@@ -3,9 +3,10 @@
 The agent is the hub's presence on a managed Linux, Windows or macOS
 machine: one root service with one socket open to the hub. It hosts the
 modules the hub's state names, reports what is true, and shares the
-machine's desktop when told. It draws no window and, apart from the
-CloudCLI forwarder ("CloudCLI" below), listens on no port. Its own code is
-pure standard library. The
+machine's desktop when told. It draws no window, and the only ports it
+listens on are the forwarders of CloudCLI and code-server, on `127.0.0.1`
+("CloudCLI" and "code-server" below). Its own code is pure standard
+library. The
 package includes the interpreter that runs it, so it installs on a machine
 with no Python and touches none the machine already has.
 
@@ -15,7 +16,9 @@ a separate package in that person's own session
 also joins the hub's virtual network as an ordinary peer, through the NetBird
 and EasyTier daemons its own package registers as services. A terminal it
 opens on a managed machine is a `shell` stream the hub bridges to that
-machine's agent, the same shell the panel's terminal reaches. This page is
+machine's agent, the same shell the panel's terminal reaches, and every
+other connection it makes to a service on a machine is a `connect` stream
+the hub relays to that machine's agent. This page is
 the agent's own design: who commands it, how state moves, how the machine's
 root reaches it, and where the platform seam runs. The socket itself, its
 frames, sections, kinds and admission, is [protocol.md](protocol.md).
@@ -31,7 +34,7 @@ never to the agent.
 hub's pages, in the agent, and in the client:
 
 - **Modules** are software the hub administers on a machine: Samba, Gitea,
-  Podman, ZFS, VS Code, CloudCLI and the RustDesk host. The hub says what is wanted and sends
+  Podman, ZFS, VS Code, code-server, CloudCLI and the RustDesk host. The hub says what is wanted and sends
   the bytes; the agent observes, installs and configures. A device's Modules
   page writes one `want` per module into `config/devices/<id>/modules.json`.
   The state the agent receives names, per module, that `want`, the
@@ -44,7 +47,7 @@ hub's pages, in the agent, and in the client:
 
 | The hub may | Root on the machine may |
 | --- | --- |
-| Push the state and open `shell`, `file` and `command` streams | Bind the machine to a hub, or unbind it |
+| Push the state and open `shell`, `file`, `command` and `connect` streams | Bind the machine to a hub, or unbind it |
 | Say which modules are absent, installed, stopped or running, and configure them | Send a report now (`nagent sync`) |
 | Reboot, shut down, reinstall the agent | Share the desktop and stop sharing it |
 | Read and set up a person's own AnyDesk or TeamViewer | Read the binding and status |
@@ -69,11 +72,11 @@ declaration, and the most recent error worth showing. Down: the `state`, once wh
 report's hash differs and again whenever the hub's copy changes, and the
 streams the hub opens.
 
-The hub opens `shell`, `file` and `command` streams to an agent; the agent
-opens `log` and `package` streams to the hub; `desktop` is reserved. A
-`command` names a module and a verb (`{agent, reboot}`, `{samba, reload}`,
-`{zfs, validate}`). Every stream sits behind a credit window, so a long
-transfer never starves the reader, and a stream's result is its close.
+The hub opens `shell`, `file`, `command` and `connect` streams to an agent;
+the agent opens `log` and `package` streams to the hub. A `command` names a
+module and a verb (`{agent, reboot}`, `{samba, reload}`, `{zfs,
+validate}`). Every stream sits behind a credit window, so a long transfer
+never starves the reader, and a stream's result is its close.
 
 **Presence is memory only.** Online, version and last seen are in the hub's
 session registry. A hub restart forgets every machine until it reports again,
@@ -205,6 +208,31 @@ sets the unattended password when the drawer asks, as the seated account for
 AnyDesk and as root for TeamViewer, because that is where each keeps its
 configuration.
 
+## The connect stream
+
+A `connect {port}` stream is one TCP connection the hub relays for a client
+to a service on this machine ([protocol.md](protocol.md), "The connect
+stream"). The agent dials `127.0.0.1:<port>`, within
+`AGENT_CONNECT_DIAL_TIMEOUT_S`, and relays bytes both ways under credit
+until either socket ends. It dials only a port the machine publishes at
+that moment:
+
+| Published while | The port |
+| --- | --- |
+| the file share reports a share | 445, the SMB port |
+| the desktop is shared | the RustDesk direct port the `desktop` section reports |
+| the Gitea module reports its URL | that URL's port |
+| a VS Code, code-server or CloudCLI instance is configured | the instance's port |
+| a Podman container publishes a host port | that port, dialled on the host address it is published on when it names one |
+
+Any other port is refused `port_not_published {port}` and nothing is
+dialled. A dial that fails closes the stream `connect_failed {reason}`, `reason` being
+`refused`, `timeout` or `unreachable`. Every service in the table, a
+container published on one address aside, answers on loopback: Gitea listens on every address, the editors and the forwarders
+listen on `127.0.0.1`, RustDesk's direct port answers on loopback, Samba's
+`hosts allow` names `127.0.0.1`, and the file share's fence on Windows and
+macOS leaves `127.0.0.0/8` out of what it blocks.
+
 ## The local control channel
 
 One Unix socket, 0600 under a 0700 directory, so the kernel refuses anyone
@@ -242,11 +270,11 @@ accounts the module names, each started by the system's own service
 manager: a systemd unit with `User=` on Linux, a LaunchDaemon with
 `UserName` on macOS, and on Windows a scheduled task registered with the
 account's login, because LocalSystem cannot start a process as another
-account without its password; on Windows the module also opens each
-instance's port in the firewall and closes it with the instance, since the
-hub's forwards reach the server from the network. CloudCLI is reached the
-same way ("CloudCLI" below). Everything else the agent does is root's own
-work.
+account without its password. Every server listens on `127.0.0.1` alone and
+the module opens no port in any firewall, since the hub reaches it through
+the agent's `connect` stream. CloudCLI and code-server are reached the same
+way ("CloudCLI" and "code-server" below). Everything else the agent does is
+root's own work.
 
 ## The platform layer
 
@@ -265,7 +293,8 @@ platform with `smb_server` gets the file share, driving the SMB server the
 system carries, with nothing to install or uninstall; there, any other
 module the state names reads `unsupported`, never `failed`, beside the
 built-in RustDesk row. A platform with `hub_packages` gets the VS Code
-module; on Linux VS Code is one of the runners `packages` builds. On every
+module, and macOS the code-server module beside it; on Linux both are among
+the runners `packages` builds. On every
 system, software the hub sends down a package stream is unpacked into a
 directory of the module's own name under the state root, and that directory
 alone is opened to every account to read and run: mode 755, and on Windows
@@ -276,7 +305,7 @@ only POSIX has is guarded, so one package imports on all three systems.
 | --- | --- | --- | --- |
 | Program | `/opt/neutrino/agent` | `C:\Program Files\Neutrino\agent` | `/Library/Application Support/Neutrino/agent/app` |
 | Configuration root: the binding, the credentials, the desired state | `/etc/neutrino/agent` | `%ProgramData%\Neutrino\agent\config`, under `%ProgramData%\Neutrino\agent`, whose ACL, SYSTEM and the administrators alone, the `.msi` sets | `/Library/Application Support/Neutrino/agent/config`, mode 700 |
-| State root: configured marks, packages, the last reinstall, `vscode/`, `cloudcli/` | `/var/lib/neutrino/agent` | `%ProgramData%\Neutrino\agent\state` | `/Library/Application Support/Neutrino/agent/state`, mode 755 |
+| State root: configured marks, packages, the last reinstall, `vscode/`, `code_server/`, `cloudcli/` | `/var/lib/neutrino/agent` | `%ProgramData%\Neutrino\agent\state` | `/Library/Application Support/Neutrino/agent/state`, mode 755 |
 | Log | the journal | `%ProgramData%\Neutrino\agent\log\agent.log` | `/Library/Logs/Neutrino/agent/agent.log` |
 | Service | systemd `neutrino_agent.service` runs `nagent run` | the `neutrino_agent` service, LocalSystem, runs `nagent service run` | the `com.neutrino.agent` LaunchDaemon runs `nagent run` |
 | Control transport | Unix socket `/run/neutrino/agent/agent.sock` | named pipe `\\.\pipe\neutrino_agent`, its descriptor SYSTEM and the administrators | Unix socket `/var/run/neutrino/agent/agent.sock` |
@@ -336,6 +365,7 @@ module a system cannot run is left out on that system.
 | Containers (Podman) | yes | no | no |
 | ZFS storage | yes | no | no |
 | VS Code | glibc 2.28 and above, amd64 and arm64 | amd64 | arm64 and amd64 |
+| code-server | glibc 2.28 and above, amd64 and arm64 | no | arm64 and amd64 |
 | CloudCLI | glibc 2.28 and above, amd64 and arm64 | amd64 and arm64 | arm64 and amd64 |
 | Remote desktop (RustDesk, AnyDesk, TeamViewer) | yes | yes | yes |
 
@@ -348,12 +378,14 @@ lines that name the module, from `agent.log` under the log root (the rotated
 most half the box, and a box is empty only while the agent has logged
 nothing about the module. The file share reads the SMB server's latest
 events from `Microsoft-Windows-SMBServer/Operational` on Windows, or what the
-unified log holds of `smbd` over the last 15 minutes on macOS. VS Code and
-CloudCLI read the end of each instance's log file: on Windows the task runs
-the CLI through `cmd.exe`, which appends its output to `<account>.log`
-beside the CLI, and a CloudCLI install still running shows
-`run\install_<account>.log`; on macOS the LaunchDaemon's `StandardOutPath`
-and `StandardErrorPath` name `/Library/Logs/Neutrino/agent/vscode_<account>.log`.
+unified log holds of `smbd` over the last 15 minutes on macOS. VS Code,
+code-server and CloudCLI read the end of each instance's log file: on
+Windows the task runs the CLI through `cmd.exe`, which appends its output
+to `<account>.log` beside the CLI, and a CloudCLI install still running
+shows `run\install_<account>.log`; on macOS the LaunchDaemon's
+`StandardOutPath` and `StandardErrorPath` name
+`/Library/Logs/Neutrino/agent/<module>_<account>.log`, `<module>` being
+`vscode`, `code_server` or `cloudcli`.
 A source that cannot be read leaves one line in the agent's log naming it,
 so the next journal shows why. `journal` answers while an apply runs; it
 does not wait for the state to settle. Every log comes oldest line first,
@@ -366,10 +398,9 @@ The hub's own machine on macOS and Windows runs the local agent
 `nhub setup` installs ([install_and_dev.md](install_and_dev.md)), so its
 shares and VS Code are that agent's modules, as on any device.
 
-A VS Code instance listens on every address of the machine, on every
-system; its token is what admits a browser, and the hub names the address a
-client opens by that client's scope ([protocol.md](protocol.md), "The
-address a caller is given").
+A VS Code instance listens on `127.0.0.1` alone, on every system. A client
+reaches it through a `connect` stream ("The connect stream"), and its token
+is what admits a browser.
 
 On a Mac the connections land in the `RustDesk --server` job of the signed-in
 session (the LaunchAgent `com.carriez.RustDesk_server`), not in the root
@@ -462,8 +493,9 @@ modules, then unregistered. The hub publishes an instance's `web` entry
 only while the device reports it running.
 
 **The agent's forwarder stands in front of CloudCLI.** CloudCLI listens on
-loopback alone. A thin HTTP forwarder of the agent's listens on every address
-of the device (`0.0.0.0`) at the configured port. The hub generates each
+loopback alone. A thin HTTP forwarder of the agent's listens on
+`127.0.0.1` at the configured port, where the agent's end of a `connect`
+stream reaches it. The hub generates each
 instance's password and keeps it in its vault; on CloudCLI's first start the
 agent registers the account with it through CloudCLI's register endpoint,
 the first account registered being its administrator, and the forwarder
@@ -488,6 +520,64 @@ forwarder checks the HMAC and the expiry itself and keeps every nonce it
 accepted until that nonce's expiry, so a token works once. No token enters
 the device's state, and minting one leaves the state's hash as it is
 ([client.md](client.md), "The Web page").
+
+### code-server
+
+The `code_server` module runs code-server, the browser build of VS Code
+that Coder publishes (MIT), once per account on Linux and macOS. Its
+extensions come from Open VSX, code-server's own default gallery. It is
+an ordinary module shaped like CloudCLI,
+`agent/neutrino_agent/modules/code_server/` with its config, constants,
+runner, installer, forwarder and one applier per system, and its
+configuration is `{instances: [{account, port, secret}]}`. Its manifest has
+no Windows branch, so the Modules page greys it out on Windows.
+
+**It runs as the account, never as root**: a unit
+`neutrino_code_server@<account>.service` with `User=<account>` on Linux, and
+a LaunchDaemon `com.neutrino.code_server.<account>` with `UserName` on
+macOS. Its settings and extensions are in code-server's own directories
+under the account's home.
+
+**The release comes from its publisher.** `data/manifests/code_server.json`
+pins the standalone release for Linux and macOS on amd64 and arm64, each
+with its url and sha256, at the source the edition names. The module's
+installer fetches the archive into the module cache and sends it down
+`package {module: code_server}`. The agent unpacks it under its state root,
+`/var/lib/neutrino/agent/code_server/` on Linux and `/Library/Application
+Support/Neutrino/agent/state/code_server` on macOS: owned by root, read-only
+to every account, one copy per machine, never on `PATH`. The release
+includes its own Node.js.
+
+**code-server listens on a socket only its account opens.** The service
+runs `code-server --auth none --socket <run-dir>/code_server.sock
+--socket-mode 600 --disable-telemetry --disable-update-check`, where
+`<run-dir>` is `code_server/run/<account>/` under the state root, owned by the
+account, mode 700. Root and the account alone can open the socket, so
+`--auth none` admits nobody else.
+
+**The agent's forwarder is in front of it, as in front of CloudCLI.** It
+listens on `127.0.0.1` at the configured port, where the agent's end of a
+`connect` stream reaches it, and passes what it admits to the socket:
+
+| A request | The forwarder |
+| --- | --- |
+| carries `?tkn=<token>` that verifies | sets its own login cookie, `neutrino_code_server_<port>`, and redirects to the same path without the token |
+| carries `?tkn=<token>` that does not verify, has expired or was spent | 401 |
+| carries the login cookie with a good signature and expiry | passes it on unchanged, WebSocket included |
+| carries neither | 401 |
+
+The token is CloudCLI's: the hub mints it from the instance's secret on
+every `service` ask, it expires 60 seconds later, and it works once. The
+login cookie is `base64url(expiry || HMAC-SHA256(key, expiry))`, the key
+derived from the instance's secret, and lasts seven days. The agent keeps a
+root-only record per instance, its port and its secret, so the forwarder
+comes back after an agent restart.
+
+Each instance a running module serves is published as one `web` entry,
+`code_server_<device id>_<account>`, titled `code-server (<account>)`, with
+`is_token_required: true` and `description_code` `code_server_module`
+([protocol.md](protocol.md), "The services section, one entry per published
+service").
 
 ## Two ports, one process
 
@@ -622,8 +712,10 @@ who can already strip TLS, who fails the fingerprint check first.
 
 **A local account on the managed machine**: the control socket is 0600 under
 a 0700 directory, so the kernel rejects their connection before a request is
-read. A website in their browser gets nothing at all: the agent listens on no
-local port, so there is nothing for a cross-site form to post to.
+read. The agent's only local ports are the CloudCLI and code-server
+forwarders on `127.0.0.1`, which answer 401 to a request carrying neither a
+token the hub minted nor a login the forwarder set, so neither the account
+nor a website in their browser reaches an instance through them.
 
 **Rooting the hub box** is outside the model: the key, the vault and the
 panel all live there. The panel port itself is plain HTTP unless its HTTPS is

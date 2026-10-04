@@ -27,10 +27,10 @@ The document has these parts:
 
 | Part | Holds |
 | --- | --- |
-| `hubs[]` | `hub_id`, `hub_name`, `gateway_url`, `software`, `connection`, `last_error`, `is_exit`, `overlay`, `jobs` |
+| `hubs[]` | `hub_id`, `hub_name`, `gateway_url`, `software`, `connection`, `reached_through` (the hub's word for the way the channel reached it: `lan`, `netbird`, `easytier`, `relay`, or empty before the first state), `is_panel_allowed` (the hub's state says whether this client's permission holds `panel`), `panel_forward` (empty, or the loopback port the panel's forward listens on), `last_error`, `is_exit`, `overlay`, `jobs` |
 | `hubs[].overlay` | `network` (the chosen engine), `networks[]` (what the hub publishes), `state`, `stage` (empty, `login` or `hub` while connecting), `address`, `error` |
-| `hubs[].jobs` | `is_refreshing`, `overlay_job` (empty, `connecting`, `disconnecting`), `is_leaving` |
-| `services[]` | one per published service, with the hub's wire fields (`hub_id`, `device_id`, `module`, `kind`, `payload`, `is_healthy`, `unhealthy_code`), plus `job`, `last_error` and, for a port entry and a local-only web entry, `local_port` (the setting: `auto` or a number) and `forward` (empty, or the loopback port the forward listens on) |
+| `hubs[].jobs` | `is_refreshing`, `overlay_job` (empty, `connecting`, `disconnecting`), `is_leaving`, `is_opening_panel` |
+| `services[]` | one per published service, with the hub's wire fields (`hub_id`, `device_id`, `module`, `kind`, `payload`, `is_healthy`, `unhealthy_code`), plus `job`, `last_error` and, for every entry the client forwards ("The local port table"), `local_port` (the setting: `auto` or a number) and `forward` (empty, or the loopback port the forward listens on) |
 | `mounts[]` | the desktop's mount records, one per share mounted or being mounted |
 | `terminals` | `machines[]` and `sessions[]`, as the hub sends them |
 | `notices[]` | page-wide notices with a code, such as `binding_unknown`, each with a close button; a notice goes when closed, when **Refresh** is pressed, or after one minute |
@@ -90,6 +90,11 @@ languages, and the English column is the wording the English catalog holds.
 | Key | English |
 | --- | --- |
 | `ui.state.connected` | Connected |
+| `ui.state.connected_through` | Connected · `<way>` |
+| `ui.through.lan` | LAN |
+| `ui.through.netbird` | NetBird |
+| `ui.through.easytier` | EasyTier |
+| `ui.through.relay` | Relay |
 | `ui.state.connecting` | Connecting… |
 | `ui.state.down` | Not connected |
 | `ui.state.pending` | Joined; the hub has not been reached yet |
@@ -160,7 +165,7 @@ state is its connection:
 
 | State | Event | Next | Notes |
 | --- | --- | --- | --- |
-| `connecting` | the hub sends `welcome` | `connected` | |
+| `connecting` | the hub sends `welcome` | `connected` | the state word is `ui.state.connected_through` with the word for the state's `reached_through`, `ui.state.connected` until the first state names it |
 | `connecting` | the round ends in a code | `down` | the code is the error line; the next round runs after the backoff, up to one minute |
 | `connecting` | the code is `replaced` | `replaced` | |
 | `connected` | the socket closes | `connecting` | automatic, no error line |
@@ -177,8 +182,16 @@ The row's controls, from left to right:
 | --- | --- | --- | --- |
 | the network picker | when `overlay.networks` has two or more entries | in overlay `off` only | writes the chosen engine to the binding |
 | the network button | always | as the overlay table gives it | Connect, Cancel or Disconnect |
+| **Panel** | when `is_panel_allowed` | when the hub is `connected` and not disabled | job `ui.job.opening`: makes the panel's forward when the hub has none, then opens the system browser at `http://panel-<hub-id>.localhost:<local-port>/` (on macOS `http://127.0.0.1:<local-port>/`); a failure writes the code |
 | **Reconnect** | in `replaced` only | always | takes the binding back and starts a round |
-| **Leave** | always | not while `is_leaving` | arms; the second press deletes the binding at once, whether or not the hub answers: the core stops that hub's forwards, mounts and viewers, leaves its network when no other hub uses it, forgets the binding, and only then tells the hub once, in the background, with a short timeout, a refusal or an unreachable hub changing nothing; the row shows `ui.job.leaving` and goes when the core has forgotten the binding, which never waits on the hub |
+| **Leave** | always | not while `is_leaving` | arms; the second press deletes the binding at once, whether or not the hub answers: the core stops that hub's forwards (the panel's among them), mounts and viewers, leaves its network when no other hub uses it, forgets the binding, and only then tells the hub once, in the background, with a short timeout, a refusal or an unreachable hub changing nothing; the row shows `ui.job.leaving` and goes when the core has forgotten the binding, which never waits on the hub |
+
+The panel's forward is a forward of the local port table whose far end is
+`connect {is_panel: true}`; it listens from the first press of **Panel**
+until the hub is left or the client quits. The panel answers through it
+over plain HTTP, the channel being its encryption, and asks for the panel's
+password as it does on the LAN. `<hub-id>` is the hub's id, so each hub's
+panel keeps its own session cookie in the browser.
 
 The row of the hub whose gateway the AI tools point at shows `ui.hub_is_exit`
 under its mono line; the AI page sets it.
@@ -240,40 +253,41 @@ the picker and the button in the row. The state is `off`, `connecting` or
 ## The Web page
 
 A row per `web` entry: the title, the URL as the mono line, the provider
-line. The controls:
+line. Every entry opens through a forward of the local port table. The
+controls:
 
 | Control | Shown | Enabled | Does |
 | --- | --- | --- | --- |
-| **Open** | when the entry is not local-only | when the entry is healthy and the hub is not disabled | opens the URL in the system browser; no job. An entry with `is_token_required` takes job `ui.job.opening`: reads `{token}` on the `service` stream, then opens `<url>?tkn=<token>` at the entry's own address; a failure writes the code |
-| **Open locally** | when the entry is local-only | the same | job `ui.job.opening`: forwards the port to the loopback as a port entry does, reads the token on the `service` stream, opens the browser on the entry's loopback URL below; a failure writes the code |
-| **Configure** | when the entry is local-only | when the entry is not forwarded | the local port dialog of the Ports page |
-| **Disconnect** | when the entry is local-only and forwarded | always | ends the forward, as on the Ports page |
+| **Open** | always | when the entry is healthy and the hub is not disabled | job `ui.job.opening`: makes the entry's forward when it has none, reads `{token}` on the `service` stream when the entry has `is_token_required`, and opens the system browser on the entry's forwarded URL below; a failure writes the code |
+| **Configure** | always | when the entry is not forwarded | the local port dialog ("The local port table") |
+| **Disconnect** | when the entry is forwarded | always | ends the forward, as on the Ports page |
 
-A local-only entry's row is a Ports row once forwarded: the mono line adds
-`→ 127.0.0.1:<local port>`. The forward relays bytes, as a port entry's
-does. The browser is opened on `http://<slug>.localhost:<local port>/?tkn=<token>`,
-where `slug` is the entry's id with every character outside letters, digits
-and hyphens turned into a hyphen: a browser resolves a `.localhost` name to
-the loopback by itself, and a cookie belongs to its host, so each instance
-keeps its own `vscode-tkn` cookie and two instances never overwrite each
-other's; the distinct local port keeps their storage apart as well. VS Code
-reads that cookie in the page to authenticate its own connection, which is
-why the token must reach the browser and a forward that hides it cannot
-work. On macOS the host is `127.0.0.1`, since Safari resolves no
-`.localhost` name. A phone does the same through its app core: the forward
-listens on the phone's loopback, and the browser opens there.
+A forwarded row is a Ports row: the mono line adds `→ 127.0.0.1:<local
+port>`. The browser is opened on
+`<scheme>://<slug>.localhost:<local-port><path>`, with `?tkn=<token>` added
+for an entry with `is_token_required`. `<scheme>` and `<path>` are the
+entry's url's own, and `<slug>` is the entry's id with every character
+outside letters, digits and hyphens turned into a hyphen. A browser
+resolves a `.localhost` name to the loopback by itself, and a cookie
+belongs to its host, so each instance keeps its own cookie and two
+instances never overwrite each other's; the distinct local port keeps their
+storage apart as well. On macOS the host is `127.0.0.1`, since Safari
+resolves no `.localhost` name; every forward there shares that host, and a
+browser keeps one cookie per name for it, so two instances whose cookies
+have the same name sign each other out. A phone does the same through its app core:
+the forward listens on the phone's loopback, and the browser opens there.
 
-An entry with `is_token_required`, a CloudCLI instance, is not local-only:
-the browser opens `http://<device address>:<port>/?tkn=<token>` directly, with
-no forward and no **Configure**, on the desktop and on the phone alike, and
-**Open** is its one button. The agent's forwarder trades the token for
-CloudCLI's own login ([agent.md](agent.md), "CloudCLI"). A token is spent
-once and dies after 60 seconds, so every press reads a new one.
+VS Code reads its token from a cookie in the page to authenticate its own
+connection, so the token must reach the browser in the URL. The forwarders
+in front of code-server and CloudCLI trade a token for a login of their own
+([agent.md](agent.md), "CloudCLI" and "code-server"). Their token is spent
+once and dies after 60 seconds, so every press of **Open** reads a new one.
 
 ## The Ports page
 
-A row per `port` entry: the title, `host:port` as the mono line, the
-provider line. On a desktop the forward is a state of the row:
+A row per `port` entry: the title, `host:port` as the mono line, where the
+service is on the hub's networks, and the provider line. On a desktop the
+forward is a state of the row:
 
 | State | Event | Next | Control shown |
 | --- | --- | --- | --- |
@@ -288,37 +302,66 @@ with the reason on the row. A phone has the same states; its forward lives in
 the app's foreground service, and the forwarded row adds **Copy** for the
 loopback address, since the phone has no shell to type it into.
 
+## The local port table
+
+A forward is a listener on `127.0.0.1:<local-port>` that opens one
+`connect` stream to the hub for every connection it accepts and relays the
+bytes both ways ([protocol.md](protocol.md), "The connect stream"). No page
+of any client dials a service's own address; the hub's agent port is the
+one address a client dials.
+
+| Entry | The forward listens |
+| --- | --- |
+| `port` | from **Connect** until **Disconnect** |
+| `web` | from **Open** until **Disconnect** |
+| `ai`, on a desktop | while the client runs and the hub is the exit of any tool |
+| `ai`, on a phone | from **Connect** until **Disconnect**, as a `port` entry |
+| `rdp` | from **Connect** until the viewer ends |
+| `file`, on Linux and macOS | from **Mount** until the share is unmounted |
+| the hub's panel | from the first press of **Panel** until the hub is left or the client quits |
+
+A `file` entry on Windows goes through the files adapter instead ("The
+files adapter on Windows"), and on a phone the in-app SMB client's sockets
+are `connect` streams themselves; neither holds a local port. A client that
+quits ends every forward.
+
 The local port is the client's to manage:
 
 | Rule | Reason |
 | --- | --- |
-| Every forwardable entry (a port entry, a local-only web entry) has a **Configure** button at the left of its action, a small button like the row's others; it opens a dialog with one choice, **Local port**: **Auto** (the default) or **Fixed** with a number from 1024 to 65535, and **Save** and **Cancel**. The button is disabled while the entry is forwarded, with the reason `ui.reason.disconnect_first`. | The port a tool is told to use must not change under it; changing it under a running forward is the change nobody asked for. |
-| **Auto** picks the entry's own port when no other entry holds it and it is free on the loopback, else the first free port from 20000 up; the client records the pick for the entry and gives it the same port on every later forward and after a restart. | Two instances on the same remote port must land on two local ports, and the local port of each must stay put. |
+| A `port` or `web` entry has a **Configure** button at the left of its action, a small button like the row's others; it opens a dialog with one choice, **Local port**: **Auto** (the default) or **Fixed** with a number from 1024 to 65535, and **Save** and **Cancel**. The button is disabled while the entry is forwarded, with the reason `ui.reason.disconnect_first`. Every other forward is **Auto**. | The port a tool is told to use must not change under it; changing it under a running forward is the change nobody asked for. |
+| **Auto** picks the entry's own port when no other entry holds it and it is free, else the first free port from 20000 up; the client records the pick for the entry and gives it the same port on every later forward and after a restart. The panel has no port of its own and starts at 20000. | Two instances on the same remote port must land on two local ports, and the local port of each must stay put. |
+| A port is free only when nothing listens on it on any address of the machine: a probe binds it on the IPv4 wildcard address, and on the IPv6 one where the machine has IPv6, with no address-reuse option, and closes it. The forward itself listens on `127.0.0.1` alone. | A loopback listener beside a server on every address takes that server's local traffic, and on macOS a loopback bind succeeds beside it. |
 | The client keeps one table of local ports: every entry's pick or fixed number is in it, no two entries hold one number, and a **Fixed** number another entry holds is refused in the dialog with `ui.reason.port_taken`. | One table is the only way two forwards never collide. |
-| A forwarded row always shows `→ 127.0.0.1:<local port>`, on the Web page as on the Ports page. | A port the person cannot see is a port they cannot type. |
+| A forwarded row always shows `→ 127.0.0.1:<local port>`, on the Web, Ports and AI pages. | A port the person cannot see is a port they cannot type. |
 
 ## The AI page
 
 A row per hub's gateway: `ui.module_ai_gateway` as the title, the gateway
-address as the mono line. The desktop controls:
+address as the mono line, and `→ 127.0.0.1:<local port>` after it while
+the forward listens. The desktop controls:
 
 | Control | Enabled | Does |
 | --- | --- | --- |
-| **AI tools use this gateway** (a chip) | when the entry is healthy, the hub is not disabled and no switch runs | job `ui.job.switching`: points Claude Code, Codex and Gemini at this gateway with this client's key; one hub is the exit at a time, and only a chip the person turned on makes it so: with no chip turned on no hub is the exit; the chip of the other hub turns off in the same push |
+| **AI tools use this gateway** (a chip) | when the entry is healthy, the hub is not disabled and no switch runs | job `ui.job.switching`: makes the entry's forward, reads this client's key on the `service` stream, and points Claude Code, Codex and Gemini at `http://127.0.0.1:<local-port>` with that key ([modules/ai.md](modules/ai.md)); one hub is the exit at a time, and only a chip the person turned on makes it so: with no chip turned on no hub is the exit; the chip of the other hub turns off in the same push, and its forward ends |
 | **Configure** | the same | opens the configuration dialog: a picker per tool for its model and, for Codex, its effort; **Save** and **Cancel**; the dialog is the inline-form idiom with a dirty frame |
 
-A phone shows the gateway address with a **Copy** button, and this client's
-key on one row: the key in a mono field with the eye toggle inside the field
-at its right end (the panel's password field), then **QR**, then **Copy**,
-in that order; on a narrow screen the field shrinks and the two buttons keep
-their size. **QR** draws the address and the key under the row for another
-app to scan.
+Under the controls is the line `ui.ai_needs_client`: the tools reach the
+gateway only while this client runs.
+
+A phone forwards the gateway as a Ports row: **Connect** and
+**Disconnect**, and the forwarded row shows the loopback address with
+**Copy**, for an app on the same phone. Under it, this client's key on one
+row: the key in a mono field with the eye toggle inside the field at its
+right end (the panel's password field), then **Copy**; on a narrow screen
+the field shrinks and the button keeps its size.
 
 ## The Files page
 
 A row per `file` entry: the share's name, `//host/share` as the mono line,
-the provider line. On a desktop the mount is a record with its own state, and
-the row's button is the record's:
+where the share is on the hub's networks, and the provider line. On a
+desktop the mount is a record with its own state, and the row's button is
+the record's:
 
 | Record state | Event | Next | The button |
 | --- | --- | --- | --- |
@@ -329,6 +372,7 @@ the row's button is the record's:
 | `mounted` | press **Unmount** | `unmounting`, then none | `ui.job.unmounting` |
 | `mounted` | the entry turns unhealthy | `mounted` | **Unmount**; the state word is `ui.unhealthy` |
 | `failed` | press **Mount** | `pending` | `ui.job.mounting` |
+| `failed` with a login refusal | press **Save** in the form with a new login | `pending`, mounting with the new login at once | `ui.job.mounting` |
 | `failed` | its entry leaves the hub's list, or another record is set to mount at the same place | none | a failed record is dropped and holds no place |
 
 **Configure** opens the row's form in place: a user name (a picker over the
@@ -346,21 +390,31 @@ The form is a configurable panel with a dirty frame, **Save** and **Cancel**.
 **Mount** is disabled until the form has a user name and, where the shape
 asks for one, a place, with the reason on the row.
 
+Every system mounts the share from the hub's channel, never from the
+share's own address:
+
+| System | The mount |
+| --- | --- |
+| Linux | the entry's forward, mounted by the root helper under `pkexec`: `mount_helper mount --share //127.0.0.1/<share> --port <local-port> --location <path> --credentials <file>`, which runs `mount.cifs` with `port=<local-port>` among its options |
+| macOS | the entry's forward, mounted by the system as below |
+| Windows | the files adapter's address for the share's machine, `net use <letter>: \\<fake-address>\<share>` ("The files adapter on Windows") |
+
 On macOS the client does not mount the share itself: it asks the system to
 mount the volume through `osascript`, with the one-line script on its
 standard input and never on an argument:
 
-```
-mount volume "smb://<user>@<host>/<share>" as user name "<user>" with password "<password>"
+```text
+mount volume "smb://<user>@127.0.0.1:<local-port>/<share>" as user name "<user>" with password "<password>"
 ```
 
 The volume is the one the Finder's **Connect to Server** would make, listed
 under the server in the Finder's sidebar. The record's `path` is empty until
 the system has mounted the volume, is then read back from the mount table
-(`//<user>@<host>/<share> on /Volumes/<name> (smbfs, …)`), and is empty
-again after an unmount; **Unmount** ejects that mount point with `diskutil
-unmount`, which needs no administrator. A volume the system already has
-mounted for the same host and share is taken as mounted, not mounted twice.
+(`//<user>@127.0.0.1:<local-port>/<share> on /Volumes/<name> (smbfs, …)`),
+and is empty again after an unmount; **Unmount** ejects that mount point
+with `diskutil unmount`, which needs no administrator. A volume the system
+already has mounted for the same address, port and share is taken as
+mounted, not mounted twice.
 
 The system's own dialogs belong to the system, and the client waits for
 them rather than answering or killing them: the first connection to a server
@@ -382,7 +436,41 @@ a user name only.
 A phone has no mount. Its row shows **Open in Files**, which makes the share
 a location in the system's Files app through the client's file provider. The
 password is asked once in a sheet and kept in the keystore; **Forget
-password** on the row arms and removes it.
+password** on the row arms and removes it. The app's SMB client reaches the
+share through its socket factory, which hands it sockets whose bytes are
+`connect` streams naming the file entry.
+
+## The files adapter on Windows
+
+The Windows SMB client dials port 445 alone, and the system holds the
+machine's own 445, so a forward on a loopback port cannot carry a share.
+The Windows client gives every machine that provides a share an address of
+its own on a virtual adapter, and sends the adapter's SMB connections to
+the hub.
+
+| Part | What it is |
+| --- | --- |
+| The adapter | `neutrino_files`, a wintun adapter at `198.19.255.1/24`, with no gateway and no DNS server, connected to no network <!-- scan: allow --> |
+| The fake addresses | one per machine that provides a `file` entry, from `198.19.255.2` up, kept per hub and machine in the client's store, so a drive letter keeps naming the same machine; the machine is the entry's `device_id`, or its host for a declared record <!-- scan: allow --> |
+| tun2socks | the GPL-3.0 executable the client's package includes, credited on the About card, run with the adapter as its device and the SOCKS endpoint as its proxy; it hands every TCP connection entering the adapter to that endpoint |
+| The SOCKS endpoint | a SOCKS5 listener of the resident on `127.0.0.1`, behind a user name and password the resident generates at each start; it accepts a connection to `<fake-address>:445` of a machine it knows and opens a `connect` stream naming a `file` entry of that machine, and refuses any other address or port |
+
+The adapter and tun2socks need administrator rights, and the resident has
+none. The privileged part is a service the `.msi` installs beside the
+EasyTier daemon, in the same way: `NeutrinoClientFiles`, which runs
+`nclient.exe files-daemon --service` as LocalSystem and answers one JSON
+request per connection on the pipe `\\.\pipe\neutrino_client_files`, with
+the EasyTier pipe's security descriptor. The resident asks it `up` with the
+endpoint's port, user name and password before its first Windows mount; the
+daemon makes the adapter, gives it its address and runs tun2socks as its
+child. The resident asks it `down` when its last mount record goes and when
+it quits, and the daemon stops tun2socks and removes the adapter. A
+`status` answers whether the adapter is up. The daemon serves the resident
+that asked last.
+
+When the adapter cannot be made, because the service is missing, stopped or
+refuses, the mount record goes `failed` with `files_adapter_unavailable
+{detail}` on the row's error line, and nothing else changes on the system.
 
 ## The Terminals page
 
@@ -396,7 +484,7 @@ switches at the right and nothing else.
 | The chips name every machine with a terminal, each with its provider line; the picked chip is the one a new terminal opens on. | The person opens a terminal on a machine, and the machine is the first choice to make. |
 | **New terminal** is disabled with no chip picked or with the picked machine offline, with the reason under the chips. | Nothing opens on a machine that cannot answer. |
 | Keys reach the machine in the order they were pressed: a tab has one sender that writes its bytes in sequence, on every client. | A letter that overtakes the one before it types another word. |
-| **Clear**, wherever a client offers it, sends Ctrl+C, clears the screen, drops what had arrived and was not yet drawn, and goes on dropping what arrives until the stream has been quiet for half a second, for twenty seconds at most. While it drops, the terminal's own box shows `ui.job.clearing` where the output would be, and the word goes when the dropping ends. | A clear that is followed by the rest of the flood clears nothing, and how long the flood's tail takes to cross the hub is not a number a client can know. |
+| **Clear**, wherever a client offers it, sends Ctrl+C, clears the screen, drops what had arrived and was not yet drawn, and goes on dropping what arrives until the stream has been quiet for half a second, for twenty seconds at most. While it drops, the terminal's own box shows `ui.job.clearing` ("Clearing…", 「清屏中…」) where the output would be, and the word goes when the dropping ends. The desktop and the phone behave the same. | A clear that is followed by the rest of the flood clears nothing, and how long the flood's tail takes to cross the hub is not a number a client can know. |
 | A plain session ends when its tab closes; a persistent or shared session's **×** arms and the second press ends the session with `stop_session`. | Ending a session others can see takes two presses, like every destructive action. |
 
 ### The session list
@@ -447,7 +535,7 @@ attaches receives the kept output first, then the live stream.
 
 | Rule | Reason |
 | --- | --- |
-| A right click opens a menu at the pointer: **Copy** (enabled with a selection), **Paste**, **Select all**, **Clear**. **Clear** sends Ctrl+C first and then clears the screen, so a command that is still pouring output stops with it. Escape or a press elsewhere closes it. | A menu is what a right click opens on every desktop; a clear that leaves the flood running clears nothing. |
+| A right click opens a menu at the pointer: **Copy** (enabled with a selection), **Paste**, **Select all**, **Clear**. **Clear** is the page's rule: Ctrl+C, the screen cleared, and the output dropped under `ui.job.clearing` until the stream is quiet. Escape or a press elsewhere closes the menu. | A menu is what a right click opens on every desktop; a clear that leaves the flood running clears nothing. |
 | Ctrl+Shift+C copies the selection and Ctrl+Shift+V pastes; on macOS Cmd+C and Cmd+V do the same. On Linux a middle click pastes the selection. | Each system's own terminal habit holds. |
 | The copy goes through the resident with `POST /api/clipboard`, and the paste reads `GET /api/clipboard`. | The web view's clipboard permission differs by system; the resident's does not. |
 | The wheel and the scrollbar move through the scrollback; the view follows new output only when it is at the bottom; Shift+PageUp and Shift+PageDown page. | Reading history while a build prints is the common case. |
@@ -472,15 +560,13 @@ word. The controls:
 
 | Control | Enabled | Does |
 | --- | --- | --- |
-| **Connect** | when the entry is healthy, the hub is not disabled and no viewer runs on it | job `ui.job.connecting`: on a desktop starts the viewer with the seat password on its command line, the one channel RustDesk 1.4.9 has for a connect password (its peer file takes only a hash salted by the host), and follows the viewer process, on Windows the copy the bundled viewer starts of itself from its own data directory; on a phone opens the viewer page |
+| **Connect** | when the entry is healthy, the hub is not disabled and no viewer runs on it | job `ui.job.connecting`: reads `{password}` on the `service` stream and makes the entry's forward; on a desktop starts the viewer at `127.0.0.1:<local-port>` with the seat password on its command line, the one channel RustDesk 1.4.9 has for a connect password (its peer file takes only a hash salted by the host), and follows the viewer process, on Windows the copy the bundled viewer starts of itself from its own data directory; on a phone opens the viewer page, whose core dials the same forward. The forward ends with the viewer |
 | the viewer | | on a desktop a separate window, and the row then shows `ui.rdp_open`; on a phone a page of the app whose three round buttons open the keyboard, the key bar of Esc, Tab, Ctrl, Shift, Alt, Win, **Paste** and the arrows, and close the session |
 | **Configure** | on a phone, when the entry is healthy | the dialog of the inline-form idiom with two pickers: **Codec** (Auto, then each codec the core offers) and **Quality** (Balanced, Low bandwidth, Best); **Save** and **Cancel**; the choice is kept per entry in the app's settings and applied at the next connect |
 
-The row's mono line is the entry's host and port, and the viewer dials the
-same address: the hub chooses the entry's host and the connect answer's host
-by one rule, the address in the caller's network, so the row and the viewer
-never name two addresses.
-The row's state word is the entry's health, and `ui.rdp_open` while the
+The row's mono line is the entry's host and port, where the desktop is on
+the hub's networks; the viewer dials the forward on the loopback and never
+that address. The row's state word is the entry's health, and `ui.rdp_open` while the
 viewer runs.
 
 The phone's viewer page is built for the picture first:
@@ -530,12 +616,12 @@ else.
 | Feature | Desktop | Phone |
 | --- | --- | --- |
 | join | paste the link | scan the QR, or paste the link; either adds the hub at once |
-| port entry | forward to the loopback | the same: a foreground service listens on `127.0.0.1:<local port>` and relays each connection to the entry's address over a plain socket, as the desktop does, and the forwarded row shows the loopback address with **Copy** |
-| local-only web entry | open through a forward | the same: the app forwards, reads the token and opens the system browser on the loopback URL |
-| web entry with `is_token_required` | read the token, open the browser at the device's address | the same |
-| file entry | mount into the system | a location in the system's Files app |
-| AI entry | point the tools at the gateway, configure them | copy the address and the key, show a QR |
-| remote desktop | the viewer process | the viewer page |
+| port entry | forward to the loopback | the same: a foreground service listens on `127.0.0.1:<local port>` and relays each connection as a `connect` stream, as the desktop does, and the forwarded row shows the loopback address with **Copy** |
+| web entry | open through a forward, with the token for an entry with `is_token_required` | the same: the app forwards, reads the token and opens the system browser on the loopback URL |
+| file entry | mount the forward, or the files adapter's address on Windows | a location in the system's Files app, its sockets `connect` streams |
+| AI entry | point the tools at the forward, configure them | forward it as a port entry, copy the loopback address and the key |
+| remote desktop | the viewer process, at the forward | the viewer page, at the forward |
+| hub's panel | **Panel** on the hub row | the same |
 | terminal input | right-click menu, shortcuts, middle click | the key row, long press |
 | frame | sidebar, tray | bottom bar in portrait; a sidebar in landscape, and in portrait on a tablet at least 720 dp wide |
 | virtual networks | one per hub, several hubs at once | one at a time: **Connect** on a second hub is disabled with the reason `overlay_other_network` while another hub's network is not off |
