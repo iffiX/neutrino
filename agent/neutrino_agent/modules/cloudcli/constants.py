@@ -59,9 +59,9 @@ CLOUDCLI_SYSTEM_PATH = ("/usr/local/bin", "/usr/bin", "/bin")
 
 # CloudCLI listens on loopback alone, on a port the agent picks.
 CLOUDCLI_UPSTREAM_HOST = "127.0.0.1"
-# The forwarder listens on every address of the machine at the configured
-# port.
-CLOUDCLI_LISTEN_HOST = "0.0.0.0"
+# The forwarder listens on loopback alone at the configured port, where the
+# agent's end of a ``connect`` stream reaches it.
+CLOUDCLI_LISTEN_HOST = "127.0.0.1"
 CLOUDCLI_PORT_MIN = 1024
 CLOUDCLI_PORT_MAX = 65535
 

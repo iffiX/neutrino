@@ -29,8 +29,12 @@ SAMBA_NATIVE_STATUS_TTL_S = 30.0
 # Windows: the start of the description of every share the module made,
 # which is also the description of every account it made.
 SAMBA_WINDOWS_MARKER = "neutrino:"
+# The networks the fence never blocks, beside the allowed subnets: the
+# machine's own loopback, where the agent's end of a ``connect`` stream
+# reaches the server.
+SAMBA_LOOPBACK_NETWORKS = ("127.0.0.0/8", "::1/128")
 # The firewall rule that blocks SMB from every address outside the allowed
-# subnets, by its name and the title the firewall shows.
+# subnets and loopback, by its name and the title the firewall shows.
 SAMBA_WINDOWS_FENCE_RULE = "neutrino_smb_fence"
 SAMBA_WINDOWS_FENCE_TITLE = "Neutrino file share fence"
 # The event log the SMB server writes its own events to.

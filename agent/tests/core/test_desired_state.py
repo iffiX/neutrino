@@ -225,6 +225,15 @@ def test_a_missing_or_broken_file_reads_as_nothing(tmp_path):
     assert store.read() == {}
 
 
+def test_the_latest_state_is_the_one_last_taken(tmp_path):
+    held, _engine = applier({}, tmp_path=tmp_path)
+    assert held.latest() == {}
+
+    held.take({"hash": "h2", "modules": {"vscode": {"want": "running"}}})
+
+    assert held.latest() == {"hash": "h2", "modules": {"vscode": {"want": "running"}}}
+
+
 # --- the order and the four wants ---
 
 

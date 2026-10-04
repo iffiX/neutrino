@@ -160,6 +160,23 @@ def test_a_declared_but_never_started_container_still_appears(commands):
     assert by_name["webdav"].host_ports == [8081]
 
 
+def test_each_tcp_host_port_is_bound_to_the_address_it_is_published_on(commands):
+    commands.answers[("/usr/bin/podman", "ps")] = (
+        0,
+        '[{"Names": ["db"], "Image": "postgres", "Status": "Up", "State": "running", '
+        '"Ports": [{"host_ip": "192.168.1.5", "host_port": 5432, "protocol": "tcp"}, '
+        '{"host_ip": "", "host_port": 8080}, '
+        '{"host_ip": "", "host_port": 5353, "protocol": "udp"}]}]',
+    )
+
+    (state,) = PodmanStatusReader().survey(declared_names=[])
+
+    assert state.host_bindings == [
+        {"address": "192.168.1.5", "port": 5432},
+        {"address": "", "port": 8080},
+    ]
+
+
 def test_no_podman_surveys_as_nothing(commands):
     commands.answers[("/usr/bin/podman", "ps")] = subprocess.CalledProcessError(
         1, ["podman"], stderr="gone"

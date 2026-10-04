@@ -122,11 +122,13 @@ def applier(tools, tmp_path):
 
 def test_the_fence_passes_the_allowed_subnets_and_blocks_the_rest():
     assert render_pf_rules(["192.168.1.7/24", "bogus", "fd00::/8"]) == (
+        "pass in quick proto tcp from { 127.0.0.0/8, ::1/128 } to any port 445\n"
         "table <neutrino_smb_allowed> const { 192.168.1.0/24, fd00::/8 }\n"
         "pass in quick proto tcp from <neutrino_smb_allowed> to any port 445\n"
         "block drop in quick proto tcp from any to any port 445\n"
     )
     assert render_pf_rules([]) == (
+        "pass in quick proto tcp from { 127.0.0.0/8, ::1/128 } to any port 445\n"
         "block drop in quick proto tcp from any to any port 445\n"
     )
 

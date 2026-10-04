@@ -53,6 +53,18 @@ AGENT_WS_CHUNK_BYTES = 64 * 1024
 AGENT_WS_STREAM_CREDIT_BYTES = 1024 * 1024
 # How long a stream waits on the hub's credit before it stops trying.
 AGENT_WS_CREDIT_TIMEOUT_S = 60
+# How long a ``connect`` stream waits for the port it dials on this machine.
+AGENT_CONNECT_DIAL_TIMEOUT_S = 10
+# The address a ``connect`` stream dials, unless a container port is
+# published on one address of its own.
+AGENT_CONNECT_LOOPBACK = "127.0.0.1"
+# What a ``connect`` stream closes with when it dials nothing: a port this
+# machine does not publish now, and a dial that failed, with its reason.
+AGENT_CODE_PORT_NOT_PUBLISHED = "port_not_published"
+AGENT_CODE_CONNECT_FAILED = "connect_failed"
+AGENT_CONNECT_REFUSED = "refused"
+AGENT_CONNECT_TIMEOUT = "timeout"
+AGENT_CONNECT_UNREACHABLE = "unreachable"
 # Close codes: a refused hello, after the ``refused`` frame that says why,
 # and a socket replaced by a second one for the same binding.
 AGENT_WS_CLOSE_REFUSED = 4000

@@ -52,6 +52,9 @@ class PodmanContainerState:
         volumes: Every mount as ``source:destination``, from inspect.
         environment: The container's environment, ``KEY=value`` each.
         has_unit: Whether a unit file this machine renders stands for it.
+        host_bindings: Each published TCP host port with the host address
+            it is published on, ``{"address", "port"}``, the address empty
+            for every address.
     """
 
     name: str
@@ -64,6 +67,7 @@ class PodmanContainerState:
     volumes: list = field(default_factory=list)
     environment: list = field(default_factory=list)
     has_unit: bool = False
+    host_bindings: list = field(default_factory=list)
 
 
 def is_version_at_least(version: str, floor: str) -> bool:
@@ -277,6 +281,7 @@ class PodmanStatusReader:
                     is_running=entry.get("State", "") == "running",
                     is_declared=names[0] in declared_names,
                     host_ports=_host_ports(entry.get("Ports") or []),
+                    host_bindings=_host_bindings(entry.get("Ports") or []),
                     ports=_inspected_ports(detail),
                     volumes=_inspected_volumes(detail),
                     environment=_inspected_environment(detail),
@@ -452,6 +457,21 @@ def _host_ports(entries: list) -> list:
         if isinstance(port, int) and port > 0:
             ports.add(port)
     return sorted(ports)
+
+
+def _host_bindings(entries: list) -> list:
+    bindings = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        port = entry.get("host_port")
+        protocol = str(entry.get("protocol", "") or "tcp")
+        if not isinstance(port, int) or port <= 0 or protocol != "tcp":
+            continue
+        binding = {"address": str(entry.get("host_ip", "") or ""), "port": port}
+        if binding not in bindings:
+            bindings.append(binding)
+    return bindings
 
 
 def _read(path: str) -> "str | None":
