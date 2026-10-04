@@ -33,7 +33,7 @@ The document has these parts:
 | `services[]` | one per published service, with the hub's wire fields (`hub_id`, `device_id`, `module`, `kind`, `payload`, `is_healthy`, `unhealthy_code`), plus `job`, `last_error` and, for a port entry and a local-only web entry, `local_port` (the setting: `auto` or a number) and `forward` (empty, or the loopback port the forward listens on) |
 | `mounts[]` | the desktop's mount records, one per share mounted or being mounted |
 | `terminals` | `machines[]` and `sessions[]`, as the hub sends them |
-| `notices[]` | page-wide notices with a code, such as `binding_unknown`, each shown for one minute |
+| `notices[]` | page-wide notices with a code, such as `binding_unknown`, each with a close button; a notice goes when closed, when **Refresh** is pressed, or after one minute |
 | `language`, `theme`, `terminal_font_size` | the client's own settings, at the top level |
 
 `services[].job` and `hubs[].jobs` are the only places a running action is
@@ -168,7 +168,7 @@ state is its connection:
 | `down` | the backoff ends, or a refresh | `connecting` | |
 | `replaced` | press **Reconnect** | `connecting` | nothing automatic leaves `replaced` |
 | `disabled` | the frame says enabled | `connected` | no button acts on a disabled hub except **Leave** |
-| any | the code is `binding_unknown` | row removed, as after **Leave** | the hub no longer holds the client; the code's wording is a notice on the page for one minute |
+| any | the code is `binding_unknown` | row removed, as after **Leave** | the hub no longer holds the client; the code's wording is a notice on the page with a close button, gone when closed, on **Refresh**, or after one minute |
 
 The row's controls, from left to right:
 
