@@ -1,11 +1,18 @@
-"""``nagent service run``: the agent as the Windows service.
+"""``nagent service run`` and ``nagent service uninstall``: the entries the
+system's service manager and the package's removal run.
 
-This is what the service control manager starts. The dispatcher is handed
-the process first, inside the manager's 30 seconds; the agent and its
-control pipe are built once the service reports running. A stop only asks
-the agent's loop to end, so the manager hears back at once; the control
-pipe closes once the loop has ended. Its log goes to ``agent.log`` under
-the agent's log root, rotated.
+``run`` is what the Windows service control manager starts. The dispatcher
+is handed the process first, inside the manager's 30 seconds; the agent and
+its control pipe are built once the service reports running. A stop only
+asks the agent's loop to end, so the manager hears back at once; the
+control pipe closes once the loop has ended. Its log goes to ``agent.log``
+under the agent's log root, rotated.
+
+``uninstall`` takes away what the agent's modules added in order to run and
+to fence, and leaves what the machine serves: shares, accounts and the
+modules' data stay. The deb's and the rpm's removal and the Windows
+installer's removal run it, and an upgrade never does. On macOS, which has
+no uninstaller, it removes the agent itself as well.
 """
 
 import logging
@@ -14,9 +21,11 @@ import os
 import sys
 import threading
 
+from neutrino_agent.cli.start import is_confirmed
 from neutrino_agent.constants import AGENT_WINDOWS_SERVICE_NAME
 from neutrino_agent.control.server import ControlServer
 from neutrino_agent.core.loop import Agent
+from neutrino_agent.exceptions import PlatformUnsupportedError
 from neutrino_agent.platforms.detect import detect_platform
 from neutrino_agent.platforms.windows_service import ServiceControlDispatcher
 
@@ -27,6 +36,14 @@ SERVICE_LOG_FORMAT = "%(asctime)s %(message)s"
 SERVICE_NOT_FROM_MANAGER = (
     "nagent service run is started by the service control manager; "
     "run nagent run in a terminal instead"
+)
+UNINSTALL_QUESTION = (
+    "stop the agent and remove the units, launchd jobs, scheduled tasks and "
+    "firewall rules its modules added? Shares and accounts stay [y/N] "
+)
+UNINSTALL_QUESTION_DARWIN = (
+    "remove the agent from this Mac, with the launchd jobs and the fence its "
+    "modules added? Shares, accounts, the binding and the state stay [y/N] "
 )
 
 
@@ -65,6 +82,38 @@ def main_run() -> int:
     except OSError as error:
         print(f"{SERVICE_NOT_FROM_MANAGER} ({error})", file=sys.stderr)
         return 1
+    return 0
+
+
+def main_uninstall(*, is_forced: bool) -> int:
+    """Stop the agent and take away what its modules added.
+
+    Args:
+        is_forced: Go ahead without asking.
+
+    Returns:
+        Process exit status: 0 when the removal ran, 1 when the answer was
+        no or the platform has nothing to remove.
+    """
+    platform = detect_platform()
+    is_whole = "self_removal" in platform.capabilities
+    question = UNINSTALL_QUESTION_DARWIN if is_whole else UNINSTALL_QUESTION
+    if not is_forced and not is_confirmed(question):
+        print("nothing changed")
+        return 1
+    try:
+        platform.stop_agent_service()
+        removed = platform.remove_added()
+        if is_whole:
+            removed += platform.remove_agent_program()
+    except PlatformUnsupportedError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
+    except OSError as error:
+        print(f"error: the removal stopped: {error}", file=sys.stderr)
+        return 1
+    for name in removed:
+        print(f"removed    {name}")
     return 0
 
 

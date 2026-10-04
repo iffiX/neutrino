@@ -155,3 +155,74 @@ def test_the_service_log_makes_its_directory_and_writes_the_file(tmp_path):
 
     text = (tmp_path / "log" / "agent.log").read_text(encoding="utf-8")
     assert "service stopping" in text
+
+
+class RemovalPlatform(FakeControlPlatform):
+    """Records what ``nagent service uninstall`` asks of the system."""
+
+    def __init__(self, *, capabilities=frozenset({"removal"}), error=None):
+        self.capabilities = capabilities
+        self.calls = []
+        self._error = error
+
+    def stop_agent_service(self):
+        self.calls.append("stop")
+
+    def remove_added(self):
+        self.calls.append("remove_added")
+        if self._error is not None:
+            raise self._error
+        return ["neutrino_vscode@ann.service"]
+
+    def remove_agent_program(self):
+        self.calls.append("remove_agent_program")
+        return ["com.neutrino.agent"]
+
+
+def test_uninstall_stops_the_agent_before_taking_what_its_modules_added(
+    monkeypatch, capsys
+):
+    platform = RemovalPlatform()
+    monkeypatch.setattr(service_cli, "detect_platform", lambda: platform)
+
+    assert service_cli.main_uninstall(is_forced=True) == 0
+
+    assert platform.calls == ["stop", "remove_added"]
+    assert "removed    neutrino_vscode@ann.service" in capsys.readouterr().out
+
+
+def test_uninstall_on_a_mac_removes_the_agent_itself_as_well(monkeypatch, capsys):
+    platform = RemovalPlatform(capabilities=frozenset({"removal", "self_removal"}))
+    monkeypatch.setattr(service_cli, "detect_platform", lambda: platform)
+
+    assert service_cli.main_uninstall(is_forced=True) == 0
+
+    assert platform.calls == ["stop", "remove_added", "remove_agent_program"]
+    assert "removed    com.neutrino.agent" in capsys.readouterr().out
+
+
+def test_uninstall_asks_first_and_a_no_changes_nothing(monkeypatch, capsys):
+    platform = RemovalPlatform()
+    monkeypatch.setattr(service_cli, "detect_platform", lambda: platform)
+    monkeypatch.setattr("builtins.input", lambda question: "n")
+
+    assert service_cli.main_uninstall(is_forced=False) == 1
+
+    assert platform.calls == []
+    assert "nothing changed" in capsys.readouterr().out
+
+
+def test_uninstall_says_why_when_the_removal_stops(monkeypatch, capsys):
+    platform = RemovalPlatform(error=OSError("powershell did not answer"))
+    monkeypatch.setattr(service_cli, "detect_platform", lambda: platform)
+
+    assert service_cli.main_uninstall(is_forced=True) == 1
+
+    assert "powershell did not answer" in capsys.readouterr().err
+
+
+def test_uninstall_on_a_platform_with_nothing_to_remove_exits_1(monkeypatch, capsys):
+    monkeypatch.setattr(service_cli, "detect_platform", lambda: FakeControlPlatform())
+
+    assert service_cli.main_uninstall(is_forced=True) == 1
+    assert "error:" in capsys.readouterr().err

@@ -1065,3 +1065,78 @@ def test_terminate_process_denied_is_an_os_error_and_the_handle_closes(monkeypat
 
     assert not isinstance(opening.value, ProcessLookupError)
     assert refused.calls[-1] == ("close", 0x2000)
+
+
+def test_windows_removal_takes_the_modules_tasks_and_rules_and_leaves_the_hubs(
+    monkeypatch,
+):
+    """The fence is one of the rules; the hub's own rules stay, and every
+    process under the state root is ended with the tasks."""
+    monkeypatch.setenv("ProgramData", "C:\\ProgramData")
+    ran = []
+
+    def powershell(script, document):
+        ran.append((script, document))
+        if script is windows_module.WINDOWS_ADDED_LIST_SCRIPT:
+            return {
+                "tasks": [
+                    "neutrino_vscode_ann",
+                    "neutrino_cloudcli_install_bob",
+                    "neutrino_client_tray",
+                ],
+                "rules": [
+                    "neutrino_smb_fence",
+                    "neutrino_vscode_port_ann",
+                    "neutrino_hub_panel",
+                ],
+            }
+        return {"is_removed": True}
+
+    removed = WindowsPlatform(powershell=powershell).remove_added()
+
+    assert ran[0][1] == {"prefix": "neutrino_"}
+    script, document = ran[1]
+    assert script is windows_module.WINDOWS_ADDED_REMOVE_SCRIPT
+    assert document == {
+        "tasks": ["neutrino_cloudcli_install_bob", "neutrino_vscode_ann"],
+        "rules": ["neutrino_smb_fence", "neutrino_vscode_port_ann"],
+        "state_root": "C:\\ProgramData\\Neutrino\\agent\\state",
+    }
+    assert removed == [
+        "task neutrino_cloudcli_install_bob",
+        "task neutrino_vscode_ann",
+        "firewall rule neutrino_smb_fence",
+        "firewall rule neutrino_vscode_port_ann",
+    ]
+
+
+def test_windows_removal_with_one_task_and_no_rules_reads_powershells_bare_value():
+    ran = []
+
+    def powershell(script, document):
+        ran.append(document)
+        if script is windows_module.WINDOWS_ADDED_LIST_SCRIPT:
+            return {"tasks": "neutrino_vscode_ann", "rules": None}
+        return {"is_removed": True}
+
+    removed = WindowsPlatform(powershell=powershell).remove_added()
+
+    assert removed == ["task neutrino_vscode_ann"]
+    assert ran[1]["rules"] == []
+
+
+def test_windows_removal_says_when_powershell_does_not_answer():
+    def powershell(script, document):
+        raise subprocess.TimeoutExpired("powershell.exe", 120)
+
+    with pytest.raises(OSError):
+        WindowsPlatform(powershell=powershell).remove_added()
+
+
+def test_the_removal_script_ends_processes_under_the_state_root_without_case():
+    script = windows_module.WINDOWS_ADDED_REMOVE_SCRIPT
+
+    assert "Unregister-ScheduledTask -TaskName $name -Confirm:$false" in script
+    assert "Remove-NetFirewallRule -Name $name" in script
+    assert "OrdinalIgnoreCase" in script
+    assert script.index("Unregister-ScheduledTask") < script.index("Stop-Process")

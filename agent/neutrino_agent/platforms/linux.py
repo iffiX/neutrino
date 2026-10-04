@@ -23,10 +23,12 @@ import subprocess
 import time
 
 from neutrino_agent.constants import (
+    AGENT_ADDED_NAME_PREFIX,
     AGENT_COMMAND_TIMEOUT_S,
     AGENT_CONTROL_SOCKET_PATH,
     AGENT_SERVICE_NAME,
     AGENT_STEP_DOWN_TIMEOUT_S,
+    AGENT_SYSTEMD_UNIT_DIR,
 )
 from neutrino_agent.core.metrics import (
     GpuMetrics,
@@ -36,7 +38,7 @@ from neutrino_agent.core.metrics import (
     read_nvidia_gpus,
 )
 from neutrino_agent.modules import installers
-from neutrino_agent.platforms.base import AgentPlatform
+from neutrino_agent.platforms.base import AgentPlatform, is_added_name
 
 try:
     import pwd
@@ -53,6 +55,11 @@ PROC_STAT_PATH = "/proc/stat"
 PROC_MEMINFO_PATH = "/proc/meminfo"
 PROC_UPTIME_PATH = "/proc/uptime"
 THERMAL_ZONE_GLOB = "/sys/class/thermal"
+
+# The directories beside the units that hold an enabled unit's links.
+SYSTEMD_LINK_DIR_SUFFIXES = (".wants", ".requires")
+SYSTEMD_DROP_IN_SUFFIX = ".d"
+SYSTEMD_TIMEOUT_S = 30
 
 DRM_CARDS_PATH = "/sys/class/drm"
 DRM_CARD_PATTERN = re.compile(r"^card\d+$")
@@ -102,6 +109,39 @@ def _interface_addresses(entry: dict) -> list:
     return addresses
 
 
+def _systemctl(arguments: list) -> str:
+    """Run one systemctl command, best-effort.
+
+    Args:
+        arguments: What follows ``systemctl``.
+
+    Returns:
+        Its standard output, empty when it could not run.
+    """
+    try:
+        result = subprocess.run(
+            ["systemctl", *arguments],
+            capture_output=True,
+            text=True,
+            timeout=SYSTEMD_TIMEOUT_S,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return result.stdout or ""
+
+
+def _remove_path(path: str) -> None:
+    """Delete one file, link or directory tree; a missing one is no error."""
+    try:
+        if os.path.isdir(path) and not os.path.islink(path):
+            shutil.rmtree(path)
+        else:
+            os.unlink(path)
+    except FileNotFoundError:
+        pass
+
+
 class LinuxPlatform(AgentPlatform):
     """Linux behind the platform contract."""
 
@@ -118,6 +158,7 @@ class LinuxPlatform(AgentPlatform):
             "machine_id",
             "packages",
             "system_packages",
+            "removal",
         }
     )
 
@@ -287,6 +328,61 @@ class LinuxPlatform(AgentPlatform):
             timeout=30,
             check=False,
         )
+
+    def remove_added(self) -> list:
+        """Disable, stop and delete the units the agent's modules wrote.
+
+        A unit is the modules' when :func:`is_added_name` says so: every
+        loaded one, template instances included, and every file under
+        ``/etc/systemd/system``. Each is disabled and stopped, then its
+        file, its drop-in directory and its links in the targets' wants are
+        deleted. Units the packages installed under ``/lib`` and the hub's
+        own are not touched.
+
+        Returns:
+            The units removed.
+        """
+        prefix = AGENT_ADDED_NAME_PREFIX
+        units = {
+            line.split()[0]
+            for line in _systemctl(
+                [
+                    "list-units",
+                    "--all",
+                    "--plain",
+                    "--no-legend",
+                    "--full",
+                    f"{prefix}*",
+                ]
+            ).splitlines()
+            if line.strip() and is_added_name(line.split()[0], prefix)
+        }
+        try:
+            entries = sorted(os.listdir(AGENT_SYSTEMD_UNIT_DIR))
+        except OSError:
+            entries = []
+        files = [name for name in entries if is_added_name(name, prefix)]
+        for name in files:
+            if name.endswith(SYSTEMD_DROP_IN_SUFFIX):
+                name = name[: -len(SYSTEMD_DROP_IN_SUFFIX)]
+            units.add(name)
+        for unit in sorted(units):
+            _systemctl(["disable", "--now", unit])
+        for entry in entries:
+            directory = os.path.join(AGENT_SYSTEMD_UNIT_DIR, entry)
+            if not entry.endswith(SYSTEMD_LINK_DIR_SUFFIXES):
+                continue
+            if not os.path.isdir(directory):
+                continue
+            for link in os.listdir(directory):
+                if is_added_name(link, prefix):
+                    _remove_path(os.path.join(directory, link))
+        for name in files:
+            _remove_path(os.path.join(AGENT_SYSTEMD_UNIT_DIR, name))
+        _systemctl(["daemon-reload"])
+        for unit in sorted(units):
+            _systemctl(["reset-failed", unit])
+        return sorted(units)
 
     def agent_service_start_hint(self) -> str:
         """The systemctl command that starts the agent's own service."""

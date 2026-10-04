@@ -5,7 +5,8 @@ resolve an account's home; run a process as an account; control the agent's
 own service; power actions; read host metrics; read the network interfaces;
 read the machine id; install and remove a package of a kind; drive the SMB
 server the system carries; unpack the hub's software; find the agent's own
-log; end a process where the system has no signals. A new platform is a new class, and nothing above this seam changes.
+log; end a process where the system has no signals; take away what the
+agent's modules added when the agent itself is removed. A new platform is a new class, and nothing above this seam changes.
 
 Each platform advertises the capabilities it has in ``capabilities``.
 Invoking one it does not have raises :class:`PlatformUnsupportedError`, whose
@@ -17,14 +18,40 @@ Invoking one it does not have raises :class:`PlatformUnsupportedError`, whose
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 
 from neutrino_agent.constants import (
+    AGENT_ADDED_FOREIGN_WORDS,
     AGENT_DATA_DIR_POSIX,
     AGENT_STEP_DOWN_TIMEOUT_S,
     AGENT_VAR_DIR,
 )
 from neutrino_agent.exceptions import PlatformUnsupportedError
+
+# What ends the word after a name's prefix.
+ADDED_NAME_WORD_END = re.compile(r"[_.@-]")
+
+
+def is_added_name(name: str, prefix: str) -> bool:
+    """Whether a unit, job, task or rule is one the agent's modules added.
+
+    Such a name starts with ``prefix`` and its next word is none of
+    :data:`AGENT_ADDED_FOREIGN_WORDS`, which name the hub, the client and the
+    agent's own service.
+
+    Args:
+        name: The unit, label, task or rule name, compared without case.
+        prefix: ``neutrino_`` or ``com.neutrino.``.
+
+    Returns:
+        Whether removing the agent takes it away.
+    """
+    folded = name.lower()
+    if not folded.startswith(prefix):
+        return False
+    word = ADDED_NAME_WORD_END.split(folded[len(prefix) :], maxsplit=1)[0]
+    return bool(word) and word not in AGENT_ADDED_FOREIGN_WORDS
 
 
 class AgentPlatform:
@@ -318,3 +345,30 @@ class AgentPlatform:
                 manager to ask.
         """
         raise PlatformUnsupportedError("cannot remove system packages here")
+
+    def remove_added(self) -> list:
+        """Stop and delete what the agent's modules added in order to run and
+        to fence: their units, launchd jobs, scheduled tasks and firewall
+        rules, found by name, and the file share's fence. Shares, accounts
+        and the modules' data stay.
+
+        Returns:
+            What was removed, one line each.
+
+        Raises:
+            PlatformUnsupportedError: When the platform has nothing the
+                agent knows how to remove.
+        """
+        raise PlatformUnsupportedError("nothing to remove here")
+
+    def remove_agent_program(self) -> list:
+        """Remove the agent itself where no package manager does.
+
+        Returns:
+            What was removed, one line each.
+
+        Raises:
+            PlatformUnsupportedError: Where a package manager removes the
+                agent.
+        """
+        raise PlatformUnsupportedError("the package manager removes the agent here")

@@ -253,3 +253,24 @@ AGENT_NVIDIA_SMI_COMMAND = (
     "--format=csv,noheader,nounits",
 )
 AGENT_NVIDIA_SMI_TIMEOUT_S = 4
+
+# What removing the agent takes away is found by name. The units, scheduled
+# tasks and firewall rules the modules add start with the first prefix, and
+# their launchd jobs with the second; a name whose next word is another
+# package's or the agent's own is not a module's.
+AGENT_ADDED_NAME_PREFIX = "neutrino_"
+AGENT_ADDED_LAUNCHD_PREFIX = "com.neutrino."
+AGENT_ADDED_FOREIGN_WORDS = ("hub", "client", "agent")
+# Where the modules write their units and their launchd jobs.
+AGENT_SYSTEMD_UNIT_DIR = "/etc/systemd/system"
+AGENT_LAUNCHD_DAEMON_DIR = "/Library/LaunchDaemons"
+# The pf anchor the file share's fence on macOS lives under.
+AGENT_PF_PARENT_ANCHOR = "com.apple"
+# What a macOS removal takes besides the modules' jobs: the agent's own
+# program, the link a terminal reaches it through, RustDesk as the package
+# laid it down, and the package's receipt. The configuration, the state and
+# the log stay, as a Linux package's removal leaves them.
+AGENT_DARWIN_PROGRAM_DIR = "/Library/Application Support/Neutrino/agent/app"
+AGENT_DARWIN_LINK_PATH = "/usr/local/bin/nagent"
+AGENT_DARWIN_PACKAGE_ID = "com.neutrino.agent"
+AGENT_DARWIN_RUSTDESK_APP = "/Applications/RustDesk.app"
