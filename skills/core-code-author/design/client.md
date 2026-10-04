@@ -471,7 +471,7 @@ word. The controls:
 
 | Control | Enabled | Does |
 | --- | --- | --- |
-| **Connect** | when the entry is healthy, the hub is not disabled and no viewer runs on it | job `ui.job.connecting`: on a desktop starts the viewer and hands it the seat password off every argument vector, then follows the viewer process, on Windows the copy the bundled viewer starts of itself from its own data directory; on a phone opens the viewer page |
+| **Connect** | when the entry is healthy, the hub is not disabled and no viewer runs on it | job `ui.job.connecting`: on a desktop starts the viewer with the seat password on its command line, the one channel RustDesk 1.4.9 has for a connect password (its peer file takes only a hash salted by the host), and follows the viewer process, on Windows the copy the bundled viewer starts of itself from its own data directory; on a phone opens the viewer page |
 | the viewer | | on a desktop a separate window, and the row then shows `ui.rdp_open`; on a phone a page of the app whose three round buttons open the keyboard, the key bar of Esc, Tab, Ctrl, Shift, Alt, Win, **Paste** and the arrows, and close the session |
 | **Configure** | on a phone, when the entry is healthy | the dialog of the inline-form idiom with two pickers: **Codec** (Auto, then each codec the core offers) and **Quality** (Balanced, Low bandwidth, Best); **Save** and **Cancel**; the choice is kept per entry in the app's settings and applied at the next connect |
 
