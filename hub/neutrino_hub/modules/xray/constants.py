@@ -4,6 +4,7 @@ Ports and tags here are referenced by the nftables ruleset and the dnsmasq
 config, so they are wire-level identifiers rather than user settings.
 """
 
+from neutrino_hub.modules.tun.constants import TUN_SUPERVISED_NAME
 from neutrino_hub.utils.constants import (
     UTILS_GEODATA_DIR,
     UTILS_GENERATED_DIR,
@@ -306,8 +307,8 @@ XRAY_DNS_INBOUND = (XRAY_DNS_LISTEN, XRAY_DNS_PORT)
 # The proxy core's unit, and the children the hub's one service runs for
 # the proxy outside Linux, the TUN's beside xray and only while xray runs.
 XRAY_CORE_UNIT = (XRAY_SUPERVISED_NAME, f"{XRAY_SERVICE_NAME}.service")
-XRAY_SUPERVISED_NAMES = (XRAY_SUPERVISED_NAME, "tun2socks")
-XRAY_CHILD_REQUIREMENTS = {"tun2socks": XRAY_SUPERVISED_NAME}
+XRAY_SUPERVISED_NAMES = (XRAY_SUPERVISED_NAME, TUN_SUPERVISED_NAME)
+XRAY_CHILD_REQUIREMENTS = {TUN_SUPERVISED_NAME: XRAY_SUPERVISED_NAME}
 XRAY_SIDE_GATEWAY_MODE = {
     "key": "side_gateway",
     "summary": "Forwards for hosts that name it as their gateway.",
