@@ -168,6 +168,32 @@ def test_a_report_records_the_link_address_and_the_interfaces(box):
     ]
 
 
+def test_a_lan_address_wins_over_the_overlay_the_socket_came_by(config_dir):
+    runtime = FakeRuntime(lans=[("192.168.100.1", "192.168.100.0/24")])
+    runtime._scopes.append(
+        HostScope(id="overlay", cidr="10.200.0.0/24", hub_address="10.200.0.2")
+    )
+    stored = DeviceRegistry().create("nmxwin")
+    section = {
+        "link": {
+            "interface": "et",
+            "mac": "02:00:00:00:00:09",
+            "address": "10.200.0.1",
+        },
+        "interfaces": [
+            {"name": "et", "mac": "02:00:00:00:00:09", "addresses": ["10.200.0.1"]},
+            {"name": "Ethernet", "mac": LINK_MAC, "addresses": ["192.168.10.105"]},
+        ],
+    }
+
+    agent_reports.record_report(
+        runtime, stored, report(network=section), peer_host="10.200.0.1"
+    )
+
+    assert runtime.device_address[stored.id] == "192.168.10.105"
+    assert DeviceRegistry().get(stored.id).link_mac == LINK_MAC
+
+
 def test_a_report_naming_no_address_records_the_peer(box):
     runtime, device = box
 

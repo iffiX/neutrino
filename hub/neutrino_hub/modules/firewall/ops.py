@@ -9,6 +9,8 @@ has its own nftables ruleset and never comes here.
 Not pure: drives the appliers.
 """
 
+import json
+
 from neutrino_hub.modules.cliproxyapi.constants import (
     CLIPROXYAPI_BINARY_PATH,
     CLIPROXYAPI_DEFAULT_PORT,
@@ -16,6 +18,7 @@ from neutrino_hub.modules.cliproxyapi.constants import (
 from neutrino_hub.modules.easytier.constants import EASYTIER_CORE_PATH
 from neutrino_hub.modules.firewall.constants import (
     FIREWALL_GATEWAY_SETTINGS_FILE,
+    FIREWALL_INTERFACES_PATH,
     FIREWALL_PANEL_SETTINGS_FILE,
     FIREWALL_SETTING_AGENT_PORT,
     FIREWALL_SETTING_GATEWAY_PORT,
@@ -40,7 +43,7 @@ from neutrino_hub.modules.router.link_status import device_addresses
 from neutrino_hub.modules.xray.constants import XRAY_BINARY
 from neutrino_hub.platforms.constants import PLATFORM_OS_WINDOWS
 from neutrino_hub.platforms.detect import hub_os, hub_platform
-from neutrino_hub.utils.json_file import read_config
+from neutrino_hub.utils.json_file import read_config, write_generated
 from neutrino_hub.web.constants import (
     WEB_DEFAULT_AGENT_LISTEN_PORT,
     WEB_DEFAULT_HTTPS_LISTEN_PORT,
@@ -101,11 +104,28 @@ def converge_firewall(network: RouterNetworkConfig, *, routing: dict) -> tuple:
         ],
     )
     if hub_os() == PLATFORM_OS_WINDOWS:
-        return FirewallWindowsApplier().apply(rules)
-    applier = FirewallDarwinApplier()
-    notes = applier.apply(_programs(overlays))
-    notes += applier.load_anchor(render_pf_anchor(rules, interfaces=present))
-    return notes, []
+        notes, refused = FirewallWindowsApplier().apply(rules)
+    else:
+        applier = FirewallDarwinApplier()
+        notes = applier.apply(_programs(overlays))
+        notes += applier.load_anchor(render_pf_anchor(rules, interfaces=present))
+        refused = []
+    write_generated(FIREWALL_INTERFACES_PATH, json.dumps(sorted(present)))
+    return notes, refused
+
+
+def is_interface_set_moved() -> bool:
+    """Whether the interfaces this box has differ from the last pass's.
+
+    Returns:
+        True when an interface came, went or was renamed since the firewall
+        was last written, and when it never was.
+    """
+    try:
+        scoped = json.loads(FIREWALL_INTERFACES_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return True
+    return scoped != sorted(device_addresses())
 
 
 def reload_firewall() -> None:

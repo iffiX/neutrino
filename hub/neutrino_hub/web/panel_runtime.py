@@ -19,6 +19,7 @@ from neutrino_hub.modules.router.routes import install_dnsmasq
 from neutrino_hub.modules.router.connections import RouterConnectionSet
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.router.link_status import RouterLinkStatus
+from neutrino_hub.modules.firewall.ops import is_interface_set_moved
 from neutrino_hub.modules.router.controller import (
     RouterStateController,
     change_codes,
@@ -238,10 +239,13 @@ class PanelRuntime:
     def follow_overlay_devices(self) -> bool:
         """Converge again when an overlay's device or engine cgroup moved.
 
+        On macOS and Windows a change of the interfaces the system firewall
+        was last scoped to converges too.
+
         Returns:
-            True when the devices or the engine cgroups found now differ
-            from the ones the loaded ruleset names and a converge ran; False
-            on a box not set up.
+            True when the devices, the engine cgroups or the firewall's
+            interfaces found now differ from the ones the last pass used and
+            a converge ran; False on a box not set up.
         """
         try:
             network = RouterNetworkConfig.from_dict(read_config("router/network.json"))
@@ -250,8 +254,11 @@ class PanelRuntime:
             return False
         found = overlay_devices(network)
         cgroups = engine_cgroups(routing) if is_linux() else {}
-        if found == rendered_overlay_devices() and (
-            cgroups == rendered_engine_cgroups()
+        is_moved = not is_linux() and is_interface_set_moved()
+        if (
+            found == rendered_overlay_devices()
+            and cgroups == rendered_engine_cgroups()
+            and not is_moved
         ):
             return False
         LOGGER.info("overlay devices moved: %s; engine cgroups: %s", found, cgroups)

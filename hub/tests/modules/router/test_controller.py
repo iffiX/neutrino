@@ -345,6 +345,27 @@ def test_the_engine_cgroups_found_are_rendered_and_recorded(box, monkeypatch):
     assert controller.rendered_engine_cgroups() == found
 
 
+def test_an_engine_cgroup_started_again_loads_the_same_ruleset_again(box, monkeypatch):
+    """nft resolves the cgroup path at load: after NetBird left and joined, the
+    text was the same, the load was skipped, and the accept stayed on the dead
+    cgroup while the new id was recorded as loaded."""
+    files, kernel = box
+    files["xray/routing.json"]["is_local_proxy_enabled"] = True
+    found = {"system.slice/neutrino_hub_netbird.service": 5960}
+    monkeypatch.setattr(controller, "engine_cgroups", lambda routing: dict(found))
+    pass_of().reconcile()
+    kernel.is_table_loaded = True
+    pass_of().reconcile()
+    loads_before = kernel.loads()
+
+    found["system.slice/neutrino_hub_netbird.service"] = 8202
+    pass_of().reconcile()
+
+    assert loads_before == 1
+    assert kernel.loads() == 2
+    assert controller.rendered_engine_cgroups() == found
+
+
 def test_only_the_engine_cgroups_present_are_found(tmp_path):
     (tmp_path / "system.slice" / "neutrino_hub_easytier.service").mkdir(parents=True)
 

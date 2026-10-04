@@ -189,6 +189,24 @@ def test_macos_allows_the_programs_of_the_enabled_overlays(
     ]
 
 
+def test_a_pass_records_the_interfaces_it_scoped_the_rules_to(
+    elsewhere, recorder, monkeypatch
+):
+    """After the TUN was rebuilt the rules kept a dead adapter and lost
+    EasyTier's for forty minutes: the pass that follows the overlay devices
+    asks this, and a moved set runs the firewall again."""
+    monkeypatch.setattr(ops, "read_config", lambda name: {})
+    assert ops.is_interface_set_moved() is True
+
+    ops.converge_firewall(EXPOSURE, routing=ROUTING)
+
+    assert ops.is_interface_set_moved() is False
+    renamed = {**PRESENT, "et_3_abcd": PRESENT["et_2_zqdp"]}
+    del renamed["et_2_zqdp"]
+    monkeypatch.setattr(ops, "device_addresses", lambda: dict(renamed))
+    assert ops.is_interface_set_moved() is True
+
+
 def test_a_reset_takes_everything_away(elsewhere, recorder):
     notes = ops.hand_back_firewall()
 

@@ -20,6 +20,7 @@ from pathlib import Path
 
 import psutil
 
+from neutrino_hub.modules.tun.constants import TUN_DEVICE_NAMES
 from neutrino_hub.platforms.constants import PLATFORM_OS_DARWIN
 from neutrino_hub.platforms.detect import hub_os, is_linux
 from neutrino_hub.system.powershell_run import listed, run_powershell
@@ -333,7 +334,7 @@ class RouterLinkStatus:
             the overlay are left out: they are not ports anybody gives a role
             to, and nothing here has to name them one by one to exclude them.
             On macOS and Windows every interface holding an IPv4 address
-            outside loopback, as ethernet.
+            outside loopback, as ethernet, the proxy's TUN left out.
         """
         if not is_linux():
             return {
@@ -381,7 +382,8 @@ def device_addresses() -> dict[str, str]:
 
     Returns:
         Device name to address with its prefix, loopback left out. On macOS
-        and Windows an overlay's device is ``utunN`` or the adapter's name.
+        and Windows an overlay's device is ``utunN`` or the adapter's name,
+        and the proxy's TUN is left out.
     """
     if not is_linux():
         found = {}
@@ -469,10 +471,13 @@ def system_default_routes() -> list[dict]:
 
 
 def _system_entries() -> dict[str, dict]:
-    """Every interface psutil reports, shaped as ``ip -json addr show`` entries."""
+    """Every interface psutil reports but the proxy's TUN, shaped as ``ip -json addr show`` entries."""
     stats = psutil.net_if_stats()
+    tun_device = TUN_DEVICE_NAMES.get(hub_os(), "")
     entries = {}
     for name, addresses in psutil.net_if_addrs().items():
+        if name == tun_device:
+            continue
         stat = stats.get(name)
         is_up = stat is not None and stat.isup
         entry = {

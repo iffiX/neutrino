@@ -210,8 +210,12 @@ def on_windows(monkeypatch):
 @pytest.fixture(autouse=True)
 def _router_lock_in_a_test_directory(tmp_path, monkeypatch):
     """Point the routing-state lock and its record where a test may create them."""
+    from neutrino_hub.modules.firewall import ops as firewall_ops
     from neutrino_hub.modules.router import controller
 
+    monkeypatch.setattr(
+        firewall_ops, "FIREWALL_INTERFACES_PATH", tmp_path / "firewall_interfaces.json"
+    )
     monkeypatch.setattr(controller, "ROUTER_LOCK_PATH", tmp_path / "router.lock")
     monkeypatch.setattr(
         controller,

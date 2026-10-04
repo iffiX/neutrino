@@ -12,6 +12,7 @@ import pytest
 
 from tests.conftest import FakePowerShell, FakePsutil, FakeTools
 from neutrino_hub.modules.router import link_status
+from neutrino_hub.modules.tun.constants import TUN_ADDRESS
 from neutrino_hub.modules.router.link_status import (
     LINK_KIND_ETHERNET,
     LINK_WINDOWS_ROUTE_SCRIPT,
@@ -79,6 +80,24 @@ def test_a_port_is_every_interface_holding_an_ipv4_address(elsewhere, machine):
     assert links[0].mac_address == "02:00:5e:10:00:02"
     assert not links[0].is_up
     assert links[0].speed_mbps is None
+
+
+@pytest.mark.parametrize(
+    ("system", "tun_device"), [("darwin", "utun225"), ("win32", "neutrino_tun")]
+)
+def test_the_proxys_tun_is_no_network_of_the_box(
+    monkeypatch, machine, system, tun_device
+):
+    """It was listed for exposure, and its /30 offered to NetBird as a LAN."""
+    from neutrino_hub.platforms import detect
+
+    monkeypatch.setattr(detect.sys, "platform", system)
+    machine.addresses[tun_device] = [(socket.AF_INET, TUN_ADDRESS, "255.255.255.252")]
+    machine.stats[tun_device] = (True, 0)
+
+    assert tun_device not in device_addresses()
+    assert tun_device not in [link.name for link in RouterLinkStatus().all_links()]
+    assert tun_device not in admin_up_interfaces()
 
 
 def test_the_interfaces_that_are_up(elsewhere, machine):

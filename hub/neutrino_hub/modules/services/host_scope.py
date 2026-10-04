@@ -17,6 +17,7 @@ from neutrino_hub.modules.services.constants import (
     SERVICES_SCOPE_LINK,
     SERVICES_SCOPE_OVERLAY,
 )
+from neutrino_hub.modules.tun.constants import TUN_ADDRESS, TUN_PREFIX_LENGTH
 
 
 @dataclass(frozen=True)
@@ -130,6 +131,46 @@ def device_host_for(scope: HostScope, interfaces: list, link_address: str) -> st
             if address is not None and address in network:
                 return str(address)
     return link_address
+
+
+def lan_in_place_of_overlay(
+    link_address: str, interfaces: list, served: list[HostScope]
+) -> tuple:
+    """A device's LAN address, when the address its socket left by is an overlay's.
+
+    Args:
+        link_address: The device's ``network.link.address``, or the peer
+            address standing in for it.
+        interfaces: The device's reported ``network.interfaces``, each
+            ``{"name", "mac", "addresses"}``.
+        served: The scopes from :func:`served_scopes`.
+
+    Returns:
+        ``(address, mac)`` of the first reported IPv4 address outside every
+        overlay, loopback, link-local and the proxy's TUN network, and the
+        MAC of the interface holding it; ``("", "")`` when the link address
+        is on no overlay or the device reports no such address.
+    """
+    overlays = [
+        ipaddress.ip_network(scope.cidr)
+        for scope in served
+        if scope.id == SERVICES_SCOPE_OVERLAY and scope.cidr
+    ]
+    link = _ipv4_of(link_address)
+    if link is None or not any(link in network for network in overlays):
+        return "", ""
+    tun = ipaddress.ip_network(f"{TUN_ADDRESS}/{TUN_PREFIX_LENGTH}", strict=False)
+    for interface in interfaces:
+        if not isinstance(interface, dict):
+            continue
+        for text in interface.get("addresses") or []:
+            address = _ipv4_of(str(text))
+            if address is None or address.is_loopback or address.is_link_local:
+                continue
+            if address in tun or any(address in network for network in overlays):
+                continue
+            return str(address), str(interface.get("mac", "") or "")
+    return "", ""
 
 
 def _ipv4_of(text: str) -> "ipaddress.IPv4Address | None":

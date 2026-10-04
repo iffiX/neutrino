@@ -37,7 +37,10 @@ from neutrino_hub.modules.devices.module_import import (
 )
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.services.constants import SERVICES_RDP_PORT
-from neutrino_hub.modules.services.host_scope import scope_of
+from neutrino_hub.modules.services.host_scope import (
+    lan_in_place_of_overlay,
+    scope_of,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -305,18 +308,23 @@ def _record_machine(runtime, key: str, machine) -> None:
 
 
 def _record_network(runtime, device, network, *, peer_host: str) -> None:
-    """The address, the interfaces and the link MAC of the ``network`` section."""
+    """The address, interfaces and link MAC of ``network``, a LAN address before an overlay's."""
     key = device.id
     network = network if isinstance(network, dict) else {}
     address = link_address(network, peer_host or runtime.device_address.get(key, ""))
-    if address:
-        runtime.device_address[key] = address
+    link = network.get("link")
+    mac = str(link.get("mac", "") or "") if isinstance(link, dict) else ""
     interfaces = network.get("interfaces")
     if isinstance(interfaces, list):
         runtime.device_interfaces[key] = [
             dict(interface) for interface in interfaces if isinstance(interface, dict)
         ]
-    link = network.get("link")
-    mac = str(link.get("mac", "") or "") if isinstance(link, dict) else ""
+        lan_address, lan_mac = lan_in_place_of_overlay(
+            address, runtime.device_interfaces[key], runtime.host_scopes()
+        )
+        if lan_address:
+            address, mac = lan_address, lan_mac
+    if address:
+        runtime.device_address[key] = address
     if mac:
         DeviceRegistry().note_machine(key, link_mac=mac)

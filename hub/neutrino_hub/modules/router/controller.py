@@ -183,7 +183,13 @@ class RouterStateController:
             rules.ensure_policy_route if is_diverting else rules.remove_policy_route,
         )
         results.append(policy)
-        loaded = _load_ruleset(rules, ruleset, is_diverting=is_diverting, policy=policy)
+        loaded = _load_ruleset(
+            rules,
+            ruleset,
+            is_diverting=is_diverting,
+            policy=policy,
+            is_cgroup_moved=cgroups != rendered_engine_cgroups(),
+        )
         results.append(loaded)
         if not loaded.is_failed:
             write_generated(ROUTER_OVERLAY_DEVICES_PATH, json.dumps(devices))
@@ -389,6 +395,7 @@ def _load_ruleset(
     *,
     is_diverting: bool,
     policy: RouterStepResult,
+    is_cgroup_moved: bool = False,
 ) -> RouterStepResult:
     """Load the ruleset when it differs from what the kernel holds.
 
@@ -397,12 +404,15 @@ def _load_ruleset(
         ruleset: The rendered ruleset.
         is_diverting: Whether the ruleset diverts into the proxy.
         policy: The policy route step's result.
+        is_cgroup_moved: Whether an engine cgroup's id differs from the one
+            the loaded ruleset resolved at its load; the same text is then
+            loaded again.
 
     Returns:
         The ruleset step's result.
     """
     is_loaded = rules.is_table_loaded()
-    if is_loaded and _loaded_text() == ruleset:
+    if is_loaded and not is_cgroup_moved and _loaded_text() == ruleset:
         return RouterStepResult(name="ruleset", state=ROUTER_STEP_UNCHANGED)
     if policy.is_failed and is_diverting and is_loaded:
         # A diverting ruleset with no policy route sends what it diverts
