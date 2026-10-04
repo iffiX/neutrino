@@ -201,10 +201,11 @@ def test_attach_maps_in_this_process_with_the_login_off_every_argv(
     recorder = CommandRecorder()
     monkeypatch.setattr(windows_module.subprocess, "run", recorder)
 
-    platform.attach_share(
+    mounted = platform.attach_share(
         share_url="//hub/media", location="Z:", credentials_path=str(credentials)
     )
 
+    assert mounted == "Z:"
     win32 = platform._win32()
     assert (
         "add_connection",

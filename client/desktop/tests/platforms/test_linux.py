@@ -115,12 +115,13 @@ def test_attach_rides_pkexec_and_the_helper_with_the_credentials_file(
     recorder = CommandRecorder()
     monkeypatch.setattr(linux_module.subprocess, "run", recorder)
 
-    LinuxPlatform().attach_share(
+    mounted = LinuxPlatform().attach_share(
         share_url="//hub/media",
         location="/home/alice/nas/media",
         credentials_path=str(credentials),
     )
 
+    assert mounted == "/home/alice/nas/media"
     assert recorder.commands == [
         [
             "pkexec",

@@ -1990,7 +1990,19 @@ function mountDefaultPath(payload, state) {
   if ((state.mount_location_shape || 'path') === 'drive_letter') {
     return state.mount_location_suggestion || 'N:';
   }
+  // A volume's mount point is the system's to pick.
+  if (!asksMountPlace(state)) return '';
   return (state.home || '') + '/nas/' + (payload.share || '');
+}
+
+// Whether the form asks where to mount: not for a volume the system places.
+function asksMountPlace(state) {
+  return (state.mount_location_shape || 'path') !== 'volume';
+}
+
+// Whether a staged form holds everything a mount needs.
+function isMountFormFilled(staged, state) {
+  return !!staged.username && (!!staged.path || !asksMountPlace(state));
 }
 
 // A form staged for an entry no hub carries any more is gone.
@@ -2026,25 +2038,34 @@ function drawFileEntry(card, state, hub, entry) {
       fileStaged[key] = {
         is_open: true, username: record ? (record.username || '') : '',
         password: '',
-        path: record ? record.path : mountDefaultPath(payload, state),
+        path: record && asksMountPlace(state) ? record.path
+          : mountDefaultPath(payload, state),
       };
     }
     redraw();
   };
-  const mount = mountButton(hub, entry, record, staged);
-  const extras = records.map((each) => drawMountRecord(each));
+  const mount = mountButton(state, hub, entry, record, staged);
+  const extras = [];
+  for (const each of records) {
+    extras.push(drawMountRecord(each));
+    // A volume is listed in the Finder under the server it came from.
+    if (!asksMountPlace(state) && each.is_attached && each.path) {
+      extras.push(noteLine(t('ui.mount_finder', { server: each.host || '' })));
+    }
+  }
   if (staged && staged.is_open) {
-    extras.push(drawFileForm(staged, state, () => {
+    extras.push(drawFileForm(staged, state, payload.host || '', () => {
       if (!entry.job) {
         mount.disabled = !isEntryFree(hub, entry) || !entry.is_healthy
-          || !staged.username || !staged.path;
+          || !isMountFormFilled(staged, state);
       }
     }));
   }
   let reason = '';
   if (mount.disabled && !entryWork(hub, entry)) {
     reason = entryReason(hub, entry, !(record && record.is_attached))
-      || t('ui.reason.mount_form');
+      || (asksMountPlace(state) ? t('ui.reason.mount_form')
+        : t('ui.reason.mount_form_volume'));
   }
   card.appendChild(entryRow(hub, entry,
     '//' + (payload.host || '') + '/' + (payload.share || ''),
@@ -2054,7 +2075,7 @@ function drawFileEntry(card, state, hub, entry) {
 // The one button beside Configure: Mount, its job while it mounts, Unmount
 // once mounted, its job while it unmounts. An open form always wins: what
 // it holds is sent as a fresh mount.
-function mountButton(hub, entry, record, staged) {
+function mountButton(state, hub, entry, record, staged) {
   if (entry.job) {
     return jobButton('', entry.job, entry.job === 'unmounting' ? 'danger' : '');
   }
@@ -2063,7 +2084,7 @@ function mountButton(hub, entry, record, staged) {
   const isFree = isEntryFree(hub, entry);
   if (staged && staged.is_open) {
     button.textContent = t('ui.mount');
-    button.disabled = !isFree || !entry.is_healthy || !staged.username || !staged.path;
+    button.disabled = !isFree || !entry.is_healthy || !isMountFormFilled(staged, state);
     button.onclick = () => {
       const sent = {
         action: 'mount', hub_id: entry.hub_id, id: entry.id,
@@ -2087,7 +2108,7 @@ function mountButton(hub, entry, record, staged) {
     button.onclick = () => {
       fileStaged[serviceKey(entry)] = {
         is_open: true, username: record.username || '', password: '',
-        path: record.path,
+        path: asksMountPlace(state) ? record.path : '',
       };
       redraw();
     };
@@ -2121,14 +2142,16 @@ function drawMountRecord(record) {
   line.innerHTML = marker(tone);
   const path = document.createElement('span');
   path.className = 'path';
-  path.textContent = record.path + (status ? ' — ' + status : '');
+  // A volume has no path until the system has mounted it.
+  path.textContent = record.path
+    ? record.path + (status ? ' — ' + status : '') : status;
   line.appendChild(path);
   return line;
 }
 
 // The form's fields write the stage as typed, and onChange keeps the Mount
 // button in step with them.
-function drawFileForm(staged, state, onChange) {
+function drawFileForm(staged, state, server, onChange) {
   const form = document.createElement('div');
   form.className = 'form';
   const fields = [
@@ -2150,6 +2173,8 @@ function drawFileForm(staged, state, onChange) {
   }
   if ((state.mount_location_shape || 'path') === 'drive_letter') {
     form.appendChild(driveLetterLine(staged, state));
+  } else if (!asksMountPlace(state)) {
+    form.appendChild(volumeCaptionLine(server));
   } else {
     form.appendChild(mountPathLine(staged, onChange));
   }
@@ -2199,6 +2224,18 @@ function driveLetterLine(staged, state) {
   wrap.appendChild(select);
   wrap.appendChild(caption);
   return wrap;
+}
+
+// The caption naming where the system lists a volume: in the Finder,
+// under its server.
+function volumeCaptionLine(server) {
+  const caption = document.createElement('div');
+  caption.className = 'feat';
+  const note = document.createElement('div');
+  note.className = 'note';
+  note.textContent = t('ui.mount_volume_caption', { server: server });
+  caption.appendChild(note);
+  return caption;
 }
 
 // --- the Settings page: About, then the window's own choices ---

@@ -7,8 +7,22 @@ import time
 import pytest
 
 from neutrino_client.control import page, routes
+from neutrino_client.core.resident import ClientResident
 from neutrino_client.exceptions import EnrollmentError
-from tests.conftest import FakeClientPlatform, FakeResident
+from neutrino_client.platforms.darwin import DarwinPlatform
+from tests.conftest import FakeClientPlatform, FakeResident, discard
+
+
+def test_the_state_on_a_mac_offers_a_volume_and_no_place():
+    resident = ClientResident(log=discard, platform=DarwinPlatform())
+    try:
+        _status, state = routes.dispatch("GET", "/api/state", None, resident)
+    finally:
+        resident.shutdown()
+
+    assert state["mount_location_shape"] == "volume"
+    assert state["mount_location_suggestion"] == ""
+    assert state["mount_location_choices"] == []
 
 
 def test_state_carries_the_persons_facts_the_hubs_and_no_token():

@@ -493,7 +493,7 @@ class ClientResident:
         return self.platform.mount_location_choices()
 
     def mount_location_shape(self) -> str:
-        """What a mount location is here: ``path`` or ``drive_letter``."""
+        """What a mount location is here: ``path``, ``drive_letter`` or ``volume``."""
         return self.platform.mount_location_shape
 
     def language(self) -> str:

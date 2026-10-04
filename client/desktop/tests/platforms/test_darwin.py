@@ -1,9 +1,10 @@
-"""The macOS platform: peercred identity, mount_smbfs as the person, mount.
+"""The macOS platform: peercred identity, a volume the system mounts, mount.
 
-A mount needs no root on macOS and rides ``mount_smbfs`` with the username
-on the share URL and the password typed at the tool's own prompt on a
-pseudo-terminal, never on an argument vector; attachment is read from the
-mount table; the language is the first the account prefers.
+A mount asks the system for a network volume through ``osascript``, the
+script and its password on standard input and never on an argument vector;
+the mount point the system picked is read back from the mount table, a
+share already mounted is not mounted twice, and ``diskutil unmount`` ejects
+it; the language is the first the account prefers.
 """
 
 import collections
@@ -22,7 +23,7 @@ PwdEntry = collections.namedtuple("PwdEntry", "pw_name pw_uid pw_shell pw_dir")
 
 MOUNT_TABLE = (
     "/dev/disk3s1s1 on / (apfs, sealed, local, read-only, journaled)\n"
-    "//alice@hub/media on /Users/alice/my nas (smbfs, nodev, nosuid, "
+    "//alice@nas/media on /Users/alice/my nas (smbfs, nodev, nosuid, "
     "mounted by alice)\n"
     "map auto_home on /System/Volumes/Data/home (autofs, automounted, nobrowse)\n"
 )
@@ -52,19 +53,6 @@ class CommandRecorder:
         if self.results:
             return self.results.pop(0)
         return completed(command)
-
-
-class TerminalRecorder:
-    """Stands in for the pseudo-terminal run, remembering what was typed."""
-
-    def __init__(self, code=0, output=""):
-        self.runs = []
-        self.code = code
-        self.output = output
-
-    def __call__(self, argv, *, prompt, answer, timeout_s):
-        self.runs.append((list(argv), prompt, answer))
-        return self.code, self.output
 
 
 def xucred(uid: int) -> bytes:
@@ -162,170 +150,248 @@ def test_a_defaults_that_cannot_be_asked_falls_back_to_the_locale(monkeypatch):
     assert DarwinPlatform().system_language() == "en"
 
 
-def test_attach_names_the_user_on_the_url_and_types_the_password(monkeypatch, tmp_path):
+def credentials_file(tmp_path, username="media", password="s3cret"):
     credentials = tmp_path / "r1.credentials"
-    credentials.write_text("username=media\npassword=s3cret\n")  # scan: allow
-    terminal = TerminalRecorder()
-    monkeypatch.setattr(darwin_module, "run_on_pty", terminal)
+    credentials.write_text(f"username={username}\npassword={password}\n")
+    return str(credentials)
+
+
+def volume_table(source="//media@hub/media", location="/Volumes/media"):
+    return (
+        MOUNT_TABLE
+        + f"{source} on {location} (smbfs, nodev, nosuid, mounted by alice)\n"
+    )
+
+
+def test_attach_asks_the_system_to_mount_a_volume_on_osascripts_stdin(
+    monkeypatch, tmp_path
+):
+    recorder = CommandRecorder(
+        [completed(stdout=MOUNT_TABLE), completed(), completed(stdout=volume_table())]
+    )
+    monkeypatch.setattr(darwin_module.subprocess, "run", recorder)
+
+    mounted = DarwinPlatform().attach_share(
+        share_url="//hub/media",
+        location="",
+        credentials_path=credentials_file(tmp_path),
+    )
+
+    assert mounted == "/Volumes/media"
+    assert recorder.commands == [["mount"], ["osascript", "-"], ["mount"]]
+    assert recorder.inputs[1] == (
+        'mount volume "smb://media@hub/media" as user name "media"'
+        ' with password "s3cret"\n'  # scan: allow
+    )
+    for argv in recorder.commands:
+        assert "s3cret" not in " ".join(argv)  # scan: allow
+
+
+def test_the_system_picks_the_next_free_name_and_it_is_read_back(monkeypatch, tmp_path):
+    table = volume_table(location="/Volumes/media-1")
+    recorder = CommandRecorder(
+        [completed(stdout=MOUNT_TABLE), completed(), completed(stdout=table)]
+    )
+    monkeypatch.setattr(darwin_module.subprocess, "run", recorder)
+
+    mounted = DarwinPlatform().attach_share(
+        share_url="//hub/media",
+        location="",
+        credentials_path=credentials_file(tmp_path),
+    )
+
+    assert mounted == "/Volumes/media-1"
+
+
+def test_quotes_and_backslashes_are_escaped_in_the_script(monkeypatch, tmp_path):
+    recorder = CommandRecorder(
+        [completed(stdout=MOUNT_TABLE), completed(), completed(stdout=volume_table())]
+    )
+    monkeypatch.setattr(darwin_module.subprocess, "run", recorder)
 
     DarwinPlatform().attach_share(
         share_url="//hub/media",
-        location="/Users/alice/nas/media",
-        credentials_path=str(credentials),
+        location="",
+        credentials_path=credentials_file(
+            tmp_path, username='lab\\"bob', password='p"w\\x'  # scan: allow
+        ),
     )
 
-    assert terminal.runs == [
-        (
-            ["mount_smbfs", "//media@hub/media", "/Users/alice/nas/media"],
-            "Password",
-            "s3cret\n",  # scan: allow
-        )
-    ]
-    assert "s3cret" not in " ".join(terminal.runs[0][0])  # scan: allow
+    script = recorder.inputs[1]
+    assert 'as user name "lab\\\\\\"bob"' in script
+    assert 'with password "p\\"w\\\\x"' in script  # scan: allow
 
 
-def test_a_username_with_reserved_characters_is_escaped_on_the_url(
-    monkeypatch, tmp_path
-):
-    credentials = tmp_path / "r1.credentials"
-    credentials.write_text("username=lab@corp\npassword=x\n")  # scan: allow
-    terminal = TerminalRecorder()
-    monkeypatch.setattr(darwin_module, "run_on_pty", terminal)
+def test_the_user_and_share_are_percent_encoded_in_the_url():
+    script = darwin_module.mount_volume_script(
+        host="hub", share="my files", username="lab@corp", password="x"
+    )
+
+    assert script.startswith('mount volume "smb://lab%40corp@hub/my%20files"')
+
+
+def test_a_share_the_system_already_mounted_is_not_mounted_twice(monkeypatch, tmp_path):
+    table = volume_table(source="//GUEST:@HUB/Media", location="/Volumes/Media")
+    recorder = CommandRecorder([completed(stdout=table)])
+    monkeypatch.setattr(darwin_module.subprocess, "run", recorder)
+
+    mounted = DarwinPlatform().attach_share(
+        share_url="//hub/media",
+        location="",
+        credentials_path=credentials_file(tmp_path),
+    )
+
+    assert mounted == "/Volumes/Media"
+    assert recorder.commands == [["mount"]]
+
+
+def test_a_share_of_another_host_is_not_taken_as_mounted(monkeypatch, tmp_path):
+    other = volume_table(source="//media@nas/media", location="/Volumes/media")
+    table = volume_table(location="/Volumes/media-1")
+    recorder = CommandRecorder(
+        [completed(stdout=other), completed(), completed(stdout=table)]
+    )
+    monkeypatch.setattr(darwin_module.subprocess, "run", recorder)
 
     DarwinPlatform().attach_share(
-        share_url="//hub/media", location="/mnt", credentials_path=str(credentials)
+        share_url="//hub/media",
+        location="",
+        credentials_path=credentials_file(tmp_path),
     )
 
-    assert terminal.runs[0][0][1] == "//lab%40corp@hub/media"
+    assert recorder.commands[1] == ["osascript", "-"]
 
 
-def test_a_gone_credentials_file_is_refused_before_the_tool(monkeypatch, tmp_path):
-    terminal = TerminalRecorder()
-    monkeypatch.setattr(darwin_module, "run_on_pty", terminal)
+def test_a_mount_the_table_does_not_show_is_a_failed_mount(monkeypatch, tmp_path):
+    recorder = CommandRecorder(
+        [completed(stdout=MOUNT_TABLE), completed(), completed(stdout=MOUNT_TABLE)]
+    )
+    monkeypatch.setattr(darwin_module.subprocess, "run", recorder)
 
     with pytest.raises(ShareAttachError) as caught:
         DarwinPlatform().attach_share(
             share_url="//hub/media",
-            location="/mnt",
+            location="",
+            credentials_path=credentials_file(tmp_path),
+        )
+    assert caught.value.code == "mount_failed"
+
+
+def test_a_gone_credentials_file_is_refused_before_the_tool(monkeypatch, tmp_path):
+    recorder = CommandRecorder()
+    monkeypatch.setattr(darwin_module.subprocess, "run", recorder)
+
+    with pytest.raises(ShareAttachError) as caught:
+        DarwinPlatform().attach_share(
+            share_url="//hub/media",
+            location="",
             credentials_path=str(tmp_path / "gone"),
         )
     assert caught.value.code == "credentials_missing"
-    assert terminal.runs == []
+    assert recorder.commands == []
 
 
 def test_an_unreadable_share_url_is_refused_before_the_tool(monkeypatch, tmp_path):
-    terminal = TerminalRecorder()
-    monkeypatch.setattr(darwin_module, "run_on_pty", terminal)
+    recorder = CommandRecorder()
+    monkeypatch.setattr(darwin_module.subprocess, "run", recorder)
 
     with pytest.raises(ShareAttachError) as caught:
         DarwinPlatform().attach_share(
-            share_url="hub", location="/mnt", credentials_path=str(tmp_path)
+            share_url="hub", location="", credentials_path=str(tmp_path)
         )
     assert caught.value.code == "mount_failed"
-    assert terminal.runs == []
-
-
-def test_a_refused_mount_carries_the_tools_words(monkeypatch, tmp_path):
-    credentials = tmp_path / "r1.credentials"
-    credentials.write_text("username=media\npassword=x\n")  # scan: allow
-    terminal = TerminalRecorder(
-        code=64,
-        output="Password for hub:\r\nmount_smbfs: server rejected the connection",
-    )
-    monkeypatch.setattr(darwin_module, "run_on_pty", terminal)
-
-    with pytest.raises(ShareAttachError) as caught:
-        DarwinPlatform().attach_share(
-            share_url="//hub/media", location="/mnt", credentials_path=str(credentials)
-        )
-    assert caught.value.code == "mount_failed"
-    assert caught.value.detail.endswith("server rejected the connection")
+    assert recorder.commands == []
 
 
 @pytest.mark.parametrize(
     ("said", "code"),
     [
         (
-            "server rejected the connection: Authentication error",
+            "execution error: The user name or password is wrong. (-5023)",
             "share_login_rejected",
         ),
-        ("mount_smbfs: /mnt: Permission denied", "share_access_denied"),
-        (
-            "server rejected the connection: No such file or directory",
-            "share_not_found",
-        ),
-        ("could not connect to hub: Operation timed out", "share_unreachable"),
-        ("mount_smbfs: could not connect: Connection refused", "share_unreachable"),
-        ("mount_smbfs: could not connect: No route to host", "share_unreachable"),
+        ("execution error: Access not granted. (-5000)", "share_access_denied"),
+        ("execution error: File not found. (-43)", "share_not_found"),
+        ("execution error: An I/O error occurred. (-36)", "share_unreachable"),
+        ("execution error: Connection failed.", "share_unreachable"),
+        ("execution error: User canceled. (-128)", "mount_not_authorized"),
+        ("execution error: s3cret was refused. (-1)", "mount_failed"),  # scan: allow
     ],
 )
-def test_the_tools_words_name_the_share_refusal(monkeypatch, tmp_path, said, code):
-    """The same refusals every platform words; mount_smbfs tells them by
-    its own phrases, and a wrong password reads as one before the person."""
-    credentials = tmp_path / "r1.credentials"
-    credentials.write_text("username=media\npassword=x\n")  # scan: allow
-    terminal = TerminalRecorder(code=77, output=f"Password for hub:\r\n{said}")
-    monkeypatch.setattr(darwin_module, "run_on_pty", terminal)
-
-    with pytest.raises(ShareAttachError) as caught:
-        DarwinPlatform().attach_share(
-            share_url="//hub/media", location="/mnt", credentials_path=str(credentials)
-        )
-    assert caught.value.code == code
-    assert caught.value.detail.endswith(said)
-
-
-def test_a_tool_that_cannot_start_is_a_failed_mount(monkeypatch, tmp_path):
-    credentials = tmp_path / "r1.credentials"
-    credentials.write_text("username=media\npassword=x\n")  # scan: allow
-
-    def refuse(argv, *, prompt, answer, timeout_s):
-        raise OSError("out of ptys")
-
-    monkeypatch.setattr(darwin_module, "run_on_pty", refuse)
-
-    with pytest.raises(ShareAttachError) as caught:
-        DarwinPlatform().attach_share(
-            share_url="//hub/media", location="/mnt", credentials_path=str(credentials)
-        )
-    assert caught.value.code == "mount_failed"
-    assert caught.value.detail == "out of ptys"
-
-
-def test_detach_runs_umount_on_the_location(monkeypatch):
-    recorder = CommandRecorder()
-    monkeypatch.setattr(darwin_module.subprocess, "run", recorder)
-
-    DarwinPlatform().detach_share(location="/Users/alice/nas/media")
-
-    assert recorder.commands == [["umount", "/Users/alice/nas/media"]]
-
-
-def test_a_failed_unmount_carries_the_tools_words(monkeypatch):
+def test_osascripts_words_name_the_refusal_and_never_carry_the_password(
+    monkeypatch, tmp_path, said, code
+):
     recorder = CommandRecorder(
-        [completed(returncode=1, stderr="umount: /mnt: Resource busy")]
+        [completed(stdout=MOUNT_TABLE), completed(returncode=1, stderr=f"0:80: {said}")]
     )
     monkeypatch.setattr(darwin_module.subprocess, "run", recorder)
 
     with pytest.raises(ShareAttachError) as caught:
-        DarwinPlatform().detach_share(location="/mnt")
+        DarwinPlatform().attach_share(
+            share_url="//hub/media",
+            location="",
+            credentials_path=credentials_file(tmp_path),
+        )
+    assert caught.value.code == code
+    assert "s3cret" not in caught.value.detail  # scan: allow
+    assert "s3cret" not in str(caught.value)  # scan: allow
+
+
+def test_an_osascript_that_does_not_finish_is_a_failed_mount(monkeypatch, tmp_path):
+    def refuse(command, **kwargs):
+        if command == ["mount"]:
+            return completed(stdout=MOUNT_TABLE)
+        raise subprocess.TimeoutExpired(command, 60)
+
+    monkeypatch.setattr(darwin_module.subprocess, "run", refuse)
+
+    with pytest.raises(ShareAttachError) as caught:
+        DarwinPlatform().attach_share(
+            share_url="//hub/media",
+            location="",
+            credentials_path=credentials_file(tmp_path),
+        )
+    assert caught.value.code == "mount_failed"
+    assert "s3cret" not in caught.value.detail  # scan: allow
+
+
+def test_detach_ejects_the_mount_point_with_diskutil(monkeypatch, tmp_path):
+    recorder = CommandRecorder()
+    monkeypatch.setattr(darwin_module.subprocess, "run", recorder)
+    location = tmp_path / "media"
+    location.mkdir()
+
+    DarwinPlatform().detach_share(location=str(location))
+
+    assert recorder.commands == [["diskutil", "unmount", str(location)]]
+    assert location.is_dir()
+
+
+def test_a_failed_unmount_carries_the_tools_words(monkeypatch):
+    recorder = CommandRecorder(
+        [completed(returncode=1, stderr="Unmount of /Volumes/media failed")]
+    )
+    monkeypatch.setattr(darwin_module.subprocess, "run", recorder)
+
+    with pytest.raises(ShareAttachError) as caught:
+        DarwinPlatform().detach_share(location="/Volumes/media")
     assert caught.value.code == "unmount_failed"
-    assert caught.value.detail == "umount: /mnt: Resource busy"
+    assert caught.value.detail == "Unmount of /Volumes/media failed"
 
 
-def test_an_umount_that_cannot_run_is_a_failed_unmount(monkeypatch):
+def test_a_diskutil_that_cannot_run_is_a_failed_unmount(monkeypatch):
     def refuse(command, **kwargs):
         raise subprocess.TimeoutExpired(command, 1)
 
     monkeypatch.setattr(darwin_module.subprocess, "run", refuse)
 
     with pytest.raises(ShareAttachError) as caught:
-        DarwinPlatform().detach_share(location="/mnt")
+        DarwinPlatform().detach_share(location="/Volumes/media")
     assert caught.value.code == "unmount_failed"
 
 
-def test_the_tooling_is_mount_smbfs(monkeypatch):
-    monkeypatch.setattr(darwin_module.shutil, "which", lambda name: "/sbin/mount_smbfs")
+def test_the_tooling_is_osascript(monkeypatch):
+    monkeypatch.setattr(darwin_module.shutil, "which", lambda name: "/usr/bin/" + name)
     assert DarwinPlatform().has_mount_tooling() is True
 
     monkeypatch.setattr(darwin_module.shutil, "which", lambda name: None)
@@ -333,14 +399,22 @@ def test_the_tooling_is_mount_smbfs(monkeypatch):
 
 
 def test_attachment_is_read_from_the_mount_table(monkeypatch):
-    recorder = CommandRecorder([completed(stdout=MOUNT_TABLE)] * 3)
+    recorder = CommandRecorder([completed(stdout=volume_table())] * 3)
     monkeypatch.setattr(darwin_module.subprocess, "run", recorder)
     platform = DarwinPlatform()
 
+    assert platform.is_share_attached(location="/Volumes/media")
     assert platform.is_share_attached(location="/Users/alice/my nas")
-    assert not platform.is_share_attached(location="/Users/alice/other")
-    assert not platform.is_share_attached(location="/Users/alice")
+    assert not platform.is_share_attached(location="/Volumes")
     assert recorder.commands == [["mount"]] * 3
+
+
+def test_an_empty_location_is_not_attached_and_asks_nothing(monkeypatch):
+    recorder = CommandRecorder()
+    monkeypatch.setattr(darwin_module.subprocess, "run", recorder)
+
+    assert DarwinPlatform().is_share_attached(location="") is False
+    assert recorder.commands == []
 
 
 def test_a_mount_table_that_cannot_be_read_answers_not_attached(monkeypatch):
@@ -355,30 +429,25 @@ def test_a_mount_table_that_cannot_be_read_answers_not_attached(monkeypatch):
     assert DarwinPlatform().is_share_attached(location="/mnt") is False
 
 
-def test_a_mount_location_is_a_free_form_path_under_the_home():
+def test_a_mount_location_is_a_volume_the_system_places():
     platform = DarwinPlatform()
 
-    assert platform.mount_location_shape == "path"
+    assert platform.mount_location_shape == "volume"
     assert platform.mount_location_choices() == []
     assert platform.suggest_mount_location() == ""
-    assert platform.validate_mount_location(location="nas/media") == {
-        "code": "mountpoint_invalid",
-        "params": {},
-    }
-    assert platform.validate_mount_location(location="/Users/alice/nas") is None
+    assert platform.validate_mount_location(location="") is None
 
 
-def test_preparing_a_mount_location_makes_the_directory(tmp_path):
-    location = tmp_path / "nas" / "media"
+def test_preparing_an_empty_location_makes_no_directory(monkeypatch, tmp_path):
+    made = []
+    monkeypatch.setattr(DarwinPlatform, "make_directory", made.append)
+    working = tmp_path / "working"
+    working.mkdir()
+    monkeypatch.chdir(working)
 
-    assert DarwinPlatform().prepare_mount_location(location=str(location)) is None
-    assert location.is_dir()
-
-    (location / "kept").write_text("")
-    assert DarwinPlatform().prepare_mount_location(location=str(location)) == {
-        "code": "mountpoint_not_empty",
-        "params": {},
-    }
+    assert DarwinPlatform().prepare_mount_location(location="") is None
+    assert made == []
+    assert list(working.iterdir()) == []
 
 
 def test_a_link_opens_through_open(monkeypatch):

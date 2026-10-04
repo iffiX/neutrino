@@ -583,3 +583,112 @@ def test_a_record_without_a_hub_is_unmounted_by_path_then_dropped(service):
     assert subject.rows() == []
     assert attach(subject, path=str(tmp_path / "new")) == {}
     assert [row["hub_id"] for row in subject.rows()] == ["h1"]
+
+
+class FakeVolumePlatform(FakeClientPlatform):
+    """A platform that places a volume's mount point itself, as macOS does."""
+
+    os_name = "darwin"
+    mount_location_shape = "volume"
+
+    def __init__(self):
+        super().__init__()
+        self.volume_location = "/Volumes/media"
+
+    def validate_mount_location(self, *, location: str) -> "dict | None":
+        return None
+
+    def prepare_mount_location(self, *, location: str) -> "dict | None":
+        return None
+
+
+@pytest.fixture
+def volume_service(tmp_path):
+    platform = FakeVolumePlatform()
+    store = ClientServiceStore(path=str(tmp_path / "state.json"))
+    subject = FileServiceHandler(
+        platform=platform,
+        store=store,
+        credentials_dir=str(tmp_path / "config" / "mount_credentials"),
+        log=discard,
+    )
+    return subject, platform, store
+
+
+def test_a_volumes_path_is_empty_until_the_system_mounted_it(volume_service):
+    subject, platform, store = volume_service
+
+    reply = subject.attach(
+        hub_id="h1",
+        entry_id="share_media",
+        payload=PAYLOAD,
+        username="media",
+        password="pw",
+        path="",
+    )
+
+    assert reply == {}
+    (row,) = subject.rows()
+    assert (row["state"], row["path"]) == ("queued", "")
+    assert store.mounts()[mount_record_id("h1", "share_media", "")]["path"] == ""
+
+    subject.reconcile()
+
+    assert platform.attach_calls[0]["location"] == ""
+    (row,) = subject.rows()
+    assert (row["state"], row["path"]) == ("mounted", "/Volumes/media")
+    assert platform.fs_calls == []
+
+
+def test_a_path_sent_for_a_volume_is_not_used(volume_service):
+    subject, platform, store = volume_service
+
+    assert attach(subject, path="/Volumes/media") == {}
+
+    assert platform.attach_calls[0]["location"] == ""
+    assert platform.fs_calls == []
+
+
+def test_a_volume_is_unmounted_at_the_path_the_system_gave(volume_service):
+    subject, platform, store = volume_service
+    platform.volume_location = "/Volumes/media-1"
+    assert attach(subject, path="") == {}
+    (record_id,) = store.mounts()
+
+    assert subject.detach(record_id=record_id) == {}
+
+    assert platform.detach_calls == ["/Volumes/media-1"]
+    (row,) = subject.rows()
+    assert (row["state"], row["path"]) == ("detached", "")
+
+
+def test_a_lost_volume_is_mounted_again_where_the_system_puts_it(volume_service):
+    subject, platform, store = volume_service
+    assert attach(subject, path="") == {}
+    platform.attached.clear()
+    platform.volume_location = "/Volumes/media-1"
+
+    subject.reconcile()
+
+    assert [call["location"] for call in platform.attach_calls] == ["", ""]
+    (row,) = subject.rows()
+    assert (row["state"], row["path"]) == ("mounted", "/Volumes/media-1")
+
+
+def test_two_volumes_are_not_one_mount_point(volume_service):
+    subject, platform, store = volume_service
+    assert attach(subject, path="") == {}
+
+    assert attach(subject, path="", hub_id="h2") == {}
+
+    assert len(store.mounts()) == 2
+
+
+def test_release_empties_a_volumes_path(volume_service):
+    subject, platform, store = volume_service
+    assert attach(subject, path="") == {}
+
+    assert subject.release() == 1
+
+    assert platform.detach_calls == ["/Volumes/media"]
+    assert [record["path"] for record in store.mounts().values()] == [""]
