@@ -456,7 +456,7 @@ the hub.
 | --- | --- |
 | The adapter | `neutrino_files`, a wintun adapter at `198.19.255.1/24`, with no gateway and no DNS server, connected to no network <!-- scan: allow --> |
 | The fake addresses | one per machine that provides a `file` entry, from `198.19.255.2` up, kept per hub and machine in the client's store, so a drive letter keeps naming the same machine; the machine is the entry's `device_id`, or its host for a declared record <!-- scan: allow --> |
-| tun2socks | the GPL-3.0 executable the client's package includes, credited on the About card, run with the adapter as its device and the SOCKS endpoint as its proxy; it hands every TCP connection entering the adapter to that endpoint |
+| tun2socks | the MIT-licensed executable the client's package includes, credited on the About card, run with the adapter as its device and the SOCKS endpoint as its proxy; it hands every TCP connection entering the adapter to that endpoint |
 | The SOCKS endpoint | a SOCKS5 listener of the resident on `127.0.0.1`, behind a user name and password the resident generates at each start; it accepts a connection to `<fake-address>:445` of a machine it knows and opens a `connect` stream naming a `file` entry of that machine, and refuses any other address or port |
 
 The adapter and tun2socks need administrator rights, and the resident has
