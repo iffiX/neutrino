@@ -345,14 +345,36 @@ The form is a configurable panel with a dirty frame, **Save** and **Cancel**.
 asks for one, a place, with the reason on the row.
 
 On macOS the client does not mount the share itself: it asks the system to
-mount the volume (`mount volume "smb://<user>@<host>/<share>"` through
-`osascript`, the script with the password on its standard input and never on
-an argument), so the volume is the one the Finder's **Connect to Server**
-would make, listed under the server in the Finder's sidebar. The record's
-`path` is empty until the system has mounted the volume and is then read
-back from the mount table; **Unmount** ejects that mount point with
-`diskutil unmount`. A volume the system already has mounted for the same
-share is taken as mounted, not mounted twice.
+mount the volume through `osascript`, with the one-line script on its
+standard input and never on an argument:
+
+```
+mount volume "smb://<user>@<host>/<share>" as user name "<user>" with password "<password>"
+```
+
+The volume is the one the Finder's **Connect to Server** would make, listed
+under the server in the Finder's sidebar. The record's `path` is empty until
+the system has mounted the volume, is then read back from the mount table
+(`//<user>@<host>/<share> on /Volumes/<name> (smbfs, …)`), and is empty
+again after an unmount; **Unmount** ejects that mount point with `diskutil
+unmount`, which needs no administrator. A volume the system already has
+mounted for the same host and share is taken as mounted, not mounted twice.
+
+The system's own dialogs belong to the system, and the client waits for
+them rather than answering or killing them: the first connection to a server
+asks the person to confirm the server once; a wrong password opens the
+system's login dialog; a share that does not exist or a server that cannot
+be reached shows the system's alert and the script returns only once the
+person has dismissed it. So the script's timeout is ten minutes
+(`MOUNT_SCRIPT_TIMEOUT_S`), the row shows `ui.job.mounting` throughout, and
+a script the client had to kill is followed by nothing else until the
+person mounts again. The script's errors map to the refusals: `-5014` and
+`-43` are `share_not_found`; `-128`, the person cancelling the system's
+dialog, is `mount_not_authorized`; `-5023` and `-5000` are the login
+refusals; `-36` and "Connection failed" are `share_unreachable`; anything
+else is `mount_failed` with the script's words, the password masked. On a
+Mac the empty form's reason is `ui.reason.mount_form_volume`, which asks for
+a user name only.
 
 A phone has no mount. Its row shows **Open in Files**, which makes the share
 a location in the system's Files app through the client's file provider. The
