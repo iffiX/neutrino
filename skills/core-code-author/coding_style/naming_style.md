@@ -34,9 +34,11 @@ def is_enabled(self) -> bool: ...   # can_/should_ allowed where they read bette
   `modules/xray/constants.py`, `ROUTER_` in `modules/router/constants.py`,
   `SAMBA_` in `modules/samba/constants.py`, `SYSTEM_` in
   `system/constants.py`, `WEB_` in `neutrino_hub/web/constants.py`. All caps with
-  underscores. One exception: `PROTOCOL` and `PROTOCOL_MIN` have no prefix in
+  underscores. Two exceptions: `PROTOCOL` and `PROTOCOL_MIN` have no prefix in
   any package, because one number has one name across the hub, the agent and
-  the client ([design/protocol.md](../design/protocol.md)).
+  the client ([design/protocol.md](../design/protocol.md)); and `EDITION` has
+  none in any package's `_version.py`, because one edition has one name
+  across every package ([agent_work_rule/release.md](../agent_work_rule/release.md)).
 - No misleading terms: no "DB" for something that is not a database, no `env`
   for an environment-variable dict when it is really something else, no
   abbreviation that collides with another concept. Say the concrete role

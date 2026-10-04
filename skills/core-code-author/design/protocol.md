@@ -84,8 +84,9 @@ set, `RouterNetworkConfig.exposed_interfaces` in `modules/router/interfaces.py`.
 It is a pure function equal to `exposed_device_names + exposed_overlay_device_names`;
 a LAN contributes its configured address, every other interface its live IPv4.
 
-One test asserts that the link's address set equals the firewall's open set.
-Enrolling a device on a LAN begins with exposing that LAN.
+One test asserts that the link's address set equals the firewall's open set,
+with one extra member: the relay's address while the relay is on and
+configured, which no local interface holds. Enrolling a device on a LAN begins with exposing that LAN.
 
 ### The identity agents and clients pin
 
@@ -264,11 +265,11 @@ The HTTP status names the class of the refusal:
 
 | Status | Class | Codes |
 | --- | --- | --- |
-| 400 | a body, a query or a path that does not validate, or a value the route refuses | `body_invalid` for what the models refuse, then the route's own: `password_wrong`, `path_invalid`, `unknown_credential`, `login_refused`, `vault_locked`, `language_unknown`, `theme_unknown`, `hub_name_required`, `invalid_range`, `unsupported_kind`, `permission_kind_unknown {kind}`, `permission_device_unknown {device_id}`, `easytier_mode_unknown {mode}`, `easytier_config_server_invalid`, `overlay_subnet_overlap {title, subnet, conflict}`, `account_duplicate {account}`, `port_duplicate {port}`, `credential_missing {account}`, `proxy_scope_unsupported {switch}` |
+| 400 | a body, a query or a path that does not validate, or a value the route refuses | `body_invalid` for what the models refuse, then the route's own: `password_wrong`, `path_invalid`, `unknown_credential`, `login_refused`, `vault_locked`, `language_unknown`, `theme_unknown`, `hub_name_required`, `invalid_range`, `unsupported_kind`, `permission_kind_unknown {kind}`, `permission_device_unknown {device_id}`, `easytier_mode_unknown {mode}`, `easytier_config_server_invalid`, `overlay_subnet_overlap {title, subnet, conflict}`, `account_duplicate {account}`, `port_duplicate {port}`, `credential_missing {account}`, `proxy_scope_unsupported {switch}`, `relay_host_invalid {host}`, `relay_account_invalid {account}`, `relay_ssh_missing`, `resolver_required {field}`, `resolver_address_invalid {address}` |
 | 401 | a missing session, a dead ticket, or a token that names no binding | `ticket_spent`, `binding_unknown` |
 | 404 | an unknown member | `device_unknown`, `https_authority_missing`, `session_unknown {session_id}` |
-| 409 | a state the action cannot run in | `agent_offline`, `protocol_too_old`, `protocol_too_new`, `role_mismatch`, `update_in_progress`, `release_not_latest`, `no_platform_build {module}` |
-| 502 | a service the hub asked did not answer as one | `gateway_unreachable`, `geodata_unreachable`, `release_dns_failed`, `release_timed_out`, `release_refused`, `release_http_error {status}`, `release_unreachable` |
+| 409 | a state the action cannot run in | `agent_offline`, `protocol_too_old`, `protocol_too_new`, `role_mismatch`, `update_in_progress`, `release_not_latest`, `no_platform_build {module}`, `admission_paused {retry_after_s}`, `terms_not_accepted {module}` |
+| 502 | a service the hub asked did not answer as one | `gateway_unreachable`, `geodata_unreachable`, `release_dns_failed`, `release_timed_out`, `release_refused`, `release_http_error {status}`, `release_unreachable`, `relay_apply_failed {detail}` |
 
 Every surface words a code itself: the hub's catalogs are
 `hub/frontend/src/locales/<language>/codes.json` under `code.<code>`, the
@@ -300,7 +301,7 @@ TLS port.
 | `/api/hub/credential` | The secrets the box keeps for somebody: SSH keys, logins and tokens |
 | `/api/hub/setting` | The panel's own: its two ports, its scheme and certificate authority, password, hub name, backup, restore, version, and updating the hub itself from its newest release |
 | `/api/agent/file` | Browsing and moving files on a device through its agent |
-| `/api/agent/module` | The modules a device hosts through its agent: observed state, install, start, stop, uninstall; under it one block per module, `samba`, `gitea`, `podman`, `zfs`, `vscode`, `cloudcli`, each setting what it is to have and all but `zfs`, `vscode` and `cloudcli` importing what the machine already has |
+| `/api/agent/module` | The modules a device hosts through its agent: observed state, install, start, stop, uninstall; under it one block per module, `samba`, `gitea`, `podman`, `zfs`, `vscode`, `code_server`, `cloudcli`, each setting what it is to have and all but `zfs`, `vscode`, `code_server` and `cloudcli` importing what the machine already has |
 | `/api/agent/terminal` | The shell sessions every online machine holds, and ending one; the shells themselves are `/ws/agent/terminal` |
 | `/ws` | The panel's live sockets, grouped the same way: `/ws/hub/event` (cache invalidation, site-wide), `/ws/hub/dashboard/stat`, `/ws/hub/dashboard/dns_log`, `/ws/hub/task`; `/ws/agent/terminal` |
 | `/api/channel` | Agents and clients on the agent port: `join` and `leave`, and `/api/channel/socket` for everything else |
@@ -599,7 +600,7 @@ A session is started by opening `/ws/agent/terminal` with a new
 | `POST /api/agent/module/stop` | `{device_id, module}` | writes `want: stopped` |
 | `POST /api/agent/module/uninstall` | `{device_id, module}` | writes `want: absent` |
 | `GET /api/agent/module/journal` | `?device_id=&module=&lines=` | the tail of the module's log on the device: its units' journal on Linux, its own sources and the agent's lines naming it on Windows and macOS ([agent.md](agent.md), "Which modules each system runs") |
-| `POST /api/agent/module/<name>/apply` | `{device_id}` | pushes the device's state again, for `samba`, `gitea`, `podman`, `zfs`, `vscode` and `cloudcli` alike; 409 `agent_offline` |
+| `POST /api/agent/module/<name>/apply` | `{device_id}` | pushes the device's state again, for `samba`, `gitea`, `podman`, `zfs`, `vscode`, `code_server` and `cloudcli` alike; 409 `agent_offline` |
 | `GET /api/agent/module/samba` | `?device_id=` | the hub's Samba configuration for the device |
 | `GET /api/agent/module/samba/status` | `?device_id=` | `SambaStatusView`: whether the unit is active, the sessions open and how full each share's disk is, as last reported |
 | `POST /api/agent/module/samba/import` | `{device_id}` | the machine's shares and users become the hub's configuration |
@@ -616,6 +617,8 @@ A session is started by opening `/ws/agent/terminal` with a new
 | `POST /api/agent/module/vscode/set` | `{device_id, instances: [{account, port, login_id}]}`, `port` 1024 to 65535 | replaces the instances, generating each account's connection token the first time; 400 `account_duplicate {account}`, `port_duplicate {port}`, `unknown_credential {field}` for a login the vault does not hold, `credential_missing {account}` for an instance of a Windows machine with no login; the agent's own refusals as 400 |
 | `GET /api/agent/module/cloudcli` | `?device_id=` | the instances as `GET /api/agent/module/vscode` gives them, and the `accounts` the machine reported |
 | `POST /api/agent/module/cloudcli/set` | `{device_id, instances: [{account, port, login_id}]}`, `port` 1024 to 65535, `login_id` for a Windows machine | replaces the instances, generating each instance's password the first time; the refusals of `vscode/set` |
+| `GET /api/agent/module/code_server` | `?device_id=` | the instances, each `{account, port, is_running, code}` with `is_running` and `code` as last reported, and the `accounts` the machine reported |
+| `POST /api/agent/module/code_server/set` | `{device_id, instances: [{account, port}]}`, `port` 1024 to 65535 | replaces the instances, generating each instance's token secret the first time; 400 `account_duplicate {account}`, `port_duplicate {port}`; the agent's own refusals as 400 |
 | `GET /api/agent/module/podman` | `?device_id=` | |
 | `POST /api/agent/module/podman/import` | `{device_id}` | |
 | `POST /api/agent/module/podman/container/set` | `{device_id, ...}` | |
@@ -662,7 +665,7 @@ keyed by the peer's address.
 | Directory | Files |
 | --- | --- |
 | `web/routers/hub/` | `setup.py`, `auth.py`, `display.py`, `dashboard.py`, `network.py`, `overlay.py` with `overlay_netbird.py`, `overlay_easytier.py` and `overlay_relay.py`, `proxy.py` with `proxy_node.py`, `ai.py` with `ai_gateway.py`, `device.py`, `client.py`, `service.py`, `credential.py`, `setting.py` |
-| `web/routers/agent/` | `file.py`, `module.py` with `module_samba.py`, `module_gitea.py`, `module_podman.py`, `module_zfs.py`, `module_vscode.py` and `module_cloudcli.py`, `terminal.py` |
+| `web/routers/agent/` | `file.py`, `module.py` with `module_samba.py`, `module_gitea.py`, `module_podman.py`, `module_zfs.py`, `module_vscode.py`, `module_code_server.py` and `module_cloudcli.py`, `terminal.py` |
 | `web/routers/` | `channel.py`, on the agent port's app |
 | `web/` | `ws.py`, both socket groups |
 
@@ -695,7 +698,9 @@ device link has no `overlays`. A peer that does not know the member ignores
 it.
 
 `urls` is every exposed address on the agent port, because one of them is on
-the joining machine's network and neither end knows which. `role` is `agent`
+the joining machine's network and neither end knows which. While the relay
+is on and configured, `https://<host>:<public-port>` is its last member
+([network.md](modules/network.md), "The relay's address"). `role` is `agent`
 or `client`, read on the pasting side before the first request. A client
 rejects a device link with `link_not_for_client` and an agent rejects a client
 link with `link_not_for_agent`, each code's `params` naming the link's `role`.
@@ -765,7 +770,9 @@ The first frame each way is an identity card, and both cards have one shape.
 
 A rejected `hello` gets `refused {code, params}` and close 4000: `hello_invalid`
 when the first frame is late, not text, not a `hello`, or one the hub cannot
-read, and otherwise the admission codes below. The handshake has no state
+read, `channel_full {limit}` when the port already holds
+`CHANNEL_SOCKETS_MAX` admitted sockets, and otherwise the admission codes
+below. The handshake has no state
 hash; the first `report` has it.
 
 ### The frames
@@ -801,7 +808,9 @@ the three packages, named here so that changing one is a change to this table.
 
 | What it bounds | Hub | Agent | Client |
 | --- | --- | --- | --- |
-| a fresh socket's hello | `CHANNEL_HELLO_TIMEOUT_S` 10 | | |
+| a TLS handshake on the agent port | `CHANNEL_TLS_HANDSHAKE_TIMEOUT_S` 10 | | |
+| a fresh socket's hello, from its upgrade | `CHANNEL_HELLO_TIMEOUT_S` 10 | | |
+| a connection's admission, from accept to an admitted `hello` | `CHANNEL_ADMISSION_TIMEOUT_S` 30 | | |
 | connecting and the handshake on top of it | | `AGENT_REQUEST_TIMEOUT_S` 10 | `CLIENT_CONNECT_TIMEOUT_S` 10 |
 | a report while nothing changes | | `AGENT_REPORT_INTERVAL_S` 5 | `CLIENT_REPORT_INTERVAL_S` 30 |
 | keepalive | `CHANNEL_PING_INTERVAL_S` 20, `CHANNEL_PING_TIMEOUT_S` 20 | | |
@@ -818,7 +827,12 @@ the three packages, named here so that changing one is a change to this table.
 
 Every number is seconds except the two rows in bytes and the count of
 streams. The client's credit and frame size hold on every stream that
-has binary frames, `shell` and `connect` alike. The hub's ping interval
+has binary frames, `shell` and `connect` alike. The hello timeout and the
+admission timeout both run: a socket closes when either ends first, so the
+handshake, the upgrade and the `hello` together fit in 30 seconds and the
+`hello` alone in 10. The agent port's counts, `CHANNEL_UNADMITTED_MAX`,
+`CHANNEL_SOCKETS_MAX` and the failed admissions per window, are in
+[network.md](modules/network.md), "The agent port's limits". The hub's ping interval
 is inside both silence windows, so a socket with nothing to say is kept open
 by the pings alone, and a peer that reaches its window closes and reconnects.
 A refused `hello` is retried at the backoff's maximum, the minute named under
@@ -864,7 +878,9 @@ stream.
 
 `urls` is every address the hub answers the channel on: the link's set, which
 holds the hub's address on every running overlay it is exposed on, plus
-NetBird's name for the hub where its daemon reports one. Both states carry it
+NetBird's name for the hub where its daemon reports one, and last the
+relay's `https://<host>:<public-port>` while the relay is on and configured.
+Both states carry it
 under their hash, and the hub pushes the state when the set changes: after a
 converge step, and when the address sampler reads a different set, which it
 does every `WEB_ADDRESS_SAMPLE_INTERVAL_S` seconds.
@@ -1099,8 +1115,9 @@ secret, which the hub generates the first time, keeps sealed in
 `config/devices/<id>/code_server.json` and sends opened inside the state,
 as it sends CloudCLI's. Its recipe names the release
 `data/manifests/code_server.json` pins for the platform, which the agent
-opens `package {module: code_server}` for. `details` is `{instances:
-[{account, port, is_running, code}]}`. An apply refuses `account_invalid`,
+opens `package {module: code_server}` for. `details` is `{version,
+instances: [{account, port, is_running, code}]}`, `version` being the
+release installed. An apply refuses `account_invalid`,
 `account_duplicate`, `port_invalid`, `port_duplicate` and `secret_missing`,
 each naming the `account` or the `port`, and `account_unknown {account}`
 for an account the machine does not have.
@@ -1362,7 +1379,8 @@ it was.
 A refusal keeps the binding. The agent or the client records it as
 `last_error` and sends `hello` again a minute later. `protocol_too_old`,
 `protocol_too_new`, `ticket_spent`, `role_mismatch` and every transient
-refusal behave this way.
+refusal behave this way; `channel_full` and `admission_paused` are
+transient.
 
 `binding_unknown` is the one refusal that unbinds: the hub says it has no such
 binding, because the row was removed on the panel. Only the hub holding the

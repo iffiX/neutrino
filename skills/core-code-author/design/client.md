@@ -115,6 +115,9 @@ languages, and the English column is the wording the English catalog holds.
 | `ui.job.opening` | Opening… |
 | `ui.job.clearing` | Clearing… |
 
+The Chinese catalog's words for the ways in are 局域网, NetBird, EasyTier and
+中继, the relay's word being the one [ui_text.md](ui_text.md) fixes.
+
 The dot follows [visual.md](visual.md):
 
 | Dot | Means |
@@ -215,6 +218,7 @@ row pending.
 | A join (a scanned QR or a pasted link) stores the binding at once, with the link's ticket kept and no token yet, and the Hubs page shows the hub's row in the same frame: the state word is `ui.state.pending` ("Joined; the hub has not been reached yet"), the mono line is the link's first address, and the virtual network line is live from the link's `overlays`, with its picker and **Connect**. | Nothing a person pastes or scans is refused for the hub being out of reach at that moment: a phone on 4G adds the hub now and reaches it later. The link carries the network's material at once. |
 | The channel's rounds run as for any hub. The first time an address answers with the pinned certificate, the client spends the ticket there (`POST /api/channel/join`), keeps the token, and only then sends `hello`; from then on the binding is ordinary. | The join and the first channel share one reachable address, whichever path gave it. |
 | A ticket the hub refuses (`ticket_spent`, or any refusal of the join) puts the row in `down` with that code, **Leave** as its only action, and no further rounds; the person scans again. | A dead ticket cannot be revived; a loop on it is a hang with a name. |
+| `admission_paused {retry_after_s}` is the one transient refusal of the join: the client keeps the ticket, leaves the row `pending` with the code on its error line, and joins again after `retry_after_s` seconds. | The hub paused new enrolments after too many failures; the ticket behind the pause is still valid. |
 | A ticket lives 30 minutes, which the Clients page says beside the QR. | A phone that has to raise a network first needs more than five minutes. |
 
 ### The virtual network line
