@@ -11,7 +11,13 @@ import pytest
 
 from neutrino_hub.modules.overlay.relay_config import OverlayRelayConfig
 from neutrino_hub.web import channel_addresses
-from neutrino_hub.web.channel_addresses import channel_urls
+from fastapi import HTTPException
+
+from neutrino_hub.web.channel_addresses import (
+    channel_urls,
+    enrollment_link_parts,
+    own_agent_urls,
+)
 from tests.conftest import lan_entry, network_config, wan_entry
 
 LIVE = {
@@ -247,3 +253,41 @@ def test_a_relay_that_is_off_or_not_configured_adds_nothing(live, monkeypatch):
         is_key_stored=False,
     )
     assert channel_urls(unstored) == ["https://192.168.8.1:8443"]
+
+
+# --- the hub's own agent ---
+
+
+def test_the_hubs_own_agent_is_given_loopback_alone_when_nothing_is_exposed(live):
+    runtime = FakeRuntime(
+        network_config(overlays=[]), settings={"agent_listen_port": 9443}
+    )
+
+    assert channel_urls(runtime) == []
+    assert own_agent_urls(runtime) == ["https://127.0.0.1:9443"]
+
+
+def test_the_hubs_own_agent_is_given_loopback_before_the_exposed_set(live):
+    runtime = FakeRuntime(
+        network_config(lan_entry("enp1s0", address="192.168.8.1"), overlays=[])
+    )
+
+    assert own_agent_urls(runtime) == [
+        "https://127.0.0.1:8443",
+        "https://192.168.8.1:8443",
+    ]
+
+
+def test_only_a_link_for_another_machine_is_refused_with_nothing_exposed(
+    live, monkeypatch
+):
+    monkeypatch.setattr(channel_addresses, "certificate_fingerprint", lambda: "f" * 64)
+    runtime = FakeRuntime(network_config(overlays=[]))
+
+    urls, fingerprint = enrollment_link_parts(runtime, is_hub=True)
+    with pytest.raises(HTTPException) as refused:
+        enrollment_link_parts(runtime)
+
+    assert urls == ["https://127.0.0.1:8443"]
+    assert fingerprint == "f" * 64
+    assert refused.value.detail["code"] == "no_reachable_address"

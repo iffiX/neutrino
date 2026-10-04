@@ -671,3 +671,12 @@ def test_the_overlay_scope_alone_diverts_only_the_overlay():
 
     assert 'iifname != { "wt0" } return' in ruleset
     assert f"meta mark {hex(ROUTER_FWMARK_TPROXY)} accept" in ruleset
+
+
+@pytest.mark.parametrize("entries", TOPOLOGIES.values(), ids=list(TOPOLOGIES))
+def test_loopback_reaches_every_port_in_every_topology(entries):
+    """The hub's own agent dials the agent port on loopback, exposed or not."""
+    ruleset = without_comments(render(*entries))
+    chain = ruleset.split("chain input {", 1)[1].split("}", 1)[0]
+
+    assert 'iifname "lo" accept' in chain

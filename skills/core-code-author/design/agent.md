@@ -627,7 +627,11 @@ endpoints"); `nagent join` inflates it before it reads:
 ```
 
 `urls` is every exposed address on the agent port, because only one of them
-is on the joining machine's network and neither end knows which. A client
+is on the joining machine's network and neither end knows which. The link
+`nhub setup` makes for the hub's own agent names `https://127.0.0.1:<agent-port>`
+first and the exposed addresses after it, so that agent joins over loopback
+even when nothing is exposed, and every state the hub sends it keeps loopback
+first in `urls`. A client
 link is the same object with `"role": "client"`, generated on the Clients
 page; the client rejects a device link and the agent a client one. The
 base64url alphabet holds no character a shell splits or a URL escapes, so the

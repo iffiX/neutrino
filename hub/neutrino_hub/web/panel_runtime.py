@@ -41,6 +41,8 @@ from neutrino_hub.modules.channel.tickets import ChannelTicketRegistry
 from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiServedModelCache
 from neutrino_hub.modules.devices.catalog import DeviceCatalogCache
 from neutrino_hub.modules.devices.desired_state import DesiredStateStore
+from neutrino_hub.modules.devices.registry import DeviceRegistry
+from neutrino_hub.system.machine import machine_id
 from neutrino_hub.modules.overlay.constants import OVERLAY_ENGINES
 from neutrino_hub.modules.overlay.ops import (
     OverlayRouteGuard,
@@ -89,7 +91,7 @@ from neutrino_hub.web.auth import SessionStore, session_secret
 from neutrino_hub.web import channel_state
 from neutrino_hub.web.address_sampler import PanelAddressSampler
 from neutrino_hub.web.agent_tls import certificate_fingerprint
-from neutrino_hub.web.channel_addresses import channel_urls
+from neutrino_hub.web.channel_addresses import channel_urls, own_agent_urls
 from neutrino_hub.web.events import PanelEventBus
 from neutrino_hub.web.link_sampler import PanelLinkSampler
 from neutrino_hub.modules.devices.agent_module_cache import AgentModuleCache
@@ -689,10 +691,26 @@ class PanelRuntime:
             self.device_platform.get(key, {}),
             address=self.device_address.get(key, ""),
             allowed_subnets=self.share_subnets(),
-            urls=channel_urls(self),
+            urls=self._device_urls(key),
             hub_address=scope.hub_address if scope is not None else "",
         )
         return state_hash, desired
+
+    def _device_urls(self, key: str) -> list:
+        """The addresses a device's state names: loopback first for the hub's own.
+
+        Args:
+            key: The device.
+
+        Returns:
+            :func:`own_agent_urls` for the device on the hub's own machine,
+            :func:`channel_urls` for every other.
+        """
+        device = DeviceRegistry().get(key)
+        own_machine = machine_id()
+        if device is not None and own_machine and device.machine_id == own_machine:
+            return own_agent_urls(self)
+        return channel_urls(self)
 
     def share_subnets(self) -> list:
         """The networks a device's shares answer, from this hub's own fence.

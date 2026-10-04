@@ -380,7 +380,9 @@ def _minted_link() -> tuple:
     from neutrino_hub.web.routers.hub.device import generate_enrollment_link
 
     try:
-        link, _ = generate_enrollment_link(shared_runtime(), name="", device_id=None)
+        link, _ = generate_enrollment_link(
+            shared_runtime(), name="", device_id=None, is_hub=True
+        )
     except HTTPException as error:
         return "", f"the panel cannot mint a link ({error.detail})"
     return link, ""
@@ -1051,7 +1053,9 @@ def _enrollment_link(password: str) -> tuple:
             session = _post(f"{base}{SETUP_LOGIN_PATH}", {"password": password})
             cookie = session.headers.get("set-cookie", "").split(";")[0]
             generated = _post(
-                f"{base}{SETUP_ENROLLMENT_PATH}", {"name": ""}, cookie=cookie
+                f"{base}{SETUP_ENROLLMENT_PATH}",
+                {"name": "", "is_hub": True},
+                cookie=cookie,
             )
             return json.loads(generated.read())["link"], ""
         except (OSError, ValueError, KeyError) as error:

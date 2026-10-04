@@ -439,8 +439,9 @@ def create_enrollment(
     page, and pastes this; nothing else is configured by hand.
 
     Args:
-        request: An optional name, and an existing device to bind to; a scan
-            row becomes a stored device under an id of its own.
+        request: An optional name, an existing device to bind to (a scan
+            row becomes a stored device under an id of its own), and whether
+            the link is for the hub's own machine.
         runtime: The shared runtime, which holds the open tickets.
 
     Returns:
@@ -457,14 +458,18 @@ def create_enrollment(
         _require_device(registry, request.device_id)
         device_id = registry.adopt(request.device_id).id
     link, token = generate_enrollment_link(
-        runtime, name=request.name, device_id=device_id
+        runtime, name=request.name, device_id=device_id, is_hub=request.is_hub
     )
     runtime.events.publish(WEB_EVENT_DEVICES)
     return DeviceEnrollmentView(link=link, token=token, expires_in_s=ENROLLMENT_TTL_S)
 
 
 def generate_enrollment_link(
-    runtime: PanelRuntime, *, name: str, device_id: "str | None"
+    runtime: PanelRuntime,
+    *,
+    name: str,
+    device_id: "str | None",
+    is_hub: bool = False,
 ) -> tuple[str, str]:
     """One ticket and the link that carries it, however the join begins.
 
@@ -477,6 +482,9 @@ def generate_enrollment_link(
         name: What the joining machine should be called, blank to keep what
             it has or says.
         device_id: The stored device to bind to, or None for any machine.
+        is_hub: Whether the link is for the agent on the hub's own machine,
+            which names loopback first and is never refused for want of an
+            exposed address.
 
     Returns:
         The link and its ticket.
@@ -488,7 +496,7 @@ def generate_enrollment_link(
             certificate to pin.
         OSError: When the ticket file cannot be written.
     """
-    urls, fingerprint = enrollment_link_parts(runtime)
+    urls, fingerprint = enrollment_link_parts(runtime, is_hub=is_hub)
     token, _ = runtime.enrollments.make(
         kind=CHANNEL_ROLE_AGENT, name=name.strip(), device_id=device_id
     )

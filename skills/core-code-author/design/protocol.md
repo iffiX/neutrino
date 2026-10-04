@@ -432,7 +432,7 @@ moved. Its steps and their order are [network.md](modules/network.md),
 | `GET /api/hub/device` | | every device on record |
 | `POST /api/hub/device/scan` | | scans the LAN; the list |
 | `GET /api/hub/device/online` | | the devices with a socket open |
-| `POST /api/hub/device/enrollment/create` | `{device_id?, name?}` | a link for that row, or for a new one |
+| `POST /api/hub/device/enrollment/create` | `{device_id?, name?, is_hub?}` | a link for that row, or for a new one; `is_hub` makes the link for the agent on the hub's own machine, which names loopback first and is not refused `no_reachable_address` |
 | `POST /api/hub/device/set` | `{device_id, name, icon, ssh, shown_module}`, each optional | the name, the icon, the stored SSH credential the hub reaches it with, and which module tabs its Modules page shows |
 | `POST /api/hub/device/remove` | `{device_id}` | forgets the device; its socket is closed with `binding_unknown` |
 | `POST /api/hub/device/wake` | `{device_id}` | Wake-on-LAN to the last link MAC; `wol_no_mac` when none is stored |
@@ -698,7 +698,10 @@ device link has no `overlays`. A peer that does not know the member ignores
 it.
 
 `urls` is every exposed address on the agent port, because one of them is on
-the joining machine's network and neither end knows which. While the relay
+the joining machine's network and neither end knows which. The link for the
+hub's own agent, and every state the hub sends that agent, names
+`https://127.0.0.1:<agent-port>` first, so it reaches the hub over loopback
+whatever is exposed. While the relay
 is on and configured, `https://<host>:<public-port>` is its last member
 ([network.md](modules/network.md), "The relay's address"). `role` is `agent`
 or `client`, read on the pasting side before the first request. A client

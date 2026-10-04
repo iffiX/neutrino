@@ -1708,3 +1708,45 @@ def test_the_install_output_is_the_devices_install_tasks_newest_first(box_api):
     assert tasks[0]["is_finished"] is True
     assert tasks[0]["exit_code"] == 0
     assert tasks[1]["output"] == "[installed]\n"
+
+
+def link_urls(link: str) -> list:
+    """The ``urls`` a link carries."""
+    import base64
+    import zlib
+
+    text = link.removeprefix("neutrino://enroll/")
+    payload = zlib.decompress(base64.urlsafe_b64decode(text + "=" * (-len(text) % 4)))
+    return json.loads(payload)["urls"]
+
+
+def test_the_hubs_own_link_names_loopback_alone_when_nothing_is_exposed(
+    box_api, monkeypatch
+):
+    client, runtime = box_api
+    runtime.settings = {}
+    monkeypatch.setattr(channel_addresses, "channel_urls", lambda runtime: [])
+
+    response = client.post(ENROLLMENT_PATH, json={"name": "", "is_hub": True})
+
+    assert response.status_code == 200
+    assert link_urls(response.json()["link"]) == ["https://127.0.0.1:8443"]
+
+
+def test_the_hubs_own_link_names_loopback_before_the_exposed_addresses(
+    box_api, monkeypatch
+):
+    client, runtime = box_api
+    runtime.settings = {}
+    monkeypatch.setattr(
+        channel_addresses, "channel_urls", lambda runtime: ["https://192.168.8.1:8443"]
+    )
+
+    hub_link = client.post(ENROLLMENT_PATH, json={"name": "", "is_hub": True})
+    other_link = client.post(ENROLLMENT_PATH, json={"name": ""})
+
+    assert link_urls(hub_link.json()["link"]) == [
+        "https://127.0.0.1:8443",
+        "https://192.168.8.1:8443",
+    ]
+    assert link_urls(other_link.json()["link"]) == ["https://192.168.8.1:8443"]

@@ -217,3 +217,33 @@ def test_outside_linux_a_direct_list_of_its_own_reads_nothing(on_windows, monkey
 
     assert panel.follow_network_resolvers() is False
     assert passes.passes == 0
+
+
+class OwnMachineDevices:
+    """The device rows: one on the hub's own machine, one elsewhere."""
+
+    def __init__(self):
+        self.rows = {
+            "own": type("Row", (), {"machine_id": "hub-machine"})(),
+            "other": type("Row", (), {"machine_id": "laptop"})(),
+        }
+
+    def get(self, key):
+        return self.rows.get(key)
+
+
+def test_the_hubs_own_device_is_handed_loopback_first(monkeypatch):
+    """A state whose addresses lack loopback would take it from the hub's own
+    agent; its state names loopback first, every other device's does not."""
+    panel = object.__new__(PanelRuntime)
+    devices = OwnMachineDevices()
+    monkeypatch.setattr(runtime_module, "DeviceRegistry", lambda: devices)
+    monkeypatch.setattr(runtime_module, "machine_id", lambda: "hub-machine")
+    monkeypatch.setattr(runtime_module, "channel_urls", lambda runtime: [])
+    monkeypatch.setattr(
+        runtime_module, "own_agent_urls", lambda runtime: ["https://127.0.0.1:8443"]
+    )
+
+    assert panel._device_urls("own") == ["https://127.0.0.1:8443"]
+    assert panel._device_urls("other") == []
+    assert panel._device_urls("gone") == []
