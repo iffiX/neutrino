@@ -22,6 +22,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from neutrino_hub.modules.channel.port_guard import ChannelPortGuard
 from neutrino_hub.modules.channel.tickets import ChannelTicketRegistry
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_CHUNK_BYTES,
@@ -136,6 +137,7 @@ class FakeRuntime:
         self.events = RecordingEvents()
         self.tasks = TaskStreamRegistry()
         self.enrollments = ChannelTicketRegistry()
+        self.channel_port = ChannelPortGuard()
         self.device_metrics = {}
         self.device_modules = {}
         self.device_platform = {}

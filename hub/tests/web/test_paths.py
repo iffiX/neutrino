@@ -84,6 +84,7 @@ class StubRuntime:
         self.link_sampler = StubLinkSampler()
         self.address_sampler = StubLinkSampler()
         self.exit_controller = StubExitController()
+        self.relay_monitor = StubExitController()
 
     def publish_ai_usage(self) -> None:
         return None

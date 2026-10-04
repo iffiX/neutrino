@@ -45,6 +45,7 @@ def test_the_families_disagree_only_where_they_were_measured_to():
         "dhcpcd-base",
         "wpasupplicant",
         "smbclient",
+        "openssh-client",
     }
     assert set(debian) - set(rhel) == debian_only
     assert set(rhel) - set(debian) == {
@@ -53,8 +54,14 @@ def test_the_families_disagree_only_where_they_were_measured_to():
         "dhcpcd",
         "wpa_supplicant",
         "samba-client",
+        "openssh-clients",
     }
-    assert set(debian) - set(arch) == {"dnsmasq-base", "dhcpcd-base", "wpasupplicant"}
+    assert set(debian) - set(arch) == {
+        "dnsmasq-base",
+        "dhcpcd-base",
+        "wpasupplicant",
+        "openssh-client",
+    }
 
 
 def test_nothing_installed_as_a_dependency_manages_a_network():

@@ -259,6 +259,21 @@ class ChildProcessSupervisor:
             child = self._children.get(name)
             return child is not None and self._is_alive(child)
 
+    def process_id(self, name: str) -> int:
+        """The id of one child's process.
+
+        Args:
+            name: The child's name.
+
+        Returns:
+            The process id; 0 while it does not run.
+        """
+        with self._lock:
+            child = self._children.get(name)
+            if child is None or not self._is_alive(child):
+                return 0
+            return int(getattr(child.process, "pid", 0) or 0)
+
     def tick(self) -> None:
         """Look at every child once: one that ended starts again after its wait.
 

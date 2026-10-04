@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from neutrino_hub.exceptions import StreamRefusedError
+from neutrino_hub.exceptions import NetworkApplyError, StreamRefusedError
 from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_CLIENT
 from neutrino_hub.modules.overlay.config import enabled_providers, set_enabled
 from neutrino_hub.modules.overlay.constants import OVERLAY_EASYTIER, OVERLAY_NETBIRD
@@ -205,6 +205,12 @@ def applied(monkeypatch):
         "desired_state_for",
         lambda self, device: ("h-" + device, {"modules": {}}),
     )
+
+    def apply_relay(self, *, is_restarted=False):
+        written.append(("relay applied", is_restarted))
+        return ""
+
+    monkeypatch.setattr(runtime_module.PanelRuntime, "apply_relay", apply_relay)
     return panel, written, results, files
 
 
@@ -228,10 +234,44 @@ def test_the_steps_run_in_their_order(applied, monkeypatch):
         "installed dnsmasq",
         "pushed states",
         "stopped",
+        "relay applied",
         "routes checked",
     ]
     assert {"code": "xray_restarted", "params": {}} in changes
     assert {"code": "devices_pushed", "params": {"count": 1}} in changes
+
+
+def test_a_relay_that_started_is_a_change(applied, monkeypatch):
+    panel, _, _, _ = applied
+    monkeypatch.setattr(runtime_module, "XrayConfigApplier", _AcceptingApplier)
+    monkeypatch.setattr(
+        runtime_module.PanelRuntime,
+        "apply_relay",
+        lambda self, *, is_restarted=False: "relay_started",
+    )
+
+    changes = panel.converge_network_blocking()
+
+    assert {"code": "relay_started", "params": {}} in changes
+
+
+def test_a_relay_that_will_not_apply_stops_none_of_the_rest(applied, monkeypatch):
+    panel, written, _, _ = applied
+    monkeypatch.setattr(runtime_module, "XrayConfigApplier", _AcceptingApplier)
+
+    def refuse(self, *, is_restarted=False):
+        raise OSError("no room for the key file")
+
+    monkeypatch.setattr(runtime_module.PanelRuntime, "apply_relay", refuse)
+
+    with pytest.raises(NetworkApplyError) as raised:
+        panel.converge_network_blocking()
+
+    assert {
+        "code": "relay_apply_failed",
+        "params": {"detail": "no room for the key file"},
+    } in raised.value.failures
+    assert "routes checked" in steps_of(written)
 
 
 def test_the_networks_resolvers_reach_dnsmasq_and_xray_and_are_recorded(
@@ -340,6 +380,7 @@ def test_an_engine_that_will_not_start_stops_none_of_the_rest(applied, monkeypat
         "installed dnsmasq",
         "pushed states",
         "stopped",
+        "relay applied",
         "routes checked",
     ]
 
@@ -631,6 +672,7 @@ def test_macos_and_windows_run_no_dnsmasq(applied, monkeypatch, system):
         "reconciled",
         "pushed states",
         "stopped",
+        "relay applied",
         "routes checked",
     ]
 

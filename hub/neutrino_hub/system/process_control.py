@@ -128,6 +128,35 @@ class ProcessController:
         """
         raise NotImplementedError
 
+    def process_id(self, name: str) -> int:
+        """The id of the process one daemon runs as now.
+
+        Args:
+            name: Panel-facing service name.
+
+        Returns:
+            The process id; 0 while it does not run.
+
+        Raises:
+            KeyError: If the name is not a managed daemon.
+        """
+        raise NotImplementedError
+
+    def run_output(self, name: str, *, line_count: int) -> list:
+        """What one daemon's last process wrote, without the manager's own lines.
+
+        Args:
+            name: Panel-facing service name.
+            line_count: How many of the last lines to return.
+
+        Returns:
+            The lines, oldest first; empty when it wrote none.
+
+        Raises:
+            KeyError: If the name is not a managed daemon.
+        """
+        raise NotImplementedError
+
     def is_active(self, name: str) -> bool:
         """Whether one daemon runs now.
 
@@ -460,6 +489,38 @@ class SupervisedProcessController(ProcessController):
         except OSError:
             return ""
         return "".join(tail)
+
+    def process_id(self, name: str) -> int:
+        """The id of one child's process.
+
+        Args:
+            name: Panel-facing service name.
+
+        Returns:
+            The process id; 0 while it does not run, or outside the service.
+
+        Raises:
+            KeyError: If the name is not one the service runs.
+        """
+        self._check(name)
+        if not self._is_supervising:
+            return 0
+        return self._supervisor.process_id(name)
+
+    def run_output(self, name: str, *, line_count: int) -> list:
+        """The last lines of one child's log file.
+
+        Args:
+            name: Panel-facing service name.
+            line_count: How many lines to return.
+
+        Returns:
+            The lines, oldest first, without their line ends.
+
+        Raises:
+            KeyError: If the name is not one the service runs.
+        """
+        return self.journal(name, line_count=line_count).splitlines()
 
     def reload(self) -> None:
         """Nothing to read again: the service holds every start line itself."""

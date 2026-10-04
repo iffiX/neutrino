@@ -11,6 +11,7 @@ import { OverlayPeers } from "../components/overlay_peers";
 import type { OverlayPeerRow } from "../components/overlay_peers";
 import { OverlayTopology } from "../components/overlay_topology";
 import { PasswordInput } from "../components/password_input";
+import { RelaySection } from "../components/relay_panels";
 import { StatusDot } from "../components/status_dot";
 import { apiPost, describeError } from "../api_client";
 import { formatDuration } from "../format_duration";
@@ -36,6 +37,7 @@ import "./overlay_page.css";
 /** The engines by the key `config/` names them. */
 const PROVIDER_NETBIRD = "netbird";
 const PROVIDER_EASYTIER = "easytier";
+const PROVIDER_RELAY = "relay";
 
 /** The product's own name, which is the same in every language. */
 const NETBIRD_PRODUCT_NAME = "NetBird";
@@ -136,6 +138,8 @@ export function OverlayPage() {
       {selected === PROVIDER_EASYTIER && isEnabled(PROVIDER_EASYTIER) && (
         <EasyTierSection />
       )}
+
+      {selected === PROVIDER_RELAY && <RelaySection />}
     </div>
   );
 }

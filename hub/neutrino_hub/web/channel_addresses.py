@@ -9,6 +9,8 @@ their hash, and the address sampler pushes both when it changes.
 from fastapi import HTTPException, status
 
 from neutrino_hub.modules.netbird.ops import NetbirdStatusReader
+from neutrino_hub.modules.overlay.relay_config import read_relay
+from neutrino_hub.modules.overlay.relay_ops import is_relay_configured
 from neutrino_hub.modules.router.constants import ROUTER_OVERLAY_NETBIRD
 from neutrino_hub.modules.router.link_status import device_addresses
 from neutrino_hub.web.agent_tls import certificate_fingerprint
@@ -24,10 +26,31 @@ def channel_urls(runtime) -> list[str]:
 
     Returns:
         Base ``https`` URLs, one per host :func:`channel_hosts` returns, in
-        its order.
+        its order, and last the relay's address while it is on and
+        configured.
     """
     port = runtime.settings.get("agent_listen_port", WEB_DEFAULT_AGENT_LISTEN_PORT)
-    return [f"https://{host}:{port}" for host in channel_hosts(runtime.network())]
+    urls = [f"https://{host}:{port}" for host in channel_hosts(runtime.network())]
+    relay = relay_url()
+    if relay and relay not in urls:
+        urls.append(relay)
+    return urls
+
+
+def relay_url() -> str:
+    """The relay's address while it is on and configured.
+
+    Returns:
+        ``https://<host>:<public-port>``, an IPv6 host in brackets; empty
+        while the relay is off or names no host, account or key.
+    """
+    try:
+        config = read_relay()
+    except ValueError:
+        return ""
+    if not config.is_enabled or not is_relay_configured(config):
+        return ""
+    return config.url
 
 
 def channel_hosts(network) -> list[str]:

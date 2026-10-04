@@ -530,6 +530,8 @@ export interface KeyView {
   has_passphrase: boolean;
   created_at: string;
   device_count: number;
+  /** Whether `config/overlay/relay.json` names this key. */
+  is_relay_key: boolean;
 }
 
 /** A pasted key to store under a name. */
@@ -1608,6 +1610,47 @@ export interface OverlayEngineSwitch {
 export interface OverlayChoiceRequest {
   netbird?: OverlayEngineSwitch;
   easytier?: OverlayEngineSwitch;
+  relay?: OverlayEngineSwitch;
+}
+
+// --- Relay ---
+
+/** The relay's state codes, network.md "The states". */
+export type RelayState =
+  | "disabled"
+  | "not_configured"
+  | "vault_locked"
+  | "connecting"
+  | "connected"
+  | "port_closed"
+  | "auth_failed"
+  | "host_key_changed"
+  | "forward_refused"
+  | "unreachable";
+
+export interface RelayView {
+  is_enabled: boolean;
+  host: string;
+  ssh_port: number;
+  account: string;
+  key_id: string;
+  public_port: number;
+  /** The address the relay adds to `urls`; empty while not configured. */
+  url: string;
+  state: RelayState;
+  /** The recorded host key as `SHA256:<base64>`; empty when none is. */
+  host_key_fingerprint: string;
+  last_error: string;
+  /** The last check's time in ISO 8601; empty before the first. */
+  checked_at: string;
+}
+
+export interface RelaySetRequest {
+  host: string;
+  ssh_port: number;
+  account: string;
+  key_id: string;
+  public_port: number;
 }
 
 // --- NetBird ---
