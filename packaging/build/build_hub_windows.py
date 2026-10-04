@@ -182,6 +182,10 @@ WIX_BODY = r"""
 """
 
 
+# The cabinet compression of the mainland hub package: WiX's strongest.
+HUB_MSI_CN_COMPRESSION = "high"
+
+
 def main() -> int:
     """Build the installer.
 
@@ -333,6 +337,9 @@ def wix_source(staged: dict, version: str, publisher: str) -> str:
         version=version,
         upgrade_code=UPGRADE_CODE,
         body=body,
+        compression_level=(
+            HUB_MSI_CN_COMPRESSION if edition_build.build_edition() == "cn" else ""
+        ),
     )
 
 

@@ -1,8 +1,8 @@
 """The edition every build is asked for, and the check on the tree it runs in.
 
-A ``cn`` build stops on a tree that holds a path the mainland edition leaves
-out, and an ``intl`` build on one that lacks it; the edition reaches the
-step that writes ``_version.py`` through ``NEUTRINO_EDITION``.
+A build stops on a tree that is not its edition's, by
+``shared.edition_tree.check_tree``; the edition reaches the step that writes
+``_version.py`` through ``NEUTRINO_EDITION``.
 """
 
 import argparse
@@ -13,50 +13,70 @@ from pathlib import Path
 import pytest
 
 from shared import edition_build
-from shared.constants import PACKAGING_EDITION_ENV
+from shared.constants import PACKAGING_EDITION_ENV, PACKAGING_INSTALL_EDITION_LINES
 import venv_tree
 
+# The phone core scripts take no edition: a core is the same in both, and
+# each script's own bytes name its cache.
 BUILD_SCRIPTS = sorted(
-    (Path(__file__).resolve().parents[3] / "packaging" / "build").glob("build_*.py")
+    path
+    for path in (Path(__file__).resolve().parents[3] / "packaging" / "build").glob(
+        "build_*.py"
+    )
+    if not path.name.startswith("build_core_")
 )
 
 
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
 @pytest.fixture
-def left_out(tmp_path, monkeypatch):
-    """A tree and the one path its mainland edition leaves out."""
-    monkeypatch.setattr(
-        edition_build, "PACKAGING_CN_LEFT_OUT_PATHS", ("hub/neutrino_hub/modules/xray",)
-    )
+def cn_tree(tmp_path, monkeypatch):
+    """A tree the mainland edition would build: its root file and both
+    install scripts say cn, and it holds no left-out path."""
     monkeypatch.setenv(PACKAGING_EDITION_ENV, "")
+    (tmp_path / "EDITION").write_text("cn\n")
+    for relative, line in PACKAGING_INSTALL_EDITION_LINES.items():
+        (tmp_path / relative).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / relative).write_text(line.format(edition="cn") + "\n")
     return tmp_path
 
 
-def test_a_cn_build_stops_on_a_tree_that_holds_a_left_out_path(left_out):
-    (left_out / "hub" / "neutrino_hub" / "modules" / "xray").mkdir(parents=True)
+def test_a_cn_build_stops_on_the_full_tree(monkeypatch):
+    monkeypatch.setenv(PACKAGING_EDITION_ENV, "")
 
     with pytest.raises(SystemExit) as refused:
-        edition_build.require_edition_tree("cn", left_out)
+        edition_build.require_edition_tree("cn", REPO_ROOT)
 
-    assert str(refused.value) == (
-        "a cn build cannot hold hub/neutrino_hub/modules/xray; build it from "
-        "the mainland source tree"
-    )
+    assert str(refused.value) == "EDITION names intl, not cn"
 
 
-def test_an_intl_build_stops_on_a_tree_that_lacks_a_left_out_path(left_out):
+def test_an_intl_build_stops_on_the_mainland_tree(cn_tree):
     with pytest.raises(SystemExit) as refused:
-        edition_build.require_edition_tree("intl", left_out)
+        edition_build.require_edition_tree("intl", cn_tree)
 
-    assert str(refused.value) == (
-        "an intl build needs hub/neutrino_hub/modules/xray, which this tree "
-        "does not hold"
-    )
+    assert str(refused.value) == "EDITION names cn, not intl"
 
 
-def test_a_tree_of_its_edition_names_the_edition_for_the_build(left_out):
-    edition_build.require_edition_tree("cn", left_out)
+def test_a_tree_of_its_edition_names_the_edition_for_the_build(cn_tree):
+    edition_build.require_edition_tree("cn", cn_tree)
 
     assert edition_build.build_edition() == "cn"
+
+
+def test_a_build_script_asked_for_cn_in_the_full_tree_exits_with_one_sentence(
+    tmp_path,
+):
+    script = REPO_ROOT / "packaging" / "build" / "build_checksums.py"
+
+    result = subprocess.run(
+        [sys.executable, str(script), "--edition", "cn", "--output-dir", str(tmp_path)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert result.stderr.strip() == "EDITION names intl, not cn"
 
 
 def test_a_build_with_no_edition_named_is_intl(monkeypatch):
@@ -102,3 +122,22 @@ def test_the_hub_stamp_carries_the_edition(monkeypatch, edition):
     exec(venv_tree.version_stamp("9.9.9", "x"), namespace)  # noqa: S102
 
     assert namespace["EDITION"] == edition
+
+
+@pytest.mark.parametrize(
+    "edition, expected",
+    [("intl", []), ("cn", ["-Zxz", "-z9", "-Sextreme"])],
+)
+def test_the_mainland_hub_deb_is_compressed_at_xz_s_strongest(
+    monkeypatch, tmp_path, edition, expected
+):
+    import build_deb
+
+    commands = []
+    monkeypatch.setattr(build_deb, "run", commands.append)
+    monkeypatch.setenv(PACKAGING_EDITION_ENV, edition)
+
+    build_deb._build(tmp_path / "tree", tmp_path / "out.deb")
+
+    ((command),) = commands
+    assert command[2 : command.index("--build")] == expected

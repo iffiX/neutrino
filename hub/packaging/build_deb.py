@@ -45,6 +45,8 @@ from venv_tree import (
     FIRST_INSTALL,
     stage_desktop_entry,
 )
+from constants import HUB_DEB_CN_COMPRESSION  # noqa: E402
+from shared import edition_build  # noqa: E402
 
 CONTROL = """Package: {name}
 Version: {version}
@@ -244,13 +246,28 @@ def _lay_out(
 
 
 def _build(tree: Path, target: Path) -> None:
-    """Run dpkg-deb over a laid-out tree.
+    """Run dpkg-deb over a laid-out tree, at xz's strongest for ``cn``.
 
     Args:
         tree: The package tree.
         target: Where to write the .deb.
+
+    Raises:
+        SystemExit: When ``NEUTRINO_EDITION`` names no edition.
     """
-    run(["dpkg-deb", "--root-owner-group", "--build", str(tree), str(target)])
+    strongest = (
+        list(HUB_DEB_CN_COMPRESSION) if edition_build.build_edition() == "cn" else []
+    )
+    run(
+        [
+            "dpkg-deb",
+            "--root-owner-group",
+            *strongest,
+            "--build",
+            str(tree),
+            str(target),
+        ]
+    )
 
 
 def _host_architecture() -> str:
