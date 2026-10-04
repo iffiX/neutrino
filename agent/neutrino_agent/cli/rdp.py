@@ -87,7 +87,7 @@ def share_line(state: dict) -> str:
     where = f"{state.get('hostname', '')}:{share.get('port', '')}"
     identifier = str(share.get("rustdesk_id", ""))
     tail = f"  {RDP_ID_LABEL} {identifier}" if identifier else ""
-    return f"{where} — {standing}{tail}"
+    return f"{where} - {standing}{tail}"
 
 
 def graphical_accounts() -> "list | None":
