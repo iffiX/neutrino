@@ -131,8 +131,8 @@ testable. Details of the files themselves:
         geodata/            geoip.dat and geosite.dat
         cliproxyapi/        the AI gateway's accounts and tokens
         netbird/            the hub's own NetBird configuration and profile
-        agent_module_cache/ the third-party packages the hub fetched for
-                            managed machines
+        agent_module_cache/ the third-party packages a module's installer
+                            fetched for managed machines
         agent_cache/        the agent packages this hub hands out
         services.json       which daemons the supervising service runs,
                             macOS and Windows only
@@ -142,6 +142,12 @@ testable. Details of the files themselves:
                             first start installs the box's own agent
         stood_down.json     which units the hub stopped so it could drive
                             the network
+        enrollment_tickets.json
+                            the open enrolment tickets, each as the SHA-256
+                            of the ticket with its kind, the row it binds
+                            and its expiry, mode 0600
+        relay/              the relay's key file and known_hosts, mode 0700,
+                            each file 0600
         xray_node_health.json
                             each exit node's recent measurements and the
                             exit the hub last pinned
@@ -184,6 +190,19 @@ version's own package, writes the install script, and starts it outside the
 panel's own process; the script installs, holds a health gate, and installs
 the previous package when the gate fails, writing each turn into
 `state.json`. Two packages stay: the one running and the one before it.
+
+`hub/enrollment_tickets.json` keeps a link working across a hub restart for
+its 30 minutes. It holds no ticket, only each ticket's hash, so reading the
+file joins nothing; a `join` is judged against the hash and the entry leaves
+the file when it is spent or expires ([protocol.md](protocol.md),
+`/api/hub/device`).
+
+`hub/relay/` holds what the relay's `ssh` reads: `key`, the private key the
+converge step writes from the vault while the relay runs and deletes when it
+stops, and `known_hosts`, the VPS's host key as `ssh` recorded it on its first
+connection ([network.md](modules/network.md), "The relay, the third way in").
+Both are state: the key is in the vault, and a lost `known_hosts` is recorded
+again on the next connection.
 
 `hub/stood_down.json` is a note of what the hub did, not a copy of what
 anybody else had: router mode stops the manager that was running and writes

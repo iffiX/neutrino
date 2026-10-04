@@ -288,7 +288,7 @@ TLS port.
 | `/api/hub/display` | The language and the palette the panel is drawn in, read before there is a session |
 | `/api/hub/dashboard` | The summary, the traffic history, the DNS log; `/ws/hub/dashboard/stat` and `/ws/hub/dashboard/dns_log` are its live readings |
 | `/api/hub/network` | The mode, the interfaces and their roles, Wi-Fi, what listens where |
-| `/api/hub/overlay` | Which overlay engines the box runs, and under it `netbird` (the network it joins) and `easytier` (the network it defines: peers, networks, secret) |
+| `/api/hub/overlay` | The **Access** page: which ways in the box runs, and under it `netbird` (the network it joins), `easytier` (the network it defines: peers, networks, secret) and `relay` (the reverse forward to a server the person owns) |
 | `/api/hub/proxy` | Routing policy, and under it `node` (the exit nodes), `balancer`, and `geodata` (the databases the split runs on: which release is installed, and updating them to the latest) |
 | `/api/hub/ai` | The providers the gateway forwards to and their order, and under it `gateway` (the gateway itself: keys, accounts, usage, journal) |
 | `/api/hub/device` | Every machine on record on the LAN: the list, a scan, names and icons, the SSH credential the hub reaches a machine with, enrolment links, installing or reinstalling the agent over SSH, waking, rebooting, shutting down, its processes, its remote desktops, its seat password, its published services, which module tabs its Modules page shows |
@@ -348,10 +348,10 @@ the page's whole view.
 
 | Route | Parameters | Does |
 | --- | --- | --- |
-| `GET /api/hub/network` | | `NetworkView`, with `hub_os` (`linux`, `darwin` or `windows`) and `modes`, which holds `server` alone outside Linux |
+| `GET /api/hub/network` | | `NetworkView`, with `hub_os` (`linux`, `darwin` or `windows`) and `modes`, which holds `server` alone outside Linux; each interface's `link.lease_dns` lists the resolvers its DHCP lease names, empty for a static uplink and for an interface holding no lease |
 | `POST /api/hub/network/set` | the page's own settings, `{uplink_policy, is_inter_lan_allowed, exposed_interfaces, exposed_overlays, static_leases}`; absent lists leave the exposure as it is | `NetworkView` |
 | `POST /api/hub/network/mode/set` | `{mode, ...}` | replaces the whole shape; `NetworkView` |
-| `POST /api/hub/network/interface/set` | `{name, ...}` | one interface's role and settings; `NetworkView` |
+| `POST /api/hub/network/interface/set` | `{name, ...}`; a static uplink's `wan.dns` is its resolvers, `[{address, port}]`, `port` 53 when absent, in the order they are asked | one interface's role and settings; `NetworkView`; 400 `resolver_address_invalid {address}` for a row that is not an IP address, `port_out_of_range {minimum, maximum, value}` |
 | `POST /api/hub/network/interface/remove` | `{name}` | `NetworkView` |
 | `GET /api/hub/network/wifi_network` | | the saved Wi-Fi networks |
 | `POST /api/hub/network/wifi_network/leave` | `{ssid}` | forgets one |
@@ -362,8 +362,8 @@ the page's whole view.
 
 | Route | Parameters | Does |
 | --- | --- | --- |
-| `GET /api/hub/overlay` | | `OverlayChoiceView`: `kinds`, one row per engine in the engine table's order, `{key, title, is_enabled, is_integrated, is_supported, is_installed, is_active, client_count}`, `client_count` being the online clients whose socket comes from a network one of that engine's devices holds an address in; and `route_conflicts`, one `{code, params, is_withdrawn}` per route a running overlay installed that the hub refused, `code` being `overlay_default_route_refused` or `overlay_route_overlap` and `params` `{title, route, conflict}` |
-| `POST /api/hub/overlay/set` | `{netbird: {is_enabled}, easytier: {is_enabled}}`, an engine left out keeping what it has | turns engines on or off, any number at once, and runs the converge step; 400 `overlay_not_integrated {title}`, `overlay_not_supported {title}` or `overlay_subnet_overlap {title, subnet, conflict}` when an engine is being turned on, 502 `overlay_switch_failed {detail}` |
+| `GET /api/hub/overlay` | | `OverlayChoiceView`: `kinds`, one row per engine in the engine table's order and then the relay, `{key, title, is_enabled, is_integrated, is_supported, is_installed, is_active, client_count}`, `client_count` being the online clients whose socket comes from a network one of that engine's devices holds an address in; the relay's row is `key` `relay`, `is_installed` whether the system's OpenSSH client is present, `is_active` whether its state is `connected`, and `client_count` the online clients whose socket comes from a loopback address; and `route_conflicts`, one `{code, params, is_withdrawn}` per route a running overlay installed that the hub refused, `code` being `overlay_default_route_refused` or `overlay_route_overlap` and `params` `{title, route, conflict}` |
+| `POST /api/hub/overlay/set` | `{netbird: {is_enabled}, easytier: {is_enabled}, relay: {is_enabled}}`, a way in left out keeping what it has | turns engines and the relay on or off, any number at once, writing the relay's into `config/overlay/relay.json`, and runs the converge step; 400 `overlay_not_integrated {title}`, `overlay_not_supported {title}` or `overlay_subnet_overlap {title, subnet, conflict}` when an engine is being turned on, 400 `relay_ssh_missing` when the relay is being turned on and the system has no OpenSSH client, 502 `overlay_switch_failed {detail}` |
 | `GET /api/hub/overlay/netbird` | | the NetBird network the box joins |
 | `POST /api/hub/overlay/netbird/join` | the setup key and management URL | joins it, keeps the key sealed in `config/netbird/netbird.json` once the join succeeds, and runs the converge step; 502 `overlay_join_failed {detail}` |
 | `POST /api/hub/overlay/netbird/leave` | | asks the plane to delete the peer and deletes the profile; the kept key stays; runs the converge step; 502 `overlay_leave_failed {detail}` |
@@ -372,9 +372,12 @@ the page's whole view.
 | `POST /api/hub/overlay/easytier/set` | `{mode, config_server, is_secure_mode, network_name, network_secret, address, hostname, peers, exported_networks}`: `mode` is `manual` or `console`; `config_server` null keeps the stored console address and empty forgets it; an empty `network_secret` keeps the stored secret | stores every setting at once, the console address with its token and the secret sealed in `config/easytier/easytier.json`, and runs the converge step; the manual network's name is checked in manual mode, and in console mode only when one is given; while EasyTier runs, a manual address whose network overlaps is refused 400 `overlay_subnet_overlap {title, subnet, conflict}`; 502 `easytier_apply_failed {detail}` |
 | `POST /api/hub/overlay/easytier/suggestion/create` | | a suggested network for a member |
 | `GET /api/hub/overlay/easytier/secret` | | the network secret |
+| `GET /api/hub/overlay/relay` | | `RelayView`: `is_enabled`, `host`, `ssh_port`, `account`, `key_id`, `public_port`; `url`, the address the relay adds to `urls`, empty while it is not configured; `state`, one of the relay's state codes ([network.md](modules/network.md), "The states"); `host_key_fingerprint`, the recorded host key as `SHA256:<base64>`, empty when none is recorded; `last_error`, the last line `ssh` wrote before it exited or the failed check's reason, empty while connected; `checked_at`, the last check's time in ISO 8601, empty before the first |
+| `POST /api/hub/overlay/relay/set` | `{host, ssh_port, account, key_id, public_port}`, the ports 1 to 65535 | stores them in `config/overlay/relay.json`, deletes the recorded host key when `host` or `ssh_port` changed, and runs the converge step; `RelayView`; 400 `relay_host_invalid {host}`, `relay_account_invalid {account}`, `unknown_credential {field: key_id}` for a key the vault does not hold, `port_out_of_range {minimum, maximum, value}`; 502 `relay_apply_failed {detail}` |
+| `POST /api/hub/overlay/relay/host_key/remove` | | deletes the recorded host key and starts the relay again, which records the key it meets next; `RelayView`. The key is recorded by the connection, so the path has no `add` |
 
-Every write on this page, the Network page's writes and the Proxy page's
-`apply` run one converge step, `PanelRuntime.converge_network`, and so does
+Every write on this page, the relay's included, the Network page's writes and
+the Proxy page's `apply` run one converge step, `PanelRuntime.converge_network`, and so does
 the address sampler when the channel's address set or an overlay's device
 moved. Its steps and their order are [network.md](modules/network.md),
 "The converge step".
@@ -384,7 +387,7 @@ moved. Its steps and their order are [network.md](modules/network.md),
 | Route | Parameters | Does |
 | --- | --- | --- |
 | `GET /api/hub/proxy` | | the view, with `geodata: {geoip_version, geosite_version, source, latest?}` |
-| `POST /api/hub/proxy/set` | routing policy | 400 `proxy_scope_unsupported {switch}` for `is_proxy_enabled`, `is_overlay_proxy_enabled` or `is_local_proxy_enabled` switched on outside Linux |
+| `POST /api/hub/proxy/set` | routing policy; `remote_dns` and `direct_dns` are lists of `{address, port}`, `port` 53 when absent, asked in their order; an empty `direct_dns` follows the network's resolvers ([proxy.md](modules/proxy.md), "Where names resolve") | 400 `proxy_scope_unsupported {switch}` for `is_proxy_enabled`, `is_overlay_proxy_enabled` or `is_local_proxy_enabled` switched on outside Linux, `resolver_required {field: remote_dns}` for an empty `remote_dns`, `resolver_address_invalid {address}`, `port_out_of_range {minimum, maximum, value}` |
 | `POST /api/hub/proxy/apply` | | renders and applies xray |
 | `GET /api/hub/proxy/node` | | the exit nodes |
 | `POST /api/hub/proxy/node/add` | a share link or a node | |
@@ -440,6 +443,20 @@ moved. Its steps and their order are [network.md](modules/network.md),
 | `GET /api/hub/device/service` | `?device_id=` | what the device publishes |
 | `GET /api/hub/device/install_output` | `?device_id=` | the last install's output |
 
+A ticket, the secret a link carries to `join`, is on disk from the moment
+`enrollment/create` makes it, on this page and on the Clients page alike. The
+hub writes it to `enrollment_tickets.json` under the state root, mode 0600
+([files.md](files.md)): one entry per open ticket, `{token_sha256, kind,
+name, device_id, client_id, expires_at}`, where `token_sha256` is the SHA-256
+of the ticket in hex, `kind` is `agent` or `client`, `device_id` or
+`client_id` names the row it binds, and `expires_at` is Unix seconds. The
+ticket itself is never written. The hub reads the file back when it starts
+and drops every entry past `expires_at`. A `join` hashes the ticket it
+carries, and the entry with that hash leaves the file and the memory in one
+step before it is judged; an expired entry leaves both whenever a ticket is
+made or spent. Making a ticket replaces the open ticket of its kind, and
+a ticket lives `ENROLLMENT_TTL_S` 30 minutes whether the hub restarted or not.
+
 #### `/api/hub/client`
 
 | Route | Parameters | Does |
@@ -489,9 +506,9 @@ has is refused 400 `permission_device_unknown {device_id}`.
 
 | Route | Parameters | Does |
 | --- | --- | --- |
-| `GET /api/hub/credential/ssh_key` | | the stored keys |
+| `GET /api/hub/credential/ssh_key` | | the stored keys, each with `device_count` and `is_relay_key`, whether `config/overlay/relay.json` names it |
 | `POST /api/hub/credential/ssh_key/add` | a key | |
-| `POST /api/hub/credential/ssh_key/remove` | `{key_id}` | |
+| `POST /api/hub/credential/ssh_key/remove` | `{key_id}` | clears the key from every device and from the relay, whose state becomes `not_configured` and which the converge step stops |
 | `GET /api/hub/credential/login`, `POST .../login/add`, `POST .../login/remove` | `{login_id}` on remove | the same shape for logins |
 | `GET /api/hub/credential/token`, `POST .../token/add`, `POST .../token/remove` | `{token_id}` on remove | the same shape for tokens |
 
@@ -529,8 +546,10 @@ has is refused 400 `permission_device_unknown {device_id}`.
 | `POST /api/agent/file/rename` | `{device_id, path, name}` | |
 | `POST /api/agent/file/remove` | `{device_id, path}` | |
 
-The VS Code block keeps `config/devices/<id>/vscode.json` as `{instances:
-[{account, port, login_id, token_sealed}]}`: each instance's connection
+The VS Code block keeps `config/devices/<id>/vscode.json` as
+`{terms_accepted_at, instances: [{account, port, login_id, token_sealed}]}`:
+`terms_accepted_at` is the ISO 8601 time the person accepted Microsoft's terms
+for this machine, absent before; each instance's connection
 token is generated with `secrets.token_urlsafe(24)` the first time its
 account is saved and sealed under the vault's data key, and `login_id` names
 the vault login a Windows machine starts it with. The state carries the
@@ -586,7 +605,8 @@ A session is started by opening `/ws/agent/terminal` with a new
 | `POST /api/agent/module/gitea/set` | `{device_id, ...}` | |
 | `POST /api/agent/module/gitea/admin/add` | `{device_id, ...}` | |
 | `POST /api/agent/module/gitea/admin/password/set` | `{device_id, username, password}` | |
-| `GET /api/agent/module/vscode` | `?device_id=` | `VscodeDeviceView`: the instances, each `{account, port, login_id, is_running, code}` with `is_running` and `code` as last reported, and the `accounts` the machine reported |
+| `GET /api/agent/module/vscode` | `?device_id=` | `VscodeDeviceView`: the instances, each `{account, port, login_id, is_running, code}` with `is_running` and `code` as last reported, the `accounts` the machine reported, `is_terms_accepted` for this machine, and `terms_url`, the address of Microsoft's VS Code Server license terms |
+| `POST /api/agent/module/vscode/terms/set` | `{device_id, is_accepted}` | records, with `is_accepted` true, that the person accepted the terms for this machine, as `terms_accepted_at` in `config/devices/<id>/vscode.json`; false deletes the record; `VscodeDeviceView`. The panel sends true alone, from the press that opens the terms. Until the record exists, `module/install`, `module/start` and `vscode/set` naming `vscode` on that machine are refused 409 `terms_not_accepted {module}` |
 | `POST /api/agent/module/vscode/set` | `{device_id, instances: [{account, port, login_id}]}`, `port` 1024 to 65535 | replaces the instances, generating each account's connection token the first time; 400 `account_duplicate {account}`, `port_duplicate {port}`, `unknown_credential {field}` for a login the vault does not hold, `credential_missing {account}` for an instance of a Windows machine with no login; the agent's own refusals as 400 |
 | `GET /api/agent/module/cloudcli` | `?device_id=` | the instances as `GET /api/agent/module/vscode` gives them, and the `accounts` the machine reported |
 | `POST /api/agent/module/cloudcli/set` | `{device_id, instances: [{account, port, login_id}]}`, `port` 1024 to 65535, `login_id` for a Windows machine | replaces the instances, generating each instance's password the first time; the refusals of `vscode/set` |
@@ -624,15 +644,19 @@ A session is started by opening `/ws/agent/terminal` with a new
 
 | Route | Parameters | Does |
 | --- | --- | --- |
-| `POST /api/channel/join` | `{ticket, role, protocol, machine_id, name, software, platform}` | `{id, token}` |
+| `POST /api/channel/join` | `{ticket, role, protocol, machine_id, name, software, platform}` | `{id, token}`; 409 `admission_paused {retry_after_s}` while the hub's failed admissions are at their limit, before the ticket is looked up |
 | `POST /api/channel/leave` | `{id, token}` | removes the binding: a device's row and its `config/devices/<id>/` stay, a client's row is deleted |
-| `WS /api/channel/socket` | | the channel |
+| `WS /api/channel/socket` | | the channel; a `hello` past the cap on channel sockets is refused `channel_full {limit}` |
+
+The agent port's caps, timeouts and the count of failed admissions are in
+[network.md](modules/network.md), "The agent port's limits". None of them is
+keyed by the peer's address.
 
 ### The router files
 
 | Directory | Files |
 | --- | --- |
-| `web/routers/hub/` | `setup.py`, `auth.py`, `display.py`, `dashboard.py`, `network.py`, `overlay.py` with `overlay_netbird.py` and `overlay_easytier.py`, `proxy.py` with `proxy_node.py`, `ai.py` with `ai_gateway.py`, `device.py`, `client.py`, `service.py`, `credential.py`, `setting.py` |
+| `web/routers/hub/` | `setup.py`, `auth.py`, `display.py`, `dashboard.py`, `network.py`, `overlay.py` with `overlay_netbird.py`, `overlay_easytier.py` and `overlay_relay.py`, `proxy.py` with `proxy_node.py`, `ai.py` with `ai_gateway.py`, `device.py`, `client.py`, `service.py`, `credential.py`, `setting.py` |
 | `web/routers/agent/` | `file.py`, `module.py` with `module_samba.py`, `module_gitea.py`, `module_podman.py`, `module_zfs.py`, `module_vscode.py` and `module_cloudcli.py`, `terminal.py` |
 | `web/routers/` | `channel.py`, on the agent port's app |
 | `web/` | `ws.py`, both socket groups |
