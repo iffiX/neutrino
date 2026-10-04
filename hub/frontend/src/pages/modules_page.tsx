@@ -70,6 +70,8 @@ interface PanelTarget {
   platformOs: string;
   /** Whether the machine reports the module installing. */
   isInstalling: boolean;
+  /** What the hub asks of the module: `running`, `stopped`, or empty. */
+  want: string;
 }
 
 /** The modules this page has panels for, in tab order. */
@@ -104,6 +106,7 @@ const MODULE_PANELS: Record<string, (target: PanelTarget) => ReactNode> = {
       deviceId={target.deviceId}
       basePath={target.basePath}
       isEditable={target.isEditable}
+      want={target.want}
       isWindows={target.platformOs === WINDOWS_OS}
     />
   ),
@@ -112,6 +115,7 @@ const MODULE_PANELS: Record<string, (target: PanelTarget) => ReactNode> = {
       deviceId={target.deviceId}
       basePath={target.basePath}
       isEditable={target.isEditable}
+      want={target.want}
       isWindows={target.platformOs === WINDOWS_OS}
       isInstalling={target.isInstalling}
     />
@@ -460,10 +464,11 @@ export function ModulesPage() {
                 <div className="modules_actions">
                   <ActionButton
                     action="install"
-                    isEnabled={
-                      canAct &&
-                      (activeRow.state === "absent" ||
-                        activeRow.state === "failed")
+                    isEnabled={canAct && activeRow.state === "absent"}
+                    disabledReason={
+                      isPresent || activeRow.state === "failed"
+                        ? t("ui.modules.install_present")
+                        : undefined
                     }
                     isBusy={busyAction === "install"}
                     onClick={() => void act("install")}
@@ -493,6 +498,11 @@ export function ModulesPage() {
                     action="uninstall"
                     isEnabled={
                       canAct && (isPresent || activeRow.state === "failed")
+                    }
+                    disabledReason={
+                      activeRow.state === "absent"
+                        ? t("ui.modules.uninstall_absent")
+                        : undefined
                     }
                     isBusy={busyAction === "uninstall"}
                     onClick={askUninstall}
@@ -539,6 +549,7 @@ export function ModulesPage() {
             isEditable: isAgentOnline,
             platformOs: selectedDevice?.platform.os ?? "",
             isInstalling: activeRow?.state === "installing",
+            want: activeRow?.want ?? "",
           })}
         </fieldset>
       )}
@@ -551,6 +562,8 @@ export function ModulesPage() {
 interface ActionButtonProps {
   action: ModuleAction;
   isEnabled: boolean;
+  /** Why the press is dead, shown on hover while it is. */
+  disabledReason?: string;
   isBusy: boolean;
   onClick: () => void;
 }
@@ -558,6 +571,7 @@ interface ActionButtonProps {
 function ActionButton({
   action,
   isEnabled,
+  disabledReason,
   isBusy,
   onClick,
 }: ActionButtonProps) {
@@ -566,6 +580,7 @@ function ActionButton({
       type="button"
       className={`button ${action === "uninstall" ? "button--danger" : ""}`}
       disabled={!isEnabled}
+      title={isEnabled ? undefined : disabledReason}
       onClick={onClick}
     >
       {isBusy ? (

@@ -19,7 +19,7 @@ import {
   toDeviceUpgradePath,
 } from "../device_level";
 import type { DeviceUpgradePath } from "../device_level";
-import { t, useLanguage } from "../i18n";
+import { hasWord, t, useLanguage } from "../i18n";
 import { useConfirm } from "../use_confirm";
 import { formatTimeAgo } from "../format_duration";
 import { stripAnsi } from "../strip_ansi";
@@ -27,6 +27,7 @@ import { HUB_EVENT_DEVICE_REPORT, useHubEvents } from "../use_hub_events";
 import { useTaskStream } from "../use_task_stream";
 import type {
   DeviceAnnotation,
+  DeviceClientError,
   DeviceEnrollmentRequest,
   DeviceEnrollmentView,
   DeviceView,
@@ -60,18 +61,6 @@ const GUIDANCE_HINT_KEYS: Record<DeviceUpgradePath, string | null> = {
 const VERSION_MISMATCH_HINT_KEYS: Record<DeviceUpgradePath, string> = {
   install: "ui.drawer.version_mismatch_install_hint",
   link: "ui.drawer.version_mismatch_link_hint",
-};
-
-// The agent's last_error {code, params}, worded. A code without an entry
-// shows as itself, because a failure hidden entirely is worse than a bare
-// code.
-const AGENT_ERROR_KEYS: Record<string, string> = {
-  unsupported_platform: "code.unsupported_platform",
-  update_failed: "code.update_failed",
-  agent_package_missing: "code.agent_package_missing",
-  agent_package_fetch_failed: "code.agent_package_fetch_failed",
-  agent_package_sha256_mismatch: "code.agent_package_sha256_mismatch",
-  agent_package_cache_unwritable: "code.agent_package_cache_unwritable",
 };
 
 // The {code, params} an action is refused with, worded.
@@ -147,7 +136,9 @@ export function DeviceDrawer({
   useLanguage();
   const navigate = useNavigate();
   const [name, setName] = useState(device.name ?? "");
-  const [icon, setIcon] = useState<IconName>(toDeviceIconName(device.icon));
+  const [icon, setIcon] = useState<IconName>(
+    toDeviceIconName(device.icon, device.client?.platform_os ?? null),
+  );
   const [isSaving, setIsSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -420,7 +411,7 @@ export function DeviceDrawer({
               <div className="notice notice--warn">
                 <Icon name="alert" size={15} />
                 <div className="notice_body">
-                  {describeAgentError(device.client.last_error.code)}
+                  {describeAgentError(device.client.last_error)}
                 </div>
               </div>
             )}
@@ -700,10 +691,20 @@ function describeTask(
   return t("ui.drawer.task_finished", { action, code: exitCode });
 }
 
-/** One agent failure, worded, or the bare code where none is worded. */
-function describeAgentError(code: string): string {
-  const key = AGENT_ERROR_KEYS[code];
-  return key === undefined ? code : t(key);
+/** One agent failure, worded from the codes catalogue, or the bare code
+ * where none is worded, because a failure hidden entirely is worse. */
+function describeAgentError(error: DeviceClientError): string {
+  const key = `code.${error.code}`;
+  if (!hasWord(key)) {
+    return error.code;
+  }
+  const params: Record<string, string> = {};
+  for (const [name, value] of Object.entries(error.params)) {
+    if (typeof value === "string" || typeof value === "number") {
+      params[name] = String(value);
+    }
+  }
+  return t(key, params);
 }
 
 /** Wording for a failed action, with the coded refusals spelled out. */

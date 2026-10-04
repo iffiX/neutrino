@@ -14,6 +14,11 @@
   align-items: center;
 }
 
+/* A dead press loses its border, the red one of Uninstall included. */
+.modules_actions .button:disabled {
+  border-color: transparent;
+}
+
 /* An install's or an uninstall's lines, as the agent sends them up. */
 .modules_log {
   display: flex;
@@ -26,6 +31,10 @@
   gap: var(--space-2);
   align-items: center;
   justify-content: space-between;
+}
+
+.modules_log_loading {
+  height: 120px;
 }
 
 .modules_log_output {

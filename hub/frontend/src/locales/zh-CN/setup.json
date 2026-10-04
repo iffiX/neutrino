@@ -17,7 +17,7 @@
   "ui.setup.vault_passphrase": "保险库口令",
   "ui.setup.ports_server_lead": "每个网口保留现有地址，并在上面提供服务。",
   "ui.setup.machine_ports": "这台机器的网口",
-  "ui.setup.way_out_today": "当前出网口",
+  "ui.setup.reaches_internet": "本机经此上网",
   "ui.setup.panel_port": "面板端口",
   "ui.setup.https_port": "HTTPS 端口",
   "ui.setup.ports_differ": "HTTP 端口和 HTTPS 端口不能相同。",

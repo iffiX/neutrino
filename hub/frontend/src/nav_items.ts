@@ -38,6 +38,9 @@ export const NAV_ITEMS: NavItem[] = [
     labelKey: "ui.nav.dashboard",
     icon: "dashboard",
     descriptionKey: "ui.nav.dashboard_description",
+    modeDescriptionKeys: {
+      server: "ui.nav.dashboard_description_server",
+    },
     group: "hub",
   },
   {
