@@ -63,6 +63,8 @@ Android 8.0 对应 API 级别 26，即应用声明的 `minSdk`；系统更旧的
 | Containers                                               | 发行版软件源里的 Podman            | 不支持              | 不支持              |
 | ZFS storage                                              | 各发行版系列存放 OpenZFS 的软件源  | 不支持              | 不支持              |
 | VS Code                                                  | x86-64 和 ARM64，glibc 2.28 及以上 | x86-64              | Apple 芯片          |
+| code-server                                              | x86-64 和 ARM64，glibc 2.28 及以上 | 不支持              | Apple 芯片和 Intel  |
+| CloudCLI                                                 | x86-64 和 ARM64，glibc 2.28 及以上 | x86-64 和 ARM64     | Apple 芯片和 Intel  |
 | AnyDesk、TeamViewer，作为**设备**（Devices）页的远程桌面 | 使用者自己装了才检测到             | 同左                | 同左                |
 
 被控端读取模块状态时，对机器上的程序有以下最低版本要求：

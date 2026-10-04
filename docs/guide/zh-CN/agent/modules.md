@@ -4,7 +4,7 @@ title: 模块
 
 # 模块
 
-模块是中枢装到被控端机器上、替你运行和配置的一套服务软件。**模块**（Modules）页一次管一台机器上的全部模块。
+模块是受管机器上的一套服务软件：你从它的发布方把它装到这台机器上，遵守发布方的条款；被控端按中枢的指令运行和配置它。**模块**（Modules）页一次管一台机器上的全部模块。
 
 开始之前，这台机器要装好被控端并保持在线。被控端离线时，页面显示 **被控端已离线**（The agent is offline），所有按钮都不可用。
 
@@ -13,7 +13,7 @@ title: 模块
 1. 在 **选择机器**（Which machine）里选一台机器。
 1. 在 **这台机器上的模块**（Modules on this machine）里选一个标签。
 
-每个标签上有模块的名字、一个圆点和一个状态词。名字取自中枢的模块目录，中文界面上也显示英文：**File share**、**Gitea**、**Containers**、**VS Code** 和 **ZFS storage**。
+每个标签上有模块的名字、一个圆点和一个状态词。名字取自中枢的模块目录，中文界面上也显示英文：**File share**、**Gitea**、**Containers**、**VS Code**、**code-server**、**CloudCLI** 和 **ZFS storage**。
 
 标签行末尾的 **+** 打开模块列表。勾选一项，这台机器就多一个标签；取消勾选，标签就去掉。没有保存过选择的机器，被控端上报过的每个模块都有标签。
 
@@ -28,6 +28,8 @@ title: 模块
 | **Containers**  | 支持                              | 不支持              | 不支持              |
 | **ZFS storage** | 支持                              | 不支持              | 不支持              |
 | **VS Code**     | amd64 和 arm64，glibc 2.28 及以上 | amd64               | Apple 芯片          |
+| **code-server** | amd64 和 arm64，glibc 2.28 及以上 | 不支持              | Apple 芯片和 Intel  |
+| **CloudCLI**    | amd64 和 arm64，glibc 2.28 及以上 | amd64 和 arm64      | Apple 芯片和 Intel  |
 
 模块目录里还有 AnyDesk 和 TeamViewer，它们不在本页出现。[设备](../hub/devices.md)页设备抽屉里的远程桌面面板读取并设置它们。
 
@@ -57,6 +59,8 @@ title: 模块
 
 模块目录里没有适合这台机器平台的构建时，中枢返回 `no_platform_build`。
 
+**VS Code** 标签上要先看微软的条款，见 [VS Code](./modules/vscode.md)。**code-server** 和 **CloudCLI** 标签直接就是 **安装**。
+
 ## 卸载
 
 **卸载** 弹出确认框，写明模块和机器。你确认之前，什么都不删。
@@ -64,6 +68,8 @@ title: 模块
 ::: warning
 软件和中枢写下的配置都会删掉。存储池、共享文件夹、仓库和容器卷留在机器上。
 :::
+
+从机器上卸掉被控端本身，共享和账户也都留着。模块加的服务、计划任务和防火墙规则会一起删掉，详见 [nagent 命令](../commands/nagent.md)里的 `nagent service uninstall`。
 
 ## 配置
 
@@ -77,6 +83,8 @@ title: 模块
 | **Containers**  | 机器已有的容器，连同镜像、端口、卷和环境变量，以及镜像源                            |
 | **Gitea**       | 中枢自己装的实例；手工装的 Gitea 只上报端口，设置仍归它自己                         |
 | **VS Code**     | 不收                                                                                |
+| **code-server** | 不收                                                                                |
+| **CloudCLI**    | 不收                                                                                |
 | **ZFS storage** | 不收；各分区显示机器自报的磁盘情况                                                  |
 
 从此中枢手上这份配置是唯一依据，每次应用都把整份配置写回机器。
@@ -89,4 +97,6 @@ title: 模块
 | **Gitea**       | 接入、管理员                 |
 | **Containers**  | 正在运行、镜像源、声明的容器 |
 | **VS Code**     | 实例                         |
+| **code-server** | 实例                         |
+| **CloudCLI**    | 实例                         |
 | **ZFS storage** | 拓扑、存储池、数据集         |

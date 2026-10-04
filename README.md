@@ -21,14 +21,14 @@ The wall is still there. It just stops being yours.
 
 ## What it does
 
-In one line: the hub manages your machines and publishes the services they provide; a client on your LAN, or one that reaches the hub from outside through the overlay, gets the same services.
+In one line: the hub manages your machines and publishes the services they provide; a client on your LAN, or one that reaches the hub from outside through NetBird, EasyTier or a relay server of your own, gets the same services.
 
-Each part has its place. The hub runs on one always-on Linux box and handles the network, the overlay, the proxy and the AI gateway. The agent runs on every Linux machine you manage and provides that machine's shares, git server, containers, storage and desktop. The client runs on every computer you sit at and turns those services into buttons in a window.
+Each part has its place. The hub runs on one always-on Linux box and handles the network, the overlay, the proxy and the AI gateway. The agent runs on every Linux machine you manage and provides that machine's shares, git server, containers, storage and desktop. The client runs on every computer you sit at and turns those services into buttons in a window. Every button reaches its service through the hub, so a client needs only the hub's port 8443.
 
 | What you can do                                                                                                           | Where           |
 | ------------------------------------------------------------------------------------------------------------------------- | --------------- |
 | Pick the box's shape (server, side gateway, router), give each interface a role, choose the networks the panel listens on | **Network**     |
-| Join a NetBird network or create an EasyTier one, and reach the LAN through the box from outside                          | **Access**      |
+| Reach the hub from outside through NetBird, EasyTier, or a relay on a server you own                                     | **Access**      |
 | Import exit nodes from `ss://` and `vless://` links, open SOCKS ports, split traffic by device and destination            | **Proxy**       |
 | Put API providers and subscription accounts behind one endpoint, with a key per client                                    | **AI**          |
 | Enroll a machine by link or over SSH, read its vitals, reboot or wake it, open its shared desktop                         | **Devices**     |
@@ -60,6 +60,18 @@ Each part has its place. The hub runs on one always-on Linux box and handles the
 | macOS           | macOS 12.3 and newer, Apple silicon                                 | ARM64         | `.pkg`  |
 
 ## Install
+
+Every release comes in two editions from one source. The full edition is on [GitHub](https://github.com/iffiX/neutrino/releases). The mainland edition is on [Gitee](https://gitee.com/iffiX/neutrino): it has every feature except the proxy and NetBird, and fetches its downloads from mirrors in mainland China. Each edition updates from its own release page. To install the mainland edition with one command:
+
+```bash
+curl -fsSL https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.sh | sh
+```
+
+```powershell
+irm https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.ps1 | iex
+```
+
+The commands below install the full edition.
 
 > [!WARNING]
 > Do not install with `dpkg -i` or `rpm -i`: they install none of the dependencies. If you already did, run `sudo apt -f install` (Debian family) or `sudo dnf install <the packages it named>` (Fedora family) to finish the install.
@@ -99,7 +111,7 @@ sudo dnf install ./neutrino-agent-0.3.0-1.x86_64.rpm   # Fedora family
 sudo nagent join '<link>'
 ```
 
-`<link>` is what **Add by link** on the **Devices** page shows; it is valid for five minutes, and the machine then appears under **Managed devices**.
+`<link>` is what **Add by link** on the **Devices** page shows; it is valid for thirty minutes, and the machine then appears under **Managed devices**.
 </details>
 <details><summary><b>Client · Debian, Ubuntu, Fedora, RHEL</b></summary>
 
@@ -131,10 +143,10 @@ Every file is on the [releases page](https://github.com/iffiX/neutrino/releases)
 
 | Client panel    | What the hub publishes         | Where the entry comes from                        | The button            |
 | --------------- | ------------------------------ | ------------------------------------------------- | --------------------- |
-| Web             | a link                         | the Gitea module, or declared by hand             | **Open**              |
+| Web             | a link                         | Gitea, VS Code, code-server, CloudCLI, or declared by hand | **Open**              |
 | Ports           | a TCP port                     | a container's published port, or declared by hand | **Connect**           |
-| AI              | the gateway endpoint and a key | the AI gateway on the hub                         | **Config**, **Apply** |
-| Files           | an SMB share                   | the Samba module, or declared by hand             | **Config**, **Mount** |
+| AI              | the gateway endpoint and a key | the AI gateway on the hub                         | **Configure**, **The AI tools use this gateway** |
+| Files           | an SMB share                   | the Samba module, or declared by hand             | **Configure**, **Mount** |
 | Remote desktops | a desktop the machine shares   | `sudo nagent rdp start` on that machine           | **Connect**           |
 
 <table>
@@ -199,7 +211,7 @@ The three packages share one version number, and the panel marks an agent or a c
 
 - The hub and the agent run as root; the client runs as the person, and its one privileged step is a polkit helper that mounts a share.
 - The panel is plain HTTP, for the LAN and the overlay: the password is not protected from someone reading the wire, so keep the panel on a network you own. It is protected from guessing: five free attempts, then each failure locks login for 30 s, 60 s, 5 min, an hour, a day; and fail2ban bans an address that hammers SSH on the same ladder.
-- Everything between the hub and its agents and clients is TLS. An enrollment link is valid for five minutes and is consumed once, and the channel pins the hub's certificate by the fingerprint inside that link, so a machine that joined speaks only to the hub it joined.
+- Everything between the hub and its agents and clients is TLS. An enrollment link is valid for thirty minutes and is consumed once, and the channel pins the hub's certificate by the fingerprint inside that link, so a machine that joined speaks only to the hub it joined.
 - The vault is sealed under the passphrase set during setup.
 
 ## Why I built it

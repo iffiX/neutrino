@@ -14,7 +14,7 @@ A client is the program on one person's computer or phone that uses what the hub
 
 ![The new client link with its Copy button and its QR code](/guide/en/clients_link_qr.webp)
 
-The link works for thirty minutes and is used once. On a phone, the person scans the QR code with the app. On a computer, the person pastes the link into the client window, or runs `nclient join` with it in a terminal. Installing and joining are on [Desktop client](../client/desktop.md) and [Android app](../client/android.md).
+The link works for thirty minutes and is used once. The hub keeps an unused link on disk, so a restart of the hub within those thirty minutes leaves it working. On a phone, the person scans the QR code with the app. On a computer, the person pastes the link into the client window, or runs `nclient join` with it in a terminal. Installing and joining are on [Desktop client](../client/desktop.md) and [Android app](../client/android.md).
 
 A computer that joins again returns to the row it already had, under the name in the new link. The page badge reads how many clients are online, as **2 of 3 online**.
 
@@ -28,21 +28,24 @@ Each row shows the client's **Name**, **Hostname**, **Platform**, **Version**, *
 
 Each kind has its own switch:
 
-| Kind                | What the client gets                              |
-| ------------------- | ------------------------------------------------- |
-| **Virtual network** | joins the hub's overlay networks as a peer        |
-| **Web pages**       | the web entries, opened in a browser              |
-| **Ports**           | TCP ports forwarded to the computer's `127.0.0.1` |
-| **AI gateway**      | its own key and the gateway's address             |
-| **Files**           | SMB shares to mount                               |
-| **Terminals**       | shells on managed machines                        |
-| **Remote desktops** | the desktops machines share                       |
+| Kind                | What the client gets                                                                 |
+| ------------------- | ------------------------------------------------------------------------------------ |
+| **Virtual network** | joins the hub's overlay networks as a peer                                           |
+| **Web pages**       | the web entries, opened in a browser                                                 |
+| **Ports**           | TCP ports forwarded to the computer's `127.0.0.1`                                    |
+| **AI gateway**      | its own key and the gateway's address                                                |
+| **Files**           | SMB shares to mount                                                                  |
+| **Terminals**       | shells on managed machines                                                           |
+| **Remote desktops** | the desktops machines share                                                          |
+| **Hub panel**       | the **Panel** button on the client's hub row, which opens this panel through the hub |
+
+Every kind is on by default. **Hub panel** opens the panel's sign-in page and nothing more; the panel password still guards it.
 
 After changing switches, select **Apply permissions**. The hub sends the new list to that client, or to every client that follows the default.
 
 ## Device filters
 
-Beside every switch but **Virtual network**, a filter reads **All agents**. To narrow a kind:
+Beside every switch but **Virtual network** and **Hub panel**, a filter reads **All agents**. To narrow a kind:
 
 1. Select the filter beside the kind.
 1. Tick the managed devices whose entries the client can reach.
@@ -56,6 +59,6 @@ A client that joins gets a gateway key named `client/` followed by its name. The
 
 ## Disable or delete a client
 
-**Disable** switches a client off. The hub revokes its gateway key, and its window reads **Switched off by the hub** with every entry greyed. **Enable** switches it back on with a new key.
+**Disable** switches a client off. The hub revokes its gateway key, and its hub row reads **Disabled by the hub** with every entry greyed. **Enable** switches it back on with a new key.
 
 **Delete** revokes the client's key and removes its row. The program on that computer loses the hub and joins again only with a new link.
