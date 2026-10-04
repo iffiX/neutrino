@@ -1,17 +1,26 @@
-"""The material a ``service`` stream closes with, judged for one client now.
+"""The material a ``service`` stream closes with, and where a ``connect``
+stream goes, judged for one client now.
 
-A desktop's material is its address in the client's scope, its port and
-the seat password; the gateway's is the base URL at the hub's address in
-that scope, the key and a model. A client that is switched off, an entry
-that is not published, a share that stopped, and a locked vault each close
-with their code and no material.
+A desktop's material is the seat password; the gateway's is the client's
+key and a model. A client that is switched off, an entry that is not
+published, a share that stopped, and a locked vault each close with their
+code and no material. A ``connect`` is judged by the same checks with the
+stream limit after the client's own two, and goes to the agent of the
+machine that provides the entry, to a declared record's own address, or
+to the gateway or the panel on loopback.
 """
 
 import pytest
 
 from neutrino_hub.modules.clients import services
 from neutrino_hub.modules.clients.registry import ClientRegistry
-from neutrino_hub.modules.clients.services import service_material
+from neutrino_hub.modules.channel.constants import CHANNEL_CONNECT_STREAMS_MAX
+from neutrino_hub.modules.clients.services import (
+    ConnectTarget,
+    connect_target,
+    entry_port,
+    service_material,
+)
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
 from neutrino_hub.modules.services.collector import resolve_entries
 from neutrino_hub.modules.services.host_scope import (
@@ -45,7 +54,7 @@ VSCODE_ENTRY = {
     **ENTRY,
     "id": "vscode_dev_alice",
     "title": "VS Code (alice)",
-    "payload": {"url": "http://192.168.100.7:8000/", "is_local_only": True},
+    "payload": {"url": "http://192.168.100.7:8000/", "is_token_required": True},
     "description_code": "vscode_module",
     "description_params": {"host": "192.168.100.7", "account": "alice"},
     "device_id": "dev",
@@ -60,9 +69,12 @@ class StubPublishedServices:
     """The published list, resolved per scope the way the cache resolves it."""
 
     def __init__(self, entries, runtime, hub_addresses=()):
-        self.entries = list(entries)
+        self.listed = list(entries)
         self.runtime = runtime
         self.hub_addresses = set(hub_addresses)
+
+    def entries(self):
+        return list(self.listed), "fingerprint"
 
     def entries_for(self, scope):
         device_hosts = {
@@ -74,7 +86,7 @@ class StubPublishedServices:
             for device_id in self.runtime.device_address
         }
         return resolve_entries(
-            self.entries,
+            self.listed,
             device_hosts=device_hosts,
             hub_addresses=self.hub_addresses,
             hub_host=scope.hub_address,
@@ -114,9 +126,9 @@ def credential(monkeypatch):
     """The gateway credential minted for a client, without a gateway."""
     minted: list = []
 
-    def fake(registry, client, *, hub_host, served_models):
-        minted.append((client.id, hub_host))
-        return {"base_url": f"http://{hub_host}:8317", "api_key": "k", "model": "m"}
+    def fake(registry, client, *, served_models):
+        minted.append(client.id)
+        return {"api_key": "k", "model": "m"}
 
     monkeypatch.setattr(services, "client_credential", fake)
     return minted
@@ -137,7 +149,7 @@ def sharing(runtime) -> None:
     ]
 
 
-def test_a_desktops_material_is_its_share_and_the_seat_password(config_dir):
+def test_a_desktops_material_is_the_seat_password_alone(config_dir):
     runtime = FakeRuntime()
     sharing(runtime)
     client_id = ClientRegistry().create("alice")
@@ -146,64 +158,7 @@ def test_a_desktops_material_is_its_share_and_the_seat_password(config_dir):
     code, params = service_material(runtime, client_id, "rdp_s1")
 
     assert code == ""
-    assert params == {
-        "host": "192.168.100.7",
-        "port": 21118,
-        "password": "seat-pass",  # scan: allow
-    }
-
-
-def test_a_desktops_address_is_the_one_in_the_clients_scope_now(config_dir):
-    runtime = FakeRuntime()
-    sharing(runtime)
-    client_id = ClientRegistry().create("alice")
-
-    runtime.client_scope[client_id] = OVERLAY
-    on_overlay = service_material(runtime, client_id, "rdp_s1")[1]["host"]
-    runtime.client_scope[client_id] = link_scope("203.0.113.1")
-    elsewhere = service_material(runtime, client_id, "rdp_s1")[1]["host"]
-    del runtime.client_scope[client_id]
-    unsettled = service_material(runtime, client_id, "rdp_s1")[1]["host"]
-
-    assert (on_overlay, elsewhere, unsettled) == (
-        "100.64.9.2",
-        "192.168.100.7",
-        "192.168.100.7",
-    )
-
-
-def test_the_row_and_the_connect_answer_name_one_host_for_one_caller(config_dir):
-    """A phone's row named the hub's address in its network while the viewer
-    dialled the address the share was declared at."""
-    runtime = FakeRuntime()
-    runtime.published_services.hub_addresses = {"192.168.10.105"}
-    runtime.device_shares.declare(
-        device_id="dev",
-        share_id="s1",
-        hostname="nmxwin",
-        host="10.200.0.1",
-        port=21118,
-    )
-    runtime.device_address["dev"] = "192.168.10.105"
-    client_id = ClientRegistry().create("phone")
-    caller = HostScope(
-        id="192.168.122.0/24", cidr="192.168.122.0/24", hub_address="192.168.122.127"
-    )
-    runtime.client_scope[client_id] = caller
-
-    (row,) = [
-        entry
-        for entry in runtime.published_services.entries_for(caller)
-        if entry["id"] == "rdp_s1"
-    ]
-    code, answer = service_material(runtime, client_id, "rdp_s1")
-
-    assert code == ""
-    assert (answer["host"], answer["port"]) == (
-        row["payload"]["host"],
-        row["payload"]["port"],
-    )
-    assert answer["host"] == "192.168.122.127"
+    assert params == {"password": "seat-pass"}  # scan: allow
 
 
 def test_a_desktop_that_stopped_sharing_is_rdp_not_shared(config_dir):
@@ -216,7 +171,7 @@ def test_a_desktop_that_stopped_sharing_is_rdp_not_shared(config_dir):
     )
 
 
-def test_the_gateways_material_is_minted_for_the_clients_scope(config_dir, credential):
+def test_the_gateways_material_is_the_clients_key_and_a_model(config_dir, credential):
     runtime = FakeRuntime()
     client_id = ClientRegistry().create("alice")
     runtime.client_scope[client_id] = LAN
@@ -224,12 +179,8 @@ def test_the_gateways_material_is_minted_for_the_clients_scope(config_dir, crede
     code, params = service_material(runtime, client_id, "ai")
 
     assert code == ""
-    assert params == {
-        "base_url": "http://192.168.100.1:8317",
-        "api_key": "k",
-        "model": "m",
-    }
-    assert credential == [(client_id, "192.168.100.1")]
+    assert params == {"api_key": "k", "model": "m"}
+    assert credential == [client_id]
 
 
 def test_a_locked_vault_mints_no_key_and_says_so(config_dir, monkeypatch):
@@ -339,7 +290,6 @@ CLOUDCLI_ENTRY = {
     "title": "CloudCLI (alice)",
     "payload": {
         "url": "http://192.168.100.7:3001/",
-        "is_local_only": False,
         "is_token_required": True,
     },
     "description_code": "cloudcli_module",
@@ -380,3 +330,171 @@ def test_a_cloudcli_secret_that_does_not_open_is_vault_locked(config_dir):
         "vault_locked",
         {},
     )
+
+
+# --- where a connect stream goes ---
+
+DECLARED_ENTRY = {
+    **ENTRY,
+    "id": "declared_nas",
+    "type": "web",
+    "title": "NAS",
+    "payload": {"url": "http://192.168.100.1:5000/"},
+    "source": "declared",
+    "record_id": "declared_nas",
+    "device_id": "",
+}
+FILE_ENTRY = {
+    **ENTRY,
+    "id": "samba_dev_media",
+    "type": "file",
+    "payload": {"protocol": "smb", "host": "192.168.100.7", "share": "media"},
+    "device_id": "dev",
+}
+PANEL_PORT = 8080
+
+
+def target(runtime, client_id, args, open_count=0) -> tuple:
+    return connect_target(
+        runtime, client_id, args, open_count=open_count, panel_port=PANEL_PORT
+    )
+
+
+@pytest.fixture
+def gateway_port(monkeypatch):
+    """The gateway's configured port, without a gateway configuration."""
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(
+        services, "load_config", lambda: SimpleNamespace(listen_port=8317)
+    )
+
+
+def test_a_connect_is_refused_in_the_service_streams_order_with_the_limit(
+    config_dir,
+):
+    runtime = FakeRuntime()
+    registry = ClientRegistry()
+    client_id = registry.create("alice")
+
+    assert target(runtime, "nobody", {"id": "nothing"}) == (
+        "binding_unknown",
+        {},
+        None,
+    )
+    registry.set_disabled(client_id, True)
+    assert target(
+        runtime, client_id, {"id": "nothing"}, CHANNEL_CONNECT_STREAMS_MAX
+    ) == ("client_disabled", {}, None)
+    registry.set_disabled(client_id, False)
+    assert target(
+        runtime, client_id, {"id": "nothing"}, CHANNEL_CONNECT_STREAMS_MAX
+    ) == ("connect_limit", {"limit": CHANNEL_CONNECT_STREAMS_MAX}, None)
+    assert target(
+        runtime, client_id, {"id": "nothing"}, CHANNEL_CONNECT_STREAMS_MAX - 1
+    ) == ("service_unknown", {"service_id": "nothing"}, None)
+    registry.set_permission(client_id, ["ai"])
+    assert target(runtime, client_id, {"id": "rdp_s1"}) == (
+        "permission_denied",
+        {"kind": "rdp"},
+        None,
+    )
+    registry.set_permission(client_id, ["rdp"])
+    assert target(runtime, client_id, {"id": "rdp_s1"}) == (
+        "rdp_not_shared",
+        {"service_id": "rdp_s1"},
+        None,
+    )
+
+
+def test_a_device_filter_refuses_a_connect_to_another_devices_entry(config_dir):
+    runtime = FakeRuntime()
+    registry = ClientRegistry()
+    client_id = registry.create("alice")
+    registry.set_permission(client_id, ["web"], {"web": ["other"]})
+
+    assert target(runtime, client_id, {"id": "vscode_dev_alice"}) == (
+        "permission_denied",
+        {"kind": "web"},
+        None,
+    )
+
+
+def test_the_panel_is_its_own_kind_on_loopback_at_the_panels_http_port(config_dir):
+    runtime = FakeRuntime()
+    registry = ClientRegistry()
+    client_id = registry.create("alice")
+
+    assert target(runtime, client_id, {"is_panel": True}) == (
+        "",
+        {},
+        ConnectTarget("", "127.0.0.1", PANEL_PORT),
+    )
+
+    registry.set_permission(client_id, ["web", "terminal"])
+
+    assert target(runtime, client_id, {"is_panel": True}) == (
+        "permission_denied",
+        {"kind": "panel"},
+        None,
+    )
+
+
+def test_an_entry_a_machine_provides_goes_to_its_agent_at_the_entrys_port(
+    config_dir,
+):
+    runtime = FakeRuntime(entries=(VSCODE_ENTRY, RDP_ENTRY, FILE_ENTRY))
+    sharing(runtime)
+    client_id = ClientRegistry().create("alice")
+    runtime.client_scope[client_id] = OVERLAY
+
+    assert [
+        target(runtime, client_id, {"id": entry_id})[2]
+        for entry_id in ("vscode_dev_alice", "rdp_s1", "samba_dev_media")
+    ] == [
+        ConnectTarget("dev", "", 8000),
+        ConnectTarget("dev", "", 21118),
+        ConnectTarget("dev", "", 445),
+    ]
+
+
+def test_a_declared_record_is_dialled_at_its_own_address_whatever_the_scope(
+    config_dir,
+):
+    runtime = FakeRuntime(entries=(DECLARED_ENTRY,))
+    runtime.published_services.hub_addresses = {"192.168.100.1"}
+    client_id = ClientRegistry().create("alice")
+    runtime.client_scope[client_id] = OVERLAY
+
+    assert target(runtime, client_id, {"id": "declared_nas"}) == (
+        "",
+        {},
+        ConnectTarget("", "192.168.100.1", 5000),
+    )
+
+
+def test_the_gateway_is_dialled_on_loopback_at_its_port(config_dir, gateway_port):
+    runtime = FakeRuntime()
+    client_id = ClientRegistry().create("alice")
+
+    assert target(runtime, client_id, {"id": "ai"}) == (
+        "",
+        {},
+        ConnectTarget("", "127.0.0.1", 8317),
+    )
+
+
+@pytest.mark.parametrize(
+    "entry, port",
+    [
+        ({"type": "web", "payload": {"url": "http://h:3000/"}}, 3000),
+        ({"type": "web", "payload": {"url": "http://h/"}}, 80),
+        ({"type": "web", "payload": {"url": "https://h/x"}}, 443),
+        ({"type": "port", "payload": {"host": "h", "port": 2222}}, 2222),
+        ({"type": "rdp", "payload": {"host": "h", "port": 21118}}, 21118),
+        ({"type": "file", "payload": {"host": "h", "share": "s"}}, 445),
+        ({"type": "ai", "payload": {"endpoint": "http://h:8317"}}, 0),
+    ],
+)
+def test_an_entrys_port_follows_its_type(entry, port):
+    assert entry_port(entry) == port

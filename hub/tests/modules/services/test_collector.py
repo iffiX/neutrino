@@ -573,7 +573,7 @@ def test_the_catalog_carries_the_code_and_its_params():
     assert entry["description_params"] == {"device": "workshop"}
 
 
-def test_each_vscode_instance_is_a_web_entry_opened_only_through_localhost():
+def test_each_vscode_instance_is_a_web_entry_opened_with_a_token():
     entries = collect(
         device_modules=[
             hosting(
@@ -597,7 +597,7 @@ def test_each_vscode_instance_is_a_web_entry_opened_only_through_localhost():
     assert entry["title"] == "VS Code (alice)"
     assert entry["payload"] == {
         "url": f"http://{DEVICE_HOST}:8000/",
-        "is_local_only": True,
+        "is_token_required": True,
     }
     assert entry["description_code"] == "vscode_module"
     assert entry["description_params"] == {"host": DEVICE_HOST, "account": "alice"}
@@ -629,7 +629,6 @@ def test_each_cloudcli_instance_is_a_web_entry_opened_with_a_token():
     assert alice["title"] == "CloudCLI (alice)"
     assert alice["payload"] == {
         "url": f"http://{DEVICE_HOST}:3001/",
-        "is_local_only": False,
         "is_token_required": True,
     }
     assert (alice["is_healthy"], bob["is_healthy"]) == (True, False)

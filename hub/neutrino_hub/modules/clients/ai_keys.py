@@ -4,7 +4,7 @@ One :class:`CliproxyApiClientKey` per client, labelled ``client/<name>``:
 minted the first time the client connects with the vault unlocked, revoked
 when it is disabled or deleted, minted again when it is enabled. The key's
 id lives on the client record; the material lives sealed in the gateway's
-own config and is handed to the client as a credential frame.
+own config and is handed to the client as a ``service`` stream's close.
 
 One more per managed device whose CloudCLI module is enabled, labelled
 ``device/<name>`` and kept under the device's id in the gateway's
@@ -148,20 +148,20 @@ def device_gateway(device_id: str, hub_address: str) -> dict:
 
 
 def client_credential(
-    registry: ClientRegistry, client: Client, *, hub_host: str, served_models
+    registry: ClientRegistry, client: Client, *, served_models
 ) -> "dict | None":
-    """What the client's AI tools point at.
+    """What the client's AI tools hand the gateway through the client's forward.
 
     Args:
         registry: The client records.
         client: The client.
-        hub_host: The address the client reaches the hub on.
         served_models: The shared
             :class:`neutrino_hub.modules.cliproxyapi.ops.CliproxyApiServedModelCache`.
 
     Returns:
-        ``{base_url, api_key, model}``, or None while the client is disabled
-        or the vault is locked.
+        ``{api_key, model}``: the client's own key and the first model the
+        gateway serves; None while the client is disabled or the vault is
+        locked.
     """
     if client.is_disabled:
         return None
@@ -170,7 +170,6 @@ def client_credential(
         return None
     port = load_config().listen_port
     return {
-        "base_url": f"http://{hub_host}:{port}",
         "api_key": api_key,
         "model": served_models.first_model(port=port, client_key=api_key),
     }

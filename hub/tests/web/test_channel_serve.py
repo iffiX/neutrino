@@ -143,6 +143,7 @@ class FakeRuntime:
         self.device_scope = {}
         self.device_last_error = {}
         self.client_scope = {}
+        self.client_reached: dict = {}
         self.device_shares = DeviceShareRegistry()
         self.published_services = StubPublishedServices()
         self.desired_states = SeatPasswords()
@@ -158,9 +159,13 @@ class FakeRuntime:
         self.pushed: list = []
         self.urls = ["https://192.168.100.1:8443"]
         self.overlays: list = []
+        self.settings: dict = {}
 
     def host_scopes(self):
         return []
+
+    def overlay_networks(self):
+        return {}
 
     def desired_state_for(self, device):
         self.state_requests += 1
@@ -1067,11 +1072,7 @@ def test_a_service_stream_closes_with_the_desktops_material(api):
             "type": "close",
             "stream": 1,
             "code": "",
-            "params": {
-                "host": "192.168.100.7",
-                "port": 21118,
-                "password": "seat-pass",  # scan: allow
-            },
+            "params": {"password": "seat-pass"},  # scan: allow
         }
         socket.send_json(
             {"type": "open", "stream": 3, "kind": "service", "id": "rdp_s2"}
@@ -1089,8 +1090,7 @@ def test_a_service_stream_closes_with_the_gateways_material(api, monkeypatch):
     ]
     monkeypatch.setattr(
         "neutrino_hub.modules.clients.services.client_credential",
-        lambda registry, held, *, hub_host, served_models: {
-            "base_url": f"http://{hub_host}:8317",
+        lambda registry, held, *, served_models: {
             "api_key": "key-one",  # scan: allow
             "model": served_models.first_model(port=8317, client_key="k"),
         },
@@ -1103,9 +1103,53 @@ def test_a_service_stream_closes_with_the_gateways_material(api, monkeypatch):
 
         close = socket.receive_json()
         assert close["params"] == {
-            "base_url": "http://testserver:8317",
             "api_key": "key-one",  # scan: allow
             "model": "claude-x",
         }
     finally:
         socket.__exit__(None, None, None)
+
+
+def test_a_clients_connect_reaches_the_agent_and_bytes_cross_both_ways(api):
+    client, runtime = api
+    device_id, device_token = bound_device()
+    runtime.published_services.entries = [{**ENTRY, "device_id": device_id}]
+    client_id, client_token = bound_client()
+    agent = welcomed(client, device_id, device_token)
+    person = welcomed(client, client_id, client_token, role="client")
+    try:
+        person.send_json(
+            {"type": "open", "stream": 1, "kind": "connect", "id": "web_gitea"}
+        )
+        assert person.receive_json()["type"] == "credit"
+        opened = agent.receive_json()
+        assert {key: opened[key] for key in ("type", "kind", "port")} == {
+            "type": "open",
+            "kind": "connect",
+            "port": 3000,
+        }
+        assert agent.receive_json() == {
+            "type": "credit",
+            "stream": opened["stream"],
+            "bytes": CHANNEL_STREAM_CREDIT_BYTES,
+        }
+        far = opened["stream"].to_bytes(4, "big")
+        agent.send_json({"type": "credit", "stream": opened["stream"], "bytes": 64})
+        person.send_json({"type": "credit", "stream": 1, "bytes": 64})
+
+        person.send_bytes((1).to_bytes(4, "big") + b"GET /")
+        assert agent.receive_bytes() == far + b"GET /"
+        agent.send_bytes(far + b"200 OK")
+        received = person.receive()
+        while received.get("bytes") is None:
+            assert '"credit"' in received["text"]
+            received = person.receive()
+        assert received["bytes"] == (1).to_bytes(4, "big") + b"200 OK"
+        agent.send_json(
+            {"type": "close", "stream": opened["stream"], "code": "", "params": {}}
+        )
+        frames = text_frames(frames_until(person, "close"))
+        assert frames[-1] == {"type": "close", "stream": 1, "code": "", "params": {}}
+    finally:
+        person.__exit__(None, None, None)
+        agent.__exit__(None, None, None)

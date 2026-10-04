@@ -204,7 +204,7 @@ class ServiceListCollector:
                         title=SERVICES_VSCODE_TITLE.format(account=account),
                         payload={
                             "url": f"http://{host}:{instance['port']}/",
-                            "is_local_only": True,
+                            "is_token_required": True,
                         },
                         is_healthy=bool(vscode.get("is_healthy")),
                         description=SERVICES_VSCODE_DESCRIPTION.format(
@@ -229,7 +229,6 @@ class ServiceListCollector:
                         title=SERVICES_CLOUDCLI_TITLE.format(account=account),
                         payload={
                             "url": f"http://{host}:{instance['port']}/",
-                            "is_local_only": False,
                             "is_token_required": True,
                         },
                         is_healthy=bool(instance.get("is_healthy")),

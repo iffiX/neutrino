@@ -27,6 +27,7 @@ def display_order() -> list[str]:
 def test_the_drawer_lists_the_overlay_first_and_the_desktops_last():
     assert display_order() == [
         "overlay",
+        "panel",
         "web",
         "port",
         "ai",
