@@ -56,7 +56,9 @@ XUCRED_FORMAT = "II"
 XUCRED_SIZE = 76
 
 MOUNT_SCRIPT_COMMAND = ["osascript", "-"]
-MOUNT_SCRIPT_TIMEOUT_S = 60
+# The script waits on the system's own dialogs; one killed under a dialog
+# leaves NetAuthSysAgent unable to mount until it restarts.
+MOUNT_SCRIPT_TIMEOUT_S = 600
 UNMOUNT_TOOL = "diskutil"
 UNMOUNT_TIMEOUT_S = 60
 # What osascript prints for each way ``mount volume`` refuses, in the order
@@ -67,6 +69,8 @@ MOUNT_VOLUME_REFUSALS = (
     ("(-5023)", "share_login_rejected"),
     # afpAccessDenied: this login may not use the share.
     ("(-5000)", "share_access_denied"),
+    # afpMiscErr, after the system's alert: the server has no share by this name.
+    ("(-5014)", "share_not_found"),
     # fnfErr: the server has no share by this name.
     ("(-43)", "share_not_found"),
     # ioErr: the server did not answer.
@@ -231,7 +235,8 @@ class DarwinPlatform(ClientPlatform):
         Raises:
             ShareAttachError: ``credentials_missing`` without the file; the
                 refusal osascript's words name, ``share_login_rejected`` for
-                a wrong username or password among them; ``mount_failed``
+                a wrong username or password among them; ``mount_timed_out``
+                when the script does not finish in time; ``mount_failed``
                 with osascript's own words, the password masked, for
                 anything else.
         """
@@ -255,7 +260,7 @@ class DarwinPlatform(ClientPlatform):
                 encoding="utf-8",
             )
         except subprocess.TimeoutExpired:
-            raise ShareAttachError("mount_failed", detail="osascript timed out")
+            raise ShareAttachError("mount_timed_out")
         except (OSError, subprocess.SubprocessError) as error:
             detail = _without_password(str(error), password)[:200]
             raise ShareAttachError("mount_failed", detail=detail)

@@ -275,6 +275,7 @@ def test_a_declined_authorization_is_typed_and_not_retried(service):
         "share_access_denied",
         "share_not_found",
         "share_session_conflict",
+        "mount_timed_out",
     ],
 )
 def test_a_share_refusal_the_person_must_act_on_is_not_retried(service, code):

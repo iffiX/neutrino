@@ -64,6 +64,7 @@ CLIENT_CODE_WORDS = {
         "so leave this hub and join with a fresh link"
     ),
     "mount_not_authorized": "mounting was not authorized on this machine",
+    "mount_timed_out": "the system did not finish the mount in ten minutes; mount again",
     "mount_tooling_missing": "the mount tooling is missing on this machine",
     "control_peer_refused": "the running client belongs to another account",
     "control_socket_unavailable": "this session has no place for the client's socket",

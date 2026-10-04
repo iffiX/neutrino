@@ -312,6 +312,10 @@ def test_an_unreadable_share_url_is_refused_before_the_tool(monkeypatch, tmp_pat
         ),
         ("execution error: Access not granted. (-5000)", "share_access_denied"),
         ("execution error: File not found. (-43)", "share_not_found"),
+        (
+            "execution error: An error of type -5014 has occurred. (-5014)",
+            "share_not_found",
+        ),
         ("execution error: An I/O error occurred. (-36)", "share_unreachable"),
         ("execution error: Connection failed.", "share_unreachable"),
         ("execution error: User canceled. (-128)", "mount_not_authorized"),
@@ -337,11 +341,32 @@ def test_osascripts_words_name_the_refusal_and_never_carry_the_password(
     assert "s3cret" not in str(caught.value)  # scan: allow
 
 
-def test_an_osascript_that_does_not_finish_is_a_failed_mount(monkeypatch, tmp_path):
+def test_the_script_waits_ten_minutes_for_the_systems_dialogs(monkeypatch, tmp_path):
+    timeouts = []
+
+    def record(command, **kwargs):
+        timeouts.append((command, kwargs.get("timeout")))
+        if command == ["mount"]:
+            return completed(stdout=MOUNT_TABLE)
+        return completed(returncode=1, stderr="execution error: (-128)")
+
+    monkeypatch.setattr(darwin_module.subprocess, "run", record)
+
+    with pytest.raises(ShareAttachError):
+        DarwinPlatform().attach_share(
+            share_url="//hub/media",
+            location="",
+            credentials_path=credentials_file(tmp_path),
+        )
+    assert darwin_module.MOUNT_SCRIPT_TIMEOUT_S == 600
+    assert (["osascript", "-"], 600) in timeouts
+
+
+def test_an_osascript_that_does_not_finish_is_a_timed_out_mount(monkeypatch, tmp_path):
     def refuse(command, **kwargs):
         if command == ["mount"]:
             return completed(stdout=MOUNT_TABLE)
-        raise subprocess.TimeoutExpired(command, 60)
+        raise subprocess.TimeoutExpired(command, 600)
 
     monkeypatch.setattr(darwin_module.subprocess, "run", refuse)
 
@@ -351,8 +376,8 @@ def test_an_osascript_that_does_not_finish_is_a_failed_mount(monkeypatch, tmp_pa
             location="",
             credentials_path=credentials_file(tmp_path),
         )
-    assert caught.value.code == "mount_failed"
-    assert "s3cret" not in caught.value.detail  # scan: allow
+    assert caught.value.code == "mount_timed_out"
+    assert "s3cret" not in str(caught.value)  # scan: allow
 
 
 def test_detach_ejects_the_mount_point_with_diskutil(monkeypatch, tmp_path):
