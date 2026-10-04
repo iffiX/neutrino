@@ -8,7 +8,7 @@ Neutrino splits your machines by role. One hub runs the network and publishes se
 
 ## The hub's layers
 
-The hub box stacks its layers in the order of the table. Each layer needs only the layers before it, and the last three work in server mode.
+The hub runs on Linux in any network shape, and in server mode on macOS and Windows. The hub box stacks its layers in the order of the table. Each layer needs only the layers before it, and the last three work in server mode.
 
 | Layer         | What it is                                                                                                                                                                                            | When it is off                                              |
 | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
@@ -57,11 +57,11 @@ The **Terminals** panel lists the managed machines this client can open a shell 
 
 One release tag publishes the hub, agent and client packages together:
 
-| Package           | Runs on                                                                  | Runs as                                                |
-| ----------------- | ------------------------------------------------------------------------ | ------------------------------------------------------ |
-| `neutrino-hub`    | one Linux box, x86-64 or ARM64                                           | root, as the panel and its units                       |
-| `neutrino-agent`  | each managed machine: Linux, Windows 10 or 11, or macOS on Apple silicon | a root service, LocalSystem on Windows, with no window |
-| `neutrino-client` | a person's Linux, Windows or macOS computer                              | that person's own account                              |
+| Package           | Runs on                                                                                    | Runs as                                                  |
+| ----------------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------- |
+| `neutrino-hub`    | one box: Linux on x86-64 or ARM64 in any network shape, or macOS or Windows in server mode | root, as the panel and its units; LocalSystem on Windows |
+| `neutrino-agent`  | each managed machine: Linux, Windows 10 or 11, or macOS on Apple silicon or Intel          | a root service, LocalSystem on Windows, with no window   |
+| `neutrino-client` | a person's Linux, Windows or macOS computer                                                | that person's own account                                |
 
 The Android app is a separate apk of the same release. What has to match between all of them is the protocol number each build speaks, and every 0.5.0 package speaks protocol 3. A 0.5.0 hub accepts peers from its `PROTOCOL_MIN` to its `PROTOCOL`, both 3, and rejects any other with `protocol_too_old` or `protocol_too_new`. The rejected peer keeps its binding and connects again a minute later. An agent inside the range updates itself when the hub names a newer version.
 

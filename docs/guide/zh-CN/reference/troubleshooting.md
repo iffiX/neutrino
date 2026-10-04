@@ -149,7 +149,7 @@ Android 应用的共享出现在系统的“文件”应用里，出错时显示
 | 中枢的某个单元     | `journalctl -u neutrino_hub_web -n 200`，其他单元同理：`neutrino_hub_xray`、`neutrino_hub_dnsmasq`、`neutrino_hub_cliproxyapi`、`neutrino_hub_netbird`、`neutrino_hub_easytier`、`neutrino_hub_relay` |
 | 一次中枢升级       | 中枢上的 `journalctl -u neutrino_hub_update`                                                                                                                                                          |
 | Linux 上的被控端   | 在那台机器上运行 `journalctl -u neutrino_agent -n 200`                                                                                                                                                |
-| Windows 上的被控端 | `%ProgramData%\Neutrino\agent\agent.log`                                                                                                                                                              |
-| macOS 上的被控端   | `/Library/Logs/neutrino_agent.log`                                                                                                                                                                    |
+| Windows 上的被控端 | `C:\ProgramData\Neutrino\agent\log\agent.log`                                                                                                                                                         |
+| macOS 上的被控端   | `/Library/Logs/Neutrino/agent/agent.log`                                                                                                                                                              |
 | 面板里看 AI 网关   | **AI** 页的**日志**（Journal）                                                                                                                                                                        |
 | 一次渲染会生成什么 | 中枢上的 `sudo nhub apply --dry-run`                                                                                                                                                                  |

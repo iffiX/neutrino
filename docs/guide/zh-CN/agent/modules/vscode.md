@@ -10,7 +10,7 @@ title: VS Code
 | ------- | --------------------------------- |
 | Linux   | amd64 和 arm64，glibc 2.28 及以上 |
 | Windows | amd64                             |
-| macOS   | Apple 芯片                        |
+| macOS   | Apple 芯片和 Intel                |
 
 ## 启用
 
