@@ -177,6 +177,56 @@ running.
 The mechanical placement rules are in
 [../coding_style/layout_style.md](../coding_style/layout_style.md).
 
+## A left-out feature is reached through one table
+
+A left-out feature is a feature the mainland edition `cn` builds without,
+by deleting its files from the tree: the proxy and NetBird
+([../agent_work_rule/release.md](../agent_work_rule/release.md), "Two
+editions from one source"). The code that stays must import, start and pass
+its tests in a tree without those files, so it reaches a left-out feature
+through one table and through no other import.
+
+| Rule | Reason |
+| --- | --- |
+| A left-out feature's files are its own: a module package, its routers, its frontend files, its examples and unit templates, and its mirrored tests, each listed in `PACKAGING_CN_LEFT_OUT_PATHS`. | Deleting the listed paths is the whole of what makes the mainland tree. |
+| No file outside a left-out feature's own files imports them, except the edition table. | One static import of a deleted package breaks the import of everything above it. |
+| The edition table imports none of them when it loads; it names each hook by its dotted path and imports it on the first lookup. | A table that imported the features would fail in the tree it exists for, and every layer can read it, renderers included, without importing `web/`. |
+| A feature is present when its package imports, and absent when that package is missing from the tree. | The tree is the one truth about what a package carries; `EDITION` chooses where a package fetches from and never which features exist. |
+| A lookup returns the hooks of the present features only, and an absent feature contributes nothing: no route, no step, no page, no rule in a rendered file. | The code that stays has one path for both trees and never tests for an edition. |
+
+| Feature | Its own files in the hub |
+| --- | --- |
+| `proxy` | `modules/xray/`, `modules/tun/`, `web/routers/hub/proxy.py`, `web/routers/hub/proxy_node.py`, the **Proxy** page and the panels only it shows |
+| `netbird` | `modules/netbird/`, `web/routers/hub/overlay_netbird.py`, its card on the **Access** page |
+
+Each package that leaves something out has its one table: the hub's is
+`hub/neutrino_hub/edition.py`, the desktop client's
+`client/desktop/neutrino_client/edition.py`, and the Android app's
+`Edition.kt` in the app's root package. `has_feature(<name>)` answers whether
+a feature is present, by the names `proxy` and `netbird`.
+
+Every place the hub registers something today takes a left-out feature's
+part from the table:
+
+| Where the hub registers | What it holds for every edition | What it adds from the table |
+| --- | --- | --- |
+| `web/app.py`, `API_ROUTERS` | the routers every edition has | the proxy's routers (`proxy.py`, `proxy_node.py`) and NetBird's (`overlay_netbird.py`) |
+| `modules/registry.py`, `MODULE_SPECS` | EasyTier and the AI gateway | NetBird's entry |
+| `cli/run.py`, the processes `nhub run` starts | the panel and the AI gateway | xray and its `--only-xray` |
+| `cli/setup.py`, `CORE_STEPS`, and the wizard's questions | every other step | the proxy's steps and its question about the hub's own traffic, NetBird's steps |
+| The network modes setup and the **Network** page offer | `router` and `server` | `side_gateway`, which the proxy adds |
+| `nhub apply`'s component list and the panel's converge steps | every other component | xray, the proxy TUN, NetBird |
+| The router's renderers (`nft_renderer.py`, `dnsmasq_renderer.py`) and the overlay's | the rules and the files with no proxy part | the proxy's chains, its marks and the forward to xray's DNS inbound, from a hook the proxy gives; NetBird's interface and routes |
+| `hub/frontend/src/nav_items.ts` and the routes in `authenticated_routes.tsx` | every other page | the **Proxy** page and the NetBird card, which `hub/frontend/src/edition.ts` finds with `import.meta.glob` over their files; a file the glob does not find adds nothing |
+
+The side gateway mode exists to divert through the proxy, so the proxy
+registers it, and `cn` offers `router` and `server` alone.
+
+Two checks hold the rule. `hub/tests/test_edition.py` reads every Python
+file of the hub and fails on an import of a left-out package from outside
+that feature's own files and the table. The tests also run once on the
+full tree and once on the mainland tree ([tests.md](tests.md), "Editions").
+
 ## Services are the person's to take; modules are the hub's to install
 
 Two different things leave the hub, and confusing them is what the

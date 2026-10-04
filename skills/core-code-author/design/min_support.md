@@ -42,10 +42,10 @@ satisfies it, and RHEL 9 has 4.0 (`client/desktop/packaging/build_rpm.py:54`).
 The introspection library on RHEL 9 is older than the bindings need, so the
 package installs its own (`client/desktop/packaging/payload.py:127`).
 
-The amd64 macOS packages are built on GitHub's `macos-15-intel` runner.
-GitHub provides its Intel macOS runners until autumn 2027, and macOS Tahoe 26
-is the last macOS for Intel Macs; whether the amd64 packages continue is
-decided then.
+The amd64 macOS packages are built on GitHub's `macos-15-intel` runner, for
+`intl` only. GitHub provides its Intel macOS runners until autumn 2027, and
+macOS Tahoe 26 is the last macOS for Intel Macs; whether the amd64 packages
+continue is decided then.
 
 The two phone rows are the floor each app's build declares: `minSdk 26` in
 the Gradle project and a deployment target of 16.0 in the Xcode project. The
@@ -67,6 +67,24 @@ distribution provides.
 | fail2ban | 0.11 | the `nftables-multiport` ban action the SSH jail sets | `hub/neutrino_hub/system/constants.py:166` |
 | wpa_supplicant, hostapd | 2.9 | SAE with `ieee80211w` for a WPA3 network; the access point renders WPA2 only | `hub/neutrino_hub/modules/router/supplicant_renderer.py:101` |
 | dhcpcd | 7.1 | `nohook`, which keeps the client off resolv.conf and the hostname | `hub/neutrino_hub/modules/router/dhcp_renderer.py:58` |
+| OpenSSH client | 7.6 | `StrictHostKeyChecking=accept-new` in the relay's `ssh` start line | the relay's start line ([modules/network.md](modules/network.md)) |
+
+The relay needs an OpenSSH client on every system the hub runs on, and each
+system has one from its own vendor:
+
+| System | Where `ssh` comes from | Oldest supported release has |
+| --- | --- | --- |
+| Debian family | `openssh-client`, a dependency of the hub's `.deb` | Debian 12: 9.2 |
+| Fedora and RHEL family | `openssh-clients`, a dependency of the `.rpm` | RHEL 9: 8.7 |
+| Arch family | `openssh`, a dependency of the Arch package | a rolling release |
+| macOS | `/usr/bin/ssh`, part of the system | macOS 12: 8.6 |
+| Windows | `%SystemRoot%\System32\OpenSSH\ssh.exe`, the optional feature `OpenSSH.Client`, installed by default since Windows 10 1803 | Windows 10 1809: 7.7 |
+
+On Linux the name is one more entry in `SYSTEM_RUNTIME_PACKAGES`, spelled
+per family in `SYSTEM_PACKAGE_NAMES`
+(`hub/neutrino_hub/system/constants.py`), so the dependency fields and
+`nhub setup`'s check name it alike. On macOS and Windows the hub's package
+names no dependency.
 
 ## What the agent drives
 
@@ -85,6 +103,7 @@ releases a supported family provides.
 | `sharing`, `sysadminctl`, `pwpolicy`, `dscl`, `pfctl` | macOS 12 | the file share on macOS | `agent/neutrino_agent/modules/samba/darwin_applier.py` |
 | glibc | 2.28 | the VS Code server that Microsoft's CLI downloads for `serve-web`; below it the module reads as one the machine cannot run | `min_version` of the Linux entries in `hub/neutrino_hub/data/manifests/vscode.json` |
 | glibc | 2.28, VS Code's `min_version` | the Node.js build CloudCLI runs on | `min_version` of the Linux entries in `hub/neutrino_hub/data/manifests/cloudcli.json` |
+| glibc, libstdc++ | glibc 2.28 and `GLIBCXX_3.4.21` | code-server's standalone release builds, the only builds the module installs; on macOS they name no minimum beyond the agent's own; no Windows build is offered | `min_version` of the Linux entries in `hub/neutrino_hub/data/manifests/code_server.json` |
 
 ## What the client's window loads
 
