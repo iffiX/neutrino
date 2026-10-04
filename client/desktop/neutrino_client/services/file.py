@@ -6,7 +6,9 @@ hub. Mount attaches, Unmount detaches. The privileged part of a mount is the
 platform's: on Linux it goes through the root helper under ``pkexec``.
 
 A record in the store is the hub and entry a share came from, the login and
-the path this person typed, nothing more: what is attached is this run's
+the path this person typed, nothing more. Where the system places a volume
+itself, on macOS, the path is empty until the attach answers with the mount
+point, and empty again once it is detached. What is attached is this run's
 own. The reconcile remounts what this run attached and lost, which is what
 brings a share back after the network dropped; a record from an earlier run
 waits for the person to ask. A mount takes the host and share its entry
@@ -195,7 +197,7 @@ class FileServiceHandler(ServiceTypeHandler):
         records that name no hub and their credentials."""
         with self._lock:
             records = sorted(self._store.mounts().items())
-        for _record_id, record in records:
+        for record_id, record in records:
             location = str(record.get("path", ""))
             try:
                 if not self._platform.is_share_attached(location=location):
@@ -204,6 +206,8 @@ class FileServiceHandler(ServiceTypeHandler):
             except (ShareAttachError, PlatformUnsupportedError) as error:
                 self._log(f"could not unmount {location}: {error}")
                 continue
+            with self._lock:
+                self._forget_volume(record_id)
             self._log(f"unmounted {location} after an unclean exit")
         with self._lock:
             for record_id in self._store.drop_hubless_mounts():
@@ -228,7 +232,7 @@ class FileServiceHandler(ServiceTypeHandler):
             payload: The entry's payload, naming the host and share.
             username: The share's own username.
             password: The share's own password; it stays on this machine.
-            path: The mount point.
+            path: The mount point; ignored where the system places a volume.
 
         Returns:
             Empty on success, ``{"code", "params"}`` on a refusal;
@@ -241,14 +245,14 @@ class FileServiceHandler(ServiceTypeHandler):
         refusal = self._tooling_refusal()
         if refusal is not None:
             return refusal
-        location = os.path.normpath(path)
+        location = "" if self._is_volume() else os.path.normpath(path)
         with self._lock:
             refusal = self._platform.prepare_mount_location(location=location)
             if refusal is not None:
                 return refusal
             for old_id, old in list(self._store.mounts().items()):
                 if old.get("hub_id") != hub_id or old.get("entry_id") != entry_id:
-                    if str(old.get("path", "")) == location:
+                    if location and str(old.get("path", "")) == location:
                         return {"code": "mountpoint_in_use", "params": {"path": path}}
                     continue
                 old_location = str(old.get("path", ""))
@@ -285,7 +289,7 @@ class FileServiceHandler(ServiceTypeHandler):
             self._problems.pop(record_id, None)
             self._stages[record_id] = "queued"
             self._attached.add(record_id)
-            self._log(f"queued {_share_url(record)} for {location}")
+            self._log(f"queued {_share_url(record)} for {location or 'a volume'}")
         self._wakeup.set()
         self._on_change()
         return {}
@@ -335,6 +339,7 @@ class FileServiceHandler(ServiceTypeHandler):
                 return _share_refusal(error)
             except PlatformUnsupportedError:
                 return {"code": "unsupported_platform", "params": {}}
+            self._forget_volume(record_id)
             self._problems.pop(record_id, None)
             self._stages.pop(record_id, None)
             self._attached.discard(record_id)
@@ -428,6 +433,11 @@ class FileServiceHandler(ServiceTypeHandler):
         if not os.path.isfile(self._credentials_path(record_id)):
             self._problems[record_id] = {"code": "credentials_missing", "params": {}}
             return
+        if location and self._is_volume():
+            with self._lock:
+                self._forget_volume(record_id)
+            location = ""
+            record = dict(record, path="")
         refusal = self._platform.prepare_mount_location(location=location)
         if refusal is not None:
             self._problems[record_id] = refusal
@@ -442,7 +452,7 @@ class FileServiceHandler(ServiceTypeHandler):
         self._stages[record_id] = "mounting"
         self._on_change()
         try:
-            self._platform.attach_share(
+            attached_at = self._platform.attach_share(
                 share_url=_share_url(record),
                 location=location,
                 credentials_path=self._credentials_path(record_id),
@@ -460,6 +470,10 @@ class FileServiceHandler(ServiceTypeHandler):
         except PlatformUnsupportedError:
             self._stages.pop(record_id, None)
             return
+        if attached_at and attached_at != location:
+            with self._lock:
+                self._place_record(record_id, attached_at)
+            location = attached_at
         self._problems.pop(record_id, None)
         self._stages.pop(record_id, None)
         self._log(f"mounted {_share_url(record)} at {location}")
@@ -498,6 +512,7 @@ class FileServiceHandler(ServiceTypeHandler):
                 if self._platform.is_share_attached(location=location):
                     self._platform.detach_share(location=location)
                     detached += 1
+                self._forget_volume(record_id)
             except (ShareAttachError, PlatformUnsupportedError) as error:
                 self._log(f"could not unmount {location}: {error}")
             self._stages.pop(record_id, None)
@@ -517,6 +532,21 @@ class FileServiceHandler(ServiceTypeHandler):
         if is_ready:
             return None
         return {"code": "mount_tooling_missing", "params": {}}
+
+    def _is_volume(self) -> bool:
+        """Whether the system places a share's mount point itself."""
+        return self._platform.mount_location_shape == "volume"
+
+    def _place_record(self, record_id: str, path: str) -> None:
+        """Write a record's path back to the store; under the lock."""
+        record = self._store.mounts().get(record_id)
+        if record is not None and record.get("path") != path:
+            self._store.set_mount(record_id, dict(record, path=path))
+
+    def _forget_volume(self, record_id: str) -> None:
+        """Empty a detached record's path where the system placed it; under the lock."""
+        if self._is_volume():
+            self._place_record(record_id, "")
 
     def _credentials_path(self, record_id: str) -> str:
         return os.path.join(self._credentials_dir, f"{record_id}.credentials")

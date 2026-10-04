@@ -1046,9 +1046,46 @@ def test_the_ai_switch_and_configure_wait_for_any_switch_running():
 
 
 def test_a_mount_waits_for_a_user_name_and_a_path():
-    mount = body_of("mountButton")
-    assert "!staged.username || !staged.path" in mount
+    assert "!isMountFormFilled(staged, state)" in body_of("mountButton")
+    assert "!isMountFormFilled(staged, state)" in body_of("drawFileEntry")
+    filled = body_of("isMountFormFilled")
+    assert "!!staged.username && (!!staged.path || !asksMountPlace(state))" in filled
     assert "t('ui.reason.mount_form')" in body_of("drawFileEntry")
+
+
+def test_a_volume_form_asks_for_no_place_and_names_the_server():
+    assert "!== 'volume'" in body_of("asksMountPlace")
+    default = body_of("mountDefaultPath")
+    assert "if (!asksMountPlace(state)) return '';" in default
+    form = body_of("drawFileForm")
+    assert "} else if (!asksMountPlace(state)) {" in form
+    assert "form.appendChild(volumeCaptionLine(server));" in form
+    caption = body_of("volumeCaptionLine")
+    assert "t('ui.mount_volume_caption', { server: server })" in caption
+    files = body_of("drawFileEntry")
+    assert "drawFileForm(staged, state, payload.host || ''," in files
+    assert "t('ui.reason.mount_form_volume')" in files
+    assert EN_WORDS["ui.mount_volume_caption"] == "Appears in the Finder under {server}"
+    assert (
+        EN_WORDS["ui.reason.mount_form_volume"] == "Enter a user name in Config first."
+    )
+    assert "path" not in EN_WORDS["ui.reason.mount_form_volume"]
+
+
+def test_a_volume_shows_no_path_before_the_system_mounted_it():
+    files = body_of("drawFileEntry")
+    assert "path: record && asksMountPlace(state) ? record.path" in files
+    assert "path: asksMountPlace(state) ? record.path : ''," in body_of("mountButton")
+    record = body_of("drawMountRecord")
+    assert "path.textContent = record.path\n    ? record.path" in record
+    assert "/Volumes" not in PAGE_JS
+
+
+def test_a_mounted_volume_names_the_server_the_finder_lists_it_under():
+    files = body_of("drawFileEntry")
+    assert "if (!asksMountPlace(state) && each.is_attached && each.path) {" in files
+    assert "noteLine(t('ui.mount_finder', { server: each.host || '' }))" in files
+    assert EN_WORDS["ui.mount_finder"] == "In the Finder it is under {server}."
 
 
 def test_a_desktop_connects_once_while_no_viewer_runs():

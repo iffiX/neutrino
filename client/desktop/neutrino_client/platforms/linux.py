@@ -123,13 +123,16 @@ class LinuxPlatform(ClientPlatform):
 
     def attach_share(
         self, *, share_url: str, location: str, credentials_path: str
-    ) -> None:
+    ) -> str:
         """Mount a CIFS share through the root helper under ``pkexec``.
 
         Args:
             share_url: The share, as ``//host/name``.
             location: The mount point.
             credentials_path: The credentials file.
+
+        Returns:
+            The mount point given.
 
         Raises:
             ShareAttachError: ``mount_not_authorized`` when the person
@@ -150,6 +153,7 @@ class LinuxPlatform(ClientPlatform):
             ],
             failure_code="mount_failed",
         )
+        return location
 
     def detach_share(self, *, location: str) -> None:
         """Unmount the share at a location through the root helper.

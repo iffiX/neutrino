@@ -19,6 +19,7 @@ from neutrino_client.exceptions import (
     PlatformUnsupportedError,
 )
 from neutrino_client.platforms.base import ClientPlatform
+from neutrino_client.platforms.darwin import DarwinPlatform
 from neutrino_client.platforms.linux import LinuxPlatform
 from neutrino_client.platforms.windows import WindowsPlatform
 
@@ -82,10 +83,11 @@ def test_linux_shares_the_posix_mount_location_judgment():
     assert LinuxPlatform.prepare_mount_location is ClientPlatform.prepare_mount_location
 
 
-def test_mount_locations_are_paths_except_windows_drive_letters():
+def test_mount_locations_are_paths_drive_letters_on_windows_volumes_on_macos():
     assert ClientPlatform.mount_location_shape == "path"
     assert LinuxPlatform.mount_location_shape == "path"
     assert WindowsPlatform.mount_location_shape == "drive_letter"
+    assert DarwinPlatform.mount_location_shape == "volume"
 
 
 def test_the_posix_mount_preparation_wants_an_empty_directory(tmp_path):

@@ -135,8 +135,9 @@ class ClientPlatform:
     """
 
     os_name = ""
-    # What a mount location is on this platform: a directory path, or a
-    # drive letter on Windows. Surfaces grey the directory browser off it.
+    # What a mount location is on this platform: a directory path, a drive
+    # letter on Windows, or a volume the system places on macOS. Surfaces
+    # draw the form's place control off it.
     mount_location_shape = "path"
 
     def config_dir(self) -> str:
@@ -248,13 +249,17 @@ class ClientPlatform:
 
     def attach_share(
         self, *, share_url: str, location: str, credentials_path: str
-    ) -> None:
+    ) -> str:
         """Attach a published share at a location with a kept login.
 
         Args:
             share_url: The share, as ``//host/name``.
-            location: Where the share appears.
+            location: Where the share appears; empty where the system picks.
             credentials_path: The credentials file the login is read from.
+
+        Returns:
+            Where the share is attached: the location given, or the one the
+            system picked.
 
         Raises:
             PlatformUnsupportedError: When the platform cannot attach.

@@ -333,6 +333,8 @@ class FakeClientPlatform(ClientPlatform):
         self.detach_calls = []
         self.attach_error = None
         self.detach_error = None
+        # Where the system places a volume when no location is given.
+        self.volume_location = ""
         self.has_tooling = True
         self.opened_urls = []
         self.started = []
@@ -376,7 +378,7 @@ class FakeClientPlatform(ClientPlatform):
     def has_mount_tooling(self) -> bool:
         return self.has_tooling
 
-    def attach_share(self, *, share_url, location, credentials_path) -> None:
+    def attach_share(self, *, share_url, location, credentials_path) -> str:
         self.attach_calls.append(
             {
                 "share_url": share_url,
@@ -386,7 +388,9 @@ class FakeClientPlatform(ClientPlatform):
         )
         if self.attach_error is not None:
             raise self.attach_error
-        self.attached.add(location)
+        attached_at = location or self.volume_location
+        self.attached.add(attached_at)
+        return attached_at
 
     def detach_share(self, *, location: str) -> None:
         self.detach_calls.append(location)

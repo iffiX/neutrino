@@ -229,13 +229,16 @@ class WindowsPlatform(ClientPlatform):
 
     def attach_share(
         self, *, share_url: str, location: str, credentials_path: str
-    ) -> None:
+    ) -> str:
         """Map a share in this person's own session.
 
         Args:
             share_url: The share, as ``//host/name``.
             location: The drive letter.
             credentials_path: The credentials file the login is read from.
+
+        Returns:
+            The drive letter given.
 
         Raises:
             ShareAttachError: ``credentials_missing`` without the file; the
@@ -260,6 +263,7 @@ class WindowsPlatform(ClientPlatform):
                 SHARE_REFUSALS.get(code, "mount_failed"), detail=win32.win_error(code)
             )
         self._announce_drive(location, SHCNE_DRIVEADD)
+        return location
 
     def detach_share(self, *, location: str) -> None:
         """Take the mapping at a drive letter down, in this session.
