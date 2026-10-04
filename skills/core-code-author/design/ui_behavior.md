@@ -348,6 +348,77 @@ Counts and names go in through placeholders — `{healthy} of {total} reachable`
 rather than concatenation, because a sentence assembled from fragments has an
 English word order baked into it ([ui_text.md](ui_text.md), "Localization").
 
+## Lists of short values
+
+A list of short values a person types is a `StringListEditor`
+(`components/string_list_editor.tsx`): the values as removable chips, then an
+input with an **Add** button that appends the typed value as the last row. The
+container panel's ports, volumes and environment are the reference, and the
+same component is every such list; none gets a table or a second idiom.
+
+| Rule | Reason |
+| --- | --- |
+| The list is part of its panel's draft: an added or removed row lights the frame, and the apply bar writes the whole list. | A list inside a frame stages, as "Inline forms" states. |
+| A row keeps the order it was added in, and that order is the order the backend uses. Reordering is removing a row and adding it again. | The chips have no drag handle, and the order is rarely changed. |
+| A blank row or a duplicate is dropped at the add; what the value means is checked by the backend, and its refusal shows on the apply bar. | The editor keeps the list tidy and the backend owns the rules. |
+
+Three lists of resolvers use it, each row one address or `<address>:<port>`,
+an IPv6 address in brackets when it has a port; the page sends each row as
+`{address, port}` with `port` 53 when the row names none:
+
+| List | Where | While empty |
+| --- | --- | --- |
+| `remote_dns` | the Proxy page, beside the direct list | refused at apply, `resolver_required {field}` |
+| `direct_dns` | the Proxy page | `Follows the network's resolvers` / 「跟随网络层的解析器」 |
+| `wan.dns` | a static uplink's form on the Network page, under its address, prefix and gateway | `Built-in resolvers: 223.5.5.5, 119.29.29.29` / 「使用内置解析器 223.5.5.5、119.29.29.29」 | <!-- scan: allow -->
+
+A DHCP uplink's form shows no list; in its place a hint line names the
+resolvers its lease gives, from `link.lease_dns`.
+
+## Terms before a module opens
+
+A module whose publisher asks for acceptance of its terms opens on a machine
+only after the person accepts them for that machine. VS Code is the one such
+module, and its tab on the Modules page is the reference:
+
+| Step | What the tab shows |
+| --- | --- |
+| Not accepted on this machine | One notice, `ui.vscode.terms_notice`, and one `button--primary`, **Open and accept the terms**. Nothing else of the tab is drawn: no state line, no install, no instances. |
+| The press | Opens `terms_url` in a new tab (`target="_blank"`, `rel="noreferrer"`) and, in the same press, sends `POST /api/agent/module/vscode/terms/set {device_id, is_accepted: true}`. The press is the acceptance; no dialog follows. |
+| Accepted | The notice stays at the top with its button disabled and reading **Terms accepted**, and the tab opens below it as before. |
+
+The record is per machine, `terms_accepted_at` in that machine's
+`config/devices/<id>/vscode.json` ([protocol.md](protocol.md),
+`/api/agent/module`), so each machine's tab asks once. A failed write
+shows in place under the button, which stays live. CloudCLI, Gitea and
+code-server tabs carry no notice ([ui_text.md](ui_text.md), "Software the
+owner installs").
+
+## The relay card on the Access page
+
+The **Access** page draws the ways in as cards in the engine panel:
+NetBird, EasyTier, Relay. The relay's card is shaped like the other two: its
+switch stages into the engine panel's draft and that panel's apply bar turns
+it on or off, and pressing the card shows the relay's section under the
+panel ([ui_text.md](ui_text.md), "The relay's words").
+
+The relay's section holds two panels:
+
+| Panel | Kind | Holds |
+| --- | --- | --- |
+| Status | visualizing, read from `GET /api/hub/overlay/relay` on the page's 10 s cadence | the state as a `StatusDot` with its word; **Address for clients**, the `url` in mono; **Host key**, the `host_key_fingerprint` in mono with **Forget host key** beside it while one is recorded; `last_error` in mono under the state while it is not empty; a link to the guide page **What to set up on your server** |
+| Settings | configurable, a `settings_group` with its own apply bar | **Server**, **SSH port**, **Account**, **SSH key** and **Public port**. **SSH key** is a picker of the Credentials page's SSH keys, with a link to that page when it holds none. The bar's label is **Apply relay**, its hint `ui.overlay.relay_apply_hint`, and its warning `ui.overlay.relay_apply_warning` while the relay is `connected` |
+
+The state's tone follows "Status dots and badges": `connected` is `ok`,
+`connecting` is `warn`, `disabled` and `not_configured` are `idle`, and every
+other state is `error`.
+
+**Forget host key** asks through `useConfirm`: the title `Forget the host
+key` / 「忘记主机密钥」, the body `The next connection records the key the
+server presents.` / 「下次连接时记录服务器出示的密钥。」, and the button
+**Forget** / **忘记**. It acts at once, outside the settings draft, the
+way a revocation does ("When an effect happens").
+
 ## An interaction this document does not cover
 
 Before designing one, establish that it is not generic. **Where an established

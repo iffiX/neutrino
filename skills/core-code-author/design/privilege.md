@@ -190,6 +190,24 @@ Windows keeps the password with the task from then on.
 CloudCLI runs the same way, as the account it serves and never as root
 ([agent.md](agent.md), "CloudCLI").
 
+## The relay's ssh runs as root and opens no session
+
+The relay's `ssh` is a root process: the unit `neutrino_hub_relay.service` on
+Linux, and a child of the root or SYSTEM service on macOS and Windows. It
+reads a key file that only root reads, under the state root
+([files.md](files.md)), and it dials one server the person named.
+
+| Rule | Reason |
+| --- | --- |
+| The start line is rendered from `config/overlay/relay.json`, and a `host` or `account` that is empty, holds whitespace or starts with `-`, or an `account` that holds `@`, is refused before it is stored. | Either value reaches a root command line, where a leading `-` is read as an option. |
+| The line carries `-N`, `-T`, `BatchMode=yes` and `IdentitiesOnly=yes`. | The process opens no session, allocates no terminal, asks no question, and offers the one key it was given. |
+| The key file holds the key without its passphrase, mode 0600, and is deleted when the relay stops. | `BatchMode` cannot type a passphrase, and the vault keeps the sealed copy. |
+
+On the server, the key is limited by the `authorized_keys` options the
+person sets, `restrict,port-forwarding,permitlisten=` the public port, so the
+key opens that one listener and nothing else
+([network.md](modules/network.md), "The VPS is the person's").
+
 ## Where privilege is allowed to live
 
 Root-requiring calls stay in `neutrino_hub/system/` and in each module's `ops` or `apply`

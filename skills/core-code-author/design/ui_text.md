@@ -138,6 +138,85 @@ and stays.
 text as it is, and the text it becomes or `deleted`. Both languages change in
 the same table.
 
+## Names that are fixed
+
+A fixed name is spelled one way on every surface: the panel, the desktop
+client, the Android app, the docs and the release notes. Each language has
+its own word, and a string in one language carries no word of the other.
+
+| Thing | English | Chinese | Rule |
+| --- | --- | --- | --- |
+| the hub | hub, this hub | 中枢，这台中枢 | English never writes 中枢 and Chinese never writes `hub`. Neither calls the hub a gateway (网关): that word names the AI gateway, the side gateway mode and a network's router. |
+| the product | Neutrino | 微子 | Neutrino is described as remote access to a person's own machines (远程访问). No surface calls it a VPN or a proxy (代理, 翻墙); the proxy is one feature, named on its own page. |
+| the page of the ways in | **Access** | **外部访问** | The page, its sidebar entry and every link to it use this name. The configuration, the routes and the protocol keep `overlay`, and so do the catalog keys (`ui.nav.overlay`, `ui.overlay.*`). |
+| the third way in | Relay | 中继 | The card, the client's hub row and the docs use it. The server it reaches is "your server" (你的服务器) in a label and VPS in the guide. |
+
+The sidebar's lines under the two renamed entries:
+
+| Key | English | Chinese |
+| --- | --- | --- |
+| `ui.nav.overlay`, `ui.overlay.title` | Access | 外部访问 |
+| `ui.nav.overlay_description` | Reaching this hub from outside | 从外面连回这台中枢 |
+| `ui.nav.modules_description`, `ui.nav.modules_description_other` | Features configured on each machine | 每台机器配置的功能 |
+
+A docs page follows this table where the term list in
+[doc-author](../../doc-author/SKILL.md) offers a choice.
+
+## Software the owner installs
+
+Gitea, VS Code, code-server and CloudCLI are programs the machine's owner
+installs on their own machine through a module. The text rules follow from
+that:
+
+| Rule | Example |
+| --- | --- |
+| A module page that names third-party software says that the owner installs it on that machine. | `You install VS Code Server on this machine under Microsoft's license terms.` |
+| A module page names the publisher's terms only where the publisher asks for acceptance; VS Code is the one such module ([ui_behavior.md](ui_behavior.md), "Terms before a module opens"). CloudCLI's page carries no licence line. | |
+| No surface says the hub downloads, provides, bundles or distributes third-party software, in either language (代为下载, 提供, 自带). A sentence about the mechanism, in a standard page or a code comment, makes the module's installer its subject. | `The module's installer fetches the archive.`, never `The hub downloads VS Code.` |
+| The **About** card on the Settings page credits only the components the hub's own package carries on that system and in that edition, such as xray, CLIProxyAPI, NetBird, EasyTier and tun2socks. Gitea, VS Code, code-server and CloudCLI are never on it. | |
+
+The VS Code notice and its button:
+
+| Key | English | Chinese |
+| --- | --- | --- |
+| `ui.vscode.terms_notice` | You install VS Code Server on this machine under Microsoft's license terms. Open them to accept them and use VS Code here. | 你在这台机器上按微软的许可条款安装 VS Code Server。打开条款即接受，之后才能在这里使用 VS Code。 |
+| `ui.vscode.terms_accept` | Open and accept the terms | 打开并接受条款 |
+| `ui.vscode.terms_accepted` | Terms accepted | 已接受条款 |
+
+## The relay's words
+
+| Key | English | Chinese |
+| --- | --- | --- |
+| `ui.overlay.relay_title` | Relay | 中继 |
+| `ui.overlay.summary_relay` | Through a server you own, over SSH | 经你自己的服务器，用 SSH 转发 |
+| `ui.overlay.relay_host` | Server | 服务器 |
+| `ui.overlay.relay_ssh_port` | SSH port | SSH 端口 |
+| `ui.overlay.relay_account` | Account | 账户 |
+| `ui.overlay.relay_key` | SSH key | SSH 密钥 |
+| `ui.overlay.relay_public_port` | Public port | 对外端口 |
+| `ui.overlay.relay_address` | Address for clients | 客户端连接地址 |
+| `ui.overlay.relay_host_key` | Host key | 主机密钥 |
+| `ui.overlay.relay_forget_host_key` | Forget host key | 忘记主机密钥 |
+| `ui.overlay.relay_apply` | Apply relay | 应用中继 |
+| `ui.overlay.relay_apply_hint` | Saves the relay and connects it again. | 保存中继设置并重新连接。 |
+| `ui.overlay.relay_apply_warning` | Clients connected through the relay disconnect and connect again. | 经中继连着的客户端会断开再重连。 |
+| `ui.overlay.relay_guide` | What to set up on your server | 服务器上要做的设置 |
+
+The state words, `state.relay_<code>`:
+
+| `state` | English | Chinese |
+| --- | --- | --- |
+| `disabled` | Off | 已关闭 |
+| `not_configured` | Not configured | 未配置 |
+| `vault_locked` | Vault locked | 保管库已锁定 |
+| `connecting` | Connecting | 连接中 |
+| `connected` | Connected | 已连上 |
+| `port_closed` | Public port closed | 对外端口不通 |
+| `auth_failed` | Authentication failed | 认证失败 |
+| `host_key_changed` | Host key changed | 主机密钥已变 |
+| `forward_refused` | Forward refused | 服务器不让对外监听 |
+| `unreachable` | Server unreachable | 连不上服务器 |
+
 ## Localization
 
 The panel and the client page speak English and Simplified Chinese; the

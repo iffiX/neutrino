@@ -30,7 +30,7 @@ nobody in that description can cross.
 
 | Mode | Addressing | What the machine is | What the hub owns |
 | --- | --- | --- | --- |
-| `server` | the machine's own | somebody's machine — a VPS, a laptop | **nothing**: no port holds a role, and it answers on the address each already has |
+| `server` | the machine's own | somebody's machine on the LAN, a desktop or a laptop | **nothing**: no port holds a role, and it answers on the address each already has |
 | `side_gateway` | the machine's own | a machine on a network somebody else routes | **nothing**: forwarding, masquerade and DNS are all in our own nftables and dnsmasq |
 | `router` | the hub's | this box *is* the router | the network stack |
 
@@ -120,7 +120,7 @@ udp dport { 51820 } accept          # where the overlay's peers knock
 
 A served network is exposed by definition — it is where the panel, the leases
 and DNS are reached — and an uplink is closed, because remote access arrives
-over the overlay. Opening an uplink opens *everything*, which is why there is
+over an overlay or through the relay. Opening an uplink opens *everything*, which is why there is
 no "SSH from the WAN" switch: a per-port list on the one interface facing the
 internet is a list that gets half right, and the honest control is the whole
 interface with what it costs written beside it.
@@ -233,8 +233,8 @@ chain is therefore rendered at `mangle + 1`: it runs after the daemon's
 whatever the order of reloads, and the mark it sets is the one that stands.
 
 `server` and `side_gateway` start with every interface open. That is what the
-machine was already doing before the hub arrived, and a VPS that answers on
-nothing after an install is a VPS nobody can reach.
+machine was already doing before the hub arrived, and a machine reached over
+SSH that answers on nothing after an install is a machine nobody can reach.
 
 ### Outside Linux, the system firewall
 
@@ -286,20 +286,193 @@ hub's `fwmark` rule at priority 100 for table 100; which of them the kernel
 reads first for a packet from each overlay is measured on a running box, not
 assumed.
 
+## The ways in from outside
+
+A way in is how a client or an agent away from the hub's LAN reaches the
+agent port. The hub offers three: NetBird, EasyTier and the relay. The panel
+draws them on one page, **Access** (外部访问 in Chinese), as three cards in
+that order; the configuration, the routes and the protocol keep the word
+`overlay` ([ui_text.md](../ui_text.md), "Names that are fixed").
+
+| Rule | Reason |
+| --- | --- |
+| The hub stands on the LAN of the machines it manages and is not placed on a public address. No way in needs an uplink exposed, and from outside a person opens the panel through a client's **Panel** entry. | The hub dials every machine's services on its own LAN for the clients; a hub on a public address is a panel and an agent port open to every scanner on the internet. |
+| Every way in reaches the one agent port, and the link's and the state's `urls` hold one address per way in. | A peer tries the set in turn and pins one fingerprint, so a way in adds an address and nothing else. |
+| The served networks stay offered as routes on both overlay engines: the NetBird page names them for the routing peer the person sets up in its console, and the EasyTier form lists them to export. The hub withdraws none. | A client reaches a published service as a stream through the hub and needs no route. A route reaches every port of a machine, which is the advanced use the person chooses. |
+
+## The relay, the third way in
+
+The relay is a reverse SSH forward from the hub to a server the person owns,
+called the VPS on this page. The hub logs in to the VPS with one SSH key from
+the Credentials page and has the VPS's sshd listen on a public port; every
+connection to that port reaches the hub's agent port on loopback. TLS and the
+fingerprint pin run end to end, so the VPS forwards ciphertext.
+
+`config/overlay/relay.json` holds the relay:
+
+| Key | Holds |
+| --- | --- |
+| `is_enabled` | whether the relay runs; written by the **Access** page's switch together with the overlay engines' |
+| `host` | the VPS's name or address |
+| `ssh_port` | its sshd's port, 22 by default |
+| `account` | the account the hub logs in as |
+| `key_id` | the id of an SSH key on the Credentials page, the same key a device's `ssh.key_id` names |
+| `public_port` | the port the VPS listens on for peers, 8443 by default |
+
+The relay is configured when `host`, `account` and `key_id` are set and the
+key exists. `host` and `account` reach a command line that runs as root, so a
+value that is empty, holds whitespace or starts with `-`, and an `account`
+holding `@`, is refused at save.
+
+### What the hub runs
+
+The hub keeps one `ssh` process running while the relay is on and
+configured: the unit `neutrino_hub_relay.service` on Linux, and a child of the
+supervising service on macOS and Windows. The start line is rendered from
+`relay.json`; on Linux it is the drop-in
+`/etc/systemd/system/neutrino_hub_relay.service.d/arguments.conf`, and on
+macOS and Windows the supervisor holds it as it holds EasyTier's:
+
+```text
+ssh -N -T -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3
+    -o ConnectTimeout=15 -o BatchMode=yes -o IdentitiesOnly=yes
+    -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=<state>/relay/known_hosts
+    -i <state>/relay/key -p <ssh-port>
+    -R 0.0.0.0:<public-port>:127.0.0.1:<agent-port> <account>@<host>
+```
+
+`<state>` is the hub's state root ([files.md](../files.md)), `<agent-port>` is
+`agent_listen_port`, and the other placeholders are the `relay.json` keys of
+the same names. The program is the system's OpenSSH client: `ssh` on
+Linux and macOS, `%SystemRoot%\System32\OpenSSH\ssh.exe` on Windows. A process
+that exits is started again: by the unit's `RestartSec=10` on Linux, and on
+macOS and Windows by the supervisor's backoff, `SYSTEM_CHILD_RESTART_MIN_S` 1
+doubled up to `SYSTEM_CHILD_RESTART_MAX_S` 60.
+
+| File | Written | Holds |
+| --- | --- | --- |
+| `<state>/relay/key` | by the converge step from the vault, mode 0600; deleted when the relay stops | the private key in OpenSSH form, without the passphrase it was stored with |
+| `<state>/relay/known_hosts` | by `ssh` on its first connection, mode 0600 | the VPS's host key |
+
+A locked vault leaves the key file unwritten and the relay in `vault_locked`.
+A save that changes `host` or `ssh_port` deletes `known_hosts`, so the next
+connection records the new server's key. A recorded key that no longer
+matches stops every connection, and the card's **Forget host key** deletes
+the file.
+
+### The VPS is the person's
+
+The hub runs no command on the VPS and changes nothing there: `-N` opens no
+session and `-T` no terminal. The VPS's own setup is the person's: an account
+for the forward, `GatewayPorts clientspecified` in its sshd, the key in that
+account's `authorized_keys` behind
+`restrict,port-forwarding,permitlisten="<public-port>"`, and the public port
+open in the provider's firewall. A guide page lists these steps and sends the
+person to their provider's terms on forwarded traffic.
+
+### The states
+
+The hub checks the relay from outside. `OVERLAY_RELAY_CHECK_FIRST_S` 5
+seconds after the process starts, and every `OVERLAY_RELAY_CHECK_INTERVAL_S`
+60 seconds after that, it dials `<host>:<public-port>` itself, completes a
+TLS handshake within `OVERLAY_RELAY_CHECK_TIMEOUT_S` 10 seconds, and compares
+the certificate's SHA-256 with its own agent certificate's fingerprint. The
+check closes after the handshake and sends no request. The three constants
+are in `modules/overlay/constants.py`.
+
+| `state` | When |
+| --- | --- |
+| `disabled` | `is_enabled` is false |
+| `not_configured` | on, and `host`, `account` or `key_id` is missing, or the key is gone from the vault |
+| `vault_locked` | on and configured, and the vault cannot open the key |
+| `connecting` | `ssh` runs and no check has finished since it started |
+| `connected` | `ssh` runs and the last check met the hub's own certificate |
+| `port_closed` | `ssh` runs and the last check got no answer or another certificate: the VPS's sshd binds loopback only, or a firewall closes the port |
+| `auth_failed` | `ssh` exited after writing `Permission denied` |
+| `host_key_changed` | `ssh` exited after writing `REMOTE HOST IDENTIFICATION HAS CHANGED` or `Host key verification failed` |
+| `forward_refused` | `ssh` exited after writing `remote port forwarding failed`: the sshd refuses the forward, or the port is taken |
+| `unreachable` | `ssh` exited for any other reason: no answer, a refused connection, a name that does not resolve, a keepalive left unanswered |
+
+An exit is judged by the last lines `ssh` wrote to its standard error, which
+the hub reads from the unit's journal on Linux and from `relay.log` on macOS
+and Windows. Between an exit and the next start the state stays the exit's.
+The state view carries the last of those lines, or the failed check's
+reason, as `last_error`, and the recorded host key's fingerprint in OpenSSH's
+own form, `SHA256:<base64>`, as `host_key_fingerprint`.
+
+### The relay's address
+
+While the relay is on and configured, `https://<host>:<public-port>` is the
+last member of `urls`, in every link and in every agent's and client's state,
+whatever its state; an IPv6 host is written in brackets. A peer tries it like
+any other address and pins the same fingerprint. Turning the relay on or off
+and saving its settings run the converge step, which pushes every peer its
+new `urls`.
+
+A socket through the relay arrives at the agent port from `127.0.0.1`, so its
+scope is `link` ([protocol.md](../protocol.md), "The address a caller is
+given"). The relay's `client_count` on the **Access** page is the number of
+online clients whose socket comes from a loopback address.
+
+## The agent port's limits
+
+The agent port is reached through every way in, and through the relay every
+peer arrives from loopback. So no limit on the port is keyed by the peer's
+address: each one counts the whole port. The constants are in the hub's
+`modules/channel/constants.py`.
+
+| Limit | Constant | At the limit |
+| --- | --- | --- |
+| a TLS handshake's time | `CHANNEL_TLS_HANDSHAKE_TIMEOUT_S` 10 | the connection is closed |
+| the time from accept to an admitted `hello` | `CHANNEL_ADMISSION_TIMEOUT_S` 30 | the connection is closed; a `join` or `leave` request in flight counts toward that time |
+| connections that have not passed `hello` | `CHANNEL_UNADMITTED_MAX` 128 | the oldest of them is closed to make room for the new one |
+| channel sockets past `hello` | `CHANNEL_SOCKETS_MAX` 512 | the next `hello` is refused `channel_full {limit}`, which a peer retries as it retries any transient refusal |
+| failed admissions across the hub | `CHANNEL_ADMISSION_FAILURES_MAX` 30 within `CHANNEL_ADMISSION_WINDOW_S` 60 | `join` pauses, as the next paragraphs state |
+
+`CHANNEL_HELLO_TIMEOUT_S` 10, a socket's time from its upgrade to its
+`hello`, keeps the value the channel's timings table gives it
+([protocol.md](../protocol.md), "The timings").
+
+A failed admission is a `join` refused `ticket_spent` (an unknown, expired or
+spent ticket alike) or `role_mismatch`, a
+`hello` refused `binding_unknown` or `hello_invalid`, or a connection closed
+by either timeout. A protocol refusal, `channel_full`, a connection closed to
+make room and a connection that closes on its own are not counted.
+
+While the window holds `CHANNEL_ADMISSION_FAILURES_MAX` failures, every
+`join` is refused 409 `admission_paused {retry_after_s}` before its ticket is
+looked up, so no ticket is spent or tested; `retry_after_s` is the time until
+the oldest failure leaves the window. A `hello` is judged as always, so every
+bound agent and client with a valid token is admitted throughout. The pause
+holds back new enrolments only, and a ticket stays valid behind it.
+
+The cap on open handshakes closes no admitted socket. A flood that keeps
+`CHANNEL_UNADMITTED_MAX` handshakes open can close a reconnecting peer's
+handshake to make room; that peer tries again after its own backoff, and its
+binding is untouched.
+
+The numbers sit above a home's own load. One binding holds one socket, so 512
+sockets is far above the machines and clients one hub manages. After a hub
+restart every peer reconnects within its backoff and each handshake takes
+under a second, so 128 open handshakes is more than a home starts at once. A
+home's own failures are a removed device's one refused `hello` and a client's
+spent link, a few in an hour.
+
 ## The converge step
 
 Everything derived from the set of overlays, the network and the proxy is
 recomputed by one step, `PanelRuntime.converge_network`, and every writer
-calls it: an overlay switched on or off, the EasyTier settings, a NetBird
-join, leave or setup key, the Network page's writes, the Proxy page's apply,
+calls it: an overlay or the relay switched on or off, the EasyTier settings,
+the relay's settings or its forgotten host key, a NetBird join, leave or setup
+key, the Network page's writes, the Proxy page's apply,
 and the address sampler when an overlay's device or the channel's address set
 moved. It holds the router lock throughout, the lock the resident router unit
 takes, and runs seven steps in this order:
 
 | Step | What it does |
 | --- | --- |
-| 1 | The enabled engines start. An engine that was not running is given 20 seconds to hold an address before the step goes on. |
-| 2 | EasyTier is restarted only when the text it would start with, its network file and its unit drop-in, differs from the text on disk, or when it is not running. |
+| 1 | The enabled engines start. An engine that was not running is given 20 seconds to hold an address before the step goes on. The relay's key file is written and the relay starts when it is on and configured. |
+| 2 | EasyTier is restarted only when the text it would start with, its network file and its unit drop-in, differs from the text on disk, or when it is not running. The relay is restarted by the same test on its own drop-in, and when its key file changed. |
 | 3 | `RouterStateController.reconcile_locked()`: the firewall, the policy route, the interfaces. |
 | 4 | dnsmasq restarts only when its text changed. |
 | 5 | xray restarts only when its text changed or it is not running. |
@@ -310,9 +483,9 @@ On macOS and Windows step 2 compares the start line the supervisor holds in
 place of the drop-in, step 3 is the routing pass of "Outside Linux, the
 system firewall", and step 4 does not exist.
 
-The engines turned off stop after step 7. A client reaching the hub through
-one of them is handed the state that no longer names it while its socket
-still stands; the hub does not wait for it to answer. A step that fails
+The engines turned off stop after step 7, and so does the relay when it is
+off or no longer configured. A client reaching the hub through one of them is
+handed the state that no longer names it while its socket still stands; the hub does not wait for it to answer. A step that fails
 stops none of the steps after it, and the failures are raised together at
 the end.
 

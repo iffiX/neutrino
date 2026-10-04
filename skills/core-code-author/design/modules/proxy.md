@@ -177,7 +177,7 @@ an edition built without the proxy has the first layer alone.
 resolvers its lease names. A static uplink lists its own under its address,
 prefix and gateway, one row each. With several uplinks, each one's resolvers
 are used in the uplinks' order of priority. When an uplink names none, two
-built-in fallbacks answer: `223.5.5.5` and `119.29.29.29`. dnsmasq forwards
+built-in fallbacks answer: `223.5.5.5` and `119.29.29.29`. dnsmasq forwards <!-- scan: allow -->
 to these.
 
 **The proxy's resolvers** are two lists in `config/xray/routing.json`, one

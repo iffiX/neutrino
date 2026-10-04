@@ -43,6 +43,7 @@ of `clients.example.json` is ever a client.
 | `config/cliproxyapi/cliproxyapi.json` | `cliproxyapi.example.json` | yes: the AI gateway's client keys, device keys and the hub's own key, sealed |
 | `config/netbird/netbird.json` | `netbird.example.json` | yes: the reusable setup key clients join the overlay with, sealed |
 | `config/easytier/easytier.json` | `easytier.example.json` | yes: the mode, the network secret and the console address with its token, both sealed |
+| `config/overlay/relay.json` | `relay.example.json` | no: the relay's `is_enabled`, `host`, `ssh_port`, `account`, `public_port`, and `key_id`, the id of the SSH key in the vault |
 | `config/credentials/vault.json` | `vault.example.json` | yes — every sealed secret |
 | `config/devices/packages/*` | — | no (build artifacts, just large) |
 
@@ -58,6 +59,12 @@ stricter mode on the file hides nothing. On macOS and Windows no drop-in
 exists: the supervising service starts EasyTier with that line, and the
 process list shows it in the same way.
 
+The relay's start line is the drop-in
+`/etc/systemd/system/neutrino_hub_relay.service.d/arguments.conf`, mode 0644.
+It names the host, the ports, the account and the paths of the key file and
+the known-hosts file under the state root, and no secret: the key file is
+mode 0600 and readable by root alone.
+
 ## Credentials
 
 The secrets the gateway uses on your behalf are managed in the panel's
@@ -65,9 +72,10 @@ The secrets the gateway uses on your behalf are managed in the panel's
 
 **SSH keys** — pasted once, validated, and sealed in the vault as `ssh_key`
 objects; the key type and fingerprint stay readable beside the ciphertext.
-Devices reference a key by its id, so one key can serve many devices and the
-material never sits in a device's config. Deleting a device leaves its key in
-place; the tab warns before deleting a key still in use.
+Devices and the relay reference a key by its id, `key_id`, so one key can
+serve many devices and the material never sits in a device's config or in
+`relay.json`. Deleting a device leaves its key in place; the tab warns before
+deleting a key still in use, the relay's included.
 
 **Logins** — one account each, a password with an optional username, sealed
 as `login` objects. A device's SSH password and sudo password reference them
@@ -144,8 +152,11 @@ Each `*.example.json` is annotated field-by-field. The load-bearing ones:
   whose reference does not resolve is dropped from the rendered config.
 - **`routing.json`** — `is_geoip_split_enabled` (default `true`: CN domains/IPs
   go direct, everything else through JustMySocks), `is_local_proxy_enabled`
-  (the gateway's own traffic through the proxy — default `false`), and the DNS
-  servers for each side.
+  (the gateway's own traffic through the proxy, default `false`), and the
+  proxy's two resolver lists, `remote_dns` and `direct_dns`, each a list of
+  `{address, port}` asked in order. An empty `direct_dns` follows the
+  network's resolvers ([../design/modules/proxy.md](../design/modules/proxy.md),
+  "Where names resolve").
 - **`connections.json`** — `connections[]`, one per wireless network the box
   knows: `ssid`, `key_mgmt` (`WPA-PSK` | `SAE` | `NONE`), `psk` (the
   passphrase or the 64-character key derived from it), `priority` (higher wins
@@ -156,7 +167,8 @@ Each `*.example.json` is annotated field-by-field. The load-bearing ones:
   `side_gateway` or `server`: it says what the whole machine is, and whether
   the hub addresses its interfaces at all. Then one entry per interface with a
   `role`: `wan` (uplink, DHCP or static, optional cloned MAC for
-  MAC-registration networks), `lan` (served network with its address and DHCP
+  MAC-registration networks; a static uplink lists its resolvers in `dns`,
+  `[{address, port}]`, and with none listed the built-in fallbacks answer), `lan` (served network with its address and DHCP
   range — set `upstream_gateway` to an existing network's router to run as a
   side gateway, where that router is the box's way out over the same wire),
   `split` (an 802.1Q trunk), or `disabled`. Each also carries `is_exposed`:
@@ -179,6 +191,12 @@ Each `*.example.json` is annotated field-by-field. The load-bearing ones:
   runs that engine and no other; the next write stores `is_enabled` on every
   row. A file with no `overlays` at all reads as one enabled, exposed NetBird
   row.
+- **`relay.json`**, in `config/overlay/`: `is_enabled`, `host`, `ssh_port`
+  (default 22), `account`, `key_id` and `public_port` (default 8443). The
+  relay is configured when `host`, `account` and `key_id` are set; a missing
+  file reads as a relay that is off and not configured
+  ([../design/modules/network.md](../design/modules/network.md), "The relay,
+  the third way in").
 - **`identity.json`** — the hub's own `id` (a uuid generated at setup) and
   `name` (the hostname until the Settings page changes it); the `welcome`
   frame carries both, and `nhub reset all` deletes the file.
