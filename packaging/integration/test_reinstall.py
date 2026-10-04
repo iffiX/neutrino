@@ -16,6 +16,8 @@ Run with `--package`, on a box that is already set up; the runner does it as
 its own phase.
 """
 
+import time
+
 import pytest
 
 import machine_state
@@ -31,6 +33,44 @@ LIVE_UNITS = (
     "neutrino_hub_xray",
     "neutrino_hub_dnsmasq",
 )
+# The box's own agent, which setup starts last. The panel writes the device's
+# record and its rdp.json when that agent's first report lands, seconds after
+# setup returns, so the snapshot waits for it.
+LOCAL_AGENT_UNIT = "neutrino_agent"
+LOCAL_AGENT_REPORT_TIMEOUT_S = 180
+# How long config/ must hold still before it is snapshotted, and how often it
+# is read.
+CONFIG_SETTLE_S = 5
+POLL_INTERVAL_S = 1
+
+
+def wait_for_the_local_agent(panel) -> None:
+    """Return once the hub stored its own agent's first report and config/
+    holds still; at once on a box whose agent is not running.
+
+    Args:
+        panel: A signed-in client.
+
+    Raises:
+        AssertionError: If the report or the stillness does not come in
+            ``LOCAL_AGENT_REPORT_TIMEOUT_S``.
+    """
+    if not machine_state.is_active(LOCAL_AGENT_UNIT):
+        return
+    deadline = time.monotonic() + LOCAL_AGENT_REPORT_TIMEOUT_S
+    while not any(
+        row.get("is_hub") for row in panel.read("/hub/device/online")["devices"]
+    ):
+        assert time.monotonic() < deadline, "the local agent never reported"
+        time.sleep(POLL_INTERVAL_S)
+    held = machine_state.config_digests()
+    held_since = time.monotonic()
+    while time.monotonic() - held_since < CONFIG_SETTLE_S:
+        assert time.monotonic() < deadline, "config/ kept changing"
+        time.sleep(POLL_INTERVAL_S)
+        now = machine_state.config_digests()
+        if now != held:
+            held, held_since = now, time.monotonic()
 
 
 @pytest.fixture(scope="module")
@@ -46,6 +86,7 @@ def reinstalled(package, panel):
         What was true before, so the checks can compare against it.
     """
     assert panel.status("GET", "/hub/network") == 200
+    wait_for_the_local_agent(panel)
     before = {
         "config": machine_state.config_digests(),
         "started": {unit: machine_state.started_at(unit) for unit in HUB_UNITS},
