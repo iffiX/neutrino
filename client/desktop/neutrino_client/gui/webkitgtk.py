@@ -23,13 +23,12 @@ from neutrino_client import words
 from neutrino_client.constants import (
     CLIENT_DEFAULT_LANGUAGE,
     CLIENT_DESKTOP_NAME,
-    CLIENT_GUI_WINDOW_HEIGHT,
-    CLIENT_GUI_WINDOW_WIDTH,
     CLIENT_TRAY_OPEN_LABEL_KEY,
     CLIENT_TRAY_QUIT_LABEL_KEY,
     CLIENT_WEBKITGTK_ABIS,
 )
 from neutrino_client.exceptions import GuiShellUnavailableError
+from neutrino_client.gui.shell import window_size
 from neutrino_client.gui.tray_linux import LinuxTrayIcon
 
 # The distribution packages the import guard names when neither ABI's C
@@ -79,7 +78,7 @@ def open_window(
     GLib.set_prgname(CLIENT_DESKTOP_NAME)
     GLib.set_application_name(title)
     window = Gtk.Window(title=title)
-    window.set_default_size(CLIENT_GUI_WINDOW_WIDTH, CLIENT_GUI_WINDOW_HEIGHT)
+    window.set_default_size(*window_size(*_work_area(window)))
     if icon_path:
         try:
             window.set_icon_from_file(icon_path)
@@ -155,6 +154,21 @@ def open_window(
     if on_push_ready is not None:
         on_push_ready(push_state)
     Gtk.main()
+
+
+def _work_area(window) -> tuple:
+    """The work area of the monitor the window opens on: the primary one.
+
+    Returns:
+        ``(width, height)``; ``(0, 0)`` when GTK does not say.
+    """
+    try:
+        display = window.get_display()
+        monitor = display.get_primary_monitor() or display.get_monitor(0)
+        area = monitor.get_workarea()
+        return int(area.width), int(area.height)
+    except Exception:  # noqa: BLE001 - the default size stands without it
+        return 0, 0
 
 
 def _toolkit():

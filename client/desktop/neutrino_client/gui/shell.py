@@ -10,8 +10,34 @@ imports the client, and opening the window there refuses with a typed code
 naming what to install.
 """
 
-from neutrino_client.constants import CLIENT_DEFAULT_LANGUAGE
+from neutrino_client.constants import (
+    CLIENT_DEFAULT_LANGUAGE,
+    CLIENT_GUI_WINDOW_FRAME_ROOM,
+    CLIENT_GUI_WINDOW_HEIGHT,
+    CLIENT_GUI_WINDOW_WIDTH,
+)
 from neutrino_client.exceptions import GuiShellUnavailableError
+
+
+def window_size(work_width: int, work_height: int) -> tuple:
+    """The size the window opens at: its default, cut to the screen's work area.
+
+    Args:
+        work_width: The work area's width, 0 when the system did not say.
+        work_height: The work area's height, 0 when the system did not say.
+
+    Returns:
+        ``(width, height)``: each side the default, or the work area's side
+        less the frame's room where that is smaller.
+    """
+    sizes = []
+    for default, work in (
+        (CLIENT_GUI_WINDOW_WIDTH, work_width),
+        (CLIENT_GUI_WINDOW_HEIGHT, work_height),
+    ):
+        room = int(work or 0) - CLIENT_GUI_WINDOW_FRAME_ROOM
+        sizes.append(min(default, room) if room > 0 else default)
+    return sizes[0], sizes[1]
 
 
 def open_shell_window(
