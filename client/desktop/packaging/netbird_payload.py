@@ -223,14 +223,27 @@ def windows_components(wix_build, payload_dir: Path) -> tuple:
                     "Arguments": NETBIRD_SERVICE_ARGUMENTS,
                 },
             ),
+            # The stop is waited for, so netbird.exe is free before the
+            # files are written and no upgrade owes a restart. The start is
+            # not: a NetBird daemon already on the machine holds what this
+            # one needs, its service then cannot start, and that must not
+            # fail the install.
             wix_build.element(
                 "ServiceControl",
                 {
-                    "Id": "NetbirdServiceControl",
+                    "Id": "NetbirdServiceStop",
                     "Name": CLIENT_NETBIRD_SERVICE_WINDOWS,
-                    "Start": "install",
                     "Stop": "both",
                     "Remove": "uninstall",
+                    "Wait": "yes",
+                },
+            ),
+            wix_build.element(
+                "ServiceControl",
+                {
+                    "Id": "NetbirdServiceStart",
+                    "Name": CLIENT_NETBIRD_SERVICE_WINDOWS,
+                    "Start": "install",
                     "Wait": "no",
                 },
             ),

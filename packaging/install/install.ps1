@@ -169,6 +169,9 @@ function Install-Neutrino {
         if ($msiexec.ExitCode -notin $NeutrinoInstalledCodes) {
             throw "msiexec exited $($msiexec.ExitCode) installing $($asset.Name)."
         }
+        if ($msiexec.ExitCode -eq 3010) {
+            Write-Output "Windows needs a restart to finish installing $($asset.Name)."
+        }
     } finally {
         Remove-Item -Recurse -Force -LiteralPath $work -ErrorAction SilentlyContinue
     }

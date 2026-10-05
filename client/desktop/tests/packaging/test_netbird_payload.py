@@ -143,6 +143,29 @@ def test_the_windows_service_runs_the_binary_on_its_own_state(source):
     assert components["NetbirdDataFolder"].get("Directory") == "NETBIRDDATAFOLDER"
 
 
+def test_the_netbird_service_stop_is_waited_for_and_its_start_is_not(source):
+    """netbird.exe must be free before the files are written, or the upgrade
+    owes a restart; a start that fails because another NetBird holds the
+    machine must not fail the install."""
+    root = xml.etree.ElementTree.fromstring(source)
+    controls = {
+        element.get("Id"): element
+        for element in root.iter(f"{WXS}ServiceControl")
+        if element.get("Name") == "NeutrinoClientNetbird"
+    }
+
+    assert set(controls) == {"NetbirdServiceStop", "NetbirdServiceStart"}
+    stop, start = controls["NetbirdServiceStop"], controls["NetbirdServiceStart"]
+    assert (stop.get("Stop"), stop.get("Remove"), stop.get("Wait")) == (
+        "both",
+        "uninstall",
+        "yes",
+    )
+    assert stop.get("Start") is None
+    assert (start.get("Start"), start.get("Wait")) == ("install", "no")
+    assert start.get("Stop") is None and start.get("Remove") is None
+
+
 def test_the_macos_daemon_runs_unless_another_holds_the_socket(tmp_path):
     build_client_macos.write_daemons(tmp_path)
     plist = tmp_path / "Library/LaunchDaemons/com.neutrino.client.netbird.plist"

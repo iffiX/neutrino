@@ -352,3 +352,16 @@ def test_status_says_nothing_about_a_reinstall_that_never_happened(
     status_cli.main()
 
     assert "reinstall" not in capsys.readouterr().out
+
+
+def test_a_reinstall_that_finished_with_a_restart_owed_went_through(
+    tmp_path, monkeypatch, capsys
+):
+    serve_nothing(monkeypatch, tmp_path)
+    (tmp_path / AGENT_REINSTALL_RESULT_NAME).write_text(
+        json.dumps(dict(REINSTALL_RESULT, exit_code=3010))
+    )
+
+    status_cli.main()
+
+    assert "reinstall  ok at 2026-09-10T10:00:12Z" in capsys.readouterr().out

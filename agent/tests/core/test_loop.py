@@ -537,8 +537,14 @@ def test_a_failed_reinstall_reports_the_installers_tail_masked(
     assert params["output"] == "MSI (s) Note: 1: 1316\nhttp://host:8000/?tkn=***\n"
 
 
-def test_a_reinstall_that_went_through_is_no_error(tmp_path, config_path, monkeypatch):
-    (tmp_path / AGENT_REINSTALL_RESULT_NAME).write_text(json.dumps(REINSTALL_RESULT))
+@pytest.mark.parametrize("exit_code", [0, 3010])
+def test_a_reinstall_that_went_through_is_no_error(
+    tmp_path, config_path, monkeypatch, exit_code
+):
+    """3010 is an install that finished with a restart owed."""
+    (tmp_path / AGENT_REINSTALL_RESULT_NAME).write_text(
+        json.dumps(dict(REINSTALL_RESULT, exit_code=exit_code))
+    )
     agent, script = scripted_agent(config_path, monkeypatch, [welcomed_then_dropped()])
 
     agent.run_once()

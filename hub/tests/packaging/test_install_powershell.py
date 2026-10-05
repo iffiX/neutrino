@@ -191,10 +191,20 @@ def test_a_refusal_is_one_sentence(run, arguments, options, said):
     assert outcome.startswith(said)
 
 
-def test_a_reboot_owed_is_still_an_install(run):
+def test_a_reboot_owed_is_still_an_install_and_is_said_in_one_line(run):
     outcome, _asked = run(exit_code=3010)
 
     assert outcome == "ok"
+    assert (
+        "Windows needs a restart to finish installing "
+        "neutrino-hub-9.9.9-windows-amd64.msi."
+    ) in run.said
+
+
+def test_an_install_that_owes_no_restart_says_nothing_of_one(run):
+    run()
+
+    assert not any("restart" in line for line in run.said)
 
 
 def test_the_script_names_the_edition_of_its_tree():

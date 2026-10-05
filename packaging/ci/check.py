@@ -85,6 +85,25 @@ from pathlib import Path
 CHECK_LIMIT_S = 25 * 60
 CHECK_COMMAND_TIMEOUT_S = 5 * 60
 CHECK_MSIEXEC_TIMEOUT_S = 15 * 60
+# Every msiexec of a check runs with no interface and with the restart
+# suppressed by the property too: ``/norestart`` is not applied to every
+# form (``/f`` drops it), and a restart takes the runner away.
+CHECK_MSIEXEC_QUIET = ("/quiet", "/norestart", "REBOOT=ReallySuppress")
+# What msiexec answers when it finished but wants a restart, and the log
+# lines that name what held a file.
+CHECK_MSIEXEC_RESTART_CODES = (3010, 1641)
+CHECK_MSIEXEC_HELD_PATTERNS = (
+    "held in use",
+    "in use by",
+    "requires a system restart",
+    "FilesInUse",
+    "RESTART MANAGER",
+)
+# Where Windows keeps the files it is to replace at the next restart, and
+# the mark of one of ours among them.
+CHECK_PENDING_RENAMES_KEY = r"SYSTEM\CurrentControlSet\Control\Session Manager"
+CHECK_PENDING_RENAMES_VALUE = "PendingFileRenameOperations"
+CHECK_PENDING_RENAMES_MARK = "\\neutrino\\"
 CHECK_SNAPSHOT_TIMEOUT_S = 60
 CHECK_HEARTBEAT_S = 5 * 60
 # The runner keeps its job only while it reaches GitHub. The watchdog dials
@@ -179,6 +198,9 @@ CLIENT_WINDOWS_RELAUNCH_TASKS = "NeutrinoClientRelaunch_*"
 CLIENT_WINDOWS_RELAUNCH_PLANTED = "NeutrinoClientRelaunch_cicheck"
 CLIENT_WINDOWS_RELAUNCH_MARKER = Path(tempfile.gettempdir()) / "relaunch_marker.txt"
 CLIENT_WINDOWS_RELAUNCH_WAIT_S = 60
+# The repair, as the product's own reinstall runs it: the agent's self-update
+# writes the same properties.
+CLIENT_WINDOWS_REPAIR_PROPERTIES = ("REINSTALL=ALL", "REINSTALLMODE=vomus")
 CLIENT_WINDOWS_EASYTIER_SERVICE = "NeutrinoClientEasytier"
 # Every service a client package may register, stopped first by a rescue.
 CLIENT_WINDOWS_SERVICES = (
@@ -430,6 +452,7 @@ def check_agent_windows(msi: Path) -> None:
     _require_host("win32", "Windows")
     log = Path(tempfile.gettempdir()) / "agent_install.log"
     print(f"msiexec /i exited {_msiexec('/i', msi, log)}")
+    _check_no_pending_rename()
     _print_log(log, ("RemoveOldRustDesk", "return value 3"), 40)
     if AGENT_WINDOWS_FOLDER.is_dir():
         print(
@@ -600,6 +623,7 @@ def _client_windows_install(msi: Path) -> None:
             log, ("return value 3", "Error 19", CLIENT_WINDOWS_EASYTIER_SERVICE), 25
         )
         raise SystemExit("the client did not install")
+    _check_no_pending_rename()
 
 
 def _client_windows_installed(msi: Path) -> None:
@@ -662,9 +686,14 @@ def _client_windows_repair(msi: Path) -> None:
             "/f",
         ]
     )
-    _note("repair: msiexec /fa starting")
-    code = _msiexec("/fa", msi, _phase_log("repair"))
-    _note(f"repair: msiexec /fa exited {code}")
+    _note("repair: msiexec /i REINSTALL=ALL starting")
+    code = _msiexec(
+        "/i", msi, _phase_log("repair"), properties=CLIENT_WINDOWS_REPAIR_PROPERTIES
+    )
+    _note(f"repair: msiexec /i REINSTALL=ALL exited {code}")
+    if code != 0:
+        raise SystemExit(f"the reinstall exited {code}")
+    _check_no_pending_rename()
 
 
 def _client_windows_marker(msi: Path) -> None:
@@ -1019,6 +1048,7 @@ def check_hub_windows(msi: Path) -> None:
     if code != 0 or not nhub.is_file():
         _print_log(log, ("return value 3", "Error 19"), 25)
         raise SystemExit("the hub did not install")
+    _check_no_pending_rename()
     print(f"nhub {_answer([str(nhub), '--version'])}")
     if not _service_exists(HUB_WINDOWS_SERVICE):
         raise SystemExit("the hub's service is not registered")
@@ -1370,7 +1400,7 @@ def _remove_windows_product(name: str) -> None:
             if shown == name:
                 codes.append(code)
     for code in codes:
-        result = subprocess.run(["msiexec", "/x", code, "/quiet", "/norestart"])
+        result = subprocess.run(["msiexec", "/x", code, *CHECK_MSIEXEC_QUIET])
         print(f"msiexec /x {name} exited {result.returncode}")
 
 
@@ -1388,25 +1418,80 @@ def _require_host(platform: str, name: str) -> None:
         raise SystemExit(f"this check runs on {name}; this is {sys.platform}")
 
 
-def _msiexec(action: str, msi: Path, log: Path) -> int:
+def _msiexec(action: str, msi: Path, log: Path, properties: tuple = ()) -> int:
     """Run msiexec quietly with a verbose log, and return its exit code.
+
+    Args:
+        action: ``/i`` or ``/x``.
+        msi: The installer.
+        log: Where the verbose log goes.
+        properties: Public properties for this run, such as a reinstall's.
+
+    Returns:
+        msiexec's exit code.
 
     Raises:
         SystemExit: When it runs past ``CHECK_MSIEXEC_TIMEOUT_S``, after what
-            the machine is doing and the log's last lines are printed.
+            the machine is doing and the log's last lines are printed; or
+            when it finished wanting a restart, after the log's lines that
+            name what held a file: no install, upgrade or removal of ours may
+            need one.
     """
-    _say(f"msiexec {action} {msi.name}")
+    named = " ".join((action, *properties))
+    _say(f"msiexec {named} {msi.name}")
     try:
         code = subprocess.run(
-            ["msiexec", action, str(msi), "/quiet", "/norestart", "/l*v", str(log)],
+            [
+                "msiexec",
+                action,
+                str(msi),
+                *properties,
+                *CHECK_MSIEXEC_QUIET,
+                "/l*v",
+                str(log),
+            ],
             timeout=CHECK_MSIEXEC_TIMEOUT_S,
         ).returncode
     except subprocess.TimeoutExpired:
         _snapshot()
         _print_log(log, ("",), 40)
-        raise SystemExit(f"msiexec {action} ran past {CHECK_MSIEXEC_TIMEOUT_S} s")
-    _say(f"msiexec {action} exited {code}")
+        raise SystemExit(f"msiexec {named} ran past {CHECK_MSIEXEC_TIMEOUT_S} s")
+    _say(f"msiexec {named} exited {code}")
+    if code in CHECK_MSIEXEC_RESTART_CODES:
+        _print_log(log, CHECK_MSIEXEC_HELD_PATTERNS, 40)
+        raise SystemExit(f"msiexec {named} wants a restart (exit {code})")
     return code
+
+
+def _check_no_pending_rename() -> None:
+    """No file of ours is left for Windows to replace at the next restart.
+
+    Raises:
+        SystemExit: When one is, naming each.
+    """
+    ours = [
+        entry
+        for entry in _pending_renames()
+        if CHECK_PENDING_RENAMES_MARK in entry.lower()
+    ]
+    if ours:
+        raise SystemExit(
+            "files of ours wait for a restart to be replaced: " + ", ".join(ours)
+        )
+
+
+def _pending_renames() -> list:
+    """What Windows is to rename or delete at the next restart; empty for none."""
+    import winreg
+
+    try:
+        with winreg.OpenKey(
+            winreg.HKEY_LOCAL_MACHINE, CHECK_PENDING_RENAMES_KEY
+        ) as key:
+            value, _kind = winreg.QueryValueEx(key, CHECK_PENDING_RENAMES_VALUE)
+    except OSError:
+        return []
+    return [entry for entry in value if entry]
 
 
 def _say(text: str) -> None:
@@ -1517,7 +1602,7 @@ def _remove_windows_package(msi: Path, services: tuple = ()) -> None:
     _say(f"taking {msi.name} away")
     try:
         result = subprocess.run(
-            ["msiexec", "/x", str(msi), "/quiet", "/norestart"],
+            ["msiexec", "/x", str(msi), *CHECK_MSIEXEC_QUIET],
             timeout=CHECK_MSIEXEC_TIMEOUT_S,
         )
     except subprocess.SubprocessError as error:
