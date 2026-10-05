@@ -45,9 +45,6 @@
     "scan_press": "Press Scan to use the camera.",
     "share_login_needed": "Give this share's password on the Files screen first.",
     "share_reconnecting": "Reconnecting…",
-    "terminal_detached": "Detached; waiting for the hub",
-    "through": {
-      "direct": "Direct"
-    }
+    "terminal_detached": "Detached; waiting for the hub"
   }
 }
