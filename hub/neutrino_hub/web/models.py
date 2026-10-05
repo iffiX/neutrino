@@ -1837,6 +1837,8 @@ class ChannelServiceEntry(BaseModel):
     # What the hub calls the machine providing it; empty when no machine it
     # knows does.
     device_name: str = ""
+    # Whether the machine providing it is the one the client runs on.
+    is_own_machine: bool = False
 
 
 class ChannelOverlay(BaseModel):
@@ -1892,6 +1894,8 @@ class ChannelClientMachine(BaseModel):
 
     hostname: str = ""
     platform: dict = Field(default_factory=dict)
+    # The operating system's id for the machine, as an agent reads its own.
+    os_machine_id: str = ""
 
 
 class ChannelClientReport(BaseModel):

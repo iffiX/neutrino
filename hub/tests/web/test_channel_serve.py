@@ -963,7 +963,11 @@ def client_report(state_hash: str = "") -> dict:
     return {
         "type": "report",
         "state_hash": state_hash,
-        "machine": {"hostname": "laptop", "platform": PLATFORM},
+        "machine": {
+            "hostname": "laptop",
+            "platform": PLATFORM,
+            "os_machine_id": "laptop-machine",
+        },
     }
 
 
@@ -990,7 +994,9 @@ def test_a_clients_first_report_is_handed_the_published_list(api):
             "description_params",
             "device_id",
             "device_name",
+            "is_own_machine",
         }
+        assert state["services"][0]["is_own_machine"] is False
         # The TestClient's peer is "testclient": on no served network, so
         # the scope is the link it reached the hub on.
         (scope,) = runtime.published_services.scopes
@@ -998,6 +1004,7 @@ def test_a_clients_first_report_is_handed_the_published_list(api):
         assert runtime.client_scope[client_id] == scope
         stored = ClientRegistry().get(client_id)
         assert (stored.hostname, stored.version) == ("laptop", "1.2.3")
+        assert stored.os_machine_id == "laptop-machine"
         assert stored.platform == PLATFORM
 
         socket.send_json(client_report(state["hash"]))

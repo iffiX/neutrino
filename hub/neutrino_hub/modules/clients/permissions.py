@@ -141,6 +141,36 @@ def entry_device_id(
     return hub_device_id
 
 
+def entry_machine_id(
+    entry: dict,
+    *,
+    hub_machine_id: str,
+    device_ids_by_address: dict,
+    machine_ids_by_device: dict,
+) -> str:
+    """The operating system's id for the machine that provides one entry.
+
+    Args:
+        entry: The composed entry, with ``device_id`` and ``source``.
+        hub_machine_id: The hub box's own id.
+        device_ids_by_address: Device ids by the address each is reached at.
+        machine_ids_by_device: Each stored device's ``machine_id`` by its id.
+
+    Returns:
+        The device's id for an entry a device hosts or a declared record at
+        a device's address; the hub box's for one of the hub's own modules;
+        empty for a declared record no device is at.
+    """
+    device_id = entry_device_id(
+        entry, hub_device_id="", device_ids_by_address=device_ids_by_address
+    )
+    if device_id:
+        return machine_ids_by_device.get(device_id, "")
+    if entry.get("source") == SERVICES_SOURCE_DECLARED:
+        return ""
+    return hub_machine_id
+
+
 def entry_host(entry: dict) -> str:
     """The host an entry's payload names, wherever its type keeps it.
 
