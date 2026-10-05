@@ -767,6 +767,17 @@ def test_desktop_connect_words_the_hubs_refusal(stack, capsys):
     assert wording.word_code("rdp_not_shared") in capsys.readouterr().err
 
 
+def test_desktop_connect_while_its_viewer_runs_is_refused(stack, capsys):
+    stack.states["viewers"] = {"h1/rdp_s9": {"is_running": True}}
+
+    assert service_cli.main_desktop_connect("1") == 1
+
+    assert stack.service_calls == []
+    err = capsys.readouterr().err
+    assert wording.word_code("rdp_viewer_open") in err
+    assert "close it first" in err
+
+
 def test_desktop_connect_to_nothing_published_is_refused(stack, capsys):
     assert service_cli.main_desktop_connect("7") == 2
 

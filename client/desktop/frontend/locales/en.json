@@ -69,6 +69,7 @@
   "code.rdp_no_address": "That machine published no address to connect to",
   "code.rdp_no_desktop": "This session has no screen to open a viewer on",
   "code.rdp_not_shared": "That desktop is not shared any more",
+  "code.rdp_viewer_open": "A viewer is already open on this desktop; close it first",
   "code.resident_not_running": "The client is not running",
   "code.role_mismatch": "The hub says this is not a client's link",
   "code.root_refused": "Run the client as your own user",

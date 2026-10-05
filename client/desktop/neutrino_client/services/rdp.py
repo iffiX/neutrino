@@ -3,7 +3,9 @@
 Connect opens a ``service`` stream to the hub for the share's access
 password, makes the entry's forward of the local port table, and starts the
 carried RustDesk viewer at the forward on the loopback; the forward ends
-with the viewer. The password travels in the one close and the one argument
+with the viewer. A Connect on an entry whose viewer still runs is refused
+``rdp_viewer_open``: a second viewer would dial the same forward, and
+either one's end would take the forward from under the other. The password travels in the one close and the one argument
 vector and lands in no log and no state. The viewer processes are tracked
 by service key so a shutdown, or a hub letting go, closes them.
 """
@@ -140,7 +142,8 @@ class RdpViewerHandler(ServiceTypeHandler):
             body: ``{"action": "connect", "hub_id", "id"}``.
 
         Returns:
-            Empty on success, ``{"code", "params"}`` on a refusal.
+            Empty on success, ``{"code", "params"}`` on a refusal;
+            ``rdp_viewer_open`` while a viewer runs on that entry.
         """
         if str(body.get("action", "")) != RDP_ACTION_CONNECT:
             return {"code": "unknown_request", "params": {}}
@@ -153,6 +156,11 @@ class RdpViewerHandler(ServiceTypeHandler):
         if entry is None:
             return {"code": "unknown_request", "params": {}}
         key = service_key(str(entry.get("hub_id", "")), str(entry.get("id", "")))
+        with self._lock:
+            self._prune()
+            is_open = key in self._viewers
+        if is_open:
+            return {"code": "rdp_viewer_open", "params": {}}
 
         def open_viewer() -> dict:
             return self._open(entry, key)

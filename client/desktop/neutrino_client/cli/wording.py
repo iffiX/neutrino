@@ -155,6 +155,7 @@ CLIENT_CODE_WORDS = {
     "rdp_no_desktop": "this session has no screen to open a viewer on",
     "rdp_launch_failed": "the RustDesk viewer could not be started: {detail}",
     "rdp_no_address": "that machine published no address to connect to",
+    "rdp_viewer_open": "a viewer is already open on this desktop; close it first",
     "unsupported_platform": "this machine cannot do this",
     "gui_webkitgtk_missing": (
         "the window needs WebKitGTK; install it: sudo apt install {packages}"
