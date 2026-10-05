@@ -645,6 +645,7 @@ Everything else is left alone, and each for its own reason:
 | docker's, podman's and libvirt's interfaces | theirs |
 | The overlay's `wt0` | the hub's, driven by the NetBird module rather than here. It carries no role and takes no address from the hub; what it does have is an exposure row, because that is a firewall question rather than a role |
 | The proxy's TUN (`utun225`, `neutrino_tun`) | the proxy's, driven by the TUN module. It is no interface the hub exposes, counts among its LAN networks, or advertises to an overlay as a route; its /30 appears nowhere but in the TUN's own state |
+| The desktop client's files adapter (`neutrino_files`) | the client's, made on Windows to mount shares, and named by the client's own constant. On every system it is left out where the proxy's TUN is: it is no row on the **Network** page and never exposed, in a link's `urls`, a wake target, in the firewall's rules or among Direct's enabled interfaces |
 | CAN, IEEE 802.15.4, InfiniBand | buses, not ports. A CAN adapter offered as a way to the internet is worse than one not shown |
 
 Adding a kind means being able to drive it end to end. Half-driving one is how
