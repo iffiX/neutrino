@@ -794,3 +794,56 @@ def test_a_script_that_runs_out_its_time_is_an_os_error(platform, monkeypatch):
         platform.configure_files_adapter()
 
     assert "PowerShell did not finish" in str(raised.value)
+
+
+class FilesPeerWin32(FakeWin32):
+    """The identity seam plus the pipe's client process and process waits."""
+
+    def __init__(self):
+        super().__init__(account="Bob")
+        self.ended = set()
+        self.closed = []
+
+    def pipe_client_process_id(self, handle):
+        self.calls.append(("pipe_client_process_id", handle))
+        return 5100
+
+    def open_process_to_wait(self, pid):
+        if pid == 0:
+            raise OSError("no such process")
+        return 900 + pid
+
+    def is_waitable_running(self, handle):
+        return handle not in self.ended
+
+    def close_handle(self, handle):
+        self.closed.append(handle)
+
+
+class PipePeer:
+    pipe_handle = 77
+
+
+def test_the_files_pipes_peer_is_its_account_and_process():
+    platform = WindowsPlatform(win32=FilesPeerWin32())
+
+    assert platform.files_peer(PipePeer()) == {"account": "Bob", "pid": 5100}
+
+
+def test_a_watched_process_runs_until_it_ends_and_its_handle_closes_once():
+    api = FilesPeerWin32()
+    watch = WindowsPlatform(win32=api).watch_process(5100)
+
+    assert watch.is_running() is True
+    api.ended.add(6000)
+    assert watch.is_running() is False
+    watch.close()
+    watch.close()
+
+    assert api.closed == [6000]
+    assert watch.is_running() is False
+
+
+def test_a_process_that_cannot_be_opened_is_an_os_error():
+    with pytest.raises(OSError):
+        WindowsPlatform(win32=FilesPeerWin32()).watch_process(0)

@@ -487,6 +487,39 @@ class WindowsPlatform(ClientPlatform):
             words = (result.stdout or "").strip() or (result.stderr or "").strip()
             raise OSError(words or f"PowerShell exited {result.returncode}")
 
+    def files_peer(self, connection) -> dict:
+        """The files daemon pipe's peer: its account and its process.
+
+        Args:
+            connection: The accepted pipe connection.
+
+        Returns:
+            ``{"account", "pid"}``.
+
+        Raises:
+            PlatformUnsupportedError: When the peer is not a pipe or its
+                token cannot be read.
+            OSError: When the process id cannot be read.
+        """
+        identity = self.read_peer_identity(connection)
+        pid = self._win32().pipe_client_process_id(connection.pipe_handle)
+        return {"account": identity["account"], "pid": pid}
+
+    def watch_process(self, pid: int) -> "WindowsProcessWatch":
+        """A handle on one running process, to see whether it has ended.
+
+        Args:
+            pid: The process id.
+
+        Returns:
+            The watch.
+
+        Raises:
+            OSError: When the process cannot be opened.
+        """
+        api = self._win32()
+        return WindowsProcessWatch(api=api, handle=api.open_process_to_wait(pid))
+
     def bind_child_process(self, process) -> None:
         """Put a child in a job that ends it when the daemon ends.
 
@@ -636,6 +669,39 @@ class WindowsJobProcess:
             OSError: When Windows refuses.
         """
         self.terminate()
+
+
+class WindowsProcessWatch:
+    """One process the daemon waits on, through a handle it keeps open."""
+
+    def __init__(self, *, api, handle: int):
+        """
+        Args:
+            api: The Win32 seam.
+            handle: The process handle, opened to wait on.
+        """
+        self._api = api
+        self._handle: "int | None" = handle
+
+    def is_running(self) -> bool:
+        """Whether the process has not ended.
+
+        Returns:
+            True while it runs.
+
+        Raises:
+            OSError: When Windows refuses the wait.
+        """
+        if self._handle is None:
+            return False
+        return self._api.is_waitable_running(self._handle)
+
+    def close(self) -> None:
+        """Let the handle go. Idempotent."""
+        handle = self._handle
+        self._handle = None
+        if handle is not None:
+            self._api.close_handle(handle)
 
 
 class _WindowsApi:
@@ -942,3 +1008,60 @@ class _WindowsApi:
     def close_handle(self, handle: int) -> None:
         """Close a handle. Best-effort."""
         self._identity.close_handle(handle)
+
+    def pipe_client_process_id(self, handle: int) -> int:
+        """The id of the process on the client end of a pipe instance.
+
+        Args:
+            handle: The connected pipe instance.
+
+        Returns:
+            The process id.
+
+        Raises:
+            OSError: When Windows refuses.
+        """
+        pid = ctypes.c_ulong(0)
+        if not win32.libraries().kernel32.GetNamedPipeClientProcessId(
+            ctypes.c_void_p(handle), ctypes.byref(pid)
+        ):
+            raise win32.last_error()
+        return int(pid.value)
+
+    def open_process_to_wait(self, pid: int) -> int:
+        """A handle on a process that can be waited on.
+
+        Args:
+            pid: The process id.
+
+        Returns:
+            The handle.
+
+        Raises:
+            OSError: When the process cannot be opened.
+        """
+        handle = win32.libraries().kernel32.OpenProcess(
+            win32.SYNCHRONIZE | win32.PROCESS_QUERY_LIMITED_INFORMATION, False, pid
+        )
+        if not handle:
+            raise win32.last_error()
+        return handle
+
+    def is_waitable_running(self, handle: int) -> bool:
+        """Whether the object a handle names is not signalled yet.
+
+        Args:
+            handle: A process handle opened to wait on.
+
+        Returns:
+            True while the process runs.
+
+        Raises:
+            OSError: When the wait fails.
+        """
+        result = win32.libraries().kernel32.WaitForSingleObject(handle, 0)
+        if result == win32.WAIT_TIMEOUT:
+            return True
+        if result == win32.WAIT_OBJECT_0:
+            return False
+        raise win32.last_error()

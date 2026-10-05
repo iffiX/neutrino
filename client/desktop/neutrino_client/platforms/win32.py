@@ -104,6 +104,10 @@ ENABLE_PROCESSED_OUTPUT = 0x0001
 ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
 WAIT_OBJECT_0 = 0
 INFINITE = 0xFFFFFFFF
+# Waiting on a process the files daemon holds a handle on.
+SYNCHRONIZE = 0x00100000
+PROCESS_QUERY_LIMITED_INFORMATION = 0x00001000
+WAIT_TIMEOUT = 0x00000102
 
 # Windows, icons and menus for the tray.
 WS_POPUP = 0x80000000
@@ -638,6 +642,13 @@ class Win32Libraries:
             ctypes.c_ulong,
         ]
         self.kernel32.WaitForSingleObject.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
+        self.kernel32.WaitForSingleObject.restype = DWORD
+        self.kernel32.OpenProcess.restype = ctypes.c_void_p
+        self.kernel32.OpenProcess.argtypes = [DWORD, ctypes.c_int, DWORD]
+        self.kernel32.GetNamedPipeClientProcessId.argtypes = [
+            ctypes.c_void_p,
+            ctypes.POINTER(DWORD),
+        ]
         self.kernel32.GetExitCodeProcess.argtypes = [
             ctypes.c_void_p,
             ctypes.POINTER(ctypes.c_ulong),

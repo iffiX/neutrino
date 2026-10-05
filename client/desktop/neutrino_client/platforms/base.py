@@ -542,6 +542,39 @@ class ClientPlatform:
         """
         raise PlatformUnsupportedError("no files adapter here")
 
+    def files_peer(self, connection) -> dict:
+        """Who is on the other end of the files daemon's pipe.
+
+        Args:
+            connection: The accepted pipe connection.
+
+        Returns:
+            ``{"account", "pid"}``: the account by impersonation and the
+            calling process's id.
+
+        Raises:
+            PlatformUnsupportedError: Everywhere but Windows, or when the
+                peer cannot be read.
+            OSError: When the process id cannot be read.
+        """
+        raise PlatformUnsupportedError("no files adapter here")
+
+    def watch_process(self, pid: int):
+        """A handle on one running process, to see whether it has ended.
+
+        Args:
+            pid: The process id.
+
+        Returns:
+            An object with ``is_running()`` and ``close()``; the handle it
+            holds keeps the id from naming another process meanwhile.
+
+        Raises:
+            PlatformUnsupportedError: Everywhere but Windows.
+            OSError: When the process cannot be opened.
+        """
+        raise PlatformUnsupportedError("no files adapter here")
+
     def raw_terminal(self):
         """This process's terminal in raw mode, for a ``with`` block.
 

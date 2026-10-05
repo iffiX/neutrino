@@ -539,3 +539,14 @@ def test_the_daemons_probe_is_refused_without_a_log_line(plan, connector):
     assert reply[:2] == b"\x05\x02"
     assert not any("198.19.255.254" in line for line in lines)  # scan: allow
     assert "files endpoint refused 198.19.255.9:445" in lines  # scan: allow
+
+
+def test_an_adapter_held_by_another_account_is_its_own_refusal(adapter, daemon):
+    held, _ = adapter
+    daemon.answers["up"] = {"code": "files_adapter_in_use", "params": {}}
+
+    with pytest.raises(ShareAttachError) as raised:
+        held.host("h1", "d1")
+
+    assert raised.value.code == "files_adapter_in_use"
+    assert raised.value.detail == ""
