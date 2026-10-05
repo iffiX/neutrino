@@ -110,6 +110,7 @@ WIX_BODY = r"""
     <StandardDirectory Id="CommonAppDataFolder">
       <Directory Id="NeutrinoDataFolder" Name="Neutrino">
         <Directory Id="HUBDATAFOLDER" Name="hub">
+          <Directory Id="HUBCONFIGFOLDER" Name="config" />
           <Directory Id="HUBSTATEFOLDER" Name="state" />
         </Directory>
       </Directory>
@@ -168,6 +169,23 @@ WIX_BODY = r"""
       </Component>
     </ComponentGroup>
 
+    <!-- The configuration, the vault among it, under the same descriptor:
+         the hub writes here from its first run, so the folder exists with
+         its protection before anything is written into it. -->
+    <ComponentGroup Id="Config" Directory="HUBCONFIGFOLDER">
+      <Component Id="HubConfigFolder" Guid="*">
+        <CreateFolder>
+          <PermissionEx Sddl="@DATA_SDDL@" />
+        </CreateFolder>
+        <RegistryValue Root="HKLM"
+                       Key="Software\Neutrino\Hub"
+                       Name="ConfigFolder"
+                       Type="string"
+                       Value="[HUBCONFIGFOLDER]"
+                       KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
     <!-- The geodata and the agent's own installer, seeded into the state
          directory the hub reads them from. -->
     <ComponentGroup Id="State" Directory="HUBSTATEFOLDER">
@@ -177,6 +195,7 @@ WIX_BODY = r"""
     <Feature Id="Main" Title="Neutrino Hub" Level="1" AllowAbsent="no">
       <ComponentGroupRef Id="Payload" />
       <ComponentGroupRef Id="Data" />
+      <ComponentGroupRef Id="Config" />
       <ComponentGroupRef Id="State" />
     </Feature>
 """

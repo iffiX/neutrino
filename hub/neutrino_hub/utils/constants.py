@@ -121,12 +121,29 @@ UTILS_LOG_DIR = UTILS_LOG_ROOT
 UTILS_SETUP_LOG_PATH = UTILS_LOG_ROOT / "setup.log"
 
 
+def is_stamped_package() -> bool:
+    """Whether this hub is a built package rather than a checkout.
+
+    A build writes ``_version.py`` into the tree, compiled or not; a checkout
+    has none.
+
+    Returns:
+        True when the build stamp imports.
+    """
+    try:
+        import neutrino_hub._version  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
 def resolve_config_dir() -> Path:
     """Where this instance reads and writes its configuration.
 
     Returns:
-        The environment's override, the system directory under a development
-        root or when one exists, and the checkout's own ``config/`` otherwise.
+        The environment's override; the system directory under a development
+        root, in a built package whether or not it exists yet, or when it
+        exists; and the checkout's own ``config/`` otherwise.
     """
     override = os.environ.get(UTILS_CONFIG_ENV)
     if override:
@@ -134,7 +151,7 @@ def resolve_config_dir() -> Path:
     # A development root is a whole appliance, so its configuration is where an
     # appliance keeps it. The checkout's own `config/` is what a working copy
     # with no development root falls back to.
-    if is_dev_root_set() or UTILS_SYSTEM_CONFIG_DIR.exists():
+    if is_dev_root_set() or is_stamped_package() or UTILS_SYSTEM_CONFIG_DIR.exists():
         return UTILS_SYSTEM_CONFIG_DIR
     return UTILS_CHECKOUT_CONFIG_DIR
 

@@ -186,6 +186,7 @@ def test_the_daemon_binaries_are_service_components_and_not_files_of_the_glob(
     assert {ref.get("Id") for ref in main.iter(f"{WXS}ComponentGroupRef")} == {
         "Payload",
         "Daemons",
+        "Data",
     }
 
 
@@ -820,3 +821,20 @@ def test_the_mainland_installer_registers_the_files_daemon(mainland_staging):
     names = [install.get("Name") for install in document.iter(f"{WXS}ServiceInstall")]
 
     assert "NeutrinoClientFiles" in names
+
+
+def test_the_data_folder_admits_system_and_the_administrators_alone(source):
+    """NetBird's private key and EasyTier's networks are under it, and
+    ProgramData's own grants let every account read."""
+    root = xml.etree.ElementTree.fromstring(source)
+    (folder,) = [
+        node
+        for node in root.iter(f"{WXS}Component")
+        if node.get("Id") == "ClientDataFolder"
+    ]
+    (permission,) = folder.iter(f"{WXS}PermissionEx")
+    assert permission.get("Sddl") == "D:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
+    (feature,) = [
+        node for node in root.iter(f"{WXS}Feature") if node.get("Id") == "Main"
+    ]
+    assert "Data" in [ref.get("Id") for ref in feature.iter(f"{WXS}ComponentGroupRef")]
