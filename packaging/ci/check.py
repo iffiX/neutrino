@@ -119,6 +119,19 @@ CHECK_WINDOWS_SNAPSHOT = (
     "Get-Content $_.FullName -Tail 15 }"
 )
 CHECK_STARTED = time.monotonic()
+# Where a check leaves what must outlive the machine it runs on: every
+# progress line, each msiexec log, a snapshot after each phase, and what
+# one phase hands the next. None writes nothing.
+CHECK_EVIDENCE: "Path | None" = None
+CHECK_PROGRESS_NAME = "progress.txt"
+CHECK_STATE_NAME = "state.json"
+# The Windows client check in phases, each one workflow step, so the step
+# list alone says which phase a runner was lost in.
+CLIENT_WINDOWS_PHASES = ("install", "installed", "repair", "marker", "remove")
+# A line pushed off the machine as a commit status, best effort.
+CHECK_STATUS_CONTEXT = "client_windows check"
+CHECK_STATUS_TIMEOUT_S = 10
+CHECK_STATUS_TEXT_CHARS = 140
 # What takes away what a check has installed so far, run by the watchdog
 # when the network is gone or the time is up.
 CHECK_RESCUES: list = []
@@ -372,13 +385,34 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("target", choices=sorted(CHECKS), help="what was built")
     parser.add_argument("artifact", help="the package file")
+    parser.add_argument(
+        "--phase",
+        choices=CLIENT_WINDOWS_PHASES,
+        default="",
+        help="client_windows only: run one phase; every phase in order without",
+    )
+    parser.add_argument(
+        "--evidence-dir",
+        default="",
+        help="where progress, msiexec logs and snapshots are kept as they come",
+    )
     arguments = parser.parse_args()
+    global CHECK_EVIDENCE
     for stream in (sys.stdout, sys.stderr):
         stream.reconfigure(line_buffering=True)
+    if arguments.evidence_dir:
+        CHECK_EVIDENCE = Path(arguments.evidence_dir).resolve()
+        CHECK_EVIDENCE.mkdir(parents=True, exist_ok=True)
     threading.Thread(target=_watchdog, name="check_watchdog", daemon=True).start()
     artifact = Path(arguments.artifact).resolve()
     if not artifact.is_file():
         raise SystemExit(f"{artifact} is not a file")
+    if arguments.phase:
+        if arguments.target != "client_windows":
+            raise SystemExit("--phase is for client_windows alone")
+        run_client_windows_phase(artifact, arguments.phase)
+        print(f"{arguments.target} {arguments.phase}: {artifact.name} passed")
+        return 0
     CHECKS[arguments.target](artifact)
     print(f"{arguments.target}: {artifact.name} passed")
     return 0
@@ -501,7 +535,7 @@ def windows_rustdesk_problem(
 
 
 def check_client_windows(msi: Path) -> None:
-    """Install the client's .msi, use it, and remove it.
+    """Install the client's .msi, use it, repair it, and remove it: every phase in order.
 
     Args:
         msi: The installer.
@@ -509,25 +543,70 @@ def check_client_windows(msi: Path) -> None:
     Raises:
         SystemExit: When a step fails.
     """
+    for phase in CLIENT_WINDOWS_PHASES:
+        run_client_windows_phase(msi, phase)
+
+
+def run_client_windows_phase(msi: Path, phase: str) -> None:
+    """Run one phase of the Windows client check and leave its evidence.
+
+    The phase before must have passed, as the state file records; whatever
+    the phase comes to, a snapshot of the machine is left beside its
+    msiexec log.
+
+    Args:
+        msi: The installer.
+        phase: One of ``CLIENT_WINDOWS_PHASES``.
+
+    Raises:
+        SystemExit: When the phase before did not pass, or this one fails.
+    """
     _require_host("win32", "Windows")
-    _say("client_windows: planting what an earlier build left")
+    index = CLIENT_WINDOWS_PHASES.index(phase)
+    passed = _read_state().get("passed", [])
+    if index and CLIENT_WINDOWS_PHASES[index - 1] not in passed:
+        raise SystemExit(
+            f"phase {phase} needs {CLIENT_WINDOWS_PHASES[index - 1]} to have passed"
+        )
+    if phase != "install":
+        CHECK_RESCUES.append(
+            functools.partial(
+                _remove_windows_package, msi, services=CLIENT_WINDOWS_SERVICES
+            )
+        )
+    _note(f"{phase}: starting")
+    try:
+        CLIENT_WINDOWS_PHASE_RUNS[phase](msi)
+    finally:
+        _keep_snapshot(f"{phase}.snapshot.txt")
+    _write_state({"passed": [*passed, phase]})
+    _note(f"{phase}: passed")
+
+
+def _client_windows_install(msi: Path) -> None:
+    """Install over what an earlier build is made to have left."""
+    _note("install: planting what an earlier build left")
     _plant_client_windows_leftovers()
     CHECK_RESCUES.append(
         functools.partial(
             _remove_windows_package, msi, services=CLIENT_WINDOWS_SERVICES
         )
     )
-    log = Path(tempfile.gettempdir()) / "client_install.log"
+    log = _phase_log("install")
     code = _msiexec("/i", msi, log)
-    print(f"msiexec /i exited {code}")
     nclient = CLIENT_WINDOWS_FOLDER / "nclient.exe"
     if code != 0 or not nclient.is_file():
         _print_log(
             log, ("return value 3", "Error 19", CLIENT_WINDOWS_EASYTIER_SERVICE), 25
         )
         raise SystemExit("the client did not install")
+
+
+def _client_windows_installed(msi: Path) -> None:
+    """What the install left: the command, PATH, the daemon, the data tree."""
+    nclient = CLIENT_WINDOWS_FOLDER / "nclient.exe"
     print(f"nclient {_answer([str(nclient), '--version'])}")
-    _say("nclient status")
+    _note("installed: nclient status")
     status = subprocess.run(
         [str(nclient), "status"], timeout=CHECK_COMMAND_TIMEOUT_S
     ).returncode
@@ -543,38 +622,28 @@ def check_client_windows(msi: Path) -> None:
         raise SystemExit("the EasyTier daemon has no pipe")
     if not CLIENT_WINDOWS_EASYTIER_STATE.is_dir():
         raise SystemExit(f"no EasyTier state at {CLIENT_WINDOWS_EASYTIER_STATE}")
-    _say("the data tree's access lists")
+    _note("installed: the data tree's access lists")
     _check_client_windows_data()
-    _say("the relaunch tasks")
-    _check_client_windows_relaunch(msi)
-
-    log = Path(tempfile.gettempdir()) / "client_remove.log"
-    print(f"msiexec /x exited {_msiexec('/x', msi, log)}")
-    if CLIENT_WINDOWS_FOLDER.exists():
-        raise SystemExit("the folder outlived the uninstaller")
-    if _service_exists(CLIENT_WINDOWS_EASYTIER_SERVICE):
-        raise SystemExit("the EasyTier daemon outlived the uninstaller")
-    if _relaunch_tasks():
-        raise SystemExit(
-            f"relaunch tasks outlived the uninstaller: {_relaunch_tasks()}"
-        )
+    _note("installed: no relaunch task and no window")
+    _check_client_windows_nothing_started()
 
 
-def _check_client_windows_relaunch(msi: Path) -> None:
-    """An install over no running client starts nothing; a repair starts the relaunch tasks.
-
-    Args:
-        msi: The installer, run again as a repair.
+def _check_client_windows_nothing_started() -> None:
+    """An install over no running client left no relaunch task and started no window.
 
     Raises:
-        SystemExit: When the install left a relaunch task or a running
-            window, or the repair did not start the planted task.
+        SystemExit: When it did.
     """
     if _relaunch_tasks():
         raise SystemExit(f"the install left relaunch tasks: {_relaunch_tasks()}")
     windows = _answer(["tasklist", "/fi", "imagename eq nclientw.exe", "/fo", "csv"])
     if "nclientw.exe" in windows.lower():
         raise SystemExit("an install over no running client started one")
+
+
+def _client_windows_repair(msi: Path) -> None:
+    """Plant a relaunch task of SYSTEM's and run the repair, which starts it."""
+    _note("repair: planting the relaunch task")
     CLIENT_WINDOWS_RELAUNCH_MARKER.unlink(missing_ok=True)
     _answer(
         [
@@ -593,16 +662,122 @@ def _check_client_windows_relaunch(msi: Path) -> None:
             "/f",
         ]
     )
-    log = Path(tempfile.gettempdir()) / "client_repair.log"
-    print(f"msiexec /fa exited {_msiexec('/fa', msi, log)}")
+    _note("repair: msiexec /fa starting")
+    code = _msiexec("/fa", msi, _phase_log("repair"))
+    _note(f"repair: msiexec /fa exited {code}")
+
+
+def _client_windows_marker(msi: Path) -> None:
+    """The planted task wrote its marker: the repair's last step started it."""
+    _note("marker: waiting")
     deadline = time.monotonic() + CLIENT_WINDOWS_RELAUNCH_WAIT_S
     while not CLIENT_WINDOWS_RELAUNCH_MARKER.is_file():
         if time.monotonic() >= deadline:
-            _print_log(log, ("RelaunchClients", "WixQuietExec"), 10)
+            _print_log(_phase_log("repair"), ("RelaunchClients", "WixQuietExec"), 10)
             raise SystemExit("the repair did not start the relaunch task")
         time.sleep(SERVICE_POLL_S)
     CLIENT_WINDOWS_RELAUNCH_MARKER.unlink(missing_ok=True)
     print("the repair started the relaunch task")
+
+
+def _client_windows_remove(msi: Path) -> None:
+    """The removal takes the folder, the daemon and every relaunch task."""
+    code = _msiexec("/x", msi, _phase_log("remove"))
+    _note(f"remove: msiexec /x exited {code}")
+    if CLIENT_WINDOWS_FOLDER.exists():
+        raise SystemExit("the folder outlived the uninstaller")
+    if _service_exists(CLIENT_WINDOWS_EASYTIER_SERVICE):
+        raise SystemExit("the EasyTier daemon outlived the uninstaller")
+    if _relaunch_tasks():
+        raise SystemExit(
+            f"relaunch tasks outlived the uninstaller: {_relaunch_tasks()}"
+        )
+
+
+CLIENT_WINDOWS_PHASE_RUNS = {
+    "install": _client_windows_install,
+    "installed": _client_windows_installed,
+    "repair": _client_windows_repair,
+    "marker": _client_windows_marker,
+    "remove": _client_windows_remove,
+}
+
+
+def _phase_log(phase: str) -> Path:
+    """Where one phase's msiexec log goes: the evidence, else the temporary directory."""
+    root = CHECK_EVIDENCE or Path(tempfile.gettempdir())
+    return root / f"client_{phase}.msiexec.log"
+
+
+def _read_state() -> dict:
+    """What earlier phases handed on; empty without evidence or before the first."""
+    if CHECK_EVIDENCE is None:
+        return {"passed": list(_PASSED_HERE)}
+    try:
+        return json.loads((CHECK_EVIDENCE / CHECK_STATE_NAME).read_text("utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def _write_state(state: dict) -> None:
+    """Hand the next phase what this one leaves."""
+    _PASSED_HERE[:] = state.get("passed", [])
+    if CHECK_EVIDENCE is not None:
+        (CHECK_EVIDENCE / CHECK_STATE_NAME).write_text(json.dumps(state), "utf-8")
+
+
+# The phases passed in this process, for a run with no evidence directory.
+_PASSED_HERE: list = []
+
+
+def _note(text: str) -> None:
+    """One progress line, kept on disk at once and pushed off the machine, best effort."""
+    _say(text)
+    _push_status(text)
+
+
+def _push_status(text: str) -> None:
+    """Post one line as a commit status of this run's commit. Never raises.
+
+    Needs ``GITHUB_TOKEN``, ``GITHUB_REPOSITORY`` and ``GITHUB_SHA``, and the
+    job's ``statuses: write``; without them nothing is sent.
+    """
+    token = os.environ.get("GITHUB_TOKEN", "")
+    repository = os.environ.get("GITHUB_REPOSITORY", "")
+    commit = os.environ.get("GITHUB_SHA", "")
+    if not (token and repository and commit):
+        return
+    body = json.dumps(
+        {
+            "state": "pending",
+            "context": CHECK_STATUS_CONTEXT,
+            "description": text[:CHECK_STATUS_TEXT_CHARS],
+        }
+    ).encode("utf-8")
+    request = urllib.request.Request(
+        f"https://api.github.com/repos/{repository}/statuses/{commit}",
+        data=body,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "Content-Type": "application/json",
+        },
+    )
+    try:
+        urllib.request.urlopen(request, timeout=CHECK_STATUS_TIMEOUT_S).close()
+    except Exception as error:  # noqa: BLE001 - best effort, never fails a step
+        print(f"the status was not posted: {type(error).__name__}", flush=True)
+
+
+def _keep_snapshot(name: str) -> None:
+    """Write what the machine is doing into the evidence. Never raises."""
+    if CHECK_EVIDENCE is None:
+        return
+    try:
+        (CHECK_EVIDENCE / name).write_text(_snapshot(), "utf-8")
+    except OSError as error:
+        print(f"the snapshot was not kept: {error}", flush=True)
 
 
 def _relaunch_tasks() -> list:
@@ -1235,12 +1410,23 @@ def _msiexec(action: str, msi: Path, log: Path) -> int:
 
 
 def _say(text: str) -> None:
-    """Print one progress line with the time the check has run."""
-    print(f"[{int(time.monotonic() - CHECK_STARTED):>5} s] {text}", flush=True)
+    """Print one progress line with the time the check has run, and keep it
+    in the evidence on disk at once."""
+    line = f"[{int(time.monotonic() - CHECK_STARTED):>5} s] {text}"
+    print(line, flush=True)
+    if CHECK_EVIDENCE is None:
+        return
+    try:
+        with open(CHECK_EVIDENCE / CHECK_PROGRESS_NAME, "a", encoding="utf-8") as kept:
+            kept.write(line + "\n")
+            kept.flush()
+            os.fsync(kept.fileno())
+    except OSError:
+        pass
 
 
-def _snapshot() -> None:
-    """Print what the machine is doing now. Never raises."""
+def _snapshot() -> str:
+    """Print what the machine is doing now, and return it. Never raises."""
     _say("what the machine is doing:")
     if sys.platform == "win32":
         command = ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command"]
@@ -1253,9 +1439,10 @@ def _snapshot() -> None:
         )
     except (OSError, subprocess.SubprocessError) as error:
         print(f"no snapshot: {error}", flush=True)
-        return
-    print((result.stdout or "")[-20000:], flush=True)
-    print((result.stderr or "")[-2000:], flush=True)
+        return f"no snapshot: {error}\n"
+    text = (result.stdout or "")[-20000:] + "\n" + (result.stderr or "")[-2000:]
+    print(text, flush=True)
+    return text
 
 
 def _watchdog() -> None:

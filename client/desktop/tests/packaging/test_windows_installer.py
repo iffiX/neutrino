@@ -680,25 +680,74 @@ def test_the_release_builds_the_stand_in_with_msvc_before_the_installer():
     assert "--packet-dll build/packet_stub/packet.dll" in job
 
 
-def test_each_windows_client_check_step_has_a_limit_and_unbuffered_output():
-    """A check that hangs or runs away must end within its job, and what it
-    printed must reach the log as it goes."""
+CHECK_PHASES = ("install", "installed", "repair", "marker", "remove")
+
+
+def windows_client_jobs() -> dict:
+    """The two Windows client jobs of the release workflow, by their artifact."""
     workflow = (
         Path(payload.__file__).resolve().parents[3]
         / ".github"
         / "workflows"
         / "release.yml"
     ).read_text(encoding="utf-8")
-    steps = [
-        part
-        for part in workflow.split("      - ")
-        if part.startswith("run: python packaging/ci/check.py client_windows")
-    ]
+    full = workflow.split("\n  client_windows:\n")[1].split("\n  client_macos:")[0]
+    mainland = workflow.split("\n  client_windows_cn:\n")[1].split(
+        "\n  client_macos_cn:"
+    )[0]
+    return {"client_windows_x64": full, "cn_client_windows_amd64": mainland}
 
-    assert len(steps) == 2
-    for step in steps:
+
+@pytest.mark.parametrize("artifact", ["client_windows_x64", "cn_client_windows_amd64"])
+def test_the_msi_is_uploaded_before_any_check_runs(artifact):
+    """A package that fails its check can still be downloaded to reproduce it."""
+    job = windows_client_jobs()[artifact]
+
+    uploaded = job.index(f"          name: {artifact}\n")
+    assert uploaded < job.index("packaging/ci/check.py")
+
+
+@pytest.mark.parametrize("artifact", ["client_windows_x64", "cn_client_windows_amd64"])
+def test_the_check_runs_one_step_per_phase_each_with_its_evidence_uploaded(artifact):
+    """The step list alone says which phase a lost runner died in, and what
+    each phase wrote before it is in an artifact."""
+    job = windows_client_jobs()[artifact]
+    steps = job.split("      - ")
+    checks = [step for step in steps if "packaging/ci/check.py client_windows" in step]
+
+    assert [step.split("--phase ")[1].split()[0] for step in checks] == list(
+        CHECK_PHASES
+    )
+    for step in checks:
+        assert "--evidence-dir ci_evidence" in step
         assert "timeout-minutes: 30" in step
         assert 'PYTHONUNBUFFERED: "1"' in step
+        assert "GITHUB_TOKEN: ${{ github.token }}" in step
+    for phase in CHECK_PHASES:
+        (upload,) = [
+            step for step in steps if f"name: check_{artifact}_{phase}\n" in step
+        ]
+        assert "if: always()" in upload
+        assert "ci_evidence/*" in upload
+    assert "statuses: write" in job.split("    steps:")[0]
+
+
+def test_no_check_evidence_reaches_a_release():
+    """The intl draft copies every artifact but the mainland ones and the
+    checks' evidence; the mainland draft takes only cn_* artifacts, which no
+    evidence artifact's name matches."""
+    workflow = (
+        Path(payload.__file__).resolve().parents[3]
+        / ".github"
+        / "workflows"
+        / "release.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "cn_* | *_cn | check_*) continue ;;" in workflow
+    assert "pattern: cn_*" in workflow
+    for artifact in windows_client_jobs():
+        for phase in CHECK_PHASES:
+            assert not f"check_{artifact}_{phase}".startswith("cn_")
 
 
 def test_the_payload_carries_no_wrapper_script_and_no_interpreter_of_its_own():

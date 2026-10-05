@@ -152,14 +152,16 @@ jobs:
 
       - run: python packaging/build/build_agent_windows.py --output-dir dist --architecture x64
 
-      - run: python packaging/ci/check.py agent_windows dist/*.msi
-        shell: bash
-
+      # Uploaded before the check, so a package that fails it can still be
+      # downloaded; a job that needs it waits on this job's result.
       - uses: actions/upload-artifact@v7
         with:
           name: agent_windows_amd64
           path: dist/*.msi
           if-no-files-found: error
+
+      - run: python packaging/ci/check.py agent_windows dist/*.msi
+        shell: bash
 
   # Both Macs: Apple silicon on macos-15, Intel on macos-15-intel. The build
   # is native, so each package comes off a runner of its own machine.
@@ -305,14 +307,16 @@ jobs:
               && format('--agent-package-url-base {0}', env.AGENT_PACKAGE_URL_BASE)
               || '' }}
 
-      - run: python packaging/ci/check.py hub_windows dist/*.msi
-        shell: bash
-
+      # Uploaded before the check, so a package that fails it can still be
+      # downloaded; a job that needs it waits on this job's result.
       - uses: actions/upload-artifact@v7
         with:
           name: hub_windows_amd64
           path: dist/*.msi
           if-no-files-found: error
+
+      - run: python packaging/ci/check.py hub_windows dist/*.msi
+        shell: bash
 
   # The client is compiled, so each package is built on a machine of its own
   # architecture: Nuitka under emulation is hours, and the arm runners are
@@ -353,6 +357,9 @@ jobs:
     name: client installer (Windows x64)
     if: inputs.editions != 'cn'
     runs-on: windows-2025
+    permissions:
+      contents: read
+      statuses: write
     steps:
       - uses: actions/checkout@v7
 
@@ -382,20 +389,92 @@ jobs:
 
       - run: python packaging/build/build_client_windows.py --output-dir dist --architecture x64 --packet-dll build/packet_stub/packet.dll
 
-      # The check ends itself after 25 minutes with a snapshot of the machine;
-      # the step's own limit is behind it.
-      - run: python packaging/ci/check.py client_windows dist/*.msi
-        shell: bash
-        timeout-minutes: 30
-        env:
-          PYTHONUNBUFFERED: "1"
-
+      # Uploaded before any check, so a package that fails its check can
+      # still be downloaded; the draft waits on this job's result.
       - uses: actions/upload-artifact@v7
-        if: always()
         with:
           name: client_windows_x64
           path: dist/*.msi
           if-no-files-found: error
+
+      # One step per phase, so the step list says which phase a lost
+      # runner died in; after each, what the phase wrote so far: its
+      # progress, its msiexec log and a snapshot of the machine. Each
+      # phase also posts its progress as a commit status.
+      - name: "Check: install"
+        run: python packaging/ci/check.py client_windows dist/*.msi --phase install --evidence-dir ci_evidence
+        shell: bash
+        timeout-minutes: 30
+        env:
+          PYTHONUNBUFFERED: "1"
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: check_client_windows_x64_install
+          path: ci_evidence/*
+          if-no-files-found: ignore
+
+      - name: "Check: what the install left"
+        run: python packaging/ci/check.py client_windows dist/*.msi --phase installed --evidence-dir ci_evidence
+        shell: bash
+        timeout-minutes: 30
+        env:
+          PYTHONUNBUFFERED: "1"
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: check_client_windows_x64_installed
+          path: ci_evidence/*
+          if-no-files-found: ignore
+
+      - name: "Check: plant the relaunch task and run the repair"
+        run: python packaging/ci/check.py client_windows dist/*.msi --phase repair --evidence-dir ci_evidence
+        shell: bash
+        timeout-minutes: 30
+        env:
+          PYTHONUNBUFFERED: "1"
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: check_client_windows_x64_repair
+          path: ci_evidence/*
+          if-no-files-found: ignore
+
+      - name: "Check: wait for the relaunch task"
+        run: python packaging/ci/check.py client_windows dist/*.msi --phase marker --evidence-dir ci_evidence
+        shell: bash
+        timeout-minutes: 30
+        env:
+          PYTHONUNBUFFERED: "1"
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: check_client_windows_x64_marker
+          path: ci_evidence/*
+          if-no-files-found: ignore
+
+      - name: "Check: removal"
+        run: python packaging/ci/check.py client_windows dist/*.msi --phase remove --evidence-dir ci_evidence
+        shell: bash
+        timeout-minutes: 30
+        env:
+          PYTHONUNBUFFERED: "1"
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: check_client_windows_x64_remove
+          path: ci_evidence/*
+          if-no-files-found: ignore
 
   # Both Macs, as the agent's job builds them.
   client_macos:
@@ -572,7 +651,8 @@ jobs:
           mkdir dist
           for artifact in artifacts/*/; do
             case "$(basename "$artifact")" in
-              cn_* | *_cn) continue ;;
+              # A check's evidence is no release file.
+              cn_* | *_cn | check_*) continue ;;
             esac
             cp "$artifact"* dist/
           done
@@ -688,15 +768,17 @@ jobs:
       - run: python packaging/build/build_agent_windows.py --edition cn --output-dir dist --architecture x64
         working-directory: cn
 
-      - run: python packaging/ci/check.py agent_windows dist/*.msi
-        shell: bash
-        working-directory: cn
-
+      # Uploaded before the check, so a package that fails it can still be
+      # downloaded; a job that needs it waits on this job's result.
       - uses: actions/upload-artifact@v7
         with:
           name: cn_agent_windows_amd64
           path: cn/dist/*.msi
           if-no-files-found: error
+
+      - run: python packaging/ci/check.py agent_windows dist/*.msi
+        shell: bash
+        working-directory: cn
 
   # Apple silicon alone: the cn release carries no Intel Mac package.
   agent_macos_cn:
@@ -904,15 +986,17 @@ jobs:
               || '' }}
         working-directory: cn
 
-      - run: python packaging/ci/check.py hub_windows dist/*.msi
-        shell: bash
-        working-directory: cn
-
+      # Uploaded before the check, so a package that fails it can still be
+      # downloaded; a job that needs it waits on this job's result.
       - uses: actions/upload-artifact@v7
         with:
           name: cn_hub_windows_amd64
           path: cn/dist/*.msi
           if-no-files-found: error
+
+      - run: python packaging/ci/check.py hub_windows dist/*.msi
+        shell: bash
+        working-directory: cn
 
   client_cn:
     name: cn client .deb (${{ matrix.architecture }})
@@ -956,6 +1040,9 @@ jobs:
     name: cn client installer (Windows x64)
     needs: [sources_cn]
     runs-on: windows-2025
+    permissions:
+      contents: read
+      statuses: write
     steps:
       - uses: actions/download-artifact@v8
         with:
@@ -988,18 +1075,97 @@ jobs:
       - run: python packaging/build/build_client_windows.py --edition cn --output-dir dist --architecture x64 --packet-dll build/packet_stub/packet.dll
         working-directory: cn
 
-      - run: python packaging/ci/check.py client_windows dist/*.msi
-        shell: bash
-        working-directory: cn
-        timeout-minutes: 30
-        env:
-          PYTHONUNBUFFERED: "1"
-
+      # Uploaded before any check, so a package that fails its check can
+      # still be downloaded; the draft waits on this job's result.
       - uses: actions/upload-artifact@v7
         with:
           name: cn_client_windows_amd64
           path: cn/dist/*.msi
           if-no-files-found: error
+
+      # One step per phase, so the step list says which phase a lost
+      # runner died in; after each, what the phase wrote so far: its
+      # progress, its msiexec log and a snapshot of the machine. Each
+      # phase also posts its progress as a commit status.
+      - name: "Check: install"
+        run: python packaging/ci/check.py client_windows dist/*.msi --phase install --evidence-dir ci_evidence
+        shell: bash
+        working-directory: cn
+        timeout-minutes: 30
+        env:
+          PYTHONUNBUFFERED: "1"
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: check_cn_client_windows_amd64_install
+          path: cn/ci_evidence/*
+          if-no-files-found: ignore
+
+      - name: "Check: what the install left"
+        run: python packaging/ci/check.py client_windows dist/*.msi --phase installed --evidence-dir ci_evidence
+        shell: bash
+        working-directory: cn
+        timeout-minutes: 30
+        env:
+          PYTHONUNBUFFERED: "1"
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: check_cn_client_windows_amd64_installed
+          path: cn/ci_evidence/*
+          if-no-files-found: ignore
+
+      - name: "Check: plant the relaunch task and run the repair"
+        run: python packaging/ci/check.py client_windows dist/*.msi --phase repair --evidence-dir ci_evidence
+        shell: bash
+        working-directory: cn
+        timeout-minutes: 30
+        env:
+          PYTHONUNBUFFERED: "1"
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: check_cn_client_windows_amd64_repair
+          path: cn/ci_evidence/*
+          if-no-files-found: ignore
+
+      - name: "Check: wait for the relaunch task"
+        run: python packaging/ci/check.py client_windows dist/*.msi --phase marker --evidence-dir ci_evidence
+        shell: bash
+        working-directory: cn
+        timeout-minutes: 30
+        env:
+          PYTHONUNBUFFERED: "1"
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: check_cn_client_windows_amd64_marker
+          path: cn/ci_evidence/*
+          if-no-files-found: ignore
+
+      - name: "Check: removal"
+        run: python packaging/ci/check.py client_windows dist/*.msi --phase remove --evidence-dir ci_evidence
+        shell: bash
+        working-directory: cn
+        timeout-minutes: 30
+        env:
+          PYTHONUNBUFFERED: "1"
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: check_cn_client_windows_amd64_remove
+          path: cn/ci_evidence/*
+          if-no-files-found: ignore
 
   client_macos_cn:
     name: cn client installer (macOS arm64)
