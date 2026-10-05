@@ -118,7 +118,11 @@ class _EasytierRequestHandler(socketserver.StreamRequestHandler):
             except (UnicodeDecodeError, ValueError):
                 request = None
             try:
-                answer = daemon.handle(request)
+                identify = self.server.easytier_identify
+                if identify is None:
+                    answer = daemon.handle(request)
+                else:
+                    answer = daemon.handle(request, peer=_peer(identify, self.request))
             except (
                 Exception
             ) as error:  # noqa: BLE001 - one request must not end the daemon
@@ -130,6 +134,14 @@ class _EasytierRequestHandler(socketserver.StreamRequestHandler):
                     "params": {"kind": type(error).__name__},
                 }
         self.wfile.write((json.dumps(answer) + "\n").encode("utf-8"))
+
+
+def _peer(identify, connection) -> "dict | None":
+    """Who is on the other end of one connection, None when it cannot be read."""
+    try:
+        return identify(connection)
+    except (OSError, NotImplementedError):
+        return None
 
 
 def _unix_server(address: str, handler) -> socketserver.BaseServer:
@@ -161,6 +173,7 @@ class EasytierSocketServer:
         log=print,
         pipe_api=None,
         invalid_code: str = "overlay_request_invalid",
+        identify=None,
     ):
         """
         Args:
@@ -172,8 +185,12 @@ class EasytierSocketServer:
             pipe_api: The Win32 pipe seam; None uses the real one.
             invalid_code: The code a request over the size limit is answered
                 with.
+            identify: ``identify(connection)`` returns who is on the other
+                end, ``{"account", "pid"}``, handed to the daemon as
+                ``peer``; None hands nothing.
         """
         self._invalid_code = invalid_code
+        self._identify = identify
         self._daemon = daemon
         self._address = address
         self._log = log
@@ -218,6 +235,7 @@ class EasytierSocketServer:
         server.easytier_daemon = self._daemon
         server.easytier_log = self._log
         server.easytier_invalid_code = self._invalid_code
+        server.easytier_identify = self._identify
         self._server = server
 
     def start(self) -> None:

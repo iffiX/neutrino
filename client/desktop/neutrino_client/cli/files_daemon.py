@@ -95,12 +95,14 @@ def start_daemon(platform, log, *, tun2socks_log=None) -> dict:
         bind_child=platform.bind_child_process,
         log=log,
         tun2socks_log=tun2socks_log,
+        watch_process=platform.watch_process,
     )
     server = EasytierSocketServer(
         daemon=daemon,
         address=platform.files_daemon_address(),
         log=log,
         invalid_code=FILES_REFUSAL_CODE,
+        identify=platform.files_peer,
     )
     server.bind()
     daemon.start()

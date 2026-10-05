@@ -24,6 +24,7 @@ import getpass
 import os
 import re
 import subprocess
+import sys
 import threading
 import time
 
@@ -41,6 +42,10 @@ from neutrino_client.constants import (
     CLIENT_FILES_ADAPTER_WAIT_S,
     CLIENT_FILES_NETWORK,
     CLIENT_FILES_PIPE_WINDOWS,
+    CLIENT_RELAUNCH_ARGUMENTS,
+    CLIENT_RELAUNCH_TASK_PREFIX_WINDOWS,
+    CLIENT_RELAUNCH_TIMEOUT_S,
+    CLIENT_WINDOWED_PROGRAM_WINDOWS,
     CLIENT_LOG_SUBDIR_WINDOWS,
     CLIENT_STATE_SUBDIR_WINDOWS,
 )
@@ -166,6 +171,37 @@ def files_adapter_command() -> list:
         "Bypass",
         "-EncodedCommand",
         encoded,
+    ]
+
+
+def relaunch_task_command(name: str, program: str) -> list:
+    """How ``schtasks`` registers one account's relaunch task.
+
+    A one-time trigger at midnight today, already past, never fires; the
+    task runs when the installer starts it.
+
+    Args:
+        name: The task's name.
+        program: The windowed program the task starts.
+
+    Returns:
+        The argument vector.
+    """
+    return [
+        "schtasks",
+        "/create",
+        "/tn",
+        name,
+        "/tr",
+        f'"{program}" {CLIENT_RELAUNCH_ARGUMENTS}',
+        "/sc",
+        "once",
+        "/st",
+        "00:00",
+        "/rl",
+        "limited",
+        "/it",
+        "/f",
     ]
 
 
@@ -487,6 +523,84 @@ class WindowsPlatform(ClientPlatform):
             words = (result.stdout or "").strip() or (result.stderr or "").strip()
             raise OSError(words or f"PowerShell exited {result.returncode}")
 
+    def relaunch_task_name(self) -> str:
+        """The relaunch task of this account."""
+        return CLIENT_RELAUNCH_TASK_PREFIX_WINDOWS + _pipe_safe_name(
+            self.current_account()
+        )
+
+    def register_relaunch(self) -> bool:
+        """Register this account's relaunch task, for the installer to start.
+
+        The task has no trigger that fires, runs at the limited level and only
+        while the account is signed in, so it starts the windowed program in
+        that person's own session, never elevated.
+
+        Returns:
+            True when the task was registered; False where no windowed
+            program stands beside this one, as in a checkout.
+
+        Raises:
+            OSError: When ``schtasks`` cannot run or refuses.
+        """
+        program = os.path.join(
+            os.path.dirname(sys.executable), CLIENT_WINDOWED_PROGRAM_WINDOWS
+        )
+        if not os.path.isfile(program):
+            return False
+        command = relaunch_task_command(self.relaunch_task_name(), program)
+        try:
+            result = run_quietly(command, timeout_s=CLIENT_RELAUNCH_TIMEOUT_S)
+        except subprocess.SubprocessError as error:
+            raise OSError(f"schtasks did not finish: {error}")
+        if result.returncode != 0:
+            words = (result.stderr or "").strip() or (result.stdout or "").strip()
+            raise OSError(words or f"schtasks exited {result.returncode}")
+        return True
+
+    def forget_relaunch(self) -> None:
+        """Delete this account's relaunch task, when one stands. Best-effort."""
+        try:
+            run_quietly(
+                ["schtasks", "/delete", "/tn", self.relaunch_task_name(), "/f"],
+                timeout_s=CLIENT_RELAUNCH_TIMEOUT_S,
+            )
+        except (OSError, subprocess.SubprocessError):
+            pass
+
+    def files_peer(self, connection) -> dict:
+        """The files daemon pipe's peer: its account and its process.
+
+        Args:
+            connection: The accepted pipe connection.
+
+        Returns:
+            ``{"account", "pid"}``.
+
+        Raises:
+            PlatformUnsupportedError: When the peer is not a pipe or its
+                token cannot be read.
+            OSError: When the process id cannot be read.
+        """
+        identity = self.read_peer_identity(connection)
+        pid = self._win32().pipe_client_process_id(connection.pipe_handle)
+        return {"account": identity["account"], "pid": pid}
+
+    def watch_process(self, pid: int) -> "WindowsProcessWatch":
+        """A handle on one running process, to see whether it has ended.
+
+        Args:
+            pid: The process id.
+
+        Returns:
+            The watch.
+
+        Raises:
+            OSError: When the process cannot be opened.
+        """
+        api = self._win32()
+        return WindowsProcessWatch(api=api, handle=api.open_process_to_wait(pid))
+
     def bind_child_process(self, process) -> None:
         """Put a child in a job that ends it when the daemon ends.
 
@@ -636,6 +750,39 @@ class WindowsJobProcess:
             OSError: When Windows refuses.
         """
         self.terminate()
+
+
+class WindowsProcessWatch:
+    """One process the daemon waits on, through a handle it keeps open."""
+
+    def __init__(self, *, api, handle: int):
+        """
+        Args:
+            api: The Win32 seam.
+            handle: The process handle, opened to wait on.
+        """
+        self._api = api
+        self._handle: "int | None" = handle
+
+    def is_running(self) -> bool:
+        """Whether the process has not ended.
+
+        Returns:
+            True while it runs.
+
+        Raises:
+            OSError: When Windows refuses the wait.
+        """
+        if self._handle is None:
+            return False
+        return self._api.is_waitable_running(self._handle)
+
+    def close(self) -> None:
+        """Let the handle go. Idempotent."""
+        handle = self._handle
+        self._handle = None
+        if handle is not None:
+            self._api.close_handle(handle)
 
 
 class _WindowsApi:
@@ -942,3 +1089,60 @@ class _WindowsApi:
     def close_handle(self, handle: int) -> None:
         """Close a handle. Best-effort."""
         self._identity.close_handle(handle)
+
+    def pipe_client_process_id(self, handle: int) -> int:
+        """The id of the process on the client end of a pipe instance.
+
+        Args:
+            handle: The connected pipe instance.
+
+        Returns:
+            The process id.
+
+        Raises:
+            OSError: When Windows refuses.
+        """
+        pid = ctypes.c_ulong(0)
+        if not win32.libraries().kernel32.GetNamedPipeClientProcessId(
+            ctypes.c_void_p(handle), ctypes.byref(pid)
+        ):
+            raise win32.last_error()
+        return int(pid.value)
+
+    def open_process_to_wait(self, pid: int) -> int:
+        """A handle on a process that can be waited on.
+
+        Args:
+            pid: The process id.
+
+        Returns:
+            The handle.
+
+        Raises:
+            OSError: When the process cannot be opened.
+        """
+        handle = win32.libraries().kernel32.OpenProcess(
+            win32.SYNCHRONIZE | win32.PROCESS_QUERY_LIMITED_INFORMATION, False, pid
+        )
+        if not handle:
+            raise win32.last_error()
+        return handle
+
+    def is_waitable_running(self, handle: int) -> bool:
+        """Whether the object a handle names is not signalled yet.
+
+        Args:
+            handle: A process handle opened to wait on.
+
+        Returns:
+            True while the process runs.
+
+        Raises:
+            OSError: When the wait fails.
+        """
+        result = win32.libraries().kernel32.WaitForSingleObject(handle, 0)
+        if result == win32.WAIT_TIMEOUT:
+            return True
+        if result == win32.WAIT_OBJECT_0:
+            return False
+        raise win32.last_error()

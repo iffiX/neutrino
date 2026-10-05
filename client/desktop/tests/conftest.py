@@ -585,6 +585,7 @@ class FakeResident:
         self.shows = 0
         self.shutdowns = 0
         self.is_shut_down = threading.Event()
+        self.relaunches = 0
         self.is_bound = True
         self.hubs_value = [dict(HUB_ROW), dict(OFFICE_ROW)]
         self.reconnects = []
@@ -849,6 +850,9 @@ class FakeResident:
     def shutdown(self) -> None:
         self.shutdowns += 1
         self.is_shut_down.set()
+
+    def arrange_relaunch(self) -> None:
+        self.relaunches += 1
 
     def subscribe(self, watcher) -> None:
         self.__dict__.setdefault("watchers", []).append(watcher)

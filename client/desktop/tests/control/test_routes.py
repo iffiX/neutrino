@@ -840,3 +840,15 @@ def test_the_terminal_font_size_is_kept_and_stated():
 
     assert status == 200
     assert state["terminal_font_size"] == 15
+
+
+def test_a_quit_for_an_upgrade_arranges_the_return_before_it_shuts_down(
+    quit_without_ending,
+):
+    resident = FakeResident()
+
+    status, _ = routes.dispatch("POST", "/api/quit", {"is_upgrade": True}, resident)
+
+    assert status == 200
+    assert resident.relaunches == 1
+    assert resident.is_shut_down.wait(timeout=5)

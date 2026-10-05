@@ -262,8 +262,14 @@ def test_the_quit_runs_before_the_close_that_ends_what_did_not_answer(source):
     ]
 
     assert len(scheduled) == 1
-    assert scheduled[0].get("After") == "CostFinalize"
+    assert scheduled[0].get("After") == "QuitClientResidentForUpgrade"
     assert scheduled[0].get("Condition") == "Installed OR WIX_UPGRADE_DETECTED"
+    (first,) = [
+        custom
+        for custom in root.iter(WXS + "Custom")
+        if custom.get("Action") == "QuitClientResidentForUpgrade"
+    ]
+    assert first.get("After") == "CostFinalize"
     assert list(root.iter(UTIL + "CloseApplication"))
 
 
@@ -877,3 +883,72 @@ def test_the_reset_leaves_the_data_folder_its_own_descriptor():
     assert '"[CLIENTDATAFOLDER]*"' in command
     assert '"[CLIENTDATAFOLDER]"' not in command
     assert "/T" in command.split()
+
+
+def actions_and_scheduling(source, names):
+    root = xml.etree.ElementTree.fromstring(source)
+    actions = {
+        action.get("Id"): action
+        for action in root.iter(WXS + "CustomAction")
+        if action.get("Id") in names
+    }
+    scheduled = {
+        custom.get("Action"): custom
+        for custom in root.iter(WXS + "Custom")
+        if custom.get("Action") in names
+    }
+    return actions, scheduled
+
+
+def test_an_install_that_keeps_the_client_asks_it_to_quit_for_an_upgrade(source):
+    """The client registers its account's relaunch task before it goes; an
+    older build refuses the flag and the plain quit after it quits that one."""
+    actions, scheduled = actions_and_scheduling(
+        source, ("QuitClientResidentForUpgrade",)
+    )
+
+    action = actions["QuitClientResidentForUpgrade"]
+    assert action.get("ExeCommand") == '"[INSTALLFOLDER]nclientw.exe" quit --upgrade'
+    assert action.get("Execute") == "immediate"
+    assert action.get("Impersonate") is None
+    assert action.get("Return") == "ignore"
+    assert scheduled["QuitClientResidentForUpgrade"].get("Condition") == (
+        '(Installed OR WIX_UPGRADE_DETECTED) AND NOT REMOVE~="ALL"'
+    )
+
+
+def test_the_last_step_starts_every_accounts_relaunch_task_as_system(source):
+    """The task runs as its own account, limited, and only where it is signed
+    in; SYSTEM only starts it."""
+    actions, scheduled = actions_and_scheduling(
+        source, ("SetRelaunchClients", "RelaunchClients")
+    )
+
+    command = actions["SetRelaunchClients"].get("Value")
+    assert command.startswith(
+        '"[System64Folder]WindowsPowerShell\\v1.0\\powershell.exe" -NoProfile'
+    )
+    assert (
+        "Get-ScheduledTask -TaskName 'NeutrinoClientRelaunch_*' "
+        "-ErrorAction SilentlyContinue | Start-ScheduledTask" in command
+    )
+    assert actions["RelaunchClients"].get("DllEntry") == "WixQuietExec"
+    assert actions["RelaunchClients"].get("Impersonate") == "no"
+    assert actions["RelaunchClients"].get("Return") == "ignore"
+    assert scheduled["RelaunchClients"].get("After") == "SecureClientData"
+    assert scheduled["RelaunchClients"].get("Condition") == 'NOT REMOVE~="ALL"'
+
+
+def test_a_removal_deletes_every_relaunch_task_but_an_upgrades_removal_keeps_them(
+    source,
+):
+    actions, scheduled = actions_and_scheduling(
+        source, ("SetForgetRelaunches", "ForgetRelaunches")
+    )
+
+    command = actions["SetForgetRelaunches"].get("Value")
+    assert "Unregister-ScheduledTask -Confirm:$false" in command
+    assert scheduled["ForgetRelaunches"].get("Condition") == (
+        'REMOVE~="ALL" AND NOT UPGRADINGPRODUCTCODE'
+    )
+    assert actions["ForgetRelaunches"].get("Impersonate") == "no"

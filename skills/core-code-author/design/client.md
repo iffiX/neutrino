@@ -507,8 +507,22 @@ resident asks it `down` when it quits and at no other time: Windows' SMB
 client keeps its connection to a fake address past an unmount, and an
 adapter taken away and made again under that connection fails every mount
 that follows. The daemon then stops tun2socks and removes the adapter. A
-`status` answers whether the adapter is up. The daemon serves the resident
-that asked last.
+`status` answers whether the adapter is up.
+
+The adapter serves one account at a time, since a drive letter of one
+person must never reach another person's endpoint:
+
+| Rule | Reason |
+| --- | --- |
+| The daemon reads who asks from the pipe itself: the account by impersonating the caller, and the calling process by its process id. | A request names nothing the daemon trusts; the pipe's peer is what the system vouches for. |
+| While a resident of one account holds the adapter, an `up` or a `down` from another account is refused `files_adapter_in_use`; the holder's adapter, endpoint and mounts are untouched. | Serving the second person would send the first person's drive letters to the second person's endpoint. |
+| A resident of the same account that asks later is served in the first one's place. | A restarted resident is the same person with a new endpoint. |
+| The daemon keeps a handle on the holding process and looks at it every second; when it has ended, by a quit, a crash or the end of its session, the daemon stops tun2socks, removes the adapter and is free for any account. | A crashed resident never asks `down`, and a handle the daemon holds keeps the process id from naming another process meanwhile. |
+
+A mount the refusal stops goes `failed` with `files_adapter_in_use` on the
+row's error line, which says the files adapter is in use by another account
+on this machine, and is tried again on the remount timer, so it mounts once
+the other account's client has quit.
 
 When the adapter cannot be made, because the service is missing, stopped or
 refuses, the mount record goes `failed` with `files_adapter_unavailable

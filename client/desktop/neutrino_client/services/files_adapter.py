@@ -41,6 +41,7 @@ from neutrino_client.services.base import is_unhealthy
 FILES_ENDPOINT_HOST = "127.0.0.1"
 FILES_ENDPOINT_BACKLOG = 64
 FILES_REFUSAL_CODE = "files_adapter_unavailable"
+FILES_IN_USE_CODE = "files_adapter_in_use"
 # The SOCKS5 words the endpoint speaks (RFC 1928, RFC 1929).
 SOCKS_VERSION = 5
 SOCKS_AUTH_VERSION = 1
@@ -553,6 +554,9 @@ class FilesAdapter:
         except (OSError, ValueError) as error:
             self._log(f"files adapter: the service does not answer: {error}")
             raise _unavailable(f"{CLIENT_FILES_SERVICE_WINDOWS} does not answer")
+        if answer.get("code") == FILES_IN_USE_CODE:
+            self._log("files adapter: in use by another account on this machine")
+            raise ShareAttachError("files_adapter_in_use")
         if answer.get("code"):
             params = answer.get("params") or {}
             raise _unavailable(str(params.get("detail") or answer.get("code")))
