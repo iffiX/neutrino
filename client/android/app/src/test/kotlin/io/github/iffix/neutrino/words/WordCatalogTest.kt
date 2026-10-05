@@ -2,6 +2,7 @@ package io.github.iffix.neutrino.words
 
 import io.github.iffix.neutrino.CLIENT_HUB_CODES
 import io.github.iffix.neutrino.CLIENT_LANGUAGES
+import io.github.iffix.neutrino.CLIENT_REACHED_THROUGH
 import io.github.iffix.neutrino.CLIENT_THEMES
 import io.github.iffix.neutrino.RepositoryFiles
 import io.github.iffix.neutrino.shell.AppScreen
@@ -116,6 +117,18 @@ class WordCatalogTest {
             "Local port 28080 is already in use; pick another with Configure",
             catalog("en").refusal("port_taken", mapOf("port" to 28080)),
         )
+    }
+
+    @Test
+    fun everyWayInIsWordedInEveryLanguage() {
+        for (language in CLIENT_LANGUAGES) {
+            val words = catalog(language)
+            for (way in CLIENT_REACHED_THROUGH) assertTrue("ui.through.$way in $language", words.has("ui.through.$way"))
+        }
+        val way = mapOf("way" to catalog("en").word("ui.through.direct"))
+        assertEquals("Connected · Direct", catalog("en").word("ui.state.connected_through", way))
+        val chinese = mapOf("way" to catalog("zh-CN").word("ui.through.direct"))
+        assertEquals("已连接 · 直连", catalog("zh-CN").word("ui.state.connected_through", chinese))
     }
 
     @Test

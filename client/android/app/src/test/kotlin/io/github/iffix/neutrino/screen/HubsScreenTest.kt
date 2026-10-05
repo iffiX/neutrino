@@ -50,6 +50,20 @@ class HubsScreenTest {
     }
 
     @Test
+    fun aDirectWayInIsNamedAndAnUnknownWayReadsAsConnected() {
+        val words = WordCatalog(
+            mapOf(
+                "ui.state.connected" to "Connected",
+                "ui.state.connected_through" to "Connected · {way}",
+                "ui.through.direct" to "Direct",
+            ),
+        )
+        val row = HubView(Samples.binding, HubConnection.CONNECTED)
+        assertEquals("Connected · Direct", hubStateWord(row.copy(reachedThrough = "direct"), words))
+        assertEquals("Connected", hubStateWord(row.copy(reachedThrough = "pigeon"), words))
+    }
+
+    @Test
     fun aPanelJobIsAJobOnTheRow() {
         val row = HubView(Samples.binding, HubConnection.CONNECTED, jobs = HubJobs(isOpeningPanel = true))
         assertEquals(DotTone.PULSE, hubTone(row))
