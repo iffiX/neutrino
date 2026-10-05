@@ -11,10 +11,12 @@ on request.
 
 import json
 import os
+import threading
 
 import pytest
 
 from neutrino_client.constants import CLIENT_DEFAULT_LANGUAGE, CLIENT_DEFAULT_THEME
+import neutrino_client.services.store as store_module
 from neutrino_client.services.store import ClientServiceStore
 
 RECORD = {
@@ -303,3 +305,58 @@ def test_a_files_address_names_a_hub_and_a_machine(tmp_path):
 
     with pytest.raises(ValueError):
         store.set_files_address("198.19.255.2", "h1", "")  # scan: allow
+
+
+def test_a_replace_the_system_refuses_while_the_file_is_held_is_tried_again(
+    tmp_path, monkeypatch
+):
+    """On Windows a replace fails while any handle holds the file open."""
+    real = os.replace
+    refusals = [PermissionError(5, "Access is denied")] * 3
+    monkeypatch.setattr(store_module.time, "sleep", lambda seconds: None)
+
+    def replace(source, target):
+        if refusals:
+            raise refusals.pop()
+        real(source, target)
+
+    monkeypatch.setattr(store_module.os, "replace", replace)
+    store = ClientServiceStore(path=str(tmp_path / "state.json"))
+
+    store.set_mount("r1", RECORD)
+
+    assert refusals == []
+    assert store.mounts() == {"r1": RECORD}
+
+
+def test_a_file_held_past_every_try_fails_the_write(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module.time, "sleep", lambda seconds: None)
+
+    def replace(source, target):
+        raise PermissionError(5, "Access is denied")
+
+    monkeypatch.setattr(store_module.os, "replace", replace)
+    store = ClientServiceStore(path=str(tmp_path / "state.json"))
+
+    with pytest.raises(PermissionError):
+        store.set_mount("r1", RECORD)
+
+
+def test_a_read_waits_for_a_write_in_progress(tmp_path):
+    """No read of the resident holds the file open while a write replaces it."""
+    store = ClientServiceStore(path=str(tmp_path / "state.json"))
+    store.set_mount("r1", RECORD)
+    read = threading.Event()
+    seen = []
+
+    def reader():
+        seen.append(store.mounts())
+        read.set()
+
+    with store._lock:
+        thread = threading.Thread(target=reader)
+        thread.start()
+        assert not read.wait(0.2)
+    thread.join(timeout=5)
+
+    assert seen == [{"r1": RECORD}]

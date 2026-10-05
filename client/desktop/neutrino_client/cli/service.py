@@ -277,8 +277,12 @@ def main_file_unmount(ref: str, *, hub: str = "") -> int:
     )
     if reply is None:
         return 1
-    fresh = _record_at(reply, entry, str(record.get("path", "")))
-    print(_record_line(fresh) if fresh else f"{record.get('path', '')}: unmounted")
+    path = str(record.get("path", ""))
+    fresh = _record_at(reply, entry, path)
+    if fresh is None or not (fresh.get("is_attached") or fresh.get("code")):
+        print(_placed(path, wording.CLIENT_MOUNT_UNMOUNTED_WORD))
+    else:
+        print(_record_line(fresh))
     return 0
 
 

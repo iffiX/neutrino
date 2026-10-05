@@ -12,8 +12,11 @@ running client's own and starts clean.
 Secrets never enter it: a mount's password lives in that record's own
 credentials file, and the gateway key arrives fresh in every poll reply.
 
-Every write re-reads the file under one lock and lands atomically: a
-temporary file in the same directory, then ``os.replace``. A key an older
+Every read and every write takes one lock, and a write re-reads the file
+and lands atomically: a temporary file in the same directory, then
+``os.replace``. On Windows a replace fails while the file is open
+anywhere, so no read of this process overlaps a write, and a replace
+another program's brief open refuses is tried again. A key an older
 build wrote reads as if it were absent and is gone from the next write.
 """
 
@@ -24,6 +27,7 @@ from __future__ import annotations
 import json
 import os
 import threading
+import time
 import uuid
 
 from neutrino_client.constants import (
@@ -37,6 +41,10 @@ from neutrino_client.constants import (
 
 # What one mount record keeps; a record's other fields are dropped.
 STORE_MOUNT_KEYS = ("hub_id", "entry_id", "host", "share", "username", "path")
+# How often, and how far apart, a replace the system refuses with the
+# file held open is tried.
+STORE_REPLACE_TRIES = 20
+STORE_REPLACE_PAUSE_S = 0.05
 # The setting of a local port the client picks itself.
 STORE_LOCAL_PORT_AUTO = "auto"
 # The protocols a local port is held on; a record with none is TCP.
@@ -206,6 +214,23 @@ def _kept(data: dict) -> dict:
             if isinstance(record, dict)
         },
     }
+
+
+def _replace(source: str, target: str) -> None:
+    """``os.replace``, tried again while the target is briefly held open.
+
+    Raises:
+        PermissionError: When the target stays held past the last try.
+        OSError: When the replace fails for any other reason.
+    """
+    for attempt in range(STORE_REPLACE_TRIES):
+        try:
+            os.replace(source, target)
+            return
+        except PermissionError:
+            if attempt == STORE_REPLACE_TRIES - 1:
+                raise
+            time.sleep(STORE_REPLACE_PAUSE_S)
 
 
 class ClientServiceStore:
@@ -455,11 +480,12 @@ class ClientServiceStore:
             return dropped
 
     def _read(self) -> dict:
-        try:
-            with open(self._path, "r", encoding="utf-8") as stream:
-                data = json.load(stream)
-        except (OSError, ValueError):
-            data = {}
+        with self._lock:
+            try:
+                with open(self._path, "r", encoding="utf-8") as stream:
+                    data = json.load(stream)
+            except (OSError, ValueError):
+                data = {}
         return _kept(data if isinstance(data, dict) else {})
 
     def _mutate(self, change) -> None:
@@ -483,4 +509,4 @@ class ClientServiceStore:
             )
             with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
                 json.dump(data, stream, indent=2)
-            os.replace(temporary, self._path)
+            _replace(temporary, self._path)

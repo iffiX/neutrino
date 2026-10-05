@@ -548,7 +548,26 @@ def test_file_unmount_detaches_and_words_the_record(stack, capsys):
     assert stack.service_calls == [
         ("file", {"hub_id": "h1", "action": "unmount", "record_id": "r1"})
     ]
-    assert wording.CLIENT_MOUNT_STATE_WORDS["detached"] in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert out.strip() == "/home/alice/nas/media: unmounted"
+    assert wording.CLIENT_MOUNT_STATE_WORDS["detached"] not in out
+
+
+def test_an_unmount_the_system_refused_says_why(stack, capsys, monkeypatch):
+    stack.states["mounts"].append(dict(MOUNTED_ROW))
+    real = stack.service_action
+
+    def refuse(service_type, body):
+        answer = real(service_type, body)
+        for row in stack.states["mounts"]:
+            row.update(is_attached=True, code="unmount_failed", params={})
+        return answer
+
+    monkeypatch.setattr(stack, "service_action", refuse)
+
+    assert service_cli.main_file_unmount("1") == 0
+
+    assert wording.CLIENT_MOUNT_UNMOUNTED_WORD not in capsys.readouterr().out
 
 
 def test_a_failed_record_is_worded_from_its_code(stack, capsys):
