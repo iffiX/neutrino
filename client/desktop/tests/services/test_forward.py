@@ -9,6 +9,7 @@ entries.
 
 import functools
 import socket
+import sys
 import threading
 import time
 
@@ -20,9 +21,11 @@ from neutrino_client.services.forward import (
     ConnectStreamSocket,
     ForwardListenerRegistry,
     PortLocalTable,
+    is_kept_port_free,
     is_port_free,
     relay_socket,
 )
+from neutrino_client.exceptions import LocalPortTakenError
 from neutrino_client.services.store import ClientServiceStore
 from tests.conftest import FakeConnectHub, discard, echo_server, round_trip
 
@@ -367,7 +370,70 @@ def test_auto_takes_the_entrys_own_port_when_free_and_keeps_it(tmp_path):
 
     assert table.setting("h1/db") == "auto"
     assert table.take("h1/db", 5432) == 5432
-    assert table_on(tmp_path, busy=(5432,)).take("h1/db", 5432) == 5432
+    assert table_on(tmp_path).take("h1/db", 5432) == 5432
+
+
+def test_a_kept_auto_port_another_program_took_is_picked_again_and_kept(tmp_path):
+    assert table_on(tmp_path).take("h1/db", 5432) == 5432
+
+    assert table_on(tmp_path, busy=(5432,)).take("h1/db", 5432) == 20000
+
+    assert table_on(tmp_path).setting("h1/db") == "auto"
+    assert table_on(tmp_path).take("h1/db", 5432) == 20000
+
+
+def test_a_fixed_port_another_program_took_is_refused_and_kept(tmp_path):
+    table = table_on(tmp_path, busy=(15432,))
+    assert table.configure("h1/db", 15432) == {}
+
+    with pytest.raises(LocalPortTakenError) as taken:
+        table.take("h1/db", 5432)
+
+    assert taken.value.port == 15432
+    assert table.setting("h1/db") == 15432
+    assert table_on(tmp_path).take("h1/db", 5432) == 15432
+
+
+def test_a_kept_port_on_the_wildcard_of_another_socket_is_picked_again(tmp_path):
+    """The lab's B1-6: another program listens on every address of the
+    port the entry kept, and the forward must not listen beside it."""
+    other = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    other.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    other.bind(("0.0.0.0", 0))  # scan: allow
+    other.listen()
+    port = other.getsockname()[1]
+    store = ClientServiceStore(path=str(tmp_path / "state.json"))
+    store.set_local_port("h1/web", "auto", port)
+    table = PortLocalTable(store=store)
+
+    picked = table.take("h1/web", port)
+
+    assert picked != port
+    assert store.local_ports()["h1/web"] == {"setting": "auto", "port": picked}
+    other.close()
+
+
+def test_a_kept_port_still_free_is_kept_without_a_new_pick(tmp_path):
+    port = free_port()
+    store = ClientServiceStore(path=str(tmp_path / "state.json"))
+    store.set_local_port("h1/web", "auto", port)
+
+    assert PortLocalTable(store=store).take("h1/web", 0) == port
+    assert store.local_ports()["h1/web"]["port"] == port
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux's TIME_WAIT")
+def test_the_clients_own_closed_connections_do_not_take_its_kept_port():
+    listener = socket.create_server(("127.0.0.1", 0))
+    port = listener.getsockname()[1]
+    client = socket.create_connection(("127.0.0.1", port))
+    served, _ = listener.accept()
+    served.close()
+    client.recv(1)
+    client.close()
+    listener.close()
+
+    assert is_kept_port_free(port) is True
 
 
 def test_auto_takes_the_first_free_port_from_20000_when_its_own_is_not_to_be_had(

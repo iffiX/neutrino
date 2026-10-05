@@ -128,6 +128,22 @@ class ShareAttachError(OSError):
         self.detail = detail
 
 
+class LocalPortTakenError(OSError):
+    """Raised when a forward's fixed local port is listened on by another program.
+
+    Attributes:
+        port: The port.
+    """
+
+    def __init__(self, port: int):
+        """
+        Args:
+            port: The port.
+        """
+        super().__init__(f"local port {port} is taken")
+        self.port = port
+
+
 class PlatformUnsupportedError(NotImplementedError):
     """Raised when a capability this platform does not have is invoked."""
 

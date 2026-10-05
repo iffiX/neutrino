@@ -60,7 +60,7 @@
   "code.overlay_withdrawn": "The hub no longer offers {network}",
   "code.permission_denied": "The hub does not allow this client to use {kind}",
   "code.port_not_published": "That machine does not publish port {port} now",
-  "code.port_taken": "Another entry already holds local port {port}",
+  "code.port_taken": "Local port {port} is already in use; pick another with Configure",
   "code.protocol_too_new": "This client speaks protocol {peer}; the hub speaks {hub}, so update the hub first",
   "code.protocol_too_old": "This client speaks protocol {peer}; the hub accepts {min} and up, so update the client",
   "code.rdp_launch_failed": "The RustDesk viewer could not be started: {detail}",
