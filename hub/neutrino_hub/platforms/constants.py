@@ -114,6 +114,16 @@ PLATFORM_DARWIN_ELEVATOR = "osascript"
 
 # A child started with no console window of its own.
 PLATFORM_WINDOWS_CREATE_NO_WINDOW = 0x08000000
+# A file readable by SYSTEM (S-1-5-18) and the Administrators group
+# (S-1-5-32-544) alone, with nothing inherited from its folder; OpenSSH's
+# ssh.exe refuses a key file any other account can read.
+PLATFORM_WINDOWS_ICACLS = "icacls.exe"
+PLATFORM_WINDOWS_ROOT_ONLY_ACL = (
+    "/inheritance:r",
+    "/grant:r",
+    "*S-1-5-18:F",
+    "*S-1-5-32-544:F",
+)
 # The proactor callback that raises when a browser drops its connection.
 PLATFORM_WINDOWS_CONNECTION_LOST_CALLBACK = "_call_connection_lost"
 

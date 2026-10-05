@@ -123,3 +123,25 @@ def test_an_older_line_does_not_decide_a_later_exit():
 
 def test_an_exit_with_no_output_is_unreachable_with_no_line():
     assert judge_exit(["", "  "]) == ("unreachable", "")
+
+
+def test_a_key_file_ssh_ignored_for_its_permissions_is_not_auth_failed():
+    """ssh ends such a run with `Permission denied`; the fault is the hub's own
+    file, so the state is not the one that tells the owner to check the key."""
+    lines = [
+        "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@",
+        "@         WARNING: UNPROTECTED PRIVATE KEY FILE!          @",
+        "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@",
+        "Permissions for 'C:\\\\ProgramData\\\\Neutrino\\\\hub\\\\state\\\\relay\\\\key' "
+        "are too open.",
+        "This private key will be ignored.",
+        'Load key "C:\\\\ProgramData\\\\Neutrino\\\\hub\\\\state\\\\relay\\\\key": '
+        "bad permissions",
+        "relay@203.0.113.5: Permission denied (publickey).",
+    ]
+
+    state, last_error = judge_exit(lines)
+
+    assert state == "unreachable"
+    assert last_error.startswith("the hub's own key file can be read by other")
+    assert last_error.endswith("bad permissions")

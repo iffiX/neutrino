@@ -5,6 +5,9 @@ Pure: values in, words out, no file and no process.
 
 from neutrino_hub.modules.overlay.constants import (
     OVERLAY_RELAY_EXIT_LINES,
+    OVERLAY_RELAY_KEY_FILE_ERROR,
+    OVERLAY_RELAY_KEY_FILE_LINES,
+    OVERLAY_RELAY_KEY_FILE_WINDOW,
     OVERLAY_RELAY_KNOWN_HOSTS_OPTION,
     OVERLAY_RELAY_LISTEN_ADDRESS,
     OVERLAY_RELAY_SSH_OPTIONS,
@@ -79,12 +82,21 @@ def judge_exit(lines: list) -> tuple:
     Returns:
         ``(state, last_line)``: the state of the first entry of
         :data:`OVERLAY_RELAY_EXIT_LINES` the last line holds, else
-        ``unreachable``; and that line, empty when it wrote none.
+        ``unreachable``; and that line, empty when it wrote none. When one of
+        the last lines says ssh ignored the hub's own key file for its
+        permissions, the state is ``unreachable`` and the line says the file
+        is the hub's.
     """
     written = [line.strip() for line in lines if line.strip()]
     if not written:
         return OVERLAY_RELAY_STATE_UNREACHABLE, ""
     last = written[-1]
+    for line in written[-OVERLAY_RELAY_KEY_FILE_WINDOW:]:
+        if any(phrase in line for phrase in OVERLAY_RELAY_KEY_FILE_LINES):
+            return (
+                OVERLAY_RELAY_STATE_UNREACHABLE,
+                OVERLAY_RELAY_KEY_FILE_ERROR.format(line=line),
+            )
     for phrase, state in OVERLAY_RELAY_EXIT_LINES:
         if phrase in last:
             return state, last

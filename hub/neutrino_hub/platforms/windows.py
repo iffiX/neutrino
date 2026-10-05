@@ -25,7 +25,9 @@ from neutrino_hub.platforms.constants import (
     PLATFORM_SERVICE_WAIT_S,
     PLATFORM_WINDOWS_CONNECTION_LOST_CALLBACK,
     PLATFORM_WINDOWS_CREATE_NO_WINDOW,
+    PLATFORM_WINDOWS_ICACLS,
     PLATFORM_WINDOWS_RESOLVERS_SCRIPT,
+    PLATFORM_WINDOWS_ROOT_ONLY_ACL,
     PLATFORM_WINDOWS_SERVICE_NAME,
     PLATFORM_WINDOWS_SERVICE_STATES,
     PLATFORM_WINDOWS_SHELL,
@@ -162,6 +164,32 @@ class WindowsHubPlatform(HubPlatform):
             state_path=SYSTEM_SERVICES_STATE_PATH,
             log_dir=SYSTEM_CHILD_LOG_DIR,
         )
+
+    def make_root_only(self, path) -> None:
+        """Leave one file to SYSTEM and the Administrators group alone.
+
+        The entries it inherits from its folder are taken away, and the two
+        accounts are named by their well-known SIDs, so no language's names
+        matter.
+
+        Args:
+            path: The file.
+
+        Raises:
+            OSError: When icacls cannot be run or refuses.
+        """
+        result = subprocess.run(
+            [PLATFORM_WINDOWS_ICACLS, str(path), *PLATFORM_WINDOWS_ROOT_ONLY_ACL],
+            capture_output=True,
+            text=True,
+            timeout=PLATFORM_COMMAND_TIMEOUT_S,
+            creationflags=PLATFORM_WINDOWS_CREATE_NO_WINDOW,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise OSError(
+                f"icacls refused {path}: {(result.stdout + result.stderr).strip()}"
+            )
 
     def open_browser(self, url: str) -> bool:
         """Open a page with the shell's own handler, as the signed-in account.

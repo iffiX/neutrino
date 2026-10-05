@@ -513,3 +513,31 @@ def test_a_known_hosts_file_ssh_left_readable_is_made_root_only(box):
 
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert path.read_text() == "203.0.113.5 ssh-ed25519 AAAA\n"
+
+
+class RecordingPlatform:
+    """The platform, recording the files it is asked to make root-only."""
+
+    def __init__(self):
+        self.root_only: list = []
+
+    def make_root_only(self, path) -> None:
+        self.root_only.append(path)
+
+
+def test_the_key_and_the_known_hosts_are_made_root_only_through_the_platform(
+    box, monkeypatch
+):
+    platform = RecordingPlatform()
+    monkeypatch.setattr(relay_ops, "hub_platform", lambda: platform)
+
+    applier(box).apply(box["relay"])
+    applier(box).apply(box["relay"])
+
+    relay = box["state"] / "relay"
+    assert platform.root_only == [
+        relay / "key",
+        relay / "known_hosts",
+        relay / "key",
+        relay / "known_hosts",
+    ]

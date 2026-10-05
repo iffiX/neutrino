@@ -161,6 +161,19 @@ OVERLAY_RELAY_EXIT_LINES = (
     ("Host key verification failed", OVERLAY_RELAY_STATE_HOST_KEY_CHANGED),
     ("remote port forwarding failed", OVERLAY_RELAY_STATE_FORWARD_REFUSED),
 )
+# ssh ignoring the hub's own key file because other accounts can read it,
+# which it writes just before the `Permission denied` that ends the run:
+#
+#   @         WARNING: UNPROTECTED PRIVATE KEY FILE!          @
+#   Load key "C:\\...\\relay\\key": bad permissions
+#
+# The fault is the hub's file, so it is not `auth_failed`; the state is the
+# catch-all `unreachable` with a line that names the file.
+OVERLAY_RELAY_KEY_FILE_LINES = ("UNPROTECTED PRIVATE KEY FILE", "bad permissions")
+OVERLAY_RELAY_KEY_FILE_WINDOW = 3
+OVERLAY_RELAY_KEY_FILE_ERROR = (
+    "the hub's own key file can be read by other accounts, so ssh ignored it: " "{line}"
+)
 # What an apply changed, as the panel words it.
 OVERLAY_RELAY_CHANGE_STARTED = "relay_started"
 OVERLAY_RELAY_CHANGE_STOPPED = "relay_stopped"

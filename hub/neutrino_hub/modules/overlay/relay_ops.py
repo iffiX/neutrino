@@ -61,7 +61,7 @@ from neutrino_hub.modules.overlay.relay_renderer import (
     judge_exit,
 )
 from neutrino_hub.platforms.constants import PLATFORM_OS_WINDOWS
-from neutrino_hub.platforms.detect import hub_os, is_linux
+from neutrino_hub.platforms.detect import hub_os, hub_platform, is_linux
 from neutrino_hub.system.constants import (
     SYSTEM_SERVICES_STATE_PATH,
     SYSTEM_START_LINE_DROPIN_NAME,
@@ -273,6 +273,7 @@ class OverlayRelayApplier:
                 agent_port=self._agent_port,
             ).render(config)
             is_changed = self._write_key(key_text)
+            hub_platform().make_root_only(key_path())
             self._hold_known_hosts()
             if not self._is_start_line_current(argv):
                 is_changed = True
@@ -286,13 +287,14 @@ class OverlayRelayApplier:
     def _hold_known_hosts(self) -> None:
         """Make the known-hosts file root-only, empty when ssh has not written it.
 
-        ssh appends to the file it finds, keeping its mode, so a file made here
-        stays 0600 after the first connection records the host key.
+        ssh appends to the file it finds, keeping its mode and its access
+        list, so a file made here stays root-only after the first connection
+        records the host key.
         """
         path = known_hosts_path()
         if not path.exists():
             path.touch(mode=OVERLAY_RELAY_FILE_MODE)
-        os.chmod(path, OVERLAY_RELAY_FILE_MODE)
+        hub_platform().make_root_only(path)
 
     def _write_key(self, text: str) -> bool:
         """Write the key file root-only, telling whether it changed.
