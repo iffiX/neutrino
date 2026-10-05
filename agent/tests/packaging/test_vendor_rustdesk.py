@@ -181,14 +181,14 @@ def test_the_whole_host_directory_is_carried_and_nothing_around_it(
     assert not (tmp_path / "tree/lib/systemd/system/rustdesk.service").exists()
 
 
-def test_the_name_on_the_path_points_at_the_carried_binary(tmp_path, downloaded):
+def test_no_name_on_the_path_points_at_the_carried_binary(tmp_path, downloaded):
+    """A person's own RustDesk package keeps /usr/bin/rustdesk."""
     downloaded(_fixture_deb(tmp_path))
 
     payload.stage_rustdesk(tmp_path / "tree", "amd64", "deb")
 
-    link = tmp_path / "tree/usr/bin/rustdesk"
-    assert link.is_symlink()
-    assert str(link.readlink()) == "/usr/lib/neutrino/agent/rustdesk/rustdesk"
+    assert not (tmp_path / "tree/usr/bin/rustdesk").exists()
+    assert (tmp_path / "tree/usr/lib/neutrino/agent/rustdesk/rustdesk").is_file()
 
 
 def test_a_package_carrying_no_host_fails_the_build(tmp_path, downloaded):

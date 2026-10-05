@@ -36,9 +36,6 @@ def carried(monkeypatch):
         vendor = tree / str(payload.RUSTDESK_VENDOR_DIR).lstrip("/")
         vendor.mkdir(parents=True)
         (vendor / "rustdesk").write_text("")
-        link = tree / payload.RUSTDESK_LINK
-        link.parent.mkdir(parents=True, exist_ok=True)
-        link.symlink_to(payload.RUSTDESK_VENDOR_DIR / "rustdesk")
 
     for module in (build_deb, build_rpm):
         monkeypatch.setattr(module.payload, "stage_linux_interpreter", stage)
@@ -87,26 +84,45 @@ def test_the_deb_asks_for_systemd_and_no_python(tmp_path, carried):
     assert "python3" not in control.split("Description:")[0]
 
 
-def test_the_deb_carries_both_units_and_nothing_for_a_desktop(tmp_path, carried):
+def test_the_deb_carries_the_host_and_registers_nothing_of_it(tmp_path, carried):
+    """The agent writes RustDesk's unit when the hub's switch goes on."""
     build_deb._lay_out(tmp_path, "9.9.9", "amd64", "somebody")
 
     assert (tmp_path / "lib/systemd/system/neutrino_agent.service").is_file()
-    unit = (tmp_path / "lib/systemd/system/rustdesk.service").read_text()
-    assert "ExecStart=/usr/lib/neutrino/agent/rustdesk/rustdesk --service" in unit
+    assert (tmp_path / "usr/lib/neutrino/agent/rustdesk/rustdesk").is_file()
+    for units in ("lib/systemd", "usr/lib/systemd", "etc/systemd"):
+        assert not list((tmp_path / units).rglob("rustdesk*"))
+    assert not (tmp_path / "usr/bin/rustdesk").exists()
     assert not (tmp_path / "usr/share/applications").exists()
     assert not (tmp_path / "usr/share/icons").exists()
 
 
-def test_the_deb_starts_the_desktop_host_and_stops_it_on_removal(tmp_path, carried):
-    """RustDesk's own code runs `systemctl enable rustdesk`, so the unit is
-    named that and no other."""
+def test_the_deb_starts_nothing_of_rustdesk(tmp_path, carried):
     build_deb._lay_out(tmp_path, "9.9.9", "amd64", "somebody")
 
-    postinst = (tmp_path / "DEBIAN/postinst").read_text()
-    prerm = (tmp_path / "DEBIAN/prerm").read_text()
+    for script in ("postinst", "prerm", "postrm"):
+        assert "rustdesk" not in (tmp_path / "DEBIAN" / script).read_text()
 
-    assert "systemctl enable --now rustdesk.service" in postinst
-    assert "systemctl stop rustdesk.service" in prerm
+
+@pytest.mark.parametrize(
+    "argument, owner, is_stopped",
+    [
+        ("upgrade", "neutrino-agent: /lib/systemd/system/rustdesk.service", True),
+        ("upgrade", "rustdesk: /lib/systemd/system/rustdesk.service", False),
+        ("upgrade", "", False),
+        ("install", "neutrino-agent: /lib/systemd/system/rustdesk.service", False),
+    ],
+)
+def test_an_upgrade_stops_the_unit_an_earlier_agent_package_owned_and_no_other(
+    tmp_path, carried, argument, owner, is_stopped
+):
+    build_deb._lay_out(tmp_path / "tree", "9.9.9", "amd64", "somebody")
+
+    calls = _run_with_fakes(
+        tmp_path, tmp_path / "tree/DEBIAN/preinst", argument, owner=owner
+    )
+
+    assert ("systemctl disable --now rustdesk.service" in calls) is is_stopped
 
 
 @pytest.mark.parametrize(
@@ -148,17 +164,14 @@ def test_the_rpm_takes_away_what_the_modules_added_on_a_removal_alone(
         )
 
 
-def test_the_deb_restarts_a_running_desktop_host_on_an_upgrade(tmp_path, carried):
-    """An upgrade or a reinstall replaces the binary the running host has
-    open; `try-restart` touches only a unit that exists and is active."""
+def test_the_deb_restarts_the_agent_on_an_upgrade(tmp_path, carried):
     build_deb._lay_out(tmp_path, "9.9.9", "amd64", "somebody")
 
     postinst = (tmp_path / "DEBIAN/postinst").read_text()
     upgrade = postinst.split('if [ "$1" = configure ] && [ -n "$2" ]; then')[1]
     upgrade = upgrade.split("\nfi\n")[0]
 
-    assert "systemctl try-restart rustdesk.service" in upgrade
-    assert upgrade.index("neutrino_agent.service") < upgrade.index("rustdesk")
+    assert "systemctl try-restart neutrino_agent.service" in upgrade
 
 
 def test_the_deb_carries_the_licence_of_what_it_ships(tmp_path, carried):
@@ -233,7 +246,9 @@ def test_the_rpm_lays_the_same_payload_under_the_same_prefix(tmp_path, carried):
     )
     assert 'AGENT_VERSION = "9.9.9"' in (package / "_version.py").read_text()
     assert (tmp_path / "usr/lib/systemd/system/neutrino_agent.service").is_file()
-    assert (tmp_path / "usr/lib/systemd/system/rustdesk.service").is_file()
+    for units in ("lib/systemd", "usr/lib/systemd", "etc/systemd"):
+        assert not list((tmp_path / units).rglob("rustdesk*"))
+    assert not (tmp_path / "usr/bin/rustdesk").exists()
     assert (tmp_path / "usr/lib/neutrino/agent/rustdesk/rustdesk").is_file()
     assert not (tmp_path / "usr/share/applications").exists()
     wrapper = (tmp_path / "usr/bin/nagent").read_text()
@@ -260,7 +275,6 @@ def _spec(architecture="aarch64"):
         prefix=payload.INSTALL_PREFIX,
         vendor=payload.VENDOR_PREFIX,
         unit_dir=build_rpm.UNIT_DIR,
-        rustdesk_link=payload.RUSTDESK_LINK,
         rustdesk_unit=payload.RUSTDESK_UNIT_NAME,
         prune=payload.PRUNE_UNTRACKED,
     )
@@ -286,37 +300,55 @@ def test_the_rpm_owns_the_desktop_host_it_carries():
     assert "%dir /usr/lib/neutrino/agent" in spec
     assert "/usr/lib/neutrino/agent/*" in spec
     assert "rm -rf /usr/lib/neutrino/agent" in spec
-    assert "/usr/bin/rustdesk" in spec
-    assert "/usr/lib/systemd/system/rustdesk.service" in spec
     assert "/usr/share/doc/neutrino-agent" in spec
-    assert "systemctl enable --now rustdesk.service" in spec
-    assert "systemctl stop rustdesk.service" in spec
+    files = spec.split("%files\n")[1].split("\n%pre\n")[0]
+    assert "rustdesk.service" not in files
+    assert "/usr/bin/rustdesk" not in files
+    for scriptlet in ("%post\n", "%preun\n", "%postun\n"):
+        body = spec.split(scriptlet)[1].split("\n%")[0]
+        assert "rustdesk" not in body
 
 
-def test_the_rpm_restarts_a_running_desktop_host_on_an_upgrade():
-    spec = _spec()
-    post = spec.split("%post\n")[1].split("%preun")[0]
-    upgrade = post.split('if [ "$1" -ge 2 ]; then')[1].split("\nfi\n")[0]
+@pytest.mark.parametrize(
+    "count, owner, is_stopped",
+    [
+        ("2", "neutrino-agent", True),
+        ("2", "rustdesk", False),
+        ("2", "file /usr/lib/systemd/system/rustdesk.service is not owned", False),
+        ("1", "neutrino-agent", False),
+    ],
+)
+def test_an_rpm_upgrade_stops_the_unit_an_earlier_agent_package_owned_and_no_other(
+    tmp_path, count, owner, is_stopped
+):
+    pre = _spec().split("\n%pre\n")[1].split("\n%post\n")[0]
+    script = tmp_path / "pre"
+    script.write_text("#!/bin/sh\n" + pre.replace("%%{NAME}", "%{NAME}"))
 
-    assert "systemctl try-restart rustdesk.service" in upgrade
+    calls = _run_with_fakes(tmp_path, script, count, owner=owner)
+
+    assert ("systemctl disable --now rustdesk.service" in calls) is is_stopped
 
 
-def test_the_packages_replace_the_upstream_rustdesk_package():
-    assert "Conflicts: rustdesk\nReplaces: rustdesk\n" in build_deb.CONTROL
-    assert "Conflicts:      rustdesk" in build_rpm.SPEC
+def test_the_packages_live_beside_a_person_s_own_rustdesk_package():
+    assert "Conflicts" not in build_deb.CONTROL
+    assert "Replaces" not in build_deb.CONTROL
+    assert "Conflicts" not in build_rpm.SPEC
 
 
 def test_the_rpm_build_allows_the_viewers_upstream_runpath_and_nothing_else():
     assert build_rpm.RPMBUILD_ENVIRONMENT == {"QA_RPATHS": "0x0002"}
 
 
-def _run_with_fakes(tmp_path, script, argument):
-    """Run one maintainer script with nagent and systemctl recording calls.
+def _run_with_fakes(tmp_path, script, argument, owner=""):
+    """Run one maintainer script with nagent and systemctl recording calls,
+    and dpkg-query and rpm naming one owner for any file.
 
     Args:
         tmp_path: Where the fakes and their record go.
         script: The script to run.
         argument: Its first argument.
+        owner: What the package database answers for a file.
 
     Returns:
         The commands it ran, one line each.
@@ -327,6 +359,10 @@ def _run_with_fakes(tmp_path, script, argument):
     for name in ("nagent", "systemctl"):
         fake = fakes / name
         fake.write_text(f'#!/bin/sh\necho "{name} $*" >>"{record}"\n')
+        fake.chmod(0o755)
+    for name in ("dpkg-query", "rpm"):
+        fake = fakes / name
+        fake.write_text(f'#!/bin/sh\n[ -n "{owner}" ] || exit 1\necho "{owner}"\n')
         fake.chmod(0o755)
     environment = dict(os.environ, PATH=f"{fakes}:/usr/bin:/bin")
     subprocess.run(["sh", str(script), argument], env=environment, check=True)

@@ -9,7 +9,9 @@ preinstall unloading and the postinstall loading all three; and the name the
 release publishes it under.
 """
 
+import os
 import plistlib
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -37,7 +39,7 @@ def laid_out(tmp_path, monkeypatch):
     def stage_darwin_app(dest_dir, *, machine="aarch64"):
         app = dest_dir / "RustDesk.app" / "Contents" / "MacOS"
         app.mkdir(parents=True)
-        (app / "RustDesk").write_bytes(b"")
+        (app / "RustDesk").write_bytes(b"\xcf\xfa\xed\xfe" + b"\0" * 12)
         return dest_dir / "RustDesk.app"
 
     monkeypatch.setattr(build_agent_macos, "_check_build_machine", lambda machine: None)
@@ -94,12 +96,19 @@ def test_the_installed_tree_is_read_back_for_its_links_before_signing(laid_out):
     assert checked == [(installed, 0)]
 
 
-def test_rustdesk_is_the_app_under_applications(laid_out):
-    staged, _signed, _checked = laid_out
+def test_rustdesk_is_the_app_in_the_agents_own_folder_with_upstreams_signature(
+    laid_out,
+):
+    """It is copied in after the ad hoc signing, which never touches it."""
+    staged, signed, _checked = laid_out
+    app = (
+        staged["root"]
+        / "Library/Application Support/Neutrino/agent/app/rustdesk/RustDesk.app"
+    )
 
-    assert (
-        staged["root"] / "Applications/RustDesk.app/Contents/MacOS/RustDesk"
-    ).is_file()
+    assert (app / "Contents/MacOS/RustDesk").is_file()
+    assert not any("RustDesk.app" in str(path) for path in signed)
+    assert not (staged["root"] / "Applications").exists()
 
 
 def test_the_agents_daemon_runs_nagent_run_into_its_log(laid_out):
@@ -119,27 +128,18 @@ def test_the_agents_daemon_runs_nagent_run_into_its_log(laid_out):
     assert job["EnvironmentVariables"] == {"LANG": "en_US.UTF-8"}
 
 
-def test_rustdesks_daemon_and_session_agent_are_its_own(laid_out):
+def test_the_package_installs_the_agents_job_and_no_job_of_rustdesks(laid_out):
+    """The agent registers RustDesk's jobs when the hub's switch is on."""
     staged, _signed, _checked = laid_out
     root = staged["root"]
 
-    service = read_plist(root, "Library/LaunchDaemons", "com.carriez.RustDesk_service")
-    server = read_plist(root, "Library/LaunchAgents", "com.carriez.RustDesk_server")
-
-    assert service["ProgramArguments"] == [
-        "/bin/sh",
-        "-c",
-        "/Applications/RustDesk.app/Contents/MacOS/service",
+    assert sorted(path.name for path in (root / "Library/LaunchDaemons").iterdir()) == [
+        "com.neutrino.agent.plist"
     ]
-    assert server["ProgramArguments"] == [
-        "/Applications/RustDesk.app/Contents/MacOS/RustDesk",
-        "--server",
-    ]
-    assert server["LimitLoadToSessionType"] == ["LoginWindow", "Aqua"]
-    assert server["AssociatedBundleIdentifiers"] == "com.carriez.rustdesk"
+    assert not (root / "Library/LaunchAgents").exists()
 
 
-def test_the_scripts_unload_before_and_load_all_three_after(laid_out):
+def test_the_scripts_unload_the_agent_before_and_start_it_alone_after(laid_out):
     staged, _signed, _checked = laid_out
     scripts = staged["scripts"]
 
@@ -147,7 +147,6 @@ def test_the_scripts_unload_before_and_load_all_three_after(laid_out):
     postinstall = (scripts / "postinstall").read_text()
 
     assert "launchctl bootout system/com.neutrino.agent" in preinstall
-    assert "launchctl bootout system/com.carriez.RustDesk_service" in preinstall
     assert postinstall.startswith("#!/bin/sh\nstart_daemon() {")
     assert (
         "start_daemon com.neutrino.agent "
@@ -155,18 +154,7 @@ def test_the_scripts_unload_before_and_load_all_three_after(laid_out):
     )
     agent_start = postinstall.split("start_daemon com.neutrino.agent ")[1]
     assert agent_start.split("}")[0].rstrip().endswith("exit 1")
-    assert (
-        "start_daemon com.carriez.RustDesk_service \\\n"
-        "    /Library/LaunchDaemons/com.carriez.RustDesk_service.plist" in postinstall
-    )
-    assert "|| true" not in agent_start.split("seat=")[0]
-    assert (
-        'launchctl bootstrap gui/"$seat" '
-        "/Library/LaunchAgents/com.carriez.RustDesk_server.plist" in postinstall
-    )
-    assert "console_user() {" in postinstall
-    assert "user=$(console_user)" in postinstall
-    assert "/usr/sbin/scutil" in postinstall
+    assert "RustDesk" not in postinstall
     assert postinstall.index('mkdir -p "/Library/Logs/Neutrino/agent"') < (
         postinstall.index("start_daemon com.")
     )
@@ -227,3 +215,94 @@ def test_the_build_refuses_anything_but_a_mac(monkeypatch):
         build_agent_macos._check_build_machine("arm64")
 
     assert "Mac" in str(refused.value)
+
+
+# --- an upgrade from the layout that installed RustDesk under /Applications ---
+
+OLD_RECEIPT = """Applications/RustDesk.app
+Applications/RustDesk.app/Contents
+Applications/RustDesk.app/Contents/MacOS/RustDesk
+Applications/RustDesk.app/Contents/MacOS/service
+Library/Application Support/Neutrino/agent/app/nagent
+Library/LaunchAgents/com.carriez.RustDesk_server.plist
+Library/LaunchDaemons/com.carriez.RustDesk_service.plist
+Library/LaunchDaemons/com.neutrino.agent.plist
+"""
+
+PROCESSES = """  101 /Applications/RustDesk.app/Contents/MacOS/RustDesk --server
+  102 /bin/sh -c /Applications/RustDesk.app/Contents/MacOS/service
+  103 /Applications/RustDesk.app/Contents/MacOS/RustDesk --connect 123456789
+  104 /Library/Application Support/Neutrino/agent/app/rustdesk/RustDesk.app/Contents/MacOS/RustDesk --server
+"""
+
+
+def _run_preinstall(tmp_path, laid_out, receipt):
+    """Run the preinstall script with every command it touches the Mac with
+    replaced by one that records what it was asked."""
+    staged, _signed, _checked = laid_out
+    fakes = tmp_path / "fakes"
+    fakes.mkdir()
+    record = tmp_path / "calls"
+    (tmp_path / "receipt").write_text(receipt)
+    (tmp_path / "processes").write_text(PROCESSES)
+    scripts = {
+        "pkgutil": f'[ -s "{tmp_path}/receipt" ] || exit 1\ncat "{tmp_path}/receipt"',
+        "ps": f'case "$*" in *comm=*) echo "  501 /System/Library/CoreServices/'
+        f'loginwindow.app/Contents/MacOS/loginwindow";; *) cat "{tmp_path}/processes";; esac',
+        "launchctl": f'echo "launchctl $*" >>"{record}"',
+        "kill": f'echo "kill $*" >>"{record}"',
+        "rm": f'echo "rm $*" >>"{record}"',
+    }
+    for name, body in scripts.items():
+        fake = fakes / name
+        fake.write_text(f"#!/bin/sh\n{body}\n")
+        fake.chmod(0o755)
+    text = (
+        (staged["scripts"] / "preinstall")
+        .read_text()
+        .replace('kill "$pid"', '"$KILL" "$pid"')
+    )
+    script = tmp_path / "preinstall"
+    script.write_text(text)
+    subprocess.run(
+        ["sh", str(script)],
+        env=dict(os.environ, PATH=f"{fakes}:/usr/bin:/bin", KILL=str(fakes / "kill")),
+        check=True,
+    )
+    return record.read_text().splitlines() if record.exists() else []
+
+
+def test_an_upgrade_takes_away_what_the_old_package_put_under_applications(
+    tmp_path, laid_out
+):
+    calls = _run_preinstall(tmp_path, laid_out, OLD_RECEIPT)
+
+    assert "launchctl bootout system/com.carriez.RustDesk_service" in calls
+    assert "launchctl bootout gui/501/com.carriez.RustDesk_server" in calls
+    assert "rm -f /Library/LaunchDaemons/com.carriez.RustDesk_service.plist" in calls
+    assert "rm -f /Library/LaunchAgents/com.carriez.RustDesk_server.plist" in calls
+    assert "rm -rf /Applications/RustDesk.app" in calls
+    assert "kill 101" in calls
+    assert "kill 102" in calls
+    assert "kill 103" not in calls
+    assert "kill 104" not in calls
+
+
+@pytest.mark.parametrize(
+    "receipt",
+    [
+        "",
+        "Library/Application Support/Neutrino/agent/app/nagent\n"
+        "Library/Application Support/Neutrino/agent/app/rustdesk/RustDesk.app/"
+        "Contents/MacOS/RustDesk\n",
+    ],
+    ids=["fresh", "already_new"],
+)
+def test_a_rustdesk_the_receipt_does_not_list_is_left_alone(
+    tmp_path, laid_out, receipt
+):
+    """A person's own RustDesk, and the jobs the agent registered itself
+    under RustDesk's names, are no package's files."""
+    calls = _run_preinstall(tmp_path, laid_out, receipt)
+
+    assert calls == ["launchctl bootout system/com.neutrino.agent"]

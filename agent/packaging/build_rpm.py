@@ -56,7 +56,6 @@ License:        MIT
 URL:            https://github.com/iffiX/neutrino
 BuildArch:      {architecture}
 {requires}
-Conflicts:      rustdesk
 Packager:       {packager}
 
 # The payload is prebuilt and carries its own interpreter, so none of
@@ -84,10 +83,20 @@ cp -a {staged}/. %{{buildroot}}/
 %dir {vendor}
 {vendor}/*
 /usr/bin/nagent
-/{rustdesk_link}
 /{unit_dir}/neutrino_agent.service
-/{unit_dir}/{rustdesk_unit}
 /usr/share/doc/{name}
+
+%pre
+# Before an upgrade's files land: the RustDesk unit an earlier package of the
+# agent installed, enabled and started is stopped and disabled, and this
+# package carries none. rpm names the package that owns the unit file; a
+# unit another package owns, or one written by hand, is left as it is.
+if [ "$1" -ge 2 ]; then
+    if rpm -qf --qf '%%{{NAME}}\\n' /{unit_dir}/{rustdesk_unit} 2>/dev/null \\
+        | grep -qx '{name}'; then
+        systemctl disable --now {rustdesk_unit} >/dev/null 2>&1 || true
+    fi
+fi
 
 %post
 systemctl daemon-reload >/dev/null 2>&1 || true
@@ -95,13 +104,7 @@ systemctl daemon-reload >/dev/null 2>&1 || true
 # here, and without the restart the old process goes on beating.
 if [ "$1" -ge 2 ]; then
     systemctl try-restart neutrino_agent.service >/dev/null 2>&1 || true
-    # The package has replaced the RustDesk binary under a running service,
-    # which would go on running the deleted file.
-    systemctl try-restart {rustdesk_unit} >/dev/null 2>&1 || true
 fi
-# The desktop host the package carries. Its unit is named the way RustDesk's
-# own code names it, which runs `systemctl enable rustdesk` for itself.
-systemctl enable --now {rustdesk_unit} >/dev/null 2>&1 || true
 if [ "$1" = 1 ]; then
     echo ""
     echo "  Neutrino agent installed. Start it and join a hub:"
@@ -119,8 +122,6 @@ if [ "$1" = 0 ]; then
     # units. Shares, accounts and the modules' data stay. An upgrade runs
     # this scriptlet with 1 and keeps them.
     nagent service uninstall --yes >/dev/null 2>&1 || true
-    systemctl stop {rustdesk_unit} >/dev/null 2>&1 || true
-    systemctl disable {rustdesk_unit} >/dev/null 2>&1 || true
 fi
 
 %postun
@@ -193,7 +194,6 @@ def main() -> int:
                 prefix=payload.INSTALL_PREFIX,
                 vendor=payload.VENDOR_PREFIX,
                 unit_dir=UNIT_DIR,
-                rustdesk_link=payload.RUSTDESK_LINK,
                 rustdesk_unit=payload.RUSTDESK_UNIT_NAME,
                 prune=payload.PRUNE_UNTRACKED,
             ),
@@ -232,12 +232,6 @@ def _lay_out(staged: Path, version: str, architecture: str) -> None:
         (AGENT_ROOT / "neutrino_agent/data/systemd/neutrino_agent.service").read_text(
             encoding="utf-8"
         ),
-    )
-    payload.write(
-        staged / UNIT_DIR / payload.RUSTDESK_UNIT_NAME,
-        (
-            AGENT_ROOT / "neutrino_agent/data/systemd" / payload.RUSTDESK_UNIT_NAME
-        ).read_text(encoding="utf-8"),
     )
 
 
