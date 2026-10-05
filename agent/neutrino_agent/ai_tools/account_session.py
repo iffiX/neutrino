@@ -24,7 +24,9 @@ from neutrino_agent.ai_tools.constants import (
     AI_TOOLS_CODE_SWITCH_FAILED,
     AI_TOOLS_COMMAND_TIMEOUT_S,
     AI_TOOLS_DETAIL_LIMIT,
+    AI_TOOLS_PAYLOAD_BASE,
     AI_TOOLS_PAYLOAD_NAME,
+    AI_TOOLS_PAYLOAD_TREE,
 )
 from neutrino_agent.exceptions import (
     ModuleApplyError,
@@ -35,6 +37,11 @@ from neutrino_agent.exceptions import (
 # Writes standard input to the file the first argument names, its directory
 # made first.
 POSIX_WRITE_SHELL = 'mkdir -p -- "$(dirname -- "$1")" && cat > "$1"'
+# Removes the file the first argument names, then each directory after it
+# that is empty, stopping at the first that is not.
+POSIX_REMOVE_SHELL = (
+    'rm -f -- "$1"; shift; for d do rmdir -- "$d" 2>/dev/null || exit 0; done'
+)
 # The PowerShell that does the same four things on Windows, each given the
 # path as a literal.
 WINDOWS_READ_SCRIPT = """
@@ -60,6 +67,15 @@ exit 0
 """
 WINDOWS_REMOVE_SCRIPT = """
 Remove-Item -LiteralPath {path} -Force -ErrorAction SilentlyContinue
+exit 0
+"""
+WINDOWS_REMOVE_WITH_DIRS_SCRIPT = """
+Remove-Item -LiteralPath {path} -Force -ErrorAction SilentlyContinue
+foreach ($d in @({dirs})) {{
+    if (-not (Test-Path -LiteralPath $d -PathType Container)) {{ continue }}
+    if (Get-ChildItem -LiteralPath $d -Force) {{ break }}
+    Remove-Item -LiteralPath $d -Force -ErrorAction SilentlyContinue
+}}
 exit 0
 """
 
@@ -108,6 +124,7 @@ class AiToolsAccountSession:
         self._platform = platform
         self._binary = binary
         self._password = password
+        self._os_name = platform.os_name
         self._is_windows = platform.os_name == "windows"
         self._join = ntpath.join if self._is_windows else posixpath.join
 
@@ -228,8 +245,34 @@ class AiToolsAccountSession:
         self._run(command)
 
     def payload_path(self) -> str:
-        """The file a payload for cc-switch is handed in, below the account's home."""
-        return self.path(AI_TOOLS_PAYLOAD_NAME)
+        """The file a payload for cc-switch is handed in, in the account's Neutrino tree."""
+        return self._join(self._payload_dirs()[0], AI_TOOLS_PAYLOAD_NAME)
+
+    def remove_payload(self) -> None:
+        """Delete the payload as the account, then each directory of its tree left empty.
+
+        ``ai_tools``, ``agent`` and the Neutrino directory go in that order;
+        the first that holds anything else stays, with those above it.
+        """
+        dirs = self._payload_dirs()
+        if self._is_windows:
+            command = powershell_argv(
+                WINDOWS_REMOVE_WITH_DIRS_SCRIPT.format(
+                    path=powershell_literal(self.payload_path()),
+                    dirs=", ".join(powershell_literal(d) for d in dirs),
+                )
+            )
+        else:
+            command = ["sh", "-c", POSIX_REMOVE_SHELL, "sh", self.payload_path()]
+            command += dirs
+        self._run(command)
+
+    def _payload_dirs(self) -> list:
+        """The payload's tree in the account's home, deepest directory first."""
+        key = self._os_name if self._os_name in AI_TOOLS_PAYLOAD_TREE else "linux"
+        base = AI_TOOLS_PAYLOAD_BASE[key]
+        tree = AI_TOOLS_PAYLOAD_TREE[key]
+        return [self.path(*base, *tree[:depth]) for depth in range(len(tree), 0, -1)]
 
     def _run(self, command: list, *, stdin: str = ""):
         """Run one command as the account.

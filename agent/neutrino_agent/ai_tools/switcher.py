@@ -487,7 +487,7 @@ class AiToolsAccountSwitcher:
         try:
             return self._session.cc(arguments + [path], app, is_checked=False)
         finally:
-            self._session.remove(path)
+            self._session.remove_payload()
 
     def _live_payload(self, app: str) -> str:
         """A tool's live configuration in the shape cc-switch's extract reads."""

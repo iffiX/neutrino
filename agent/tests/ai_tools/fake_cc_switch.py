@@ -109,7 +109,10 @@ class FakeSession:
         return "/".join([self.home, *parts])
 
     def payload_path(self):
-        return self.path(".neutrino_ai_tools_payload")
+        return self.path(".local", "share", "neutrino", "agent", "ai_tools", "payload")
+
+    def remove_payload(self):
+        self.remove(self.payload_path())
 
     def failure(self, detail):
         return ToolSwitchError(
