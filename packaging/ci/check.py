@@ -52,6 +52,7 @@ Not pure: installs and removes packages.
 """
 
 import argparse
+import functools
 import hashlib
 import json
 import os
@@ -60,13 +61,59 @@ import plistlib
 import re
 import secrets
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+
+# Every check ends within this whole, and every command it runs within its
+# own limit: past the whole, what the machine is doing is printed and the
+# process ends, so a hung or a runaway step never outlives its job's runner.
+CHECK_LIMIT_S = 25 * 60
+CHECK_COMMAND_TIMEOUT_S = 5 * 60
+CHECK_MSIEXEC_TIMEOUT_S = 15 * 60
+CHECK_SNAPSHOT_TIMEOUT_S = 60
+CHECK_HEARTBEAT_S = 5 * 60
+# The runner keeps its job only while it reaches GitHub. The watchdog dials
+# this address every so often; after so many misses in a row it prints what
+# the machine is doing, takes away what the check installed, and ends the
+# check, so a package that cuts the network fails the step instead of
+# losing the runner.
+CHECK_NETWORK_PROBE = ("api.github.com", 443)
+CHECK_NETWORK_EVERY_S = 30
+CHECK_NETWORK_TIMEOUT_S = 5
+CHECK_NETWORK_MISSES = 3
+# What a Windows snapshot prints: the processes busiest by processor time and
+# by memory, the client's services and tasks, the default routes and the
+# adapters that are up, and the last lines of the client's logs.
+CHECK_WINDOWS_SNAPSHOT = (
+    "Get-Process | Sort-Object CPU -Descending | Select-Object -First 15 "
+    "Name,Id,CPU,@{n='WorkingSetMB';e={[int]($_.WorkingSet64/1MB)}} | "
+    "Format-Table -AutoSize | Out-String -Width 200; "
+    "Get-Process | Sort-Object WorkingSet64 -Descending | Select-Object -First 8 "
+    "Name,Id,@{n='WorkingSetMB';e={[int]($_.WorkingSet64/1MB)}} | "
+    "Format-Table -AutoSize | Out-String -Width 200; "
+    "Get-Service Neutrino*, neutrino* -ErrorAction SilentlyContinue | "
+    "Format-Table -AutoSize Name,Status | Out-String; "
+    "Get-ScheduledTask -TaskName 'NeutrinoClientRelaunch_*' "
+    "-ErrorAction SilentlyContinue | Format-Table -AutoSize TaskName,State | Out-String; "
+    "Get-NetRoute -DestinationPrefix 0.0.0.0/0 -ErrorAction SilentlyContinue | "
+    "Format-Table -AutoSize InterfaceAlias,NextHop,RouteMetric | Out-String; "
+    "Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object Status -eq 'Up' | "
+    "Format-Table -AutoSize Name,InterfaceDescription | Out-String -Width 200; "
+    'Get-ChildItem "$env:ProgramData\\Neutrino\\client\\log" -Filter *.log '
+    "-ErrorAction SilentlyContinue | ForEach-Object { '--- ' + $_.Name; "
+    "Get-Content $_.FullName -Tail 15 }"
+)
+CHECK_STARTED = time.monotonic()
+# What takes away what a check has installed so far, run by the watchdog
+# when the network is gone or the time is up.
+CHECK_RESCUES: list = []
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 INSTALL_SCRIPTS_DIR = REPO_ROOT / "packaging" / "install"
@@ -97,6 +144,12 @@ CLIENT_WINDOWS_RELAUNCH_PLANTED = "NeutrinoClientRelaunch_cicheck"
 CLIENT_WINDOWS_RELAUNCH_MARKER = Path(tempfile.gettempdir()) / "relaunch_marker.txt"
 CLIENT_WINDOWS_RELAUNCH_WAIT_S = 60
 CLIENT_WINDOWS_EASYTIER_SERVICE = "NeutrinoClientEasytier"
+# Every service a client package may register, stopped first by a rescue.
+CLIENT_WINDOWS_SERVICES = (
+    "NeutrinoClientNetbird",
+    "NeutrinoClientEasytier",
+    "NeutrinoClientFiles",
+)
 CLIENT_WINDOWS_EASYTIER_PIPE = "neutrino_client_easytier"
 # What ``sc query`` exits with for a service that does not exist.
 SERVICE_DOES_NOT_EXIST = 1060
@@ -267,6 +320,9 @@ def main() -> int:
     parser.add_argument("target", choices=sorted(CHECKS), help="what was built")
     parser.add_argument("artifact", help="the package file")
     arguments = parser.parse_args()
+    for stream in (sys.stdout, sys.stderr):
+        stream.reconfigure(line_buffering=True)
+    threading.Thread(target=_watchdog, name="check_watchdog", daemon=True).start()
     artifact = Path(arguments.artifact).resolve()
     if not artifact.is_file():
         raise SystemExit(f"{artifact} is not a file")
@@ -341,7 +397,13 @@ def check_client_windows(msi: Path) -> None:
         SystemExit: When a step fails.
     """
     _require_host("win32", "Windows")
+    _say("client_windows: planting what an earlier build left")
     _plant_client_windows_leftovers()
+    CHECK_RESCUES.append(
+        functools.partial(
+            _remove_windows_package, msi, services=CLIENT_WINDOWS_SERVICES
+        )
+    )
     log = Path(tempfile.gettempdir()) / "client_install.log"
     code = _msiexec("/i", msi, log)
     print(f"msiexec /i exited {code}")
@@ -352,7 +414,10 @@ def check_client_windows(msi: Path) -> None:
         )
         raise SystemExit("the client did not install")
     print(f"nclient {_answer([str(nclient), '--version'])}")
-    status = subprocess.run([str(nclient), "status"]).returncode
+    _say("nclient status")
+    status = subprocess.run(
+        [str(nclient), "status"], timeout=CHECK_COMMAND_TIMEOUT_S
+    ).returncode
     if status != 1:
         raise SystemExit(f"nclient status exited {status}, expected 1")
     if "Neutrino\\client" not in _machine_path():
@@ -365,7 +430,9 @@ def check_client_windows(msi: Path) -> None:
         raise SystemExit("the EasyTier daemon has no pipe")
     if not CLIENT_WINDOWS_EASYTIER_STATE.is_dir():
         raise SystemExit(f"no EasyTier state at {CLIENT_WINDOWS_EASYTIER_STATE}")
+    _say("the data tree's access lists")
     _check_client_windows_data()
+    _say("the relaunch tasks")
     _check_client_windows_relaunch(msi)
 
     log = Path(tempfile.gettempdir()) / "client_remove.log"
@@ -997,10 +1064,129 @@ def _require_host(platform: str, name: str) -> None:
 
 
 def _msiexec(action: str, msi: Path, log: Path) -> int:
-    """Run msiexec quietly with a verbose log, and return its exit code."""
-    return subprocess.run(
-        ["msiexec", action, str(msi), "/quiet", "/norestart", "/l*v", str(log)]
-    ).returncode
+    """Run msiexec quietly with a verbose log, and return its exit code.
+
+    Raises:
+        SystemExit: When it runs past ``CHECK_MSIEXEC_TIMEOUT_S``, after what
+            the machine is doing and the log's last lines are printed.
+    """
+    _say(f"msiexec {action} {msi.name}")
+    try:
+        code = subprocess.run(
+            ["msiexec", action, str(msi), "/quiet", "/norestart", "/l*v", str(log)],
+            timeout=CHECK_MSIEXEC_TIMEOUT_S,
+        ).returncode
+    except subprocess.TimeoutExpired:
+        _snapshot()
+        _print_log(log, ("",), 40)
+        raise SystemExit(f"msiexec {action} ran past {CHECK_MSIEXEC_TIMEOUT_S} s")
+    _say(f"msiexec {action} exited {code}")
+    return code
+
+
+def _say(text: str) -> None:
+    """Print one progress line with the time the check has run."""
+    print(f"[{int(time.monotonic() - CHECK_STARTED):>5} s] {text}", flush=True)
+
+
+def _snapshot() -> None:
+    """Print what the machine is doing now. Never raises."""
+    _say("what the machine is doing:")
+    if sys.platform == "win32":
+        command = ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command"]
+        command.append(CHECK_WINDOWS_SNAPSHOT)
+    else:
+        command = ["ps", "-eo", "pid,pcpu,rss,comm", "--sort=-pcpu"]
+    try:
+        result = subprocess.run(
+            command, capture_output=True, text=True, timeout=CHECK_SNAPSHOT_TIMEOUT_S
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        print(f"no snapshot: {error}", flush=True)
+        return
+    print((result.stdout or "")[-20000:], flush=True)
+    print((result.stderr or "")[-2000:], flush=True)
+
+
+def _watchdog() -> None:
+    """Watch the check: what the machine does every few minutes, whether the
+    network still reaches GitHub, and the time limit.
+
+    The network is watched once a check has registered a rescue, since
+    only then is there something of its own to take away. A network gone
+    for ``CHECK_NETWORK_MISSES`` probes in a row, or a check past
+    ``CHECK_LIMIT_S``, prints a snapshot, runs every rescue and ends the
+    process.
+    """
+    misses = 0
+    last_heartbeat = time.monotonic()
+    while time.monotonic() - CHECK_STARTED < CHECK_LIMIT_S:
+        time.sleep(min(CHECK_NETWORK_EVERY_S, CHECK_LIMIT_S))
+        if CHECK_RESCUES:
+            misses = 0 if _is_network_up() else misses + 1
+        if misses:
+            _say(f"GitHub did not answer ({misses} in a row)")
+        if misses >= CHECK_NETWORK_MISSES:
+            _give_up("the network is gone")
+            return
+        if time.monotonic() - last_heartbeat >= CHECK_HEARTBEAT_S:
+            last_heartbeat = time.monotonic()
+            _snapshot()
+    _give_up(f"the check ran past {CHECK_LIMIT_S} s")
+
+
+def _is_network_up() -> bool:
+    """Whether a connection to GitHub opens within its timeout."""
+    try:
+        socket.create_connection(
+            CHECK_NETWORK_PROBE, timeout=CHECK_NETWORK_TIMEOUT_S
+        ).close()
+    except OSError:
+        return False
+    return True
+
+
+def _give_up(reason: str) -> None:
+    """Print a snapshot, take away what the check installed, and end the process."""
+    _say(reason)
+    _snapshot()
+    for rescue in list(CHECK_RESCUES):
+        try:
+            rescue()
+        except Exception as error:  # noqa: BLE001 - every rescue is tried
+            print(f"a rescue failed: {error}", flush=True)
+    _say(f"network after the rescues: {'up' if _is_network_up() else 'down'}")
+    _snapshot()
+    os._exit(1)
+
+
+def _remove_windows_package(msi: Path, services: tuple = ()) -> None:
+    """Stop a package's services, then take it away by its installer, within limits.
+
+    Args:
+        msi: The installer.
+        services: The services to stop first, which works while another
+            msiexec still holds the installer.
+    """
+    for name in services:
+        try:
+            subprocess.run(
+                ["sc.exe", "stop", name],
+                capture_output=True,
+                timeout=CHECK_COMMAND_TIMEOUT_S,
+            )
+        except subprocess.SubprocessError:
+            pass
+    _say(f"taking {msi.name} away")
+    try:
+        result = subprocess.run(
+            ["msiexec", "/x", str(msi), "/quiet", "/norestart"],
+            timeout=CHECK_MSIEXEC_TIMEOUT_S,
+        )
+    except subprocess.SubprocessError as error:
+        _say(f"msiexec /x did not finish: {error}")
+        return
+    _say(f"msiexec /x exited {result.returncode}")
 
 
 def _print_log(log: Path, patterns: tuple, count: int) -> None:
@@ -1079,11 +1265,16 @@ def _powershell(script: str) -> str:
     Raises:
         SystemExit: When it fails.
     """
-    result = subprocess.run(
-        ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
-        capture_output=True,
-        text=True,
-    )
+    try:
+        result = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+            capture_output=True,
+            text=True,
+            timeout=CHECK_COMMAND_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired:
+        _snapshot()
+        raise SystemExit(f"powershell ran past {CHECK_COMMAND_TIMEOUT_S} s: {script}")
     if result.returncode != 0:
         raise SystemExit(f"powershell exited {result.returncode}: {result.stderr}")
     return result.stdout.strip()
@@ -1106,7 +1297,15 @@ def _answer(command: list) -> str:
     Raises:
         SystemExit: When it fails.
     """
-    result = subprocess.run(command, capture_output=True, text=True)
+    try:
+        result = subprocess.run(
+            command, capture_output=True, text=True, timeout=CHECK_COMMAND_TIMEOUT_S
+        )
+    except subprocess.TimeoutExpired:
+        _snapshot()
+        raise SystemExit(
+            f"{' '.join(command[:2])} ran past {CHECK_COMMAND_TIMEOUT_S} s"
+        )
     if result.returncode != 0:
         raise SystemExit(
             f"{' '.join(command[:2])} exited {result.returncode}: "

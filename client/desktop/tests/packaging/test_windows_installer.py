@@ -680,6 +680,27 @@ def test_the_release_builds_the_stand_in_with_msvc_before_the_installer():
     assert "--packet-dll build/packet_stub/packet.dll" in job
 
 
+def test_each_windows_client_check_step_has_a_limit_and_unbuffered_output():
+    """A check that hangs or runs away must end within its job, and what it
+    printed must reach the log as it goes."""
+    workflow = (
+        Path(payload.__file__).resolve().parents[3]
+        / ".github"
+        / "workflows"
+        / "release.yml"
+    ).read_text(encoding="utf-8")
+    steps = [
+        part
+        for part in workflow.split("      - ")
+        if part.startswith("run: python packaging/ci/check.py client_windows")
+    ]
+
+    assert len(steps) == 2
+    for step in steps:
+        assert "timeout-minutes: 30" in step
+        assert 'PYTHONUNBUFFERED: "1"' in step
+
+
 def test_the_payload_carries_no_wrapper_script_and_no_interpreter_of_its_own():
     """The binary is the command; a .cmd beside a carried python.exe was
     the shape before."""

@@ -635,3 +635,129 @@ def test_the_hub_entry_must_declare_the_runners_architecture_first(
     else:
         with pytest.raises(SystemExit):
             check._check_hub_macos_entry()
+
+
+def test_an_msiexec_that_hangs_ends_the_check_with_a_snapshot(
+    check, monkeypatch, tmp_path
+):
+    snapshots = []
+
+    def hang(command, **kwargs):
+        assert kwargs["timeout"] == check.CHECK_MSIEXEC_TIMEOUT_S
+        raise check.subprocess.TimeoutExpired(command, kwargs["timeout"])
+
+    monkeypatch.setattr(check.subprocess, "run", hang)
+    monkeypatch.setattr(check, "_snapshot", lambda: snapshots.append(1))
+
+    with pytest.raises(SystemExit, match="msiexec /fa ran past"):
+        check._msiexec("/fa", tmp_path / "client.msi", tmp_path / "repair.log")
+
+    assert snapshots == [1]
+
+
+@pytest.mark.parametrize("helper", ["_answer", "_powershell"])
+def test_a_command_that_hangs_ends_the_check_with_a_snapshot(
+    check, monkeypatch, helper
+):
+    snapshots = []
+
+    def hang(command, **kwargs):
+        assert kwargs["timeout"] == check.CHECK_COMMAND_TIMEOUT_S
+        raise check.subprocess.TimeoutExpired(command, kwargs["timeout"])
+
+    monkeypatch.setattr(check.subprocess, "run", hang)
+    monkeypatch.setattr(check, "_snapshot", lambda: snapshots.append(1))
+
+    with pytest.raises(SystemExit, match="ran past"):
+        getattr(check, helper)(["schtasks", "/query"] if helper == "_answer" else "x")
+
+    assert snapshots == [1]
+
+
+def test_a_snapshot_that_cannot_run_does_not_fail_the_check(check, monkeypatch, capsys):
+    def refuse(command, **kwargs):
+        raise OSError("no such program")
+
+    monkeypatch.setattr(check.subprocess, "run", refuse)
+
+    check._snapshot()
+
+    assert "no snapshot: no such program" in capsys.readouterr().out
+
+
+@pytest.fixture
+def watched(check, monkeypatch):
+    """The watchdog with time, the network, snapshots and the exit scripted."""
+    events = []
+    monkeypatch.setattr(check, "CHECK_NETWORK_EVERY_S", 0)
+    monkeypatch.setattr(check, "_snapshot", lambda: events.append("snapshot"))
+    monkeypatch.setattr(check.os, "_exit", lambda status: events.append(status))
+    monkeypatch.setattr(check, "CHECK_RESCUES", [lambda: events.append("rescue")])
+    return events
+
+
+def test_the_watchdog_ends_a_check_past_its_limit_after_its_rescues(
+    check, monkeypatch, watched
+):
+    monkeypatch.setattr(check, "CHECK_LIMIT_S", 0)
+    monkeypatch.setattr(check, "_is_network_up", lambda: True)
+
+    check._watchdog()
+
+    assert watched == ["snapshot", "rescue", "snapshot", 1]
+
+
+def test_a_network_gone_three_probes_in_a_row_ends_the_check(
+    check, monkeypatch, watched, capsys
+):
+    answers = iter([True, False, True, False, False, False, True])
+    monkeypatch.setattr(check, "CHECK_LIMIT_S", 3600)
+    monkeypatch.setattr(check, "_is_network_up", lambda: next(answers))
+
+    check._watchdog()
+
+    assert watched == ["snapshot", "rescue", "snapshot", 1]
+    out = capsys.readouterr().out
+    assert "did not answer (3 in a row)" in out
+    assert "the network is gone" in out
+    assert "network after the rescues: up" in out
+
+
+def test_a_rescue_stops_the_clients_services_before_it_removes_the_package(
+    check, monkeypatch, tmp_path
+):
+    commands = []
+
+    def run(command, **kwargs):
+        commands.append(command[:3])
+        assert kwargs["timeout"]
+        return check.subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(check.subprocess, "run", run)
+
+    check._remove_windows_package(
+        tmp_path / "client.msi", services=check.CLIENT_WINDOWS_SERVICES
+    )
+
+    assert commands == [
+        ["sc.exe", "stop", "NeutrinoClientNetbird"],
+        ["sc.exe", "stop", "NeutrinoClientEasytier"],
+        ["sc.exe", "stop", "NeutrinoClientFiles"],
+        ["msiexec", "/x", str(tmp_path / "client.msi")],
+    ]
+
+
+def test_a_check_with_no_rescue_is_not_ended_by_the_network(
+    check, monkeypatch, watched
+):
+    monkeypatch.setattr(check, "CHECK_RESCUES", [])
+    monkeypatch.setattr(check, "CHECK_LIMIT_S", 0.05)
+    monkeypatch.setattr(check, "CHECK_NETWORK_EVERY_S", 0.01)
+    probes = []
+    monkeypatch.setattr(check, "_is_network_up", lambda: probes.append(1) or False)
+    monkeypatch.setattr(check, "CHECK_STARTED", check.time.monotonic())
+
+    check._watchdog()
+
+    assert probes == [1]
+    assert watched[-1] == 1
