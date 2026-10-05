@@ -48,6 +48,9 @@ CONTROL_OPCODES = (OPCODE_CLOSE, OPCODE_PING, OPCODE_PONG)
 HANDSHAKE_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 HANDSHAKE_HEADER_LIMIT = 64 * 1024
 CONTROL_PAYLOAD_LIMIT = 125
+# The mask key every frame this side sends carries: the zero key, which
+# leaves the payload as it is.
+WS_ZERO_MASK_KEY = bytes(4)
 # How much one frame may carry before it is refused as unreasonable.
 FRAME_PAYLOAD_LIMIT = 64 * 1024 * 1024
 
@@ -202,11 +205,16 @@ def _refusal(code: str, params: dict) -> Exception:
 
 
 def _mask(payload: bytes, key: bytes) -> bytes:
-    """XOR a payload with a four-byte key, both ways."""
-    if not payload:
-        return b""
-    repeated = (key * (len(payload) // 4 + 1))[: len(payload)]
-    return bytes(a ^ b for a, b in zip(payload, repeated))
+    """XOR a payload with a four-byte key, both ways, in one block.
+
+    The zero key leaves the payload as it is.
+    """
+    size = len(payload)
+    if not size or key == WS_ZERO_MASK_KEY:
+        return bytes(payload)
+    repeated = (key * (size // 4 + 1))[:size]
+    masked = int.from_bytes(payload, "big") ^ int.from_bytes(repeated, "big")
+    return masked.to_bytes(size, "big")
 
 
 class WebSocketClient:
@@ -397,7 +405,7 @@ class WebSocketClient:
         sock = self._sock
         if sock is None:
             raise GatewayUnreachable("the socket is closed")
-        frame = encode_frame(opcode, payload, mask_key=os.urandom(4))
+        frame = encode_frame(opcode, payload, mask_key=WS_ZERO_MASK_KEY)
         with self._io_lock:
             try:
                 sock.sendall(frame)
@@ -504,7 +512,7 @@ class WebSocketClient:
         with self._io_lock:
             try:
                 sock.sendall(
-                    encode_frame(OPCODE_CLOSE, payload, mask_key=os.urandom(4))
+                    encode_frame(OPCODE_CLOSE, payload, mask_key=WS_ZERO_MASK_KEY)
                 )
             except OSError:
                 pass
