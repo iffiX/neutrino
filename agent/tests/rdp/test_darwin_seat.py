@@ -1,15 +1,19 @@
-"""The macOS seat: the console's owner, netstat, and the permissions dialog.
+"""The macOS seat: the console user, netstat, and the permissions dialog.
 
 Commands are faked at ``subprocess.run`` and accounts at ``pwd``. What is
-pinned is who is at the screen, that a seated Mac says nothing a peer would
-wait on, and that a share start asks for the dialog and the Screen Recording
-pane inside the account's own session, as the account, without waiting for
-either.
+pinned is who is at the screen, read from the system configuration's
+console user, the console's owner only when that cannot be asked; that a
+seated Mac says nothing a peer would wait on; and that a share start asks
+for the dialog and the Screen Recording pane inside the account's own
+session, as the account, through the agent's own step-down and never
+``chroot`` or ``sudo``, without waiting for either, and logs a failure.
 """
 
 import subprocess
 import threading
 from types import SimpleNamespace
+
+import pytest
 
 from neutrino_agent.rdp import darwin_seat as seat_module
 from neutrino_agent.rdp.darwin_seat import DarwinSeat
@@ -24,18 +28,69 @@ def printing(monkeypatch, stdout, *, returncode=0, calls=None):
     monkeypatch.setattr(seat_module.subprocess, "run", run)
 
 
-def test_the_consoles_owner_is_the_seat(monkeypatch):
+# What scutil printed on the rented Mac, signed in by auto-login while
+# /dev/console stayed root's.
+CONSOLE_USER = """<dictionary> {
+  GID : 20
+  Name : chuzu
+  SessionInfo : <array> {
+    0 : <dictionary> {
+      kCGSSessionOnConsoleKey : TRUE
+      kCGSSessionUserIDKey : 502
+      kCGSSessionUserNameKey : chuzu
+    }
+  }
+  UID : 502
+}
+"""
+
+
+def test_the_system_configurations_console_user_is_the_seat(monkeypatch):
     calls = []
-    printing(monkeypatch, "pat\n", calls=calls)
 
-    assert DarwinSeat().graphical_accounts() == ["pat"]
-    assert calls == [["stat", "-f", "%Su", "/dev/console"]]
+    def run(command, **kwargs):
+        calls.append((list(command), kwargs.get("input")))
+        return subprocess.CompletedProcess(command, 0, stdout=CONSOLE_USER)
+
+    monkeypatch.setattr(seat_module.subprocess, "run", run)
+
+    assert DarwinSeat().graphical_accounts() == ["chuzu"]
+    assert seat_module.console_user() == ("chuzu", 502)
+    assert calls[0] == (["/usr/sbin/scutil"], "show State:/Users/ConsoleUser\n")
+    assert all(command[0] != "stat" for command, _ in calls)
 
 
-def test_the_login_window_is_nobody_seated(monkeypatch):
-    printing(monkeypatch, "root\n")
+@pytest.mark.parametrize(
+    "printed",
+    [
+        "<dictionary> {\n  Name : loginwindow\n  UID : 0\n}\n",
+        "<dictionary> {\n  Name : root\n  UID : 0\n}\n",
+        "  No such key\n",
+        "",
+    ],
+)
+def test_the_login_window_root_and_no_key_are_nobody_seated(monkeypatch, printed):
+    printing(monkeypatch, printed)
 
     assert DarwinSeat().graphical_accounts() == []
+    assert seat_module.console_user() == ()
+
+
+def test_the_consoles_owner_stands_in_only_when_scutil_cannot_be_asked(
+    monkeypatch,
+):
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append(list(command))
+        if command[0] == "/usr/sbin/scutil":
+            raise FileNotFoundError(command[0])
+        return subprocess.CompletedProcess(command, 0, stdout="pat 501\n")
+
+    monkeypatch.setattr(seat_module.subprocess, "run", run)
+
+    assert DarwinSeat().graphical_accounts() == ["pat"]
+    assert calls[-1] == ["stat", "-f", "%Su %u", "/dev/console"]
 
 
 def test_a_console_that_cannot_be_asked_cannot_say(monkeypatch):
@@ -105,14 +160,13 @@ def session_prefix():
         "/bin/launchctl",
         "asuser",
         "501",
-        "/usr/sbin/chroot",
-        "-u",
-        "pat",
-        "-g",
+        "/Library/Application Support/Neutrino/agent/app/nagent",
+        "step-down",
+        "--uid",
+        "501",
+        "--gid",
         "20",
-        "-G",
-        "20",
-        "/",
+        "--",
     ]
 
 
@@ -137,6 +191,8 @@ def test_a_share_start_asks_for_the_dialog_and_the_pane_in_the_session(monkeypat
         "x-apple.systempreferences:com.apple.preference.security"
         "?Privacy_ScreenCapture"
     )
+    for command in run.commands:
+        assert not any("chroot" in word or "sudo" in word for word in command)
     for kwargs in run.kwargs:
         assert kwargs["timeout"] > 0
         assert kwargs["env"]["HOME"] == "/Users/pat"
@@ -155,6 +211,34 @@ def test_the_dialog_is_never_waited_for(monkeypatch):
     assert run.both_asked.wait(timeout=5)
     assert not run.released.is_set()
     run.released.set()
+
+
+def test_a_command_that_fails_to_start_or_exits_badly_is_logged(monkeypatch):
+    an_account(monkeypatch)
+    lines = []
+
+    def run(command, **kwargs):
+        if "/usr/bin/open" in command:
+            raise OSError("exec format error")
+        return subprocess.CompletedProcess(command, 137, stdout="", stderr="Killed: 9")
+
+    monkeypatch.setattr(seat_module.subprocess, "run", run)
+    started = []
+    real_thread = threading.Thread
+
+    def thread(**kwargs):
+        made = real_thread(**kwargs)
+        started.append(made)
+        return made
+
+    monkeypatch.setattr(seat_module.threading, "Thread", thread)
+
+    DarwinSeat(log=lines.append).ask_for_permissions("pat")
+    for made in started:
+        made.join(timeout=5)
+
+    assert any("exited 137: Killed: 9" in line for line in lines)
+    assert any("could not start: exec format error" in line for line in lines)
 
 
 def test_a_command_that_fails_or_runs_out_of_time_is_swallowed(monkeypatch):

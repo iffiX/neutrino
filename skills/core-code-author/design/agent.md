@@ -430,6 +430,15 @@ cc-switch and `<tool>` the tool, and the agent's own program makes a pseudo
 console there, starts cc-switch on it, types the reply, and prints what the
 console drew.
 
+On macOS a program is put in an account's GUI session as the account by
+`launchctl asuser <uid> <nagent> step-down --uid <uid> --gid <gid> --
+<program>`: `launchctl` starts the agent's own program in the session, and
+`step-down` sets the account's group as its only supplementary group, then
+its group, then its user, and replaces itself with the program. It opens
+no socket and reads no state. `chroot -u` is not used: macOS kills a
+program with the hardened runtime under it. A command that does not start,
+or exits other than 0, leaves one line in the agent's log.
+
 `answer` is the one `nagent` verb any account may run. It starts the
 program it is given as the account that runs it, with that account's
 rights and no other; it reads no binding, opens neither the control socket
@@ -506,7 +515,7 @@ only POSIX has is guarded, so one package imports on all three systems.
 | Refused | nothing | packages | packages |
 | Kill | SIGTERM, then SIGKILL after two seconds | `OpenProcess` with `PROCESS_TERMINATE` and `TerminateProcess` | SIGTERM, then SIGKILL after two seconds |
 | Shell stream | the login shell on a pseudo-terminal, which is its controlling terminal so a resize reaches it as `SIGWINCH`, started in root's home | PowerShell on a pseudo console, in a job that kills it on close, started in the signed-in account's profile directory, and in the system drive's root when nobody is signed in or the profile cannot be found (a domain account, a directory that is not there), never in the service's own directory | `zsh -il` on a pseudo-terminal, its controlling terminal as on Linux, started in root's home |
-| Seat | `loginctl`, `/proc/net/tcp`, the Wayland token | the console session's user through WTS, `netstat` | the owner of `/dev/console`, `netstat`, the privacy grants |
+| Seat | `loginctl`, `/proc/net/tcp`, the Wayland token | the console session's user through WTS, `netstat` | the system configuration's console user, `State:/Users/ConsoleUser` through `scutil`, the login window, root and no name being nobody, and the owner of `/dev/console` only when `scutil` cannot be asked, since under auto-login that owner stays root while a person is signed in; `netstat`; the privacy grants |
 | RustDesk | `/usr/lib/neutrino/agent/rustdesk/rustdesk`, unit `rustdesk`, root's and the seat's `RustDesk2.toml` | `%ProgramFiles%\RustDesk\rustdesk.exe`, service `RustDesk`, LocalService's `RustDesk2.toml` | `/Applications/RustDesk.app`, job `com.carriez.RustDesk_service`, root's and the seat's `RustDesk2.toml` |
 | File share | Samba, `smb.conf` rendered whole | the SMB server through one PowerShell script per operation, JSON in and out and the password on standard input: shares whose description starts `neutrino:`, local accounts in no group, hidden from the sign-in screen and denied the console and RDP through `LsaAddAccountRights`, folders granted with `icacls`, and the block rule `neutrino_smb_fence` for TCP 445 from every address outside the allowed subnets | Apple's smbd through `launchctl enable` and `kickstart`: share points made with `sharing` under the record prefix `neutrino_`, SMB only, no guest, no encryption; accounts made with `sysadminctl` without a shell or a home, hidden, in `com.apple.access_smb` where it exists, the NT hash turned on before `dscl -passwd`; folders granted with `chmod +a`; the pf sub-anchor `com.apple/neutrino_smb`, loaded from a file under the state root at every apply and when the agent starts |
 | VS Code | the CLI in `/var/lib/neutrino/agent/vscode`, the unit `neutrino_vscode@<account>.service` with `User=`, environment and token files in `/var/lib/neutrino/agent/vscode/tokens`, and `/etc/sysctl.d/90-neutrino-vscode.conf` when the machine's inotify watch or instance limit is under the module's floor (524288 and 512), since a served home directory runs a distribution's default out | the CLI in `%ProgramData%\Neutrino\agent\state\vscode`, the task `neutrino_vscode_<account>` registered with the account's login, at startup, no time limit, a limited token; a stop ends the task's whole process tree, so the port is free for the next start | the CLI in `/Library/Application Support/Neutrino/agent/state/vscode`, the LaunchDaemon `com.neutrino.vscode.<account>` with `UserName` |
@@ -608,7 +617,8 @@ accessibility, which only somebody at that Mac grants, and the privacy
 database that records them is closed to root, so the seat does not read it:
 its attention is empty. Instead, starting a share from `nagent rdp start`
 or from the panel puts a dialog on that Mac's screen, in the signed-in
-session, naming the two permissions, prints the same line in the terminal,
+session through `step-down` ("Acting for an account"), naming the two
+permissions, prints the same line in the terminal,
 and opens the Screen Recording pane of the system settings; RustDesk is
 started whether or not the person has granted them yet. The hub's `rdp`
 entry carries the machine's `platform_os`, and a client shows a standing

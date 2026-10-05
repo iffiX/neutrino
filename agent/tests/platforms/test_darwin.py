@@ -608,12 +608,11 @@ def test_darwin_removes_the_agent_itself_and_keeps_its_configuration_and_state(
         calls,
     )
     monkeypatch.setattr(darwin_module, "AGENT_DARWIN_LINK_PATH", str(link))
-    monkeypatch.setattr(darwin_module, "DARWIN_CONSOLE_PATH", str(tmp_path / "none"))
 
     removed = DarwinPlatform().remove_agent_program()
 
     assert "com.neutrino.agent" in removed
-    assert calls[:2] == [
+    assert [call for call in calls if call[0] == "launchctl"][:2] == [
         ["launchctl", "bootout", "system/com.carriez.RustDesk_service"],
         ["launchctl", "bootout", "system/com.neutrino.agent"],
     ]

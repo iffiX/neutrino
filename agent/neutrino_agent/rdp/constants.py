@@ -71,10 +71,19 @@ RDP_WINDOWS_ESTABLISHED = "ESTABLISHED"
 RDP_WINDOWS_NO_CONSOLE_SESSION = 0xFFFFFFFF
 RDP_WINDOWS_WTS_USER_NAME = 5
 
-# Who owns the Mac's console: the account signed in at its screen, or root
-# at the login window.
-RDP_DARWIN_CONSOLE_OWNER_COMMAND = ("stat", "-f", "%Su", "/dev/console")
-RDP_DARWIN_LOGIN_WINDOW_OWNER = "root"
+# Who is at the Mac's screen: the console user the system configuration
+# holds, asked through scutil. The owner of /dev/console stands in only when
+# that store cannot be asked: with auto-login it stays root while a person
+# is signed in. The names that mean nobody: the login window's, root's, and
+# none.
+RDP_DARWIN_SCUTIL = "/usr/sbin/scutil"
+RDP_DARWIN_CONSOLE_USER_QUERY = "show State:/Users/ConsoleUser\n"
+RDP_DARWIN_CONSOLE_OWNER_COMMAND = ("stat", "-f", "%Su %u", "/dev/console")
+RDP_DARWIN_NOBODY_NAMES = ("", "root", "loginwindow")
+# The agent's own program, and the verb that drops to an account and runs a
+# program as it: what launchctl asuser starts inside the account's session.
+RDP_DARWIN_AGENT_PROGRAM = "/Library/Application Support/Neutrino/agent/app/nagent"
+RDP_DARWIN_STEP_DOWN_VERB = "step-down"
 RDP_DARWIN_NETSTAT_COMMAND = ("netstat", "-an", "-p", "tcp")
 RDP_DARWIN_ESTABLISHED = "ESTABLISHED"
 # What a share start puts on a Mac's screen: a dialog naming the two
@@ -97,7 +106,6 @@ RDP_DARWIN_SCREEN_RECORDING_PANE = (
     "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
 )
 RDP_DARWIN_LAUNCHCTL = "/bin/launchctl"
-RDP_DARWIN_CHROOT = "/usr/sbin/chroot"
 RDP_DARWIN_OSASCRIPT = "/usr/bin/osascript"
 RDP_DARWIN_OPEN = "/usr/bin/open"
 RDP_DARWIN_SESSION_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
