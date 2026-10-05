@@ -4,8 +4,14 @@
    row would either wrap badly or squeeze the sentences to nothing. */
 .overlay_choices {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-3);
+}
+
+@media (max-width: 720px) {
+  .overlay_choices {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* One engine: the card picks whose settings show, the switch runs it. */

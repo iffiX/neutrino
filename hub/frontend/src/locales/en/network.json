@@ -363,7 +363,6 @@
   "ui.overlay.network_name": "Network name",
   "ui.overlay.network_secret": "Network secret",
   "ui.overlay.network_title": "This hub on the network",
-  "ui.overlay.none_body": "No overlay is running. Turn one on above.",
   "ui.overlay.not_integrated": "Not integrated yet",
   "ui.overlay.not_supported": "No build for this machine",
   "ui.overlay.open_console": "Open console",

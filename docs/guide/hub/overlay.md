@@ -23,7 +23,7 @@ The mainland edition has the Direct, Relay and EasyTier cards, and no NetBird ca
 1. Turn on the engine's switch.
 1. Select **Apply overlays**. The hub installs the engine when it is absent, starts the engines turned on, then stops the ones turned off.
 
-A card marked **active** has its engine running. A card that reads **No build for this machine** cannot be turned on. With no engine on, the page reads **No overlay is running. Turn one on above.**, and only machines on your own network reach the hub.
+A card marked **active** has its engine running. A card that reads **No build for this machine** cannot be turned on.
 
 The hub rejects turning an engine on with `overlay_subnet_overlap` when its network overlaps another network. That is the other overlay's network, or any network this box holds an address on. NetBird's network is `100.64.0.0/10`. EasyTier's is the network of this box's address on it.
 
