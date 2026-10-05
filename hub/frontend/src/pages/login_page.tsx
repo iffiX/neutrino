@@ -103,7 +103,9 @@ export function LoginPage() {
     try {
       const state = await login(password);
       if (state.is_cookie_refused) {
-        setStaleOrigin(httpsOrigin(state.https_listen_port));
+        setStaleOrigin(
+          httpsOrigin(state.https_listen_port, window.location.hostname),
+        );
         setPassword("");
       } else if (!state.is_authenticated) {
         setPassword("");

@@ -47,6 +47,7 @@
   "state.ssh": "ssh",
   "state.unreachable": "不可访问",
   "ui.api.applied": "已应用。",
+  "ui.api.hub_address": "<中枢地址>",
   "ui.api.malformed": "API 返回的响应格式有误",
   "ui.api.refused": "这台机器拒绝了：{code}（{params}）。",
   "ui.api.refused_bare": "这台机器拒绝了：{code}。",

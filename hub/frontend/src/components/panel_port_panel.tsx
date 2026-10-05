@@ -6,6 +6,7 @@ import { Spinner } from "./spinner";
 import { apiPost, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
 import { interruptionWarning } from "../network_warnings";
+import { hubHost, isThroughClient } from "../origins";
 import { useApiResource } from "../use_api_resource";
 import { useDraft } from "../use_draft";
 import type { PanelSettings } from "../api_types";
@@ -22,7 +23,9 @@ import "./panel_port_panel.css";
  * Applying restarts the panel. The answer is written before the socket
  * closes, and this waits for the port of the scheme this page is on to answer
  * and goes there; the host does not change, so where to look is known
- * exactly.
+ * exactly. A page that came through a client's forward names the hub by a
+ * placeholder and comes back on its own address, which the client keeps
+ * forwarding to the panel.
  */
 
 const PORT_MIN = 1;
@@ -44,6 +47,8 @@ export function PanelPortPanel() {
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [movingTo, setMovingTo] = useState<string | null>(null);
+  const isClientPage = isThroughClient(resource.data);
+  const host = hubHost(isClientPage);
 
   const applied = resource.data?.listen_port ?? null;
   const appliedHttps = resource.data?.https_listen_port ?? null;
@@ -66,7 +71,9 @@ export function PanelPortPanel() {
         https_listen_port: httpsPort,
       });
       resource.setData(saved);
-      setMovingTo(currentOrigin(saved));
+      setMovingTo(
+        isClientPage ? window.location.origin : currentOrigin(saved, host),
+      );
     } catch (cause: unknown) {
       setError(describeError(cause));
     } finally {
@@ -92,6 +99,7 @@ export function PanelPortPanel() {
             value={port}
             applied={applied}
             scheme="http"
+            host={host}
             onChange={(value) => {
               setError(null);
               portsDraft.setDraft((current) => ({
@@ -105,6 +113,7 @@ export function PanelPortPanel() {
             value={httpsPort}
             applied={appliedHttps}
             scheme="https"
+            host={host}
             onChange={(value) => {
               setError(null);
               portsDraft.setDraft((current) => ({
@@ -213,6 +222,8 @@ interface PortFieldProps {
   value: number | null;
   applied: number | null;
   scheme: "http" | "https";
+  /** The hub's host as this page names it. */
+  host: string;
   onChange: (value: number) => void;
 }
 
@@ -222,6 +233,7 @@ function PortField({
   value,
   applied,
   scheme,
+  host,
   onChange,
 }: PortFieldProps) {
   return (
@@ -236,10 +248,10 @@ function PortField({
       <span className="field_hint">
         {value !== applied
           ? t("ui.network.panel_port_moves_to", {
-              origin: originOf(scheme, value ?? 0),
+              origin: originOf(scheme, value ?? 0, host),
             })
           : t("ui.network.panel_port_reached_at", {
-              origin: originOf(scheme, applied ?? 0),
+              origin: originOf(scheme, applied ?? 0, host),
             })}
       </span>
     </label>
@@ -260,15 +272,19 @@ function isValid(port: number | null): boolean {
   return port !== null && port >= PORT_MIN && port <= PORT_MAX;
 }
 
-/** This host on a scheme and port, the port left out where it is the default. */
-function originOf(scheme: "http" | "https", port: number): string {
+/** A host on a scheme and port, the port left out where it is the default. */
+function originOf(
+  scheme: "http" | "https",
+  port: number,
+  host: string,
+): string {
   const isDefault = scheme === "https" && port === HTTPS_SCHEME_PORT;
-  return `${scheme}://${window.location.hostname}${isDefault ? "" : `:${port}`}`;
+  return `${scheme}://${host}${isDefault ? "" : `:${port}`}`;
 }
 
 /** Where this page goes after a move: the port of the scheme it is on. */
-function currentOrigin(saved: PanelSettings): string {
+function currentOrigin(saved: PanelSettings, host: string): string {
   return window.location.protocol === "https:"
-    ? originOf("https", saved.https_listen_port)
-    : originOf("http", saved.listen_port);
+    ? originOf("https", saved.https_listen_port, host)
+    : originOf("http", saved.listen_port, host);
 }

@@ -46,6 +46,7 @@
   "ui.settings.https_regenerated": "Install the new certificate, restart the browser, then enable.",
   "ui.settings.https_renewed": "Last automatic renewal",
   "ui.settings.https_renewed_none": "None since the panel started",
+  "ui.settings.https_through_client": "through a client",
   "ui.settings.https_title": "HTTPS",
   "ui.settings.https_trusted": "This browser trusts the certificate.",
   "ui.settings.https_turn_off_first": "Turn HTTPS off first to regenerate the certificate.",
