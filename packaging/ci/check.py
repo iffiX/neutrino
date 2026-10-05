@@ -89,6 +89,20 @@ MACHINE_ENVIRONMENT_KEY = (
 )
 HUB_WINDOWS_FOLDER = PROGRAM_FILES / "Neutrino" / "hub"
 HUB_WINDOWS_SERVICE = "neutrino_hub"
+# Where an installed hub keeps its configuration and the vault in it; nothing
+# named config may stand under Program Files, where a checkout would keep it.
+HUB_WINDOWS_CONFIG = PROGRAM_DATA / "Neutrino" / "hub" / "config"
+HUB_WINDOWS_VAULT = HUB_WINDOWS_CONFIG / "credentials" / "vault.json"
+# The accounts an access list must not name on the vault: every person on the
+# machine, by their names in an English Windows and by their SIDs.
+WINDOWS_EVERY_PERSON = (
+    "BUILTIN\\Users",
+    "Authenticated Users",
+    "Everyone",
+    "S-1-5-32-545",
+    "S-1-5-11",
+    "S-1-1-0",
+)
 UNINSTALL_KEY = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
 # A task and a rule named as a module names them, which removing the agent
 # takes away, and a rule named as the hub names its own, which it leaves.
@@ -422,6 +436,7 @@ def check_hub_windows(msi: Path) -> None:
     if not _wait_for_service(HUB_WINDOWS_SERVICE, is_running=True):
         raise SystemExit("the hub's service is not running after setup")
     _wait_for_panel()
+    _check_hub_windows_config()
     _answer([str(nhub), "stop"])
 
     log = Path(tempfile.gettempdir()) / "hub_remove.log"
@@ -445,6 +460,29 @@ def check_hub_windows(msi: Path) -> None:
         ],
     )
     print(f"nhub by install.ps1 {_answer([str(nhub), '--version'])}")
+
+
+def _check_hub_windows_config() -> None:
+    """The set-up hub's configuration is under ProgramData and closed to people.
+
+    Raises:
+        SystemExit: When the vault is elsewhere, a configuration directory
+            stands under Program Files, or the vault's access list names an
+            account every person is in.
+    """
+    if not HUB_WINDOWS_VAULT.is_file():
+        raise SystemExit(f"the hub wrote no vault at {HUB_WINDOWS_VAULT}")
+    neutrino = PROGRAM_FILES / "Neutrino"
+    stray = [*neutrino.glob("config"), *neutrino.glob("*/config")]
+    if stray:
+        raise SystemExit(
+            f"configuration under Program Files: {[str(p) for p in stray]}"
+        )
+    access = _answer(["icacls", str(HUB_WINDOWS_VAULT)])
+    print(access)
+    named = [account for account in WINDOWS_EVERY_PERSON if account in access]
+    if named:
+        raise SystemExit(f"the vault is open to {', '.join(named)}")
 
 
 def check_hub_macos(pkg: Path) -> None:

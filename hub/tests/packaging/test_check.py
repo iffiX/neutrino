@@ -342,3 +342,49 @@ def test_the_windows_agent_check_plants_a_task_and_rules_named_both_ways(check):
     assert "Register-ScheduledTask -TaskName neutrino_check_task" in planted
     assert "'neutrino_check_rule', 'neutrino_hub_check_rule'" in planted
     assert check.AGENT_WINDOWS_FOREIGN_RULE.startswith("neutrino_hub_")
+
+
+@pytest.fixture
+def windows_box(check, monkeypatch, tmp_path):
+    """Program Files and ProgramData of this test's own, the vault written."""
+    program_files = tmp_path / "Program Files"
+    (program_files / "Neutrino" / "hub").mkdir(parents=True)
+    vault = tmp_path / "ProgramData" / "Neutrino" / "hub" / "config" / "vault.json"
+    vault.parent.mkdir(parents=True)
+    vault.write_text("{}")
+    access = {
+        "text": "vault.json NT AUTHORITY\\SYSTEM:(I)(F)\n BUILTIN\\Administrators:(I)(F)"
+    }
+    monkeypatch.setattr(check, "PROGRAM_FILES", program_files)
+    monkeypatch.setattr(check, "HUB_WINDOWS_VAULT", vault)
+    monkeypatch.setattr(check, "_answer", lambda command: access["text"])
+    return program_files, access
+
+
+def test_a_vault_under_programdata_closed_to_people_passes(check, windows_box):
+    check._check_hub_windows_config()
+
+
+def test_a_configuration_under_program_files_fails_the_check(check, windows_box):
+    program_files, _ = windows_box
+    (program_files / "Neutrino" / "config").mkdir()
+
+    with pytest.raises(SystemExit, match="under Program Files"):
+        check._check_hub_windows_config()
+
+
+def test_a_vault_every_person_can_read_fails_the_check(check, windows_box):
+    _, access = windows_box
+    access["text"] += "\n BUILTIN\\Users:(I)(RX)"
+
+    with pytest.raises(SystemExit, match="BUILTIN"):
+        check._check_hub_windows_config()
+
+
+def test_no_vault_under_programdata_fails_the_check(
+    check, windows_box, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(check, "HUB_WINDOWS_VAULT", tmp_path / "nowhere" / "vault.json")
+
+    with pytest.raises(SystemExit, match="no vault"):
+        check._check_hub_windows_config()

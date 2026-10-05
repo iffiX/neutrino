@@ -225,6 +225,12 @@ CLIENT_CONFIG_DIR_NAME = "Neutrino\\client"
 # changing it makes an upgrade install beside the old one instead of over it.
 UPGRADE_CODE = "0221A508-0A7E-4CFE-B517-B901D9318962"
 
+# The data folder's whole security descriptor, the hub's and the agent's:
+# SYSTEM and the administrators, inherited by everything under it, and
+# nothing inherited from ProgramData, whose own grants let every account
+# read. The overlay daemons' state under it holds their private keys.
+DATA_FOLDER_SDDL = "D:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
+
 # The quit, run as the person installing, through the windowed program: an
 # installer's custom action has no console, and a console program started by
 # one opens a black window over the wizard. The ask itself is bounded by the
@@ -448,9 +454,27 @@ WIX_BODY = r"""
 
 @DAEMONS@
 
+    <!-- The daemons' state and logs live here, NetBird's private key and
+         EasyTier's networks among them, so the folder admits SYSTEM and the
+         administrators and nobody else. -->
+    <ComponentGroup Id="Data" Directory="CLIENTDATAFOLDER">
+      <Component Id="ClientDataFolder" Guid="*">
+        <CreateFolder>
+          <PermissionEx Sddl="@DATA_SDDL@" />
+        </CreateFolder>
+        <RegistryValue Root="HKLM"
+                       Key="Software\Neutrino\Client"
+                       Name="DataFolder"
+                       Type="string"
+                       Value="[CLIENTDATAFOLDER]"
+                       KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
     <Feature Id="Main" Title="Neutrino Client" Level="1" AllowAbsent="no">
       <ComponentGroupRef Id="Payload" />
       <ComponentGroupRef Id="Daemons" />
+      <ComponentGroupRef Id="Data" />
     </Feature>
     <Feature Id="PathFeature"
              Title="Command line"
@@ -679,6 +703,7 @@ def _wix_source(staged: dict, version: str, publisher: str, machine: str) -> str
             "CLIENT_WINDOWED_BINARY": CLIENT_WINDOWED_BINARY_NAME,
             "LICENSE_RTF": staged["license"],
             "UTIL_LIBRARY": wix_build.UTIL_LIBRARY[machine],
+            "DATA_SDDL": DATA_FOLDER_SDDL,
             "QUIT_COMMAND": QUIT_COMMAND,
             "REMOVE_CONFIG_COMMAND": REMOVE_CONFIG_COMMAND,
             "CONFIG_GOES": CONFIG_GOES_CONDITION,

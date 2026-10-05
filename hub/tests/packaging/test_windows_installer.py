@@ -289,3 +289,20 @@ def test_the_build_refuses_another_interpreter_than_the_pinned_one(monkeypatch):
         build_hub_windows._check_build_machine("amd64")
 
     assert "3.13" in str(refused.value)
+
+
+def test_the_config_folder_is_made_with_the_data_folders_protection(document):
+    """The hub writes its vault there from its first run, so the folder exists
+    with SYSTEM and the administrators alone before anything is written."""
+    _source, root = document
+
+    config = by_id(root, WXS + "Directory", "HUBCONFIGFOLDER")
+    assert config.get("Name") == "config"
+    assert config in list(by_id(root, WXS + "Directory", "HUBDATAFOLDER"))
+    folder = by_id(root, WXS + "Component", "HubConfigFolder")
+    (permission,) = folder.iter(WXS + "PermissionEx")
+    assert permission.get("Sddl") == "D:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
+    feature = by_id(root, WXS + "Feature", "Main")
+    assert "Config" in [
+        ref.get("Id") for ref in feature.iter(WXS + "ComponentGroupRef")
+    ]
