@@ -206,6 +206,15 @@ def test_json_carries_every_hub_and_its_way_in(resident, capsys):
     assert office["reached_through"] == ""
 
 
+@pytest.mark.parametrize("way", ["direct", "a_way_this_client_does_not_know"])
+def test_json_passes_the_hubs_way_in_through_unchanged(resident, capsys, way):
+    resident.hubs_value[0]["reached_through"] = way
+
+    status_cli.main(is_json=True)
+
+    assert json.loads(capsys.readouterr().out)["hubs"][0]["reached_through"] == way
+
+
 def test_json_with_no_resident_reads_the_binding_file(platform, config_path, capsys):
     bind(config_path, bindings=[dict(BINDING), dict(OFFICE_BINDING)])
 

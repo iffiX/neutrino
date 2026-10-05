@@ -1112,6 +1112,14 @@ def test_the_hub_row_says_the_way_in_and_offers_the_panel():
     word = body_of("hubWord")
     assert "t('ui.state.connected_through'," in word
     assert "{ way: t('ui.through.' + hub.reached_through) }" in word
+    # Every way the hub names has its word; a way the list lacks reads as
+    # the plain connected word.
+    assert "const THROUGH_WAYS = ['lan', 'direct'].concat(" in PAGE_JS
+    assert (
+        "if (connection === 'connected' && "
+        "THROUGH_WAYS.indexOf(hub.reached_through) >= 0) {" in word
+    )
+    assert "  return t('ui.state.' + connection);\n}" in word
     row = body_of("hubRow")
     assert "if (hub.is_panel_allowed) actions.push(panelButton(hub));" in row
     assert row.index("actions.push(network);") < row.index("panelButton(hub)")
@@ -1122,6 +1130,7 @@ def test_the_hub_row_says_the_way_in_and_offers_the_panel():
     assert "hub.connection !== 'connected'" in panel
     for way, english, chinese in (
         ("lan", "LAN", "局域网"),
+        ("direct", "Direct", "直连"),
         ("netbird", "NetBird", "NetBird"),
         ("easytier", "EasyTier", "EasyTier"),
         ("relay", "Relay", "中继"),

@@ -588,8 +588,9 @@ function hubTone(hub) {
   return 'wait';
 }
 
-// The ways the channel reaches a hub, as the hub's state names them.
-const THROUGH_WAYS = ['lan'].concat(
+// The ways the channel reaches a hub, as the hub's state names them. A
+// way not in the list reads as the plain connected word.
+const THROUGH_WAYS = ['lan', 'direct'].concat(
   ...PARTS.map((part) => part.throughWays || []), ['easytier', 'relay']);
 
 // The hub's state word: the job running on it, else its connection's, with
