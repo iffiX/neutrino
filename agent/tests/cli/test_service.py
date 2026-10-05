@@ -226,3 +226,31 @@ def test_uninstall_on_a_platform_with_nothing_to_remove_exits_1(monkeypatch, cap
 
     assert service_cli.main_uninstall(is_forced=True) == 1
     assert "error:" in capsys.readouterr().err
+
+
+class SwitchingBack:
+    """The AI tools as the uninstall reaches them, recording when."""
+
+    def __init__(self, platform, log=print):
+        self._platform = platform
+
+    def switch_back_all(self):
+        self._platform.calls.append("switch_back")
+        return [{"account": "ann", "state": "switched_back", "code": "", "params": {}}]
+
+
+def test_uninstall_switches_every_account_s_ai_tools_back_before_anything(
+    monkeypatch, capsys
+):
+    platform = RemovalPlatform()
+    monkeypatch.setattr(service_cli, "detect_platform", lambda: platform)
+    monkeypatch.setattr(
+        service_cli,
+        "AiToolsApplier",
+        lambda platform, log=print: SwitchingBack(platform, log),
+    )
+
+    assert service_cli.main_uninstall(is_forced=True) == 0
+
+    assert platform.calls == ["switch_back", "stop", "remove_added"]
+    assert "ai tools   ann: switched_back" in capsys.readouterr().out

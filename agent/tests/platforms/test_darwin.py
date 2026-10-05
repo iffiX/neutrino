@@ -628,3 +628,70 @@ def test_darwin_removes_the_agent_itself_and_keeps_its_configuration_and_state(
     named = " ".join(" ".join(call) for call in calls)
     assert "agent/config" not in named
     assert "agent/state" not in named
+
+
+AccountEntry = collections.namedtuple("AccountEntry", "pw_name pw_uid pw_gid pw_dir")
+
+
+def test_a_mac_runs_as_the_account_with_its_uid_its_group_and_no_other(monkeypatch):
+    monkeypatch.setattr(
+        darwin_module.pwd,
+        "getpwnam",
+        lambda name: AccountEntry("alice", 501, 20, "/Users/alice"),
+    )
+    seen = {}
+
+    def record(command, **kwargs):
+        seen["command"] = list(command)
+        seen.update(kwargs)
+        return subprocess.CompletedProcess(command, 0, stdout="ok", stderr="")
+
+    monkeypatch.setattr(darwin_module.subprocess, "run", record)
+
+    done = DarwinPlatform().run_as_account("alice", ["id"], stdin="x")
+
+    assert done.stdout == "ok"
+    assert seen["command"] == ["id"]
+    assert (seen["user"], seen["group"], seen["extra_groups"]) == (501, 20, [])
+    assert seen["cwd"] == "/Users/alice"
+    assert seen["env"] == {
+        "HOME": "/Users/alice",
+        "USER": "alice",
+        "LOGNAME": "alice",
+        "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+    }
+    assert seen["input"] == "x"
+
+
+def test_a_mac_answers_a_question_as_the_account_on_a_pty(monkeypatch):
+    monkeypatch.setattr(
+        darwin_module.pwd,
+        "getpwnam",
+        lambda name: AccountEntry("alice", 501, 20, "/Users/alice"),
+    )
+    seen = {}
+
+    def on_pty(argv, **kwargs):
+        seen["argv"] = list(argv)
+        seen.update(kwargs)
+        return 0, "Deleted"
+
+    monkeypatch.setattr(darwin_module, "run_on_pty", on_pty)
+
+    answered = DarwinPlatform().run_as_account_answering(
+        "alice", ["cc-switch"], prompt="(y/N)", answer="y\n"
+    )
+
+    assert answered == (0, "Deleted")
+    assert (seen["user"], seen["group"], seen["cwd"]) == (501, 20, "/Users/alice")
+    assert seen["env"]["USER"] == "alice"
+
+
+def test_a_mac_account_the_database_lacks_is_a_key_error(monkeypatch):
+    def lacks(name):
+        raise KeyError(name)
+
+    monkeypatch.setattr(darwin_module.pwd, "getpwnam", lacks)
+
+    with pytest.raises(KeyError):
+        DarwinPlatform().run_as_account("ghost", ["id"])

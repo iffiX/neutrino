@@ -36,6 +36,7 @@ from neutrino_agent.constants import (
     AGENT_LAUNCHD_LABEL,
     AGENT_LAUNCHD_PLIST_PATH,
     AGENT_PF_PARENT_ANCHOR,
+    AGENT_STEP_DOWN_TIMEOUT_S,
     AGENT_VAR_DIR_DARWIN,
 )
 from neutrino_agent.core.metrics import (
@@ -50,6 +51,7 @@ from neutrino_agent.modules.samba.constants import (
     SAMBA_DARWIN_PF_RULES_NAME,
 )
 from neutrino_agent.modules.samba.darwin_applier import SambaDarwinApplier
+from neutrino_agent.platforms.answered_run import run_on_pty
 from neutrino_agent.platforms.base import AgentPlatform, is_added_name
 
 try:
@@ -61,6 +63,8 @@ except ImportError:  # Windows has no account database module.
 # the system's.
 DARWIN_HUMAN_UID_FLOOR = 501
 DARWIN_HOMES_DIR = "/Users/"
+# The PATH a command run as an account starts from.
+DARWIN_ACCOUNT_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
 DARWIN_ACCOUNTS_COMMAND = ("dscl", ".", "-list", "/Users", "UniqueID")
 
 DARWIN_POWER_COMMANDS = {
@@ -298,6 +302,7 @@ class DarwinPlatform(AgentPlatform):
     os_name = "darwin"
     capabilities = frozenset(
         {
+            "run_as",
             "accounts",
             "control_socket",
             "agent_service",
@@ -383,6 +388,98 @@ class DarwinPlatform(AgentPlatform):
             KeyError: When the account database has no such account.
         """
         return pwd.getpwnam(account).pw_dir
+
+    def _account_process(self, account: str) -> dict:
+        """How a child runs as an account: its uid, its group, its home, its names.
+
+        Raises:
+            KeyError: When the account database has no such account.
+        """
+        entry = pwd.getpwnam(account)
+        return {
+            "user": entry.pw_uid,
+            "group": entry.pw_gid,
+            "extra_groups": [],
+            "cwd": entry.pw_dir,
+            "env": {
+                "HOME": entry.pw_dir,
+                "USER": entry.pw_name,
+                "LOGNAME": entry.pw_name,
+                "PATH": DARWIN_ACCOUNT_PATH,
+            },
+        }
+
+    def run_as_account(
+        self,
+        account: str,
+        argv: list,
+        *,
+        stdin: str = "",
+        timeout_s: int = AGENT_STEP_DOWN_TIMEOUT_S,
+        password: str = "",
+    ) -> "subprocess.CompletedProcess":
+        """Run a process as an account: its uid and group, no other groups, in its home.
+
+        Args:
+            account: The account; empty runs as the agent itself.
+            argv: Argument vector.
+            stdin: Sent to the process's standard input.
+            timeout_s: How long to wait.
+            password: Unused here; Windows needs it.
+
+        Returns:
+            The completed process, with text output captured.
+
+        Raises:
+            KeyError: When the account database has no such account.
+        """
+        extra = self._account_process(account) if account else {}
+        return subprocess.run(
+            list(argv),
+            input=stdin,
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+            **extra,
+        )
+
+    def run_as_account_answering(
+        self,
+        account: str,
+        argv: list,
+        *,
+        prompt: str,
+        answer: str,
+        timeout_s: int = AGENT_STEP_DOWN_TIMEOUT_S,
+        password: str = "",
+    ) -> tuple:
+        """Run a process as an account on a pseudo-terminal, answering one question.
+
+        Args:
+            account: The account.
+            argv: Argument vector.
+            prompt: The text the answer follows.
+            answer: The keystrokes to send, newline included.
+            timeout_s: How long to wait.
+            password: Unused here; Windows needs it.
+
+        Returns:
+            ``(returncode, output)``; 127 when it could not start.
+
+        Raises:
+            KeyError: When the account database has no such account.
+        """
+        extra = self._account_process(account)
+        return run_on_pty(
+            list(argv),
+            prompt=prompt,
+            answer=answer,
+            timeout_s=timeout_s,
+            env=extra["env"],
+            cwd=extra["cwd"],
+            user=extra["user"],
+            group=extra["group"],
+        )
 
     def control_socket_path(self) -> str:
         """Where the agent's control socket lives on a Mac.

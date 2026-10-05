@@ -30,6 +30,7 @@ import time
 import urllib.parse
 
 from neutrino_agent import AGENT_VERSION
+from neutrino_agent.ai_tools.applier import AiToolsApplier
 from neutrino_agent.constants import (
     AGENT_BACKOFF_MAX_S,
     AGENT_BACKOFF_MIN_S,
@@ -170,6 +171,8 @@ class Agent:
             credentials_dir=os.path.join(data_dir, AGENT_CREDENTIALS_DIR_NAME),
             log=log,
         )
+        # The machine's AI tools, switched as each account the state names.
+        self._ai_tools = AiToolsApplier(platform=self._platform, log=log)
         self._desired = DesiredStateApplier(
             engine=self._engine,
             runners=self._engine.module_runners,
@@ -180,6 +183,7 @@ class Agent:
             log=log,
             open_stream=self._open_stream,
             package_dir=self._package_dir,
+            ai_tools=self._ai_tools,
         )
         # The share flow refuses before it configures anything when RustDesk
         # is not on the machine, which is what the engine's report answers.
@@ -277,6 +281,7 @@ class Agent:
         when it could not.
         """
         self._drop_session()
+        self._ai_tools.switch_back_all()
         outcome = enrollment.unbind()
         if outcome:
             self._log(f"could not tell the hub we are leaving: {outcome['code']}")
@@ -680,6 +685,7 @@ class Agent:
             # Whether this machine's desktop is reachable. The seat
             # password it answers with stays on the machine.
             "desktop": self.rdp_declaration(),
+            "ai_tools": self._ai_tools.report(),
             "error": self._error_section(),
         }
 
@@ -875,6 +881,7 @@ class Agent:
         rejection = channel_error(error)
         code = rejection["code"]
         if code == AGENT_CODE_BINDING_UNKNOWN:
+            self._ai_tools.switch_back_all()
             enrollment.remove_binding()
             self._reset_binding_state()
             self._load_connection()

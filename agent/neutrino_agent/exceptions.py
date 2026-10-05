@@ -139,6 +139,25 @@ class SelfUpdateError(RuntimeError):
     """Raised when the agent's own update cannot be fetched, verified or launched."""
 
 
+class ToolSwitchError(RuntimeError):
+    """Raised when an account's AI tools cannot be switched or switched back.
+
+    Attributes:
+        code: The typed reason the report carries.
+        params: What the wording names.
+    """
+
+    def __init__(self, code: str, params: "dict | None" = None):
+        """
+        Args:
+            code: The typed reason.
+            params: What the wording names.
+        """
+        super().__init__(code)
+        self.code = code
+        self.params = dict(params or {})
+
+
 class PlatformUnsupportedError(NotImplementedError):
     """Raised when a capability this platform does not have is invoked."""
 

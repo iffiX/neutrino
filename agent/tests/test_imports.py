@@ -56,7 +56,13 @@ for found in pkgutil.walk_packages(neutrino_agent.__path__, "neutrino_agent."):
 """
 
 SURVIVING_MODULES = {
+    "neutrino_agent.ai_tools",
+    "neutrino_agent.ai_tools.account_session",
+    "neutrino_agent.ai_tools.applier",
+    "neutrino_agent.ai_tools.constants",
+    "neutrino_agent.ai_tools.switcher",
     "neutrino_agent.cli",
+    "neutrino_agent.cli.answer",
     "neutrino_agent.cli.entry",
     "neutrino_agent.cli.join",
     "neutrino_agent.cli.leave",
@@ -152,6 +158,7 @@ SURVIVING_MODULES = {
     "neutrino_agent.modules.zfs.constants",
     "neutrino_agent.modules.zfs.runner",
     "neutrino_agent.platforms",
+    "neutrino_agent.platforms.answered_run",
     "neutrino_agent.platforms.base",
     "neutrino_agent.platforms.darwin",
     "neutrino_agent.platforms.detect",

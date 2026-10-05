@@ -10,6 +10,7 @@
     nagent run
     nagent service run
     nagent service uninstall [--yes]
+    nagent answer --prompt <text> --answer <keys> -- <program> [arguments]
 
 The shape is settled in ../../../docs/cli.md.
 """
@@ -21,7 +22,18 @@ import subprocess
 import sys
 
 from neutrino_agent import AGENT_VERSION
-from neutrino_agent.cli import join, leave, rdp, run, service, start, status, stop, sync
+from neutrino_agent.cli import (
+    answer,
+    join,
+    leave,
+    rdp,
+    run,
+    service,
+    start,
+    status,
+    stop,
+    sync,
+)
 
 # Everything the agent does is root's to do, and the control socket it asks
 # through is root's to open. Only ``--version`` answers any account.
@@ -99,6 +111,18 @@ def main() -> int:
         "--yes", action="store_true", help="remove without asking first"
     )
     rdp_parser = _add_rdp_parser(subparsers)
+    answer_parser = subparsers.add_parser(
+        "answer",
+        help="run a program on a terminal of its own and answer one question; "
+        "the agent runs it as an account",
+    )
+    answer_parser.add_argument("--prompt", required=True, help="the question's text")
+    answer_parser.add_argument(
+        "--answer", required=True, help="what to type before Enter"
+    )
+    answer_parser.add_argument(
+        "program", nargs=argparse.REMAINDER, help="-- then the program"
+    )
 
     arguments = parser.parse_args()
     if not arguments.command:
@@ -122,6 +146,13 @@ def main() -> int:
         return sync.main()
     if arguments.command == "rdp":
         return _run_rdp(arguments, rdp_parser)
+    if arguments.command == "answer":
+        program = list(arguments.program)
+        if program[:1] == ["--"]:
+            program = program[1:]
+        return answer.main(
+            prompt=arguments.prompt, answer=arguments.answer, argv=program
+        )
     if arguments.command == "service":
         if arguments.service_command == "run":
             return service.main_run()

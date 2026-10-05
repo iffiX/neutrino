@@ -21,6 +21,7 @@ import os
 import sys
 import threading
 
+from neutrino_agent.ai_tools.applier import AiToolsApplier
 from neutrino_agent.cli.start import is_confirmed
 from neutrino_agent.constants import AGENT_WINDOWS_SERVICE_NAME
 from neutrino_agent.control.server import ControlServer
@@ -101,6 +102,10 @@ def main_uninstall(*, is_forced: bool) -> int:
     if not is_forced and not is_confirmed(question):
         print("nothing changed")
         return 1
+    for switched in AiToolsApplier(platform=platform, log=print).switch_back_all():
+        print(
+            f"ai tools   {switched['account']}: {switched['state']} {switched['code']}".rstrip()
+        )
     try:
         platform.stop_agent_service()
         removed = platform.remove_added()

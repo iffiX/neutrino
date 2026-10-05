@@ -28,6 +28,11 @@ CONTRACT_CALLS = {
     "account_home": ("accounts", ("alice",), {}),
     "control_socket_path": ("control_socket", (), {}),
     "run_as_account": ("run_as", ("alice", ["id"]), {}),
+    "run_as_account_answering": (
+        "run_as",
+        ("alice", ["id"]),
+        {"prompt": "(y/N)", "answer": "y\n"},
+    ),
     "install_system_packages": ("system_packages", (["cifs-utils"],), {}),
     "remove_system_packages": ("system_packages", (["cifs-utils"],), {}),
     "read_agent_service_state": ("agent_service", (), {}),
@@ -107,11 +112,11 @@ def test_a_platform_advertises_only_capabilities_the_contract_names(platform_cla
     assert platform_class.capabilities <= named
 
 
-def test_windows_and_macos_install_nothing_and_step_down_to_nobody():
+def test_windows_and_macos_install_nothing_and_run_as_an_account():
     for platform_class in (WindowsPlatform, DarwinPlatform):
         assert "packages" not in platform_class.capabilities
         assert "system_packages" not in platform_class.capabilities
-        assert "run_as" not in platform_class.capabilities
+        assert "run_as" in platform_class.capabilities
     assert "accounts" in WindowsPlatform.capabilities
     assert "accounts" in DarwinPlatform.capabilities
 

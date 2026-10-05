@@ -146,6 +146,7 @@ class AgentPlatform:
         *,
         stdin: str = "",
         timeout_s: int = AGENT_STEP_DOWN_TIMEOUT_S,
+        password: str = "",
     ) -> "subprocess.CompletedProcess":
         """Run a process as an account.
 
@@ -154,12 +155,44 @@ class AgentPlatform:
             argv: Argument vector.
             stdin: Sent to the process's standard input.
             timeout_s: How long to wait.
+            password: The account's login, which Windows needs to run as it;
+                ignored elsewhere.
 
         Returns:
             The completed process, with text output captured.
 
         Raises:
             PlatformUnsupportedError: When the platform cannot step down.
+        """
+        raise PlatformUnsupportedError("cannot run as another account here")
+
+    def run_as_account_answering(
+        self,
+        account: str,
+        argv: list,
+        *,
+        prompt: str,
+        answer: str,
+        timeout_s: int = AGENT_STEP_DOWN_TIMEOUT_S,
+        password: str = "",
+    ) -> tuple:
+        """Run a process as an account on a terminal of its own, answering one question.
+
+        Args:
+            account: The account.
+            argv: Argument vector.
+            prompt: The text the answer follows.
+            answer: The keystrokes to send, newline included.
+            timeout_s: How long to wait.
+            password: The account's login, which Windows needs to run as it;
+                ignored elsewhere.
+
+        Returns:
+            ``(returncode, output)``, the output as the terminal drew it.
+
+        Raises:
+            PlatformUnsupportedError: When the platform cannot step down or
+                make a terminal.
         """
         raise PlatformUnsupportedError("cannot run as another account here")
 

@@ -399,8 +399,10 @@ def test_the_report_carries_every_field_from_its_source(config_path, monkeypatch
         "network",
         "modules",
         "desktop",
+        "ai_tools",
         "error",
     }
+    assert report["ai_tools"] == {"accounts": []}
     assert report["type"] == "report"
     assert report["state_hash"] == ""
     assert set(report["machine"]) == {
@@ -1570,3 +1572,42 @@ def test_a_loop_asked_to_stop_before_it_starts_takes_no_turn(config_path, monkey
     agent.stop()
 
     agent.run_forever()
+
+
+class RecordedAiTools:
+    """The AI tools as the loop reaches them."""
+
+    def __init__(self):
+        self.switched_back = 0
+
+    def switch_back_all(self):
+        self.switched_back += 1
+        return []
+
+    def report(self):
+        return {"accounts": []}
+
+
+def test_leave_switches_the_ai_tools_back_first(config_path, monkeypatch):
+    agent, _ = scripted_agent(config_path, monkeypatch, [[WELCOME]])
+    monkeypatch.setattr(
+        enrollment_module.BindingHttpClient,
+        "leave",
+        lambda self, binding_id, token: None,
+    )
+    tools = RecordedAiTools()
+    agent._ai_tools = tools
+
+    agent.leave()
+
+    assert tools.switched_back == 1
+
+
+def test_binding_unknown_switches_the_ai_tools_back(config_path, monkeypatch):
+    agent, _ = scripted_agent(config_path, monkeypatch, [refused("binding_unknown")])
+    tools = RecordedAiTools()
+    agent._ai_tools = tools
+
+    agent.run_once()
+
+    assert tools.switched_back == 1

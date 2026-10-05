@@ -173,6 +173,7 @@ class DesiredStateApplier:
         log=print,
         open_stream=None,
         package_dir: str = "",
+        ai_tools=None,
     ):
         """
         Args:
@@ -191,6 +192,9 @@ class DesiredStateApplier:
                 ``hub_unreachable``.
             package_dir: Where a package's bytes land until their digest
                 is checked.
+            ai_tools: The :class:`AiToolsApplier` the state's ``ai_tools``
+                section is handed to, after the modules; None applies
+                nothing of it.
         """
         self._engine = engine
         self._runners = dict(runners)
@@ -199,6 +203,7 @@ class DesiredStateApplier:
         self._log = log
         self._open_stream = open_stream
         self._package_dir = package_dir
+        self._ai_tools = ai_tools
         self._lock = threading.Lock()
         self._idle = threading.Condition(self._lock)
         self._is_applying = False
@@ -303,6 +308,8 @@ class DesiredStateApplier:
             )
             if failure and first_failure is None:
                 first_failure = {"module": name, **failure}
+        if self._ai_tools is not None:
+            self._ai_tools.apply(document.get("ai_tools"), state_hash)
         with self._lock:
             is_retried = first_failure is not None and (
                 first_failure["code"] == RETRIED_CODE
