@@ -80,7 +80,10 @@ const val CLIENT_RUSTDESK_SOURCE_URL = "https://github.com/rustdesk/rustdesk/tre
  */
 const val CLIENT_RUSTDESK_PATCH_URL = "{source}/blob/v{version}/packaging/build/build_core_rustdesk.patch"
 
-/** The cores every edition of the app carries, for the About card. */
+/**
+ * The cores every edition of the app carries, for the About card. The mainland edition links EasyTier's
+ * own Gitee repository and Gitee's RustDesk mirror, each holding the same tag at the same commit.
+ */
 val CLIENT_CARRIED_CORES: List<CarriedCore> = listOf(
     CarriedCore(
         "EasyTier",
@@ -88,8 +91,16 @@ val CLIENT_CARRIED_CORES: List<CarriedCore> = listOf(
         "LGPL-3.0",
         "https://github.com/EasyTier/EasyTier/tree/v2.6.4",
         "{source}/blob/v{version}/packaging/build/build_core_easytier.patch",
+        "https://gitee.com/easytier/EasyTier/tree/v2.6.4",
     ),
-    CarriedCore(CLIENT_RUSTDESK_CORE, "1.4.9", "AGPL-3.0", CLIENT_RUSTDESK_SOURCE_URL, CLIENT_RUSTDESK_PATCH_URL),
+    CarriedCore(
+        CLIENT_RUSTDESK_CORE,
+        "1.4.9",
+        "AGPL-3.0",
+        CLIENT_RUSTDESK_SOURCE_URL,
+        CLIENT_RUSTDESK_PATCH_URL,
+        "https://gitee.com/mirrors/rustdesk/tree/1.4.9",
+    ),
 )
 
 /** The `platform_os` a desktop entry carries when the sharing machine is a Mac. */

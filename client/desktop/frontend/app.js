@@ -31,8 +31,10 @@ const REASONING_EFFORTS = ['minimal', 'low', 'medium', 'high'];
 
 // The licence the client ships under and where its source is, by the edition
 // the state names; the programs the package carries, each with the key its
-// version is stamped under, its licence, its repository, the tag a version is
-// released under and, for one only a system's package carries, that system.
+// version is stamped under, its licence, its repository, the mirror the
+// mainland edition links instead where one holds the same tags, the tag a
+// version is released under and, for one only a system's package carries,
+// that system.
 const CLIENT_LICENCE = 'MIT';
 const CLIENT_SOURCES = {
   intl: 'https://github.com/iffiX/neutrino',
@@ -40,9 +42,11 @@ const CLIENT_SOURCES = {
 };
 const CARRIED = PARTS.flatMap((part) => part.carried || []).concat([
   { name: 'EasyTier', key: 'easytier', licence: 'LGPL-3.0',
-    repository: 'https://github.com/EasyTier/EasyTier', tag: 'v{version}' },
+    repository: 'https://github.com/EasyTier/EasyTier',
+    mainland: 'https://gitee.com/easytier/EasyTier', tag: 'v{version}' },
   { name: 'RustDesk', key: 'rustdesk', licence: 'AGPL-3.0',
-    repository: 'https://github.com/rustdesk/rustdesk', tag: '{version}' },
+    repository: 'https://github.com/rustdesk/rustdesk',
+    mainland: 'https://gitee.com/mirrors/rustdesk', tag: '{version}' },
   { name: 'cc-switch', key: 'cc-switch', licence: 'MIT',
     repository: 'https://github.com/SaladDay/cc-switch-cli', tag: 'v{version}' },
   { name: 'tun2socks', key: 'tun2socks', licence: 'MIT',
@@ -2524,7 +2528,7 @@ function aboutSection(state) {
     .map((core) => {
     const version = versions[core.key];
     return [version ? core.name + ' ' + version : core.name, core.licence,
-      [[source, carriedSource(core, version)]]];
+      [[source, carriedSource(core, version, state.edition)]]];
   })));
   card.appendChild(about);
   return card;
@@ -2572,9 +2576,10 @@ function aboutLink(word, url) {
 
 // A carried program's source: at the tag of the version the package
 // carries, its repository when no version is stamped.
-function carriedSource(core, version) {
-  if (!version) return core.repository;
-  return core.repository + '/tree/' + fill(core.tag, { version: version });
+function carriedSource(core, version, edition) {
+  const repository = (edition === 'cn' && core.mainland) || core.repository;
+  if (!version) return repository;
+  return repository + '/tree/' + fill(core.tag, { version: version });
 }
 
 // --- the one picker, and the dialogs ---
