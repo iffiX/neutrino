@@ -1213,7 +1213,7 @@ def test_the_hub_row_says_the_way_in_and_offers_the_panel():
         ("direct", "Direct", "直连"),
         ("netbird", "NetBird", "NetBird"),
         ("easytier", "EasyTier", "EasyTier"),
-        ("relay", "Relay", "中继"),
+        ("relay", "SSH Relay", "SSH 中继"),
     ):
         assert EN_WORDS["ui.through." + way] == english
         assert CATALOGS["zh-CN"]["ui.through." + way] == chinese

@@ -242,7 +242,7 @@
   "ui.through.easytier": "EasyTier",
   "ui.through.lan": "LAN",
   "ui.through.netbird": "NetBird",
-  "ui.through.relay": "Relay",
+  "ui.through.relay": "SSH Relay",
   "ui.tool_claude": "Claude Code",
   "ui.tool_codex": "Codex",
   "ui.tool_gemini": "Gemini",
