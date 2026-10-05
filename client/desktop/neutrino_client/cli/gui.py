@@ -65,6 +65,7 @@ def main(*, is_hidden: bool = False) -> int:
     )
     if not server.bind():
         return _show_running(socket_path)
+    platform.forget_relaunch()
     resident.start()
     server.start()
     _install_quit_signals(resident, server)

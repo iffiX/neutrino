@@ -70,3 +70,17 @@ def test_a_platform_without_a_socket_is_refused(monkeypatch, capsys):
 
     assert quit_cli.main() == 1
     assert wording.word_code("control_socket_unavailable") in capsys.readouterr().err
+
+
+def test_an_installer_asks_for_the_client_to_come_back(resident):
+    assert quit_cli.main(is_upgrade=True) == 0
+
+    assert resident.is_shut_down.wait(timeout=5)
+    assert resident.relaunches == 1
+
+
+def test_a_plain_quit_arranges_no_return(resident):
+    assert quit_cli.main() == 0
+
+    assert resident.is_shut_down.wait(timeout=5)
+    assert resident.relaunches == 0

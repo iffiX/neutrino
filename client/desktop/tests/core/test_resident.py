@@ -2728,3 +2728,33 @@ def test_a_mount_job_that_crashes_says_so_in_the_log(windows_hub, monkeypatch):
         "h1/share_media: the job crashed: PermissionError" in line for line in lines
     )
     assert platform.attach_calls == []
+
+
+class RelaunchPlatform(FakeClientPlatform):
+    def __init__(self, outcome):
+        super().__init__()
+        self.outcome = outcome
+
+    def register_relaunch(self):
+        if isinstance(self.outcome, Exception):
+            raise self.outcome
+        return self.outcome
+
+
+@pytest.mark.parametrize(
+    "outcome, line",
+    [
+        (True, "the client starts again once the upgrade is installed"),
+        (
+            OSError("Access is denied."),
+            "the restart after the upgrade could not be arranged: Access is denied.",
+        ),
+    ],
+)
+def test_an_upgrade_quit_arranges_the_return_and_says_how_it_went(outcome, line):
+    lines = []
+    resident = ClientResident(log=lines.append, platform=RelaunchPlatform(outcome))
+
+    resident.arrange_relaunch()
+
+    assert line in lines

@@ -69,7 +69,8 @@ def test_no_command_prints_the_help(monkeypatch, capsys):
         (["status"], "status", ((), {"is_json": False})),
         (["status", "--json"], "status", ((), {"is_json": True})),
         (["gui", "--hidden"], "gui", ((), {"is_hidden": True})),
-        (["quit"], "quit", ((), {})),
+        (["quit"], "quit", ((), {"is_upgrade": False})),
+        (["quit", "--upgrade"], "quit", ((), {"is_upgrade": True})),
         (
             ["terminal", "lepton"],
             "terminal",

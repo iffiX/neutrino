@@ -18,8 +18,12 @@ from neutrino_client.exceptions import PlatformUnsupportedError
 from neutrino_client.platforms.detect import detect_platform
 
 
-def main() -> int:
+def main(*, is_upgrade: bool = False) -> int:
     """Ask the running client to quit.
+
+    Args:
+        is_upgrade: Whether an installer asks, which has the client started
+            again once the install ends.
 
     Returns:
         Process exit status: 0 when it took the ask, 1 when nothing is
@@ -32,7 +36,10 @@ def main() -> int:
         return 1
     try:
         status, reply = client.request(
-            socket_path=socket_path, method="POST", path="/api/quit"
+            socket_path=socket_path,
+            method="POST",
+            path="/api/quit",
+            body={"is_upgrade": True} if is_upgrade else None,
         )
     except (OSError, ValueError):
         print(wording.NOT_RUNNING, file=sys.stderr)

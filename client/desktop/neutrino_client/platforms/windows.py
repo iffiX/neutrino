@@ -24,6 +24,7 @@ import getpass
 import os
 import re
 import subprocess
+import sys
 import threading
 import time
 
@@ -41,6 +42,10 @@ from neutrino_client.constants import (
     CLIENT_FILES_ADAPTER_WAIT_S,
     CLIENT_FILES_NETWORK,
     CLIENT_FILES_PIPE_WINDOWS,
+    CLIENT_RELAUNCH_ARGUMENTS,
+    CLIENT_RELAUNCH_TASK_PREFIX_WINDOWS,
+    CLIENT_RELAUNCH_TIMEOUT_S,
+    CLIENT_WINDOWED_PROGRAM_WINDOWS,
     CLIENT_LOG_SUBDIR_WINDOWS,
     CLIENT_STATE_SUBDIR_WINDOWS,
 )
@@ -166,6 +171,37 @@ def files_adapter_command() -> list:
         "Bypass",
         "-EncodedCommand",
         encoded,
+    ]
+
+
+def relaunch_task_command(name: str, program: str) -> list:
+    """How ``schtasks`` registers one account's relaunch task.
+
+    A one-time trigger at midnight today, already past, never fires; the
+    task runs when the installer starts it.
+
+    Args:
+        name: The task's name.
+        program: The windowed program the task starts.
+
+    Returns:
+        The argument vector.
+    """
+    return [
+        "schtasks",
+        "/create",
+        "/tn",
+        name,
+        "/tr",
+        f'"{program}" {CLIENT_RELAUNCH_ARGUMENTS}',
+        "/sc",
+        "once",
+        "/st",
+        "00:00",
+        "/rl",
+        "limited",
+        "/it",
+        "/f",
     ]
 
 
@@ -486,6 +522,51 @@ class WindowsPlatform(ClientPlatform):
         if result.returncode != 0:
             words = (result.stdout or "").strip() or (result.stderr or "").strip()
             raise OSError(words or f"PowerShell exited {result.returncode}")
+
+    def relaunch_task_name(self) -> str:
+        """The relaunch task of this account."""
+        return CLIENT_RELAUNCH_TASK_PREFIX_WINDOWS + _pipe_safe_name(
+            self.current_account()
+        )
+
+    def register_relaunch(self) -> bool:
+        """Register this account's relaunch task, for the installer to start.
+
+        The task has no trigger that fires, runs at the limited level and only
+        while the account is signed in, so it starts the windowed program in
+        that person's own session, never elevated.
+
+        Returns:
+            True when the task was registered; False where no windowed
+            program stands beside this one, as in a checkout.
+
+        Raises:
+            OSError: When ``schtasks`` cannot run or refuses.
+        """
+        program = os.path.join(
+            os.path.dirname(sys.executable), CLIENT_WINDOWED_PROGRAM_WINDOWS
+        )
+        if not os.path.isfile(program):
+            return False
+        command = relaunch_task_command(self.relaunch_task_name(), program)
+        try:
+            result = run_quietly(command, timeout_s=CLIENT_RELAUNCH_TIMEOUT_S)
+        except subprocess.SubprocessError as error:
+            raise OSError(f"schtasks did not finish: {error}")
+        if result.returncode != 0:
+            words = (result.stderr or "").strip() or (result.stdout or "").strip()
+            raise OSError(words or f"schtasks exited {result.returncode}")
+        return True
+
+    def forget_relaunch(self) -> None:
+        """Delete this account's relaunch task, when one stands. Best-effort."""
+        try:
+            run_quietly(
+                ["schtasks", "/delete", "/tn", self.relaunch_task_name(), "/f"],
+                timeout_s=CLIENT_RELAUNCH_TIMEOUT_S,
+            )
+        except (OSError, subprocess.SubprocessError):
+            pass
 
     def files_peer(self, connection) -> dict:
         """The files daemon pipe's peer: its account and its process.

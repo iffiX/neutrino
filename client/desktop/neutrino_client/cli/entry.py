@@ -77,7 +77,8 @@ def main() -> int:
     gui_parser.add_argument(
         "--hidden", action="store_true", help="start without showing the window"
     )
-    subparsers.add_parser("quit", help="stop the running client")
+    quit_parser = subparsers.add_parser("quit", help="stop the running client")
+    quit_parser.add_argument("--upgrade", action="store_true", help=argparse.SUPPRESS)
     terminal_parser = subparsers.add_parser(
         "terminal", help="a shell on a machine a hub offers one on"
     )
@@ -114,7 +115,7 @@ def main() -> int:
     if arguments.command == "gui":
         return gui.main(is_hidden=arguments.hidden)
     if arguments.command == "quit":
-        return quit.main()
+        return quit.main(is_upgrade=arguments.upgrade)
     if arguments.command == "terminal":
         return terminal.main(
             arguments.machine, hub=arguments.hub, session_id=arguments.session

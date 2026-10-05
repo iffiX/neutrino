@@ -542,6 +542,20 @@ class ClientPlatform:
         """
         raise PlatformUnsupportedError("no files adapter here")
 
+    def register_relaunch(self) -> bool:
+        """Have this client started again once an installer has replaced it.
+
+        Returns:
+            Whether a start was arranged; nothing is arranged here.
+
+        Raises:
+            OSError: When the system refuses the arrangement.
+        """
+        return False
+
+    def forget_relaunch(self) -> None:
+        """Drop a start an earlier quit arranged. Nothing here."""
+
     def files_peer(self, connection) -> dict:
         """Who is on the other end of the files daemon's pipe.
 

@@ -391,3 +391,15 @@ def test_the_log_lives_beside_the_state(platform, residents, monkeypatch):
     assert gui_cli.main() == 0
 
     assert seen[0].endswith("client.log")
+
+
+def test_a_starting_client_drops_the_return_an_upgrade_arranged(
+    platform, residents, monkeypatch
+):
+    forgotten = []
+    platform.forget_relaunch = lambda: forgotten.append(1)
+    monkeypatch.setattr(gui_cli, "open_shell_window", lambda **rest: None)
+
+    assert gui_cli.main() == 0
+
+    assert forgotten == [1]

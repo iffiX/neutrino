@@ -295,6 +295,15 @@ CLIENT_EASYTIER_STABLE_S = 60
 # How long a stopped core is given to end before it is killed.
 CLIENT_EASYTIER_STOP_TIMEOUT_S = 10
 
+# The task a Windows client registers, as its own account, when an
+# installer asks it to quit for an upgrade; the installer's last step starts
+# it, and the client deletes it when it starts. The account follows the
+# prefix. The task starts the windowed program with these arguments.
+CLIENT_RELAUNCH_TASK_PREFIX_WINDOWS = "NeutrinoClientRelaunch_"
+CLIENT_WINDOWED_PROGRAM_WINDOWS = "nclientw.exe"
+CLIENT_RELAUNCH_ARGUMENTS = "gui --hidden"
+CLIENT_RELAUNCH_TIMEOUT_S = 30
+
 # The files adapter on Windows: a wintun adapter whose SMB connections reach
 # the hub. The daemon is a service of this package run as SYSTEM, the only
 # thing that runs tun2socks; it answers one JSON request per connection on
