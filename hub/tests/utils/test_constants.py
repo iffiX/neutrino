@@ -94,3 +94,76 @@ def test_a_carried_program_ends_in_exe_on_windows_alone(monkeypatch):
     assert constants.carried_program("xray").name == "xray"
     monkeypatch.setattr(constants, "hub_os", lambda: "linux")
     assert constants.carried_program("xray") == constants.UTILS_PROGRAM_DIR / "xray"
+
+
+# --- where the configuration is ---
+
+
+@pytest.fixture
+def config_places(monkeypatch, tmp_path, no_dev_root):
+    """A system directory and a checkout directory of this test's own."""
+    system = tmp_path / "system_config"
+    checkout = tmp_path / "checkout_config"
+    monkeypatch.delenv(constants.UTILS_CONFIG_ENV, raising=False)
+    monkeypatch.setattr(constants, "UTILS_SYSTEM_CONFIG_DIR", system)
+    monkeypatch.setattr(constants, "UTILS_CHECKOUT_CONFIG_DIR", checkout)
+    return system, checkout
+
+
+@pytest.mark.parametrize("is_present", [True, False])
+def test_a_built_package_keeps_its_configuration_in_the_system_directory(
+    monkeypatch, config_places, is_present
+):
+    """On Windows nothing makes the directory before the service first
+    imports the hub, and the checkout's directory there is under Program
+    Files, which every account reads."""
+    system, _ = config_places
+    if is_present:
+        system.mkdir()
+    monkeypatch.setattr(constants, "is_stamped_package", lambda: True)
+
+    assert constants.resolve_config_dir() == system
+
+
+def test_a_checkout_uses_the_system_directory_only_when_it_exists(
+    monkeypatch, config_places
+):
+    system, checkout = config_places
+    monkeypatch.setattr(constants, "is_stamped_package", lambda: False)
+
+    assert constants.resolve_config_dir() == checkout
+    system.mkdir()
+    assert constants.resolve_config_dir() == system
+
+
+@pytest.mark.parametrize("is_stamped", [True, False])
+def test_the_environment_override_wins_over_everything(
+    monkeypatch, config_places, tmp_path, is_stamped
+):
+    monkeypatch.setattr(constants, "is_stamped_package", lambda: is_stamped)
+    monkeypatch.setenv(constants.UTILS_CONFIG_ENV, str(tmp_path / "elsewhere"))
+
+    assert constants.resolve_config_dir() == tmp_path / "elsewhere"
+
+
+def test_a_development_root_uses_the_system_directory_absent_or_not(
+    monkeypatch, config_places, tmp_path
+):
+    system, _ = config_places
+    monkeypatch.setattr(constants, "is_stamped_package", lambda: False)
+    monkeypatch.setenv(constants.UTILS_DEV_ROOT_ENV, str(tmp_path))
+
+    assert constants.resolve_config_dir() == system
+
+
+def test_a_checkout_has_no_build_stamp():
+    assert constants.is_stamped_package() is False
+
+
+def test_a_build_stamp_makes_a_stamped_package(monkeypatch):
+    import sys
+    import types
+
+    monkeypatch.setitem(sys.modules, "neutrino_hub._version", types.ModuleType("v"))
+
+    assert constants.is_stamped_package() is True
