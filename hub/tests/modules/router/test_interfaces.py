@@ -7,6 +7,7 @@ and no way back in but a keyboard.
 """
 
 import pytest
+from neutrino_hub.modules.router.constants import ROUTER_MODE_ROUTER, ROUTER_MODES_KEYS
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 
 from tests.conftest import lan_entry, network_config, wan_entry
@@ -428,7 +429,9 @@ def test_in_router_mode_an_interface_is_enabled_unless_its_role_is_disabled():
     assert not network.is_interface_enabled("not-listed")
 
 
-@pytest.mark.parametrize("mode", ["server", "side_gateway"])
+@pytest.mark.parametrize(
+    "mode", [key for key in ROUTER_MODES_KEYS if key != ROUTER_MODE_ROUTER]
+)
 def test_where_the_hub_addresses_nothing_every_listed_interface_is_enabled(mode):
     network = RouterNetworkConfig.from_dict(
         {

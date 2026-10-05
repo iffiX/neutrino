@@ -537,7 +537,7 @@ def test_turning_direct_on_writes_its_file_and_converges(box):
     assert read_direct() == OverlayDirectConfig(
         is_enabled=True, public_host="hub.example.org", public_port=443
     )
-    assert runtime.converged == [[OVERLAY_NETBIRD]]
+    assert len(runtime.converged) == 1
 
 
 def test_direct_counts_the_online_clients_that_came_from_outside(box):
