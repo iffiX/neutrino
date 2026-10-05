@@ -110,13 +110,6 @@ export function OverlayPage() {
         </div>
       )}
 
-      {!choice.kinds.some((kind) => kind.is_enabled) && (
-        <div className="notice">
-          <Icon name="blocked" size={15} />
-          <div className="notice_body">{t("ui.overlay.none_body")}</div>
-        </div>
-      )}
-
       {NetbirdCard !== null &&
         selected === PROVIDER_NETBIRD &&
         isEnabled(PROVIDER_NETBIRD) && <NetbirdCard />}
