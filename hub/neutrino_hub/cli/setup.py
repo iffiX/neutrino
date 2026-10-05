@@ -34,6 +34,7 @@ import base64
 import hashlib
 import json
 import os
+import shutil
 import signal
 import socket
 import ssl
@@ -118,6 +119,7 @@ from neutrino_hub.web.constants import (
     WEB_SETTING_HTTPS,
     WEB_SETTING_HTTPS_PORT,
     WEB_SETUP_GRACE_S,
+    WEB_RESTORE_LOCAL_AGENT_PATH,
     WEB_SETUP_LOCAL_AGENT_PATH,
     WEB_SETUP_WAIT_S,
 )
@@ -355,6 +357,59 @@ def finish_local_agent() -> None:
         WEB_SETUP_LOCAL_AGENT_PATH.unlink(missing_ok=True)
 
 
+def rejoin_local_agent() -> None:
+    """Join this machine's agent to the restored row of this machine.
+
+    Runs in the panel's process once it serves, after a restore left the
+    mark naming the row; the mark is removed either way. A machine whose
+    agent is not installed joins nothing.
+    """
+    if not WEB_RESTORE_LOCAL_AGENT_PATH.is_file():
+        return
+    try:
+        if is_dev_root_set() or not is_local_agent_installed():
+            return
+        try:
+            mark = json.loads(WEB_RESTORE_LOCAL_AGENT_PATH.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            mark = {}
+        device_id = (
+            str(mark.get("device_id", "") or "") if isinstance(mark, dict) else ""
+        )
+        reporter = InstallReporter(
+            total_step_count=1, is_color_enabled=False, log_path=UTILS_SETUP_LOG_PATH
+        )
+        reporter.start("Joining this machine's agent", code=SETUP_STEP_LOCAL_AGENT)
+        _wait_for_panel()
+        link, note = _minted_link(device_id=device_id or None)
+        if not link:
+            reporter.failed(note)
+            return
+        try:
+            run(
+                [hub_platform().agent_command(), "join", link, "--yes"],
+                timeout_s=SETUP_AGENT_JOIN_TIMEOUT_S,
+            )
+        except (subprocess.SubprocessError, OSError) as error:
+            reporter.failed(command_failure_text(error))
+            return
+        reporter.done("joined")
+    finally:
+        WEB_RESTORE_LOCAL_AGENT_PATH.unlink(missing_ok=True)
+
+
+def is_local_agent_installed() -> bool:
+    """Whether this machine's agent is installed.
+
+    Returns:
+        True when the agent's command is on ``PATH`` or at its absolute path.
+    """
+    command = hub_platform().agent_command()
+    if os.path.isabs(command):
+        return os.path.isfile(command)
+    return shutil.which(command) is not None
+
+
 def _wait_for_panel() -> None:
     """Wait, at most the panel's wait, for the panel's port to take connections."""
     deadline = time.monotonic() + SETUP_PANEL_WAIT_S
@@ -368,8 +423,12 @@ def _wait_for_panel() -> None:
             time.sleep(SETUP_PANEL_POLL_S)
 
 
-def _minted_link() -> tuple:
+def _minted_link(device_id: "str | None" = None) -> tuple:
     """One enrollment link minted by the panel in this process.
+
+    Args:
+        device_id: The stored row to join, or None for whichever row the
+            machine id finds or a new one.
 
     Returns:
         The link and an empty note, or an empty link and why there is none.
@@ -381,7 +440,7 @@ def _minted_link() -> tuple:
 
     try:
         link, _ = generate_enrollment_link(
-            shared_runtime(), name="", device_id=None, is_hub=True
+            shared_runtime(), name="", device_id=device_id, is_hub=True
         )
     except HTTPException as error:
         return "", f"the panel cannot mint a link ({error.detail})"

@@ -28,6 +28,9 @@ def setup_files(monkeypatch, tmp_path):
     monkeypatch.setattr(
         setup, "WEB_SETUP_LOCAL_AGENT_PATH", directory / "setup_local_agent"
     )
+    monkeypatch.setattr(
+        setup, "WEB_RESTORE_LOCAL_AGENT_PATH", directory / "restore_local_agent"
+    )
     return directory
 
 

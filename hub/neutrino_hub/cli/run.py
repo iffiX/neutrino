@@ -546,14 +546,24 @@ def _agent_port_guard():
 
 
 def _finish_first_run() -> None:
-    """Install this machine's agent beside the panel, when the first run left it."""
-    from neutrino_hub.web.constants import WEB_SETUP_LOCAL_AGENT_PATH
+    """Install this machine's agent beside the panel, when the first run left
+    it, or join it again, when a restore left it."""
+    from neutrino_hub.web.constants import (
+        WEB_RESTORE_LOCAL_AGENT_PATH,
+        WEB_SETUP_LOCAL_AGENT_PATH,
+    )
 
     if WEB_SETUP_LOCAL_AGENT_PATH.is_file():
         from neutrino_hub.cli import setup
 
         threading.Thread(
             target=setup.finish_local_agent, name="local_agent", daemon=True
+        ).start()
+    elif WEB_RESTORE_LOCAL_AGENT_PATH.is_file():
+        from neutrino_hub.cli import setup
+
+        threading.Thread(
+            target=setup.rejoin_local_agent, name="local_agent", daemon=True
         ).start()
 
 
