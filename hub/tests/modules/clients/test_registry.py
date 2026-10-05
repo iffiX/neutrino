@@ -6,7 +6,10 @@ import json
 
 import pytest
 
+from neutrino_hub.modules.clients.constants import CLIENT_PERMISSION_KINDS
 from neutrino_hub.modules.clients.registry import ClientRegistry
+from neutrino_hub.utils.constants import UTILS_EXAMPLES_DIR
+from neutrino_hub.utils.json_file import copy_example
 
 
 @pytest.fixture
@@ -19,6 +22,21 @@ def config_dir(tmp_path, monkeypatch):
 def stored(config_dir) -> dict:
     data = json.loads((config_dir / "clients" / "clients.json").read_text())
     return data["clients"]
+
+
+def test_a_hub_set_up_from_the_examples_allows_every_kind_the_panel_among_them(
+    config_dir,
+):
+    copy_example(
+        UTILS_EXAMPLES_DIR / "clients" / "clients.example.json",
+        config_dir / "clients" / "clients.json",
+    )
+
+    registry = ClientRegistry()
+
+    assert registry.default_permission() == list(CLIENT_PERMISSION_KINDS)
+    assert "panel" in registry.default_permission()
+    assert registry.default_permission_devices() == {}
 
 
 def test_a_missing_file_is_an_empty_list(config_dir):
