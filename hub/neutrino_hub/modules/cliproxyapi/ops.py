@@ -2,7 +2,9 @@
 
 Not pure: writes the generated file, restarts the unit, and probes the
 running service. On macOS and Windows the gateway is a child of the hub's one
-service, restarted through the process controller.
+service, restarted through the process controller. A change of keys alone is
+written into the served file in place: the gateway watches that file and
+reloads it without a restart, so no request in flight is cut.
 """
 
 import hashlib
@@ -17,7 +19,12 @@ from neutrino_hub.platforms.detect import is_linux, process_controller
 from neutrino_hub.system.constants import SYSTEM_SYSTEMD_DIR
 from neutrino_hub.utils import constants
 from neutrino_hub.utils.constants import UTILS_GENERATED_DIR
-from neutrino_hub.utils.json_file import read_config, write_config, write_generated
+from neutrino_hub.utils.json_file import (
+    read_config,
+    rewrite_generated,
+    write_config,
+    write_generated,
+)
 from neutrino_hub.utils.subprocess_run import run
 
 from neutrino_hub.modules.cliproxyapi.config import (
@@ -29,6 +36,10 @@ from neutrino_hub.modules.cliproxyapi.constants import (
     CLIPROXYAPI_BINARY_PATH,
     CLIPROXYAPI_GENERATED_NAME,
     CLIPROXYAPI_HUB_KEY_NAME,
+    CLIPROXYAPI_KEY_REFUSED_STATUSES,
+    CLIPROXYAPI_RELOAD_POLL_S,
+    CLIPROXYAPI_RELOAD_WAIT_S,
+    CLIPROXYAPI_RESTART_WAIT_S,
     CLIPROXYAPI_SERVED_FINGERPRINT_RELATIVE,
     CLIPROXYAPI_SERVED_MODELS_TTL_S,
     CLIPROXYAPI_SUPERVISED_NAME,
@@ -137,7 +148,8 @@ def _fingerprint_path() -> Path:
 
 
 class CliproxyApiConfigApplier:
-    """Renders the YAML and restarts the service to pick it up."""
+    """Renders the YAML and hands it to the gateway: a restart for a whole
+    apply, a reload in place for a change of keys."""
 
     def apply(self) -> str:
         """Render from the stored state and restart the gateway.
@@ -158,11 +170,86 @@ class CliproxyApiConfigApplier:
         write_served_fingerprint(rendered)
         if not self.is_installed:
             return "rendered; the service is not installed yet"
+        self._restart()
+        return f"applied with {enabled} provider(s) and restarted"
+
+    def apply_keys(self, *, new_key: "str | None" = None) -> str:
+        """Hand the running gateway a changed set of keys without a restart.
+
+        The render is written into the served file in place, which the
+        gateway reloads by itself. A render equal to the one served writes
+        nothing. With ``new_key``, the call returns once the gateway accepts
+        that key; when it does not within ``CLIPROXYAPI_RELOAD_WAIT_S``, the
+        gateway is restarted and the call returns once it listens again, or
+        after ``CLIPROXYAPI_RESTART_WAIT_S``.
+
+        Args:
+            new_key: A key the change adds, which the gateway must accept
+                before the call returns; None for a change that adds none.
+
+        Returns:
+            A one-line summary of what happened.
+
+        Raises:
+            ValueError: If the stored settings do not validate, or a provider's
+                or a client's sealed key does not open.
+        """
+        self._ensure_hub_key()
+        rendered, _ = self._render()
+        served_path = UTILS_GENERATED_DIR / CLIPROXYAPI_GENERATED_NAME
+        if not self.is_installed or not served_path.is_file():
+            return self.apply()
+        if fingerprint_of(rendered) == read_served_fingerprint():
+            return "unchanged"
+        rewrite_generated(served_path, rendered, mode=0o600)
+        write_served_fingerprint(rendered)
+        if new_key is None:
+            return "reloaded"
+        port = load_config().listen_port
+        if self._wait(port, new_key, CLIPROXYAPI_RELOAD_WAIT_S, is_key_awaited=True):
+            return "reloaded"
+        self._restart()
+        self._wait(port, new_key, CLIPROXYAPI_RESTART_WAIT_S, is_key_awaited=False)
+        return "restarted"
+
+    def _wait(
+        self, port: int, key: str, timeout_s: float, *, is_key_awaited: bool
+    ) -> bool:
+        """Ask the gateway until it answers, or accepts the key, or time runs out.
+
+        Args:
+            port: Where it listens.
+            key: The key the probe carries.
+            timeout_s: How long to keep asking.
+            is_key_awaited: Whether only an answer that accepts the key ends
+                the wait; otherwise any answer does.
+
+        Returns:
+            Whether the wait ended on such an answer.
+        """
+        deadline = time.monotonic() + timeout_s
+        while True:
+            is_answered, failure, _ = self.probe(port=port, client_key=key)
+            code = (failure or {}).get("code", "")
+            status = (failure or {}).get("params", {}).get("status")
+            if is_answered or (
+                code == "gateway_probe_status"
+                and (
+                    not is_key_awaited or status not in CLIPROXYAPI_KEY_REFUSED_STATUSES
+                )
+            ):
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(CLIPROXYAPI_RELOAD_POLL_S)
+
+    @staticmethod
+    def _restart() -> None:
+        """Restart the gateway: its unit on Linux, its supervised child elsewhere."""
         if is_linux():
             run(["systemctl", "restart", CLIPROXYAPI_UNIT])
         else:
             process_controller().restart(CLIPROXYAPI_SUPERVISED_NAME)
-        return f"applied with {enabled} provider(s) and restarted"
 
     @staticmethod
     def _ensure_hub_key() -> None:

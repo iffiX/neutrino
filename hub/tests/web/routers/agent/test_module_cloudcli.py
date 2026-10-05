@@ -45,7 +45,7 @@ HUB = "192.168.100.1"
 @pytest.fixture
 def api(monkeypatch, tmp_path):
     unlock_vault(monkeypatch, tmp_path)
-    monkeypatch.setattr(ai_keys, "_apply", lambda: None)
+    monkeypatch.setattr(ai_keys, "_apply", lambda **kwargs: None)
     client, runtime = module_box(monkeypatch, tmp_path, module_cloudcli.router)
     runtime.device_scope[DEVICE] = HostScope(
         id="192.168.100.0/24", cidr="192.168.100.0/24", hub_address=HUB

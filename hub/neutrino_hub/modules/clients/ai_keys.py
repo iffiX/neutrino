@@ -51,8 +51,9 @@ def ensure_client_key(registry: ClientRegistry, client: Client) -> "str | None":
         config.client_keys.append(key)
         save_config(config)
         registry.set_ai_key_id(client.id, key.id)
-    _apply()
-    return key.open_key()
+    material = key.open_key()
+    _apply(new_key=material)
+    return material
 
 
 def revoke_client_key(registry: ClientRegistry, client: Client) -> None:
@@ -104,8 +105,9 @@ def ensure_device_key(device_id: str, name: str) -> "str | None":
             return None
         config.device_keys[device_id] = key
         save_config(config)
-    _apply()
-    return key.open_key()
+    material = key.open_key()
+    _apply(new_key=material)
+    return material
 
 
 def revoke_device_key(device_id: str) -> None:
@@ -188,8 +190,9 @@ def _label(client: Client) -> str:
     return f"{CLIENT_AI_KEY_LABEL_PREFIX}{client.name or client.id}"
 
 
-def _apply() -> None:
+def _apply(*, new_key: "str | None" = None) -> None:
+    """Hand the gateway the changed keys, waiting for ``new_key`` when given."""
     try:
-        CliproxyApiConfigApplier().apply()
+        CliproxyApiConfigApplier().apply_keys(new_key=new_key)
     except ValueError:
         return
