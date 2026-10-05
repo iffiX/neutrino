@@ -406,11 +406,12 @@ the record's:
 | `pending` | the core takes it | `queued`, then `mounting` | `ui.job.mounting` |
 | `mounting` | the system mounts it | `mounted` | **Unmount** |
 | `mounting` | a code | `failed`, with the error line; the form keeps its values | **Mount** |
-| `mounted` | press **Unmount** | `unmounting`, then none | `ui.job.unmounting` |
+| `mounted` | press **Unmount** | `unmounting`, then `detached`: the record and its login stay | `ui.job.unmounting` |
+| `detached` | press **Mount** | `pending`, mounting with the kept login, nothing retyped | `ui.job.mounting` |
 | `mounted` | the entry turns unhealthy | `mounted` | **Unmount**; the state word is `ui.unhealthy` |
 | `failed` | press **Mount** | `pending` | `ui.job.mounting` |
 | `failed` with a login refusal | press **Save** in the form with a new login | `pending`, mounting with the new login at once | `ui.job.mounting` |
-| `failed` | its entry leaves the hub's list, or another record is set to mount at the same place | none | a failed record is dropped and holds no place |
+| `failed` or `detached` | its entry leaves the hub's list, or another record is set to mount at the same place | none | a failed or detached record is dropped with its login and holds no place |
 
 **Configure** opens the row's form in place: a user name (a picker over the
 share's `users`, with typed text accepted), the password, and the place the
@@ -434,7 +435,7 @@ share's own address:
 | --- | --- |
 | Linux | the entry's forward, mounted by the root helper under `pkexec`: `mount_helper mount --share //127.0.0.1/<share> --port <local-port> --location <path> --credentials <file>`, which runs `mount.cifs` with `port=<local-port>` among its options |
 | macOS | the entry's forward, mounted by the system as below |
-| Windows | the files adapter's address for the share's machine, `net use <letter>: \\<fake-address>\<share>` ("The files adapter on Windows") |
+| Windows | the files adapter's address for the share's machine, `net use <letter>: \\<fake-address>\<share>` ("The files adapter on Windows"); a share of the client's own machine (`is_own_machine`) is mounted from `\\127.0.0.1\<share>` directly, through no adapter |
 
 On macOS the client does not mount the share itself: it asks the system to
 mount the volume through `osascript`, with the one-line script on its
@@ -488,7 +489,7 @@ the hub.
 | Part | What it is |
 | --- | --- |
 | The adapter | `neutrino_files`, a wintun adapter at `198.19.255.1/24`, with no gateway and no DNS server, connected to no network <!-- scan: allow --> |
-| The fake addresses | one per machine that provides a `file` entry, from `198.19.255.2` to `198.19.255.253`, kept per hub and machine in the client's store, so a drive letter keeps naming the same machine; the machine is the entry's `device_id`, or its host for a declared record <!-- scan: allow --> |
+| The fake addresses | one per machine other than the client's own that provides a `file` entry, from `198.19.255.2` to `198.19.255.253`, kept per hub and machine in the client's store, so a drive letter keeps naming the same machine; the machine is the entry's `device_id`, or its host for a declared record <!-- scan: allow --> |
 | tun2socks | the MIT-licensed executable the client's package includes, credited on the About card, run with the adapter as its device and the SOCKS endpoint as its proxy; it hands every TCP connection entering the adapter to that endpoint |
 | The SOCKS endpoint | a SOCKS5 listener of the resident on `127.0.0.1`, behind a user name and password the resident generates at each start; it accepts a connection to `<fake-address>:445` of a machine it knows and opens a `connect` stream naming a `file` entry of that machine, and refuses any other address or port |
 
@@ -509,6 +510,16 @@ adapter taken away and made again under that connection fails every mount
 that follows. The daemon then stops tun2socks and removes the adapter. A
 `status` answers whether the adapter is up. The daemon serves the resident
 that asked last.
+
+A share of the client's own machine never goes through the adapter.
+Windows refuses a login that leaves the machine and comes back to it
+(`0xC000006D`), and a mount at a fake address of the machine itself would
+read on the row as a wrong password. An entry with `is_own_machine` is
+mounted at `\\127.0.0.1\<share>`, the machine's own SMB server on its own
+445, takes no fake address and brings the adapter up for nothing; its row
+reads as any mounted row. On Linux and macOS such a share takes its forward
+like any other: neither system's SMB client is the Windows one that the
+server recognises as its own.
 
 When the adapter cannot be made, because the service is missing, stopped or
 refuses, the mount record goes `failed` with `files_adapter_unavailable

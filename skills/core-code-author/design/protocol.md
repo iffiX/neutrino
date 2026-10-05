@@ -788,6 +788,15 @@ and each role reads them somewhere else:
 | `machine_id` | `/etc/machine-id`, else `/var/lib/dbus/machine-id`, else empty | a uuid4 hex generated on the first read of its state file and kept there |
 | `platform` | `{os, family, arch, version}`: `linux`, `windows` or `darwin`, the distribution family `debian`, `rhel` or empty, the architecture normalized to `amd64`, `arm64` or `armhf`, and the system's version: the glibc version on Linux (`2.36`), the build number on Windows (`26100`), the product version on macOS (`15.3.1`), empty where it cannot be read | the same first three keys, `os` one of `linux`, `windows` and `darwin`, and `family` empty off Linux |
 
+A client's report also carries, in its `machine` section, `os_machine_id`:
+the operating system's id for the machine, read where an agent reads its
+`machine_id` (`/etc/machine-id`, else `/var/lib/dbus/machine-id` on Linux,
+`IOPlatformUUID` on macOS, `MachineGuid` on Windows), empty where it cannot
+be read. The hub keeps it on the client's row and answers one question with
+it, which entries the client's own machine provides (`is_own_machine` on the
+entry); the installation's id stays the client's key. It is an added field
+and keeps `PROTOCOL`.
+
 An agent's id is the operating system's, so a machine joining with a blank
 link is matched to the row it already had. A client's is one installation's,
 so the same person on two machines is two clients, and a client joining again
@@ -915,13 +924,13 @@ and platform, which change between releases.
 
 | Section | `state` to agent | `report` from agent | `state` to client | `report` from client |
 | --- | --- | --- | --- | --- |
-| `machine` | | `{hostname, platform, accounts, metrics, sessions}` | | `{hostname, platform}` |
+| `machine` | | `{hostname, platform, accounts, metrics, sessions}` | | `{hostname, platform, os_machine_id}` |
 | `is_refresh` | | | | bool: a refresh the person asked for, answered with the whole state |
 | `network` | | `{link: {interface, mac, address}, interfaces: [{name, mac, addresses[]}]}` | | |
 | `modules` | `{name: {want, config, install, uninstall}}` | `{name: {state, is_active, code, params, details}}` | | |
 | `desktop` | `{seat_password}` | `{is_shared, account, share_id, port, attention, connected_count}` | | |
 | `ai_tools` | `{is_enabled, base_url, api_key, tool_configs, accounts: [{account, password}]}` | `{accounts: [{account, state, code, params}]}` | | |
-| `services` | | | `[{id, type, title, payload, is_healthy, source, description, description_code, description_params, device_id, device_name}]` | |
+| `services` | | | `[{id, type, title, payload, is_healthy, source, description, description_code, description_params, device_id, device_name, is_own_machine}]` | |
 | `is_disabled` | | | bool | |
 | `urls` | `["https://<address>:<port>", ...]` | | the same list | |
 | `overlays` | | | `[{provider, ...}]`: what the client joins each of the hub's overlays with, the preferred first | |
@@ -1305,6 +1314,15 @@ entry whose `source` is `module` or `device` and that a machine hosts, and
 empty for a declared record and for the hub's own gateway. A client keys what
 it keeps per machine by it, since a name changes and an address depends on
 the way the hub was reached. It is an added field and keeps `PROTOCOL`.
+
+`is_own_machine` is true when the machine that provides the entry is the
+machine the client runs on: the `os_machine_id` of the client's last report
+equals the provider's `machine_id`, which is the device's, as its agent
+reported it, for an entry a device hosts or a declared record at a device's
+address, and the hub box's own for one of the hub's modules. It is false
+when either id is empty or no machine the hub knows provides the entry. It
+is an added field and keeps `PROTOCOL`; a client that does not read it
+mounts as before.
 
 ### The kinds
 
