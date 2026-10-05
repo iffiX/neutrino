@@ -7,6 +7,7 @@ import io.github.iffix.neutrino.FORWARD_AUTO_FIRST_PORT
 import io.github.iffix.neutrino.FORWARD_FIXED_PORTS
 import io.github.iffix.neutrino.FORWARD_PROBE_HOST_V4
 import io.github.iffix.neutrino.FORWARD_PROBE_HOST_V6
+import io.github.iffix.neutrino.LocalPortTakenException
 import io.github.iffix.neutrino.channel.ChannelResult
 import java.io.IOException
 import java.net.BindException
@@ -25,12 +26,18 @@ import kotlinx.serialization.json.Json
  * The one table of local ports, by entry key `<binding>/<entry>`, kept in the app's settings:
  * each entry is automatic or fixed, and no two entries hold one number. An automatic entry takes
  * its own published port when no other entry holds it and nothing listens on it, else the first
- * free number from 20000 up, and keeps that pick from then on.
+ * free number from 20000 up, and keeps that pick from then on. A kept or fixed number is looked at
+ * again each time its forward is about to listen: an automatic pick another program now listens
+ * on is picked again and the new number kept, and a fixed one is refused.
  *
  * @param preferences Where the table is written.
- * @param isFree Whether nothing listens on a number on any address of the phone now.
+ * @param isFree Whether nothing listens on a number on any address of the phone now, by the number
+ *   and whether the table keeps it for an entry already.
  */
-class LocalPortTable(private val preferences: SharedPreferences, private val isFree: (Int) -> Boolean = ::isPortFree) {
+class LocalPortTable(
+    private val preferences: SharedPreferences,
+    private val isFree: (Int, Boolean) -> Boolean = ::isPortFree,
+) {
     private val current = MutableStateFlow(read())
 
     /** Every entry's choice. */
@@ -66,21 +73,29 @@ class LocalPortTable(private val preferences: SharedPreferences, private val isF
     }
 
     /**
-     * The number an entry's forward listens on, picked and kept on its first forward when automatic.
+     * The number an entry's forward is about to listen on: the kept or fixed number while nothing
+     * else listens on it, else for an automatic entry a new pick, kept from then on.
      *
      * @param key The entry's key.
      * @param publishedPort The entry's own port.
      * @return The number.
+     * @throws LocalPortTakenException When another program listens on the entry's fixed number.
      * @throws IOException When no number is free.
      */
     fun portFor(key: String, publishedPort: Int): Int = synchronized(this) {
         val choice = choiceOf(key)
-        if (choice.port != 0) return choice.port
-        val pick = if (publishedPort in FORWARD_FIXED_PORTS && !isHeld(publishedPort, key) && isFree(publishedPort)) {
+        if (choice.port != 0) {
+            if (isFree(choice.port, true)) return choice.port
+            if (choice.isFixed) throw LocalPortTakenException(choice.port)
+        }
+        val isOwnFree = publishedPort in FORWARD_FIXED_PORTS && publishedPort != choice.port &&
+            !isHeld(publishedPort, key) && isFree(publishedPort, false)
+        val pick = if (isOwnFree) {
             publishedPort
         } else {
-            (FORWARD_AUTO_FIRST_PORT..FORWARD_FIXED_PORTS.last).firstOrNull { !isHeld(it, key) && isFree(it) }
-                ?: throw IOException("no local port is free")
+            (FORWARD_AUTO_FIRST_PORT..FORWARD_FIXED_PORTS.last).firstOrNull {
+                it != choice.port && !isHeld(it, key) && isFree(it, false)
+            } ?: throw IOException("no local port is free")
         }
         write(current.value + (key to choice.copy(port = pick)))
         pick
@@ -121,18 +136,22 @@ class LocalPortTable(private val preferences: SharedPreferences, private val isF
 
         /**
          * Whether nothing listens on a number on any address of the phone now: a probe binds it on
-         * the IPv4 wildcard address, then on the IPv6 one where the phone has IPv6, with no
-         * address reuse, and closes it.
+         * the IPv4 wildcard address, then on the IPv6 one where the phone has IPv6, and closes it.
+         * A new pick is probed with no address reuse. A number the table keeps is probed with
+         * address reuse, so the app's own closed connections still lingering on it do not count,
+         * while another program's listener still does.
          *
          * @param port The number.
+         * @param isKept Whether the table keeps the number for an entry already.
          * @return True when both probes could take it.
          */
-        fun isPortFree(port: Int): Boolean = canBind(FORWARD_PROBE_HOST_V4, port, isFamilyRequired = true) &&
-            canBind(FORWARD_PROBE_HOST_V6, port, isFamilyRequired = false)
+        fun isPortFree(port: Int, isKept: Boolean = false): Boolean =
+            canBind(FORWARD_PROBE_HOST_V4, port, isKept, isFamilyRequired = true) &&
+                canBind(FORWARD_PROBE_HOST_V6, port, isKept, isFamilyRequired = false)
 
-        private fun canBind(host: String, port: Int, isFamilyRequired: Boolean): Boolean = try {
+        private fun canBind(host: String, port: Int, isReused: Boolean, isFamilyRequired: Boolean): Boolean = try {
             ServerSocket().use {
-                it.reuseAddress = false
+                it.reuseAddress = isReused
                 it.bind(InetSocketAddress(InetAddress.getByName(host), port))
             }
             true

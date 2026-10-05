@@ -36,3 +36,10 @@ class ShareRefusedException(val code: String, message: String) : IOException(mes
  */
 class ConnectRefusedException(val code: String, val params: JsonObject) :
     IOException("the hub refused the connection: $code")
+
+/**
+ * Another program listens on the fixed local port a forward is to listen on.
+ *
+ * @property port The fixed number.
+ */
+class LocalPortTakenException(val port: Int) : IOException("local port $port is already in use")

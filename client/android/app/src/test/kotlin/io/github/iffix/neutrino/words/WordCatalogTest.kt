@@ -107,6 +107,18 @@ class WordCatalogTest {
     }
 
     @Test
+    fun aTakenLocalPortIsWordedByTheDesktopsCatalog() {
+        for (language in CLIENT_LANGUAGES) {
+            assertTrue("code.port_taken" !in app(language))
+            assertEquals(desktop(language)["code.port_taken"], catalog(language).word("code.port_taken"))
+        }
+        assertEquals(
+            "Local port 28080 is already in use; pick another with Configure",
+            catalog("en").refusal("port_taken", mapOf("port" to 28080)),
+        )
+    }
+
+    @Test
     fun hasSaysWhetherAKeyIsThere() {
         val words = WordCatalog(mapOf("ui.a" to "A"))
         assertTrue(words.has("ui.a"))

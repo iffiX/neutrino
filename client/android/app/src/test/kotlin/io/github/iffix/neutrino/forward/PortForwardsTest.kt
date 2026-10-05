@@ -27,7 +27,7 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class PortForwardsTest {
     private val hub = FakeConnectHub()
-    private val table = LocalPortTable(FakeSharedPreferences(), isFree = ::isFree)
+    private val table = LocalPortTable(FakeSharedPreferences()) { port, _ -> isFree(port) }
     private val opened = mutableListOf<Pair<String, Map<String, JsonElement>>>()
     private val streams: (String, Map<String, JsonElement>) -> ChannelResult<ChannelStream> = { bindingId, args ->
         synchronized(opened) { opened += bindingId to args }
@@ -160,6 +160,26 @@ class PortForwardsTest {
             forwards.configure("b1", "p1", LocalPortChoice(isFixed = true, port = 30001)),
         )
         assertEquals(LocalPortChoice(isFixed = true, port = 30001), forwards.localPortOf("b1", "p1"))
+    }
+
+    @Test
+    fun aFixedPortAnotherProgramListensOnIsPortTakenAndBindsNothing() = runTest {
+        var made = 0
+        val forwards = PortForwards(noMaterial, streams, backgroundScope, table) { name, open, local ->
+            made += 1
+            PortForwardRelay(name, open, local)
+        }
+        val other = ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"))
+        other.use {
+            forwards.configure("b1", "p1", LocalPortChoice(isFixed = true, port = other.localPort))
+            forwards.connect("b1", "p1", 30080)
+            runCurrent()
+        }
+        val row = forwards.rows.value.getValue("b1/p1")
+        assertEquals("port_taken", row.error?.code)
+        assertEquals(other.localPort.toString(), row.error?.params?.get("port")?.jsonPrimitive?.content)
+        assertTrue(!row.isForwarded)
+        assertEquals(0, made)
     }
 
     @Test
