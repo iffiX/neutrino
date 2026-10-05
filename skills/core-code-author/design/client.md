@@ -256,6 +256,7 @@ the picker and the button in the row. The state is `off`, `connecting` or
 | While `on`, the hub's channel connects through the hub's address on that network first. | The network exists so the hub is reachable from outside; the channel is what proves it. |
 | The picker is disabled in `connecting` and `on`, and shows the engine's name while disabled. | Changing the engine under a running one is the switch that hangs. |
 | The picker is absent when the hub publishes one network; the line then names that engine. | A choice of one is no choice. |
+| A hub that publishes no virtual network has no virtual network line: no state word, no picker, no button and no reason. | A client reaches a hub over its LAN, through Direct or through the relay, so a hub with no virtual network is an ordinary hub, and a line that names only what is absent tells the person nothing. |
 
 ## The Web page
 
