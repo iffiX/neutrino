@@ -78,6 +78,9 @@ class FakeRuntime:
     def overlay_networks(self):
         return {}
 
+    def interface_networks(self):
+        return []
+
     def desired_state_for(self, device):
         return self.desired
 

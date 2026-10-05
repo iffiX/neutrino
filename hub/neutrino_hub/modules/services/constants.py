@@ -99,10 +99,12 @@ SERVICES_SCOPE_OVERLAY = "overlay"
 SERVICES_SCOPE_LINK = "link"
 
 # The way a client's socket reached the hub, beside each overlay engine's
-# own key: a peer on loopback came through the relay, any other through a
-# network the hub serves or exposes.
+# own key: a peer on loopback came through the relay, a peer inside a network
+# one of the hub's interfaces holds an address in through the LAN, and any
+# other from outside the hub's networks, straight to its port.
 SERVICES_REACHED_LAN = "lan"
 SERVICES_REACHED_RELAY = "relay"
+SERVICES_REACHED_DIRECT = "direct"
 
 SERVICES_FILE_PROTOCOL = "smb"
 SERVICES_AI_PROTOCOL = "openai"

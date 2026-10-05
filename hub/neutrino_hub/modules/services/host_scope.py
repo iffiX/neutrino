@@ -15,6 +15,7 @@ from dataclasses import dataclass
 
 from neutrino_hub import edition
 from neutrino_hub.modules.services.constants import (
+    SERVICES_REACHED_DIRECT,
     SERVICES_REACHED_LAN,
     SERVICES_REACHED_RELAY,
     SERVICES_SCOPE_LINK,
@@ -93,17 +94,24 @@ def scope_of(
     return link_scope(reached_address)
 
 
-def reached_through(peer_address: str, overlay_networks: dict) -> str:
+def reached_through(
+    peer_address: str, overlay_networks: dict, interface_networks: "list | None" = None
+) -> str:
     """The way a caller's socket reached the hub.
 
     Args:
         peer_address: Where the caller's socket comes from.
         overlay_networks: Overlay engine key to the addresses, each with its
             prefix length, that the engine's devices hold on this box.
+        interface_networks: The addresses, each with its prefix length, that
+            the box's other interfaces hold; None judges no peer as coming
+            from outside.
 
     Returns:
         ``relay`` for a peer on loopback; the key of the first engine one of
-        whose networks holds the peer; ``lan`` for anything else.
+        whose networks holds the peer; ``lan`` for a peer inside a network of
+        ``interface_networks``; ``direct`` for any other when
+        ``interface_networks`` is given; else ``lan``.
     """
     address = _ipv4_of(peer_address)
     if address is None:
@@ -121,7 +129,30 @@ def reached_through(peer_address: str, overlay_networks: dict) -> str:
                 continue
             if address.version == network.version and address in network:
                 return provider
-    return SERVICES_REACHED_LAN
+    if interface_networks is None or _is_in_any(address, interface_networks):
+        return SERVICES_REACHED_LAN
+    return SERVICES_REACHED_DIRECT
+
+
+def _is_in_any(address, held: list) -> bool:
+    """Whether an address lies in a network one of the held addresses names.
+
+    Args:
+        address: The address.
+        held: Addresses with their prefix length; text that is not one is
+            skipped.
+
+    Returns:
+        True when one of them holds it, of the same family.
+    """
+    for text in held:
+        try:
+            network = ipaddress.ip_interface(str(text)).network
+        except ValueError:
+            continue
+        if address.version == network.version and address in network:
+            return True
+    return False
 
 
 def link_scope(reached_address: str) -> HostScope:

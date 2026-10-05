@@ -240,3 +240,69 @@ def test_a_reset_takes_everything_away(elsewhere, recorder):
     else:
         assert notes == ["removed"]
         assert handed == []
+
+
+# --- Direct ---
+
+
+@pytest.mark.feature("proxy")
+@pytest.mark.feature("netbird")
+def test_direct_opens_the_agent_port_alone_on_windows_enabled_interfaces(
+    on_windows, recorder, monkeypatch
+):
+    monkeypatch.setattr(ops, "read_config", lambda name: {})
+    monkeypatch.setattr(ops, "direct_agent_port", lambda: 8443)
+
+    ops.converge_firewall(EXPOSURE, routing=ROUTING)
+
+    ((_, rules),) = recorder.handed
+    by_name = {rule.name: rule.interfaces for rule in rules}
+    assert by_name["neutrino_hub_agent"] == (
+        "Ethernet Instance 0 2",
+        "Ethernet 3",
+        "wt0",
+        "Wi-Fi",
+    )
+    assert by_name["neutrino_hub_panel_https"] == (
+        "Ethernet Instance 0 2",
+        "Ethernet 3",
+        "wt0",
+    )
+
+
+@pytest.mark.feature("netbird")
+def test_direct_lifts_the_agent_ports_block_on_macos_interfaces_alone(
+    on_darwin, recorder, monkeypatch
+):
+    monkeypatch.setattr(ops, "read_config", lambda name: {})
+    monkeypatch.setattr(ops, "direct_agent_port", lambda: 8443)
+
+    ops.converge_firewall(EXPOSURE, routing={})
+
+    _, (_, anchor) = recorder.handed
+    lines = anchor.splitlines()
+    assert (
+        "block drop in quick on { et_2_zqdp } proto tcp from any to any port 8443"
+        in lines
+    )
+    assert (
+        "block drop in quick on { Wi-Fi et_2_zqdp } proto tcp from any to any port 443"
+        in lines
+    )
+
+
+def test_the_enabled_devices_leave_out_overlays_and_disabled_interfaces():
+    network = RouterNetworkConfig.from_dict(
+        {
+            "mode": "router",
+            "interfaces": [
+                {"name": "enp1s0", "role": "lan"},
+                {"name": "enp2s0", "role": "disabled"},
+            ],
+            "overlays": [{"provider": "netbird", "is_enabled": True}],
+        }
+    ).with_overlay_devices({"netbird": ["wt0"]})
+
+    assert ops.enabled_devices(network, ["enp1s0", "enp2s0", "wt0", "enp9s0"]) == [
+        "enp1s0"
+    ]

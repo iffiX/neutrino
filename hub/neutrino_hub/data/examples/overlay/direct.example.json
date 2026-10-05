@@ -1,0 +1,12 @@
+{
+  "_comment": "Direct, a way in: the agent port opened on every enabled interface, under the Network page's firewall rules, and only that port. The Access page writes this file.",
+
+  "_comment_is_enabled": "Whether Direct is on, written by the Access page's switch.",
+  "is_enabled": false,
+
+  "_comment_public_host": "The host name or IP address the person states for the hub, for example the public address a router forwards to it. Clients are given it after the hub's own addresses and before the relay's. Empty states none.",
+  "public_host": "",
+
+  "_comment_public_port": "The port at that address.",
+  "public_port": 8443
+}

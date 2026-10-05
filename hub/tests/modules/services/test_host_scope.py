@@ -205,3 +205,24 @@ def test_any_other_peer_came_through_the_lan():
     assert reached_through("203.0.113.9", {}) == "lan"
     assert reached_through("", ENGINE_NETWORKS) == "lan"
     assert reached_through("100.88.4.2", {"netbird": ["not an address"]}) == "lan"
+
+
+INTERFACE_NETWORKS = ["192.168.100.1/24", "not an address"]
+
+
+def test_a_peer_inside_an_interfaces_network_came_through_the_lan():
+    assert (
+        reached_through("192.168.100.20", ENGINE_NETWORKS, INTERFACE_NETWORKS) == "lan"
+    )
+
+
+def test_a_peer_from_outside_every_network_of_the_box_came_direct():
+    assert (
+        reached_through("203.0.113.9", ENGINE_NETWORKS, INTERFACE_NETWORKS) == "direct"
+    )
+    assert reached_through("203.0.113.9", ENGINE_NETWORKS, []) == "direct"
+
+
+def test_loopback_and_the_engines_come_before_direct():
+    assert reached_through("127.0.0.1", ENGINE_NETWORKS, []) == "relay"
+    assert reached_through("100.88.4.2", ENGINE_NETWORKS, []) == "netbird"

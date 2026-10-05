@@ -33,6 +33,7 @@ from neutrino_hub.modules.firewall.renderer import (
 )
 from neutrino_hub.modules.firewall.windows_applier import FirewallWindowsApplier
 from neutrino_hub.modules.overlay.config import enabled_providers
+from neutrino_hub.modules.overlay.direct_config import direct_agent_port
 from neutrino_hub.modules.overlay.constants import (
     OVERLAY_EASYTIER,
     OVERLAY_ENGINES,
@@ -101,6 +102,9 @@ def converge_firewall(network: RouterNetworkConfig, *, routing: dict) -> tuple:
             for overlay in network.enabled_overlays
             if overlay.is_exposed
         ],
+        direct_interfaces=(
+            enabled_devices(network, present) if direct_agent_port() is not None else []
+        ),
     )
     if hub_os() == PLATFORM_OS_WINDOWS:
         notes, refused = FirewallWindowsApplier().apply(rules)
@@ -164,6 +168,26 @@ def exposed_devices(network: RouterNetworkConfig, present: list) -> list:
         name for name in network.exposed_overlay_device_names if name in present
     ]
     return interfaces + overlays
+
+
+def enabled_devices(network: RouterNetworkConfig, present: list) -> list:
+    """The enabled interfaces of the ones this box has now, overlays aside.
+
+    Args:
+        network: The parsed router configuration, carrying the overlays'
+            devices found at run time.
+        present: The devices this box has, as the system names them.
+
+    Returns:
+        Each present interface that is not an overlay's device and that the
+        configuration does not turn off.
+    """
+    overlay_devices = set(network.overlay_device_names)
+    return [
+        name
+        for name in present
+        if name not in overlay_devices and network.is_interface_enabled(name)
+    ]
 
 
 def hand_back_firewall() -> list:

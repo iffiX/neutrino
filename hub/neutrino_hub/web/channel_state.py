@@ -152,7 +152,7 @@ def note_client_scope(
     scope = scope_of(peer_host, reached_host, runtime.host_scopes())
     runtime.client_scope[client_id] = scope
     runtime.client_reached[client_id] = reached_through(
-        peer_host, runtime.overlay_networks()
+        peer_host, runtime.overlay_networks(), runtime.interface_networks()
     )
     return scope
 

@@ -335,6 +335,24 @@ class PanelRuntime:
         """
         return served_scopes(self.network(), device_addresses())
 
+    def interface_networks(self) -> list:
+        """The addresses the box's own interfaces hold, overlays aside.
+
+        Returns:
+            Each address with its prefix length, of every device that is not
+            an overlay engine's; a peer inside none of their networks reached
+            the hub from outside them.
+        """
+        addresses = device_addresses()
+        overlays = {
+            name for provider in OVERLAY_ENGINES for name in engine_devices(provider)
+        }
+        return [
+            address
+            for name, address in addresses.items()
+            if name not in overlays and address
+        ]
+
     def overlay_networks(self) -> dict:
         """The networks each overlay engine's devices hold an address in.
 

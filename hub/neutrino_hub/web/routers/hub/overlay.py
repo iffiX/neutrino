@@ -13,10 +13,17 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from neutrino_hub.modules.overlay.config import enabled_providers, set_enabled
 from neutrino_hub.modules.overlay.constants import (
+    OVERLAY_DIRECT,
+    OVERLAY_DIRECT_TITLE,
     OVERLAY_ENGINES,
     OVERLAY_RELAY,
     OVERLAY_RELAY_STATE_CONNECTED,
     OVERLAY_RELAY_TITLE,
+)
+from neutrino_hub.modules.overlay.direct_config import (
+    OverlayDirectConfig,
+    read_direct,
+    write_direct,
 )
 from neutrino_hub.modules.overlay.ops import engine_devices, overlay_subnets
 from neutrino_hub.modules.overlay.relay_config import (
@@ -27,6 +34,7 @@ from neutrino_hub.modules.overlay.relay_config import (
 from neutrino_hub.modules.overlay.relay_ops import ssh_path
 from neutrino_hub.modules.overlay.route_check import find_subnet_overlap
 from neutrino_hub.modules.registry import MODULE_SPECS
+from neutrino_hub.modules.services.constants import SERVICES_REACHED_DIRECT
 from neutrino_hub.modules.router.link_status import device_addresses
 from neutrino_hub.system.machine import ANY_ARCHITECTURE, machine_architecture
 from neutrino_hub.utils.subprocess_run import command_failure_text
@@ -94,6 +102,7 @@ async def update_choice(
     if set(enabled_providers(network)) - was_enabled:
         _refuse_overlap(network)
     relay = _relay_switched(request)
+    direct = _direct_switched(request)
     # Written before the engines are touched: what the box is a member of is
     # the stored fact, and a daemon started against a configuration that was
     # never written is a machine on an overlay nothing records.
@@ -101,6 +110,8 @@ async def update_choice(
         runtime.write_network(network)
     if relay is not None:
         write_relay(relay)
+    if direct is not None:
+        write_direct(direct)
     try:
         await runtime.converge_network()
     except (
@@ -177,6 +188,32 @@ def _relay_switched(request: OverlayChoiceRequest) -> "OverlayRelayConfig | None
     return relay
 
 
+def _direct_switched(request: OverlayChoiceRequest) -> "OverlayDirectConfig | None":
+    """The stored Direct settings with the request's switch, when it moves them.
+
+    Args:
+        request: The switches.
+
+    Returns:
+        The settings to store, None when the request leaves Direct as it is.
+    """
+    if request.direct is None:
+        return None
+    direct = stored_direct()
+    if request.direct.is_enabled == direct.is_enabled:
+        return None
+    direct.is_enabled = request.direct.is_enabled
+    return direct
+
+
+def stored_direct() -> OverlayDirectConfig:
+    """The stored Direct settings; a file that does not read is Direct off."""
+    try:
+        return read_direct()
+    except ValueError:
+        return OverlayDirectConfig()
+
+
 def _stored_relay() -> OverlayRelayConfig:
     """The stored relay; a file that does not read is a relay never set."""
     try:
@@ -198,13 +235,14 @@ def _view(runtime: PanelRuntime) -> OverlayChoiceView:
         runtime: The shared runtime.
 
     Returns:
-        A row per overlay engine, in the engine table's order.
+        Direct's row, the relay's, then a row per overlay engine in the engine
+        table's order.
     """
     network = runtime.network()
     enabled = {overlay.provider for overlay in network.enabled_overlays}
     addresses = device_addresses()
     peers = [session.address for session in runtime.client_sessions.sessions()]
-    kinds = []
+    kinds = [_direct_kind(runtime), _relay_kind(runtime, peers)]
     for key, engine in OVERLAY_ENGINES.items():
         is_installed, is_active = _unit_status(runtime, key)
         kinds.append(
@@ -221,7 +259,6 @@ def _view(runtime: PanelRuntime) -> OverlayChoiceView:
                 ),
             )
         )
-    kinds.append(_relay_kind(runtime, peers))
     return OverlayChoiceView(
         kinds=kinds,
         route_conflicts=[
@@ -243,8 +280,40 @@ def _view(runtime: PanelRuntime) -> OverlayChoiceView:
     )
 
 
+def _direct_kind(runtime: PanelRuntime) -> OverlayKindView:
+    """Direct's row, the first.
+
+    Args:
+        runtime: The shared runtime, for how each client reached the hub.
+
+    Returns:
+        The row: always installed, active while it is on, and counting the
+        online clients that reached the hub from outside its networks.
+    """
+    direct = stored_direct()
+    online = set(runtime.client_sessions.keys())
+    return OverlayKindView(
+        key=OVERLAY_DIRECT,
+        title=OVERLAY_DIRECT_TITLE,
+        is_enabled=direct.is_enabled,
+        is_integrated=True,
+        is_supported=True,
+        is_installed=True,
+        is_active=direct.is_enabled,
+        client_count=(
+            sum(
+                1
+                for key, reached in runtime.client_reached.items()
+                if reached == SERVICES_REACHED_DIRECT and key in online
+            )
+            if direct.is_enabled
+            else 0
+        ),
+    )
+
+
 def _relay_kind(runtime: PanelRuntime, peers: list) -> OverlayKindView:
-    """The relay's row, after the engines'.
+    """The relay's row, after Direct's.
 
     Args:
         runtime: The shared runtime, for where the relay stands.

@@ -9,6 +9,10 @@ their hash, and the address sampler pushes both when it changes.
 from fastapi import HTTPException, status
 
 from neutrino_hub.modules.overlay.ops import overlay_parts
+from neutrino_hub.modules.overlay.direct_config import (
+    OverlayDirectConfig,
+    read_direct,
+)
 from neutrino_hub.modules.overlay.relay_config import read_relay
 from neutrino_hub.modules.overlay.relay_ops import is_relay_configured
 from neutrino_hub.modules.router.constants import ROUTER_OVERLAY_NETBIRD
@@ -28,16 +32,27 @@ def channel_urls(runtime) -> list[str]:
             port.
 
     Returns:
-        Base ``https`` URLs, one per host :func:`channel_hosts` returns, in
-        its order, and last the relay's address while it is on and
-        configured.
+        Base ``https`` URLs: one per host :func:`channel_hosts` returns, in
+        its order, every enabled interface's among them while Direct is on;
+        then the public address the person stated for Direct, while it is on;
+        and last the relay's address while it is on and configured.
     """
     port = runtime.settings.get("agent_listen_port", WEB_DEFAULT_AGENT_LISTEN_PORT)
-    urls = [f"https://{host}:{port}" for host in channel_hosts(runtime.network())]
-    relay = relay_url()
-    if relay and relay not in urls:
-        urls.append(relay)
+    direct = _stored_direct()
+    hosts = channel_hosts(runtime.network(), is_direct=direct.is_enabled)
+    urls = [f"https://{host}:{port}" for host in hosts]
+    for added in (direct.public_url if direct.is_enabled else "", relay_url()):
+        if added and added not in urls:
+            urls.append(added)
     return urls
+
+
+def _stored_direct() -> OverlayDirectConfig:
+    """The stored Direct settings; a file that does not read is Direct off."""
+    try:
+        return read_direct()
+    except ValueError:
+        return OverlayDirectConfig()
 
 
 def own_agent_urls(runtime) -> list[str]:
@@ -74,16 +89,19 @@ def relay_url() -> str:
     return config.url
 
 
-def channel_hosts(network) -> list[str]:
+def channel_hosts(network, *, is_direct: bool = False) -> list[str]:
     """Every address and name the box answers on.
 
     A served network contributes its configured address, every other exposed
     interface the address its live link holds, and an exposed NetBird
     overlay its name as well, so a peer on the overlay reaches the hub after
-    its overlay address moved.
+    its overlay address moved. While Direct is on, every enabled interface
+    that is not exposed follows the exposed ones: the agent port answers
+    there, and nothing else of the box.
 
     Args:
         network: The router configuration.
+        is_direct: Whether Direct is on.
 
     Returns:
         The hosts, in configuration order, the overlay's name last.
@@ -95,7 +113,10 @@ def channel_hosts(network) -> list[str]:
     }
     live = None
     hosts = []
-    for name in network.exposed_interfaces:
+    names = list(network.exposed_interfaces)
+    if is_direct:
+        names += [name for name in network.enabled_device_names if name not in names]
+    for name in names:
         address = configured.get(name, "")
         if not address:
             if live is None:

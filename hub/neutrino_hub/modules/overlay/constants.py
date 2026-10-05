@@ -70,6 +70,18 @@ OVERLAY_ADDRESS_POLL_S = 0.5
 # uplink, so such a route is deleted wherever it appears.
 OVERLAY_DEFAULT_ROUTE = "0.0.0.0/0"
 
+# Direct: the agent port opened on every enabled interface, and the public
+# address the person states for the hub. A way in beside the engines, not an
+# engine, so it is not a row of the engine table.
+OVERLAY_DIRECT = "direct"
+OVERLAY_DIRECT_TITLE = "Direct"
+OVERLAY_DIRECT_CONFIG_NAME = "overlay/direct.json"
+OVERLAY_DIRECT_DEFAULT_PUBLIC_PORT = 8443
+OVERLAY_DIRECT_PORT_MIN = 1
+OVERLAY_DIRECT_PORT_MAX = 65535
+# The longest host name DNS carries.
+OVERLAY_DIRECT_HOST_MAX = 253
+
 # The relay: a reverse SSH forward from this box to a server the person owns.
 # It is a way in beside the engines, not an engine, so it is not a row of the
 # engine table.
