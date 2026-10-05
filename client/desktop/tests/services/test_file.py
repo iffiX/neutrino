@@ -581,6 +581,45 @@ def test_a_failed_record_holds_no_place(service):
     assert platform.attached == {location}
 
 
+def test_an_unmounted_record_holds_no_place(service):
+    subject, platform, store, tmp_path = service
+    location = str(tmp_path / "nas")
+    assert attach(subject, path=location) == {}
+    (record_id,) = store.mounts()
+    assert subject.detach(record_id=record_id) == {}
+
+    assert attach(subject, path=location, hub_id="h2") == {}
+
+    assert [record["hub_id"] for record in store.mounts().values()] == ["h2"]
+    assert platform.attached == {location}
+
+
+def test_a_record_mounted_again_on_the_timer_keeps_its_place(service):
+    subject, platform, store, tmp_path = service
+    location = str(tmp_path / "nas")
+    assert attach(subject, path=location) == {}
+    platform.attached.discard(location)
+
+    refused = attach(subject, path=location, hub_id="h2")
+
+    assert refused == {"code": "mountpoint_in_use", "params": {"path": location}}
+
+
+def test_a_left_hubs_records_and_logins_go_and_another_hubs_stay(service):
+    subject, platform, store, tmp_path = service
+    assert attach(subject, path=str(tmp_path / "a")) == {}
+    assert attach(subject, path=str(tmp_path / "b"), hub_id="h2") == {}
+    credentials = tmp_path / "config" / "mount_credentials"
+
+    subject.release_hub("h1")
+    dropped = subject.drop_withdrawn(hub_id="h1", entries=[])
+
+    assert dropped == 1
+    assert [record["hub_id"] for record in store.mounts().values()] == ["h2"]
+    assert len(list(credentials.iterdir())) == 1
+    assert platform.attached == {str(tmp_path / "b")}
+
+
 def test_a_failed_record_whose_entry_left_the_list_is_dropped(service):
     subject, platform, store, tmp_path = service
     platform.attach_error = ShareAttachError("share_not_found", "")

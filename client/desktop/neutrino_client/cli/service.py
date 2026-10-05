@@ -182,7 +182,7 @@ def main_file_config(ref: str, *, path: str, username: str, hub: str = "") -> in
     if reply is None:
         return 1
     record = _record_at(reply, entry, path)
-    print(_record_line(record) if record else f"{path}: asked")
+    print(_record_line(record) if record else _placed(path, "asked"))
     return 0
 
 
@@ -225,7 +225,9 @@ def main_file_mount(ref: str, *, hub: str = "") -> int:
     if reply is None:
         return 1
     fresh = _record_at(reply, entry, str(record.get("path", "")))
-    print(_record_line(fresh) if fresh else f"{record.get('path', '')}: asked")
+    print(
+        _record_line(fresh) if fresh else _placed(str(record.get("path", "")), "asked")
+    )
     return 0
 
 
@@ -256,7 +258,10 @@ def main_file_unmount(ref: str, *, hub: str = "") -> int:
     record = records[0]
     if record.get("state") == "detached":
         print(
-            f"{record.get('path', '')}: {wording.CLIENT_MOUNT_STATE_WORDS['detached']}"
+            _placed(
+                str(record.get("path", "")),
+                wording.CLIENT_MOUNT_STATE_WORDS["detached"],
+            )
         )
         return 0
     reply = _act(
@@ -711,7 +716,21 @@ def _record_line(record: dict) -> str:
                 if record.get("is_attached")
                 else wording.CLIENT_MOUNT_STATE_WORDS["detached"]
             )
-    return f"{record.get('path', '')}: {standing}"
+    return _placed(str(record.get("path", "")), standing)
+
+
+def _placed(path: str, words: str) -> str:
+    """Where a share is mounted, then what is said of it.
+
+    Args:
+        path: The mount point; a drive letter already ends in a colon.
+        words: What is said.
+
+    Returns:
+        ``<path>: <words>``, one colon after a drive letter as after a path.
+    """
+    label = path if path.endswith(":") else f"{path}:"
+    return f"{label} {words}"
 
 
 def _merged_tool_configs(state: dict, chosen: dict) -> dict:
