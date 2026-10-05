@@ -408,7 +408,7 @@ the page's whole view.
 | `POST /api/hub/overlay/easytier/set` | `{mode, config_server, is_secure_mode, network_name, network_secret, address, hostname, peers, exported_networks}`: `mode` is `manual` or `console`; `config_server` null keeps the stored console address and empty forgets it; an empty `network_secret` keeps the stored secret | stores every setting at once, the console address with its token and the secret sealed in `config/easytier/easytier.json`, and runs the converge step; the manual network's name is checked in manual mode, and in console mode only when one is given; while EasyTier runs, a manual address whose network overlaps is refused 400 `overlay_subnet_overlap {title, subnet, conflict}`; 502 `easytier_apply_failed {detail}` |
 | `POST /api/hub/overlay/easytier/suggestion/create` | | a suggested network for a member |
 | `GET /api/hub/overlay/easytier/secret` | | the network secret |
-| `GET /api/hub/overlay/direct` | | `DirectView`: `is_enabled`, `public_host`, `public_port`; `urls`, what Direct adds to `urls` while it is on: every enabled interface's address that is not exposed, then the stated public address |
+| `GET /api/hub/overlay/direct` | | `DirectView`: `is_enabled`, `public_host`, `public_port`; `urls`, what Direct adds to `urls` while it is on, in the order `urls` holds them: the exposed interfaces' stable IPv6 addresses, every other enabled interface's IPv4 and stable IPv6 addresses, then the stated public address |
 | `POST /api/hub/overlay/direct/set` | `{public_host, public_port}`, an empty host stating none, the port 1 to 65535 | stores them in `config/overlay/direct.json` and runs the converge step; `DirectView`; 400 `direct_host_invalid {host}` for a value that is neither an IP address nor a host name, `port_out_of_range {minimum, maximum, value}`; 502 `direct_apply_failed {detail}` |
 | `GET /api/hub/overlay/relay` | | `RelayView`: `is_enabled`, `host`, `ssh_port`, `account`, `key_id`, `public_port`; `url`, the address the relay adds to `urls`, empty while it is not configured; `state`, one of the relay's state codes ([network.md](modules/network.md), "The states"); `host_key_fingerprint`, the recorded host key as `SHA256:<base64>`, empty when none is recorded; `last_error`, the last line `ssh` wrote before it exited or the failed check's reason, empty while connected; `checked_at`, the last check's time in ISO 8601, empty before the first |
 | `POST /api/hub/overlay/relay/set` | `{host, ssh_port, account, key_id, public_port}`, the ports 1 to 65535 | stores them in `config/overlay/relay.json`, deletes the recorded host key when `host` or `ssh_port` changed, and runs the converge step; `RelayView`; 400 `relay_host_invalid {host}`, `relay_account_invalid {account}`, `unknown_credential {field: key_id}` for a key the vault does not hold, `port_out_of_range {minimum, maximum, value}`; 502 `relay_apply_failed {detail}` |
@@ -744,9 +744,12 @@ it.
 the joining machine's network and neither end knows which. The link for the
 hub's own agent, and every state the hub sends that agent, names
 `https://127.0.0.1:<agent-port>` first, so it reaches the hub over loopback
-whatever is exposed. While Direct is on, every enabled interface's address
-follows the exposed ones, and the public address stated for Direct follows
-them. While the relay is on and configured, `https://<host>:<public-port>` is
+whatever is exposed. While Direct is on, the exposed interfaces' stable
+IPv6 addresses follow the exposed set, every other enabled interface's
+IPv4 and then stable IPv6 addresses follow those, and the public address
+stated for Direct follows them; an IPv6 address is written in brackets
+([network.md](modules/network.md), "Direct"). While Direct is off, every
+address in `urls` is IPv4. While the relay is on and configured, `https://<host>:<public-port>` is
 its last member ([network.md](modules/network.md), "The relay's address"). `role` is `agent`
 or `client`, read on the pasting side before the first request. A client
 rejects a device link with `link_not_for_client` and an agent rejects a client
@@ -931,7 +934,8 @@ stream.
 `urls` is every address the hub answers the channel on: the link's set, which
 holds the hub's address on every running overlay it is exposed on, plus
 NetBird's name for the hub where its daemon reports one; while Direct is on,
-every enabled interface's address and then the public address stated for it;
+the stable IPv6 addresses and every enabled interface's addresses, in the
+order the link gives them, and then the public address stated for it;
 and last the relay's `https://<host>:<public-port>` while the relay is on and
 configured.
 Both states carry it
@@ -1532,14 +1536,15 @@ shows and never dials, since its bytes go over `connect`:
 
 A client behind NAT gets the link address, which it only shows.
 
-The same peer address settles the client's `reached_through`:
+The same peer address settles the client's `reached_through`, an
+IPv4-mapped IPv6 address read as its IPv4 address:
 
 | The peer | `reached_through` |
 | --- | --- |
-| on loopback | `relay` |
+| on loopback, `127.0.0.0/8`, `::1` or a mapped `127.0.0.1` | `relay` |
 | inside the network of a NetBird device the box holds an address on | `netbird` |
 | inside the network of an EasyTier device the box holds an address on | `easytier` |
-| inside the network of an address one of the box's other interfaces holds: a served LAN, the interface in server mode, an exposed uplink's own network | `lan` |
+| inside the network of an address one of the box's other interfaces holds, IPv4 or IPv6: a served LAN, the interface in server mode, an exposed uplink's own network; or an IPv6 link-local address, `fe80::/10`, which reaches one link only | `lan` |
 | anywhere else: from outside every network the box holds an address in, through an exposed uplink or the public address stated for Direct | `direct` |
 
 An engine's devices are the ones the Overlay page's `client_count` counts
