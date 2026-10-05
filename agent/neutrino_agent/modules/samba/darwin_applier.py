@@ -30,7 +30,9 @@ from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.samba.config import SambaConfig
 from neutrino_agent.modules.samba.constants import (
     SAMBA_DARWIN_ACCESS_GROUP,
+    SAMBA_DARWIN_ACCOUNT_KEYS,
     SAMBA_DARWIN_ACCOUNT_NAME,
+    SAMBA_DARWIN_LOG_PREFIX,
     SAMBA_DARWIN_ACL_CHANGE,
     SAMBA_DARWIN_ACL_READ,
     SAMBA_DARWIN_HOME,
@@ -128,6 +130,50 @@ def parse_share_points(text: str) -> list:
     return points
 
 
+def account_full_name(name: str) -> str:
+    """The full name the module gives one of its accounts.
+
+    Args:
+        name: The account's short name.
+
+    Returns:
+        The module's words followed by the short name.
+    """
+    return f"{SAMBA_DARWIN_ACCOUNT_NAME} {name}"
+
+
+def is_module_full_name(full_name: str) -> bool:
+    """Whether a full name is one the module gives its accounts.
+
+    Args:
+        full_name: An account's full name.
+
+    Returns:
+        True for the module's words alone, as earlier builds wrote them,
+        or followed by a short name.
+    """
+    return full_name == SAMBA_DARWIN_ACCOUNT_NAME or full_name.startswith(
+        SAMBA_DARWIN_ACCOUNT_NAME + " "
+    )
+
+
+def tool_line(result) -> str:
+    """The last line a tool printed, without NSLog's prefix.
+
+    Args:
+        result: The tool's :class:`CommandResult`.
+
+    Returns:
+        The last non-empty line of its standard error, else of its
+        standard output, else the tool's name and exit status.
+    """
+    for text in (result.stderr, result.stdout):
+        lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
+        if lines:
+            return re.sub(SAMBA_DARWIN_LOG_PREFIX, "", lines[-1])[:500]
+    return f"{result.command[0]} exited {result.exit_code}"
+
+
 class SambaDarwinApplier:
     """Converges macOS's SMB server with the module's configuration."""
 
@@ -163,8 +209,9 @@ class SambaDarwinApplier:
         """Make the server serve the configuration, and nothing else of ours.
 
         An account is the module's when the record lists it or its full name
-        is the module's; a share point is the module's when the record lists
-        its name and its record name has the module's prefix. Each share
+        is the module's; a record of the account's name that the module did
+        not make, a bare one included, is refused. A share point is the
+        module's when the record lists its name and its record name has the module's prefix. Each share
         keeps one point: a matching one stays, the others of its name go.
 
         Args:
@@ -176,7 +223,8 @@ class SambaDarwinApplier:
 
         Raises:
             ModuleApplyError: ``share_name_taken`` or ``user_name_taken`` for
-                a name the module did not make.
+                a name the module did not make, ``user_create_failed`` for
+                an account the system would not make.
             OSError: When a command cannot run.
             subprocess.CalledProcessError: When a command refuses.
         """
@@ -191,9 +239,9 @@ class SambaDarwinApplier:
             if held and not is_ours:
                 raise ModuleApplyError("share_name_taken", {"name": share.name})
         for name in config.users:
-            if name in owned_accounts or not self._account_exists(name):
+            if name in owned_accounts or not self._record_exists(name):
                 continue
-            if self._full_name(name) != SAMBA_DARWIN_ACCOUNT_NAME:
+            if not is_module_full_name(self._full_name(name)):
                 raise ModuleApplyError("user_name_taken", {"user": name})
         notes = self._serve()
         self._load_fence(render_pf_rules(config.allowed_subnets))
@@ -242,11 +290,12 @@ class SambaDarwinApplier:
             password: The new password.
 
         Raises:
+            ModuleApplyError: ``user_create_failed`` when the system would
+                not make the account.
             OSError: When a command cannot run.
             subprocess.CalledProcessError: When a command refuses.
         """
-        if not self._account_exists(name):
-            self._make_account(name, has_access_group=self._has_access_group())
+        self._ensure_account(name, has_access_group=self._has_access_group())
         self._run(["pwpolicy", "-u", name, "-enableuser"], is_checked=False)
         self._run(["pwpolicy", "-u", name, "-sethashtypes", SMB_NT_HASH, "on"])
         self._run(["dscl", ".", "-passwd", f"/Users/{name}", password])
@@ -316,7 +365,7 @@ class SambaDarwinApplier:
             "users": [
                 {
                     "name": name,
-                    "is_present": self._account_exists(name),
+                    "is_present": self._is_usable(name),
                     "has_password": name in passworded
                     and SMB_NT_HASH
                     in self._read(
@@ -368,11 +417,9 @@ class SambaDarwinApplier:
         notes = []
         has_access_group = self._has_access_group()
         for name in config.users:
-            if self._account_exists(name):
-                self._settle_account(name, has_access_group=has_access_group)
-            else:
-                self._make_account(name, has_access_group=has_access_group)
-                notes.append(f"created account {name}")
+            note = self._ensure_account(name, has_access_group=has_access_group)
+            if note:
+                notes.append(note)
         for name in owned:
             if name not in config.users:
                 self._run(["pwpolicy", "-u", name, "-disableuser"], is_checked=False)
@@ -385,23 +432,55 @@ class SambaDarwinApplier:
             is_checked=False,
         ).is_success
 
+    def _ensure_account(self, name: str, *, has_access_group: bool) -> str:
+        """Make one of the module's accounts usable, hidden, in the SMB group.
+
+        A record of the name that holds only its name, which a failed
+        attempt leaves, is deleted and the account made again. Callers have
+        refused a record the module did not make.
+
+        Returns:
+            What changed, empty when the account was already usable.
+        """
+        if self._is_usable(name):
+            self._settle_account(name, has_access_group=has_access_group)
+            return ""
+        if self._record_exists(name):
+            self._run(["dscl", ".", "-delete", f"/Users/{name}"])
+            self._make_account(name, has_access_group=has_access_group)
+            return f"made account {name} again"
+        self._make_account(name, has_access_group=has_access_group)
+        return f"created account {name}"
+
     def _make_account(self, name: str, *, has_access_group: bool) -> None:
-        """Make one account with a random password, hidden, in the SMB group."""
-        self._run(
+        """Make one account with a random password, hidden, in the SMB group.
+
+        sysadminctl can refuse and still exit 0, so the record is read back.
+
+        Raises:
+            ModuleApplyError: ``user_create_failed`` with the tool's own
+                line when the record is not a usable account afterwards.
+        """
+        result = self._run(
             [
                 "sysadminctl",
                 "-addUser",
                 name,
                 "-fullName",
-                SAMBA_DARWIN_ACCOUNT_NAME,
+                account_full_name(name),
                 "-shell",
                 SAMBA_DARWIN_SHELL,
                 "-home",
                 SAMBA_DARWIN_HOME,
                 "-password",
                 secrets.token_urlsafe(24),
-            ]
+            ],
+            is_checked=False,
         )
+        if not self._is_usable(name):
+            raise ModuleApplyError(
+                "user_create_failed", {"user": name, "detail": tool_line(result)}
+            )
         self._settle_account(name, has_access_group=has_access_group)
 
     def _settle_account(self, name: str, *, has_access_group: bool) -> None:
@@ -488,10 +567,20 @@ class SambaDarwinApplier:
             ["launchctl", "print", SAMBA_DARWIN_SMBD_TARGET], is_checked=False
         ).is_success
 
-    def _account_exists(self, name: str) -> bool:
+    def _record_exists(self, name: str) -> bool:
         return self._run(
-            ["dscl", ".", "-read", f"/Users/{name}", "UniqueID"], is_checked=False
+            ["dscl", ".", "-read", f"/Users/{name}", "RecordName"], is_checked=False
         ).is_success
+
+    def _is_usable(self, name: str) -> bool:
+        """Whether the account's record holds every key a sign-in needs."""
+        text = self._read(
+            ["dscl", ".", "-read", f"/Users/{name}", *SAMBA_DARWIN_ACCOUNT_KEYS]
+        )
+        return all(
+            re.search(rf"^{key}:", text, re.MULTILINE)
+            for key in SAMBA_DARWIN_ACCOUNT_KEYS
+        )
 
     def _full_name(self, name: str) -> str:
         text = self._read(["dscl", ".", "-read", f"/Users/{name}", "RealName"])

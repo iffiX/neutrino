@@ -87,3 +87,19 @@ def test_unit_state_reads_systemds_word_and_survives_no_systemd(monkeypatch):
 
     monkeypatch.setattr(subprocess_run.subprocess, "run", broken)
     assert unit_state("smbd.service") == ""
+
+
+def test_a_blank_standard_error_does_not_hide_the_words_on_standard_output():
+    error = subprocess.CalledProcessError(
+        56, ["dscl", ".", "-passwd"], output="DS Error: -14136\n", stderr="\n"
+    )
+
+    assert command_detail(error) == "DS Error: -14136"
+
+
+def test_a_command_that_said_nothing_is_named_with_its_exit_status():
+    error = subprocess.CalledProcessError(
+        1, ["pwpolicy", "-u", "ann"], output="", stderr=" \n"
+    )
+
+    assert command_detail(error) == "pwpolicy exited 1"

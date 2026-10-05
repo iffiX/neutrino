@@ -260,6 +260,7 @@
   "code.user_name_invalid": "The user name {user} is not usable on this machine.",
   "code.user_unknown": "The user is not applied on this machine yet.",
   "code.user_name_taken": "This machine already has an account called {user} that the share module did not make.",
+  "code.user_create_failed": "The machine would not make the account {user}: {detail}",
   "code.validate_failed": "The machine will not take that configuration: {detail}",
   "code.vault_locked": "The vault is locked; unlock it to use stored credentials.",
   "code.vault_passphrase_needed": "Enter the vault passphrase this backup was sealed with.",

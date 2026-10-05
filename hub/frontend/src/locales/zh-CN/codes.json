@@ -260,6 +260,7 @@
   "code.user_name_invalid": "用户名 {user} 在这台机器上不能用。",
   "code.user_unknown": "这个用户还没有在这台机器上生效。",
   "code.user_name_taken": "这台机器上已经有一个不是共享模块建的账户叫 {user}。",
+  "code.user_create_failed": "这台机器没有建出账户 {user}：{detail}",
   "code.validate_failed": "这台机器不接受这份配置：{detail}",
   "code.vault_locked": "保管库已锁定，解锁后才能使用已存凭据。",
   "code.vault_passphrase_needed": "请输入这份备份封存时用的保险库口令。",

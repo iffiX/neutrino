@@ -601,6 +601,22 @@ def test_a_password_the_server_refused_is_not_recorded(native):
     assert record_of(native)["passworded"] == []
 
 
+def test_an_account_the_system_would_not_make_keeps_its_code_and_words(native):
+    native.apply(WINDOWS_CONFIG)
+
+    def refuse(name, password):
+        raise ModuleApplyError(
+            "user_create_failed", {"user": name, "detail": "full name exists"}
+        )
+
+    native.applier.set_password = refuse
+    outcome = native.command("set_password", {"name": "ann", "password": "pw"})
+
+    assert outcome["code"] == "user_create_failed"
+    assert outcome["params"] == {"user": "ann", "detail": "full name exists"}
+    assert record_of(native)["passworded"] == []
+
+
 def test_a_removal_forgets_every_password(native):
     native.apply(WINDOWS_CONFIG)
     native.command("set_password", {"name": "ann", "password": "pw"})

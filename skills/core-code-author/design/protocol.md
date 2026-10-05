@@ -1079,6 +1079,8 @@ of at most 20 characters on Windows. `stopped` takes the module's shares off
 the server and keeps its accounts and its fence. An apply refuses a name the
 machine already has for something the module did not make: a share with
 `share_name_taken {name}`, an account with `user_name_taken {user}`. An
+account the system will not make is refused with `user_create_failed {user,
+detail}`, `detail` being the tool's own line. An
 account the module made signs in once `set_password` has set its password.
 
 The `vscode` module runs Microsoft's standalone CLI, `code serve-web`, once

@@ -3,7 +3,9 @@
 What these pin: smbd enabled through launchd and started only when launchd
 does not hold it; share points made with ``sharing`` under the module's
 prefix, SMB only, no guest, read-only by ``-R 1`` and never encrypted;
-accounts made without a shell or a home, hidden and put in the SMB group,
+accounts made without a shell or a home, each with a full name of its
+own, read back after sysadminctl since it can refuse and exit 0, a bare
+record a failed attempt left made again, hidden and put in the SMB group,
 the account enabled and the NT hash turned on before ``dscl -passwd``, and
 an account the password reaches first made by it; one share point per
 share, kept across applies, the module's duplicates removed and all of a
@@ -56,17 +58,23 @@ LSOF_OUTPUT = (
 class FakeTools:
     """Every command the applier runs, recorded, answered by its first words.
 
+    ``dscl`` on ``/Users`` and ``sysadminctl`` act on a directory of
+    records, where sysadminctl refuses a full name a record holds and still
+    exits 0, as macOS 15 does.
+
     Attributes:
         calls: Each argument vector, in order.
         answers: Output by the leading words of a command; a command no
             entry names succeeds and prints nothing.
         failing: Leading words of the commands that exit 1.
+        users: The directory: each record's keys by its short name.
     """
 
     def __init__(self):
         self.calls: list = []
         self.answers: dict = {}
         self.failing: set = set()
+        self.users: dict = {}
 
     def __call__(self, command, *, is_checked=True, input_text=None, timeout_s=0):
         command = list(command)
@@ -79,11 +87,61 @@ class FakeTools:
                 return CommandResult(command, 1, "", "refused")
             if key in self.answers:
                 return CommandResult(command, 0, self.answers[key], "")
+        if command[0] == "sysadminctl" and command[1] == "-addUser":
+            return self._add_user(command)
+        if command[0] == "dscl" and command[3:4] and command[3].startswith("/Users/"):
+            return self._dscl(command)
+        return CommandResult(command, 0, "", "")
+
+    def _add_user(self, command):
+        name = command[2]
+        full_name = command[command.index("-fullName") + 1]
+        if any(user.get("RealName") == full_name for user in self.users.values()):
+            line = f"User with full name '{full_name}' already exists."
+            return CommandResult(
+                command, 0, "", f"2026-10-04 21:26:48.632 sysadminctl[1:2] {line}\n"
+            )
+        self.users[name] = account(full_name)
+        return CommandResult(command, 0, "", "")
+
+    def _dscl(self, command):
+        name = command[3][len("/Users/") :]
+        held = self.users.get(name)
+        verb = command[2]
+        if verb == "-create":
+            self.users.setdefault(name, {})[command[4]] = command[5]
+            return CommandResult(command, 0, "", "")
+        if held is None:
+            return CommandResult(
+                command, 56, "", "<dscl_cmd> DS Error: -14136 (eDSRecordNotFound)\n"
+            )
+        if verb == "-delete":
+            del self.users[name]
+        if verb == "-read":
+            keys = command[4:] or ["RecordName"]
+            printed = [
+                f"{key}: {held[key]}" if key in held else f"No such key: {key}"
+                for key in keys
+            ]
+            missing = any(key not in held for key in keys)
+            return CommandResult(command, int(missing), "\n".join(printed) + "\n", "")
         return CommandResult(command, 0, "", "")
 
     def ran(self, *words) -> list:
         """The recorded commands that start with these words."""
         return [call for call in self.calls if tuple(call[: len(words)]) == words]
+
+
+def account(full_name="neutrino file share ann") -> dict:
+    """A usable account's record, as sysadminctl makes one."""
+    return {
+        "RecordName": "x",
+        "RealName": full_name,
+        "UniqueID": "502",
+        "PrimaryGroupID": "20",
+        "UserShell": "/usr/bin/false",
+        "NFSHomeDirectory": "/var/empty",
+    }
 
 
 def share_list(*points) -> str:
@@ -108,11 +166,7 @@ def tools(monkeypatch, tmp_path):
     plist = tmp_path / "com.apple.smbd.plist"
     plist.write_text("")
     monkeypatch.setattr(applier_module, "SAMBA_DARWIN_SMBD_PLIST", str(plist))
-    held = FakeTools()
-    # Nobody exists yet but what a test adds.
-    held.failing.add(("dscl", ".", "-read", "/Users/ann", "UniqueID"))
-    held.failing.add(("dscl", ".", "-read", "/Users/bob", "UniqueID"))
-    return held
+    return FakeTools()
 
 
 @pytest.fixture
@@ -175,7 +229,7 @@ def test_an_apply_makes_the_server_the_fence_the_accounts_and_the_shares(
     (add_ann,) = tools.ran("sysadminctl", "-addUser", "ann")
     assert add_ann[3:9] == [
         "-fullName",
-        "neutrino file share",
+        "neutrino file share ann",
         "-shell",
         "/usr/bin/false",
         "-home",
@@ -246,10 +300,7 @@ def test_a_share_point_the_module_did_not_make_is_refused_untouched(applier, too
 
 
 def test_an_account_the_module_did_not_make_is_refused_untouched(applier, tools):
-    tools.failing.discard(("dscl", ".", "-read", "/Users/ann", "UniqueID"))
-    tools.answers[("dscl", ".", "-read", "/Users/ann", "RealName")] = (
-        "RealName:\n Ann Example\n"
-    )
+    tools.users["ann"] = account("Ann Example")
 
     with pytest.raises(ModuleApplyError) as refused:
         applier.apply(CONFIG, {})
@@ -260,14 +311,70 @@ def test_an_account_the_module_did_not_make_is_refused_untouched(applier, tools)
 
 
 def test_an_account_named_as_the_module_names_its_own_is_its_own(applier, tools):
-    tools.failing.discard(("dscl", ".", "-read", "/Users/ann", "UniqueID"))
-    tools.answers[("dscl", ".", "-read", "/Users/ann", "RealName")] = (
-        "RealName: neutrino file share\n"
-    )
+    """An earlier build gave every account the words alone."""
+    tools.users["ann"] = account("neutrino file share")
 
     applier.apply(CONFIG, {})
 
     assert [call[2] for call in tools.ran("sysadminctl", "-addUser")] == ["bob"]
+
+
+def test_two_accounts_in_one_apply_each_get_a_full_name_of_their_own(applier, tools):
+    applier.apply(CONFIG, {})
+
+    assert [call[4] for call in tools.ran("sysadminctl", "-addUser")] == [
+        "neutrino file share ann",
+        "neutrino file share bob",
+    ]
+    assert tools.users["ann"]["UniqueID"] and tools.users["bob"]["UniqueID"]
+
+
+def test_a_refusal_the_tool_exits_0_on_is_a_refusal_with_its_own_words(applier, tools):
+    tools.users["other"] = account("neutrino file share ann")
+
+    with pytest.raises(ModuleApplyError) as refused:
+        applier.apply(CONFIG, {})
+
+    assert refused.value.code == "user_create_failed"
+    assert refused.value.params == {
+        "user": "ann",
+        "detail": "User with full name 'neutrino file share ann' already exists.",
+    }
+    assert tools.ran("dscl", ".", "-create", "/Users/ann") == []
+
+
+def test_a_bare_record_a_failed_attempt_left_is_made_again(applier, tools):
+    tools.users["ann"] = {"RecordName": "ann", "IsHidden": "1"}
+
+    notes = applier.apply(CONFIG, {"accounts": ["ann"]})
+
+    deleted = ["dscl", ".", "-delete", "/Users/ann"]
+    (made,) = tools.ran("sysadminctl", "-addUser", "ann")
+    assert tools.calls.index(deleted) < tools.calls.index(made)
+    assert tools.users["ann"]["UniqueID"] == "502"
+    assert tools.users["ann"]["IsHidden"] == "1"
+    assert "made account ann again" in notes
+
+
+def test_a_bare_record_the_module_did_not_list_is_refused_untouched(applier, tools):
+    tools.users["ann"] = {"RecordName": "ann"}
+
+    with pytest.raises(ModuleApplyError) as refused:
+        applier.apply(CONFIG, {})
+
+    assert refused.value.code == "user_name_taken"
+    assert tools.ran("dscl", ".", "-delete") == []
+    assert tools.ran("sysadminctl") == []
+
+
+def test_a_password_for_a_bare_record_makes_the_account_first(applier, tools):
+    tools.users["ann"] = {"RecordName": "ann", "IsHidden": "1"}
+
+    applier.set_password("ann", "s3cret")
+
+    assert tools.ran("dscl", ".", "-delete", "/Users/ann")
+    assert tools.users["ann"]["UniqueID"] == "502"
+    assert tools.calls[-1] == ["dscl", ".", "-passwd", "/Users/ann", "s3cret"]
 
 
 def test_a_share_point_that_moved_is_made_again_and_a_dropped_one_removed(
@@ -298,12 +405,24 @@ def test_a_share_point_that_moved_is_made_again_and_a_dropped_one_removed(
 
 
 def test_the_account_is_enabled_and_its_nt_hash_on_before_the_password(applier, tools):
-    tools.failing.discard(("dscl", ".", "-read", "/Users/ann", "UniqueID"))
+    tools.users["ann"] = account()
+    tools.failing.add(("dscl", ".", "-read", "/Groups/com.apple.access_smb"))
 
     applier.set_password("ann", "s3cret")
 
     assert tools.calls == [
-        ["dscl", ".", "-read", "/Users/ann", "UniqueID"],
+        ["dscl", ".", "-read", "/Groups/com.apple.access_smb"],
+        [
+            "dscl",
+            ".",
+            "-read",
+            "/Users/ann",
+            "UniqueID",
+            "PrimaryGroupID",
+            "UserShell",
+            "NFSHomeDirectory",
+        ],
+        ["dscl", ".", "-create", "/Users/ann", "IsHidden", "1"],
         ["pwpolicy", "-u", "ann", "-enableuser"],
         ["pwpolicy", "-u", "ann", "-sethashtypes", "SMB-NT", "on"],
         ["dscl", ".", "-passwd", "/Users/ann", "s3cret"],
@@ -436,7 +555,7 @@ def test_the_status_reads_launchd_the_share_list_and_lsof(applier, tools):
         ("neutrino_media", "/m", "media", 1), ("Public", "/p", "Public", 0)
     )
     tools.answers[("lsof",)] = LSOF_OUTPUT
-    tools.failing.discard(("dscl", ".", "-read", "/Users/ann", "UniqueID"))
+    tools.users["ann"] = account()
     tools.answers[("dscl", ".", "-read", "/Users/ann", "AuthenticationAuthority")] = (
         "AuthenticationAuthority: ;ShadowHash;HASHLIST:<SALTED-SHA512-PBKDF2,SMB-NT>\n"
     )
@@ -522,7 +641,7 @@ def test_a_log_that_cannot_answer_is_an_os_error(applier, tools):
 
 
 def test_a_user_whose_password_was_never_set_has_none(applier, tools):
-    tools.failing.discard(("dscl", ".", "-read", "/Users/ann", "UniqueID"))
+    tools.users["ann"] = account()
     tools.answers[("dscl", ".", "-read", "/Users/ann", "AuthenticationAuthority")] = (
         "AuthenticationAuthority: ;ShadowHash;HASHLIST:<SALTED-SHA512-PBKDF2,SMB-NT>\n"
     )
