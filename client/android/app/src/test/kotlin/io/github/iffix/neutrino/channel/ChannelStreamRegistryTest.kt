@@ -109,6 +109,39 @@ class ChannelStreamRegistryTest {
     }
 
     @Test
+    fun aFrameTheCreditDoesNotCoverIsDroppedWithoutWaiting() = runTest {
+        val stream = open(hasBytes = true)
+        assertEquals(false, stream.trySend(byteArrayOf(0, 1, 2)))
+        registry.takeCredit(ChannelInbound.Credit(stream.id, 5))
+        assertEquals(true, stream.trySend(byteArrayOf(0, 1, 2)))
+        assertEquals(false, stream.trySend(byteArrayOf(0, 1, 2)))
+        assertEquals(true, stream.trySend(byteArrayOf(0, 1)))
+        assertEquals(listOf(7, 6), socket.binaries.map { it.size })
+    }
+
+    @Test
+    fun aReceivedFrameIsGrantedBackAtOnce() = runTest {
+        val stream = open(hasBytes = true)
+        registry.takeBinary(frame(stream.id, byteArrayOf(0, 9, 7, 7)))
+        assertEquals(4, stream.receive()?.size)
+        assertEquals(4, socket.sent("credit").last()["bytes"]!!.jsonPrimitive.int)
+    }
+
+    @Test
+    fun waitingForTheFirstCreditEndsWithTheCreditOrTheStream() = runTest {
+        val credited = open(hasBytes = true)
+        val waiting = async { credited.awaitCredit() }
+        runCurrent()
+        assertTrue(waiting.isActive)
+        registry.takeCredit(ChannelInbound.Credit(credited.id, 1))
+        assertEquals(true, waiting.await())
+        val refused = open(hasBytes = true)
+        registry.takeClose(ChannelInbound.Close(refused.id, "permission_denied", JsonObject(emptyMap())))
+        assertEquals(false, refused.awaitCredit())
+        assertEquals("permission_denied", refused.refusal?.code)
+    }
+
+    @Test
     fun closingHereSendsOneCloseAndNoMore() = runTest {
         val stream = open()
         stream.close()

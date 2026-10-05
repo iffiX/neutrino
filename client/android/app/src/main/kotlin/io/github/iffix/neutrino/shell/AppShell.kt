@@ -215,9 +215,9 @@ fun AppShell(
                                 PortsScreen(
                                     hubs,
                                     forwards = forwardRows,
-                                    onConnect = { bindingId, entryId, port ->
+                                    onConnect = { bindingId, entryId, port, protocol ->
                                         askNotices()
-                                        actions.connectPort(bindingId, entryId, port)
+                                        actions.connectPort(bindingId, entryId, port, protocol)
                                     },
                                     onDisconnect = actions::disconnectPort,
                                     onCopy = { actions.copy(it) },

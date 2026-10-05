@@ -9,7 +9,6 @@ import io.github.iffix.neutrino.FORWARD_CLOSE_WAIT_MILLIS
 import io.github.iffix.neutrino.channel.ChannelConnectSocket
 import io.github.iffix.neutrino.channel.ChannelResult
 import io.github.iffix.neutrino.channel.ChannelStream
-import java.io.Closeable
 import java.io.IOException
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -27,10 +26,10 @@ import kotlin.concurrent.thread
  * @param requestedPort The loopback number to listen on; 0 for any free one.
  */
 open class PortForwardRelay(
-    val name: String,
+    override val name: String,
     private val open: () -> ChannelResult<ChannelStream>,
     private val requestedPort: Int,
-) : Closeable {
+) : PortForwardListener {
     private val connections = mutableSetOf<Socket>()
     private var listener: ServerSocket? = null
     private var acceptor: Thread? = null
@@ -39,11 +38,11 @@ open class PortForwardRelay(
     private var isClosed = false
 
     /** The loopback number bound; 0 until started. */
-    var localPort: Int = 0
+    final override var localPort: Int = 0
         private set
 
     /** Whether the relay still listens. */
-    val isActive: Boolean
+    override val isActive: Boolean
         get() = listener != null && !isClosed
 
     /**
@@ -52,7 +51,7 @@ open class PortForwardRelay(
      * @return The loopback number bound.
      * @throws IOException When the number cannot be bound.
      */
-    open fun start(): Int {
+    override fun start(): Int {
         val bound = bind(requestedPort)
         listener = bound
         localPort = bound.localPort

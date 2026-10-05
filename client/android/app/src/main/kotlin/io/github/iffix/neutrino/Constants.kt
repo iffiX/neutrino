@@ -292,6 +292,27 @@ val FORWARD_FIXED_PORTS: IntRange = 1024..65535
 /** Where an automatic local port is looked for when the entry's own is taken; the panel starts here. */
 const val FORWARD_AUTO_FIRST_PORT = 20000
 
+/** A `port` entry's protocol when its payload names none, and a TCP entry's. */
+const val PORT_PROTOCOL_TCP = "tcp"
+
+/** A UDP `port` entry's protocol. */
+const val PORT_PROTOCOL_UDP = "udp"
+
+/** The sources one UDP forward remembers the address of; the one idle the longest gives way. */
+const val CLIENT_UDP_SOURCES_MAX = 64
+
+/** The datagrams a UDP forward holds while its stream waits for its first credit. */
+const val CLIENT_UDP_HELD_DATAGRAMS_MAX = 16
+
+/** How long a UDP forward waits after a refused open before a datagram tries again. */
+const val CLIENT_UDP_RETRY_MILLIS = 1000L
+
+/** The largest UDP datagram. */
+const val CLIENT_UDP_DATAGRAM_BYTES_MAX = 65507
+
+/** The bytes of a UDP frame's source port, after the stream id. */
+const val CLIENT_UDP_SOURCE_BYTES = 2
+
 /** The IPv4 wildcard address a free-port probe binds. */
 const val FORWARD_PROBE_HOST_V4 = "0.0.0.0"
 

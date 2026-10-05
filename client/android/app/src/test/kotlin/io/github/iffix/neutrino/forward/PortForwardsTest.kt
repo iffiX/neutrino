@@ -8,7 +8,10 @@ import io.github.iffix.neutrino.channel.ChannelStream
 import io.github.iffix.neutrino.channel.FakeConnectHub
 import io.github.iffix.neutrino.channel.HubConnection
 import io.github.iffix.neutrino.channel.HubView
+import java.net.DatagramPacket
+import java.net.DatagramSocket
 import java.net.InetAddress
+import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 import kotlinx.coroutines.CompletableDeferred
@@ -343,6 +346,69 @@ class PortForwardsTest {
         assertTrue(isFree(port))
         forwards.stopAll()
         assertTrue(forwards.rows.value.isEmpty())
+    }
+
+    @Test
+    fun aUdpEntryIsOneUdpSocketAndOneStreamBesideATcpOneOnTheSameNumber() = runTest {
+        val forwards = PortForwards(noMaterial, streams, backgroundScope, table)
+        forwards.connect("b1", "dns", 30053)
+        forwards.connect("b1", "dns_udp", 30053, "udp")
+        runCurrent()
+        val tcp = forwards.rows.value.getValue("b1/dns")
+        val udp = forwards.rows.value.getValue("b1/dns_udp")
+        assertEquals(tcp.localPort, udp.localPort)
+        assertEquals("q", datagram(udp.localPort, "q"))
+        assertEquals(listOf("dns_udp"), opened.map { it.second["id"]?.jsonPrimitive?.content })
+        forwards.disconnect("b1", "dns_udp")
+        runCurrent()
+        assertNull(forwards.rows.value["b1/dns_udp"])
+        forwards.stopAll()
+    }
+
+    @Test
+    fun aUdpStreamRefusedAtConnectEndsTheForwardWithTheCode() = runTest {
+        val refusing = FakeConnectHub(refusal = ChannelResult.refused("permission_denied", "kind" to "port"))
+        val forwards = PortForwards(noMaterial, { _, args -> refusing.open(args) }, backgroundScope, table)
+        forwards.connect("b1", "dns_udp", 30054, "udp")
+        runCurrent()
+        waitFor { forwards.rows.value["b1/dns_udp"]?.error != null }
+        runCurrent()
+        val row = forwards.rows.value.getValue("b1/dns_udp")
+        assertEquals("permission_denied", row.error?.code)
+        assertTrue(!row.isForwarded)
+        assertNull(row.job)
+    }
+
+    @Test
+    fun aUdpStreamRefusedLaterLeavesTheForwardListeningWithTheCode() = runTest {
+        val forwards = PortForwards(noMaterial, streams, backgroundScope, table)
+        forwards.connect("b1", "dns_udp", 30055, "udp")
+        runCurrent()
+        val port = forwards.rows.value.getValue("b1/dns_udp").localPort
+        assertEquals("q", datagram(port, "q"))
+        hub.end(hub.opens.last()["stream"]!!.jsonPrimitive.content.toInt(), "port_not_published")
+        waitFor { forwards.rows.value["b1/dns_udp"]?.error != null }
+        val row = forwards.rows.value.getValue("b1/dns_udp")
+        assertEquals("port_not_published", row.error?.code)
+        assertEquals(port, row.localPort)
+        forwards.stopAll()
+    }
+
+    private fun datagram(port: Int, text: String): String = DatagramSocket().use { program ->
+        program.soTimeout = 5000
+        program.send(DatagramPacket(text.toByteArray(), text.length, InetSocketAddress("127.0.0.1", port)))
+        val buffer = ByteArray(512)
+        val packet = DatagramPacket(buffer, buffer.size)
+        program.receive(packet)
+        String(buffer, 0, packet.length)
+    }
+
+    private fun waitFor(condition: () -> Boolean) {
+        val deadline = System.currentTimeMillis() + 5000
+        while (!condition()) {
+            check(System.currentTimeMillis() < deadline) { "the condition did not hold in 5 s" }
+            Thread.sleep(10)
+        }
     }
 
     private fun exchange(port: Int, text: String): String = Socket("127.0.0.1", port).use { client ->

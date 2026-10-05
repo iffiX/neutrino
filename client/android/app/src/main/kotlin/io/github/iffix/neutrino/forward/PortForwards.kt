@@ -4,10 +4,13 @@ import android.util.Log
 import io.github.iffix.neutrino.CLIENT_HTTPS_DEFAULT_PORT
 import io.github.iffix.neutrino.CLIENT_HTTP_DEFAULT_PORT
 import io.github.iffix.neutrino.CLIENT_LOG_TAG
+import io.github.iffix.neutrino.ConnectRefusedException
 import io.github.iffix.neutrino.FORWARD_BIND_HOST
 import io.github.iffix.neutrino.FORWARD_PANEL_ENTRY
 import io.github.iffix.neutrino.FORWARD_PANEL_SLUG_PREFIX
 import io.github.iffix.neutrino.LocalPortTakenException
+import io.github.iffix.neutrino.PORT_PROTOCOL_TCP
+import io.github.iffix.neutrino.PORT_PROTOCOL_UDP
 import io.github.iffix.neutrino.WEB_LOOPBACK_DOMAIN
 import io.github.iffix.neutrino.WEB_TOKEN_PARAMETER
 import io.github.iffix.neutrino.channel.ChannelFrames
@@ -45,6 +48,8 @@ import kotlinx.serialization.json.JsonPrimitive
  * @param streams Opens one `connect` stream on a hub, by binding id and the stream's arguments.
  * @param scope Where the jobs run.
  * @param table The local port of every forwarded entry.
+ * @param udpRelayOf A UDP entry's forward by what the log calls it, how it opens its stream, its
+ *   loopback number, and what a refusal of its stream does, with whether it ended the forward.
  * @param relayOf A relay by what the log calls it, how it opens a stream, and its loopback number.
  */
 class PortForwards(
@@ -52,30 +57,44 @@ class PortForwards(
     private val streams: (String, Map<String, JsonElement>) -> ChannelResult<ChannelStream>,
     private val scope: CoroutineScope,
     private val table: LocalPortTable,
+    private val udpRelayOf: (
+        String,
+        () -> ChannelResult<ChannelStream>,
+        Int,
+        (ChannelResult.Refused, Boolean) -> Unit,
+    ) ->
+    PortForwardListener = { name, open, local, onRefused -> PortForwardUdpRelay(name, open, local, onRefused) },
     private val relayOf: (String, () -> ChannelResult<ChannelStream>, Int) -> PortForwardRelay = { name, open, local ->
         PortForwardRelay(name, open, local)
     },
 ) {
     private val current = MutableStateFlow<Map<String, PortForwardRow>>(emptyMap())
-    private val relays = mutableMapOf<String, PortForwardRelay>()
+    private val relays = mutableMapOf<String, PortForwardListener>()
 
     /** Every row with a forward, a job or an error, by entry key. */
     val rows: StateFlow<Map<String, PortForwardRow>> = current.asStateFlow()
 
     /**
-     * Press Connect on a port entry or the AI gateway. A press while the row's job runs is dropped.
+     * Press Connect on a port entry or the AI gateway. A UDP entry's forward is one UDP socket and
+     * one stream; a refusal of its stream that ends it, or a later one, is the row's error. A
+     * press while the row's job runs is dropped.
      *
      * @param bindingId The hub.
      * @param entryId The entry.
      * @param port The entry's own port, which the local port table tries first.
+     * @param protocol `tcp` or `udp`.
      */
-    fun connect(bindingId: String, entryId: String, port: Int) {
+    fun connect(bindingId: String, entryId: String, port: Int, protocol: String = PORT_PROTOCOL_TCP) {
         val key = keyOf(bindingId, entryId)
         if (!begin(key, PortForwardJob.FORWARDING)) return
         scope.launch {
-            when (val bound = forward(key, bindingId, entryArgs(entryId), port)) {
+            when (val bound = forward(key, bindingId, entryArgs(entryId), port, protocol)) {
                 is ChannelResult.Refused -> settle(key) { PortForwardRow(error = bound) }
-                is ChannelResult.Ok -> settle(key) { PortForwardRow(localPort = bound.value) }
+
+                is ChannelResult.Ok -> settle(key) { row ->
+                    val isListening = synchronized(relays) { relays[key]?.isActive == true }
+                    if (isListening) PortForwardRow(localPort = bound.value) else row?.copy(job = null, localPort = 0)
+                }
             }
         }
     }
@@ -224,14 +243,20 @@ class PortForwards(
      * @param bindingId The hub.
      * @param entryId The entry.
      * @param choice Automatic, or fixed with a number from 1024 to 65535.
+     * @param protocol The entry's protocol, `tcp` or `udp`.
      * @return Ok once kept; `disconnect_first` while the entry is forwarded; `port_taken {port}`
-     *   when another entry holds the fixed number.
+     *   when another entry of the same protocol holds the fixed number.
      * @throws IllegalArgumentException When a fixed number is outside 1024 to 65535.
      */
-    fun configure(bindingId: String, entryId: String, choice: LocalPortChoice): ChannelResult<Unit> {
+    fun configure(
+        bindingId: String,
+        entryId: String,
+        choice: LocalPortChoice,
+        protocol: String = PORT_PROTOCOL_TCP,
+    ): ChannelResult<Unit> {
         val key = keyOf(bindingId, entryId)
         if (synchronized(relays) { relays[key]?.isActive == true }) return ChannelResult.refused("disconnect_first")
-        return table.configure(key, choice)
+        return table.configure(key, choice, protocol)
     }
 
     /**
@@ -308,16 +333,30 @@ class PortForwards(
         return isStarted
     }
 
-    private fun forward(key: String, bindingId: String, args: Map<String, JsonElement>, port: Int): ChannelResult<Int> {
+    private fun forward(
+        key: String,
+        bindingId: String,
+        args: Map<String, JsonElement>,
+        port: Int,
+        protocol: String = PORT_PROTOCOL_TCP,
+    ): ChannelResult<Int> {
         synchronized(relays) { relays[key]?.takeIf { it.isActive } }?.let { return ChannelResult.Ok(it.localPort) }
         return try {
-            val relay = relayOf(key, { streams(bindingId, args) }, table.portFor(key, port))
+            val local = table.portFor(key, port, protocol)
+            val open = { streams(bindingId, args) }
+            val relay = if (protocol == PORT_PROTOCOL_UDP) {
+                udpRelayOf(key, open, local) { refusal, isEnded -> refused(key, refusal, isEnded) }
+            } else {
+                relayOf(key, open, local)
+            }
             val bound = relay.start()
             synchronized(relays) { relays.put(key, relay) }?.close()
             Log.i(CLIENT_LOG_TAG, "forwarding $FORWARD_BIND_HOST:$bound to $key through the hub")
             ChannelResult.Ok(bound)
         } catch (error: LocalPortTakenException) {
             ChannelResult.refused("port_taken", "port" to error.port.toString())
+        } catch (error: ConnectRefusedException) {
+            ChannelResult.Refused(error.code, error.params)
         } catch (error: IOException) {
             ChannelResult.refused("forward_failed", "detail" to (error.message ?: "IOException").take(200))
         }
@@ -331,6 +370,14 @@ class PortForwards(
             val row = rows[key] ?: return@update rows
             val left = row.copy(localPort = 0)
             if (left == PortForwardRow()) rows - key else rows + (key to left)
+        }
+    }
+
+    private fun refused(key: String, refusal: ChannelResult.Refused, isEnded: Boolean) {
+        if (isEnded) synchronized(relays) { relays.remove(key) }
+        settle(key) { row ->
+            val kept = row ?: PortForwardRow()
+            if (isEnded) kept.copy(localPort = 0, error = refusal) else kept.copy(error = refusal)
         }
     }
 
