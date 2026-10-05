@@ -423,6 +423,18 @@ def test_the_open_sidebar_entry_is_washed_in_the_accent_without_a_glow():
     assert "box-shadow" not in tab_on and "box-shadow" not in bar
 
 
+def test_a_row_whose_actions_do_not_fit_puts_them_on_a_line_of_their_own():
+    """The narrow window of a small screen: Leave and Join stay in reach."""
+    row = PAGE_CSS.split(".feat {")[1].split("}")[0]
+    body = PAGE_CSS.split(".feat .body {")[1].split("}")[0]
+    actions = PAGE_CSS.split(".row_actions {")[1].split("}")[0]
+
+    assert "flex-wrap: wrap" in row
+    assert "flex: 1 1 200px" in body and "min-width: 0" in body
+    assert "flex: 0 1 auto" in actions and "flex-wrap: wrap" in actions
+    assert "margin-left: auto" in actions
+
+
 def test_the_window_is_a_sidebar_beside_a_content_that_fills_the_width():
     wrap = PAGE_CSS.split(".wrap {")[1].split("}")[0]
     main = PAGE_CSS.split(".main {")[1].split("}")[0]

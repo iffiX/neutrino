@@ -21,12 +21,11 @@ import threading
 from neutrino_client import words
 from neutrino_client.constants import (
     CLIENT_DEFAULT_LANGUAGE,
-    CLIENT_GUI_WINDOW_HEIGHT,
-    CLIENT_GUI_WINDOW_WIDTH,
     CLIENT_TRAY_OPEN_LABEL_KEY,
     CLIENT_TRAY_QUIT_LABEL_KEY,
 )
 from neutrino_client.exceptions import GuiShellUnavailableError
+from neutrino_client.gui.shell import window_size
 from neutrino_client.gui.tray_macos import MacosTrayIcon
 
 # The distributions the import guard names when the bindings are absent.
@@ -75,9 +74,8 @@ def open_window(
             app.setApplicationIconImage_(image)
 
     queue = Foundation.NSOperationQueue.mainQueue()
-    frame = Foundation.NSMakeRect(
-        0, 0, CLIENT_GUI_WINDOW_WIDTH, CLIENT_GUI_WINDOW_HEIGHT
-    )
+    width, height = window_size(*_visible_area(AppKit))
+    frame = Foundation.NSMakeRect(0, 0, width, height)
     configuration = WebKit.WKWebViewConfiguration.alloc().init()
     handler = classes["message_handler"].alloc().init()
     configuration.userContentController().addScriptMessageHandler_name_(
@@ -166,6 +164,19 @@ def open_window(
     if on_push_ready is not None:
         on_push_ready(push_state)
     app.run()
+
+
+def _visible_area(AppKit) -> tuple:
+    """The main screen's frame without the menu bar and the Dock.
+
+    Returns:
+        ``(width, height)``; ``(0, 0)`` when AppKit does not say.
+    """
+    try:
+        size = AppKit.NSScreen.mainScreen().visibleFrame().size
+        return int(size.width), int(size.height)
+    except Exception:  # noqa: BLE001 - the default size stands without it
+        return 0, 0
 
 
 def _toolkit():

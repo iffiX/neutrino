@@ -1009,3 +1009,93 @@ def test_the_macos_window_pushes_state_through_the_main_queue(monkeypatch):
     assert FakeWKWebView.made[0].scripts[-1] == (
         'window.neutrinoState({"is_connected": false})'
     )
+
+
+# --- the window's size on a small screen ---
+
+
+def test_the_window_opens_at_its_default_size_where_the_screen_has_room():
+    from neutrino_client.gui.shell import window_size
+
+    assert window_size(1920, 1040) == (1080, 640)
+    assert window_size(0, 0) == (1080, 640)
+
+
+def test_the_window_opens_inside_a_small_screens_work_area():
+    """The 1024x768 screen of the Linux test, its panel taking 28 pixels."""
+    from neutrino_client.gui.shell import window_size
+
+    assert window_size(1024, 740) == (976, 640)
+    assert window_size(800, 572) == (752, 524)
+
+
+class FakeArea:
+    def __init__(self, width, height):
+        self.width = width
+        self.height = height
+
+
+class FakeMonitor:
+    def __init__(self, area):
+        self.area = area
+
+    def get_workarea(self):
+        return self.area
+
+
+class FakeDisplay:
+    def __init__(self, primary, first):
+        self.primary = primary
+        self.first = first
+
+    def get_primary_monitor(self):
+        return self.primary
+
+    def get_monitor(self, index):
+        return self.first
+
+
+def test_the_linux_window_fits_the_primary_monitors_work_area(monkeypatch):
+    from tests.gui.test_tray_linux import FakeGtkWindow
+
+    display = FakeDisplay(FakeMonitor(FakeArea(1024, 740)), None)
+    monkeypatch.setattr(
+        FakeGtkWindow, "get_display", lambda self: display, raising=False
+    )
+    _glib, gtk = linux_toolkit(monkeypatch)
+
+    webkitgtk.open_window(title="t", html="<html>", bridge=None)
+
+    assert gtk.windows[0].size == (976, 640)
+
+
+def test_the_linux_window_takes_the_first_monitor_without_a_primary(monkeypatch):
+    from tests.gui.test_tray_linux import FakeGtkWindow
+
+    display = FakeDisplay(None, FakeMonitor(FakeArea(1024, 740)))
+    monkeypatch.setattr(
+        FakeGtkWindow, "get_display", lambda self: display, raising=False
+    )
+    _glib, gtk = linux_toolkit(monkeypatch)
+
+    webkitgtk.open_window(title="t", html="<html>", bridge=None)
+
+    assert gtk.windows[0].size == (976, 640)
+
+
+def test_the_linux_window_keeps_its_default_when_gtk_names_no_area(monkeypatch):
+    _glib, gtk = linux_toolkit(monkeypatch)
+
+    webkitgtk.open_window(title="t", html="<html>", bridge=None)
+
+    assert gtk.windows[0].size == (1080, 640)
+
+
+def test_the_windows_window_fits_the_first_screen(monkeypatch):
+    fake = windows_toolkit(monkeypatch)
+    fake.screens = [FakeArea(1024, 768)]
+
+    webview2.open_window(title="t", html="<html>", bridge=None)
+
+    window = fake.windows[0]
+    assert (window.width, window.height) == (976, 640)

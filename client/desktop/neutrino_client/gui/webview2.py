@@ -15,13 +15,12 @@ import json
 from neutrino_client import words
 from neutrino_client.constants import (
     CLIENT_DEFAULT_LANGUAGE,
-    CLIENT_GUI_WINDOW_HEIGHT,
-    CLIENT_GUI_WINDOW_WIDTH,
     CLIENT_TRAY_OPEN_LABEL_KEY,
     CLIENT_TRAY_QUIT_LABEL_KEY,
 )
 from neutrino_client.exceptions import GuiShellUnavailableError
 from neutrino_client.gui.bridge import GuiWindowApi
+from neutrino_client.gui.shell import window_size
 from neutrino_client.gui.tray_windows import WindowsTrayIcon
 
 WEBVIEW2_RUNTIME = "the Microsoft Edge WebView2 Runtime"
@@ -65,12 +64,13 @@ def open_window(
         raise GuiShellUnavailableError(
             "gui_webview2_missing", {"runtime": WEBVIEW2_RUNTIME}
         ) from error
+    width, height = window_size(*_screen_area(webview))
     window = webview.create_window(
         title,
         html=html,
         js_api=GuiWindowApi(bridge),
-        width=CLIENT_GUI_WINDOW_WIDTH,
-        height=CLIENT_GUI_WINDOW_HEIGHT,
+        width=width,
+        height=height,
         hidden=is_hidden,
     )
 
@@ -114,3 +114,16 @@ def open_window(
         webview.start(gui="edgechromium")
     finally:
         tray.stop()
+
+
+def _screen_area(webview) -> tuple:
+    """The first screen's size as pywebview reports it.
+
+    Returns:
+        ``(width, height)``; ``(0, 0)`` when pywebview does not say.
+    """
+    try:
+        screen = webview.screens[0]
+        return int(screen.width), int(screen.height)
+    except Exception:  # noqa: BLE001 - the default size stands without it
+        return 0, 0

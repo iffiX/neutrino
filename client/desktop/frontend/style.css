@@ -127,11 +127,13 @@ button:disabled { opacity: .4; cursor: not-allowed;
    second press or a press elsewhere. */
 button.danger.armed { border-color: var(--color-error); background: var(--color-error);
                       color: var(--color-bg); }
-.feat { display: flex; gap: 12px; align-items: center; padding: 12px 0;
-        border-bottom: 1px solid var(--color-border); }
+/* A row whose actions do not fit beside its words puts them on a line of
+   their own, at its right, where they wrap. */
+.feat { display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+        padding: 12px 0; border-bottom: 1px solid var(--color-border); }
 .feat:last-child { border-bottom: none; }
 .feat.greyed .body { opacity: .5; }
-.feat .body { flex: 1; min-width: 0; }
+.feat .body { flex: 1 1 200px; min-width: 0; }
 .feat .title { font-weight: 600; }
 .feat .note { color: var(--color-text-muted); font-size: 12px; }
 .feat .sub { overflow-wrap: anywhere; }
@@ -140,8 +142,8 @@ button.danger.armed { border-color: var(--color-error); background: var(--color-
 .reason { color: var(--color-text-faint); font-size: 12px; }
 /* A row's actions, in one line at its right; a button that is its job's
    indicator carries the spinner before its word. */
-.row_actions { flex: none; display: flex; flex-wrap: wrap; gap: 8px;
-               align-items: center; justify-content: flex-end; }
+.row_actions { flex: 0 1 auto; display: flex; flex-wrap: wrap; gap: 8px;
+               align-items: center; justify-content: flex-end; margin-left: auto; }
 .row_actions button { display: inline-flex; gap: 8px; align-items: center; }
 .overlay_line { display: flex; gap: 8px; align-items: center; margin-top: 4px;
                 color: var(--color-text-muted); font-size: 12px; }
