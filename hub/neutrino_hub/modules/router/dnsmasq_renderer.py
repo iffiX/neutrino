@@ -93,7 +93,9 @@ class RouterDnsmasqRenderer:
             # interface that is not there, which is the whole point here.
             return header + [
                 "# No interface has the LAN role, so there is nothing to serve.",
+                "# Loopback stays: the box itself resolves here.",
                 f"interface={NO_LAN_PLACEHOLDER_INTERFACE}",
+                "interface=lo",
                 "bind-dynamic",
                 "",
             ]

@@ -1,8 +1,9 @@
 """What the box itself resolves names with.
 
 A box in router mode resolves where its own devices do: at the dnsmasq on its
-served network, which forwards through the proxy or to the direct resolver as
-the routing configuration says. Without this the gateway comes up with an
+served network, or on loopback when it serves none, which forwards through the
+proxy or to the network's resolvers as the routing configuration says. Without
+this the gateway comes up with an
 address, a route, and nothing to ask a name of — it cannot fetch its own
 geodata, install a module from a vendor, or run apt.
 

@@ -259,6 +259,8 @@ ROUTER_RESOLVER_ORIGINAL_PATH = UTILS_STATE_ROOT / "resolv.conf.original"
 ROUTER_RESOLVER_TO_RESOLVED = "resolved"
 ROUTER_RESOLVER_TO_ORIGINAL = "original"
 ROUTER_RESOLVER_TO_FALLBACK = "fallback"
+# Where a router that serves no network resolves: its dnsmasq on loopback.
+ROUTER_LOOPBACK_RESOLVER = "127.0.0.1"
 
 # The name this box answers to on every served network, resolving to its
 # address on the network the query arrived from. `.internal` is the top-level

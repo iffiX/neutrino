@@ -129,6 +129,24 @@ def test_a_box_serving_nothing_still_refuses_to_answer_the_uplink(tmp_path):
     validate_dnsmasq(config, tmp_path)
 
 
+def test_a_box_serving_nothing_answers_itself_on_loopback(tmp_path):
+    """The resolver file of a router that serves no network names
+    127.0.0.1, so dnsmasq has to be listening there."""
+    directives = without_comments(render(wan_entry("enp2s0"))).splitlines()
+
+    assert "interface=lo" in directives
+    assert "except-interface=lo" not in directives
+
+
+def test_a_box_serving_a_network_keeps_off_loopback():
+    directives = without_comments(
+        render(lan_entry("enp1s0", address="192.168.100.1"))
+    ).splitlines()
+
+    assert "except-interface=lo" in directives
+    assert "interface=lo" not in directives
+
+
 @pytest.mark.feature("proxy")
 def test_the_only_upstream_is_the_local_xray_inbound(tmp_path):
     """The whole point of the DNS path: no query leaves by the uplink in clear."""
