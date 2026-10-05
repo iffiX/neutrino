@@ -529,6 +529,11 @@
               "title": "Description Params",
               "type": "object"
             },
+            "device_id": {
+              "default": "",
+              "title": "Device Id",
+              "type": "string"
+            },
             "device_name": {
               "default": "",
               "title": "Device Name",
@@ -1321,6 +1326,11 @@
           "additionalProperties": true,
           "title": "Description Params",
           "type": "object"
+        },
+        "device_id": {
+          "default": "",
+          "title": "Device Id",
+          "type": "string"
         },
         "device_name": {
           "default": "",

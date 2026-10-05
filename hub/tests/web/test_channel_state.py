@@ -394,7 +394,9 @@ def test_each_terminal_carries_the_sessions_the_client_sees_oldest_first(
     assert after["hash"] != before["hash"]
 
 
-def test_every_entry_names_the_machine_that_provides_it(config_dir, monkeypatch):
+def test_every_entry_names_the_machine_that_provides_it_by_name_and_id(
+    config_dir, monkeypatch
+):
     monkeypatch.setattr(channel_state.socket, "gethostname", lambda: "neutrino")
     runtime = FakeRuntime()
     devices = DeviceRegistry()
@@ -431,7 +433,13 @@ def test_every_entry_names_the_machine_that_provides_it(config_dir, monkeypatch)
         "declared_on_argon": "argon",
         "declared_elsewhere": "",
     }
-    assert all("device_id" not in entry for entry in state["services"])
+    assert {entry["id"]: entry["device_id"] for entry in state["services"]} == {
+        "web_gitea_argon": argon.id,
+        "web_gitea_muon": muon.id,
+        "ai_gateway": "",
+        "declared_on_argon": "",
+        "declared_elsewhere": "",
+    }
 
 
 def test_a_device_filter_keeps_only_that_devices_entries_and_terminals(

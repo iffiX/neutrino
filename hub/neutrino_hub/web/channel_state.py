@@ -213,11 +213,14 @@ def _terminals(runtime, viewer: str) -> list:
 
 
 def _named_entries(runtime, entries: list) -> list:
-    """The catalog entries, each with ``device_name``: the machine providing it.
+    """The catalog entries, each with ``device_id`` and ``device_name``: the
+    machine providing it.
 
-    An entry a device hosts names that device; one of the hub's own modules
-    names the hub's machine; a declared record at a device's address names
-    that device, and any other names nobody.
+    An entry a device hosts names that device by its id and its name; one of
+    the hub's own modules names the hub's machine; a declared record at a
+    device's address names that device, and any other names nobody. Only an
+    entry a managed machine provides carries an id; every other carries an
+    empty one.
     """
     names = {}
     for device in DeviceRegistry().all_stored():
@@ -231,13 +234,15 @@ def _named_entries(runtime, entries: list) -> list:
     named = []
     for entry, catalog in zip(entries, catalog_entries(entries)):
         device_id = entry.get("device_id") or ""
+        if entry.get("source") == SERVICES_SOURCE_DECLARED:
+            device_id = ""
         if device_id:
             provider = names.get(device_id, "")
         elif entry.get("source") == SERVICES_SOURCE_DECLARED:
             provider = by_address.get(entry_host(entry), "")
         else:
             provider = hub_machine
-        named.append({**catalog, "device_name": provider})
+        named.append({**catalog, "device_id": device_id, "device_name": provider})
     return named
 
 
