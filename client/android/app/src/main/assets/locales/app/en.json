@@ -9,6 +9,8 @@
     "verb_unknown": "the hub does not know this command; update the hub"
   },
   "ui": {
+    "ai_address_plain": "For apps that add /v1 themselves",
+    "ai_address_v1": "For apps that want /v1 in the address",
     "back": "Back",
     "camera_allow": "Allow the camera",
     "camera_refused": "The camera is not allowed; paste the link below.",

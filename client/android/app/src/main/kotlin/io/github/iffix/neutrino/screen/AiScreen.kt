@@ -13,6 +13,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import io.github.iffix.neutrino.AI_VERSION_PATH
 import io.github.iffix.neutrino.CLIENT_HTTPS_DEFAULT_PORT
 import io.github.iffix.neutrino.CLIENT_HTTP_DEFAULT_PORT
 import io.github.iffix.neutrino.CLIENT_KEY_SHOWN_PREFIX
@@ -28,6 +29,7 @@ import io.github.iffix.neutrino.design.NeutrinoButton
 import io.github.iffix.neutrino.design.NeutrinoTheme
 import io.github.iffix.neutrino.design.ReasonLine
 import io.github.iffix.neutrino.design.SecretField
+import io.github.iffix.neutrino.design.ValueField
 import io.github.iffix.neutrino.forward.PortForwardRow
 import io.github.iffix.neutrino.forward.PortForwards
 import java.net.URI
@@ -37,8 +39,9 @@ import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * The AI gateway each joined hub publishes, forwarded as a Ports row: Connect makes the forward
- * on this phone's loopback through the hub, the forwarded row names the loopback address with
- * Copy beside Disconnect, and under it sits this phone's key with its eye toggle and Copy. A line
+ * on this phone's loopback through the hub, the forwarded row shows two loopback addresses, for
+ * apps that add `/v1` themselves and for apps that want it in the address, each with its own Copy,
+ * and under them sits this phone's key with its eye toggle and Copy. A line
  * says an app on the phone reaches the gateway only while this app runs.
  *
  * @param hubs Every hub joined.
@@ -64,14 +67,19 @@ fun AiScreen(
 }
 
 /**
- * The address an app on the phone points at while the gateway is forwarded.
+ * The two addresses an app on the phone points at while the gateway is forwarded: one for an app
+ * that adds `/v1` itself, one for an app that wants it in the address.
  *
  * @param endpoint The entry's endpoint, where the gateway stands on the hub's networks.
  * @param localPort The forward's loopback number.
- * @return `http://127.0.0.1:<local port><path of the endpoint>`.
+ * @return `http://127.0.0.1:<local port><path of the endpoint>`, then the same with `/v1` after
+ *   it unless the path already ends in `/v1`.
  */
-internal fun loopbackEndpointOf(endpoint: String, localPort: Int): String =
-    "http://$FORWARD_BIND_HOST:$localPort${endpointPartsOf(endpoint)?.second.orEmpty()}"
+internal fun loopbackAddressesOf(endpoint: String, localPort: Int): List<String> {
+    val plain = "http://$FORWARD_BIND_HOST:$localPort${endpointPartsOf(endpoint)?.second.orEmpty()}"
+    val trimmed = plain.trimEnd('/')
+    return listOf(plain, if (trimmed.endsWith(AI_VERSION_PATH)) trimmed else trimmed + AI_VERSION_PATH)
+}
 
 /**
  * The gateway's own port and path, from its endpoint.
@@ -123,9 +131,6 @@ private fun GatewayRow(
         marker = entryTone(hub, entry, isBusy = job != null || answer == null),
         hasDivider = hasDivider,
         actions = {
-            if (row.isForwarded && job == null) {
-                CopyButton(isEnabled = isFree) { onCopy(loopbackEndpointOf(endpoint, row.localPort), false) }
-            }
             NeutrinoButton(
                 label = words.word(
                     when {
@@ -160,6 +165,17 @@ private fun GatewayRow(
         BasicText(words.word("ui.ai_needs_client"), style = NeutrinoTheme.note)
         ErrorLine(row.error)
         ReasonLine(reason)
+        if (row.isForwarded) {
+            val (plain, withVersion) = loopbackAddressesOf(endpoint, row.localPort)
+            Column(modifier = Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                ValueField(words.word("ui.ai_address_plain"), plain) {
+                    CopyButton(isEnabled = isFree) { onCopy(plain, false) }
+                }
+                ValueField(words.word("ui.ai_address_v1"), withVersion) {
+                    CopyButton(isEnabled = isFree) { onCopy(withVersion, false) }
+                }
+            }
+        }
         when (val current = answer) {
             null -> Unit
 

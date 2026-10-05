@@ -303,6 +303,9 @@ val FORWARD_FIXED_PORTS: IntRange = 1024..65535
 /** Where an automatic local port is looked for when the entry's own is taken; the panel starts here. */
 const val FORWARD_AUTO_FIRST_PORT = 20000
 
+/** The path an app that speaks the OpenAI interface puts before every request. */
+const val AI_VERSION_PATH = "/v1"
+
 /** A `port` entry's protocol when its payload names none, and a TCP entry's. */
 const val PORT_PROTOCOL_TCP = "tcp"
 
