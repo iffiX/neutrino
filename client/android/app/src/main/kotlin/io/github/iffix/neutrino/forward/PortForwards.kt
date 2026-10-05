@@ -36,18 +36,19 @@ import kotlinx.serialization.json.JsonPrimitive
  * forward from Connect until Disconnect; a web entry from Open until Disconnect, its Open reading
  * the entry's token on the `service` stream when it needs one and opening the browser on the
  * entry's own `.localhost` name; a shared desktop from its Connect until its viewer closes; the
- * hub's panel, keyed `<binding>/#panel`, from the first press of Panel until the hub is left. A
- * forward stops when its hub is left, when its entry leaves the hub's state, and on [stopAll] as
- * the app core's service ends.
+ * hub's panel, keyed `<binding>/#panel`, from the first press of Panel until the hub is left, each
+ * press reading a one-time sign-in token first. A forward stops when its hub is left, when its
+ * entry leaves the hub's state, and on [stopAll] as the app core's service ends.
  *
- * @param material What the hub hands this phone for one entry, by binding id and entry id.
+ * @param material What the hub hands this phone on a `service` stream, by binding id and the
+ *   stream's arguments.
  * @param streams Opens one `connect` stream on a hub, by binding id and the stream's arguments.
  * @param scope Where the jobs run.
  * @param table The local port of every forwarded entry.
  * @param relayOf A relay by what the log calls it, how it opens a stream, and its loopback number.
  */
 class PortForwards(
-    private val material: suspend (String, String) -> ChannelResult<JsonObject>,
+    private val material: suspend (String, Map<String, JsonElement>) -> ChannelResult<JsonObject>,
     private val streams: (String, Map<String, JsonElement>) -> ChannelResult<ChannelStream>,
     private val scope: CoroutineScope,
     private val table: LocalPortTable,
@@ -130,7 +131,7 @@ class PortForwards(
                 settle(key) { PortForwardRow(localPort = bound) }
                 return@launch
             }
-            val token = when (val answer = material(bindingId, entryId)) {
+            val token = when (val answer = material(bindingId, entryArgs(entryId))) {
                 is ChannelResult.Refused -> {
                     settle(key) { PortForwardRow(localPort = bound, error = answer) }
                     return@launch
@@ -148,9 +149,11 @@ class PortForwards(
     }
 
     /**
-     * Press Panel on a hub's row: the panel's forward is made when the hub has none, and the
-     * browser opens `http://panel-<hub id>.localhost:<local port>/`. A press while the job runs is
-     * dropped.
+     * Press Panel on a hub's row: a one-time `{token}` is read on a `service` stream with
+     * `{is_panel: true}`, the panel's forward is made when the hub has none, and the browser opens
+     * `http://panel-<hub id>.localhost:<local port>/?tkn=<token>`, which signs the panel in. A
+     * refusal of either is the row's error and opens nothing. The token goes to the browser and
+     * is kept nowhere else. A press while the job runs is dropped.
      *
      * @param bindingId The hub.
      * @param hubId The hub's own id, from its welcome.
@@ -161,11 +164,24 @@ class PortForwards(
         if (!begin(key, PortForwardJob.OPENING)) return
         scope.launch {
             val args = ChannelFrames.args("is_panel" to true)
+            val token = when (val answer = material(bindingId, args)) {
+                is ChannelResult.Refused -> {
+                    settle(key) { it?.copy(job = null, error = answer) ?: PortForwardRow(error = answer) }
+                    return@launch
+                }
+
+                is ChannelResult.Ok -> (answer.value["token"] as? JsonPrimitive)?.content.orEmpty()
+            }
+            if (token.isEmpty()) {
+                val missing = ChannelResult.refused("web_token_missing")
+                settle(key) { it?.copy(job = null, error = missing) ?: PortForwardRow(error = missing) }
+                return@launch
+            }
             when (val bound = forward(key, bindingId, args, 0)) {
                 is ChannelResult.Refused -> settle(key) { PortForwardRow(error = bound) }
 
                 is ChannelResult.Ok -> {
-                    onOpen("http://${panelHostOf(hubId.ifEmpty { bindingId })}:${bound.value}/")
+                    onOpen(tokenUrlOf("http://${panelHostOf(hubId.ifEmpty { bindingId })}:${bound.value}/", token))
                     settle(key) { PortForwardRow(localPort = bound.value) }
                 }
             }

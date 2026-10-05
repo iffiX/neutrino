@@ -145,8 +145,8 @@ class NeutrinoApplication : Application() {
     /** The loopback forwards of every forwarded entry and of the hubs' panels, each connection a `connect` stream. */
     val portForwards: PortForwards by lazy {
         PortForwards(
-            material = { bindingId, entryId ->
-                connections.session(bindingId)?.openService(entryId) ?: ChannelResult.refused("unknown_hub")
+            material = { bindingId, args ->
+                connections.session(bindingId)?.openService(args) ?: ChannelResult.refused("unknown_hub")
             },
             streams = ::openConnect,
             scope = scope,

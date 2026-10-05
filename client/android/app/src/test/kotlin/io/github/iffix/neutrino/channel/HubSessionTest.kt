@@ -220,6 +220,22 @@ class HubSessionTest {
     }
 
     @Test
+    fun thePanelsTokenIsTheCloseOfAServiceStreamNamingThePanel() = runTest {
+        val transport = FakeHubTransport { FakeHubTransport.welcoming }
+        val (session, _) = session(transport)
+        served(session)
+        val (_, socket, events) = transport.dialled.single()
+        val material = backgroundScope.async { session.openService(ChannelFrames.args("is_panel" to true)) }
+        runCurrent()
+        val open = socket.sent("open").single()
+        assertEquals("service", open["kind"]!!.jsonPrimitive.content)
+        assertEquals(true, open["is_panel"]!!.jsonPrimitive.boolean)
+        assertEquals(null, open["id"])
+        events.trySend(ChannelSocketEvent.Text("""{"type":"close","stream":1,"code":"","params":{"token":"t"}}"""))
+        assertEquals("t", ((material.await() as ChannelResult.Ok).value["token"])!!.jsonPrimitive.content)
+    }
+
+    @Test
     fun aRoundStartsConnectingAndARoundWithNoAnswerIsDownWithItsCode() = runTest {
         val (session, _) = session(FakeHubTransport { FakeHubTransport.silent })
         assertEquals(HubConnection.CONNECTING, session.view.value.connection)
