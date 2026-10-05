@@ -29,6 +29,7 @@ class FakeAccountPlatform:
         self.runs: list = []
         self.answered: list = []
         self.refusal = None
+        self.opened: list = []
         self._root = root
 
     def store(self, account) -> FakeCcSwitch:
@@ -39,6 +40,9 @@ class FakeAccountPlatform:
 
     def agent_var_dir(self):
         return self._root
+
+    def open_to_accounts(self, directory):
+        self.opened.append(directory)
 
     def account_home(self, account):
         if account not in self.homes:

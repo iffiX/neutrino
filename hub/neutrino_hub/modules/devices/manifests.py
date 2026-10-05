@@ -24,6 +24,7 @@ from neutrino_hub.modules.devices.constants import (
     AGENT_MODULE_INSTALLER_BUILTIN,
     AGENT_MODULE_INSTALLER_TIERS,
     AGENT_MODULE_INSTALLER_USER,
+    AGENT_TOOL_FIELDS,
 )
 from neutrino_hub.utils.constants import UTILS_DATA_DIR
 from neutrino_hub.utils.json_file import strip_comments
@@ -47,15 +48,8 @@ def load_module_manifests() -> dict:
             module the hub installs, an ``uninstall`` block.
     """
     loaded = []
-    if not MANIFESTS_DIR.is_dir():
-        return {}
-    for path in sorted(MANIFESTS_DIR.glob("*.json")):
-        try:
-            manifest = strip_comments(json.loads(path.read_text(encoding="utf-8")))
-        except (OSError, ValueError):
-            continue
-        name = manifest.get("name")
-        if not name:
+    for path, name, manifest in _read_manifests():
+        if manifest.get("is_module") is False:
             continue
         installer = manifest.get("installer")
         if installer not in AGENT_MODULE_INSTALLER_TIERS:
@@ -77,6 +71,59 @@ def load_module_manifests() -> dict:
         )
     )
     return dict(loaded)
+
+
+def load_tool_manifests() -> dict:
+    """Read every manifest that names a program the agent runs rather than a module.
+
+    Returns:
+        Name to its parsed manifest, comment keys removed, for each manifest
+        that says ``is_module: false``.
+
+    Raises:
+        ValueError: For one that names no ``version`` or ``source``, or a
+            platform branch that lacks ``url``, ``cn_url``, ``sha256`` or
+            ``package_kind``.
+    """
+    loaded = {}
+    for path, name, manifest in _read_manifests():
+        if manifest.get("is_module") is not False:
+            continue
+        for field in ("version", "source"):
+            if not str(manifest.get(field, "") or ""):
+                raise ValueError(f"manifest {path.name}: {field} must be named")
+        platforms = manifest.get("platforms")
+        if not isinstance(platforms, dict) or not platforms:
+            raise ValueError(f"manifest {path.name}: platforms must name a branch")
+        for key, entry in platforms.items():
+            missing = [
+                field
+                for field in AGENT_TOOL_FIELDS
+                if not isinstance(entry, dict) or not isinstance(entry.get(field), str)
+            ]
+            if missing:
+                raise ValueError(
+                    f"manifest {path.name}: platform {key} must name "
+                    f"{', '.join(missing)}"
+                )
+        loaded[name] = manifest
+    return loaded
+
+
+def _read_manifests() -> list:
+    """Every manifest file that parses and names itself, as ``(path, name, manifest)``."""
+    if not MANIFESTS_DIR.is_dir():
+        return []
+    read = []
+    for path in sorted(MANIFESTS_DIR.glob("*.json")):
+        try:
+            manifest = strip_comments(json.loads(path.read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            continue
+        name = manifest.get("name")
+        if name:
+            read.append((path, name, manifest))
+    return read
 
 
 def _check_branches(file_name: str, manifest: dict) -> None:

@@ -91,7 +91,6 @@ and the client with their own three directories.
                     and on macOS and Windows tun2socks
     agent/
         python/     the interpreter, the agent, and the window's bindings
-        bin/        cc-switch, which the agent runs as each account
     client/
         the compiled client, its libraries and the carried programs
         libexec/mount_helper
@@ -101,10 +100,7 @@ Static. Nothing writes here after the install, and an upgrade replaces the
 directory whole. Removing a package removes its directory entirely, which is
 the property that makes it the right place for everything carried rather
 than configured. On macOS and Windows the hub is one compiled `nhub` beside
-its programs, and the agent and the client are compiled the same way. The
-agent's cc-switch is in `bin` under its program directory on every system:
-`/Library/Application Support/Neutrino/agent/app/bin/cc-switch` on macOS,
-`C:\Program Files\Neutrino\agent\bin\cc-switch.exe` on Windows.
+its programs, and the agent and the client are compiled the same way.
 
 Why the hub carries an interpreter at all, and what that costs, is in
 [../agent_work_rule/release.md](../agent_work_rule/release.md).
@@ -177,7 +173,9 @@ overrides both, which is what makes a second instance testable. Details of the f
                             agent pointed at the hub, root only; on
                             Windows also login.json, the login the account
                             was switched with, kept until it is switched back;
-                            .locks/ holds one lock file per account
+                            .locks/ holds one lock file per account; bin/
+                            holds the cc-switch fetched from the hub, read
+                            and run by every account
         run_as/             Windows only: per account, the script, input,
                             output and exit code of one one-shot task,
                             removed once the task ends

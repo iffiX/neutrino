@@ -10,6 +10,12 @@ records already carry the wanted settings is not run again, and a state the
 agent applied once is not applied again, so a failed account is tried again
 only with a state of another hash.
 
+cc-switch is the copy the agent fetched from the hub into ``bin`` under the
+records' directory. Before any account is run, a copy of the version the
+section names is made sure of; one that cannot be had fails every account
+and leaves the state to be applied again. Holding an account's lock, no
+switch is made once the machine has no binding.
+
 The records live under the state root, one directory per account, root's
 own. Each account's switch or switch back holds that account's lock from
 start to end, so two agent processes never run cc-switch for one account at
@@ -27,22 +33,22 @@ from __future__ import annotations
 
 import contextlib
 import json
-import ntpath
 import os
 import shutil
+import tarfile
 import tempfile
 import threading
+import zipfile
 
 from neutrino_agent.ai_tools.account_lock import AiToolsAccountLock
 from neutrino_agent.ai_tools.account_session import AiToolsAccountSession
+from neutrino_agent.ai_tools import switcher_copy
 from neutrino_agent.ai_tools.constants import (
     AI_TOOLS_APPS,
-    AI_TOOLS_CC_SWITCH_BINARY,
-    AI_TOOLS_CC_SWITCH_PATHS,
-    AI_TOOLS_CC_SWITCH_WINDOWS_PARTS,
+    AI_TOOLS_CC_SWITCH_PACKAGE,
     AI_TOOLS_CODE_ACCOUNT_UNKNOWN,
-    AI_TOOLS_CODE_BUNDLE_MISSING,
     AI_TOOLS_CODE_CREDENTIAL_MISSING,
+    AI_TOOLS_CODE_DOWNLOAD_FAILED,
     AI_TOOLS_CODE_SWITCH_FAILED,
     AI_TOOLS_DETAIL_LIMIT,
     AI_TOOLS_DIR_NAME,
@@ -54,28 +60,8 @@ from neutrino_agent.ai_tools.constants import (
     AI_TOOLS_STATE_SWITCHED_BACK,
 )
 from neutrino_agent.ai_tools.switcher import AiToolsAccountSwitcher
-from neutrino_agent.constants import (
-    AGENT_WINDOWS_PROGRAM_FILES_DEFAULT,
-    AGENT_WINDOWS_PROGRAM_SUBDIR,
-)
 from neutrino_agent.exceptions import ToolSwitchError
-
-
-def cc_switch_path(os_name: str) -> str:
-    """Where the agent's package carries cc-switch on one system.
-
-    Args:
-        os_name: ``linux``, ``darwin`` or ``windows``.
-
-    Returns:
-        The binary's path; empty on a system the package carries none for.
-    """
-    if os_name == "windows":
-        root = os.environ.get("ProgramFiles", "") or AGENT_WINDOWS_PROGRAM_FILES_DEFAULT
-        return ntpath.join(
-            root, *AGENT_WINDOWS_PROGRAM_SUBDIR, *AI_TOOLS_CC_SWITCH_WINDOWS_PARTS
-        )
-    return AI_TOOLS_CC_SWITCH_PATHS.get(os_name, "")
+from neutrino_agent.streams.package import CODE_UNREACHABLE
 
 
 def result(
@@ -93,38 +79,38 @@ def result(
 class AiToolsApplier:
     """Switches the named accounts' AI tools to the hub and back."""
 
-    def __init__(
-        self, *, platform, log=print, root_dir: str = "", binary: "str | None" = None
-    ):
+    def __init__(self, *, platform, log=print, root_dir: str = "", is_bound=None):
         """
         Args:
             platform: The machine's platform, which runs as an account.
             log: Callable used for progress messages.
-            root_dir: Where the records live; empty is ``ai_tools`` under
-                the state root.
-            binary: The cc-switch to run; None is the one the agent's
-                package carries.
+            root_dir: Where the records and the copy of cc-switch live;
+                empty is ``ai_tools`` under the state root.
+            is_bound: Says whether the machine still has a binding; a
+                switch is made only while it does. None makes every switch.
         """
         self._platform = platform
         self._log = log
         self._root = root_dir or os.path.join(
             platform.agent_var_dir(), AI_TOOLS_DIR_NAME
         )
-        self._binary = (
-            binary if binary is not None else cc_switch_path(platform.os_name)
-        )
+        self._binary = switcher_copy.binary_path(self._root, platform.os_name)
+        self._is_bound = is_bound
         self._lock = threading.Lock()
         self._applied_hash: "str | None" = None
         self._results: "list | None" = None
 
-    def apply(self, section, state_hash: str) -> None:
+    def apply(self, section, state_hash: str, receive=None) -> None:
         """Make one state's section true, once per state.
 
         Args:
             section: The state's ``ai_tools``; anything but a dict leaves
                 every account as it is.
             state_hash: The state's hash; a hash applied before is not
-                applied again.
+                applied again, and one whose copy of cc-switch could not be
+                had is not marked applied.
+            receive: Opens ``package {module}`` to the hub and returns
+                ``{"path"}`` or ``{"code", "params"}``; None fetches nothing.
         """
         if not isinstance(section, dict):
             return
@@ -137,17 +123,26 @@ class AiToolsApplier:
             for entry in section.get("accounts") or []:
                 if isinstance(entry, dict) and str(entry.get("account", "") or ""):
                     named.append(entry)
-        results = []
-        names = set()
-        for entry in named:
-            account = str(entry["account"])
-            names.add(account)
-            results.append(
-                self._switch(account, str(entry.get("password", "") or ""), section)
+        names = [str(entry["account"]) for entry in named]
+        leaving = [name for name in self.switched_accounts() if name not in names]
+        if names or leaving:
+            version = (
+                str(section.get("cc_switch_version", "") or "") if is_enabled else ""
             )
-        for account in self.switched_accounts():
-            if account not in names:
-                results.append(self._switch_back(account))
+            refusal = self._ensure_copy(version, receive)
+            if refusal is not None:
+                with self._lock:
+                    self._results = self._refused_all(names + leaving, refusal)
+                return
+        results = []
+        for entry in named:
+            switched = self._switch(
+                str(entry["account"]), str(entry.get("password", "") or ""), section
+            )
+            if switched is not None:
+                results.append(switched)
+        for account in leaving:
+            results.append(self._switch_back(account))
         with self._lock:
             self._results = results
             self._applied_hash = state_hash
@@ -158,10 +153,23 @@ class AiToolsApplier:
         Returns:
             Each account's result.
         """
-        results = [self._switch_back(account) for account in self.switched_accounts()]
+        accounts = self.switched_accounts()
+        refusal = self._ensure_copy("", None) if accounts else None
+        if refusal is not None:
+            results = self._refused_all(accounts, refusal)
+        else:
+            results = [self._switch_back(account) for account in accounts]
         with self._lock:
             self._results = results
         return results
+
+    def remove_copy(self) -> list:
+        """Delete the copy of cc-switch the agent fetched.
+
+        Returns:
+            What was removed, one path each.
+        """
+        return switcher_copy.remove_copy(self._root)
 
     def report(self) -> dict:
         """The report's ``ai_tools`` section.
@@ -192,10 +200,17 @@ class AiToolsApplier:
             if not name.startswith(".") and self._has_records(name)
         )
 
-    def _switch(self, account: str, password: str, section: dict) -> dict:
-        """Point one account's tools at the hub, holding its lock, or say why not."""
+    def _switch(self, account: str, password: str, section: dict) -> "dict | None":
+        """Point one account's tools at the hub, holding its lock, or say why not.
+
+        Returns:
+            The account's result, None when the machine has no binding any
+            more and nothing was done.
+        """
         try:
             with self._account_lock(account):
+                if self._is_bound is not None and not self._is_bound():
+                    return None
                 return self._switch_held(account, password, section)
         except ToolSwitchError as error:
             return self._refused(account, error)
@@ -259,15 +274,67 @@ class AiToolsApplier:
         self._log(f"ai_tools: {account} switched back: {', '.join(notes)}")
         return result(account, AI_TOOLS_STATE_SWITCHED_BACK)
 
-    def _session(self, account: str, password: str):
-        """The session that reaches one account, or its failure as a result."""
-        if not self._binary or not os.path.isfile(self._binary):
-            return result(
+    def _ensure_copy(self, version: str, receive) -> "dict | None":
+        """Have a copy of cc-switch of the version named, fetched when it is not there.
+
+        Args:
+            version: The version the section names; empty takes any copy.
+            receive: Opens a package stream to the hub; None fetches nothing.
+
+        Returns:
+            None when a copy is there, else ``{"code", "params"}``:
+            ``hub_unreachable`` with no hub to ask, and
+            ``cc_switch_download_failed {detail}`` when the hub refused or
+            the archive would not unpack.
+        """
+        is_there = os.path.isfile(self._binary)
+        if is_there and (
+            not version or switcher_copy.installed_version(self._root) == version
+        ):
+            return None
+        if receive is None:
+            return None if is_there else {"code": CODE_UNREACHABLE, "params": {}}
+        received = receive(AI_TOOLS_CC_SWITCH_PACKAGE)
+        path = str(received.get("path", "") or "")
+        if not path:
+            code = str(received.get("code", "") or "")
+            if code == CODE_UNREACHABLE:
+                return {"code": code, "params": {}}
+            return {"code": AI_TOOLS_CODE_DOWNLOAD_FAILED, "params": {"detail": code}}
+        try:
+            switcher_copy.install_copy(
+                path,
+                root=self._root,
+                os_name=self._platform.os_name,
+                version=version,
+                open_to_accounts=self._platform.open_to_accounts,
+            )
+        except (OSError, tarfile.TarError, zipfile.BadZipFile, ValueError) as error:
+            return {
+                "code": AI_TOOLS_CODE_DOWNLOAD_FAILED,
+                "params": {"detail": str(error)[:AI_TOOLS_DETAIL_LIMIT]},
+            }
+        finally:
+            with contextlib.suppress(OSError):
+                os.unlink(path)
+        self._log(f"ai_tools: cc-switch {version or '?'} fetched from the hub")
+        return None
+
+    def _refused_all(self, accounts: list, refusal: dict) -> list:
+        """The same refusal as every account's result."""
+        self._log(f"ai_tools: {refusal['code']} {refusal['params']}")
+        return [
+            result(
                 account,
                 AI_TOOLS_STATE_FAILED,
-                AI_TOOLS_CODE_BUNDLE_MISSING,
-                {"binary": AI_TOOLS_CC_SWITCH_BINARY},
+                refusal["code"],
+                {"account": account, **refusal["params"]},
             )
+            for account in accounts
+        ]
+
+    def _session(self, account: str, password: str):
+        """The session that reaches one account, or its failure as a result."""
         try:
             home = self._platform.account_home(account)
         except KeyError:

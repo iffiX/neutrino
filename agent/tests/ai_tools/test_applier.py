@@ -4,21 +4,27 @@ What these pin: every account the section names is switched as itself,
 with the section's endpoint, key and models, and reported switched; nothing
 runs when the records already carry the settings, and a state applied once
 is not applied again; an account the section no longer names, and every
-account when it is off, is switched back and its records removed; a missing
-cc-switch is ``bundle_missing`` for every account with nothing run; an
+account when it is off, is switched back and its records removed; an
 account the machine lacks is ``account_unknown``; on Windows an account with
 no login is ``credential_missing`` and the login it was switched with is
 kept, root's own, for the switch back; a refusing account does not stop the
 next; the report before any state is the accounts whose records stand; and
-the switch back before the agent goes takes every account.
+the switch back before the agent goes takes every account. cc-switch is
+fetched from the hub when no copy is there or its version is not the
+section's, and a copy of that version is not fetched again; a fetch the hub
+refuses fails every account with ``cc_switch_download_failed`` and nothing
+run, and the same state is tried again; an unreachable hub is
+``hub_unreachable``; once the binding is gone no switch is made.
 """
 
+import io
 import os
 import stat
+import tarfile
 
 import pytest
 
-from neutrino_agent.ai_tools.applier import AiToolsApplier, cc_switch_path
+from neutrino_agent.ai_tools.applier import AiToolsApplier
 from neutrino_agent.exceptions import ModuleApplyError
 from tests.ai_tools.fake_platform import FakeAccountPlatform
 
@@ -42,15 +48,17 @@ def section(*accounts, **extra):
 
 @pytest.fixture
 def binary(tmp_path):
-    path = tmp_path / "bin" / "cc-switch"
-    path.parent.mkdir()
-    path.write_text("")
-    return str(path)
+    """A copy of cc-switch already fetched, under each system's name."""
+    directory = tmp_path / "state" / "ai_tools" / "bin"
+    directory.mkdir(parents=True)
+    for name in ("cc-switch", "cc-switch.exe"):
+        (directory / name).write_text("")
+    return str(directory / "cc-switch")
 
 
-def make(tmp_path, binary, **platform_extra):
+def make(tmp_path, binary=None, **platform_extra):
     platform = FakeAccountPlatform(root=str(tmp_path / "state"), **platform_extra)
-    applier = AiToolsApplier(platform=platform, log=lambda line: None, binary=binary)
+    applier = AiToolsApplier(platform=platform, log=lambda line: None)
     return applier, platform
 
 
@@ -133,21 +141,6 @@ def test_no_section_leaves_everything_as_it_is(tmp_path, binary):
 
     applier.apply(None, "h2")
 
-    assert platform.runs == []
-
-
-def test_a_missing_cc_switch_is_bundle_missing_and_runs_nothing(tmp_path):
-    applier, platform = make(tmp_path, str(tmp_path / "absent" / "cc-switch"))
-
-    applier.apply(section("ann"), "h1")
-
-    (entry,) = applier.report()["accounts"]
-    assert entry == {
-        "account": "ann",
-        "state": "failed",
-        "code": "bundle_missing",
-        "params": {"binary": "cc-switch"},
-    }
     assert platform.runs == []
 
 
@@ -250,7 +243,10 @@ def test_windows_needs_the_account_s_login_and_keeps_it_for_the_switch_back(
         "bob": ("failed", "credential_missing"),
     }
     assert {password for _account, password, _argv in platform.runs} == {"pw-ann"}
-    assert {argv[0] for _a, _p, argv in platform.runs} == {binary, "powershell.exe"}
+    assert {argv[0] for _a, _p, argv in platform.runs} == {
+        binary + ".exe",
+        "powershell.exe",
+    }
     login = tmp_path / "state" / "ai_tools" / "ann" / "login.json"
     assert stat.S_IMODE(os.stat(login).st_mode) == 0o600
 
@@ -284,7 +280,7 @@ def test_the_report_before_any_state_is_the_accounts_whose_records_stand(
     applier, platform = make(tmp_path, binary)
     applier.apply(section("ann"), "h1")
 
-    restarted = AiToolsApplier(platform=platform, log=lambda line: None, binary=binary)
+    restarted = AiToolsApplier(platform=platform, log=lambda line: None)
 
     assert restarted.report() == {
         "accounts": [{"account": "ann", "state": "switched", "code": "", "params": {}}]
@@ -297,7 +293,7 @@ def test_the_switch_back_before_the_agent_goes_takes_every_account(tmp_path, bin
     )
     applier.apply(section("ann", "bob"), "h1")
 
-    leaving = AiToolsApplier(platform=platform, log=lambda line: None, binary=binary)
+    leaving = AiToolsApplier(platform=platform, log=lambda line: None)
     results = leaving.switch_back_all()
 
     assert [(entry["account"], entry["state"]) for entry in results] == [
@@ -307,15 +303,155 @@ def test_the_switch_back_before_the_agent_goes_takes_every_account(tmp_path, bin
     assert leaving.switched_accounts() == []
 
 
-@pytest.mark.parametrize(
-    "os_name, path",
-    [
-        ("linux", "/opt/neutrino/agent/bin/cc-switch"),
-        ("darwin", "/Library/Application Support/Neutrino/agent/app/bin/cc-switch"),
-        ("windows", "C:\\Program Files\\Neutrino\\agent\\bin\\cc-switch.exe"),
-    ],
-)
-def test_cc_switch_is_the_one_the_agent_s_package_carries(monkeypatch, os_name, path):
-    monkeypatch.delenv("ProgramFiles", raising=False)
+def archive(tmp_path, *, name="cc-switch") -> str:
+    """cc-switch's release archive as upstream lays it out: the program at the top."""
+    path = tmp_path / "cc.tar.gz"
+    with tarfile.open(path, "w:gz") as bundle:
+        info = tarfile.TarInfo(name)
+        info.size = len(b"#!cc-switch")
+        info.mode = 0o755
+        bundle.addfile(info, io.BytesIO(b"#!cc-switch"))
+    return str(path)
 
-    assert cc_switch_path(os_name) == path
+
+class Hub:
+    """The package stream, answering each ask with a path or a refusal."""
+
+    def __init__(self, tmp_path, *, refusal=None, name="cc-switch"):
+        self.asked: list = []
+        self._tmp_path = tmp_path
+        self._refusal = refusal
+        self._name = name
+
+    def receive(self, module):
+        self.asked.append(module)
+        if self._refusal is not None:
+            return {"code": self._refusal, "params": {}}
+        return {"path": archive(self._tmp_path, name=self._name)}
+
+
+def versioned(**extra):
+    return {**section("ann"), "cc_switch_version": "5.10.4", **extra}
+
+
+def test_cc_switch_is_fetched_from_the_hub_and_run_from_the_state_root(tmp_path):
+    applier, platform = make(tmp_path)
+    hub = Hub(tmp_path)
+
+    applier.apply(versioned(), "h1", receive=hub.receive)
+
+    copy = tmp_path / "state" / "ai_tools" / "bin"
+    assert hub.asked == ["cc_switch"]
+    assert (copy / "cc-switch").read_bytes() == b"#!cc-switch"
+    assert (copy / "version").read_text() == "5.10.4"
+    assert platform.opened == [str(copy)]
+    assert stat.S_IMODE(os.stat(copy / "cc-switch").st_mode) & 0o222 == 0
+    assert not (tmp_path / "cc.tar.gz").exists()
+    assert states(applier) == {"ann": ("switched", "")}
+    assert {argv[0] for _a, _p, argv in platform.runs if "--app" in argv} == {
+        str(copy / "cc-switch")
+    }
+
+
+def test_a_copy_of_the_version_named_is_not_fetched_again(tmp_path):
+    applier, _platform = make(tmp_path)
+    hub = Hub(tmp_path)
+    applier.apply(versioned(), "h1", receive=hub.receive)
+
+    applier.apply(versioned(base_url=HUB + "/other"), "h2", receive=hub.receive)
+
+    assert hub.asked == ["cc_switch"]
+
+
+def test_a_copy_of_another_version_is_replaced(tmp_path, binary):
+    applier, _platform = make(tmp_path)
+    hub = Hub(tmp_path)
+
+    applier.apply(versioned(), "h1", receive=hub.receive)
+
+    copy = tmp_path / "state" / "ai_tools" / "bin"
+    assert hub.asked == ["cc_switch"]
+    assert sorted(os.listdir(copy)) == ["cc-switch", "version"]
+    assert (copy / "version").read_text() == "5.10.4"
+
+
+def test_a_fetch_the_hub_refuses_fails_every_account_and_is_tried_again(tmp_path):
+    applier, platform = make(tmp_path, homes={"ann": "/home/ann", "bob": "/home/bob"})
+    hub = Hub(tmp_path, refusal="hub_release_file_gone")
+    state = {**section("ann", "bob"), "cc_switch_version": "5.10.4"}
+
+    applier.apply(state, "h1", receive=hub.receive)
+    applier.apply(state, "h1", receive=hub.receive)
+
+    assert hub.asked == ["cc_switch", "cc_switch"]
+    assert platform.runs == []
+    assert [entry for entry in applier.report()["accounts"]] == [
+        {
+            "account": name,
+            "state": "failed",
+            "code": "cc_switch_download_failed",
+            "params": {"account": name, "detail": "hub_release_file_gone"},
+        }
+        for name in ("ann", "bob")
+    ]
+
+
+def test_an_archive_without_the_program_is_a_failed_download(tmp_path):
+    applier, platform = make(tmp_path)
+
+    applier.apply(versioned(), "h1", receive=Hub(tmp_path, name="other").receive)
+
+    (entry,) = applier.report()["accounts"]
+    assert entry["code"] == "cc_switch_download_failed"
+    assert "cc-switch" in entry["params"]["detail"]
+    assert not (tmp_path / "state" / "ai_tools" / "bin").exists()
+    assert platform.runs == []
+
+
+def test_an_unreachable_hub_is_said_as_it_is(tmp_path):
+    applier, _platform = make(tmp_path)
+
+    applier.apply(
+        versioned(), "h1", receive=Hub(tmp_path, refusal="hub_unreachable").receive
+    )
+
+    assert states(applier) == {"ann": ("failed", "hub_unreachable")}
+
+
+def test_no_switch_is_made_once_the_binding_is_gone(tmp_path, binary):
+    platform = FakeAccountPlatform(root=str(tmp_path / "state"))
+    applier = AiToolsApplier(
+        platform=platform, log=lambda line: None, is_bound=lambda: False
+    )
+
+    applier.apply(section("ann"), "h1")
+
+    assert platform.runs == []
+    assert applier.report() == {"accounts": []}
+    assert applier.switched_accounts() == []
+
+
+def test_a_switch_back_with_no_copy_and_no_hub_says_the_hub_is_unreachable(
+    tmp_path, binary
+):
+    applier, platform = make(tmp_path)
+    applier.apply(section("ann"), "h1")
+    applier.remove_copy()
+    platform.runs.clear()
+
+    results = applier.switch_back_all()
+
+    assert [(entry["account"], entry["code"]) for entry in results] == [
+        ("ann", "hub_unreachable")
+    ]
+    assert platform.runs == []
+    assert applier.switched_accounts() == ["ann"]
+
+
+def test_the_copy_is_removed_on_its_own(tmp_path, binary):
+    applier, _platform = make(tmp_path)
+
+    removed = applier.remove_copy()
+
+    assert removed == [str(tmp_path / "state" / "ai_tools" / "bin")]
+    assert applier.remove_copy() == []

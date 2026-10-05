@@ -155,7 +155,7 @@ sections").
 | The endpoint | `http://127.0.0.1:<local-port><path>`, the client's forward | `http://<hub-address>:<listen-port>`, the gateway as the machine reaches it on the LAN, from `device_gateway()` in `modules/clients/ai_keys.py` |
 | The key | the client's own, from the `service` stream | the device's own, from the `ai_tools` section |
 | The unchosen models | the gateway's first model, from the `service` stream | the gateway's first served model, filled in by the hub before the state is sent |
-| The cc-switch | the copy the client's package carries | the copy the agent's package carries, the same pinned version |
+| The cc-switch | the copy the client's package carries | the copy the agent fetches from the hub into `ai_tools/bin/` under its state root, the same pinned version |
 | The record per tool | `original/<tool>.json` under the client's configuration | `ai_tools/<account>/<tool>.json` under the agent's state root, never in the account's home |
 | Switched back | when the chip goes off | when the setting goes off, when the account's last instance is removed, before `nagent service uninstall`, and when the machine leaves the hub |
 

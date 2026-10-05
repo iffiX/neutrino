@@ -38,6 +38,14 @@ SSH_UNSUPPORTED_OS_STATUS = 95
 # user: the person installs it themselves and the hub only detects and
 # manages it, so no ``want`` is ever written for a user-tier module.
 AGENT_MODULE_INSTALLER_TIERS = ("platform", "hub", "user")
+# A manifest that says ``is_module: false`` names a program the agent runs
+# itself rather than a module: it stays out of the catalog, and each of its
+# platform branches names these fields.
+AGENT_TOOL_FIELDS = ("url", "cn_url", "sha256", "package_kind")
+# What a ``cn_url`` names for the release this hub was built for: the
+# address its build stamped for the agent packages, which the project's own
+# release publishes beside them.
+AGENT_MODULE_RELEASE_PLACEHOLDER = "{release}"
 AGENT_MODULE_INSTALLER_USER = "user"
 # A platform branch whose ``installer`` is this names software the system
 # itself carries, such as Windows' and macOS's own SMB servers: nothing is
@@ -221,6 +229,10 @@ DEVICE_AI_REASONING_EFFORTS = ("minimal", "low", "medium", "high")
 # The modules whose instances name the accounts the setting acts on, in the
 # order an account's Windows login is taken from.
 DEVICE_AI_TOOL_MODULES = ("vscode", "cloudcli", "code_server")
+# The program the agent runs as each account to switch its AI tools, which
+# the hub pins in data/manifests/cc_switch.json and serves on the package
+# stream.
+DEVICE_AI_SWITCHER_NAME = "cc_switch"
 # code-server, once per account. Each instance in its file holds, beside its
 # account and port, the secret its tokens are signed with, which the hub
 # generates once and keeps sealed.

@@ -42,6 +42,7 @@ from neutrino_hub.modules.devices.constants import (
     AGENT_MODULE_LISTING_LIMIT_BYTES,
     AGENT_MODULE_PROGRESS_INTERVAL_S,
     AGENT_MODULE_PROGRESS_PERCENT_STEP,
+    AGENT_MODULE_RELEASE_PLACEHOLDER,
 )
 from neutrino_hub.modules.devices.streamed_file import (
     DownloadedFile,
@@ -313,7 +314,11 @@ class AgentModuleCache:
     """Resolves a module to bytes, fetching each artifact exactly once."""
 
     def __init__(
-        self, *, root: "Path | None" = None, edition: str = AGENT_MODULE_EDITION_INTL
+        self,
+        *,
+        root: "Path | None" = None,
+        edition: str = AGENT_MODULE_EDITION_INTL,
+        release_url: str = "",
     ):
         """
         Args:
@@ -321,9 +326,13 @@ class AgentModuleCache:
                 by default.
             edition: The hub's edition; ``cn`` fetches from an entry's
                 ``cn_url`` where the entry names one.
+            release_url: Where this hub's own release publishes its files,
+                which a ``cn_url`` naming ``{release}`` is read under; empty
+                for a hub no release stamped.
         """
         self._root = Path(root) if root is not None else AGENT_MODULE_CACHE_DIR
         self._edition = edition
+        self._release_url = release_url
         self._guard = threading.Lock()
         self._fetch_locks: dict = {}
 
@@ -509,9 +518,10 @@ class AgentModuleCache:
     ) -> DownloadedFile:
         """Get one module's file, written beside its place in the cache and checked.
 
-        A ``cn`` hub fetches from the entry's ``cn_url`` where it names one;
-        when that mirror no longer carries the pinned file and the entry
-        names ``cn_latest_url``, the mirror's current release is taken
+        A ``cn`` hub fetches from the entry's ``cn_url`` where it names one,
+        reading ``{release}`` in it as its own release's address; when a
+        mirror no longer carries the pinned file and the entry names
+        ``cn_latest_url``, the mirror's current release is taken
         instead, checked by HTTPS alone. A download that is refused leaves
         nothing on disk.
 
@@ -535,7 +545,13 @@ class AgentModuleCache:
                 str(entry["github_repo"]), str(entry.get("asset_pattern", "") or "")
             )
         is_pinned = True
-        if self._edition == AGENT_MODULE_EDITION_CN and entry.get("cn_url"):
+        cn_url = str(entry.get("cn_url", "") or "")
+        if (
+            self._edition == AGENT_MODULE_EDITION_CN
+            and AGENT_MODULE_RELEASE_PLACEHOLDER in cn_url
+        ):
+            download = self._fetch_from_release(cn_url, progress=progress)
+        elif self._edition == AGENT_MODULE_EDITION_CN and cn_url:
             download, is_pinned = self._fetch_from_mirror(entry, progress=progress)
         elif not url:
             raise AgentArtifactFetchError("no_download_named")
@@ -577,6 +593,38 @@ class AgentModuleCache:
             raise AgentArtifactFetchError(
                 "module_sha256_mismatch", expected=pinned, received=download.sha256
             )
+
+    def _fetch_from_release(
+        self, cn_url: str, *, progress: "AgentModuleFetchProgress | None" = None
+    ) -> DownloadedFile:
+        """A file the project's own release publishes, from this hub's release.
+
+        Args:
+            cn_url: The entry's ``cn_url``, naming ``{release}``.
+            progress: Told the byte count after each chunk; None tells nobody.
+
+        Returns:
+            The download, not yet in its place.
+
+        Raises:
+            AgentArtifactFetchError: ``no_download_named`` for a hub no
+                release stamped, ``hub_release_file_gone {file}`` when its
+                release no longer carries the file, and the fetch's own
+                reasons otherwise.
+        """
+        if not self._release_url:
+            raise AgentArtifactFetchError("no_download_named")
+        url = cn_url.replace(
+            AGENT_MODULE_RELEASE_PLACEHOLDER, self._release_url.rstrip("/")
+        )
+        try:
+            return self._fetch_plain(url, progress=progress)
+        except AgentArtifactFetchError as error:
+            if error.params.get("status") == 404:
+                raise AgentArtifactFetchError(
+                    "hub_release_file_gone", file=url.rsplit("/", 1)[-1]
+                ) from error
+            raise
 
     def _fetch_from_mirror(
         self, entry: dict, *, progress: "AgentModuleFetchProgress | None" = None

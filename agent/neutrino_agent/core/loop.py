@@ -172,7 +172,9 @@ class Agent:
             log=log,
         )
         # The machine's AI tools, switched as each account the state names.
-        self._ai_tools = AiToolsApplier(platform=self._platform, log=log)
+        self._ai_tools = AiToolsApplier(
+            platform=self._platform, log=log, is_bound=enrollment.is_bound
+        )
         self._desired = DesiredStateApplier(
             engine=self._engine,
             runners=self._engine.module_runners,
@@ -281,10 +283,10 @@ class Agent:
         when it could not.
         """
         self._drop_session()
-        self._ai_tools.switch_back_all()
         outcome = enrollment.unbind()
         if outcome:
             self._log(f"could not tell the hub we are leaving: {outcome['code']}")
+        self._ai_tools.switch_back_all()
         self._reset_binding_state()
         self._load_connection()
         self._engine.take_state({})
@@ -881,8 +883,8 @@ class Agent:
         rejection = channel_error(error)
         code = rejection["code"]
         if code == AGENT_CODE_BINDING_UNKNOWN:
-            self._ai_tools.switch_back_all()
             enrollment.remove_binding()
+            self._ai_tools.switch_back_all()
             self._reset_binding_state()
             self._load_connection()
             with self._lock:

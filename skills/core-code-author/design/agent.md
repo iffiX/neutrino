@@ -160,8 +160,8 @@ displayed, and the first report imports them.
 
 `nagent service uninstall` stops the agent's service first, so no apply of
 its own runs beside what follows, then switches every account's AI tools
-back ("The machine's AI tools") before it removes anything, since the
-cc-switch it runs leaves with the package.
+back ("The machine's AI tools") and removes the copy of cc-switch it ran,
+before it removes anything else.
 
 **Status is typed.** A module reports `state`, `is_active` and
 `{code, params}`, never an English sentence, and every surface does its own
@@ -345,8 +345,8 @@ machine's VS Code, code-server or CloudCLI configuration. The agent looks
 nothing up and adds no account of its own.
 
 For each account the state names while the section is on, the agent runs
-the client's steps as that account, with the cc-switch its own package
-carries ([modules/ai.md](modules/ai.md), "How a client points its tools at
+the client's steps as that account, with the copy of cc-switch the agent
+fetched from the hub ([modules/ai.md](modules/ai.md), "How a client points its tools at
 the gateway", and "How a managed machine's tools are pointed at the
 gateway" for what differs). An account whose records already carry the
 wanted settings is not run again. An account is switched back by the same
@@ -357,6 +357,22 @@ steps as the client's deactivation:
   before anything is removed;
 - on `nagent leave`, and when a refusal of `binding_unknown` ends the
   binding ("What a refusal means to the agent").
+
+**cc-switch comes from the hub when it is needed.** The agent's package
+does not carry it. While the section is on and names an account, the agent
+needs a copy of the version the section's `cc_switch_version` names. When
+it has none, or one of another version, it opens `package {module:
+cc_switch}` ([protocol.md](protocol.md), "The stream layer"), checks the bytes
+against the `sha256` the close names, unpacks the `cc-switch` at the
+archive's top (`cc-switch.exe` on Windows) into `ai_tools/bin/` under the
+state root, and writes the version beside it in `version`, replacing a copy
+of another version whole. The directory is root's own: every account may
+read and run what is in it and none may write it, as with any software the
+hub sends ("The platform layer"). A switch back while the section is off
+runs whatever copy is there. A download or an unpack that fails gives every
+account the section names, and every account it would switch back, `failed`
+with `cc_switch_download_failed {detail}`, runs nothing, and leaves the
+state to be tried again at the next state or the next retry.
 
 The records are the client's, one per tool, `{is_present, previous, added}`,
 kept under the state root in `ai_tools/<account>/<tool>.json`, root's own,
@@ -372,7 +388,10 @@ never run cc-switch for one account at once, nor replace each other's
 one-shot task on Windows. A run that finds the lock held waits up to five
 minutes and then fails as `switch_failed` with the detail `another run holds
 the account`, and since the system frees a lock when its process ends, a
-file a killed process left behind blocks no one.
+file a killed process left behind blocks no one. Holding the lock, the agent
+makes no switch once the machine has no binding: `nagent leave` and a
+`binding_unknown` refusal remove the binding before they switch back, so a
+service that waited on the lock finds none and switches nothing.
 
 **Every step in an account's home runs as that account, reads included.**
 cc-switch runs as the account, with the account's home and its own
@@ -430,8 +449,9 @@ leave.
 The report names each account the state names and each one switched back
 under the current state's hash, `{account, state, code, params}`, `state`
 being `switched`, `switched_back` or `failed`. A failure carries the client's
-codes where they fit, `switch_failed {account, detail}` and `bundle_missing
-{binary}`, and the module codes for an account it cannot run as:
+code where it fits, `switch_failed {account, detail}`, the download's
+`cc_switch_download_failed {detail}`, and the module codes for an account it
+cannot run as:
 `account_unknown {account}`, and on Windows `credential_missing {account}`
 and `credential_invalid {account}`. A failed account is not tried again
 while the state's hash is unchanged, as a failed module is not.
@@ -464,14 +484,14 @@ VS Code modules, and macOS the code-server module beside them; on Linux all
 three are among
 the runners `packages` builds. On every
 system, software the hub sends down a package stream is unpacked into a
-directory of the module's own name under the state root, and that directory
-alone is opened to every account to read and run: mode 755, and on Windows
+directory of the module's own name under the state root, cc-switch into
+`ai_tools/bin/`, and that directory alone is opened to every account to read and run: mode 755, and on Windows
 read and execute for the Users group. Every import
 only POSIX has is guarded, so one package imports on all three systems.
 
 | | Linux | Windows | macOS |
 | --- | --- | --- | --- |
-| Program, with cc-switch in its `bin` | `/opt/neutrino/agent` | `C:\Program Files\Neutrino\agent` | `/Library/Application Support/Neutrino/agent/app` |
+| Program | `/opt/neutrino/agent` | `C:\Program Files\Neutrino\agent` | `/Library/Application Support/Neutrino/agent/app` |
 | Configuration root: the binding, the credentials, the desired state | `/etc/neutrino/agent` | `%ProgramData%\Neutrino\agent\config`, under `%ProgramData%\Neutrino\agent`, whose ACL, SYSTEM and the administrators alone, the `.msi` sets | `/Library/Application Support/Neutrino/agent/config`, mode 700 |
 | State root: configured marks, packages, the last reinstall, `vscode/`, `code_server/`, `cloudcli/`, `ai_tools/`, and on Windows and macOS `gitea/` and `gitea_data/` | `/var/lib/neutrino/agent` | `%ProgramData%\Neutrino\agent\state` | `/Library/Application Support/Neutrino/agent/state`, mode 755 |
 | Log | the journal | `%ProgramData%\Neutrino\agent\log\agent.log` | `/Library/Logs/Neutrino/agent/agent.log` |

@@ -325,5 +325,6 @@
   "code.setup_in_progress": "This hub is already being set up.",
   "code.gateway_not_serving": "The hub's AI gateway serves no model yet; set it up on the AI page first.",
   "code.switch_failed": "cc-switch did not point the tools at the gateway: {detail}",
-  "code.bundle_missing": "This install carries no {binary}; reinstall the agent."
+  "code.cc_switch_download_failed": "This machine could not get cc-switch from the hub: {detail}",
+  "code.hub_release_file_gone": "the hub's own release no longer carries the file, so update the hub to its latest release"
 }

@@ -37,7 +37,8 @@ checks read it (`hub/neutrino_hub/system/package_manager.py:420`), so a
 machine installs and is checked against whichever of the two names its
 repositories carry (`hub/neutrino_hub/system/package_manager.py:128`).
 
-The cc-switch every agent package carries moves no floor. On Linux it is
+The cc-switch the agent fetches from the hub (`data/manifests/cc_switch.json`)
+moves no floor. On Linux it is
 upstream's musl build, which is linked statically and names no glibc
 (`client/desktop/packaging/bundled.py:42`), and on Windows and macOS it is
 the build the client's `.msi` and `.pkg` already carry on the same floors.

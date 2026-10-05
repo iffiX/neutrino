@@ -920,7 +920,7 @@ and platform, which change between releases.
 | `network` | | `{link: {interface, mac, address}, interfaces: [{name, mac, addresses[]}]}` | | |
 | `modules` | `{name: {want, config, install, uninstall, retry_mark}}` | `{name: {state, is_active, code, params, details}}` | | |
 | `desktop` | `{seat_password}` | `{is_shared, account, share_id, port, attention, connected_count}` | | |
-| `ai_tools` | `{is_enabled, base_url, api_key, tool_configs, accounts: [{account, password}], retry_mark}` | `{accounts: [{account, state, code, params}]}` | | |
+| `ai_tools` | `{is_enabled, base_url, api_key, tool_configs, accounts: [{account, password}], cc_switch_version, retry_mark}` | `{accounts: [{account, state, code, params}]}` | | |
 | `services` | | | `[{id, type, title, payload, is_healthy, source, description, description_code, description_params, device_id, device_name}]` | |
 | `is_disabled` | | | bool | |
 | `urls` | `["https://<address>:<port>", ...]` | | the same list | |
@@ -1033,10 +1033,14 @@ gateway's first served model where none was chosen, as the client's
 `resolved_configs` fills it. `accounts` names every account with an instance
 in the machine's VS Code, code-server or CloudCLI configuration; `password`
 is the login's own for the account's first instance in that order, sent only
-to a Windows machine. With it false the section is `{is_enabled: false}`
-alone. The report's `ai_tools` lists each account the state names and each
-one switched back under the current hash, `state` being `switched`,
-`switched_back` or `failed`, with `{code, params}` on a failure. An agent
+to a Windows machine. `cc_switch_version` is the version
+`data/manifests/cc_switch.json` pins, the copy of cc-switch the agent runs.
+With it false the section is `{is_enabled: false}` alone. The report's
+`ai_tools` lists each account the state names and each one switched back
+under the current hash, `state` being `switched`, `switched_back` or
+`failed`, with `{code, params}` on a failure; `cc_switch_download_failed
+{detail}` is every account's when the agent could not get its copy of
+cc-switch. An agent
 that restarted reports each account whose records stand as `switched` until
 the next state arrives, and does not act on a state whose hash it already
 tried. Both are added fields and keep `PROTOCOL`; an agent that predates them ignores the
@@ -1252,7 +1256,13 @@ and an apply refuse `gitea_git_missing` while the machine has no usable
 when the system will not make the server's account.
 
 Package bytes come to the agent down a `package {module}` stream it opens, the
-same stream that serves its own upgrade. An install's or an uninstall's output
+same stream that serves its own upgrade. cc-switch, which the machine's AI
+tools run and no module installs, comes down the same stream as `package
+{module: cc_switch}`: `data/manifests/cc_switch.json` pins it, says
+`is_module: false`, and so stays out of the catalog's modules. A `cn` hub
+fetches it from its own release and closes the stream
+`hub_release_file_gone {file}` once that release no longer carries the file
+([install_and_dev.md](install_and_dev.md), "Where each edition fetches from"). An install's or an uninstall's output
 goes up a `log {module}` stream line by line, and the Modules page shows it
 under the module's tab as it arrives.
 
@@ -1326,7 +1336,7 @@ is added without a change to the protocol; a kind is added by a row here.
 | hub, to an agent | `file` | one file operation `{op, path, ...}`; `op` is `list`, `download`, `upload`, `rename`, `remove`, `directory_create` or `directory_download`, and every path is absolute in the machine's own form. `list` closes with `params: {path, separator, entries}`, `separator` being `\` on Windows and `/` elsewhere and each entry `{name, path, kind, size, modified_at, mode}`; on Windows a `list` of `/` or of no path closes with `path` `/` and one `dir` entry per drive, named `C:` with `path` `C:\`. `separator` and the drive list are added and keep `PROTOCOL`; an agent before 0.5.0 sends no `separator` |
 | agent, to the hub | `log` | `{module}`: opened for an install or an uninstall, output up as binary frames line by line, closed with `params: {state}` |
 | hub, to an agent | `command` | `{module, verb, ...args}`: `{agent, reboot}`, `{samba, reload}`, `{zfs, validate, config}`; an unknown kind is closed `kind_unknown` and an unknown verb `verb_unknown`, which the panel shows as `unsupported`; closed with `params: {exit_code, output, result}` |
-| agent, to the hub | `package` | `{module}` for a module's package bytes from the hub's cache, `{}` for the agent's own package; the close's `params` has the `sha256` of the bytes sent and `name`, the file's own name as its release gave it, with no directory |
+| agent, to the hub | `package` | `{module}` for a module's package bytes from the hub's cache, `{module: cc_switch}` for cc-switch, `{}` for the agent's own package; the close's `params` has the `sha256` of the bytes sent and `name`, the file's own name as its release gave it, with no directory |
 | client, to the hub | `service` | `{id}`: one published entry, or `{is_panel: true}`: a sign-in to the hub's own panel. The close is the whole answer, its `params` the material that entry takes from the hub and its `code` the reason it takes none; a new service type adds no kind |
 | client, to the hub | `shell` | `{device_id, cols, rows, session_id, is_resumed, is_shared}`: a shell on a managed machine, which the hub opens as the agent's own `shell` with the same `session_id`, `is_resumed` and `is_shared`, stamped `owner: client:<id>`, and relays terminal bytes both ways, each side under the other's credit; closed with `params: {exit_code}`, or refused `binding_unknown`, `client_disabled`, `permission_denied {kind: terminal}` (no `terminal`, or a machine outside its device list), `session_not_owned {session_id}` (a session another viewer owns and has not shared) or `agent_offline {device}` before any agent stream opens; closed `session_not_owned {session_id}` when the owner stops sharing the session |
 | client, to the hub | `command` | `{module: agent, verb: resize, shell, cols, rows}`, `shell` being the client's own `shell` stream id, which the hub maps to the agent's; closed empty once sent on, `shell_unknown {shell}` when no such shell is open. `{module: agent, verb: persist, session_id, is_persistent, is_shared}` and `{module: agent, verb: stop_session, session_id}` go unchanged to the machine holding the session, the one this client's open `shell` names for the id or else the online machine whose report lists it, and close with the agent's close; `session_unknown {session_id}` when no machine holds it, `session_not_owned {session_id}` for a `persist` on a session the machine reports under another owner, and the `shell` stream's permission refusals for that machine. A `persist` names only the flags it carries. `verb_unknown` for any other module or verb. A hub before 0.4.0 closes both kinds `kind_unknown`, which a client reads as a refusal |

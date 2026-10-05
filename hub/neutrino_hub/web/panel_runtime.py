@@ -202,12 +202,14 @@ class PanelRuntime:
             on_fingerprint_change=self._services_changed,
         )
         self.device_catalog = DeviceCatalogCache(services=self.published_services)
-        # The bytes a module's ``package`` stream serves, fetched once and
-        # kept; the agent installs them by the recipe its state carries.
-        self.agent_modules = AgentModuleCache(edition=edition.EDITION)
         # The hub's own agent packages, seeded by its package and topped up
         # from the release for a platform it was not built for.
         self.agent_packages = AgentPackageCache()
+        # The bytes a module's ``package`` stream serves, fetched once and
+        # kept; the agent installs them by the recipe its state carries.
+        self.agent_modules = AgentModuleCache(
+            edition=edition.EDITION, release_url=self.agent_packages.release_url()
+        )
         self.is_config_dirty = False
         # Latest agent metrics, keyed by device id. Runtime only: these are
         # stale the moment the panel restarts, so they are never written to

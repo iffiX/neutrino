@@ -116,9 +116,3 @@ CLIPROXYAPI_ASSETS = {
         "d6816c59d155bcf3d1f5f47242770d4b13c9bf68ce310ae86873bdb0b52e5a50",  # scan: allow
     ),
 }
-
-# The cc-switch command line, which points a machine's AI tools at this
-# gateway. It is a device module like any other — its manifest lives in
-# data/manifests/cc_switch.json — and this is the name the AI service
-# declares as its dependency.
-CLIPROXYAPI_SWITCHER_NAME = "cc_switch"

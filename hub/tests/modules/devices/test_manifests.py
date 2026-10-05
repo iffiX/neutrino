@@ -716,3 +716,69 @@ def test_cloudclis_state_carries_the_npm_environment_the_manifest_names(
 
     assert sent["npm_environment"] == environment
     assert all(name.startswith("npm_config_") for name in environment)
+
+
+def packaging_constants():
+    """The packaging pins, read from their file as the build reads them."""
+    import importlib.util
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[4] / "packaging/shared/constants.py"
+    spec = importlib.util.spec_from_file_location("packaging_pins", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+# The packaging pin's systems and machines, as the manifest's platform keys.
+CC_SWITCH_KEYS = {
+    ("linux", "x86_64"): "linux-amd64",
+    ("linux", "aarch64"): "linux-arm64",
+    ("darwin", "x86_64"): "darwin-amd64",
+    ("darwin", "aarch64"): "darwin-arm64",
+    ("windows", "x86_64"): "windows-amd64",
+}
+
+
+def test_cc_switch_is_pinned_where_the_client_s_packages_are():
+    pins = packaging_constants()
+    manifest = manifests_module.load_tool_manifests()["cc_switch"]
+
+    assert manifest["version"] == pins.PACKAGING_CC_SWITCH_VERSION
+    assert set(manifest["platforms"]) == {
+        CC_SWITCH_KEYS[key] for key in pins.PACKAGING_CC_SWITCH_ASSETS
+    }
+    for key, (asset, digest) in pins.PACKAGING_CC_SWITCH_ASSETS.items():
+        entry = manifest["platforms"][CC_SWITCH_KEYS[key]]
+        assert entry["url"] == pins.PACKAGING_CC_SWITCH_URL.format(
+            version=pins.PACKAGING_CC_SWITCH_VERSION, asset=asset
+        )
+        assert entry["sha256"] == digest
+        assert entry["package_kind"] == ("zip" if asset.endswith(".zip") else "tar")
+        assert entry["cn_url"] == "{release}/" + entry["url"].rsplit("/", 1)[-1]
+
+
+def test_cc_switch_is_no_module():
+    assert "cc_switch" not in load_module_manifests()
+    assert list(manifests_module.load_tool_manifests()) == ["cc_switch"]
+
+
+def test_the_loader_refuses_a_program_branch_that_lacks_a_field(tmp_path, monkeypatch):
+    monkeypatch.setattr(manifests_module, "MANIFESTS_DIR", tmp_path)
+    (tmp_path / "tool.json").write_text(
+        json.dumps(
+            {
+                "name": "tool",
+                "is_module": False,
+                "source": "x",
+                "version": "1",
+                "platforms": {
+                    "linux-amd64": {"url": "u", "sha256": "s", "package_kind": "tar"}
+                },
+            }
+        )
+    )
+
+    with pytest.raises(ValueError, match="linux-amd64 must name cn_url"):
+        manifests_module.load_tool_manifests()
+    assert load_module_manifests() == {}

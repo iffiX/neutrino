@@ -332,6 +332,7 @@ def test_a_setting_that_is_on_sends_the_gateway_the_key_and_the_accounts(
             "gemini": {"model": ""},
         },
         "accounts": [{"account": "alice"}, {"account": "bob"}],
+        "cc_switch_version": "5.10.4",
     }
 
 

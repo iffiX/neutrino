@@ -51,8 +51,12 @@ from neutrino_hub.modules.devices.ai_tools import (
     resolved_tool_configs,
 )
 from neutrino_hub.modules.devices.catalog import resolved_modules
-from neutrino_hub.modules.devices.manifests import load_module_manifests
+from neutrino_hub.modules.devices.manifests import (
+    load_module_manifests,
+    load_tool_manifests,
+)
 from neutrino_hub.modules.devices.constants import (
+    DEVICE_AI_SWITCHER_NAME,
     DEVICE_AI_TOOL_MODULES,
     DEVICE_AI_TOOLS_NAME,
     DEVICE_RETRY_MARK_KEY,
@@ -195,7 +199,12 @@ def cloudcli_agent_config(
 
 
 def ai_tools_agent_config(
-    stored: dict, accounts: list, platform: dict, gateway: dict, models: list
+    stored: dict,
+    accounts: list,
+    platform: dict,
+    gateway: dict,
+    models: list,
+    switcher_version: str = "",
 ) -> dict:
     """What the agent is sent for the machine's AI tools.
 
@@ -208,14 +217,15 @@ def ai_tools_agent_config(
         gateway: ``{gateway_url, gateway_key}``: the gateway as the device
             reaches it, and the device's own key.
         models: The names the gateway serves now.
+        switcher_version: The cc-switch version the hub's manifest pins.
 
     Returns:
         ``{is_enabled: false}`` while the setting is off, the gateway serves
         no model, or the device has no key or no address for it; else
         ``{is_enabled, base_url, api_key, tool_configs, accounts: [{account,
-        password}]}``, every Claude slot filled with the first served model
-        where none was chosen and ``password`` sent to a Windows machine
-        alone.
+        password}], cc_switch_version}``, every Claude slot filled with the
+        first served model where none was chosen and ``password`` sent to a
+        Windows machine alone.
     """
     base_url = str(gateway.get("gateway_url", "") or "")
     api_key = str(gateway.get("gateway_key", "") or "")
@@ -236,6 +246,7 @@ def ai_tools_agent_config(
             stored.get("tool_configs") or {}, str(models[0])
         ),
         "accounts": sent_accounts,
+        "cc_switch_version": switcher_version,
     }
 
 
@@ -794,6 +805,12 @@ class DesiredStateStore:
                 platform,
                 device_gateway(key, hub_address),
                 list(ai_models),
+                str(
+                    load_tool_manifests()
+                    .get(DEVICE_AI_SWITCHER_NAME, {})
+                    .get("version", "")
+                    or ""
+                ),
             ),
         }
         if desired["ai_tools"]["is_enabled"] and marks.get(DEVICE_AI_TOOLS_NAME):

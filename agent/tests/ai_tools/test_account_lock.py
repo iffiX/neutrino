@@ -124,13 +124,11 @@ def test_the_lock_is_taken_again_once_given_back(tmp_path):
 def test_the_applier_reports_a_held_account_and_runs_nothing_as_it(
     tmp_path, monkeypatch
 ):
-    binary = tmp_path / "bin" / "cc-switch"
-    binary.parent.mkdir()
+    binary = tmp_path / "state" / "ai_tools" / "bin" / "cc-switch"
+    binary.parent.mkdir(parents=True)
     binary.write_text("")
     platform = FakeAccountPlatform(root=str(tmp_path / "state"))
-    applier = AiToolsApplier(
-        platform=platform, log=lambda line: None, binary=str(binary)
-    )
+    applier = AiToolsApplier(platform=platform, log=lambda line: None)
     monkeypatch.setattr(
         applier_module,
         "AiToolsAccountLock",
@@ -156,4 +154,4 @@ def test_the_applier_reports_a_held_account_and_runs_nothing_as_it(
     assert entry["params"]["detail"] == "another run holds the account"
     assert platform.runs == []
     assert applier.switched_accounts() == []
-    assert os.listdir(tmp_path / "state" / "ai_tools") == [".locks"]
+    assert sorted(os.listdir(tmp_path / "state" / "ai_tools")) == [".locks", "bin"]

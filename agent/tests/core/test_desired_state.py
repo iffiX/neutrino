@@ -843,8 +843,9 @@ class RecordedAiToolsSection:
     def __init__(self):
         self.applied: list = []
 
-    def apply(self, section, state_hash):
+    def apply(self, section, state_hash, receive=None):
         self.applied.append((section, state_hash))
+        self.receive = receive
 
 
 def test_the_ai_tools_section_is_handed_on_after_the_modules(tmp_path):
@@ -859,6 +860,7 @@ def test_the_ai_tools_section_is_handed_on_after_the_modules(tmp_path):
     held.apply(document)
 
     assert tools.applied == [({"is_enabled": False}, "h1")]
+    assert tools.receive == held._receive
     assert journal
 
 

@@ -83,14 +83,17 @@ AI_TOOLS_LOCK_WAIT_S = 300
 AI_TOOLS_LOCK_POLL_S = 0.2
 AI_TOOLS_LOCK_HELD_DETAIL = "another run holds the account"
 
-# Where the agent's package carries cc-switch: below the program directory
-# on each system.
-AI_TOOLS_CC_SWITCH_PATHS = {
-    "linux": "/opt/neutrino/agent/bin/cc-switch",
-    "darwin": "/Library/Application Support/Neutrino/agent/app/bin/cc-switch",
-}
-AI_TOOLS_CC_SWITCH_WINDOWS_PARTS = ("bin", "cc-switch.exe")
-AI_TOOLS_CC_SWITCH_BINARY = "cc-switch"
+# cc-switch as the hub serves it: the name the agent asks the package
+# stream for, the archive's kind and the program's name in it on each
+# system, and the directory under the records' directory that holds the
+# copy with the version it was fetched for beside it.
+AI_TOOLS_CC_SWITCH_PACKAGE = "cc_switch"
+AI_TOOLS_CC_SWITCH_KINDS = {"windows": "zip"}
+AI_TOOLS_CC_SWITCH_KIND = "tar"
+AI_TOOLS_CC_SWITCH_NAMES = {"windows": "cc-switch.exe"}
+AI_TOOLS_CC_SWITCH_NAME = "cc-switch"
+AI_TOOLS_BIN_DIR_NAME = "bin"
+AI_TOOLS_VERSION_NAME = "version"
 
 # An account's result in the report.
 AI_TOOLS_STATE_SWITCHED = "switched"
@@ -98,7 +101,7 @@ AI_TOOLS_STATE_SWITCHED_BACK = "switched_back"
 AI_TOOLS_STATE_FAILED = "failed"
 # The codes a failure carries.
 AI_TOOLS_CODE_SWITCH_FAILED = "switch_failed"
-AI_TOOLS_CODE_BUNDLE_MISSING = "bundle_missing"
+AI_TOOLS_CODE_DOWNLOAD_FAILED = "cc_switch_download_failed"
 AI_TOOLS_CODE_ACCOUNT_UNKNOWN = "account_unknown"
 AI_TOOLS_CODE_CREDENTIAL_MISSING = "credential_missing"
 AI_TOOLS_CODE_CREDENTIAL_INVALID = "credential_invalid"

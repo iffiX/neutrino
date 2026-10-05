@@ -87,10 +87,10 @@ def main_run() -> int:
 
 
 def main_uninstall(*, is_forced: bool) -> int:
-    """Stop the agent, switch the accounts' AI tools back, and take away what its modules added.
+    """Stop the agent, switch the accounts' AI tools back, and take away what it and its modules added.
 
     The service stops first, so no apply of its own runs beside the switch
-    back.
+    back; the copy of cc-switch goes once the switch back is done.
 
     Args:
         is_forced: Go ahead without asking.
@@ -107,12 +107,13 @@ def main_uninstall(*, is_forced: bool) -> int:
         return 1
     try:
         platform.stop_agent_service()
-        for switched in AiToolsApplier(platform=platform, log=print).switch_back_all():
+        ai_tools = AiToolsApplier(platform=platform, log=print)
+        for switched in ai_tools.switch_back_all():
             print(
                 f"ai tools   {switched['account']}: "
                 f"{switched['state']} {switched['code']}".rstrip()
             )
-        removed = platform.remove_added()
+        removed = ai_tools.remove_copy() + platform.remove_added()
         if is_whole:
             removed += platform.remove_agent_program()
     except PlatformUnsupportedError as error:

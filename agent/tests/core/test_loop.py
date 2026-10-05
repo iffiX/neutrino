@@ -1579,16 +1579,20 @@ class RecordedAiTools:
 
     def __init__(self):
         self.switched_back = 0
+        self.is_bound_at_switch_back: list = []
 
     def switch_back_all(self):
         self.switched_back += 1
+        self.is_bound_at_switch_back.append(enrollment_module.is_bound())
         return []
 
     def report(self):
         return {"accounts": []}
 
 
-def test_leave_switches_the_ai_tools_back_first(config_path, monkeypatch):
+def test_leave_switches_the_ai_tools_back_once_the_binding_is_gone(
+    config_path, monkeypatch
+):
     agent, _ = scripted_agent(config_path, monkeypatch, [[WELCOME]])
     monkeypatch.setattr(
         enrollment_module.BindingHttpClient,
@@ -1601,6 +1605,7 @@ def test_leave_switches_the_ai_tools_back_first(config_path, monkeypatch):
     agent.leave()
 
     assert tools.switched_back == 1
+    assert tools.is_bound_at_switch_back == [False]
 
 
 def test_binding_unknown_switches_the_ai_tools_back(config_path, monkeypatch):
@@ -1611,3 +1616,4 @@ def test_binding_unknown_switches_the_ai_tools_back(config_path, monkeypatch):
     agent.run_once()
 
     assert tools.switched_back == 1
+    assert tools.is_bound_at_switch_back == [False]
