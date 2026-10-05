@@ -430,3 +430,15 @@ def test_the_next_pass_scopes_a_rule_left_narrowed_or_disabled_again():
     assert refused == []
     assert len(windows.changes) == 1
     assert windows.rules["neutrino_hub_easytier_udp"]["interfaces"] == [EASYTIER]
+
+
+def test_the_agent_rule_names_no_address_so_it_covers_ipv4_and_ipv6():
+    """A rule with no local or remote address matches both families: the
+    agent port answers on IPv6 wherever it answers on IPv4."""
+    powershell = FakePowerShell({FIREWALL_WINDOWS_READ_SCRIPT: {"rules": []}})
+
+    FirewallWindowsApplier(powershell=powershell).apply(RULES)
+
+    _, (change_script, change) = powershell.runs
+    assert "Address" not in change_script
+    assert change["create"][1] == document("neutrino_hub_agent", "TCP", "8443")

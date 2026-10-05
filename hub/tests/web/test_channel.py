@@ -75,10 +75,10 @@ class FakeRuntime:
     def host_scopes(self):
         return []
 
-    def overlay_networks(self):
+    def overlay_networks(self, *, is_ipv6=False):
         return {}
 
-    def interface_networks(self):
+    def interface_networks(self, *, is_ipv6=False):
         return []
 
     def desired_state_for(self, device):
@@ -723,3 +723,29 @@ def test_a_client_leaving_ends_its_panel_session_and_the_log_names_it(api, caplo
     assert not runtime.sessions.is_valid(session)
     assert f"panel: session of client {name} ended (left the hub)" in caplog.text
     assert client_id not in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("peer", "recorded"),
+    [
+        ("::ffff:192.168.8.20", "192.168.8.20"),
+        ("2001:db8::20", "2001:db8::20"),
+    ],
+)
+def test_a_join_records_a_mapped_peer_by_its_ipv4_address(api, peer, recorded):
+    client, runtime = api
+    mapped = TestClient(client.app, client=(peer, 5000))
+
+    binding = joined_device(mapped, runtime)
+
+    assert runtime.device_address[binding["id"]] == recorded
+
+
+def test_a_connection_is_keyed_by_its_unmapped_address():
+    class Connection:
+        class client:
+            host = "::ffff:192.168.8.20"
+            port = 5000
+
+    assert channel_router._connection_key(Connection) == ("192.168.8.20", 5000)
+    assert channel_router._peer_host(Connection) == "192.168.8.20"

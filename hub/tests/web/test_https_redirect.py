@@ -12,6 +12,7 @@ import pytest
 from neutrino_hub.web.https_redirect import (
     PanelHttpsRedirectMiddleware,
     https_location,
+    is_loopback_peer,
 )
 
 
@@ -81,3 +82,19 @@ def test_a_plain_request_from_loopback_is_served_while_https_is_on():
     assert answered(True, "http", "::1") == 200
     assert answered(True, "http", "192.168.8.20") == 301
     assert answered(False, "https", "127.0.0.1") == 301
+
+
+@pytest.mark.parametrize(
+    ("peer", "is_loopback"),
+    [
+        ("127.0.0.1", True),
+        ("::1", True),
+        ("::ffff:127.0.0.1", True),
+        ("::ffff:192.168.8.20", False),
+        ("::127.0.0.1", False),
+        ("192.168.8.20", False),
+        ("not an address", False),
+    ],
+)
+def test_only_a_loopback_peer_or_its_mapped_form_is_loopback(peer, is_loopback):
+    assert is_loopback_peer({"client": (peer, 5000)}) is is_loopback

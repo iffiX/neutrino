@@ -44,6 +44,7 @@ from neutrino_hub.modules.services.host_scope import (
     reached_through,
     scope_of,
 )
+from neutrino_hub.utils.peer_address import unmapped
 from neutrino_hub.web import channel_overlay
 from neutrino_hub.web.channel_addresses import channel_urls
 from neutrino_hub.web.shell_bridge import client_owner, device_name, sessions_for
@@ -151,8 +152,11 @@ def note_client_scope(
     """
     scope = scope_of(peer_host, reached_host, runtime.host_scopes())
     runtime.client_scope[client_id] = scope
+    is_ipv6 = ":" in unmapped(peer_host)
     runtime.client_reached[client_id] = reached_through(
-        peer_host, runtime.overlay_networks(), runtime.interface_networks()
+        peer_host,
+        runtime.overlay_networks(is_ipv6=is_ipv6),
+        runtime.interface_networks(is_ipv6=is_ipv6),
     )
     return scope
 

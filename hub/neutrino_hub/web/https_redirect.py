@@ -16,6 +16,7 @@ setting says.
 import ipaddress
 from urllib.parse import urlsplit
 
+from neutrino_hub.utils.peer_address import unmapped
 from neutrino_hub.web.constants import (
     WEB_DEFAULT_HTTPS_LISTEN_PORT,
     WEB_DEFAULT_LISTEN_PORT,
@@ -90,13 +91,14 @@ def is_loopback_peer(scope) -> bool:
             server accepted it, never a header.
 
     Returns:
-        True when the peer's address is a loopback address.
+        True when the peer's address is a loopback address, an IPv4-mapped
+        one read as its IPv4 address.
     """
     client = scope.get("client")
     if not client:
         return False
     try:
-        return ipaddress.ip_address(str(client[0])).is_loopback
+        return ipaddress.ip_address(unmapped(str(client[0]))).is_loopback
     except ValueError:
         return False
 

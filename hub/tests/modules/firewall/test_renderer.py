@@ -214,3 +214,24 @@ def test_the_pf_anchor_leaves_the_agent_port_open_where_direct_opens_it():
 
     assert "port 8443" not in anchor
     assert "port 80\n" in anchor
+
+
+def test_the_pf_anchor_names_no_family_so_it_covers_ipv4_and_ipv6():
+    rules = render_port_rules(
+        panel_http_port=80,
+        panel_https_port=443,
+        agent_port=8443,
+        ai_gateway_port=8317,
+        socks_ports=[],
+        overlays=[],
+        exposed_interfaces=["en0"],
+        exposed_overlays=[],
+        direct_interfaces=["en0"],
+    )
+
+    anchor = render_pf_anchor(rules, interfaces=["en0", "en1"])
+
+    assert "block drop in quick on { en1 } proto tcp from any to any port 8443" in (
+        anchor.splitlines()
+    )
+    assert " inet" not in anchor

@@ -24,6 +24,7 @@ from websockets.exceptions import ConnectionClosed
 from neutrino_hub.cli import run
 from neutrino_hub.modules.channel.constants import CHANNEL_MESSAGE_BYTES_MAX
 from neutrino_hub.modules.channel.port_guard import ChannelPortGuard
+from neutrino_hub.web.agent_port import AgentPortServer
 from tests.conftest import self_signed_pair
 from neutrino_hub.utils.constants import UTILS_EXAMPLES_DIR
 from neutrino_hub.web.constants import WEB_DEFAULT_AGENT_LISTEN_PORT
@@ -181,3 +182,39 @@ def test_a_message_past_the_cap_closes_the_socket_unread(tmp_path, monkeypatch):
     assert echoed == b"x" * 16
     assert close_code == 1009
     assert received == [CHANNEL_MESSAGE_BYTES_MAX]
+
+
+def test_the_agent_port_answers_on_ipv4_and_ipv6(tmp_path, monkeypatch):
+    """The hub's own agent server on the wildcard: one port, both families,
+    each peer seen in its own family."""
+    certificate, key, _ = self_signed_pair(tmp_path)
+    monkeypatch.setattr(run, "WEB_AGENT_TLS_CERT_PATH", certificate)
+    monkeypatch.setattr(run, "_agent_port_guard", ChannelPortGuard)
+    monkeypatch.setattr(run, "_configured_agent_port", lambda: 0)
+    config = run._agent_config(run.DEFAULT_LISTEN_HOST, key)
+    config.app = recording_app([])
+    config.factory = False
+    config.log_level = "warning"
+
+    async def scenario():
+        server = AgentPortServer(config)
+        task = asyncio.create_task(server.serve())
+        while not server.started:
+            await asyncio.sleep(0.01)
+        ports = {sock.getsockname()[1] for sock in server.servers[0].sockets}
+        ports |= {sock.getsockname()[1] for sock in server.servers[1].sockets}
+        (port,) = ports
+        seen = []
+        for host in ("127.0.0.1", "::1"):
+            connection = http.client.HTTPSConnection(
+                host, port, context=client_context(), timeout=5
+            )
+            await asyncio.to_thread(connection.request, "GET", "/peer")
+            response = await asyncio.to_thread(connection.getresponse)
+            seen.append(json.loads(response.read())["host"])
+            connection.close()
+        server.should_exit = True
+        await task
+        return seen
+
+    assert asyncio.run(scenario()) == ["127.0.0.1", "::1"]

@@ -20,7 +20,7 @@ from neutrino_hub.modules.overlay.direct_config import (
     write_direct,
 )
 from neutrino_hub.utils.subprocess_run import command_failure_text
-from neutrino_hub.web.channel_addresses import channel_hosts
+from neutrino_hub.web.channel_addresses import channel_hosts, channel_url
 from neutrino_hub.web.constants import WEB_DEFAULT_AGENT_LISTEN_PORT
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import DirectSetRequest, DirectView
@@ -111,7 +111,7 @@ def direct_view(runtime: PanelRuntime) -> DirectView:
     port = runtime.settings.get("agent_listen_port", WEB_DEFAULT_AGENT_LISTEN_PORT)
     without = set(channel_hosts(network))
     added = [
-        f"https://{host}:{port}"
+        channel_url(host, port)
         for host in channel_hosts(network, is_direct=True)
         if host not in without
     ]

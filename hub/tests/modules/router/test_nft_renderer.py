@@ -748,3 +748,22 @@ def test_in_server_mode_every_listed_interface_is_enabled():
     (answering,) = _answering_lines(chain)
     assert '"eno1"' in answering
     assert '"eno2"' not in answering
+
+
+def test_the_rules_that_open_the_agent_port_cover_ipv4_and_ipv6():
+    """The table is ``inet`` and neither rule names a family, so each
+    matches IPv6 exactly as IPv4."""
+    network = network_config(
+        wan_entry("enp2s0"), lan_entry("enp1s0", address="192.168.100.1")
+    )
+    ruleset = RouterNftRenderer(
+        network=network, routing=ROUTING_DIRECT, xray_uid=999, direct_port=8443
+    ).render()
+    chain = _input_chain(ruleset)
+
+    assert "table inet neutrino {" in ruleset
+    (answering,) = _answering_lines(chain)
+    direct = [line for line in chain.splitlines() if "tcp dport 8443" in line]
+    assert direct == ['        iifname { "enp2s0" } tcp dport 8443 accept']
+    for line in [answering, *direct]:
+        assert "ip " not in line and "ip6 " not in line and "nfproto" not in line

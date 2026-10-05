@@ -48,6 +48,11 @@ def api(monkeypatch, tmp_path):
     monkeypatch.setattr(
         channel_addresses, "device_addresses", lambda: {"enp2s0": "203.0.113.7/24"}
     )
+    monkeypatch.setattr(
+        channel_addresses,
+        "device_ipv6_addresses",
+        lambda: {"enp1s0": ["fd00:8::1/64"], "enp2s0": ["2001:db8::7/64"]},
+    )
     runtime = FakeRuntime()
     app = FastAPI()
     app.include_router(direct_router.router)
@@ -66,7 +71,11 @@ def test_an_unset_direct_reads_off_and_lists_what_turning_it_on_adds(api):
         "is_enabled": False,
         "public_host": "",
         "public_port": 8443,
-        "urls": ["https://203.0.113.7:9443"],
+        "urls": [
+            "https://[fd00:8::1]:9443",
+            "https://203.0.113.7:9443",
+            "https://[2001:db8::7]:9443",
+        ],
     }
 
 
@@ -85,7 +94,9 @@ def test_setting_stores_the_address_keeps_the_switch_and_converges(api):
     )
     assert runtime.converged == 1
     assert response.json()["urls"] == [
+        "https://[fd00:8::1]:9443",
         "https://203.0.113.7:9443",
+        "https://[2001:db8::7]:9443",
         "https://hub.example.org:443",
     ]
 
@@ -98,7 +109,7 @@ def test_an_empty_host_states_no_public_address(api):
     )
 
     assert response.status_code == 200
-    assert response.json()["urls"] == ["https://203.0.113.7:9443"]
+    assert response.json()["urls"][-1] == "https://[2001:db8::7]:9443"
 
 
 @pytest.mark.parametrize("host", ["two words", "-oProxyCommand=x", "a..b"])
@@ -146,3 +157,17 @@ def test_a_converge_step_that_fails_answers_502(api):
 
     assert response.status_code == 502
     assert response.json()["detail"]["code"] == "direct_apply_failed"
+
+
+def test_an_ipv6_public_address_is_stored_bare_and_listed_in_brackets(api):
+    client, _ = api
+
+    response = client.post(
+        "/api/hub/overlay/direct/set",
+        json={"public_host": "2001:db8::99", "public_port": 443},
+    )
+
+    assert response.status_code == 200
+    assert read_direct().public_host == "2001:db8::99"
+    assert response.json()["public_host"] == "2001:db8::99"
+    assert response.json()["urls"][-1] == "https://[2001:db8::99]:443"

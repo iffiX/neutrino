@@ -108,7 +108,7 @@ class LargeRuntime:
     def host_scopes(self):
         return [LAN, OVERLAY]
 
-    def overlay_networks(self):
+    def overlay_networks(self, *, is_ipv6=False):
         return {}
 
 

@@ -55,7 +55,10 @@ from neutrino_hub.modules.overlay.relay_ops import (
     OverlayRelayApplier,
     OverlayRelayMonitor,
 )
-from neutrino_hub.modules.router.link_status import device_addresses
+from neutrino_hub.modules.router.link_status import (
+    device_addresses,
+    device_ipv6_addresses,
+)
 from neutrino_hub.modules.router.share_fence import share_subnets
 from neutrino_hub.modules.services.probe import DeclaredServiceProbe
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
@@ -335,37 +338,45 @@ class PanelRuntime:
         """
         return served_scopes(self.network(), device_addresses())
 
-    def interface_networks(self) -> list:
+    def interface_networks(self, *, is_ipv6: bool = False) -> list:
         """The addresses the box's own interfaces hold, overlays aside.
+
+        Args:
+            is_ipv6: Whether to read the stable IPv6 addresses instead of the
+                IPv4 ones.
 
         Returns:
             Each address with its prefix length, of every device that is not
             an overlay engine's; a peer inside none of their networks reached
             the hub from outside them.
         """
-        addresses = device_addresses()
         overlays = {
             name for provider in OVERLAY_ENGINES for name in engine_devices(provider)
         }
         return [
             address
-            for name, address in addresses.items()
-            if name not in overlays and address
+            for name, held in _held_addresses(is_ipv6).items()
+            if name not in overlays
+            for address in held
         ]
 
-    def overlay_networks(self) -> dict:
+    def overlay_networks(self, *, is_ipv6: bool = False) -> dict:
         """The networks each overlay engine's devices hold an address in.
+
+        Args:
+            is_ipv6: Whether to read the stable IPv6 addresses instead of the
+                IPv4 ones.
 
         Returns:
             Engine key to the CIDRs of the addresses its devices hold now,
             the devices the Overlay page counts clients by.
         """
-        addresses = device_addresses()
+        held = _held_addresses(is_ipv6)
         return {
             provider: [
-                addresses[name]
+                address
                 for name in engine_devices(provider)
-                if name in addresses
+                for address in held.get(name, [])
             ]
             for provider in OVERLAY_ENGINES
         }
@@ -945,3 +956,18 @@ def _diverted_interface_names(ruleset: str) -> set:
         if "iifname !=" in line and line.strip().endswith("return"):
             return set(re.findall(r'"([^"]+)"', line))
     return set()
+
+
+def _held_addresses(is_ipv6: bool) -> dict:
+    """Device name to the addresses it holds of one family.
+
+    Args:
+        is_ipv6: Whether to read the stable IPv6 addresses instead of the
+            IPv4 ones.
+
+    Returns:
+        Each device's addresses with their prefix lengths.
+    """
+    if is_ipv6:
+        return device_ipv6_addresses()
+    return {name: [address] for name, address in device_addresses().items() if address}
