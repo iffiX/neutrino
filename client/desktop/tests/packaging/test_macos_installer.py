@@ -481,3 +481,134 @@ def test_the_carried_binaries_land_where_the_runtime_looks():
     assert CLIENT_BUNDLED_PATHS_DARWIN["rustdesk"].startswith(
         bundled.DARWIN_RESOURCES_DIR + "/"
     )
+
+
+# The system tools the install scripts call, faked: each records its
+# arguments, and the console's owner, the client's answer to quit and
+# whether its process is still there come from the environment.
+FAKE_TOOLS = {
+    "stat": """case "$2" in
+%u) echo "$CONSOLE_UID" ;;
+%Su) echo "$CONSOLE_USER" ;;
+esac""",
+    "sudo": """shift 3
+"$@"
+""",
+    "pgrep": 'exit "$PGREP_RC"',
+    "pkill": "exit 0",
+    "launchctl": """case "$1" in
+print) exit 113 ;;
+asuser) exit "$OPEN_RC" ;;
+esac
+exit 0""",
+    "id": 'echo "$CONSOLE_UID"',
+    "chown": "exit 0",
+    "chmod": "exit 0",
+    "sleep": "exit 0",
+}
+
+
+def run_install_scripts(tmp_path, *, console_uid, quit_rc=0, pgrep_rc=1, open_rc=0):
+    """Run the preinstall and the postinstall with the system faked.
+
+    Returns:
+        ``(preinstall exit, postinstall exit, calls, marker left behind)``,
+        the calls one line each, every program named first.
+    """
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    calls = tmp_path / "calls"
+    for name, body in FAKE_TOOLS.items():
+        tool = bin_dir / name
+        tool.write_text(f'#!/bin/sh\necho "{name} $*" >> "{calls}"\n{body}\n')
+        tool.chmod(0o755)
+    program = tmp_path / "Neutrino Client.app" / "Contents" / "MacOS" / "nclient"
+    program.parent.mkdir(parents=True)
+    program.write_text(f'#!/bin/sh\necho "nclient $*" >> "{calls}"\nexit "$QUIT_RC"\n')
+    program.chmod(0o755)
+    state = tmp_path / "state"
+    marker = state / ".reopen_for"
+
+    def localised(script):
+        return (
+            script.replace(str(build_client_macos.REOPEN_MARKER), str(marker))
+            .replace(str(build_client_macos.APP_PROGRAM), str(program))
+            .replace(str(build_client_macos.APP_PATH), str(program.parents[2]))
+            .replace(build_client_macos.CLIENT_STATE_DIR_DARWIN, str(state))
+        )
+
+    environment = {
+        "PATH": f"{bin_dir}:/usr/bin:/bin",
+        "CONSOLE_UID": str(console_uid),
+        "CONSOLE_USER": "ann" if console_uid >= 501 else "root",
+        "QUIT_RC": str(quit_rc),
+        "PGREP_RC": str(pgrep_rc),
+        "OPEN_RC": str(open_rc),
+    }
+    codes = []
+    for script in (build_client_macos.PREINSTALL, build_client_macos.POSTINSTALL):
+        codes.append(
+            subprocess.run(
+                ["sh", "-c", localised(script)],
+                env=environment,
+                capture_output=True,
+            ).returncode
+        )
+    lines = calls.read_text().splitlines() if calls.exists() else []
+    return codes[0], codes[1], lines, marker.exists()
+
+
+def test_an_upgrade_over_a_running_client_quits_it_and_opens_the_new_one(tmp_path):
+    pre, post, calls, is_marker_left = run_install_scripts(tmp_path, console_uid=501)
+
+    assert (pre, post) == (0, 0)
+    assert "nclient quit" in calls
+    quit_ask = calls.index("nclient quit")
+    assert calls[quit_ask - 1].startswith("sudo -H -u ann ")
+    (opened,) = [line for line in calls if line.startswith("launchctl asuser")]
+    assert opened == (
+        f"launchctl asuser 501 sudo -H -u ann open -a {tmp_path / 'Neutrino Client.app'}"
+    )
+    assert calls.index(opened) > max(
+        index for index, line in enumerate(calls) if line.startswith("launchctl print")
+    )
+    assert not is_marker_left
+
+
+def test_an_install_with_no_client_running_opens_nothing(tmp_path):
+    pre, post, calls, is_marker_left = run_install_scripts(
+        tmp_path, console_uid=501, quit_rc=1
+    )
+
+    assert (pre, post) == (0, 0)
+    assert "nclient quit" in calls
+    assert not any(line.startswith("launchctl asuser") for line in calls)
+    assert not is_marker_left
+
+
+@pytest.mark.parametrize("console_uid", [0, 248])
+def test_with_nobody_at_the_screen_nothing_is_asked_or_opened(tmp_path, console_uid):
+    """The login window, an install over ssh, and the setup assistant's own
+    account all leave the console to an account below the floor."""
+    pre, post, calls, _ = run_install_scripts(tmp_path, console_uid=console_uid)
+
+    assert (pre, post) == (0, 0)
+    assert not any(line.startswith(("sudo", "nclient")) for line in calls)
+    assert not any(line.startswith("launchctl asuser") for line in calls)
+
+
+def test_a_client_that_does_not_end_is_ended_and_a_failed_open_fails_nothing(
+    tmp_path,
+):
+    pre, post, calls, _ = run_install_scripts(
+        tmp_path, console_uid=501, pgrep_rc=0, open_rc=1
+    )
+
+    assert (pre, post) == (0, 0)
+    assert (
+        calls.count(
+            f"pgrep -U 501 -f {tmp_path / 'Neutrino Client.app/Contents/MacOS/nclient'}"
+        )
+        == build_client_macos.QUIT_WAIT_TURNS
+    )
+    assert any(line.startswith("pkill -TERM -U 501 -f ") for line in calls)

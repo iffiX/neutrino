@@ -14,7 +14,10 @@ compile is native, so an Apple silicon package comes off an Apple silicon
 Mac.
 
 The client is a person's application, not a service and not a login item:
-it runs when the person opens it. The installer puts the bundle under
+it runs when the person opens it. An upgrade over a client running for the
+person at the screen asks it to quit before the files are replaced and
+opens the new one for that person afterwards; an install with no client
+running, or with nobody at the screen, opens nothing. The installer puts the bundle under
 ``/Applications`` and links ``nclient`` into ``/usr/local/bin``. The overlay
 daemons it carries are LaunchDaemons, all kept running: each one a part of
 the payload the tree holds adds, and the client's own EasyTier daemon,
@@ -116,10 +119,43 @@ DAEMON_STATE_DIRS = " ".join(
     + [CLIENT_EASYTIER_STATE_DIR_DARWIN]
 )
 
-# What the install runs around the files: every daemon unloaded before; their
-# directories made, root's alone, and every daemon loaded after, the install
-# failing when one does not start.
+# The app as an install puts it, its program, and the file the preinstall
+# leaves for the postinstall naming the person whose client it asked to
+# quit. A person is someone at the screen: the owner of /dev/console, with
+# a uid of an ordinary account; root there is the login window, and an
+# install over ssh with nobody signed in finds root.
+APP_PATH = INSTALL_APPLICATIONS_DIR / APP_BUNDLE_NAME
+APP_PROGRAM = APP_PATH / "Contents" / "MacOS" / CLIENT_BINARY_NAME
+REOPEN_MARKER = Path(CLIENT_STATE_DIR_DARWIN) / ".reopen_for"
+CONSOLE_UID_FLOOR = 501
+# How many half seconds the preinstall waits for the asked client to end
+# before it ends it.
+QUIT_WAIT_TURNS = 30
+
+# What the install runs around the files: the running client of the person
+# at the screen asked to quit and every daemon unloaded before; their
+# directories made, root's alone, every daemon loaded after, the install
+# failing when one does not start, and the client opened again for the
+# person it was running for.
 PREINSTALL = f"""#!/bin/sh
+rm -f "{REOPEN_MARKER}"
+uid=$(stat -f %u /dev/console)
+user=$(stat -f %Su /dev/console)
+if [ "$uid" -ge {CONSOLE_UID_FLOOR} ] && [ -x "{APP_PROGRAM}" ]; then
+    if sudo -H -u "$user" "{APP_PROGRAM}" quit >/dev/null 2>&1; then
+        mkdir -p "{CLIENT_STATE_DIR_DARWIN}"
+        echo "$user" > "{REOPEN_MARKER}"
+        turns=0
+        while pgrep -U "$uid" -f "{APP_PROGRAM}" >/dev/null 2>&1; do
+            turns=$((turns + 1))
+            if [ "$turns" -ge {QUIT_WAIT_TURNS} ]; then
+                pkill -TERM -U "$uid" -f "{APP_PROGRAM}"
+                break
+            fi
+            sleep 0.5
+        done
+    fi
+fi
 for label in {DAEMON_LABELS}; do
     launchctl bootout "system/$label" >/dev/null 2>&1 || true
 done
@@ -138,6 +174,16 @@ for label in {DAEMON_LABELS}; do
     start_daemon "$label" "{CLIENT_LAUNCHD_DAEMONS_DIR}/$label.plist" ||
         failed="$failed $label"
 done
+if [ -f "{REOPEN_MARKER}" ]; then
+    user=$(cat "{REOPEN_MARKER}")
+    rm -f "{REOPEN_MARKER}"
+    if [ "$user" = "$(stat -f %Su /dev/console)" ]; then
+        uid=$(id -u "$user")
+        launchctl asuser "$uid" sudo -H -u "$user" open -a "{APP_PATH}" \\
+            >/dev/null 2>&1 ||
+            echo "  Open Neutrino Client again to use the new version." >&2
+    fi
+fi
 if [ -n "$failed" ]; then
     echo "  These services did not start:$failed" >&2
     exit 1
@@ -319,6 +365,7 @@ def _lay_out(root: Path, version: str, machine: str) -> dict:
         root / "scripts", preinstall=PREINSTALL, postinstall=POSTINSTALL
     )
     return {"root": package_root, "app": app, "scripts": scripts}
+
 
 def easytier_daemon_arguments() -> list:
     """The client's EasyTier daemon, as its LaunchDaemon runs it.

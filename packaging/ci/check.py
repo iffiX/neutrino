@@ -29,7 +29,9 @@ The targets:
   module names
   them, and keeps one named as the hub names its own. macOS.
 - ``client_macos``: the .pkg installs, ``nclient --version`` answers and
-  ``nclient status`` exits 1 unbound. macOS.
+  ``nclient status`` exits 1 unbound. Where the runner's own account is at
+  the screen, the app opened and the .pkg installed again leaves a new app
+  running, and an install with the app quit opens none. macOS.
 - ``hub_windows``: the .msi installs, ``nhub --version`` answers, the
   ``neutrino_hub`` service runs and serves the setup wizard on the panel's
   port, ``nhub setup --json`` sets a ``server`` hub up and installs its local
@@ -176,6 +178,12 @@ AGENT_WINDOWS_FOUND_SCRIPT = (
 
 # --- macOS ---
 AGENT_MACOS_JOB = "system/com.neutrino.agent"
+CLIENT_MACOS_APP = "/Applications/Neutrino Client.app"
+CLIENT_MACOS_PROGRAM = CLIENT_MACOS_APP + "/Contents/MacOS/nclient"
+# How long the app is given to come up or to go, and how long an install
+# with no app running is watched for one that opens.
+CLIENT_MACOS_APP_WAIT_S = 60
+CLIENT_MACOS_QUIET_S = 10
 # The agent's two roots the postinstall makes, and their modes: what the
 # hub decided is root's alone, what the machine accumulated is open to
 # every account for the software the hub sends.
@@ -496,6 +504,74 @@ def check_client_macos(pkg: Path) -> None:
     status = subprocess.run(["/usr/local/bin/nclient", "status"]).returncode
     if status != 1:
         raise SystemExit(f"nclient status exited {status}, expected 1")
+    _check_client_macos_upgrade(pkg)
+
+
+def _check_client_macos_upgrade(pkg: Path) -> None:
+    """An upgrade over a running app leaves the new app running; an install
+    with none running opens none.
+
+    Checked only where this account is the one at the screen; elsewhere the
+    install is the one asserted and the reopen is named as not checked.
+
+    Args:
+        pkg: The installer.
+
+    Raises:
+        SystemExit: When an upgrade leaves no new app, or an install opens
+            one nobody had open.
+    """
+    if _console_uid() != os.getuid():
+        print("this account is not at the screen: the reopen is not checked")
+        return
+    subprocess.run(["open", "-a", CLIENT_MACOS_APP])
+    first = _wait_for_client_app(lambda pids: bool(pids))
+    if not first:
+        print("the app did not come up on this runner: the reopen is not checked")
+        return
+    _sudo(["installer", "-pkg", str(pkg), "-target", "/"])
+    second = _wait_for_client_app(lambda pids: bool(pids) and not pids & first)
+    if not second:
+        raise SystemExit("after the upgrade no new client app runs")
+    print(f"the client app ran as {sorted(first)} and runs as {sorted(second)}")
+    subprocess.run([CLIENT_MACOS_PROGRAM, "quit"])
+    if _wait_for_client_app(lambda pids: not pids) is None:
+        raise SystemExit("the client app did not quit")
+    _sudo(["installer", "-pkg", str(pkg), "-target", "/"])
+    time.sleep(CLIENT_MACOS_QUIET_S)
+    if _client_app_pids():
+        raise SystemExit("an install with no client app running opened one")
+
+
+def _console_uid() -> int:
+    """The uid of the account at the screen; root's at the login window."""
+    return os.stat("/dev/console").st_uid
+
+
+def _client_app_pids() -> set:
+    """The client app's processes of this account."""
+    result = subprocess.run(
+        ["pgrep", "-U", str(os.getuid()), "-f", CLIENT_MACOS_PROGRAM],
+        capture_output=True,
+        text=True,
+    )
+    return {int(word) for word in result.stdout.split() if word.isdigit()}
+
+
+def _wait_for_client_app(is_wanted) -> "set | None":
+    """Wait until the client app's processes are what ``is_wanted`` takes.
+
+    Returns:
+        The processes then, or None when the wait ran out.
+    """
+    deadline = time.monotonic() + CLIENT_MACOS_APP_WAIT_S
+    while True:
+        pids = _client_app_pids()
+        if is_wanted(pids):
+            return pids
+        if time.monotonic() >= deadline:
+            return None
+        time.sleep(1)
 
 
 def check_hub_windows(msi: Path) -> None:
