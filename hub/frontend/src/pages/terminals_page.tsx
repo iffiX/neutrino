@@ -10,7 +10,11 @@ import { StatusDot } from "../components/status_dot";
 import { ToggleSwitch } from "../components/toggle_switch";
 import { hasWord, t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
-import { HUB_EVENT_DEVICE_REPORT, HUB_EVENT_DEVICES } from "../use_hub_events";
+import {
+  HUB_EVENT_CONFIG,
+  HUB_EVENT_DEVICE_REPORT,
+  HUB_EVENT_DEVICES,
+} from "../use_hub_events";
 import type { PersistFlags, TerminalState } from "../components/shell_terminal";
 import type { StatusTone } from "../components/status_dot";
 import type {
@@ -18,6 +22,7 @@ import type {
   DevicesOnlineResponse,
   TerminalSessionListView,
   TerminalSessionStopRequest,
+  TerminalDeviceView,
   TerminalSessionView,
 } from "../api_types";
 
@@ -36,10 +41,19 @@ import "./terminals_page.css";
  * hidden, and the page itself stays mounted while other pages show.
  */
 
-/** The account a shell opens as on each system, a name rather than a word:
- * root, and SYSTEM on Windows, where the agent's service is LocalSystem. */
-const TERMINAL_ACCOUNT = "root";
-const TERMINAL_ACCOUNTS: Record<string, string> = { windows: "SYSTEM" };
+/** The agent's own account, which a shell opens as while the machine's
+ * Terminal module names none: root, and SYSTEM on Windows, where the agent's
+ * service is LocalSystem. A name rather than a word. */
+const AGENT_ACCOUNT = "root";
+const AGENT_ACCOUNTS: Record<string, string> = { windows: "SYSTEM" };
+
+/** The code a shell's socket closed with and the params the hub gave it. */
+interface CloseReason {
+  code: string;
+  params: Record<string, string | number>;
+}
+
+const NO_REASON: CloseReason = { code: "", params: {} };
 
 /** What one shell's state is called. */
 const STATE_KEYS: Record<TerminalState, string> = {
@@ -110,7 +124,9 @@ export function TerminalsPage() {
   const [tabs, setTabs] = useState<ShellTab[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [states, setStates] = useState<Record<string, TerminalState>>({});
-  const [closeReasons, setCloseReasons] = useState<Record<string, string>>({});
+  const [closeReasons, setCloseReasons] = useState<Record<string, CloseReason>>(
+    {},
+  );
   // A flip shows at once and holds until the list reports the same values.
   const [pendingFlags, setPendingFlags] = useState<
     Record<string, PersistFlags>
@@ -169,6 +185,22 @@ export function TerminalsPage() {
   const devices = resource.data?.devices ?? [];
   const selectedDevice =
     devices.find((device) => device.device_id === selectedId) ?? null;
+  const terminalModule = useApiResource<TerminalDeviceView>(
+    selectedDevice === null
+      ? null
+      : apiPath("/agent/module/terminal", {
+          device_id: selectedDevice.device_id,
+        }),
+    {
+      invalidateOn:
+        selectedDevice === null
+          ? []
+          : [
+              { type: HUB_EVENT_DEVICE_REPORT, key: selectedDevice.device_id },
+              { type: HUB_EVENT_CONFIG },
+            ],
+    },
+  );
   const activeTab = tabs.find((tab) => tab.sessionId === activeId) ?? null;
   const activeRow = activeTab === null ? undefined : rows[activeTab.sessionId];
   const activeState =
@@ -176,7 +208,9 @@ export function TerminalsPage() {
       ? null
       : (states[activeTab.sessionId] ?? "connecting");
   const activeReason =
-    activeTab === null ? "" : (closeReasons[activeTab.sessionId] ?? "");
+    activeTab === null
+      ? NO_REASON
+      : (closeReasons[activeTab.sessionId] ?? NO_REASON);
   const activeFlags =
     activeTab === null
       ? NEW_FLAGS
@@ -288,8 +322,15 @@ export function TerminalsPage() {
     setStates((current) => ({ ...current, [sessionId]: state }));
   };
 
-  const noteCloseReason = (sessionId: string, reason: string) => {
-    setCloseReasons((current) => ({ ...current, [sessionId]: reason }));
+  const noteCloseReason = (
+    sessionId: string,
+    code: string,
+    params: Record<string, string | number>,
+  ) => {
+    setCloseReasons((current) => ({
+      ...current,
+      [sessionId]: { code, params },
+    }));
   };
 
   if (resource.error !== null && devices.length === 0) {
@@ -308,8 +349,13 @@ export function TerminalsPage() {
           <h1>{t("ui.terminals.title")}</h1>
           {selectedDevice !== null && (
             <span className="badge badge--warn">
-              {TERMINAL_ACCOUNTS[selectedDevice.platform.os ?? ""] ??
-                TERMINAL_ACCOUNT}
+              {shownAccount(
+                selectedDevice.platform.os ?? "",
+                activeTab?.deviceId === selectedDevice.device_id
+                  ? activeRow
+                  : undefined,
+                terminalModule.data,
+              )}
             </span>
           )}
         </div>
@@ -396,8 +442,8 @@ export function TerminalsPage() {
                   onExit={() => noteExit(tab.sessionId)}
                   onRefused={(code) => noteRefused(tab.sessionId, code)}
                   onStateChange={(state) => noteState(tab.sessionId, state)}
-                  onCloseReason={(reason) =>
-                    noteCloseReason(tab.sessionId, reason)
+                  onCloseReason={(reason, params) =>
+                    noteCloseReason(tab.sessionId, reason, params)
                   }
                 />
               ))}
@@ -674,10 +720,29 @@ function describeCode(code: string): string {
   return hasWord(key) ? t(key) : code;
 }
 
-/** What the foot says once a socket closed: the code's word, else the loss. */
-function closedText(reason: string): string {
-  const key = `code.${reason}`;
-  return reason !== "" && hasWord(key) ? t(key) : t("ui.terminals.lost");
+/** The account the title names: the open session's own, else the one
+ * the machine's Terminal module names, else the agent's. */
+function shownAccount(
+  os: string,
+  row: TerminalSessionView | undefined,
+  module: TerminalDeviceView | null,
+): string {
+  if (row !== undefined && row.account !== "") {
+    return row.account;
+  }
+  if (module !== null && module.is_account_settable && module.account !== "") {
+    return module.account;
+  }
+  return AGENT_ACCOUNTS[os] ?? AGENT_ACCOUNT;
+}
+
+/** What the foot says once a socket closed: the code's words with its
+ * params, else the loss. */
+function closedText(reason: CloseReason): string {
+  const key = `code.${reason.code}`;
+  return reason.code !== "" && hasWord(key)
+    ? t(key, reason.params)
+    : t("ui.terminals.lost");
 }
 
 /** What one shell's state looks like as a dot. */

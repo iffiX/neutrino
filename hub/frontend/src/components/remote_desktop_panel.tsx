@@ -155,7 +155,6 @@ export function RemoteDesktopPanel({
       ) : (
         <div className="remote_desktop_grid">
           <RustdeskCard
-            sessionId={status.rustdesk_id}
             rdp={device.client?.rdp ?? null}
             deviceId={device.id}
             onResetSeatPassword={resetSeatPassword}
@@ -186,7 +185,6 @@ export function RemoteDesktopPanel({
 }
 
 interface RustdeskCardProps {
-  sessionId: string;
   rdp: DeviceRdp | null;
   /** The machine, whose Modules page holds the switch. */
   deviceId: string;
@@ -194,8 +192,8 @@ interface RustdeskCardProps {
 }
 
 /**
- * RustDesk as the machine's own report carries it: its id, and whether the
- * desktop is shared right now.
+ * RustDesk as the machine's own report carries it: whether the desktop is
+ * shared right now, by whom and on which port.
  *
  * Every agent package carries the host, so there is nothing to install here
  * and nothing here asks a machine to share: that is the Remote desktop
@@ -204,12 +202,10 @@ interface RustdeskCardProps {
  * one action this card has.
  */
 function RustdeskCard({
-  sessionId,
   rdp,
   deviceId,
   onResetSeatPassword,
 }: RustdeskCardProps) {
-  const isReported = sessionId !== "";
   const isShared = rdp?.is_shared ?? false;
   const attention = rdp?.attention ?? "";
 
@@ -236,27 +232,6 @@ function RustdeskCard({
           label={t(isShared ? "state.shared" : "state.not_sharing")}
         />
       </div>
-
-      {isReported ? (
-        <div className="remote_desktop_id_row">
-          <span className="remote_desktop_id_label">
-            {t("ui.remote_desktop.id_label")}
-          </span>
-          <span className="remote_desktop_id">{sessionId}</span>
-          <button
-            type="button"
-            className="button button--ghost button--small"
-            onClick={() => void copyText(sessionId)}
-            title={t("ui.remote_desktop.copy_id")}
-          >
-            <Icon name="link" size={12} />
-          </button>
-        </div>
-      ) : (
-        <span className="field_hint">
-          {t("ui.remote_desktop.not_reported")}
-        </span>
-      )}
 
       {isShared && rdp !== null && (
         <>

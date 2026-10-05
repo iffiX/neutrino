@@ -60,6 +60,7 @@ const STATE_TONES: Record<string, StatusTone> = {
   failed: "error",
 };
 const NOT_REPORTED_KEY = "ui.device_monitor.waiting";
+const STATE_SWITCHED_BACK = "switched_back";
 
 interface AiToolsPanelProps {
   deviceId: string;
@@ -197,7 +198,11 @@ export function AiToolsPanel({ deviceId }: AiToolsPanelProps) {
           {view.accounts.length > 0 && (
             <div className="ai_tools_accounts">
               {view.accounts.map((entry) => (
-                <AccountRow key={entry.account} entry={entry} />
+                <AccountRow
+                  key={entry.account}
+                  entry={entry}
+                  isEnabled={view.is_enabled}
+                />
               ))}
             </div>
           )}
@@ -302,7 +307,18 @@ function ToolForm({
 }
 
 /** One account: its name, the modules it runs, and its last result. */
-function AccountRow({ entry }: { entry: AiToolAccountView }) {
+interface AccountRowProps {
+  entry: AiToolAccountView;
+  /** Whether the setting is on; off, an account the machine did not name
+   * keeps its own settings and nothing is to be reported for it. */
+  isEnabled: boolean;
+}
+
+function AccountRow({ entry: reported, isEnabled }: AccountRowProps) {
+  const entry =
+    !isEnabled && reported.state === ""
+      ? { ...reported, state: STATE_SWITCHED_BACK }
+      : reported;
   const tone = STATE_TONES[entry.state] ?? "idle";
   return (
     <div className="ai_tools_account">

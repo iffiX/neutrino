@@ -32,8 +32,6 @@ export interface RemoteDesktopStatus {
 export interface RemoteDesktopView {
   anydesk: RemoteDesktopStatus;
   teamviewer: RemoteDesktopStatus;
-  /** The id a peer connects to RustDesk by, off the module's own report. */
-  rustdesk_id: string;
 }
 
 // --- Auth ---
