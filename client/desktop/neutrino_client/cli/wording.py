@@ -47,7 +47,7 @@ CLIENT_CODE_WORDS = {
     "admission_paused": "the hub has paused new joins; this client tries again in "
     "{retry_after_s} s",
     "shell_unknown": "the hub no longer has that terminal open",
-    "session_not_owned": "only the client that opened this session can change it",
+    "session_not_owned": "this session belongs to someone else and is not shared",
     "session_unknown": "the machine no longer keeps this session",
     "kind_unknown": "the hub is too old to open this; update the hub",
     "overlay_daemon_down": "the virtual network service is not running on this machine; reinstall the client",
