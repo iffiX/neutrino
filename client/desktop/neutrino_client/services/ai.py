@@ -20,6 +20,11 @@ longer name it.
 A run that ended without putting the tools back leaves cc-switch standing on
 the hub and an adopt record beside it; :meth:`AiServiceHandler.clear_leftovers`
 is what the resident calls at start to undo that.
+
+On a machine the agent is installed on, the agent sets the tools from the
+hub's panel: while :meth:`AiServiceHandler.check_gate` finds it, every apply
+is refused ``ai_tools_managed``, the toggle stays off, and a toggle that was
+on when the agent first appeared is turned off by one deactivation.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -177,6 +182,11 @@ def _nobody() -> None:
     """Nobody listening for changes."""
 
 
+def _never() -> bool:
+    """No agent on this machine."""
+    return False
+
+
 class AiServiceHandler(ServiceTypeHandler):
     """Commits the page's AI apply and keeps the tools converged on it."""
 
@@ -194,6 +204,7 @@ class AiServiceHandler(ServiceTypeHandler):
         switcher_module=None,
         on_change=None,
         start_thread=None,
+        is_managed=None,
     ):
         """
         Args:
@@ -214,6 +225,8 @@ class AiServiceHandler(ServiceTypeHandler):
                 nobody listening.
             start_thread: The lane's thread starter; None uses a daemon
                 thread.
+            is_managed: Callable ``() -> bool`` saying whether the agent is
+                installed on this machine; None for never.
         """
         self._store = store
         self._original_dir = original_dir
@@ -234,6 +247,9 @@ class AiServiceHandler(ServiceTypeHandler):
         self._granted: dict = {}
         self._status: dict = self._steady(is_active=False)
         self._on_change = on_change if on_change is not None else _nobody
+        self._is_managed = is_managed if is_managed is not None else _never
+        # What the last look at the agent's program directory found.
+        self._is_held = False
         self._worker = ServiceWorker(
             name="ai", on_change=self._on_change, log=log, start_thread=start_thread
         )
@@ -251,6 +267,10 @@ class AiServiceHandler(ServiceTypeHandler):
         """
         if "is_enabled" not in body:
             return {"code": "unknown_request", "params": {}}
+        with self._lock:
+            is_held = self._is_held
+        if is_held:
+            return {"code": "ai_tools_managed", "params": {}}
         if self._worker.is_working:
             return self._worker.submit(AI_STEP_SWITCHING, self.reconcile)
         tool_configs = body.get("tool_configs")
@@ -260,6 +280,29 @@ class AiServiceHandler(ServiceTypeHandler):
         with self._lock:
             self._is_enabled = bool(body.get("is_enabled"))
         return self._worker.submit(AI_STEP_SWITCHING, self.reconcile)
+
+    def check_gate(self) -> bool:
+        """Look again whether the agent is installed, and hold the page while it is.
+
+        A toggle that is on when the agent is first found is turned off, and
+        the lane runs its deactivation once.
+
+        Returns:
+            Whether the gate's standing changed.
+        """
+        is_managed = bool(self._is_managed())
+        with self._lock:
+            was_held = self._is_held
+            self._is_held = is_managed
+            is_turning_off = is_managed and self._is_enabled
+            if is_managed:
+                self._is_enabled = False
+        if is_turning_off:
+            self._log("ai service: the agent is installed; its tools are set there")
+            self._worker.submit(
+                AI_STEP_SWITCHING, self.reconcile, if_busy=IF_BUSY_KEEP_ONE
+            )
+        return was_held != is_managed
 
     def settle(self, timeout_s: float) -> dict:
         """Wait for the lane to be idle, and say how its last step ended.
@@ -276,12 +319,14 @@ class AiServiceHandler(ServiceTypeHandler):
         """This person's AI standing, for the state payload.
 
         Returns:
-            ``{"ai": {"is_enabled", "is_active", "state", "code",
-            "params"}, "ai_tool_configs": {...}}``.
+            ``{"ai": {"is_enabled", "is_active", "is_managed", "state",
+            "code", "params", "work"}, "ai_tool_configs": {...}}``;
+            ``is_managed`` is true while the agent is installed.
         """
         with self._lock:
             status = dict(self._status)
             status["is_enabled"] = self._is_enabled
+            status["is_managed"] = self._is_held
         status["work"] = self._worker.status()
         return {"ai": status, "ai_tool_configs": self._store.ai_tool_configs()}
 

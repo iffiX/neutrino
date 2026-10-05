@@ -142,6 +142,12 @@ CLIENT_WEBKITGTK_ABIS = (
 
 # Where the packages install the client and the binaries it carries.
 CLIENT_INSTALL_PREFIX_LINUX = "/opt/neutrino/client"
+
+# Where the agent's package puts its program; while it stands, this
+# machine's AI tools are set from the hub's panel and the AI page is held.
+CLIENT_AGENT_PROGRAM_DIR_LINUX = "/opt/neutrino/agent"
+CLIENT_AGENT_PROGRAM_DIR_DARWIN = "/Library/Application Support/Neutrino/agent/app"
+CLIENT_AGENT_PROGRAM_SUBDIR_WINDOWS = ("Neutrino", "agent")
 CLIENT_BUNDLED_PATHS_LINUX = {
     "cc-switch": "bin/cc-switch",
     "rustdesk": "rustdesk/rustdesk",

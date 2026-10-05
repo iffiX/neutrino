@@ -309,6 +309,8 @@ def main_ai_show(*, hub: str = "") -> int:
     payload = entry.get("payload") or {}
     print(f"{entry.get('title', '')}  {payload.get('endpoint', '')}")
     print(f"  {_ai_line(state)}")
+    if (state.get("ai") or {}).get("is_managed"):
+        print(f"  {wording.word_code('ai_tools_managed', {})}")
     return 0
 
 
@@ -346,6 +348,9 @@ def main_ai_apply(
     """
     state = wording.read_state()
     if state is None:
+        return 1
+    if (state.get("ai") or {}).get("is_managed"):
+        print(wording.word_code("ai_tools_managed", {}), file=sys.stderr)
         return 1
     if hub:
         state = _choose_exit(state, hub)

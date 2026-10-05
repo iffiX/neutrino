@@ -164,6 +164,7 @@ def subject(tmp_path):
     fake = FakeSwitcher()
     hub = FakeHub()
     hub.forwards = FakeForwards()
+    hub.has_agent = False
     handler = AiServiceHandler(
         store=store,
         original_dir=str(tmp_path / "original"),
@@ -173,6 +174,7 @@ def subject(tmp_path):
         log=discard,
         switcher_module=fake,
         start_thread=run_inline,
+        is_managed=lambda: hub.has_agent,
     )
     return handler, store, fake, hub
 
@@ -704,3 +706,64 @@ def test_a_forward_that_cannot_listen_points_no_tool(subject):
     row = handler.state()["ai"]
     assert (row["code"], row["is_active"]) == ("forward_failed", False)
     assert activations(fake) == []
+
+
+def deactivations(fake) -> list:
+    return [call for call in fake.calls if call[0] == "deactivate"]
+
+
+def test_with_the_agent_installed_an_apply_is_refused_and_nothing_is_made(subject):
+    handler, _store, fake, hub = subject
+    hub.has_agent = True
+
+    assert handler.check_gate() is True
+    outcome = handler.act(entries=[ENTRY], body={"is_enabled": True})
+    handler.refresh(entries=[ENTRY])
+
+    assert outcome == {"code": "ai_tools_managed", "params": {}}
+    assert hub.opened == [] and activations(fake) == []
+    assert hub.forwards.ensured == []
+    row = handler.state()["ai"]
+    assert row["is_managed"] is True and row["is_enabled"] is False
+
+
+def test_a_chip_on_when_the_agent_appears_is_deactivated_once(subject):
+    handler, _store, fake, hub = subject
+    handler.act(entries=[ENTRY], body={"is_enabled": True})
+    hub.has_agent = True
+
+    handler.check_gate()
+    handler.refresh(entries=[ENTRY])
+    handler.check_gate()
+    handler.refresh(entries=[ENTRY])
+
+    assert deactivations(fake) == [("deactivate", HOME_LOCAL)]
+    assert hub.forwards.running == {}
+    assert len(activations(fake)) == 1
+    row = handler.state()["ai"]
+    assert row["is_enabled"] is False and row["is_active"] is False
+
+
+def test_leftovers_are_put_back_while_the_agent_is_installed(subject):
+    handler, _store, fake, hub = subject
+    hub.has_agent = True
+    handler.check_gate()
+    fake.active_apps = {"claude"}
+
+    handler.clear_leftovers()
+
+    assert deactivations(fake) == [("deactivate", "")]
+
+
+def test_the_gate_goes_away_with_the_agent(subject):
+    handler, _store, fake, hub = subject
+    hub.has_agent = True
+    handler.check_gate()
+    hub.has_agent = False
+
+    assert handler.check_gate() is True
+    outcome = handler.act(entries=[ENTRY], body={"is_enabled": True})
+
+    assert outcome == {}
+    assert handler.state()["ai"]["is_managed"] is False
+    assert len(activations(fake)) == 1

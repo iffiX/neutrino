@@ -90,6 +90,8 @@ class RecordingHandler(ServiceTypeHandler):
         starts: How often the resident started it.
         cleared: How often it was asked to clear leftovers.
         refreshed: The entries of every refresh, in order.
+        gates: Every look at the agent's program directory, in order with
+            the refreshes as ``"gate"`` in ``order``.
         released_hubs: Every hub it was asked to let go of, in order.
         withdrawn: ``(hub_id, entries)`` of every list it was told of.
         is_holding: Set while a release that hangs is held.
@@ -110,6 +112,8 @@ class RecordingHandler(ServiceTypeHandler):
         self.released_hubs = []
         self.withdrawn = []
         self.acted = []
+        self.gates = 0
+        self.order = []
         self._log = log
         self._count = count
         self._is_hanging = is_hanging
@@ -122,6 +126,12 @@ class RecordingHandler(ServiceTypeHandler):
 
     def refresh(self, *, entries) -> None:
         self.refreshed.append(list(entries))
+        self.order.append("refresh")
+
+    def check_gate(self) -> bool:
+        self.gates += 1
+        self.order.append("gate")
+        return False
 
     def start(self) -> None:
         self.starts += 1
@@ -279,7 +289,7 @@ def run_inline(target) -> None:
     target()
 
 
-def inline_ai(resident) -> tuple:
+def inline_ai(resident, *, is_managed=None) -> tuple:
     """Put an AI handler under the resident whose grants are scripted per hub.
 
     Returns:
@@ -301,6 +311,7 @@ def inline_ai(resident) -> tuple:
         switcher_module=switcher,
         on_change=resident.notify,
         start_thread=run_inline,
+        is_managed=is_managed,
     )
     resident._services["ai"] = handler
     return handler, switcher
@@ -2622,3 +2633,65 @@ def test_a_quit_takes_the_adapter_down_and_stops_the_endpoint(windows_hub):
 
     assert daemon.verbs[-1] == "down"
     assert resident._files_adapter._endpoint.is_running is False
+
+
+# --- the agent's gate on the AI page ---
+
+
+def test_the_start_looks_for_the_agent(config_path):
+    resident = ClientResident(log=discard, platform=FakeClientPlatform())
+    released_handlers(resident)
+
+    resident.start()
+    resident.shutdown()
+
+    assert resident._services["ai"].gates == 1
+
+
+def test_each_hubs_state_looks_for_the_agent_before_the_refresh(two_hubs, monkeypatch):
+    released_handlers(two_hubs)
+    sockets_by_hub(
+        monkeypatch,
+        {"hub.lan": [HOME_WELCOME, HOME_STATE], "office.lan": [OFFICE_WELCOME]},
+    )
+
+    turn(two_hubs, "c1")
+
+    order = two_hubs._services["ai"].order
+    assert order[:2] == ["gate", "refresh"]
+
+
+def test_the_agent_turns_the_chip_off_once_and_its_removal_frees_the_page(
+    two_hubs_up, monkeypatch, tmp_path
+):
+    resident, _scripts = two_hubs_up
+    program_dir = tmp_path / "agent"
+    monkeypatch.setattr(
+        resident.platform, "agent_program_dir", lambda: str(program_dir)
+    )
+    handler, switcher = inline_ai(
+        resident, is_managed=resident.platform.is_agent_installed
+    )
+    home = resident._sessions["c1"]
+    resident.set_exit("h1")
+    resident.service_action("ai", {"is_enabled": True})
+
+    program_dir.mkdir()
+    home._dispatch(ScriptedSocket([]), "text", json.dumps(HOME_STATE))
+    home._dispatch(ScriptedSocket([]), "text", json.dumps(HOME_STATE))
+    refused = resident.service_action("ai", {"is_enabled": True})
+
+    assert switcher.calls == ["activate", "deactivate"]
+    assert refused == {}
+    assert list(resident._entry_errors.values()) == [
+        {"code": "ai_tools_managed", "params": {}}
+    ]
+    row = handler.state()["ai"]
+    assert row["is_managed"] is True and row["is_enabled"] is False
+
+    program_dir.rmdir()
+    home._dispatch(ScriptedSocket([]), "text", json.dumps(HOME_STATE))
+
+    assert handler.state()["ai"]["is_managed"] is False
+    assert resident.service_action("ai", {"is_enabled": True}) == {}
+    assert switcher.calls == ["activate", "deactivate", "activate"]

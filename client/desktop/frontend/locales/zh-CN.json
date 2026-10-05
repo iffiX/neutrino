@@ -1,6 +1,7 @@
 {
   "code.admission_paused": "中枢暂停了新的加入；本客户端 {retry_after_s} 秒后再试",
   "code.agent_offline": "那台机器现在没有连到中枢",
+  "code.ai_tools_managed": "这是已管理的设备，请到中枢面板的“模块”页，在“全局配置”里设置它的 AI 工具。",
   "code.ambiguous_hub": "已加入多台中枢，请指明其中一台",
   "code.binding_unknown": "这台中枢已不再认识这个客户端，请用新链接重新加入",
   "code.bundle_missing": "此安装未包含 {binary}，请重新安装客户端",
@@ -191,6 +192,7 @@
   "ui.rdp_connect": "连接",
   "ui.rdp_mac_hint": "画面全黑或鼠标没反应，说明那台 Mac 还没给 RustDesk 开启“屏幕录制”和“辅助功能”。",
   "ui.rdp_open": "查看器已打开",
+  "ui.reason.ai_managed": "这是已管理的设备，请到中枢面板的“模块”页，在“全局配置”里设置它的 AI 工具。",
   "ui.reason.console_waiting": "本机已登记到控制台，请在控制台里把它挂载到一个网络。",
   "ui.reason.disabled": "中枢已把本机停用。",
   "ui.reason.disconnect_first": "先断开，才能改本地端口。",

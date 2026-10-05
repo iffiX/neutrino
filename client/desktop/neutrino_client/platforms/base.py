@@ -168,6 +168,24 @@ class ClientPlatform:
         """This person's home directory."""
         return os.path.expanduser("~")
 
+    def agent_program_dir(self) -> str:
+        """Where the agent's package puts its program on this platform.
+
+        Returns:
+            The absolute directory path; empty where no agent is packaged.
+        """
+        return ""
+
+    def is_agent_installed(self) -> bool:
+        """Whether the agent's program directory stands on this machine.
+
+        Returns:
+            True while the agent is installed: its AI tools are then set
+            from the hub's panel, and the AI page holds still.
+        """
+        path = self.agent_program_dir()
+        return bool(path) and os.path.isdir(path)
+
     def system_language(self) -> str:
         """The language this machine is set up in, as the client names it.
 

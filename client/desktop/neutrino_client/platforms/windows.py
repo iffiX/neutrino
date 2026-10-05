@@ -28,6 +28,7 @@ import threading
 import time
 
 from neutrino_client.constants import (
+    CLIENT_AGENT_PROGRAM_SUBDIR_WINDOWS,
     CLIENT_CONTROL_PIPE_NAME_PREFIX,
     CLIENT_CONTROL_PIPE_PREFIX,
     CLIENT_DEFAULT_LANGUAGE,
@@ -66,6 +67,7 @@ from neutrino_client.words import language_for_tag
 WINDOWS_CLIENT_DIR_PARTS = ("Neutrino", "client")
 WINDOWS_MOUNT_TIMEOUT_S = 60
 WINDOWS_PROGRAM_DATA_DEFAULT = "C:\\ProgramData"
+WINDOWS_PROGRAM_FILES_DEFAULT = "C:\\Program Files"
 WINDOWS_SYSTEM_ROOT_DEFAULT = "C:\\Windows"
 
 # A share that File Explorer never hears about stands there as a disconnected
@@ -193,6 +195,11 @@ class WindowsPlatform(ClientPlatform):
             self.home(), "AppData", "Roaming"
         )
         return os.path.join(root, *WINDOWS_CLIENT_DIR_PARTS)
+
+    def agent_program_dir(self) -> str:
+        """``%ProgramFiles%\\Neutrino\\agent``."""
+        root = os.environ.get("ProgramFiles", "") or WINDOWS_PROGRAM_FILES_DEFAULT
+        return os.path.join(root, *CLIENT_AGENT_PROGRAM_SUBDIR_WINDOWS)
 
     def log_dir(self) -> str:
         """``%LOCALAPPDATA%\\Neutrino\\client``."""

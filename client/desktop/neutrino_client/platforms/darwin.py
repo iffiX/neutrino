@@ -28,6 +28,7 @@ except ImportError:  # Windows has no account database module.
     pwd = None
 
 from neutrino_client.constants import (
+    CLIENT_AGENT_PROGRAM_DIR_DARWIN,
     CLIENT_CLIPBOARD_TIMEOUT_S,
     CLIENT_CONTROL_SOCKET_NAME,
     CLIENT_EASYTIER_SOCKET_PATH_DARWIN,
@@ -157,6 +158,10 @@ class DarwinPlatform(ClientPlatform):
     def log_dir(self) -> str:
         """``~/Library/Logs/Neutrino/client``."""
         return os.path.join(self.home(), DARWIN_LOG_DIR)
+
+    def agent_program_dir(self) -> str:
+        """``/Library/Application Support/Neutrino/agent/app``."""
+        return CLIENT_AGENT_PROGRAM_DIR_DARWIN
 
     def system_language(self) -> str:
         """The first of the languages this account prefers, as set in

@@ -1600,3 +1600,79 @@ def test_the_sidebar_carries_only_the_pages_and_no_foot():
 def test_a_token_web_entry_has_open_alone_and_shows_its_job():
     web = body_of("drawWebEntry")
     assert "const opening = entry.job === 'opening' ? entry.job : '';" in web
+
+
+def run_ai_row(*, is_managed: bool) -> dict:
+    """The page's own drawAiEntry, run in node on a healthy entry of the exit
+    hub with the chip on, returning the row it draws."""
+    import json
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("no node to run the page's script")
+    signature = "function drawAiEntry(card, state, hub, entry)"
+    script = "\n".join(
+        [
+            "const document = {createElement: () => ({appendChild: () => {}}),",
+            "  createTextNode: () => ({})};",
+            "const t = (key) => key;",
+            "const ensureAiStaged = () => ({});",
+            "const isAiSwitching = () => false;",
+            "const isEntryFree = () => true;",
+            "const isUnhealthy = () => false;",
+            "const entryWork = () => '';",
+            "const entryReason = () => 'other';",
+            "const marker = () => '';",
+            "const noteLine = (text) => text;",
+            "const errorLine = (text) => text;",
+            "const wordCode = (code) => code;",
+            "const forwardedTo = () => ' -> 21001';",
+            "let row = null;",
+            "function entryRow(hub, entry, address, word, actions, reason, extras) {",
+            "  row = {address, disabled: actions.map((a) => a.disabled), reason};",
+            "  return row;",
+            "}",
+            signature + function_body(signature) + "\n}",
+            "const state = {ai: {is_enabled: false, is_active: false,",
+            "  is_managed: " + json.dumps(is_managed) + "}};",
+            "drawAiEntry({appendChild: () => {}}, state, {is_exit: true},",
+            "  {payload: {endpoint: 'http://hub:8080'}, job: ''});",
+            "console.log(JSON.stringify(row));",
+        ]
+    )
+    result = subprocess.run(
+        [node, "-e", script], capture_output=True, text=True, timeout=30
+    )
+    assert result.returncode == 0, result.stderr
+    return json.loads(result.stdout)
+
+
+def test_with_the_agent_installed_the_ai_row_shows_but_holds_still():
+    row = run_ai_row(is_managed=True)
+
+    assert row == {
+        "address": "http://hub:8080 -> 21001",
+        "disabled": [True, True],
+        "reason": "ui.reason.ai_managed",
+    }
+
+
+def test_without_the_agent_the_ai_row_is_usable_again():
+    row = run_ai_row(is_managed=False)
+
+    assert row["disabled"] == [False, False]
+    assert row["reason"] == ""
+
+
+def test_the_managed_reason_is_one_text_with_its_code_in_both_languages():
+    for words in CATALOGS.values():
+        assert words["ui.reason.ai_managed"] == words["code.ai_tools_managed"]
+    assert EN_WORDS["ui.reason.ai_managed"] == (
+        "This is a managed device: set its AI tools on the hub's panel, "
+        "under Modules, Global configuration."
+    )
+    assert CATALOGS["zh-CN"]["ui.reason.ai_managed"] == (
+        "这是已管理的设备，请到中枢面板的“模块”页，在“全局配置”里设置它的 AI 工具。"
+    )
