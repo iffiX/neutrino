@@ -44,12 +44,12 @@ class HubsScreenTest {
             mapOf(
                 "ui.state.connected" to "Connected",
                 "ui.state.connected_through" to "Connected · {way}",
-                "ui.through.relay" to "Relay",
+                "ui.through.relay" to "SSH Relay",
             ),
         )
         val before = HubView(Samples.binding, HubConnection.CONNECTED)
         assertEquals("Connected", hubStateWord(before, words))
-        assertEquals("Connected · Relay", hubStateWord(before.copy(reachedThrough = "relay"), words))
+        assertEquals("Connected · SSH Relay", hubStateWord(before.copy(reachedThrough = "relay"), words))
         assertEquals("ui.state.down", hubStateKey(before.copy(connection = HubConnection.DOWN, reachedThrough = "lan")))
     }
 
