@@ -173,7 +173,7 @@ Every file is on the [releases page](https://github.com/iffiX/neutrino/releases)
 | Ports           | a TCP port                     | a container's published port, or declared by hand | **Connect**           |
 | AI              | the gateway endpoint and a key | the AI gateway on the hub                         | **Configure**, **The AI tools use this gateway** |
 | Files           | an SMB share                   | the Samba module, or declared by hand             | **Configure**, **Mount** |
-| Remote desktops | a desktop the machine shares   | `sudo nagent rdp start` on that machine           | **Connect**           |
+| Remote desktops | a desktop the machine shares   | the Remote desktop module's switch for that machine | **Connect**           |
 
 <table>
 <tr valign="top">
