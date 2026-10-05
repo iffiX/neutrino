@@ -236,7 +236,6 @@ class CloudcliLinuxApplier:
         for instance in config.instances:
             home = homes[instance.account]
             environment = installer.service_environment(
-                config,
                 instance,
                 upstream_port=upstream_ports[instance.account],
                 home=home,

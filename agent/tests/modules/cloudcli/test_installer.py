@@ -196,7 +196,7 @@ def test_the_installed_version_is_read_from_the_package(tmp_path):
     assert installer.installed_version(str(tmp_path / "none")) == ""
 
 
-def test_an_instance_runs_with_an_environment_written_from_scratch():
+def test_an_instance_runs_with_an_environment_written_from_scratch_naming_no_gateway():
     config = CloudcliConfig.from_dict(
         {
             "gateway_url": "http://10.0.0.1:8317",
@@ -206,7 +206,6 @@ def test_an_instance_runs_with_an_environment_written_from_scratch():
     )
 
     environment = installer.service_environment(
-        config,
         config.instances[0],
         upstream_port=41234,
         home="/home/ann",
@@ -220,9 +219,6 @@ def test_an_instance_runs_with_an_environment_written_from_scratch():
         "SERVER_PORT": "41234",
         "JWT_SECRET": jwt_secret("s"),
         "DATABASE_PATH": "/home/ann/.local/share/neutrino/agent/cloudcli/auth.db",
-        "ANTHROPIC_BASE_URL": "http://10.0.0.1:8317",
-        "ANTHROPIC_AUTH_TOKEN": "k",
-        "OPENAI_BASE_URL": "http://10.0.0.1:8317/v1",
         "HOME": "/home/ann",
         "PATH": "/var/lib/neutrino/agent/cloudcli/n/bin:/home/ann/.local/bin:"
         "/usr/local/bin:/usr/bin:/bin",
@@ -236,7 +232,6 @@ def test_a_windows_instance_puts_node_before_the_account_s_own_path():
     )
 
     environment = installer.service_environment(
-        config,
         config.instances[0],
         upstream_port=41234,
         home="C:\\Users\\ann",

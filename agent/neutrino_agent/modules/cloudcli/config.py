@@ -2,8 +2,9 @@
 
 Each instance is one account's CloudCLI behind the agent's forwarder on one
 port. The hub sends each instance's CloudCLI password and the secret its
-tokens are signed with, and the gateway's address and this device's key
-for the AI tools CloudCLI starts. On Windows an instance also carries the
+tokens are signed with. The AI tools CloudCLI starts read the account's own
+files, which the machine's AI tools setting points at the gateway. On
+Windows an instance also carries the
 account's password, from the login the hub holds for it, because a task
 that runs as an account needs its password to sign in.
 
@@ -117,9 +118,6 @@ class CloudcliConfig:
     """Everything the module's desired configuration holds.
 
     Attributes:
-        gateway_url: The hub's AI gateway as this machine reaches it; empty
-            when the hub serves none.
-        gateway_key: This device's own key to the gateway.
         npm_registry: The npm registry of the hub's edition, which npm
             installs CloudCLI from; empty for npm's own default.
         npm_environment: More of npm's settings the hub's edition names,
@@ -128,8 +126,6 @@ class CloudcliConfig:
         instances: One CloudCLI per account.
     """
 
-    gateway_url: str = ""
-    gateway_key: str = ""
     npm_registry: str = ""
     npm_environment: dict = field(default_factory=dict)
     instances: list = field(default_factory=list)
@@ -138,8 +134,6 @@ class CloudcliConfig:
     def from_dict(cls, data: dict) -> "CloudcliConfig":
         instances = data.get("instances")
         return cls(
-            gateway_url=str(data.get("gateway_url", "") or "").rstrip("/"),
-            gateway_key=str(data.get("gateway_key", "") or ""),
             npm_registry=str(data.get("npm_registry", "") or ""),
             npm_environment=npm_settings_of(data.get("npm_environment")),
             instances=[
@@ -148,21 +142,6 @@ class CloudcliConfig:
                 if isinstance(entry, dict)
             ],
         )
-
-    def environment(self) -> dict:
-        """The gateway's part of every instance's environment.
-
-        Returns:
-            ``ANTHROPIC_BASE_URL``, ``ANTHROPIC_AUTH_TOKEN`` and
-            ``OPENAI_BASE_URL``; empty when the hub serves no gateway.
-        """
-        if not self.gateway_url:
-            return {}
-        return {
-            "ANTHROPIC_BASE_URL": self.gateway_url,
-            "ANTHROPIC_AUTH_TOKEN": self.gateway_key,
-            "OPENAI_BASE_URL": self.gateway_url + "/v1",
-        }
 
     def validate(self, *, os_name: str = "linux") -> None:
         """Check the configuration holds together.

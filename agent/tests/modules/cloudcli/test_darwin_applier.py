@@ -127,7 +127,9 @@ def test_an_instance_is_a_root_only_launchdaemon_of_its_account(
     search_path = environment["PATH"].split(":")
     assert search_path[0].endswith(f"{NODE_DIR}/bin")
     assert search_path[1] == "/Users/ann/.local/bin"
-    assert environment["ANTHROPIC_AUTH_TOKEN"] == "device-key"
+    assert not {"ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "OPENAI_BASE_URL"} & set(
+        environment
+    )
     assert plist["StandardOutPath"].endswith("Logs/cloudcli_ann.log")
     assert ["launchctl", "bootstrap", "system", str(path)] in launchd.calls
     assert account.calls[0][1] == ["/bin/zsh", "-l", "-c", "command -v claude"]

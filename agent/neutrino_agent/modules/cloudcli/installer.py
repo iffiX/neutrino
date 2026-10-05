@@ -320,7 +320,6 @@ def registry_host(registry: str) -> str:
 
 
 def service_environment(
-    config,
     instance,
     *,
     upstream_port: int,
@@ -333,7 +332,6 @@ def service_environment(
     """The environment one instance's CloudCLI runs with, written from scratch.
 
     Args:
-        config: The :class:`CloudcliConfig`, for the gateway.
         instance: The :class:`CloudcliInstance`.
         upstream_port: The loopback port CloudCLI listens on.
         home: The account's home.
@@ -345,16 +343,16 @@ def service_environment(
         join: How the system joins a path.
 
     Returns:
-        ``HOST``, ``SERVER_PORT``, ``JWT_SECRET``, ``DATABASE_PATH``, the
-        gateway's three, ``PATH`` with a Node directory or a ``claude``,
-        and with a ``claude`` also ``HOME`` and ``CLAUDE_CLI_PATH``.
+        ``HOST``, ``SERVER_PORT``, ``JWT_SECRET``, ``DATABASE_PATH``,
+        ``PATH`` with a Node directory or a ``claude``, and with a
+        ``claude`` also ``HOME`` and ``CLAUDE_CLI_PATH``; nothing names
+        the gateway.
     """
     environment = {
         "HOST": CLOUDCLI_UPSTREAM_HOST,
         "SERVER_PORT": str(int(upstream_port)),
         "JWT_SECRET": jwt_secret(instance.token_secret),
         "DATABASE_PATH": database_path(home, os_name, join),
-        **config.environment(),
     }
     if os_name == "windows":
         if node_dir:
