@@ -133,7 +133,9 @@ def may_open_panel(client) -> bool:
     return CLIENT_PERMISSION_PANEL in permitted_kinds(ClientRegistry(), client)
 
 
-def end_client_panel_sessions(runtime, *, why: str) -> list:
+def end_client_panel_sessions(
+    runtime, *, why: str, names: "dict | None" = None
+) -> list:
     """Close what clients no longer hold, after a client left the hub.
 
     The decision is :func:`neutrino_hub.web.client_access.close_lost_access`;
@@ -142,13 +144,14 @@ def end_client_panel_sessions(runtime, *, why: str) -> list:
     Args:
         runtime: The shared runtime.
         why: What the hub's log says ended a panel session.
+        names: Client id to name for clients whose row is already gone.
 
     Returns:
         The ids of the clients whose panel sessions ended.
     """
     from neutrino_hub.web.client_access import close_lost_access
 
-    closed = close_lost_access(runtime, why=why)
+    closed = close_lost_access(runtime, why=why, names=names)
     return [
         client_id for client_id, what in closed.items() if what.get("panel_sessions")
     ]

@@ -710,12 +710,16 @@ def test_a_hello_past_the_cap_on_sockets_is_channel_full(api):
     assert not runtime.agent_sessions.is_online(binding["id"])
 
 
-def test_a_client_leaving_ends_its_panel_session(api):
+def test_a_client_leaving_ends_its_panel_session_and_the_log_names_it(api, caplog):
     client, runtime = api
     client_id, binding = joined_client(client, runtime)
     ClientRegistry().set_permission(client_id, ["panel"])
+    name = ClientRegistry().get(client_id).name
     session = runtime.sessions.open_for_client(client_id)
 
-    client.post("/api/channel/leave", json=binding)
+    with caplog.at_level("INFO", logger="neutrino_hub.web.client_access"):
+        client.post("/api/channel/leave", json=binding)
 
     assert not runtime.sessions.is_valid(session)
+    assert f"panel: session of client {name} ended (left the hub)" in caplog.text
+    assert client_id not in caplog.text

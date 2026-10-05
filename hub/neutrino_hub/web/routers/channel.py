@@ -165,7 +165,11 @@ def leave(
         revoke_client_key(registry, client)
     registry.forget(binding.id)
     runtime.forget_client(binding.id)
-    end_client_panel_sessions(runtime, why=SESSION_END_LEFT)
+    end_client_panel_sessions(
+        runtime,
+        why=SESSION_END_LEFT,
+        names={binding.id: client.name} if client is not None else None,
+    )
     runtime.events.publish(WEB_EVENT_CLIENTS)
     return {}
 

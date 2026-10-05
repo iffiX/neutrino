@@ -2,7 +2,8 @@
 
 The panel holds one of these open and refetches what it draws when a frame
 arrives, so what is pinned here is the socket's gate, the frame it opens
-with, and that the things a page watches — a machine's channel, a report
+with, that it closes once its session ends, and that the things a page
+watches — a machine's channel, a report
 saying something new, a report saying nothing new, a machine's vitals, and a
 write under ``config/`` — reach it exactly as often as they should, carrying
 what they carry.
@@ -41,10 +42,13 @@ POLICY_VIOLATION_CODE = 1008
 
 
 class StubSessions:
-    """The panel's session store: one token is signed in."""
+    """The panel's session store: one token is signed in until it ends."""
+
+    def __init__(self):
+        self.is_ended = False
 
     def is_valid(self, token) -> bool:
-        return token == SESSION_TOKEN
+        return token == SESSION_TOKEN and not self.is_ended
 
 
 class FakeRuntime:
@@ -282,3 +286,18 @@ def test_a_config_write_names_the_file_it_wrote(box):
 
     assert frame["type"] == WEB_EVENT_CONFIG
     assert frame["key"] == "devices/device-one/samba.json"
+
+
+def test_a_session_that_ends_closes_its_open_socket(box, monkeypatch):
+    client, runtime = box
+    monkeypatch.setattr(ws, "WEB_SOCKET_SESSION_CHECK_INTERVAL_S", 0.01)
+    panel = opened(client)
+
+    runtime.sessions.is_ended = True
+
+    with pytest.raises(WebSocketDisconnect) as ended:
+        while True:
+            panel.receive_json()
+    assert ended.value.code == POLICY_VIOLATION_CODE
+    assert ended.value.reason == "session ended"
+    closed(panel)
