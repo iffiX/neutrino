@@ -49,6 +49,8 @@ from neutrino_hub.modules.services.constants import (
     SERVICES_DESCRIPTION_CLOUDCLI_MODULE,
     SERVICES_DESCRIPTION_CODE_SERVER_MODULE,
     SERVICES_DESCRIPTION_VSCODE_MODULE,
+    SERVICES_PORT_PROTOCOLS,
+    SERVICES_PROTOCOL_TCP,
     SERVICES_SAMBA_DEFAULT_PORT,
     SERVICES_SOURCE_DECLARED,
     SERVICES_TYPE_AI,
@@ -79,6 +81,7 @@ class ConnectTarget:
             or ``panel``.
         provider: The machine the permission's device lists judge it by,
             empty for none.
+        protocol: ``tcp``, or ``udp`` for a UDP ``port`` entry.
     """
 
     device_id: str
@@ -86,6 +89,7 @@ class ConnectTarget:
     port: int
     kind: str = field(default="", compare=False)
     provider: str = field(default="", compare=False)
+    protocol: str = SERVICES_PROTOCOL_TCP
 
 
 def service_material(runtime, client_id: str, entry_id: str) -> tuple:
@@ -234,9 +238,30 @@ def connect_target(
         "",
         {},
         ConnectTarget(
-            target.device_id, target.host, target.port, kind=kind, provider=provider
+            target.device_id,
+            target.host,
+            target.port,
+            kind=kind,
+            provider=provider,
+            protocol=entry_protocol(raw),
         ),
     )
+
+
+def entry_protocol(entry: dict) -> str:
+    """The protocol one published entry is reached over.
+
+    Args:
+        entry: The entry.
+
+    Returns:
+        A ``port`` entry's ``protocol``, ``tcp`` when it names none or names
+        neither; ``tcp`` for every other type.
+    """
+    if entry.get("type") != SERVICES_TYPE_PORT:
+        return SERVICES_PROTOCOL_TCP
+    protocol = (entry.get("payload") or {}).get("protocol")
+    return protocol if protocol in SERVICES_PORT_PROTOCOLS else SERVICES_PROTOCOL_TCP
 
 
 def entry_port(entry: dict) -> int:

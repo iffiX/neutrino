@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 
 from neutrino_hub.modules.devices.desired_state import DesiredStateStore
 from neutrino_hub.modules.services.ops import SambaShareListing
+from neutrino_hub.modules.services.config import DeclaredServiceRegistry
 from neutrino_hub.modules.services.host_scope import HostScope
 from neutrino_hub.modules.services.probe import DeclaredServiceHealth
 from neutrino_hub.modules.services.published import PublishedServiceCache
@@ -147,7 +148,11 @@ def test_each_form_kind_lands_as_its_own_type(box):
 
     by_type = {entry["type"]: entry for entry in entries}
     assert by_type["web"]["payload"]["url"] == "https://10.0.0.5:8080/"
-    assert by_type["port"]["payload"] == {"host": "10.0.0.5", "port": 9000}
+    assert by_type["port"]["payload"] == {
+        "host": "10.0.0.5",
+        "port": 9000,
+        "protocol": "tcp",
+    }
     assert by_type["file"]["payload"] == {
         "protocol": "smb",
         "host": "192.168.100.7",
@@ -411,3 +416,40 @@ def test_the_list_carries_what_the_probe_measured(box):
     payload = client.get("/api/hub/service").json()
 
     assert payload["services"][0]["detail_code"] == "share_missing"
+
+
+def test_a_port_declared_on_udp_is_stored_as_udp_and_listed_so(box):
+    client, _ = box
+
+    entries = declare(client, name="dns", port=53, protocol="udp")
+    tcp_entries = declare(client, name="ssh", port=22)
+
+    by_name = {entry["title"]: entry for entry in tcp_entries}
+    assert by_name["dns"]["payload"]["protocol"] == "udp"
+    assert by_name["ssh"]["payload"]["protocol"] == "tcp"
+    assert [entry["title"] for entry in entries] == ["dns"]
+    kinds = {
+        record.name: record.kind for record in DeclaredServiceRegistry().list_records()
+    }
+    assert kinds == {"dns": "generic_udp", "ssh": "generic_tcp"}
+
+
+def test_a_port_on_a_protocol_that_is_neither_is_refused(box):
+    client, _ = box
+
+    response = client.post(
+        "/api/hub/service/declaration/add",
+        json={
+            "name": "x",
+            "kind": "port",
+            "host": "10.0.0.5",
+            "port": 1,
+            "protocol": "sctp",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == {
+        "code": "declared_service_invalid",
+        "params": {"field": "protocol"},
+    }

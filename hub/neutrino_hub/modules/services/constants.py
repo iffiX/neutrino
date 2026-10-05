@@ -5,11 +5,25 @@ SERVICES_DECLARED_PATH = "services/declared.json"
 SERVICES_KIND_SAMBA = "samba"
 SERVICES_KIND_HTTP = "http"
 SERVICES_KIND_GENERIC_TCP = "generic_tcp"
+SERVICES_KIND_GENERIC_UDP = "generic_udp"
 SERVICES_DECLARED_KINDS = (
     SERVICES_KIND_SAMBA,
     SERVICES_KIND_HTTP,
     SERVICES_KIND_GENERIC_TCP,
+    SERVICES_KIND_GENERIC_UDP,
 )
+
+# The two protocols a port entry states, the one a payload with none reads
+# as first, the declared kind each is stored as, and what a UDP container
+# entry's id ends with.
+SERVICES_PROTOCOL_TCP = "tcp"
+SERVICES_PROTOCOL_UDP = "udp"
+SERVICES_PORT_PROTOCOLS = (SERVICES_PROTOCOL_TCP, SERVICES_PROTOCOL_UDP)
+SERVICES_PORT_KIND_BY_PROTOCOL = {
+    SERVICES_PROTOCOL_TCP: SERVICES_KIND_GENERIC_TCP,
+    SERVICES_PROTOCOL_UDP: SERVICES_KIND_GENERIC_UDP,
+}
+SERVICES_UDP_ID_SUFFIX = "_udp"
 
 SERVICES_HTTP_SCHEMES = ("http", "https")
 
@@ -82,7 +96,10 @@ SERVICES_TYPE_TO_KIND = {
     SERVICES_TYPE_PORT: SERVICES_KIND_GENERIC_TCP,
     SERVICES_TYPE_FILE: SERVICES_KIND_SAMBA,
 }
-SERVICES_KIND_TO_TYPE = {kind: type_ for type_, kind in SERVICES_TYPE_TO_KIND.items()}
+SERVICES_KIND_TO_TYPE = {
+    **{kind: type_ for type_, kind in SERVICES_TYPE_TO_KIND.items()},
+    SERVICES_KIND_GENERIC_UDP: SERVICES_TYPE_PORT,
+}
 
 # Where an entry comes from: a hub module, a person's declaration, or a
 # managed machine saying it is sharing its desktop.

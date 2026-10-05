@@ -55,7 +55,7 @@ def container(name: str, *, ports: list[int], is_running: bool = True) -> dict:
         "name": name,
         "image": "docker.io/nginx:1.25",
         "is_running": is_running,
-        "host_ports": ports,
+        "bindings": [(port, "tcp") for port in ports],
     }
 
 
@@ -190,7 +190,7 @@ def test_a_devices_podman_publishes_one_port_entry_per_published_container_port(
     ]
     entry = entries[0]
     assert entry["type"] == "port"
-    assert entry["payload"] == {"host": DEVICE_HOST, "port": 8080}
+    assert entry["payload"] == {"host": DEVICE_HOST, "port": 8080, "protocol": "tcp"}
     assert entry["description"] == (
         f"published by container web (docker.io/nginx:1.25) on {DEVICE_HOST}"
     )
@@ -249,7 +249,11 @@ def test_declared_records_map_onto_the_types_with_their_probe_health():
     assert by_id["w1"]["is_healthy"] is True
     assert by_id["w1"]["source"] == "declared"
     assert by_id["w1"]["description"] == "the forge box"
-    assert by_id["p1"]["payload"] == {"host": "10.0.0.5", "port": 9000}
+    assert by_id["p1"]["payload"] == {
+        "host": "10.0.0.5",
+        "port": 9000,
+        "protocol": "tcp",
+    }
     assert by_id["p1"]["is_healthy"] is False
     assert by_id["f1_media"]["payload"]["share"] == "media"
     assert by_id["f1_media"]["payload"]["users"] == []
@@ -663,3 +667,27 @@ def test_each_code_server_instance_is_a_web_entry_opened_with_a_token():
     assert alice["description_code"] == "code_server_module"
     assert alice["description_params"] == {"host": DEVICE_HOST, "account": "alice"}
     assert alice["device_id"] == DEVICE
+
+
+def test_a_containers_udp_port_is_its_own_entry_with_the_udp_id():
+    stopped = {**container("dns", ports=[], is_running=False)}
+    stopped["bindings"] = [(53, "tcp"), (53, "udp")]
+    entries = collect(device_modules=[hosting(podman={"containers": [stopped]})])
+
+    by_id = {entry["id"]: entry for entry in entries}
+    assert by_id["podman_device-one_dns_53"]["payload"]["protocol"] == "tcp"
+    assert by_id["podman_device-one_dns_53_udp"]["payload"] == {
+        "host": DEVICE_HOST,
+        "port": 53,
+        "protocol": "udp",
+    }
+    assert by_id["podman_device-one_dns_53_udp"]["is_healthy"] is False
+
+
+def test_a_declared_udp_record_is_a_udp_port_entry_with_empty_health():
+    entries = collect(declared_services=[declared("generic_udp", port=53)])
+
+    (entry,) = entries
+    assert entry["type"] == "port"
+    assert entry["payload"] == {"host": "10.0.0.5", "port": 53, "protocol": "udp"}
+    assert entry["is_healthy"] is None

@@ -1278,8 +1278,9 @@ class PublishedServiceView(BaseModel):
 class DeclaredServiceCreate(BaseModel):
     """A declaration as the form submits it.
 
-    ``kind`` is a service type — web, port or file — mapped onto the stored
-    probe kind; the fields a kind does not have are ignored. A ``file``
+    ``kind`` is a service type, web, port or file, mapped onto the stored
+    kind, a port by its ``protocol``; the fields a kind does not have are
+    ignored. A ``file``
     declaration left without a port gets 445, and names every share it
     declares on that server.
     """
@@ -1292,6 +1293,8 @@ class DeclaredServiceCreate(BaseModel):
     path: str | None = None
     shares: list[str] | None = None
     description: str = ""
+    # ``tcp`` or ``udp``, read for a ``port`` declaration alone.
+    protocol: str = "tcp"
 
 
 class DeclaredServiceRequest(BaseModel):

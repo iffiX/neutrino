@@ -33,6 +33,8 @@ from neutrino_hub.modules.services.collector import (
 )
 from neutrino_hub.modules.services.config import DeclaredServiceRegistry
 from neutrino_hub.modules.services.constants import (
+    SERVICES_PORT_PROTOCOLS,
+    SERVICES_PROTOCOL_TCP,
     SERVICES_ANSWER_TIMEOUT_S,
     SERVICES_LIST_TTL_S,
 )
@@ -375,9 +377,7 @@ class PublishedServiceCache:
                         "name": str(container.get("name", "")),
                         "image": str(container.get("image", "")),
                         "is_running": bool(container.get("is_running")),
-                        "host_ports": [
-                            int(port) for port in container.get("host_ports") or []
-                        ],
+                        "bindings": container_bindings(container),
                     }
                     for container in details.get("containers") or []
                     if isinstance(container, dict) and container.get("name")
@@ -434,3 +434,34 @@ class PublishedServiceCache:
 
 
 __all__ = ["PublishedServiceCache"]
+
+
+def container_bindings(container: dict) -> list:
+    """The ports one container publishes, each with its protocol, once each.
+
+    Args:
+        container: One container of a Podman report's ``details``.
+
+    Returns:
+        ``(port, protocol)`` pairs in the report's order: one per item of
+        ``host_bindings``, a missing ``protocol`` read as ``tcp``; every
+        ``host_ports`` number as ``tcp`` when the report has no
+        ``host_bindings`` at all, as an agent before 0.5.0 sends it.
+    """
+    bindings = container.get("host_bindings")
+    if not isinstance(bindings, list):
+        bindings = [{"port": port} for port in container.get("host_ports") or []]
+    pairs = []
+    for binding in bindings:
+        if not isinstance(binding, dict):
+            continue
+        try:
+            port = int(binding.get("port") or 0)
+        except (TypeError, ValueError):
+            continue
+        protocol = str(binding.get("protocol") or SERVICES_PROTOCOL_TCP)
+        if port <= 0 or protocol not in SERVICES_PORT_PROTOCOLS:
+            continue
+        if (port, protocol) not in pairs:
+            pairs.append((port, protocol))
+    return pairs

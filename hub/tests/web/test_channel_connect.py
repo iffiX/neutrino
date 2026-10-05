@@ -9,8 +9,10 @@ refusals included, being the client's; a client that closes closes the
 agent's stream; a machine with no socket is ``agent_offline``; a socket the
 hub dials carries bytes both ways and its end of file closes the stream
 empty; a dial that fails is ``connect_failed`` with ``refused``, ``timeout``
-or ``unreachable``; and the far end's bytes reach the client only as far as
-the client's credit allows.
+or ``unreachable``; the far end's bytes reach the client only as far as
+the client's credit allows; and a UDP entry opens its agent's ``connect
+{port, protocol: udp}`` with frames crossing unchanged, or has the hub
+answer for a declared record from a socket of its own.
 """
 
 import asyncio
@@ -25,6 +27,7 @@ from neutrino_hub.modules.channel.sessions import ChannelSession, ChannelStream
 from neutrino_hub.modules.clients.services import ConnectTarget
 from neutrino_hub.web import channel_connect
 from neutrino_hub.web.channel_connect import dial_reason, serve_connect_stream
+from neutrino_hub.web.channel_udp import frame_of, split_frame
 from tests.conftest import FakeChannelSessions, ScriptedChannelStream
 
 DEVICE = "device-one"
@@ -314,3 +317,72 @@ def test_the_far_ends_bytes_reach_the_client_only_as_its_credit_allows(judged):
     assert all(frame[:4] == stream_id for frame in after)
     assert b"".join(frame[4:] for frame in after) == b"a" * 10 + b"b" * 10
     assert last == {"type": "close", "stream": 1, "code": "", "params": {}}
+
+
+def test_a_udp_entry_opens_its_agents_udp_connect_and_frames_cross(judged):
+    judged.verdict = (
+        "",
+        {},
+        ConnectTarget(DEVICE, "", 53, kind="port", provider=DEVICE, protocol="udp"),
+    )
+    runtime = FakeRuntime()
+    session = FakeSession()
+
+    async def scenario():
+        stream = ScriptedChannelStream("connect", {"id": "dns_udp"}, 1)
+        serving = asyncio.create_task(serve_connect_stream(runtime, session, stream))
+        await until(lambda: runtime.agent_sessions.streams)
+        (far,) = runtime.agent_sessions.streams
+        held = dict(session.connects)
+        stream._deliver(("data", frame_of(40001, b"query")))
+        far._deliver(("data", frame_of(40001, b"reply")))
+        await until(lambda: far.sent and stream.sent)
+        far.finish({"code": "", "params": {}})
+        await serving
+        return stream, far, held
+
+    stream, far, held = asyncio.run(scenario())
+
+    assert (far.kind, far.args) == ("connect", {"port": 53, "protocol": "udp"})
+    assert [split_frame(frame) for frame in far.sent] == [(40001, b"query")]
+    assert [split_frame(frame) for frame in stream.sent] == [(40001, b"reply")]
+    assert held == {1: ("port", DEVICE)}
+    assert session.connects == {}
+
+
+def test_a_declared_udp_record_is_answered_from_the_hubs_own_socket(judged):
+    runtime = FakeRuntime()
+
+    class Echo(asyncio.DatagramProtocol):
+        def connection_made(self, transport):
+            self.transport = transport
+
+        def datagram_received(self, data, address):
+            self.transport.sendto(data.upper(), address)
+
+    async def scenario():
+        loop = asyncio.get_running_loop()
+        transport, _ = await loop.create_datagram_endpoint(
+            Echo, local_addr=("127.0.0.1", 0)
+        )
+        port = transport.get_extra_info("sockname")[1]
+        judged.verdict = (
+            "",
+            {},
+            ConnectTarget("", "127.0.0.1", port, kind="port", protocol="udp"),
+        )
+        stream = ScriptedChannelStream("connect", {"id": "dns"}, 1)
+        serving = asyncio.create_task(
+            serve_connect_stream(runtime, FakeSession(), stream)
+        )
+        stream._deliver(("data", frame_of(40001, b"ping")))
+        await until(lambda: stream.sent)
+        await stream.close()
+        await asyncio.wait_for(serving, 5)
+        transport.close()
+        return stream
+
+    stream = asyncio.run(scenario())
+
+    assert [split_frame(frame) for frame in stream.sent] == [(40001, b"PING")]
+    assert runtime.agent_sessions.streams == []

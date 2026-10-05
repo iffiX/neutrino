@@ -101,6 +101,12 @@ CHANNEL_PING_TIMEOUT_S = 20.0
 CHANNEL_CONNECT_DIAL_TIMEOUT_S = 10.0
 # How many ``connect`` streams one client socket may hold open at once.
 CHANNEL_CONNECT_STREAMS_MAX = 256
+# A UDP stream's far end: how long a source keeps its socket with no
+# datagram either way, and how many sources one stream keeps a socket for.
+CHANNEL_UDP_IDLE_TIMEOUT_S = 60.0
+CHANNEL_UDP_SOURCES_MAX = 64
+# A UDP frame's source port in front of its datagram, big-endian.
+CHANNEL_UDP_SOURCE_BYTES = 2
 # The loopback address the hub dials its own gateway and panel on.
 CHANNEL_CONNECT_LOOPBACK = "127.0.0.1"
 # The agent port's limits, each over the whole port and never per peer

@@ -128,6 +128,27 @@ class ChannelStream:
             self._credit -= size
             view = view[size:]
 
+    async def send_datagram(self, data: bytes) -> bool:
+        """Send one frame to the peer now, or drop it.
+
+        Args:
+            data: The frame's bytes after the stream id.
+
+        Returns:
+            True when it was sent; False when the peer's credit is short of
+            it, and the frame is dropped without waiting.
+
+        Raises:
+            AgentOfflineError: If the stream is closed or the socket is gone.
+        """
+        if self._closed.is_set():
+            raise AgentOfflineError(self._session.key)
+        if self._credit < len(data):
+            return False
+        self._credit -= len(data)
+        await self._session.send_bytes(self.id, data)
+        return True
+
     async def close(self, code: str = "", params: "dict | None" = None) -> None:
         """End the stream from this side, with its result.
 

@@ -23,6 +23,8 @@ from neutrino_hub.modules.services.constants import (
     SERVICES_ERROR_SHARE_SCAN,
     SERVICES_ERROR_UNKNOWN,
     SERVICES_KIND_SAMBA,
+    SERVICES_PORT_KIND_BY_PROTOCOL,
+    SERVICES_TYPE_PORT,
     SERVICES_TYPE_TO_KIND,
 )
 from neutrino_hub.modules.services.host_scope import scope_of
@@ -104,7 +106,8 @@ def add_declared_service(
 
     Args:
         request: The incoming request.
-        body: The declaration's fields; its ``kind`` is a service type.
+        body: The declaration's fields; its ``kind`` is a service type, and
+            a port's ``protocol`` picks ``generic_tcp`` or ``generic_udp``.
         runtime: The shared runtime.
 
     Returns:
@@ -112,13 +115,19 @@ def add_declared_service(
 
     Raises:
         HTTPException: 400 with ``declared_service_invalid`` naming the field
-            that was refused.
+            that was refused, ``protocol`` among them.
     """
     kind = SERVICES_TYPE_TO_KIND.get(body.kind)
     if kind is None:
         raise _invalid(
             ServiceFieldInvalidError(SERVICES_ERROR_INVALID, {"field": "kind"})
         )
+    if body.kind == SERVICES_TYPE_PORT:
+        kind = SERVICES_PORT_KIND_BY_PROTOCOL.get(body.protocol)
+        if kind is None:
+            raise _invalid(
+                ServiceFieldInvalidError(SERVICES_ERROR_INVALID, {"field": "protocol"})
+            )
     shares = []
     if kind == SERVICES_KIND_SAMBA:
         shares = [DeclaredShare(name=name) for name in (body.shares or [])]
