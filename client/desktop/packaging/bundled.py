@@ -29,40 +29,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "packaging"))
 import payload  # noqa: E402
+from shared import cc_switch_assets  # noqa: E402
 from shared import hub_assets  # noqa: E402
 from shared import rustdesk_assets  # noqa: E402
-
-# The AI tool switcher, published as one static binary per machine. The musl
-# builds are the ones that need nothing of the machine's own C library.
-CC_SWITCH_VERSION = "5.10.4"
-CC_SWITCH_URL = (
-    "https://github.com/SaladDay/cc-switch-cli/releases/download/"
-    "v{version}/cc-switch-cli-v{version}-{asset}"
-)
-CC_SWITCH_ASSETS = {
-    ("linux", "x86_64"): (
-        "linux-x64-musl.tar.gz",
-        "a9a569d85cb0a61169082a558f86786e0e7ee9c2725900e7d6e876873eb416c3",  # scan: allow
-    ),
-    ("linux", "aarch64"): (
-        "linux-arm64-musl.tar.gz",
-        "37d9b2564f9d47215dbb45914158d71f746d92d829ad62ca1214de4eeb5bfc6f",  # scan: allow
-    ),
-    ("windows", "x86_64"): (
-        "windows-x64.zip",
-        "6bc4ceea645cdf3cebc662e859d6a8804e3a3c737d4968497f66ba6df481f1a7",  # scan: allow
-    ),
-    ("darwin", "aarch64"): (
-        "darwin-arm64.tar.gz",
-        "7ca345ac2c9c930e7929252584fcfe7e7507ae40c1350d4969a80bafbad769f5",  # scan: allow
-    ),
-    ("darwin", "x86_64"): (
-        "darwin-x64.tar.gz",
-        "aaea1f60f5d34b784831c9a6cb9568927a07930e52fd295608b94d2ac17ba53b",  # scan: allow
-    ),
-}
-CC_SWITCH_BINARY_NAME = "cc-switch"
-CC_SWITCH_WINDOWS_BINARY_NAME = "cc-switch.exe"
 
 # The RustDesk viewer, pinned in ``packaging/shared/rustdesk_assets.py``. Linux
 # takes it out of upstream's Flutter .deb, Windows takes the portable
@@ -163,7 +132,7 @@ def stage_windows_binaries(installed: Path, architecture: str) -> None:
     """
     machine = payload.machine_name(architecture)
     _stage_cc_switch(
-        installed / "bin" / CC_SWITCH_WINDOWS_BINARY_NAME, "windows", machine
+        installed / "bin" / cc_switch_assets.binary_name("windows"), "windows", machine
     )
     rustdesk_assets.stage_windows_exe(installed / "bin", machine=machine)
     for part in payload.parts():
@@ -235,25 +204,7 @@ def _stage_cc_switch(target: Path, os_name: str, machine: str) -> None:
         SystemExit: When there is no pin, what arrived is not what was
             pinned, or the archive carries no binary.
     """
-    asset, digest = _asset(CC_SWITCH_ASSETS, os_name, machine, "cc-switch")
-    url = CC_SWITCH_URL.format(version=CC_SWITCH_VERSION, asset=asset)
-    downloaded = payload.fetch(url, digest, "cc-switch")
-    name = (
-        CC_SWITCH_WINDOWS_BINARY_NAME if os_name == "windows" else CC_SWITCH_BINARY_NAME
-    )
-    with tempfile.TemporaryDirectory() as workdir:
-        root = Path(workdir)
-        archive = root / asset
-        archive.write_bytes(downloaded)
-        opened = root / "opened"
-        opened.mkdir()
-        shutil.unpack_archive(str(archive), str(opened))
-        binary = opened / name
-        if not binary.is_file():
-            raise SystemExit(f"{url} carries no {name}")
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(binary, target)
-    target.chmod(0o755)
+    cc_switch_assets.stage(target, os_name, machine)
 
 
 def _stage_easytier(target_dir: Path, os_name: str, machine: str) -> None:

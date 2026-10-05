@@ -226,6 +226,10 @@ def test_the_payload_keeps_the_agents_binary_for_the_service_component(
     assert staged["binary"].name == "nagent.exe"
     assert staged["rustdesk"].name == "rustdesk-1.4.9-x86_64.exe"
     assert (staged["payload"] / "licenses" / "rustdesk.txt").is_file()
+    assert (staged["payload"] / "licenses" / "cc_switch.txt").is_file()
+    assert (staged["payload"] / "bin" / "cc-switch.exe").read_bytes() == (
+        b"MZ cc-switch"
+    )
     entry, binary_name, options = compiled[0]
     assert entry.parts[-3:] == ("neutrino_agent", "cli", "entry.py")
     assert binary_name == "nagent.exe"

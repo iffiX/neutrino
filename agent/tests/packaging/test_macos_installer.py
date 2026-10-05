@@ -225,3 +225,18 @@ def test_the_build_refuses_anything_but_a_mac(monkeypatch):
         build_agent_macos._check_build_machine("arm64")
 
     assert "Mac" in str(refused.value)
+
+
+def test_the_agent_carries_cc_switch_in_its_bin_for_every_account(
+    laid_out, cc_switch_fetched
+):
+    from shared import cc_switch_assets
+
+    staged, _signed, _checked = laid_out
+    installed = staged["root"] / "Library/Application Support/Neutrino/agent/app"
+
+    binary = installed / "bin" / "cc-switch"
+    assert binary.read_bytes() == b"cc-switch"
+    assert binary.stat().st_mode & 0o777 == 0o755
+    assert (installed / "licenses" / "cc_switch.txt").is_file()
+    assert cc_switch_fetched == [cc_switch_assets.asset_url("darwin", "aarch64")[0]]

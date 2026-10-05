@@ -103,6 +103,43 @@ PACKAGING_TUN2SOCKS_ASSETS = {
 PACKAGING_TUN2SOCKS_ASSET_MEMBER = "tun2socks-{os_name}-{machine}"
 PACKAGING_TUN2SOCKS_LICENSE = "tun2socks.txt"
 
+# The cc-switch CLI, which every client package carries for the person's AI
+# tools and every agent package carries for the AI tools of the accounts it
+# serves, in both editions: the release, the asset each system and machine
+# takes and its hash (machines named as the interpreter releases name them;
+# the musl builds on Linux need nothing of the machine's C library), the
+# program's name inside each archive, and its licence under licenses/.
+PACKAGING_CC_SWITCH_VERSION = "5.10.4"
+PACKAGING_CC_SWITCH_URL = (
+    "https://github.com/SaladDay/cc-switch-cli/releases/download/"
+    "v{version}/cc-switch-cli-v{version}-{asset}"
+)
+PACKAGING_CC_SWITCH_ASSETS = {
+    ("linux", "x86_64"): (
+        "linux-x64-musl.tar.gz",
+        "a9a569d85cb0a61169082a558f86786e0e7ee9c2725900e7d6e876873eb416c3",  # scan: allow
+    ),
+    ("linux", "aarch64"): (
+        "linux-arm64-musl.tar.gz",
+        "37d9b2564f9d47215dbb45914158d71f746d92d829ad62ca1214de4eeb5bfc6f",  # scan: allow
+    ),
+    ("windows", "x86_64"): (
+        "windows-x64.zip",
+        "6bc4ceea645cdf3cebc662e859d6a8804e3a3c737d4968497f66ba6df481f1a7",  # scan: allow
+    ),
+    ("darwin", "aarch64"): (
+        "darwin-arm64.tar.gz",
+        "7ca345ac2c9c930e7929252584fcfe7e7507ae40c1350d4969a80bafbad769f5",  # scan: allow
+    ),
+    ("darwin", "x86_64"): (
+        "darwin-x64.tar.gz",
+        "aaea1f60f5d34b784831c9a6cb9568927a07930e52fd295608b94d2ac17ba53b",  # scan: allow
+    ),
+}
+PACKAGING_CC_SWITCH_BINARY_NAME = "cc-switch"
+PACKAGING_CC_SWITCH_WINDOWS_BINARY_NAME = "cc-switch.exe"
+PACKAGING_CC_SWITCH_LICENSE = "cc_switch.txt"
+
 # The line naming the edition in each one-command install script, which the
 # mainland source tree stamps `cn`.
 PACKAGING_INSTALL_EDITION_LINES = {

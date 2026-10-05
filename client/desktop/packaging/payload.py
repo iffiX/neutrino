@@ -38,7 +38,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "packaging"))
 from shared import edition_build  # noqa: E402
 from shared import nuitka_build  # noqa: E402
-from shared.constants import PACKAGING_TUN2SOCKS_LICENSE  # noqa: E402
+from shared.constants import (  # noqa: E402
+    PACKAGING_CC_SWITCH_LICENSE,
+    PACKAGING_CC_SWITCH_VERSION,
+    PACKAGING_TUN2SOCKS_LICENSE,
+)
 from constants import PACKAGING_GLIBC_FLOOR  # noqa: E402
 from gui_assets import stage_gui  # noqa: E402
 
@@ -176,7 +180,7 @@ LINUX_GUI_BUILD_HEADERS = (
 # The licences of what the client packages carry, by the file name they have
 # in the repository's own ``licenses/``.
 CARRIED_LICENSES = tuple(name for part in parts() for name in part.CARRIED_LICENSES) + (
-    "cc_switch.txt",
+    PACKAGING_CC_SWITCH_LICENSE,
     "rustdesk.txt",
     "easytier.txt",
     "xterm.txt",
@@ -332,7 +336,7 @@ def stage_client_tree(
     carried |= {
         "easytier": bundled.EASYTIER_VERSION,
         "rustdesk": bundled.rustdesk_assets.RUSTDESK_VERSION,
-        "cc-switch": bundled.CC_SWITCH_VERSION,
+        "cc-switch": PACKAGING_CC_SWITCH_VERSION,
     }
     if is_windows:
         carried["tun2socks"] = bundled.hub_assets.pinned_version(
