@@ -273,6 +273,7 @@ class Agent:
             EnrollmentError: If the link is unusable or the hub refuses.
         """
         enrollment.enroll(link, platform=self._platform)
+        self._desired.forget_tried()
         self._drop_session()
         self._reset_binding_state()
         self._load_connection()
@@ -290,6 +291,7 @@ class Agent:
         if outcome:
             self._log(f"could not tell the hub we are leaving: {outcome['code']}")
         self._ai_tools.switch_back_all()
+        self._desired.forget_tried()
         self._reset_binding_state()
         self._load_connection()
         self._engine.take_state({})
@@ -942,6 +944,7 @@ class Agent:
         with self._lock:
             if self._binding == binding:
                 return
+        self._desired.reload_tried()
         self._reset_binding_state()
         self._drop_session()
         self._engine.take_state({})

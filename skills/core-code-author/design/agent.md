@@ -124,7 +124,12 @@ code and is not repeated while the state's hash is unchanged; trying again is
 a person's word, never a timer's.
 
 **A retry is the same press again.** The agent tries a state once and keeps
-the hash it tried on disk, so a restart does not try it again. When a
+the hash it tried on disk, so a restart does not try it again. The mark
+holds for one install and one binding: `nagent service uninstall`, which
+every package's removal runs, deletes it, and so do a join and a leave, so
+the next agent that holds the same state applies it again after a removal
+undid it. An upgrade replaces the package without either and applies
+nothing again. When a
 person presses a module's own action again on a module whose last report is
 `failed`, the hub writes a fresh `retry_mark` into that module's entry of
 the state. The mark means nothing to the agent; it changes the state's hash,

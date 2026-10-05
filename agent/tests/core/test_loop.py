@@ -766,6 +766,48 @@ def test_a_join_wakes_a_replaced_agent(config_path, monkeypatch):
     assert agent._is_replaced is False
 
 
+def _tried(agent, state_hash):
+    """Mark a state as tried, as an apply leaves it."""
+    agent._desired._store.write_tried(state_hash)
+    agent._desired.reload_tried()
+
+
+def test_a_join_forgets_the_state_last_tried(config_path, monkeypatch):
+    """A join after a removal must apply the state the hub sends again, even
+    under the hash the removed agent tried."""
+    agent, _ = scripted_agent(config_path, monkeypatch)
+    _tried(agent, "h1")
+    monkeypatch.setattr(
+        enrollment_module, "enroll", lambda link, platform=None: bind(config_path)
+    )
+
+    agent.join("neutrino://enroll/x")
+
+    assert agent._desired._tried_hash == ""
+    assert agent._desired._store.read_tried() == ""
+
+
+def test_a_leave_forgets_the_state_last_tried(config_path, monkeypatch):
+    agent, _ = scripted_agent(config_path, monkeypatch)
+    _tried(agent, "h1")
+
+    agent.leave()
+
+    assert agent._desired._store.read_tried() == ""
+
+
+def test_a_binding_another_process_wrote_reads_the_mark_again(config_path):
+    agent = Agent(log=lambda message: None)
+    _tried(agent, "h1")
+
+    # nagent join, from its own process: a new binding, the mark deleted.
+    agent._desired._store.clear_tried()
+    bind(config_path)
+    agent._adopt_external_binding()
+
+    assert agent._desired._tried_hash == ""
+
+
 def test_a_refusal_after_the_welcome_keeps_the_binding(config_path, monkeypatch):
     """A 4000 on a live socket is a refusal like any other: the next hello
     hears the code, and the binding stays until the hub says it has none."""

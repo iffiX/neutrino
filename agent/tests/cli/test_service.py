@@ -190,6 +190,27 @@ def desktop_off(monkeypatch):
 
     monkeypatch.setattr(service_cli, "turn_desktop_off", record)
 
+    def forget(platform):
+        if hasattr(platform, "calls"):
+            platform.calls.append("forget_tried")
+
+    monkeypatch.setattr(service_cli, "forget_tried", forget)
+
+
+def test_the_removal_deletes_the_mark_of_the_state_last_tried(monkeypatch, tmp_path):
+    class Roots:
+        def agent_data_dir(self):
+            return str(tmp_path)
+
+    (tmp_path / "desired.json").write_text("{}")
+    (tmp_path / "desired.json.tried").write_text("h1")
+    monkeypatch.undo()
+
+    service_cli.forget_tried(Roots())
+
+    assert not (tmp_path / "desired.json.tried").exists()
+    assert (tmp_path / "desired.json").exists()
+
 
 class OffHost:
     """A desktop host as the uninstall builds it."""
@@ -261,7 +282,7 @@ def test_uninstall_stops_the_agent_before_taking_what_its_modules_added(
 
     assert service_cli.main_uninstall(is_forced=True) == 0
 
-    assert platform.calls == ["stop", "desktop_off", "remove_added"]
+    assert platform.calls == ["stop", "forget_tried", "desktop_off", "remove_added"]
     assert "removed    neutrino_vscode@ann.service" in capsys.readouterr().out
 
 
@@ -273,6 +294,7 @@ def test_uninstall_on_a_mac_removes_the_agent_itself_as_well(monkeypatch, capsys
 
     assert platform.calls == [
         "stop",
+        "forget_tried",
         "desktop_off",
         "remove_added",
         "remove_agent_program",
@@ -337,6 +359,7 @@ def test_uninstall_switches_the_ai_tools_back_once_the_service_stopped(
 
     assert platform.calls == [
         "stop",
+        "forget_tried",
         "desktop_off",
         "switch_back",
         "remove_copy",
