@@ -113,6 +113,28 @@ def write_generated(path: Path, text: str, *, mode: int = 0o644) -> None:
     _write_atomic(path, text, mode=mode)
 
 
+def rewrite_generated(path: Path, text: str, *, mode: int = 0o600) -> None:
+    """Write new contents into an existing rendered file, keeping the file itself.
+
+    A program that watches the file by its inode sees a write, where a
+    replace would leave it watching the old file.
+
+    Args:
+        path: The file, which exists.
+        text: The new contents.
+        mode: Permission bits for the result.
+
+    Raises:
+        OSError: If the file cannot be opened or written.
+    """
+    with path.open("r+", encoding="utf-8") as stream:
+        stream.truncate(0)
+        stream.write(text)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.chmod(path, mode)
+
+
 def strip_comments(data: Any) -> Any:
     """Remove ``_comment`` documentation keys from parsed config data.
 

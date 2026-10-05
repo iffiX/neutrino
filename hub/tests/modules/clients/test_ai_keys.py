@@ -141,16 +141,35 @@ def test_a_disabled_client_and_a_locked_vault_have_no_credential(
 
 
 def test_an_apply_that_refuses_does_not_undo_the_mint(unlocked, monkeypatch):
-    def refuse(self):
+    def refuse(self, **kwargs):
         raise ValueError("no")
 
-    monkeypatch.setattr(CliproxyApiConfigApplier, "apply", refuse)
+    monkeypatch.setattr(CliproxyApiConfigApplier, "apply_keys", refuse)
     registry = ClientRegistry()
     client_id = registry.create("alice")
 
     assert ensure_client_key(registry, registry.get(client_id))
     assert len(load_config().client_keys) == 1
     assert ai_keys.load_config().client_keys[0].name == "client/alice"
+
+
+def test_a_new_key_is_handed_to_the_gateway_as_one_to_await_and_a_revoke_is_not(
+    unlocked, monkeypatch
+):
+    handed: list = []
+    monkeypatch.setattr(
+        CliproxyApiConfigApplier,
+        "apply_keys",
+        lambda self, *, new_key=None: handed.append(new_key) or "reloaded",
+    )
+    registry = ClientRegistry()
+    client_id = registry.create("alice")
+
+    material = ensure_client_key(registry, registry.get(client_id))
+    ensure_client_key(registry, ClientRegistry().get(client_id))
+    revoke_client_key(registry, ClientRegistry().get(client_id))
+
+    assert handed == [material, None]
 
 
 # --- a CloudCLI device's key ---

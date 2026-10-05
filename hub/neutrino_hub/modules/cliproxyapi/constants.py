@@ -70,6 +70,16 @@ CLIPROXYAPI_USAGE_MINUTES_KEPT = 90
 # How long a probed model list answers heartbeats before it is re-asked.
 CLIPROXYAPI_SERVED_MODELS_TTL_S = 10.0
 
+# A change of keys alone is written into the served file, which the gateway
+# watches and reloads without a restart: how long the hub waits for it to
+# accept a new key, how often it asks, and, when it never does, how long
+# the restart that follows may take to listen again.
+CLIPROXYAPI_RELOAD_WAIT_S = 5.0
+CLIPROXYAPI_RELOAD_POLL_S = 0.2
+CLIPROXYAPI_RESTART_WAIT_S = 10.0
+# The answers a gateway gives a key it does not hold.
+CLIPROXYAPI_KEY_REFUSED_STATUSES = (401, 403)
+
 CLIPROXYAPI_SUPPORTED_ARCHITECTURES = ("amd64", "arm64")
 # The vendor's release assets name arm64 the kernel way.
 CLIPROXYAPI_ASSET_ARCHITECTURES = {"amd64": "amd64", "arm64": "aarch64"}

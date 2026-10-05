@@ -256,3 +256,163 @@ def test_elsewhere_an_apply_restarts_the_child(
 ):
     assert CliproxyApiConfigApplier().apply().endswith("restarted")
     assert fake_controller.verbs() == [("restart", "cliproxyapi")]
+
+
+# --- a change of keys is reloaded in place ---
+
+
+class Gateway:
+    """The running gateway as the probe sees it: each answer from a script."""
+
+    def __init__(self, answers):
+        self.answers = list(answers)
+        self.asked: list = []
+
+    def probe(self, *, port, client_key):
+        self.asked.append((port, client_key))
+        status = self.answers.pop(0) if len(self.answers) > 1 else self.answers[0]
+        if status is None:
+            return False, {"code": "gateway_unreachable", "params": {}}, []
+        if status == 200:
+            return True, None, ["m"]
+        return False, {"code": "gateway_probe_status", "params": {"status": status}}, []
+
+    def install(self, monkeypatch) -> "Gateway":
+        """Answer every applier's probe from this script."""
+        monkeypatch.setattr(
+            CliproxyApiConfigApplier,
+            "probe",
+            lambda applier, **kwargs: self.probe(**kwargs),
+        )
+        return self
+
+
+@pytest.fixture()
+def served_box(installed_box, monkeypatch):
+    """An installed box that has applied once, with every restart recorded and
+    no real waiting."""
+    restarts: list = []
+    monkeypatch.setattr(ops, "run", lambda command, **kwargs: restarts.append(command))
+    monkeypatch.setattr(ops.time, "sleep", lambda seconds: None)
+    CliproxyApiConfigApplier().apply()
+    restarts.clear()
+    return installed_box, restarts
+
+
+def _add_client_key(name: str) -> str:
+    config = ops.load_config()
+    key = CliproxyApiClientKey.generated(name)
+    config.client_keys.append(key)
+    ops.save_config(config)
+    return key.open_key()
+
+
+def test_a_new_key_is_written_in_place_and_awaited_with_no_restart(
+    served_box, monkeypatch
+):
+    box, restarts = served_box
+    served = box / "generated" / CLIPROXYAPI_GENERATED_NAME
+    inode = served.stat().st_ino
+    gateway = Gateway([401, 401, 200])
+    gateway.install(monkeypatch)
+    material = _add_client_key("client/alice")
+
+    assert CliproxyApiConfigApplier().apply_keys(new_key=material) == "reloaded"
+
+    assert served.stat().st_ino == inode
+    assert served.stat().st_mode & 0o777 == 0o600
+    assert material in _rendered(box)["api-keys"]
+    assert [key for _, key in gateway.asked] == [material] * 3
+    assert restarts == []
+    assert not CliproxyApiConfigApplier().is_serving_stale
+
+
+def test_a_render_equal_to_the_served_one_writes_nothing_and_restarts_nothing(
+    served_box, monkeypatch
+):
+    box, restarts = served_box
+    served = box / "generated" / CLIPROXYAPI_GENERATED_NAME
+    before = served.stat().st_mtime_ns
+    gateway = Gateway([200])
+    gateway.install(monkeypatch)
+
+    assert CliproxyApiConfigApplier().apply_keys(new_key="k") == "unchanged"
+
+    assert served.stat().st_mtime_ns == before
+    assert gateway.asked == []
+    assert restarts == []
+
+
+def test_a_removed_key_is_reloaded_without_a_wait(served_box, monkeypatch):
+    box, restarts = served_box
+    _add_client_key("client/bob")
+    CliproxyApiConfigApplier().apply_keys(new_key=None)
+    config = ops.load_config()
+    config.client_keys = []
+    ops.save_config(config)
+    gateway = Gateway([200])
+    gateway.install(monkeypatch)
+
+    assert CliproxyApiConfigApplier().apply_keys() == "reloaded"
+
+    assert gateway.asked == []
+    assert restarts == []
+
+
+def test_a_gateway_that_never_takes_the_key_is_restarted_and_awaited(
+    served_box, monkeypatch
+):
+    _box, restarts = served_box
+    monkeypatch.setattr(ops, "CLIPROXYAPI_RELOAD_WAIT_S", 0)
+    gateway = Gateway([401, None, None, 200])
+    gateway.install(monkeypatch)
+    material = _add_client_key("client/carol")
+
+    assert CliproxyApiConfigApplier().apply_keys(new_key=material) == "restarted"
+
+    assert restarts == [["systemctl", "restart", "neutrino_hub_cliproxyapi.service"]]
+    assert len(gateway.asked) == 4
+
+
+def test_a_restart_that_never_listens_still_answers_after_its_bound(
+    served_box, monkeypatch
+):
+    _box, restarts = served_box
+    monkeypatch.setattr(ops, "CLIPROXYAPI_RELOAD_WAIT_S", 0)
+    monkeypatch.setattr(ops, "CLIPROXYAPI_RESTART_WAIT_S", 0)
+    Gateway([None]).install(monkeypatch)
+    material = _add_client_key("client/dan")
+
+    assert CliproxyApiConfigApplier().apply_keys(new_key=material) == "restarted"
+    assert len(restarts) == 1
+
+
+def test_elsewhere_a_gateway_that_never_takes_the_key_restarts_the_child(
+    elsewhere, fake_controller, served_box, monkeypatch
+):
+    monkeypatch.setattr(ops, "CLIPROXYAPI_RELOAD_WAIT_S", 0)
+    Gateway([401, 200]).install(monkeypatch)
+    material = _add_client_key("client/erin")
+    fake_controller.calls.clear()
+
+    assert CliproxyApiConfigApplier().apply_keys(new_key=material) == "restarted"
+    assert fake_controller.verbs() == [("restart", "cliproxyapi")]
+
+
+def test_elsewhere_a_new_key_is_reloaded_with_no_restart(
+    elsewhere, fake_controller, served_box, monkeypatch
+):
+    Gateway([200]).install(monkeypatch)
+    before = list(fake_controller.verbs())
+    material = _add_client_key("client/fay")
+
+    assert CliproxyApiConfigApplier().apply_keys(new_key=material) == "reloaded"
+    assert fake_controller.verbs() == before
+
+
+def test_a_box_that_never_applied_is_applied_whole(installed_box, monkeypatch):
+    restarts: list = []
+    monkeypatch.setattr(ops, "run", lambda command, **kwargs: restarts.append(command))
+
+    assert CliproxyApiConfigApplier().apply_keys(new_key="k").endswith("restarted")
+    assert restarts == [["systemctl", "restart", "neutrino_hub_cliproxyapi.service"]]
