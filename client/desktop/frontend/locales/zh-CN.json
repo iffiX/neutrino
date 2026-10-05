@@ -71,7 +71,7 @@
   "code.role_mismatch": "中枢说这不是客户端的链接",
   "code.root_refused": "请以你自己的用户身份运行客户端",
   "code.service_unknown": "中枢已不再发布那个服务",
-  "code.session_not_owned": "只有开这个会话的客户端能改它",
+  "code.session_not_owned": "这个会话属于别人，且没有共享",
   "code.session_unknown": "那台机器已不再保留这个会话",
   "code.share_access_denied": "登录被拒绝：密码不对，或者这个账号不能用这个共享。",
   "code.share_login_rejected": "用户名或密码不对。打开配置重新填写。",
