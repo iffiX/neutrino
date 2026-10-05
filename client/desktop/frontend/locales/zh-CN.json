@@ -69,6 +69,7 @@
   "code.rdp_no_address": "那台机器没有发布可连接的地址",
   "code.rdp_no_desktop": "此会话没有可供查看器打开的屏幕",
   "code.rdp_not_shared": "那个桌面已不再共享",
+  "code.rdp_viewer_open": "这台桌面已经开着一个查看器，请先关掉它",
   "code.resident_not_running": "客户端没有在运行",
   "code.role_mismatch": "中枢说这不是客户端的链接",
   "code.root_refused": "请以你自己的用户身份运行客户端",

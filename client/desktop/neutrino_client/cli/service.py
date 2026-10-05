@@ -18,7 +18,7 @@ from __future__ import annotations
 import sys
 
 from neutrino_client.cli import wording
-from neutrino_client.services.base import is_unhealthy
+from neutrino_client.services.base import is_unhealthy, service_key
 from neutrino_client.services.forward import FORWARD_PROTOCOL_UDP
 from neutrino_client.services.port import entry_protocol
 
@@ -422,6 +422,13 @@ def main_desktop_connect(ref: str, *, hub: str = "") -> int:
         return 2
     if is_unhealthy(entry):
         print(f"{entry.get('title', '')}: {SERVICE_UNHEALTHY}", file=sys.stderr)
+        return 1
+    key = service_key(str(entry.get("hub_id", "")), str(entry.get("id", "")))
+    if ((state.get("viewers") or {}).get(key) or {}).get("is_running"):
+        print(
+            f"{entry.get('title', '')}: {wording.word_code('rdp_viewer_open', {})}",
+            file=sys.stderr,
+        )
         return 1
     reply = _act("rdp", dict(_address(entry), action="connect"))
     if reply is None:

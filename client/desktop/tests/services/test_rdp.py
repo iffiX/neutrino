@@ -374,3 +374,37 @@ def test_a_viewer_that_ends_frees_the_entry_and_says_so(handler, monkeypatch):
     assert subject.state()["viewers"] == {}
     assert any("closed" in line for line in lines)
     assert subject.forwards.forwards() == {}
+
+
+def test_a_second_connect_while_the_viewer_runs_keeps_the_viewer_and_its_forward(
+    handler, monkeypatch
+):
+    """The case seen on Windows: Connect again while the first viewer still
+    shows its window. Nothing new starts, and the forward the first viewer
+    dials stays."""
+    import threading
+
+    subject, platform, hub, _lines = handler
+    monkeypatch.setattr(rdp_module, "RDP_WATCH_INTERVAL_S", 0.01)
+    assert subject.act(entries=SERVICES, body=CONNECT_BODY) == {}
+    port = subject.forwards.port_of("h1", "rdp_s9")
+
+    again = subject.act(entries=SERVICES, body=CONNECT_BODY)
+    threading.Event().wait(0.1)
+
+    assert again == {"code": "rdp_viewer_open", "params": {}}
+    assert len(platform.started) == 1
+    assert hub.opened == [("h1", "rdp_s9")]
+    assert subject.forwards.port_of("h1", "rdp_s9") == port
+    assert subject.state()["viewers"] == {"h1/rdp_s9": {"is_running": True}}
+
+
+def test_once_the_viewer_ends_a_connect_opens_a_new_one(handler):
+    subject, platform, _hub, _lines = handler
+    assert subject.act(entries=SERVICES, body=CONNECT_BODY) == {}
+    platform.started[0].returncode = 0
+
+    assert subject.act(entries=SERVICES, body=CONNECT_BODY) == {}
+
+    assert len(platform.started) == 2
+    assert subject.state()["viewers"] == {"h1/rdp_s9": {"is_running": True}}
