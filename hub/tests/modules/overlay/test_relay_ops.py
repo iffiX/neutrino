@@ -158,7 +158,8 @@ def test_the_start_line_reaches_the_unit_and_the_relay_starts(box):
     assert change == "relay_started"
     assert argv[0] == "/usr/bin/ssh"
     assert argv[-2:] == ["0.0.0.0:18443:127.0.0.1:8443", "relay@203.0.113.5"]
-    assert f"UserKnownHostsFile={box['state'] / 'relay' / 'known_hosts'}" in argv
+    known_hosts = box["state"] / "relay" / "known_hosts"
+    assert f'UserKnownHostsFile="{known_hosts}"' in argv
     assert [call[0] for call in controller.calls] == [
         "reload",
         "start_line",

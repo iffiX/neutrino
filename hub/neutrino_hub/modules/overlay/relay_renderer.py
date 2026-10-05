@@ -59,7 +59,8 @@ class OverlayRelayRenderer:
             arguments += ["-o", option]
         arguments += [
             "-o",
-            f"{OVERLAY_RELAY_KNOWN_HOSTS_OPTION}={self._known_hosts_path}",
+            f"{OVERLAY_RELAY_KNOWN_HOSTS_OPTION}="
+            f"{ssh_option_quoted(self._known_hosts_path)}",
             "-i",
             self._key_path,
             "-p",
@@ -70,6 +71,23 @@ class OverlayRelayRenderer:
             f"{config.account}@{config.host}",
         ]
         return arguments
+
+
+def ssh_option_quoted(value: str) -> str:
+    """One value of an ``-o`` option, whole whatever spaces it holds.
+
+    ssh reads an ``-o`` the way it reads a line of ``ssh_config``: words split
+    at spaces unless quoted, and a backslash before a backslash or a quote
+    stands for that character.
+
+    Args:
+        value: The value, a path for example.
+
+    Returns:
+        The value in double quotes, its backslashes and quotes escaped.
+    """
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
 
 
 def judge_exit(lines: list) -> tuple:

@@ -52,7 +52,7 @@ def test_the_start_line_is_the_one_the_standard_gives():
         "-o",
         "StrictHostKeyChecking=accept-new",
         "-o",
-        "UserKnownHostsFile=/var/lib/neutrino/hub/relay/known_hosts",
+        'UserKnownHostsFile="/var/lib/neutrino/hub/relay/known_hosts"',
         "-i",
         "/var/lib/neutrino/hub/relay/key",
         "-p",
@@ -145,3 +145,54 @@ def test_a_key_file_ssh_ignored_for_its_permissions_is_not_auth_failed():
     assert state == "unreachable"
     assert last_error.startswith("the hub's own key file can be read by other")
     assert last_error.endswith("bad permissions")
+
+
+MAC_STATE = "/Library/Application Support/Neutrino/hub/state/relay"
+
+
+def spaced_renderer(state: str = MAC_STATE) -> OverlayRelayRenderer:
+    return OverlayRelayRenderer(
+        ssh_path="/usr/bin/ssh",
+        key_path=f"{state}/key",
+        known_hosts_path=f"{state}/known_hosts",
+        agent_port=8443,
+    )
+
+
+def ssh_option_words(value: str) -> list:
+    """An ``-o`` value split as ssh splits a line of ``ssh_config``."""
+    import shlex
+
+    return shlex.split(value)
+
+
+def test_a_known_hosts_path_with_a_space_reaches_ssh_whole():
+    """macOS keeps the state root under Application Support; ssh splits an
+    unquoted -o value at the space and writes the host key beside it."""
+    argv = spaced_renderer().render(RELAY)
+
+    option = argv[argv.index("-i") - 1]
+    assert ssh_option_words(option) == [f"UserKnownHostsFile={MAC_STATE}/known_hosts"]
+    assert argv[argv.index("-i") + 1] == f"{MAC_STATE}/key"
+
+
+def test_a_windows_known_hosts_path_keeps_its_backslashes():
+    state = "C:\\ProgramData\\Neutrino\\hub\\state\\relay"
+    argv = spaced_renderer(state).render(RELAY)
+
+    option = argv[argv.index("-i") - 1]
+    assert ssh_option_words(option) == [f"UserKnownHostsFile={state}/known_hosts"]
+
+
+def test_the_unit_drop_in_hands_ssh_the_same_whole_path():
+    """systemd reads the drop-in's quoting back into the argv the supervisor
+    is handed directly, and ssh then reads the option as one path."""
+    import shlex
+
+    from neutrino_hub.system.systemd_ctl import start_line_dropin
+
+    argv = spaced_renderer().render(RELAY)
+    dropin = start_line_dropin(argv, {}, None)
+    line = [row for row in dropin.splitlines() if row.startswith('ExecStart="')]
+
+    assert shlex.split(line[0].removeprefix("ExecStart=")) == argv
