@@ -464,9 +464,26 @@ and **Configure** on a refused configuration try again the same way. A
 press on a module that did not fail asks for nothing new.
 
 The tabs of **Module configuration** come in one order, the modules every
-system runs first: File share, Gitea, VS Code, code-server, CloudCLI,
-Containers, ZFS storage. A module the machine cannot run is left out, as
-before ([agent.md](agent.md), "Which modules each system runs").
+system runs first: File share, Terminal, Remote desktop, Gitea, VS Code,
+code-server, CloudCLI, Containers, ZFS storage. A module the machine cannot
+run is left out, as before ([agent.md](agent.md), "Which modules each system
+runs").
+
+Terminal and Remote desktop are a tab on every managed machine and never in
+the picker. Their tab draws the module's state line and its panel, and none
+of **Install**, **Start**, **Stop**, **Uninstall**, **Configure** or the
+output box, since the agent's package carries them:
+
+| Tab | Its panel | Idiom |
+| --- | --- | --- |
+| Terminal | **Account**, a picker over the human accounts the machine reported with the agent's own first (`ui.terminal_module.account_agent`); **Shell program**, a text field with **Browse…** beside it, which opens the panel's path window on that machine in its file mode, where a press on a file picks it | one configurable `settings_group` with its own apply bar, `ui.terminal_module.apply`; on a Windows machine **Account** is disabled with the line `ui.terminal_module.account_windows` under it |
+| Remote desktop | one switch, `ui.remote_desktop_module.switch`, with its description | one configurable `settings_group` with its own apply bar, `ui.remote_desktop_module.apply`; a failed step is the module's notice with its code's words, and the apply bar's Apply tries again |
+
+The path window is the one Samba's share folders use
+(`directory_picker_modal.tsx`); its file mode opens at the field's path, or
+at the machine's root, lists files beside folders, and a press on a file
+hands its path back. The device drawer's desktop section names the switch
+and links to this tab instead of offering a way to share.
 
 The AI tools part follows the client's AI page ([client.md](client.md), "The
 AI page") and adds nothing to it:

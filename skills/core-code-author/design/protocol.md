@@ -225,7 +225,7 @@ it has none:
 | Path depth | the same for the same function: `channel/join`/`leave`; `module/install`/`uninstall`, `start`/`stop`; `device/agent/install`/`reinstall`; `zfs/dataset/share`/`unshare`; `zfs/pool/create`/`destroy` | |
 | Channel frames | `hello`/`welcome`; `open`/`close`; `state`/`report` | `refused`, `credit` |
 | Stream kinds | none; installing and uninstalling follow from `want` | `shell`, `file`, `command`, `package`, `log`, `service`, `connect` |
-| CLI | `nhub start`/`stop`, `nagent start`/`stop`, `nagent join`/`leave`, `nclient join`/`leave`, `nagent rdp start`/`stop`, `nclient service ... mount`/`unmount`, `nclient service port forward`/`unforward` | `status`, `sync`, `run`, `gui`, `quit` |
+| CLI | `nhub start`/`stop`, `nagent start`/`stop`, `nagent join`/`leave`, `nclient join`/`leave`, `nclient service ... mount`/`unmount`, `nclient service port forward`/`unforward` | `status`, `sync`, `run`, `gui`, `quit` |
 
 ### The page, its members and its writes
 
@@ -295,7 +295,7 @@ The HTTP status names the class of the refusal:
 
 | Status | Class | Codes |
 | --- | --- | --- |
-| 400 | a body, a query or a path that does not validate, or a value the route refuses | `body_invalid` for what the models refuse, then the route's own: `password_wrong`, `path_invalid`, `unknown_credential`, `login_refused`, `vault_locked`, `language_unknown`, `theme_unknown`, `hub_name_required`, `invalid_range`, `unsupported_kind`, `permission_kind_unknown {kind}`, `permission_device_unknown {device_id}`, `easytier_mode_unknown {mode}`, `easytier_config_server_invalid`, `overlay_subnet_overlap {title, subnet, conflict}`, `account_duplicate {account}`, `port_duplicate {port}`, `credential_missing {account}`, `proxy_scope_unsupported {switch}`, `relay_host_invalid {host}`, `relay_account_invalid {account}`, `relay_ssh_missing`, `direct_host_invalid {host}`, `resolver_required {field}`, `resolver_address_invalid {address}` |
+| 400 | a body, a query or a path that does not validate, or a value the route refuses | `body_invalid` for what the models refuse, then the route's own: `password_wrong`, `path_invalid`, `unknown_credential`, `login_refused`, `vault_locked`, `language_unknown`, `theme_unknown`, `hub_name_required`, `invalid_range`, `unsupported_kind`, `permission_kind_unknown {kind}`, `permission_device_unknown {device_id}`, `easytier_mode_unknown {mode}`, `easytier_config_server_invalid`, `overlay_subnet_overlap {title, subnet, conflict}`, `account_duplicate {account}`, `port_duplicate {port}`, `credential_missing {account}`, `proxy_scope_unsupported {switch}`, `relay_host_invalid {host}`, `relay_account_invalid {account}`, `relay_ssh_missing`, `direct_host_invalid {host}`, `resolver_required {field}`, `resolver_address_invalid {address}`, `shell_program_unusable {path}` |
 | 401 | a missing session, a dead ticket, or a token that names no binding | `ticket_spent`, `binding_unknown` |
 | 404 | an unknown member | `device_unknown`, `https_authority_missing`, `session_unknown {session_id}` |
 | 413 | a body past the agent port's limit | `request_too_large {limit}` |
@@ -333,7 +333,7 @@ TLS port.
 | `/api/hub/credential` | The secrets the box keeps for somebody: SSH keys, logins and tokens |
 | `/api/hub/setting` | The panel's own: its two ports, its scheme and certificate authority, password, hub name, backup, restore, version, and updating the hub itself from its newest release |
 | `/api/agent/file` | Browsing and moving files on a device through its agent |
-| `/api/agent/module` | The modules a device hosts through its agent: observed state, install, start, stop, uninstall; under it one block per module, `samba`, `gitea`, `podman`, `zfs`, `vscode`, `code_server`, `cloudcli`, each setting what it is to have and all but `zfs`, `vscode`, `code_server` and `cloudcli` importing what the machine already has; and `ai_tool`, the machine's AI tools setting, drawn as the page's **Global configuration** |
+| `/api/agent/module` | The modules a device hosts through its agent: observed state, install, start, stop, uninstall; under it one block per module, `samba`, `terminal`, `remote_desktop`, `gitea`, `podman`, `zfs`, `vscode`, `code_server`, `cloudcli`, each setting what it is to have and all but `zfs`, `vscode`, `code_server` and `cloudcli` importing what the machine already has; and `ai_tool`, the machine's AI tools setting, drawn as the page's **Global configuration** |
 | `/api/agent/terminal` | The shell sessions every online machine holds, and ending one; the shells themselves are `/ws/agent/terminal` |
 | `/ws` | The panel's live sockets, grouped the same way: `/ws/hub/event` (cache invalidation, site-wide), `/ws/hub/dashboard/stat`, `/ws/hub/dashboard/dns_log`, `/ws/hub/task`; `/ws/agent/terminal` |
 | `/api/channel` | Agents and clients on the agent port: `join` and `leave`, and `/api/channel/socket` for everything else |
@@ -650,7 +650,7 @@ A session is started by opening `/ws/agent/terminal` with a new
 | `POST /api/agent/module/stop` | `{device_id, module}` | writes `want: stopped`; the same `retry_mark` on a failed module |
 | `POST /api/agent/module/uninstall` | `{device_id, module}` | writes `want: absent`; the same `retry_mark` on a failed module |
 | `GET /api/agent/module/journal` | `?device_id=&module=&lines=` | the tail of the module's log on the device: its units' journal on Linux, its own sources and the agent's lines naming it on Windows and macOS ([agent.md](agent.md), "Which modules each system runs") |
-| `POST /api/agent/module/<name>/apply` | `{device_id}` | pushes the device's state again, for `samba`, `gitea`, `podman`, `zfs`, `vscode`, `code_server` and `cloudcli` alike, with a fresh `retry_mark` on a module whose last report is `failed`; 409 `agent_offline` |
+| `POST /api/agent/module/<name>/apply` | `{device_id}` | pushes the device's state again, for `samba`, `terminal`, `remote_desktop`, `gitea`, `podman`, `zfs`, `vscode`, `code_server` and `cloudcli` alike, with a fresh `retry_mark` on a module whose last report is `failed`; 409 `agent_offline` |
 | `GET /api/agent/module/samba` | `?device_id=` | the hub's Samba configuration for the device |
 | `GET /api/agent/module/samba/status` | `?device_id=` | `SambaStatusView`: whether the unit is active, the sessions open and how full each share's disk is, as last reported |
 | `POST /api/agent/module/samba/import` | `{device_id}` | the machine's shares and users become the hub's configuration |
@@ -671,6 +671,10 @@ A session is started by opening `/ws/agent/terminal` with a new
 | `POST /api/agent/module/ai_tool/enable` | `{device_id}` | turns the setting on, mints the device's gateway key, pushes the state; on a setting already on whose machine reported an account `failed`, writes a fresh `retry_mark` on the section and pushes; `AiToolDeviceView`; 409 `gateway_not_serving` while the gateway serves no model, 409 `agent_offline`, 400 `vault_locked` |
 | `POST /api/agent/module/ai_tool/disable` | `{device_id}` | turns the setting off, revokes the device's gateway key, pushes the state; `AiToolDeviceView`; 409 `agent_offline` |
 | `POST /api/agent/module/ai_tool/set` | `{device_id, tool_configs}` | replaces the stored choices, the unknown tools and keys dropped as the client's `clean_tool_configs` drops them, and pushes the state while the setting is on; `AiToolDeviceView`; 409 `agent_offline` |
+| `GET /api/agent/module/terminal` | `?device_id=` | `TerminalDeviceView`: the fields of every module view; `account` and `shell_path`, empty for the agent's own; `accounts`, the human accounts the machine reported; `is_account_settable`, false for a Windows machine |
+| `POST /api/agent/module/terminal/set` | `{device_id, account, shell_path}`, both strings, empty for the default | stores `config/devices/<id>/terminal.json` once the agent's `validate` took it, and pushes; 400 `account_unknown {account}` for an account the machine did not report, `path_invalid {path}` for a path that is not absolute, and the agent's own `shell_program_unusable {path}`; 409 `agent_offline`; `TerminalDeviceView` |
+| `GET /api/agent/module/remote_desktop` | `?device_id=` | `RemoteDesktopDeviceView`: the fields of every module view, `state` being the module's as last reported; `is_enabled`, the switch; `platform_os`, the machine's `linux`, `windows` or `darwin` |
+| `POST /api/agent/module/remote_desktop/set` | `{device_id, is_enabled}` | stores `config/devices/<id>/remote_desktop.json` and pushes; turning it on generates the seat password when the device has none; 409 `agent_offline`; `RemoteDesktopDeviceView` |
 | `GET /api/agent/module/code_server` | `?device_id=` | the instances, each `{account, port, is_running, code}` with `is_running` and `code` as last reported, and the `accounts` the machine reported |
 | `POST /api/agent/module/code_server/set` | `{device_id, instances: [{account, port}]}`, `port` 1024 to 65535 | replaces the instances, generating each instance's token secret the first time; 400 `account_duplicate {account}`, `port_duplicate {port}`; the agent's own refusals as 400 |
 | `GET /api/agent/module/podman` | `?device_id=` | |
@@ -721,7 +725,7 @@ before it is parsed.
 | Directory | Files |
 | --- | --- |
 | `web/routers/hub/` | `setup.py`, `auth.py`, `display.py`, `dashboard.py`, `network.py`, `overlay.py` with `overlay_direct.py`, `overlay_netbird.py`, `overlay_easytier.py` and `overlay_relay.py`, `proxy.py` with `proxy_node.py`, `ai.py` with `ai_gateway.py`, `device.py`, `client.py`, `service.py`, `credential.py`, `setting.py` |
-| `web/routers/agent/` | `file.py`, `module.py` with `module_samba.py`, `module_gitea.py`, `module_podman.py`, `module_zfs.py`, `module_vscode.py`, `module_code_server.py`, `module_cloudcli.py` and `module_ai_tool.py`, `terminal.py` |
+| `web/routers/agent/` | `file.py`, `module.py` with `module_samba.py`, `module_terminal.py`, `module_remote_desktop.py`, `module_gitea.py`, `module_podman.py`, `module_zfs.py`, `module_vscode.py`, `module_code_server.py`, `module_cloudcli.py` and `module_ai_tool.py`, `terminal.py` |
 | `web/routers/` | `channel.py`, on the agent port's app |
 | `web/` | `ws.py`, both socket groups |
 
@@ -1092,6 +1096,34 @@ owner.
 }
 ```
 
+Terminal and Remote desktop are composed from their own files, not from
+`modules.json`, and sent to every managed device, recipes left out:
+
+```json
+"terminal": {"want": "running", "config": {"account": "", "shell_path": ""}},
+"remote_desktop": {"want": "stopped", "config": {"is_enabled": false}}
+```
+
+`terminal`'s `want` is always `running`; its `config` is
+`config/devices/<id>/terminal.json`, `{account, shell_path}`, both empty
+when the file is absent, and `account` is always empty for a Windows
+machine. `remote_desktop`'s `want` is `running` while `is_enabled` is true
+and `stopped` otherwise; its `config` is `remote_desktop.json`,
+`{is_enabled}`, false when the file is absent. Their manifests,
+`terminal.json` and `remote_desktop.json`, name the tier `agent`: the agent's
+own package carries the module, no branch names a platform, and the loader
+refuses one that names `url`, `packages` or a recipe. `GET /api/agent/module`
+answers both `is_supported: true` on every platform, and the four presses
+refuse both 400 `module_not_optional {name}`, as a user-tier module.
+
+The agent reports `terminal` `running` once it holds the settings, and
+`remote_desktop` `running` while its copy of RustDesk listens, `stopped`
+while the switch is off and none of its RustDesk processes runs, and
+`failed` with `rdp_takeover_failed {step, detail}` or `rdp_restore_failed
+{step, detail}`. The report's `rustdesk` row of earlier agents is gone. A
+`shell` stream refused for the Terminal module's sake closes
+`account_unknown {account}` or `shell_program_unusable {path}`.
+
 `install` and `uninstall` come from `data/manifests/<module>.json`, one branch
 per platform, each with a `verify` command and, for a module the hub installs,
 an `uninstall` block; the loader refuses a manifest that lacks either. A branch
@@ -1350,13 +1382,13 @@ is added without a change to the protocol; a kind is added by a row here.
 
 | Opened by | `kind` | Arguments and result |
 | --- | --- | --- |
-| hub, to an agent | `shell` | `{cols, rows}`, with `{module: podman, container}` added for a container's shell, or `{session_id, is_resumed, owner, is_shared}` for a shell the agent keeps: `session_id` names the session and is generated by whoever opened the shell; an id the machine holds attaches to that session beside every stream already attached to it, and its kept output is sent first; `is_resumed: true` asks only for a session the machine holds, refused `session_unknown {session_id}` otherwise; `owner` is the hub's stamp, which the agent keeps as given and reports; `is_shared`, false when absent, says whether a new session starts shared; a shell opened without an id ends with its stream. Terminal bytes both ways; closed with `params: {exit_code}` once the shell ends, or empty when the stream closed on a shell that runs on |
+| hub, to an agent | `shell` | `{cols, rows}`, the shell running as the Terminal module's account with its shell program, refused `account_unknown {account}` or `shell_program_unusable {path}` when the machine cannot; with `{module: podman, container}` added for a container's shell, which the module does not touch, or `{session_id, is_resumed, owner, is_shared}` for a shell the agent keeps: `session_id` names the session and is generated by whoever opened the shell; an id the machine holds attaches to that session beside every stream already attached to it, and its kept output is sent first; `is_resumed: true` asks only for a session the machine holds, refused `session_unknown {session_id}` otherwise; `owner` is the hub's stamp, which the agent keeps as given and reports; `is_shared`, false when absent, says whether a new session starts shared; a shell opened without an id ends with its stream. Terminal bytes both ways; closed with `params: {exit_code}` once the shell ends, or empty when the stream closed on a shell that runs on |
 | hub, to an agent | `file` | one file operation `{op, path, ...}`; `op` is `list`, `download`, `upload`, `rename`, `remove`, `directory_create` or `directory_download`, and every path is absolute in the machine's own form. `list` closes with `params: {path, separator, entries}`, `separator` being `\` on Windows and `/` elsewhere and each entry `{name, path, kind, size, modified_at, mode}`; on Windows a `list` of `/` or of no path closes with `path` `/` and one `dir` entry per drive, named `C:` with `path` `C:\`. `separator` and the drive list are added and keep `PROTOCOL`; an agent before 0.5.0 sends no `separator` |
 | agent, to the hub | `log` | `{module}`: opened for an install or an uninstall, output up as binary frames line by line, closed with `params: {state}` |
 | hub, to an agent | `command` | `{module, verb, ...args}`: `{agent, reboot}`, `{samba, reload}`, `{zfs, validate, config}`; an unknown kind is closed `kind_unknown` and an unknown verb `verb_unknown`, which the panel shows as `unsupported`; closed with `params: {exit_code, output, result}` |
 | agent, to the hub | `package` | `{module}` for a module's package bytes from the hub's cache, `{module: cc_switch}` for cc-switch, `{}` for the agent's own package; the close's `params` has the `sha256` of the bytes sent and `name`, the file's own name as its release gave it, with no directory |
 | client, to the hub | `service` | `{id}`: one published entry, or `{is_panel: true}`: a sign-in to the hub's own panel. The close is the whole answer, its `params` the material that entry takes from the hub and its `code` the reason it takes none; a new service type adds no kind |
-| client, to the hub | `shell` | `{device_id, cols, rows, session_id, is_resumed, is_shared}`: a shell on a managed machine, which the hub opens as the agent's own `shell` with the same `session_id`, `is_resumed` and `is_shared`, stamped `owner: client:<id>`, and relays terminal bytes both ways, each side under the other's credit; closed with `params: {exit_code}`, or refused `binding_unknown`, `client_disabled`, `permission_denied {kind: terminal}` (no `terminal`, or a machine outside its device list), `session_not_owned {session_id}` (a session another viewer owns and has not shared) or `agent_offline {device}` before any agent stream opens; closed `session_not_owned {session_id}` when the owner stops sharing the session |
+| client, to the hub | `shell` | `{device_id, cols, rows, session_id, is_resumed, is_shared}`: a shell on a managed machine, which the hub opens as the agent's own `shell` with the same `session_id`, `is_resumed` and `is_shared`, stamped `owner: client:<id>`, and relays terminal bytes both ways, each side under the other's credit; closed with `params: {exit_code}`, or refused `binding_unknown`, `client_disabled`, `permission_denied {kind: terminal}` (no `terminal`, or a machine outside its device list), `session_not_owned {session_id}` (a session another viewer owns and has not shared) or `agent_offline {device}` before any agent stream opens; closed with the agent's refusal, `account_unknown {account}` or `shell_program_unusable {path}` among them; closed `session_not_owned {session_id}` when the owner stops sharing the session |
 | client, to the hub | `command` | `{module: agent, verb: resize, shell, cols, rows}`, `shell` being the client's own `shell` stream id, which the hub maps to the agent's; closed empty once sent on, `shell_unknown {shell}` when no such shell is open. `{module: agent, verb: persist, session_id, is_persistent, is_shared}` and `{module: agent, verb: stop_session, session_id}` go unchanged to the machine holding the session, the one this client's open `shell` names for the id or else the online machine whose report lists it, and close with the agent's close; `session_unknown {session_id}` when no machine holds it, `session_not_owned {session_id}` for a `persist` on a session the machine reports under another owner, and the `shell` stream's permission refusals for that machine. A `persist` names only the flags it carries. `verb_unknown` for any other module or verb. A hub before 0.4.0 closes both kinds `kind_unknown`, which a client reads as a refusal |
 | client, to the hub | `connect` | `{id}`, one published entry by the id a `service` stream takes, or `{is_panel: true}`, the hub's own panel: one TCP connection to that service, or every datagram of one UDP `port` entry. Bytes both ways under credit; closed empty when either end's socket ends, or with a refusal's code. "The connect stream" has the checks, the far ends and the codes |
 | hub, to an agent | `connect` | `{port, protocol}`, `protocol` being `tcp` or `udp` and `tcp` when absent: one TCP connection to `127.0.0.1:<port>` on the machine, or every datagram of one UDP entry to that port, a port the machine publishes now on that protocol; bytes both ways under credit; closed empty when either socket ends, `port_not_published {port}` for any other port or protocol, `connect_failed {reason}` when the dial fails |
