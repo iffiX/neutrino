@@ -4,7 +4,11 @@ import subprocess
 
 import pytest
 
+from neutrino_hub import edition
 from neutrino_hub.cli import stop as stop_module
+
+# The proxy core's unit, where the tree carries the proxy.
+XRAY = ["xray"] if edition.has_feature("proxy") else []
 
 
 @pytest.fixture
@@ -47,7 +51,7 @@ def test_the_panel_is_stopped_before_what_it_serves(systemd):
     stop_module.stop(list(stop_module.STOP_ORDER))
 
     names = [name for name, _ in asked]
-    assert names.index("web") < names.index("xray")
+    assert names.index("web") < names.index("dnsmasq")
 
 
 def test_one_service_can_be_named(systemd):
@@ -70,7 +74,7 @@ def test_every_service_run_starts_can_be_stopped_by_the_same_flag(monkeypatch):
         lambda name, interface: chosen.append(f"{name}@{interface}") or 0,
     )
 
-    for name in ("web", "xray", "cliproxyapi", "dnsmasq"):
+    for name in ("web", *XRAY, "cliproxyapi", "dnsmasq"):
         monkeypatch.setattr("sys.argv", ["nhub-stop", f"--only-{name}"])
         assert stop_module.main() == 0
     for name in ("supplicant", "dhcpcd"):
@@ -81,7 +85,7 @@ def test_every_service_run_starts_can_be_stopped_by_the_same_flag(monkeypatch):
 
     assert chosen == [
         "web",
-        "xray",
+        *XRAY,
         "cliproxyapi",
         "dnsmasq",
         "supplicant@eth0",
@@ -184,7 +188,7 @@ def test_what_is_already_stopped_is_left_alone(systemd):
 def test_one_refusal_does_not_stop_the_rest(systemd):
     """A unit that will not stop must not hide what happened to the others."""
     asked, state = systemd
-    state["refusing"] = ("xray",)
+    state["refusing"] = ("dnsmasq",)
 
     assert stop_module.stop(list(stop_module.STOP_ORDER)) == 1
     assert [name for name, _ in asked] == list(stop_module.STOP_ORDER)

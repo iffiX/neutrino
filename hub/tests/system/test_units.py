@@ -54,6 +54,7 @@ def test_a_packaged_unit_drops_the_lines_that_would_name_its_own_environment(
     assert rendered.endswith("\n")
 
 
+@pytest.mark.feature("proxy")
 def test_the_proxy_core_has_a_unit_of_its_own(installer):
     """It travels in the package, so no vendor script installs one to patch."""
     assert (
