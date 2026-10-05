@@ -46,7 +46,7 @@ password and is turned on for one client at a time.
 | `config/netbird/netbird.json` | `netbird.example.json` | yes: the reusable setup key clients join the overlay with, sealed |
 | `config/easytier/easytier.json` | `easytier.example.json` | yes: the mode, the network secret and the console address with its token, both sealed |
 | `config/overlay/direct.json` | `direct.example.json` | no: Direct's `is_enabled`, `public_host` and `public_port` |
-| `config/overlay/relay.json` | `relay.example.json` | no: the relay's `is_enabled`, `host`, `ssh_port`, `account`, `public_port`, and `key_id`, the id of the SSH key in the vault |
+| `config/overlay/relay.json` | `relay.example.json` | no: the relay's `is_enabled`, `host`, `ssh_port`, `account`, `public_port`, and `key_id` or `login_id`, the id of the SSH key or of the login in the vault |
 | `config/credentials/vault.json` | `vault.example.json` | yes — every sealed secret |
 | `config/devices/packages/*` | — | no (build artifacts, just large) |
 
@@ -198,9 +198,11 @@ Each `*.example.json` is annotated field-by-field. The load-bearing ones:
   for none) and `public_port` (default 8443); a missing file reads as Direct
   off ([../design/modules/network.md](../design/modules/network.md), "Direct").
 - **`relay.json`**, in `config/overlay/`: `is_enabled`, `host`, `ssh_port`
-  (default 22), `account`, `key_id` and `public_port` (default 8443). The
-  relay is configured when `host`, `account` and `key_id` are set; a missing
-  file reads as a relay that is off and not configured
+  (default 22), `account`, `key_id`, `login_id` and `public_port` (default
+  8443). At most one of `key_id` and `login_id` is set, the relay's
+  credential kind. The relay is configured when `host`, `account` and one of
+  the two are set; a missing file reads as a relay that is off and not
+  configured
   ([../design/modules/network.md](../design/modules/network.md), "The relay,
   the third way in").
 - **`identity.json`** — the hub's own `id` (a uuid generated at setup) and

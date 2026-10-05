@@ -410,7 +410,11 @@ Direct, Relay, EasyTier. The cards sit two to a row, the third of a tree
 without NetBird in the left cell, and one to a row below 720 px. A page with
 no card switched on says nothing about it. Every card is shaped alike: its switch stages into
 the engine panel's draft and that panel's apply bar turns it on or off, and
-pressing the card shows its section under the panel.
+pressing the card shows its section under the panel while the card is on as
+applied. A card that is off, or switched on and not yet applied, draws
+nothing under the panel, the same for all four; once the relay is applied on,
+its section appears with the state it has then, `not_configured` until it is
+set up.
 
 Direct's section is one configurable panel, a `settings_group` with its own
 apply bar ([ui_text.md](ui_text.md), "Direct's words"): the switch's
@@ -432,8 +436,8 @@ The relay's section holds two panels:
 
 | Panel | Kind | Holds |
 | --- | --- | --- |
-| Status | visualizing, read from `GET /api/hub/overlay/relay` on the page's 10 s cadence | the state as a `StatusDot` with its word; **Address for clients**, the `url` in mono; **Host key**, the `host_key_fingerprint` in mono with **Forget host key** beside it while one is recorded; `last_error` in mono under the state while it is not empty; a link to the guide page **What to set up on your server** |
-| Settings | configurable, a `settings_group` with its own apply bar | **Server**, **SSH port**, **Account**, **SSH key** and **Public port**. **SSH key** is a picker of the Credentials page's SSH keys, with a link to that page when it holds none. The bar's label is **Apply relay**, its hint `ui.overlay.relay_apply_hint`, and its warning `ui.overlay.relay_apply_warning` while the relay is `connected` |
+| Status | visualizing, read from `GET /api/hub/overlay/relay` on the page's 10 s cadence | the state as a `StatusDot` with its word; **Address for clients**, the `url` in mono; **Host key**, the `host_key_fingerprint` in mono with **Forget host key** beside it while one is recorded; `last_error` in mono under the state while it is not empty. No link: the guide page stays in the guide |
+| Settings | configurable, a `settings_group` with its own apply bar | **Server**, **SSH port**, **Account**, **Credential** and **Public port**, then the vault picker of the credential chosen. **Credential** is the Devices page's **Install agent** picker, with its words and the hint `ui.overlay.relay_credential_hint`: **SSH key** shows the picker of the vault's SSH keys, **Password** the picker of its logins, and the request names the one picked as `key_id` or `login_id`, as the install's does. No link to the Credentials page. The bar's label is **Apply SSH Relay**, its hint `ui.overlay.relay_apply_hint`, and its warning `ui.overlay.relay_apply_warning` while the relay is `connected` |
 
 The state's tone follows "Status dots and badges": `connected` is `ok`,
 `connecting` is `warn`, `disabled` and `not_configured` are `idle`, and every

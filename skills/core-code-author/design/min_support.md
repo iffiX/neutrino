@@ -74,6 +74,7 @@ distribution provides.
 | wpa_supplicant, hostapd | 2.9 | SAE with `ieee80211w` for a WPA3 network; the access point renders WPA2 only | `hub/neutrino_hub/modules/router/supplicant_renderer.py:101` |
 | dhcpcd | 7.1 | `nohook`, which keeps the client off resolv.conf and the hostname | `hub/neutrino_hub/modules/router/dhcp_renderer.py:58` |
 | OpenSSH client | 7.6 | `StrictHostKeyChecking=accept-new` in the relay's `ssh` start line | the relay's start line ([modules/network.md](modules/network.md)) |
+| OpenSSH client, a relay with a password | 8.4, or `DISPLAY` set before it | `SSH_ASKPASS_REQUIRE=force`, which makes ssh ask the askpass program and never a terminal; an older client asks it when it has no terminal and `DISPLAY` is set, and the start line sets both | the relay's password start line ([modules/network.md](modules/network.md), "What the hub runs") |
 
 The relay needs an OpenSSH client on every system the hub runs on, and each
 system has one from its own vendor:
@@ -85,6 +86,11 @@ system has one from its own vendor:
 | Arch family | `openssh`, a dependency of the Arch package | a rolling release |
 | macOS | `/usr/bin/ssh`, part of the system | macOS 12: 8.6 |
 | Windows | `%SystemRoot%\System32\OpenSSH\ssh.exe`, the optional feature `OpenSSH.Client`, installed by default since Windows 10 1803 | Windows 10 1809: 7.7 |
+
+A relay that logs in with a password was proven with Debian 12's 9.2 and
+Windows 11's `OpenSSH_for_Windows_9.5p2`, which runs an askpass `.cmd`.
+Whether Windows 10 1809's 7.7 takes `SSH_ASKPASS` through `DISPLAY` is not
+proven; a relay with a key needs neither.
 
 On Linux the name is one more entry in `SYSTEM_RUNTIME_PACKAGES`, spelled
 per family in `SYSTEM_PACKAGE_NAMES`
