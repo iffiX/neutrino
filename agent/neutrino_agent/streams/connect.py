@@ -1,7 +1,8 @@
 """One TCP connection to a service on this machine, over one stream.
 
-The hub opens ``connect {port}`` for a client that asked for a service this
-machine publishes. The agent dials ``127.0.0.1:<port>``, or the address a
+The hub opens ``connect {port, protocol}`` for a client that asked for a
+service this machine publishes; this module serves ``tcp``, the protocol an
+open that names none asks for, and says what is published on each protocol. The agent dials ``127.0.0.1:<port>``, or the address a
 container port is published on when it names one, and nothing else: a port
 the machine does not publish at that moment is refused
 ``port_not_published {port}`` before anything is dialled. Bytes go both
@@ -29,6 +30,7 @@ from neutrino_agent.constants import (
     AGENT_CONNECT_DIAL_TIMEOUT_S,
     AGENT_CONNECT_LOOPBACK,
     AGENT_CONNECT_REFUSED,
+    AGENT_CONNECT_TCP,
     AGENT_CONNECT_TIMEOUT,
     AGENT_CONNECT_UNREACHABLE,
     AGENT_WS_CHUNK_BYTES,
@@ -48,8 +50,14 @@ INSTANCE_MODULES = ("vscode", "cloudcli", "code_server")
 POLL_S = 0.5
 
 
-def published_ports(modules: dict, desired_modules: dict, desktop: dict) -> dict:
-    """Every port this machine publishes now, each to the address it is dialled on.
+def published_ports(
+    modules: dict,
+    desired_modules: dict,
+    desktop: dict,
+    protocol: str = AGENT_CONNECT_TCP,
+) -> dict:
+    """Every port this machine publishes now on one protocol, each to the
+    address it is dialled on.
 
     Args:
         modules: The modules section of this machine's report, ``{name:
@@ -57,14 +65,20 @@ def published_ports(modules: dict, desired_modules: dict, desktop: dict) -> dict
         desired_modules: The modules section of the hub's last state,
             ``{name: {want, config, ...}}``.
         desktop: The desktop section of this machine's report.
+        protocol: ``tcp`` or ``udp``.
 
     Returns:
-        Port to address: 445 while the file share reports a share, the
-        desktop's direct port while it is shared, the port of the url the
-        Gitea module reports, each configured editor or CloudCLI instance's
-        port, and each port a container publishes, at the one address it is
-        published on when it names one; every other on loopback.
+        Port to address. On TCP: 445 while the file share reports a share,
+        the desktop's direct port while it is shared, the port of the url
+        the Gitea module reports, each configured editor or CloudCLI
+        instance's port, and each port a container publishes on TCP. On
+        UDP: each port a container publishes on UDP, and nothing else. A
+        container's port goes to the one address it is published on when
+        it names one; every other to loopback. A binding that names no
+        protocol is TCP.
     """
+    if protocol != AGENT_CONNECT_TCP:
+        return _container_ports(modules, protocol)
     ports: dict = {}
     samba = _configured(modules.get("samba"))
     if samba is not None and samba.get("shares"):
@@ -87,14 +101,7 @@ def published_ports(modules: dict, desired_modules: dict, desktop: dict) -> dict
             port = _port(instance.get("port") if isinstance(instance, dict) else 0)
             if port:
                 ports[port] = AGENT_CONNECT_LOOPBACK
-    podman = _configured(modules.get("podman"))
-    for container in (podman or {}).get("containers") or []:
-        if not isinstance(container, dict):
-            continue
-        for binding in container.get("host_bindings") or []:
-            port = _port(binding.get("port") if isinstance(binding, dict) else 0)
-            if port:
-                ports[port] = dial_address(str(binding.get("address", "") or ""))
+    ports.update(_container_ports(modules, protocol))
     return ports
 
 
@@ -160,13 +167,15 @@ class ConnectStream:
         """
         Args:
             channel: The stream's :class:`StreamChannel`.
-            args: The open's arguments, ``{port}``.
+            args: The open's arguments, ``{port, protocol}``, ``protocol``
+                ``tcp`` or absent.
             published: Called with nothing for :func:`published_ports` now.
             dial: Called with ``(address, timeout)`` for the connected
                 socket; None takes :func:`socket.create_connection`.
         """
         self._channel = channel
         self._port = args.get("port")
+        self._protocol = args.get("protocol", AGENT_CONNECT_TCP)
         self._published = published
         self._dial = dial or socket.create_connection
         self._socket: "socket.socket | None" = None
@@ -177,11 +186,12 @@ class ConnectStream:
 
         Raises:
             StreamRefused: ``port_not_published {port}`` for a port the
-                machine does not publish now; ``connect_failed {reason}``
-                when the dial fails.
+                machine does not publish now on TCP, or for an open naming
+                another protocol; ``connect_failed {reason}`` when the dial
+                fails.
         """
         port = self._port
-        ports = self._published()
+        ports = self._published() if self._protocol == AGENT_CONNECT_TCP else {}
         if isinstance(port, bool) or not isinstance(port, int) or port not in ports:
             raise StreamRefused(AGENT_CODE_PORT_NOT_PUBLISHED, {"port": port})
         try:
@@ -252,6 +262,24 @@ class ConnectStream:
         self._is_done.set()
         with contextlib.suppress(OSError):
             connection.shutdown(socket.SHUT_RDWR)
+
+
+def _container_ports(modules: dict, protocol: str) -> dict:
+    """The ports the Podman module's containers publish on one protocol."""
+    ports: dict = {}
+    podman = _configured(modules.get("podman"))
+    for container in (podman or {}).get("containers") or []:
+        if not isinstance(container, dict):
+            continue
+        for binding in container.get("host_bindings") or []:
+            if not isinstance(binding, dict):
+                continue
+            if str(binding.get("protocol", "") or AGENT_CONNECT_TCP) != protocol:
+                continue
+            port = _port(binding.get("port"))
+            if port:
+                ports[port] = dial_address(str(binding.get("address", "") or ""))
+    return ports
 
 
 def _configured(status) -> "dict | None":

@@ -52,9 +52,10 @@ class PodmanContainerState:
         volumes: Every mount as ``source:destination``, from inspect.
         environment: The container's environment, ``KEY=value`` each.
         has_unit: Whether a unit file this machine renders stands for it.
-        host_bindings: Each published TCP host port with the host address
-            it is published on, ``{"address", "port"}``, the address empty
-            for every address.
+        host_bindings: Each published host port with the host address it
+            is published on and its protocol, ``{"address", "port",
+            "protocol"}``, the protocol ``tcp`` or ``udp`` and the address
+            empty for every address.
     """
 
     name: str
@@ -465,10 +466,14 @@ def _host_bindings(entries: list) -> list:
         if not isinstance(entry, dict):
             continue
         port = entry.get("host_port")
-        protocol = str(entry.get("protocol", "") or "tcp")
-        if not isinstance(port, int) or port <= 0 or protocol != "tcp":
+        protocol = str(entry.get("protocol", "") or "tcp").lower()
+        if not isinstance(port, int) or port <= 0 or protocol not in ("tcp", "udp"):
             continue
-        binding = {"address": str(entry.get("host_ip", "") or ""), "port": port}
+        binding = {
+            "address": str(entry.get("host_ip", "") or ""),
+            "port": port,
+            "protocol": protocol,
+        }
         if binding not in bindings:
             bindings.append(binding)
     return bindings

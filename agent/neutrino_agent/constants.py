@@ -65,6 +65,16 @@ AGENT_CODE_CONNECT_FAILED = "connect_failed"
 AGENT_CONNECT_REFUSED = "refused"
 AGENT_CONNECT_TIMEOUT = "timeout"
 AGENT_CONNECT_UNREACHABLE = "unreachable"
+# The two protocols a ``connect`` stream carries; an open that names none
+# is TCP.
+AGENT_CONNECT_TCP = "tcp"
+AGENT_CONNECT_UDP = "udp"
+# A UDP stream's far end: how long a source's socket lives with no
+# datagram either way, and how many sources one stream keeps a socket for.
+# The hub's own values, CHANNEL_UDP_IDLE_TIMEOUT_S and
+# CHANNEL_UDP_SOURCES_MAX.
+AGENT_UDP_IDLE_TIMEOUT_S = 60
+AGENT_UDP_SOURCES_MAX = 64
 # Close codes: a refused hello, after the ``refused`` frame that says why,
 # and a socket replaced by a second one for the same binding.
 AGENT_WS_CLOSE_REFUSED = 4000
