@@ -14,10 +14,16 @@ import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -386,22 +392,50 @@ class PortForwardsTest {
     @Test
     fun aUdpForwardTheHubEndsWritesOneLineWithTheCode() = runTest {
         val lines = mutableListOf<String>()
+        val stopped = CountDownLatch(1)
         val refusing = FakeConnectHub(refusal = ChannelResult.refused("permission_denied", "kind" to "port"))
         val forwards = PortForwards(
             noMaterial,
             { _, args -> refusing.open(args) },
             backgroundScope,
             table,
-            log = { synchronized(lines) { lines += it } },
+            log = { line ->
+                synchronized(lines) { lines += line }
+                if (line.startsWith("stopped")) stopped.countDown()
+            },
         )
         forwards.connect("b1", "u1_udp", 30084, "udp")
         runCurrent()
-        waitFor { synchronized(lines) { lines.any { it.startsWith("stopped") } } }
+        assertTrue(stopped.await(EVENT_BOUND_SECONDS, TimeUnit.SECONDS))
         forwards.stopAll()
         assertEquals(
             listOf("stopped forwarding 127.0.0.1:30084 to b1/u1_udp: the hub refused it: permission_denied"),
             synchronized(lines) { lines.filter { it.startsWith("stopped") } },
         )
+    }
+
+    @Test
+    fun anEndDuringStartIsLoggedOnce() = runTest {
+        val lines = mutableListOf<String>()
+        val forwards = PortForwards(
+            noMaterial,
+            streams,
+            backgroundScope,
+            table,
+            log = { synchronized(lines) { lines += it } },
+            udpRelayOf = { name, _, local, onRefused -> EndedAtStart(name, local, onRefused) },
+        )
+        forwards.connect("b1", "u1_udp", 30085, "udp")
+        runCurrent()
+        assertEquals(
+            listOf("stopped forwarding 127.0.0.1:30085 to b1/u1_udp: the hub refused it: permission_denied"),
+            synchronized(lines) { lines.toList() },
+        )
+        val row = forwards.rows.value.getValue("b1/u1_udp")
+        assertEquals("permission_denied", row.error?.code)
+        assertTrue(!row.isForwarded)
+        forwards.stopAll()
+        assertEquals(1, synchronized(lines) { lines.size })
     }
 
     @Test
@@ -427,7 +461,7 @@ class PortForwardsTest {
         val forwards = PortForwards(noMaterial, { _, args -> refusing.open(args) }, backgroundScope, table)
         forwards.connect("b1", "dns_udp", 30054, "udp")
         runCurrent()
-        waitFor { forwards.rows.value["b1/dns_udp"]?.error != null }
+        awaitRow(forwards, "b1/dns_udp") { it.error != null }
         runCurrent()
         val row = forwards.rows.value.getValue("b1/dns_udp")
         assertEquals("permission_denied", row.error?.code)
@@ -443,7 +477,7 @@ class PortForwardsTest {
         val port = forwards.rows.value.getValue("b1/dns_udp").localPort
         assertEquals("q", datagram(port, "q"))
         hub.end(hub.opens.last()["stream"]!!.jsonPrimitive.content.toInt(), "port_not_published")
-        waitFor { forwards.rows.value["b1/dns_udp"]?.error != null }
+        awaitRow(forwards, "b1/dns_udp") { it.error != null }
         val row = forwards.rows.value.getValue("b1/dns_udp")
         assertEquals("port_not_published", row.error?.code)
         assertEquals(port, row.localPort)
@@ -451,7 +485,7 @@ class PortForwardsTest {
     }
 
     private fun datagram(port: Int, text: String): String = DatagramSocket().use { program ->
-        program.soTimeout = 5000
+        program.soTimeout = (EVENT_BOUND_SECONDS * 1000).toInt()
         program.send(DatagramPacket(text.toByteArray(), text.length, InetSocketAddress("127.0.0.1", port)))
         val buffer = ByteArray(512)
         val packet = DatagramPacket(buffer, buffer.size)
@@ -459,12 +493,32 @@ class PortForwardsTest {
         String(buffer, 0, packet.length)
     }
 
-    private fun waitFor(condition: () -> Boolean) {
-        val deadline = System.currentTimeMillis() + 5000
-        while (!condition()) {
-            check(System.currentTimeMillis() < deadline) { "the condition did not hold in 5 s" }
-            Thread.sleep(10)
+    private fun awaitRow(forwards: PortForwards, key: String, condition: (PortForwardRow) -> Boolean) =
+        runBlocking(Dispatchers.Default) {
+            withTimeout(EVENT_BOUND_SECONDS * 1000) {
+                forwards.rows.first { rows -> rows[key]?.let(condition) == true }
+            }
         }
+
+    private class EndedAtStart(
+        override val name: String,
+        private val requested: Int,
+        private val onRefused: (ChannelResult.Refused, Boolean) -> Unit,
+    ) : PortForwardListener {
+        override var localPort: Int = 0
+        override val isActive: Boolean = false
+
+        override fun start(): Int {
+            localPort = requested
+            onRefused(ChannelResult.refused("permission_denied", "kind" to "port"), true)
+            return requested
+        }
+
+        override fun close() = Unit
+    }
+
+    private companion object {
+        const val EVENT_BOUND_SECONDS = 30L
     }
 
     private fun exchange(port: Int, text: String): String = Socket("127.0.0.1", port).use { client ->

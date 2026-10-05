@@ -286,6 +286,16 @@ The state words, `state.relay_<code>`:
 | `forward_refused` | Forward refused | 服务器不让对外监听 |
 | `unreachable` | Server unreachable | 连不上服务器 |
 
+## The phone's AI addresses
+
+The forwarded AI row on the phone labels its two addresses
+([client.md](client.md), "The AI page"):
+
+| Key | English | Chinese |
+| --- | --- | --- |
+| `ui.ai_address_plain` | For apps that add /v1 themselves | 应用自己会加 /v1 时用这个 |
+| `ui.ai_address_v1` | For apps that want /v1 in the address | 应用要求地址带 /v1 时用这个 |
+
 ## Localization
 
 The panel and the client page speak English and Simplified Chinese; the

@@ -356,9 +356,14 @@ class PortForwards(
             } else {
                 relayOf(key, open, local)
             }
-            val bound = relay.start()
             synchronized(relays) { relays.put(key, relay) }?.close()
-            log("forwarding $FORWARD_BIND_HOST:$bound to $key through the hub")
+            val bound = try {
+                relay.start()
+            } catch (error: IOException) {
+                synchronized(relays) { if (relays[key] === relay) relays.remove(key) }
+                throw error
+            }
+            if (relay.isActive) log("forwarding $FORWARD_BIND_HOST:$bound to $key through the hub")
             ChannelResult.Ok(bound)
         } catch (error: LocalPortTakenException) {
             ChannelResult.refused("port_taken", "port" to error.port.toString())

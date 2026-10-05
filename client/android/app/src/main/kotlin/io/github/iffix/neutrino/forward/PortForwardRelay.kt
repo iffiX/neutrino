@@ -49,11 +49,15 @@ open class PortForwardRelay(
      * Bind the loopback and start accepting.
      *
      * @return The loopback number bound.
-     * @throws IOException When the number cannot be bound.
+     * @throws IOException When the number cannot be bound, or the forward was closed first.
      */
     override fun start(): Int {
         val bound = bind(requestedPort)
         listener = bound
+        if (isClosed) {
+            bound.close()
+            throw IOException("the forward was closed before it listened")
+        }
         localPort = bound.localPort
         acceptor = thread(isDaemon = true, name = "forward-$localPort") { accept(bound) }
         return localPort

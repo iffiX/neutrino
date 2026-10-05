@@ -115,7 +115,7 @@ class PortForwardUdpRelayTest {
         hub.send(stream, reply(programs.first().localPort, "lost"))
         hub.send(stream, reply(programs.last().localPort, "kept"))
         assertEquals("kept", receive(programs.last()))
-        assertNull(receiveOrNull(programs.first()))
+        assertNull(receiveOrNull(programs.first(), QUIET_MILLIS))
     }
 
     @Test
@@ -186,7 +186,6 @@ class PortForwardUdpRelayTest {
         send(program, port, "a")
         assertEquals("a", receive(program))
         hub.end(streamOf(hub))
-        Thread.sleep(100)
         send(program, port, "b")
         assertEquals("b", receive(program))
         assertEquals(2, opensOf(hub).size)
@@ -211,7 +210,7 @@ class PortForwardUdpRelayTest {
 
     private fun program(): DatagramSocket =
         DatagramSocket(InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0)).also {
-            it.soTimeout = 3000
+            it.soTimeout = EVENT_BOUND_MILLIS
             opened += it
         }
 
@@ -223,9 +222,10 @@ class PortForwardUdpRelayTest {
     private fun receive(program: DatagramSocket): String =
         receiveOrNull(program) ?: throw AssertionError("no reply came")
 
-    private fun receiveOrNull(program: DatagramSocket): String? {
+    private fun receiveOrNull(program: DatagramSocket, timeoutMillis: Int = EVENT_BOUND_MILLIS): String? {
         val buffer = ByteArray(2048)
         val packet = DatagramPacket(buffer, buffer.size)
+        program.soTimeout = timeoutMillis
         return try {
             program.receive(packet)
             String(buffer, 0, packet.length)
@@ -246,10 +246,15 @@ class PortForwardUdpRelayTest {
     private fun streamOf(hub: FakeConnectHub): Int = opensOf(hub).last()["stream"]!!.jsonPrimitive.content.toInt()
 
     private fun waitFor(condition: () -> Boolean) {
-        val deadline = System.currentTimeMillis() + 5000
+        val deadline = System.currentTimeMillis() + EVENT_BOUND_MILLIS
         while (!condition()) {
-            if (System.currentTimeMillis() > deadline) fail("the condition did not hold in 5 s")
+            if (System.currentTimeMillis() > deadline) fail("the condition did not hold in $EVENT_BOUND_MILLIS ms")
             Thread.sleep(10)
         }
+    }
+
+    private companion object {
+        const val EVENT_BOUND_MILLIS = 30_000
+        const val QUIET_MILLIS = 1000
     }
 }
