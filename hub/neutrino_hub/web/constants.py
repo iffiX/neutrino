@@ -199,6 +199,9 @@ WEB_LOGIN_LOCKOUT_STEPS_S = (30, 60, 300, 3600, 86400)
 WEB_LOGIN_LOCKOUT_STATE_PATH = UTILS_RUNTIME_ROOT / "login_lockout.json"
 
 WEB_STATS_PUSH_INTERVAL_S = 1.0
+# How long the hub keeps its own record of a terminal session the
+# machine's report no longer lists.
+WEB_SHELL_LEDGER_GRACE_S = 120.0
 # How often an open panel socket checks that its session still holds.
 WEB_SOCKET_SESSION_CHECK_INTERVAL_S = 1.0
 # How long a socket whose session ended has to finish before it is cut.

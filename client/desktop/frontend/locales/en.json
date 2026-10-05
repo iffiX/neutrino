@@ -71,7 +71,7 @@
   "code.role_mismatch": "The hub says this is not a client's link",
   "code.root_refused": "Run the client as your own user",
   "code.service_unknown": "The hub no longer publishes that service",
-  "code.session_not_owned": "Only the client that opened this session can change it",
+  "code.session_not_owned": "This session belongs to someone else and is not shared",
   "code.session_unknown": "The machine no longer keeps this session",
   "code.share_access_denied": "The share refused this login: the password is wrong, or this account may not use the share.",
   "code.share_login_rejected": "The share rejected the username or password. Open Configure and enter them again.",

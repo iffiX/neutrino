@@ -10,7 +10,10 @@ agent's ``exit_code``, or with the refusal. A later size is a client-opened
 stream, which the hub maps to the agent's. ``command {agent, persist,
 session_id, is_persistent, is_shared}`` from the session's owner and
 ``command {agent, stop_session, session_id}`` go to the machine holding the
-session unchanged, since the id is the agent's own.
+session unchanged, since the id is the agent's own. A ``shell`` naming a
+session another viewer owns and has not shared is refused
+``session_not_owned`` (:func:`neutrino_hub.web.shell_bridge.is_session_refused`),
+and an unshare closes every other client's stream on the session.
 """
 
 import asyncio
@@ -46,8 +49,10 @@ from neutrino_hub.web.shell_bridge import (
     DEFAULT_ROWS,
     client_owner,
     device_of_session,
-    is_persist_refused,
+    is_session_refused,
     persist_flags,
+    record_opened,
+    record_sharing,
     resize_shell,
     session_command,
     settle_shell,
@@ -72,14 +77,22 @@ async def serve_shell_stream(
     if code:
         await stream.close(code, params)
         return
+    viewer = client_owner(session.key)
+    if session_id and is_session_refused(
+        runtime, device_id, session_id, viewer, is_join=True
+    ):
+        await stream.close(CHANNEL_CODE_SESSION_NOT_OWNED, {"session_id": session_id})
+        return
     cols, rows = _size(stream.args)
     args = {"cols": cols, "rows": rows}
     if session_id:
         args["session_id"] = session_id
-        args["owner"] = client_owner(session.key)
+        args["owner"] = viewer
         args["is_shared"] = stream.args.get("is_shared") is True
         if stream.args.get("is_resumed") is True:
             args["is_resumed"] = True
+        else:
+            record_opened(runtime, device_id, session_id, viewer, args["is_shared"])
     try:
         shell = await runtime.agent_sessions.open_stream(
             device_id, CHANNEL_STREAM_SHELL, args
@@ -176,10 +189,9 @@ async def _serve_session_verb(
         await stream.close(code, params)
         return
     args = {"session_id": session_id}
+    viewer = client_owner(session.key)
     if verb == CHANNEL_VERB_PERSIST:
-        if is_persist_refused(
-            runtime.agent_sessions, device_id, session_id, client_owner(session.key)
-        ):
+        if is_session_refused(runtime, device_id, session_id, viewer, is_join=False):
             await stream.close(
                 CHANNEL_CODE_SESSION_NOT_OWNED, {"session_id": session_id}
             )
@@ -190,6 +202,10 @@ async def _serve_session_verb(
     except AgentOfflineError as offline:
         await stream.close(offline.code, {"device": device_id})
         return
+    if verb == CHANNEL_VERB_PERSIST and not info["code"]:
+        await record_sharing(
+            runtime, device_id, session_id, viewer, persist_flags(stream.args)
+        )
     await stream.close(info["code"], info["params"])
 
 
