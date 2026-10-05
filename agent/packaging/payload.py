@@ -111,7 +111,9 @@ RUSTDESK_UPSTREAM_DIR = "usr/share/rustdesk"
 RUSTDESK_BINARY_NAME = "rustdesk"
 # RustDesk finds its own files through ``current_exe``, but some of its paths
 # still assume the name on PATH.
-RUSTDESK_LINK = "usr/bin/rustdesk"
+# The unit the agent's packages before the Remote desktop module installed
+# for the host, enabled and started, under RustDesk's own name; an upgrade
+# from one of them stops it, and leaves alone one another package owns.
 RUSTDESK_UNIT_NAME = "rustdesk.service"
 
 # The licences of what the agent packages carry, by the file name they have
@@ -287,7 +289,8 @@ def stage_rustdesk(tree: Path, architecture: str, kind: str) -> None:
 
     The upstream package is fetched and opened here, and only its host
     directory is carried: the binary, its libraries and its data, under
-    :data:`VENDOR_PREFIX`. The symlink on PATH points at that copy.
+    :data:`VENDOR_PREFIX`. Nothing on PATH names it and no unit runs it: the
+    agent registers it when the hub's Remote desktop switch is on.
 
     Args:
         tree: The staging directory standing in for the filesystem root.
@@ -324,11 +327,6 @@ def stage_rustdesk(tree: Path, architecture: str, kind: str) -> None:
             )
         staged.parent.mkdir(parents=True, exist_ok=True)
         shutil.copytree(carried, staged)
-
-    link = tree / RUSTDESK_LINK
-    link.parent.mkdir(parents=True, exist_ok=True)
-    link.unlink(missing_ok=True)
-    link.symlink_to(RUSTDESK_VENDOR_DIR / RUSTDESK_BINARY_NAME)
 
 
 def stage_licenses(tree: Path) -> None:

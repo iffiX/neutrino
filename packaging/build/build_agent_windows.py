@@ -11,11 +11,15 @@ service, run as LocalSystem at boot with ``service run``, puts its folder on
 PATH so an administrator's terminal answers ``nagent``, and creates the data
 folder under ``%ProgramData%`` open to SYSTEM and the administrators alone.
 
-RustDesk comes as upstream's own executable, pinned by hash, and installs
-itself: after the files are laid down, a deferred action run as the system
-calls it with ``--silent-install``, which puts it under
-``%ProgramFiles%\\RustDesk``, registers its ``RustDesk`` service and opens its
-firewall rules. Removing the agent runs ``--uninstall``; an upgrade keeps it.
+RustDesk comes as the files upstream's pinned executable packs, unpacked at
+build time and checked file by file, laid down in the agent's own folder
+under ``rustdesk``: the same files upstream's own install copies into
+``%ProgramFiles%\\RustDesk``. The installer runs nothing of RustDesk's and
+registers nothing of it, no service, no uninstall entry, no driver and no
+firewall rule: the agent registers its copy when the hub's Remote desktop
+switch is on. An upgrade from a package that ran upstream's installer runs
+that package's own copy of it with ``--uninstall`` first, before the old
+version's files go; a RustDesk no package of the agent installed stays.
 
 Removing the agent also runs ``nagent service uninstall --yes`` before its
 files go, which unregisters the scheduled tasks and removes the firewall
@@ -23,13 +27,15 @@ rules its modules added, the file share's fence among them. Shares and
 accounts stay, and an upgrade runs neither action.
 
 Needs WiX 6 and its Util extension: ``dotnet tool install --global wix
---version 6.0.2`` and ``wix extension add -g WixToolset.Util.wixext/6.0.2``.
+--version 6.0.2`` and ``wix extension add -g WixToolset.Util.wixext/6.0.2``,
+and the Python package ``brotli`` to unpack RustDesk's files.
 
 Not pure: makes a virtual environment, downloads a compiler and RustDesk,
 compiles, writes a package tree, runs wix.
 """
 
 import argparse
+import importlib.util
 import platform
 import shutil
 import sys
@@ -61,8 +67,13 @@ AGENT_SERVICE_ARGUMENTS = "service run"
 # x64 only: RustDesk publishes no Windows arm64 build to carry.
 WINDOWS_MACHINES = {"x86_64": "amd64"}
 
-# RustDesk's own installer, under the name upstream publishes it as.
-RUSTDESK_INSTALLER_NAME = f"rustdesk-{rustdesk_assets.RUSTDESK_VERSION}-x86_64.exe"
+# Where the agent's copy of RustDesk lies under its folder.
+RUSTDESK_DIR_NAME = "rustdesk"
+# What every earlier package that ran upstream's installer left in the
+# agent's folder: upstream's own executable, under the name upstream
+# publishes it as. Its being there is what says the RustDesk under
+# Program Files is that package's, and it removes what it installed.
+OLD_RUSTDESK_INSTALLER_PATTERN = "rustdesk-*-x86_64.exe"
 
 # The identity of the product across every version it ever ships as. Fixed:
 # changing it makes an upgrade install beside the old one instead of over it.
@@ -73,10 +84,21 @@ UPGRADE_CODE = "9F4E4A1C-9C0B-4C0E-9E2E-6C5A2C7C1E33"
 # whose own grants let every account read.
 DATA_FOLDER_SDDL = "D:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
 
-# RustDesk and what the modules added are taken away when the agent is
-# removed, and kept through an upgrade, whose removal of the old version
-# carries the upgrading code.
+# What the modules added is taken away when the agent is removed, and kept
+# through an upgrade, whose removal of the old version carries the upgrading
+# code.
 AGENT_REMOVED_CONDITION = 'REMOVE~="ALL" AND NOT UPGRADINGPRODUCTCODE'
+# An upgrade over an earlier version, which MajorUpgrade names.
+AGENT_UPGRADING_CONDITION = "WIX_UPGRADE_DETECTED AND NOT REMOVE"
+# The earlier version is removed inside this install's own transaction, so
+# what the old package left can be read and acted on just before it goes.
+UPGRADE_SCHEDULE = "afterInstallInitialize"
+# Runs, as the system, every copy of upstream's installer an earlier package
+# left in the agent's folder with --uninstall; none there runs nothing.
+OLD_RUSTDESK_UNINSTALL = (
+    '"[System64Folder]cmd.exe" /c for %f in '
+    f'("[INSTALLFOLDER]{OLD_RUSTDESK_INSTALLER_PATTERN}") do "%~f" --uninstall'
+)
 # What the removal runs the agent with to take away what its modules added.
 AGENT_UNINSTALL_ARGUMENTS = "service uninstall --yes"
 
@@ -104,12 +126,6 @@ WIX_BODY = r"""
     <ComponentGroup Id="Payload" Directory="INSTALLFOLDER">
       <Files Include="@PAYLOAD@\**" />
       @SERVICE_COMPONENT@
-      <Component Id="RustDeskInstallerComponent" Guid="*">
-        <File Id="RustDeskInstaller"
-              Source="@RUSTDESK@"
-              Name="@RUSTDESK_NAME@"
-              KeyPath="yes" />
-      </Component>
       <Component Id="PathEntry" Guid="*">
         <Environment Id="AgentPath"
                      Name="PATH"
@@ -142,18 +158,14 @@ WIX_BODY = r"""
       </Component>
     </ComponentGroup>
 
-    @INSTALL_RUSTDESK@
-    @UNINSTALL_RUSTDESK@
+    @REMOVE_OLD_RUSTDESK@
     @UNINSTALL_ADDED@
 
     <InstallExecuteSequence>
-      <Custom Action="InstallRustDesk"
-              After="InstallFiles"
-              Condition="NOT REMOVE" />
+      <Custom Action="RemoveOldRustDesk"
+              Before="RemoveExistingProducts"
+              Condition="@AGENT_UPGRADING@" />
       <Custom Action="UninstallAdded"
-              Before="UninstallRustDesk"
-              Condition="@AGENT_REMOVED@" />
-      <Custom Action="UninstallRustDesk"
               Before="RemoveFiles"
               Condition="@AGENT_REMOVED@" />
     </InstallExecuteSequence>
@@ -254,8 +266,7 @@ def wix_source(staged: dict, version: str, publisher: str) -> str:
     """The installer's source with every value filled in.
 
     Args:
-        staged: What :func:`_lay_out` wrote: ``payload``, ``binary`` and
-            ``rustdesk``.
+        staged: What :func:`_lay_out` wrote: ``payload`` and ``binary``.
         version: The version being packaged.
         publisher: The Manufacturer field's value.
 
@@ -273,14 +284,11 @@ def wix_source(staged: dict, version: str, publisher: str) -> str:
         start="auto",
         permissions=(SERVICE_RECOVERY,),
     )
-    install_rustdesk = wix_build.custom_action(
-        "InstallRustDesk", FileRef="RustDeskInstaller", ExeCommand="--silent-install"
-    )
-    uninstall_rustdesk = wix_build.custom_action(
-        "UninstallRustDesk",
+    remove_old_rustdesk = wix_build.custom_action(
+        "RemoveOldRustDesk",
         is_failure_ignored=True,
-        FileRef="RustDeskInstaller",
-        ExeCommand="--uninstall",
+        Directory="INSTALLFOLDER",
+        ExeCommand=OLD_RUSTDESK_UNINSTALL,
     )
     uninstall_added = wix_build.custom_action(
         "UninstallAdded",
@@ -292,16 +300,14 @@ def wix_source(staged: dict, version: str, publisher: str) -> str:
         WIX_BODY,
         {
             "PAYLOAD": staged["payload"],
-            "RUSTDESK": staged["rustdesk"],
-            "RUSTDESK_NAME": RUSTDESK_INSTALLER_NAME,
             "DATA_SDDL": DATA_FOLDER_SDDL,
             "AGENT_REMOVED": AGENT_REMOVED_CONDITION,
+            "AGENT_UPGRADING": AGENT_UPGRADING_CONDITION,
         },
     )
     body = (
         body.replace("@SERVICE_COMPONENT@", service)
-        .replace("@INSTALL_RUSTDESK@", install_rustdesk)
-        .replace("@UNINSTALL_RUSTDESK@", uninstall_rustdesk)
+        .replace("@REMOVE_OLD_RUSTDESK@", remove_old_rustdesk)
         .replace("@UNINSTALL_ADDED@", uninstall_added)
     )
     return wix_build.package_source(
@@ -310,6 +316,7 @@ def wix_source(staged: dict, version: str, publisher: str) -> str:
         version=version,
         upgrade_code=UPGRADE_CODE,
         body=body,
+        upgrade_schedule=UPGRADE_SCHEDULE,
     )
 
 
@@ -322,9 +329,9 @@ def _lay_out(root: Path, version: str, machine: str) -> dict:
         machine: ``amd64``.
 
     Returns:
-        The paths the installer's source names: the payload directory, the
-        agent's own binary, kept out of the payload so the service component
-        can claim it, and RustDesk's installer.
+        The paths the installer's source names: the payload directory, with
+        RustDesk's files under its ``rustdesk``, and the agent's own binary,
+        kept out of the payload so the service component can claim it.
 
     Raises:
         SystemExit: When this Python is not the pinned minor, when the
@@ -350,11 +357,8 @@ def _lay_out(root: Path, version: str, machine: str) -> dict:
     binary = root / AGENT_BINARY_NAME
     shutil.copyfile(dist / AGENT_BINARY_NAME, binary)
     _stage_licenses(installed)
-
-    rustdesk = rustdesk_assets.stage_windows_exe(
-        root / "rustdesk", name=RUSTDESK_INSTALLER_NAME
-    )
-    return {"payload": installed, "binary": binary, "rustdesk": rustdesk}
+    rustdesk_assets.stage_windows_files(installed / RUSTDESK_DIR_NAME)
+    return {"payload": installed, "binary": binary}
 
 
 def _check_build_machine(machine: str) -> None:
@@ -459,10 +463,18 @@ def _check_tools(is_stage_only: bool) -> None:
         is_stage_only: Whether the build stops before wix.
 
     Raises:
-        SystemExit: When this is not Windows, or WiX is missing.
+        SystemExit: When this is not Windows, the decompressor RustDesk's
+            files need is not installed, or WiX is missing.
     """
     if sys.platform != "win32":
         raise SystemExit(f"{Path(__file__).name} runs on Windows; this is {sys.platform}")
+    if importlib.util.find_spec(rustdesk_assets.RUSTDESK_PACKED_DECOMPRESSOR) is None:
+        raise SystemExit(
+            "unpacking RustDesk's Windows files needs the Python package "
+            f"{rustdesk_assets.RUSTDESK_PACKED_DECOMPRESSOR}: pip install "
+            f"{rustdesk_assets.RUSTDESK_PACKED_DECOMPRESSOR}=="
+            f"{rustdesk_assets.RUSTDESK_PACKED_DECOMPRESSOR_VERSION}"
+        )
     if not is_stage_only and shutil.which("wix") is None:
         raise SystemExit(
             "WiX 6 is needed and wix is not on the path: "

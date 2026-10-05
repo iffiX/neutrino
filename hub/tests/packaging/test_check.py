@@ -8,6 +8,7 @@ setup`` accepts, and a directory the scripts install from.
 import hashlib
 import importlib.util
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -303,6 +304,7 @@ def _macos_agent_check(check, monkeypatch, tmp_path, *, is_foreign_taken):
     monkeypatch.setattr(check, "AGENT_MACOS_ADDED_PLIST", added)
     monkeypatch.setattr(check, "AGENT_MACOS_FOREIGN_PLIST", foreign)
     monkeypatch.setattr(check, "AGENT_MACOS_COMMAND", str(command))
+    monkeypatch.setattr(check, "_macos_rustdesk_problem", lambda: "")
     monkeypatch.setattr(check, "AGENT_MACOS_ROOT_MODES", {})
     monkeypatch.setattr(check, "_require_host", lambda platform, name: None)
     monkeypatch.setattr(check, "_sudo", sudo)
@@ -761,3 +763,103 @@ def test_a_check_with_no_rescue_is_not_ended_by_the_network(
 
     assert probes == [1]
     assert watched[-1] == 1
+
+
+# --- RustDesk in the agent's own folder, registered by nothing ---
+
+
+def test_the_linux_agent_check_looks_for_the_copy_and_no_registration(
+    check, monkeypatch, tmp_path
+):
+    calls = []
+    monkeypatch.setattr(
+        check.shutil,
+        "which",
+        lambda name: "/usr/bin/docker" if name == "docker" else None,
+    )
+    monkeypatch.setattr(
+        check.subprocess, "run", _fake_container_run("nagent 0.5.0\n", calls)
+    )
+    package = tmp_path / "neutrino-agent_0.5.0_amd64.deb"
+    package.write_bytes(b"deb")
+
+    check.check_linux(package)
+
+    script = calls[0][-1]
+    assert check.AGENT_LINUX_RUSTDESK_CHECK in script
+    assert script.index(check.AGENT_LINUX_RUSTDESK_CHECK) < script.index(
+        "nagent --version"
+    )
+
+
+@pytest.mark.parametrize(
+    "present, said",
+    [
+        (("copy",), ""),
+        ((), "the agent's package laid down no "),
+        (("copy", "unit"), "the agent's package installed "),
+        (("copy", "link"), "the agent's package installed "),
+    ],
+)
+def test_the_linux_rustdesk_check_says_what_is_wrong(check, tmp_path, present, said):
+    copy = tmp_path / "usr/lib/neutrino/agent/rustdesk/rustdesk"
+    unit = tmp_path / "lib/systemd/system/rustdesk.service"
+    link = tmp_path / "usr/bin/rustdesk"
+    if "copy" in present:
+        copy.parent.mkdir(parents=True)
+        copy.write_text("")
+        copy.chmod(0o755)
+    for name, path in (("unit", unit), ("link", link)):
+        if name in present:
+            path.parent.mkdir(parents=True)
+            path.write_text("")
+    snippet = check.AGENT_LINUX_RUSTDESK_CHECK
+    for absolute in (check.AGENT_LINUX_RUSTDESK, *check.AGENT_LINUX_RUSTDESK_ABSENT):
+        snippet = snippet.replace(absolute, str(tmp_path) + absolute)
+
+    result = subprocess.run(["sh", "-c", snippet], capture_output=True, text=True)
+
+    assert (result.returncode == 0) is (not said)
+    assert result.stderr.startswith(said)
+
+
+@pytest.mark.parametrize(
+    "options, said",
+    [
+        ({}, ""),
+        ({"is_copy_there": False}, "the agent's .msi laid down no "),
+        ({"answer": "NotSigned False False"}, "signature is NotSigned"),
+        ({"is_service_there": True}, "registered RustDesk's service"),
+        ({"answer": "Valid True False"}, "left RustDesk's uninstall entry"),
+        ({"is_standard_folder_there": True}, "installed "),
+        ({"answer": "Valid False True"}, "a RustDesk process runs"),
+    ],
+)
+def test_the_windows_rustdesk_check_says_what_is_wrong(check, options, said):
+    given = {
+        "is_copy_there": True,
+        "answer": "Valid False False",
+        "is_service_there": False,
+        "is_standard_folder_there": False,
+        **options,
+    }
+
+    problem = check.windows_rustdesk_problem(**given)
+
+    assert (said in problem) if said else problem == ""
+    assert bool(problem) == bool(said)
+
+
+def test_the_windows_agent_has_one_service_of_its_own(check):
+    assert check.AGENT_WINDOWS_SERVICES == ("neutrino_agent",)
+    assert str(check.AGENT_WINDOWS_RUSTDESK).endswith("agent/rustdesk/rustdesk.exe")
+
+
+def test_the_macos_check_finds_no_copy_where_none_was_laid(
+    check, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(
+        check, "AGENT_MACOS_RUSTDESK_APP", str(tmp_path / "RustDesk.app")
+    )
+
+    assert check._macos_rustdesk_problem().startswith("the agent's .pkg laid down no ")

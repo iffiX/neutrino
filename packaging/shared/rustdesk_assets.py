@@ -2,15 +2,20 @@
 
 Every asset comes from upstream's own release and is checked against the
 SHA-256 recorded here, so a build either carries the RustDesk this project
-was tested against or fails. Windows takes the executable as it is; macOS
-takes the app bundle out of the disk image, attached with ``hdiutil`` on the
-Mac the package is built on. The Linux ``.deb`` assets are pinned here too
-and unpacked by the package that carries them.
+was tested against or fails. On Windows the client takes the executable as
+it is, and the agent takes the files it packs: upstream's executable is
+RustDesk's portable packer, a program with every file of the installed
+RustDesk appended to it, each compressed with Brotli and named with its path
+and the MD5 of its contents, which is what its own install copies into
+``Program Files``. macOS takes the app bundle out of the disk image, attached
+with ``hdiutil`` on the Mac the package is built on. The Linux ``.deb``
+assets are pinned here too and unpacked by the package that carries them.
 
 Not pure: downloads, attaches disk images, writes files.
 """
 
 import hashlib
+import importlib
 import shutil
 import subprocess
 import tempfile
@@ -47,6 +52,16 @@ RUSTDESK_ASSETS = {
     ),
 }
 RUSTDESK_WINDOWS_BINARY_NAME = "rustdesk.exe"
+# The portable packer's appended files: the identifier they start after, then
+# for each file a big-endian length and its path, a big-endian length and
+# its Brotli-compressed contents, and the MD5 of the contents as 32 hex
+# digits. The decompressor is the one Python package the build needs for it.
+RUSTDESK_PACKED_IDENTIFIER = b"rustdesk"
+RUSTDESK_PACKED_LENGTH_BYTES = 4
+RUSTDESK_PACKED_DIGEST_BYTES = 32
+RUSTDESK_PACKED_PATH_BYTES_MAX = 260
+RUSTDESK_PACKED_DECOMPRESSOR = "brotli"
+RUSTDESK_PACKED_DECOMPRESSOR_VERSION = "1.2.0"
 # The app bundle the disk image carries, and its binary inside.
 RUSTDESK_APP_NAME = "RustDesk.app"
 RUSTDESK_APP_BINARY = "Contents/MacOS/RustDesk"
@@ -109,6 +124,124 @@ def stage_windows_exe(
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(content)
     return target
+
+
+def stage_windows_files(dest_dir: Path, *, machine: str = "x86_64") -> list:
+    """Unpack the files upstream's pinned Windows executable packs.
+
+    The executable is checked against its pin first; each file it packs is
+    then checked against the MD5 the packer records for it.
+
+    Args:
+        dest_dir: The directory the files belong in, as upstream's own
+            install lays them under ``Program Files\\RustDesk``.
+        machine: ``x86_64``.
+
+    Returns:
+        The files written.
+
+    Raises:
+        SystemExit: When there is no pin, what arrived is not what was
+            pinned, the decompressor is not installed, or the packed files
+            are not whole.
+    """
+    written = []
+    for path, content in packed_files(download("windows", machine)):
+        target = dest_dir.joinpath(*path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(content)
+        written.append(target)
+    if not (dest_dir / RUSTDESK_WINDOWS_BINARY_NAME).is_file():
+        raise SystemExit(
+            f"RustDesk's Windows executable packs no {RUSTDESK_WINDOWS_BINARY_NAME}"
+        )
+    return written
+
+
+def packed_files(executable: bytes) -> list:
+    """The files RustDesk's portable packer carries, in the order it packs them.
+
+    Args:
+        executable: The packer's bytes.
+
+    Returns:
+        ``(parts, contents)`` for each file: its path as a tuple of names,
+        and its decompressed bytes.
+
+    Raises:
+        SystemExit: When no packed files are found, the decompressor is not
+            installed, or a file is not what its recorded MD5 says.
+    """
+    try:
+        decompressor = importlib.import_module(RUSTDESK_PACKED_DECOMPRESSOR)
+    except ImportError:
+        raise SystemExit(
+            "unpacking RustDesk's Windows files needs the Python package "
+            f"{RUSTDESK_PACKED_DECOMPRESSOR}: pip install "
+            f"{RUSTDESK_PACKED_DECOMPRESSOR}=={RUSTDESK_PACKED_DECOMPRESSOR_VERSION}"
+        ) from None
+    position = _packed_start(executable)
+    files = []
+    while True:
+        entry = _packed_entry(executable, position)
+        if entry is None:
+            break
+        path, blob, digest, position = entry
+        content = decompressor.decompress(blob)
+        if hashlib.md5(content).hexdigest() != digest:
+            raise SystemExit(f"RustDesk's packed {path} is not what its MD5 says")
+        parts = tuple(part for part in path.split("\\") if part not in ("", "."))
+        if not parts or ".." in parts:
+            raise SystemExit(f"RustDesk packs a file at a path it may not: {path}")
+        files.append((parts, content))
+    if not files:
+        raise SystemExit("RustDesk's Windows executable packs no files")
+    return files
+
+
+def _packed_start(executable: bytes) -> int:
+    """Where the first packed file begins: after the identifier that a
+    well-formed entry follows.
+
+    Raises:
+        SystemExit: When there is none.
+    """
+    found = executable.find(RUSTDESK_PACKED_IDENTIFIER)
+    while found >= 0:
+        position = found + len(RUSTDESK_PACKED_IDENTIFIER)
+        if _packed_entry(executable, position) is not None:
+            return position
+        found = executable.find(RUSTDESK_PACKED_IDENTIFIER, found + 1)
+    raise SystemExit("RustDesk's Windows executable carries no packed files")
+
+
+def _packed_entry(executable: bytes, position: int):
+    """One packed file at a position, or None where the files end.
+
+    Returns:
+        ``(path, compressed bytes, md5, the next position)``, or None.
+    """
+    width = RUSTDESK_PACKED_LENGTH_BYTES
+    path_length = int.from_bytes(executable[position : position + width], "big")
+    if not 0 < path_length <= RUSTDESK_PACKED_PATH_BYTES_MAX:
+        return None
+    position += width
+    try:
+        path = executable[position : position + path_length].decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    if not path.startswith(".\\"):
+        return None
+    position += path_length
+    blob_length = int.from_bytes(executable[position : position + width], "big")
+    position += width
+    blob = executable[position : position + blob_length]
+    position += blob_length
+    digest = executable[position : position + RUSTDESK_PACKED_DIGEST_BYTES]
+    position += RUSTDESK_PACKED_DIGEST_BYTES
+    if len(blob) != blob_length or len(digest) != RUSTDESK_PACKED_DIGEST_BYTES:
+        return None
+    return path, blob, digest.decode("ascii", errors="replace"), position
 
 
 def stage_darwin_app(dest_dir: Path, *, machine: str = "aarch64") -> Path:

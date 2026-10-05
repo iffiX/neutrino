@@ -52,3 +52,126 @@ def test_a_machine_with_no_pin_is_refused_by_name():
 
     assert "aarch64" in str(refused.value)
     assert "x86_64" in str(refused.value)
+
+
+# --- the files upstream's Windows executable packs, for the agent ---
+
+
+def _entry(path, content):
+    import hashlib
+
+    name = path.encode()
+    return (
+        len(name).to_bytes(4, "big")
+        + name
+        + len(content).to_bytes(4, "big")
+        + content
+        + hashlib.md5(content).hexdigest().encode()
+    )
+
+
+def _packer(*entries):
+    """An executable as the portable packer writes it: code that names the
+    identifier on its own, then the identifier and the packed files."""
+    return b"MZ code rustdesk text " + b"rustdesk" + b"".join(entries) + b"tail"
+
+
+@pytest.fixture
+def identity(monkeypatch):
+    """A decompressor that hands the bytes back as they are."""
+
+    class Identity:
+        @staticmethod
+        def decompress(blob):
+            return blob
+
+    real = rustdesk_assets.importlib.import_module
+    monkeypatch.setattr(
+        rustdesk_assets.importlib,
+        "import_module",
+        lambda name: Identity if name == "brotli" else real(name),
+    )
+
+
+def test_the_packed_files_come_out_with_their_paths(identity):
+    files = rustdesk_assets.packed_files(
+        _packer(
+            _entry(".\\rustdesk.exe", b"MZ host"),
+            _entry(".\\data\\flutter_assets\\a.svg", b"<svg/>"),
+        )
+    )
+
+    assert files == [
+        (("rustdesk.exe",), b"MZ host"),
+        (("data", "flutter_assets", "a.svg"), b"<svg/>"),
+    ]
+
+
+def test_a_packed_file_that_is_not_its_md5_stops_the_build(identity):
+    entry = bytearray(_entry(".\\rustdesk.exe", b"MZ host"))
+    entry[-1] = ord("0") if entry[-1] != ord("0") else ord("1")
+
+    with pytest.raises(SystemExit) as refused:
+        rustdesk_assets.packed_files(_packer(bytes(entry)))
+
+    assert "rustdesk.exe is not what its MD5 says" in str(refused.value)
+
+
+def test_a_packed_path_that_climbs_out_stops_the_build(identity):
+    with pytest.raises(SystemExit) as refused:
+        rustdesk_assets.packed_files(_packer(_entry(".\\..\\evil.dll", b"x")))
+
+    assert "evil.dll" in str(refused.value)
+
+
+def test_an_executable_with_nothing_packed_stops_the_build(identity):
+    with pytest.raises(SystemExit) as refused:
+        rustdesk_assets.packed_files(b"MZ rustdesk nothing packed")
+
+    assert str(refused.value) == "RustDesk's Windows executable carries no packed files"
+
+
+def test_without_the_decompressor_the_build_says_what_to_install(monkeypatch):
+    def missing(name):
+        raise ImportError(name)
+
+    monkeypatch.setattr(rustdesk_assets.importlib, "import_module", missing)
+
+    with pytest.raises(SystemExit) as refused:
+        rustdesk_assets.packed_files(_packer(_entry(".\\rustdesk.exe", b"MZ")))
+
+    assert str(refused.value).endswith("pip install brotli==1.2.0")
+
+
+def test_the_agent_s_copy_is_laid_out_as_upstream_s_install_lays_it(
+    tmp_path, monkeypatch, identity
+):
+    monkeypatch.setattr(
+        rustdesk_assets,
+        "download",
+        lambda os_name, machine: _packer(
+            _entry(".\\rustdesk.exe", b"MZ host"),
+            _entry(".\\data\\app.so", b"so"),
+        ),
+    )
+
+    written = rustdesk_assets.stage_windows_files(tmp_path / "rustdesk")
+
+    assert sorted(path.relative_to(tmp_path).as_posix() for path in written) == [
+        "rustdesk/data/app.so",
+        "rustdesk/rustdesk.exe",
+    ]
+    assert (tmp_path / "rustdesk" / "rustdesk.exe").read_bytes() == b"MZ host"
+
+
+def test_a_pack_without_the_program_stops_the_build(tmp_path, monkeypatch, identity):
+    monkeypatch.setattr(
+        rustdesk_assets,
+        "download",
+        lambda os_name, machine: _packer(_entry(".\\data\\app.so", b"so")),
+    )
+
+    with pytest.raises(SystemExit) as refused:
+        rustdesk_assets.stage_windows_files(tmp_path / "rustdesk")
+
+    assert "packs no rustdesk.exe" in str(refused.value)

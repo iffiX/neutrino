@@ -9,11 +9,14 @@ it runs on, so run it on a throwaway one.
 
 The targets:
 
-- ``agent_windows``: the .msi installs, the ``neutrino_agent`` and
-  ``RustDesk`` services run, ``nagent --version`` answers, and removing it
-  takes both services away, with a scheduled task and a firewall rule named
-  as a module names them, and leaves a rule named as the hub names its
-  own. Windows.
+- ``agent_windows``: the .msi installs, the ``neutrino_agent`` service
+  runs, ``nagent --version`` answers, RustDesk's files are in the agent's
+  ``rustdesk`` folder with upstream's signature valid, and nothing of
+  RustDesk's is registered or running: no ``RustDesk`` service, no uninstall
+  entry, no ``Program Files\\RustDesk``, no process; removing it takes the
+  service and the folder away, with a scheduled task and a firewall rule
+  named as a module names them, and leaves a rule named as the hub names
+  its own. Windows.
 - ``client_windows``: the .msi installs, ``nclient --version`` answers,
   ``nclient status`` exits 1 unbound, the folder is on PATH, ``packet.dll``
   lies beside EasyTier's core, the EasyTier daemon runs, answers on its
@@ -21,7 +24,10 @@ The targets:
   it takes the folder and the daemon away. Windows.
 - ``agent_macos``: the .pkg installs, its LaunchDaemon runs, ``nagent
   --version`` answers, its ``config`` is root's alone and its ``state`` open
-  to every account, and ``nagent service uninstall --yes`` leaves no job,
+  to every account, ``app/rustdesk/RustDesk.app`` passes ``codesign
+  --verify --deep --strict`` and nothing of RustDesk's is loaded or running
+  and nothing is under ``/Applications``, and ``nagent service uninstall
+  --yes`` leaves no job,
   no ``nagent``, no receipt and no LaunchDaemon named as a module names
   them, and keeps one named as the hub names its own. macOS.
 - ``client_macos``: the .pkg installs, ``nclient --version`` answers and
@@ -45,7 +51,9 @@ The targets:
   fresh container of its family and its command answers ``--version``; the
   hub's install prints the setup wizard's address with its token, and its
   agent cache holds the agent package of its own family and machine alone,
-  none for Arch. Linux with podman or docker; another architecture needs QEMU registered with
+  none for Arch; the agent's RustDesk is at
+  ``/usr/lib/neutrino/agent/rustdesk/rustdesk``, and no RustDesk unit and
+  no ``/usr/bin/rustdesk`` came with it. Linux with podman or docker; another architecture needs QEMU registered with
   binfmt_misc.
 
 Not pure: installs and removes packages.
@@ -121,8 +129,23 @@ INSTALL_SCRIPTS_DIR = REPO_ROOT / "packaging" / "install"
 # --- Windows ---
 PROGRAM_FILES = Path(os.environ.get("ProgramFiles", "C:/Program Files"))
 AGENT_WINDOWS_FOLDER = PROGRAM_FILES / "Neutrino" / "agent"
-AGENT_WINDOWS_SERVICES = ("neutrino_agent", "RustDesk")
+AGENT_WINDOWS_SERVICES = ("neutrino_agent",)
+# The agent's copy of RustDesk, and what RustDesk's own install registers,
+# which the agent's package does not.
+AGENT_WINDOWS_RUSTDESK = AGENT_WINDOWS_FOLDER / "rustdesk" / "rustdesk.exe"
 RUSTDESK_WINDOWS_FOLDER = PROGRAM_FILES / "RustDesk"
+RUSTDESK_WINDOWS_SERVICE = "RustDesk"
+RUSTDESK_WINDOWS_UNINSTALL_KEY = (
+    "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\RustDesk"
+)
+# Prints the copy's signature status, then whether RustDesk's uninstall
+# entry exists, then whether a RustDesk process runs: one line, three words.
+AGENT_WINDOWS_RUSTDESK_SCRIPT = (
+    "$signature = (Get-AuthenticodeSignature -LiteralPath '{copy}').Status; "
+    "$entry = Test-Path '{key}'; "
+    "$running = [bool](Get-Process -Name rustdesk -ErrorAction SilentlyContinue); "
+    "Write-Output (@($signature, $entry, $running) -join ' ')"
+)
 CLIENT_WINDOWS_FOLDER = PROGRAM_FILES / "Neutrino" / "client"
 PROGRAM_DATA = Path(os.environ.get("ProgramData", "C:/ProgramData"))
 CLIENT_WINDOWS_EASYTIER_STATE = (
@@ -225,6 +248,18 @@ AGENT_MACOS_LEFTOVERS = (
 )
 AGENT_MACOS_PACKAGE_ID = "com.neutrino.agent"
 AGENT_MACOS_COMMAND = "/usr/local/bin/nagent"
+# The agent's copy of RustDesk, RustDesk's two jobs, which the package does
+# not load, and where RustDesk's own install puts it, which the package
+# leaves alone.
+AGENT_MACOS_RUSTDESK_APP = (
+    "/Library/Application Support/Neutrino/agent/app/rustdesk/RustDesk.app"
+)
+RUSTDESK_MACOS_JOBS = ("com.carriez.RustDesk_service", "com.carriez.RustDesk_server")
+RUSTDESK_MACOS_STANDARD_APP = "/Applications/RustDesk.app"
+RUSTDESK_MACOS_PLISTS = (
+    "/Library/LaunchDaemons/com.carriez.RustDesk_service.plist",
+    "/Library/LaunchAgents/com.carriez.RustDesk_server.plist",
+)
 # A LaunchDaemon named as a module names its jobs, which removing the agent
 # takes away, and one named as the hub names its own, which it leaves.
 AGENT_MACOS_ADDED_PLIST = Path("/Library/LaunchDaemons/com.neutrino.check.plist")
@@ -290,6 +325,24 @@ HUB_AGENT_CACHE_DIR = "/var/lib/neutrino/hub/agent_cache"
 HUB_AGENT_CACHE_LINE = "agent cache: "
 # The hub package kinds that carry an agent package of their own family.
 HUB_AGENT_CARRYING_SUFFIXES = (".deb", ".rpm")
+# What an installed agent package must hold of RustDesk, its copy, and
+# what it must not, a unit or a name on the path: each one sentence on the
+# error stream when it fails.
+AGENT_LINUX_RUSTDESK = "/usr/lib/neutrino/agent/rustdesk/rustdesk"
+AGENT_LINUX_RUSTDESK_ABSENT = (
+    "/lib/systemd/system/rustdesk.service",
+    "/usr/lib/systemd/system/rustdesk.service",
+    "/etc/systemd/system/rustdesk.service",
+    "/usr/bin/rustdesk",
+)
+AGENT_LINUX_RUSTDESK_CHECK = (
+    f"{{ test -x {AGENT_LINUX_RUSTDESK} || "
+    f'{{ echo "the agent\'s package laid down no {AGENT_LINUX_RUSTDESK}" >&2; '
+    "exit 1; }; } && "
+    f"for found in {' '.join(AGENT_LINUX_RUSTDESK_ABSENT)}; do "
+    'if [ -e "$found" ]; then '
+    'echo "the agent\'s package installed $found" >&2; exit 1; fi; done'
+)
 # The command each package puts on the path.
 LINUX_COMMANDS = {
     "neutrino-hub": "nhub",
@@ -343,18 +396,13 @@ def check_agent_windows(msi: Path) -> None:
     _require_host("win32", "Windows")
     log = Path(tempfile.gettempdir()) / "agent_install.log"
     print(f"msiexec /i exited {_msiexec('/i', msi, log)}")
-    _print_log(log, ("RustDesk", "return value 3"), 40)
-    for folder in (AGENT_WINDOWS_FOLDER, RUSTDESK_WINDOWS_FOLDER):
-        if folder.is_dir():
-            print(f"{folder}: {', '.join(sorted(p.name for p in folder.iterdir()))}")
-    if not _wait_for_service("RustDesk", is_running=True):
-        print("RustDesk is not running; running its installer by hand for comparison")
-        installers = sorted(AGENT_WINDOWS_FOLDER.glob("rustdesk*.exe"))
-        if installers:
-            result = subprocess.run([str(installers[0]), "--silent-install"])
-            print(f"rustdesk --silent-install by hand exited {result.returncode}")
-            time.sleep(20)
-            print(f"RustDesk by hand: {_service_state('RustDesk')}")
+    _print_log(log, ("RemoveOldRustDesk", "return value 3"), 40)
+    if AGENT_WINDOWS_FOLDER.is_dir():
+        print(
+            f"{AGENT_WINDOWS_FOLDER}: "
+            f"{', '.join(sorted(p.name for p in AGENT_WINDOWS_FOLDER.iterdir()))}"
+        )
+    _check_rustdesk_windows()
     for service in AGENT_WINDOWS_SERVICES:
         state = _service_state(service)
         print(f"{service} {state}")
@@ -372,11 +420,13 @@ def check_agent_windows(msi: Path) -> None:
 
     log = Path(tempfile.gettempdir()) / "agent_remove.log"
     print(f"msiexec /x exited {_msiexec('/x', msi, log)}")
-    _print_log(log, ("UninstallRustDesk", "UninstallAdded", "return value 3"), 12)
+    _print_log(log, ("UninstallAdded", "return value 3"), 12)
     for service in AGENT_WINDOWS_SERVICES:
         if not _wait_for_service(service, is_running=False):
             raise SystemExit(f"{service} outlived the uninstaller")
         print(f"{service} is gone")
+    if AGENT_WINDOWS_RUSTDESK.parent.exists():
+        raise SystemExit(f"{AGENT_WINDOWS_RUSTDESK.parent} outlived the uninstaller")
     found = _powershell(AGENT_WINDOWS_FOUND_SCRIPT.format(**names))
     _powershell(f"Remove-NetFirewallRule -Name {AGENT_WINDOWS_FOREIGN_RULE}")
     if found != "False False True":
@@ -385,6 +435,69 @@ def check_agent_windows(msi: Path) -> None:
             "expected False False True"
         )
     print("the module's task and rule are gone, the hub's rule stays")
+
+
+def _check_rustdesk_windows() -> None:
+    """Check that the agent's .msi laid RustDesk's files down and nothing more.
+
+    Raises:
+        SystemExit: When the copy is missing or its signature is not valid,
+            or RustDesk's service, folder, uninstall entry or process is
+            there.
+    """
+    problem = windows_rustdesk_problem(
+        is_copy_there=AGENT_WINDOWS_RUSTDESK.is_file(),
+        answer=(
+            _powershell(
+                AGENT_WINDOWS_RUSTDESK_SCRIPT.format(
+                    copy=AGENT_WINDOWS_RUSTDESK, key=RUSTDESK_WINDOWS_UNINSTALL_KEY
+                )
+            )
+            if AGENT_WINDOWS_RUSTDESK.is_file()
+            else ""
+        ),
+        is_service_there=_service_exists(RUSTDESK_WINDOWS_SERVICE),
+        is_standard_folder_there=RUSTDESK_WINDOWS_FOLDER.exists(),
+    )
+    if problem:
+        raise SystemExit(problem)
+    print(f"{AGENT_WINDOWS_RUSTDESK}: signature Valid, nothing registered or running")
+
+
+def windows_rustdesk_problem(
+    *,
+    is_copy_there: bool,
+    answer: str,
+    is_service_there: bool,
+    is_standard_folder_there: bool,
+) -> str:
+    """What is wrong with RustDesk after the agent's .msi installed.
+
+    Args:
+        is_copy_there: Whether ``rustdesk.exe`` is in the agent's folder.
+        answer: What :data:`AGENT_WINDOWS_RUSTDESK_SCRIPT` printed: the
+            copy's signature status, whether RustDesk's uninstall entry
+            exists, and whether a RustDesk process runs.
+        is_service_there: Whether a ``RustDesk`` service exists.
+        is_standard_folder_there: Whether ``Program Files\\RustDesk`` exists.
+
+    Returns:
+        The one sentence naming the first fault, or an empty string.
+    """
+    if not is_copy_there:
+        return f"the agent's .msi laid down no {AGENT_WINDOWS_RUSTDESK}"
+    signature, entry, running = answer.split()
+    if signature != "Valid":
+        return f"{AGENT_WINDOWS_RUSTDESK}'s signature is {signature}, not Valid"
+    if is_service_there:
+        return "the agent's .msi registered RustDesk's service"
+    if entry == "True":
+        return "the agent's .msi left RustDesk's uninstall entry"
+    if is_standard_folder_there:
+        return f"the agent's .msi installed {RUSTDESK_WINDOWS_FOLDER}"
+    if running == "True":
+        return "a RustDesk process runs after the agent's .msi installed"
+    return ""
 
 
 def check_client_windows(msi: Path) -> None:
@@ -548,6 +661,10 @@ def check_agent_macos(pkg: Path) -> None:
     if "state = running" not in job:
         raise SystemExit(f"{AGENT_MACOS_JOB} is not running")
     print(f"nagent {_answer(['/usr/local/bin/nagent', '--version'])}")
+    problem = _macos_rustdesk_problem()
+    if problem:
+        raise SystemExit(problem)
+    print(f"{AGENT_MACOS_RUSTDESK_APP}: signature valid, nothing loaded or running")
     for directory, mode in AGENT_MACOS_ROOT_MODES.items():
         found = os.stat(directory).st_mode & 0o777
         if found != mode:
@@ -577,6 +694,37 @@ def check_agent_macos(pkg: Path) -> None:
             "nagent service uninstall took the wrong LaunchDaemons: "
             f"the module's gone {is_added_gone}, the hub's kept {is_foreign_kept}"
         )
+
+
+def _macos_rustdesk_problem() -> str:
+    """What is wrong with RustDesk after the agent's .pkg installed.
+
+    Returns:
+        The one sentence naming the first fault, or an empty string.
+    """
+    if not Path(AGENT_MACOS_RUSTDESK_APP).is_dir():
+        return f"the agent's .pkg laid down no {AGENT_MACOS_RUSTDESK_APP}"
+    verified = subprocess.run(
+        ["codesign", "--verify", "--deep", "--strict", AGENT_MACOS_RUSTDESK_APP],
+        capture_output=True,
+        text=True,
+    )
+    if verified.returncode != 0:
+        return f"{AGENT_MACOS_RUSTDESK_APP}'s signature: {verified.stderr.strip()}"
+    for job in RUSTDESK_MACOS_JOBS:
+        if _is_job_loaded(f"system/{job}"):
+            return f"the agent's .pkg loaded {job}"
+    for plist in RUSTDESK_MACOS_PLISTS:
+        if Path(plist).exists():
+            return f"the agent's .pkg installed {plist}"
+    if Path(RUSTDESK_MACOS_STANDARD_APP).exists():
+        return f"the agent's .pkg installed {RUSTDESK_MACOS_STANDARD_APP}"
+    running = subprocess.run(
+        ["pgrep", "-f", "RustDesk.app/Contents/MacOS/"], capture_output=True
+    )
+    if running.returncode == 0:
+        return "a RustDesk process runs after the agent's .pkg installed"
+    return ""
 
 
 def check_client_macos(pkg: Path) -> None:
@@ -859,6 +1007,8 @@ def check_linux(package: Path) -> None:
             f" && {{ ls -1 {HUB_AGENT_CACHE_DIR} 2>/dev/null || true; }}"
             f" | sed 's/^/{HUB_AGENT_CACHE_LINE}/'"
         )
+    if command == LINUX_COMMANDS["neutrino-agent"]:
+        script += f" && {AGENT_LINUX_RUSTDESK_CHECK}"
     script += f" && {command} --version"
     if command == LINUX_COMMANDS["neutrino-hub"]:
         script += f" && {command} open --print"

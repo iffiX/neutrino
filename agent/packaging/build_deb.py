@@ -49,8 +49,6 @@ Section: admin
 Priority: optional
 Architecture: {architecture}
 Depends: {depends}
-Conflicts: rustdesk
-Replaces: rustdesk
 Maintainer: {maintainer}
 Description: Neutrino device agent
  Keeps a managed machine's modules in the state its Neutrino Hub asks for:
@@ -81,16 +79,8 @@ systemctl daemon-reload || true
 # disk while the old process goes on beating.
 if [ "$1" = configure ] && [ -n "$2" ]; then
     systemctl try-restart neutrino_agent.service >/dev/null 2>&1 || true
-    # The package has replaced the RustDesk binary under a running service,
-    # which would go on running the deleted file.
-    systemctl try-restart {rustdesk_unit} >/dev/null 2>&1 || true
 fi
 systemctl enable --now neutrino_agent.service >/dev/null 2>&1 || true
-
-# The desktop host the package carries, started after the agent that writes
-# its configuration. Its unit is named the way RustDesk's own code names it,
-# which runs `systemctl enable rustdesk` for itself.
-systemctl enable --now {rustdesk_unit} >/dev/null 2>&1 || true
 
 echo ""
 echo "  Neutrino agent installed. Join a hub with:"
@@ -117,8 +107,22 @@ if [ "$1" = remove ] || [ "$1" = deconfigure ]; then
         # runs this script with "upgrade" and keeps them.
         nagent service uninstall --yes >/dev/null 2>&1 || true
     fi
-    systemctl stop {rustdesk_unit} >/dev/null 2>&1 || true
-    systemctl disable {rustdesk_unit} >/dev/null 2>&1 || true
+fi
+"""
+
+# Before an upgrade's files land: the RustDesk unit an earlier package of the
+# agent installed, enabled and started is stopped and disabled, and this
+# package carries none. dpkg names the package that owns the unit file; a
+# unit another package owns, or one written by hand, is left as it is. The
+# agent registers its copy again when the hub's switch says so.
+PREINST = """#!/bin/sh
+set -e
+
+if [ "$1" = upgrade ]; then
+    if dpkg-query -S /lib/systemd/system/{rustdesk_unit} 2>/dev/null \\
+        | grep -q '^{package}:'; then
+        systemctl disable --now {rustdesk_unit} >/dev/null 2>&1 || true
+    fi
 fi
 """
 
@@ -214,12 +218,6 @@ def _lay_out(tree: Path, version: str, architecture: str, maintainer: str) -> No
             encoding="utf-8"
         ),
     )
-    payload.write(
-        tree / "lib/systemd/system" / payload.RUSTDESK_UNIT_NAME,
-        (
-            AGENT_ROOT / "neutrino_agent/data/systemd" / payload.RUSTDESK_UNIT_NAME
-        ).read_text(encoding="utf-8"),
-    )
 
     control = CONTROL.format(
         name=PACKAGE_NAME,
@@ -235,15 +233,15 @@ def _lay_out(tree: Path, version: str, architecture: str, maintainer: str) -> No
             prune=payload.PRUNE_UNTRACKED,
             package=PACKAGE_NAME,
             prefix=payload.INSTALL_PREFIX,
-            rustdesk_unit=payload.RUSTDESK_UNIT_NAME,
         ),
         is_executable=True,
     )
     payload.write(
-        tree / "DEBIAN/prerm",
-        PRERM.format(rustdesk_unit=payload.RUSTDESK_UNIT_NAME),
+        tree / "DEBIAN/preinst",
+        PREINST.format(rustdesk_unit=payload.RUSTDESK_UNIT_NAME, package=PACKAGE_NAME),
         is_executable=True,
     )
+    payload.write(tree / "DEBIAN/prerm", PRERM, is_executable=True)
     payload.write(
         tree / "DEBIAN/postrm",
         POSTRM.format(prefix=payload.INSTALL_PREFIX, vendor=payload.VENDOR_PREFIX),

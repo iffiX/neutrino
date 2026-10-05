@@ -11,20 +11,21 @@ it, under ``/Library/Application Support/Neutrino/agent/app``, linked into
 ``/usr/local/bin``. The ``com.neutrino.agent`` LaunchDaemon runs it as root at
 boot with ``run``, its output in ``/Library/Logs/Neutrino/agent``.
 
-RustDesk comes as upstream's app bundle out of its pinned disk image, under
-``/Applications``, with the two launchd jobs its own installer would write:
-the ``com.carriez.RustDesk_service`` daemon and the
-``com.carriez.RustDesk_server`` agent in every session at the screen. The
-preinstall script unloads the running jobs; the postinstall script loads
-all three, the session agent into the session at the screen when there is
-one. A package on macOS has no uninstaller: ``sudo nagent service
-uninstall`` removes the agent, RustDesk and what the agent's modules added,
-and keeps the configuration and the state.
+RustDesk comes as upstream's app bundle out of its pinned disk image, copied
+as it is, its signature intact, to ``app/rustdesk/RustDesk.app`` in the
+agent's own folder. The package registers nothing of RustDesk's and starts
+nothing of it: the agent registers its copy when the hub's Remote desktop
+switch is on. The preinstall script takes away what the agent's earlier
+packages installed of RustDesk at the system's standard place, as their
+receipt lists it, and nothing else; the postinstall script starts the agent.
+A package on macOS has no uninstaller: ``sudo nagent service uninstall``
+removes the agent and what the agent's modules added, and keeps the
+configuration and the state.
 
 The standalone tree is read back with ``otool`` and refused when a file of
 it loads a library from outside the system, then signed ad hoc, file by
 file: Apple silicon refuses native code with no signature at all. RustDesk
-keeps upstream's own.
+is copied in after that and keeps upstream's own signature.
 
 Needs the Xcode command line tools for ``codesign``, ``otool``, ``pkgbuild``
 and ``productbuild``, and ``hdiutil``, which every Mac has.
@@ -67,19 +68,23 @@ INSTALL_AGENT_DIR = INSTALL_ROOT_DIR / "app"
 INSTALL_CONFIG_DIR = INSTALL_ROOT_DIR / "config"
 INSTALL_STATE_DIR = INSTALL_ROOT_DIR / "state"
 INSTALL_LINK_PATH = Path("/usr/local/bin") / AGENT_BINARY_NAME
-INSTALL_APPLICATIONS_DIR = Path("/Applications")
+# The agent's copy of RustDesk, under the agent's own program directory.
+INSTALL_RUSTDESK_DIR = INSTALL_AGENT_DIR / "rustdesk"
 
 # The agent's own job, and where its output goes.
 AGENT_LAUNCHD_LABEL = "com.neutrino.agent"
 AGENT_LOG_DIR = "/Library/Logs/Neutrino/agent"
 AGENT_LOG_PATH = AGENT_LOG_DIR + "/agent.log"
 
-# RustDesk's two jobs, named the way its own installer names them: the root
-# service, and the server it runs in each session at the screen.
-RUSTDESK_SERVICE_LABEL = "com.carriez.RustDesk_service"
-RUSTDESK_SERVER_LABEL = "com.carriez.RustDesk_server"
-RUSTDESK_APP_DIR = INSTALL_APPLICATIONS_DIR / rustdesk_assets.RUSTDESK_APP_NAME
-RUSTDESK_BUNDLE_ID = "com.carriez.rustdesk"
+# What the agent's packages before the Remote desktop module installed of
+# RustDesk at the system's standard place, by the paths their receipt lists:
+# the app bundle under /Applications, and RustDesk's two jobs, the root
+# service and the server it ran in each session at the screen.
+OLD_RUSTDESK_APP_DIR = Path("/Applications") / rustdesk_assets.RUSTDESK_APP_NAME
+OLD_RUSTDESK_SERVICE_LABEL = "com.carriez.RustDesk_service"
+OLD_RUSTDESK_SERVER_LABEL = "com.carriez.RustDesk_server"
+OLD_RUSTDESK_SERVICE_PLIST = f"Library/LaunchDaemons/{OLD_RUSTDESK_SERVICE_LABEL}.plist"
+OLD_RUSTDESK_SERVER_PLIST = f"Library/LaunchAgents/{OLD_RUSTDESK_SERVER_LABEL}.plist"
 
 # The identity the installer records the package under.
 PACKAGE_IDENTIFIER = "com.neutrino.agent"
@@ -89,34 +94,50 @@ PACKAGE_IDENTIFIER = "com.neutrino.agent"
 MACOS_MACHINES = {"aarch64": "arm64", "x86_64": "amd64"}
 
 PREINSTALL = f"""#!/bin/sh
-# An upgrade replaces files the running jobs hold.
+# An upgrade replaces files the running job holds.
 launchctl bootout system/{AGENT_LAUNCHD_LABEL} 2>/dev/null || true
-launchctl bootout system/{RUSTDESK_SERVICE_LABEL} 2>/dev/null || true
+
+# What an earlier package of the agent installed of RustDesk at the system's
+# standard place goes, by what its receipt lists: its two jobs are booted
+# out, the hosts run from its copy end, and its files are deleted. A
+# RustDesk the receipt does not list is a person's own and stays.
+listed=$(pkgutil --files {PACKAGE_IDENTIFIER} 2>/dev/null || true)
+is_listed() {{
+    printf '%s\\n' "$listed" | grep -qx "$1"
+}}
+if is_listed "{OLD_RUSTDESK_SERVICE_PLIST}"; then
+    launchctl bootout system/{OLD_RUSTDESK_SERVICE_LABEL} 2>/dev/null || true
+    rm -f "/{OLD_RUSTDESK_SERVICE_PLIST}"
+fi
+if is_listed "{OLD_RUSTDESK_SERVER_PLIST}"; then
+    for seat in $(ps -axo uid=,comm= | awk '$2 ~ /loginwindow$/ {{print $1}}' | sort -u); do
+        launchctl bootout gui/"$seat"/{OLD_RUSTDESK_SERVER_LABEL} 2>/dev/null || true
+    done
+    rm -f "/{OLD_RUSTDESK_SERVER_PLIST}"
+fi
+if is_listed "{str(OLD_RUSTDESK_APP_DIR).lstrip('/')}/Contents/MacOS/RustDesk"; then
+    ps -axo pid=,command= | while read -r pid command; do
+        case "$command" in
+            *"{OLD_RUSTDESK_APP_DIR}/"*--connect*) ;;
+            *"{OLD_RUSTDESK_APP_DIR}/"*) kill "$pid" 2>/dev/null || true ;;
+        esac
+    done
+    rm -rf "{OLD_RUSTDESK_APP_DIR}"
+fi
 exit 0
 """
 
 POSTINSTALL = f"""#!/bin/sh
 {pkg_build.LAUNCHD_START_FUNCTION}
-{pkg_build.CONSOLE_USER_FUNCTION}
 mkdir -p "{INSTALL_CONFIG_DIR}" "{INSTALL_STATE_DIR}"
 chown root:wheel "{INSTALL_CONFIG_DIR}" "{INSTALL_STATE_DIR}"
 chmod 700 "{INSTALL_CONFIG_DIR}"
 chmod 755 "{INSTALL_STATE_DIR}"
 mkdir -p "{AGENT_LOG_DIR}"
-start_daemon {RUSTDESK_SERVICE_LABEL} \\
-    /Library/LaunchDaemons/{RUSTDESK_SERVICE_LABEL}.plist ||
-    echo "  RustDesk's service did not start: {RUSTDESK_SERVICE_LABEL}" >&2
 start_daemon {AGENT_LAUNCHD_LABEL} /Library/LaunchDaemons/{AGENT_LAUNCHD_LABEL}.plist || {{
     echo "  The agent's service did not start: {AGENT_LAUNCHD_LABEL}" >&2
     exit 1
 }}
-# The session server goes into the session at the screen now; later sessions
-# load it themselves.
-user=$(console_user)
-if [ -n "$user" ]; then
-    seat=$(id -u "$user")
-    launchctl bootstrap gui/"$seat" /Library/LaunchAgents/{RUSTDESK_SERVER_LABEL}.plist || true
-fi
 echo ""
 echo "  Neutrino agent installed. Join a hub with:"
 echo ""
@@ -211,7 +232,7 @@ def pkg_name(version: str, machine: str) -> str:
 
 
 def write_launchd_jobs(package_root: Path) -> None:
-    """Write the agent's LaunchDaemon and RustDesk's two jobs.
+    """Write the agent's LaunchDaemon, the one job the package installs.
 
     Args:
         package_root: The directory standing in for the filesystem root.
@@ -221,25 +242,6 @@ def write_launchd_jobs(package_root: Path) -> None:
         label=AGENT_LAUNCHD_LABEL,
         program_arguments=[str(INSTALL_AGENT_DIR / AGENT_BINARY_NAME), "run"],
         log_path=AGENT_LOG_PATH,
-    )
-    macos_dir = RUSTDESK_APP_DIR / "Contents" / "MacOS"
-    pkg_build.write_launchd_plist(
-        package_root,
-        label=RUSTDESK_SERVICE_LABEL,
-        program_arguments=["/bin/sh", "-c", str(macos_dir / "service")],
-        extra={"WorkingDirectory": str(macos_dir)},
-    )
-    pkg_build.write_launchd_plist(
-        package_root,
-        label=RUSTDESK_SERVER_LABEL,
-        program_arguments=[str(macos_dir / "RustDesk"), "--server"],
-        is_agent=True,
-        extra={
-            "LimitLoadToSessionType": ["LoginWindow", "Aqua"],
-            "KeepAlive": {"SuccessfulExit": False, "AfterInitialDemand": True},
-            "AssociatedBundleIdentifiers": RUSTDESK_BUNDLE_ID,
-            "WorkingDirectory": str(macos_dir),
-        },
     )
 
 
@@ -280,7 +282,7 @@ def _lay_out(root: Path, version: str, machine: str) -> dict:
     link.symlink_to(INSTALL_AGENT_DIR / AGENT_BINARY_NAME)
 
     rustdesk_assets.stage_darwin_app(
-        package_root / str(INSTALL_APPLICATIONS_DIR).lstrip("/"),
+        package_root / str(INSTALL_RUSTDESK_DIR).lstrip("/"),
         machine=payload.machine_name(machine),
     )
     write_launchd_jobs(package_root)

@@ -147,6 +147,9 @@ jobs:
       - run: dotnet tool install --global wix --version 6.0.2
       - run: wix extension add -g WixToolset.Util.wixext/6.0.2
 
+      # The Brotli decompressor RustDesk's packed Windows files need.
+      - run: python -m pip install brotli==1.2.0
+
       - run: python packaging/build/build_agent_windows.py --output-dir dist --architecture x64
 
       - run: python packaging/ci/check.py agent_windows dist/*.msi
@@ -678,6 +681,9 @@ jobs:
 
       - run: dotnet tool install --global wix --version 6.0.2
       - run: wix extension add -g WixToolset.Util.wixext/6.0.2
+
+      # The Brotli decompressor RustDesk's packed Windows files need.
+      - run: python -m pip install brotli==1.2.0
 
       - run: python packaging/build/build_agent_windows.py --edition cn --output-dir dist --architecture x64
         working-directory: cn
