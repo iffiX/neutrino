@@ -8,9 +8,18 @@ piece is written, a close from the hub ends a shell that would run on, the
 open's ``module``, a container shell is refused typed when podman does
 not list the container, and a shell opened with a session id and made
 persistent keeps running when its stream closes and is attached again with
-its output.
+its output. The Terminal module: a shell for a named account starts as the
+platform steps down to it, with its login shell or the module's program as
+a login shell, in its home with its environment, on a terminal handed to
+it, and is listed under that account; the module's program alone runs as
+the agent; an account the machine does not have and a program that cannot
+be run refuse the open with no fallback; a session already open keeps what
+it runs when the settings change; a container's shell reads none of them.
 """
 
+import getpass
+import os
+import pwd
 import threading
 import time
 
@@ -18,6 +27,7 @@ import pytest
 
 from neutrino_agent.streams import shell as shell_module
 from neutrino_agent.exceptions import StreamRefused
+from neutrino_agent.modules.terminal.config import TerminalConfig
 from neutrino_agent.streams.shell import (
     ContainerShellStream,
     ShellStream,
@@ -231,3 +241,183 @@ def test_without_pseudo_terminals_a_shell_is_refused(monkeypatch):
         ShellStream(FakeChannel(), {}).open()
 
     assert refused.value.code == "unsupported_platform"
+
+
+ME = getpass.getuser()
+
+
+class StepDownPlatform:
+    """Steps down by running a stand-in command, and records what it was asked."""
+
+    def __init__(self, tmp_path, command):
+        self.asked: list = []
+        self._tmp_path = tmp_path
+        self._command = command
+
+    def account_process(self, account, argv):
+        self.asked.append((account, list(argv)))
+        return list(self._command), {
+            "cwd": str(self._tmp_path),
+            "env": {
+                "HOME": str(self._tmp_path),
+                "USER": account,
+                "PATH": "/bin:/usr/bin",
+            },
+        }
+
+
+def terminal_stream(channel, settings, platform=None, **args):
+    return ShellStream(
+        channel,
+        {"cols": 80, "rows": 24, **args},
+        terminal=lambda: settings,
+        platform=platform,
+        sessions=args.pop("sessions", None),
+    )
+
+
+def test_a_shell_for_an_account_starts_as_the_platform_steps_down(tmp_path):
+    platform = StepDownPlatform(
+        tmp_path,
+        [
+            "/bin/sh",
+            "-c",
+            'echo "as:$USER:$HOME:$SHELL:$TERM"; pwd; '
+            'ls -ln "$(tty)" | awk \'{print "uid:" $3}\'',
+        ],
+    )
+    channel = FakeChannel()
+    stream = terminal_stream(
+        channel, TerminalConfig(account=ME, shell_path="/bin/sh"), platform
+    )
+
+    stream.open()
+    closed = stream.run()
+
+    output = channel.output().decode()
+    assert platform.asked == [(ME, ["/bin/sh", "-l"])]
+    assert f"as:{ME}:{tmp_path}:/bin/sh:xterm-256color" in output
+    assert str(tmp_path) in output
+    assert f"uid:{pwd.getpwnam(ME).pw_uid}" in output
+    assert closed == {"code": "", "params": {"exit_code": 0}}
+    assert stream._session.account == ME
+
+
+def test_an_account_with_no_program_named_gets_its_own_login_shell(tmp_path):
+    platform = StepDownPlatform(tmp_path, ["/bin/true"])
+    stream = terminal_stream(FakeChannel(), TerminalConfig(account=ME), platform)
+
+    stream.open()
+    stream.run()
+
+    own = pwd.getpwnam(ME).pw_shell
+    expected = own if os.access(own, os.X_OK) and "nologin" not in own else "/bin/bash"
+    assert platform.asked == [(ME, [expected, "-l"])]
+
+
+def test_the_program_alone_runs_as_the_agent_as_a_login_shell(tmp_path):
+    program = tmp_path / "myshell"
+    program.write_text('#!/bin/sh\necho "args:$*"\n')
+    program.chmod(0o755)
+    channel = FakeChannel()
+    stream = terminal_stream(channel, TerminalConfig(shell_path=str(program)))
+
+    stream.open()
+    stream.run()
+
+    assert b"args:-l" in channel.output()
+    assert stream._session.account == shell_module.shell_account()
+
+
+@pytest.mark.parametrize(
+    "settings, code, params",
+    [
+        (
+            TerminalConfig(account="nobody-here-xyz"),
+            "account_unknown",
+            {"account": "nobody-here-xyz"},
+        ),
+        (
+            TerminalConfig(shell_path="/no/such/shell"),
+            "shell_program_unusable",
+            {"path": "/no/such/shell"},
+        ),
+        (
+            TerminalConfig(account=ME, shell_path="/no/such/shell"),
+            "shell_program_unusable",
+            {"path": "/no/such/shell"},
+        ),
+        (
+            TerminalConfig(shell_path="bin/sh"),
+            "shell_program_unusable",
+            {"path": "bin/sh"},
+        ),
+    ],
+)
+def test_what_cannot_run_refuses_the_open_with_no_fallback(
+    tmp_path, settings, code, params
+):
+    platform = StepDownPlatform(tmp_path, ["/bin/true"])
+    stream = terminal_stream(FakeChannel(), settings, platform)
+
+    with pytest.raises(StreamRefused) as refused:
+        stream.open()
+
+    assert (refused.value.code, refused.value.params) == (code, params)
+    assert platform.asked == []
+
+
+def test_a_program_with_no_execute_bit_and_a_directory_are_unusable(tmp_path):
+    plain = tmp_path / "plain"
+    plain.write_text("#!/bin/sh\n")
+    for path in (str(plain), str(tmp_path)):
+        stream = terminal_stream(FakeChannel(), TerminalConfig(shell_path=path))
+        with pytest.raises(StreamRefused) as refused:
+            stream.open()
+        assert refused.value.code == "shell_program_unusable"
+
+
+def test_a_session_already_open_keeps_what_it_runs(tmp_path):
+    registry = ShellSessionRegistry()
+    settings = {"held": TerminalConfig()}
+    first = FakeChannel()
+    opened = ShellStream(
+        first,
+        {"cols": 80, "rows": 24, "session_id": "tab-k"},
+        sessions=registry,
+        terminal=lambda: settings["held"],
+        platform=StepDownPlatform(tmp_path, ["/bin/true"]),
+    )
+    opened.open()
+    thread = threading.Thread(target=opened.run)
+    thread.start()
+    assert registry.persist("tab-k", True)
+    settings["held"] = TerminalConfig(account="nobody-here-xyz")
+
+    again = ShellStream(
+        FakeChannel(),
+        {"cols": 80, "rows": 24, "session_id": "tab-k", "is_resumed": True},
+        sessions=registry,
+        terminal=lambda: settings["held"],
+    )
+    again.open()
+
+    assert again._session is opened._session
+    assert again._session.account == shell_module.shell_account()
+    first.close_from_hub()
+    thread.join(timeout=5)
+    again._session.end()
+
+
+def test_a_container_shell_reads_no_terminal_settings():
+    inside = open_shell_stream(
+        FakeChannel(),
+        {"module": "podman", "container": "kuma", "cols": 1, "rows": 1},
+        terminal=lambda: TerminalConfig(account="nobody-here-xyz"),
+    )
+
+    session = inside._make_session()
+
+    assert type(inside) is ContainerShellStream
+    assert session.account == shell_module.shell_account()
+    assert inside._command[0].endswith("podman")

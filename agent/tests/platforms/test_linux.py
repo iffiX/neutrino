@@ -156,6 +156,33 @@ def test_linux_step_down_env_carries_the_target_identity(monkeypatch):
     assert recorded["env"]["LOGNAME"] == "alice"
 
 
+def test_linux_starts_a_long_lived_process_through_runuser_in_the_home(
+    monkeypatch,
+):
+    entry = PwdEntry("alice", 1000, "/bin/bash", "/home/alice")
+    monkeypatch.setattr(linux_module.pwd, "getpwnam", lambda name: entry)
+    monkeypatch.setattr(linux_module.os, "geteuid", lambda: 0)
+
+    command, process = LinuxPlatform().account_process("alice", ["/bin/zsh", "-l"])
+
+    assert command == ["runuser", "-u", "alice", "--", "/bin/zsh", "-l"]
+    assert process["cwd"] == "/home/alice"
+    assert (process["env"]["HOME"], process["env"]["USER"]) == ("/home/alice", "alice")
+    assert process["env"]["LOGNAME"] == "alice"
+
+
+def test_linux_a_long_lived_process_for_an_unknown_account_is_a_key_error(
+    monkeypatch,
+):
+    def lacks(name):
+        raise KeyError(name)
+
+    monkeypatch.setattr(linux_module.pwd, "getpwnam", lacks)
+
+    with pytest.raises(KeyError):
+        LinuxPlatform().account_process("ghost", ["/bin/sh", "-l"])
+
+
 def test_linux_the_account_floor_is_the_platform_classes_own_number(
     monkeypatch, tmp_path
 ):

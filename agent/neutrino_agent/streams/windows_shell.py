@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import contextlib
 import ctypes
+import ntpath
 import queue
 import subprocess
 import threading
@@ -37,7 +38,8 @@ from neutrino_agent.constants import (
     AGENT_SHELL_READ_BYTES,
     AGENT_SHELL_WINDOWS_ACCOUNT,
 )
-from neutrino_agent.exceptions import StreamRefused
+from neutrino_agent.exceptions import ModuleApplyError, StreamRefused
+from neutrino_agent.modules.terminal.config import check_shell_program
 from neutrino_agent.platforms import win32
 from neutrino_agent.platforms.answered_run import answer_on_prompt
 from neutrino_agent.platforms.windows import WindowsPlatform
@@ -440,7 +442,14 @@ class WindowsShellStream(SessionShellStream):
     """PowerShell on a pseudo console, kept by id when the open names one."""
 
     def __init__(
-        self, channel, args: dict, *, kernel32=None, sessions=None, platform=None
+        self,
+        channel,
+        args: dict,
+        *,
+        kernel32=None,
+        sessions=None,
+        platform=None,
+        terminal=None,
     ):
         """
         Args:
@@ -452,10 +461,13 @@ class WindowsShellStream(SessionShellStream):
                 its stream.
             platform: Names the directory the shell starts in; None asks
                 the Windows platform.
+            terminal: Returns the Terminal module's settings, of which only
+                the shell program is read; None is PowerShell.
         """
         super().__init__(channel, args, sessions=sessions)
         self._kernel32 = kernel32
         self._platform = platform
+        self._terminal = terminal
 
     def _check_platform(self) -> None:
         """Refuse a Windows with no pseudo console, or no kernel32."""
@@ -467,6 +479,22 @@ class WindowsShellStream(SessionShellStream):
             raise StreamRefused("unsupported_platform")
 
     def _make_session(self, *, on_change=None, on_end=None) -> ShellSession:
+        """A new console, running the Terminal module's shell program as SYSTEM.
+
+        Raises:
+            StreamRefused: ``shell_program_unusable {path}`` for a program
+                that cannot be run.
+        """
+        shell_path = self._terminal().shell_path if self._terminal else ""
+        argv = None
+        title = AGENT_SHELL_COMMANDS["win32"][0]
+        if shell_path:
+            try:
+                check_shell_program(shell_path)
+            except ModuleApplyError as error:
+                raise StreamRefused(error.code, dict(error.params)) from None
+            argv = [shell_path]
+            title = ntpath.basename(shell_path)
         return ShellSession(
             session_id=self._session_id,
             terminal=ConsoleTerminal(
@@ -474,9 +502,10 @@ class WindowsShellStream(SessionShellStream):
                 cols=self._columns,
                 rows=self._rows,
                 start_dir=self._bound_platform().shell_start_dir(),
+                argv=argv,
             ),
             account=AGENT_SHELL_WINDOWS_ACCOUNT,
-            title=AGENT_SHELL_COMMANDS["win32"][0],
+            title=title,
             on_change=on_change,
             on_end=on_end,
         )

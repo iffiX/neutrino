@@ -79,6 +79,8 @@ from neutrino_agent.streams import (
 from neutrino_agent.streams.connect import published_ports
 from neutrino_agent.streams.connect_udp import open_connect_stream
 from neutrino_agent.streams.package import remove_stale
+from neutrino_agent.modules.terminal.config import TerminalConfig
+from neutrino_agent.modules.terminal.constants import TERMINAL_NAME
 from neutrino_agent.streams.shell import open_shell_stream
 from neutrino_agent.streams.shell_session import ShellSessionRegistry
 
@@ -526,7 +528,10 @@ class Agent:
                 STREAM_KINDS,
                 **{
                     STREAM_KIND_SHELL: functools.partial(
-                        open_shell_stream, sessions=self._shells
+                        open_shell_stream,
+                        sessions=self._shells,
+                        terminal=self._terminal_settings,
+                        platform=self._platform,
                     ),
                     STREAM_KIND_CONNECT: functools.partial(
                         open_connect_stream, published=self._published_ports
@@ -534,6 +539,11 @@ class Agent:
                 },
             ),
         )
+
+    def _terminal_settings(self):
+        """The Terminal module's settings a new shell runs with."""
+        runner = self._engine.module_runners.get(TERMINAL_NAME)
+        return runner.settings() if runner is not None else TerminalConfig()
 
     def _published_ports(self, protocol: str = AGENT_CONNECT_TCP) -> dict:
         """Every port this machine publishes now on one protocol, each to the

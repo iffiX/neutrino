@@ -151,6 +151,7 @@ class LinuxPlatform(AgentPlatform):
         {
             "accounts",
             "run_as",
+            "account_shell",
             "control_socket",
             "agent_service",
             "power",
@@ -247,6 +248,28 @@ class LinuxPlatform(AgentPlatform):
             timeout=timeout_s,
             env=env,
         )
+
+    def account_process(self, account: str, argv: list) -> tuple:
+        """How a long-lived process starts as an account: through ``runuser`` when root.
+
+        Args:
+            account: The account.
+            argv: Argument vector.
+
+        Returns:
+            ``(argv, popen_arguments)``: ``runuser -u <account> --`` before
+            the argument vector when the agent is root, the account's home
+            as the working directory, and the environment with its ``HOME``,
+            ``USER`` and ``LOGNAME``.
+
+        Raises:
+            KeyError: When the account database has no such account.
+        """
+        entry = pwd.getpwnam(account)
+        command = list(argv)
+        if os.geteuid() == 0:
+            command = ["runuser", "-u", account, "--"] + command
+        return command, {"cwd": entry.pw_dir, "env": self._account_env(account)}
 
     def run_as_account_answering(
         self,

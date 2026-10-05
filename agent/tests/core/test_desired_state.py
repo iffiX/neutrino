@@ -887,3 +887,33 @@ def test_the_same_state_with_a_retry_mark_tries_a_failed_install_again(tmp_path)
     assert held.applied_hash == "h1-retry"
     assert held.state_error is None
     assert runners["samba"].applied == [{"n": "samba"}]
+
+
+def test_the_terminal_module_installs_nothing_and_runs_with_the_settings_held(
+    monkeypatch, tmp_path
+):
+    from neutrino_agent.core import engine as engine_module
+    from neutrino_agent.core.engine import ModuleEngine
+    from neutrino_agent.platforms.base import AgentPlatform
+
+    class Carried(AgentPlatform):
+        os_name = "linux"
+        capabilities = frozenset({"metrics"})
+
+    monkeypatch.setattr(engine_module.rustdesk, "binary_path", lambda: "")
+    engine = ModuleEngine(platform=Carried(), configured_dir=str(tmp_path / "marks"))
+    held, _ = applier(engine.module_runners, engine=engine, tmp_path=tmp_path)
+    settings = {"account": "ann", "shell_path": "/bin/zsh"}
+
+    held.apply(
+        {
+            "hash": "h1",
+            "modules": {"terminal": {"want": "running", "config": settings}},
+            "desktop": {"seat_password": ""},
+        }
+    )
+    engine._refresh(is_forced=True)
+
+    assert engine.report()["terminal"]["state"] == "running"
+    assert engine.module_runners["terminal"].settings().to_dict() == settings
+    assert held.applied_hash == "h1"
