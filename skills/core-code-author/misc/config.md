@@ -26,7 +26,9 @@ key ever reaches git history.
 
 An example's records are placeholders: a step that writes a real file from
 an example copies its shape and none of its records, so no `_example_` id
-of `clients.example.json` is ever a client.
+of `clients.example.json` is ever a client. Its default permission names
+every kind but `panel`, which signs a client into the panel without the
+password and is turned on for one client at a time.
 
 | Real file (read at runtime) | Committed example | Secret? |
 | --- | --- | --- |

@@ -185,16 +185,17 @@ The row's controls, from left to right:
 | --- | --- | --- | --- |
 | the network picker | when `overlay.networks` has two or more entries | in overlay `off` only | writes the chosen engine to the binding |
 | the network button | always | as the overlay table gives it | Connect, Cancel or Disconnect |
-| **Panel** | when `is_panel_allowed` | when the hub is `connected` and not disabled | job `ui.job.opening`: makes the panel's forward when the hub has none, then opens the system browser at `http://panel-<hub-id>.localhost:<local-port>/` (on macOS `http://127.0.0.1:<local-port>/`); a failure writes the code |
+| **Panel** | when `is_panel_allowed` | when the hub is `connected` and not disabled | job `ui.job.opening`: asks `service {is_panel: true}` for a sign-in token, makes the panel's forward when the hub has none, then opens the system browser at `http://panel-<hub-id>.localhost:<local-port>/?tkn=<token>` (on macOS `http://127.0.0.1:<local-port>/?tkn=<token>`); a failure, `permission_denied` among them, writes the code on the row's error line |
 | **Reconnect** | in `replaced` only | always | takes the binding back and starts a round |
 | **Leave** | always | not while `is_leaving` | arms; the second press deletes the binding at once, whether or not the hub answers: the core stops that hub's forwards (the panel's among them), mounts and viewers, leaves its network when no other hub uses it, forgets the binding, and only then tells the hub once, in the background, with a short timeout, a refusal or an unreachable hub changing nothing; the row shows `ui.job.leaving` and goes when the core has forgotten the binding, which never waits on the hub |
 
 The panel's forward is a forward of the local port table whose far end is
 `connect {is_panel: true}`; it listens from the first press of **Panel**
 until the hub is left or the client quits. The panel answers through it
-over plain HTTP, the channel being its encryption, and asks for the panel's
-password as it does on the LAN. `<hub-id>` is the hub's id, so each hub's
-panel keeps its own session cookie in the browser.
+over plain HTTP, the channel being its encryption, and signs the browser
+in with the token, so no panel password is asked; a token that no longer
+spends lands on the ordinary login page. `<hub-id>` is the hub's id, so
+each hub's panel keeps its own session cookie in the browser.
 
 The row of the hub whose gateway the AI tools point at shows `ui.hub_is_exit`
 under its mono line; the AI page sets it.
