@@ -403,26 +403,50 @@ def test_a_share_that_names_no_account_or_viewers_carries_neither(box):
 # --- the seat password ---
 
 
-@pytest.mark.parametrize("state", ["installed", "stopped", "running"])
-def test_a_machine_with_the_host_present_is_given_a_seat_password(box, state):
+def test_a_machine_whose_switch_is_on_is_given_a_seat_password(box):
     runtime, device = box
+    runtime.desired_states.set_remote_desktop(DEVICE, True)
 
-    agent_reports.record_report(
-        runtime, device, report(modules={"rustdesk": {"state": state}})
-    )
+    agent_reports.record_report(runtime, device, report())
 
     assert runtime.desired_states.ensured == [DEVICE]
 
 
-def test_a_machine_whose_package_lacks_the_host_is_given_none(box):
+def test_a_machine_whose_switch_is_off_is_given_none(box):
     runtime, device = box
+    runtime.desired_states.set_remote_desktop(DEVICE, False)
 
     agent_reports.record_report(
-        runtime, device, report(modules={"rustdesk": {"state": "absent"}})
+        runtime, device, report(modules={"remote_desktop": {"state": "stopped"}})
     )
     agent_reports.record_report(runtime, device, report(modules={}))
 
     assert runtime.desired_states.ensured == []
+
+
+def test_a_share_the_old_command_made_turns_the_switch_on_once(box):
+    """A machine that shares through ``nagent rdp start`` and has no switch
+    on the hub keeps sharing: the switch is written on and the state goes
+    down with it and the seat password."""
+    runtime, device = box
+    shared = {"is_shared": True, "share_id": "s1", "port": 21118}
+
+    agent_reports.record_report(runtime, device, report(desktop=shared))
+    agent_reports.record_report(runtime, device, report(desktop=shared))
+
+    assert runtime.desired_states.remote_desktop(DEVICE) == {"is_enabled": True}
+    assert runtime.desired_states.ensured == [DEVICE]
+
+
+def test_a_share_on_a_machine_switched_off_is_not_turned_on(box):
+    runtime, device = box
+    runtime.desired_states.set_remote_desktop(DEVICE, False)
+
+    agent_reports.record_report(
+        runtime, device, report(desktop={"is_shared": True, "share_id": "s1"})
+    )
+
+    assert runtime.desired_states.remote_desktop(DEVICE) == {"is_enabled": False}
 
 
 def test_a_report_that_stops_sharing_withdraws_the_share(box):

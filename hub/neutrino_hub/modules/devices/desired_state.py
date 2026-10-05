@@ -43,6 +43,8 @@ from neutrino_hub.modules.credentials.vault import (
 )
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_MODULE_STATE_ABSENT,
+    CHANNEL_MODULE_STATE_RUNNING,
+    CHANNEL_MODULE_STATE_STOPPED,
     CHANNEL_MODULE_WANTS,
 )
 from neutrino_hub.modules.clients.ai_keys import device_gateway
@@ -57,8 +59,12 @@ from neutrino_hub.modules.devices.manifests import (
 )
 from neutrino_hub.modules.devices.constants import (
     DEVICE_AI_SWITCHER_NAME,
+    DEVICE_AGENT_MODULES,
     DEVICE_AI_TOOL_MODULES,
     DEVICE_AI_TOOLS_NAME,
+    DEVICE_REMOTE_DESKTOP_MODULE,
+    DEVICE_TERMINAL_ACCOUNT_OS,
+    DEVICE_TERMINAL_MODULE,
     DEVICE_RETRY_MARK_KEY,
     DEVICE_CLOUDCLI_LOGIN_KEY,
     DEVICE_CLOUDCLI_MODULE,
@@ -247,6 +253,26 @@ def ai_tools_agent_config(
         ),
         "accounts": sent_accounts,
         "cc_switch_version": switcher_version,
+    }
+
+
+def terminal_agent_config(stored: dict, platform: dict) -> dict:
+    """What the agent is sent for the Terminal module.
+
+    Args:
+        stored: ``terminal.json``, empty when the device has none.
+        platform: The tuple the agent reported; a Windows machine is sent
+            no account.
+
+    Returns:
+        ``{account, shell_path}``, both empty for the default.
+    """
+    is_account_sent = (
+        not platform.get("os") or platform.get("os") in DEVICE_TERMINAL_ACCOUNT_OS
+    )
+    return {
+        "account": (str(stored.get("account", "") or "") if is_account_sent else ""),
+        "shell_path": str(stored.get("shell_path", "") or ""),
     }
 
 
@@ -730,6 +756,53 @@ class DesiredStateStore:
             (account, found[account][0], found[account][1]) for account in sorted(found)
         ]
 
+    def remote_desktop(self, key: str) -> dict:
+        """One device's Remote desktop switch.
+
+        Args:
+            key: The device key.
+
+        Returns:
+            ``{is_enabled}``, off when the device has no file.
+        """
+        stored = self.read(key, DEVICE_REMOTE_DESKTOP_MODULE)
+        return {"is_enabled": stored.get("is_enabled") is True}
+
+    def has_remote_desktop(self, key: str) -> bool:
+        """Whether the device's Remote desktop switch was ever written."""
+        return bool(self.read(key, DEVICE_REMOTE_DESKTOP_MODULE))
+
+    def set_remote_desktop(self, key: str, is_enabled: bool) -> dict:
+        """Write one device's Remote desktop switch.
+
+        Args:
+            key: The device key.
+            is_enabled: Whether the desktop is shared.
+
+        Returns:
+            The switch as written.
+        """
+        held = {"is_enabled": bool(is_enabled)}
+        self.write(key, DEVICE_REMOTE_DESKTOP_MODULE, held)
+        return held
+
+    def agent_module_want(self, key: str, name: str) -> str:
+        """The ``want`` the state sends for a module the agent carries.
+
+        Args:
+            key: The device key.
+            name: ``terminal`` or ``remote_desktop``.
+
+        Returns:
+            ``running`` for the Terminal module and for a Remote desktop
+            switched on, ``stopped`` for one switched off.
+        """
+        if name == DEVICE_REMOTE_DESKTOP_MODULE and not (
+            self.remote_desktop(key)["is_enabled"]
+        ):
+            return CHANNEL_MODULE_STATE_STOPPED
+        return CHANNEL_MODULE_STATE_RUNNING
+
     def is_ai_tools_enabled(self, key: str) -> bool:
         """Whether one device's AI tools setting is on."""
         return self.ai_tools(key)["is_enabled"]
@@ -750,7 +823,9 @@ class DesiredStateStore:
 
         Every module ``modules.json`` names and has not settled is sent with
         its ``want``; one it does not name, and one the machine has already
-        settled, is left out, so the agent leaves it as it is.
+        settled, is left out, so the agent leaves it as it is. The two
+        modules the agent carries, ``terminal`` and ``remote_desktop``, are
+        always sent, composed from their own files with no recipe.
 
         Args:
             key: The device key.
@@ -793,6 +868,19 @@ class DesiredStateStore:
                 "config": config,
                 **_recipes(resolved.get(name) or {}),
             }
+            if marks.get(name):
+                modules[name][DEVICE_RETRY_MARK_KEY] = marks[name]
+        modules[DEVICE_TERMINAL_MODULE] = {
+            "want": self.agent_module_want(key, DEVICE_TERMINAL_MODULE),
+            "config": terminal_agent_config(
+                self.read(key, DEVICE_TERMINAL_MODULE), platform
+            ),
+        }
+        modules[DEVICE_REMOTE_DESKTOP_MODULE] = {
+            "want": self.agent_module_want(key, DEVICE_REMOTE_DESKTOP_MODULE),
+            "config": self.remote_desktop(key),
+        }
+        for name in DEVICE_AGENT_MODULES:
             if marks.get(name):
                 modules[name][DEVICE_RETRY_MARK_KEY] = marks[name]
         desired = {

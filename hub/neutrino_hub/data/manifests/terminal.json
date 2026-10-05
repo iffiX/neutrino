@@ -1,0 +1,10 @@
+{
+  "_comment": "The terminal every managed machine has: the agent's own package carries it, so nothing is installed. Its settings, config/devices/<id>/terminal.json, name the account a shell runs as and the shell program, both empty for the shell the agent runs by default; a Windows machine takes the shell program alone.",
+  "name": "terminal",
+  "title": "Terminal",
+  "kind": "agent",
+  "installer": "agent",
+  "source": "the Neutrino agent",
+  "description": "The account and the shell program a terminal on this machine runs",
+  "platforms": {}
+}

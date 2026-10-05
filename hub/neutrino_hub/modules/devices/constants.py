@@ -37,7 +37,11 @@ SSH_UNSUPPORTED_OS_STATUS = 95
 # agent installs it.
 # user: the person installs it themselves and the hub only detects and
 # manages it, so no ``want`` is ever written for a user-tier module.
-AGENT_MODULE_INSTALLER_TIERS = ("platform", "hub", "user")
+# agent: the agent's own package carries it on every system; no branch
+# names a platform, the hub composes its entry from its own file, and none
+# of the four presses applies to it.
+AGENT_MODULE_INSTALLER_TIERS = ("agent", "platform", "hub", "user")
+AGENT_MODULE_INSTALLER_AGENT = "agent"
 # A manifest that says ``is_module: false`` names a program the agent runs
 # itself rather than a module: it stays out of the catalog, and each of its
 # platform branches names these fields.
@@ -237,6 +241,16 @@ DEVICE_AI_SWITCHER_NAME = "cc_switch"
 # account and port, the secret its tokens are signed with, which the hub
 # generates once and keeps sealed.
 DEVICE_CODE_SERVER_MODULE = "code_server"
+# The two modules the agent's package carries, each composed from its own
+# file under the device's directory and sent to every managed device. The
+# Terminal module's settings name the account a shell runs as and its shell
+# program, both empty for the default; a Windows machine is sent no account.
+# The Remote desktop module's switch is its ``want``: running while on,
+# stopped while off.
+DEVICE_TERMINAL_MODULE = "terminal"
+DEVICE_REMOTE_DESKTOP_MODULE = "remote_desktop"
+DEVICE_AGENT_MODULES = (DEVICE_TERMINAL_MODULE, DEVICE_REMOTE_DESKTOP_MODULE)
+DEVICE_TERMINAL_ACCOUNT_OS = ("linux", "darwin")
 DEVICE_CODE_SERVER_SECRET_KEY = "secret_sealed"  # scan: allow
 DEVICE_CODE_SERVER_SECRET_AAD = b"device_code_server:secret"
 DEVICE_CODE_SERVER_SECRET_BYTES = 32

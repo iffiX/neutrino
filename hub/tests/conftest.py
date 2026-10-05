@@ -553,6 +553,7 @@ class StubDesiredStates:
         self.ensured: list = []
         self.wants: dict = {}
         self.settled: list = []
+        self.desktop_switches: dict = {}
 
     def ensure_seat_password(self, key: str) -> bool:
         key = key.lower()
@@ -573,6 +574,16 @@ class StubDesiredStates:
 
     def is_ai_tools_enabled(self, key: str) -> bool:
         return False
+
+    def remote_desktop(self, key: str) -> dict:
+        return {"is_enabled": self.desktop_switches.get(key.lower()) is True}
+
+    def has_remote_desktop(self, key: str) -> bool:
+        return key.lower() in self.desktop_switches
+
+    def set_remote_desktop(self, key: str, is_enabled: bool) -> dict:
+        self.desktop_switches[key.lower()] = bool(is_enabled)
+        return {"is_enabled": bool(is_enabled)}
 
 
 class StubPublishedServices:

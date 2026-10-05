@@ -102,7 +102,7 @@ def test_settling_a_module_keeps_its_want_and_leaves_it_out_of_the_state(config)
         "gitea": {"want": "running", "is_settled": False},
     }
     desired, _ = store.compose(DEVICE, PLATFORM)
-    assert set(desired["modules"]) == {"gitea"}
+    assert set(desired["modules"]) == {"gitea", "terminal", "remote_desktop"}
 
 
 def test_a_press_asks_again_for_a_module_the_machine_had_settled(config):
@@ -146,7 +146,7 @@ def test_compose_is_every_named_module_with_its_want_and_recipes_and_the_desktop
 
     assert set(desired) == {"modules", "desktop", "urls", "ai_tools"}
     assert desired["ai_tools"] == {"is_enabled": False}
-    assert set(desired["modules"]) == {"samba", "gitea"}
+    assert set(desired["modules"]) == {"samba", "gitea", "terminal", "remote_desktop"}
     samba = desired["modules"]["samba"]
     assert set(samba) == {"want", "config", "install", "uninstall"}
     assert samba["want"] == "running"

@@ -21,6 +21,7 @@ import re
 
 from neutrino_hub.modules.devices.constants import (
     AGENT_MODULE_DOWNLOAD_FIELDS,
+    AGENT_MODULE_INSTALLER_AGENT,
     AGENT_MODULE_INSTALLER_BUILTIN,
     AGENT_MODULE_INSTALLER_TIERS,
     AGENT_MODULE_INSTALLER_USER,
@@ -136,7 +137,8 @@ def _check_branches(file_name: str, manifest: dict) -> None:
     that is ``{}`` says the platform carries the software natively. A branch
     whose ``installer`` is ``builtin`` names software the system carries,
     which the agent's runner checks for itself: it names nothing to
-    download or install and needs neither ``verify`` nor ``uninstall``.
+    download or install and needs neither ``verify`` nor ``uninstall``. A
+    module of the ``agent`` tier names no platform at all.
 
     Args:
         file_name: The manifest's file, for the message.
@@ -145,13 +147,19 @@ def _check_branches(file_name: str, manifest: dict) -> None:
     Raises:
         ValueError: Naming the branch and what it lacks, a
             ``min_version`` that is not a dotted number, an ``installer``
-            other than ``builtin``, or a builtin branch naming something
-            to download or install.
+            other than ``builtin``, a builtin branch naming something
+            to download or install, or an agent-tier module naming a
+            platform.
     """
     is_installed_by_hub = manifest.get("installer") != AGENT_MODULE_INSTALLER_USER
     platforms = manifest.get("platforms", {})
     if not isinstance(platforms, dict):
         raise ValueError(f"manifest {file_name}: platforms must be an object")
+    if manifest.get("installer") == AGENT_MODULE_INSTALLER_AGENT and platforms:
+        raise ValueError(
+            f"manifest {file_name}: the agent carries an agent-tier module, "
+            "so no branch may name a platform"
+        )
     for key, entry in platforms.items():
         if not isinstance(entry, dict):
             raise ValueError(f"manifest {file_name}: platform {key} must be an object")

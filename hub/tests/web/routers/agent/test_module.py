@@ -403,6 +403,8 @@ def test_vscode_is_stopped_and_uninstalled_without_its_terms(api, monkeypatch):
 # What each shipped manifest offers a Windows machine and a Mac: the modules
 # the picker lets a person choose there.
 SUPPORTED_OFF_LINUX = {
+    "remote_desktop": (True, True),
+    "terminal": (True, True),
     "anydesk": (True, True),
     "cloudcli": (True, True),
     "code_server": (False, True),
@@ -870,3 +872,45 @@ def test_a_press_on_a_module_that_did_not_fail_puts_no_mark(api, state):
     )
 
     assert retry_marks() == {}
+
+
+# --- the two modules the agent carries ---
+
+
+@pytest.mark.parametrize("name", ["terminal", "remote_desktop"])
+def test_a_module_the_agent_carries_is_a_row_on_every_system_with_its_want(
+    api, monkeypatch, name
+):
+    client, runtime = api
+    monkeypatch.setattr(device_modules, "load_module_manifests", shipped_manifests)
+    for platform in (WINDOWS, DARWIN, {"os": "linux", "family": "arch"}):
+        runtime.device_platform[DEVICE] = platform
+        rows = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()
+        row = {entry["name"]: entry for entry in rows["modules"]}[name]
+        assert (row["installer"], row["is_supported"], row["is_native"]) == (
+            "agent",
+            True,
+            True,
+        )
+    assert row["want"] == ("running" if name == "terminal" else "stopped")
+
+
+@pytest.mark.parametrize("press", ["install", "start", "stop", "uninstall"])
+@pytest.mark.parametrize("name", ["terminal", "remote_desktop"])
+def test_no_press_applies_to_a_module_the_agent_carries(
+    api, monkeypatch, tmp_path, press, name
+):
+    client, runtime = api
+    runtime.agent_sessions.online.add(DEVICE)
+    monkeypatch.setattr(device_modules, "load_module_manifests", shipped_manifests)
+
+    refused = client.post(
+        f"{MODULE_PATH}/{press}", json={"device_id": DEVICE, "module": name}
+    )
+
+    assert refused.status_code == 400
+    assert refused.json()["detail"] == {
+        "code": "module_not_optional",
+        "params": {"name": name},
+    }
+    assert modules_file(tmp_path) == {}
