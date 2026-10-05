@@ -232,13 +232,16 @@ and `cn` in the mainland source tree.
 | The npm registry, for CloudCLI | `https://registry.npmjs.org` | `https://registry.npmmirror.com` |
 | better-sqlite3's prebuilt binary, for CloudCLI | its GitHub releases | `https://registry.npmmirror.com/-/binary/better-sqlite3` |
 | code-server | `https://github.com/coder/code-server/releases/download/` | `https://mirrors.ustc.edu.cn/github-release/coder/code-server/` |
+| cc-switch, for the machine's AI tools | `https://github.com/SaladDay/cc-switch-cli/releases/download/` | not named yet; a `cn` hub refuses the download |
 
 - An edition updates only to its own edition: the update check and the
   install scripts read that edition's release and no other.
 - A manifest entry's sha256 is the publisher's file, and a mirror serves the
   same file, so one pin covers both addresses. The entry names the mirror's
   address in `cn_url` beside `url`, and a `cn` hub's installer fetches from
-  `cn_url` when the entry has one.
+  `cn_url` when the entry has one. An entry whose `cn_url` is there and
+  empty has no mainland address yet: a `cn` hub refuses its download with
+  `no_download_named` and does not fetch `url` in its place.
 - The hub sends the npm registry of its edition in the module's state, and
   the agent runs `npm` with the registry the state names. Beside it the
   state carries `npm_environment`, the settings `cloudcli.json` names for
@@ -333,11 +336,13 @@ The agent is installed by the same three stages, one package down: its
 package lays the payload, `nagent join` joins a hub, and the hub's desired
 state decides what the machine hosts. What it carries is the hub's own
 answer: an interpreter under `/opt/neutrino/agent` with the agent installed
-beside it, the RustDesk host, and cc-switch in `bin`, all built for one
-machine. cc-switch is the client's pinned version, and
-`packaging/shared/constants.py` holds the one pin both packages build from;
-the agent runs it as each account its AI tools setting names
-([agent.md](agent.md), "The machine's AI tools"). The agent draws no window,
+beside it and the RustDesk host, both built for one machine. It does not
+carry cc-switch: the agent fetches it from the hub the first time the
+machine's AI tools setting needs it and runs it as each account the setting
+names ([agent.md](agent.md), "The machine's AI tools"). The hub's
+`data/manifests/cc_switch.json` pins the client's version, the one
+`packaging/shared/constants.py` holds, with the same assets and sha256
+values, and a hub test keeps the two the same. The agent draws no window,
 so it carries no bindings and depends on nothing named `python`.
 
 **The system's Python is not part of the story.** The agent is standard
@@ -357,8 +362,8 @@ tree and none depends on one: `nclient` on Linux under `/opt/neutrino/client`
 with the root mount helper compiled under its `libexec` at the path polkit pins,
 `nclient.exe` from the Windows installer, `Neutrino Client.app` from the
 macOS one. Beside the binary ride the two tools it drives, cc-switch and the
-RustDesk viewer, pinned by hash; the cc-switch pin is the one the agent's
-package takes too.
+RustDesk viewer, pinned by hash; the hub's manifest for the agent's copy
+of cc-switch repeats the same pin.
 
 What a machine still supplies is the window's toolkit. On Linux that is the
 WebKitGTK 4.1 stack and the appindicator library, plain dependencies of the
