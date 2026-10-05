@@ -123,3 +123,18 @@ def test_the_cn_archive_carries_no_upstream_source_of_a_left_out_feature():
     assert not any("netbird" in name or "xray" in name for name in kept)
     assert any(name.startswith("easytier-") for name in kept)
     assert any(name.startswith("rustdesk-") for name in kept)
+
+
+def test_the_removal_scripts_stop_only_units_this_tree_carries():
+    """The removal scripts' list comes from the code, so in the mainland
+    tree it names no unit of the proxy or NetBird."""
+    import re
+
+    import venv_tree
+    from neutrino_hub.utils.constants import UTILS_DATA_DIR
+
+    lines = venv_tree.stop_hub_lines()
+    named = re.search(r"for unit in ([^;]+); do", lines).group(1).split()
+    templates = {path.name for path in (UTILS_DATA_DIR / "services").iterdir()}
+
+    assert named and all(f"{unit}.service" in templates for unit in named), named

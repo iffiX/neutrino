@@ -42,7 +42,7 @@ class Reporter:
 def systemctl(monkeypatch):
     """A systemd every unit is installed and enabled in, running as told."""
     asked = Asked()
-    state = {"active": "active"}
+    state = {"active": "active", "enabled": "enabled"}
 
     def run(command, **keywords):
         asked.append(list(command))
@@ -50,7 +50,7 @@ def systemctl(monkeypatch):
             stdout=(
                 "LoadState=loaded\n"
                 f"ActiveState={state['active']}\n"
-                "UnitFileState=enabled\n"
+                f"UnitFileState={state['enabled']}\n"
             ),
             stderr="",
             returncode=0,
@@ -147,3 +147,32 @@ def test_reset_all_stops_everything_it_names(monkeypatch, systemctl):
     assert set(acted_units(systemctl, "stop")) == {
         SYSTEM_MANAGED_UNITS[name] for name in stop.STOP_ORDER
     }
+
+
+def test_stop_and_reset_stop_the_relay_right_after_the_panel(monkeypatch, systemctl):
+    """A running relay keeps the panel's port published on the owner's
+    server; a hub that stopped publishes nothing."""
+    monkeypatch.setattr(stop, "_configured_engines", lambda: [])
+
+    stop.stop_everything()
+
+    stopped = acted_units(systemctl, "stop")
+    assert stopped[:2] == ["neutrino_hub_web.service", "neutrino_hub_relay.service"]
+
+
+@pytest.mark.parametrize(
+    ("enabled", "is_started"), [("enabled", True), ("disabled", False)]
+)
+def test_start_brings_the_relay_back_only_when_it_is_enabled(
+    systemctl, enabled, is_started
+):
+    """The panel enables the relay's unit only while it is switched on and
+    configured, as boot would start it."""
+    systemctl.state["active"] = "inactive"
+    systemctl.state["enabled"] = enabled
+
+    start.start(["relay"], is_enabled_only=True)
+
+    assert (
+        acted_units(systemctl, "start") == ["neutrino_hub_relay.service"]
+    ) is is_started
