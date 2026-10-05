@@ -102,13 +102,13 @@ The dot before the name shows the state:
 
 ### Row buttons
 
-| Button        | Shown                                                | What it does                                                                                                                                 |
-| ------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Panel**     | when the hub's **Clients** page allows **Hub panel** | reads **Opening…**, then opens the hub's panel in your browser through a forward on this computer, where you sign in with the panel password |
-| **Reconnect** | on a row reading **Replaced by another client**      | takes the hub back from the other client and connects                                                                                        |
-| **Leave**     | always                                               | reads **Press again to leave**; a second press within five seconds leaves the hub                                                            |
+| Button        | Shown                                                                     | What it does                                                                                                         |
+| ------------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| **Panel**     | when the hub's **Clients** page allows **Hub panel without the password** | reads **Opening…**, then opens the hub's panel in your browser through a forward on this computer, already signed in |
+| **Reconnect** | on a row reading **Replaced by another client**                           | takes the hub back from the other client and connects                                                                |
+| **Leave**     | always                                                                    | reads **Press again to leave**; a second press within five seconds leaves the hub                                    |
 
-**Panel** opens the panel from anywhere the client reaches the hub, so the panel's own ports can stay on the LAN. **Hub panel** is on by default; a hub that turned it off has to turn it on again from the LAN. The browser opens `http://panel-<hub-id>.localhost:<local-port>/`, or `http://127.0.0.1:<local-port>/` on macOS, where `<hub-id>` is the hub's id and `<local-port>` the forward's port. The forward stays until you leave the hub or quit the client.
+**Panel** opens the panel from anywhere the client reaches the hub, so the panel's own ports can stay on the LAN. **Hub panel without the password** is off until somebody turns it on for this computer on the hub's **Clients** page. The browser opens `http://panel-<hub-id>.localhost:<local-port>/?tkn=<token>`, or `http://127.0.0.1:<local-port>/?tkn=<token>` on macOS, where `<hub-id>` is the hub's id, `<local-port>` the forward's port and `<token>` a sign-in that works once, within a minute. The panel then drops `tkn` from the address. A refusal, such as `permission_denied`, shows on the row's error line. The forward stays until you leave the hub or quit the client.
 
 From a terminal, `nclient leave --yes` leaves without the question, and `nclient status --json` prints the state of every hub as JSON. Leaving removes the row at once, whether the hub is reachable or not. It undoes what the hub published on this computer: its forwards, the panel's forward among them, its mounts, its viewers, and a virtual network no other hub names.
 

@@ -71,7 +71,7 @@ While the channel is open, the state names the way it reached the hub: **Connect
 
 ### Panel
 
-When the hub's **Clients** page allows **Hub panel**, the row has **Panel**. Select it to open the hub's panel in the phone's browser, through a forward on the phone, and sign in with the panel password. The panel opens wherever the app reaches the hub, so its own ports can stay on the LAN.
+When the hub's **Clients** page allows **Hub panel without the password**, the row has **Panel**. Select it to open the hub's panel in the phone's browser, through a forward on the phone, already signed in. The switch is off until somebody turns it on for this phone, and a refusal such as `permission_denied` shows on the row's error line. The panel opens wherever the app reaches the hub, so its own ports can stay on the LAN.
 
 ### Virtual network
 
