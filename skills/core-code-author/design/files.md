@@ -43,6 +43,7 @@ What a user's own account holds, one tree per user with the same three names:
 | the client's log | the same directory | `~/Library/Logs/Neutrino/client` | `%LOCALAPPDATA%\Neutrino\client` |
 | the client's control socket | `$XDG_RUNTIME_DIR/neutrino/client.sock` | `~/Library/Application Support/Neutrino/client/client.sock` | the pipe `neutrino_client_<user>` |
 | what the agent installs for the account (CloudCLI's app, its npm cache and database) | `~/.local/share/neutrino/agent/cloudcli` | `~/Library/Application Support/Neutrino/agent/cloudcli` | `%LOCALAPPDATA%\Neutrino\agent\cloudcli` |
+| the input of one cc-switch call, there only during that call | `~/.local/share/neutrino/agent/ai_tools/payload` | `~/Library/Application Support/Neutrino/agent/ai_tools/payload` | `%LOCALAPPDATA%\Neutrino\agent\ai_tools\payload` |
 | build caches of the packaging scripts | `~/.cache/neutrino` | the same | the same |
 
 A few locations are the operating system's rather than this project's, and
@@ -170,7 +171,13 @@ overrides both, which is what makes a second instance testable. Details of the f
         vscode/             the VS Code CLI, read and run by every account
         cloudcli/           CloudCLI's Node.js, read and run by every account
         ai_tools/           per account, the record of each AI tool the
-                            agent pointed at the hub, root only
+                            agent pointed at the hub, root only; on
+                            Windows also login.json, the login the account
+                            was switched with, kept until it is switched back;
+                            .locks/ holds one lock file per account
+        run_as/             Windows only: per account, the script, input,
+                            output and exit code of one one-shot task,
+                            removed once the task ends
     client/
         netbird/            the client's NetBird configuration and profile
         easytier/           the client's EasyTier networks and console file
@@ -216,6 +223,11 @@ again on the next connection.
 anybody else had: router mode stops the manager that was running and writes
 down which units those were, so handing the machine back starts exactly
 those. Losing the file costs one `systemctl unmask` by hand.
+
+`agent/run_as/<account>/` is the one place under the agent's state an
+account writes: its ACL grants that account modify, so the account's
+one-shot task can read its script and input and write its output and exit
+code, and every file in it goes when the task ends.
 
 `agent/vscode/` and `agent/cloudcli/` hold programs the accounts of the
 machine run, so those two directories alone are readable and executable by

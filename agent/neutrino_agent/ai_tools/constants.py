@@ -53,9 +53,20 @@ AI_TOOLS_DETAIL_LIMIT = 300
 # How much of a hub key the record keeps: a digest, never the key.
 AI_TOOLS_KEY_DIGEST_CHARS = 16
 
-# The file a payload for cc-switch is handed in, below the account's home,
-# written and removed as the account.
-AI_TOOLS_PAYLOAD_NAME = ".neutrino_ai_tools_payload"
+# The file a payload for cc-switch is handed in, in the account's own
+# Neutrino tree, written and removed as the account: below the home, the
+# system's place for an account's data, then the tree's own directories.
+AI_TOOLS_PAYLOAD_BASE = {
+    "linux": (".local", "share"),
+    "darwin": ("Library", "Application Support"),
+    "windows": ("AppData", "Local"),
+}
+AI_TOOLS_PAYLOAD_TREE = {
+    "linux": ("neutrino", "agent", "ai_tools"),
+    "darwin": ("Neutrino", "agent", "ai_tools"),
+    "windows": ("Neutrino", "agent", "ai_tools"),
+}
+AI_TOOLS_PAYLOAD_NAME = "payload"
 
 # The records: one directory per account under the state root, one file per
 # tool, and on Windows the login the account was switched with, kept until
@@ -63,6 +74,14 @@ AI_TOOLS_PAYLOAD_NAME = ".neutrino_ai_tools_payload"
 AI_TOOLS_DIR_NAME = "ai_tools"
 AI_TOOLS_RECORD_SUFFIX = ".json"
 AI_TOOLS_LOGIN_NAME = "login.json"
+# One lock file per account, in a directory of its own beside the records
+# so a switch back that removes an account's records leaves its lock; how
+# long a run waits for another that holds the account, how often it looks,
+# and what its refusal says.
+AI_TOOLS_LOCK_DIR_NAME = ".locks"
+AI_TOOLS_LOCK_WAIT_S = 300
+AI_TOOLS_LOCK_POLL_S = 0.2
+AI_TOOLS_LOCK_HELD_DETAIL = "another run holds the account"
 
 # Where the agent's package carries cc-switch: below the program directory
 # on each system.

@@ -1027,8 +1027,10 @@ is the login's own for the account's first instance in that order, sent only
 to a Windows machine. With it false the section is `{is_enabled: false}`
 alone. The report's `ai_tools` lists each account the state names and each
 one switched back under the current hash, `state` being `switched`,
-`switched_back` or `failed`, with `{code, params}` on a failure. Both are
-added fields and keep `PROTOCOL`; an agent that predates them ignores the
+`switched_back` or `failed`, with `{code, params}` on a failure. An agent
+that restarted reports each account whose records stand as `switched` until
+the next state arrives, and does not act on a state whose hash it already
+tried. Both are added fields and keep `PROTOCOL`; an agent that predates them ignores the
 section and reports none, which the panel draws as a machine that has not
 reported.
 

@@ -2,7 +2,7 @@
 
 It reads the commands the session sends as the account: the binary is
 cc-switch; on Linux and macOS ``cat``, ``test -f``, ``sh -c`` and ``rm -f``
-are the file operations, and on Windows the PowerShell scripts that do the
+are the file operations, and ``sh -c`` with the payload's removal removes, and on Windows the PowerShell scripts that do the
 same, decoded from their ``-EncodedCommand``. Every run is recorded with
 the account and the login.
 """
@@ -11,6 +11,7 @@ import base64
 import re
 import subprocess
 
+from neutrino_agent.ai_tools.account_session import POSIX_REMOVE_SHELL
 from tests.ai_tools.fake_cc_switch import FakeCcSwitch
 
 # The single-quoted literal a Windows script carries its path in.
@@ -86,6 +87,8 @@ class FakeAccountPlatform:
             if "ReadAllText" in script:
                 return "read", path
             return "is_file", path
+        if argv[:3] == ["sh", "-c", POSIX_REMOVE_SHELL]:
+            return "remove", argv[4]
         verbs = {"cat": "read", "test": "is_file", "sh": "write", "rm": "remove"}
         return verbs.get(argv[0], ""), argv[-1]
 

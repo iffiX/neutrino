@@ -239,7 +239,7 @@ class SwitchingBack:
         return [{"account": "ann", "state": "switched_back", "code": "", "params": {}}]
 
 
-def test_uninstall_switches_every_account_s_ai_tools_back_before_anything(
+def test_uninstall_switches_the_ai_tools_back_once_the_service_stopped(
     monkeypatch, capsys
 ):
     platform = RemovalPlatform()
@@ -252,5 +252,5 @@ def test_uninstall_switches_every_account_s_ai_tools_back_before_anything(
 
     assert service_cli.main_uninstall(is_forced=True) == 0
 
-    assert platform.calls == ["switch_back", "stop", "remove_added"]
+    assert platform.calls == ["stop", "switch_back", "remove_added"]
     assert "ai tools   ann: switched_back" in capsys.readouterr().out

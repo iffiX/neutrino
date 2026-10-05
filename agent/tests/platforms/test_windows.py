@@ -17,6 +17,7 @@ import neutrino_agent.core.metrics as metrics_module
 import neutrino_agent.platforms.windows as windows_module
 from neutrino_agent.constants import AGENT_PROCESS_TOP_COUNT
 from neutrino_agent.platforms import win32
+from neutrino_agent.platforms.base import is_added_name
 from neutrino_agent.platforms.windows import (
     cmd_argument,
     WindowsHostMetricsReader,
@@ -1107,6 +1108,7 @@ def test_windows_removal_takes_the_modules_tasks_and_rules_and_leaves_the_hubs(
         "tasks": ["neutrino_cloudcli_install_bob", "neutrino_vscode_ann"],
         "rules": ["neutrino_smb_fence", "neutrino_vscode_port_ann"],
         "state_root": "C:\\ProgramData\\Neutrino\\agent\\state",
+        "run_as_dir": "run_as",
     }
     assert removed == [
         "service neutrino_gitea",
@@ -1148,6 +1150,11 @@ def test_the_removal_script_ends_processes_under_the_state_root_without_case():
     assert "Remove-NetFirewallRule -Name $name" in script
     assert "OrdinalIgnoreCase" in script
     assert script.index("Unregister-ScheduledTask") < script.index("Stop-Process")
+    assert "Join-Path $d.state_root $d.run_as_dir" in script
+
+
+def test_a_one_shot_run_as_task_is_one_the_removal_takes():
+    assert is_added_name("neutrino_run_as_ann", "neutrino_")
 
 
 class RunAsPowershell:

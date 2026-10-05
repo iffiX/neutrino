@@ -7,15 +7,20 @@ file is read with ``cat``, tested with ``test -f``, written by ``sh`` from
 standard input and removed with ``rm -f``; on Windows each is a PowerShell
 script naming the path as a literal; the login rides along on Windows; a
 login Windows refuses is ``credential_invalid``; anything else that stops a
-run is ``switch_failed`` with the account.
+run is ``switch_failed`` with the account. The payload lives in the
+account's own Neutrino tree on each system, and its removal, as the
+account, takes the tree's directories left empty and stops at the first
+that holds anything else.
 """
 
 import base64
+import shutil
 import subprocess
 
 import pytest
 
 from neutrino_agent.ai_tools.account_session import (
+    POSIX_REMOVE_SHELL,
     AiToolsAccountSession,
     powershell_literal,
 )
@@ -211,3 +216,87 @@ def test_a_run_that_cannot_start_is_switch_failed():
 
     assert caught.value.code == "switch_failed"
     assert "does not exist" in caught.value.params["detail"]
+
+
+@pytest.mark.parametrize(
+    "os_name,home,path",
+    [
+        (
+            "linux",
+            "/home/ann",
+            "/home/ann/.local/share/neutrino/agent/ai_tools/payload",
+        ),
+        (
+            "darwin",
+            "/Users/ann",
+            "/Users/ann/Library/Application Support/Neutrino/agent/ai_tools/payload",
+        ),
+        (
+            "windows",
+            "C:\\Users\\ann",
+            "C:\\Users\\ann\\AppData\\Local\\Neutrino\\agent\\ai_tools\\payload",
+        ),
+    ],
+)
+def test_the_payload_lives_in_the_account_s_own_neutrino_tree(os_name, home, path):
+    assert session_on(RecordingPlatform(os_name), home).payload_path() == path
+
+
+def test_the_payload_is_removed_as_the_account_with_its_tree_deepest_first():
+    platform = RecordingPlatform()
+
+    session_on(platform).remove_payload()
+
+    (run,) = platform.runs
+    assert run["account"] == "ann"
+    assert run["argv"][:3] == ["sh", "-c", POSIX_REMOVE_SHELL]
+    assert run["argv"][4:] == [
+        "/home/ann/.local/share/neutrino/agent/ai_tools/payload",
+        "/home/ann/.local/share/neutrino/agent/ai_tools",
+        "/home/ann/.local/share/neutrino/agent",
+        "/home/ann/.local/share/neutrino",
+    ]
+
+
+def test_windows_removes_the_payload_and_its_empty_tree_by_powershell():
+    platform = RecordingPlatform("windows")
+
+    session_on(platform, "C:\\Users\\ann", "pw").remove_payload()
+
+    script = script_of(platform.runs[0]["argv"])
+    tree = "C:\\Users\\ann\\AppData\\Local\\Neutrino"
+    assert powershell_literal(tree + "\\agent\\ai_tools\\payload") in script
+    dirs = [tree + "\\agent\\ai_tools", tree + "\\agent", tree]
+    assert ", ".join(powershell_literal(d) for d in dirs) in script
+    assert "Get-ChildItem" in script and "break" in script
+
+
+@pytest.mark.skipif(shutil.which("sh") is None, reason="needs a POSIX shell")
+@pytest.mark.parametrize(
+    "kept,left",
+    [
+        (None, []),
+        ("neutrino/agent/cloudcli", ["neutrino/agent"]),
+        ("neutrino/client", ["neutrino"]),
+    ],
+)
+def test_the_posix_removal_leaves_no_empty_neutrino_directory(tmp_path, kept, left):
+    share = tmp_path / ".local" / "share"
+    tree = share / "neutrino" / "agent" / "ai_tools"
+    tree.mkdir(parents=True)
+    (tree / "payload").write_text("{}")
+    if kept:
+        (share / kept).mkdir(parents=True, exist_ok=True)
+    dirs = [str(tree), str(tree.parent), str(tree.parent.parent)]
+
+    subprocess.run(
+        ["sh", "-c", POSIX_REMOVE_SHELL, "sh", str(tree / "payload")] + dirs,
+        check=True,
+    )
+
+    assert not tree.exists()
+    assert share.exists()
+    for name in left:
+        assert (share / name).is_dir()
+    if not kept:
+        assert not (share / "neutrino").exists()

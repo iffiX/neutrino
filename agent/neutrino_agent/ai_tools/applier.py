@@ -11,7 +11,10 @@ agent applied once is not applied again, so a failed account is tried again
 only with a state of another hash.
 
 The records live under the state root, one directory per account, root's
-own. On Windows the account's login travels in the state only while the
+own. Each account's switch or switch back holds that account's lock from
+start to end, so two agent processes never run cc-switch for one account at
+once, and a run that waits too long for it is that account's
+``switch_failed``. On Windows the account's login travels in the state only while the
 section is on, so the login an account was switched with is kept beside its
 records, root's own, until it is switched back.
 
@@ -30,6 +33,7 @@ import shutil
 import tempfile
 import threading
 
+from neutrino_agent.ai_tools.account_lock import AiToolsAccountLock
 from neutrino_agent.ai_tools.account_session import AiToolsAccountSession
 from neutrino_agent.ai_tools.constants import (
     AI_TOOLS_APPS,
@@ -42,6 +46,7 @@ from neutrino_agent.ai_tools.constants import (
     AI_TOOLS_CODE_SWITCH_FAILED,
     AI_TOOLS_DETAIL_LIMIT,
     AI_TOOLS_DIR_NAME,
+    AI_TOOLS_LOCK_DIR_NAME,
     AI_TOOLS_LOGIN_NAME,
     AI_TOOLS_RECORD_SUFFIX,
     AI_TOOLS_STATE_FAILED,
@@ -188,6 +193,14 @@ class AiToolsApplier:
         )
 
     def _switch(self, account: str, password: str, section: dict) -> dict:
+        """Point one account's tools at the hub, holding its lock, or say why not."""
+        try:
+            with self._account_lock(account):
+                return self._switch_held(account, password, section)
+        except ToolSwitchError as error:
+            return self._refused(account, error)
+
+    def _switch_held(self, account: str, password: str, section: dict) -> dict:
         """Point one account's tools at the hub, or say why not."""
         session = self._session(account, password)
         if isinstance(session, dict):
@@ -210,14 +223,8 @@ class AiToolsApplier:
                 base_url=base_url, api_key=api_key, tool_configs=configs
             )
         except ToolSwitchError as error:
-            self._log(f"ai_tools: {account}: {error.code} {error.params}")
             self._drop_unswitched(account)
-            return result(
-                account,
-                AI_TOOLS_STATE_FAILED,
-                error.code,
-                {"account": account, **error.params},
-            )
+            return self._refused(account, error)
         except Exception as error:  # noqa: BLE001 - reported, never raised
             self._drop_unswitched(account)
             return self._failed(account, error)
@@ -227,6 +234,14 @@ class AiToolsApplier:
         return result(account, AI_TOOLS_STATE_SWITCHED)
 
     def _switch_back(self, account: str) -> dict:
+        """Put one account's tools back, holding its lock, or say why not."""
+        try:
+            with self._account_lock(account):
+                return self._switch_back_held(account)
+        except ToolSwitchError as error:
+            return self._refused(account, error)
+
+    def _switch_back_held(self, account: str) -> dict:
         """Put one account's tools back, and forget its records once that took."""
         session = self._session(account, self._read_login(account))
         if isinstance(session, dict):
@@ -237,13 +252,7 @@ class AiToolsApplier:
         try:
             notes = switcher.deactivate()
         except ToolSwitchError as error:
-            self._log(f"ai_tools: {account}: {error.code} {error.params}")
-            return result(
-                account,
-                AI_TOOLS_STATE_FAILED,
-                error.code,
-                {"account": account, **error.params},
-            )
+            return self._refused(account, error)
         except Exception as error:  # noqa: BLE001 - reported, never raised
             return self._failed(account, error)
         shutil.rmtree(self._account_dir(account), ignore_errors=True)
@@ -283,6 +292,23 @@ class AiToolsApplier:
             home=home,
             binary=self._binary,
             password=password,
+        )
+
+    def _account_lock(self, account: str) -> AiToolsAccountLock:
+        """The lock one account's switch or switch back holds."""
+        return AiToolsAccountLock(
+            path=os.path.join(self._root, AI_TOOLS_LOCK_DIR_NAME, account),
+            account=account,
+        )
+
+    def _refused(self, account: str, error: ToolSwitchError) -> dict:
+        """A refusal as the account's result."""
+        self._log(f"ai_tools: {account}: {error.code} {error.params}")
+        return result(
+            account,
+            AI_TOOLS_STATE_FAILED,
+            error.code,
+            {"account": account, **error.params},
         )
 
     def _failed(self, account: str, error: Exception) -> dict:

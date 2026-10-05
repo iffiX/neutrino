@@ -83,6 +83,7 @@ def test_each_named_account_is_switched_as_itself(tmp_path, binary):
         "gemini.json",
     ]
     assert stat.S_IMODE(os.stat(record_dir).st_mode) == 0o700
+    assert not [path for path in platform.files if path.endswith("/payload")]
 
 
 def test_nothing_runs_when_nothing_changed_and_a_state_is_applied_once(
