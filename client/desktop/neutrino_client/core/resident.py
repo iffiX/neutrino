@@ -1452,6 +1452,7 @@ class ClientResident:
             if not outcome:
                 outcome = handler.settle(SERVICE_SETTLE_TIMEOUT_S)
         except Exception as error:  # noqa: BLE001 - reported on the row
+            self._log(f"{key}: the job crashed: {type(error).__name__}: {error}")
             outcome = {"code": "crashed", "params": {"detail": str(error)[:200]}}
         outcome = self._answer_now(outcome)
         with self._lock:

@@ -2695,3 +2695,36 @@ def test_the_agent_turns_the_chip_off_once_and_its_removal_frees_the_page(
     assert handler.state()["ai"]["is_managed"] is False
     assert resident.service_action("ai", {"is_enabled": True}) == {}
     assert switcher.calls == ["activate", "deactivate", "activate"]
+
+
+def test_a_mount_job_that_crashes_says_so_in_the_log(windows_hub, monkeypatch):
+    """A first mount once ended with a bare failure and no line anywhere."""
+    resident, platform, _daemon, _made = windows_hub
+    lines = []
+    monkeypatch.setattr(resident, "_log", lines.append)
+
+    def held(*_args, **_kwargs):
+        raise PermissionError(5, "Access is denied")
+
+    monkeypatch.setattr(resident._store, "set_mount", held)
+
+    assert (
+        resident.service_action(
+            "file",
+            {
+                "action": "mount",
+                "hub_id": "h1",
+                "id": "share_media",
+                "username": "media",
+                "password": "pw",
+                "path": "T:",
+            },
+        )
+        == {}
+    )
+
+    assert resident._entry_errors["h1/share_media"]["code"] == "crashed"
+    assert any(
+        "h1/share_media: the job crashed: PermissionError" in line for line in lines
+    )
+    assert platform.attach_calls == []

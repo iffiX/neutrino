@@ -191,6 +191,8 @@ CLIENT_WORK_WORDS = {
 }
 
 # Where a mount record stands; failed records are worded by their code.
+# What an unmount that took the share down says.
+CLIENT_MOUNT_UNMOUNTED_WORD = "unmounted"
 CLIENT_MOUNT_STATE_WORDS = {
     "queued": "waiting for the client",
     "mounting": "mounting",

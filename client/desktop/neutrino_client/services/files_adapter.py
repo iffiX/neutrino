@@ -415,8 +415,8 @@ class FilesSocksEndpoint:
             and hmac.compare_digest(password, self._password.encode("ascii"))
         )
         if not is_known:
-            client.sendall(bytes((SOCKS_AUTH_VERSION, SOCKS_AUTH_FAILED)))
             self._log("files endpoint: a client gave the wrong login")
+            client.sendall(bytes((SOCKS_AUTH_VERSION, SOCKS_AUTH_FAILED)))
             return None
         client.sendall(bytes((SOCKS_AUTH_VERSION, SOCKS_AUTH_SUCCEEDED)))
         _, command, _, address_type = _received(client, 4)
@@ -430,24 +430,24 @@ class FilesSocksEndpoint:
         port = int.from_bytes(_received(client, 2), "big")
         target = self._plan.target_of(address)
         if port != CLIENT_FILES_SHARE_PORT or target is None:
-            _reply(client, SOCKS_REPLY_NOT_ALLOWED)
             if address != CLIENT_FILES_PROBE_ADDRESS:
                 self._log(f"files endpoint refused {address}:{port}")
+            _reply(client, SOCKS_REPLY_NOT_ALLOWED)
             return None
         hub_id, machine = target
         entry_id = self._entry_of(hub_id, machine)
         if not entry_id:
-            _reply(client, SOCKS_REPLY_HOST_UNREACHABLE)
             self._log(f"files endpoint: {hub_id} publishes no share on {machine}")
+            _reply(client, SOCKS_REPLY_HOST_UNREACHABLE)
             return None
         try:
             far = self._connector(hub_id, entry_id)
         except Exception as error:  # noqa: BLE001 - any refusal is one reply
-            _reply(client, SOCKS_REPLY_REFUSED)
             self._log(
                 f"files endpoint: {hub_id} refused {entry_id}: "
                 f"{getattr(error, 'code', '') or type(error).__name__}"
             )
+            _reply(client, SOCKS_REPLY_REFUSED)
             return None
         try:
             _reply(client, SOCKS_REPLY_SUCCEEDED)
