@@ -146,6 +146,46 @@ def test_a_stop_runs_on_stop_then_reports_stopped_and_ends(control):
     holding.set()
 
 
+def test_the_stop_control_returns_to_the_manager_before_the_daemon_stops():
+    """A handler that waits for the daemon, or ends the process inside the
+    control, is a stop the manager reports as failed."""
+    advapi32 = FakeAdvapi32()
+    exits = Exits()
+    stopping = threading.Event()
+    may_finish = threading.Event()
+    holding = threading.Event()
+
+    def on_stop():
+        stopping.set()
+        may_finish.wait(timeout=5)
+
+    dispatcher = ServiceControlDispatcher(
+        "NeutrinoClientFiles",
+        on_start=holding.wait,
+        on_stop=on_stop,
+        advapi32=advapi32,
+        exit=exits,
+    )
+    thread = dispatch_in_thread(dispatcher)
+    wait_for(lambda: win32.SERVICE_RUNNING in advapi32.states)
+
+    answer = advapi32.handler(win32.SERVICE_CONTROL_STOP, 0, None, None)
+
+    assert answer == win32.NO_ERROR
+    assert advapi32.states[-1] == win32.SERVICE_STOP_PENDING
+    assert exits.statuses == []
+    stopping.wait(timeout=5)
+    assert win32.SERVICE_STOPPED not in advapi32.states
+    may_finish.set()
+    thread.join(timeout=5)
+    assert advapi32.states[-1] == win32.SERVICE_STOPPED
+    assert exits.statuses == [0]
+    assert advapi32.handler(win32.SERVICE_CONTROL_STOP, 0, None, None) == (
+        win32.NO_ERROR
+    )
+    holding.set()
+
+
 def test_a_daemon_that_ends_by_itself_ends_the_process_as_a_crash():
     advapi32 = FakeAdvapi32()
     exits = Exits()

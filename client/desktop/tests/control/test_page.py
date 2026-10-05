@@ -1173,7 +1173,18 @@ def test_a_mount_waits_for_a_user_name_and_a_path():
     assert "!isMountFormFilled(staged, state)" in body_of("drawFileEntry")
     filled = body_of("isMountFormFilled")
     assert "!!staged.username && (!!staged.path || !asksMountPlace(state))" in filled
-    assert "t('ui.reason.mount_form')" in body_of("mountReason")
+    assert "t(MOUNT_FORM_REASONS[state.mount_location_shape || 'path'])" in (
+        body_of("mountReason")
+    )
+    assert "path: 'ui.reason.mount_form'," in PAGE_JS
+
+
+def test_a_drive_letter_form_asks_for_a_drive_letter():
+    assert "drive_letter: 'ui.reason.mount_form_drive'," in PAGE_JS
+    assert EN_WORDS["ui.reason.mount_form_drive"] == (
+        "Enter a user name and a drive letter in Configure first."
+    )
+    assert "path" not in EN_WORDS["ui.reason.mount_form_drive"]
 
 
 def test_a_volume_form_asks_for_no_place_and_names_the_server():
@@ -1187,7 +1198,7 @@ def test_a_volume_form_asks_for_no_place_and_names_the_server():
     assert "t('ui.mount_volume_caption', { server: server })" in caption
     files = body_of("drawFileEntry")
     assert "drawFileForm(staged, state, LOOPBACK_SERVER, key, onSave, () => {" in files
-    assert "t('ui.reason.mount_form_volume')" in body_of("mountReason")
+    assert "volume: 'ui.reason.mount_form_volume'," in PAGE_JS
     assert EN_WORDS["ui.mount_volume_caption"] == "Appears in the Finder under {server}"
     assert (
         EN_WORDS["ui.reason.mount_form_volume"]

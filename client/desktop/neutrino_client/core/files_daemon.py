@@ -59,13 +59,13 @@ def tun2socks_command(binary: str, *, port: int, user: str, password: str) -> li
     """
     return [
         binary,
-        "-device",
+        "--device",
         f"tun://{CLIENT_FILES_ADAPTER_NAME}",
-        "-proxy",
+        "--proxy",
         f"socks5://{user}:{password}@{FILES_ENDPOINT_HOST}:{port}",  # scan: allow
-        "-mtu",
+        "--mtu",
         str(CLIENT_FILES_ADAPTER_MTU),
-        "-loglevel",
+        "--loglevel",
         CLIENT_FILES_TUN2SOCKS_LOG_LEVEL,
     ]
 

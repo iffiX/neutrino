@@ -149,6 +149,26 @@ def test_a_machine_is_its_device_or_a_declared_records_host():
     )
 
 
+def test_a_managed_machines_share_is_keyed_by_its_name_whatever_way_in():
+    """The hub sends no device id on the channel, and the host of a share on
+    the hub's own machine is the address the client reached the hub at."""
+    over_lan = {
+        "source": "module",
+        "device_name": "nmxhub",
+        "payload": {"host": "192.168.122.82", "share": "t1share"},
+    }
+    over_relay = dict(over_lan, payload={"host": "192.168.10.164"})
+
+    assert files_machine(over_lan) == files_machine(over_relay) == "nmxhub"
+    declared = {
+        "source": "declared",
+        "device_name": "nmxhub",
+        "payload": {"host": "nas"},
+    }
+    assert files_machine(declared) == "nas"
+    assert files_machine({"source": "module", "payload": {"host": "nas"}}) == "nas"
+
+
 def test_each_machine_keeps_its_address_per_hub_across_a_restart(store, plan):
     assert plan.address_for("h1", "d1") == FIRST
     assert plan.address_for("h1", "d2") == SECOND

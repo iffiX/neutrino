@@ -195,6 +195,7 @@
   "ui.reason.disabled": "The hub has switched this client off.",
   "ui.reason.disconnect_first": "Disconnect first to change the local port.",
   "ui.reason.mount_form": "Enter a user name and a path in Configure first.",
+  "ui.reason.mount_form_drive": "Enter a user name and a drive letter in Configure first.",
   "ui.reason.mount_form_volume": "Enter a user name in Configure first.",
   "ui.reason.no_machine": "Pick a machine above first.",
   "ui.reason.no_network": "The hub publishes no virtual network.",

@@ -2135,12 +2135,18 @@ function drawFileEntry(card, state, hub, entry) {
   card.appendChild(row);
 }
 
+// What an empty mount form asks for, by the system's mount location shape.
+const MOUNT_FORM_REASONS = {
+  path: 'ui.reason.mount_form',
+  drive_letter: 'ui.reason.mount_form_drive',
+  volume: 'ui.reason.mount_form_volume',
+};
+
 // Why Mount cannot run, empty while it can.
 function mountReason(state, hub, entry, record, mount) {
   if (!mount.disabled || entryWork(hub, entry)) return '';
   return entryReason(hub, entry, !(record && record.is_attached))
-    || (asksMountPlace(state) ? t('ui.reason.mount_form')
-      : t('ui.reason.mount_form_volume'));
+    || t(MOUNT_FORM_REASONS[state.mount_location_shape || 'path']);
 }
 
 // A row's faint reason line set to a text, or removed with none.

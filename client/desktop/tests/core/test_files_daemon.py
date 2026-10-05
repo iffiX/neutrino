@@ -85,13 +85,13 @@ def daemon(started, adapter, lines):
 def test_tun2socks_runs_on_the_adapter_towards_the_endpoint():
     assert tun2socks_command("t.exe", port=40001, user="u1", password="pw") == [
         "t.exe",
-        "-device",
+        "--device",
         "tun://neutrino_files",
-        "-proxy",
+        "--proxy",
         "socks5://u1:pw@127.0.0.1:40001",  # scan: allow
-        "-mtu",
+        "--mtu",
         "1500",
-        "-loglevel",
+        "--loglevel",
         "warn",
     ]
 
