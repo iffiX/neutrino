@@ -428,6 +428,7 @@ def _compile(python: Path, tree: Path, build: Path, version: str) -> Path:
         source_root=tree,
         options=(
             "--include-package=neutrino_agent",
+            nuitka_build.NUITKA_ARGV_PASSTHROUGH,
             "--windows-console-mode=force",
             "--product-name=Neutrino Agent",
             f"--product-version={version}",

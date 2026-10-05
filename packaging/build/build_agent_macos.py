@@ -366,7 +366,10 @@ def _compile(python: Path, tree: Path, build: Path, version: str) -> Path:
         build,
         AGENT_BINARY_NAME,
         source_root=tree,
-        options=("--include-package=neutrino_agent",),
+        options=(
+            "--include-package=neutrino_agent",
+            nuitka_build.NUITKA_ARGV_PASSTHROUGH,
+        ),
     )
 
 

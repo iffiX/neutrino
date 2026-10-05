@@ -178,6 +178,26 @@ def test_the_package_is_named_the_way_the_release_publishes_it():
         build_agent_macos.macos_machine("armhf")
 
 
+def test_the_compiled_agent_carries_any_argument_vector(tmp_path, monkeypatch):
+    """nagent step-down and nagent answer run another program's argument
+    vector, `sh -c` included; the compiled program refuses -c and -m unless
+    built without its self-execution guard."""
+    compiled = []
+
+    def compile_standalone(python, entry, output_dir, binary_name, **kwargs):
+        compiled.append(kwargs["options"])
+        return output_dir
+
+    monkeypatch.setattr(
+        build_agent_macos.nuitka_build, "compile_standalone", compile_standalone
+    )
+
+    build_agent_macos._compile(Path("python3"), tmp_path, tmp_path, "9.9.9")
+
+    assert "--no-deployment-flag=self-execution" in compiled[0]
+    assert "--include-package=neutrino_agent" in compiled[0]
+
+
 def test_an_intel_package_carries_the_intel_rustdesk(tmp_path, monkeypatch):
     asked = []
 

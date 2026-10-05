@@ -235,6 +235,9 @@ def test_the_payload_keeps_the_agents_binary_for_the_service_component(
     assert binary_name == "nagent.exe"
     assert "--windows-console-mode=force" in options
     assert "--include-package=neutrino_agent" in options
+    # step-down and answer carry any program's argument vector, -c and -m
+    # included, which the compiled program refuses by default.
+    assert "--no-deployment-flag=self-execution" in options
     stamped = tmp_path / "tree" / "neutrino_agent" / "_version.py"
     assert 'AGENT_VERSION = "9.9.9"' in stamped.read_text()
 
