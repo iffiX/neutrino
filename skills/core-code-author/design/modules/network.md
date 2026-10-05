@@ -433,7 +433,9 @@ doubled up to `SYSTEM_CHILD_RESTART_MAX_S` 60.
 | `<state>/relay/known_hosts` | by `ssh` on its first connection, mode 0600 | the VPS's host key |
 
 The password file and the askpass program are root-only as the key file is,
-through the same `make_root_only`. A locked vault leaves the key file or the
+through the same `make_root_only`. On Linux the unit starts only while the key
+file or the password file exists, `ConditionPathExists=|` on each, so a relay
+that was stopped does not start with the machine. A locked vault leaves the key file or the
 password file unwritten and the relay in `vault_locked`.
 A save that changes `host` or `ssh_port` deletes `known_hosts`, so the next
 connection records the new server's key. A recorded key that no longer
