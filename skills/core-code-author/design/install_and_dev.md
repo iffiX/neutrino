@@ -369,6 +369,24 @@ machine of its own architecture. A checkout pays none of it: `pip install -e
 client` runs on the checkout's interpreter, and `nclient gui` uses whatever
 can import `gi`.
 
+## A client upgraded while it runs comes back
+
+An install over a running client closes it to replace its files, and the
+client is running again when the install ends, in the same person's session,
+as that person, never as SYSTEM or elevated, with no second prompt. An
+install over no running client starts nothing.
+
+On Windows the installer asks the installing account's client to quit for
+an upgrade. That client registers, as its own account, the task
+`NeutrinoClientRelaunch_<account>`: no trigger, the limited run level, run
+only while the account is signed in, starting `nclientw.exe gui --hidden`.
+The installer's last step, as SYSTEM, starts every such task, and the client
+deletes its own task when it starts. An account that is not signed in, as
+under an install from ssh or a management tool with nobody at the desktop,
+does not run its task, and the install does not fail. A removal deletes
+every such task. A client of another account, which the installer closes
+without asking, is not brought back.
+
 ## A hub package carries its own agent package and fetches the others
 
 Every hub package carries one agent package, the one of its own system,
