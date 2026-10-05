@@ -135,7 +135,7 @@ def test_directories_are_made_and_no_account(monkeypatch, tmp_path, system):
         monkeypatch.setattr(setup, name, tmp_path / name.lower())
     if edition.has_feature("proxy"):
         monkeypatch.setattr(
-            "neutrino_hub.modules.xray.setup_part.UTILS_GEODATA_DIR",
+            "neutrino_hub.modules.xray.setup_part.XRAY_GEODATA_DIR",
             tmp_path / "geodata",
         )
     monkeypatch.setattr(setup, "UTILS_LOG_DIR", tmp_path / "log")

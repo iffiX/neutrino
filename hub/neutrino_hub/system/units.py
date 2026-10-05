@@ -6,15 +6,17 @@ filled in here, so an upgraded package's units land the next time anything
 makes the box true rather than only on a first setup.
 """
 
+from neutrino_hub import edition
 from neutrino_hub.system.constants import SYSTEM_SYSTEMD_DIR
 from neutrino_hub.system.installation import checkout_root, is_packaged, venv_python
 from neutrino_hub.platforms.detect import process_controller
 from neutrino_hub.utils.constants import UTILS_DATA_DIR
 
 # --- config ---
-# The units the hub owns, template name to installed name. The proxy core is
-# among them: it travels in the package, so its unit is the hub's own rather
-# than a drop-in over one a vendor's script installed.
+# The units the hub owns, template name to installed name. The proxy core's
+# is among them where the tree carries the proxy, from the edition table: it
+# travels in the package, so its unit is the hub's own rather than a drop-in
+# over one a vendor's script installed.
 SYSTEM_UNIT_TEMPLATES = {
     "neutrino_hub_router.service": "neutrino_hub_router.service",
     "neutrino_hub_web.service": "neutrino_hub_web.service",
@@ -25,7 +27,7 @@ SYSTEM_UNIT_TEMPLATES = {
     "neutrino_hub_hostapd@.service": "neutrino_hub_hostapd@.service",
     "neutrino_hub_supplicant@.service": "neutrino_hub_supplicant@.service",
     "neutrino_hub_dhcpcd@.service": "neutrino_hub_dhcpcd@.service",
-    "neutrino_hub_xray.service": "neutrino_hub_xray.service",
+    **{name: name for name in edition.hooks("unit_templates")},
     "neutrino_hub_dnsmasq.service": "neutrino_hub_dnsmasq.service",
 }
 # What a checkout's templates say, and what a package has instead.

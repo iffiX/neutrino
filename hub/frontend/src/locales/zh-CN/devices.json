@@ -295,6 +295,8 @@
   "ui.nav.dashboard": "总览",
   "ui.nav.dashboard_description": "实时吞吐、出口和 DNS",
   "ui.nav.dashboard_description_server": "实时吞吐和出口",
+  "ui.nav.dashboard_description_no_exits": "实时吞吐和 DNS",
+  "ui.nav.dashboard_description_server_no_exits": "实时吞吐",
   "ui.nav.devices": "设备",
   "ui.nav.devices_description": "局域网主机和远程操作",
   "ui.nav.files": "文件",

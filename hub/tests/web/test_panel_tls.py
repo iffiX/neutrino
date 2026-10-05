@@ -85,6 +85,7 @@ def verify(paths, leaf_pem: bytes, name) -> None:
 # --- the authority ---
 
 
+@pytest.mark.feature("netbird")
 def test_the_authority_is_a_p256_ca_limited_to_private_names(paths):
     assert ensure_authority(**paths, host_name="argon")
 
@@ -156,6 +157,7 @@ def test_the_download_is_named_after_the_hub():
 # --- the panel certificate ---
 
 
+@pytest.mark.feature("netbird")
 def test_the_panel_certificate_chains_to_the_authority(paths):
     ensure_authority(**paths, host_name="argon")
     names = ["hub.neutrino.internal", "localhost", "argon", "127.0.0.1"]
@@ -192,6 +194,7 @@ def test_a_certificate_for_a_public_name_fails_the_verifier(paths, name):
         verify(paths, leaf_pem, name)
 
 
+@pytest.mark.feature("netbird")
 def test_only_private_addresses_and_permitted_names_reach_a_certificate(paths):
     ensure_authority(**paths, host_name="argon")
     hosts = [

@@ -117,6 +117,7 @@ def test_reset_all_forgets_the_keys_the_box_was_holding(box):
     assert not (box.parent / "state" / "vault.key").exists()
 
 
+@pytest.mark.feature("proxy")
 def test_reset_all_forgets_what_this_box_read_about_its_nodes(box):
     """The readings describe nodes the next owner does not have."""
     reset._reset_all()
@@ -247,7 +248,7 @@ def test_a_service_that_will_not_stop_is_reported_rather_than_raised(
 ):
     """One unit refusing must not hide what happened to the others, and a
     traceback would say the reset failed when what failed was one stop."""
-    asked = _controller(monkeypatch, refusing=("xray",))
+    asked = _controller(monkeypatch, refusing=("dnsmasq",))
     monkeypatch.setattr(
         reset, "stop_everything", lambda: stop_module.stop(list(stop_module.STOP_ORDER))
     )
@@ -306,6 +307,7 @@ def test_macos_and_windows_stop_the_service_and_hand_back_nothing(
     assert not hub_service.is_running
 
 
+@pytest.mark.feature("netbird")
 def test_reset_all_forgets_the_services_children(box):
     state = box.parent / "state"
     (state / "services.json").write_text('{"enabled": ["xray"]}')

@@ -6,11 +6,14 @@ config, so they are wire-level identifiers rather than user settings.
 
 from neutrino_hub.modules.tun.constants import TUN_SUPERVISED_NAME
 from neutrino_hub.utils.constants import (
-    UTILS_GEODATA_DIR,
+    UTILS_STATE_ROOT,
     UTILS_GENERATED_DIR,
     carried_program,
 )
 
+# The account xray runs as on Linux, and where its databases live.
+XRAY_SERVICE_USER = "xray"
+XRAY_GEODATA_DIR = UTILS_STATE_ROOT / "geodata"
 XRAY_CONFIG_PATH = UTILS_GENERATED_DIR / "xray_config.json"
 # Carried by the hub's package rather than installed by the vendor's script,
 # so it lives under the hub's own prefix instead of /usr/local, which belongs
@@ -22,7 +25,7 @@ XRAY_BINARY = str(carried_program("xray"))
 # path that starts xray sets this: the unit, and the validation that runs
 # `xray -test` before a render is accepted.
 XRAY_ASSET_ENV = "XRAY_LOCATION_ASSET"
-XRAY_ASSET_DIR = str(UTILS_GEODATA_DIR)
+XRAY_ASSET_DIR = str(XRAY_GEODATA_DIR)
 XRAY_SERVICE_NAME = "neutrino_hub_xray"
 # The name the process controller knows xray by.
 XRAY_SUPERVISED_NAME = "xray"
@@ -105,7 +108,7 @@ XRAY_GEODATA_TIMEOUT_S = 120
 # Which release each database on this machine came from. State rather than
 # configuration: it describes the files on the disk, and a restored backup
 # carries neither the databases nor this.
-XRAY_GEODATA_VERSION_PATH = UTILS_GEODATA_DIR / "version.json"
+XRAY_GEODATA_VERSION_PATH = XRAY_GEODATA_DIR / "version.json"
 # Where the databases came from: carried by the package, or fetched from the
 # repository that publishes them.
 XRAY_GEODATA_SOURCE_PACKAGE = "package"
@@ -307,6 +310,7 @@ XRAY_DNS_INBOUND = (XRAY_DNS_LISTEN, XRAY_DNS_PORT)
 # The proxy core's unit, and the children the hub's one service runs for
 # the proxy outside Linux, the TUN's beside xray and only while xray runs.
 XRAY_CORE_UNIT = (XRAY_SUPERVISED_NAME, f"{XRAY_SERVICE_NAME}.service")
+XRAY_UNIT_TEMPLATE = f"{XRAY_SERVICE_NAME}.service"
 XRAY_SUPERVISED_NAMES = (XRAY_SUPERVISED_NAME, TUN_SUPERVISED_NAME)
 XRAY_CHILD_REQUIREMENTS = {TUN_SUPERVISED_NAME: XRAY_SUPERVISED_NAME}
 XRAY_SIDE_GATEWAY_MODE = {

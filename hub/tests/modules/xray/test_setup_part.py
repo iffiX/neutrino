@@ -167,7 +167,7 @@ def test_the_service_user_owns_the_log_directory(monkeypatch, tmp_path):
     owned = []
     monkeypatch.setattr("sys.platform", "linux")
     monkeypatch.setattr(setup_part, "run", run)
-    monkeypatch.setattr(setup_part, "UTILS_GEODATA_DIR", tmp_path / "geodata")
+    monkeypatch.setattr(setup_part, "XRAY_GEODATA_DIR", tmp_path / "geodata")
     monkeypatch.setattr(setup_part, "UTILS_LOG_DIR", tmp_path / "log")
     (tmp_path / "log").mkdir()
     (tmp_path / "log" / "xray_error.log").write_text("")

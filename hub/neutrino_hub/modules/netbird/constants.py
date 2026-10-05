@@ -121,6 +121,10 @@ NETBIRD_SETUP_KEY_AAD = b"netbird:setup_key"
 # the hub's one service outside Linux.
 NETBIRD_OPTIONAL_UNIT = (NETBIRD_SUPERVISED_NAME, NETBIRD_UNIT)
 NETBIRD_SUPERVISED_NAMES = (NETBIRD_SUPERVISED_NAME,)
+# The overlay's domain a panel certificate may name, the directory a
+# reset clears, both reached through the edition table.
+NETBIRD_PANEL_TLS_DOMAIN = "netbird.cloud"
+NETBIRD_STATE_DIR_NAME = "netbird"
 # NetBird's row of the hub's overlay engines, reached through the edition
 # table as ``(key, fields)``.
 NETBIRD_OVERLAY_ENGINE = (

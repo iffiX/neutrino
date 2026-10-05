@@ -87,13 +87,13 @@ def test_a_running_unit_is_left_running(systemd, capsys):
 
 def test_a_unit_that_will_not_start_does_not_hide_the_others(systemd, capsys):
     asked, state = systemd
-    state["refusing"] = ("xray",)
+    state["refusing"] = ("dnsmasq",)
 
     code = start_module.start(list(start_module.START_ORDER), is_enabled_only=True)
 
     assert code == 1
     assert [name for name, _ in asked] == list(start_module.START_ORDER)
-    assert "xray: did not start" in capsys.readouterr().err
+    assert "dnsmasq: did not start" in capsys.readouterr().err
 
 
 def test_every_service_stop_can_name_start_can_name(monkeypatch):
@@ -250,7 +250,7 @@ def test_a_service_that_will_not_start_says_so(hub_service, capsys):
 
 
 def test_the_only_flags_are_linuxs(hub_service, monkeypatch, capsys):
-    monkeypatch.setattr(start_module.sys, "argv", ["nhub start", "--only-xray"])
+    monkeypatch.setattr(start_module.sys, "argv", ["nhub start", "--only-dnsmasq"])
 
     assert start_module.main() == 2
     assert "systemd unit" in capsys.readouterr().err

@@ -2,7 +2,8 @@
 
     sudo nhub stop                              # everything it started
     sudo nhub stop --only-web                   # one of them
-    sudo nhub stop --only-xray
+    sudo nhub stop --only-relay
+    sudo nhub stop --only-xray                  # where the tree carries the proxy
     sudo nhub stop --only-cliproxyapi
     sudo nhub stop --only-dnsmasq
     sudo nhub stop --only-router
@@ -18,9 +19,12 @@ With no ``--only`` it stops all of them, the per-interface engines included:
 a box left holding a DHCP lease it asked for is a box the hub has not stopped
 running, whatever the panel is doing.
 
-What it leaves alone is the optional modules. Samba serves shares whether or
-not this box routes anything, so a plain ``nhub stop`` is the hub going quiet
-rather than the machine going down.
+What it leaves alone is the optional modules and the overlay engines. Samba
+serves shares whether or not this box routes anything, and an overlay is how
+the box is reached from outside, so a plain ``nhub stop`` is the hub going
+quiet rather than the machine going down. The relay is stopped with the
+panel: it publishes the panel's port on a public server, and a hub that has
+gone quiet publishes nothing.
 
 Nothing is disabled, so everything comes back at the next boot. Removing the
 hub is the package manager's business, and undoing a setup is ``nhub reset``.
@@ -33,6 +37,7 @@ import argparse
 import subprocess
 import sys
 
+from neutrino_hub import edition
 from neutrino_hub.modules.router.dhcp_client import RouterDhcpClient
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.router.supplicant import RouterWifiClient
@@ -46,7 +51,16 @@ from neutrino_hub.utils.subprocess_run import command_failure_text
 # The panel first because it is what a person is holding: stopping it while
 # the proxy underneath is already gone means a page that hangs rather than one
 # that closes. The routing state last, because it is what the rest ran on.
-STOP_ORDER = ("web", "cliproxyapi", "dnsmasq", "xray", "router")
+# The relay right after the panel whose port it publishes. The proxy core's
+# unit is the proxy's, from the edition table.
+STOP_ORDER = (
+    "web",
+    "relay",
+    "cliproxyapi",
+    "dnsmasq",
+    *edition.hooks("services"),
+    "router",
+)
 # The two that run one unit per interface, named as `run` names them.
 STOP_PER_INTERFACE = ("supplicant", "dhcpcd")
 

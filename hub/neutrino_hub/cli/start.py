@@ -2,7 +2,8 @@
 
     sudo nhub start                              # every unit boot would start
     sudo nhub start --only-web                   # one of them
-    sudo nhub start --only-xray
+    sudo nhub start --only-relay                 # when it is enabled and configured
+    sudo nhub start --only-xray                  # where the tree carries the proxy
     sudo nhub start --only-cliproxyapi
     sudo nhub start --only-dnsmasq
     sudo nhub start --only-router
