@@ -32,6 +32,7 @@ import urllib.parse
 from neutrino_agent import AGENT_VERSION
 from neutrino_agent.ai_tools.applier import AiToolsApplier
 from neutrino_agent.constants import (
+    AGENT_REINSTALL_INSTALLED_CODES,
     AGENT_BACKOFF_MAX_S,
     AGENT_BACKOFF_MIN_S,
     AGENT_CODE_BINDING_UNKNOWN,
@@ -721,7 +722,7 @@ class Agent:
             no record stands there or the install went through.
         """
         result = self_update.read_reinstall_result(self._var_dir)
-        if result is None or result["exit_code"] == 0:
+        if result is None or result["exit_code"] in AGENT_REINSTALL_INSTALLED_CODES:
             return None
         return {
             "code": "reinstall_failed",
@@ -811,7 +812,7 @@ class Agent:
         result = self_update.wait_reinstall_result(
             self._var_dir, timeout_s=AGENT_REINSTALL_WAIT_S
         )
-        if result is None or result["exit_code"] == 0:
+        if result is None or result["exit_code"] in AGENT_REINSTALL_INSTALLED_CODES:
             return {}
         self._log(f"reinstall failed: the installer exited {result['exit_code']}")
         return {

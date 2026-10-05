@@ -247,6 +247,9 @@ AGENT_REINSTALL_OUTPUT_LIMIT_BYTES = 4 * 1024
 # closes as launched, and how often it looks; under the hub's own wait.
 AGENT_REINSTALL_WAIT_S = 120.0
 AGENT_REINSTALL_POLL_S = 1.0
+# The exit statuses of an install that went through: msiexec's 3010 is one
+# that finished with a restart owed.
+AGENT_REINSTALL_INSTALLED_CODES = (0, 3010)
 
 # How long a module's live details stand in the report before the engine
 # reads them again. The reporter never waits on a read.

@@ -17,6 +17,7 @@ import re
 import sys
 
 from neutrino_agent.constants import (
+    AGENT_REINSTALL_INSTALLED_CODES,
     AGENT_CONTROL_ACTION_TIMEOUT_S,
     AGENT_CONTROL_REQUEST_TIMEOUT_S,
     AGENT_SERVICE_NAME,
@@ -206,7 +207,11 @@ def word_reinstall(result: dict) -> str:
         The words to print.
     """
     exit_code = result.get("exit_code")
-    outcome = "ok" if exit_code == 0 else f"failed, exit {exit_code}"
+    outcome = (
+        "ok"
+        if exit_code in AGENT_REINSTALL_INSTALLED_CODES
+        else f"failed, exit {exit_code}"
+    )
     return f"{outcome} at {result.get('finished_at', '')}"
 
 
