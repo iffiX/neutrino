@@ -1144,6 +1144,11 @@ jobs:
       # The install scripts the mainland tree holds, stamped cn.
       - run: cp cn/packaging/install/install.sh cn/packaging/install/install.ps1 dist_cn/
 
+      # The pinned cc-switch release files and their licence, which the
+      # mainland hubs fetch from this release.
+      - run: python3 packaging/build/build_cc_switch.py --edition cn --output-dir ../dist_cn
+        working-directory: cn
+
       - run: python3 packaging/build/build_checksums.py --edition cn --output-dir ../dist_cn
         working-directory: cn
 
