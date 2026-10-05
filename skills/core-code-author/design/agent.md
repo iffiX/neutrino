@@ -367,11 +367,16 @@ Windows each is one PowerShell script in the account's task, the path
 written into it as a literal.
 
 `config common extract` and `config common set` read their input from a
-file. The agent writes that input to `~/.neutrino_ai_tools_payload` as the
-account, runs the one cc-switch call that reads it, and removes it as the
-account straight after: it holds a tool's live configuration in the shape
-`extract` reads, or the shared settings `set` stores, and stands only for
-that one call ([files.md](files.md), "One root, three names").
+file. The agent writes that input as the account to `payload` in the
+account's own tree, `~/.local/share/neutrino/agent/ai_tools/` on Linux,
+`~/Library/Application Support/Neutrino/agent/ai_tools/` on macOS and
+`%LOCALAPPDATA%\Neutrino\agent\ai_tools\` on Windows, making the
+directories it lacks. It runs the one cc-switch call that reads the file,
+and straight after removes it as the account, then each of `ai_tools`,
+`agent` and the Neutrino directory that is left empty, in that order, so an
+account that had no Neutrino tree has none afterwards. The file holds a
+tool's live configuration in the shape `extract` reads, or the shared
+settings `set` stores ([files.md](files.md), "One root, three names").
 
 **The delete is answered on a terminal.** `provider delete` prints `(y/N)`
 and reads the reply from its terminal; with a pipe on its standard input it

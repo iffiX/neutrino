@@ -193,7 +193,9 @@ CloudCLI runs the same way, as the account it serves and never as root
 The machine's AI tools go further: cc-switch and every read, write and
 removal in the account's home run as the account, because an account can
 point a file of its home at a file only root reads
-([agent.md](agent.md), "The machine's AI tools"). On Windows the login an
+([agent.md](agent.md), "The machine's AI tools"). The one file the agent
+hands cc-switch, `payload` under the account's `neutrino/agent/ai_tools/`,
+is written and removed as the account too. On Windows the login an
 account was switched with stays in the agent's state, which SYSTEM and the
 administrators alone open, until the account is switched back. `nagent
 answer`, which that account's task runs, is the one `nagent` verb an
