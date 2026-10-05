@@ -1163,12 +1163,20 @@ def context() -> dict:
     }
 
 
-def welcome() -> None:
+def welcome(*, is_done=None) -> bool:
     """What this is, before the questions start.
 
     Shown on the way into the terminal's own screens. A machine that can open
     a browser gets :func:`offer_browser` instead, which says the same thing
     and then waits.
+
+    Args:
+        is_done: Asked every poll interval while Enter has not been pressed,
+            whether the box was set up elsewhere; None waits for Enter alone.
+
+    Returns:
+        True when Enter was pressed; False when ``is_done`` answered True
+        first.
 
     Raises:
         SystemExit: When the person interrupts or standard input ends.
@@ -1176,11 +1184,51 @@ def welcome() -> None:
     _headline(WIZARD_WELCOME_TITLE)
     _intro()
     print()
+    if is_done is None:
+        try:
+            input("  Press Enter to begin: ")
+        except (EOFError, KeyboardInterrupt):
+            _abort_welcome()
+        return True
+    print("  Press Enter to begin: ", end="", flush=True)
     try:
-        input("  Press Enter to begin: ")
-    except (EOFError, KeyboardInterrupt):
-        print(f"\n\n  {WIZARD_ABORTED}\n", file=sys.stderr)
-        raise SystemExit(WIZARD_STOPPED_STATUS) from None
+        while True:
+            line = _line_within(WIZARD_POLL_INTERVAL_S)
+            if line == "":
+                _abort_welcome()
+            if line is not None:
+                return True
+            if is_done():
+                print()
+                return False
+    except KeyboardInterrupt:
+        _abort_welcome()
+
+
+def _abort_welcome() -> None:
+    """End the run from the welcome screen, nothing written."""
+    print(f"\n\n  {WIZARD_ABORTED}\n", file=sys.stderr)
+    raise SystemExit(WIZARD_STOPPED_STATUS) from None
+
+
+def _line_within(timeout_s: float):
+    """The line typed within one wait, read whole.
+
+    Args:
+        timeout_s: How long to wait for it.
+
+    Returns:
+        The line; empty when standard input has ended; None when none came.
+    """
+    if hub_os() == PLATFORM_OS_WINDOWS:
+        return _stdin_line(timeout_s)
+    try:
+        ready, _, _ = select.select([sys.stdin], [], [], timeout_s)
+    except (OSError, ValueError):
+        return ""
+    if not ready:
+        return None
+    return sys.stdin.readline()
 
 
 def offer_browser(*, urls: list, token: str, arrived, is_opened: bool = True) -> bool:
