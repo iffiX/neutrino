@@ -29,10 +29,10 @@ import kotlinx.coroutines.runBlocking
  * one for a source no longer remembered is dropped. A datagram the hub's credit does not cover is
  * dropped; up to 16 wait only while an open waits for its first credit.
  *
- * The stream opens at [start], and again at the first datagram that finds none. The stream
- * opened at [start] closed with a code before any datagram went into it ends the forward, as the
- * answer to Connect; a later refusal leaves the forward listening, and a datagram tries again at
- * most once a second. Both are told to [onRefused].
+ * The stream opens at [start], and again at the first datagram that finds none or finds it
+ * ended. The stream opened at [start] closed with a code before any datagram went into it ends
+ * the forward, as the answer to Connect; a later refusal leaves the forward listening, and a
+ * datagram tries again at most once a second. Both are told to [onRefused].
  *
  * @property name What the log calls the far end.
  * @param open Opens the forward's `connect` stream.
@@ -77,7 +77,7 @@ class PortForwardUdpRelay(
      * Bind the loopback, open the stream, and start carrying datagrams.
      *
      * @return The loopback number bound.
-     * @throws IOException When the number cannot be bound.
+     * @throws IOException When the number cannot be bound, or the forward was closed first.
      * @throws ConnectRefusedException When the stream cannot be opened.
      */
     override fun start(): Int {
@@ -98,6 +98,11 @@ class PortForwardUdpRelay(
             is ChannelResult.Ok -> opened.value
         }
         socket = bound
+        if (isClosed) {
+            bound.close()
+            first.close()
+            throw IOException("the forward was closed before it listened")
+        }
         localPort = bound.localPort
         synchronized(lock) { carry(first, isFirst = true) }
         thread(isDaemon = true, name = "forward-udp-$localPort") { receive(bound) }
@@ -135,9 +140,13 @@ class PortForwardUdpRelay(
     }
 
     private fun forward(frame: ByteArray) {
+        var retired: Retired? = null
         val refusal = synchronized(lock) {
             if (isClosed) return
-            val open = when (val current = stream?.let { ChannelResult.Ok(it) } ?: reopen() ?: return) {
+            stream?.takeIf { it.isDone }?.let { retired = retire(it) }
+            if (retired?.isEnding == true) return@synchronized null
+            val open = when (val current = stream?.let { ChannelResult.Ok(it) } ?: reopen()) {
+                null -> return@synchronized null
                 is ChannelResult.Refused -> return@synchronized current
                 is ChannelResult.Ok -> current.value
             }
@@ -149,6 +158,7 @@ class PortForwardUdpRelay(
             }
             null
         }
+        retired?.let { told(it) }
         refusal?.let { onRefused(it, false) }
     }
 
@@ -199,16 +209,26 @@ class PortForwardUdpRelay(
     }
 
     private fun ended(opened: ChannelStream) {
-        val (refusal, isEnding) = synchronized(lock) {
+        val retired = synchronized(lock) {
             if (stream !== opened || isClosed) return
-            stream = null
-            held.clear()
-            val refusal = opened.refusal?.takeIf { it.code != "hub_unreachable" } ?: return
-            refusedAt = clock()
-            refusal to (isFirstStream && !hasSent)
-        }
-        Log.i(CLIENT_LOG_TAG, "the hub ended the stream to $name: ${refusal.code}")
-        if (isEnding) close()
-        onRefused(refusal, isEnding)
+            retire(opened)
+        } ?: return
+        told(retired)
     }
+
+    private fun retire(opened: ChannelStream): Retired? {
+        stream = null
+        held.clear()
+        val refusal = opened.refusal?.takeIf { it.code != "hub_unreachable" } ?: return null
+        refusedAt = clock()
+        return Retired(refusal, isFirstStream && !hasSent)
+    }
+
+    private fun told(retired: Retired) {
+        Log.i(CLIENT_LOG_TAG, "the hub ended the stream to $name: ${retired.refusal.code}")
+        if (retired.isEnding) close()
+        onRefused(retired.refusal, retired.isEnding)
+    }
+
+    private class Retired(val refusal: ChannelResult.Refused, val isEnding: Boolean)
 }
