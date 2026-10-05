@@ -83,7 +83,10 @@ commit without the listed paths, with the root `EDITION` file holding
 `cn` and `EDITION` stamped `cn` in `install.sh` and `install.ps1`, so a clone
 of the Gitee repository, a development run from it and its install scripts
 all read `cn`, and `third_party/` holding the upstream
-source of what the `cn` packages carry. Every `cn` package is built from
+source of what the `cn` packages carry. Its `README.md` is the
+repository's `README.zh-CN-Gitee.md`, the page Gitee shows, and its root
+holds no other README, so a tree holding `README.zh-CN-Gitee.md` is a full
+tree. Every `cn` package is built from
 this tree, unpacked, and never from the full checkout.
 
 A `cn` build exits with one sentence naming the path when any listed path
