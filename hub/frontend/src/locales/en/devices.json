@@ -333,7 +333,6 @@
   "ui.remote_desktop.not_asked_stream_unknown": "Its agent cannot answer, so this device's status could not be read.",
   "ui.remote_desktop.not_in_package": "Not in this agent's package.",
   "ui.remote_desktop.not_on_device": "Not on this device.",
-  "ui.remote_desktop.not_reported": "Not reported by this machine.",
   "ui.remote_desktop.password_on_device": "Set the password in the {product} app on the device.",
   "ui.remote_desktop.reading": "Reading status…",
   "ui.remote_desktop.reset": "Reset seat password",

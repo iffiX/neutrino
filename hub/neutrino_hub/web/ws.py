@@ -285,6 +285,15 @@ async def _bridge_shell(websocket: WebSocket, device_id: str, args: dict) -> Non
                 {"type": "exit", "code": int(params.get("exit_code", 1) or 0)}
             )
     if refusal:
+        # A close reason holds 123 bytes, so the params ride a frame before it.
+        with contextlib.suppress(RuntimeError):
+            await websocket.send_json(
+                {
+                    "type": "closing",
+                    "code": refusal,
+                    "params": dict(info.get("params") or {}),
+                }
+            )
         await _close(websocket, code=INTERNAL_ERROR_CODE, reason=refusal)
     else:
         await _close(websocket)

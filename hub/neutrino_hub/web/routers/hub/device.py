@@ -1063,7 +1063,6 @@ def remote_desktop_status(
     return RemoteDesktopView(
         anydesk=cards["anydesk"],
         teamviewer=cards["teamviewer"],
-        rustdesk_id=_reported_rustdesk_id(runtime, key),
     )
 
 
@@ -1103,25 +1102,6 @@ def _remote_desktop_view(product: str, info: dict) -> RemoteDesktopStatusView:
         session_id=str(session_id) if session_id else None,
         can_set_password=bool(result.get("can_set_password", True)),
     )
-
-
-def _reported_rustdesk_id(runtime: PanelRuntime, device_id: str) -> str:
-    """The RustDesk id one machine's module report carries.
-
-    Args:
-        runtime: The shared runtime.
-        device_id: The device.
-
-    Returns:
-        The id, empty when the machine has not reported one.
-    """
-    status_ = (runtime.device_modules.get(device_id) or {}).get("rustdesk")
-    if not isinstance(status_, dict):
-        return ""
-    details = status_.get("details")
-    if not isinstance(details, dict):
-        return ""
-    return str(details.get("rustdesk_id", "") or "")
 
 
 @router.post("/remote_desktop/password/set", response_model=TaskStarted)

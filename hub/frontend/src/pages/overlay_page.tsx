@@ -123,7 +123,7 @@ export function OverlayPage() {
       )}
 
       {selected === PROVIDER_RELAY && isEnabled(PROVIDER_RELAY) && (
-        <RelaySection />
+        <RelaySection onStateChange={reload} />
       )}
     </div>
   );

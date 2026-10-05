@@ -63,8 +63,9 @@ interface ShellTerminalProps {
   persistFlags?: PersistFlags | null;
   /** Called with the code of a message the hub refused on the socket. */
   onRefused?: (code: string) => void;
-  /** Called with the code the socket closed with, empty for a plain close. */
-  onCloseReason?: (reason: string) => void;
+  /** Called with the code the socket closed with, empty for a plain close,
+   * and the params the hub's `closing` frame gave that code. */
+  onCloseReason?: (reason: string, params: CloseParams) => void;
 }
 
 export function ShellTerminal({
@@ -93,6 +94,11 @@ export function ShellTerminal({
   const onRefusedRef = useRef(onRefused);
   onRefusedRef.current = onRefused;
   const socketRef = useRef<WebSocket | null>(null);
+  // The refusal the hub named in the frame before its close.
+  const closingRef = useRef<{
+    code: string;
+    params: CloseParams;
+  } | null>(null);
 
   useEffect(() => {
     const surface = surfaceRef.current;
@@ -194,6 +200,13 @@ export function ShellTerminal({
         onRefusedRef.current?.(message.code);
         return;
       }
+      if (message.type === "closing" && typeof message.code === "string") {
+        closingRef.current = {
+          code: message.code,
+          params: closeParams(message.params),
+        };
+        return;
+      }
       if (message.type === "exit") {
         onExitRef.current?.(
           typeof message.code === "number" ? message.code : null,
@@ -203,7 +216,11 @@ export function ShellTerminal({
 
     socket.onclose = (event: CloseEvent) => {
       onStateChangeRef.current?.("closed");
-      onCloseReasonRef.current?.(event.reason);
+      const closing = closingRef.current;
+      onCloseReasonRef.current?.(
+        event.reason,
+        closing !== null && closing.code === event.reason ? closing.params : {},
+      );
     };
 
     socket.onerror = () => {
@@ -272,4 +289,22 @@ export function ShellTerminal({
       ref={surfaceRef}
     />
   );
+}
+
+/** A refusal's params as words can take them: strings and numbers, every
+ * other value as its JSON. */
+type CloseParams = Record<string, string | number>;
+
+function closeParams(raw: unknown): CloseParams {
+  if (typeof raw !== "object" || raw === null) {
+    return {};
+  }
+  const params: CloseParams = {};
+  for (const [name, value] of Object.entries(raw)) {
+    params[name] =
+      typeof value === "string" || typeof value === "number"
+        ? value
+        : JSON.stringify(value);
+  }
+  return params;
 }

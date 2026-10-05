@@ -333,7 +333,6 @@
   "ui.remote_desktop.not_asked_stream_unknown": "被控端无法回应，读不到这台设备的状态。",
   "ui.remote_desktop.not_in_package": "这个被控端的安装包里没有它。",
   "ui.remote_desktop.not_on_device": "这台设备上没有它。",
-  "ui.remote_desktop.not_reported": "这台机器没有上报。",
   "ui.remote_desktop.password_on_device": "请在设备上的 {product} 应用里设置密码。",
   "ui.remote_desktop.reading": "正在读取状态…",
   "ui.remote_desktop.reset": "重置坐席密码",

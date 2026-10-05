@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { ApplyBar } from "./apply_bar";
 import { ErrorPanel } from "./error_panel";
@@ -44,10 +44,29 @@ const STATE_TONES: Record<RelayState, StatusTone> = {
   unreachable: "error",
 };
 
-export function RelaySection() {
+interface RelaySectionProps {
+  /** Called when the relay's state moves, so the page's card, whose
+   * "active" is the state `connected`, is read again at the same moment. */
+  onStateChange?: (state: RelayState) => void;
+}
+
+export function RelaySection({ onStateChange }: RelaySectionProps = {}) {
   // Redrawn when the panel's language changes.
   useLanguage();
   const resource = useApiResource<RelayView>(RELAY_PATH);
+  const state = resource.data?.state ?? null;
+  const onStateChangeRef = useRef(onStateChange);
+  onStateChangeRef.current = onStateChange;
+  const seenStateRef = useRef<RelayState | null>(null);
+  useEffect(() => {
+    if (state === null) {
+      return;
+    }
+    if (seenStateRef.current !== null && seenStateRef.current !== state) {
+      onStateChangeRef.current?.(state);
+    }
+    seenStateRef.current = state;
+  }, [state]);
 
   const reload = resource.reload;
   useEffect(() => {

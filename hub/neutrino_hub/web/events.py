@@ -71,6 +71,8 @@ class PanelEventBus:
         self._lock = threading.Lock()
         self._subscribers: list[tuple] = []
         self._published_at: dict[tuple, float] = {}
+        # The hints swallowed inside their window, each sent once at its end.
+        self._trailing: set[tuple] = set()
 
     def publish(
         self, event_type: str, key: str = "", data: "dict | None" = None
@@ -82,11 +84,16 @@ class PanelEventBus:
             key: The one thing the event is about, or empty.
             data: The reading to carry, for the types that carry one. An
                 event carrying one is never coalesced: a repeated hint says
-                nothing new, a repeated reading is the new value.
+                nothing new, a repeated reading is the new value. A hint
+                swallowed inside its window is sent once when the window
+                ends, so the last change is never the one lost.
         """
         if data is None and not self._claim(event_type, key):
             return
-        event = event_frame(event_type, key, data)
+        self._deliver(event_frame(event_type, key, data))
+
+    def _deliver(self, event: dict) -> None:
+        """Hand one event to every subscriber's own loop."""
         with self._lock:
             subscribers = list(self._subscribers)
         for queue, loop in subscribers:
@@ -131,6 +138,15 @@ class PanelEventBus:
                 published_at is not None
                 and now - published_at < WEB_EVENT_COALESCE_WINDOW_S
             ):
+                if pair not in self._trailing:
+                    self._trailing.add(pair)
+                    timer = threading.Timer(
+                        WEB_EVENT_COALESCE_WINDOW_S - (now - published_at),
+                        self._trail,
+                        args=pair,
+                    )
+                    timer.daemon = True
+                    timer.start()
                 return False
             self._published_at = {
                 seen: at
@@ -139,3 +155,10 @@ class PanelEventBus:
             }
             self._published_at[pair] = now
         return True
+
+    def _trail(self, event_type: str, key: str) -> None:
+        """Send the hint a window swallowed, and open a new window with it."""
+        with self._lock:
+            self._trailing.discard((event_type, key))
+            self._published_at[(event_type, key)] = time.monotonic()
+        self._deliver(event_frame(event_type, key))
