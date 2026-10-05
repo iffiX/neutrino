@@ -37,6 +37,7 @@ from neutrino_agent.modules.samba.applier import (
 )
 from neutrino_agent.modules.samba.config import SambaConfig
 from neutrino_agent.modules.samba.constants import (
+    SAMBA_ACCOUNT_REFUSALS,
     SAMBA_BINARY_NAME,
     SAMBA_COMMAND_SET_PASSWORD,
     SAMBA_CONF_PATH,
@@ -297,8 +298,14 @@ class SambaNativeServerRunner(ModuleRunner):
         shares = dict(record["shares"])
         shares.update({share.name: share.path for share in parsed.shares})
         self._write_record(dict(record, shares=shares))
+        refusal = None
         try:
             notes = self._applier.apply(parsed, dict(record, shares=shares))
+        except ModuleApplyError as error:
+            if error.code not in SAMBA_ACCOUNT_REFUSALS:
+                raise
+            refusal = error
+            notes = [f"passed over account {error.params.get('user', '')}"]
         except (OSError, subprocess.SubprocessError) as error:
             raise ModuleApplyError(
                 "apply_failed", {"detail": command_detail(error)[:500]}
@@ -321,6 +328,8 @@ class SambaNativeServerRunner(ModuleRunner):
         )
         self._config = parsed
         self._log("samba: " + "; ".join(notes or ["unchanged"]))
+        if refusal is not None:
+            raise refusal
 
     def stop(self) -> None:
         """Take the module's shares off the server; accounts and fence stay.

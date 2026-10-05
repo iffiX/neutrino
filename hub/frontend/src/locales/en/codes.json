@@ -262,6 +262,7 @@
   "code.user_unknown": "The user is not applied on this machine yet.",
   "code.user_name_taken": "This machine already has an account called {user} that the share module did not make.",
   "code.user_create_failed": "The machine would not make the account {user}: {detail}",
+  "code.user_record_unusable": "The Mac holds a record named {user} that is not a usable account, and macOS will not let the agent remove it ({detail}). Remove it as an administrator in System Settings, Users & Groups, or with sysadminctl -deleteUser {user} in Terminal, or pick another name. The other users and the shares are applied.",
   "code.validate_failed": "The machine will not take that configuration: {detail}",
   "code.vault_locked": "The vault is locked; unlock it to use stored credentials.",
   "code.vault_passphrase_needed": "Enter the vault passphrase this backup was sealed with.",

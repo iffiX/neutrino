@@ -455,7 +455,8 @@ class DesiredStateApplier:
         except ModuleInstallPending:
             return {"code": PENDING_CODE, "params": {}}
         except ModuleApplyError as error:
-            self._log(f"{name}: {error.code}")
+            said = " ".join(f"{key}={value}" for key, value in error.params.items())
+            self._log(f"{name}: {error.code} {said}".rstrip()[:500])
             return {"code": error.code, "params": dict(error.params)}
         except PlatformUnsupportedError:
             return {"code": "unsupported_platform", "params": {}}

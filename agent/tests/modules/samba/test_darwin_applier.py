@@ -661,3 +661,40 @@ def test_duplicate_points_are_one_share_in_the_status(applier, tools):
     status = applier.read_status({"shares": {"media": "/m"}})
 
     assert [share["name"] for share in status["shares"]] == ["media"]
+
+
+def test_a_bare_record_macos_will_not_delete_is_refused_and_the_rest_applied(
+    applier, tools
+):
+    """macOS 15 refuses the deletion even to root; that one user is refused
+    with the system's words, and bob and both shares are applied without it."""
+    tools.users["ann"] = {"RecordName": "ann", "IsHidden": "1"}
+    tools.failing.add(("dscl", ".", "-delete", "/Users/ann"))
+
+    with pytest.raises(ModuleApplyError) as refused:
+        applier.apply(CONFIG, {"accounts": ["ann"]})
+
+    assert refused.value.code == "user_record_unusable"
+    assert refused.value.params == {"user": "ann", "detail": "refused"}
+    assert tools.users["ann"] == {"RecordName": "ann", "IsHidden": "1"}
+    assert [call[2] for call in tools.ran("sysadminctl", "-addUser")] == ["bob"]
+    assert [call[2] for call in tools.ran("sharing", "-a")] == [
+        "/Volumes/data/media",
+        "/Volumes/data/docs",
+    ]
+    named = " ".join(" ".join(call) for call in tools.ran("chmod"))
+    assert "user:ann" not in named
+    assert "user:bob" in named
+
+
+def test_a_password_for_a_bare_record_macos_keeps_is_refused_with_its_words(
+    applier, tools
+):
+    tools.users["ann"] = {"RecordName": "ann"}
+    tools.failing.add(("dscl", ".", "-delete", "/Users/ann"))
+
+    with pytest.raises(ModuleApplyError) as refused:
+        applier.set_password("ann", "s3cret")
+
+    assert refused.value.code == "user_record_unusable"
+    assert tools.ran("dscl", ".", "-passwd") == []

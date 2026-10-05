@@ -58,6 +58,9 @@ SAMBA_DARWIN_SMBD_TARGET = "system/com.apple.smbd"
 SAMBA_DARWIN_SMBD_PLIST = "/System/Library/LaunchDaemons/com.apple.smbd.plist"
 # The start of the record name of every share point the module made.
 SAMBA_DARWIN_SHARE_PREFIX = "neutrino_"
+# The refusals of one account an apply on Windows or macOS makes once every
+# other account and every share is applied.
+SAMBA_ACCOUNT_REFUSALS = ("user_create_failed", "user_record_unusable")
 # The words every full name of an account the module made starts with;
 # the account's own name follows them, since sysadminctl refuses a second
 # account with a full name that exists. Accounts made before carry the

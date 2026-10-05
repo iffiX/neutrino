@@ -9,6 +9,10 @@ PowerShell detached from the service on Windows, and in a job submitted to
 launchd on macOS. Each writes what the installer said and how it exited
 beside the agent's state, in one shape, and the agent that install put on
 the machine reads it there and carries it up.
+
+launchd keeps a submitted job alive and runs it again every ten seconds,
+so the macOS job removes itself as its last act, and an agent that starts
+removes a job of that label that is not running.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -122,6 +126,7 @@ def install_command(kind: str, path: str, *, state_dir: str) -> list:
     if kind == "pkg":
         install = f"installer -pkg {shlex.quote(path)} -target /"
         script = _reporting_script(install, kind=kind, path=path, state_dir=state_dir)
+        script += f"\nlaunchctl remove {AGENT_UPDATE_UNIT}"
         return [
             "launchctl",
             "submit",
@@ -148,6 +153,40 @@ def install_command(kind: str, path: str, *, state_dir: str) -> list:
         + setenv
         + ["sh", "-c", script]
     )
+
+
+def remove_stale_job(kind: str) -> bool:
+    """Remove a submitted update job launchd still holds and is not running.
+
+    A job an earlier build submitted stays with launchd and runs its
+    install again every ten seconds. One that is running now is the install
+    that is starting this agent, and is left to end and remove itself.
+
+    Args:
+        kind: The machine's package kind; only ``pkg`` submits a job.
+
+    Returns:
+        Whether a job was removed.
+    """
+    if kind != "pkg":
+        return False
+    try:
+        held = subprocess.run(
+            ["launchctl", "print", f"system/{AGENT_UPDATE_UNIT}"],
+            capture_output=True,
+            text=True,
+            timeout=AGENT_UPDATE_LAUNCH_TIMEOUT_S,
+        )
+        if held.returncode != 0 or "state = running" in (held.stdout or ""):
+            return False
+        subprocess.run(
+            ["launchctl", "remove", AGENT_UPDATE_UNIT],
+            capture_output=True,
+            timeout=AGENT_UPDATE_LAUNCH_TIMEOUT_S,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return True
 
 
 def read_reinstall_result(state_dir: str) -> "dict | None":
