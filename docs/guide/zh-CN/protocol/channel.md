@@ -101,17 +101,17 @@ title: 通道
 
 ### 帧
 
-| 帧        | 方向 | 内容                                        |
-| --------- | ---- | ------------------------------------------- |
-| `hello`   | 上行 | 身份卡，带 `token`                          |
-| `welcome` | 下行 | 中枢的身份卡                                |
-| `refused` | 下行 | `{code, params}`，随后以 4000 关闭          |
-| `state`   | 下行 | `{hash, ...sections}`：应当成立的状态       |
-| `report`  | 上行 | `{state_hash, ...sections}`：实际的状态     |
-| `open`    | 双向 | `{stream, kind, ...args}`：一个流开始       |
-| `close`   | 双向 | `{stream, code, params}`：流结束，带着结果  |
-| `credit`  | 双向 | `{stream, bytes}`：发送方还能再发这么多字节 |
-| 二进制    | 双向 | `<u32 stream id><bytes>`                    |
+| 帧        | 方向 | 内容                                                                                        |
+| --------- | ---- | ------------------------------------------------------------------------------------------- |
+| `hello`   | 上行 | 身份卡，带 `token`                                                                          |
+| `welcome` | 下行 | 中枢的身份卡                                                                                |
+| `refused` | 下行 | `{code, params}`，随后以 4000 关闭                                                          |
+| `state`   | 下行 | `{hash, ...sections}`：应当成立的状态                                                       |
+| `report`  | 上行 | `{state_hash, ...sections}`：实际的状态                                                     |
+| `open`    | 双向 | `{stream, kind, ...args}`：一个流开始                                                       |
+| `close`   | 双向 | `{stream, code, params}`：流结束，带着结果                                                  |
+| `credit`  | 双向 | `{stream, bytes}`：发送方还能再发这么多字节                                                 |
+| 二进制    | 双向 | `<u32 stream id><bytes>`；UDP 的 `connect` 流上是 `<u32 stream id><u16 source><一个数据报>` |
 
 中枢每 20 秒发一次 ping，pong 迟到超过 20 秒就断开套接字。被控端和客户端 45 秒收不到任何东西就认为套接字已断，按 5～60 秒的退避间隔重连。
 
@@ -216,7 +216,7 @@ title: 通道
 | `type` | `payload`                                                                                                                             |
 | ------ | ------------------------------------------------------------------------------------------------------------------------------------- |
 | `web`  | `{url, is_token_required}`；只有 VS Code、code-server 和 CloudCLI 实例带 `is_token_required` 且为真                                   |
-| `port` | `{host, port}`                                                                                                                        |
+| `port` | `{host, port, protocol}`；`protocol` 是 `tcp` 或 `udp`，没有这一项就是 `tcp`。同一个端口号两种协议都用时，是两个条目                  |
 | `ai`   | `{endpoint, protocol, models}`，`protocol` 是 `openai`                                                                                |
 | `file` | `{protocol, host, share, users}`，`protocol` 是 `smb`                                                                                 |
 | `rdp`  | `{protocol, host, port, attention, platform_os}`，`protocol` 是 `rustdesk`，`platform_os` 是共享机器的 `linux`、`windows` 或 `darwin` |
@@ -259,7 +259,7 @@ payload 里的 `host`、`port`、`url` 和 `endpoint` 是服务在中枢网络�
 
 ### connect 流
 
-`open {kind: connect, id}` 承载到一个已发布条目的一条 TCP 连接，`open {kind: connect, is_panel: true}` 承载到中枢自己面板的一条。客户端的本地监听每接受一条连接，就开一个流；条目 payload 里的地址，客户端一个也不拨。中枢做 service 流的那些检查，流的上限也在其中；这里没有 `vault_locked`：
+`open {kind: connect, id}` 承载到一个已发布条目的一条 TCP 连接，`open {kind: connect, is_panel: true}` 承载到中枢自己面板的一条。客户端的本地监听每接受一条连接，就开一个流；UDP 的 `port` 条目连接期间只开一个流。条目 payload 里的地址，客户端一个也不拨。中枢做 service 流的那些检查，流的上限也在其中；这里没有 `vault_locked`：
 
 | `code`                         | 什么时候                                                                |
 | ------------------------------ | ----------------------------------------------------------------------- |
@@ -281,6 +281,8 @@ payload 里的 `host`、`port`、`url` 和 `endpoint` 是服务在中枢网络�
 | 面板               | 中枢回环上面板的 HTTP 端口，不跳转到 HTTPS |
 
 字节以二进制帧双向传送，受额度约束，窗口和单帧大小与 `shell` 流相同。任一端读到文件结束，读到的字节发完后，流以空 params 关闭；收到 close 的一方写完手上的字节，再关自己的套接字。流没有半关闭；客户端的套接字断了，上面所有 `connect` 流一并结束。
+
+UDP 流上每个二进制帧是一个数据报，前面是它的 `source`：大端 `u16`，即数据报在客户端机器上的发出端口。回复带着它所回复的 `source`。额度不够一帧的一方直接丢掉这个数据报；某个 `source` 60 秒没有数据报来往，远端就把它忘掉。
 
 ### shell 与 command 流
 
@@ -306,7 +308,7 @@ payload 里的 `host`、`port`、`url` 和 `endpoint` 是服务在中枢网络�
 | `urls`    | 中枢提供通道的每个地址                         |                                                                           |
 | `error`   |                                                | `{code, params}`：被控端最近一次值得显示的失败                            |
 
-被控端每 5 秒汇报一次。中枢向它打开 `shell`、`file`、`command` 和 `connect` 流，它向中枢打开 `log` 和 `package` 流。一个 `connect {port}` 流是被控端在 `127.0.0.1` 上拨出的一条 TCP 连接；容器端口只发布在某一个地址上时，拨那个地址。机器此刻没有发布的端口以 `port_not_published {port}` 关闭，拨不通以 `connect_failed {reason}` 关闭。
+被控端每 5 秒汇报一次。中枢向它打开 `shell`、`file`、`command` 和 `connect` 流，它向中枢打开 `log` 和 `package` 流。一个 `connect {port, protocol}` 流是被控端在 `127.0.0.1` 上拨出的一条 TCP 连接，容器端口只发布在某一个地址上时拨那个地址；UDP 条目则是发往那个端口的全部数据报。没有 `protocol` 就是 `tcp`。机器此刻没有在这个协议上发布的端口以 `port_not_published {port}` 关闭，拨不通以 `connect_failed {reason}` 关闭。
 
 ## 拒绝与绑定
 

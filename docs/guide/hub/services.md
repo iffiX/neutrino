@@ -16,7 +16,7 @@ The page shows four groups. A shared desktop is the fifth kind, and it appears i
 | -------------- | ----------------- | ------------------------------------------------------- | ---------------------------- |
 | Web            | **Web**           | Gitea, VS Code, code-server, CloudCLI, or a declaration | **Open**                     |
 | Port           | **Ports**         | a container's published port, or a declaration          | **Connect**                  |
-| AI             | **AI**            | the hub's AI gateway                                    | **Config**                   |
+| AI             | **AI**            | the hub's AI gateway                                    | **Configure**                |
 | File           | **Files**         | the file share module, or a declaration                 | **Mount**                    |
 | Remote desktop | none              | a machine running `nagent rdp start`                    | **Connect**                  |
 
@@ -46,11 +46,12 @@ A client opens the entry at its own forward on the computer's loopback, with a t
 
 ## Declare a service by hand
 
-A declaration publishes something the hub does not manage: a web page, a TCP port, or an SMB share on another server.
+A declaration publishes something the hub does not manage: a web page, a TCP or UDP port, or an SMB share on another server.
 
 1. Select **Declare service**.
 1. Fill **Name** and pick the **Kind**: **Web**, **Port** or **File**.
 1. Fill **Host** and **Port**.
+1. If the kind is **Port**, pick the **Protocol**: **TCP**, the default, or **UDP**.
 1. If the kind is **Web**, pick the **Scheme** and fill the **Path**.
 1. If the kind is **File**, select **Scan host** to list the server's shares, or type each name under **Shares**.
 1. Optional: fill **Description**.
@@ -60,7 +61,17 @@ A declaration publishes something the hub does not manage: a web page, a TCP por
 
 A file service with no port uses 445, and each share becomes its own row. A host of `127.0.0.1`, `localhost` or `0.0.0.0` means the hub itself. Each client receives it as the address it reaches the hub on.
 
+A port number used on both protocols is declared twice, once for each.
+
 **Delete** on a declared row removes the declaration and every row it published. The machine it points at is untouched.
+
+## UDP ports
+
+A UDP port is a **Port** entry of its own, from a declaration with the protocol **UDP** or from a container port published with `/udp`. Its row shows its address as `host:port/udp`. A client forwards it to a UDP port on its own `127.0.0.1`, and a program there sends its datagrams to that address.
+
+Every stream a client opens goes through one TCP connection to the hub. A lost packet therefore holds up every stream on that connection until it is sent again, the UDP ones too. A UDP port through the hub suits question-and-answer traffic of small volume: DNS, time, discovery, a small game server.
+
+Voice, video and fast games need a direct path to the machine. You set it up as a subnet route in the overlay's own console, NetBird's or EasyTier's. The hub lists the networks it serves for that, and manages no route.
 
 ## Health
 
@@ -71,4 +82,4 @@ The badge beside the title counts healthy rows against all rows, as **3 of 4 hea
 | **module**   | **serving**, **not serving**                                   |
 | **declared** | **reachable**, **unreachable**, **checking…**, **not checked** |
 
-The hub checks a declared row by connecting to it. It opens a TCP connection to a port, sends a GET to a web page, and reads a file server's share list. **Test** checks the row again now. A share the server hides from anonymous listing reads as healthy, with a line saying the name is not verified. In a client, an unhealthy entry is greyed and reads **not reachable now**.
+The hub checks a declared row by connecting to it. It opens a TCP connection to a TCP port, sends a GET to a web page, and reads a file server's share list. A UDP port has no connection to try, so the hub does not check it: its row reads **not checked**, and clients can still use it. **Test** checks the row again now. A share the server hides from anonymous listing reads as healthy, with a line saying the name is not verified. In a client, an unhealthy entry is greyed and reads **not reachable now**.

@@ -101,17 +101,17 @@ A client joined to several hubs groups them by the hub's `id` and labels them by
 
 ### The frames
 
-| Frame     | Direction | Body                                                  |
-| --------- | --------- | ----------------------------------------------------- |
-| `hello`   | up        | the identity card, with `token`                       |
-| `welcome` | down      | the hub's identity card                               |
-| `refused` | down      | `{code, params}`, then close 4000                     |
-| `state`   | down      | `{hash, ...sections}`: what is to be true             |
-| `report`  | up        | `{state_hash, ...sections}`: what is true             |
-| `open`    | both      | `{stream, kind, ...args}`: a stream begins            |
-| `close`   | both      | `{stream, code, params}`: it ends, with its result    |
-| `credit`  | both      | `{stream, bytes}`: the sender can send that many more |
-| binary    | both      | `<u32 stream id><bytes>`                              |
+| Frame     | Direction | Body                                                                                            |
+| --------- | --------- | ----------------------------------------------------------------------------------------------- |
+| `hello`   | up        | the identity card, with `token`                                                                 |
+| `welcome` | down      | the hub's identity card                                                                         |
+| `refused` | down      | `{code, params}`, then close 4000                                                               |
+| `state`   | down      | `{hash, ...sections}`: what is to be true                                                       |
+| `report`  | up        | `{state_hash, ...sections}`: what is true                                                       |
+| `open`    | both      | `{stream, kind, ...args}`: a stream begins                                                      |
+| `close`   | both      | `{stream, code, params}`: it ends, with its result                                              |
+| `credit`  | both      | `{stream, bytes}`: the sender can send that many more                                           |
+| binary    | both      | `<u32 stream id><bytes>`; on a UDP `connect` stream `<u32 stream id><u16 source><one datagram>` |
 
 The hub pings every 20 seconds and drops a socket whose pong is more than 20 seconds late. Agents and clients treat 45 seconds of silence as a dead socket and reconnect with a backoff from 5 to 60 seconds.
 
@@ -216,7 +216,7 @@ Each entry of `services` is `{id, type, title, payload, is_healthy, source, desc
 | `type` | `payload`                                                                                                                                         |
 | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `web`  | `{url, is_token_required}`; `is_token_required` is present and true on a VS Code, code-server or CloudCLI instance only                           |
-| `port` | `{host, port}`                                                                                                                                    |
+| `port` | `{host, port, protocol}`; `protocol` is `tcp` or `udp`, and a payload without it is `tcp`. A number used on both protocols is two entries         |
 | `ai`   | `{endpoint, protocol, models}`, `protocol` being `openai`                                                                                         |
 | `file` | `{protocol, host, share, users}`, `protocol` being `smb`                                                                                          |
 | `rdp`  | `{protocol, host, port, attention, platform_os}`, `protocol` being `rustdesk`, `platform_os` the sharing machine's `linux`, `windows` or `darwin` |
@@ -259,7 +259,7 @@ A close with no code carries the material. A client opens a `web` entry with `is
 
 ### The connect stream
 
-`open {kind: connect, id}` carries one TCP connection to one published entry, and `open {kind: connect, is_panel: true}` carries one to the hub's own panel. A client opens one stream for each connection its local listener accepts, and it dials no address an entry's payload names. The hub runs the service stream's checks with the stream limit among them; `vault_locked` has no place here:
+`open {kind: connect, id}` carries one TCP connection to one published entry, and `open {kind: connect, is_panel: true}` carries one to the hub's own panel. A client opens one stream for each connection its local listener accepts, and one stream for as long as a UDP `port` entry is connected. It dials no address an entry's payload names. The hub runs the service stream's checks with the stream limit among them; `vault_locked` has no place here:
 
 | `code`                         | Given when                                                                                           |
 | ------------------------------ | ---------------------------------------------------------------------------------------------------- |
@@ -281,6 +281,8 @@ A close with no code carries the material. A client opens a `web` entry with `is
 | the panel                     | the panel's HTTP port on the hub's loopback, with no HTTPS redirect |
 
 Bytes travel as binary frames both ways under credit, with the window and frame size of a `shell` stream. End of file on either end closes the stream with empty params once everything read is sent, and the side that receives the close writes what it holds and closes its own socket. A stream has no half-close, and a client socket that ends ends every `connect` stream on it.
+
+On a UDP stream each binary frame is one datagram, preceded by its `source`: a big-endian `u16`, the port the datagram left from on the client's machine. A reply carries the `source` it answers. A side that holds too little credit for a frame drops the datagram, and the far end forgets a `source` that is quiet for 60 seconds.
 
 ### The shell and command streams
 
@@ -306,7 +308,7 @@ An agent's documents carry these sections; the `modules` entries come from the h
 | `urls`    | every address the hub serves the channel on    |                                                                           |
 | `error`   |                                                | `{code, params}`: the agent's most recent failure worth showing           |
 
-An agent reports every 5 seconds. The hub opens `shell`, `file`, `command` and `connect` streams to it, and the agent opens `log` and `package` streams to the hub. A `connect {port}` stream is one TCP connection the agent dials on `127.0.0.1`, or on the one address a container port is published on; a port the machine does not publish at that moment closes with `port_not_published {port}`, and a failed dial with `connect_failed {reason}`.
+An agent reports every 5 seconds. The hub opens `shell`, `file`, `command` and `connect` streams to it, and the agent opens `log` and `package` streams to the hub. A `connect {port, protocol}` stream is one TCP connection the agent dials on `127.0.0.1`, or on the one address a container port is published on, or every datagram of one UDP entry to that port; `protocol` absent is `tcp`. A port the machine does not publish on that protocol at that moment closes with `port_not_published {port}`, and a failed dial with `connect_failed {reason}`.
 
 ## Refusals and the binding
 
