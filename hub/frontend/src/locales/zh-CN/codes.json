@@ -325,5 +325,6 @@
   "code.setup_in_progress": "这个中枢已在配置中。",
   "code.gateway_not_serving": "中枢的 AI 网关还没有可用的模型，先到 AI 页设置好。",
   "code.switch_failed": "cc-switch 没能把工具指向网关：{detail}",
-  "code.bundle_missing": "此安装未包含 {binary}，请重新安装被控端。"
+  "code.cc_switch_download_failed": "这台机器没能从中枢取得 cc-switch：{detail}",
+  "code.hub_release_file_gone": "中枢自己的发布已不再带有这个文件，请把中枢更新到最新发布"
 }
