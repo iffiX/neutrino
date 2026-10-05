@@ -1,7 +1,7 @@
 """Staging the payload both agent packages carry.
 
 The deb and the rpm ship the same thing — an interpreter with the agent
-installed beside it — and differ only in how their format wants that
+installed beside it, the RustDesk host and the cc-switch CLI — and differ only in how their format wants that
 described. What they have in common lives here so it cannot drift two ways.
 
 The interpreter is carried rather than depended on, the hub package's own
@@ -30,7 +30,9 @@ from constants import PACKAGING_GLIBC_FLOOR
 SHARED_PACKAGING_DIR = Path(__file__).resolve().parents[2] / "packaging"
 if str(SHARED_PACKAGING_DIR) not in sys.path:
     sys.path.insert(0, str(SHARED_PACKAGING_DIR))
+from shared import cc_switch_assets  # noqa: E402
 from shared import edition_build  # noqa: E402
+from shared.constants import PACKAGING_CC_SWITCH_LICENSE  # noqa: E402
 
 AGENT_ROOT = Path(__file__).resolve().parent.parent
 REPO_ROOT = AGENT_ROOT.parent
@@ -45,6 +47,9 @@ GLIBC_VERSION = re.compile(r"GLIBC_(\d+)\.(\d+)")
 # may run both, and removing either deletes only its own.
 INSTALL_PREFIX = Path("/opt/neutrino/agent")
 PYTHON_DIR = INSTALL_PREFIX / "python"
+# The cc-switch CLI the agent runs as each account its AI tools setting
+# names.
+CC_SWITCH_PATH = INSTALL_PREFIX / "bin" / "cc-switch"
 
 # The interpreter the Linux packages carry, pinned by hash. The same build the
 # hub's packages carry, so one machine running both carries two copies of one
@@ -116,7 +121,7 @@ RUSTDESK_UNIT_NAME = "rustdesk.service"
 
 # The licences of what the agent packages carry, by the file name they have
 # in the repository's own ``licenses/``.
-CARRIED_LICENSES = ("rustdesk.txt",)
+CARRIED_LICENSES = ("rustdesk.txt", PACKAGING_CC_SWITCH_LICENSE)
 
 # What each packaging format calls the machine, mapped to what the interpreter
 # release calls it. 32-bit ARM is not on the list: no interpreter is published
@@ -329,6 +334,25 @@ def stage_rustdesk(tree: Path, architecture: str, kind: str) -> None:
     link.parent.mkdir(parents=True, exist_ok=True)
     link.unlink(missing_ok=True)
     link.symlink_to(RUSTDESK_VENDOR_DIR / RUSTDESK_BINARY_NAME)
+
+
+def stage_cc_switch(tree: Path, architecture: str) -> Path:
+    """Put the pinned cc-switch CLI into a Linux package tree.
+
+    Args:
+        tree: The staging directory standing in for the filesystem root.
+        architecture: The architecture, named however the format names it.
+
+    Returns:
+        The staged binary.
+
+    Raises:
+        SystemExit: When the machine is not one the agent is published for,
+            nothing is pinned for it, or what arrived is not what was pinned.
+    """
+    return cc_switch_assets.stage(
+        tree / str(CC_SWITCH_PATH).lstrip("/"), "linux", machine_name(architecture)
+    )
 
 
 def stage_licenses(tree: Path) -> None:

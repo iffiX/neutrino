@@ -88,7 +88,7 @@ def test_the_edition_the_build_was_asked_for_is_stamped_beside_it(
 
 def test_the_versions_of_what_the_package_carries_are_stamped_beside_it(tmp_path):
     import bundled
-    from shared import rustdesk_assets
+    from shared import constants, rustdesk_assets
 
     staged = payload.stage_client_tree(tmp_path / "site-packages", "9.9.9")
 
@@ -101,7 +101,7 @@ def test_the_versions_of_what_the_package_carries_are_stamped_beside_it(tmp_path
         **parts,
         "easytier": bundled.EASYTIER_VERSION,
         "rustdesk": rustdesk_assets.RUSTDESK_VERSION,
-        "cc-switch": bundled.CC_SWITCH_VERSION,
+        "cc-switch": constants.PACKAGING_CC_SWITCH_VERSION,
     }
     assert "tun2socks" not in stamped["CLIENT_CARRIED_VERSIONS"]
 

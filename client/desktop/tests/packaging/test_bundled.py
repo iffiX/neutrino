@@ -14,7 +14,7 @@ import pytest
 
 import bundled
 import payload
-from shared import rustdesk_assets
+from shared import cc_switch_assets, constants, rustdesk_assets
 
 MACHINES = ("x86_64", "aarch64")
 
@@ -68,13 +68,14 @@ def downloads(monkeypatch):
         if "easytier" in url:
             return _easytier_zip(url)
         if url.endswith(".zip"):
-            return _zip(bundled.CC_SWITCH_WINDOWS_BINARY_NAME)
+            return _zip(constants.PACKAGING_CC_SWITCH_WINDOWS_BINARY_NAME)
         if url.endswith(".tar.gz"):
-            return _tarball(bundled.CC_SWITCH_BINARY_NAME)
+            return _tarball(constants.PACKAGING_CC_SWITCH_BINARY_NAME)
         return b"MZ"
 
     monkeypatch.setattr(bundled.payload, "fetch", fetch)
     monkeypatch.setattr(rustdesk_assets, "_fetch", fetch)
+    monkeypatch.setattr(cc_switch_assets, "_fetch", fetch)
     monkeypatch.setattr(bundled.hub_assets, "fetch", fetch)
     return asked
 
@@ -127,7 +128,10 @@ def attached_image(monkeypatch):
 
 @pytest.mark.parametrize("machine", MACHINES)
 def test_every_linux_machine_has_both_binaries_pinned(machine):
-    for assets in (bundled.CC_SWITCH_ASSETS, rustdesk_assets.RUSTDESK_ASSETS):
+    for assets in (
+        constants.PACKAGING_CC_SWITCH_ASSETS,
+        rustdesk_assets.RUSTDESK_ASSETS,
+    ):
         asset, digest = assets[("linux", machine)]
         assert asset
         assert len(digest) == 64
@@ -135,7 +139,10 @@ def test_every_linux_machine_has_both_binaries_pinned(machine):
 
 
 def test_windows_has_both_binaries_pinned():
-    for assets in (bundled.CC_SWITCH_ASSETS, rustdesk_assets.RUSTDESK_ASSETS):
+    for assets in (
+        constants.PACKAGING_CC_SWITCH_ASSETS,
+        rustdesk_assets.RUSTDESK_ASSETS,
+    ):
         asset, digest = assets[("windows", "x86_64")]
         assert asset
         assert len(digest) == 64
@@ -143,7 +150,10 @@ def test_windows_has_both_binaries_pinned():
 
 @pytest.mark.parametrize("machine", ["aarch64", "x86_64"])
 def test_both_mac_architectures_have_both_binaries_pinned(machine):
-    for assets in (bundled.CC_SWITCH_ASSETS, rustdesk_assets.RUSTDESK_ASSETS):
+    for assets in (
+        constants.PACKAGING_CC_SWITCH_ASSETS,
+        rustdesk_assets.RUSTDESK_ASSETS,
+    ):
         asset, digest = assets[("darwin", machine)]
         assert asset
         assert len(digest) == 64
@@ -151,11 +161,23 @@ def test_both_mac_architectures_have_both_binaries_pinned(machine):
 
 
 def test_the_linux_switcher_is_the_musl_build_and_windows_is_the_zip():
-    assert bundled.CC_SWITCH_ASSETS[("linux", "x86_64")][0].endswith("-musl.tar.gz")
-    assert bundled.CC_SWITCH_ASSETS[("linux", "aarch64")][0].endswith("-musl.tar.gz")
-    assert bundled.CC_SWITCH_ASSETS[("windows", "x86_64")][0].endswith(".zip")
-    assert bundled.CC_SWITCH_ASSETS[("darwin", "aarch64")][0] == "darwin-arm64.tar.gz"
-    assert bundled.CC_SWITCH_ASSETS[("darwin", "x86_64")][0] == "darwin-x64.tar.gz"
+    assert constants.PACKAGING_CC_SWITCH_ASSETS[("linux", "x86_64")][0].endswith(
+        "-musl.tar.gz"
+    )
+    assert constants.PACKAGING_CC_SWITCH_ASSETS[("linux", "aarch64")][0].endswith(
+        "-musl.tar.gz"
+    )
+    assert constants.PACKAGING_CC_SWITCH_ASSETS[("windows", "x86_64")][0].endswith(
+        ".zip"
+    )
+    assert (
+        constants.PACKAGING_CC_SWITCH_ASSETS[("darwin", "aarch64")][0]
+        == "darwin-arm64.tar.gz"
+    )
+    assert (
+        constants.PACKAGING_CC_SWITCH_ASSETS[("darwin", "x86_64")][0]
+        == "darwin-x64.tar.gz"
+    )
 
 
 def test_the_viewer_is_the_flutter_build_and_never_the_old_frontend():
@@ -171,9 +193,9 @@ def test_the_viewer_is_the_flutter_build_and_never_the_old_frontend():
 
 
 def test_the_urls_name_the_versions_the_pins_are_for():
-    switcher = bundled.CC_SWITCH_URL.format(
-        version=bundled.CC_SWITCH_VERSION,
-        asset=bundled.CC_SWITCH_ASSETS[("linux", "x86_64")][0],
+    switcher = constants.PACKAGING_CC_SWITCH_URL.format(
+        version=constants.PACKAGING_CC_SWITCH_VERSION,
+        asset=constants.PACKAGING_CC_SWITCH_ASSETS[("linux", "x86_64")][0],
     )
     viewer = rustdesk_assets.RUSTDESK_URL.format(
         version=rustdesk_assets.RUSTDESK_VERSION,
@@ -181,7 +203,7 @@ def test_the_urls_name_the_versions_the_pins_are_for():
     )
 
     assert switcher.endswith(
-        f"v{bundled.CC_SWITCH_VERSION}/cc-switch-cli-v{bundled.CC_SWITCH_VERSION}"
+        f"v{constants.PACKAGING_CC_SWITCH_VERSION}/cc-switch-cli-v{constants.PACKAGING_CC_SWITCH_VERSION}"
         "-linux-x64-musl.tar.gz"
     )
     assert viewer.endswith(f"{rustdesk_assets.RUSTDESK_VERSION}-x86_64.deb")
@@ -344,7 +366,9 @@ def test_an_archive_carrying_no_binary_is_refused(tmp_path, monkeypatch):
     def fetch(url, digest, what):
         return _tarball("something-else")
 
-    monkeypatch.setattr(bundled.payload, "fetch", fetch)
+    monkeypatch.setattr(
+        cc_switch_assets, "_fetch", lambda url, digest: fetch(url, digest, "")
+    )
 
     with pytest.raises(SystemExit) as refused:
         bundled._stage_cc_switch(tmp_path / "bin" / "cc-switch", "linux", "x86_64")
@@ -367,7 +391,7 @@ def test_the_install_paths_are_the_ones_the_runtime_resolver_reads():
         f"{bundled.RUSTDESK_INSTALL_DIR}/{bundled.RUSTDESK_BINARY_NAME}"
     )
     assert CLIENT_BUNDLED_PATHS_WINDOWS["cc-switch"] == (
-        f"bin\\{bundled.CC_SWITCH_WINDOWS_BINARY_NAME}"
+        f"bin\\{constants.PACKAGING_CC_SWITCH_WINDOWS_BINARY_NAME}"
     )
     assert CLIENT_BUNDLED_PATHS_WINDOWS["rustdesk"] == (
         f"bin\\{rustdesk_assets.RUSTDESK_WINDOWS_BINARY_NAME}"

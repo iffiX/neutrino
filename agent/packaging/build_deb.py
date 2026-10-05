@@ -200,6 +200,7 @@ def _lay_out(tree: Path, version: str, architecture: str, maintainer: str) -> No
     payload.compile_bytecode(staged_python, payload.PYTHON_DIR)
     payload.strip_build_paths(staged_python, tree)
     payload.stage_rustdesk(tree, architecture, "deb")
+    payload.stage_cc_switch(tree, architecture)
     payload.stage_licenses(tree)
     payload.require_glibc_floor(tree)
 

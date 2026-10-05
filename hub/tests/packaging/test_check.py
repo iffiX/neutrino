@@ -278,7 +278,9 @@ def test_the_linux_hub_check_reads_dnf_scriptlet_words_from_its_error_stream(
     assert calls[0][-1].startswith("dnf -y install ")
 
 
-def _macos_agent_check(check, monkeypatch, tmp_path, *, is_foreign_taken):
+def _macos_agent_check(
+    check, monkeypatch, tmp_path, *, is_foreign_taken, is_cc_switch_kept=False
+):
     """Run the macOS agent check with the Mac stood in for.
 
     ``nagent service uninstall`` is faked to delete the module's plist, the
@@ -288,6 +290,8 @@ def _macos_agent_check(check, monkeypatch, tmp_path, *, is_foreign_taken):
     foreign = tmp_path / "com.neutrino.hub_check.plist"
     command = tmp_path / "nagent"
     command.write_text("")
+    switcher = tmp_path / "cc-switch"
+    switcher.write_text("")
     ran = []
 
     def sudo(arguments):
@@ -297,12 +301,16 @@ def _macos_agent_check(check, monkeypatch, tmp_path, *, is_foreign_taken):
         if arguments[1:] == ["service", "uninstall", "--yes"]:
             added.unlink()
             command.unlink()
+            if not is_cc_switch_kept:
+                switcher.unlink()
             if is_foreign_taken:
                 foreign.unlink()
 
     monkeypatch.setattr(check, "AGENT_MACOS_ADDED_PLIST", added)
     monkeypatch.setattr(check, "AGENT_MACOS_FOREIGN_PLIST", foreign)
     monkeypatch.setattr(check, "AGENT_MACOS_COMMAND", str(command))
+    monkeypatch.setattr(check, "AGENT_MACOS_CC_SWITCH", str(switcher))
+    monkeypatch.setattr(check, "_darwin_cc_switch_problem", lambda path: "")
     monkeypatch.setattr(check, "AGENT_MACOS_ROOT_MODES", {})
     monkeypatch.setattr(check, "_require_host", lambda platform, name: None)
     monkeypatch.setattr(check, "_sudo", sudo)
@@ -455,3 +463,148 @@ def test_a_client_data_tree_with_no_log_folder_fails_the_check(check, client_dat
 
     with pytest.raises(SystemExit, match="no .*log"):
         check._check_client_windows_data()
+
+
+# --- the cc-switch every agent package carries ---
+
+
+def _agent_linux_output(check, owner="0", mode="755", version=None):
+    version = version or check.CC_SWITCH_VERSION_LINE
+    return (
+        "Setting up neutrino-agent (0.5.0) ...\n"
+        f"{check.CC_SWITCH_LINE}{owner} {mode}\n"
+        f"{check.CC_SWITCH_LINE}{version}\n"
+        "nagent 0.5.0\n"
+    )
+
+
+def test_the_linux_agent_check_reads_cc_switch_before_nagent(
+    check, monkeypatch, tmp_path
+):
+    calls = []
+    monkeypatch.setattr(
+        check.shutil,
+        "which",
+        lambda name: "/usr/bin/docker" if name == "docker" else None,
+    )
+    monkeypatch.setattr(
+        check.subprocess,
+        "run",
+        _fake_container_run(_agent_linux_output(check), calls),
+    )
+    package = tmp_path / "neutrino-agent_0.5.0_arm64.deb"
+    package.write_bytes(b"deb")
+
+    check.check_linux(package)
+
+    script = calls[0][-1]
+    assert (
+        f"stat -c '{check.CC_SWITCH_LINE}%u %a' /opt/neutrino/agent/bin/cc-switch"
+        in script
+    )
+    assert script.index("/opt/neutrino/agent/bin/cc-switch --version") < script.index(
+        "nagent --version"
+    )
+    assert script.endswith(" && nagent --version")
+
+
+def test_the_linux_hub_and_client_checks_ask_nothing_of_cc_switch_in_bin(
+    check, monkeypatch, tmp_path
+):
+    calls = []
+    monkeypatch.setattr(
+        check.shutil,
+        "which",
+        lambda name: "/usr/bin/docker" if name == "docker" else None,
+    )
+    monkeypatch.setattr(
+        check.subprocess, "run", _fake_container_run("nclient 0.5.0\n", calls)
+    )
+    package = tmp_path / "neutrino-client_0.5.0_amd64.deb"
+    package.write_bytes(b"deb")
+
+    check.check_linux(package)
+
+    assert check.AGENT_LINUX_CC_SWITCH not in calls[0][-1]
+
+
+@pytest.mark.parametrize(
+    ("owner", "mode", "version", "said"),
+    [
+        ("0", "755", None, ""),
+        ("1000", "755", None, "cc-switch is not owned by root or the administrators"),
+        ("0", "775", None, "cc-switch can be changed by accounts other than its owner"),
+        ("0", "757", None, "cc-switch can be changed by accounts other than its owner"),
+        ("0", "750", None, "cc-switch cannot be run by every account"),
+        (
+            "0",
+            "755",
+            "cc-switch 5.0.0",
+            "cc-switch --version printed 'cc-switch 5.0.0'",
+        ),
+    ],
+)
+def test_the_linux_agent_s_cc_switch_is_root_s_and_every_account_s_to_run(
+    check, owner, mode, version, said
+):
+    problem = check.linux_cc_switch_problem(
+        _agent_linux_output(check, owner, mode, version)
+    )
+
+    assert problem.startswith(said)
+    assert bool(problem) == bool(said)
+
+
+def test_a_linux_agent_that_printed_nothing_of_cc_switch_fails(check):
+    assert check.linux_cc_switch_problem("nagent 0.5.0\n") == (
+        "/opt/neutrino/agent/bin/cc-switch printed no owner, mode and version"
+    )
+
+
+def test_the_pinned_version_is_the_one_the_check_expects(check):
+    from shared.constants import PACKAGING_CC_SWITCH_VERSION
+
+    assert check.CC_SWITCH_VERSION_LINE == f"cc-switch {PACKAGING_CC_SWITCH_VERSION}"
+
+
+@pytest.mark.parametrize(
+    ("answer", "said"),
+    [
+        ("S-1-5-32-544 False True", ""),
+        ("S-1-5-18 False True", ""),
+        ("S-1-5-21-1-2-3-1001 False True", "cc-switch is not owned"),
+        ("S-1-5-32-544 True True", "cc-switch can be changed"),
+        ("S-1-5-32-544 False False", "cc-switch cannot be run"),
+    ],
+)
+def test_the_windows_agent_s_cc_switch_is_the_administrators_and_the_users_to_run(
+    check, answer, said
+):
+    problem = check.windows_cc_switch_problem(answer, check.CC_SWITCH_VERSION_LINE)
+
+    assert problem.startswith(said)
+    assert bool(problem) == bool(said)
+
+
+def test_the_windows_acl_script_names_every_account_by_sid(check):
+    everyone = ", ".join(f"'{sid}'" for sid in check.WINDOWS_EVERY_ACCOUNT_SIDS)
+    script = check.WINDOWS_CC_SWITCH_ACL_SCRIPT.format(
+        path=check.AGENT_WINDOWS_CC_SWITCH, everyone=everyone
+    )
+
+    assert "'S-1-5-32-545'" in script
+    assert "'S-1-1-0'" in script
+    assert str(check.AGENT_WINDOWS_CC_SWITCH) in script
+    assert "{" not in script.replace("{ $_", "").replace("{ ([int]", "")
+
+
+def test_the_macos_agent_check_fails_when_cc_switch_outlives_the_removal(
+    check, monkeypatch, tmp_path
+):
+    with pytest.raises(SystemExit) as failed:
+        _macos_agent_check(
+            check, monkeypatch, tmp_path, is_foreign_taken=False, is_cc_switch_kept=True
+        )
+
+    assert "outlived nagent service uninstall" in str(failed.value)
+    assert "cc-switch" in str(failed.value)
