@@ -15,13 +15,15 @@
 
 客户端只连中枢一个端口，由中枢再连到每台机器上的服务。
 
-## 三个部分
+## 各部分装在哪里
 
-| 部分   | 装在哪里                         | 国内版支持的系统                                                    |
-| ------ | -------------------------------- | ------------------------------------------------------------------- |
-| 中枢   | 家里一台常开的机器               | Debian 系 Linux（amd64、arm64）；Windows（x64）和 macOS（Apple 芯片）上以服务器形态运行 |
-| 被控端 | 每台要用的家里机器               | Debian 系 Linux（amd64、arm64）、Windows（x64）、macOS（Apple 芯片） |
-| 客户端 | 你随身的电脑或手机               | Debian 系 Linux（amd64、arm64）、Windows（x64）、macOS（Apple 芯片）、Android |
+| 部分   | 装在哪里                                 | 支持的系统                                                                              |
+| ------ | ---------------------------------------- | --------------------------------------------------------------------------------------- |
+| 中枢   | 家里一台常开的机器                       | Debian 系 Linux（amd64、arm64）；Windows（x64）和 macOS（Apple 芯片）上以服务器形态运行 |
+| 被控端 | 每台要用的家里机器，在那台机器上提供服务 | Debian 系 Linux（amd64、arm64）、Windows（x64）、macOS（Apple 芯片）                    |
+| 客户端 | 你随身的电脑或手机                       | Debian 系 Linux（amd64、arm64）、Windows（x64）、macOS（Apple 芯片）、Android           |
+
+服务器形态的中枢只为别的机器提供服务，不改动所在网络的设置。中枢所在的机器上，设置向导会顺带装好被控端，所以这台机器自己的文件和服务也能用。
 
 ## 安装
 
@@ -37,23 +39,23 @@ curl -fsSL https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.s
 irm https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.ps1 | iex
 ```
 
-脚本从本仓库的发行版页面下载安装包，核对校验和后安装。在 Linux 或 macOS 上，在 `sh` 后面加 `-s -- agent` 安装被控端，加 `-s -- client` 安装客户端。
+脚本从本仓库的[发行版页面](https://gitee.com/iffiX/neutrino/releases)下载安装包，核对校验和后安装。在 Linux 或 macOS 上，在 `sh` 后面加 `-s -- agent` 安装被控端，加 `-s -- client` 安装客户端；Windows 上的被控端和客户端，从发行版页面下载 `.msi` 安装。
 
 也可以在发行版页面自己下载安装包。文件名里的 `<version>` 是页面上的版本号：
 
-| 系统                | 中枢                                     | 被控端                                     | 客户端                                      |
-| ------------------- | ---------------------------------------- | ------------------------------------------ | ------------------------------------------- |
-| Linux amd64         | `neutrino-hub_<version>_amd64.deb`       | `neutrino-agent_<version>_amd64.deb`       | `neutrino-client_<version>_amd64.deb`       |
-| Linux arm64         | `neutrino-hub_<version>_arm64.deb`       | `neutrino-agent_<version>_arm64.deb`       | `neutrino-client_<version>_arm64.deb`       |
+| 系统                | 中枢                                       | 被控端                                       | 客户端                                        |
+| ------------------- | ------------------------------------------ | -------------------------------------------- | --------------------------------------------- |
+| Linux amd64         | `neutrino-hub_<version>_amd64.deb`         | `neutrino-agent_<version>_amd64.deb`         | `neutrino-client_<version>_amd64.deb`         |
+| Linux arm64         | `neutrino-hub_<version>_arm64.deb`         | `neutrino-agent_<version>_arm64.deb`         | `neutrino-client_<version>_arm64.deb`         |
 | Windows x64         | `neutrino-hub-<version>-windows-amd64.msi` | `neutrino-agent-<version>-windows-amd64.msi` | `neutrino-client-<version>-windows-amd64.msi` |
-| macOS（Apple 芯片） | `neutrino-hub-<version>-macos-arm64.pkg` | `neutrino-agent-<version>-macos-arm64.pkg` | `neutrino-client-<version>-macos-arm64.pkg` |
-| Android             |                                          |                                            | `neutrino-client-<version>-android.apk`     |
+| macOS（Apple 芯片） | `neutrino-hub-<version>-macos-arm64.pkg`   | `neutrino-agent-<version>-macos-arm64.pkg`   | `neutrino-client-<version>-macos-arm64.pkg`   |
+| Android             |                                            |                                              | `neutrino-client-<version>-android.apk`       |
 
 ## 装好之后
 
 1. 用浏览器打开安装脚本最后打印的设置向导地址（Linux 上也可以运行 `sudo nhub setup`），按向导设好中枢，然后登录面板。
-1. 在面板的 **设备** 页选 **用链接添加**，在要管理的机器上用这条链接运行 `nagent join '<enroll-link>'`：Linux 和 macOS 上加 `sudo`，Windows 上以管理员身份运行。
-1. 在面板的 **客户端** 页选 **新建客户端链接**，电脑把链接粘进客户端窗口，手机扫页面上的二维码。
+1. 在要管理的机器上装好被控端。在面板的 **设备** 页选 **用链接添加**，在那台机器上用这条链接运行 `nagent join '<enroll-link>'`：Linux 和 macOS 上加 `sudo`，Windows 上以管理员身份运行。
+1. 在电脑或手机上装好客户端。在面板的 **客户端** 页选 **新建客户端链接**；电脑把链接粘进客户端窗口，手机在应用的 **加入中枢** 里扫页面上的二维码。
 
 详细的步骤见[快速上手](docs/guide/zh-CN/quick-start.md)。
 
@@ -61,10 +63,10 @@ irm https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.ps1 | ie
 
 在面板的 **外部访问** 页上选一种办法：
 
-- EasyTier：家里的中枢和外面的设备加入同一个 EasyTier 网络，见[外部访问](docs/guide/zh-CN/hub/overlay.md)。
+- EasyTier：家里的中枢和外面的设备加入同一个 EasyTier 网络。客户端自带 EasyTier，在中枢那一行上选 **连接** 就能加入，见[外部访问](docs/guide/zh-CN/hub/overlay.md)。
 - 中继：用你自己的一台有公网地址的服务器，中枢经 SSH 把一个端口映射上去，见[中继](docs/guide/zh-CN/hub/relay.md)。
 
-在外面管理中枢时，给你自己的客户端打开 **免密码进入中枢面板** 权限（默认关闭），再用客户端上的 **面板** 按钮打开面板。
+在外面管理中枢时，先在面板的 **客户端** 页给你自己的客户端打开 **免密码进入中枢面板** 权限（默认关闭），再用客户端上的 **面板** 按钮打开面板。
 
 ## 文档
 
@@ -73,7 +75,7 @@ irm https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.ps1 | ie
 
 ## 完整版和开发
 
-这里发布的是国内版，包含完整版功能的一部分。完整版和全部开发都在 GitHub：<https://github.com/iffiX/neutrino>。
+这里发布的是国内版，包含完整版功能的一部分。完整版和全部开发都在 GitHub：<https://github.com/iffiX/neutrino>，Intel 芯片的 Mac、Fedora、Arch 等系统的安装包也在那里。
 
 ## 许可证
 
