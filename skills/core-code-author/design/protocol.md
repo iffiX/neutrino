@@ -856,7 +856,7 @@ and platform, which change between releases.
 | `network` | | `{link: {interface, mac, address}, interfaces: [{name, mac, addresses[]}]}` | | |
 | `modules` | `{name: {want, config, install, uninstall}}` | `{name: {state, is_active, code, params, details}}` | | |
 | `desktop` | `{seat_password}` | `{is_shared, account, share_id, port, attention, connected_count}` | | |
-| `services` | | | `[{id, type, title, payload, is_healthy, source, description, description_code, description_params, device_name}]` | |
+| `services` | | | `[{id, type, title, payload, is_healthy, source, description, description_code, description_params, device_id, device_name}]` | |
 | `is_disabled` | | | bool | |
 | `urls` | `["https://<address>:<port>", ...]` | | the same list | |
 | `overlays` | | | `[{provider, ...}]`: what the client joins each of the hub's overlays with, the preferred first | |
@@ -1179,6 +1179,12 @@ the hub's modules, the device at that address for a declared record, and
 empty when no machine the hub knows is there. It is an added field and keeps
 `PROTOCOL` at 2; a hub that predates it sends none, and the client shows the
 entry's address in its place.
+
+`device_id` is the id of the managed machine that provides the entry, for an
+entry whose `source` is `module` or `device` and that a machine hosts, and
+empty for a declared record and for the hub's own gateway. A client keys what
+it keeps per machine by it, since a name changes and an address depends on
+the way the hub was reached. It is an added field and keeps `PROTOCOL`.
 
 ### The kinds
 
