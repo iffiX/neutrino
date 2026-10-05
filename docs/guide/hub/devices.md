@@ -112,13 +112,13 @@ Selecting a machine opens its drawer. A managed machine shows a **Live monitor**
 
 Below the monitor come **Identity**, with **Display name** and **Icon**, then **Actions**, **Remote desktop**, **Action output** and **Agent command results**. **Terminal** and **Files** at the top open those pages on this machine.
 
-| Action              | What happens                                                                          |
-| ------------------- | ------------------------------------------------------------------------------------- |
-| **Reinstall agent** | A reporting agent installs the hub's package again; a silent one gets the SSH dialog. |
-| **Reboot**          | The machine restarts at once.                                                         |
-| **Shut down**       | The machine powers off at once.                                                       |
-| **Wake-on-LAN**     | The hub sends a magic packet to UDP 9 on every network it serves.                     |
-| **Forget device**   | The row and its SSH settings leave the hub; keys and logins stay on Credentials.      |
+| Action              | What happens                                                                                                                                                                                                                                       |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Reinstall agent** | A reporting agent installs the hub's package again; a silent one gets the SSH dialog.                                                                                                                                                              |
+| **Reboot**          | The machine restarts at once.                                                                                                                                                                                                                      |
+| **Shut down**       | The machine powers off at once.                                                                                                                                                                                                                    |
+| **Wake-on-LAN**     | The hub sends a magic packet to UDP 9 on every network it serves, or, set up as a server, on every network it is exposed on; never across NetBird or EasyTier. The machine wakes only with Wake-on-LAN armed in its firmware and its network card. |
+| **Forget device**   | The row and its SSH settings leave the hub; keys and logins stay on Credentials.                                                                                                                                                                   |
 
 **Reboot** and **Shut down** open a confirmation first, and anything unsaved on the machine is lost. An action on a machine that is not answering returns `agent_offline`. A forgotten machine keeps its agent, and a fresh link enrolls it again.
 
