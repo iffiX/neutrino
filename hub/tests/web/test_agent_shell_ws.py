@@ -1,7 +1,8 @@
 """The terminal sockets, bridged to a device's shell stream end to end.
 
 What these pin: the session gate, a device with no channel turned away
-with ``agent_offline``, an agent's refusal closing with its code, the
+with ``agent_offline``, an agent's refusal sending a ``closing`` frame
+with its code and params and then closing with its code, the
 browser's input reaching the stream and a resize opening one ``command
 {agent, resize}`` stream naming the shell, the stream's bytes becoming
 output frames and its close an exit frame, the container variant
@@ -115,7 +116,33 @@ def test_an_agents_refusal_closes_with_its_code(api):
 
     socket = open_terminal(client, f"/ws/agent/terminal?device_id={MAC}&container=kuma")
     try:
+        assert socket.receive_json() == {
+            "type": "closing",
+            "code": "container_unknown",
+            "params": {"name": "kuma"},
+        }
         assert closed_with(socket) == (INTERNAL_ERROR_CODE, "container_unknown")
+    finally:
+        socket.__exit__(None, None, None)
+
+
+def test_a_refusals_params_reach_the_page_whole_before_the_close(api):
+    """A path longer than a close reason holds still arrives whole."""
+    client, runtime = api
+    path = "/opt/" + "a" * 200 + "/shell"
+    runtime.agent_sessions.scripts["shell"] = lambda args: (
+        [],
+        {"code": "shell_program_unusable", "params": {"path": path}},
+    )
+
+    socket = open_terminal(
+        client, f"/ws/agent/terminal?device_id={MAC}&session_id={'a' * 32}"
+    )
+    try:
+        frame = socket.receive_json()
+        assert frame["type"] == "closing"
+        assert frame["params"] == {"path": path}
+        assert closed_with(socket) == (INTERNAL_ERROR_CODE, "shell_program_unusable")
     finally:
         socket.__exit__(None, None, None)
 

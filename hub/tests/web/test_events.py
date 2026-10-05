@@ -2,7 +2,8 @@
 
 An event is a hint rather than a value, so the bus is judged on five things:
 a publish from a worker thread reaching a subscriber on the loop, identical
-hints inside the window arriving once, a reading never being coalesced away,
+hints inside the window arriving once and a swallowed one once more when the
+window ends, a reading never being coalesced away,
 a subscriber too far behind losing the oldest rather than the newest, and
 unsubscribing being final.
 """
@@ -79,6 +80,27 @@ def test_identical_events_inside_the_window_arrive_once():
             bus.publish(WEB_EVENT_DEVICE_REPORT, "aa:bb:cc:dd:ee:ff")
 
         assert len(await settled(queue)) == 1
+
+    on_loop(body)
+
+
+def test_a_hint_swallowed_inside_the_window_arrives_once_when_it_ends():
+    """The reported bug: a module's state moved in a report right after
+    another report's hint, the page's reload ran before it was recorded, and
+    the tab kept the old state until the page was reloaded."""
+
+    async def body():
+        bus = PanelEventBus()
+        queue = bus.subscribe()
+
+        for _ in range(3):
+            bus.publish(WEB_EVENT_DEVICE_REPORT, "aa:bb:cc:dd:ee:ff")
+        assert len(await settled(queue)) == 1
+
+        trailing = await asyncio.wait_for(queue.get(), 2.0)
+        assert trailing["key"] == "aa:bb:cc:dd:ee:ff"
+        await asyncio.sleep(0.3)
+        assert await settled(queue) == []
 
     on_loop(body)
 

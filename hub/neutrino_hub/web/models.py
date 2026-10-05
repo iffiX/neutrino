@@ -1221,17 +1221,13 @@ class RemoteDesktopStatusView(BaseModel):
 class RemoteDesktopView(BaseModel):
     """The remote-desktop products' state on a device.
 
-    AnyDesk and TeamViewer are read over SSH, because a user-tier product is
-    whatever the person put there. RustDesk is a module the hub installs, so
-    its id arrives on the heartbeat with the rest of that module's report and
-    needs no credentials at all.
+    AnyDesk and TeamViewer are read through the agent, because a person's
+    own product is whatever the person put there. RustDesk is the agent's,
+    and its share rides the device's own report, ``client.rdp``.
     """
 
     anydesk: RemoteDesktopStatusView
     teamviewer: RemoteDesktopStatusView
-    # The id a peer connects to RustDesk by, empty until the module is
-    # installed and the machine has reported one.
-    rustdesk_id: str = ""
 
 
 class RemoteDesktopPassword(BaseModel):
