@@ -37,6 +37,11 @@ checks read it (`hub/neutrino_hub/system/package_manager.py:420`), so a
 machine installs and is checked against whichever of the two names its
 repositories carry (`hub/neutrino_hub/system/package_manager.py:128`).
 
+The cc-switch every agent package carries moves no floor. On Linux it is
+upstream's musl build, which is linked statically and names no glibc
+(`client/desktop/packaging/bundled.py:42`), and on Windows and macOS it is
+the build the client's `.msi` and `.pkg` already carry on the same floors.
+
 The client's `.rpm` reaches RHEL 9 and AlmaLinux 9 because either WebKit2 ABI
 satisfies it, and RHEL 9 has 4.0 (`client/desktop/packaging/build_rpm.py:54`).
 The introspection library on RHEL 9 is older than the bindings need, so the

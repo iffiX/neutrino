@@ -102,6 +102,8 @@ agent/
     modules/         What a machine can host: samba/, gitea/, podman/, zfs/,
                      vscode/, cloudcli/, code_server/, the RustDesk host,
                      and the installers they share.
+    ai_tools/        The machine's AI tools: cc-switch run as each account the
+                     hub names, the client's steps, the records per tool.
     rdp/             Sharing this machine's desktop at the seat password the
                      hub set; one seat file per OS reads who is at the screen.
     platforms/       The OS layer: linux.py, windows.py and darwin.py behind

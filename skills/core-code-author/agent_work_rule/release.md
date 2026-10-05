@@ -224,10 +224,12 @@ is its own line, and only on RHEL rebuilds. Fedora carries all three itself.
 
 The agent runs on the machines the hub manages, as root or LocalSystem and
 headless: it draws no window and listens on nothing. Each Linux package
-carries its own interpreter under `/opt/neutrino/agent` and the RustDesk host,
-and depends on no distribution package named `python`. The Windows and macOS
-installers include the agent compiled with Nuitka and upstream's RustDesk, and
-run the terminal and the shared desktop.
+carries its own interpreter under `/opt/neutrino/agent`, the RustDesk host and
+cc-switch, and depends on no distribution package named `python`. The Windows
+and macOS installers include the agent compiled with Nuitka, upstream's
+RustDesk and cc-switch, and run the terminal and the shared desktop. Every
+agent package carries the cc-switch build the client's package of the same
+system and architecture carries, at the same pin.
 
 | File | For |
 | --- | --- |

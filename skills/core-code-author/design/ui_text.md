@@ -183,6 +183,37 @@ The VS Code notice and its button:
 | `ui.vscode.terms_accept` | Open and accept the terms | 打开并接受条款 |
 | `ui.vscode.terms_accepted` | Terms accepted | 已接受条款 |
 
+## The Modules page's words
+
+The panel titles and the AI tools part of **Global configuration**
+([ui_behavior.md](ui_behavior.md), "The Modules page"). The chip, the
+dialog and the reason follow the desktop client's words for its AI page
+where they fit, and a managed machine is a managed device, as the
+**Devices** page calls it.
+
+| Key | English | Chinese |
+| --- | --- | --- |
+| `ui.modules.global_title` | Global configuration | 全局配置 |
+| `ui.modules.tabs_title` | Module configuration | 模块配置 |
+| `ui.ai_tools.title` | AI tools | AI 工具 |
+| `ui.ai_tools.use` | This machine's AI tools use the hub's AI gateway | 这台机器的 AI 工具使用中枢的 AI 网关 |
+| `ui.ai_tools.accounts` | Applies to the accounts that run VS Code, code-server or CloudCLI here: {accounts} | 作用于在这台机器上运行 VS Code、code-server 或 CloudCLI 的账户：{accounts} |
+| `ui.ai_tools.no_accounts` | No account runs VS Code, code-server or CloudCLI on this machine yet. | 这台机器上还没有账户运行 VS Code、code-server 或 CloudCLI。 |
+| `ui.ai_tools.tool_claude`, `ui.ai_tools.tool_codex`, `ui.ai_tools.tool_gemini` | Claude Code, Codex, Gemini | Claude Code、Codex、Gemini |
+| `ui.ai_tools.slot_default`, `ui.ai_tools.slot_opus`, `ui.ai_tools.slot_sonnet`, `ui.ai_tools.slot_haiku` | Default model, Opus slot, Sonnet slot, Haiku slot | 默认模型、Opus 档位、Sonnet 档位、Haiku 档位 |
+| `ui.ai_tools.codex_effort` | Reasoning effort | 推理强度 |
+| `state.ai_tools_switched` | Uses the hub's AI gateway | 使用中枢的 AI 网关 |
+| `state.ai_tools_switched_back` | Uses its own settings | 使用自己原来的设置 |
+| `code.gateway_not_serving` | The hub's AI gateway serves no model yet; set it up on the AI page first. | 中枢的 AI 网关还没有可用的模型，先到 AI 页设置好。 |
+
+**Configure** is `ui.modules.configure`, the page's existing word. The
+desktop client's reason for its disabled AI page and the code its command
+line refuses with:
+
+| Key | English | Chinese |
+| --- | --- | --- |
+| `ui.reason.ai_managed`, `code.ai_tools_managed` | This is a managed device: set its AI tools on the hub's panel, under Modules, Global configuration. | 这是已管理的设备，请到中枢面板的“模块”页，在“全局配置”里设置它的 AI 工具。 |
+
 ## Direct's words
 
 | Key | English | Chinese |

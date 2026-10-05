@@ -45,6 +45,9 @@ hub's pages, in the agent, and in the client:
   none of them and renders none of them. Its only part is the one entry a
   machine declares for itself, its own desktop, described below.
 
+The machine's AI tools are neither: a setting the hub sends and the agent
+makes true for the accounts it names ("The machine's AI tools").
+
 | The hub may | Root on the machine may |
 | --- | --- |
 | Push the state and open `shell`, `file`, `command` and `connect` streams | Bind the machine to a hub, or unbind it |
@@ -142,6 +145,10 @@ serving them. The agent's own units, scheduled tasks, firewall rules and
 fence go with the package. An agent installed again finds the shares and
 accounts that were left and takes them back by the rule above: they are
 displayed, and the first report imports them.
+
+Before anything else, `nagent service uninstall` switches every account's AI
+tools back ("The machine's AI tools"), since the cc-switch it runs leaves
+with the package.
 
 **Status is typed.** A module reports `state`, `is_active` and
 `{code, params}`, never an English sentence, and every surface does its own
@@ -297,9 +304,9 @@ it.
 
 The agent is root, so reaching down to an account is `runuser -u <account>
 --`, never `sudo`, for the reason the hub bans it
-([privilege.md](privilege.md)). That reach is two things. One is the seat
+([privilege.md](privilege.md)). That reach is three things. One is the seat
 whose desktop is shared, whose RustDesk configuration lives in that
-account's own session. The other is VS Code, whose servers run as the
+account's own session. Another is VS Code, whose servers run as the
 accounts the module names, each started by the system's own service
 manager: a systemd unit with `User=` on Linux, a LaunchDaemon with
 `UserName` on macOS, and on Windows a scheduled task registered with the
@@ -307,8 +314,54 @@ account's login, because LocalSystem cannot start a process as another
 account without its password. Every server listens on `127.0.0.1` alone and
 the module opens no port in any firewall, since the hub reaches it through
 the agent's `connect` stream. CloudCLI and code-server are reached the same
-way ("CloudCLI" and "code-server" below). Everything else the agent does is
-root's own work.
+way ("CloudCLI" and "code-server" below). The third is the machine's AI
+tools, pointed at the gateway by cc-switch run as each account ("The
+machine's AI tools"). Everything else the agent does is root's own work.
+
+## The machine's AI tools
+
+The `ai_tools` section of the state says whether the machine's AI tools use
+the hub's gateway, and for which accounts ([protocol.md](protocol.md), "The
+sections"). It is a setting, not a module: nothing is installed, started or
+stopped, and it has no `want`. The agent makes it true and reports each
+account's result in the `ai_tools` section of its report.
+
+The accounts are the hub's word: every account with an instance in the
+machine's VS Code, code-server or CloudCLI configuration. The agent looks
+nothing up and adds no account of its own.
+
+For each account the state names while the section is on, the agent runs
+the client's steps as that account, with the cc-switch its own package
+carries ([modules/ai.md](modules/ai.md), "How a client points its tools at
+the gateway", and "How a managed machine's tools are pointed at the
+gateway" for what differs). An account whose records already carry the
+wanted settings is not run again. An account is switched back by the same
+steps as the client's deactivation:
+
+- when the section turns off, or the state names it no longer;
+- before `nagent service uninstall` removes anything;
+- on `nagent leave`, and when a refusal of `binding_unknown` ends the
+  binding ("What a refusal means to the agent").
+
+The records are the client's, one per tool, `{is_present, previous, added}`,
+kept under the state root in `ai_tools/<account>/<tool>.json`, root's own,
+never in the account's home. cc-switch keeps its own store in the account's
+home, as on a person's computer. An account whose records are all gone after
+a switch back has its directory removed.
+
+cc-switch runs as the account, with the account's home and its own
+environment, never as root or SYSTEM in an account's home ("Running as an
+account" in the platform table). `provider delete` asks `(y/N)` on a
+terminal, so the agent runs it on a terminal of its own as the client does.
+
+The report names each account the state names and each one switched back
+under the current state's hash, `{account, state, code, params}`, `state`
+being `switched`, `switched_back` or `failed`. A failure carries the client's
+codes where they fit, `switch_failed {account, detail}` and `bundle_missing
+{binary}`, and the module codes for an account it cannot run as:
+`account_unknown {account}`, and on Windows `credential_missing {account}`
+and `credential_invalid {account}`. A failed account is not tried again
+while the state's hash is unchanged, as a failed module is not.
 
 ## The platform layer
 
@@ -337,9 +390,9 @@ only POSIX has is guarded, so one package imports on all three systems.
 
 | | Linux | Windows | macOS |
 | --- | --- | --- | --- |
-| Program | `/opt/neutrino/agent` | `C:\Program Files\Neutrino\agent` | `/Library/Application Support/Neutrino/agent/app` |
+| Program, with cc-switch in its `bin` | `/opt/neutrino/agent` | `C:\Program Files\Neutrino\agent` | `/Library/Application Support/Neutrino/agent/app` |
 | Configuration root: the binding, the credentials, the desired state | `/etc/neutrino/agent` | `%ProgramData%\Neutrino\agent\config`, under `%ProgramData%\Neutrino\agent`, whose ACL, SYSTEM and the administrators alone, the `.msi` sets | `/Library/Application Support/Neutrino/agent/config`, mode 700 |
-| State root: configured marks, packages, the last reinstall, `vscode/`, `code_server/`, `cloudcli/` | `/var/lib/neutrino/agent` | `%ProgramData%\Neutrino\agent\state` | `/Library/Application Support/Neutrino/agent/state`, mode 755 |
+| State root: configured marks, packages, the last reinstall, `vscode/`, `code_server/`, `cloudcli/`, `ai_tools/` | `/var/lib/neutrino/agent` | `%ProgramData%\Neutrino\agent\state` | `/Library/Application Support/Neutrino/agent/state`, mode 755 |
 | Log | the journal | `%ProgramData%\Neutrino\agent\log\agent.log` | `/Library/Logs/Neutrino/agent/agent.log` |
 | Service | systemd `neutrino_agent.service` runs `nagent run` | the `neutrino_agent` service, LocalSystem, runs `nagent service run` | the `com.neutrino.agent` LaunchDaemon runs `nagent run` |
 | Control transport | Unix socket `/run/neutrino/agent/agent.sock` | named pipe `\\.\pipe\neutrino_agent`, its descriptor SYSTEM and the administrators | Unix socket `/var/run/neutrino/agent/agent.sock` |
@@ -348,7 +401,8 @@ only POSIX has is guarded, so one package imports on all three systems.
 | Machine id | `/etc/machine-id` | the registry's `MachineGuid` | `IOPlatformUUID` from `ioreg` |
 | Accounts | uid 1000 and above with a login shell | the enabled local accounts from `Get-LocalUser`, without Administrator, Guest, DefaultAccount, WDAGUtilityAccount and the file share's own, read at most every 30 seconds; the home is the profile `Win32_UserProfile` names | `dscl`, uid 501 and above, home under `/Users` |
 | Power | `systemctl reboot` or `poweroff --force` | `shutdown /r` or `/s /t 0` | `shutdown -r` or `-h now` |
-| Refused | nothing | stepping down, packages | stepping down, packages |
+| Running as an account | `runuser -u <account> --`, with the account's home and environment | a one-shot scheduled task registered with the login the Credentials page holds for the account's instance, a limited token, its output written to a file under the state root and read back; an account with no login is reported `credential_missing {account}` | a child process with the account's uid and group and no other groups, in its home, with `HOME`, `USER` and `LOGNAME` set |
+| Refused | nothing | packages | packages |
 | Kill | SIGTERM, then SIGKILL after two seconds | `OpenProcess` with `PROCESS_TERMINATE` and `TerminateProcess` | SIGTERM, then SIGKILL after two seconds |
 | Shell stream | the login shell on a pseudo-terminal, which is its controlling terminal so a resize reaches it as `SIGWINCH`, started in root's home | PowerShell on a pseudo console, in a job that kills it on close, started in the signed-in account's profile directory, and in the system drive's root when nobody is signed in or the profile cannot be found (a domain account, a directory that is not there), never in the service's own directory | `zsh -il` on a pseudo-terminal, its controlling terminal as on Linux, started in root's home |
 | Seat | `loginctl`, `/proc/net/tcp`, the Wayland token | the console session's user through WTS, `netstat` | the owner of `/dev/console`, `netstat`, the privacy grants |
@@ -498,9 +552,12 @@ nodejs.org, npm and GitHub; a LAN machine reaches them through the hub's
 proxy, and no mirror is configured.
 
 **The service's environment is written from scratch**: `HOST=127.0.0.1`,
-`SERVER_PORT` (CloudCLI's own name for its port), `ANTHROPIC_BASE_URL` (the hub's gateway), `ANTHROPIC_AUTH_TOKEN` (the
-device's gateway key, [modules/ai.md](modules/ai.md)), `OPENAI_BASE_URL`, and
-`PATH`. Nothing is inherited from a login profile or a version manager.
+`SERVER_PORT` (CloudCLI's own name for its port) and `PATH`. Nothing is
+inherited from a login profile or a version manager, and nothing names the
+gateway. The tools CloudCLI starts read the account's own files: Claude
+Code its `~/.claude/settings.json`, Codex its `~/.codex/auth.json` and
+`~/.codex/config.toml`. Pointing those at the gateway is the machine's AI
+tools setting ("The machine's AI tools").
 
 **The `claude` CloudCLI starts is the account's own.** Before starting the
 service the agent runs `command -v claude` in the account's login shell

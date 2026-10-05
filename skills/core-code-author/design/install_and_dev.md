@@ -329,8 +329,12 @@ The agent is installed by the same three stages, one package down: its
 package lays the payload, `nagent join` joins a hub, and the hub's desired
 state decides what the machine hosts. What it carries is the hub's own
 answer: an interpreter under `/opt/neutrino/agent` with the agent installed
-beside it, and the RustDesk host, all built for one machine. The agent draws
-no window, so it carries no bindings and depends on nothing named `python`.
+beside it, the RustDesk host, and cc-switch in `bin`, all built for one
+machine. cc-switch is the client's pinned version, and
+`packaging/shared/constants.py` holds the one pin both packages build from;
+the agent runs it as each account its AI tools setting names
+([agent.md](agent.md), "The machine's AI tools"). The agent draws no window,
+so it carries no bindings and depends on nothing named `python`.
 
 **The system's Python is not part of the story.** The agent is standard
 library only, so one architecture-independent package once ran on whatever
@@ -349,7 +353,8 @@ tree and none depends on one: `nclient` on Linux under `/opt/neutrino/client`
 with the root mount helper compiled under its `libexec` at the path polkit pins,
 `nclient.exe` from the Windows installer, `Neutrino Client.app` from the
 macOS one. Beside the binary ride the two tools it drives, cc-switch and the
-RustDesk viewer, pinned by hash.
+RustDesk viewer, pinned by hash; the cc-switch pin is the one the agent's
+package takes too.
 
 What a machine still supplies is the window's toolkit. On Linux that is the
 WebKitGTK 4.1 stack and the appindicator library, plain dependencies of the

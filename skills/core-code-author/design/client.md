@@ -371,6 +371,21 @@ the forward listens. The desktop controls:
 Under the controls is the line `ui.ai_needs_client`: the tools reach the
 gateway only while this client runs.
 
+A desktop client on a machine the Neutrino agent is installed on leaves the
+machine's AI tools to the agent ([modules/ai.md](modules/ai.md), "How a
+managed machine's tools are pointed at the gateway"). The agent is
+installed when its program directory exists: `/opt/neutrino/agent` on
+Linux, `/Library/Application Support/Neutrino/agent/app` on macOS,
+`C:\Program Files\Neutrino\agent` on Windows ([files.md](files.md)). The
+resident checks at its start and each time it takes a state from a hub.
+
+| Rule | Reason |
+| --- | --- |
+| With the agent installed, the chip and **Configure** are disabled, with the reason `ui.reason.ai_managed` under the controls; the row, its address and its forward line still show. | The agent and the client would both write the provider `neutrino` into the same account's cc-switch store, with different endpoints. |
+| A client whose chip is on when it first sees the agent turns the chip off and runs its deactivation once, as a press of the chip would; the chip stays off and disabled from then on. | The person's tools go back to what they had, and the agent's setting is the one that points them at the hub afterwards. |
+| `nclient service ai apply` exits with `ai_tools_managed`, the code worded as the reason is; `nclient service ai show` still answers. | The command line is the same switch as the chip. |
+| The Android app has no gate. | No agent runs on a phone. |
+
 A phone forwards the gateway as a Ports row: **Connect** and
 **Disconnect**, and the forwarded row shows the loopback address with
 **Copy**, for an app on the same phone. Under it, this client's key on one
