@@ -62,6 +62,7 @@ SURVIVING_MODULES = {
     "neutrino_agent.ai_tools.applier",
     "neutrino_agent.ai_tools.constants",
     "neutrino_agent.ai_tools.switcher",
+    "neutrino_agent.ai_tools.switcher_copy",
     "neutrino_agent.cli",
     "neutrino_agent.cli.answer",
     "neutrino_agent.cli.entry",

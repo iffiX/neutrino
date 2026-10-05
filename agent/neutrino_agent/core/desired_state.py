@@ -309,7 +309,9 @@ class DesiredStateApplier:
             if failure and first_failure is None:
                 first_failure = {"module": name, **failure}
         if self._ai_tools is not None:
-            self._ai_tools.apply(document.get("ai_tools"), state_hash)
+            self._ai_tools.apply(
+                document.get("ai_tools"), state_hash, receive=self._receive
+            )
         with self._lock:
             is_retried = first_failure is not None and (
                 first_failure["code"] == RETRIED_CODE

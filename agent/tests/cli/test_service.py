@@ -238,6 +238,10 @@ class SwitchingBack:
         self._platform.calls.append("switch_back")
         return [{"account": "ann", "state": "switched_back", "code": "", "params": {}}]
 
+    def remove_copy(self):
+        self._platform.calls.append("remove_copy")
+        return ["/var/lib/neutrino/agent/ai_tools/bin"]
+
 
 def test_uninstall_switches_the_ai_tools_back_once_the_service_stopped(
     monkeypatch, capsys
@@ -252,5 +256,7 @@ def test_uninstall_switches_the_ai_tools_back_once_the_service_stopped(
 
     assert service_cli.main_uninstall(is_forced=True) == 0
 
-    assert platform.calls == ["stop", "switch_back", "remove_added"]
-    assert "ai tools   ann: switched_back" in capsys.readouterr().out
+    assert platform.calls == ["stop", "switch_back", "remove_copy", "remove_added"]
+    printed = capsys.readouterr().out
+    assert "ai tools   ann: switched_back" in printed
+    assert "removed    /var/lib/neutrino/agent/ai_tools/bin" in printed
