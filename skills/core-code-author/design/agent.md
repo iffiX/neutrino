@@ -122,6 +122,16 @@ no memory of past failures. A step that failed is reported failed with its
 code and is not repeated while the state's hash is unchanged; trying again is
 a person's word, never a timer's.
 
+**A retry is the same press again.** The agent tries a state once and keeps
+the hash it tried on disk, so a restart does not try it again. When a
+person presses a module's own action again on a module whose last report is
+`failed`, the hub writes a fresh `retry_mark` into that module's entry of
+the state. The mark means nothing to the agent; it changes the state's hash,
+so the hash the agent tried no longer matches and the state is tried again.
+The machine's AI tools take the same mark on the `ai_tools` section when a
+press asks again while an account's result is `failed`. A press on a module
+that did not fail writes no mark and asks for nothing new.
+
 Software somebody installs or removes by hand is displayed, never fought. A
 hand-installed Samba reports `installed`; its shares and users become the
 hub's configuration at the machine's first report on a socket, and the

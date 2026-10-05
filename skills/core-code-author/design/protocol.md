@@ -645,12 +645,12 @@ A session is started by opening `/ws/agent/terminal` with a new
 | Route | Parameters | Does |
 | --- | --- | --- |
 | `GET /api/agent/module` | `?device_id=` | each module's observed `state`, `is_active` and `details` |
-| `POST /api/agent/module/install` | `{device_id, module}` | writes `want: installed` |
-| `POST /api/agent/module/start` | `{device_id, module}` | writes `want: running` |
-| `POST /api/agent/module/stop` | `{device_id, module}` | writes `want: stopped` |
-| `POST /api/agent/module/uninstall` | `{device_id, module}` | writes `want: absent` |
+| `POST /api/agent/module/install` | `{device_id, module}` | writes `want: installed`; on a module whose last report is `failed`, also a fresh `retry_mark` |
+| `POST /api/agent/module/start` | `{device_id, module}` | writes `want: running`; the same `retry_mark` on a failed module |
+| `POST /api/agent/module/stop` | `{device_id, module}` | writes `want: stopped`; the same `retry_mark` on a failed module |
+| `POST /api/agent/module/uninstall` | `{device_id, module}` | writes `want: absent`; the same `retry_mark` on a failed module |
 | `GET /api/agent/module/journal` | `?device_id=&module=&lines=` | the tail of the module's log on the device: its units' journal on Linux, its own sources and the agent's lines naming it on Windows and macOS ([agent.md](agent.md), "Which modules each system runs") |
-| `POST /api/agent/module/<name>/apply` | `{device_id}` | pushes the device's state again, for `samba`, `gitea`, `podman`, `zfs`, `vscode`, `code_server` and `cloudcli` alike; 409 `agent_offline` |
+| `POST /api/agent/module/<name>/apply` | `{device_id}` | pushes the device's state again, for `samba`, `gitea`, `podman`, `zfs`, `vscode`, `code_server` and `cloudcli` alike, with a fresh `retry_mark` on a module whose last report is `failed`; 409 `agent_offline` |
 | `GET /api/agent/module/samba` | `?device_id=` | the hub's Samba configuration for the device |
 | `GET /api/agent/module/samba/status` | `?device_id=` | `SambaStatusView`: whether the unit is active, the sessions open and how full each share's disk is, as last reported |
 | `POST /api/agent/module/samba/import` | `{device_id}` | the machine's shares and users become the hub's configuration |
@@ -668,7 +668,7 @@ A session is started by opening `/ws/agent/terminal` with a new
 | `GET /api/agent/module/cloudcli` | `?device_id=` | the instances as `GET /api/agent/module/vscode` gives them, and the `accounts` the machine reported |
 | `POST /api/agent/module/cloudcli/set` | `{device_id, instances: [{account, port, login_id}]}`, `port` 1024 to 65535, `login_id` for a Windows machine | replaces the instances, generating each instance's password the first time; the refusals of `vscode/set` |
 | `GET /api/agent/module/ai_tool` | `?device_id=` | `AiToolDeviceView`: `is_enabled`, the stored setting; `is_gateway_serving`, whether the gateway serves a model now; `tool_configs`, the stored choices as the client's **Configure** dialog saves them; `models`, the names the gateway serves, for the dialog's pickers; `accounts`, each account the setting acts on as `{account, modules, state, code, params}` with `modules` the module names it has an instance in and the rest as last reported, `state` empty before the machine reported it |
-| `POST /api/agent/module/ai_tool/enable` | `{device_id}` | turns the setting on, mints the device's gateway key, pushes the state; `AiToolDeviceView`; 409 `gateway_not_serving` while the gateway serves no model, 409 `agent_offline`, 400 `vault_locked` |
+| `POST /api/agent/module/ai_tool/enable` | `{device_id}` | turns the setting on, mints the device's gateway key, pushes the state; on a setting already on whose machine reported an account `failed`, writes a fresh `retry_mark` on the section and pushes; `AiToolDeviceView`; 409 `gateway_not_serving` while the gateway serves no model, 409 `agent_offline`, 400 `vault_locked` |
 | `POST /api/agent/module/ai_tool/disable` | `{device_id}` | turns the setting off, revokes the device's gateway key, pushes the state; `AiToolDeviceView`; 409 `agent_offline` |
 | `POST /api/agent/module/ai_tool/set` | `{device_id, tool_configs}` | replaces the stored choices, the unknown tools and keys dropped as the client's `clean_tool_configs` drops them, and pushes the state while the setting is on; `AiToolDeviceView`; 409 `agent_offline` |
 | `GET /api/agent/module/code_server` | `?device_id=` | the instances, each `{account, port, is_running, code}` with `is_running` and `code` as last reported, and the `accounts` the machine reported |
@@ -918,9 +918,9 @@ and platform, which change between releases.
 | `machine` | | `{hostname, platform, accounts, metrics, sessions}` | | `{hostname, platform}` |
 | `is_refresh` | | | | bool: a refresh the person asked for, answered with the whole state |
 | `network` | | `{link: {interface, mac, address}, interfaces: [{name, mac, addresses[]}]}` | | |
-| `modules` | `{name: {want, config, install, uninstall}}` | `{name: {state, is_active, code, params, details}}` | | |
+| `modules` | `{name: {want, config, install, uninstall, retry_mark}}` | `{name: {state, is_active, code, params, details}}` | | |
 | `desktop` | `{seat_password}` | `{is_shared, account, share_id, port, attention, connected_count}` | | |
-| `ai_tools` | `{is_enabled, base_url, api_key, tool_configs, accounts: [{account, password}]}` | `{accounts: [{account, state, code, params}]}` | | |
+| `ai_tools` | `{is_enabled, base_url, api_key, tool_configs, accounts: [{account, password}], retry_mark}` | `{accounts: [{account, state, code, params}]}` | | |
 | `services` | | | `[{id, type, title, payload, is_healthy, source, description, description_code, description_params, device_id, device_name}]` | |
 | `is_disabled` | | | bool | |
 | `urls` | `["https://<address>:<port>", ...]` | | the same list | |
@@ -1012,6 +1012,15 @@ closes, whether every viewer with terminal rights on the machine can attach
 to it, and how many streams are attached. A `terminals` entry lists them by
 `started_at` and is empty for a machine that is offline. The list is an added
 field and keeps `PROTOCOL`.
+
+`retry_mark`, in a module's entry and in the `ai_tools` section, is a
+short random token the hub writes when a person presses a failed module's
+own action again ([agent.md](agent.md), "A retry is the same press
+again"). It changes the state's hash and means nothing else; no
+configuration reads it, and an entry without one is the same entry. The hub
+keeps one mark per module and one for the AI tools per device in
+`device_retry_marks.json` under its state root, replaced by each press and
+dropped with the device ([files.md](files.md)).
 
 `ai_tools` in the state is the machine's AI tools setting
 ([agent.md](agent.md), "The machine's AI tools"). `is_enabled` is true while

@@ -149,6 +149,9 @@ overrides both, which is what makes a second instance testable. Details of the f
                             first start installs the box's own agent
         stood_down.json     which units the hub stopped so it could drive
                             the network
+        device_retry_marks.json
+                            per device, the last retry mark of each module
+                            and of its AI tools
         enrollment_tickets.json
                             the open enrolment tickets, each as the SHA-256
                             of the ticket with its kind, the row it binds
@@ -218,6 +221,12 @@ stops, and `known_hosts`, the VPS's host key as `ssh` recorded it on its first
 connection ([network.md](modules/network.md), "The relay, the third way in").
 Both are state: the key is in the vault, and a lost `known_hosts` is recorded
 again on the next connection.
+
+`hub/device_retry_marks.json` keeps the mark a press on a failed module
+put into the device's state, so a hub restart composes the same state and a
+press is not lost. It holds one mark per module and device, each press
+replacing the one before, and a device's marks go when the device is
+removed. Losing the file costs the next press.
 
 `hub/stood_down.json` is a note of what the hub did, not a copy of what
 anybody else had: router mode stops the manager that was running and writes
