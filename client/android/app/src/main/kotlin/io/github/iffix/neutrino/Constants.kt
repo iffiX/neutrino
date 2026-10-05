@@ -220,7 +220,7 @@ const val CLIENT_STREAM_KIND_CONNECT = "connect"
 const val CLIENT_REFUSAL_CODE_ADMISSION_PAUSED = "admission_paused"
 
 /** The ways a client's socket reaches its hub, each worded as `ui.through.<way>`. */
-val CLIENT_REACHED_THROUGH: List<String> = listOf("lan", "netbird", "easytier", "relay")
+val CLIENT_REACHED_THROUGH: List<String> = listOf("lan", "direct", "netbird", "easytier", "relay")
 
 /** The file the bindings are kept in, sealed under the Keystore's key. */
 const val CLIENT_BINDINGS_FILE_NAME = "bindings.sealed"
