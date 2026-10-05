@@ -12,7 +12,8 @@ empty; a dial that fails is ``connect_failed`` with ``refused``, ``timeout``
 or ``unreachable``; the far end's bytes reach the client only as far as
 the client's credit allows; and a UDP entry opens its agent's ``connect
 {port, protocol: udp}`` with frames crossing unchanged, or has the hub
-answer for a declared record from a socket of its own.
+answer for a declared record from a socket of its own; and whatever a far
+end raises closes the client's stream ``connect_failed`` and is logged once.
 """
 
 import asyncio
@@ -386,3 +387,38 @@ def test_a_declared_udp_record_is_answered_from_the_hubs_own_socket(judged):
 
     assert [split_frame(frame) for frame in stream.sent] == [(40001, b"PING")]
     assert runtime.agent_sessions.streams == []
+
+
+@pytest.mark.parametrize(
+    "target, broken",
+    [
+        (ConnectTarget("", "127.0.0.1", 53, protocol="udp"), "relay_to_socket"),
+        (ConnectTarget(DEVICE, "", 53, protocol="udp"), "relay_to_agent"),
+        (ConnectTarget(DEVICE, "", 8000), "_relay_to_agent"),
+        (ConnectTarget("", "127.0.0.1", 8000), "_relay_to_socket"),
+    ],
+)
+def test_a_far_end_that_raises_closes_the_clients_stream_and_is_logged_once(
+    judged, monkeypatch, caplog, target, broken
+):
+    judged.verdict = ("", {}, target)
+
+    async def fails(*arguments, **keywords):
+        raise NotImplementedError("no add_reader here")
+
+    monkeypatch.setattr(channel_connect, broken, fails)
+    runtime = FakeRuntime()
+
+    async def scenario():
+        stream = ScriptedChannelStream("connect", {"id": "x"}, 1)
+        await serve_connect_stream(runtime, FakeSession(), stream)
+        return stream
+
+    with caplog.at_level("ERROR", logger="neutrino_hub.web.channel_connect"):
+        stream = asyncio.run(scenario())
+
+    assert stream.close_info == {
+        "code": "connect_failed",
+        "params": {"reason": "unreachable"},
+    }
+    assert len(caplog.records) == 1

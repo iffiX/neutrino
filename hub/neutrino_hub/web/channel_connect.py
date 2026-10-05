@@ -14,6 +14,7 @@ is closed after it; there is no half-close.
 import asyncio
 import contextlib
 import errno
+import logging
 
 from neutrino_hub.exceptions import AgentOfflineError
 from neutrino_hub.modules.channel.constants import (
@@ -34,6 +35,8 @@ from neutrino_hub.web.constants import WEB_DEFAULT_LISTEN_PORT
 # The errors a refused dial raises, beside ConnectionRefusedError.
 REFUSED_ERRNOS = (errno.ECONNREFUSED, errno.ECONNRESET)
 
+LOGGER = logging.getLogger(__name__)
+
 
 async def serve_connect_stream(
     runtime, session: ChannelSession, stream: ChannelStream
@@ -45,7 +48,9 @@ async def serve_connect_stream(
         session: The client's session; its ``connects`` holds the stream,
             with the kind and the machine it was judged by, while it is
             open.
-        stream: The client's stream, closed here.
+        stream: The client's stream, closed here; whatever its far end
+            raises closes it ``connect_failed {reason: unreachable}`` and is
+            logged once.
     """
     open_count = len(session.connects)
     session.connects[stream.id] = ("", "")
@@ -62,13 +67,25 @@ async def serve_connect_stream(
             await stream.close(code, params)
             return
         session.connects[stream.id] = (target.kind, target.provider)
-        if target.protocol == SERVICES_PROTOCOL_UDP:
-            await _relay_datagrams(runtime, stream, target)
-            return
-        if target.device_id:
-            await _relay_to_agent(runtime, stream, target)
-            return
-        await _relay_to_socket(stream, target)
+        try:
+            if target.protocol == SERVICES_PROTOCOL_UDP:
+                await _relay_datagrams(runtime, stream, target)
+            elif target.device_id:
+                await _relay_to_agent(runtime, stream, target)
+            else:
+                await _relay_to_socket(stream, target)
+        except AgentOfflineError:
+            raise
+        except Exception:  # noqa: BLE001 - any far end's fault is the client's close
+            LOGGER.exception(
+                "connect stream %s of %s to %s failed", stream.id, session.key, target
+            )
+            if not stream.is_closed:
+                with contextlib.suppress(AgentOfflineError):
+                    await stream.close(
+                        CHANNEL_CODE_CONNECT_FAILED,
+                        {"reason": CHANNEL_CONNECT_UNREACHABLE},
+                    )
     finally:
         session.connects.pop(stream.id, None)
 
