@@ -1,8 +1,9 @@
 """The port service type: forwarding a published port to this machine.
 
-A published port forwards to ``127.0.0.1`` on a click: a listener on the
-port the one local port table gives the entry, whose every connection is a
-``connect`` stream through the hub. The forwards are runtime state and die
+A published port forwards to ``127.0.0.1`` on a click, on the port the one
+local port table gives the entry: for a TCP entry a listener whose every
+connection is a ``connect`` stream through the hub, for a UDP entry one UDP
+socket whose datagrams ride one stream. The forwards are runtime state and die
 with the resident; they are held by service key, so two hubs publishing the
 same entry id never collide.
 """
@@ -11,8 +12,34 @@ same entry id never collide.
 # client still imports on Python 3.9.
 from __future__ import annotations
 
-from neutrino_client.services.base import ServiceTypeHandler, find_entry
-from neutrino_client.services.forward import FORWARD_BIND_HOST, forward_refusal
+from neutrino_client.exceptions import GatewayUnreachable
+from neutrino_client.services.base import (
+    ServiceTypeHandler,
+    channel_refusal,
+    find_entry,
+)
+from neutrino_client.services.forward import (
+    FORWARD_BIND_HOST,
+    FORWARD_PROTOCOL_TCP,
+    FORWARD_PROTOCOL_UDP,
+    forward_refusal,
+)
+
+
+def entry_protocol(entry: dict) -> str:
+    """The protocol a ``port`` entry is forwarded on.
+
+    Args:
+        entry: The entry.
+
+    Returns:
+        ``udp`` when its payload says so, ``tcp`` otherwise, an entry from
+        before UDP entries naming none.
+    """
+    payload = entry.get("payload") or {}
+    if payload.get("protocol") == FORWARD_PROTOCOL_UDP:
+        return FORWARD_PROTOCOL_UDP
+    return FORWARD_PROTOCOL_TCP
 
 
 class PortServiceHandler(ServiceTypeHandler):
@@ -57,11 +84,21 @@ class PortServiceHandler(ServiceTypeHandler):
         except (TypeError, ValueError):
             return {"code": "unknown_request", "params": {}}
         return self.forward(
-            hub_id=hub_id, entry_id=entry_id, port=port, local_port=local_port
+            hub_id=hub_id,
+            entry_id=entry_id,
+            port=port,
+            local_port=local_port,
+            protocol=entry_protocol(entry),
         )
 
     def forward(
-        self, *, hub_id: str, entry_id: str, port: int, local_port: int = 0
+        self,
+        *,
+        hub_id: str,
+        entry_id: str,
+        port: int,
+        local_port: int = 0,
+        protocol: str = FORWARD_PROTOCOL_TCP,
     ) -> dict:
         """Start forwarding one published port to the loopback.
 
@@ -71,11 +108,13 @@ class PortServiceHandler(ServiceTypeHandler):
             port: The published port number, which an auto pick takes first.
             local_port: The loopback number to listen on; 0 takes the
                 entry's from the table.
+            protocol: ``tcp`` or ``udp``.
 
         Returns:
             Empty on success; ``port_taken`` for a fixed port another program
-            listens on, ``forward_failed`` when the port cannot otherwise be
-            listened on.
+            listens on, ``hub_unreachable`` when a UDP forward's stream
+            cannot be asked for, ``forward_failed`` when the port cannot
+            otherwise be listened on.
         """
         try:
             bound = self._forwards.ensure(
@@ -84,10 +123,13 @@ class PortServiceHandler(ServiceTypeHandler):
                 own_port=port,
                 kind=self.service_type,
                 local_port=local_port,
+                protocol=protocol,
             )
+        except GatewayUnreachable as error:
+            return channel_refusal(error)
         except OSError as error:
             return forward_refusal(error)
-        self._log(f"port {entry_id} is on {FORWARD_BIND_HOST}:{bound}")
+        self._log(f"port {entry_id} is on {FORWARD_BIND_HOST}:{bound}/{protocol}")
         return {}
 
     def stop(self, *, hub_id: str, entry_id: str) -> dict:

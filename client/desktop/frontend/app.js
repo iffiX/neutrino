@@ -908,11 +908,17 @@ function entryWork(hub, entry) {
   return isRefreshing(hub) ? 'refreshing' : '';
 }
 
-// An entry's dot: amber pulsing while work runs on it, green healthy,
-// amber unhealthy.
+// Whether an entry is unhealthy: only a health of false is. An entry with
+// empty health, a record no probe has reached, is not.
+function isUnhealthy(entry) {
+  return entry.is_healthy === false;
+}
+
+// An entry's dot: amber pulsing while work runs on it, amber unhealthy,
+// green otherwise.
 function entryTone(hub, entry) {
   if (entryWork(hub, entry)) return 'pulse';
-  return entry.is_healthy ? 'ok' : 'wait';
+  return isUnhealthy(entry) ? 'wait' : 'ok';
 }
 
 // An entry's state word: the work running on it, else unhealthy, else what
@@ -920,14 +926,14 @@ function entryTone(hub, entry) {
 function entryWord(hub, entry, standing) {
   const work = entryWork(hub, entry);
   if (work) return t('ui.job.' + work);
-  if (!entry.is_healthy) return t('ui.unhealthy');
+  if (isUnhealthy(entry)) return t('ui.unhealthy');
   return standing || '';
 }
 
 // Why an entry's action cannot run, empty when it can.
 function entryReason(hub, entry, isHealthNeeded) {
   if (hub.connection === 'disabled') return t('ui.reason.disabled');
-  if (isHealthNeeded && !entry.is_healthy) return t('ui.reason.unhealthy');
+  if (isHealthNeeded && isUnhealthy(entry)) return t('ui.reason.unhealthy');
   return '';
 }
 
@@ -965,7 +971,7 @@ function drawWebEntry(card, state, hub, entry) {
   const opening = entry.job === 'opening' ? entry.job : '';
   const open = jobButton(t('ui.open'), opening);
   if (!opening) {
-    open.disabled = !entry.is_healthy || !isEntryFree(hub, entry);
+    open.disabled = isUnhealthy(entry) || !isEntryFree(hub, entry);
     open.onclick = () => serviceAction('web', { hub_id: entry.hub_id, id: entry.id });
   }
   let reason = open.disabled && !entryWork(hub, entry) ? entryReason(hub, entry, true) : '';
@@ -985,7 +991,7 @@ function drawPortEntry(card, state, hub, entry) {
   const button = jobButton(isOn ? t('ui.port_disconnect') : t('ui.port_connect'),
     entry.job, isOn ? 'danger' : '');
   if (!entry.job) {
-    button.disabled = !isEntryFree(hub, entry) || (!entry.is_healthy && !isOn);
+    button.disabled = !isEntryFree(hub, entry) || (isUnhealthy(entry) && !isOn);
     button.onclick = () => serviceAction('port',
       { hub_id: entry.hub_id, id: entry.id, is_enabled: !isOn });
   }
@@ -993,14 +999,22 @@ function drawPortEntry(card, state, hub, entry) {
   let reason = button.disabled && !entryWork(hub, entry)
     ? entryReason(hub, entry, !isOn) : '';
   if (!reason && configure.disabled && isOn) reason = t('ui.reason.disconnect_first');
+  const suffix = protocolSuffix(entry);
   card.appendChild(entryRow(hub, entry,
-    (payload.host || '') + ':' + (payload.port || '') + forwardedTo(entry), '',
-    [configure, button], reason));
+    (payload.host || '') + ':' + (payload.port || '') + suffix + forwardedTo(entry),
+    '', [configure, button], reason));
+}
+
+// What a port entry's addresses carry after them: `/udp` for a UDP entry,
+// nothing for a TCP one.
+function protocolSuffix(entry) {
+  return (entry.payload || {}).protocol === 'udp' ? '/udp' : '';
 }
 
 // The mono line's tail of a forwarded entry: where its forward listens.
 function forwardedTo(entry) {
-  return entry.forward ? ' → ' + t('ui.forwarding_to', { port: entry.forward }) : '';
+  if (!entry.forward) return '';
+  return ' → ' + t('ui.forwarding_to', { port: entry.forward }) + protocolSuffix(entry);
 }
 
 // The Disconnect of a forwarded page: ends its forward.
@@ -1114,7 +1128,7 @@ function drawDesktopEntry(card, state, hub, entry) {
   const isOpen = !!viewer.is_running;
   const connect = jobButton(t('ui.rdp_connect'), entry.job);
   if (!entry.job) {
-    connect.disabled = !entry.is_healthy || !isEntryFree(hub, entry) || isOpen;
+    connect.disabled = isUnhealthy(entry) || !isEntryFree(hub, entry) || isOpen;
     connect.onclick = () => serviceAction('rdp',
       { action: 'connect', hub_id: entry.hub_id, id: entry.id });
   }
@@ -1152,7 +1166,7 @@ function drawAiEntry(card, state, hub, entry) {
   const isExit = !!hub.is_exit;
   const isInUse = isExit && !!ai.is_enabled;
   const payload = entry.payload || {};
-  const isFree = entry.is_healthy && isEntryFree(hub, entry) && !isAiSwitching(state);
+  const isFree = !isUnhealthy(entry) && isEntryFree(hub, entry) && !isAiSwitching(state);
   const config = document.createElement('button');
   config.type = 'button';
   config.className = 'ghost';
@@ -2136,7 +2150,7 @@ function drawFileEntry(card, state, hub, entry) {
       ? () => sendFileMount(entry, staged) : null;
     extras.push(drawFileForm(staged, state, LOOPBACK_SERVER, key, onSave, () => {
       if (!entry.job) {
-        mount.disabled = !isEntryFree(hub, entry) || !entry.is_healthy
+        mount.disabled = !isEntryFree(hub, entry) || isUnhealthy(entry)
           || !isMountFormFilled(staged, state);
       }
       if (row) setReasonLine(row, mountReason(state, hub, entry, record, mount));
@@ -2229,7 +2243,7 @@ function mountButton(state, hub, entry, record, staged) {
   }
   if (staged) {
     button.textContent = t('ui.mount');
-    button.disabled = !isFree || !entry.is_healthy || !isMountFormFilled(staged, state);
+    button.disabled = !isFree || isUnhealthy(entry) || !isMountFormFilled(staged, state);
     button.onclick = () => sendFileMount(entry, staged);
     return button;
   }
@@ -2253,7 +2267,7 @@ function mountButton(state, hub, entry, record, staged) {
   }
   if (!record.is_attached) {
     button.textContent = t('ui.mount');
-    button.disabled = !isFree || !entry.is_healthy;
+    button.disabled = !isFree || isUnhealthy(entry);
     button.onclick = () => serviceAction('file',
       { action: 'mount', hub_id: entry.hub_id, record_id: record.record_id });
     return button;

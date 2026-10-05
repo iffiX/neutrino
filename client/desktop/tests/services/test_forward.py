@@ -23,6 +23,7 @@ from neutrino_client.services.forward import (
     PortLocalTable,
     is_kept_port_free,
     is_port_free,
+    is_udp_port_free,
     relay_socket,
 )
 from neutrino_client.exceptions import LocalPortTakenError
@@ -409,7 +410,11 @@ def test_a_kept_port_on_the_wildcard_of_another_socket_is_picked_again(tmp_path)
     picked = table.take("h1/web", port)
 
     assert picked != port
-    assert store.local_ports()["h1/web"] == {"setting": "auto", "port": picked}
+    assert store.local_ports()["h1/web"] == {
+        "setting": "auto",
+        "port": picked,
+        "protocol": "tcp",
+    }
     other.close()
 
 
@@ -504,3 +509,450 @@ def test_a_forward_listens_on_the_tables_port(hub, tmp_path):
 
 def _is_free(busy, port) -> bool:
     return port not in busy
+
+
+# --- a UDP entry's forward: one socket, one stream ---
+
+
+from neutrino_client.core.streams import ClientStream  # noqa: E402
+from neutrino_client.services.forward import UdpForwardListener  # noqa: E402
+from neutrino_client.services.port import PortServiceHandler  # noqa: E402
+
+
+def udp_echo():
+    """A real UDP server on the loopback answering ``echo:<datagram>``."""
+    server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    server.bind(("127.0.0.1", 0))
+    received = []
+
+    def serve() -> None:
+        while True:
+            try:
+                data, address = server.recvfrom(65535)
+            except OSError:
+                return
+            received.append(data)
+            server.sendto(b"echo:" + data, address)
+
+    threading.Thread(target=serve, daemon=True).start()
+    return server, received
+
+
+class FakeUdpHub:
+    """The hub and the far end of UDP ``connect`` streams, on the loopback.
+
+    Each frame's source gets a UDP socket of its own connected to
+    ``far_port``, and its replies come back with that source in front, as
+    U.md's far end does. ``is_crediting`` False opens streams with no
+    credit until :meth:`credit` grants it; ``refusal`` closes every new
+    stream with that code just after its credit, as the hub does.
+    """
+
+    def __init__(self, far_port: int):
+        self.far_port = far_port
+        self.opens = []
+        self.streams = []
+        self.frames = []
+        self.is_crediting = True
+        self.refusal = ""
+        self.error = None
+        self._next_id = 1
+
+    def open_connect(self, hub_id: str, args: dict):
+        if self.error is not None:
+            raise self.error
+        self.opens.append((hub_id, dict(args)))
+        sockets = {}
+        stream_id = self._next_id
+        self._next_id += 2
+        holder = {}
+
+        def send_bytes(frame: bytes) -> None:
+            payload = frame[4:]
+            self.frames.append(payload)
+            source, data = payload[:2], payload[2:]
+            far = sockets.get(source)
+            if far is None:
+                far = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                far.connect(("127.0.0.1", self.far_port))
+                sockets[source] = far
+
+                def answer() -> None:
+                    while True:
+                        try:
+                            reply = far.recv(65535)
+                        except OSError:
+                            return
+                        holder["stream"].take_bytes(source + reply)
+
+                threading.Thread(target=answer, daemon=True).start()
+            far.send(data)
+
+        def close() -> None:
+            for far in sockets.values():
+                far.close()
+
+        stream = ClientStream(
+            stream_id=stream_id,
+            kind="connect",
+            send_bytes=send_bytes,
+            grant=lambda nbytes: None,
+            close=close,
+        )
+        holder["stream"] = stream
+        self.streams.append(stream)
+        if self.is_crediting:
+            stream.take_credit(1 << 20)
+        if self.refusal:
+            code = self.refusal
+            stream.take_credit(1 << 20)
+            threading.Timer(
+                0.02,
+                lambda: stream.take_close(code=code, params={"kind": "port"}),
+            ).start()
+        return stream
+
+    def credit(self, stream, nbytes: int = 1 << 20) -> None:
+        stream.take_credit(nbytes)
+
+
+@pytest.fixture
+def udp_far():
+    server, received = udp_echo()
+    yield server.getsockname()[1], received
+    server.close()
+
+
+def ask(port: int, payload: bytes, program=None) -> bytes:
+    """Send one datagram to the forward from a local program, read its reply."""
+    program = program or socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    program.settimeout(5)
+    program.sendto(payload, ("127.0.0.1", port))
+    return program.recvfrom(65535)[0]
+
+
+def test_two_local_programs_through_one_stream_each_get_their_own_replies(udp_far):
+    far_port, _received = udp_far
+    hub = FakeUdpHub(far_port)
+    registry = ForwardListenerRegistry(open_connect=hub.open_connect, log=discard)
+    port = registry.ensure(
+        hub_id="h1", entry_id="dns_udp", own_port=0, kind="port", protocol="udp"
+    )
+    first = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    second = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+    assert ask(port, b"one", first) == b"echo:one"
+    assert ask(port, b"two", second) == b"echo:two"
+    assert ask(port, b"again", first) == b"echo:again"
+
+    assert hub.opens == [("h1", {"id": "dns_udp"})]
+    sources = {frame[:2] for frame in hub.frames}
+    assert sources == {
+        first.getsockname()[1].to_bytes(2, "big"),
+        second.getsockname()[1].to_bytes(2, "big"),
+    }
+    first.close()
+    second.close()
+    registry.release()
+
+
+def test_the_udp_forward_binds_the_loopback_alone(udp_far):
+    hub = FakeUdpHub(udp_far[0])
+    registry = ForwardListenerRegistry(open_connect=hub.open_connect, log=discard)
+    registry.ensure(
+        hub_id="h1", entry_id="dns_udp", own_port=0, kind="port", protocol="udp"
+    )
+
+    listener = registry._listeners["h1/dns_udp"]
+    assert listener._socket.getsockname()[0] == "127.0.0.1"
+    assert listener._socket.type == socket.SOCK_DGRAM
+    registry.release()
+
+
+def test_a_datagram_of_zero_bytes_is_carried_as_two_bytes(udp_far):
+    far_port, received = udp_far
+    hub = FakeUdpHub(far_port)
+    registry = ForwardListenerRegistry(open_connect=hub.open_connect, log=discard)
+    port = registry.ensure(
+        hub_id="h1", entry_id="u", own_port=0, kind="port", protocol="udp"
+    )
+
+    assert ask(port, b"") == b"echo:"
+
+    assert [len(frame) for frame in hub.frames] == [2]
+    registry.release()
+
+
+UDP_ENTRY = {
+    "hub_id": "h1",
+    "id": "dns_udp",
+    "type": "port",
+    "payload": {"host": "hub", "port": 53, "protocol": "udp"},
+}
+CONNECT_UDP = {"hub_id": "h1", "id": "dns_udp", "is_enabled": True}
+
+
+def wait_for_true(condition, timeout_s: float = 5.0) -> bool:
+    deadline = time.monotonic() + timeout_s
+    while not condition() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    return condition()
+
+
+def test_a_refusal_before_any_datagram_ends_the_forward_with_the_code(udp_far):
+    """The hub grants the first credit before it judges the open, so the
+    refusal comes after Connect: the forward ends and the row has the code."""
+    hub = FakeUdpHub(udp_far[0])
+    hub.refusal = "permission_denied"
+    refused = []
+    registry = ForwardListenerRegistry(
+        open_connect=hub.open_connect,
+        log=discard,
+        on_refused=lambda *told: refused.append(told),
+    )
+    handler = PortServiceHandler(forwards=registry, log=discard)
+
+    assert handler.act(entries=[UDP_ENTRY], body=CONNECT_UDP) == {}
+
+    assert wait_for_true(lambda: registry.forwards() == {})
+    assert refused == [
+        ("h1", "dns_udp", {"code": "permission_denied", "params": {"kind": "port"}})
+    ]
+
+
+def test_connect_with_no_hub_to_ask_fails_at_once_with_its_code(udp_far):
+    hub = FakeUdpHub(udp_far[0])
+    hub.error = GatewayUnreachable("this hub is not connected")
+    registry = ForwardListenerRegistry(open_connect=hub.open_connect, log=discard)
+    handler = PortServiceHandler(forwards=registry, log=discard)
+
+    outcome = handler.act(entries=[UDP_ENTRY], body=CONNECT_UDP)
+
+    assert outcome["code"] == "hub_unreachable"
+    assert registry.forwards() == {}
+
+
+@pytest.mark.parametrize("is_socket_gone", [True, False])
+def test_a_stream_ending_with_no_code_tells_nobody_and_the_next_datagram_reopens(
+    udp_far, is_socket_gone
+):
+    far_port, _received = udp_far
+    hub = FakeUdpHub(far_port)
+    refused = []
+    now = {"t": 100.0}
+    listener = UdpForwardListener(
+        open_stream=lambda: hub.open_connect("h1", {"id": "u"}),
+        local_port=0,
+        kind="port",
+        log=discard,
+        on_refused=lambda *told: refused.append(told),
+        clock=lambda: now["t"],
+    )
+    port = listener.start()
+
+    if is_socket_gone:
+        hub.streams[0].end()
+    else:
+        hub.streams[0].take_close(code="", params={})
+    assert wait_for_true(lambda: listener._stream is None)
+    now["t"] += 5
+
+    assert ask(port, b"after") == b"echo:after"
+    assert refused == []
+    assert len(hub.opens) == 2
+    listener.close()
+
+
+def test_an_open_refused_later_keeps_listening_and_tries_again_once_a_second(udp_far):
+    far_port, _received = udp_far
+    hub = FakeUdpHub(far_port)
+    now = {"t": 100.0}
+    refusals = []
+    listener = UdpForwardListener(
+        open_stream=lambda: hub.open_connect("h1", {"id": "u"}),
+        local_port=0,
+        kind="port",
+        log=discard,
+        on_refused=lambda *told: refusals.append(told),
+        clock=lambda: now["t"],
+    )
+    port = listener.start()
+    assert ask(port, b"first") == b"echo:first"
+
+    hub.refusal = "agent_offline"
+    hub.streams[0].take_close(code="agent_offline", params={"device": "d1"})
+    deadline = time.monotonic() + 5
+    while not refusals and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert refusals == [({"code": "agent_offline", "params": {"device": "d1"}}, False)]
+    assert listener.is_active
+
+    program = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    now["t"] += 0.5
+    program.sendto(b"too soon", ("127.0.0.1", port))
+    time.sleep(0.2)
+    assert len(hub.opens) == 1
+    now["t"] += 1.0
+    hub.refusal = ""
+    program.sendto(b"later", ("127.0.0.1", port))
+    deadline = time.monotonic() + 5
+    while len(hub.opens) < 2 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert len(hub.opens) == 2
+    program.close()
+    listener.close()
+
+
+def test_datagrams_wait_for_a_reopened_streams_first_credit_sixteen_at_most(udp_far):
+    far_port, received = udp_far
+    hub = FakeUdpHub(far_port)
+    listener = UdpForwardListener(
+        open_stream=lambda: hub.open_connect("h1", {"id": "u"}),
+        local_port=0,
+        kind="port",
+        log=discard,
+        clock=lambda: 1000.0 + len(hub.opens) * 10,
+    )
+    port = listener.start()
+    hub.is_crediting = False
+    hub.streams[0].take_close(code="", params={})
+    deadline = time.monotonic() + 5
+    while listener._stream is not None and time.monotonic() < deadline:
+        time.sleep(0.01)
+    program = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+    for index in range(20):
+        program.sendto(b"held-%d" % index, ("127.0.0.1", port))
+    deadline = time.monotonic() + 5
+    while len(listener._held) < 16 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    time.sleep(0.1)
+    assert len(hub.opens) == 2
+    assert len(listener._held) == 16
+    assert hub.frames == []
+
+    hub.credit(hub.streams[1])
+    deadline = time.monotonic() + 5
+    while len(received) < 16 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    time.sleep(0.1)
+    assert received == [b"held-%d" % index for index in range(16)]
+    program.close()
+    listener.close()
+
+
+class RecordingStream:
+    """A stream that takes every frame the credit allows, and records it."""
+
+    is_done = False
+
+    def __init__(self, credit: int = 1 << 20):
+        self.sent = []
+        self.credit = credit
+
+    def try_send(self, frame: bytes) -> bool:
+        if len(frame) > self.credit:
+            return False
+        self.credit -= len(frame)
+        self.sent.append(frame)
+        return True
+
+
+def bare_listener(stream) -> UdpForwardListener:
+    listener = UdpForwardListener(
+        open_stream=lambda: stream, local_port=0, kind="port", log=discard
+    )
+    listener._stream = stream
+    return listener
+
+
+def test_a_datagram_the_credit_does_not_cover_is_dropped_never_queued():
+    stream = RecordingStream(credit=10)
+    listener = bare_listener(stream)
+
+    listener.take_datagram(b"12345678", ("127.0.0.1", 4000))
+    listener.take_datagram(b"another", ("127.0.0.1", 4000))
+
+    assert stream.sent == [(4000).to_bytes(2, "big") + b"12345678"]
+    assert listener._held == []
+
+
+def test_the_sixty_fifth_source_replaces_the_one_idle_longest():
+    stream = RecordingStream()
+    listener = bare_listener(stream)
+
+    for source in range(5000, 5065):
+        listener.take_datagram(b"x", ("127.0.0.1", source))
+
+    assert len(listener._sources) == 64
+    assert 5000 not in listener._sources
+    assert 5064 in listener._sources
+
+
+def test_a_frame_for_a_forgotten_source_or_too_short_is_dropped():
+    stream = RecordingStream()
+    listener = bare_listener(stream)
+    sent = []
+
+    class Socket:
+        def sendto(self, data, address):
+            sent.append((data, address))
+
+    listener._socket = Socket()
+    listener.take_datagram(b"q", ("127.0.0.1", 6000))
+
+    listener.take_frame((6000).to_bytes(2, "big") + b"answer")
+    listener.take_frame((6001).to_bytes(2, "big") + b"nobody asked")
+    listener.take_frame(b"\x01")
+
+    assert sent == [(b"answer", ("127.0.0.1", 6000))]
+
+
+# --- the table per protocol ---
+
+
+def test_a_tcp_and_a_udp_entry_hold_one_number_and_auto_gives_both_their_own(
+    tmp_path,
+):
+    table = table_on(tmp_path)
+
+    assert table.take("h1/dns", 53, "tcp") == 53
+    assert table.take("h1/dns_udp", 53, "udp") == 53
+    assert table.take("h2/dns_udp", 53, "udp") == 20000
+    stored = ClientServiceStore(path=str(tmp_path / "state.json")).local_ports()
+    assert stored["h1/dns"]["protocol"] == "tcp"
+    assert stored["h1/dns_udp"]["protocol"] == "udp"
+
+
+def test_a_fixed_number_is_taken_only_against_the_same_protocol(tmp_path):
+    table = table_on(tmp_path)
+    assert table.configure("h1/a", 15353, "tcp") == {}
+
+    assert table.configure("h1/b", 15353, "udp") == {}
+    assert table.configure("h1/c", 15353, "udp") == {
+        "code": "port_taken",
+        "params": {"port": 15353},
+    }
+    assert table.configure("h1/d", 15353, "tcp")["code"] == "port_taken"
+
+
+def test_a_table_from_before_udp_entries_reads_as_tcp(tmp_path):
+    path = tmp_path / "state.json"
+    path.write_text('{"local_ports": {"h1/db": {"setting": "auto", "port": 5432}}}')
+    table = PortLocalTable(
+        store=ClientServiceStore(path=str(path)), is_free=lambda port: True
+    )
+
+    assert table.take("h1/db", 5432, "tcp") == 5432
+    assert table.take("h1/db_udp", 5432, "udp") == 5432
+
+
+def test_the_udp_probe_binds_udp_sockets_on_the_wildcard():
+    held = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    held.bind(("0.0.0.0", 0))  # scan: allow
+    port = held.getsockname()[1]
+
+    assert is_udp_port_free(port) is False
+    assert is_port_free(port) is True
+    held.close()
+    assert is_udp_port_free(port) is True

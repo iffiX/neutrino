@@ -18,6 +18,9 @@ from __future__ import annotations
 import sys
 
 from neutrino_client.cli import wording
+from neutrino_client.services.base import is_unhealthy
+from neutrino_client.services.forward import FORWARD_PROTOCOL_UDP
+from neutrino_client.services.port import entry_protocol
 
 SERVICE_KIND_TITLES = (
     ("web", "Web"),
@@ -88,7 +91,7 @@ def main_web_open(ref: str, *, hub: str = "") -> int:
     entry = _resolve(state, "web", ref, hub_id)
     if entry is None:
         return 2
-    if not entry.get("is_healthy"):
+    if is_unhealthy(entry):
         print(f"{entry.get('title', '')}: {SERVICE_UNHEALTHY}", file=sys.stderr)
         return 1
     if _act("web", _address(entry)) is None:
@@ -121,9 +124,9 @@ def main_port(ref: str, *, is_enabled: bool, local_port: int = 0, hub: str = "")
         return 2
     forward = _forward_of(state, entry)
     if is_enabled and forward:
-        print(f"{FORWARD_HOST}:{forward}")
+        print(f"{FORWARD_HOST}:{forward}{_suffix(entry)}")
         return 0
-    if is_enabled and not entry.get("is_healthy"):
+    if is_enabled and is_unhealthy(entry):
         print(f"{entry.get('title', '')}: {SERVICE_UNHEALTHY}", file=sys.stderr)
         return 1
     if not is_enabled and not forward:
@@ -136,9 +139,9 @@ def main_port(ref: str, *, is_enabled: bool, local_port: int = 0, hub: str = "")
     if reply is None:
         return 1
     if is_enabled:
-        print(f"{FORWARD_HOST}:{_forward_of(reply, entry)}")
+        print(f"{FORWARD_HOST}:{_forward_of(reply, entry)}{_suffix(entry)}")
     else:
-        print(f"closed {FORWARD_HOST}:{forward}")
+        print(f"closed {FORWARD_HOST}:{forward}{_suffix(entry)}")
     return 0
 
 
@@ -167,7 +170,7 @@ def main_file_config(ref: str, *, path: str, username: str, hub: str = "") -> in
     entry = _resolve(state, "file", ref, hub_id)
     if entry is None:
         return 2
-    if not entry.get("is_healthy"):
+    if is_unhealthy(entry):
         print(f"{entry.get('title', '')}: {SERVICE_UNHEALTHY}", file=sys.stderr)
         return 1
     password = wording.ask_secret("Share password: ")
@@ -352,7 +355,7 @@ def main_ai_apply(
     if entry is None:
         print(SERVICE_NO_AI, file=sys.stderr)
         return 1
-    if is_enabled and not entry.get("is_healthy"):
+    if is_enabled and is_unhealthy(entry):
         print(f"{entry.get('title', '')}: {SERVICE_UNHEALTHY}", file=sys.stderr)
         return 1
     models = [str(model) for model in (entry.get("payload") or {}).get("models", [])]
@@ -408,7 +411,7 @@ def main_desktop_connect(ref: str, *, hub: str = "") -> int:
     entry = _resolve(state, "rdp", ref, hub_id)
     if entry is None:
         return 2
-    if not entry.get("is_healthy"):
+    if is_unhealthy(entry):
         print(f"{entry.get('title', '')}: {SERVICE_UNHEALTHY}", file=sys.stderr)
         return 1
     reply = _act("rdp", dict(_address(entry), action="connect"))
@@ -557,6 +560,18 @@ def _address(entry: dict) -> dict:
     return {"hub_id": entry.get("hub_id", ""), "id": entry.get("id", "")}
 
 
+def _suffix(entry: dict) -> str:
+    """What a port entry's addresses carry after them.
+
+    Args:
+        entry: The entry.
+
+    Returns:
+        ``/udp`` for a UDP entry, empty for a TCP one.
+    """
+    return "/udp" if entry_protocol(entry) == FORWARD_PROTOCOL_UDP else ""
+
+
 def _forward_of(state: dict, entry: dict) -> int:
     """The loopback port one entry's forward listens on, 0 when none runs."""
     for row in state.get("services") or []:
@@ -656,10 +671,11 @@ def _entry_line(state: dict, kind: str, entry: dict, title_width: int) -> str:
     if kind == "web":
         essence = str(payload.get("url", ""))
     elif kind == "port":
-        essence = f"{payload.get('host', '')}:{payload.get('port', '')}"
+        suffix = _suffix(entry)
+        essence = f"{payload.get('host', '')}:{payload.get('port', '')}{suffix}"
         forward = _forward_of(state, entry)
         if forward:
-            essence += f" -> {FORWARD_HOST}:{forward}"
+            essence += f" -> {FORWARD_HOST}:{forward}{suffix}"
     elif kind == "ai":
         essence = str(payload.get("endpoint", ""))
     elif kind == "rdp":
@@ -667,7 +683,7 @@ def _entry_line(state: dict, kind: str, entry: dict, title_width: int) -> str:
     else:
         essence = f"//{payload.get('host', '')}/{payload.get('share', '')}"
     notes = []
-    if not entry.get("is_healthy"):
+    if is_unhealthy(entry):
         notes.append(SERVICE_UNHEALTHY)
     if entry.get("description"):
         notes.append(str(entry.get("description")))

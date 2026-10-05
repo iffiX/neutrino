@@ -79,7 +79,7 @@ from neutrino_client.services.forward import (
     PortLocalTable,
     forward_refusal,
 )
-from neutrino_client.services.port import PortServiceHandler
+from neutrino_client.services.port import PortServiceHandler, entry_protocol
 from neutrino_client.services.rdp import RdpViewerHandler
 from neutrino_client.services.store import ClientServiceStore
 from neutrino_client.services.web import WebServiceHandler, local_url
@@ -231,6 +231,7 @@ class ClientResident:
             ports=self._ports,
             log=log,
             on_change=self.notify,
+            on_refused=self._forward_refused,
         )
         # The files adapter a Windows mount goes through.
         self._files_plan = FilesAddressPlan(
@@ -1261,7 +1262,9 @@ class ClientResident:
         )
         if entry is None or entry.get("type") not in CONFIGURABLE_TYPES:
             return {"code": "unknown_request", "params": {}}
-        outcome = self._ports.configure(service_key(hub_id, entry_id), setting)
+        outcome = self._ports.configure(
+            service_key(hub_id, entry_id), setting, entry_protocol(entry)
+        )
         if not outcome:
             self.notify()
         return outcome
@@ -1803,6 +1806,12 @@ class ClientResident:
         if session is None:
             raise GatewayUnreachable("this person has not joined that hub")
         return session.open_connect(args)
+
+    def _forward_refused(self, hub_id: str, entry_id: str, refusal: dict) -> None:
+        """A forward's stream was refused after its start: the row's error line."""
+        with self._lock:
+            self._entry_errors[service_key(hub_id, entry_id)] = dict(refusal)
+        self.notify()
 
     def _files_connector(self, hub_id: str, entry_id: str) -> ConnectStreamSocket:
         """One ``connect`` stream to a file entry, as the files endpoint takes it.
