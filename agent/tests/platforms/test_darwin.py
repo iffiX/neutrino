@@ -593,8 +593,9 @@ def test_darwin_removal_empties_the_fence_even_when_pfctl_lists_nothing(
 def test_darwin_removes_the_agent_itself_and_keeps_its_configuration_and_state(
     monkeypatch, tmp_path
 ):
-    """The jobs are unloaded before their files go, the program directory is
-    the last thing deleted, and nothing under config or state is named."""
+    """The job is unloaded before its files go, the program directory is
+    the last thing deleted, RustDesk's jobs are not this step's, and nothing
+    under config or state is named."""
     link = tmp_path / "nagent"
     link.write_text("")
     calls = []
@@ -612,17 +613,16 @@ def test_darwin_removes_the_agent_itself_and_keeps_its_configuration_and_state(
     removed = DarwinPlatform().remove_agent_program()
 
     assert "com.neutrino.agent" in removed
-    assert [call for call in calls if call[0] == "launchctl"][:2] == [
-        ["launchctl", "bootout", "system/com.carriez.RustDesk_service"],
+    assert [call for call in calls if call[0] == "launchctl"] == [
         ["launchctl", "bootout", "system/com.neutrino.agent"],
     ]
     assert ["pkgutil", "--forget", "com.neutrino.agent"] in calls
     assert calls[-1] == [
         "rm",
         "-rf",
-        "/Applications/RustDesk.app",
         "/Library/Application Support/Neutrino/agent/app",
     ]
+    assert "RustDesk" not in " ".join(" ".join(call) for call in calls)
     assert not link.exists()
     named = " ".join(" ".join(call) for call in calls)
     assert "agent/config" not in named

@@ -42,12 +42,13 @@ from neutrino_agent.constants import (
     AGENT_MODULE_STATE_UNSUPPORTED,
 )
 from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
-from neutrino_agent.modules import installers, rustdesk
+from neutrino_agent.modules import installers
 from neutrino_agent.modules.cloudcli.runner import CloudcliModuleRunner
 from neutrino_agent.modules.code_server.runner import CodeServerModuleRunner
 from neutrino_agent.modules.gitea.runner import GiteaModuleRunner
 from neutrino_agent.modules.package import PackageModuleRunner, verify_passes
 from neutrino_agent.modules.podman.runner import PodmanModuleRunner
+from neutrino_agent.modules.remote_desktop.runner import RemoteDesktopModuleRunner
 from neutrino_agent.modules.samba.runner import (
     SambaModuleRunner,
     SambaNativeServerRunner,
@@ -73,10 +74,8 @@ BY_NAME_KINDS = ("system_package",)
 # the package name is the entry's own.
 RECIPE_HEADER_FIELDS = ("kind", "verify", "package")
 
-# The module the agent carries itself. Its row reads installed while the
-# agent's own build is on disk, and no operation moves it.
-BUILTIN_RUSTDESK_NAME = "rustdesk"
-BUILTIN_MODULES = (BUILTIN_RUSTDESK_NAME,)
+# The modules the agent's own package carries: no operation moves them.
+CARRIED_MODULES = (RemoteDesktopModuleRunner.name,)
 
 
 class ReconcileWorker:
@@ -212,16 +211,12 @@ class ModuleEngine(ReconcileWorker):
                     kinds.append(CodeServerModuleRunner)
                 kinds.append(CloudcliModuleRunner)
         kinds.append(TerminalModuleRunner)
+        kinds.append(RemoteDesktopModuleRunner)
         self._module_runners = {}
         for kind in kinds:
             runner = kind(platform=platform, log=self._collect, publish=self._publish)
             self._module_runners[runner.name] = runner
         super().__init__(log=log, on_change=on_change)
-        # The built-in rows are known from the start, so their first
-        # refresh is not news that wakes a report.
-        with self._lock:
-            for name in BUILTIN_MODULES:
-                self._statuses[name] = self._read_one(name, None)
 
     @property
     def module_runners(self) -> dict:
@@ -400,7 +395,7 @@ class ModuleEngine(ReconcileWorker):
         Returns:
             Empty when the operation took, ``{"code", "params"}`` when not.
         """
-        if name in BUILTIN_MODULES:
+        if name in CARRIED_MODULES:
             return {"code": "module_not_orderable", "params": {"module": name}}
         wanted = self._wanted_of(name)
         if wanted is None:
@@ -502,11 +497,10 @@ class ModuleEngine(ReconcileWorker):
 
         Returns:
             The state's modules in the hub's order, then the runners the
-            state does not name, then the built-in rows; an unnamed module
-            maps to None.
+            state does not name; an unnamed module maps to None.
         """
         observed = {name: dict(entry) for name, entry in self._wanted.items()}
-        for name in list(self._module_runners) + list(BUILTIN_MODULES):
+        for name in self._module_runners:
             observed.setdefault(name, None)
         return observed
 
@@ -551,13 +545,6 @@ class ModuleEngine(ReconcileWorker):
         Returns:
             ``{"state", "is_active", "code", "params", "details"}``.
         """
-        if name in BUILTIN_MODULES:
-            is_present = bool(rustdesk.binary_path())
-            return _typed(
-                AGENT_MODULE_STATE_INSTALLED
-                if is_present
-                else AGENT_MODULE_STATE_ABSENT
-            )
         recipe = _recipe_of(wanted)
         runner = self._runner_for(str(recipe.get("kind", "")), name)
         if runner is None:

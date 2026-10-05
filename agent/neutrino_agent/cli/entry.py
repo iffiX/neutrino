@@ -6,7 +6,6 @@
     nagent sync
     nagent start [--yes]
     nagent stop [--yes]
-    nagent rdp start [--user <name>] | stop
     nagent run
     nagent service run
     nagent service uninstall [--yes]
@@ -27,7 +26,6 @@ from neutrino_agent.cli import (
     answer,
     join,
     leave,
-    rdp,
     run,
     service,
     start,
@@ -44,7 +42,6 @@ ROOT_COMMANDS = {
     "leave": "it removes the binding",
     "status": "it asks the agent over its root-only control socket",
     "sync": "it asks the agent over its root-only control socket",
-    "rdp": "it configures this machine's desktop share",
     "start": "it starts the agent's service",
     "stop": "it stops the agent's service",
     "run": "the agent manages this machine",
@@ -112,7 +109,6 @@ def main() -> int:
     uninstall_parser.add_argument(
         "--yes", action="store_true", help="remove without asking first"
     )
-    rdp_parser = _add_rdp_parser(subparsers)
     answer_parser = subparsers.add_parser(
         "answer",
         help="run a program on a terminal of its own and answer one question; "
@@ -156,8 +152,6 @@ def main() -> int:
         return run.main()
     if arguments.command == "sync":
         return sync.main()
-    if arguments.command == "rdp":
-        return _run_rdp(arguments, rdp_parser)
     if arguments.command == "answer":
         program = list(arguments.program)
         if program[:1] == ["--"]:
@@ -202,48 +196,6 @@ def _print_privilege_refusal(command: str, reason: str) -> None:
         "opened as administrator",
         file=sys.stderr,
     )
-
-
-def _add_rdp_parser(subparsers):
-    """The ``nagent rdp`` verb tree.
-
-    Args:
-        subparsers: The top-level subparser group.
-
-    Returns:
-        The rdp parser, for its help on a missing action.
-    """
-    rdp_parser = subparsers.add_parser("rdp", help="this machine's desktop share")
-    actions = rdp_parser.add_subparsers(dest="rdp_command", metavar="<action>")
-    start = actions.add_parser(
-        "start", help="share this desktop at the seat password the hub set"
-    )
-    start.add_argument(
-        "--user",
-        default="",
-        help="whose desktop; unnamed, the account that invoked sudo or the "
-        "one account at the screen",
-    )
-    actions.add_parser("stop", help="stop sharing this desktop")
-    return rdp_parser
-
-
-def _run_rdp(arguments, rdp_parser) -> int:
-    """Dispatch one ``nagent rdp`` action.
-
-    Args:
-        arguments: The parsed arguments.
-        rdp_parser: The rdp parser, for its help.
-
-    Returns:
-        The action's exit status.
-    """
-    if arguments.rdp_command == "start":
-        return rdp.main_start(user=arguments.user)
-    if arguments.rdp_command == "stop":
-        return rdp.main_stop()
-    rdp_parser.print_help()
-    return 2
 
 
 if __name__ == "__main__":

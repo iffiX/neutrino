@@ -1,165 +1,49 @@
-"""RustDesk as a module, and the mechanics of driving it.
+"""RustDesk's settings files, as the Remote desktop module writes them.
 
-The Linux agent packages carry the host at
-:data:`~neutrino_agent.constants.AGENT_RUSTDESK_BINARY_PATH`, so a machine
-that has the agent has RustDesk and nothing is fetched onto it. The Windows
-package installs it under ``%ProgramFiles%\\RustDesk`` as the ``RustDesk``
-service, and the macOS package as ``/Applications/RustDesk.app`` with its
-launchd jobs; where the binary is, where its configuration is read, and how
-its service is driven are each platform's own, in the tables below.
-``rdp/host.py`` decides when a machine shares its desktop; everything here
-is what RustDesk itself is and how it is driven.
+RustDesk keeps two files per account that runs it: ``RustDesk2.toml``, its
+options, and ``RustDesk.toml``, its id, keys and permanent password. The
+Remote desktop module writes both while the host is stopped: a running host
+writes back what it holds as it exits. The options name the direct
+connection and point the rendezvous and relay servers at the machine's own
+loopback; the password goes in as ``password = '<p>'``, which RustDesk
+reads as given, since ``--password`` from a copy outside RustDesk's
+standard place sets nothing.
 
-**No rendezvous server.** ``custom-rendezvous-server`` and ``relay-server``
-are written empty and ``direct-server`` is on, so a peer is reached by
-address on :data:`RUSTDESK_DIRECT_PORT` and nothing routes through a third
-party. Configuration is written into ``RustDesk2.toml`` at every path the
-running service and the desktop session read, never through ``--config``.
+**The owner is part of the file.** A seated account's copy is written by
+this root daemon but read and written by RustDesk running as that person;
+on Wayland it stores the screen-capture permission there, so a copy left
+owned by root costs that person the permission dialog on every connection.
+A file keeps the owner and mode it had, and a new one under a home is made
+as that home's owner.
 
-**The permanent password can only go on argv.** RustDesk 1.4.9 accepts it
-as ``rustdesk --password <value>`` and offers no standard input; the stored
-form is salted, so no file write can set it either. The call is made as
-short-lived as it can be and is the one place a secret is on a command
-line.
-
-Not pure: writes configuration and drives services.
+Not pure: writes files.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
-import ntpath
 import os
 import posixpath
 import re
-import subprocess
 import sys
-import time
 
-try:
-    import pwd
-except ImportError:
-    pwd = None
-
-from neutrino_agent.constants import AGENT_RUSTDESK_BINARY_PATH
 from neutrino_agent.exceptions import InstallError
 from neutrino_agent.platforms.detect import OS_NAMES
 
-RUSTDESK_TIMEOUT_S = 60
-# Long enough for a service to come up on a slow machine, short enough that
-# a share flow never looks hung.
-RUSTDESK_SERVICE_TIMEOUT_S = 120
-
-# How long the password call keeps being made while the service is still
-# coming up, and how often. The unit is `Type=simple`, so the platform's
-# service control returns as soon as the process is forked and the socket
-# the password travels over accepts about half a second later.
-RUSTDESK_PASSWORD_READY_TIMEOUT_S = 15
-RUSTDESK_PASSWORD_RETRY_S = 0.25
-
-# The port a direct connection lands on. RustDesk dials a bare address at
-# its own relay port plus one, so a peer typed as an address reaches this
-# without a rendezvous server; ``direct-access-port`` is set to match.
-RUSTDESK_DIRECT_PORT = 21118
-
-# What the service and the desktop session read. Written to both, because
-# the service answering a connection and the session showing it are
-# different processes with different homes.
+# The settings file the seat's Wayland permission is read from, under
+# root's and an account's own configuration on Linux.
 RUSTDESK_CONFIG_NAME = "RustDesk2.toml"
 RUSTDESK_ROOT_CONFIG = "/root/.config/rustdesk"
 RUSTDESK_ACCOUNT_RELATIVE = ".config/rustdesk"
 
-# Where the binary is: the agent's own build first, then a package's.
-RUSTDESK_BINARY_PATHS = (
-    AGENT_RUSTDESK_BINARY_PATH,
-    "/usr/bin/rustdesk",
-    "/usr/local/bin/rustdesk",
-)
-
-# On Windows: the binary RustDesk's own installer puts under Program Files,
-# and the configuration its service reads, as LocalService. The session has
-# no copy of its own to write.
-RUSTDESK_WINDOWS_PROGRAM_FILES_DEFAULT = "C:\\Program Files"
-RUSTDESK_WINDOWS_BINARY_RELATIVE = ("RustDesk", "rustdesk.exe")
-RUSTDESK_WINDOWS_SYSTEM_ROOT_DEFAULT = "C:\\Windows"
-RUSTDESK_WINDOWS_CONFIG_RELATIVE = (
-    "ServiceProfiles",
-    "LocalService",
-    "AppData",
-    "Roaming",
-    "RustDesk",
-    "config",
-)
-RUSTDESK_WINDOWS_SERVICE = "RustDesk"
-RUSTDESK_WINDOWS_STOPPED_PATTERN = re.compile(r"STATE\s*:\s*1\b")
-RUSTDESK_WINDOWS_STOP_POLL_S = 0.5
-
-# On macOS: the app bundle, root's own configuration, the copy under a
-# seated account's home, the launchd job the service runs as, and the
-# signed-in session's own ``--server`` job, which serves the connections
-# and pushes its own configuration to the service.
-RUSTDESK_DARWIN_BINARY_PATH = "/Applications/RustDesk.app/Contents/MacOS/RustDesk"
-RUSTDESK_DARWIN_ROOT_CONFIG = "/var/root/Library/Preferences/com.carriez.RustDesk"
-RUSTDESK_DARWIN_ACCOUNT_RELATIVE = "Library/Preferences/com.carriez.RustDesk"
-RUSTDESK_DARWIN_SERVICE_LABEL = "com.carriez.RustDesk_service"
-RUSTDESK_DARWIN_SERVICE_PLIST = (
-    "/Library/LaunchDaemons/com.carriez.RustDesk_service.plist"
-)
-RUSTDESK_DARWIN_SESSION_LABEL = "com.carriez.RustDesk_server"
-RUSTDESK_DARWIN_SESSION_PLIST = (
-    "/Library/LaunchAgents/com.carriez.RustDesk_server.plist"
-)
-# How long a booted-out job is waited for to be gone, and how often launchd
-# is asked.
-RUSTDESK_DARWIN_UNLOAD_TIMEOUT_S = 30
-RUSTDESK_DARWIN_UNLOAD_POLL_S = 0.5
-
-RUSTDESK_ACTION_START = "start"
-RUSTDESK_ACTION_STOP = "stop"
-RUSTDESK_ACTION_RESTART = "restart"
-
-RUSTDESK_UNIT = "rustdesk"
-
-# What every machine gets when the agent starts: no rendezvous, no relay,
-# the direct port pinned. Connections under a hub are dialed by
-# address on the LAN; nothing registers with public infrastructure.
-# ``direct-server`` is not here — opening the port is the share's decision.
-RUSTDESK_BASE_OPTIONS = (
-    ("custom-rendezvous-server", ""),
-    ("relay-server", ""),
-    ("direct-access-port", str(RUSTDESK_DIRECT_PORT)),
-    ("allow-auto-update", "N"),
-    ("enable-file-transfer", "Y"),
-)
-
-# What the share flow writes. Direct mode with a permanent password; the
-# clipboard and file transfer stay on, since a desktop a person opens from a
-# client is theirs to copy to and from, and the channels this hub does not
-# publish are turned off.
-RUSTDESK_SHARE_OPTIONS = (
-    ("custom-rendezvous-server", ""),
-    ("relay-server", ""),
-    ("direct-server", "Y"),
-    ("direct-access-port", str(RUSTDESK_DIRECT_PORT)),
-    ("allow-auto-update", "N"),
-    ("verification-method", "use-permanent-password"),
-    ("approve-mode", "password"),
-    ("enable-file-transfer", "Y"),
-    ("enable-tunnel", "N"),
-    ("enable-audio", "N"),
-)
-
-# An id is six to twelve digits: the machines this has run on were issued
-# eight, and the bound keeps a longer run of digits from reading as one.
-RUSTDESK_ID_PATTERN = re.compile(r"\b(\d{6,12})\b")
-
-# A key = 'value' line of the options table, as RustDesk itself writes it.
+# A key = 'value' line, as RustDesk itself writes it.
 RUSTDESK_OPTION_PATTERN = re.compile(r"^\s*([A-Za-z0-9_\-]+)\s*=")
+RUSTDESK_PASSWORD_KEY = "password"
 
 
 def rustdesk_os() -> str:
-    """The operating system the tables below are read for.
+    """The operating system the settings are read for.
 
     Returns:
         ``linux``, ``windows`` or ``darwin``.
@@ -168,94 +52,33 @@ def rustdesk_os() -> str:
     return OS_NAMES.get(reported, reported)
 
 
-def binary_candidates() -> tuple:
-    """Every place RustDesk's binary may be on this platform, in order.
-
-    Returns:
-        The absolute paths.
-    """
-    os_name = rustdesk_os()
-    if os_name == "windows":
-        program_files = (
-            os.environ.get("ProgramFiles") or RUSTDESK_WINDOWS_PROGRAM_FILES_DEFAULT
-        )
-        return (ntpath.join(program_files, *RUSTDESK_WINDOWS_BINARY_RELATIVE),)
-    if os_name == "darwin":
-        return (RUSTDESK_DARWIN_BINARY_PATH,)
-    return RUSTDESK_BINARY_PATHS
-
-
-def binary_path() -> str:
-    """Where RustDesk is on this machine.
-
-    Returns:
-        The executable's path, empty when it is not installed.
-    """
-    for candidate in binary_candidates():
-        if os.path.isfile(candidate):
-            return candidate
-    return ""
-
-
-def read_id() -> str:
-    """The id a peer connects to this machine by.
-
-    Returns:
-        The id, empty when RustDesk is absent or has not been assigned one.
-    """
-    binary = binary_path()
-    if not binary:
-        return ""
-    try:
-        result = subprocess.run(
-            [binary, "--get-id"],
-            capture_output=True,
-            text=True,
-            timeout=RUSTDESK_TIMEOUT_S,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return ""
-    match = RUSTDESK_ID_PATTERN.search(result.stdout or "")
-    return match.group(1) if match else ""
-
-
 def config_paths(account_home: str = "") -> list:
-    """Every ``RustDesk2.toml`` this machine reads, most privileged first.
+    """Every ``RustDesk2.toml`` a Linux machine's host reads.
 
     Args:
-        account_home: The home of the account sitting at the machine; empty
-            writes only the service's own.
+        account_home: The home of the account at the screen; empty names
+            root's alone.
 
     Returns:
-        The paths to write. On Windows the service's alone: the session
-        reads the service's.
+        The paths, root's first.
     """
-    os_name = rustdesk_os()
-    if os_name == "windows":
-        system_root = (
-            os.environ.get("SystemRoot") or RUSTDESK_WINDOWS_SYSTEM_ROOT_DEFAULT
-        )
-        return [
-            ntpath.join(
-                system_root, *RUSTDESK_WINDOWS_CONFIG_RELATIVE, RUSTDESK_CONFIG_NAME
-            )
-        ]
-    if os_name == "darwin":
-        root, relative = RUSTDESK_DARWIN_ROOT_CONFIG, RUSTDESK_DARWIN_ACCOUNT_RELATIVE
-    else:
-        root, relative = RUSTDESK_ROOT_CONFIG, RUSTDESK_ACCOUNT_RELATIVE
-    paths = [posixpath.join(root, RUSTDESK_CONFIG_NAME)]
+    if rustdesk_os() == "windows":
+        return []
+    paths = [posixpath.join(RUSTDESK_ROOT_CONFIG, RUSTDESK_CONFIG_NAME)]
     if account_home:
-        paths.append(posixpath.join(account_home, relative, RUSTDESK_CONFIG_NAME))
+        paths.append(
+            posixpath.join(
+                account_home, RUSTDESK_ACCOUNT_RELATIVE, RUSTDESK_CONFIG_NAME
+            )
+        )
     return paths
 
 
 def render_config(existing: str, options: tuple) -> str:
     """One ``RustDesk2.toml`` with the given options settled into it.
 
-    Everything above the options table is kept as it was — the machine's own
-    rendezvous state lives there — and an option RustDesk wrote that this
-    does not name is kept too.
+    Everything above the options table is kept as it was, and an option
+    RustDesk wrote that this does not name is kept too.
 
     Args:
         existing: The file's current text, empty when there is none.
@@ -272,8 +95,6 @@ def render_config(existing: str, options: tuple) -> str:
         if line.strip().startswith("[") and line.strip().endswith("]"):
             is_in_options = line.strip() == "[options]"
             if not is_in_options:
-                # A table after the options is not one this writes; keeping
-                # it would move it above the options it followed.
                 break
             continue
         if not is_in_options:
@@ -285,26 +106,125 @@ def render_config(existing: str, options: tuple) -> str:
     body = "\n".join(line for line in preamble if line.strip())
     lines = [body] if body else []
     lines.append("[options]")
-    lines.extend(f"{key} = '{value}'" for key, value in options)
+    lines.extend(f"{key} = {_quoted(value)}" for key, value in options)
     lines.extend(kept)
     return "\n".join(lines) + "\n"
 
 
-def write_config(path: str, options: tuple) -> bool:
-    """Write one ``RustDesk2.toml``, keeping what it already said and whose
-    it was.
+def render_password(existing: str, password: str) -> str:
+    """One ``RustDesk.toml`` with its permanent password set as plain text.
 
-    **The owner is part of the file.** A session's copy is written by this
-    root daemon but read *and written* by RustDesk running as that person:
-    on Wayland it stores the screen-capture permission there
-    (``wayland-restore-token``), so a copy left owned by root costs them
-    that permission dialog on every single connection. The file keeps the
-    owner and mode it had, and a new one under a home is created as that
-    home's owner.
+    The line takes the place of the one there, or is added before the
+    first table; everything else is kept as it was.
+
+    Args:
+        existing: The file's current text, empty when there is none.
+        password: The seat password.
+
+    Returns:
+        The whole file to write.
+    """
+    line = f"{RUSTDESK_PASSWORD_KEY} = {_quoted(password)}"
+    lines = existing.splitlines()
+    for index, held in enumerate(lines):
+        if held.strip().startswith("["):
+            break
+        match = RUSTDESK_OPTION_PATTERN.match(held)
+        if match is not None and match.group(1) == RUSTDESK_PASSWORD_KEY:
+            lines[index] = line
+            return "\n".join(lines) + "\n"
+    table = next(
+        (index for index, held in enumerate(lines) if held.strip().startswith("[")),
+        len(lines),
+    )
+    lines.insert(table, line)
+    return "\n".join(lines) + "\n"
+
+
+def read_password(path: str) -> str:
+    """The permanent password a ``RustDesk.toml`` holds as plain text.
+
+    Args:
+        path: The file.
+
+    Returns:
+        The value when it is plain text; empty when the file is missing,
+        names none, or holds RustDesk's own encrypted form.
+    """
+    try:
+        with open(path, "r", encoding="utf-8") as stream:
+            lines = stream.read().splitlines()
+    except OSError:
+        return ""
+    for line in lines:
+        if line.strip().startswith("["):
+            return ""
+        match = RUSTDESK_OPTION_PATTERN.match(line)
+        if match is None or match.group(1) != RUSTDESK_PASSWORD_KEY:
+            continue
+        value = line.split("=", 1)[1].strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+            return value[1:-1].replace('\\"', '"').replace("\\\\", "\\")
+    return ""
+
+
+def write_config(path: str, options: tuple) -> bool:
+    """Write one ``RustDesk2.toml``, keeping what it said and whose it was.
 
     Args:
         path: The file to write.
         options: ``(key, value)`` pairs to set.
+
+    Returns:
+        True when the file's text is not what it was.
+
+    Raises:
+        InstallError: If the file cannot be written.
+    """
+    return write_settings(path, lambda existing: render_config(existing, options))
+
+
+def write_password(path: str, password: str) -> bool:
+    """Write the permanent password into one ``RustDesk.toml``.
+
+    Args:
+        path: The file to write.
+        password: The seat password.
+
+    Returns:
+        True when the file's text is not what it was.
+
+    Raises:
+        InstallError: If the file cannot be written.
+    """
+    return write_settings(path, lambda existing: render_password(existing, password))
+
+
+def would_change(path: str, render) -> bool:
+    """Whether writing one settings file would change it.
+
+    Args:
+        path: The file.
+        render: Called with the file's text; returns the text to write.
+
+    Returns:
+        True when the file is missing or its text would change.
+    """
+    try:
+        with open(path, "r", encoding="utf-8") as stream:
+            existing = stream.read()
+    except OSError:
+        return True
+    return render(existing) != existing
+
+
+def write_settings(path: str, render) -> bool:
+    """Write one settings file through a renderer, keeping its owner and mode.
+
+    Args:
+        path: The file to write.
+        render: Called with the file's current text, empty when there is
+            none; returns the text to write.
 
     Returns:
         True when the file's text is not what it was.
@@ -318,7 +238,7 @@ def write_config(path: str, options: tuple) -> bool:
         if os.path.isfile(path):
             with open(path, "r", encoding="utf-8") as stream:
                 existing = stream.read()
-        rendered = render_config(existing, options)
+        rendered = render(existing)
         directory = os.path.dirname(path) or "."
         os.makedirs(directory, exist_ok=True)
         temporary = f"{path}.tmp"
@@ -333,8 +253,16 @@ def write_config(path: str, options: tuple) -> bool:
     return rendered != existing
 
 
+def _quoted(value: str) -> str:
+    """One TOML string: a literal one unless the value holds a quote."""
+    if "'" not in value and "\n" not in value:
+        return f"'{value}'"
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+    return f'"{escaped}"'
+
+
 def _owner_of(path: str):
-    """Who a config belongs to, so a rewrite does not take it away.
+    """Who a settings file belongs to, so a rewrite does not take it away.
 
     Args:
         path: The file being written.
@@ -360,233 +288,3 @@ def _stat(path: str):
         return os.stat(path)
     except OSError:
         return None
-
-
-def set_password(password: str) -> None:
-    """Set the permanent password a peer connects with.
-
-    RustDesk 1.4.9 takes this only as ``--password <value>``: it reads no
-    standard input and stores the password salted, so no file write reaches
-    it. The value is on this one argument vector for the length of the call
-    and is kept nowhere else on the machine.
-
-    **The call is also the readiness check.** It travels over the service's
-    own socket, which starts accepting after the service control has already
-    returned, so a call made straight after a restart is refused by the
-    socket rather than by RustDesk. Nothing else the binary offers proves
-    that socket is up — ``--get-id`` answers out of the configuration file
-    with the service stopped — so the call is repeated until it takes.
-
-    Args:
-        password: The access password.
-
-    Raises:
-        InstallError: If RustDesk is absent, or still refusing when the
-            wait runs out.
-    """
-    binary = binary_path()
-    if not binary:
-        raise InstallError("RustDesk is not installed")
-    deadline = time.monotonic() + RUSTDESK_PASSWORD_READY_TIMEOUT_S
-    while True:
-        refusal = _password_refusal(binary, password)
-        if not refusal:
-            return
-        if time.monotonic() >= deadline:
-            raise InstallError(f"rustdesk refused the password: {refusal}")
-        time.sleep(RUSTDESK_PASSWORD_RETRY_S)
-
-
-def _password_refusal(binary: str, password: str) -> str:
-    """Make the password call once.
-
-    Args:
-        binary: The RustDesk binary.
-        password: The access password.
-
-    Returns:
-        Empty when it took, what RustDesk printed when it did not.
-
-    Raises:
-        InstallError: If the binary could not be run at all, which no wait
-            would fix.
-    """
-    try:
-        result = subprocess.run(
-            [binary, "--password", password],
-            capture_output=True,
-            text=True,
-            timeout=RUSTDESK_TIMEOUT_S,
-        )
-    except (OSError, subprocess.SubprocessError) as error:
-        raise InstallError(f"rustdesk --password could not run: {error}")
-    # The binary reports a refusal on standard output and still exits zero.
-    printed = (result.stdout or "").strip()
-    if result.returncode != 0 or (printed and not printed.startswith("Done")):
-        return printed or f"exit {result.returncode}"
-    return ""
-
-
-def control_service(action: str, account: str = "") -> None:
-    """Start, stop or restart the RustDesk service the platform's own way.
-
-    systemd on Linux, the service control manager on Windows, launchd on
-    macOS. A stop on Windows waits for the service to have stopped, since
-    it rewrites its configuration as it exits.
-
-    **On macOS the signed-in session's job goes with the service.** The
-    ``--server`` job of the account at the screen serves the connections,
-    reads its configuration once as it starts, and pushes what it holds to
-    the service whenever that changes, so a file written under it running
-    is overwritten. A stop takes that job out first and the service after,
-    each waited for until launchd no longer has it; a start brings the
-    service up first, so the job reads the service's configuration when it
-    comes up.
-
-    Args:
-        action: ``start``, ``stop`` or ``restart``.
-        account: The account at the screen, whose session job is driven
-            with the service on macOS; empty, or any other system, drives
-            the service alone.
-
-    Raises:
-        InstallError: If the service manager cannot be run.
-    """
-    os_name = rustdesk_os()
-    if os_name == "windows":
-        if action in (RUSTDESK_ACTION_STOP, RUSTDESK_ACTION_RESTART):
-            _run_service_command(["sc", "stop", RUSTDESK_WINDOWS_SERVICE])
-            _wait_for_windows_stop()
-        if action in (RUSTDESK_ACTION_START, RUSTDESK_ACTION_RESTART):
-            _run_service_command(["sc", "start", RUSTDESK_WINDOWS_SERVICE])
-        return
-    if os_name == "darwin":
-        _control_darwin(action, _darwin_uid(account))
-        return
-    _run_service_command(["systemctl", action, RUSTDESK_UNIT])
-
-
-def _control_darwin(action: str, uid: "int | None") -> None:
-    """Drive the service, and the session's job when there is a uid for it.
-
-    Args:
-        action: ``start``, ``stop`` or ``restart``.
-        uid: The uid of the account at the screen, None for the service
-            alone.
-
-    Raises:
-        InstallError: If launchctl cannot be run.
-    """
-    service_target = f"system/{RUSTDESK_DARWIN_SERVICE_LABEL}"
-    session_domain = f"gui/{uid}"
-    session_target = f"{session_domain}/{RUSTDESK_DARWIN_SESSION_LABEL}"
-    if action in (RUSTDESK_ACTION_STOP, RUSTDESK_ACTION_RESTART):
-        if uid is not None:
-            _run_service_command(["launchctl", "bootout", session_target])
-            _wait_for_darwin_unload(session_target)
-        _run_service_command(["launchctl", "bootout", service_target])
-        _wait_for_darwin_unload(service_target)
-    if action in (RUSTDESK_ACTION_START, RUSTDESK_ACTION_RESTART):
-        _run_service_command(
-            ["launchctl", "bootstrap", "system", RUSTDESK_DARWIN_SERVICE_PLIST]
-        )
-        if uid is not None:
-            _run_service_command(
-                [
-                    "launchctl",
-                    "bootstrap",
-                    session_domain,
-                    RUSTDESK_DARWIN_SESSION_PLIST,
-                ]
-            )
-            # A job launchd still had loaded is not started by a bootstrap.
-            _run_service_command(["launchctl", "kickstart", session_target])
-
-
-def _darwin_uid(account: str) -> "int | None":
-    """One account's uid, None when there is no account or no such one."""
-    if not account or pwd is None:
-        return None
-    try:
-        return pwd.getpwnam(account).pw_uid
-    except KeyError:
-        return None
-
-
-def _wait_for_darwin_unload(target: str) -> None:
-    """Wait until launchd no longer holds one job.
-
-    Args:
-        target: The job's ``<domain>/<label>``.
-
-    Raises:
-        InstallError: If launchctl cannot be run.
-    """
-    deadline = time.monotonic() + RUSTDESK_DARWIN_UNLOAD_TIMEOUT_S
-    while time.monotonic() < deadline:
-        if _service_command_status(["launchctl", "print", target]) != 0:
-            return
-        time.sleep(RUSTDESK_DARWIN_UNLOAD_POLL_S)
-
-
-def _run_service_command(command: list) -> str:
-    """Run one service manager command, what it printed returned.
-
-    Args:
-        command: The argument vector.
-
-    Returns:
-        Its standard output.
-
-    Raises:
-        InstallError: If the command cannot be run.
-    """
-    try:
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            timeout=RUSTDESK_SERVICE_TIMEOUT_S,
-        )
-    except (OSError, subprocess.SubprocessError) as error:
-        raise InstallError(f"{command[0]} could not run: {error}")
-    return result.stdout or ""
-
-
-def _service_command_status(command: list) -> int:
-    """Run one service manager command, its exit status returned.
-
-    Args:
-        command: The argument vector.
-
-    Returns:
-        The exit status.
-
-    Raises:
-        InstallError: If the command cannot be run.
-    """
-    try:
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            timeout=RUSTDESK_SERVICE_TIMEOUT_S,
-        )
-    except (OSError, subprocess.SubprocessError) as error:
-        raise InstallError(f"{command[0]} could not run: {error}")
-    return result.returncode
-
-
-def _wait_for_windows_stop() -> None:
-    """Wait until the service control manager reports RustDesk stopped.
-
-    Raises:
-        InstallError: If ``sc`` cannot be run.
-    """
-    deadline = time.monotonic() + RUSTDESK_SERVICE_TIMEOUT_S
-    while time.monotonic() < deadline:
-        printed = _run_service_command(["sc", "query", RUSTDESK_WINDOWS_SERVICE])
-        # No state at all is a service that is not there to wait for.
-        if "STATE" not in printed or RUSTDESK_WINDOWS_STOPPED_PATTERN.search(printed):
-            return
-        time.sleep(RUSTDESK_WINDOWS_STOP_POLL_S)

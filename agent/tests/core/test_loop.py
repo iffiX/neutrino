@@ -329,6 +329,8 @@ def test_the_store_lives_under_the_platforms_data_root():
     root = platform.agent_data_dir()
     assert agent._store._path == os.path.join(root, "state.json")
     assert agent._rdp._credentials_dir == os.path.join(root, "credentials")
+    assert agent._rdp._dir == os.path.join(platform.agent_var_dir(), "remote_desktop")
+    assert agent._engine.module_runners["remote_desktop"]._host is agent._rdp
 
 
 # --- the hello and the report ---
@@ -1486,7 +1488,7 @@ def test_news_during_a_turn_starts_the_next_turn_without_waiting(
     """A stop or a ``nagent sync`` that lands while a turn runs is still
     standing when the wait begins, so the backoff is not waited out."""
     agent, _ = scripted_agent(config_path, monkeypatch)
-    monkeypatch.setattr(agent._rdp, "apply_baseline", lambda: None)
+    monkeypatch.setattr(agent._rdp, "resume_old_share", lambda: None)
     agent._news = _WatchedEvent()
     turns: list = []
 
@@ -1509,7 +1511,7 @@ def test_a_start_sweeps_the_package_the_last_process_left(
     config_path, monkeypatch, tmp_path
 ):
     agent, _ = scripted_agent(config_path, monkeypatch)
-    monkeypatch.setattr(agent._rdp, "apply_baseline", lambda: None)
+    monkeypatch.setattr(agent._rdp, "resume_old_share", lambda: None)
     packages = tmp_path / "packages"
     packages.mkdir()
     (packages / ".package.abc.part").write_bytes(b"the package that installed me")
@@ -1530,7 +1532,7 @@ def test_a_start_sweeps_the_package_the_last_process_left(
 
 def test_a_stop_ends_the_loop_while_it_waits(config_path, monkeypatch):
     agent, _ = scripted_agent(config_path, monkeypatch)
-    monkeypatch.setattr(agent._rdp, "apply_baseline", lambda: None)
+    monkeypatch.setattr(agent._rdp, "resume_old_share", lambda: None)
     monkeypatch.setattr(agent, "run_once", lambda: AGENT_BACKOFF_MAX_S)
     runner = threading.Thread(target=agent.run_forever, daemon=True)
     runner.start()
@@ -1567,7 +1569,7 @@ def test_a_socket_opened_after_a_stop_is_closed_and_not_served(
 
 def test_a_loop_asked_to_stop_before_it_starts_takes_no_turn(config_path, monkeypatch):
     agent, _ = scripted_agent(config_path, monkeypatch)
-    monkeypatch.setattr(agent._rdp, "apply_baseline", lambda: None)
+    monkeypatch.setattr(agent._rdp, "resume_old_share", lambda: None)
     monkeypatch.setattr(agent, "run_once", lambda: pytest.fail("no turn"))
     agent.stop()
 

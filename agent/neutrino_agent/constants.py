@@ -252,11 +252,6 @@ AGENT_REINSTALL_POLL_S = 1.0
 # reads them again. The reporter never waits on a read.
 AGENT_MODULE_DETAILS_TTL_S = 5.0
 
-# Where the agent's own RustDesk build lands. The module is built in: its
-# row reads installed while this file exists, and no order moves it. Under
-# /usr because RustDesk refuses `--password` unless its own `current_exe`
-# is there, and it resolves symlinks before it looks.
-AGENT_RUSTDESK_BINARY_PATH = "/usr/lib/neutrino/agent/rustdesk/rustdesk"
 # How long a module command waits for a pending desired state to apply
 # before it runs against the configuration that state carries.
 AGENT_MODULE_COMMAND_SETTLE_S = 30.0
@@ -313,7 +308,6 @@ AGENT_PF_PARENT_ANCHOR = "com.apple"
 AGENT_DARWIN_PROGRAM_DIR = "/Library/Application Support/Neutrino/agent/app"
 AGENT_DARWIN_LINK_PATH = "/usr/local/bin/nagent"
 AGENT_DARWIN_PACKAGE_ID = "com.neutrino.agent"
-AGENT_DARWIN_RUSTDESK_APP = "/Applications/RustDesk.app"
 # The forwarders the agent keeps in front of a module's page (CloudCLI,
 # code-server): how one request's head is read, how bytes are relayed, and
 # how long a relayed connection may stay quiet.

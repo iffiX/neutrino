@@ -4,8 +4,9 @@ The device agent for [neutrino](https://github.com/iffiX/neutrino) is one root
 service on a managed Linux machine, with one socket open to the hub. It makes
 every module the hub's state names match the `want` that state gives it, reports
 what is true on the machine every few seconds, and runs the commands the hub
-opens over the same socket. Sharing this machine's desktop is decided on
-the machine, and every report declares it upward.
+opens over the same socket. Whether this machine's desktop is shared is the
+Remote desktop module's switch, which the hub sets; every report declares the
+share upward.
 
 Its code is Python standard library only. The package includes the interpreter
 that runs it and the RustDesk host it configures, so it installs on a machine
@@ -35,8 +36,8 @@ binding to report.
 
 `nagent` is the command line on the machine. Every subcommand except
 `--version` needs root; run as another account, one prints its reason and the
-`sudo` line, then exits with status 2. `status`, `sync` and the two `rdp`
-actions reach the running service over its control socket.
+`sudo` line, then exits with status 2. `status` and `sync` reach the running
+service over its control socket.
 
 | Command              | What it does                                                                                                                                                                      |
 | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -44,8 +45,6 @@ actions reach the running service over its control socket.
 | `nagent leave`       | Posts the binding to the hub and deletes it. The agent and its service stay, and the machine joins again with a fresh link.                                                       |
 | `nagent status`      | Prints the version, the hub this machine is bound to, the service state and whether the socket is up. An error line names the refusal and the step after it.                      |
 | `nagent sync`        | Sends this machine's report to the hub now.                                                                                                                                       |
-| `nagent rdp start`   | Shares this desktop at the seat password the hub set. `--user <account>` names whose desktop; with it omitted, the account that invoked `sudo`, or the one account at the screen. |
-| `nagent rdp stop`    | Stops sharing this desktop.                                                                                                                                                       |
 | `nagent run`         | Runs the agent in the foreground, which is what the systemd unit starts.                                                                                                          |
 | `nagent --version`   | Prints the package version.                                                                                                                                                       |
 
@@ -95,9 +94,10 @@ alone, observed and reported all the same.
 | `/var/lib/neutrino/agent/packages/`   | a package coming down a `package` stream, until its digest is checked                            |
 | `/var/lib/neutrino/agent/vscode/`     | the VS Code CLI, read and run by every account, and each account's own token file                |
 | `/var/lib/neutrino/agent/cloudcli/`   | CloudCLI's Node.js, read and run by every account                                                |
+| `/var/lib/neutrino/agent/remote_desktop/` | what the switch registered under RustDesk's names, and what was there before, root-only      |
 | `/run/neutrino/agent/agent.sock`      | the control socket, 0600 under a 0700 directory, so the kernel admits root alone                 |
 | `/opt/neutrino/agent/`                | the interpreter and the agent's own code                                                         |
-| `/usr/lib/neutrino/agent/rustdesk/`   | the desktop host the package includes                                                            |
+| `/usr/lib/neutrino/agent/rustdesk/`   | the agent's copy of RustDesk, run as `rustdesk.service` while the switch is on                   |
 
 ## The package tree
 

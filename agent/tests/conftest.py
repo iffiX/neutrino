@@ -129,10 +129,6 @@ class FakeControlAgent:
         self.is_left = False
         self.join_error = None
         self.error = None
-        self.rdp_calls = []
-        self.rdp_reply = {}
-        self.rdp_error = None
-        self.is_unshared = False
         self.is_socket_open = False
         self.sync_reply = {}
         self.syncs = 0
@@ -142,7 +138,6 @@ class FakeControlAgent:
             "port": 21118,
             "account": "",
             "attention": "",
-            "rustdesk_id": "123456789",
             "has_password": False,
         }
 
@@ -151,8 +146,8 @@ class FakeControlAgent:
 
     def module_states(self) -> dict:
         return {
-            "rustdesk": {
-                "state": "installed",
+            "remote_desktop": {
+                "state": "stopped",
                 "is_active": False,
                 "code": "",
                 "params": {},
@@ -178,16 +173,6 @@ class FakeControlAgent:
     def sync(self) -> dict:
         self.syncs += 1
         return dict(self.sync_reply)
-
-    def rdp_share(self, *, account: str) -> dict:
-        self.rdp_calls.append(account)
-        if self.rdp_error is not None:
-            raise self.rdp_error
-        return dict(self.rdp_reply)
-
-    def rdp_unshare(self) -> dict:
-        self.is_unshared = True
-        return dict(self.rdp_reply)
 
     def join(self, link):
         if self.join_error is not None:

@@ -77,8 +77,8 @@ def test_the_state_carries_the_connection_the_version_and_the_modules(control):
     # Each module as the report says it, and nothing the hub's manifest
     # would add: the agent holds no catalog.
     assert state["modules"] == {
-        "rustdesk": {
-            "state": "installed",
+        "remote_desktop": {
+            "state": "stopped",
             "is_active": False,
             "code": "",
             "params": {},
@@ -191,52 +191,23 @@ def test_a_refused_link_reports_on_the_state(control):
     assert state["error"] == "the link is unusable"
 
 
-# --- POST /api/rdp/start and /api/rdp/stop ---
+# --- the desktop share is the hub's switch, not a request here ---
 
 
-def test_a_share_names_its_account_and_no_password_at_all(control):
-    server, agent = control
+@pytest.mark.parametrize("route", ["/api/rdp/start", "/api/rdp/stop"])
+def test_the_share_routes_are_gone(control, route):
+    server, _agent = control
 
-    status, state = over_socket(server, "POST", "/api/rdp/start", {"user": "alice"})
+    status, reply = over_socket(server, "POST", route, {"user": "alice"})
 
-    assert status == 200
-    assert agent.rdp_calls == ["alice"]
-    assert state["rdp"]["is_shared"] is False
-
-
-def test_an_unnamed_account_reaches_the_agent_as_empty(control):
-    server, agent = control
-
-    status, _state = over_socket(server, "POST", "/api/rdp/start", {})
-
-    assert status == 200
-    assert agent.rdp_calls == [""]
-
-
-def test_a_share_refusal_maps_to_400(control):
-    server, agent = control
-    agent.rdp_reply = {"code": "rdp_wrong_seat", "params": {"account": "bob"}}
-
-    status, reply = over_socket(server, "POST", "/api/rdp/start", {"user": "bob"})
-
-    assert status == 400
-    assert reply == {"code": "rdp_wrong_seat", "params": {"account": "bob"}}
-
-
-def test_stopping_a_share_rides_through(control):
-    server, agent = control
-
-    status, _state = over_socket(server, "POST", "/api/rdp/stop", {})
-
-    assert status == 200
-    assert agent.is_unshared is True
+    assert (status, reply["code"]) == (404, "unknown_request")
 
 
 def test_an_unknown_request_from_a_handler_maps_to_404(control):
     server, agent = control
-    agent.rdp_reply = {"code": "unknown_request", "params": {}}
+    agent.sync_reply = {"code": "unknown_request", "params": {}}
 
-    status, reply = over_socket(server, "POST", "/api/rdp/stop", {})
+    status, reply = over_socket(server, "POST", "/api/sync", {})
 
     assert (status, reply["code"]) == (404, "unknown_request")
 
@@ -250,7 +221,7 @@ def test_a_garbage_body_acts_on_nothing_and_never_crashes(control):
     connection = client._ControlSocketHttpConnection(server.socket_path, timeout_s=5)
     connection.request(
         "POST",
-        "/api/rdp/start",
+        "/api/join",
         body=b"not json at all",
         headers={"Content-Type": "application/json"},
     )
@@ -262,21 +233,21 @@ def test_a_garbage_body_acts_on_nothing_and_never_crashes(control):
     # The garbage decodes to an empty object: nothing named, and the agent's
     # own guard does nothing with a nameless ask.
     assert status == 200
-    assert agent.rdp_calls == [""]
+    assert agent.joined_links == [""]
 
 
 def test_a_handler_exception_answers_typed_and_keeps_the_server_answering(control):
     server, agent = control
-    agent.rdp_error = OSError("a secret-bearing message")
+    agent.join_error = OSError("a secret-bearing message")
 
-    status, reply = over_socket(server, "POST", "/api/rdp/start", {"user": "alice"})
+    status, reply = over_socket(server, "POST", "/api/join", {"link": "x"})
 
     # The wire carries the class name only, never the message's own words.
     assert status == 500
     assert reply == {"code": "agent_internal", "params": {"error": "OSError"}}
     assert "secret-bearing" not in json.dumps(reply)
 
-    agent.rdp_error = None
+    agent.join_error = None
     status, state = over_socket(server, "GET", "/api/state")
     assert status == 200
     assert state["version"]

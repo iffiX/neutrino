@@ -15,7 +15,6 @@ def test_the_gate_covers_every_verb():
     assert sorted(entry.ROOT_COMMANDS) == [
         "join",
         "leave",
-        "rdp",
         "run",
         "service",
         "start",
@@ -31,7 +30,6 @@ def test_the_gate_covers_every_verb():
         (["nagent", "status"], "it asks the agent over its root-only control socket"),
         (["nagent", "join", "neutrino://enroll/x"], "it writes the binding"),
         (["nagent", "leave"], "it removes the binding"),
-        (["nagent", "rdp", "start"], "it configures this machine's desktop share"),
         (["nagent", "run"], "the agent manages this machine"),
         (["nagent", "sync"], "it asks the agent over its root-only control socket"),
     ],
@@ -118,35 +116,6 @@ def test_no_command_prints_the_help(monkeypatch, capsys):
     assert "usage: nagent" in capsys.readouterr().out
 
 
-@pytest.mark.parametrize(
-    "argv, expected",
-    [
-        (["nagent", "rdp", "start"], ("start", "")),
-        (["nagent", "rdp", "start", "--user", "alice"], ("start", "alice")),
-        (["nagent", "rdp", "stop"], ("stop", "")),
-    ],
-)
-def test_the_rdp_verbs_reach_their_own_command(monkeypatch, argv, expected):
-    called = {}
-    monkeypatch.setattr(entry.os, "geteuid", lambda: 0)
-    monkeypatch.setattr(entry.sys, "argv", argv)
-    monkeypatch.setattr(
-        entry.rdp, "main_start", lambda *, user: called.update(start=user) or 0
-    )
-    monkeypatch.setattr(entry.rdp, "main_stop", lambda: called.update(stop="") or 0)
-
-    assert entry.main() == 0
-    assert called == {expected[0]: expected[1]}
-
-
-def test_rdp_with_no_action_prints_the_help(monkeypatch, capsys):
-    monkeypatch.setattr(entry.os, "geteuid", lambda: 0)
-    monkeypatch.setattr(entry.sys, "argv", ["nagent", "rdp"])
-
-    assert entry.main() == 2
-    assert "usage: nagent rdp" in capsys.readouterr().out
-
-
 def test_sync_reaches_its_own_command(monkeypatch):
     monkeypatch.setattr(entry.os, "geteuid", lambda: 0)
     monkeypatch.setattr(entry.sys, "argv", ["nagent", "sync"])
@@ -156,7 +125,7 @@ def test_sync_reaches_its_own_command(monkeypatch):
 
 
 def test_the_verbs_that_were_pruned_are_gone(monkeypatch, capsys):
-    for verb in ("gui", "module", "operation", "connect", "disconnect"):
+    for verb in ("gui", "module", "operation", "connect", "disconnect", "rdp"):
         monkeypatch.setattr(entry.sys, "argv", ["nagent", verb])
 
         with pytest.raises(SystemExit) as refused:

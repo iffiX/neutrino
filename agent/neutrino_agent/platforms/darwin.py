@@ -30,7 +30,6 @@ from neutrino_agent.constants import (
     AGENT_DARWIN_LOG_PATH,
     AGENT_DARWIN_PACKAGE_ID,
     AGENT_DARWIN_PROGRAM_DIR,
-    AGENT_DARWIN_RUSTDESK_APP,
     AGENT_DATA_DIR_DARWIN,
     AGENT_LAUNCHD_DAEMON_DIR,
     AGENT_LAUNCHD_LABEL,
@@ -592,50 +591,22 @@ class DarwinPlatform(AgentPlatform):
     def remove_agent_program(self) -> list:
         """Remove the agent from this Mac, which has no uninstaller.
 
-        RustDesk's two jobs and the agent's own are unloaded, their plists,
-        RustDesk, the program and its link are deleted, and the package's
-        receipt is forgotten. The configuration, the state and the log stay,
-        as a Linux package's removal leaves them, so an install that comes
-        after finds the binding and the file share's record.
+        The agent's job is unloaded, its plist, the program with its copy
+        of RustDesk and its link are deleted, and the package's receipt is
+        forgotten; the desktop share was turned off before. The
+        configuration, the state and the log stay, as a Linux package's
+        removal leaves them, so an install that comes after finds the
+        binding and the file share's record.
 
         Returns:
             What was removed, one line each.
         """
-        from neutrino_agent.modules.rustdesk import (
-            RUSTDESK_DARWIN_SERVICE_LABEL,
-            RUSTDESK_DARWIN_SERVICE_PLIST,
-            RUSTDESK_DARWIN_SESSION_LABEL,
-            RUSTDESK_DARWIN_SESSION_PLIST,
-        )
-
-        from neutrino_agent.rdp.darwin_seat import console_user
-
-        seated = console_user()
-        seat = seated[1] if seated else 0
-        if seat != 0:
-            _run_removal(
-                ["launchctl", "bootout", f"gui/{seat}/{RUSTDESK_DARWIN_SESSION_LABEL}"]
-            )
-        _run_removal(
-            ["launchctl", "bootout", f"system/{RUSTDESK_DARWIN_SERVICE_LABEL}"]
-        )
         _run_removal(["launchctl", "bootout", DARWIN_LAUNCHD_TARGET])
-        for path in (
-            RUSTDESK_DARWIN_SESSION_PLIST,
-            RUSTDESK_DARWIN_SERVICE_PLIST,
-            AGENT_LAUNCHD_PLIST_PATH,
-            AGENT_DARWIN_LINK_PATH,
-        ):
+        for path in (AGENT_LAUNCHD_PLIST_PATH, AGENT_DARWIN_LINK_PATH):
             _unlink(path)
         _run_removal(["pkgutil", "--forget", AGENT_DARWIN_PACKAGE_ID])
-        _run_removal(["rm", "-rf", AGENT_DARWIN_RUSTDESK_APP, AGENT_DARWIN_PROGRAM_DIR])
-        return [
-            AGENT_LAUNCHD_LABEL,
-            RUSTDESK_DARWIN_SERVICE_LABEL,
-            RUSTDESK_DARWIN_SESSION_LABEL,
-            AGENT_DARWIN_RUSTDESK_APP,
-            AGENT_DARWIN_PROGRAM_DIR,
-        ]
+        _run_removal(["rm", "-rf", AGENT_DARWIN_PROGRAM_DIR])
+        return [AGENT_LAUNCHD_LABEL, AGENT_DARWIN_PROGRAM_DIR]
 
     def agent_service_start_hint(self) -> str:
         """The launchctl command that loads the agent's own job."""

@@ -10,8 +10,11 @@ import subprocess
 
 import pytest
 
-from neutrino_agent.modules import remote_desktop
-from neutrino_agent.modules.remote_desktop import RemoteDesktopReader, teamviewer_id
+from neutrino_agent.modules.remote_desktop import user_tier as remote_desktop
+from neutrino_agent.modules.remote_desktop.user_tier import (
+    RemoteDesktopReader,
+    teamviewer_id,
+)
 from neutrino_agent.modules.subprocess_run import CommandResult
 
 # What `teamviewer info` prints on 15.61.3, escapes and all.

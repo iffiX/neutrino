@@ -23,12 +23,18 @@ import threading
 
 from neutrino_agent.ai_tools.applier import AiToolsApplier
 from neutrino_agent.cli.start import is_confirmed
-from neutrino_agent.constants import AGENT_WINDOWS_SERVICE_NAME
+from neutrino_agent.constants import (
+    AGENT_CREDENTIALS_DIR_NAME,
+    AGENT_STATE_NAME,
+    AGENT_WINDOWS_SERVICE_NAME,
+)
 from neutrino_agent.control.server import ControlServer
 from neutrino_agent.core.loop import Agent
-from neutrino_agent.exceptions import PlatformUnsupportedError
+from neutrino_agent.core.store import MachineStateStore
+from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
 from neutrino_agent.platforms.detect import detect_platform
 from neutrino_agent.platforms.windows_service import ServiceControlDispatcher
+from neutrino_agent.rdp.host import RdpShareHost
 
 # --- config ---
 SERVICE_LOG_MAX_BYTES = 1024 * 1024
@@ -87,10 +93,11 @@ def main_run() -> int:
 
 
 def main_uninstall(*, is_forced: bool) -> int:
-    """Stop the agent, switch the accounts' AI tools back, and take away what it and its modules added.
+    """Stop the agent, turn the desktop share off, switch the accounts' AI tools back, and take away what it and its modules added.
 
     The service stops first, so no apply of its own runs beside the switch
-    back; the copy of cc-switch goes once the switch back is done.
+    back; the copy of cc-switch goes once the switch back is done. A desktop
+    share that cannot be turned off is said, and the removal goes on.
 
     Args:
         is_forced: Go ahead without asking.
@@ -107,6 +114,7 @@ def main_uninstall(*, is_forced: bool) -> int:
         return 1
     try:
         platform.stop_agent_service()
+        turn_desktop_off(platform)
         ai_tools = AiToolsApplier(platform=platform, log=print)
         for switched in ai_tools.switch_back_all():
             print(
@@ -125,6 +133,27 @@ def main_uninstall(*, is_forced: bool) -> int:
     for name in removed:
         print(f"removed    {name}")
     return 0
+
+
+def turn_desktop_off(platform) -> None:
+    """Give the machine's RustDesk back before the agent goes.
+
+    Args:
+        platform: The machine's platform.
+    """
+    data_dir = platform.agent_data_dir()
+    host = RdpShareHost(
+        platform=platform,
+        store=MachineStateStore(path=os.path.join(data_dir, AGENT_STATE_NAME)),
+        credentials_dir=os.path.join(data_dir, AGENT_CREDENTIALS_DIR_NAME),
+        state_dir=platform.agent_var_dir(),
+        log=print,
+    )
+    try:
+        host.turn_off()
+    except ModuleApplyError as error:
+        said = " ".join(f"{key}={value}" for key, value in error.params.items())
+        print(f"remote desktop: {error.code} {said}".rstrip(), file=sys.stderr)
 
 
 def service_log(path: str):

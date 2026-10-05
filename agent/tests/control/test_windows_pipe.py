@@ -127,7 +127,7 @@ def test_the_pipe_serves_the_same_handler_set(monkeypatch):
     head, state = answered_json(api)
     assert head.startswith("HTTP/1.1 200")
     assert state["hostname"] == "box"
-    assert state["modules"]["rustdesk"]["state"] == "installed"
+    assert state["modules"]["remote_desktop"]["state"] == "stopped"
 
 
 def test_shutdown_dials_the_pipe_to_wake_the_accept():

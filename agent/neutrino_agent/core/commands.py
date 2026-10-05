@@ -33,7 +33,7 @@ from neutrino_agent.constants import (
     AGENT_OUTPUT_LIMIT_BYTES,
 )
 from neutrino_agent.exceptions import PlatformUnsupportedError
-from neutrino_agent.modules.remote_desktop import (
+from neutrino_agent.modules.remote_desktop.user_tier import (
     SUPPORTED_PRODUCTS,
     RemoteDesktopReader,
 )
