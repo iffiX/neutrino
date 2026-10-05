@@ -19,9 +19,10 @@ import sys
 import tempfile
 from pathlib import Path
 
-import psutil
 
 from neutrino_hub.cli.password import is_password_set
+from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
+from neutrino_hub.modules.router.link_status import RouterLinkStatus, device_addresses
 from neutrino_hub.platforms.detect import hub_platform, process_controller
 from neutrino_hub.system.constants import SYSTEM_SUPERVISED_WEB
 from neutrino_hub.utils.constants import is_dev_root_set
@@ -32,6 +33,7 @@ from neutrino_hub.web.setup_app import ensure_setup_token
 # --- config ---
 OPEN_LOOPBACK_HOST = "127.0.0.1"
 OPEN_SETTINGS_FILE = "web/settings.json"
+OPEN_NETWORK_FILE = "router/network.json"
 OPEN_START_SERVICE_FLAG = "--start-service"
 OPEN_OUTPUT_FLAG = "--output"
 
@@ -198,13 +200,28 @@ def _configured_port() -> int:
 
 
 def _reachable_host() -> str:
-    """This machine's first IPv4 address that is not loopback.
+    """The address a browser on another machine reaches this one at.
+
+    The box's addresses are read as everything else of the hub reads them,
+    by :func:`device_addresses`, which leaves out loopback, the proxy's TUN
+    and the desktop client's files adapter.
 
     Returns:
-        The address, or the hostname when no interface carries one.
+        The address of an interface this box answers on, as
+        :meth:`RouterNetworkConfig.exposed_device_names_on` reads them; else
+        of an interface holding a default route; else the first address the
+        box holds; else the hostname.
     """
-    for addresses in psutil.net_if_addrs().values():
-        for entry in addresses:
-            if entry.family == socket.AF_INET and not entry.address.startswith("127."):
-                return entry.address
+    addresses = device_addresses()
+    try:
+        network = RouterNetworkConfig.from_dict(read_config(OPEN_NETWORK_FILE))
+    except (FileNotFoundError, ValueError):
+        network = RouterNetworkConfig.from_dict({})
+    status = RouterLinkStatus()
+    routed = [name for name in addresses if status.gateway_for(name) is not None]
+    for name in [*network.exposed_device_names_on(list(addresses)), *routed]:
+        if addresses.get(name):
+            return addresses[name].partition("/")[0]
+    for held in addresses.values():
+        return held.partition("/")[0]
     return socket.gethostname()
