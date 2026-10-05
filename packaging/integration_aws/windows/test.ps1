@@ -50,7 +50,7 @@ if (($all | Where-Object { $_.Extension -in '.py', '.pyc' }).Count -ne 0) { Fail
 if ($LASTEXITCODE -ne 1) {
     Step "leave the hub a previous walk joined"
     & $nclient quit | Out-Null
-    & $nclient leave
+    & $nclient leave --yes
 }
 
 Step "status before joining (expects exit 1: unbound)"

@@ -34,7 +34,7 @@ fi
 # already joined; the walk starts from unbound by leaving first.
 if nclient status > /dev/null 2>&1; then
     step "leave the hub a previous walk joined"
-    nclient leave || fail "nclient leave failed"
+    nclient leave --yes || fail "nclient leave failed"
 fi
 
 step "status before joining (expects exit 1: unbound)"
