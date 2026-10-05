@@ -1250,7 +1250,10 @@ Package bytes come to the agent down a `package {module}` stream it opens, the
 same stream that serves its own upgrade. cc-switch, which the machine's AI
 tools run and no module installs, comes down the same stream as `package
 {module: cc_switch}`: `data/manifests/cc_switch.json` pins it, says
-`is_module: false`, and so stays out of the catalog's modules. An install's or an uninstall's output
+`is_module: false`, and so stays out of the catalog's modules. A `cn` hub
+fetches it from its own release and closes the stream
+`hub_release_file_gone {file}` once that release no longer carries the file
+([install_and_dev.md](install_and_dev.md), "Where each edition fetches from"). An install's or an uninstall's output
 goes up a `log {module}` stream line by line, and the Modules page shows it
 under the module's tab as it arrives.
 

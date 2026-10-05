@@ -232,16 +232,23 @@ and `cn` in the mainland source tree.
 | The npm registry, for CloudCLI | `https://registry.npmjs.org` | `https://registry.npmmirror.com` |
 | better-sqlite3's prebuilt binary, for CloudCLI | its GitHub releases | `https://registry.npmmirror.com/-/binary/better-sqlite3` |
 | code-server | `https://github.com/coder/code-server/releases/download/` | `https://mirrors.ustc.edu.cn/github-release/coder/code-server/` |
-| cc-switch, for the machine's AI tools | `https://github.com/SaladDay/cc-switch-cli/releases/download/` | not named yet; a `cn` hub refuses the download |
+| cc-switch, for the machine's AI tools | `https://github.com/SaladDay/cc-switch-cli/releases/download/` | the hub's own release, `https://gitee.com/iffiX/neutrino/releases/download/<tag>/`, each file under its upstream name |
 
 - An edition updates only to its own edition: the update check and the
   install scripts read that edition's release and no other.
 - A manifest entry's sha256 is the publisher's file, and a mirror serves the
   same file, so one pin covers both addresses. The entry names the mirror's
   address in `cn_url` beside `url`, and a `cn` hub's installer fetches from
-  `cn_url` when the entry has one. An entry whose `cn_url` is there and
-  empty has no mainland address yet: a `cn` hub refuses its download with
-  `no_download_named` and does not fetch `url` in its place.
+  `cn_url` when the entry has one.
+- A `cn_url` that begins with `{release}` names a file the project's own
+  release carries. The hub reads `{release}` as the address its build
+  stamped before each agent package's name in `data/agent_packages.json`,
+  the release the hub itself came from, so the release has one address and
+  the hub learns it only from its build. The mainland release keeps its
+  latest files alone: a hub older than the latest release finds the file
+  gone and answers `hub_release_file_gone {file}`, which the panel words as
+  updating the hub, and a hub no release stamped answers
+  `no_download_named`.
 - The hub sends the npm registry of its edition in the module's state, and
   the agent runs `npm` with the registry the state names. Beside it the
   state carries `npm_environment`, the settings `cloudcli.json` names for
