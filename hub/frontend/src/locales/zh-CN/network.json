@@ -508,6 +508,7 @@
   "ui.proxy.reference_url_label": "参照地址（reference URL）",
   "ui.proxy.remote_dns_hint": "经出口节点按顺序解析，至少要有一行。",
   "ui.proxy.remote_dns_label": "远程解析器（走代理的域名）",
+  "ui.proxy.remote_dns_required": "至少需要一个解析器。",
   "ui.proxy.route_hint": "谁的流量走出口节点，以及哪些目标不走。",
   "ui.proxy.route_title": "分流",
   "ui.proxy.share_link_hint": "按服务商给出的原样粘贴链接。",

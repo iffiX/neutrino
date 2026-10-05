@@ -36,6 +36,7 @@
   "code.code_server_download_failed": "The code-server release could not be fetched or unpacked.",
   "code.code_server_port_taken": "Port {port} on the machine is taken, so code-server of {account} has nowhere to listen.",
   "code.command_failed": "{detail}",
+  "code.config_unwritable": "The hub could not save this to its own disk: {detail}",
   "code.connect_failed": "The host did not answer.",
   "code.core_module_always_running": "{name} is a core service and keeps running.",
   "code.core_module_kept": "{name} is a core service and stays installed.",

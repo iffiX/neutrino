@@ -334,6 +334,7 @@ export function ProxyPage() {
               label={t("ui.proxy.remote_dns_label")}
               description={t("ui.proxy.remote_dns_hint")}
               placeholder="1.1.1.1"
+              emptyText={t("ui.proxy.remote_dns_required")}
               values={draft.remote_dns.map(resolverRow)}
               onChange={(rows) => updateResolvers("remote_dns", rows)}
             />

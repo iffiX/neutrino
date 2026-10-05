@@ -36,6 +36,7 @@
   "code.code_server_download_failed": "code-server 的发布包没能下载或解包。",
   "code.code_server_port_taken": "这台机器的端口 {port} 已被占用，{account} 的 code-server 无法在上面监听。",
   "code.command_failed": "{detail}",
+  "code.config_unwritable": "中枢无法把这项写到自己的磁盘上：{detail}",
   "code.connect_failed": "主机没有响应。",
   "code.core_module_always_running": "{name} 是核心服务，必须保持运行。",
   "code.core_module_kept": "{name} 是核心服务，不能卸载。",

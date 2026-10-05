@@ -186,7 +186,9 @@ export function AiPage() {
             {servedFamilies.length > 0 ? (
               <div className="ai_serving field_hint ai_probe">
                 <span>
-                  {t("ui.ai.serving_count", { count: servedModels.length })}
+                  {servedModels.length === 1
+                    ? t("ui.ai.serving_count_one")
+                    : t("ui.ai.serving_count", { count: servedModels.length })}
                 </span>
                 {servedFamilies.map((family) => (
                   <span key={family.name} className="badge">

@@ -182,6 +182,10 @@ const TAG_TONES: Record<string, StripTab["tagTone"]> = {
 /** The states in which the software is on the machine. */
 const PRESENT_STATES = ["installed", "stopped", "running"];
 
+/** The wants under which the machine applies the hub's configuration, so a
+ * `failed` row under one of them is a refused configuration. */
+const CONFIGURING_WANTS = ["running", "stopped"];
+
 /** The states whose tab turns a spinner beside its word. */
 const BUSY_STATES = ["installing", "uninstalling"];
 
@@ -408,6 +412,10 @@ export function ModulesPage() {
   const canAct = activeRow !== undefined && isAgentOnline && !isBusy;
   const isPresent =
     activeRow !== undefined && PRESENT_STATES.includes(activeRow.state);
+  const isConfigRefused =
+    activeRow !== undefined &&
+    activeRow.state === "failed" &&
+    CONFIGURING_WANTS.includes(activeRow.want);
   const termsView =
     terms.data !== null && terms.data.device_id === deviceId
       ? terms.data
@@ -561,7 +569,7 @@ export function ModulesPage() {
                     className={
                       isConfiguring ? "button" : "button button--primary"
                     }
-                    disabled={!canAct || !isPresent}
+                    disabled={!canAct || !(isPresent || isConfigRefused)}
                     aria-expanded={isConfiguring}
                     onClick={() => void configure()}
                   >

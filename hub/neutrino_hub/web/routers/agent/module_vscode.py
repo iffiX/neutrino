@@ -38,6 +38,7 @@ from neutrino_hub.web.routers.agent.module import (
     module_router,
     require_terms,
     store_config,
+    write_module_config,
 )
 
 MODULE = DEVICE_VSCODE_MODULE
@@ -118,7 +119,8 @@ def update_terms(
 
     Raises:
         HTTPException: 404 ``device_unknown`` when no managed device has the
-            id.
+            id, 500 ``config_unwritable {detail}`` when the device's
+            directory cannot be written.
     """
     context = device_context(runtime, MODULE, update.device_id)
     stored = dict(context.config)
@@ -128,7 +130,7 @@ def update_terms(
         stored[DEVICE_VSCODE_TERMS_KEY] = datetime.now(timezone.utc).isoformat(
             timespec="seconds"
         )
-    runtime.desired_states.write(context.key, MODULE, stored)
+    write_module_config(runtime, context.key, MODULE, stored)
     context.config = stored
     return device_view(runtime, context)
 

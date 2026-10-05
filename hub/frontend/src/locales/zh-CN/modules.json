@@ -119,6 +119,7 @@
   "ui.ai.save_provider": "保存提供方",
   "ui.ai.saving": "正在保存…",
   "ui.ai.serving_count": "正在服务 {count} 个模型",
+  "ui.ai.serving_count_one": "正在服务 1 个模型",
   "ui.ai.serving_label": "服务中",
   "ui.ai.sign_in": "登录",
   "ui.ai.sign_in_failed": "登录没有完成。",

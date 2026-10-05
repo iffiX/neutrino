@@ -269,6 +269,7 @@ The HTTP status names the class of the refusal:
 | 401 | a missing session, a dead ticket, or a token that names no binding | `ticket_spent`, `binding_unknown` |
 | 404 | an unknown member | `device_unknown`, `https_authority_missing`, `session_unknown {session_id}` |
 | 409 | a state the action cannot run in | `agent_offline`, `protocol_too_old`, `protocol_too_new`, `role_mismatch`, `update_in_progress`, `release_not_latest`, `no_platform_build {module}`, `admission_paused {retry_after_s}`, `terms_not_accepted {module}` |
+| 500 | the hub could not write its own `config/` | `config_unwritable {detail}`, from the per-device module routes |
 | 502 | a service the hub asked did not answer as one | `gateway_unreachable`, `geodata_unreachable`, `release_dns_failed`, `release_timed_out`, `release_refused`, `release_http_error {status}`, `release_unreachable`, `relay_apply_failed {detail}` |
 
 Every surface words a code itself: the hub's catalogs are
