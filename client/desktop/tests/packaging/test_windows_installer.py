@@ -74,11 +74,30 @@ def services(source) -> dict:
 
 
 def controls(source) -> dict:
-    """Every ServiceControl in the document, by the service it controls."""
+    """What the document's ServiceControls do, by the service they control.
+
+    A service may have two, its stop and its start apart; their attributes
+    are taken together, ``Wait`` aside.
+    """
     root = xml.etree.ElementTree.fromstring(source)
-    return {
-        element.get("Name"): element for element in root.iter(f"{WXS}ServiceControl")
-    }
+    merged: dict = {}
+    for element in root.iter(f"{WXS}ServiceControl"):
+        attributes = {k: v for k, v in element.attrib.items() if k != "Wait"}
+        merged.setdefault(element.get("Name"), {}).update(attributes)
+    return merged
+
+
+def test_every_service_stop_is_waited_for_before_the_files_are_written(source):
+    """A stop not waited for leaves a program holding its file, and Windows
+    Installer then finishes the upgrade with a restart owed."""
+    root = xml.etree.ElementTree.fromstring(source)
+    stops = [
+        element for element in root.iter(f"{WXS}ServiceControl") if element.get("Stop")
+    ]
+
+    assert {element.get("Name") for element in stops} == DAEMON_SERVICES
+    for element in stops:
+        assert element.get("Wait") == "yes", element.get("Name")
 
 
 def test_the_installer_registers_the_daemons_and_no_other_service(source):
