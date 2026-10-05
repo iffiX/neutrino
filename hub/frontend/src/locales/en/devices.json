@@ -343,8 +343,6 @@
   "ui.remote_desktop.set": "Set",
   "ui.remote_desktop.set_password": "Set unattended password",
   "ui.remote_desktop.shared_by": "Shared by {account}.",
-  "ui.remote_desktop.start_hint": "Run sudo nagent rdp start on the machine to share its desktop.",
-  "ui.remote_desktop.start_hint_windows": "Run nagent rdp start in an administrator PowerShell on the machine to share its desktop.",
   "ui.remote_desktop.title": "Remote desktop",
   "ui.remote_desktop.viewer_one": "1 viewer",
   "ui.remote_desktop.viewers": "{count} viewers",
@@ -455,5 +453,7 @@
   "ui.vault.token_value_label": "Token",
   "ui.services.host_hint_web": "The host name or IP address of the machine that serves the page, as this hub reaches it.",
   "ui.services.host_hint_port": "The host name or IP address of the machine that answers on the port, as this hub reaches it.",
-  "ui.services.host_hint_file": "The host name or IP address of the file server, as this hub reaches it."
+  "ui.services.host_hint_file": "The host name or IP address of the file server, as this hub reaches it.",
+  "ui.remote_desktop_module.drawer_line": "Sharing is set on the machine's Remote desktop tab.",
+  "ui.files.pick_file_title": "Choose a program"
 }

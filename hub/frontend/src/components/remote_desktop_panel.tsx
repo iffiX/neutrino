@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { copyText } from "../copy_text";
 
 import { Icon } from "./icon";
@@ -27,7 +28,8 @@ import "./remote_desktop_panel.css";
  * password. Both are user-tier modules the person installs themselves, so
  * this panel only reads and manages what is already on the machine. RustDesk
  * rides in every agent package instead, and its card reads the machine's own
- * report.
+ * report; whether it shares is the machine's Remote desktop switch, on the
+ * Modules page.
  */
 
 /** The label shown where a product reports no id. */
@@ -155,7 +157,7 @@ export function RemoteDesktopPanel({
           <RustdeskCard
             sessionId={status.rustdesk_id}
             rdp={device.client?.rdp ?? null}
-            isWindows={device.client?.platform_os === "windows"}
+            deviceId={device.id}
             onResetSeatPassword={resetSeatPassword}
           />
           <ProductCard
@@ -186,9 +188,8 @@ export function RemoteDesktopPanel({
 interface RustdeskCardProps {
   sessionId: string;
   rdp: DeviceRdp | null;
-  /** Whether the machine is Windows, where the start command takes an
-   * administrator PowerShell rather than sudo. */
-  isWindows: boolean;
+  /** The machine, whose Modules page holds the switch. */
+  deviceId: string;
   onResetSeatPassword: () => void;
 }
 
@@ -197,14 +198,15 @@ interface RustdeskCardProps {
  * desktop is shared right now.
  *
  * Every agent package carries the host, so there is nothing to install here
- * and nothing here asks a machine to share — that is one command on the
- * machine itself. The seat password is the hub's, generated and never shown,
- * and resetting it is the one action this card has.
+ * and nothing here asks a machine to share: that is the Remote desktop
+ * switch on the machine's Modules page, which the card links to. The seat
+ * password is the hub's, generated and never shown, and resetting it is the
+ * one action this card has.
  */
 function RustdeskCard({
   sessionId,
   rdp,
-  isWindows,
+  deviceId,
   onResetSeatPassword,
 }: RustdeskCardProps) {
   const isReported = sessionId !== "";
@@ -256,7 +258,7 @@ function RustdeskCard({
         </span>
       )}
 
-      {isShared && rdp !== null ? (
+      {isShared && rdp !== null && (
         <>
           <span className="muted">
             {t("ui.remote_desktop.shared_by", { account: rdp.account })}{" "}
@@ -266,15 +268,14 @@ function RustdeskCard({
             {t("ui.remote_desktop.direct_port", { port: rdp.port })}
           </span>
         </>
-      ) : (
-        <span className="field_hint">
-          {t(
-            isWindows
-              ? "ui.remote_desktop.start_hint_windows"
-              : "ui.remote_desktop.start_hint",
-          )}
-        </span>
       )}
+      <span className="field_hint">
+        <Link
+          to={`/modules?device=${encodeURIComponent(deviceId)}&module=remote_desktop`}
+        >
+          {t("ui.remote_desktop_module.drawer_line")}
+        </Link>
+      </span>
 
       {attention.length > 0 && (
         <span className="field_error">{describeAttention(attention)}</span>

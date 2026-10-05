@@ -343,8 +343,6 @@
   "ui.remote_desktop.set": "设置",
   "ui.remote_desktop.set_password": "设置无人值守密码",
   "ui.remote_desktop.shared_by": "由 {account} 共享。",
-  "ui.remote_desktop.start_hint": "在机器上运行 sudo nagent rdp start 来共享它的桌面。",
-  "ui.remote_desktop.start_hint_windows": "在机器上以管理员身份打开 PowerShell，运行 nagent rdp start 来共享它的桌面。",
   "ui.remote_desktop.title": "远程桌面",
   "ui.remote_desktop.viewer_one": "1 位观看者",
   "ui.remote_desktop.viewers": "{count} 位观看者",
@@ -455,5 +453,7 @@
   "ui.vault.token_value_label": "令牌",
   "ui.services.host_hint_web": "提供这个网页的机器的主机名或 IP 地址，要这台中枢能连到。",
   "ui.services.host_hint_port": "在这个端口上应答的机器的主机名或 IP 地址，要这台中枢能连到。",
-  "ui.services.host_hint_file": "文件服务器的主机名或 IP 地址，要这台中枢能连到。"
+  "ui.services.host_hint_file": "文件服务器的主机名或 IP 地址，要这台中枢能连到。",
+  "ui.remote_desktop_module.drawer_line": "共享在这台机器的 Remote desktop 标签页里设置。",
+  "ui.files.pick_file_title": "选择程序"
 }

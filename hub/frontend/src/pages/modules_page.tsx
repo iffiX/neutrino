@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { ReactNode } from "react";
 
@@ -13,9 +13,11 @@ import { GiteaPanels } from "../components/gitea_panels";
 import { Icon } from "../components/icon";
 import { ModuleLog } from "../components/module_log";
 import { ModulePicker } from "../components/module_picker";
+import { RemoteDesktopPanels } from "../components/remote_desktop_panels";
 import { SambaPanels } from "../components/samba_panels";
 import { Spinner } from "../components/spinner";
 import { TabStrip } from "../components/tab_strip";
+import { TerminalPanels } from "../components/terminal_panels";
 import { VscodePanels } from "../components/vscode_panels";
 import { VscodeTerms } from "../components/vscode_terms";
 import { ZfsPanels } from "../components/zfs_panels";
@@ -134,6 +136,20 @@ const MODULE_PANELS: Record<string, (target: PanelTarget) => ReactNode> = {
       isInstalling={target.isInstalling}
     />
   ),
+  terminal: (target) => (
+    <TerminalPanels
+      deviceId={target.deviceId}
+      basePath={target.basePath}
+      isEditable={target.isEditable}
+    />
+  ),
+  remote_desktop: (target) => (
+    <RemoteDesktopPanels
+      deviceId={target.deviceId}
+      basePath={target.basePath}
+      isEditable={target.isEditable}
+    />
+  ),
   zfs: (target) => (
     <ZfsPanels
       deviceId={target.deviceId}
@@ -146,6 +162,8 @@ const MODULE_PANELS: Record<string, (target: PanelTarget) => ReactNode> = {
 /** The tabs' order: the modules every system runs first. */
 const TAB_ORDER = [
   "samba",
+  "terminal",
+  "remote_desktop",
   "gitea",
   "vscode",
   "code_server",
@@ -154,6 +172,10 @@ const TAB_ORDER = [
   "zfs",
 ];
 const PAGE_MODULES = TAB_ORDER.filter((name) => name in MODULE_PANELS);
+
+/** The tier of a module the agent's package carries: always a tab, never in
+ * the picker, and none of the four presses. */
+const CARRIED_INSTALLER = "agent";
 
 /** The one system whose file share is Samba; the others serve with their own. */
 const LINUX_OS = "linux";
@@ -222,6 +244,8 @@ const ONLINE_INVALIDATE_ON = [{ type: HUB_EVENT_DEVICES }];
 
 /** The query a page link carries to open on one machine. */
 const DEVICE_QUERY = "device";
+/** The query a link opens a tab with, as the device drawer's desktop line does. */
+const MODULE_QUERY = "module";
 
 /** How tall the tab row is while the first list is still on its way. */
 const SKELETON_HEIGHT_PX = 120;
@@ -258,6 +282,8 @@ export function ModulesPage() {
       setSelectedId(askedDeviceId);
     }
   }, [askedDeviceId, setSelectedId]);
+  // The tab a link asked for, opened once the machine's tabs include it.
+  const askedModule = useRef(searchParams.get(MODULE_QUERY));
 
   const devices = online.data?.devices ?? [];
   const selectedDevice =
@@ -295,6 +321,12 @@ export function ModulesPage() {
   // Whichever tab is current has to still be one the page shows.
   useEffect(() => {
     const shown = shownKey === "" ? [] : shownKey.split(",");
+    const asked = askedModule.current;
+    if (asked !== null && shown.includes(asked)) {
+      askedModule.current = null;
+      setActiveModule(asked);
+      return;
+    }
     setActiveModule((current) =>
       current !== null && shown.includes(current)
         ? current
@@ -415,10 +447,12 @@ export function ModulesPage() {
 
   const panels =
     activeModule === null ? undefined : MODULE_PANELS[activeModule];
+  const isCarriedRow = activeRow !== undefined && isCarried(activeRow);
   const isConfiguring =
     deviceId !== null &&
     activeModule !== null &&
-    configuredKeys.includes(configuredKey(deviceId, activeModule));
+    (isCarriedRow ||
+      configuredKeys.includes(configuredKey(deviceId, activeModule)));
   const isBusy = busyAction !== null;
   const canAct = activeRow !== undefined && isAgentOnline && !isBusy;
   const isPresent =
@@ -525,83 +559,87 @@ export function ModulesPage() {
                     </div>
                   </div>
                 )}
-                <ModuleLog
-                  key={`${deviceId}:${activeRow.name}`}
-                  deviceId={deviceId}
-                  row={activeRow}
-                  isAgentOnline={isAgentOnline}
-                />
-                <div className="modules_actions">
-                  <ActionButton
-                    action="install"
-                    isEnabled={
-                      canAct &&
-                      (activeRow.state === "absent" ||
-                        isRetried(activeRow, "installed"))
-                    }
-                    disabledReason={
-                      isPresent ? t("ui.modules.install_present") : undefined
-                    }
-                    isBusy={busyAction === "install"}
-                    onClick={() => void act("install")}
+                {!isCarriedRow && (
+                  <ModuleLog
+                    key={`${deviceId}:${activeRow.name}`}
+                    deviceId={deviceId}
+                    row={activeRow}
+                    isAgentOnline={isAgentOnline}
                   />
-                  <ActionButton
-                    action="start"
-                    isEnabled={
-                      canAct &&
-                      (activeRow.state === "installed" ||
-                        activeRow.state === "stopped" ||
-                        isRetried(activeRow, "running"))
-                    }
-                    isBusy={busyAction === "start"}
-                    onClick={() => void act("start")}
-                  />
-                  <ActionButton
-                    action="stop"
-                    isEnabled={
-                      canAct &&
-                      (activeRow.state === "running" ||
-                        (activeRow.state === "installed" &&
-                          activeRow.is_active) ||
-                        isRetried(activeRow, "stopped"))
-                    }
-                    isBusy={busyAction === "stop"}
-                    onClick={() => void act("stop")}
-                  />
-                  <ActionButton
-                    action="uninstall"
-                    isEnabled={
-                      canAct && (isPresent || activeRow.state === "failed")
-                    }
-                    disabledReason={
-                      activeRow.state === "absent"
-                        ? t("ui.modules.uninstall_absent")
-                        : undefined
-                    }
-                    isBusy={busyAction === "uninstall"}
-                    onClick={askUninstall}
-                  />
-                  <button
-                    type="button"
-                    className={
-                      isConfiguring ? "button" : "button button--primary"
-                    }
-                    disabled={!canAct || !(isPresent || isConfigRefused)}
-                    aria-expanded={isConfiguring}
-                    onClick={() => void configure()}
-                  >
-                    {busyAction === "configure" ? (
-                      <Spinner size={13} />
-                    ) : (
-                      <Icon name="settings" size={14} />
-                    )}
-                    {t(
-                      isConfiguring
-                        ? "ui.modules.configure_close"
-                        : "ui.modules.configure",
-                    )}
-                  </button>
-                </div>
+                )}
+                {!isCarriedRow && (
+                  <div className="modules_actions">
+                    <ActionButton
+                      action="install"
+                      isEnabled={
+                        canAct &&
+                        (activeRow.state === "absent" ||
+                          isRetried(activeRow, "installed"))
+                      }
+                      disabledReason={
+                        isPresent ? t("ui.modules.install_present") : undefined
+                      }
+                      isBusy={busyAction === "install"}
+                      onClick={() => void act("install")}
+                    />
+                    <ActionButton
+                      action="start"
+                      isEnabled={
+                        canAct &&
+                        (activeRow.state === "installed" ||
+                          activeRow.state === "stopped" ||
+                          isRetried(activeRow, "running"))
+                      }
+                      isBusy={busyAction === "start"}
+                      onClick={() => void act("start")}
+                    />
+                    <ActionButton
+                      action="stop"
+                      isEnabled={
+                        canAct &&
+                        (activeRow.state === "running" ||
+                          (activeRow.state === "installed" &&
+                            activeRow.is_active) ||
+                          isRetried(activeRow, "stopped"))
+                      }
+                      isBusy={busyAction === "stop"}
+                      onClick={() => void act("stop")}
+                    />
+                    <ActionButton
+                      action="uninstall"
+                      isEnabled={
+                        canAct && (isPresent || activeRow.state === "failed")
+                      }
+                      disabledReason={
+                        activeRow.state === "absent"
+                          ? t("ui.modules.uninstall_absent")
+                          : undefined
+                      }
+                      isBusy={busyAction === "uninstall"}
+                      onClick={askUninstall}
+                    />
+                    <button
+                      type="button"
+                      className={
+                        isConfiguring ? "button" : "button button--primary"
+                      }
+                      disabled={!canAct || !(isPresent || isConfigRefused)}
+                      aria-expanded={isConfiguring}
+                      onClick={() => void configure()}
+                    >
+                      {busyAction === "configure" ? (
+                        <Spinner size={13} />
+                      ) : (
+                        <Icon name="settings" size={14} />
+                      )}
+                      {t(
+                        isConfiguring
+                          ? "ui.modules.configure_close"
+                          : "ui.modules.configure",
+                      )}
+                    </button>
+                  </div>
+                )}
 
                 {actionError !== null && (
                   <div className="notice notice--error">
@@ -696,9 +734,18 @@ function shownModules(
     (name) => rows[name]?.is_supported !== false,
   );
   if (device.shown_module.length > 0) {
-    return runnable.filter((name) => device.shown_module.includes(name));
+    return runnable.filter(
+      (name) => isCarried(rows[name]) || device.shown_module.includes(name),
+    );
   }
-  return runnable.filter((name) => rows[name]?.state !== "unknown");
+  return runnable.filter(
+    (name) => isCarried(rows[name]) || rows[name]?.state !== "unknown",
+  );
+}
+
+/** Whether the agent's own package carries the module. */
+function isCarried(row: DeviceModuleView | undefined): boolean {
+  return row?.installer === CARRIED_INSTALLER;
 }
 
 /** Whether a failed module's own press tries again: the one of what it was
@@ -709,7 +756,7 @@ function isRetried(row: DeviceModuleView, want: string): boolean {
 
 /** Every module the picker can show, named as its manifest names it. */
 function pickable(rows: Record<string, DeviceModuleView>): PickableModule[] {
-  return PAGE_MODULES.map((name) => ({
+  return PAGE_MODULES.filter((name) => !isCarried(rows[name])).map((name) => ({
     name,
     title: rows[name]?.title ?? name,
     isSupported: rows[name]?.is_supported !== false,
