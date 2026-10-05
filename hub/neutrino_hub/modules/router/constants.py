@@ -362,3 +362,8 @@ ROUTER_RESERVED_NETWORKS = (
 )
 # Everything here arrives through apt, which picks the machine's build.
 ROUTER_SUPPORTED_ARCHITECTURES = ("*",)
+
+# The adapter the desktop client makes to mount shares on Windows, named as
+# the client's own constants name it. It is the client's and never one of
+# the hub's interfaces, on any system.
+ROUTER_CLIENT_FILES_ADAPTER_NAME = "neutrino_files"

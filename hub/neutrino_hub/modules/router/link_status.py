@@ -21,6 +21,7 @@ from pathlib import Path
 import psutil
 
 from neutrino_hub import edition
+from neutrino_hub.modules.router.constants import ROUTER_CLIENT_FILES_ADAPTER_NAME
 from neutrino_hub.platforms.constants import PLATFORM_OS_DARWIN
 from neutrino_hub.platforms.detect import hub_os, is_linux
 from neutrino_hub.system.powershell_run import listed, run_powershell
@@ -420,11 +421,12 @@ def device_addresses() -> dict[str, str]:
     result = run(["ip", "-json", "addr", "show"], is_checked=False)
     if not result.is_success:
         return {}
+    hidden = _hidden_devices()
     found = {}
     for entry in json.loads(result.stdout or "[]"):
         name = entry.get("ifname", "")
         address = _first_ipv4(entry)
-        if name and name != "lo" and address:
+        if name and name != "lo" and name not in hidden and address:
             found[name] = address
     return found
 
@@ -460,7 +462,12 @@ def device_ipv6_addresses() -> dict[str, list[str]]:
             if any(address.get(flag) for flag in LINK_IPV6_UNSTABLE_FLAGS):
                 continue
             local = str(address.get("local", ""))
-            if name and name != "lo" and _is_stable_ipv6(local):
+            if (
+                name
+                and name != "lo"
+                and name not in _hidden_devices()
+                and _is_stable_ipv6(local)
+            ):
                 found.setdefault(name, []).append(
                     f"{local}/{address.get('prefixlen', 128)}"
                 )
@@ -537,8 +544,10 @@ def _is_stable_ipv6(text: str) -> bool:
 
 
 def _hidden_devices() -> set:
-    """The devices left out on this system: the proxy's TUN."""
-    return {names.get(hub_os(), "") for names in edition.hooks("hidden_devices")}
+    """The devices left out on this system: the proxy's TUN, and on every
+    system the desktop client's files adapter, which is the client's."""
+    hidden = {names.get(hub_os(), "") for names in edition.hooks("hidden_devices")}
+    return hidden | {ROUTER_CLIENT_FILES_ADAPTER_NAME}
 
 
 def admin_up_interfaces() -> set[str]:
@@ -610,7 +619,7 @@ def system_default_routes() -> list[dict]:
 def _system_entries() -> dict[str, dict]:
     """Every interface psutil reports but the proxy's TUN, shaped as ``ip -json addr show`` entries."""
     stats = psutil.net_if_stats()
-    hidden = {names.get(hub_os(), "") for names in edition.hooks("hidden_devices")}
+    hidden = _hidden_devices()
     entries = {}
     for name, addresses in psutil.net_if_addrs().items():
         if name in hidden:
