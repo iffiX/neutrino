@@ -540,7 +540,9 @@ function LoginCard({ value, onDeleted }: LoginCardProps) {
   const handleDelete = () =>
     confirm.ask({
       title: t("ui.credentials.delete_title", { name: value.name }),
-      body: loginDeleteBody(value.device_count),
+      body: value.is_relay_login
+        ? `${loginDeleteBody(value.device_count)} ${t("ui.credentials.login_delete_relay")}`
+        : loginDeleteBody(value.device_count),
       confirmLabel: t("ui.credentials.delete"),
       onConfirm: () => void deleteLogin(),
     });
@@ -577,6 +579,11 @@ function LoginCard({ value, onDeleted }: LoginCardProps) {
         >
           {deviceUsage(value.device_count)}
         </span>
+        {value.is_relay_login && (
+          <span className="key_card_tag key_card_tag--used">
+            {t("ui.overlay.relay_title")}
+          </span>
+        )}
         {value.created_at.length > 0 && (
           <span className="key_card_added">
             {t("ui.credentials.added", {
