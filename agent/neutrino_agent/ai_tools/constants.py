@@ -74,6 +74,14 @@ AI_TOOLS_PAYLOAD_NAME = "payload"
 AI_TOOLS_DIR_NAME = "ai_tools"
 AI_TOOLS_RECORD_SUFFIX = ".json"
 AI_TOOLS_LOGIN_NAME = "login.json"
+# One lock file per account, in a directory of its own beside the records
+# so a switch back that removes an account's records leaves its lock; how
+# long a run waits for another that holds the account, how often it looks,
+# and what its refusal says.
+AI_TOOLS_LOCK_DIR_NAME = ".locks"
+AI_TOOLS_LOCK_WAIT_S = 300
+AI_TOOLS_LOCK_POLL_S = 0.2
+AI_TOOLS_LOCK_HELD_DETAIL = "another run holds the account"
 
 # Where the agent's package carries cc-switch: below the program directory
 # on each system.

@@ -57,6 +57,7 @@ for found in pkgutil.walk_packages(neutrino_agent.__path__, "neutrino_agent."):
 
 SURVIVING_MODULES = {
     "neutrino_agent.ai_tools",
+    "neutrino_agent.ai_tools.account_lock",
     "neutrino_agent.ai_tools.account_session",
     "neutrino_agent.ai_tools.applier",
     "neutrino_agent.ai_tools.constants",
