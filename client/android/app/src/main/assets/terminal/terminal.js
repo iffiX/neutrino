@@ -4,8 +4,7 @@
   "use strict";
 
   const FONT = '"MesloLGS NF", "Neutrino Symbols 2", "Neutrino Symbols", ui-monospace, monospace';
-  const CLEAR_QUIET_MS = 500;
-  const CLEAR_MAX_MS = 20000;
+  const TERMINAL_ERASE = "\x1b[2J\x1b[3J\x1b[H";
   const SCROLLBACK_LINES = 5000;
   const SETTLE_MS = 150;
   const LONG_PRESS_MS = 500;
@@ -153,34 +152,27 @@
     });
   }
 
-  // Clear: the app sends Ctrl+C; the app and the page drop what arrives until
-  // the stream has been quiet for CLEAR_QUIET_MS, for CLEAR_MAX_MS at most, and
-  // the page drops what waits to be drawn. The note shows until the app says
-  // its dropping ended.
+  // Clear: the app sends Ctrl+C and drops what arrives until the stream has
+  // been quiet, and the page draws nothing while the pane is clearing, what
+  // was handed to it before the Clear among it. The pane leaves the clearing
+  // state when the app's list of clearing tabs, once it named the pane, no
+  // longer does, and at once when the app refuses the Clear.
   function clearPane(id, pane) {
+    showClearing(pane, true);
+    pane.isClearAsked = true;
+    if (!window.NeutrinoBridge.clear(id)) showClearing(pane, false);
+  }
+
+  // The note over a clearing pane. The screen and the scrollback are erased,
+  // the terminal's modes kept, when clearing starts, after what xterm.js
+  // still had to draw, and again when it ends.
+  function showClearing(pane, isClearing) {
     pane.queue.length = 0;
-    const now = Date.now();
-    pane.drop = { since: now, last: now };
-    showNote(pane, true);
-    window.NeutrinoBridge.clear(id);
-    pane.term.clear();
-  }
-
-  function showNote(pane, isShown) {
+    pane.isClearing = isClearing;
+    pane.isClearAsked = false;
     pane.note.textContent = labels.clearing;
-    pane.note.hidden = !isShown;
-  }
-
-  function isDropped(pane) {
-    const drop = pane.drop;
-    if (!drop) return false;
-    const now = Date.now();
-    if (now - drop.last < CLEAR_QUIET_MS && now - drop.since < CLEAR_MAX_MS) {
-      drop.last = now;
-      return true;
-    }
-    pane.drop = null;
-    return false;
+    pane.note.hidden = !isClearing;
+    pane.term.write(TERMINAL_ERASE);
   }
 
   const menu = document.createElement("div");
@@ -277,7 +269,8 @@
         sent: "",
         queue: [],
         isWriting: false,
-        drop: null,
+        isClearing: false,
+        isClearAsked: false,
       };
       new ResizeObserver(() => report(id)).observe(element);
       term.onData((data) => window.NeutrinoBridge.input(id, toBase64(withModifiers(data))));
@@ -297,7 +290,7 @@
     },
     write(id, encoded) {
       const pane = panes[id];
-      if (!pane || isDropped(pane)) return;
+      if (!pane || pane.isClearing) return;
       pane.queue.push(fromBase64(encoded));
       pump(pane);
     },
@@ -325,7 +318,15 @@
     },
     clearing(json) {
       const ids = JSON.parse(json);
-      for (const key of Object.keys(panes)) showNote(panes[key], ids.includes(key));
+      for (const key of Object.keys(panes)) {
+        const pane = panes[key];
+        if (ids.includes(key)) {
+          if (!pane.isClearing) showClearing(pane, true);
+          pane.isClearAsked = false;
+        } else if (pane.isClearing && !pane.isClearAsked) {
+          showClearing(pane, false);
+        }
+      }
     },
   };
 

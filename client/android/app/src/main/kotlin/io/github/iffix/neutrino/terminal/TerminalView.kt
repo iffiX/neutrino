@@ -19,7 +19,9 @@ import org.json.JSONObject
 /**
  * The WebView the terminals are drawn in: xterm.js from the app's assets, one pane per tab, each
  * scrolled by touch with a thin bar, and a long press opening Copy, Paste, Select all and Clear
- * through the system clipboard. A write handed to the page before a tab's Clear is not drawn.
+ * through the system clipboard. While a tab's Clear drops output its pane draws nothing that
+ * arrives, written before the Clear or after it; the pane is wiped when the drop starts and when
+ * it ends, and leaves the clearing state when the Clear is refused or the shell ends.
  *
  * @param context The window's context.
  * @param tabs The tabs whose output it draws and whose input it sends.
@@ -182,9 +184,9 @@ class TerminalView(context: Context, private val tabs: TerminalTabs, private val
         }
 
         @JavascriptInterface
-        fun clear(sessionId: String) {
+        fun clear(sessionId: String): Boolean {
             clearCounts.merge(sessionId, 1, Int::plus)
-            tabs.clear(sessionId)
+            return tabs.clear(sessionId)
         }
 
         @JavascriptInterface
