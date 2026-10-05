@@ -1,5 +1,6 @@
 """Fixed values of the web layer."""
 
+from neutrino_hub import edition
 from neutrino_hub.utils.constants import (
     UTILS_CONFIG_DIR,
     UTILS_DATA_DIR,
@@ -134,7 +135,12 @@ WEB_PANEL_TLS_PERMITTED_NETWORKS = (
     "100.64.0.0/10",
     "127.0.0.0/8",
 )
-WEB_PANEL_TLS_PERMITTED_DOMAINS = ("localhost", "neutrino.internal", "netbird.cloud")
+# NetBird's overlay domain is NetBird's, from the edition table.
+WEB_PANEL_TLS_PERMITTED_DOMAINS = (
+    "localhost",
+    "neutrino.internal",
+    *edition.hooks("panel_tls_domains"),
+)
 WEB_PANEL_TLS_LOOPBACK_NAMES = ("127.0.0.1", "localhost")
 # The address the hub's own agent reaches the agent port at, whatever is
 # exposed.

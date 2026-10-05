@@ -200,7 +200,6 @@ SYSTEM_PACKAGE_NAMES = {
 # should not have its dependencies changed out from under it by an apt upgrade.
 SYSTEM_VENV_DIR_NAME = ".venv"
 
-SYSTEM_XRAY_USER = "xray"
 
 SYSTEM_SYSTEMD_DIR = Path("/etc/systemd/system")
 # The drop-in a start line set through the controller is written to.

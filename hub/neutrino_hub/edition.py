@@ -102,6 +102,21 @@ EDITION_HOOKS = {
         (_PROXY, "neutrino_hub.modules.xray.constants:XRAY_CHILD_REQUIREMENTS"),
     ),
     "services": ((_PROXY, "neutrino_hub.modules.xray.constants:XRAY_SUPERVISED_NAME"),),
+    # system/units.py: the unit templates the hub installs on Linux.
+    "unit_templates": (
+        (_PROXY, "neutrino_hub.modules.xray.constants:XRAY_UNIT_TEMPLATE"),
+    ),
+    # cli/reset.py: the state files and directories a full reset clears.
+    "reset_state_paths": (
+        (_PROXY, "neutrino_hub.modules.xray.constants:XRAY_NODE_HEALTH_RELATIVE"),
+    ),
+    "reset_state_dirs": (
+        (_NETBIRD, "neutrino_hub.modules.netbird.constants:NETBIRD_STATE_DIR_NAME"),
+    ),
+    # web/constants.py: the domains a panel certificate may name.
+    "panel_tls_domains": (
+        (_NETBIRD, "neutrino_hub.modules.netbird.constants:NETBIRD_PANEL_TLS_DOMAIN"),
+    ),
     "child_start_lines": (
         (_PROXY, "neutrino_hub.modules.xray.run_part:child_start_lines"),
         (_NETBIRD, "neutrino_hub.modules.netbird.run_part:child_start_lines"),

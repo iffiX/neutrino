@@ -19,6 +19,8 @@ from neutrino_hub.modules.router.constants import (
     ROUTER_FWMARK_XRAY_EGRESS,
 )
 from neutrino_hub.modules.xray.constants import (
+    XRAY_GEODATA_DIR,
+    XRAY_SERVICE_USER,
     XRAY_DNS_LISTEN,
     XRAY_DNS_PORT,
     XRAY_ROUTING_FILE,
@@ -26,7 +28,6 @@ from neutrino_hub.modules.xray.constants import (
     XRAY_TPROXY_PORT,
 )
 from neutrino_hub.modules.xray.resolvers import direct_resolvers
-from neutrino_hub.system.constants import SYSTEM_XRAY_USER
 from neutrino_hub.utils.json_file import read_config
 
 
@@ -57,12 +58,12 @@ def lookup_xray_uid() -> int:
             it before any ruleset is rendered. Outside Linux there is none.
     """
     if pwd is None:
-        raise RuntimeError(f"system user {SYSTEM_XRAY_USER!r} exists on Linux alone")
+        raise RuntimeError(f"system user {XRAY_SERVICE_USER!r} exists on Linux alone")
     try:
-        return pwd.getpwnam(SYSTEM_XRAY_USER).pw_uid
+        return pwd.getpwnam(XRAY_SERVICE_USER).pw_uid
     except KeyError as error:
         raise RuntimeError(
-            f"system user {SYSTEM_XRAY_USER!r} does not exist; "
+            f"system user {XRAY_SERVICE_USER!r} does not exist; "
             f"run `nhub setup` first"
         ) from error
 

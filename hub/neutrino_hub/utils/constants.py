@@ -109,10 +109,6 @@ UTILS_CHECKOUT_CONFIG_DIR = UTILS_PACKAGE_ROOT.parent.parent / "config"
 # state rather than configuration: nothing here is worth backing up.
 UTILS_GENERATED_DIR = UTILS_STATE_ROOT / "generated"
 
-# The address and domain databases. They ship with the package and are replaced
-# by newer ones while the machine runs, which is what keeps them out of the
-# static root.
-UTILS_GEODATA_DIR = UTILS_STATE_ROOT / "geodata"
 
 UTILS_LOG_DIR = UTILS_LOG_ROOT
 

@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from neutrino_hub.modules.xray.constants import (
+    XRAY_GEODATA_DIR,
     XRAY_GEODATA,
     XRAY_GEODATA_DOWNLOAD_URL,
     XRAY_GEODATA_LATEST_URL,
@@ -30,7 +31,6 @@ from neutrino_hub.modules.xray.constants import (
     XRAY_GEODATA_TIMEOUT_S,
     XRAY_GEODATA_VERSION_PATH,
 )
-from neutrino_hub.utils.constants import UTILS_GEODATA_DIR
 from neutrino_hub.utils.tls_trust import public_ssl_context
 
 
@@ -152,7 +152,7 @@ def latest(*, fetch_bytes: Callable[[str], bytes] | None = None) -> dict[str, st
 def fetch(
     releases: dict[str, str],
     *,
-    directory: Path = UTILS_GEODATA_DIR,
+    directory: Path = XRAY_GEODATA_DIR,
     version_path: Path = XRAY_GEODATA_VERSION_PATH,
     fetch_bytes: Callable[[str], bytes] | None = None,
 ) -> XrayGeodataState:

@@ -11,12 +11,6 @@ import ipaddress
 import json
 import subprocess
 
-# Unix's alone; the proxy core's account exists on Linux alone.
-try:
-    import pwd
-except ImportError:
-    pwd = None
-
 from neutrino_hub.utils.subprocess_run import command_failure_text, run
 
 from neutrino_hub.modules.router import links, resolver, stack
@@ -84,33 +78,7 @@ from neutrino_hub.system.constants import (
 from neutrino_hub.platforms.detect import hub_platform
 from neutrino_hub.system.systemd_ctl import is_unit_startable, unit_state
 
-XRAY_SERVICE_USER = "xray"
-
 DNSMASQ_SERVICE_NAME = SYSTEM_CORE_UNITS["dnsmasq"]
-
-
-def lookup_xray_uid() -> int:
-    """Resolve the uid the xray service runs as.
-
-    The nftables anti-loop rule matches on this uid, so it is resolved once at
-    apply time and handed to the renderer rather than looked up inside it.
-
-    Returns:
-        The numeric uid.
-
-    Raises:
-        RuntimeError: If the user does not exist yet. The installer creates
-            it before any ruleset is rendered. Outside Linux there is none.
-    """
-    if pwd is None:
-        raise RuntimeError(f"system user {XRAY_SERVICE_USER!r} exists on Linux alone")
-    try:
-        return pwd.getpwnam(XRAY_SERVICE_USER).pw_uid
-    except KeyError as error:
-        raise RuntimeError(
-            f"system user {XRAY_SERVICE_USER!r} does not exist; "
-            f"run `nhub setup` first"
-        ) from error
 
 
 def remove_vlan_device(name: str) -> list[str]:

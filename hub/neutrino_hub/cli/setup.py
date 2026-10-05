@@ -189,6 +189,12 @@ SETUP_CARRIED_PROGRAMS = (
     EASYTIER_CORE_PATH,
     EASYTIER_CLI_PATH,
 )
+# What writing the answers names: the proxy's part where the tree carries it.
+SETUP_ANSWERS_WRITTEN = (
+    "vault, network, proxy and panel ports"
+    if edition.hooks("setup_answers")
+    else "vault, network and panel ports"
+)
 # The setup lock this process takes, by the browser's answers or its own.
 SETUP_LOCK = SetupLock()
 CONFIG_FILES = (
@@ -753,7 +759,7 @@ def _setup(
             ) as error:
                 reporter.failed(command_failure_text(error))
                 return 1
-            reporter.done("vault, network, proxy and panel ports")
+            reporter.done(SETUP_ANSWERS_WRITTEN)
 
     # Last, because the settings file it writes into is one of the files the
     # steps above copy from its example.

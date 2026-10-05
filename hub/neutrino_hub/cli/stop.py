@@ -33,6 +33,7 @@ import argparse
 import subprocess
 import sys
 
+from neutrino_hub import edition
 from neutrino_hub.modules.router.dhcp_client import RouterDhcpClient
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.router.supplicant import RouterWifiClient
@@ -46,7 +47,8 @@ from neutrino_hub.utils.subprocess_run import command_failure_text
 # The panel first because it is what a person is holding: stopping it while
 # the proxy underneath is already gone means a page that hangs rather than one
 # that closes. The routing state last, because it is what the rest ran on.
-STOP_ORDER = ("web", "cliproxyapi", "dnsmasq", "xray", "router")
+# The proxy core's unit is the proxy's, from the edition table.
+STOP_ORDER = ("web", "cliproxyapi", "dnsmasq", *edition.hooks("services"), "router")
 # The two that run one unit per interface, named as `run` names them.
 STOP_PER_INTERFACE = ("supplicant", "dhcpcd")
 

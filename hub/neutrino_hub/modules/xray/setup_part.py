@@ -12,6 +12,8 @@ import zipfile
 from pathlib import Path
 
 from neutrino_hub.modules.xray.constants import (
+    XRAY_GEODATA_DIR,
+    XRAY_SERVICE_USER,
     XRAY_ASSET_ARCHITECTURES,
     XRAY_BINARY,
     XRAY_BINARY_NAME,
@@ -27,10 +29,9 @@ from neutrino_hub.modules.xray.constants import (
 from neutrino_hub.modules.xray.node_config import XrayNodeList, parse_share_link
 from neutrino_hub.modules.xray.node_secrets import store_node_secret
 from neutrino_hub.platforms.detect import is_linux
-from neutrino_hub.system.constants import SYSTEM_XRAY_USER
 from neutrino_hub.system.installation import is_packaged
 from neutrino_hub.system.machine import machine_architecture, require_architecture
-from neutrino_hub.utils.constants import UTILS_GEODATA_DIR, UTILS_LOG_DIR
+from neutrino_hub.utils.constants import UTILS_LOG_DIR
 from neutrino_hub.utils.json_file import read_config, write_config
 from neutrino_hub.utils.subprocess_run import run
 
@@ -49,12 +50,12 @@ def ensure_service_user() -> bool:
         OSError: When the directory cannot be made or handed over.
     """
     is_changed = False
-    if not UTILS_GEODATA_DIR.exists():
-        UTILS_GEODATA_DIR.mkdir(parents=True, exist_ok=True)
+    if not XRAY_GEODATA_DIR.exists():
+        XRAY_GEODATA_DIR.mkdir(parents=True, exist_ok=True)
         is_changed = True
     if not is_linux():
         return is_changed
-    if not run(["id", SYSTEM_XRAY_USER], is_checked=False).is_success:
+    if not run(["id", XRAY_SERVICE_USER], is_checked=False).is_success:
         run(
             [
                 "useradd",
@@ -62,14 +63,14 @@ def ensure_service_user() -> bool:
                 "--no-create-home",
                 "--shell",
                 "/usr/sbin/nologin",
-                SYSTEM_XRAY_USER,
+                XRAY_SERVICE_USER,
             ]
         )
         is_changed = True
     UTILS_LOG_DIR.mkdir(parents=True, exist_ok=True)
-    shutil.chown(UTILS_LOG_DIR, user=SYSTEM_XRAY_USER)
+    shutil.chown(UTILS_LOG_DIR, user=XRAY_SERVICE_USER)
     for log_path in UTILS_LOG_DIR.glob("xray_*.log"):
-        shutil.chown(log_path, user=SYSTEM_XRAY_USER)
+        shutil.chown(log_path, user=XRAY_SERVICE_USER)
     return is_changed
 
 
@@ -134,15 +135,15 @@ def step_xray_core(reporter) -> str:
         fetch_xray_binary()
         is_changed = True
     for file_name, pin in XRAY_GEODATA.items():
-        if (UTILS_GEODATA_DIR / file_name).is_file():
+        if (XRAY_GEODATA_DIR / file_name).is_file():
             continue
         if is_packaged():
             raise FileNotFoundError(
-                f"the package should carry {file_name} in {UTILS_GEODATA_DIR} "
+                f"the package should carry {file_name} in {XRAY_GEODATA_DIR} "
                 f"and it is not there; reinstall the package"
             )
         reporter.note(f"downloading {file_name}")
-        fetch_pinned(pin["url"], pin["sha256"], UTILS_GEODATA_DIR / file_name)
+        fetch_pinned(pin["url"], pin["sha256"], XRAY_GEODATA_DIR / file_name)
         is_changed = True
     if not is_changed:
         version = run([XRAY_BINARY, "version"], is_checked=False).stdout

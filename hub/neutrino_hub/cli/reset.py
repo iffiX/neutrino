@@ -72,7 +72,7 @@ RESET_STATE_PATHS = (
     "agent_tls_key.pem",
     "panel_tls_certificate.pem",
     "panel_tls_key.pem",
-    "xray_node_health.json",
+    *edition.hooks("reset_state_paths"),
     "enrollment_tickets.json",
     # The children the service runs on macOS and Windows, and their start
     # lines; the next setup enables them again.
@@ -87,7 +87,12 @@ RESET_STATE_PATHS = (
 # record of the last update, both this box's own. `agent_cache` is in neither
 # list: what the hub's own package laid there is the package manager's to
 # remove.
-RESET_STATE_DIRS = ("agent_module_cache", "cliproxyapi", "hub_update", "netbird")
+RESET_STATE_DIRS = (
+    "agent_module_cache",
+    "cliproxyapi",
+    "hub_update",
+    *edition.hooks("reset_state_dirs"),
+)
 # Where every device's desired state lives, one directory per device. A
 # reset forgets them with the tokens: they describe machines the next owner
 # has not enrolled.

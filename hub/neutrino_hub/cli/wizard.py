@@ -39,6 +39,7 @@ from neutrino_hub.web.constants import (
     WEB_LANGUAGES,
 )
 from neutrino_hub.utils.constants import UTILS_SETUP_LOG_PATH
+from neutrino_hub.modules.router.constants import ROUTER_ROLE_DISABLED
 from neutrino_hub.modules.router.modes import (
     ROUTER_MODES_BY_KEY,
     ROUTER_MODE_SERVER,
@@ -913,7 +914,7 @@ class SetupWizard:
         replaced and the services start.
         """
         for interface in self._plan().interfaces:
-            line = f"  {interface.name:<14} {interface.role}"
+            line = f"  {interface.name:<14} {_review_role(interface)}"
             if interface.is_lan:
                 line += f"   {interface.lan.cidr}"
                 if interface.lan.is_dhcp_enabled:
@@ -1515,6 +1516,22 @@ def _is_enter_pressed() -> bool:
     if not ready:
         return False
     return sys.stdin.readline() == "" or True
+
+
+def _review_role(interface) -> str:
+    """What the review calls one planned interface.
+
+    Args:
+        interface: The planned ``RouterInterface``.
+
+    Returns:
+        Its role; for one with no role, ``answers`` where the hub answers on
+        it and ``closed`` where it does not, the words the browser's review
+        and the panel use.
+    """
+    if interface.role != ROUTER_ROLE_DISABLED:
+        return interface.role
+    return "answers" if interface.is_exposed else "closed"
 
 
 def _offered_modes(port_count: int, wired_count: int) -> tuple:
