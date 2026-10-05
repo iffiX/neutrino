@@ -7,9 +7,12 @@ sockets of their own; a reply dropped, not queued, when the client has no
 credit, and the client's frame granted back all the same; a host that does
 not resolve closing the stream ``connect_failed``; a frame shorter than its
 source dropped; frames between a client and an agent relayed unchanged and
-dropped, with the credit granted back, when the next side has none; and the
-table of sources forgetting one after the idle time and giving the idlest
-away for a 65th.
+dropped, with the credit granted back, when the next side has none; what
+a client sends before the agent's stream has its first credit held, 16 at
+most, and passed on in order when the credit comes, dropped when the agent
+refuses the open, and held again on the stream a client opens after such a
+refusal; and the table of sources forgetting one after the idle time and
+giving the idlest away for a 65th.
 """
 
 import asyncio
@@ -20,6 +23,7 @@ import pytest
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_ROLE_AGENT,
     CHANNEL_ROLE_CLIENT,
+    CHANNEL_UDP_HELD_DATAGRAMS_MAX,
     CHANNEL_UDP_IDLE_TIMEOUT_S,
     CHANNEL_UDP_SOURCES_MAX,
 )
@@ -287,3 +291,108 @@ def test_one_more_source_than_the_limit_replaces_the_idlest():
 )
 def test_a_frame_is_its_source_then_its_datagram(data, split):
     assert split_frame(data) == split
+
+
+async def probe_order(client, agent, frames: list) -> asyncio.Task:
+    """The probe's own order: the open granted at once by the hub, every
+    datagram sent at once, the agent's first credit some time later."""
+    client._grant(10_000)
+    relay = asyncio.ensure_future(relay_to_agent(client, agent))
+    for frame in frames:
+        client._deliver(("data", frame))
+    await asyncio.sleep(0.05)
+    return relay
+
+
+def test_a_datagram_sent_before_the_agents_first_credit_reaches_the_agent():
+    async def scenario():
+        client, _client_socket = stream_on(CHANNEL_ROLE_CLIENT, {"id": "dns"})
+        agent, agent_socket = stream_on(CHANNEL_ROLE_AGENT, {"port": 53}, 2)
+        relay = await probe_order(
+            client, agent, [frame_of(40001, b"first"), frame_of(40001, b"second")]
+        )
+        held_before = list(agent_socket.datagrams())
+        agent._grant(10_000)
+        await until(lambda: len(agent_socket.datagrams()) == 2)
+        await client.close()
+        await asyncio.wait_for(relay, 3)
+        return held_before, agent_socket.datagrams()
+
+    held_before, sent = asyncio.run(scenario())
+
+    assert held_before == []
+    assert sent == [(40001, b"first"), (40001, b"second")]
+
+
+def test_one_more_than_the_held_number_is_dropped():
+    frames = [
+        frame_of(40001, str(index).encode())
+        for index in range(CHANNEL_UDP_HELD_DATAGRAMS_MAX + 1)
+    ]
+
+    async def scenario():
+        client, _ = stream_on(CHANNEL_ROLE_CLIENT, {"id": "dns"})
+        agent, agent_socket = stream_on(CHANNEL_ROLE_AGENT, {"port": 53}, 2)
+        relay = await probe_order(client, agent, frames)
+        agent._grant(10_000)
+        await until(
+            lambda: len(agent_socket.datagrams()) == CHANNEL_UDP_HELD_DATAGRAMS_MAX
+        )
+        await asyncio.sleep(0.05)
+        await client.close()
+        await asyncio.wait_for(relay, 3)
+        return agent_socket.datagrams()
+
+    sent = asyncio.run(scenario())
+
+    assert CHANNEL_UDP_HELD_DATAGRAMS_MAX == 16
+    assert [datagram for _, datagram in sent] == [
+        str(index).encode() for index in range(16)
+    ]
+
+
+def test_an_agent_that_refuses_the_open_drops_what_was_held():
+    async def scenario():
+        client, client_socket = stream_on(CHANNEL_ROLE_CLIENT, {"id": "dns"})
+        agent, agent_socket = stream_on(CHANNEL_ROLE_AGENT, {"port": 53}, 2)
+        relay = await probe_order(client, agent, [frame_of(40001, b"query")])
+        agent._finish({"code": "port_not_published", "params": {"port": 53}})
+        await asyncio.wait_for(relay, 3)
+        return client, agent_socket
+
+    client, agent_socket = asyncio.run(scenario())
+
+    assert agent_socket.datagrams() == []
+    assert client.close_info == {
+        "code": "port_not_published",
+        "params": {"port": 53},
+    }
+
+
+def test_a_stream_opened_again_at_a_datagram_after_a_refusal_carries_it():
+    """A client's forward opens a new stream at its next datagram after a
+    refusal later; that datagram goes with the open, before any credit."""
+
+    async def scenario():
+        refused, _ = stream_on(CHANNEL_ROLE_CLIENT, {"id": "dns"}, 1)
+        gone, _ = stream_on(CHANNEL_ROLE_AGENT, {"port": 53}, 2)
+        first = await probe_order(refused, gone, [frame_of(40001, b"lost")])
+        gone._finish({"code": "port_not_published", "params": {"port": 53}})
+        await asyncio.wait_for(first, 3)
+
+        again, again_socket = stream_on(CHANNEL_ROLE_CLIENT, {"id": "dns"}, 3)
+        agent, agent_socket = stream_on(CHANNEL_ROLE_AGENT, {"port": 53}, 4)
+        second = await probe_order(again, agent, [frame_of(40002, b"again")])
+        agent._grant(10_000)
+        await until(lambda: agent_socket.datagrams())
+        agent._deliver(("data", frame_of(40002, b"answer")))
+        await until(lambda: again_socket.datagrams())
+        await again.close()
+        await asyncio.wait_for(second, 3)
+        return refused, agent_socket.datagrams(), again_socket.datagrams()
+
+    refused, sent, answered = asyncio.run(scenario())
+
+    assert refused.close_info["code"] == "port_not_published"
+    assert sent == [(40002, b"again")]
+    assert answered == [(40002, b"answer")]

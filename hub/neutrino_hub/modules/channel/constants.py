@@ -105,6 +105,10 @@ CHANNEL_CONNECT_STREAMS_MAX = 256
 # datagram either way, and how many sources one stream keeps a socket for.
 CHANNEL_UDP_IDLE_TIMEOUT_S = 60.0
 CHANNEL_UDP_SOURCES_MAX = 64
+# Datagrams the hub holds for an agent's UDP stream before that stream's
+# first credit; more are dropped. The clients hold as many before the
+# hub's.
+CHANNEL_UDP_HELD_DATAGRAMS_MAX = 16
 # A UDP frame's source port in front of its datagram, big-endian.
 CHANNEL_UDP_SOURCE_BYTES = 2
 # The loopback address the hub dials its own gateway and panel on.

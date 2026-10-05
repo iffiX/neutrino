@@ -86,11 +86,21 @@ class ChannelStream:
         self._closed = asyncio.Event()
         self._credit = 0
         self._credit_granted = asyncio.Event()
+        self._first_credit = asyncio.Event()
 
     @property
     def is_closed(self) -> bool:
         """Whether the stream ended, from either side, or the session is gone."""
         return self._closed.is_set()
+
+    @property
+    def has_credit_arrived(self) -> bool:
+        """Whether the peer has granted this stream any credit yet."""
+        return self._first_credit.is_set()
+
+    async def wait_first_credit(self) -> None:
+        """Return once the peer has granted this stream its first credit."""
+        await self._first_credit.wait()
 
     async def recv(self) -> "tuple | None":
         """The next item from the peer, granting it room for as much again.
@@ -203,6 +213,7 @@ class ChannelStream:
         self._credit += max(0, int(size))
         if self._credit > 0:
             self._credit_granted.set()
+            self._first_credit.set()
 
     def _finish(self, info: dict, *, is_abandoned: bool = False) -> None:
         if self._closed.is_set():

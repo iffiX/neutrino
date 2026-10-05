@@ -318,6 +318,13 @@ class ScriptedChannelStream:
     def is_closed(self) -> bool:
         return self._closed.is_set()
 
+    @property
+    def has_credit_arrived(self) -> bool:
+        return True
+
+    async def wait_first_credit(self) -> None:
+        return None
+
     async def recv(self):
         if self._closed.is_set() and self._inbound.empty():
             return None
