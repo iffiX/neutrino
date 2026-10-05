@@ -1109,7 +1109,8 @@ class ClientHubSession:
             known = [
                 url for url in stored if urllib.parse.urlsplit(url).hostname == host
             ]
-            url = known[0] if known else f"https://{host}:{port}"
+            bracketed = f"[{host}]" if ":" in host else host
+            url = known[0] if known else f"https://{bracketed}:{port}"
             if url not in urls:
                 urls.append(url)
         return urls

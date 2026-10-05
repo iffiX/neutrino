@@ -18,7 +18,7 @@ import pytest
 from neutrino_hub import edition
 from neutrino_hub.cli import run
 from neutrino_hub.system.constants import SYSTEM_RESTART_EXIT_STATUS
-from neutrino_hub.web.agent_port import AgentPortProtocol
+from neutrino_hub.web.agent_port import AgentPortProtocol, AgentPortServer
 from neutrino_hub.web.constants import WEB_DEFAULT_HTTPS_LISTEN_PORT
 
 TLS = {"ssl_certfile": "/state/cert.pem", "ssl_keyfile": "/state/key.pem"}
@@ -102,6 +102,7 @@ def test_only_the_https_and_agent_ports_speak_tls(served, monkeypatch):
     assert https["ssl_certfile"] == TLS["ssl_certfile"]
     assert https["ssl_keyfile"] == TLS["ssl_keyfile"]
     assert "ssl_certfile" not in agent
+    assert type(served["servers"][2]) is AgentPortServer
     gate = agent["http"]
     assert gate.func is AgentPortProtocol
     assert gate.keywords == {

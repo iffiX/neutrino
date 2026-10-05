@@ -293,7 +293,7 @@ class WebSocketClient:
         key = base64.b64encode(os.urandom(16)).decode("ascii")
         request = (
             f"GET {self._path} HTTP/1.1\r\n"
-            f"Host: {self._host}:{self._port}\r\n"
+            f"Host: {self._authority()}\r\n"
             "Upgrade: websocket\r\n"
             "Connection: Upgrade\r\n"
             f"Sec-WebSocket-Key: {key}\r\n"
@@ -400,6 +400,12 @@ class WebSocketClient:
         self._pending = sock
         if self._is_aborted:
             raise OSError("the connect was aborted")
+
+    def _authority(self) -> str:
+        """The ``Host`` header's ``host:port``, an IPv6 host in brackets."""
+        if ":" in self._host:
+            return f"[{self._host}]:{self._port}"
+        return f"{self._host}:{self._port}"
 
     def _send(self, opcode: int, payload: bytes) -> None:
         sock = self._sock

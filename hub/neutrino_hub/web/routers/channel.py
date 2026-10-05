@@ -47,6 +47,7 @@ from neutrino_hub.modules.channel.sessions import (
 from neutrino_hub.modules.clients.ai_keys import revoke_client_key
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.devices.registry import DeviceRegistry
+from neutrino_hub.utils.peer_address import unmapped
 from neutrino_hub.web import channel_serve
 from neutrino_hub.web.channel_serve import decode_frame
 from neutrino_hub.web.constants import WEB_EVENT_CLIENTS
@@ -363,10 +364,10 @@ def _connection_key(connection) -> tuple:
     client = connection.client
     if client is None:
         return ("", 0)
-    return (client.host, client.port)
+    return (unmapped(client.host), client.port)
 
 
 def _peer_host(connection) -> str:
     """Where a connection comes from, empty when the transport names none."""
     client = connection.client
-    return client.host if client is not None else ""
+    return unmapped(client.host) if client is not None else ""

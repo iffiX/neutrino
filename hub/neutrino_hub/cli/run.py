@@ -92,7 +92,11 @@ from neutrino_hub.utils.constants import (
     is_dev_root_set,
 )
 from neutrino_hub.modules.cliproxyapi.management_key import resolve_management_key
-from neutrino_hub.web.agent_port import agent_port_context, agent_port_protocol
+from neutrino_hub.web.agent_port import (
+    AgentPortServer,
+    agent_port_context,
+    agent_port_protocol,
+)
 from neutrino_hub.web.agent_tls import ensure_certificate, write_served_key
 from neutrino_hub.web.constants import (
     WEB_AGENT_TLS_CERT_PATH,
@@ -449,10 +453,10 @@ def _serve_panel(arguments) -> int:
 
     Three servers, one loop: the panel over HTTP on its port and over HTTPS
     on its HTTPS port with its own certificate, whatever ``is_https_enabled``
-    says, and the agent routes on their own TLS port, only when the vault's
-    data key can unseal the channel's private key. ``--reload`` serves the
-    panel alone over HTTP, because uvicorn's reloader supervises a single
-    server.
+    says, and the agent routes on their own TLS port over IPv4 and IPv6, only
+    when the vault's data key can unseal the channel's private key.
+    ``--reload`` serves the panel alone over HTTP, because uvicorn's reloader
+    supervises a single server.
 
     Args:
         arguments: The parsed command line.
@@ -504,7 +508,7 @@ def _serve_panel(arguments) -> int:
         servers.append(uvicorn.Server(https_config))
     agent_key_path = _agent_key()
     if agent_key_path is not None:
-        servers.append(uvicorn.Server(_agent_config(arguments.host, agent_key_path)))
+        servers.append(AgentPortServer(_agent_config(arguments.host, agent_key_path)))
     _finish_first_run()
     asyncio.run(_serve_together(servers))
     return 0

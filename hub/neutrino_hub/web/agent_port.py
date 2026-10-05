@@ -5,7 +5,8 @@ each accepted connection is counted, closed when it sends no byte within
 ``CHANNEL_FIRST_BYTE_TIMEOUT_S``, given its TLS handshake under
 ``CHANNEL_TLS_HANDSHAKE_TIMEOUT_S`` from its first byte and its admission
 under ``CHANNEL_ADMISSION_TIMEOUT_S``, and only then handed to uvicorn's own
-HTTP protocol on the TLS transport. The counts are the runtime's
+HTTP protocol on the TLS transport. The port listens on two sockets, IPv4 and
+IPv6, and one protocol class and one count serve both. The counts are the runtime's
 :class:`neutrino_hub.modules.channel.port_guard.ChannelPortGuard`. The
 middleware here refuses a join or a leave whose body is past
 ``CHANNEL_REQUEST_BYTES_MAX`` before the application reads it.
@@ -16,9 +17,14 @@ Not pure: holds sockets.
 import asyncio
 import functools
 import json
+import logging
 import os
+import socket
 import ssl
+import sys
 
+import uvicorn
+from uvicorn.config import STARTUP_FAILURE
 from uvicorn.protocols.http.auto import AutoHTTPProtocol
 
 from neutrino_hub.modules.channel.constants import (
@@ -29,9 +35,106 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_TLS_HANDSHAKE_TIMEOUT_S,
 )
 from neutrino_hub.modules.channel.port_guard import ChannelPortGuard
+from neutrino_hub.utils.peer_address import unmapped
+
+LOGGER = logging.getLogger(__name__)
 
 # The backstop asyncio's own handshake timer is given beyond the port's.
 AGENT_PORT_HANDSHAKE_SLACK_S = 1.0
+# The wildcard addresses: the IPv4 one the port is served on by default, and
+# the IPv6 one served beside it.
+AGENT_PORT_ANY_IPV4 = "0.0.0.0"
+AGENT_PORT_ANY_IPV6 = "::"
+
+
+def agent_port_sockets(host: str, port: int) -> list:
+    """The agent port's listening sockets.
+
+    The IPv4 wildcard is served beside the IPv6 one, a socket for each
+    family, the IPv6 one set to take IPv6 alone. Any other host is served on
+    its own socket.
+
+    Args:
+        host: The address to bind.
+        port: The port; 0 picks one, which the IPv6 socket then shares.
+
+    Returns:
+        The bound sockets, the IPv4 one first. A machine where the IPv6
+        socket cannot be made gets the IPv4 one alone, and the log says so
+        in one line.
+
+    Raises:
+        OSError: If the socket for ``host`` cannot be bound.
+    """
+    first = _bound_socket(host, port)
+    sockets = [first]
+    if host == AGENT_PORT_ANY_IPV4:
+        shared = first.getsockname()[1]
+        try:
+            sockets.append(_bound_socket(AGENT_PORT_ANY_IPV6, shared))
+        except OSError as error:
+            LOGGER.warning(
+                "the agent port serves IPv4 alone: no IPv6 socket on port %d (%s)",
+                shared,
+                error,
+            )
+    return sockets
+
+
+def _bound_socket(host: str, port: int) -> socket.socket:
+    """One TCP socket bound to an address, an IPv6 one taking IPv6 alone.
+
+    Args:
+        host: The address.
+        port: The port.
+
+    Returns:
+        The bound socket, not yet listening.
+
+    Raises:
+        OSError: If the socket cannot be made or bound.
+    """
+    family = socket.AF_INET6 if ":" in host else socket.AF_INET
+    sock = socket.socket(family, socket.SOCK_STREAM)
+    try:
+        if os.name == "posix":
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if family == socket.AF_INET6:
+            sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+        sock.bind((host, port))
+    except OSError:
+        sock.close()
+        raise
+    return sock
+
+
+class AgentPortServer(uvicorn.Server):
+    """uvicorn's server on the agent port's own sockets."""
+
+    async def serve(self, sockets=None) -> None:
+        """Bind the port's sockets and serve on them.
+
+        Args:
+            sockets: Sockets already bound; None binds
+                :func:`agent_port_sockets` on the configured host and port.
+        """
+        if sockets is None:
+            try:
+                sockets = agent_port_sockets(self.config.host, self.config.port)
+            except OSError as error:
+                LOGGER.error("the agent port cannot be bound: %s", error)
+                sys.exit(STARTUP_FAILURE)
+            LOGGER.info(
+                "the agent port listens on %s",
+                ", ".join(_named(sock.getsockname()) for sock in sockets),
+            )
+        await super().serve(sockets=sockets)
+
+
+def _named(address: tuple) -> str:
+    """A socket's address as ``host:port``, an IPv6 host in brackets."""
+    host = str(address[0])
+    return f"[{host}]:{address[1]}" if ":" in host else f"{host}:{address[1]}"
 
 
 def agent_port_context(certificate_path: str, key_path: str) -> ssl.SSLContext:
@@ -130,7 +233,7 @@ class AgentPortProtocol(asyncio.Protocol):
         # read here would never reach the TLS layer.
         transport.pause_reading()
         peer = transport.get_extra_info("peername") or ("", 0)
-        self._key = (str(peer[0]), int(peer[1]))
+        self._key = (unmapped(str(peer[0])), int(peer[1]))
         self._guard.accepted(self._key, transport.abort, transport.is_closing)
         self._loop.call_later(
             self._admission_timeout_s, self._guard.expire, self._key, transport.abort

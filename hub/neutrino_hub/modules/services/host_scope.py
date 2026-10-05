@@ -4,7 +4,9 @@ A scope is one network the hub answers on: a served LAN, named by its
 network CIDR, the overlay, or ``link`` for everything else. A caller's
 scope is settled from its socket's peer address, and a device's address
 in that scope is the first of its reported interface addresses inside it,
-else the address its own socket comes from. Only IPv4 is considered.
+else the address its own socket comes from. Scopes are IPv4; the way a
+caller reached the hub is judged for IPv6 too. An IPv4-mapped IPv6 peer is
+read as its IPv4 address throughout.
 
 Pure: the configuration and the addresses the box holds come in as
 arguments.
@@ -21,6 +23,7 @@ from neutrino_hub.modules.services.constants import (
     SERVICES_SCOPE_LINK,
     SERVICES_SCOPE_OVERLAY,
 )
+from neutrino_hub.utils.peer_address import unmapped
 
 
 @dataclass(frozen=True)
@@ -110,15 +113,14 @@ def reached_through(
     Returns:
         ``relay`` for a peer on loopback; the key of the first engine one of
         whose networks holds the peer; ``lan`` for a peer inside a network of
-        ``interface_networks``; ``direct`` for any other when
-        ``interface_networks`` is given; else ``lan``.
+        ``interface_networks`` or on an IPv6 link-local address; ``direct``
+        for any other when ``interface_networks`` is given; else ``lan``. An
+        IPv4-mapped IPv6 peer is judged by its IPv4 address.
     """
-    address = _ipv4_of(peer_address)
-    if address is None:
-        try:
-            address = ipaddress.ip_address(peer_address)
-        except ValueError:
-            return SERVICES_REACHED_LAN
+    try:
+        address = ipaddress.ip_address(unmapped(peer_address).split("%", 1)[0])
+    except ValueError:
+        return SERVICES_REACHED_LAN
     if address.is_loopback:
         return SERVICES_REACHED_RELAY
     for provider, held in overlay_networks.items():
@@ -130,6 +132,8 @@ def reached_through(
             if address.version == network.version and address in network:
                 return provider
     if interface_networks is None or _is_in_any(address, interface_networks):
+        return SERVICES_REACHED_LAN
+    if address.version == 6 and address.is_link_local:
         return SERVICES_REACHED_LAN
     return SERVICES_REACHED_DIRECT
 
@@ -241,9 +245,10 @@ def lan_in_place_of_overlay(
 
 
 def _ipv4_of(text: str) -> "ipaddress.IPv4Address | None":
-    """The IPv4 address a bare or prefixed address names, None for anything else."""
+    """The IPv4 address a bare or prefixed address names, an IPv4-mapped IPv6
+    one included; None for anything else."""
     try:
-        address = ipaddress.ip_interface(text).ip
+        address = ipaddress.ip_interface(unmapped(text)).ip
     except ValueError:
         return None
     return address if address.version == 4 else None

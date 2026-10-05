@@ -16,7 +16,10 @@ from neutrino_hub.modules.overlay.direct_config import (
 from neutrino_hub.modules.overlay.relay_config import read_relay
 from neutrino_hub.modules.overlay.relay_ops import is_relay_configured
 from neutrino_hub.modules.router.constants import ROUTER_OVERLAY_NETBIRD
-from neutrino_hub.modules.router.link_status import device_addresses
+from neutrino_hub.modules.router.link_status import (
+    device_addresses,
+    device_ipv6_addresses,
+)
 from neutrino_hub.web.agent_tls import certificate_fingerprint
 from neutrino_hub.web.constants import (
     WEB_AGENT_LOOPBACK_HOST,
@@ -33,18 +36,32 @@ def channel_urls(runtime) -> list[str]:
 
     Returns:
         Base ``https`` URLs: one per host :func:`channel_hosts` returns, in
-        its order, every enabled interface's among them while Direct is on;
-        then the public address the person stated for Direct, while it is on;
-        and last the relay's address while it is on and configured.
+        its order, every enabled interface's and the stable IPv6 addresses
+        among them while Direct is on; then the public address the person
+        stated for Direct, while it is on; and last the relay's address while
+        it is on and configured. An IPv6 address is written in brackets.
     """
     port = runtime.settings.get("agent_listen_port", WEB_DEFAULT_AGENT_LISTEN_PORT)
     direct = _stored_direct()
     hosts = channel_hosts(runtime.network(), is_direct=direct.is_enabled)
-    urls = [f"https://{host}:{port}" for host in hosts]
+    urls = [channel_url(host, port) for host in hosts]
     for added in (direct.public_url if direct.is_enabled else "", relay_url()):
         if added and added not in urls:
             urls.append(added)
     return urls
+
+
+def channel_url(host: str, port: int) -> str:
+    """The agent port's base URL on one host.
+
+    Args:
+        host: An address or a name; an IPv6 address is bare.
+        port: The agent port.
+
+    Returns:
+        ``https://<host>:<port>``, an IPv6 address in brackets.
+    """
+    return f"https://[{host}]:{port}" if ":" in host else f"https://{host}:{port}"
 
 
 def _stored_direct() -> OverlayDirectConfig:
@@ -69,7 +86,7 @@ def own_agent_urls(runtime) -> list[str]:
         ``https://127.0.0.1:<agent port>``, then :func:`channel_urls`.
     """
     port = runtime.settings.get("agent_listen_port", WEB_DEFAULT_AGENT_LISTEN_PORT)
-    loopback = f"https://{WEB_AGENT_LOOPBACK_HOST}:{port}"
+    loopback = channel_url(WEB_AGENT_LOOPBACK_HOST, port)
     return [loopback, *(url for url in channel_urls(runtime) if url != loopback)]
 
 
@@ -97,16 +114,18 @@ def channel_hosts(network, *, is_direct: bool = False) -> list[str]:
     does not name counting as :meth:`RouterNetworkConfig.exposed_device_names_on`
     reads it, and an exposed NetBird
     overlay its name as well, so a peer on the overlay reaches the hub after
-    its overlay address moved. While Direct is on, every enabled interface
-    that is not exposed follows the exposed ones: the agent port answers
-    there, and nothing else of the box.
+    its overlay address moved. While Direct is on, the exposed interfaces'
+    stable IPv6 addresses follow, then every enabled interface that is not
+    exposed by its IPv4 address and then its stable IPv6 addresses: the
+    agent port answers there, and nothing else of the box.
 
     Args:
         network: The router configuration.
         is_direct: Whether Direct is on.
 
     Returns:
-        The hosts, in configuration order, the overlay's name last.
+        The hosts, in configuration order, each group's IPv4 addresses
+        before its IPv6 ones, an IPv6 address bare, the overlay's name last.
     """
     configured = {
         interface.device_name: interface.lan.address
@@ -114,21 +133,55 @@ def channel_hosts(network, *, is_direct: bool = False) -> list[str]:
         if interface.lan.address
     }
     live = device_addresses()
-    hosts = []
-    names = network.exposed_device_names_on(list(live))
-    names += [
-        name for name in network.exposed_overlay_device_names if name not in names
+    held_ipv6 = device_ipv6_addresses() if is_direct else {}
+    present = list(live) + [name for name in held_ipv6 if name not in live]
+    exposed = network.exposed_device_names_on(present)
+    answering = exposed + [
+        name for name in network.exposed_overlay_device_names if name not in exposed
     ]
+    hosts = []
+    _add_ipv4(hosts, answering, configured, live)
     if is_direct:
-        names += [name for name in network.enabled_device_names if name not in names]
-    for name in names:
-        address = configured.get(name, "") or live.get(name, "").split("/")[0]
-        if address and address not in hosts:
-            hosts.append(address)
+        _add_ipv6(hosts, exposed, held_ipv6)
+        enabled = [
+            name for name in network.enabled_device_names if name not in answering
+        ]
+        _add_ipv4(hosts, enabled, configured, live)
+        _add_ipv6(hosts, enabled, held_ipv6)
     name = overlay_name(network)
     if name and name not in hosts:
         hosts.append(name)
     return hosts
+
+
+def _add_ipv4(hosts: list, names: list, configured: dict, live: dict) -> None:
+    """Add each device's IPv4 address: the configured one, else its live one.
+
+    Args:
+        hosts: The hosts so far, added to.
+        names: The devices, in order.
+        configured: Device name to a served network's configured address.
+        live: Device name to the IPv4 address with its prefix it holds now.
+    """
+    for name in names:
+        address = configured.get(name, "") or live.get(name, "").split("/")[0]
+        if address and address not in hosts:
+            hosts.append(address)
+
+
+def _add_ipv6(hosts: list, names: list, held: dict) -> None:
+    """Add each device's stable IPv6 addresses, bare.
+
+    Args:
+        hosts: The hosts so far, added to.
+        names: The devices, in order.
+        held: Device name to its stable IPv6 addresses with their prefixes.
+    """
+    for name in names:
+        for held_address in held.get(name, []):
+            address = held_address.split("/")[0]
+            if address not in hosts:
+                hosts.append(address)
 
 
 def overlay_name(network) -> str:

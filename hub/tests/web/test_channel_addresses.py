@@ -68,6 +68,7 @@ def live(monkeypatch):
     monkeypatch.setattr(channel_addresses, "overlay_parts", _parts(NamedOverlay))
     monkeypatch.setattr(channel_addresses, "read_relay", OverlayRelayConfig)
     monkeypatch.setattr(channel_addresses, "read_direct", OverlayDirectConfig)
+    monkeypatch.setattr(channel_addresses, "device_ipv6_addresses", dict)
 
 
 def test_a_served_network_is_named_by_its_configured_address(live):
@@ -394,3 +395,89 @@ def test_a_server_names_an_interface_the_config_does_not_as_the_firewall_opens_i
     )
 
     assert channel_urls(runtime) == urls
+
+
+# --- Direct over IPv6 ---
+
+LIVE_IPV6 = {
+    "enp1s0": ["fd00:8::1/64"],
+    "enp2s0": ["2001:db8::7/64", "2001:db8::8/64"],
+    "wt0": ["fd7a:115c::5/48"],
+}
+
+
+def ipv6_box(monkeypatch, *, is_direct: bool, is_relay: bool = True):
+    runtime = relay_box(
+        monkeypatch,
+        OverlayRelayConfig(
+            is_enabled=is_relay, host="vps.example.org", account="r", key_id="k"
+        ),
+    )
+    direct = OverlayDirectConfig(
+        is_enabled=is_direct, public_host="2001:db8::99", public_port=443
+    )
+    monkeypatch.setattr(channel_addresses, "read_direct", lambda: direct)
+    asked = []
+
+    def held():
+        asked.append(True)
+        return {name: list(addresses) for name, addresses in LIVE_IPV6.items()}
+
+    monkeypatch.setattr(channel_addresses, "device_ipv6_addresses", held)
+    return runtime, asked
+
+
+def test_direct_puts_each_groups_ipv6_addresses_after_its_ipv4_ones(live, monkeypatch):
+    runtime, _ = ipv6_box(monkeypatch, is_direct=True)
+
+    assert channel_urls(runtime) == [
+        "https://192.168.8.1:8443",
+        "https://[fd00:8::1]:8443",
+        "https://203.0.113.7:8443",
+        "https://[2001:db8::7]:8443",
+        "https://[2001:db8::8]:8443",
+        "https://[2001:db8::99]:443",
+        "https://vps.example.org:8443",
+    ]
+
+
+def test_without_direct_urls_hold_ipv4_alone_and_ipv6_is_not_read(live, monkeypatch):
+    runtime, asked = ipv6_box(monkeypatch, is_direct=False)
+
+    assert channel_urls(runtime) == [
+        "https://192.168.8.1:8443",
+        "https://vps.example.org:8443",
+    ]
+    assert asked == []
+
+
+@pytest.mark.feature("netbird")
+def test_an_exposed_overlays_ipv6_address_is_not_direct_s(live, monkeypatch):
+    runtime, _ = ipv6_box(monkeypatch, is_direct=True, is_relay=False)
+    runtime._network = network_config(
+        lan_entry("enp1s0", address="192.168.8.1"),
+        overlays=[{"provider": "netbird", "is_enabled": True, "is_exposed": True}],
+    ).with_overlay_devices({"netbird": ["wt0"]})
+
+    urls = channel_urls(runtime)
+
+    assert "https://[fd7a:115c::5]:8443" not in urls
+    assert urls[:3] == [
+        "https://192.168.8.1:8443",
+        "https://100.88.178.129:8443",
+        "https://[fd00:8::1]:8443",
+    ]
+
+
+def test_an_interface_with_ipv6_alone_is_named_by_it(live, monkeypatch):
+    runtime, _ = ipv6_box(monkeypatch, is_direct=True, is_relay=False)
+    monkeypatch.setattr(
+        channel_addresses, "device_addresses", lambda: {"enp1s0": "192.168.8.1/24"}
+    )
+
+    assert channel_urls(runtime)[:4] == [
+        "https://192.168.8.1:8443",
+        "https://[fd00:8::1]:8443",
+        "https://[2001:db8::7]:8443",
+        "https://[2001:db8::8]:8443",
+    ]

@@ -27,15 +27,17 @@ peer.
 
 ## Where the port is reached
 
-The port is one listener. A way in adds an address to the link's and the
-state's `urls` and changes nothing else about the port.
+The port is one listener on two sockets, one for IPv4 and one for IPv6
+([modules/network.md](modules/network.md), "Direct"). A way in adds an
+address to the link's and the state's `urls` and changes nothing else about
+the port.
 
 | Way in | The peer reaches the port at | Who else reaches it there |
 | --- | --- | --- |
 | The LAN | an exposed interface's address | every host on that network |
 | NetBird, EasyTier | the hub's address on the overlay | every peer of that overlay |
 | The relay | the public port of the person's own server, which the hub forwards to its loopback | every host on the internet |
-| Direct | every enabled interface, and the public address the person states for the hub. One switch on the **Access** page opens the port there, under the **Network** page's firewall rules. | every host that reaches such an interface or that address |
+| Direct | every enabled interface, at its IPv4 addresses and its stable IPv6 addresses, and the public address the person states for the hub. One switch on the **Access** page opens the port there, under the **Network** page's firewall rules. | every host that reaches such an interface or that address |
 
 | Rule | Reason |
 | --- | --- |
@@ -64,8 +66,8 @@ so a flood of joins tests no ticket.
 
 ## What an unadmitted peer can cost the hub
 
-Each limit is one count for the whole port, across every peer address, and
-the message cap holds on admitted sockets too. The first-byte time and the
+Each limit is one count for the whole port, across every peer address and
+both sockets, and the message cap holds on admitted sockets too. The first-byte time and the
 admission time start at the accept; the handshake time starts at the first
 byte. The constants are in the hub's `modules/channel/constants.py`.
 
@@ -85,6 +87,8 @@ byte. The constants are in the hub's `modules/channel/constants.py`.
 | A failed admission is a wrong credential: a `join` refused `ticket_spent` or `role_mismatch`, or a `hello` refused `binding_unknown`. A timeout, a malformed frame and a socket closed to make room are not counted. | A port scan produces timeouts and malformed bytes. Counted, they pause every new enrolment for a peer that holds a valid link. |
 | A pause holds back `join` alone. A `hello`, which every reconnecting peer sends, is judged as always. | Every bound peer with a valid token is admitted throughout a flood. |
 | The peer's address is the socket's own. The agent port and the panel ignore forwarded-address headers. | Through the relay, and through the panel entry, a request arrives from loopback, where a header a peer wrote is otherwise believed. |
+| An IPv4-mapped IPv6 address, `::ffff:a.b.c.d`, is read as `a.b.c.d` wherever a peer's address is judged or recorded: the port's counts, a join's recorded address, the loopback check and `reached_through`. | A dual-stack socket reports an IPv4 peer that way, and a mapped `127.0.0.1` is loopback. |
+| On Windows the event loop cannot watch a socket for its first byte, so the handshake starts at the accept and the handshake time, 10 seconds, stands in for the first-byte time, on both sockets. | The bound on a silent socket holds, at the longer of the two times. |
 
 ## Admission
 

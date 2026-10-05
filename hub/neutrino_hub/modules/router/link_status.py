@@ -66,6 +66,31 @@ $routes = @(Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyCon
 """
 # What Windows names as the next hop of a route with none.
 LINK_NO_GATEWAY = "0.0.0.0"
+# What marks an IPv6 address a peer elsewhere cannot keep using: the flags
+# `ip -json addr show` sets on it, and the words `ifconfig` prints after it
+# on macOS.
+LINK_IPV6_UNSTABLE_FLAGS = ("temporary", "deprecated", "tentative", "dadfailed")
+LINK_DARWIN_IFCONFIG_COMMAND = ("ifconfig",)
+LINK_DARWIN_IPV6_UNSTABLE_WORDS = (
+    "temporary",
+    "deprecated",
+    "tentative",
+    "duplicated",
+    "detached",
+)
+LINK_WINDOWS_IPV6_SCRIPT = """
+$found = @(Get-NetIPAddress -AddressFamily IPv6 -ErrorAction SilentlyContinue |
+  ForEach-Object {
+    @{dev = [string]$_.InterfaceAlias; address = [string]$_.IPAddress;
+      prefixlen = [int]$_.PrefixLength; state = [string]$_.AddressState;
+      suffix = [string]$_.SuffixOrigin}
+  })
+@{addresses = $found} | ConvertTo-Json -Compress -Depth 4
+"""
+# Windows: the one state of an address in use, and the suffix origin of a
+# temporary address.
+LINK_WINDOWS_IPV6_PREFERRED = "Preferred"
+LINK_WINDOWS_IPV6_TEMPORARY_SUFFIX = "Random"
 
 
 @dataclass
@@ -402,6 +427,118 @@ def device_addresses() -> dict[str, str]:
         if name and name != "lo" and address:
             found[name] = address
     return found
+
+
+def device_ipv6_addresses() -> dict[str, list[str]]:
+    """Every device's IPv6 addresses that a peer elsewhere can keep using.
+
+    Global scope only, so no loopback, link-local, site-local or multicast
+    address; and no address the system marks temporary, deprecated,
+    tentative or failed in duplicate detection. Linux reads the marks from
+    ``ip -json addr show``, macOS from ``ifconfig``, Windows from
+    ``Get-NetIPAddress``, where ``AddressState`` and ``SuffixOrigin`` say
+    them.
+
+    Returns:
+        Device name to its addresses, each with its prefix, in the order the
+        system lists them; empty when the system cannot be read. The proxy's
+        TUN is left out on macOS and Windows.
+    """
+    if hub_os() == PLATFORM_OS_DARWIN:
+        return _darwin_ipv6_addresses()
+    if not is_linux():
+        return _windows_ipv6_addresses()
+    result = run(["ip", "-json", "addr", "show"], is_checked=False)
+    if not result.is_success:
+        return {}
+    found = {}
+    for entry in json.loads(result.stdout or "[]"):
+        name = str(entry.get("ifname", ""))
+        for address in entry.get("addr_info", []):
+            if address.get("family") != "inet6" or address.get("scope") != "global":
+                continue
+            if any(address.get(flag) for flag in LINK_IPV6_UNSTABLE_FLAGS):
+                continue
+            local = str(address.get("local", ""))
+            if name and name != "lo" and _is_stable_ipv6(local):
+                found.setdefault(name, []).append(
+                    f"{local}/{address.get('prefixlen', 128)}"
+                )
+    return found
+
+
+def _darwin_ipv6_addresses() -> dict[str, list[str]]:
+    """The stable IPv6 addresses ``ifconfig`` prints on macOS."""
+    result = run(list(LINK_DARWIN_IFCONFIG_COMMAND), is_checked=False)
+    if not result.is_success:
+        return {}
+    hidden = _hidden_devices()
+    found = {}
+    name = ""
+    for line in result.stdout.splitlines():
+        if line and not line[0].isspace():
+            name = line.split(":", 1)[0]
+            continue
+        words = line.split()
+        if len(words) < 2 or words[0] != "inet6" or name in hidden:
+            continue
+        local = words[1].split("%", 1)[0]
+        if any(word in LINK_DARWIN_IPV6_UNSTABLE_WORDS for word in words[2:]):
+            continue
+        prefix = (
+            words[words.index("prefixlen") + 1] if "prefixlen" in words[:-1] else "128"
+        )
+        if _is_stable_ipv6(local):
+            found.setdefault(name, []).append(f"{local}/{prefix}")
+    return found
+
+
+def _windows_ipv6_addresses() -> dict[str, list[str]]:
+    """The stable IPv6 addresses ``Get-NetIPAddress`` lists on Windows."""
+    try:
+        answer = run_powershell(LINK_WINDOWS_IPV6_SCRIPT, {})
+    except OSError:
+        return {}
+    hidden = _hidden_devices()
+    found = {}
+    for entry in listed(answer.get("addresses")):
+        if not isinstance(entry, dict):
+            continue
+        name = str(entry.get("dev") or "")
+        local = str(entry.get("address") or "").split("%", 1)[0]
+        if (
+            not name
+            or name in hidden
+            or entry.get("state") != LINK_WINDOWS_IPV6_PREFERRED
+            or entry.get("suffix") == LINK_WINDOWS_IPV6_TEMPORARY_SUFFIX
+            or not _is_stable_ipv6(local)
+        ):
+            continue
+        found.setdefault(name, []).append(
+            f"{local}/{int(entry.get('prefixlen') or 128)}"
+        )
+    return found
+
+
+def _is_stable_ipv6(text: str) -> bool:
+    """Whether an IPv6 address has a scope wider than one link or one machine."""
+    try:
+        address = ipaddress.IPv6Address(text)
+    except ValueError:
+        return False
+    return not (
+        address.is_loopback
+        or address.is_link_local
+        or address.is_site_local
+        or address.is_multicast
+        or address.is_unspecified
+        or address.ipv4_mapped is not None
+    )
+
+
+def _hidden_devices() -> set:
+    """The devices left out on this system: the proxy's TUN."""
+    return {names.get(hub_os(), "") for names in edition.hooks("hidden_devices")}
 
 
 def admin_up_interfaces() -> set[str]:

@@ -170,10 +170,10 @@ class FakeRuntime:
     def host_scopes(self):
         return []
 
-    def overlay_networks(self):
+    def overlay_networks(self, *, is_ipv6=False):
         return {}
 
-    def interface_networks(self):
+    def interface_networks(self, *, is_ipv6=False):
         return []
 
     def desired_state_for(self, device):

@@ -85,10 +85,10 @@ class FakeRuntime:
     def host_scopes(self):
         return [LAN, OVERLAY]
 
-    def overlay_networks(self):
+    def overlay_networks(self, *, is_ipv6=False):
         return {}
 
-    def interface_networks(self):
+    def interface_networks(self, *, is_ipv6=False):
         return []
 
     def desired_state_for(self, device):
@@ -576,8 +576,12 @@ def test_the_way_a_socket_reached_the_hub_is_settled_at_hello_and_hashed(
     config_dir,
 ):
     runtime = FakeRuntime()
-    runtime.overlay_networks = lambda: {"netbird": ["100.64.0.1/16"]}
-    runtime.interface_networks = lambda: ["192.168.100.1/24"]
+    runtime.overlay_networks = lambda *, is_ipv6=False: (
+        {"netbird": ["fd7a:115c::1/48"]} if is_ipv6 else {"netbird": ["100.64.0.1/16"]}
+    )
+    runtime.interface_networks = lambda *, is_ipv6=False: (
+        ["fd00:8::1/64"] if is_ipv6 else ["192.168.100.1/24"]
+    )
     client_id = ClientRegistry().create("alice")
 
     ways = []
@@ -592,3 +596,38 @@ def test_the_way_a_socket_reached_the_hub_is_settled_at_hello_and_hashed(
 
     assert ways == ["lan", "netbird", "relay", "direct"]
     assert len(set(hashes)) == 4
+
+
+@pytest.mark.parametrize(
+    ("peer", "way"),
+    [
+        ("fd00:8::20", "lan"),
+        ("fe80::20", "lan"),
+        ("fd7a:115c::9", "netbird"),
+        ("::1", "relay"),
+        ("2001:db8::20", "direct"),
+        ("::ffff:192.168.100.9", "lan"),
+        ("::ffff:127.0.0.1", "relay"),
+        ("::ffff:203.0.113.9", "direct"),
+    ],
+)
+def test_an_ipv6_peer_is_judged_by_the_box_s_ipv6_networks(config_dir, peer, way):
+    runtime = FakeRuntime()
+    asked = []
+
+    def overlay_networks(*, is_ipv6=False):
+        asked.append(is_ipv6)
+        return {"netbird": ["fd7a:115c::1/48"]} if is_ipv6 else {}
+
+    runtime.overlay_networks = overlay_networks
+    runtime.interface_networks = lambda *, is_ipv6=False: (
+        ["fd00:8::1/64"] if is_ipv6 else ["192.168.100.1/24"]
+    )
+    client_id = ClientRegistry().create("alice")
+
+    channel_state.note_client_scope(
+        runtime, client_id, peer_host=peer, reached_host="192.168.100.1"
+    )
+
+    assert channel_state.client_state(runtime, client_id)["reached_through"] == way
+    assert asked == [not peer.startswith("::ffff:")]

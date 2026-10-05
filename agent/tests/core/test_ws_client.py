@@ -333,9 +333,24 @@ class QuietServer(socketserver.ThreadingTCPServer):
         """A connection dropped after the handshake is the pin working."""
 
 
+class QuietServerIpv6(QuietServer):
+    address_family = socket.AF_INET6
+
+
 @pytest.fixture
 def tls_stub(tmp_path):
     """A TLS stub server and the fingerprint of its runtime-made certificate."""
+    yield from serving_stub(tmp_path, QuietServer, "127.0.0.1")
+
+
+@pytest.fixture
+def tls_stub_ipv6(tmp_path):
+    """The stub server on the IPv6 loopback."""
+    yield from serving_stub(tmp_path, QuietServerIpv6, "::1")
+
+
+def serving_stub(tmp_path, server_class, host):
+    """Run a TLS stub server on a host; yield its port and fingerprint."""
     if shutil.which("openssl") is None:
         pytest.skip("openssl is not installed; the pin needs a certificate")
     certificate_path = tmp_path / "certificate.pem"
@@ -366,7 +381,7 @@ def tls_stub(tmp_path):
     StubUpgradeHandler.requests = []
     StubUpgradeHandler.answer = b"accept"
     StubUpgradeHandler.after = b""
-    server = QuietServer(("127.0.0.1", 0), StubUpgradeHandler)
+    server = server_class((host, 0), StubUpgradeHandler)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(str(certificate_path), str(key_path))
     server.socket = context.wrap_socket(server.socket, server_side=True)
@@ -388,6 +403,27 @@ def client_for(port: int, fingerprint: str) -> WebSocketClient:
         timeout_s=5,
         silence_timeout_s=5,
     )
+
+
+def test_an_ipv6_hub_is_asked_with_its_address_in_brackets(tls_stub_ipv6):
+    port, fingerprint = tls_stub_ipv6
+    made = WebSocketClient(
+        host="::1",
+        port=port,
+        path=AGENT_WS_PATH,
+        fingerprint=fingerprint,
+        timeout_s=5,
+        silence_timeout_s=5,
+    )
+
+    made.connect()
+    try:
+        assert made.is_open
+        assert made.local_address == "::1"
+        (request,) = StubUpgradeHandler.requests
+        assert f"\r\nHost: [::1]:{port}\r\n" in request.decode()
+    finally:
+        made.close()
 
 
 def test_the_upgrade_asks_for_a_websocket_and_checks_the_accept(tls_stub):
