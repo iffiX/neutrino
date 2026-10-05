@@ -164,7 +164,7 @@ def test_the_channel_is_pinned_tls_end_to_end(panel, stranger):
     )
 
     # Unbind from the device side, so the refusals below are the link's alone.
-    left = lifecycle.ssh_to(host, "sudo nagent leave")
+    left = lifecycle.ssh_to(host, "sudo nagent leave --yes")
     assert "left the hub" in left.stdout, left.stdout + left.stderr
     lifecycle.wait_for(
         "the hub to drop the leaver's binding",
@@ -199,6 +199,6 @@ def test_the_channel_is_pinned_tls_end_to_end(panel, stranger):
     )
 
     # Leave the box as this file found it.
-    lifecycle.ssh_to(host, "sudo nagent leave")
+    lifecycle.ssh_to(host, "sudo nagent leave --yes")
     assert panel.status("POST", "/hub/device/remove", {"device_id": device_id}) == 200
     panel.call("POST", "/hub/credential/ssh_key/remove", {"key_id": key["id"]})

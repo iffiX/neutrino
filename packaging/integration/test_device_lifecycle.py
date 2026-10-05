@@ -377,7 +377,7 @@ def test_the_lifecycle_walks_every_transition(panel, stranger):
 
     # The device lets go by leaving: the hub's binding empties at once, and
     # what the owner typed survives.
-    left = ssh_to(host, "sudo nagent leave")
+    left = ssh_to(host, "sudo nagent leave --yes")
     assert "left the hub" in left.stdout, left.stdout + left.stderr
     wait_for(
         "the hub to drop the leaver's binding",

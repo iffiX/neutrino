@@ -52,7 +52,11 @@ each form of `reset`, asks `[y/N]` before it acts and takes `--yes` to go
 ahead without asking. With no terminal on stdin and no `--yes` it asks
 nothing, prints one line naming `--yes` and exits 1, so every script that
 runs one passes `--yes`: the deb's and the rpm's removal script runs
-`nhub reset network --yes`.
+`nhub reset network --yes`. The agent's commands that change the machine
+do the same: `nagent start`, `stop`, `leave`, `join` over an existing
+binding and `service uninstall`, and the agent's deb removal script runs
+`nagent leave --yes`. A machine with no binding is told so by `nagent leave`
+without a question.
 
 The questions are answered in the terminal or in a browser. The hub's
 service serves the browser's questions from the install on the panel's HTTP
