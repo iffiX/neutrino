@@ -20,6 +20,7 @@ import kotlinx.serialization.json.intOrNull
  * @property descriptionCode The provenance as a code.
  * @property descriptionParams The values that sentence names.
  * @property deviceName The machine that provides it, empty when the hub knows none.
+ * @property deviceId That machine's id, empty when no managed machine provides it.
  */
 @Serializable
 data class ChannelServiceEntry(
@@ -33,6 +34,7 @@ data class ChannelServiceEntry(
     @SerialName("description_code") val descriptionCode: String = "",
     @SerialName("description_params") val descriptionParams: JsonObject = JsonObject(emptyMap()),
     @SerialName("device_name") val deviceName: String = "",
+    @SerialName("device_id") val deviceId: String = "",
 ) {
     /**
      * One text field of the payload.
