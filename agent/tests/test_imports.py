@@ -73,6 +73,7 @@ SURVIVING_MODULES = {
     "neutrino_agent.cli.service",
     "neutrino_agent.cli.start",
     "neutrino_agent.cli.status",
+    "neutrino_agent.cli.step_down",
     "neutrino_agent.cli.stop",
     "neutrino_agent.cli.sync",
     "neutrino_agent.cli.wording",

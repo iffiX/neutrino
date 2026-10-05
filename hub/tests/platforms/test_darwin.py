@@ -178,3 +178,46 @@ def test_root_with_nobody_signed_in_opens_nothing(monkeypatch):
     )
 
     assert not DarwinHubPlatform().open_browser("http://127.0.0.1:8080/")
+
+
+AUTO_LOGIN_CONSOLE_USER = """<dictionary> {
+  GID : 20
+  Name : chuzu
+  SessionInfo : <array> {
+    0 : <dictionary> {
+      kCGSSessionUserIDKey : 502
+      kCGSSessionUserNameKey : chuzu
+    }
+  }
+  UID : 502
+}
+"""
+
+
+def test_the_account_at_the_screen_is_the_system_configurations_console_user(
+    monkeypatch,
+):
+    """Under auto-login /dev/console stays root's while chuzu is signed in."""
+    calls = []
+
+    def fake_run(command, **keywords):
+        calls.append((command, keywords.get("input")))
+        return completed(AUTO_LOGIN_CONSOLE_USER)
+
+    monkeypatch.setattr(darwin.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        darwin.os, "stat", lambda path: pytest.fail("the console is not read")
+    )
+
+    assert darwin.console_uid() == 502
+    assert calls == [(["/usr/sbin/scutil"], "show State:/Users/ConsoleUser\n")]
+
+
+@pytest.mark.parametrize(
+    "printed",
+    ["  Name : loginwindow\n  UID : 0\n", "  No such key\n"],
+)
+def test_the_login_window_and_no_key_are_nobody_at_the_screen(monkeypatch, printed):
+    monkeypatch.setattr(darwin.subprocess, "run", lambda *a, **k: completed(printed))
+
+    assert darwin.console_uid() == 0

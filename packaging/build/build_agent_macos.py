@@ -97,6 +97,7 @@ exit 0
 
 POSTINSTALL = f"""#!/bin/sh
 {pkg_build.LAUNCHD_START_FUNCTION}
+{pkg_build.CONSOLE_USER_FUNCTION}
 mkdir -p "{INSTALL_CONFIG_DIR}" "{INSTALL_STATE_DIR}"
 chown root:wheel "{INSTALL_CONFIG_DIR}" "{INSTALL_STATE_DIR}"
 chmod 700 "{INSTALL_CONFIG_DIR}"
@@ -111,8 +112,9 @@ start_daemon {AGENT_LAUNCHD_LABEL} /Library/LaunchDaemons/{AGENT_LAUNCHD_LABEL}.
 }}
 # The session server goes into the session at the screen now; later sessions
 # load it themselves.
-seat=$(stat -f %u /dev/console)
-if [ "$seat" != 0 ]; then
+user=$(console_user)
+if [ -n "$user" ]; then
+    seat=$(id -u "$user")
     launchctl bootstrap gui/"$seat" /Library/LaunchAgents/{RUSTDESK_SERVER_LABEL}.plist || true
 fi
 echo ""

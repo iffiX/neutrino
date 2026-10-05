@@ -606,3 +606,32 @@ def test_a_repair_that_starts_no_relaunch_task_fails_the_check(check, relaunch_b
 
     with pytest.raises(SystemExit, match="did not start the relaunch task"):
         check._check_client_windows_relaunch(Path("client.msi"))
+
+
+@pytest.mark.parametrize(
+    "machine, declared, is_passing",
+    [
+        ("arm64", ["arm64", "x86_64"], True),
+        ("x86_64", ["x86_64"], True),
+        ("arm64", ["x86_64"], False),
+        ("arm64", None, False),
+    ],
+)
+def test_the_hub_entry_must_declare_the_runners_architecture_first(
+    check, monkeypatch, tmp_path, machine, declared, is_passing
+):
+    import plistlib
+
+    information = {"CFBundleExecutable": "Neutrino Hub"}
+    if declared is not None:
+        information["LSArchitecturePriority"] = declared
+    plist = tmp_path / "Info.plist"
+    plist.write_bytes(plistlib.dumps(information))
+    monkeypatch.setattr(check, "HUB_MACOS_APP_INFO", plist)
+    monkeypatch.setattr(check.platform, "machine", lambda: machine)
+
+    if is_passing:
+        check._check_hub_macos_entry()
+    else:
+        with pytest.raises(SystemExit):
+            check._check_hub_macos_entry()

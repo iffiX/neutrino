@@ -262,6 +262,9 @@ def test_the_entry_is_a_bundle_whose_script_opens_the_panel(laid_out):
     assert information["CFBundlePackageType"] == "APPL"
     assert information["CFBundleShortVersionString"] == "9.9.9"
     assert information["CFBundleIconFile"] == "neutrino_hub"
+    # The executable is a script: without the key Apple silicon asks for
+    # Rosetta to open it.
+    assert information["LSArchitecturePriority"] == ["arm64", "x86_64"]
     assert script.read_text() == '#!/bin/sh\nexec "/usr/local/bin/nhub" open\n'
     assert script.stat().st_mode & 0o111
     assert (contents / "Resources" / "neutrino_hub.icns").read_bytes()[:4] == b"icns"
@@ -340,3 +343,10 @@ def test_an_upgrade_starts_the_hub_again_or_fails_the_install(tmp_path):
     assert script.index("start_daemon() {") < script.index(
         "start_daemon com.neutrino.hub "
     )
+
+
+def test_an_intel_package_declares_its_entry_intel(tmp_path):
+    bundle = build_hub_macos.write_app_entry(tmp_path, "9.9.9", "amd64")
+
+    information = plistlib.loads((bundle / "Contents" / "Info.plist").read_bytes())
+    assert information["LSArchitecturePriority"] == ["x86_64"]

@@ -78,7 +78,6 @@ DARWIN_COMMAND_TIMEOUT_S = 10
 # How long one launchctl bootout, pfctl or rm of a removal may take.
 DARWIN_REMOVAL_TIMEOUT_S = 60
 DARWIN_PLIST_SUFFIX = ".plist"
-DARWIN_CONSOLE_PATH = "/dev/console"
 
 DARWIN_LOOPBACK_NAME = "lo0"
 DARWIN_INTERFACE_HEADER = re.compile(r"^([A-Za-z0-9_.]+): flags=")
@@ -592,10 +591,10 @@ class DarwinPlatform(AgentPlatform):
             RUSTDESK_DARWIN_SESSION_PLIST,
         )
 
-        try:
-            seat = os.stat(DARWIN_CONSOLE_PATH).st_uid
-        except OSError:
-            seat = 0
+        from neutrino_agent.rdp.darwin_seat import console_user
+
+        seated = console_user()
+        seat = seated[1] if seated else 0
         if seat != 0:
             _run_removal(
                 ["launchctl", "bootout", f"gui/{seat}/{RUSTDESK_DARWIN_SESSION_LABEL}"]

@@ -11,6 +11,7 @@
     nagent service run
     nagent service uninstall [--yes]
     nagent answer --prompt <text> --answer <keys> -- <program> [arguments]
+    nagent step-down --uid <uid> --gid <gid> -- <program> [arguments]
 
 The shape is settled in ../../../docs/cli.md.
 """
@@ -31,6 +32,7 @@ from neutrino_agent.cli import (
     service,
     start,
     status,
+    step_down,
     stop,
     sync,
 )
@@ -123,6 +125,16 @@ def main() -> int:
     answer_parser.add_argument(
         "program", nargs=argparse.REMAINDER, help="-- then the program"
     )
+    step_down_parser = subparsers.add_parser(
+        "step-down",
+        help="drop to an account and run one program as it; the agent runs it "
+        "under launchctl asuser",
+    )
+    step_down_parser.add_argument("--uid", type=int, required=True)
+    step_down_parser.add_argument("--gid", type=int, required=True)
+    step_down_parser.add_argument(
+        "program", nargs=argparse.REMAINDER, help="-- then the program"
+    )
 
     arguments = parser.parse_args()
     if not arguments.command:
@@ -153,6 +165,11 @@ def main() -> int:
         return answer.main(
             prompt=arguments.prompt, answer=arguments.answer, argv=program
         )
+    if arguments.command == "step-down":
+        program = list(arguments.program)
+        if program[:1] == ["--"]:
+            program = program[1:]
+        return step_down.main(uid=arguments.uid, gid=arguments.gid, argv=program)
     if arguments.command == "service":
         if arguments.service_command == "run":
             return service.main_run()

@@ -55,6 +55,8 @@ import argparse
 import hashlib
 import json
 import os
+import platform
+import plistlib
 import re
 import secrets
 import shutil
@@ -192,6 +194,9 @@ HUB_MACOS_LEFTOVERS = (
     str(HUB_MACOS_PLIST),
 )
 HUB_MACOS_PACKAGE_ID = "com.neutrino.hub"
+HUB_MACOS_APP_INFO = Path("/Applications/Neutrino Hub.app/Contents/Info.plist")
+# What the entry's first architecture is on each machine a runner is.
+HUB_MACOS_APP_ARCHITECTURE = {"arm64": "arm64", "x86_64": "x86_64"}
 
 # --- the hub, on both ---
 # A server hub on the default ports with no proxy; setup installs the local
@@ -562,8 +567,23 @@ def _check_client_macos_upgrade(pkg: Path) -> None:
 
 
 def _console_uid() -> int:
-    """The uid of the account at the screen; root's at the login window."""
-    return os.stat("/dev/console").st_uid
+    """The uid of the account at the screen, as the system configuration's
+    console user names it; 0 for nobody. The owner of /dev/console answers
+    only when scutil cannot be run."""
+    try:
+        printed = subprocess.run(
+            ["/usr/sbin/scutil"],
+            input="show State:/Users/ConsoleUser\n",
+            capture_output=True,
+            text=True,
+        ).stdout
+    except OSError:
+        return os.stat("/dev/console").st_uid
+    name = re.search(r"^\s*Name\s*:\s*(\S+)\s*$", printed, re.MULTILINE)
+    uid = re.search(r"^\s*UID\s*:\s*(\d+)\s*$", printed, re.MULTILINE)
+    if name is None or uid is None or name.group(1) in ("root", "loginwindow"):
+        return 0
+    return int(uid.group(1))
 
 
 def _client_app_pids() -> set:
@@ -685,6 +705,7 @@ def check_hub_macos(pkg: Path) -> None:
         raise SystemExit("the hub's service is not registered")
     if not _is_job_loaded(HUB_MACOS_JOB):
         raise SystemExit("the hub's service is not loaded after install")
+    _check_hub_macos_entry()
     _wait_for_wizard()
 
     _set_up_hub(["sudo", HUB_MACOS_COMMAND])
@@ -707,6 +728,23 @@ def check_hub_macos(pkg: Path) -> None:
 
     _run_install_script(pkg, ["sh", str(INSTALL_SCRIPTS_DIR / "install.sh"), "hub"])
     print(f"nhub by install.sh {_answer([HUB_MACOS_COMMAND, '--version'])}")
+
+
+def _check_hub_macos_entry() -> None:
+    """The app entry declares this machine's architecture first, so a
+    script executable opens without Rosetta.
+
+    Raises:
+        SystemExit: When the key is missing or names another machine first.
+    """
+    information = plistlib.loads(HUB_MACOS_APP_INFO.read_bytes())
+    declared = information.get("LSArchitecturePriority") or []
+    wanted = HUB_MACOS_APP_ARCHITECTURE.get(platform.machine(), "")
+    if not declared or declared[0] != wanted:
+        raise SystemExit(
+            f"Neutrino Hub.app declares {declared}, expected {wanted} first"
+        )
+    print(f"Neutrino Hub.app declares {declared}")
 
 
 def check_client_android(apk: Path) -> None:

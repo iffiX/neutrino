@@ -121,9 +121,9 @@ DAEMON_STATE_DIRS = " ".join(
 
 # The app as an install puts it, its program, and the file the preinstall
 # leaves for the postinstall naming the person whose client it asked to
-# quit. A person is someone at the screen: the owner of /dev/console, with
-# a uid of an ordinary account; root there is the login window, and an
-# install over ssh with nobody signed in finds root.
+# quit. A person is someone at the screen, as the system configuration's
+# console user names, with a uid of an ordinary account; nobody is there at
+# the login window or for an install over ssh with nobody signed in.
 APP_PATH = INSTALL_APPLICATIONS_DIR / APP_BUNDLE_NAME
 APP_PROGRAM = APP_PATH / "Contents" / "MacOS" / CLIENT_BINARY_NAME
 REOPEN_MARKER = Path(CLIENT_STATE_DIR_DARWIN) / ".reopen_for"
@@ -138,10 +138,11 @@ QUIT_WAIT_TURNS = 30
 # failing when one does not start, and the client opened again for the
 # person it was running for.
 PREINSTALL = f"""#!/bin/sh
+{pkg_build.CONSOLE_USER_FUNCTION}
 rm -f "{REOPEN_MARKER}"
-uid=$(stat -f %u /dev/console)
-user=$(stat -f %Su /dev/console)
-if [ "$uid" -ge {CONSOLE_UID_FLOOR} ] && [ -x "{APP_PROGRAM}" ]; then
+user=$(console_user)
+uid=$(id -u "$user" 2>/dev/null || echo 0)
+if [ -n "$user" ] && [ "$uid" -ge {CONSOLE_UID_FLOOR} ] && [ -x "{APP_PROGRAM}" ]; then
     if sudo -H -u "$user" "{APP_PROGRAM}" quit >/dev/null 2>&1; then
         mkdir -p "{CLIENT_STATE_DIR_DARWIN}"
         echo "$user" > "{REOPEN_MARKER}"
@@ -163,6 +164,7 @@ exit 0
 """
 POSTINSTALL = f"""#!/bin/sh
 {pkg_build.LAUNCHD_START_FUNCTION}
+{pkg_build.CONSOLE_USER_FUNCTION}
 mkdir -p "{LOG_DIR}"
 for directory in {DAEMON_STATE_DIRS}; do
     mkdir -p "$directory"
@@ -177,7 +179,7 @@ done
 if [ -f "{REOPEN_MARKER}" ]; then
     user=$(cat "{REOPEN_MARKER}")
     rm -f "{REOPEN_MARKER}"
-    if [ "$user" = "$(stat -f %Su /dev/console)" ]; then
+    if [ "$user" = "$(console_user)" ]; then
         uid=$(id -u "$user")
         launchctl asuser "$uid" sudo -H -u "$user" open -a "{APP_PATH}" \\
             >/dev/null 2>&1 ||

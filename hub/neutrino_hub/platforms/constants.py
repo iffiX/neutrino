@@ -104,6 +104,12 @@ PLATFORM_BROWSER_TIMEOUT_S = 5
 PLATFORM_DARWIN_BROWSER_OPENER = "open"
 # Where the signed-in account on a Mac is read from, when sudo names none.
 PLATFORM_DARWIN_CONSOLE = "/dev/console"
+# The account at the Mac's screen is the system configuration's console
+# user; the owner of /dev/console stands in only when scutil cannot be
+# asked, since under auto-login it stays root while a person is signed in.
+PLATFORM_DARWIN_SCUTIL = "/usr/sbin/scutil"
+PLATFORM_DARWIN_CONSOLE_USER_QUERY = "show State:/Users/ConsoleUser\n"
+PLATFORM_DARWIN_NOBODY_NAMES = ("", "root", "loginwindow")
 # What opens a page from an elevated Windows process, as the signed-in
 # account rather than as the administrator.
 PLATFORM_WINDOWS_SHELL = "explorer.exe"
