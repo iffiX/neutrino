@@ -24,7 +24,9 @@ is reported with its code under the old hash, and is tried again only when
 a state with another hash arrives; the one exception is a failure the
 socket caused, which the next state frame tries again. The hash last tried
 is kept beside the state on disk, so an agent that starts again does not
-try a failed state again either. A module whose apply
+try a failed state again either. The mark holds for one install and one
+binding: the agent's removal, a join and a leave delete it, so the next
+agent that holds the same state applies it again. A module whose apply
 waits on an install that still runs is no failure: unless another module
 failed, the state is applied again every recheck interval until the
 install has ended.
@@ -147,6 +149,14 @@ class DesiredStateStore:
         except OSError:
             return ""
 
+    def clear_tried(self) -> None:
+        """Delete the hash last tried, so the next state is applied whatever
+        its hash."""
+        try:
+            os.unlink(self._path + TRIED_SUFFIX)
+        except FileNotFoundError:
+            pass
+
     def write_tried(self, state_hash: str) -> None:
         """Keep the hash of the state an apply was just tried for, root-only.
 
@@ -257,6 +267,23 @@ class DesiredStateApplier:
             return self._idle.wait_for(
                 lambda: self._pending is None and not self._is_applying, timeout_s
             )
+
+    def forget_tried(self) -> None:
+        """Forget the hash last tried, here and on disk: what it was tried
+        against is gone."""
+        with self._lock:
+            self._tried_hash = ""
+        try:
+            self._store.clear_tried()
+        except OSError as error:
+            self._log(f"could not forget the tried state: {error}")
+
+    def reload_tried(self) -> None:
+        """Read the hash last tried from disk again, after another process
+        changed the binding and, with it, the mark."""
+        tried = self._store.read_tried()
+        with self._lock:
+            self._tried_hash = tried
 
     def latest(self) -> dict:
         """The last state taken from the hub, as it was kept.

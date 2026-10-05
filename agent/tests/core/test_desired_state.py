@@ -801,6 +801,105 @@ def test_the_tried_hash_outlives_a_restart_and_the_same_state_is_not_tried_again
     assert oct(os.stat(str(tmp_path / "desired.json.tried")).st_mode & 0o777) == "0o600"
 
 
+def _agent(runners, tmp_path):
+    """A fresh agent's applier over the state files under ``tmp_path``."""
+    return DesiredStateApplier(
+        engine=FakeEngine(runners),
+        runners=runners,
+        store=DesiredStateStore(path=str(tmp_path / "desired.json")),
+        log=lambda message: None,
+    )
+
+
+class _CountingRunner(FakeRunner):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.tries = 0
+
+    def apply(self, config):
+        self.tries += 1
+        super().apply(config)
+
+
+def test_a_removal_lets_the_next_agent_apply_the_same_state_again(tmp_path):
+    """Remove, install, join: the removal undid what the state made true, so
+    the agent that comes next applies the very same state."""
+    runner = _CountingRunner()
+    runners = {"remote_desktop": runner}
+    _agent(runners, tmp_path).apply(state(remote_desktop="running"))
+    assert runner.tries == 1
+
+    # nagent service uninstall, as every package's removal runs it.
+    DesiredStateStore(path=str(tmp_path / "desired.json")).clear_tried()
+
+    again = _agent(runners, tmp_path)
+    again.take(state(remote_desktop="running"))
+    assert again.settle(5.0)
+
+    assert runner.tries == 2
+    assert again.applied_hash == "h1"
+
+
+def test_a_failed_state_still_does_not_loop_after_a_plain_restart(tmp_path):
+    runner = _CountingRunner(failure=ModuleApplyError("cloudcli_install_failed"))
+    runners = {"cloudcli": runner}
+    _agent(runners, tmp_path).apply(state(cloudcli="running"))
+
+    again = _agent(runners, tmp_path)
+    again.take(state(cloudcli="running"))
+    assert again.settle(5.0)
+
+    assert runner.tries == 1
+
+
+def test_an_upgrade_applies_nothing_again(tmp_path):
+    """An upgrade replaces the package and restarts the agent; it neither
+    removes nor joins, so the mark stands."""
+    runner = _CountingRunner()
+    runners = {"samba": runner}
+    _agent(runners, tmp_path).apply(state(samba="running"))
+
+    upgraded = _agent(runners, tmp_path)
+    upgraded.take(state(samba="running"))
+    assert upgraded.settle(5.0)
+
+    assert runner.tries == 1
+
+
+def test_forgetting_the_mark_applies_a_state_already_held(tmp_path):
+    runner = _CountingRunner()
+    runners = {"samba": runner}
+    held = _agent(runners, tmp_path)
+    held.apply(state(samba="running"))
+
+    held.forget_tried()
+    held.take(state(samba="running"))
+    assert held.settle(5.0)
+
+    assert runner.tries == 2
+    assert held._store.read_tried() == "h1"
+
+
+def test_a_mark_another_process_deleted_is_read_again(tmp_path):
+    """nagent join runs in its own process; the service reads the mark again
+    when it adopts the new binding."""
+    runner = _CountingRunner()
+    runners = {"samba": runner}
+    held = _agent(runners, tmp_path)
+    held.apply(state(samba="running"))
+
+    DesiredStateStore(path=str(tmp_path / "desired.json")).clear_tried()
+    held.reload_tried()
+    held.take(state(samba="running"))
+    assert held.settle(5.0)
+
+    assert runner.tries == 2
+
+
+def test_clearing_a_mark_that_is_not_there_is_no_error(tmp_path):
+    DesiredStateStore(path=str(tmp_path / "desired.json")).clear_tried()
+
+
 def test_a_refusal_s_log_line_carries_its_reason(tmp_path):
     """The agent's log says why, not only the code."""
     runners = {

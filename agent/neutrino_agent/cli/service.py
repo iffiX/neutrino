@@ -25,10 +25,12 @@ from neutrino_agent.ai_tools.applier import AiToolsApplier
 from neutrino_agent.cli.start import is_confirmed
 from neutrino_agent.constants import (
     AGENT_CREDENTIALS_DIR_NAME,
+    AGENT_DESIRED_STATE_NAME,
     AGENT_STATE_NAME,
     AGENT_WINDOWS_SERVICE_NAME,
 )
 from neutrino_agent.control.server import ControlServer
+from neutrino_agent.core.desired_state import DesiredStateStore
 from neutrino_agent.core.loop import Agent
 from neutrino_agent.core.store import MachineStateStore
 from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
@@ -114,6 +116,7 @@ def main_uninstall(*, is_forced: bool) -> int:
         return 1
     try:
         platform.stop_agent_service()
+        forget_tried(platform)
         turn_desktop_off(platform)
         ai_tools = AiToolsApplier(platform=platform, log=print)
         for switched in ai_tools.switch_back_all():
@@ -133,6 +136,20 @@ def main_uninstall(*, is_forced: bool) -> int:
     for name in removed:
         print(f"removed    {name}")
     return 0
+
+
+def forget_tried(platform) -> None:
+    """Delete the hash of the state last tried, since the removal undid what
+    that state made true; the next agent applies it again.
+
+    Args:
+        platform: The machine's platform.
+
+    Raises:
+        OSError: When the mark cannot be deleted.
+    """
+    path = os.path.join(platform.agent_data_dir(), AGENT_DESIRED_STATE_NAME)
+    DesiredStateStore(path=path).clear_tried()
 
 
 def turn_desktop_off(platform) -> None:
