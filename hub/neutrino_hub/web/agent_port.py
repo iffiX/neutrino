@@ -29,6 +29,8 @@ from uvicorn.protocols.http.auto import AutoHTTPProtocol
 
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_ADMISSION_TIMEOUT_S,
+    CHANNEL_CLOSE_FIRST_BYTE,
+    CHANNEL_CLOSE_HANDSHAKE,
     CHANNEL_CODE_REQUEST_TOO_LARGE,
     CHANNEL_FIRST_BYTE_TIMEOUT_S,
     CHANNEL_REQUEST_BYTES_MAX,
@@ -300,7 +302,9 @@ class AgentPortProtocol(asyncio.Protocol):
         """No byte came in time: close the socket."""
         self._unwatch()
         self._raw.abort()
-        self._guard.closed(self._key)
+        self._guard.timed_out(
+            self._key, CHANNEL_CLOSE_FIRST_BYTE, self._first_byte_timeout_s
+        )
 
     def _unwatch(self) -> None:
         """Stop waiting for the first byte."""
@@ -328,7 +332,9 @@ class AgentPortProtocol(asyncio.Protocol):
             )
         except (TimeoutError, asyncio.TimeoutError):
             self._raw.abort()
-            self._guard.closed(self._key)
+            self._guard.timed_out(
+                self._key, CHANNEL_CLOSE_HANDSHAKE, self._handshake_timeout_s
+            )
             return
         except (OSError, ConnectionError, RuntimeError, ValueError):
             self._raw.abort()

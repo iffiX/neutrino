@@ -157,3 +157,78 @@ def test_failures_at_the_limit_pause_join_until_the_oldest_leaves_the_window():
     assert guard.pause_remaining_s() == 1
     clock.now += 1
     assert guard.pause_remaining_s() == 0
+
+
+# --- what the port logs when it closes a socket on its own ---
+
+
+def close_lines(caplog) -> list:
+    return [
+        record.getMessage()
+        for record in caplog.records
+        if record.name == "neutrino_hub.modules.channel.port_guard"
+    ]
+
+
+def test_a_socket_closed_to_make_room_is_one_line_naming_it_and_the_count(caplog):
+    guard = ChannelPortGuard(unadmitted_max=2, clock=FakeClock())
+    accept(guard, ("2001:db8::7", 1))
+    accept(guard, ("192.168.1.9", 2))
+
+    with caplog.at_level("WARNING"):
+        accept(guard, ("127.0.0.1", 3))
+
+    assert close_lines(caplog) == [
+        "agent port full: closed 2001:db8::7 to make room, 2 sockets held"
+    ]
+
+
+def test_closes_to_make_room_write_one_line_a_minute_and_count_the_rest(caplog):
+    clock = FakeClock()
+    guard = ChannelPortGuard(unadmitted_max=1, clock=clock)
+    accept(guard, ("10.0.0.1", 1))
+
+    with caplog.at_level("WARNING"):
+        for port in range(2, 102):
+            accept(guard, ("10.0.0.1", port))
+            clock.now += 0.1
+        clock.now += 60
+        accept(guard, ("10.0.0.2", 200))
+
+    assert close_lines(caplog) == [
+        "agent port full: closed 10.0.0.1 to make room, 1 sockets held",
+        "agent port full: closed 10.0.0.1 to make room, 1 sockets held; "
+        "99 more closed since the last such line",
+    ]
+
+
+def test_each_timeout_writes_its_own_line_under_its_own_limit(caplog):
+    clock = FakeClock()
+    guard = ChannelPortGuard(clock=clock)
+
+    with caplog.at_level("WARNING"):
+        for port in range(1, 4):
+            accept(guard, ("10.0.0.1", port))
+            guard.timed_out(("10.0.0.1", port), "first_byte", 3.0)
+        accept(guard, ("10.0.0.2", 9))
+        guard.timed_out(("10.0.0.2", 9), "handshake", 10.0)
+
+    assert close_lines(caplog) == [
+        "agent port: closed 10.0.0.1, no byte within 3 s",
+        "agent port: closed 10.0.0.2, TLS handshake not done within 10 s",
+    ]
+    assert guard.unadmitted_count == 0
+
+
+def test_the_normal_path_writes_no_line(caplog):
+    guard = ChannelPortGuard(clock=FakeClock())
+
+    with caplog.at_level("DEBUG"):
+        accept(guard, ("10.0.0.1", 1))
+        guard.handshaken(("10.0.0.1", 1))
+        admission = guard.admit(("10.0.0.1", 1))
+        guard.release(admission)
+        accept(guard, ("10.0.0.1", 2))
+        guard.closed(("10.0.0.1", 2))
+
+    assert close_lines(caplog) == []

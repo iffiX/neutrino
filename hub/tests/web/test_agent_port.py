@@ -512,3 +512,40 @@ def test_a_loop_that_cannot_watch_a_socket_closes_a_silent_one_at_the_handshake_
     assert is_closed
     assert waited < 3
     assert unadmitted == 0
+
+
+def test_a_silent_socket_on_ipv6_loopback_is_logged_by_its_address(tmp_path, caplog):
+    async def scenario():
+        guard = ChannelPortGuard()
+        certificate, key, _ = self_signed_pair(tmp_path)
+        context = agent_port_context(str(certificate), str(key))
+        loop = asyncio.get_running_loop()
+
+        def protocol():
+            return AgentPortProtocol(
+                guard=guard,
+                ssl_context=context,
+                config=None,
+                server_state=None,
+                app_state=None,
+                _loop=loop,
+                serve_protocol=Echo,
+                first_byte_timeout_s=0.2,
+            )
+
+        server = await loop.create_server(protocol, "::1", 0)
+        port = server.sockets[0].getsockname()[1]
+        reader, writer = await asyncio.open_connection("::1", port)
+        is_closed = await is_closed_by_peer(reader, 3)
+        writer.close()
+        server.close()
+        return is_closed
+
+    with caplog.at_level("WARNING"):
+        assert asyncio.run(scenario())
+
+    assert [
+        record.getMessage()
+        for record in caplog.records
+        if record.name == "neutrino_hub.modules.channel.port_guard"
+    ] == ["agent port: closed ::1, no byte within 0.2 s"]
