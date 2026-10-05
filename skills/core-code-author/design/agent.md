@@ -284,8 +284,12 @@ see. Whose desktop a peer sees is whoever sits at the screen; the report's
 `account` names them and decides nothing.
 
 **A share made by the old command is kept.** An agent of a version that had
-`nagent rdp start` recorded a share in its store. Until the first state that
-names `remote_desktop`, the agent leaves that share running and reports it.
+`nagent rdp start` recorded a share in its store. The package that upgrades
+it takes away the RustDesk the old package installed at the system's
+standard place, so the agent, when it starts and finds that record, takes
+the machine's RustDesk over with its own copy as the switch's way on does,
+and until the first state that names `remote_desktop` it keeps that share
+running and reports it.
 A hub that receives `desktop.is_shared` true from a device with no
 `remote_desktop.json` writes the switch on for it, so an upgrade closes no
 share.
