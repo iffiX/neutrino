@@ -26,7 +26,7 @@ def config_dir(monkeypatch, tmp_path):
 
 def test_a_box_with_no_file_has_direct_off(config_dir):
     assert read_direct() == OverlayDirectConfig()
-    assert read_direct().public_url == ""
+    assert read_direct().public_host == ""
 
 
 def test_what_is_written_reads_back(config_dir):
@@ -37,18 +37,6 @@ def test_what_is_written_reads_back(config_dir):
     write_direct(written)
 
     assert read_direct() == written
-
-
-@pytest.mark.parametrize(
-    ("host", "url"),
-    [
-        ("hub.example.org", "https://hub.example.org:443"),
-        ("203.0.113.7", "https://203.0.113.7:443"),
-        ("2001:db8::7", "https://[2001:db8::7]:443"),
-    ],
-)
-def test_the_public_url_puts_an_ipv6_address_in_brackets(host, url):
-    assert OverlayDirectConfig(public_host=host, public_port=443).public_url == url
 
 
 @pytest.mark.parametrize(

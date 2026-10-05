@@ -71,17 +71,6 @@ class OverlayDirectConfig:
         """
         return asdict(self)
 
-    @property
-    def public_url(self) -> str:
-        """The stated public address as a member of ``urls``; empty for none.
-
-        An IPv6 address is written in brackets.
-        """
-        if not self.public_host:
-            return ""
-        host = f"[{self.public_host}]" if ":" in self.public_host else self.public_host
-        return f"https://{host}:{self.public_port}"
-
 
 def is_public_host_refused(host: str) -> bool:
     """Whether a stated public host is neither an address nor a host name.

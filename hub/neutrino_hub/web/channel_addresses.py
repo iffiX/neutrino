@@ -6,6 +6,8 @@ one. An enrolment link carries it, both state documents carry it under
 their hash, and the address sampler pushes both when it changes.
 """
 
+import ipaddress
+
 from fastapi import HTTPException, status
 
 from neutrino_hub.modules.overlay.ops import overlay_parts
@@ -40,28 +42,77 @@ def channel_urls(runtime) -> list[str]:
         among them while Direct is on; then the public address the person
         stated for Direct, while it is on; and last the relay's address while
         it is on and configured. An IPv6 address is written in brackets.
+        Each address is listed once, however it was spelled.
     """
-    port = runtime.settings.get("agent_listen_port", WEB_DEFAULT_AGENT_LISTEN_PORT)
     direct = _stored_direct()
-    hosts = channel_hosts(runtime.network(), is_direct=direct.is_enabled)
-    urls = [channel_url(host, port) for host in hosts]
-    for added in (direct.public_url if direct.is_enabled else "", relay_url()):
-        if added and added not in urls:
-            urls.append(added)
+    urls = _own_urls(runtime, direct, is_direct=direct.is_enabled)
+    relay = relay_url()
+    if relay and relay not in urls:
+        urls.append(relay)
     return urls
 
 
+def direct_urls(runtime, direct: OverlayDirectConfig) -> list[str]:
+    """What Direct adds to ``urls``, whether it is on or off.
+
+    Args:
+        runtime: The shared runtime, for the network configuration and the
+            port.
+        direct: Direct's settings.
+
+    Returns:
+        The members :func:`channel_urls` holds with Direct on and not with
+        it off, in their order, each once.
+    """
+    without = _own_urls(runtime, direct, is_direct=False)
+    return [
+        url for url in _own_urls(runtime, direct, is_direct=True) if url not in without
+    ]
+
+
 def channel_url(host: str, port: int) -> str:
-    """The agent port's base URL on one host.
+    """The agent port's base URL on one host, one spelling per address.
 
     Args:
         host: An address or a name; an IPv6 address is bare.
-        port: The agent port.
+        port: The port.
 
     Returns:
-        ``https://<host>:<port>``, an IPv6 address in brackets.
+        ``https://<host>:<port>``: an IP address in its standard form, an
+        IPv6 one compressed and in brackets, a name in lower case.
     """
-    return f"https://[{host}]:{port}" if ":" in host else f"https://{host}:{port}"
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return f"https://{host.lower()}:{port}"
+    if address.version == 6:
+        return f"https://[{address}]:{port}"
+    return f"https://{address}:{port}"
+
+
+def _own_urls(runtime, direct: OverlayDirectConfig, *, is_direct: bool) -> list:
+    """The hub's own addresses on the agent port, the relay aside.
+
+    Args:
+        runtime: The shared runtime.
+        direct: Direct's settings, for its public address.
+        is_direct: Whether to list what Direct adds.
+
+    Returns:
+        One URL per host :func:`channel_hosts` returns, then the public
+        address while ``is_direct``, each address once.
+    """
+    port = runtime.settings.get("agent_listen_port", WEB_DEFAULT_AGENT_LISTEN_PORT)
+    urls = []
+    for host in channel_hosts(runtime.network(), is_direct=is_direct):
+        url = channel_url(host, port)
+        if url not in urls:
+            urls.append(url)
+    if is_direct and direct.public_host:
+        public = channel_url(direct.public_host, direct.public_port)
+        if public not in urls:
+            urls.append(public)
+    return urls
 
 
 def _stored_direct() -> OverlayDirectConfig:
