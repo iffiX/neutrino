@@ -33,7 +33,8 @@ class PortForwardsTest {
         synchronized(opened) { opened += bindingId to args }
         hub.open(args)
     }
-    private val noMaterial: suspend (String, String) -> ChannelResult<JsonObject> = { _, _ ->
+    private val panelToken = ChannelResult.Ok(JsonObject(mapOf("token" to JsonPrimitive("t-1_x"))))
+    private val noMaterial: suspend (String, Map<String, JsonElement>) -> ChannelResult<JsonObject> = { _, _ ->
         ChannelResult.Ok(JsonObject(emptyMap()))
     }
 
@@ -230,15 +231,26 @@ class PortForwardsTest {
     }
 
     @Test
-    fun thePanelForwardsFrom20000UpAndOpensUnderTheHubsOwnName() = runTest {
-        val forwards = PortForwards(noMaterial, streams, backgroundScope, table)
+    fun thePanelReadsItsTokenFirstThenForwardsAndOpensSignedIn() = runTest {
+        val answer = CompletableDeferred<ChannelResult<JsonObject>>()
+        val asked = mutableListOf<Map<String, JsonElement>>()
+        val forwards = PortForwards({ _, args ->
+            asked += args
+            answer.await()
+        }, streams, backgroundScope, table)
         val pages = mutableListOf<String>()
         forwards.openPanel("b1", "hub_7f.2", pages::add)
         assertEquals(PortForwardJob.OPENING, forwards.rows.value[PortForwards.panelKeyOf("b1")]?.job)
         runCurrent()
+        assertEquals(listOf(mapOf("is_panel" to JsonPrimitive(true))), asked)
+        assertTrue(opened.isEmpty())
+        assertTrue(pages.isEmpty())
+        answer.complete(panelToken)
+        runCurrent()
         val row = forwards.rows.value.getValue(PortForwards.panelKeyOf("b1"))
         assertTrue(row.localPort >= 20000)
-        assertEquals(listOf("http://panel-hub-7f-2.localhost:${row.localPort}/"), pages)
+        assertEquals(listOf("http://panel-hub-7f-2.localhost:${row.localPort}/?tkn=t-1_x"), pages)
+        assertTrue(row.toString().contains("t-1_x").not())
         assertEquals("ok", exchange(row.localPort, "ok"))
         assertEquals(JsonPrimitive(true), opened.single().second["is_panel"])
         assertNull(opened.single().second["id"])
@@ -246,8 +258,47 @@ class PortForwardsTest {
     }
 
     @Test
+    fun aRefusedPanelTokenIsTheRowsErrorAndOpensNothing() = runTest {
+        val forwards = PortForwards(
+            { _, _ -> ChannelResult.refused("permission_denied", "kind" to "panel") },
+            streams,
+            backgroundScope,
+            table,
+        )
+        val pages = mutableListOf<String>()
+        forwards.openPanel("b1", "h1", pages::add)
+        runCurrent()
+        val row = forwards.rows.value.getValue(PortForwards.panelKeyOf("b1"))
+        assertEquals("permission_denied", row.error?.code)
+        assertEquals("panel", row.error?.params?.get("kind")?.jsonPrimitive?.content)
+        assertNull(row.job)
+        assertTrue(pages.isEmpty())
+        assertTrue(opened.isEmpty())
+    }
+
+    @Test
+    fun aSecondPanelPressReadsANewTokenAndKeepsTheForward() = runTest {
+        var count = 0
+        val forwards = PortForwards({ _, _ ->
+            count += 1
+            ChannelResult.Ok(JsonObject(mapOf("token" to JsonPrimitive("t$count"))))
+        }, streams, backgroundScope, table)
+        val pages = mutableListOf<String>()
+        forwards.openPanel("b1", "h1", pages::add)
+        runCurrent()
+        forwards.openPanel("b1", "h1", pages::add)
+        runCurrent()
+        val port = forwards.rows.value.getValue(PortForwards.panelKeyOf("b1")).localPort
+        assertEquals(
+            listOf("http://panel-h1.localhost:$port/?tkn=t1", "http://panel-h1.localhost:$port/?tkn=t2"),
+            pages,
+        )
+        forwards.stopAll()
+    }
+
+    @Test
     fun thePanelForwardStopsWhenTheHubNoLongerAllowsIt() = runTest {
-        val forwards = PortForwards(noMaterial, streams, backgroundScope, table)
+        val forwards = PortForwards({ _, _ -> panelToken }, streams, backgroundScope, table)
         forwards.openPanel("b1", "h1") {}
         runCurrent()
         forwards.take(listOf(hub("b1", HubConnection.CONNECTED).copy(isPanelAllowed = true)))

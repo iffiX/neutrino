@@ -241,7 +241,17 @@ class HubSession(
      * @return The close's params, or its refusal.
      */
     suspend fun openService(entryId: String): ChannelResult<JsonObject> =
-        when (val opened = openStream(CLIENT_STREAM_KIND_SERVICE, ChannelFrames.args("id" to entryId))) {
+        openService(ChannelFrames.args("id" to entryId))
+
+    /**
+     * What the hub hands this phone on a `service` stream: an entry's material for `{id}`, the
+     * panel's one-time `{token}` for `{is_panel: true}`.
+     *
+     * @param args The stream's arguments.
+     * @return The close's params, or its refusal.
+     */
+    suspend fun openService(args: Map<String, JsonElement>): ChannelResult<JsonObject> =
+        when (val opened = openStream(CLIENT_STREAM_KIND_SERVICE, args)) {
             is ChannelResult.Refused -> opened
             is ChannelResult.Ok -> opened.value.awaitClose(CLIENT_STREAM_TIMEOUT_S * 1000)
         }
