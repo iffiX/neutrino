@@ -18,7 +18,7 @@ The page shows four groups. A shared desktop is the fifth kind, and it appears i
 | Port           | **Ports**         | a container's published port, or a declaration          | **Connect**                  |
 | AI             | **AI**            | the hub's AI gateway                                    | **Configure**                |
 | File           | **Files**         | the file share module, or a declaration                 | **Mount**                    |
-| Remote desktop | none              | a machine running `nagent rdp start`                    | **Connect**                  |
+| Remote desktop | none              | a machine whose **Remote desktop** switch is on         | **Connect**                  |
 
 A client sees only the kinds and devices its permissions allow, as set on [Clients](./clients.md). Every connection a client makes to an entry travels through the hub's agent port as a `connect` stream, and the client dials none of the addresses this page shows. How each button behaves is on [Desktop client](../client/desktop.md).
 

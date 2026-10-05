@@ -124,20 +124,15 @@ Below the monitor come **Identity**, with **Display name** and **Icon**, then **
 
 ## Share a desktop
 
-The remote desktop is RustDesk, included in the agent package. A share starts on the machine itself, and the hub sets and keeps the seat password.
+The remote desktop is RustDesk, included in the agent package. The machine's [Remote desktop](../agent/modules/remote_desktop.md) switch on the Modules page starts and stops the share, and the hub sets and keeps the seat password.
 
-1. On the machine, run the share command. On Windows, run it without `sudo` in a terminal opened as administrator.
-
-   ```bash
-   sudo nagent rdp start
-   ```
-
+1. On the machine's **Remote desktop** tab, turn on **Share this machine's desktop** and select **Apply remote desktop**. The drawer's link **Sharing is set on the machine's Remote desktop tab.** opens that tab.
 1. In the drawer, read **Remote desktop**: the **ID**, **Direct port 21118**, **Shared by** and the number of viewers.
 1. In a client, under **Remote desktops**, select **Connect**.
 
 ![The drawer's Remote desktop section with ID, direct port and sharing account](/guide/en/devices_drawer_rdp.webp)
 
-Without `--user`, the command shares the desktop of the account that ran `sudo`, or else the one account signed in at the screen. `sudo nagent rdp stop` ends the share. **Reset seat password** gives the machine a new password at once, and every connected viewer connects again.
+The shared desktop is the one of whoever is signed in at the screen. Turning the switch off ends the share. **Reset seat password** gives the machine a new password at once, and every connected viewer connects again.
 
 The drawer shows `rdp_nobody_seated` when nobody is signed in at the screen. It shows `rdp_screen_not_allowed` when a Wayland session has not allowed screen sharing; allow it once at that screen. Where AnyDesk or TeamViewer is installed, the same section shows its ID and **Set unattended password**.
 

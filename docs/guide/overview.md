@@ -39,7 +39,7 @@ A service reaches a client from a module, from a declaration, or from the machin
 
 - A module publishes its own entries. The file share publishes each share, Gitea its address, VS Code, code-server and CloudCLI each instance, and a container each host port it publishes.
 - The **Services** page publishes what you declare by hand: a web address, a TCP port, or an SMB share on a server the hub does not manage.
-- A machine reports its own shared desktop while `sudo nagent rdp start` is running on it.
+- A machine reports its own shared desktop while its **Remote desktop** switch on the Modules page is on.
 
 Each entry has a kind, and the client draws one panel per kind with a button for each entry:
 
