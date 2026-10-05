@@ -35,6 +35,7 @@ from neutrino_agent.constants import (
     AGENT_CODE_CHANNEL_REFUSED,
     AGENT_REPORT_INTERVAL_S,
     AGENT_HUB_ROLE,
+    AGENT_WS_SOCKET_CLOSED_DETAIL,
     AGENT_WS_STREAM_ID_BYTES,
 )
 from neutrino_agent.core.ws_client import close_error
@@ -267,7 +268,7 @@ class AgentSession:
 
     def _end(self, failure: "Exception | None") -> None:
         with self._lock:
-            if self._failure is None:
+            if self._failure is None or _is_cause_of(failure, self._failure):
                 self._failure = failure
             channels = list(self._channels.values())
         self._is_closed.set()
@@ -287,6 +288,12 @@ class AgentSession:
             except GatewayUnreachable as error:
                 if not self._is_closed.is_set():
                     self._end(error)
+                    return
+                # The sender found the socket gone first and recorded the
+                # echo; the cause is what this read hit.
+                with self._lock:
+                    if _is_cause_of(error, self._failure):
+                        self._failure = error
                 return
             try:
                 self._dispatch(kind, payload)
@@ -394,6 +401,30 @@ class AgentSession:
             )
         except GatewayUnreachable:
             return
+
+
+def _is_cause_of(failure, recorded) -> bool:
+    """Whether a failure names the cause behind one already recorded.
+
+    The client says its socket is closed when the other thread dropped it
+    first; that thread holds the cause.
+
+    Args:
+        failure: What ended a send or a read now.
+        recorded: What was recorded before.
+
+    Returns:
+        True when ``recorded`` is only that echo and ``failure`` is not.
+    """
+    return _is_echo(recorded) and failure is not None and not _is_echo(failure)
+
+
+def _is_echo(failure) -> bool:
+    """Whether a failure only says the socket was already dropped."""
+    return (
+        isinstance(failure, GatewayUnreachable)
+        and str(failure) == AGENT_WS_SOCKET_CLOSED_DETAIL
+    )
 
 
 def _refusal(message: dict) -> GatewayRefusedDetail:

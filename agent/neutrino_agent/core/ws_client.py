@@ -26,6 +26,7 @@ from neutrino_agent.constants import (
     AGENT_WS_CLOSE_REFUSED,
     AGENT_WS_CLOSE_REPLACED,
     AGENT_WS_SILENCE_TIMEOUT_S,
+    AGENT_WS_SOCKET_CLOSED_DETAIL,
 )
 from neutrino_agent.core.channel import error_detail, pinned_socket
 from neutrino_agent.exceptions import (
@@ -380,7 +381,7 @@ class WebSocketClient:
     def _send(self, opcode: int, payload: bytes) -> None:
         sock = self._sock
         if sock is None:
-            raise GatewayUnreachable("the socket is closed")
+            raise GatewayUnreachable(AGENT_WS_SOCKET_CLOSED_DETAIL)
         frame = encode_frame(opcode, payload, mask_key=WS_ZERO_MASK_KEY)
         with self._io_lock:
             try:
@@ -402,7 +403,7 @@ class WebSocketClient:
                 return frame
             sock = self._sock
             if sock is None:
-                raise GatewayUnreachable("the socket is closed")
+                raise GatewayUnreachable(AGENT_WS_SOCKET_CLOSED_DETAIL)
             if not self._wait_readable(sock):
                 self._drop()
                 raise GatewayUnreachable(

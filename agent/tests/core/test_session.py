@@ -1011,6 +1011,64 @@ def test_a_refused_frame_on_a_live_socket_is_read_tolerantly():
     assert outcome["failure"].params == {}
 
 
+class _GoneAtSecondReport(ScriptedClient):
+    """A hub that hangs up after the first report, with the second report's
+    send finding the socket dropped before the reader has said why."""
+
+    def __init__(self, send_failure, read_failure):
+        super().__init__()
+        self.reports = 0
+        self.send_failure = send_failure
+        self.read_failure = read_failure
+
+    def send_text(self, text: str) -> None:
+        if json.loads(text).get("type") == "report":
+            self.reports += 1
+            if self.reports == 2:
+                self.is_closed = True
+                # What the reader will hit, queued only now: the send loses
+                # the race every time.
+                self.inbound.put(self.read_failure)
+                raise self.send_failure
+        super().send_text(text)
+
+
+def test_a_hang_up_the_sender_meets_first_is_recorded_as_the_hang_up():
+    """The send's "the socket is closed" is an echo of the reader's cause:
+    nagent status shows what the hub did, whichever thread saw it first."""
+    client = _GoneAtSecondReport(
+        GatewayUnreachable("the socket is closed"), GatewayUnreachable("hung up")
+    )
+    session, _, news = make_session(client)
+    client.feed(welcome())
+    session.connect()
+    thread, outcome = serving(session)
+    client.wait_for("report")
+
+    news.set()
+    thread.join(timeout=3)
+
+    assert not thread.is_alive()
+    assert str(outcome["failure"]) == "hung up"
+
+
+def test_a_send_that_failed_on_its_own_keeps_its_cause():
+    client = _GoneAtSecondReport(
+        GatewayUnreachable("socket send failed: broken pipe"),
+        GatewayUnreachable("the socket is closed"),
+    )
+    session, _, news = make_session(client)
+    client.feed(welcome())
+    session.connect()
+    thread, outcome = serving(session)
+    client.wait_for("report")
+
+    news.set()
+    thread.join(timeout=3)
+
+    assert str(outcome["failure"]) == "socket send failed: broken pipe"
+
+
 def test_closing_from_here_ends_serve_with_no_failure():
     client = ScriptedClient()
     session, _, _ = make_session(client)
