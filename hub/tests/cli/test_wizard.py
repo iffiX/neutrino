@@ -9,6 +9,8 @@ uplink.
 """
 
 import io
+import os
+import sys
 
 import pytest
 
@@ -930,3 +932,59 @@ def test_a_routers_review_names_each_ports_role():
     roles = {i.name: wizard._review_role(i) for i in asked._plan().interfaces}
 
     assert roles == {"enp1s0": "lan", "enp2s0": "wan"}
+
+
+# --- the welcome while the hub's service also asks ---
+
+
+def test_the_welcome_ends_when_the_box_is_set_up_elsewhere(monkeypatch, capsys):
+    lines = iter([None, None])
+    monkeypatch.setattr(wizard, "_line_within", lambda timeout_s: next(lines))
+    asked = []
+
+    def is_done() -> bool:
+        asked.append(True)
+        return len(asked) == 2
+
+    assert wizard.welcome(is_done=is_done) is False
+    assert len(asked) == 2
+
+
+def test_enter_at_the_welcome_begins_the_questions(monkeypatch):
+    lines = iter([None, "\n"])
+    monkeypatch.setattr(wizard, "_line_within", lambda timeout_s: next(lines))
+
+    assert wizard.welcome(is_done=lambda: False) is True
+
+
+def test_the_welcome_ends_the_run_when_input_ends(monkeypatch, capsys):
+    monkeypatch.setattr(wizard, "_line_within", lambda timeout_s: "")
+
+    with pytest.raises(SystemExit) as stopped:
+        wizard.welcome(is_done=lambda: False)
+
+    assert stopped.value.code == wizard.WIZARD_STOPPED_STATUS
+
+
+def test_the_plain_welcome_waits_for_enter_alone(monkeypatch):
+    monkeypatch.setattr("builtins.input", lambda prompt: "")
+    monkeypatch.setattr(
+        wizard, "_line_within", lambda timeout_s: pytest.fail("no polling")
+    )
+
+    assert wizard.welcome() is True
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="select reads no pipe there")
+def test_a_line_within_a_wait_is_read_whole_and_an_ended_input_is_empty(monkeypatch):
+    read_end, write_end = os.pipe()
+    with os.fdopen(read_end, "r") as stdin:
+        writer = os.fdopen(write_end, "w")
+        monkeypatch.setattr(wizard.sys, "stdin", stdin)
+        monkeypatch.setattr(wizard, "hub_os", lambda: "linux")
+        assert wizard._line_within(0.05) is None
+        writer.write("\n")
+        writer.flush()
+        assert wizard._line_within(0.05) == "\n"
+        writer.close()
+        assert wizard._line_within(0.05) == ""

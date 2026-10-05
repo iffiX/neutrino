@@ -253,7 +253,11 @@ def test_a_terminal_beside_the_serving_service_points_at_it_and_asks_here(
     monkeypatch.setattr(
         setup, "_reachable_urls", lambda port: [f"http://192.0.2.7:{port}"]
     )
-    monkeypatch.setattr(setup.wizard, "welcome", lambda: welcomed.append(True))
+    monkeypatch.setattr(
+        setup.wizard,
+        "welcome",
+        lambda *, is_done: welcomed.append(is_done) or True,
+    )
     monkeypatch.setattr(
         setup, "_browser_server", lambda session: pytest.fail("one wizard is enough")
     )
@@ -261,7 +265,60 @@ def test_a_terminal_beside_the_serving_service_points_at_it_and_asks_here(
     assert setup._browser_answers() is None
 
     assert "http://192.0.2.7:8080/?token=kept-token" in capsys.readouterr().out
-    assert welcomed == [True]
+    assert welcomed == [setup.is_password_set]
+
+
+def test_a_terminal_waiting_while_the_browser_sets_the_box_up_ends_with_0(
+    monkeypatch, capsys
+):
+    monkeypatch.setattr(setup, "_is_service_serving", lambda: True)
+    monkeypatch.setattr(setup, "ensure_setup_token", lambda: "kept-token")
+    monkeypatch.setattr(setup, "_browser_port", lambda: 8080)
+    monkeypatch.setattr(setup, "_reachable_urls", lambda port: [])
+    monkeypatch.setattr(setup, "_panel_url", lambda: "http://192.0.2.7:8080")
+    monkeypatch.setattr(setup.wizard, "welcome", lambda *, is_done: False)
+
+    with pytest.raises(SystemExit) as stopped:
+        setup._browser_answers()
+
+    assert stopped.value.code == 0
+    assert capsys.readouterr().out.strip().splitlines()[-1].strip() == (
+        "The hub was set up in the browser; its panel is at http://192.0.2.7:8080"
+    )
+
+
+def test_a_run_whose_box_was_set_up_before_it_held_the_lock_changes_nothing(
+    monkeypatch, capsys
+):
+    """The browser finished first, so the terminal's answers come too late."""
+    released = []
+
+    class Lock:
+        def acquire(self) -> bool:
+            return True
+
+        def release(self) -> None:
+            released.append(True)
+
+    monkeypatch.setattr(setup, "SETUP_LOCK", Lock())
+    monkeypatch.setattr(setup, "is_password_set", lambda: True)
+    monkeypatch.setattr(
+        setup.process_controller,
+        "__call__",
+        lambda: pytest.fail("nothing is held"),
+        raising=False,
+    )
+
+    def no_step(*arguments, **keywords):
+        pytest.fail("no step runs on a set-up box")
+
+    status = setup._setup(
+        reporter=None, steps=[("write", no_step, "write_answers")], answers=None
+    )
+
+    assert status == 1
+    assert released == [True]
+    assert "already set up" in capsys.readouterr().err
 
 
 # --- the hub's own agent after a restore ---

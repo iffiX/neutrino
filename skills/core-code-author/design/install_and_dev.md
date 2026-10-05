@@ -63,7 +63,13 @@ post-install and the install script print the address with it for a box
 nobody sits at. The terminal path is `nhub setup`. Whichever path starts the
 steps first holds the setup lock, and the other is refused with
 `setup_in_progress`. When the steps finish, the service process exits and
-comes back as the panel on the same port. A browser that ran the wizard is
+comes back as the panel on the same port. A terminal that printed the
+service's address and waits at its welcome checks every two seconds whether
+the box became set up; when the browser's run finishes first it prints one
+line with the panel's address and `nhub setup` exits 0, so the install script
+that ran it ends there too. A terminal past its welcome that reaches the
+steps after the browser's run finished is refused with the "already set up"
+line, before any step runs. A browser that ran the wizard is
 sent to the panel at the address it used, its own origin, never at an
 address the hub picked from an interface.
 

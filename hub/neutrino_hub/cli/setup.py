@@ -147,6 +147,11 @@ from neutrino_hub.cli import wizard
 # --- config ---
 # What the panel is asked for, on loopback, once it is running.
 SETUP_LOGIN_PATH = "/api/hub/auth/login"
+# What a run says to a box somebody already set up.
+SETUP_ALREADY_SET_UP = (
+    "error: this hub is already set up. `nhub apply` makes a config "
+    "change true; `nhub reset all` returns the box to a fresh one."
+)
 SETUP_ENROLLMENT_PATH = "/api/hub/device/enrollment/create"
 SETUP_PANEL_TIMEOUT_S = 10
 # How long the panel gets to start listening before its link is given up on.
@@ -240,11 +245,7 @@ def main() -> int:
         )
         return 1
     if is_password_set():
-        print(
-            "error: this hub is already set up. `nhub apply` makes a config "
-            "change true; `nhub reset all` returns the box to a fresh one.",
-            file=sys.stderr,
-        )
+        print(SETUP_ALREADY_SET_UP, file=sys.stderr)
         return 1
     server = None
     try:
@@ -499,10 +500,16 @@ def _browser_answers():
 
     Raises:
         WizardAborted: When this machine has nothing to configure.
+        SystemExit: 0 when the service's browser wizard set the box up while
+            the terminal waited at its welcome.
     """
     if _is_service_serving():
         _say_where_the_service_asks()
-        wizard.welcome()
+        if not wizard.welcome(is_done=is_password_set):
+            print(
+                f"  The hub was set up in the browser; its panel is at {_panel_url()}"
+            )
+            raise SystemExit(0)
         return None
     session = WebSetupSession(context=wizard.context(), setup_lock=SETUP_LOCK)
     server = _browser_server(session)
@@ -761,6 +768,10 @@ def _setup(
             "being set up from the browser wizard or another nhub setup",
             file=sys.stderr,
         )
+        return 1
+    if is_password_set():
+        SETUP_LOCK.release()
+        print(SETUP_ALREADY_SET_UP, file=sys.stderr)
         return 1
     if not is_linux():
         process_controller().hold_service()
