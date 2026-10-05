@@ -57,7 +57,7 @@ LOGGER = logging.getLogger(__name__)
 # What a report has to change before the panel refetches the device list.
 # Metrics are not among them: every report carries them, and they ride
 # their own event to the tiles and the monitor.
-REPORT_PANEL_SECTIONS = ("modules", "desktop", "error")
+REPORT_PANEL_SECTIONS = ("modules", "desktop", "error", "ai_tools")
 
 
 async def serve_agent(
@@ -443,6 +443,13 @@ class _AgentFrames:
             if document["hash"] != session.state_hash:
                 await session.push_state(document)
             session.offered_hash = document["hash"]
+        elif await asyncio.to_thread(runtime.desired_states.is_ai_tools_enabled, key):
+            # Whether the gateway serves moves with no write to announce it,
+            # so a machine whose AI tools use it has its state read again.
+            document = await asyncio.to_thread(channel_state.agent_state, runtime, key)
+            if document["hash"] != session.offered_hash:
+                await session.push_state(document)
+                session.offered_hash = document["hash"]
 
 
 class _ClientFrames:

@@ -2758,6 +2758,46 @@ class CloudcliConfigUpdate(BaseModel):
     instances: list[CloudcliInstance] = Field(default_factory=list)
 
 
+# --- A managed machine's AI tools, the Modules page's Global configuration ---
+
+
+class AiToolAccountView(BaseModel):
+    """One account the AI tools setting acts on, and what the machine says."""
+
+    account: str
+    # The modules it has an instance in: ``vscode``, ``cloudcli``,
+    # ``code_server``.
+    modules: list[str] = Field(default_factory=list)
+    # ``switched``, ``switched_back`` or ``failed`` as last reported; empty
+    # before the machine reported the account.
+    state: str = ""
+    code: str = ""
+    params: dict = Field(default_factory=dict)
+
+
+class AiToolDeviceView(BaseModel):
+    """One machine's AI tools setting, the gateway, and each account's result."""
+
+    device_id: str
+    is_online: bool = False
+    is_enabled: bool = False
+    # Whether the gateway serves a model now; the setting turns on only then.
+    is_gateway_serving: bool = False
+    # ``{claude: {default, opus, sonnet, haiku}, codex: {model,
+    # model_reasoning_effort}, gemini: {model}}``, as chosen.
+    tool_configs: dict = Field(default_factory=dict)
+    # The names the gateway serves, for the Configure dialog's pickers.
+    models: list[str] = Field(default_factory=list)
+    accounts: list[AiToolAccountView] = Field(default_factory=list)
+
+
+class AiToolConfigUpdate(BaseModel):
+    """The tool choices being saved for one machine."""
+
+    device_id: str
+    tool_configs: dict = Field(default_factory=dict)
+
+
 # --- code-server: one instance per account on a device ---
 
 

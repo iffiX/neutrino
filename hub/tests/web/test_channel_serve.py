@@ -8,7 +8,8 @@ stream served under credit with the sha256 in its close and its download
 and sending written into the module's task, a ``log`` stream
 becoming the task the panel follows, ending with the module's state and
 the failure's code, a ``service`` stream closed with the entry's material,
-an unknown kind closed ``kind_unknown``, a client's ``is_refresh`` report
+an unknown kind closed ``kind_unknown``, a machine whose AI tools are on
+handed its state again when the gateway stops or starts serving, a client's ``is_refresh`` report
 answered with its whole state whatever the hash, and a socket ending taking the
 binding offline.
 """
@@ -1235,3 +1236,43 @@ def test_a_panel_service_stream_closes_with_a_sign_in_token_or_its_refusal(api):
     )
     assert answered["code"] == ""
     assert runtime.panel_tokens.spend(answered["params"]["token"]) == (client_id, "")
+
+
+class AiToolsOn(SeatPasswords):
+    def is_ai_tools_enabled(self, key):
+        return True
+
+
+def test_a_machine_whose_ai_tools_are_on_follows_the_gateway_without_a_press(api):
+    """The gateway stops serving: the next report is answered with the state
+    that says off; it serves again: the next report gets the state that says
+    on. A machine whose setting is off is offered its state once, as before."""
+    client, runtime = api
+    runtime.desired_states = AiToolsOn()
+    on = {"modules": {}, "ai_tools": {"is_enabled": True}}
+    off = {"modules": {}, "ai_tools": {"is_enabled": False}}
+    runtime.desired = ("h-on", on)
+    device_id, token = bound_device()
+    socket = welcomed(client, device_id, token)
+    try:
+        socket.send_json(report(state_hash="h-on"))
+        assert wait_until(
+            lambda: runtime.agent_sessions.get(device_id).report_serial == 1
+        )
+
+        runtime.desired = ("h-off", off)
+        socket.send_json(report(state_hash="h-on"))
+        stopped = socket.receive_json()
+
+        runtime.desired = ("h-on", on)
+        socket.send_json(report(state_hash="h-off"))
+        served = socket.receive_json()
+    finally:
+        socket.__exit__(None, None, None)
+
+    assert (stopped["type"], stopped["hash"], stopped["ai_tools"]) == (
+        "state",
+        "h-off",
+        {"is_enabled": False},
+    )
+    assert (served["hash"], served["ai_tools"]) == ("h-on", {"is_enabled": True})

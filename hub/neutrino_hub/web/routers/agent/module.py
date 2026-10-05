@@ -31,7 +31,6 @@ from neutrino_hub.modules.devices.agent_module_cache import (
     resolve_platform_entry,
 )
 from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
-from neutrino_hub.modules.clients.ai_keys import revoke_device_key
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_MODULE_CONFIGURED_WANTS,
     CHANNEL_MODULE_STATE_ABSENT,
@@ -722,8 +721,6 @@ def _set_want(
         runtime.desired_states.set_want(key, module, want)
     except OSError as error:
         raise _config_unwritable(error) from error
-    if module == DEVICE_CLOUDCLI_MODULE and want == CHANNEL_MODULE_STATE_ABSENT:
-        revoke_device_key(key)
     push_state(runtime, key)
     _recompose_published(runtime, module)
     return list_modules(request.device_id, runtime)

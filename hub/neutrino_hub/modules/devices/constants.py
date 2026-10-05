@@ -152,8 +152,18 @@ DEVICE_MODULE_NAMES = (
 DEVICE_MODULES_FILE = "modules.json"
 DEVICE_RDP_FILE = "rdp.json"
 DEVICE_GITEA_SECRETS_FILE = "gitea_secrets.json"  # scan: allow
+# The machine's AI tools setting, read and written by the name its file
+# takes beside the modules' own: whether its tools use the hub's gateway, and
+# the tool configuration the client's Configure dialog saves.
+DEVICE_AI_TOOLS_NAME = "ai_tools"
+DEVICE_AI_TOOLS_FILE = f"{DEVICE_AI_TOOLS_NAME}.json"
 # The files a device directory may hold that are not a module's own.
-DEVICE_DIR_FILES = (DEVICE_MODULES_FILE, DEVICE_RDP_FILE, DEVICE_GITEA_SECRETS_FILE)
+DEVICE_DIR_FILES = (
+    DEVICE_MODULES_FILE,
+    DEVICE_RDP_FILE,
+    DEVICE_GITEA_SECRETS_FILE,
+    DEVICE_AI_TOOLS_FILE,
+)
 
 # The module whose configuration is the hub's own secrets and nothing the
 # machine can be read for.
@@ -188,6 +198,20 @@ DEVICE_CLOUDCLI_SECRET_KEY = "token_secret_sealed"  # scan: allow
 DEVICE_CLOUDCLI_PASSWORD_AAD = b"device_cloudcli:web_password"
 DEVICE_CLOUDCLI_SECRET_AAD = b"device_cloudcli:token_secret"
 DEVICE_CLOUDCLI_SECRET_BYTES = 32
+# The tools and the knobs of each the AI tools setting holds, the client's
+# own: Claude Code's four role slots, Codex's model and reasoning effort,
+# Gemini's model.
+DEVICE_AI_CLAUDE_SLOTS = ("default", "opus", "sonnet", "haiku")
+DEVICE_AI_TOOL_CONFIG_KEYS = {
+    "claude": DEVICE_AI_CLAUDE_SLOTS,
+    "codex": ("model", "model_reasoning_effort"),
+    "gemini": ("model",),
+}
+DEVICE_AI_REASONING_EFFORT_KEY = "model_reasoning_effort"
+DEVICE_AI_REASONING_EFFORTS = ("minimal", "low", "medium", "high")
+# The modules whose instances name the accounts the setting acts on, in the
+# order an account's Windows login is taken from.
+DEVICE_AI_TOOL_MODULES = ("vscode", "cloudcli", "code_server")
 # code-server, once per account. Each instance in its file holds, beside its
 # account and port, the secret its tokens are signed with, which the hub
 # generates once and keeps sealed.

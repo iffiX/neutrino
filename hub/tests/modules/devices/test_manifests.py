@@ -655,7 +655,7 @@ def test_an_archive_package_is_recognised_by_its_compressor():
 def test_cloudclis_state_names_the_npm_registry_of_the_hubs_edition(edition, registry):
     from neutrino_hub.modules.devices.desired_state import cloudcli_agent_config
 
-    sent = cloudcli_agent_config({}, {}, {}, edition=edition)
+    sent = cloudcli_agent_config({}, {}, edition=edition)
 
     assert sent["npm_registry"] == registry
 
@@ -679,7 +679,7 @@ def test_cloudclis_state_carries_the_npm_environment_the_manifest_names(
 ):
     from neutrino_hub.modules.devices.desired_state import cloudcli_agent_config
 
-    sent = cloudcli_agent_config({}, {}, {}, edition=edition)
+    sent = cloudcli_agent_config({}, {}, edition=edition)
 
     assert sent["npm_environment"] == environment
     assert all(name.startswith("npm_config_") for name in environment)

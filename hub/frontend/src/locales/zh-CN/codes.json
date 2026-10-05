@@ -321,5 +321,8 @@
   "code.gateway_no_models": "网关没有提供任何模型",
   "code.wol_failed": "网络唤醒没能发出：{detail}",
   "code.wol_sent": "已发送唤醒包",
-  "code.setup_in_progress": "这个中枢已在配置中。"
+  "code.setup_in_progress": "这个中枢已在配置中。",
+  "code.gateway_not_serving": "中枢的 AI 网关还没有可用的模型，先到 AI 页设置好。",
+  "code.switch_failed": "cc-switch 没能把工具指向网关：{detail}",
+  "code.bundle_missing": "此安装未包含 {binary}，请重新安装被控端。"
 }
