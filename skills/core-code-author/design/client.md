@@ -456,7 +456,7 @@ the hub.
 | Part | What it is |
 | --- | --- |
 | The adapter | `neutrino_files`, a wintun adapter at `198.19.255.1/24`, with no gateway and no DNS server, connected to no network <!-- scan: allow --> |
-| The fake addresses | one per machine that provides a `file` entry, from `198.19.255.2` up, kept per hub and machine in the client's store, so a drive letter keeps naming the same machine; the machine is the entry's `device_id`, or its host for a declared record <!-- scan: allow --> |
+| The fake addresses | one per machine that provides a `file` entry, from `198.19.255.2` to `198.19.255.253`, kept per hub and machine in the client's store, so a drive letter keeps naming the same machine; the machine is the entry's `device_id`, or its host for a declared record <!-- scan: allow --> |
 | tun2socks | the MIT-licensed executable the client's package includes, credited on the About card, run with the adapter as its device and the SOCKS endpoint as its proxy; it hands every TCP connection entering the adapter to that endpoint |
 | The SOCKS endpoint | a SOCKS5 listener of the resident on `127.0.0.1`, behind a user name and password the resident generates at each start; it accepts a connection to `<fake-address>:445` of a machine it knows and opens a `connect` stream naming a `file` entry of that machine, and refuses any other address or port |
 
@@ -468,8 +468,13 @@ request per connection on the pipe `\\.\pipe\neutrino_client_files`, with
 the EasyTier pipe's security descriptor. The resident asks it `up` with the
 endpoint's port, user name and password before its first Windows mount; the
 daemon makes the adapter, gives it its address and runs tun2socks as its
-child. The resident asks it `down` when its last mount record goes and when
-it quits, and the daemon stops tun2socks and removes the adapter. A
+child, and answers only once a connection of its own through the adapter is
+answered, because the adapter drops what enters it in its first seconds. A
+mount made before that moment times out inside Windows' SMB client. The
+resident asks it `down` when it quits and at no other time: Windows' SMB
+client keeps its connection to a fake address past an unmount, and an
+adapter taken away and made again under that connection fails every mount
+that follows. The daemon then stops tun2socks and removes the adapter. A
 `status` answers whether the adapter is up. The daemon serves the resident
 that asked last.
 
