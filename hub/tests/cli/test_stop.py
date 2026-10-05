@@ -1,5 +1,6 @@
 """Stopping what the hub runs, and what it deliberately leaves alone."""
 
+import io
 import subprocess
 
 import pytest
@@ -75,11 +76,12 @@ def test_every_service_run_starts_can_be_stopped_by_the_same_flag(monkeypatch):
     )
 
     for name in ("web", *XRAY, "cliproxyapi", "dnsmasq"):
-        monkeypatch.setattr("sys.argv", ["nhub-stop", f"--only-{name}"])
+        monkeypatch.setattr("sys.argv", ["nhub-stop", f"--only-{name}", "--yes"])
         assert stop_module.main() == 0
     for name in ("supplicant", "dhcpcd"):
         monkeypatch.setattr(
-            "sys.argv", ["nhub-stop", f"--only-{name}", "--interface", "eth0"]
+            "sys.argv",
+            ["nhub-stop", f"--only-{name}", "--interface", "eth0", "--yes"],
         )
         assert stop_module.main() == 0
 
@@ -196,7 +198,7 @@ def test_one_refusal_does_not_stop_the_rest(systemd):
 
 def test_macos_and_windows_stop_the_hubs_one_service(hub_service, monkeypatch):
     hub_service.is_running = True
-    monkeypatch.setattr(stop_module.sys, "argv", ["nhub stop"])
+    monkeypatch.setattr(stop_module.sys, "argv", ["nhub stop", "--yes"])
 
     assert stop_module.main() == 0
     assert not hub_service.is_running
@@ -221,3 +223,60 @@ def test_one_daemon_cannot_be_named_outside_linux(hub_service, monkeypatch, caps
 
     assert stop_module.main() == 2
     assert hub_service.is_running
+
+
+def refuse_to_ask(prompt):
+    raise AssertionError("asked with no terminal")
+
+
+def recorded_stops(monkeypatch) -> list:
+    chosen: list = []
+    monkeypatch.setattr(stop_module, "stop", lambda names: chosen.extend(names) or 0)
+    monkeypatch.setattr(
+        stop_module, "stop_everything", lambda: chosen.append("everything") or 0
+    )
+    return chosen
+
+
+def test_it_asks_first_and_a_no_stops_nothing(terminal, monkeypatch):
+    chosen = recorded_stops(monkeypatch)
+    questions: list = []
+    monkeypatch.setattr(
+        "builtins.input", lambda prompt: questions.append(prompt) or "n"
+    )
+    monkeypatch.setattr("sys.argv", ["nhub-stop"])
+
+    assert stop_module.main() == 1
+    assert questions == ["Stop the hub's units? [y/N] "]
+    assert chosen == []
+
+
+def test_a_yes_at_the_prompt_stops_everything(terminal, monkeypatch):
+    chosen = recorded_stops(monkeypatch)
+    monkeypatch.setattr("builtins.input", lambda prompt: "y")
+    monkeypatch.setattr("sys.argv", ["nhub-stop"])
+
+    assert stop_module.main() == 0
+    assert chosen == ["everything"]
+
+
+def test_yes_on_the_command_line_stops_without_asking(monkeypatch):
+    chosen = recorded_stops(monkeypatch)
+    monkeypatch.setattr("builtins.input", refuse_to_ask)
+    monkeypatch.setattr("sys.argv", ["nhub-stop", "--only-web", "--yes"])
+
+    assert stop_module.main() == 0
+    assert chosen == ["web"]
+
+
+def test_with_no_terminal_it_names_yes_and_stops_nothing(monkeypatch, capsys):
+    chosen = recorded_stops(monkeypatch)
+    monkeypatch.setattr("sys.stdin", io.StringIO("y\n"))
+    monkeypatch.setattr("builtins.input", refuse_to_ask)
+    monkeypatch.setattr("sys.argv", ["nhub-stop"])
+
+    assert stop_module.main() == 1
+    assert chosen == []
+    error = capsys.readouterr().err
+    assert error.strip().count("\n") == 0
+    assert "--yes" in error

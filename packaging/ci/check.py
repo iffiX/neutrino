@@ -527,7 +527,7 @@ def check_hub_windows(msi: Path) -> None:
         raise SystemExit("the hub's service is not running after setup")
     _wait_for_panel()
     _check_hub_windows_config()
-    _answer([str(nhub), "stop"])
+    _answer([str(nhub), "stop", "--yes"])
 
     log = Path(tempfile.gettempdir()) / "hub_remove.log"
     print(f"msiexec /x exited {_msiexec('/x', msi, log)}")
@@ -598,7 +598,7 @@ def check_hub_macos(pkg: Path) -> None:
     if "state = running" not in job:
         raise SystemExit(f"{HUB_MACOS_JOB} is not running after setup")
     _wait_for_panel()
-    _sudo([HUB_MACOS_COMMAND, "stop"])
+    _sudo([HUB_MACOS_COMMAND, "stop", "--yes"])
 
     for job_name in (HUB_MACOS_JOB, AGENT_MACOS_JOB):
         subprocess.run(["sudo", "launchctl", "bootout", job_name])

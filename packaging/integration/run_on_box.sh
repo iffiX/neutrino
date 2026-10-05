@@ -200,7 +200,7 @@ panel_scheme http
 ran $?
 
 phase "reset"
-nhub reset all > /tmp/reset.log 2>&1
+nhub reset all --yes > /tmp/reset.log 2>&1
 ran $?
 python3 -m pytest "$HERE/test_reset_hands_back.py" -q
 ran $?
@@ -254,7 +254,7 @@ ran $?
 # The walks above leave the box a router whose resolver file is the hub's.
 # A reset after them has to give the machine a resolver that answers.
 phase "reset, after the box has been a router"
-nhub reset all > /tmp/reset2.log 2>&1
+nhub reset all --yes > /tmp/reset2.log 2>&1
 ran $?
 python3 -m pytest "$HERE/test_reset_hands_back.py" -q -k still_resolves
 ran $?

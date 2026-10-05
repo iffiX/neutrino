@@ -189,7 +189,7 @@ def _every_unit() -> list:
 def _assert_removal(calls: list) -> None:
     """The network is handed back first, then every unit of the code's list,
     the relay among them, is stopped and disabled."""
-    assert calls[0] == "nhub reset network"
+    assert calls[0] == "nhub reset network --yes"
     for unit in _every_unit():
         assert f"systemctl stop {unit}" in calls
         assert f"systemctl disable {unit}" in calls

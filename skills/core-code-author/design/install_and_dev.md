@@ -47,6 +47,13 @@ on any path.
 `setup` runs once. A box with a panel password is a box somebody configured,
 and `nhub reset all` is how one goes back to fresh.
 
+Every `nhub` command that changes the box, `start`, `stop`, `update` and
+each form of `reset`, asks `[y/N]` before it acts and takes `--yes` to go
+ahead without asking. With no terminal on stdin and no `--yes` it asks
+nothing, prints one line naming `--yes` and exits 1, so every script that
+runs one passes `--yes`: the deb's and the rpm's removal script runs
+`nhub reset network --yes`.
+
 The questions are answered in the terminal or in a browser. The hub's
 service serves the browser's questions from the install on the panel's HTTP
 port, the port that is in somebody's address bar afterwards, behind a
