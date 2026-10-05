@@ -34,6 +34,7 @@ from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_MODULE_CONFIGURED_WANTS,
     CHANNEL_MODULE_STATE_ABSENT,
+    CHANNEL_MODULE_STATE_FAILED,
     CHANNEL_MODULE_STATE_INSTALLED,
     CHANNEL_MODULE_STATE_RUNNING,
     CHANNEL_MODULE_STATE_STOPPED,
@@ -43,7 +44,6 @@ from neutrino_hub.modules.channel.constants import (
 )
 from neutrino_hub.modules.devices.constants import (
     AGENT_MODULE_INSTALLER_USER,
-    DEVICE_CLOUDCLI_MODULE,
     DEVICE_VSCODE_MODULE,
     DEVICE_VSCODE_TERMS_KEY,
     DEVICE_MODULE_COMMAND_TIMEOUT_S,
@@ -52,6 +52,7 @@ from neutrino_hub.modules.devices.constants import (
 )
 from neutrino_hub.modules.devices.manifests import load_module_manifests
 from neutrino_hub.modules.devices.registry import DeviceRegistry, ManagedDevice
+from neutrino_hub.modules.devices.retry_marks import DeviceRetryMarks
 from neutrino_hub.modules.services.constants import SERVICES_PUBLISHED_MODULES
 from neutrino_hub.web.channel_serve import module_task_label
 from neutrino_hub.web.dependencies import get_runtime, require_session
@@ -353,6 +354,7 @@ def module_router(
     ):
         context = device_context(runtime, module, request.device_id)
         require_online(context)
+        mark_retry(runtime, context.key, module)
         push_state(runtime, context.key)
         return ApplyResult(is_applied=True)
 
@@ -680,7 +682,8 @@ def _set_want(
 ) -> DeviceModuleListView:
     """Write one module's ``want`` on one device, push it, and answer the list.
 
-    Withdrawing CloudCLI also revokes the device's gateway key.
+    On a module whose last report is ``failed`` the press also puts a fresh
+    retry mark into the state, so the agent tries the step again.
 
     Args:
         runtime: The shared runtime.
@@ -717,13 +720,46 @@ def _set_want(
         require_terms(runtime, key, module)
     if not runtime.agent_sessions.is_online(key):
         raise _refusal(status.HTTP_409_CONFLICT, CODE_AGENT_OFFLINE, device_id=key)
+    is_failed = _is_failed(runtime, key, module)
     try:
         runtime.desired_states.set_want(key, module, want)
+        if is_failed:
+            DeviceRetryMarks().mark(key, module)
     except OSError as error:
         raise _config_unwritable(error) from error
     push_state(runtime, key)
     _recompose_published(runtime, module)
     return list_modules(request.device_id, runtime)
+
+
+def mark_retry(runtime: PanelRuntime, key: str, name: str) -> bool:
+    """Put a fresh retry mark on one module whose last report is ``failed``.
+
+    Args:
+        runtime: The shared runtime.
+        key: The device.
+        name: The module.
+
+    Returns:
+        Whether a mark was put; a module that did not fail takes none.
+
+    Raises:
+        HTTPException: 500 ``config_unwritable`` when the mark cannot be
+            written.
+    """
+    if not _is_failed(runtime, key, name):
+        return False
+    try:
+        DeviceRetryMarks().mark(key, name)
+    except OSError as error:
+        raise _config_unwritable(error) from error
+    return True
+
+
+def _is_failed(runtime: PanelRuntime, key: str, module: str) -> bool:
+    """Whether the machine last reported the module ``failed``."""
+    state = module_status(runtime, key, module)["state"]
+    return state == CHANNEL_MODULE_STATE_FAILED
 
 
 def _require_device(device_id: str) -> ManagedDevice:

@@ -18,6 +18,7 @@ from neutrino_hub.modules.clients.ai_keys import (
     revoke_device_key,
 )
 from neutrino_hub.modules.devices.constants import DEVICE_AI_TOOLS_NAME
+from neutrino_hub.modules.devices.retry_marks import DeviceRetryMarks
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import (
     AiToolAccountView,
@@ -34,6 +35,8 @@ from neutrino_hub.web.routers.agent.module import (
 )
 
 CODE_GATEWAY_NOT_SERVING = "gateway_not_serving"
+# An account's result in the report that a press on the chip tries again.
+AI_TOOL_STATE_FAILED = "failed"
 CODE_CONFIG_UNWRITABLE = "config_unwritable"
 
 router = APIRouter(
@@ -112,6 +115,10 @@ def enable(
 ) -> AiToolDeviceView:
     """Point the machine's AI tools at the gateway.
 
+    On a setting already on whose machine reported an account ``failed``,
+    the press puts a fresh retry mark on the section, so the agent tries
+    again.
+
     Args:
         request: The device.
         runtime: The shared runtime.
@@ -134,7 +141,15 @@ def enable(
         )
     if ensure_device_key(context.key, context.device.name) is None:
         raise VaultLockedError()
+    is_retried = runtime.desired_states.is_ai_tools_enabled(
+        context.key
+    ) and _has_failed_account(runtime, context.key)
     _write(runtime, context.key, is_enabled=True)
+    if is_retried:
+        try:
+            DeviceRetryMarks().mark(context.key, DEVICE_AI_TOOLS_NAME)
+        except OSError as error:
+            raise _unwritable(error) from error
     push_state(runtime, context.key)
     return device_view(runtime, context)
 
@@ -190,6 +205,16 @@ def set_tool_configs(
     return device_view(runtime, context)
 
 
+def _has_failed_account(runtime: PanelRuntime, key: str) -> bool:
+    """Whether the machine's last report has an account ``failed``."""
+    report = runtime.agent_sessions.reports().get(key) or {}
+    section = report.get("ai_tools") if isinstance(report, dict) else None
+    return any(
+        isinstance(entry, dict) and entry.get("state") == AI_TOOL_STATE_FAILED
+        for entry in (section or {}).get("accounts") or []
+    )
+
+
 def _context(runtime: PanelRuntime, device_id: str) -> DeviceModuleContext:
     return device_context(runtime, DEVICE_AI_TOOLS_NAME, device_id)
 
@@ -199,10 +224,14 @@ def _write(runtime: PanelRuntime, key: str, **fields) -> dict:
     try:
         return runtime.desired_states.set_ai_tools(key, **fields)
     except OSError as error:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={
-                "code": CODE_CONFIG_UNWRITABLE,
-                "params": {"detail": str(error)[:200]},
-            },
-        ) from error
+        raise _unwritable(error) from error
+
+
+def _unwritable(error: OSError) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail={
+            "code": CODE_CONFIG_UNWRITABLE,
+            "params": {"detail": str(error)[:200]},
+        },
+    )

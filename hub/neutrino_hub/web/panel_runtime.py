@@ -42,6 +42,7 @@ from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiServedModelCache
 from neutrino_hub.modules.devices.catalog import DeviceCatalogCache
 from neutrino_hub.modules.clients.ai_keys import gateway_models
 from neutrino_hub.modules.devices.desired_state import DesiredStateStore
+from neutrino_hub.modules.devices.retry_marks import DeviceRetryMarks
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.system.machine import machine_id
 from neutrino_hub.modules.overlay.constants import OVERLAY_ENGINES
@@ -735,6 +736,7 @@ class PanelRuntime:
             urls=self._device_urls(key),
             hub_address=scope.hub_address if scope is not None else "",
             ai_models=ai_models,
+            retry_marks=DeviceRetryMarks().marks(key),
         )
         return state_hash, desired
 

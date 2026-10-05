@@ -164,3 +164,42 @@ def test_the_choices_are_cleaned_and_pushed_only_while_the_setting_is_on(api):
     assert stored(tmp_path)["tool_configs"] == off.json()["tool_configs"]
     assert pushed_while_off == 0
     assert len(runtime.agent_sessions.pushes) == 2
+
+
+def failed_report(runtime, monkeypatch, state: str = "failed"):
+    reports = {
+        DEVICE: {
+            "ai_tools": {
+                "accounts": [
+                    {"account": "alice", "state": state, "code": "switch_failed"}
+                ]
+            }
+        }
+    }
+    monkeypatch.setattr(runtime.agent_sessions, "reports", lambda: reports)
+
+
+def test_on_again_while_an_account_failed_puts_a_retry_mark(api, monkeypatch):
+    from neutrino_hub.modules.devices.retry_marks import DeviceRetryMarks
+
+    client, runtime, _gateway, _ = api
+    client.post(f"{BASE}/enable", json={"device_id": DEVICE})
+    assert DeviceRetryMarks().marks(DEVICE) == {}
+    failed_report(runtime, monkeypatch)
+
+    client.post(f"{BASE}/enable", json={"device_id": DEVICE})
+
+    assert set(DeviceRetryMarks().marks(DEVICE)) == {"ai_tools"}
+    assert len(runtime.agent_sessions.pushes) == 2
+
+
+def test_on_again_with_no_failed_account_puts_no_mark(api, monkeypatch):
+    from neutrino_hub.modules.devices.retry_marks import DeviceRetryMarks
+
+    client, runtime, _gateway, _ = api
+    client.post(f"{BASE}/enable", json={"device_id": DEVICE})
+    failed_report(runtime, monkeypatch, state="switched")
+
+    client.post(f"{BASE}/enable", json={"device_id": DEVICE})
+
+    assert DeviceRetryMarks().marks(DEVICE) == {}

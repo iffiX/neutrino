@@ -445,6 +445,14 @@ The **Modules** page has three panels, top to bottom:
 | **Global configuration** | the settings of the picked machine that belong to no module; today one part, its AI tools |
 | **Module configuration** | the tab strip of the machine's modules and the picked module's panels, as before under the title `ui.modules.tabs_title` |
 
+A module whose last report is `failed` keeps the button of what it was
+asked for live: **Install** while its `want` is `installed`, **Start** while
+it is `running`, **Stop** while it is `stopped`, and **Uninstall** always.
+That press tries the same step again ([agent.md](agent.md), "A retry is the
+same press again"); there is no other retry button. A module panel's apply
+and **Configure** on a refused configuration try again the same way. A
+press on a module that did not fail asks for nothing new.
+
 The tabs of **Module configuration** come in one order, the modules every
 system runs first: File share, Gitea, VS Code, code-server, CloudCLI,
 Containers, ZFS storage. A module the machine cannot run is left out, as

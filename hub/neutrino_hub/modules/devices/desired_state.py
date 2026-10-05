@@ -55,6 +55,7 @@ from neutrino_hub.modules.devices.manifests import load_module_manifests
 from neutrino_hub.modules.devices.constants import (
     DEVICE_AI_TOOL_MODULES,
     DEVICE_AI_TOOLS_NAME,
+    DEVICE_RETRY_MARK_KEY,
     DEVICE_CLOUDCLI_LOGIN_KEY,
     DEVICE_CLOUDCLI_MODULE,
     DEVICE_CLOUDCLI_NPM_REGISTRIES,
@@ -732,6 +733,7 @@ class DesiredStateStore:
         urls: "list | tuple" = (),
         hub_address: str = "",
         ai_models: "list | tuple" = (),
+        retry_marks: "dict | None" = None,
     ) -> tuple:
         """One device's whole desired state and its hash.
 
@@ -749,12 +751,16 @@ class DesiredStateStore:
                 the AI gateway the machine's tools reach.
             ai_models: The names the gateway serves now; none sends the AI
                 tools setting as off.
+            retry_marks: Module name, or ``ai_tools``, to the mark the last
+                press on it after a failure left; each goes into its entry
+                as ``retry_mark``, the AI tools' only while they are on.
 
         Returns:
             ``(desired, hash)``, the document being
             ``{modules, desktop, urls, ai_tools}``.
         """
         resolved = resolved_modules(platform)
+        marks = dict(retry_marks or {})
         modules = {}
         for name, entry in self.modules(key).items():
             if entry["is_settled"]:
@@ -776,6 +782,8 @@ class DesiredStateStore:
                 "config": config,
                 **_recipes(resolved.get(name) or {}),
             }
+            if marks.get(name):
+                modules[name][DEVICE_RETRY_MARK_KEY] = marks[name]
         desired = {
             "modules": modules,
             "desktop": {"seat_password": self.seat_password(key)},
@@ -788,6 +796,8 @@ class DesiredStateStore:
                 list(ai_models),
             ),
         }
+        if desired["ai_tools"]["is_enabled"] and marks.get(DEVICE_AI_TOOLS_NAME):
+            desired["ai_tools"][DEVICE_RETRY_MARK_KEY] = marks[DEVICE_AI_TOOLS_NAME]
         return desired, state_hash(desired)
 
     def forget(self, key: str) -> None:
