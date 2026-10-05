@@ -494,3 +494,58 @@ def test_deleting_another_key_leaves_the_relay_and_converges_nothing(client):
 
     assert read_relay().key_id == key_id
     assert runtime.converged == 0
+
+
+def stored_login(client) -> str:
+    created = client.post(
+        "/api/hub/credential/login/add",
+        json={"name": "relay", "username": None, "password": STORED_PASSWORD},
+    )
+    return created.json()["id"]
+
+
+def test_the_login_the_relay_names_is_marked(client):
+    login_id = stored_login(client)
+    other_id = stored_login(client)
+    write_relay(
+        OverlayRelayConfig(is_enabled=True, host="vps", account="r", login_id=login_id)
+    )
+
+    listed = client.get("/api/hub/credential/login").json()["logins"]
+
+    marks = {item["id"]: item["is_relay_login"] for item in listed}
+    assert marks == {login_id: True, other_id: False}
+
+
+def test_deleting_the_relays_login_clears_it_from_the_relay_and_converges(client):
+    runtime = ConvergingRuntime()
+    client.app.dependency_overrides[get_runtime] = lambda: runtime
+    login_id = stored_login(client)
+    write_relay(
+        OverlayRelayConfig(is_enabled=True, host="vps", account="r", login_id=login_id)
+    )
+
+    response = client.post(
+        "/api/hub/credential/login/remove", json={"login_id": login_id}
+    )
+
+    assert response.status_code == 200
+    relay = read_relay()
+    assert relay.login_id == ""
+    assert (relay.is_enabled, relay.host) == (True, "vps")
+    assert runtime.converged == 1
+
+
+def test_deleting_another_login_leaves_the_relay_and_converges_nothing(client):
+    runtime = ConvergingRuntime()
+    client.app.dependency_overrides[get_runtime] = lambda: runtime
+    login_id = stored_login(client)
+    other_id = stored_login(client)
+    write_relay(
+        OverlayRelayConfig(is_enabled=True, host="vps", account="r", login_id=login_id)
+    )
+
+    client.post("/api/hub/credential/login/remove", json={"login_id": other_id})
+
+    assert read_relay().login_id == login_id
+    assert runtime.converged == 0

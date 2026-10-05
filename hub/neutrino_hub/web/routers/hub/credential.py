@@ -125,17 +125,22 @@ async def delete_key(
         is_relay_cleared = _clear_key_on_relay(request.key_id)
         KeyRegistry().delete(request.key_id)
     if is_relay_cleared:
-        try:
-            await runtime.converge_network()
-        except (
-            subprocess.SubprocessError,
-            OSError,
-            RuntimeError,
-            TimeoutError,
-            ValueError,
-        ) as error:
-            LOGGER.warning("the relay was not stopped: %s", error)
+        await _stop_relay(runtime)
     return {"cleared": {"device_count": device_count}}
+
+
+async def _stop_relay(runtime: PanelRuntime) -> None:
+    """Run the converge step after the relay lost its credential, which stops it."""
+    try:
+        await runtime.converge_network()
+    except (
+        subprocess.SubprocessError,
+        OSError,
+        RuntimeError,
+        TimeoutError,
+        ValueError,
+    ) as error:
+        LOGGER.warning("the relay was not stopped: %s", error)
 
 
 def _relay_key_id() -> str:
@@ -248,13 +253,17 @@ def create_login(request: LoginCreate) -> LoginView:
 
 
 @router.post("/login/remove")
-def delete_login(request: CredentialLoginRequest) -> dict:
+async def delete_login(
+    request: CredentialLoginRequest, runtime: PanelRuntime = Depends(get_runtime)
+) -> dict:
     """Remove a login and its password, clearing every reference to it.
 
-    A device naming it for its account loses that id.
+    A device naming it for its account loses that id. A login the relay
+    names is cleared from the relay too, and the converge step stops it.
 
     Args:
         request: The login's identifier.
+        runtime: The shared runtime.
 
     Returns:
         Under ``cleared``, how many devices lost the login.
@@ -272,8 +281,32 @@ def delete_login(request: CredentialLoginRequest) -> dict:
         )
     with CONFIG_WRITE_LOCK:
         device_count = _clear_login_on_devices(login_id)
+        is_relay_cleared = _clear_login_on_relay(login_id)
         vault.delete(login_id)
+    if is_relay_cleared:
+        await _stop_relay(runtime)
     return {"cleared": {"device_count": device_count}}
+
+
+def _relay_login_id() -> str:
+    """The login the relay names, empty when none."""
+    try:
+        return read_relay().login_id
+    except ValueError:
+        return ""
+
+
+def _clear_login_on_relay(login_id: str) -> bool:
+    """Take a login off the relay when it names it."""
+    try:
+        relay = read_relay()
+    except ValueError:
+        return False
+    if not login_id or relay.login_id != login_id:
+        return False
+    relay.login_id = ""
+    write_relay(relay)
+    return True
 
 
 def _login_secret(username: "str | None", password: str) -> dict:
@@ -325,6 +358,7 @@ def _login_view(
         username=username,
         created_at=record.created_at,
         device_count=device_counts.get(record.id, 0),
+        is_relay_login=bool(record.id) and record.id == _relay_login_id(),
     )
 
 

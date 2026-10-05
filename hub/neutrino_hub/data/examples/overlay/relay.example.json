@@ -1,5 +1,5 @@
 {
-  "_comment": "The relay, the third way in: a reverse SSH forward from this box to a server you own. The Access page writes this file; the converge step renders the ssh start line from it.",
+  "_comment": "The SSH Relay, the third way in: a reverse SSH forward from this box to a server you own. The Access page writes this file; the converge step renders the ssh start line from it.",
 
   "_comment_is_enabled": "Whether the relay runs, written by the Access page's switch.",
   "is_enabled": false,
@@ -13,8 +13,11 @@
   "_comment_account": "The account the hub logs in as. Empty, holding whitespace or '@', or starting with '-' is refused.",
   "account": "",
 
-  "_comment_key_id": "The id of an SSH key on the Credentials page. The key itself stays sealed in the vault.",
+  "_comment_key_id": "The id of an SSH key on the Credentials page, when the relay logs in with a key. The key itself stays sealed in the vault.",
   "key_id": "",
+
+  "_comment_login_id": "The id of a login on the Credentials page, when the relay logs in with its password instead. Set one of key_id and login_id.",
+  "login_id": "",
 
   "_comment_public_port": "The port the server listens on for clients and agents; it forwards to this box's agent port.",
   "public_port": 8443

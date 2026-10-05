@@ -3,13 +3,21 @@
 Pure: values in, words out, no file and no process.
 """
 
+import shlex
+
 from neutrino_hub.modules.overlay.constants import (
+    OVERLAY_RELAY_ASKPASS_ENV,
+    OVERLAY_RELAY_ASKPASS_REQUIRE,
+    OVERLAY_RELAY_ASKPASS_REQUIRE_ENV,
+    OVERLAY_RELAY_DISPLAY,
+    OVERLAY_RELAY_DISPLAY_ENV,
     OVERLAY_RELAY_EXIT_LINES,
     OVERLAY_RELAY_KEY_FILE_ERROR,
     OVERLAY_RELAY_KEY_FILE_LINES,
     OVERLAY_RELAY_KEY_FILE_WINDOW,
     OVERLAY_RELAY_KNOWN_HOSTS_OPTION,
     OVERLAY_RELAY_LISTEN_ADDRESS,
+    OVERLAY_RELAY_PASSWORD_SSH_OPTIONS,
     OVERLAY_RELAY_SSH_OPTIONS,
     OVERLAY_RELAY_STATE_UNREACHABLE,
     OVERLAY_RELAY_TARGET_ADDRESS,
@@ -27,6 +35,7 @@ class OverlayRelayRenderer:
         key_path: str,
         known_hosts_path: str,
         agent_port: int,
+        askpass_path: str = "",
     ):
         """
         Args:
@@ -34,11 +43,14 @@ class OverlayRelayRenderer:
             key_path: The key file under the state root.
             known_hosts_path: The known-hosts file under the state root.
             agent_port: The port the agent channel listens on.
+            askpass_path: The program that prints the login's password, under
+                the state root.
         """
         self._ssh_path = ssh_path
         self._key_path = key_path
         self._known_hosts_path = known_hosts_path
         self._agent_port = agent_port
+        self._askpass_path = askpass_path
 
     def render(self, config: OverlayRelayConfig) -> list:
         """The argument vector, the program first.
@@ -47,22 +59,31 @@ class OverlayRelayRenderer:
             config: The stored relay.
 
         Returns:
-            The words of the start line network.md gives.
+            The words of the start line network.md gives: with a key, the
+            key file; with a login, no key and a password asked through
+            askpass.
 
         Raises:
-            ValueError: If the relay names no host, account or key.
+            ValueError: If the relay names no host, account, key or login.
         """
         if not config.has_settings:
-            raise ValueError("the relay names no host, account or key")
+            raise ValueError("the relay names no host, account, key or login")
+        options = (
+            OVERLAY_RELAY_PASSWORD_SSH_OPTIONS
+            if config.is_password_login
+            else OVERLAY_RELAY_SSH_OPTIONS
+        )
         arguments = [self._ssh_path, "-N", "-T"]
-        for option in OVERLAY_RELAY_SSH_OPTIONS:
+        for option in options:
             arguments += ["-o", option]
         arguments += [
             "-o",
             f"{OVERLAY_RELAY_KNOWN_HOSTS_OPTION}="
             f"{ssh_option_quoted(self._known_hosts_path)}",
-            "-i",
-            self._key_path,
+        ]
+        if not config.is_password_login:
+            arguments += ["-i", self._key_path]
+        arguments += [
             "-p",
             str(config.ssh_port),
             "-R",
@@ -71,6 +92,40 @@ class OverlayRelayRenderer:
             f"{config.account}@{config.host}",
         ]
         return arguments
+
+    def environment(self, config: OverlayRelayConfig) -> dict:
+        """What the start line's environment adds.
+
+        Args:
+            config: The stored relay.
+
+        Returns:
+            With a login, ``SSH_ASKPASS`` naming the askpass program,
+            ``SSH_ASKPASS_REQUIRE=force`` and a ``DISPLAY``; nothing with a
+            key. The password itself is in none of them.
+        """
+        if not config.is_password_login:
+            return {}
+        return {
+            OVERLAY_RELAY_ASKPASS_ENV: self._askpass_path,
+            OVERLAY_RELAY_ASKPASS_REQUIRE_ENV: OVERLAY_RELAY_ASKPASS_REQUIRE,
+            OVERLAY_RELAY_DISPLAY_ENV: OVERLAY_RELAY_DISPLAY,
+        }
+
+
+def askpass_program(password_path: str, *, is_windows: bool) -> str:
+    """The askpass program's text: it prints the password file and nothing else.
+
+    Args:
+        password_path: The password file.
+        is_windows: Whether the program is a Windows command script.
+
+    Returns:
+        A POSIX shell script, or a command script on Windows.
+    """
+    if is_windows:
+        return f'@type "{password_path}"\r\n'
+    return f"#!/bin/sh\nexec cat {shlex.quote(password_path)}\n"
 
 
 def ssh_option_quoted(value: str) -> str:

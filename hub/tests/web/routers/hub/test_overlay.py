@@ -204,7 +204,7 @@ def test_the_relay_row_is_off_and_installed_where_ssh_is(box):
 
     relay = kinds_of(client.get("/api/hub/overlay").json())[OVERLAY_RELAY]
 
-    assert relay["title"] == "Relay"
+    assert relay["title"] == "SSH Relay"
     assert relay["is_enabled"] is False
     assert relay["is_installed"] is True
     assert relay["is_active"] is False

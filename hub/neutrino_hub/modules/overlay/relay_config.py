@@ -24,8 +24,11 @@ class OverlayRelayConfig:
         host: The server's name or address.
         ssh_port: Its sshd's port.
         account: The account the hub logs in as.
-        key_id: The id of an SSH key on the Credentials page.
+        key_id: The id of an SSH key on the Credentials page; empty when the
+            relay logs in with a password.
         public_port: The port the server listens on for peers.
+        login_id: The id of a login on the Credentials page whose password
+            the hub logs in with; empty when the relay logs in with a key.
     """
 
     is_enabled: bool = False
@@ -34,6 +37,7 @@ class OverlayRelayConfig:
     account: str = ""
     key_id: str = ""
     public_port: int = OVERLAY_RELAY_DEFAULT_PUBLIC_PORT
+    login_id: str = ""
 
     @classmethod
     def from_dict(cls, data: dict) -> "OverlayRelayConfig":
@@ -55,6 +59,7 @@ class OverlayRelayConfig:
             account=str(data.get("account", "") or ""),
             key_id=str(data.get("key_id", "") or ""),
             public_port=int(data.get("public_port", OVERLAY_RELAY_DEFAULT_PUBLIC_PORT)),
+            login_id=str(data.get("login_id", "") or ""),
         )
 
     def to_dict(self) -> dict:
@@ -67,8 +72,13 @@ class OverlayRelayConfig:
 
     @property
     def has_settings(self) -> bool:
-        """Whether the host, the account and the key are all named."""
-        return bool(self.host and self.account and self.key_id)
+        """Whether the host, the account and a key or a login are named."""
+        return bool(self.host and self.account and (self.key_id or self.login_id))
+
+    @property
+    def is_password_login(self) -> bool:
+        """Whether the relay logs in with a login's password, not a key."""
+        return bool(self.login_id) and not self.key_id
 
     @property
     def url(self) -> str:

@@ -3,12 +3,14 @@ Description=Neutrino way in through a server you own (reverse SSH forward)
 Documentation=https://neutrino.beyond-infinity.top/hub/relay.html
 After=network-online.target
 Wants=network-online.target
-# The key file is written by the panel's apply while the relay is on.
-ConditionPathExists=/var/lib/neutrino/hub/relay/key
+# The key file, or the password file with a login, is written by the panel's
+# apply while the relay is on; either one lets the unit start.
+ConditionPathExists=|/var/lib/neutrino/hub/relay/key
+ConditionPathExists=|/var/lib/neutrino/hub/relay/password
 
 [Service]
 Type=simple
-# Root: the key file under the state root is readable by root alone.
+# Root: the key and password files under the state root are root's alone.
 User=root
 # The panel's apply replaces this line with the drop-in
 # neutrino_hub_relay.service.d/arguments.conf, rendered from

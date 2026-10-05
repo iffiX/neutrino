@@ -20,6 +20,7 @@ import asyncssh
 import pytest
 
 from neutrino_hub.exceptions import VaultLockedError
+from neutrino_hub.modules.credentials.vault import SecretVault
 from neutrino_hub.modules.devices.key_registry import KeyRegistry
 from neutrino_hub.modules.overlay import relay_ops
 from neutrino_hub.modules.overlay.relay_config import OverlayRelayConfig, write_relay
@@ -47,6 +48,7 @@ class FakeController:
         self.process_ids: list = []
         self.output: list = []
         self.start_line = None
+        self.start_env = None
 
     def status(self, name):
         return ServiceStatus(name, name, True, self.is_running, self.is_on)
@@ -60,6 +62,7 @@ class FakeController:
     def set_start_line(self, name, argv, env, cwd):
         self.calls.append(("start_line", argv))
         self.start_line = argv
+        self.start_env = env
 
     def enable(self, name):
         self.calls.append(("enable",))
@@ -542,3 +545,150 @@ def test_the_key_and_the_known_hosts_are_made_root_only_through_the_platform(
         relay / "key",
         relay / "known_hosts",
     ]
+
+
+# --- a relay that logs in with a password -----------------------------------
+
+LAB_PASSWORD = "not-a-real-password-7"  # scan: allow
+
+
+def with_login(box, password: str = LAB_PASSWORD) -> OverlayRelayConfig:
+    """The box's relay switched to a vault login."""
+    login = SecretVault().add(kind="login", name="relay", secret={"password": password})
+    relay = OverlayRelayConfig(
+        **{**vars(box["relay"]), "key_id": "", "login_id": login.id}
+    )
+    write_relay(relay)
+    return relay
+
+
+def test_a_login_writes_the_password_and_its_askpass_root_only(box):
+    relay = with_login(box)
+
+    change = applier(box).apply(relay)
+
+    folder = box["state"] / "relay"
+    password = folder / "password"
+    askpass = folder / "askpass"
+    assert change == "relay_started"
+    assert password.read_text() == LAB_PASSWORD
+    assert stat.S_IMODE(password.stat().st_mode) == 0o600
+    assert stat.S_IMODE(askpass.stat().st_mode) == 0o700
+    assert askpass.read_text() == f"#!/bin/sh\nexec cat {password}\n"
+    assert not (folder / "key").exists()
+
+
+def test_a_login_s_start_line_offers_no_key_and_carries_no_password(box):
+    relay = with_login(box)
+
+    applier(box).apply(relay)
+
+    controller = box["controller"]
+    argv = controller.start_line
+    assert "-i" not in argv
+    assert "BatchMode=no" in argv and "PubkeyAuthentication=no" in argv
+    assert "NumberOfPasswordPrompts=1" in argv
+    assert controller.start_env == {
+        "SSH_ASKPASS": str(box["state"] / "relay" / "askpass"),
+        "SSH_ASKPASS_REQUIRE": "force",
+        "DISPLAY": "neutrino",
+    }
+    assert not any(LAB_PASSWORD in word for word in argv)
+    assert not any(LAB_PASSWORD in value for value in controller.start_env.values())
+
+
+def test_the_askpass_program_prints_the_password(box):
+    import subprocess
+
+    applier(box).apply(with_login(box))
+
+    printed = subprocess.run(
+        [str(box["state"] / "relay" / "askpass"), "Password:"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+
+    assert printed == LAB_PASSWORD
+
+
+def test_back_to_a_key_deletes_the_password_and_its_askpass(box):
+    applier(box).apply(with_login(box))
+    write_relay(box["relay"])
+
+    applier(box).apply(box["relay"])
+
+    folder = box["state"] / "relay"
+    assert (folder / "key").is_file()
+    assert not (folder / "password").exists()
+    assert not (folder / "askpass").exists()
+    assert box["controller"].start_env == {}
+
+
+def test_turning_a_login_relay_off_deletes_the_password(box):
+    relay = with_login(box)
+    applier(box).apply(relay)
+
+    applier(box).apply(OverlayRelayConfig(**{**vars(relay), "is_enabled": False}))
+
+    folder = box["state"] / "relay"
+    assert not (folder / "password").exists()
+    assert not (folder / "askpass").exists()
+
+
+def test_a_login_gone_from_the_vault_is_not_configured(box):
+    relay = with_login(box)
+    SecretVault().delete(relay.login_id)
+
+    assert applier(box).apply(relay) == ""
+    assert box["controller"].start_line is None
+    assert (
+        OverlayRelayMonitor(
+            controller=box["controller"], fingerprint_of=lambda: OWN_FINGERPRINT
+        ).view()["state"]
+        == "not_configured"
+    )
+
+
+def test_a_locked_vault_with_no_password_file_is_vault_locked(box, monkeypatch):
+    relay = with_login(box)
+
+    def locked(self, secret_id):
+        raise VaultLockedError()
+
+    monkeypatch.setattr(SecretVault, "open", locked)
+    monkeypatch.setattr(SecretVault, "is_locked", lambda self: True)
+
+    assert applier(box).apply(relay) == ""
+    assert not (box["state"] / "relay" / "password").exists()
+    assert (
+        OverlayRelayMonitor(
+            controller=box["controller"], fingerprint_of=lambda: OWN_FINGERPRINT
+        ).view()["state"]
+        == "vault_locked"
+    )
+
+
+def test_a_wrong_password_ends_in_auth_failed(box):
+    with_login(box)
+    box["controller"].output = [
+        "Warning: Permanently added '203.0.113.5' (ED25519) to the list of known hosts.",
+        "Permission denied, please try again.",
+        "relay@203.0.113.5: Permission denied (publickey,password).",
+    ]
+
+    view = OverlayRelayMonitor(
+        controller=box["controller"], fingerprint_of=lambda: OWN_FINGERPRINT
+    ).view()
+
+    assert view["state"] == "auth_failed"
+    assert "Permission denied" in view["last_error"]
+
+
+def test_the_unit_starts_on_the_key_file_or_the_password_file(box):
+    applier(box).apply(with_login(box))
+
+    unit = (box["systemd"] / "neutrino_hub_relay.service").read_text()
+
+    assert "ConditionPathExists=|/var/lib/neutrino/hub/relay/key" in unit
+    assert "ConditionPathExists=|/var/lib/neutrino/hub/relay/password" in unit

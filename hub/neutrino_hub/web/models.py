@@ -605,6 +605,8 @@ class LoginView(BaseModel):
     username: str | None = None
     created_at: str = ""
     device_count: int = 0
+    # Whether ``config/overlay/relay.json`` names this login.
+    is_relay_login: bool = False
 
 
 class LoginListView(BaseModel):
@@ -2484,6 +2486,8 @@ class RelayView(BaseModel):
     ssh_port: int
     account: str
     key_id: str
+    # The login whose password the relay logs in with; empty with a key.
+    login_id: str = ""
     public_port: int
     # The address the relay adds to ``urls``; empty while not configured.
     url: str = ""
@@ -2496,12 +2500,17 @@ class RelayView(BaseModel):
 
 
 class RelaySetRequest(BaseModel):
-    """The relay's settings, stored at once."""
+    """The relay's settings, stored at once.
+
+    Exactly one of ``key_id`` and ``login_id`` names the credential, as the
+    agent install's request names it.
+    """
 
     host: str
     ssh_port: int
     account: str
-    key_id: str
+    key_id: str | None = None
+    login_id: str | None = None
     public_port: int
 
 
