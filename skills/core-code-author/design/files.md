@@ -189,7 +189,10 @@ overrides both, which is what makes a second instance testable. Details of the f
                             registered under RustDesk's names; kept/, what
                             was registered there before and is put back
                             when the switch goes off: macOS the two plists,
-                            Windows and Linux service.json; root only
+                            Windows and Linux service.json, Linux a
+                            rustdesk.service found in /etc; settings/, the
+                            RustDesk settings files as they were before the
+                            first write; root only
     client/
         netbird/            the client's NetBird configuration and profile
         easytier/           the client's EasyTier networks and console file
