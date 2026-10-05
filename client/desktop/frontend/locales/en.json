@@ -1,6 +1,7 @@
 {
   "code.admission_paused": "The hub has paused new joins; this client tries again in {retry_after_s} s",
   "code.agent_offline": "That machine is not connected to the hub right now",
+  "code.ai_tools_managed": "This is a managed device: set its AI tools on the hub's panel, under Modules, Global configuration.",
   "code.ambiguous_hub": "Several hubs are joined; name the one to act on",
   "code.binding_unknown": "This hub no longer knows this client; join it again with a new link",
   "code.bundle_missing": "This install carries no {binary}; reinstall the client",
@@ -191,6 +192,7 @@
   "ui.rdp_connect": "Connect",
   "ui.rdp_mac_hint": "A black picture or a mouse that does nothing means that Mac has not given RustDesk Screen Recording and Accessibility.",
   "ui.rdp_open": "Viewer open",
+  "ui.reason.ai_managed": "This is a managed device: set its AI tools on the hub's panel, under Modules, Global configuration.",
   "ui.reason.console_waiting": "This machine is registered with the console. Attach it to a network there.",
   "ui.reason.disabled": "The hub has switched this client off.",
   "ui.reason.disconnect_first": "Disconnect first to change the local port.",

@@ -6,6 +6,7 @@ in this process, with no step-down anywhere.
 """
 
 import inspect
+import os
 import subprocess
 import sys
 import time
@@ -404,3 +405,42 @@ def test_the_state_directory_is_made_for_its_owner_alone(tmp_path):
 
     assert state.is_dir()
     assert state.stat().st_mode & 0o777 == 0o700
+
+
+def test_each_platform_names_the_agents_program_directory(monkeypatch):
+    monkeypatch.setenv("ProgramFiles", "D:\\Apps")
+
+    assert LinuxPlatform().agent_program_dir() == "/opt/neutrino/agent"
+    assert (
+        DarwinPlatform().agent_program_dir()
+        == "/Library/Application Support/Neutrino/agent/app"
+    )
+    assert WindowsPlatform().agent_program_dir() == os.path.join(
+        "D:\\Apps", "Neutrino", "agent"
+    )
+    monkeypatch.delenv("ProgramFiles")
+    assert WindowsPlatform().agent_program_dir() == os.path.join(
+        "C:\\Program Files", "Neutrino", "agent"
+    )
+    assert ClientPlatform().agent_program_dir() == ""
+
+
+@pytest.mark.parametrize(
+    "platform_class", [LinuxPlatform, DarwinPlatform, WindowsPlatform]
+)
+def test_the_agent_is_installed_while_its_program_directory_stands(
+    platform_class, monkeypatch, tmp_path
+):
+    program_dir = tmp_path / "agent"
+    platform = platform_class()
+    monkeypatch.setattr(platform, "agent_program_dir", lambda: str(program_dir))
+
+    assert platform.is_agent_installed() is False
+    program_dir.mkdir()
+    assert platform.is_agent_installed() is True
+    program_dir.rmdir()
+    assert platform.is_agent_installed() is False
+
+
+def test_a_platform_without_an_agent_is_never_managed():
+    assert ClientPlatform().is_agent_installed() is False

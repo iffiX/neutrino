@@ -1166,7 +1166,10 @@ function drawAiEntry(card, state, hub, entry) {
   const isExit = !!hub.is_exit;
   const isInUse = isExit && !!ai.is_enabled;
   const payload = entry.payload || {};
-  const isFree = !isUnhealthy(entry) && isEntryFree(hub, entry) && !isAiSwitching(state);
+  // With the agent installed, its tools are set from the hub's panel.
+  const isManaged = !!ai.is_managed;
+  const isFree = !isManaged && !isUnhealthy(entry) && isEntryFree(hub, entry)
+    && !isAiSwitching(state);
   const config = document.createElement('button');
   config.type = 'button';
   config.className = 'ghost';
@@ -1188,8 +1191,11 @@ function drawAiEntry(card, state, hub, entry) {
   toggle.onclick = () => askAiUse(hub, entry, !isInUse);
   const extras = [noteLine(t('ui.ai_needs_client'))];
   if (isExit && ai.code) extras.push(errorLine(wordCode(ai.code, ai.params)));
-  const reason = !isFree && !entryWork(hub, entry) && !isAiSwitching(state)
-    ? entryReason(hub, entry, true) : '';
+  let reason = '';
+  if (isManaged) reason = t('ui.reason.ai_managed');
+  else if (!isFree && !entryWork(hub, entry) && !isAiSwitching(state)) {
+    reason = entryReason(hub, entry, true);
+  }
   card.appendChild(entryRow(hub, entry, (payload.endpoint || '') + forwardedTo(entry),
     isInUse && ai.is_active ? t('ui.ai_on') : '', [config, toggle], reason, extras));
 }

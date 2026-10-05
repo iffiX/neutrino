@@ -274,6 +274,7 @@ class ClientResident:
                     forwards=self._forwards,
                     log=log,
                     on_change=self.notify,
+                    is_managed=self.platform.is_agent_installed,
                 ),
                 FileServiceHandler(
                     platform=self.platform,
@@ -1312,6 +1313,7 @@ class ClientResident:
         """Clear the leftovers, start everything, then watch the binding file."""
         self._log(f"neutrino_client {CLIENT_VERSION} starting on {self.hostname()}")
         self._clear_leftovers()
+        self._check_ai_gate()
         for handler in self._services.values():
             handler.start()
         self._overlay.start()
@@ -1581,6 +1583,7 @@ class ClientResident:
         self._services["file"].drop_withdrawn(
             hub_id=session.hub_id(), entries=session.service_entries()
         )
+        self._check_ai_gate()
         self._services["ai"].refresh(entries=self.service_entries())
         self._overlay.refresh()
 
@@ -1769,6 +1772,13 @@ class ClientResident:
             self._log(f"could not write the exit hub: {error}")
         with self._lock:
             self._chosen_exit_hub_id = hub_id
+
+    def _check_ai_gate(self) -> None:
+        """Look whether the agent is installed, which holds the AI page."""
+        try:
+            self._services["ai"].check_gate()
+        except Exception as error:  # noqa: BLE001 - reported, never fatal
+            self._log(f"ai: could not look for the agent: {error}")
 
     def _clear_leftovers(self) -> None:
         """Undo what a run that did not end cleanly left on this machine."""

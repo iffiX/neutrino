@@ -24,6 +24,7 @@ except ImportError:  # Windows has no account database module.
     pwd = None
 
 from neutrino_client.constants import (
+    CLIENT_AGENT_PROGRAM_DIR_LINUX,
     CLIENT_CLIPBOARD_TIMEOUT_S,
     CLIENT_CONTROL_SOCKET_NAME,
     CLIENT_EASYTIER_SOCKET_PATH_LINUX,
@@ -103,6 +104,10 @@ class LinuxPlatform(ClientPlatform):
             self.home(), ".config"
         )
         return os.path.join(root, CONFIG_DIR_NAME)
+
+    def agent_program_dir(self) -> str:
+        """``/opt/neutrino/agent``."""
+        return CLIENT_AGENT_PROGRAM_DIR_LINUX
 
     def control_socket_path(self) -> str:
         """``$XDG_RUNTIME_DIR/neutrino/client.sock``.

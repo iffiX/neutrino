@@ -762,3 +762,25 @@ def test_a_drive_letter_takes_one_colon_as_a_path_does():
     assert service_cli._record_line(
         {"path": "Z:", "state": "mounted", "is_attached": True}
     ).startswith("Z: ")
+
+
+def test_ai_apply_is_refused_on_a_managed_device(stack, capsys):
+    stack.hubs_value.append(dict(OFFICE_ROW))
+    stack.states["ai"]["is_managed"] = True
+
+    assert ai_apply(hub="office") == 1
+
+    assert stack.exits == [] and stack.service_calls == []
+    err = capsys.readouterr().err
+    assert wording.word_code("ai_tools_managed") in err
+    assert "set its AI tools on the hub's panel" in err
+
+
+def test_ai_show_still_answers_and_names_the_gate(stack, capsys):
+    stack.states["ai"]["is_managed"] = True
+
+    assert service_cli.main_ai_show() == 0
+
+    out = capsys.readouterr().out
+    assert "AI tools  http://hub:8080" in out
+    assert wording.word_code("ai_tools_managed") in out

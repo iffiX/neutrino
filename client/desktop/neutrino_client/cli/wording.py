@@ -115,6 +115,10 @@ CLIENT_CODE_WORDS = {
         "so update the hub first"
     ),
     "no_endpoint": "the hub has not granted this person a key yet",
+    "ai_tools_managed": (
+        "This is a managed device: set its AI tools on the hub's panel, "
+        "under Modules, Global configuration."
+    ),
     "mountpoint_not_empty": "that folder is not empty",
     "share_login_rejected": (
         "the share rejected the username or password; open Configure and enter "
