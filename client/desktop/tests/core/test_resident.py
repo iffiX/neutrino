@@ -2127,8 +2127,43 @@ def test_open_connect_opens_a_connect_stream_on_the_hub_named(two_hubs_up):
         resident.open_connect("h9", "svc_tcp")
 
 
-def panel_allowed(resident) -> None:
-    resident._sessions["c1"]._take_state(dict(HOME_STATE, is_panel_allowed=True))
+PANEL_TOKEN = "panel-token-once"  # scan: allow
+
+
+def panel_allowed(resident, *, code="", params=None) -> None:
+    """The home hub allows the panel and answers its ``service`` stream.
+
+    The answer is the close the hub sends once the client's open arrives:
+    ``{token}``, or the refusal ``code`` with ``params``.
+    """
+    session = resident._sessions["c1"]
+    session._take_state(dict(HOME_STATE, is_panel_allowed=True))
+    made = session._client
+    answer = {"token": PANEL_TOKEN} if params is None and not code else params
+
+    def answer_the_open() -> None:
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            opened = [
+                frame
+                for frame in list(made.sent)
+                if isinstance(frame, dict)
+                and frame.get("kind") == "service"
+                and frame.get("is_panel") is True
+            ]
+            if opened:
+                session._streams.take_close(
+                    {
+                        "type": "close",
+                        "stream": opened[0]["stream"],
+                        "code": code,
+                        "params": answer or {},
+                    }
+                )
+                return
+            time.sleep(0.005)
+
+    threading.Thread(target=answer_the_open, daemon=True).start()
 
 
 def test_panel_makes_the_forward_and_opens_the_hubs_own_address(two_hubs_up):
@@ -2147,10 +2182,20 @@ def test_panel_makes_the_forward_and_opens_the_hubs_own_address(two_hubs_up):
     port = row["panel_forward"]
     assert row["jobs"]["is_opening_panel"] is False
     assert port >= 20000
-    assert resident.platform.opened_urls == [f"http://panel-h1.localhost:{port}/"]
+    assert resident.platform.opened_urls == [
+        f"http://panel-h1.localhost:{port}/?tkn={PANEL_TOKEN}"
+    ]
     socket.create_connection(("127.0.0.1", port), timeout=5).close()
     (made,) = scripts.sockets_of("hub.lan")
-    wait_until(lambda: any(frame.get("is_panel") is True for frame in list(made.sent)))
+    opens = [frame for frame in made.sent if frame.get("type") == "open"]
+    # The token is asked for before the forward stands.
+    assert opens[0]["kind"] == "service" and opens[0]["is_panel"] is True
+    wait_until(
+        lambda: any(
+            frame.get("kind") == "connect" and frame.get("is_panel") is True
+            for frame in list(made.sent)
+        )
+    )
     assert any(
         frame.get("kind") == "connect" and frame.get("is_panel") is True
         for frame in made.sent
@@ -2167,7 +2212,9 @@ def test_panel_on_a_mac_opens_the_loopback(two_hubs_up):
     assert resident.open_panel("h1") == {}
 
     port = resident.hubs()[0]["panel_forward"]
-    assert resident.platform.opened_urls == [f"http://127.0.0.1:{port}/"]
+    assert resident.platform.opened_urls == [
+        f"http://127.0.0.1:{port}/?tkn={PANEL_TOKEN}"
+    ]
     resident._forwards.release()
 
 
@@ -2195,10 +2242,68 @@ def test_a_panel_that_cannot_listen_is_the_hub_rows_error_until_a_refresh(
 
     assert resident.open_panel("h1") == {}
 
-    assert resident.hubs()[0]["last_error"]["code"] == "forward_failed"
+    assert resident.hubs()[0]["last_error"]["code"] == "port_taken"
+    assert resident.platform.opened_urls == []
     resident.refresh()
     assert resident.hubs()[0]["last_error"] is None
     held.close()
+
+
+@pytest.mark.parametrize(
+    "code, params",
+    [
+        ("permission_denied", {"kind": "panel"}),
+        ("client_disabled", {}),
+    ],
+)
+def test_a_refused_sign_in_opens_nothing_and_is_the_rows_error(
+    two_hubs_up, code, params
+):
+    resident, _scripts = two_hubs_up
+    panel_allowed(resident, code=code, params=params)
+    resident._start_thread = run_inline
+
+    assert resident.open_panel("h1") == {}
+
+    row = resident.hubs()[0]
+    assert row["last_error"] == {"code": code, "params": params}
+    assert row["panel_forward"] is None
+    assert resident.platform.opened_urls == []
+
+
+def test_an_answer_without_a_token_opens_nothing(two_hubs_up):
+    resident, _scripts = two_hubs_up
+    panel_allowed(resident, params={})
+    resident._start_thread = run_inline
+
+    resident.open_panel("h1")
+
+    assert resident.hubs()[0]["last_error"]["code"] == "web_token_missing"
+    assert resident.platform.opened_urls == []
+
+
+def test_the_panel_token_is_in_no_log_line_and_not_in_the_state(two_hubs_up):
+    resident, _scripts = two_hubs_up
+    lines = []
+    resident._log = lines.append
+    resident._forwards._log = lines.append
+    panel_allowed(resident)
+    resident._start_thread = run_inline
+
+    resident.open_panel("h1")
+
+    assert resident.platform.opened_urls[0].endswith(f"?tkn={PANEL_TOKEN}")
+    assert lines
+    assert all(PANEL_TOKEN not in line for line in lines)
+    state = json.dumps(
+        {
+            "hubs": resident.hubs(),
+            "services": resident.entry_rows(),
+            "states": resident.service_states(),
+        }
+    )
+    assert PANEL_TOKEN not in state
+    resident._forwards.release()
 
 
 def test_leaving_a_hub_ends_its_panel_forward(two_hubs_up, monkeypatch):
