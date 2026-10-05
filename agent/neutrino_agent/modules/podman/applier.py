@@ -418,15 +418,21 @@ def _declared_first(state: PodmanContainerState) -> tuple:
 
 
 def _inspected_ports(detail: dict) -> list:
-    """Every published port of one inspect object as ``host:container``."""
+    """Every published port of one inspect object as the configuration
+    writes it: ``host:container``, and ``host:container/udp`` on UDP. A port
+    on another protocol, which the configuration cannot hold, is left out."""
     bindings = (detail.get("HostConfig") or {}).get("PortBindings") or {}
     ports = []
     for container_port, targets in sorted(bindings.items()):
-        inside = str(container_port).split("/", 1)[0]
+        inside, _, protocol = str(container_port).partition("/")
+        protocol = protocol.lower() or "tcp"
+        if protocol not in ("tcp", "udp"):
+            continue
+        suffix = "/udp" if protocol == "udp" else ""
         for target in targets or []:
             host = str((target or {}).get("HostPort", "") or "")
             if host:
-                ports.append(f"{host}:{inside}")
+                ports.append(f"{host}:{inside}{suffix}")
     return ports
 
 
