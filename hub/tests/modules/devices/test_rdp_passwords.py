@@ -70,8 +70,8 @@ def report(**sections) -> dict:
     body = {
         "type": "report",
         "machine": {"metrics": {}, "accounts": []},
-        "modules": {"rustdesk": {"state": "installed"}},
-        "desktop": {"is_shared": False},
+        "modules": {"remote_desktop": {"state": "running"}},
+        "desktop": {"is_shared": True, "share_id": "s1", "port": 21118},
         "error": None,
     }
     body.update(sections)
@@ -88,7 +88,7 @@ def stored(config) -> dict:
     return json.loads((config / RDP_PATH).read_text())
 
 
-def test_the_first_installed_report_generates_one(config, monkeypatch, tmp_path):
+def test_a_machine_whose_switch_is_on_is_given_one(config, monkeypatch, tmp_path):
     unlock_vault(monkeypatch, tmp_path)
     runtime = ReportingRuntime()
 
@@ -114,7 +114,8 @@ def test_a_machine_that_needs_no_new_password_is_pushed_nothing(
 ):
     runtime = ReportingRuntime()
 
-    beat(runtime, modules={"rustdesk": {"state": "absent"}})
+    runtime.desired_states.set_remote_desktop(DEVICE, False)
+    beat(runtime)
     beat(runtime)
 
     assert runtime.pushed == []
@@ -134,13 +135,11 @@ def test_a_later_report_keeps_the_password_the_machine_already_has(
     assert runtime.desired_states.seat_password(DEVICE) == first
 
 
-def test_a_machine_whose_package_lacks_the_host_is_given_none(
-    config, monkeypatch, tmp_path
-):
+def test_a_machine_whose_switch_is_off_is_given_none(config, monkeypatch, tmp_path):
     unlock_vault(monkeypatch, tmp_path)
     runtime = ReportingRuntime()
 
-    beat(runtime, modules={"rustdesk": {"state": "absent"}})
+    beat(runtime, desktop={"is_shared": False})
 
     assert not (config / RDP_PATH).exists()
     assert runtime.desired_states.seat_password(DEVICE) == ""

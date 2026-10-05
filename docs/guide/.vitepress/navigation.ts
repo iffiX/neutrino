@@ -45,6 +45,8 @@ export const sidebarEn: DefaultTheme.SidebarItem[] = [
         collapsed: false,
         items: [
           { text: "File share", link: "/agent/modules/shares" },
+          { text: "Terminal", link: "/agent/modules/terminal" },
+          { text: "Remote desktop", link: "/agent/modules/remote_desktop" },
           { text: "Gitea", link: "/agent/modules/gitea" },
           { text: "Containers", link: "/agent/modules/containers" },
           { text: "ZFS storage", link: "/agent/modules/zfs" },
@@ -115,6 +117,11 @@ export const sidebarZh: DefaultTheme.SidebarItem[] = [
         collapsed: false,
         items: [
           { text: "File share", link: "/zh-CN/agent/modules/shares" },
+          { text: "Terminal", link: "/zh-CN/agent/modules/terminal" },
+          {
+            text: "Remote desktop",
+            link: "/zh-CN/agent/modules/remote_desktop",
+          },
           { text: "Gitea", link: "/zh-CN/agent/modules/gitea" },
           { text: "Containers", link: "/zh-CN/agent/modules/containers" },
           { text: "ZFS storage", link: "/zh-CN/agent/modules/zfs" },

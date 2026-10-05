@@ -313,7 +313,7 @@ A kept session shows as a tab with a grey dot. Select that tab to attach, and th
 
 ## Remote desktops
 
-The **Remote desktops** page opens another machine's screen in the RustDesk viewer the client includes. An entry appears while a managed machine shares its desktop with `sudo nagent rdp start`, and goes when it stops or goes offline.
+The **Remote desktops** page opens another machine's screen in the RustDesk viewer the client includes. An entry appears while a managed machine shares its desktop, which its **Remote desktop** switch on the hub's Modules page turns on, and goes when it stops or goes offline.
 
 - Select **Connect** on the entry.
 

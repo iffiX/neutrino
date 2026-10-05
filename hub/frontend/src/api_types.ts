@@ -845,6 +845,8 @@ export interface DeviceRdp {
   /** Whether this machine's agent package carries the remote desktop host.
    * False only on a package built before it did. */
   is_available: boolean;
+  /** Whether the machine's Remote desktop switch is on. */
+  is_enabled: boolean;
 }
 
 export interface DeviceClientInfo {
@@ -1586,6 +1588,40 @@ export interface CodeServerDeviceView extends ModuleDeviceState {
   /** The human accounts the machine last reported. */
   accounts: string[];
   is_active: boolean;
+}
+
+/** One machine's Terminal module: the account and the shell program. */
+export interface TerminalDeviceView extends ModuleDeviceState {
+  device_id: string;
+  host: string;
+  /** The account a shell runs as; empty for the agent's own. */
+  account: string;
+  /** The shell program's path; empty for the default. */
+  shell_path: string;
+  /** The human accounts the machine last reported. */
+  accounts: string[];
+  /** False on Windows, whose shells run as SYSTEM. */
+  is_account_settable: boolean;
+}
+
+export interface TerminalConfigUpdate {
+  device_id: string;
+  account: string;
+  shell_path: string;
+}
+
+/** One machine's Remote desktop module: the switch and where it stands. */
+export interface RemoteDesktopDeviceView extends ModuleDeviceState {
+  device_id: string;
+  host: string;
+  is_enabled: boolean;
+  /** `linux`, `windows` or `darwin`; empty before the machine reported. */
+  platform_os: string;
+}
+
+export interface RemoteDesktopConfigUpdate {
+  device_id: string;
+  is_enabled: boolean;
 }
 
 export interface CodeServerConfigUpdate {

@@ -94,6 +94,8 @@ def test_every_shipped_manifest_names_its_installer_tier():
     }
 
     assert tiers == {
+        "remote_desktop": "agent",
+        "terminal": "agent",
         "podman": "platform",
         "samba": "platform",
         "zfs": "platform",
@@ -112,6 +114,8 @@ def test_every_shipped_manifest_says_where_its_software_comes_from():
     }
 
     assert sources == {
+        "remote_desktop": "the Neutrino agent",
+        "terminal": "the Neutrino agent",
         "podman": "system",
         "samba": "system",
         "zfs": "system",
@@ -125,9 +129,12 @@ def test_every_shipped_manifest_says_where_its_software_comes_from():
 
 
 def test_the_manifests_come_back_in_the_order_both_surfaces_draw():
-    """What the machine carries, then what the module's installer fetches,
-    then what a person installs themselves, and by title inside each tier."""
+    """What the agent carries, then what the machine carries, then what the
+    module's installer fetches, then what a person installs themselves, and
+    by title inside each tier."""
     assert list(load_module_manifests()) == [
+        "remote_desktop",
+        "terminal",
         "podman",
         "samba",
         "zfs",
@@ -782,3 +789,25 @@ def test_the_loader_refuses_a_program_branch_that_lacks_a_field(tmp_path, monkey
     with pytest.raises(ValueError, match="linux-amd64 must name cn_url"):
         manifests_module.load_tool_manifests()
     assert load_module_manifests() == {}
+
+
+def test_a_module_the_agent_carries_names_no_platform(monkeypatch, tmp_path):
+    import json
+
+    from neutrino_hub.modules.devices import manifests
+
+    (tmp_path / "shell.json").write_text(
+        json.dumps(
+            {
+                "name": "shell",
+                "title": "Shell",
+                "installer": "agent",
+                "source": "the Neutrino agent",
+                "platforms": {"linux": {"verify": "true"}},
+            }
+        )
+    )
+    monkeypatch.setattr(manifests, "MANIFESTS_DIR", tmp_path)
+
+    with pytest.raises(ValueError, match="agent-tier"):
+        manifests.load_module_manifests()

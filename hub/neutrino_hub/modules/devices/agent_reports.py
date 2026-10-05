@@ -29,7 +29,6 @@ from neutrino_hub.modules.channel.constants import (
 )
 from neutrino_hub.modules.devices.constants import (
     DEVICE_GITEA_MODULE,
-    DEVICE_RDP_MODULE,
 )
 from neutrino_hub.modules.devices.module_import import (
     MODULE_IMPORTS,
@@ -91,8 +90,9 @@ def record_report(
     runtime.device_modules[key] = modules
     is_settled = _settle_absent(runtime, key, modules)
     is_adopted = is_first and _adopt_modules(runtime, key, modules)
-    is_seated = _ensure_seat_password(runtime, key, modules)
-    if is_settled or is_adopted or is_seated:
+    is_shared = _adopt_desktop_share(runtime, key, report.get("desktop"))
+    is_seated = _ensure_seat_password(runtime, key)
+    if is_settled or is_adopted or is_shared or is_seated:
         _push_state(runtime, key)
     if is_adopted:
         runtime.published_services.schedule_refresh()
@@ -174,26 +174,48 @@ def record_desktop_share(runtime, device, share: dict, host: str) -> None:
         runtime.published_services.schedule_refresh()
 
 
-def _ensure_seat_password(runtime, key: str, modules: dict) -> bool:
-    """Give a device its seat password once its agent hosts RustDesk.
+def _adopt_desktop_share(runtime, key: str, desktop) -> bool:
+    """Record the Remote desktop switch on for a share the old command made.
 
-    The password is the hub's to make, so a machine that reports the host
-    present is handed one it never typed, and the state carrying it goes
-    down the moment it exists. A locked vault seals nothing and the next
-    report tries again.
+    A machine whose agent shared its desktop through ``nagent rdp start``
+    reports the share until its first state names the module. When the hub
+    holds no switch for it yet, the switch is written on, so an upgrade
+    closes no share.
 
     Args:
         runtime: The shared runtime.
         key: The device.
-        modules: The module states the report carries.
+        desktop: The report's ``desktop`` section.
+
+    Returns:
+        True when the switch was written, so the state is pushed again.
+    """
+    is_shared = isinstance(desktop, dict) and desktop.get("is_shared") is True
+    if not is_shared or runtime.desired_states.has_remote_desktop(key):
+        return False
+    try:
+        runtime.desired_states.set_remote_desktop(key, True)
+    except OSError:
+        return False
+    return True
+
+
+def _ensure_seat_password(runtime, key: str) -> bool:
+    """Give a device its seat password once its Remote desktop switch is on.
+
+    The password is the hub's to make, so a machine whose switch is on is
+    handed one it never typed, and the state carrying it goes down the
+    moment it exists. A locked vault seals nothing and the next report tries
+    again.
+
+    Args:
+        runtime: The shared runtime.
+        key: The device.
 
     Returns:
         True when a password was made, so the state is pushed again.
     """
-    reported = modules.get(DEVICE_RDP_MODULE)
-    if not isinstance(reported, dict):
-        return False
-    if str(reported.get("state", "")) not in CHANNEL_MODULE_PRESENT_STATES:
+    if not runtime.desired_states.remote_desktop(key)["is_enabled"]:
         return False
     return runtime.desired_states.ensure_seat_password(key)
 

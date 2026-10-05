@@ -1,0 +1,24 @@
+/* The Terminal module's two fields. */
+
+.terminal_module_fields {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(260px, 2fr);
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.terminal_module_path {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.terminal_module_path .input {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .terminal_module_fields {
+    grid-template-columns: 1fr;
+  }
+}

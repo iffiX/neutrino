@@ -1,0 +1,10 @@
+{
+  "_comment": "The desktop share every managed machine can have: the agent's own package carries RustDesk, so nothing is installed. Its switch, config/devices/<id>/remote_desktop.json, is off on a new machine; on, the agent runs its copy of RustDesk under RustDesk's own service names, and off, puts back what was there.",
+  "name": "remote_desktop",
+  "title": "Remote desktop",
+  "kind": "agent",
+  "installer": "agent",
+  "source": "the Neutrino agent",
+  "description": "Shares this machine's desktop through the agent's own RustDesk",
+  "platforms": {}
+}

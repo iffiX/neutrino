@@ -435,7 +435,7 @@ def test_an_uninstall_the_machine_confirms_keeps_the_row_saying_absent(api):
 
         assert runtime.device_modules[device_id]["samba"]["state"] == "absent"
         assert store.want_of(device_id, "samba") == "absent"
-        assert store.compose(device_id, PLATFORM)[0]["modules"] == {}
+        assert "samba" not in store.compose(device_id, PLATFORM)[0]["modules"]
         assert runtime.pushed == [device_id]
         assert ("device_report", device_id) in runtime.events.published
     finally:

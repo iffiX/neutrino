@@ -326,5 +326,8 @@
   "code.gateway_not_serving": "The hub's AI gateway serves no model yet; set it up on the AI page first.",
   "code.switch_failed": "cc-switch did not point the tools at the gateway: {detail}",
   "code.cc_switch_download_failed": "This machine could not get cc-switch from the hub: {detail}",
-  "code.hub_release_file_gone": "the hub's own release no longer carries the file, so update the hub to its latest release"
+  "code.hub_release_file_gone": "the hub's own release no longer carries the file, so update the hub to its latest release",
+  "code.shell_program_unusable": "{path} is not a program this machine can run.",
+  "code.rdp_takeover_failed": "Remote desktop could not start at {step}: {detail}",
+  "code.rdp_restore_failed": "Remote desktop could not put back the machine's RustDesk at {step}: {detail}"
 }

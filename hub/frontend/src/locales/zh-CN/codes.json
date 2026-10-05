@@ -326,5 +326,8 @@
   "code.gateway_not_serving": "中枢的 AI 网关还没有可用的模型，先到 AI 页设置好。",
   "code.switch_failed": "cc-switch 没能把工具指向网关：{detail}",
   "code.cc_switch_download_failed": "这台机器没能从中枢取得 cc-switch：{detail}",
-  "code.hub_release_file_gone": "中枢自己的发布已不再带有这个文件，请把中枢更新到最新发布"
+  "code.hub_release_file_gone": "中枢自己的发布已不再带有这个文件，请把中枢更新到最新发布",
+  "code.shell_program_unusable": "{path} 不是这台机器能运行的程序。",
+  "code.rdp_takeover_failed": "远程桌面在 {step} 这一步没能启动：{detail}",
+  "code.rdp_restore_failed": "远程桌面在 {step} 这一步没能还原机器原来的 RustDesk：{detail}"
 }

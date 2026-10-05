@@ -26,7 +26,8 @@ import "./file_browser.css";
  * operation acts at once and the listing is read again after it, so what is
  * on screen is what is on the machine. Given `onPickDirectory`, it picks a
  * directory instead: files are greyed, nothing is changed, and the foot
- * chooses the directory open.
+ * chooses the directory open. Given `onPickFile`, it picks a file: a press
+ * on a file hands its path back, and nothing is changed either.
  */
 
 // The codes the files API refuses with, and the sentence each is worded as. A
@@ -51,6 +52,9 @@ interface FileBrowserProps {
   /** Picks a directory instead of managing files: called with the path of
    * the directory open when Choose this folder is pressed. */
   onPickDirectory?: (path: string) => void;
+  /** Picks a file instead of managing files: called with the path of the
+   * file pressed. */
+  onPickFile?: (path: string) => void;
   /** Called by the foot's Cancel while picking. */
   onCancel?: () => void;
   /** Where a pick starts; the root when empty or when it cannot be read. */
@@ -62,11 +66,13 @@ interface FileBrowserProps {
 export function FileBrowser({
   deviceId,
   onPickDirectory,
+  onPickFile,
   onCancel,
   startPath = "",
   platformOs = "",
 }: FileBrowserProps) {
-  const isPicking = onPickDirectory !== undefined;
+  const isPickingFile = onPickFile !== undefined;
+  const isPicking = onPickDirectory !== undefined || isPickingFile;
   // Redrawn when the panel's language changes.
   useLanguage();
   const [listing, setListing] = useState<DeviceFileListView | null>(null);
@@ -142,6 +148,8 @@ export function FileBrowser({
   const handleOpen = (entry: DeviceFileEntry) => {
     if (entry.is_dir || entry.is_link) {
       void load(toEntryPath(path, separator, entry));
+    } else if (onPickFile !== undefined) {
+      onPickFile(toEntryPath(path, separator, entry));
     }
   };
 
@@ -399,7 +407,7 @@ export function FileBrowser({
             <div
               key={entry.name}
               className={`file_browser_row ${
-                isPicking && !entry.is_dir && !entry.is_link
+                isPicking && !isPickingFile && !entry.is_dir && !entry.is_link
                   ? "file_browser_row--muted"
                   : ""
               }`}
@@ -507,8 +515,9 @@ export function FileBrowser({
           <button
             type="button"
             className="button button--primary"
+            hidden={isPickingFile}
             disabled={listing === null || isDriveList}
-            onClick={() => onPickDirectory(path)}
+            onClick={() => onPickDirectory?.(path)}
           >
             <Icon name="check" size={14} />
             {t("ui.files.pick_choose")}

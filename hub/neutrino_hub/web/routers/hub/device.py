@@ -243,7 +243,10 @@ def _rdp_view(runtime: PanelRuntime, key: str) -> DeviceRdpView:
     """
     reported = (runtime.device_modules.get(key) or {}).get(DEVICE_RDP_MODULE)
     state = str(reported.get("state", "")) if isinstance(reported, dict) else ""
-    view = DeviceRdpView(is_available=state != DEVICE_MODULE_STATE_ABSENT)
+    view = DeviceRdpView(
+        is_available=state != DEVICE_MODULE_STATE_ABSENT,
+        is_enabled=runtime.desired_states.remote_desktop(key)["is_enabled"],
+    )
     for share in runtime.device_shares.live():
         if share.device_id != key:
             continue

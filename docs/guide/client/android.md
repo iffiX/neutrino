@@ -154,7 +154,7 @@ The **Persistent** switch under the shell keeps the session on the machine while
 
 ## Remote desktops
 
-The **Remote desktops** screen opens the desktop a managed machine shares with `sudo nagent rdp start`.
+The **Remote desktops** screen opens the desktop a managed machine shares while its **Remote desktop** switch on the hub's Modules page is on.
 
 1. Optional: select **Configure** on the entry, pick the **Codec** and the **Quality**, and select **Save**.
 1. Select **Connect**. The viewer opens on the whole screen.

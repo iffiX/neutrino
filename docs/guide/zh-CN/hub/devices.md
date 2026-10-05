@@ -124,20 +124,15 @@ Windows 和 Mac 上能跑文件共享、VS Code 和远程桌面；Gitea、容器
 
 ## 共享桌面
 
-远程桌面用 RustDesk，随被控端安装包一起装。共享在机器本地发起，坐席密码由中枢设定并保管。
+远程桌面用 RustDesk，随被控端安装包一起装。共享由模块页上这台机器的 [Remote desktop](../agent/modules/remote_desktop.md) 开关开启和停止，坐席密码由中枢设定并保管。
 
-1. 在那台机器上运行共享命令。Windows 上去掉 `sudo`，在管理员终端里运行。
-
-   ```bash
-   sudo nagent rdp start
-   ```
-
+1. 在这台机器的 **Remote desktop** 标签上，打开**共享这台机器的桌面**，点**应用远程桌面**。抽屉里的链接**共享在这台机器的 Remote desktop 标签页里设置。**会打开这个标签。
 1. 在抽屉的**远程桌面**一节里，看 **ID**、**直连端口 21118**（Direct port）、**由谁共享**（Shared by）和观看人数。
 1. 在客户端的**远程桌面**（Remote desktops）里点**连接**（Connect）。
 
 ![抽屉里的远程桌面一节：ID、直连端口和共享账户](/guide/zh/devices_drawer_rdp.webp)
 
-不带 `--user` 时，共享的是运行 `sudo` 的那个账户的桌面；没有这个账户时，共享屏幕前唯一登录的账户。`sudo nagent rdp stop` 停止共享。**重置坐席密码**（Reset seat password）让机器立即换一个密码，当前连着的观看者都要重新连。
+共享出去的，是正坐在屏幕前登录的那个人的桌面。关掉开关就停止共享。**重置坐席密码**（Reset seat password）让机器立即换一个密码，当前连着的观看者都要重新连。
 
 屏幕前没人登录时，抽屉显示 `rdp_nobody_seated`。Wayland 会话还没允许屏幕共享时，抽屉显示 `rdp_screen_not_allowed`，在那台机器的屏幕上允许一次即可。机器上装了 AnyDesk 或 TeamViewer 时，这一节还显示它的 ID 和**设置无人值守密码**（Set unattended password）。
 

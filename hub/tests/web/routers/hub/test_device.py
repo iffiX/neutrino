@@ -42,6 +42,7 @@ from neutrino_hub.web.routers.hub import device as devices_router
 from neutrino_hub.web.task_stream import TaskStreamRegistry
 from tests.conftest import (
     FakeChannelSessions,
+    StubDesiredStates,
     lan_entry,
     network_config,
     unlock_vault,
@@ -115,6 +116,7 @@ class ListRuntime:
         self.device_modules = {}
         self.device_shares = DeviceShareRegistry()
         self.agent_sessions = FakeChannelSessions()
+        self.desired_states = StubDesiredStates()
 
     def network(self):
         return _EmptyNetwork()
@@ -307,6 +309,7 @@ def test_a_device_sharing_its_desktop_carries_the_share_it_declared(listed):
         "attention": "rdp_nobody_seated",
         "connected_count": 2,
         "is_available": True,
+        "is_enabled": False,
     }
 
 
@@ -323,6 +326,7 @@ def test_a_device_sharing_nothing_says_so_without_a_port_or_an_account(listed):
         "attention": "",
         "connected_count": 0,
         "is_available": True,
+        "is_enabled": False,
     }
 
 

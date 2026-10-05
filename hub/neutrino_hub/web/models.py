@@ -1010,6 +1010,8 @@ class DeviceRdpView(BaseModel):
     # Whether this machine's agent package carries the remote desktop host.
     # False on a package built before it did.
     is_available: bool = True
+    # Whether the machine's Remote desktop switch is on.
+    is_enabled: bool = False
 
 
 class DeviceClientInfoView(BaseModel):
@@ -2834,6 +2836,45 @@ class CodeServerInstanceView(CodeServerInstance):
     is_running: bool = False
     # Why it does not run, typed, such as ``code_server_port_taken``.
     code: str = ""
+
+
+class TerminalDeviceView(ModuleDeviceFields):
+    """One device's Terminal module: the account and the shell program."""
+
+    # The account a shell runs as; empty for the agent's own.
+    account: str = ""
+    # The shell program's path; empty for the default.
+    shell_path: str = ""
+    # The human accounts the machine last reported, for the account field.
+    accounts: list[str] = Field(default_factory=list)
+    # Whether an account can be set: false for a Windows machine, whose
+    # shells run as SYSTEM.
+    is_account_settable: bool = True
+
+
+class TerminalConfigUpdate(BaseModel):
+    """The Terminal module's settings being saved."""
+
+    device_id: str
+    account: str = ""
+    shell_path: str = ""
+
+
+class RemoteDesktopDeviceView(ModuleDeviceFields):
+    """One device's Remote desktop module: the switch and where it stands."""
+
+    # Whether the desktop is to be shared.
+    is_enabled: bool = False
+    # The machine's ``linux``, ``windows`` or ``darwin``; empty before it
+    # reported one.
+    platform_os: str = ""
+
+
+class RemoteDesktopConfigUpdate(BaseModel):
+    """The Remote desktop switch being saved."""
+
+    device_id: str
+    is_enabled: bool
 
 
 class CodeServerDeviceView(ModuleDeviceFields):

@@ -43,6 +43,7 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_VERB_VALIDATE,
 )
 from neutrino_hub.modules.devices.constants import (
+    AGENT_MODULE_INSTALLER_AGENT,
     AGENT_MODULE_INSTALLER_USER,
     DEVICE_VSCODE_MODULE,
     DEVICE_VSCODE_TERMS_KEY,
@@ -164,6 +165,7 @@ def list_modules(
     modules = []
     for name, manifest in load_module_manifests().items():
         _, entry = resolve_platform_entry(manifest, platform)
+        is_carried = manifest.get("installer") == AGENT_MODULE_INSTALLER_AGENT
         modules.append(
             DeviceModuleView(
                 name=name,
@@ -173,13 +175,17 @@ def list_modules(
                 installer=manifest.get("installer", ""),
                 # With no platform reported yet, nothing is ruled out: the
                 # agent will say what it cannot do once it beats.
-                is_supported=(entry is not None if keys else True),
-                is_native=(entry == {}),
+                is_supported=(entry is not None if keys and not is_carried else True),
+                is_native=(entry == {} or is_carried),
                 is_data_kept=_is_data_kept(entry),
                 source=manifest.get("source", ""),
                 license=manifest.get("license", ""),
                 corresponding_source=manifest.get("corresponding_source", ""),
-                want=runtime.desired_states.want_of(key, name),
+                want=(
+                    runtime.desired_states.agent_module_want(key, name)
+                    if is_carried
+                    else runtime.desired_states.want_of(key, name)
+                ),
                 is_configured=bool(runtime.desired_states.read(key, name)),
                 task_id=module_task_id(runtime, key, name),
                 **module_status(runtime, key, name),
@@ -696,7 +702,7 @@ def _set_want(
     Raises:
         HTTPException: 404 ``module_unknown`` for a module with no manifest,
             404 ``device_unknown`` for an id no device has, 400
-            ``module_not_optional`` for a user-tier module, 409
+            ``module_not_optional`` for a user-tier or agent-tier module, 409
             ``no_platform_build`` when the manifest offers the device's
             platform nothing, 409 ``terms_not_accepted`` when installing or
             starting VS Code on a machine whose terms are not accepted, 409
@@ -707,7 +713,10 @@ def _set_want(
     module = request.module
     if manifest is None:
         raise _refusal(status.HTTP_404_NOT_FOUND, CODE_MODULE_UNKNOWN, name=module)
-    if str(manifest.get("installer", "")) == AGENT_MODULE_INSTALLER_USER:
+    if str(manifest.get("installer", "")) in (
+        AGENT_MODULE_INSTALLER_USER,
+        AGENT_MODULE_INSTALLER_AGENT,
+    ):
         raise _refusal(
             status.HTTP_400_BAD_REQUEST, CODE_MODULE_NOT_OPTIONAL, name=module
         )
