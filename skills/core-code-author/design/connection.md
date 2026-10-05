@@ -22,7 +22,8 @@ peer.
 | An agent dials the same port and listens on none of its own for the hub. | A managed machine behind a firewall or a NAT is reached over the socket it opened. |
 | The hub relays every stream, on the LAN and from outside alike. Each of a client's streams ends at the hub. | A relayed stream works with the routes a home already has. One path has one set of permission checks. |
 | A machine's own services stay reachable on its LAN at their own ports, under each service's own login. | A person at home keeps the tools they already use. The connection is the way from a client, and it closes no other way. |
-| The connection transports TCP. | Every kind of service here is a TCP service, and a stream has the semantics of one TCP connection. |
+| A stream is one TCP connection, or every datagram of one UDP `port` entry. A `port` entry states one protocol, TCP or UDP, and every other kind is TCP. | A container or a declared service on UDP is published the same way as one on TCP. One protocol for each entry gives each entry one permission check and one health check. |
+| A UDP stream sends one datagram in one frame, with the port the datagram left from on the client's machine in front of it. The far end keeps one socket for each such port and closes a socket after `CHANNEL_UDP_IDLE_TIMEOUT_S`, 60 seconds, with no datagram. A datagram that arrives without credit is dropped. | A reply returns to the local program that asked, and two programs on one forward stay two peers to the service. UDP has no close of its own and permits loss. A queue of datagrams adds delay and has no bound. |
 
 ## Where the port is reached
 
@@ -109,8 +110,8 @@ the entry, and reads the secret a service needs from its own store.
 | --- | --- | --- | --- | --- |
 | Files | Linux and macOS: a loopback port and a system mount. Windows: the file network card and a drive letter. Android: nothing, the app reads the share itself. | one `connect` for each SMB connection | the `file` kind and the machine | the agent, at the machine's loopback port 445; the hub itself for a declared host |
 | Web pages | a loopback port, and the browser | a `service` for the token where the page has one, then one `connect` for each connection | the `web` kind and the machine | the agent, at the page's loopback port; the hub itself for a declared page |
-| Ports | a loopback port | one `connect` for each connection | the `port` kind and the machine | the agent for a container's port; the hub itself for a declared one |
-| The panel | a loopback port, and the browser | a `service` for a sign-in token, then one `connect` for each connection | the `panel` kind, off by default | the hub, at the panel's loopback HTTP port |
+| Ports | a loopback port, TCP or UDP as the entry states | one `connect` for each TCP connection, or one for a UDP entry | the `port` kind and the machine | the agent for a container's port; the hub itself for a declared one |
+| The panel | a loopback port, and the browser | a `service` for a sign-in token, then one `connect` for each connection | the `panel` kind | the hub, at the panel's loopback HTTP port |
 | Remote desktops | a loopback port, and the viewer | a `service` for the seat password, then one `connect` for each connection | the `rdp` kind, the machine, and that the machine reports the share | the agent, at the viewer port on the machine's loopback |
 | Terminals | a terminal in the client's window | one `shell`, and a `command` for each resize, persist, share and end | the `terminal` kind and the machine | the agent, which keeps the session |
 | The AI gateway | a loopback port the AI tools point at | a `service` for the client's key, then one `connect` for each connection | the `ai` kind | the hub, at the gateway's loopback port |
@@ -123,7 +124,7 @@ the entry, and reads the secret a service needs from its own store.
 | The hub judges every `open` against the client's kinds and each kind's machines, then dials. | A permission changed on the **Clients** page holds for the next stream without a reconnect. |
 | An agent dials a port only while its machine publishes that port, and closes any other with `port_not_published {port}`. | The agent makes the check itself, so a fault in the hub's check opens no port the machine does not publish. |
 | Switching a client off, deleting it, or taking a kind or a machine from it immediately closes what the change covers: the socket, or the shells, the `connect` streams and the panel sessions of that kind. | A person switches a client off because the device is lost. A shell that stays open is the access they meant to end. |
-| The panel is a kind of its own and is off by default. A client with it receives a sign-in token of 32 random bytes that holds 60 seconds for one use. | The panel changes the hub itself. The owner's own devices get it, one by one. |
+| The panel is a kind like the others: the **Clients** page sets it in the default and for each client. A new hub's default has it off. A client with it receives a sign-in token of 32 random bytes that holds 60 seconds for one use. | The panel changes the hub itself, so a person turns it on for the devices that are their own. |
 | A client's terminal list holds its own sessions and the shared ones on the machines its `terminal` kind includes. Keeping a session is its owner's: a `persist` from another viewer is refused `session_not_owned {session_id}`. | A session is a root shell with its output on screen. |
 | A socket holds at most `CHANNEL_CONNECT_STREAMS_MAX`, 256, `connect` streams, and each stream is sent under the receiver's credit. | One client cannot exhaust the hub's sockets or its memory. |
 
@@ -139,9 +140,13 @@ the entry, and reads the secret a service needs from its own store.
 
 A client on the same overlay as a machine has a direct path to it, and the
 hub relays the client's streams all the same. The relayed path works with
-what a home already has: its LAN and one reachable port. The cost is that the
-hub's uplink and its one process bound the speed of every stream.
+what a home already has: its LAN and one reachable port.
 
-The hub offers the served networks as routes on both overlay engines to the
-person who sets a direct path up. That path is outside the connection. It
-reaches a machine's own ports under each service's own login.
+## What one socket costs
+
+| Limit | What follows from it |
+| --- | --- |
+| Every stream shares one TCP socket. A lost packet holds every stream on the socket until it is sent again. | A stall on one stream is a stall on all of them, for the length of one retransmission. |
+| A datagram in a stream keeps its boundary and loses its timing. It arrives late where plain UDP loses it. | UDP over the connection suits request and reply traffic: DNS, time, discovery, a small game server. Voice, video and fast games need a direct path. |
+| The hub's uplink and its one process bound the speed of every stream. Through the relay the server's bandwidth bounds it too. | Terminals, editors, a desktop and ordinary file copies fit inside that bound. A transfer that needs the line's full speed uses a direct path. |
+| A direct path is a subnet route the person sets up in the overlay's own console. The hub lists the served networks for it and manages no route there. | That path is outside the connection. It reaches a machine's own ports under each service's own login, with no kind and no entry in between. |
