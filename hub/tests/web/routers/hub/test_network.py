@@ -1415,3 +1415,53 @@ def test_closing_an_interface_nobody_named_stores_it_closed(windows_server):
     assert network.interface("wt0") is None
     assert network.exposed_device_names == ["Ethernet Instance 0 2"]
     assert runtime.applied == [None]
+
+
+def _rows(client) -> dict:
+    view = client.get("/api/hub/network").json()
+    return {row["settings"]["name"]: row for row in view["interfaces"]}
+
+
+def test_on_linux_a_card_plugged_in_after_setup_is_shown_off_and_unsaved(guest_box):
+    client, _, status = guest_box
+    status._links = [*status._links, link("enp9s0", address="10.9.0.2/24")]
+
+    rows = _rows(client)
+
+    assert rows["enp9s0"]["is_unsaved"] is True
+    assert rows["enp9s0"]["settings"]["is_exposed"] is False
+    assert rows["enp1s0"]["is_unsaved"] is False
+
+
+def test_turning_the_new_card_on_saves_it_and_it_is_no_longer_unsaved(guest_box):
+    client, runtime, status = guest_box
+    status._links = [*status._links, link("enp9s0", address="10.9.0.2/24")]
+
+    answer = client.post(
+        "/api/hub/network/set",
+        json={
+            "uplink_policy": "failover",
+            "is_inter_lan_allowed": False,
+            "exposed_interfaces": ["enp1s0", "enp9s0"],
+            "exposed_overlays": [],
+        },
+    )
+
+    assert answer.status_code == 200, answer.json()
+    rows = _rows(client)
+    assert rows["enp9s0"]["is_unsaved"] is False
+    assert rows["enp9s0"]["settings"]["is_exposed"] is True
+
+
+@pytest.mark.parametrize("system", ["darwin", "win32"])
+def test_outside_linux_a_new_adapter_is_in_use_at_once(guest_box, monkeypatch, system):
+    from neutrino_hub.platforms import detect
+
+    client, _, status = guest_box
+    monkeypatch.setattr(detect.sys, "platform", system)
+    status._links = [*status._links, link("Ethernet 3", address="10.9.0.2/24")]
+
+    rows = _rows(client)
+
+    assert rows["Ethernet 3"]["is_unsaved"] is False
+    assert rows["Ethernet 3"]["settings"]["is_exposed"] is True

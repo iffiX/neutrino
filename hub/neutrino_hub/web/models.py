@@ -323,6 +323,9 @@ class InterfaceView(BaseModel):
 
     settings: InterfaceSettings
     link: InterfaceLink
+    # The configuration does not name it and the hub does not use it until
+    # the person turns it on: every such interface on Linux, none elsewhere.
+    is_unsaved: bool = False
 
 
 class PlannedUplinkView(BaseModel):

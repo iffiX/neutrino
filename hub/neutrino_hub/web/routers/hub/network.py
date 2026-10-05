@@ -989,6 +989,8 @@ def _build_view(runtime: PanelRuntime) -> NetworkView:
                     device_count=_count_reaching(reaching, link.ipv4_address or ""),
                     lease_dns=_lease_dns(interface, network=network, link=link),
                 ),
+                is_unsaved=network.interface(name) is None
+                and not network.is_interface_enabled(name),
             )
         )
     plan = build_uplink_plan(network=network, status=status_reader)
