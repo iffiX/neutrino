@@ -73,7 +73,7 @@ byte. The constants are in the hub's `modules/channel/constants.py`.
 
 | Limit | Constant | At the limit | Reason |
 | --- | --- | --- | --- |
-| a socket that has sent no byte | `CHANNEL_FIRST_BYTE_TIMEOUT_S` 3 | the socket is closed | A peer starts its handshake within a round trip. A socket held open and silent is the cheapest way to fill the port. |
+| a socket that has sent no byte | `CHANNEL_FIRST_BYTE_TIMEOUT_S` 3; on Windows the TLS handshake's 10 seconds, counted from the accept | the socket is closed | A peer starts its handshake within a round trip. A socket held open and silent is the cheapest way to fill the port. The event loop a Windows hub runs on cannot learn that a byte has arrived without reading it, and a byte read there is lost to the TLS layer. |
 | a TLS handshake's time | `CHANNEL_TLS_HANDSHAKE_TIMEOUT_S` 10 | the socket is closed | A handshake over the slowest way in completes in under a second. |
 | the time from accept to an admitted `hello` | `CHANNEL_ADMISSION_TIMEOUT_S` 30 | the socket is closed; a `join` or `leave` in flight counts toward that time | It bounds how long one unadmitted socket holds a place. |
 | sockets that have not passed `hello` | `CHANNEL_UNADMITTED_MAX` 128 | one of them is closed to make room: the oldest that has not finished TLS, and the oldest of all when every one has | A peer that has finished TLS has done work a flood of bare sockets has not, so it keeps its place longest. |
