@@ -87,7 +87,10 @@ def main_run() -> int:
 
 
 def main_uninstall(*, is_forced: bool) -> int:
-    """Stop the agent and take away what its modules added.
+    """Stop the agent, switch the accounts' AI tools back, and take away what its modules added.
+
+    The service stops first, so no apply of its own runs beside the switch
+    back.
 
     Args:
         is_forced: Go ahead without asking.
@@ -102,12 +105,13 @@ def main_uninstall(*, is_forced: bool) -> int:
     if not is_forced and not is_confirmed(question):
         print("nothing changed")
         return 1
-    for switched in AiToolsApplier(platform=platform, log=print).switch_back_all():
-        print(
-            f"ai tools   {switched['account']}: {switched['state']} {switched['code']}".rstrip()
-        )
     try:
         platform.stop_agent_service()
+        for switched in AiToolsApplier(platform=platform, log=print).switch_back_all():
+            print(
+                f"ai tools   {switched['account']}: "
+                f"{switched['state']} {switched['code']}".rstrip()
+            )
         removed = platform.remove_added()
         if is_whole:
             removed += platform.remove_agent_program()

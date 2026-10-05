@@ -230,6 +230,8 @@ foreach ($process in $tree) {
 foreach ($name in @($d.rules)) {
   Remove-NetFirewallRule -Name $name -ErrorAction SilentlyContinue
 }
+Remove-Item -LiteralPath (Join-Path $d.state_root $d.run_as_dir) -Recurse -Force `
+  -ErrorAction SilentlyContinue
 @{is_removed = $true} | ConvertTo-Json -Compress
 """
 # The accounts Windows makes for itself, by their lower-case names.
@@ -862,6 +864,7 @@ class WindowsPlatform(AgentPlatform):
                     "tasks": tasks,
                     "rules": rules,
                     "state_root": self.agent_var_dir(),
+                    "run_as_dir": AGENT_RUN_AS_DIR_NAME,
                 },
             )
         except subprocess.SubprocessError as error:
