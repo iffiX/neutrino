@@ -80,4 +80,4 @@ With `--json`, the command prints one object instead, and exits with the same st
 }
 ```
 
-`reached_through` is the way the channel reached the hub: `lan`, `netbird`, `easytier` or `relay`. With no client running, `connection` and `reached_through` are empty and `is_running` is `false`.
+`reached_through` is the way the channel reached the hub: `lan`, `direct`, `netbird`, `easytier` or `relay`. With no client running, `connection` and `reached_through` are empty and `is_running` is `false`.
