@@ -9,6 +9,7 @@ package and the link on the path; the refusals for a machine that is not
 a Mac of the pinned Python and machine; and the pins being well formed.
 """
 
+import plistlib
 import subprocess
 from pathlib import Path
 
@@ -314,6 +315,9 @@ def test_pkgbuild_wraps_the_root_and_productbuild_wraps_the_component(
 
     def run(command):
         commands.append(list(command))
+        if "--analyze" in command:
+            Path(command[-1]).write_bytes(plistlib.dumps([]))
+            return
         Path(command[-1]).write_bytes(b"xar!")
 
     monkeypatch.setattr(pkg_build, "_run", run)
@@ -325,7 +329,9 @@ def test_pkgbuild_wraps_the_root_and_productbuild_wraps_the_component(
     )
 
     component = tmp_path / "com.neutrino.client.component.pkg"
+    plist = tmp_path / "com.neutrino.client.component.plist"
     assert commands == [
+        ["pkgbuild", "--analyze", "--root", str(tmp_path / "root"), str(plist)],
         [
             "pkgbuild",
             "--root",
@@ -334,6 +340,8 @@ def test_pkgbuild_wraps_the_root_and_productbuild_wraps_the_component(
             "com.neutrino.client",
             "--version",
             "9.9.9",
+            "--component-plist",
+            str(plist),
             "--install-location",
             "/",
             str(component),
