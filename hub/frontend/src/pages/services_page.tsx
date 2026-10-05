@@ -177,7 +177,10 @@ export function ServicesPage() {
     );
   }
 
-  const healthyCount = services.filter(
+  // A record the hub never probes holds no health, so the badge counts it
+  // neither way.
+  const judged = services.filter((service) => !isNeverProbed(service));
+  const healthyCount = judged.filter(
     (service) => service.is_healthy === true,
   ).length;
 
@@ -189,7 +192,7 @@ export function ServicesPage() {
           <span className="badge">
             {t("ui.services.badge", {
               healthy: healthyCount,
-              total: services.length,
+              total: judged.length,
             })}
           </span>
         </div>
@@ -280,9 +283,12 @@ function ServiceRow({ service, onChanged }: ServiceRowProps) {
         ? "error"
         : "idle";
   // A declared row with no health but a code was measured and could not be
-  // judged, which is not the same as one still waiting for its first probe.
+  // judged, and a UDP port is never probed; neither is one still waiting for
+  // its first probe.
   const declaredState =
-    tone === "idle" && service.detail_code !== null ? "unchecked" : tone;
+    tone === "idle" && (service.detail_code !== null || isNeverProbed(service))
+      ? "unchecked"
+      : tone;
   const stateLabel = t(
     service.source === "device"
       ? DEVICE_STATE_KEY
@@ -627,6 +633,15 @@ function describeService(service: PublishedService): string {
   return key === undefined
     ? service.description
     : t(key, service.description_params);
+}
+
+/** Whether the hub never probes this entry: a declared UDP port. */
+function isNeverProbed(service: PublishedService): boolean {
+  return (
+    service.source === "declared" &&
+    service.type === "port" &&
+    service.payload.protocol === "udp"
+  );
 }
 
 /** The payload, spelled the way its type reads. */

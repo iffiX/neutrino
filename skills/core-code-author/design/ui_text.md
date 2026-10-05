@@ -214,6 +214,19 @@ line refuses with:
 | --- | --- | --- |
 | `ui.reason.ai_managed`, `code.ai_tools_managed` | This is a managed device: set its AI tools on the hub's panel, under Modules, Global configuration. | 这是已管理的设备，请到中枢面板的“模块”页，在“全局配置”里设置它的 AI 工具。 |
 
+## The Services page's health words
+
+A declared row's state word, beside the still dot the page uses for no
+opinion when the row holds no health:
+
+| Key | English | Chinese | The row |
+| --- | --- | --- | --- |
+| `state.checking` | checking… | 检查中… | a TCP, web or file record the hub has not probed yet |
+| `state.not_checked` | not checked | 未检查 | a record the hub never probes, a UDP port; and a record whose last probe could not judge it |
+
+A UDP port record is in neither number of the page's badge, `{healthy} of
+{total} healthy`, since the hub holds no health for it.
+
 ## Direct's words
 
 | Key | English | Chinese |

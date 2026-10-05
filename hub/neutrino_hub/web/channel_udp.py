@@ -6,7 +6,10 @@ the datagram. Nothing waits: a frame for a side that has granted too little
 credit is dropped, and the side it came from is granted its bytes back all
 the same. The stream has no idle close.
 
-Between a client and an agent the hub relays each frame unchanged. For a
+Between a client and an agent the hub relays each frame unchanged. What
+the client sends before the agent's stream has had its first credit is held,
+at most ``CHANNEL_UDP_HELD_DATAGRAMS_MAX`` frames, and passed on in order
+when the credit comes; more are dropped. For a
 declared ``generic_udp`` record the hub is the far end: it keeps one UDP
 socket connected to the record's host and port for each source, closes one
 that carried nothing either way for ``CHANNEL_UDP_IDLE_TIMEOUT_S``, keeps at
@@ -22,6 +25,7 @@ import time
 from neutrino_hub.exceptions import AgentOfflineError
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_CODE_CONNECT_FAILED,
+    CHANNEL_UDP_HELD_DATAGRAMS_MAX,
     CHANNEL_UDP_IDLE_TIMEOUT_S,
     CHANNEL_UDP_SOURCE_BYTES,
     CHANNEL_UDP_SOURCES_MAX,
@@ -144,14 +148,16 @@ async def relay_to_agent(stream: ChannelStream, far: ChannelStream) -> None:
     """Relay every frame unchanged between a client's stream and an agent's.
 
     The stream that ends first decides the client's close: the agent's own
-    close, or nothing to send when the client closed.
+    close, or nothing to send when the client closed. The client's frames
+    wait for the agent's first credit as :func:`_pass_held_frames` holds
+    them; the agent's go to the client as they come.
 
     Args:
         stream: The client's stream.
         far: The agent's ``connect {port, protocol: udp}`` stream.
     """
     upward = asyncio.ensure_future(_pass_frames(far, stream))
-    downward = asyncio.ensure_future(_pass_frames(stream, far))
+    downward = asyncio.ensure_future(_pass_held_frames(stream, far))
     try:
         await asyncio.wait({upward, downward}, return_when=asyncio.FIRST_COMPLETED)
     finally:
@@ -227,6 +233,62 @@ async def _pass_frames(source: ChannelStream, target: ChannelStream) -> None:
             await target.send_datagram(item[1])
         except AgentOfflineError:
             return
+
+
+async def _pass_held_frames(
+    source: ChannelStream,
+    target: ChannelStream,
+    *,
+    held_max: int = CHANNEL_UDP_HELD_DATAGRAMS_MAX,
+) -> None:
+    """Hand frames on as :func:`_pass_frames` does, holding the first ones.
+
+    Until the target's first credit, at most ``held_max`` frames are held
+    and the rest dropped; the held ones go on in order once it comes. A
+    target that closes first takes nothing, and what was held is dropped.
+
+    Args:
+        source: The stream the frames come from.
+        target: The stream they go to.
+        held_max: How many frames wait for the target's first credit.
+    """
+    held: list = []
+    credit = (
+        None
+        if target.has_credit_arrived
+        else asyncio.ensure_future(target.wait_first_credit())
+    )
+    receiving = None
+    try:
+        while True:
+            if receiving is None:
+                receiving = asyncio.ensure_future(source.recv())
+            waiting = {receiving} if credit is None else {receiving, credit}
+            await asyncio.wait(waiting, return_when=asyncio.FIRST_COMPLETED)
+            if credit is not None and credit.done():
+                credit = None
+                for frame in held:
+                    await target.send_datagram(frame)
+                held = []
+            if not receiving.done():
+                continue
+            item = receiving.result()
+            receiving = None
+            if item is None:
+                return
+            if credit is not None:
+                if len(held) < held_max:
+                    held.append(item[1])
+                continue
+            await target.send_datagram(item[1])
+    except AgentOfflineError:
+        return
+    finally:
+        for task in (receiving, credit):
+            if task is not None and not task.done():
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
 
 
 async def _sweep(table: UdpSourceTable) -> None:

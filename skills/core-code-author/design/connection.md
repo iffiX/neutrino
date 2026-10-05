@@ -137,7 +137,7 @@ the entry, and reads the secret a service needs from its own store.
 | Rule | Reason |
 | --- | --- |
 | A forwarder listens on `127.0.0.1` and accepts any connection made on that machine. | The machine's accounts are the person's own. Loopback is the one boundary Linux, macOS and Windows share. |
-| A UDP forward holds at most `CLIENT_UDP_HELD_DATAGRAMS_MAX`, 16, datagrams while its stream waits for its first credit, and drops the rest; no datagram waits anywhere else. | A program's first datagram is often its only one. A bounded hold keeps it without a queue. |
+| A datagram waits in two places, each until the stream's first credit and at most 16 of them, and the rest are dropped: the client's forward before the hub's first credit (`CLIENT_UDP_HELD_DATAGRAMS_MAX`), and the hub before the agent's first credit on the agent's stream (`CHANNEL_UDP_HELD_DATAGRAMS_MAX`). No datagram waits anywhere else. | A program's first datagram is often its only one. A bounded hold keeps it without a queue. |
 | A page behind a forwarder keeps its own token or login where it has one. | A program on the client machine that finds the port still needs the page's secret. |
 | The Windows file network card has an address of its own, and its gateway and DNS fields are empty. Its endpoint returns an error for UDP. | Windows mounts SMB only on port 445 of an address. The card gives each share an address that leads to the client's own endpoint. |
 
