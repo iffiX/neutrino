@@ -644,6 +644,13 @@ word. The controls:
 | the viewer | | on a desktop a separate window, and the row then shows `ui.rdp_open`; on a phone a page of the app whose three round buttons open the keyboard, the key bar of Esc, Tab, Ctrl, Shift, Alt, Win, **Paste** and the arrows, and close the session |
 | **Configure** | on a phone, when the entry is not unhealthy | the dialog of the inline-form idiom with two pickers: **Codec** (Auto, then each codec the core offers) and **Quality** (Balanced, Low bandwidth, Best); **Save** and **Cancel**; the choice is kept per entry in the app's settings and applied at the next connect |
 
+One entry has one viewer at a time. A Connect while that entry's viewer
+runs, from the command line as from the window, is refused
+`rdp_viewer_open` and leaves the running viewer and its forward as they
+are; the person closes the viewer, and the next Connect makes a new one.
+Two viewers on one forward would end it under each other, since the forward
+ends with the viewer.
+
 The row's mono line is the entry's host and port, where the desktop is on
 the hub's networks; the viewer dials the forward on the loopback and never
 that address. The row's state word is the entry's health, and `ui.rdp_open` while the
