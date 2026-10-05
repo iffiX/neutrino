@@ -34,7 +34,8 @@ never to the agent.
 hub's pages, in the agent, and in the client:
 
 - **Modules** are software the hub administers on a machine: Samba, Gitea,
-  Podman, ZFS, VS Code, code-server, CloudCLI and the RustDesk host. The hub says what is wanted and sends
+  Podman, ZFS, VS Code, code-server, CloudCLI, and the two the agent's own
+  package carries, Terminal and Remote desktop. The hub says what is wanted and sends
   the bytes; the agent observes, installs and configures. A device's Modules
   page writes one `want` per module into `config/devices/<id>/modules.json`.
   The state the agent receives names, per module, that `want`, the
@@ -43,7 +44,7 @@ hub's pages, in the agent, and in the client:
 - **Services** are what the hub publishes and what a client consumes: a web
   link, a port, the AI gateway, a share, a shared desktop. The agent composes
   none of them and renders none of them. Its only part is the one entry a
-  machine declares for itself, its own desktop, described below.
+  machine declares once its Remote desktop module serves, described below.
 
 The machine's AI tools are neither: a setting the hub sends and the agent
 makes true for the accounts it names ("The machine's AI tools").
@@ -52,7 +53,7 @@ makes true for the accounts it names ("The machine's AI tools").
 | --- | --- |
 | Push the state and open `shell`, `file`, `command` and `connect` streams | Bind the machine to a hub, or unbind it |
 | Say which modules are absent, installed, stopped or running, and configure them | Send a report now (`nagent sync`) |
-| Reboot, shut down, reinstall the agent | Share the desktop and stop sharing it |
+| Reboot, shut down, reinstall the agent | |
 | Read and set up a person's own AnyDesk or TeamViewer | Read the binding and status |
 | | Start and stop the agent's service |
 
@@ -188,32 +189,106 @@ for a machine that has not reported. Wherever a state is drawn:
 - A new `code` arrives with its wording in the same change, which the
   catalog completeness test enforces.
 
-## The desktop is the machine's own word
+## The two modules the agent carries
 
-Sharing a desktop is the one thing decided on the machine and reported
-upward, never ordered down. `sudo nagent rdp start [--user <name>]`
-configures RustDesk for direct connection on port 21118, no rendezvous
-server and no relay, and `nagent rdp stop` withdraws it. With no `--user`
-the seat is `SUDO_USER`, else the one account at the screen.
+Terminal and Remote desktop are modules with nothing to install: the
+agent's package carries what each needs, on every system. Their manifests
+name the tier `agent`, and their state entries name no recipe. They are
+never in the Modules page's picker, always a tab, and take none of the four
+presses ([protocol.md](protocol.md), "The modules section, one entry per
+module"). The hub composes both from their own files under
+`config/devices/<id>/`, not from `modules.json`. The agent's code is
+`modules/terminal/` and `modules/remote_desktop/`, each with its config,
+constants and runner, and the latter with one applier per system
+(`linux_applier.py`, `windows_applier.py`, `darwin_applier.py`); `rdp/`
+keeps the seat and RustDesk's settings files. Their constants carry the
+prefixes `TERMINAL_` and `REMOTE_DESKTOP_`, and the hub names the modules
+`DEVICE_TERMINAL_MODULE` and `DEVICE_REMOTE_DESKTOP_MODULE`.
 
-**The seat password is the hub's.** A machine reporting the RustDesk host
-installed is given one, generated once and sealed under the vault's data key
-in that device's `rdp.json`. It is delivered in the `desktop` section of the
-state. The agent sets it into RustDesk whenever it changed and keeps it in a
-root-only file so it knows what it already set. It enters neither the agent's
-store nor any report.
+**Terminal** holds two settings: the account a `shell` stream runs as, and
+the path of the shell program. Both empty is the shell the platform table's
+"Shell stream" row names, run as the agent runs. A shell opened afterwards,
+from the panel or from a client, runs as the module says; a session already
+open keeps what it runs, and a container's shell is not touched. A named
+account the machine does not have refuses the open `account_unknown
+{account}`, and a shell path that is missing or not executable
+`shell_program_unusable {path}`; neither falls back to root or to the
+default. A shell for an account starts in that account's home with that
+account's environment, through `run_as_account`'s step-down ("Acting for an
+account"), on a pseudo-terminal of its own as before. On Windows this
+version sets the shell program alone: the hub sends no account, and the
+shell runs as SYSTEM.
+
+**Remote desktop** holds one switch, off on a new machine. It is the one
+place a desktop share is decided: the hub writes it, the state carries it,
+and the agent makes it true and keeps it true across a restart of the
+machine. `nagent rdp start` and `nagent rdp stop` are gone, from the command
+line and from the control socket.
+
+## The desktop is the hub's order
+
+With the switch on, the agent takes the machine's RustDesk over and runs its
+own copy, the one in its package (the platform table's "RustDesk" row),
+under RustDesk's own service names:
+
+1. It stops RustDesk's service and session jobs and kills every RustDesk
+   host on the machine whose program is not its copy. A process started with
+   `--connect` is a viewer a person may be using and is left alone.
+1. It keeps aside whatever is registered under RustDesk's service names and
+   is not its own (a person's own RustDesk), in `remote_desktop/kept/` under
+   the state root, and records what it registers in
+   `remote_desktop/registered.json`.
+1. It writes the settings files with the host stopped: the direct
+   connection on port 21118, the rendezvous and relay servers set to the
+   machine's own loopback, `127.0.0.1`, because an empty value means
+   upstream's public server; and the seat password as `password = '<p>'` in
+   `RustDesk.toml`, since `--password` from a copy outside the standard
+   place sets nothing.
+1. It registers and starts its copy under RustDesk's names, as the
+   platform table's "RustDesk" row says for each system, so the system's own
+   service manager brings the host back after a restart and at each login.
+
+With the switch off, the agent's copy does not run: it stops and removes
+what `registered.json` names, kills every host of its copy, puts back what
+`kept/` holds and starts it again when it ran before. No RustDesk process of
+the agent's and no registration of the agent's is left. A person's own
+RustDesk files are never changed or deleted. `nagent service uninstall`
+turns the switch off first.
+
+A failed step reports the module `failed` with `rdp_takeover_failed {step,
+detail}` on the way on, or `rdp_restore_failed {step, detail}` on the way
+off; the same press again tries it again ("A retry is the same press
+again").
+
+**The seat password is the hub's.** A machine whose switch is on is given
+one, generated once and sealed under the vault's data key in that device's
+`rdp.json`. It is delivered in the `desktop` section of the state. The agent
+writes it into RustDesk's settings whenever it changed and keeps it in a
+root-only file so it knows what it already set. It enters neither the
+agent's store nor any report.
 
 The panel never shows it: the device drawer offers **Reset seat password**,
 which generates a new one and disconnects every viewer. A client that presses
 **Connect** opens a `service` stream, the hub unseals the password for that
 one close, and the viewer is spawned with it.
 
-**A share is declared only once it answers.** RustDesk's root service holds
+**A share is declared only once it listens.** RustDesk's root service holds
 no port of its own; it spawns a second process into the session of whoever
-is logged in at the seat, and that process is what listens. So a machine
+is logged in at the seat, and that process is what listens. The agent reads
+the system's socket table, as the platform table's "Seat" row does, for its
+copy listening on 21118; it opens no connection to the host. So a machine
 with nobody logged in has nothing listening, which `rdp_nobody_seated`
 refuses in front of, and a Wayland session that has not granted screen
-capture reports `rdp_screen_not_allowed` instead of a desktop nobody can see.
+capture reports `rdp_screen_not_allowed` instead of a desktop nobody can
+see. Whose desktop a peer sees is whoever sits at the screen; the report's
+`account` names them and decides nothing.
+
+**A share made by the old command is kept.** An agent of a version that had
+`nagent rdp start` recorded a share in its store. Until the first state that
+names `remote_desktop`, the agent leaves that share running and reports it.
+A hub that receives `desktop.is_shared` true from a device with no
+`remote_desktop.json` writes the switch on for it, so an upgrade closes no
+share.
 
 The declaration is the `desktop` section of every report,
 `{is_shared, account, share_id, port, attention, connected_count}`. The hub
@@ -299,7 +374,6 @@ is its only client:
 | `leave` | unbinds it |
 | `status` | reads the binding |
 | `sync` | sends a report now |
-| `rdp start`, `rdp stop` | share and unshare the desktop |
 | `start`, `stop` | start and stop the agent's service through systemd, the service control manager or launchd; the binding is not touched |
 | `run` | the foreground entry systemd and launchd start; `service run` is Windows' |
 | `answer --prompt <text> --answer <keys> -- <program…>` | starts the program on a terminal of its own, types the keys and Enter once the text shows, prints what the terminal drew, and exits with the program's code; it does not reach this socket, and any account may run it ("The machine's AI tools") |
@@ -330,7 +404,11 @@ the module opens no port in any firewall, since the hub reaches it through
 the agent's `connect` stream. CloudCLI and code-server are reached the same
 way ("CloudCLI" and "code-server" below). The third is the machine's AI
 tools, pointed at the gateway by cc-switch run as each account ("The
-machine's AI tools"). Everything else the agent does is root's own work.
+machine's AI tools"). The fourth is a terminal for the account the Terminal
+module names, on Linux and macOS: the shell runs through the platform's
+step-down with that account's home, environment and login shell, on a
+pseudo-terminal the agent makes. Everything else the agent does is root's
+own work.
 
 ## The machine's AI tools
 
@@ -488,7 +566,7 @@ builds the package-backed runners only on a platform with `packages`. A
 platform with `smb_server` gets the file share, driving the SMB server the
 system carries, with nothing to install or uninstall; there, any other
 module the state names reads `unsupported`, never `failed`, beside the
-built-in RustDesk row. A platform with `hub_packages` gets the Gitea and
+Terminal and Remote desktop rows every platform has. A platform with `hub_packages` gets the Gitea and
 VS Code modules, and macOS the code-server module beside them; on Linux all
 three are among
 the runners `packages` builds. On every
@@ -514,9 +592,11 @@ only POSIX has is guarded, so one package imports on all three systems.
 | Running as an account | `runuser -u <account> --`, with the account's home and environment; an answered run on a pseudo-terminal the agent makes | a one-shot scheduled task `neutrino_run_as_<account>`, registered with the login the Credentials page holds for the account's instance and a limited token, started in the account's profile; its script, standard input, output and exit code are files in `state\run_as\<account>\`, whose ACL grants the account modify and SYSTEM and the administrators full control; the task and the files are removed once the exit code is read, and an uninstall removes a task or files a stopped run left; a login Windows rejects at registration (`0x8007052E`) is `credential_invalid {account}`, an account with no login `credential_missing {account}`; an answered run is `nagent answer` inside the task | a child process with the account's uid and group and no other groups, in its home, with `HOME`, `USER` and `LOGNAME` set; an answered run on a pseudo-terminal the agent makes |
 | Refused | nothing | packages | packages |
 | Kill | SIGTERM, then SIGKILL after two seconds | `OpenProcess` with `PROCESS_TERMINATE` and `TerminateProcess` | SIGTERM, then SIGKILL after two seconds |
-| Shell stream | the login shell on a pseudo-terminal, which is its controlling terminal so a resize reaches it as `SIGWINCH`, started in root's home | PowerShell on a pseudo console, in a job that kills it on close, started in the signed-in account's profile directory, and in the system drive's root when nobody is signed in or the profile cannot be found (a domain account, a directory that is not there), never in the service's own directory | `zsh -il` on a pseudo-terminal, its controlling terminal as on Linux, started in root's home |
+| Shell stream, the Terminal module's settings empty | the login shell on a pseudo-terminal, which is its controlling terminal so a resize reaches it as `SIGWINCH`, started in root's home | PowerShell on a pseudo console, in a job that kills it on close, started in the signed-in account's profile directory, and in the system drive's root when nobody is signed in or the profile cannot be found (a domain account, a directory that is not there), never in the service's own directory | `zsh -il` on a pseudo-terminal, its controlling terminal as on Linux, started in root's home |
 | Seat | `loginctl`, `/proc/net/tcp`, the Wayland token | the console session's user through WTS, `netstat` | the system configuration's console user, `State:/Users/ConsoleUser` through `scutil`, the login window, root and no name being nobody, and the owner of `/dev/console` only when `scutil` cannot be asked, since under auto-login that owner stays root while a person is signed in; `netstat`; the privacy grants |
-| RustDesk | `/usr/lib/neutrino/agent/rustdesk/rustdesk`, unit `rustdesk`, root's and the seat's `RustDesk2.toml` | `%ProgramFiles%\RustDesk\rustdesk.exe`, service `RustDesk`, LocalService's `RustDesk2.toml` | `/Applications/RustDesk.app`, job `com.carriez.RustDesk_service`, root's and the seat's `RustDesk2.toml` |
+| Shell stream, the Terminal module's account set | `runuser -u <account> -- <shell> -l` on the pseudo-terminal, started in the account's home with its environment | no account: SYSTEM, as above, with the module's shell program | the account's uid and group in the child, its home, `HOME`, `USER` and `LOGNAME`, `<shell> -l` |
+| RustDesk, the agent's copy | `/usr/lib/neutrino/agent/rustdesk/rustdesk`; with the switch on the agent writes `/etc/systemd/system/rustdesk.service`, which overrides any packaged `rustdesk.service`, and enables and starts it; off, it disables it and deletes the file; `kept/service.json` records whether a packaged `rustdesk.service` was enabled and active | `C:\Program Files\Neutrino\agent\rustdesk\rustdesk.exe` with its files; the service `RustDesk`, `AUTO_START` as LocalSystem, its `ImagePath` `"<copy>" --service`, created when none exists; `kept\service.json` holds a service found before (its `ImagePath`, start type and whether it ran) | `/Library/Application Support/Neutrino/agent/app/rustdesk/RustDesk.app`; `/Library/LaunchDaemons/com.carriez.RustDesk_service.plist`, label `com.carriez.RustDesk_service`, the copy's `Contents/MacOS/service`, system domain; `/Library/LaunchAgents/com.carriez.RustDesk_server.plist`, label `com.carriez.RustDesk_server`, the copy's `Contents/MacOS/RustDesk --server`, `LimitLoadToSessionType` `Aqua` and `LoginWindow`, `RunAtLoad`, `KeepAlive` true; files found under those names are moved to `kept/` first |
+| RustDesk's settings | root's and the seat's `~/.config/rustdesk/RustDesk2.toml` and `RustDesk.toml` | LocalService's `C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\RustDesk\config\RustDesk2.toml` and `RustDesk.toml` | root's and the seated account's `~/Library/Preferences/com.carriez.RustDesk/RustDesk2.toml` and `RustDesk.toml` |
 | File share | Samba, `smb.conf` rendered whole | the SMB server through one PowerShell script per operation, JSON in and out and the password on standard input: shares whose description starts `neutrino:`, local accounts in no group, hidden from the sign-in screen and denied the console and RDP through `LsaAddAccountRights`, folders granted with `icacls`, and the block rule `neutrino_smb_fence` for TCP 445 from every address outside the allowed subnets | Apple's smbd through `launchctl enable` and `kickstart`: share points made with `sharing` under the record prefix `neutrino_`, SMB only, no guest, no encryption; accounts made with `sysadminctl` without a shell or a home, hidden, in `com.apple.access_smb` where it exists, the NT hash turned on before `dscl -passwd`; folders granted with `chmod +a`; the pf sub-anchor `com.apple/neutrino_smb`, loaded from a file under the state root at every apply and when the agent starts |
 | VS Code | the CLI in `/var/lib/neutrino/agent/vscode`, the unit `neutrino_vscode@<account>.service` with `User=`, environment and token files in `/var/lib/neutrino/agent/vscode/tokens`, and `/etc/sysctl.d/90-neutrino-vscode.conf` when the machine's inotify watch or instance limit is under the module's floor (524288 and 512), since a served home directory runs a distribution's default out | the CLI in `%ProgramData%\Neutrino\agent\state\vscode`, the task `neutrino_vscode_<account>` registered with the account's login, at startup, no time limit, a limited token; a stop ends the task's whole process tree, so the port is free for the next start | the CLI in `/Library/Application Support/Neutrino/agent/state/vscode`, the LaunchDaemon `com.neutrino.vscode.<account>` with `UserName` |
 | Self-update | `systemd-run` of `dpkg` or `dnf` | a detached PowerShell running `msiexec` | `launchctl submit` of `installer`. On every system the package the hub streamed is renamed from its temporary name to the file name its release gave it, which the hub sends with the stream, before the installer sees it: Windows Installer reinstalls a product only from a file named as the one it was installed from. A refused reinstall ends with its code on the output's last line and a non-zero exit. An install that goes through restarts the agent, so the hub's task ends when the agent is back on the channel and has reported the install's result, and that result is the task's exit |
@@ -565,7 +645,9 @@ module a system cannot run is left out on that system.
 | VS Code | glibc 2.28 and above, amd64 and arm64 | amd64 | arm64 and amd64 |
 | code-server | glibc 2.28 and above, amd64 and arm64 | no | arm64 and amd64 |
 | CloudCLI | glibc 2.28 and above, amd64 and arm64 | amd64 and arm64 | arm64 and amd64 |
-| Remote desktop (RustDesk, AnyDesk, TeamViewer) | yes | yes | yes |
+| Terminal | yes | the shell program alone | yes |
+| Remote desktop (the agent's RustDesk) | yes | amd64 | yes |
+| A person's own AnyDesk or TeamViewer | yes | yes | yes |
 
 A module's log, the answer to its `journal` verb, is the journal of its
 systemd units on Linux. Windows and macOS run no module under a unit, so
@@ -606,20 +688,25 @@ session (the LaunchAgent `com.carriez.RustDesk_server`), not in the root
 service alone. That job takes its configuration from the root service once,
 when it starts, and from then on pushes what it holds in memory back to the
 service whenever that changes, so a file written under a running job is
-overwritten within a second. So the host configures a Mac by stopping the
-job and then the service, writing both copies, and starting the service and
-then the job; the baseline, which names no account, drives the service
-alone. The share is declared only once the direct port answers, as
-everywhere.
+overwritten within a second. So the host configures a Mac by booting out
+the job and then the service, writing both copies, and bootstrapping the
+service and then the job. The two plists keep upstream's labels, under
+which the root helper answers the session's host; under a label of the
+agent's own the host logs that it cannot reach `ipc_service`. The session
+plist's `KeepAlive` is true, so the host comes back after macOS quits and
+reopens it for the Screen Recording grant, and launchd starts both at boot
+and at each login from `/Library/LaunchDaemons` and `/Library/LaunchAgents`,
+the only folders it reads. The share is declared only once the direct port
+listens, as everywhere.
 
 A Mac shows a peer nothing until RustDesk holds both screen recording and
 accessibility, which only somebody at that Mac grants, and the privacy
 database that records them is closed to root, so the seat does not read it:
-its attention is empty. Instead, starting a share from `nagent rdp start`
-or from the panel puts a dialog on that Mac's screen, in the signed-in
+its attention is empty. Instead, the switch turning on puts a dialog on
+that Mac's screen, in the signed-in
 session through `step-down` ("Acting for an account"), naming the two
-permissions, prints the same line in the terminal,
-and opens the Screen Recording pane of the system settings; RustDesk is
+permissions, and opens the Screen Recording pane of the system settings;
+RustDesk is
 started whether or not the person has granted them yet. The hub's `rdp`
 entry carries the machine's `platform_os`, and a client shows a standing
 hint under a Mac's entry ([client.md](client.md)).

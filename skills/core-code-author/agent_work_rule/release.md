@@ -227,7 +227,8 @@ headless: it draws no window and listens on nothing. Each Linux package
 carries its own interpreter under `/opt/neutrino/agent` and the RustDesk
 host, and depends on no distribution package named `python`. The Windows
 and macOS installers include the agent compiled with Nuitka and upstream's
-RustDesk, and run the terminal and the shared desktop. No agent package
+RustDesk in the agent's own folder, and register nothing of RustDesk's: the
+agent does when a machine's Remote desktop switch goes on. No agent package
 carries cc-switch: the agent fetches it from the hub when the machine's AI
 tools need it, at the pin the client's packages carry.
 

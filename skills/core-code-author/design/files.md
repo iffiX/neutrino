@@ -49,13 +49,16 @@ What a user's own account holds, one tree per user with the same three names:
 A few locations are the operating system's rather than this project's, and
 are where they are because nothing else works: `/usr/bin/nhub`, `nagent` and
 `nclient` because a command has to be on the path (`/usr/local/bin` on macOS,
-the program directory on `PATH` on Windows); `/lib/systemd/system/` and
-`/Library/LaunchDaemons/` because the service managers read from there and
-nowhere else; `/usr/share/doc/<package>/licenses/` because that is where a
+the program directory on `PATH` on Windows); `/lib/systemd/system/`,
+`/etc/systemd/system/`, `/Library/LaunchDaemons/` and `/Library/LaunchAgents/`
+because the service managers read from there and nowhere else, which is
+also why the Remote desktop module writes RustDesk's registration there
+under RustDesk's own names while its switch is on ([agent.md](agent.md),
+"The desktop is the hub's order"); `/usr/share/doc/<package>/licenses/` because that is where a
 package's licences are looked for; the polkit rule of the client's mount
-helper under polkit's own directory; the agent's RustDesk host under
-`/usr/lib/neutrino/agent/rustdesk/`, because RustDesk answers `--password`
-only when its own binary, links resolved, sits under `/usr`. The application entry named
+helper under polkit's own directory; the agent's copy of RustDesk on Linux
+under `/usr/lib/neutrino/agent/rustdesk/`, where every Linux agent package
+has put it. The application entry named
 `Neutrino Client` writes everything under `Neutrino/client`.
 
 ## What each operation leaves behind
@@ -91,6 +94,9 @@ and the client with their own three directories.
                     and on macOS and Windows tun2socks
     agent/
         python/     the interpreter, the agent, and the window's bindings
+        rustdesk/   macOS and Windows: the agent's copy of RustDesk,
+                    RustDesk.app on macOS, rustdesk.exe and its files on
+                    Windows, upstream's build unchanged
     client/
         the compiled client, its libraries and the carried programs
         libexec/mount_helper
@@ -179,6 +185,11 @@ overrides both, which is what makes a second instance testable. Details of the f
         run_as/             Windows only: per account, the script, input,
                             output and exit code of one one-shot task,
                             removed once the task ends
+        remote_desktop/     registered.json, what the Remote desktop module
+                            registered under RustDesk's names; kept/, what
+                            was registered there before and is put back
+                            when the switch goes off: macOS the two plists,
+                            Windows and Linux service.json; root only
     client/
         netbird/            the client's NetBird configuration and profile
         easytier/           the client's EasyTier networks and console file

@@ -214,6 +214,31 @@ line refuses with:
 | --- | --- | --- |
 | `ui.reason.ai_managed`, `code.ai_tools_managed` | This is a managed device: set its AI tools on the hub's panel, under Modules, Global configuration. | 这是已管理的设备，请到中枢面板的“模块”页，在“全局配置”里设置它的 AI 工具。 |
 
+## The Terminal and Remote desktop tabs' words
+
+The tabs' names are their manifests' titles, **Terminal** and **Remote
+desktop**, on every surface and in both languages, as the other modules'
+are.
+
+| Key | English | Chinese |
+| --- | --- | --- |
+| `ui.terminal_module.account` | Account | 账户 |
+| `ui.terminal_module.account_agent` | The agent's own (root; SYSTEM on Windows) | 被控端自己的账户（root；Windows 上是 SYSTEM） |
+| `ui.terminal_module.account_windows` | On Windows a terminal runs as SYSTEM; only the shell program can be set. | 在 Windows 上终端以 SYSTEM 运行，只能设置 shell 程序。 |
+| `ui.terminal_module.shell_path` | Shell program | Shell 程序 |
+| `ui.terminal_module.shell_path_hint` | Leave it empty for the account's login shell, or PowerShell on Windows. | 留空则用该账户的登录 shell，Windows 上是 PowerShell。 |
+| `ui.terminal_module.browse` | Browse… | 浏览… |
+| `ui.terminal_module.apply` | Apply terminal | 应用终端设置 |
+| `ui.terminal_module.apply_hint` | Terminals opened from now on use these; open ones keep what they run. | 之后打开的终端用这些设置，已打开的不变。 |
+| `ui.remote_desktop_module.switch` | Share this machine's desktop | 共享这台机器的桌面 |
+| `ui.remote_desktop_module.switch_hint` | Whether this machine runs the agent's RustDesk for this hub's clients. Turning it on stops every other RustDesk host on the machine; turning it off puts back what was there. | 是否让这台机器运行被控端自带的 RustDesk，供这台中枢的客户端连接。打开时会停掉机器上其它的 RustDesk 主机，关闭时还原原来的。 |
+| `ui.remote_desktop_module.apply` | Apply remote desktop | 应用远程桌面 |
+| `ui.remote_desktop_module.apply_hint` | Starts or stops sharing this desktop now. | 立即开始或停止共享这个桌面。 |
+| `ui.remote_desktop_module.drawer_line` | Sharing is set on the machine's Remote desktop tab. | 共享在这台机器的“远程桌面”标签页里设置。 |
+| `code.shell_program_unusable` | {path} is not a program this machine can run. | {path} 不是这台机器能运行的程序。 |
+| `code.rdp_takeover_failed` | Remote desktop could not start at {step}: {detail} | 远程桌面在 {step} 这一步没能启动：{detail} |
+| `code.rdp_restore_failed` | Remote desktop could not put back the machine's RustDesk at {step}: {detail} | 远程桌面在 {step} 这一步没能还原机器原来的 RustDesk：{detail} |
+
 ## The Services page's health words
 
 A declared row's state word, beside the still dot the page uses for no

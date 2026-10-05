@@ -100,8 +100,8 @@ agent/
     streams/         Shell and file streams multiplexed over the channel;
                      windows_shell.py runs PowerShell on a pseudo console.
     modules/         What a machine can host: samba/, gitea/, podman/, zfs/,
-                     vscode/, cloudcli/, code_server/, the RustDesk host,
-                     and the installers they share.
+                     vscode/, cloudcli/, code_server/, terminal/ and
+                     remote_desktop/, and the installers they share.
     ai_tools/        The machine's AI tools: cc-switch run as each account the
                      hub names, the client's steps, the records per tool.
     rdp/             Sharing this machine's desktop at the seat password the
