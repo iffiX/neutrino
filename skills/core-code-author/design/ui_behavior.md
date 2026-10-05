@@ -406,7 +406,9 @@ owner installs").
 
 The **Access** page draws the ways in as cards in the engine panel, in this
 order: Direct, Relay, NetBird, EasyTier; a tree without NetBird draws
-Direct, Relay, EasyTier. Every card is shaped alike: its switch stages into
+Direct, Relay, EasyTier. The cards sit two to a row, the third of a tree
+without NetBird in the left cell, and one to a row below 720 px. A page with
+no card switched on says nothing about it. Every card is shaped alike: its switch stages into
 the engine panel's draft and that panel's apply bar turns it on or off, and
 pressing the card shows its section under the panel.
 
