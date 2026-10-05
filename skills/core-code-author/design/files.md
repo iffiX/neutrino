@@ -173,7 +173,8 @@ overrides both, which is what makes a second instance testable. Details of the f
         ai_tools/           per account, the record of each AI tool the
                             agent pointed at the hub, root only; on
                             Windows also login.json, the login the account
-                            was switched with, kept until it is switched back
+                            was switched with, kept until it is switched back;
+                            .locks/ holds one lock file per account
         run_as/             Windows only: per account, the script, input,
                             output and exit code of one one-shot task,
                             removed once the task ends

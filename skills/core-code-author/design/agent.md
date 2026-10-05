@@ -354,6 +354,16 @@ never in the account's home. cc-switch keeps its own store in the account's
 home, as on a person's computer. An account whose records are all gone after
 a switch back has its directory removed.
 
+Each account's switch or switch back holds that account's lock from its
+first step to its last: the file `ai_tools/.locks/<account>` under the state
+root, locked with `flock` on Linux and macOS and `msvcrt.locking` on
+Windows, so the service and a `nagent leave` or `nagent service uninstall`
+never run cc-switch for one account at once, nor replace each other's
+one-shot task on Windows. A run that finds the lock held waits up to five
+minutes and then fails as `switch_failed` with the detail `another run holds
+the account`, and since the system frees a lock when its process ends, a
+file a killed process left behind blocks no one.
+
 **Every step in an account's home runs as that account, reads included.**
 cc-switch runs as the account, with the account's home and its own
 environment ("Running as an account" in the platform table), and so does
