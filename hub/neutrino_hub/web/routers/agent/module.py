@@ -79,6 +79,7 @@ CODE_MODULE_NOT_OPTIONAL = "module_not_optional"
 CODE_NO_PLATFORM_BUILD = "no_platform_build"
 CODE_MODULE_CONFIGURED = "module_configured"
 CODE_TERMS_NOT_ACCEPTED = "terms_not_accepted"
+CODE_CONFIG_UNWRITABLE = "config_unwritable"
 
 # What a module reads as until its agent has said.
 STATE_UNKNOWN = "unknown"
@@ -397,7 +398,7 @@ def import_details(
     config = dict(import_config(context.details))
     if not config:
         return
-    runtime.desired_states.write(context.key, context.module, config)
+    write_module_config(runtime, context.key, context.module, config)
     context.config = dict(config)
     if context.want in CHANNEL_MODULE_CONFIGURED_WANTS:
         push_state(runtime, context.key)
@@ -522,7 +523,8 @@ def store_config(
     Raises:
         HTTPException: 409 ``agent_offline`` when the device has no socket,
             400 with the agent's own code when it refuses the
-            configuration, 502 when the agent could not be asked.
+            configuration, 502 when the agent could not be asked, 500
+            ``config_unwritable`` when the configuration cannot be written.
     """
     require_online(context)
     try:
@@ -552,10 +554,31 @@ def store_config(
             **params,
         )
     written = dict(config if stored is None else stored)
-    runtime.desired_states.write(context.key, context.module, written)
+    write_module_config(runtime, context.key, context.module, written)
     context.config = written
     push_state(runtime, context.key)
     _recompose_published(runtime, context.module)
+
+
+def write_module_config(
+    runtime: PanelRuntime, key: str, module: str, config: dict
+) -> None:
+    """Write one module's configuration for one device under ``config/``.
+
+    Args:
+        runtime: The shared runtime.
+        key: The device.
+        module: The module name.
+        config: What its file holds afterwards.
+
+    Raises:
+        HTTPException: 500 ``config_unwritable {detail}`` when the device's
+            directory cannot be written.
+    """
+    try:
+        runtime.desired_states.write(key, module, config)
+    except OSError as error:
+        raise _config_unwritable(error) from error
 
 
 def require_terms(runtime: PanelRuntime, key: str, module: str) -> None:
@@ -695,7 +718,10 @@ def _set_want(
         require_terms(runtime, key, module)
     if not runtime.agent_sessions.is_online(key):
         raise _refusal(status.HTTP_409_CONFLICT, CODE_AGENT_OFFLINE, device_id=key)
-    runtime.desired_states.set_want(key, module, want)
+    try:
+        runtime.desired_states.set_want(key, module, want)
+    except OSError as error:
+        raise _config_unwritable(error) from error
     if module == DEVICE_CLOUDCLI_MODULE and want == CHANNEL_MODULE_STATE_ABSENT:
         revoke_device_key(key)
     push_state(runtime, key)
@@ -732,6 +758,15 @@ def _recompose_published(runtime: PanelRuntime, module: str) -> None:
     """
     if module in SERVICES_PUBLISHED_MODULES:
         runtime.published_services.schedule_refresh()
+
+
+def _config_unwritable(error: OSError) -> HTTPException:
+    """The refusal for a device's configuration the hub could not write."""
+    return _refusal(
+        status.HTTP_500_INTERNAL_SERVER_ERROR,
+        CODE_CONFIG_UNWRITABLE,
+        detail=str(error)[:200],
+    )
 
 
 def _refusal(status_code: int, code: str, **params) -> HTTPException:

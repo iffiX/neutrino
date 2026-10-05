@@ -332,3 +332,22 @@ def test_the_terms_of_an_unknown_device_are_refused(bare):
 
     assert answer.status_code == 404
     assert answer.json()["detail"]["code"] == "device_unknown"
+
+
+def test_a_device_directory_that_cannot_be_written_is_a_coded_refusal(
+    bare, monkeypatch
+):
+    client, _ = bare
+
+    def unwritable(self, key, module, config):
+        raise PermissionError(1, "Operation not permitted", "devices/x/.tmp")
+
+    monkeypatch.setattr(DesiredStateStore, "write", unwritable)
+
+    answer = client.post(
+        f"{BASE}/terms/set", json={"device_id": DEVICE, "is_accepted": True}
+    )
+
+    assert answer.status_code == 500
+    assert answer.json()["detail"]["code"] == "config_unwritable"
+    assert "Operation not permitted" in answer.json()["detail"]["params"]["detail"]
