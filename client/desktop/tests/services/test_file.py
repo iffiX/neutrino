@@ -1019,3 +1019,17 @@ def test_linux_mounts_its_own_machines_share_through_its_forward(tmp_path):
     call = platform.attach_calls[0]
     assert (call["share_url"], call["port"]) == ("//127.0.0.1/media", FORWARD_PORT)
     assert subject._forwards.ensured
+
+
+def test_an_adapter_another_account_holds_does_not_stop_the_own_share(tmp_path):
+    def adapter_host(hub_id, machine):
+        raise ShareAttachError("files_adapter_in_use")
+
+    entry = dict(entry_for(PAYLOAD), device_id="d_self", is_own_machine=True)
+    subject, platform = drive_service(tmp_path, adapter_host, [entry])
+
+    assert attach(subject, path="Z:") == {}
+
+    row = subject.rows()[0]
+    assert (row["state"], row["code"]) == ("mounted", "")
+    assert platform.attach_calls[0]["share_url"] == "//127.0.0.1/media"
