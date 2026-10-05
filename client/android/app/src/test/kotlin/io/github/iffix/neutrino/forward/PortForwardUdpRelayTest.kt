@@ -7,6 +7,7 @@ import io.github.iffix.neutrino.channel.ChannelFrames
 import io.github.iffix.neutrino.channel.ChannelResult
 import io.github.iffix.neutrino.channel.ChannelStream
 import io.github.iffix.neutrino.channel.FakeConnectHub
+import java.net.BindException
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
@@ -200,13 +201,20 @@ class PortForwardUdpRelayTest {
         relay.close()
         assertFalse(relay.isActive)
         assertEquals(1, hub.closed.size)
-        DatagramSocket(InetSocketAddress(InetAddress.getByName("127.0.0.1"), port)).close()
+        waitFor { isFree(port) }
     }
 
     private fun relay(open: () -> ChannelResult<ChannelStream>): PortForwardUdpRelay =
         PortForwardUdpRelay("b1/u1", open, 0, { refusal, isEnded ->
             synchronized(refusals) { refusals += refusal.code to isEnded }
         }) { now }.also { opened += it }
+
+    private fun isFree(port: Int): Boolean = try {
+        DatagramSocket(InetSocketAddress(InetAddress.getByName("127.0.0.1"), port)).close()
+        true
+    } catch (_: BindException) {
+        false
+    }
 
     private fun program(): DatagramSocket =
         DatagramSocket(InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0)).also {
