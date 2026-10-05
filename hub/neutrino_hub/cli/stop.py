@@ -9,6 +9,7 @@
     sudo nhub stop --only-router
     sudo nhub stop --only-supplicant --interface wlp3s0
     sudo nhub stop --only-dhcpcd --interface enp2s0
+    sudo nhub stop --yes                        # without asking first
 
 The pair of ``nhub start``, and spelled the way ``nhub run`` is: the same
 ``--only-`` flags, the same names, and ``--interface`` for the two engines
@@ -63,13 +64,19 @@ STOP_ORDER = (
 )
 # The two that run one unit per interface, named as `run` names them.
 STOP_PER_INTERFACE = ("supplicant", "dhcpcd")
+# What a command that asks says when there is no terminal to ask on.
+CLI_NO_TERMINAL_LINE = (
+    "error: no terminal to answer on; run it again with --yes to go ahead "
+    "without asking"
+)
 
 
 def main() -> int:
-    """Stop what was asked for.
+    """Stop what was asked for, once the person says yes.
 
     Returns:
-        Process exit status; 1 when something refused to stop.
+        Process exit status; 1 when the answer was no or something refused
+        to stop.
     """
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -77,6 +84,7 @@ def main() -> int:
         default=None,
         help="which interface, for the per-interface engines",
     )
+    parser.add_argument("--yes", action="store_true", help="stop without asking first")
     group = parser.add_mutually_exclusive_group()
     for name in STOP_ORDER + STOP_PER_INTERFACE:
         group.add_argument(
@@ -95,10 +103,18 @@ def main() -> int:
             file=sys.stderr,
         )
         return 2
+    if arguments.only in STOP_PER_INTERFACE and not arguments.interface:
+        print(f"error: --only-{arguments.only} needs --interface", file=sys.stderr)
+        return 1
+    if not is_linux():
+        what = "the hub's service"
+    elif arguments.only in STOP_PER_INTERFACE:
+        what = f"{arguments.only} on {arguments.interface}"
+    else:
+        what = arguments.only or "the hub's units"
+    if not arguments.yes and not is_confirmed_on_terminal(f"Stop {what}?"):
+        return 1
     if arguments.only in STOP_PER_INTERFACE:
-        if not arguments.interface:
-            print(f"error: --only-{arguments.only} needs --interface", file=sys.stderr)
-            return 1
         return stop_engine(arguments.only, arguments.interface)
     if arguments.only:
         return stop([arguments.only])
@@ -228,6 +244,29 @@ def _configured_engines() -> list:
         for interface in network.interfaces
         for name in STOP_PER_INTERFACE
     ]
+
+
+def is_confirmed_on_terminal(question: str) -> bool:
+    """Ask one yes-or-no question on the terminal.
+
+    With no terminal on stdin nothing is asked: one line on stderr says that
+    ``--yes`` goes ahead without asking.
+
+    Args:
+        question: The question, without ``[y/N]``.
+
+    Returns:
+        True only for ``y`` or ``yes``; no input and no terminal are a no.
+    """
+    if sys.stdin is None or not sys.stdin.isatty():
+        print(CLI_NO_TERMINAL_LINE, file=sys.stderr)
+        return False
+    try:
+        answer = input(f"{question} [y/N] ")
+    except EOFError:
+        print()
+        return False
+    return answer.strip().lower() in ("y", "yes")
 
 
 if __name__ == "__main__":

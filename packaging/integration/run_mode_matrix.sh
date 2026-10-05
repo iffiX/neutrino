@@ -67,7 +67,7 @@ python3 -m pytest "$HERE/test_mode_matrix.py" -q --durations=10
 ran $?
 
 phase "reset"
-nhub reset all > /tmp/reset.log 2>&1
+nhub reset all --yes > /tmp/reset.log 2>&1
 ran $?
 python3 -m pytest "$HERE/test_reset_hands_back.py" -q
 ran $?

@@ -6,6 +6,7 @@ keys. What is tested here is that it destroys exactly those and nothing near
 them, and that `reset password` touches only the password.
 """
 
+import io
 import json
 import subprocess
 
@@ -363,3 +364,86 @@ def test_reset_network_hands_back_and_keeps_every_config(monkeypatch, box, capsy
     assert json.loads((box / "web/settings.json").read_text()) == {
         "admin_password_hash": "real-hash"
     }
+
+
+# --- the question every target asks ---
+
+
+class Elevated:
+    elevation_word = "root"
+
+    def is_elevated(self) -> bool:
+        return True
+
+    def elevation_hint(self, command: str) -> str:
+        return f"sudo nhub {command}"
+
+
+def refuse_to_ask(prompt):
+    raise AssertionError("asked with no terminal")
+
+
+@pytest.fixture
+def targets(monkeypatch) -> list:
+    """Each target's work recorded instead of done, as root."""
+    done: list = []
+    monkeypatch.setattr(reset, "hub_platform", Elevated)
+    monkeypatch.setattr(reset, "_reset_all", lambda: done.append("all") or 0)
+    monkeypatch.setattr(reset, "_reset_network", lambda: done.append("network") or 0)
+    monkeypatch.setattr(
+        reset,
+        "_reset_password",
+        lambda *, is_stdin: done.append(("password", is_stdin)) or 0,
+    )
+    return done
+
+
+@pytest.mark.parametrize("target", ["all", "network", "password"])
+def test_every_target_asks_first_and_a_no_resets_nothing(
+    target, targets, terminal, monkeypatch
+):
+    questions: list = []
+    monkeypatch.setattr(
+        "builtins.input", lambda prompt: questions.append(prompt) or "n"
+    )
+    monkeypatch.setattr("sys.argv", ["nhub-reset", target])
+
+    assert reset.main() == 1
+    assert questions == [f"{reset.RESET_QUESTIONS[target]} [y/N] "]
+    assert targets == []
+
+
+def test_a_yes_at_the_prompt_resets(targets, terminal, monkeypatch):
+    monkeypatch.setattr("builtins.input", lambda prompt: "yes")
+    monkeypatch.setattr("sys.argv", ["nhub-reset", "network"])
+
+    assert reset.main() == 0
+    assert targets == ["network"]
+
+
+def test_yes_on_the_command_line_resets_without_asking(targets, monkeypatch):
+    monkeypatch.setattr("builtins.input", refuse_to_ask)
+    monkeypatch.setattr("sys.argv", ["nhub-reset", "password", "--stdin", "--yes"])
+
+    assert reset.main() == 0
+    assert targets == [("password", True)]
+
+
+def test_with_no_terminal_it_names_yes_and_resets_nothing(targets, monkeypatch, capsys):
+    monkeypatch.setattr("sys.stdin", io.StringIO("y\n"))
+    monkeypatch.setattr("builtins.input", refuse_to_ask)
+    monkeypatch.setattr("sys.argv", ["nhub-reset", "all"])
+
+    assert reset.main() == 1
+    assert targets == []
+    error = capsys.readouterr().err
+    assert error.strip().count("\n") == 0
+    assert "--yes" in error
+
+
+def test_the_bare_command_lists_the_targets_and_asks_nothing(targets, monkeypatch):
+    monkeypatch.setattr("builtins.input", refuse_to_ask)
+    monkeypatch.setattr("sys.argv", ["nhub-reset"])
+
+    assert reset.main() == 2
+    assert targets == []

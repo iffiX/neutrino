@@ -866,7 +866,7 @@ def stop_hub_lines(*, indent: str = "    ") -> str:
     lines = [
         "# The network goes back to the machine while the hub's code is still",
         "# here: the firewall, the engines it started, and the resolver.",
-        "nhub reset network >/dev/null 2>&1 || true",
+        "nhub reset network --yes >/dev/null 2>&1 || true",
         f"for unit in {' '.join(units)}; do",
         '    systemctl stop "${unit}.service" >/dev/null 2>&1 || true',
         '    systemctl disable "${unit}.service" >/dev/null 2>&1 || true',

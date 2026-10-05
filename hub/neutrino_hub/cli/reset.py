@@ -4,6 +4,7 @@
     sudo nhub reset password
     sudo nhub reset network
     sudo nhub reset all
+    sudo nhub reset all --yes       # without asking first
 
 Resetting is always named: the bare command lists and stops, so nothing here
 is destroyed by a command that was meant to ask a question.
@@ -19,7 +20,12 @@ import subprocess
 import shutil
 import sys
 
-from neutrino_hub.cli.stop import stop, stop_everything, stop_service
+from neutrino_hub.cli.stop import (
+    is_confirmed_on_terminal,
+    stop,
+    stop_everything,
+    stop_service,
+)
 from neutrino_hub.cli.password import (
     clear_password,
     read_new_password,
@@ -102,6 +108,13 @@ RESET_EXAMPLE_SUFFIX = ".example.json"
 # Examples of files the next setup generates; no reset copies them over.
 RESET_GENERATED_EXAMPLES = ("web/identity.example.json",)
 RESET_PANEL_UNIT = "web"
+# What each target asks before it acts.
+RESET_QUESTIONS = {
+    "password": "Set a new panel password and sign everyone out?",  # scan: allow
+    "all": "Return every config to its example, clear the password and the "
+    "keys this box collected, and stop the hub?",
+    "network": "Hand the machine's network back and stop the panel?",
+}
 RESET_TARGETS = {
     "password": "the panel password, leaving every other setting alone",  # scan: allow
     "all": "every module's config, the panel password, and the keys and tokens "
@@ -115,8 +128,8 @@ def main() -> int:
     """Reset what was named.
 
     Returns:
-        Process exit status: 0 on success, 1 on refusal, 2 when nothing was
-        named.
+        Process exit status: 0 on success, 1 on refusal or when the answer
+        was no, 2 when nothing was named.
     """
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -127,6 +140,7 @@ def main() -> int:
         action="store_true",
         help="read the new password from standard input rather than prompting",
     )
+    parser.add_argument("--yes", action="store_true", help="reset without asking first")
     arguments = parser.parse_args()
 
     if arguments.target is None:
@@ -143,6 +157,10 @@ def main() -> int:
             f"({platform.elevation_hint(f'reset {arguments.target}')})",
             file=sys.stderr,
         )
+        return 1
+    if not arguments.yes and not is_confirmed_on_terminal(
+        RESET_QUESTIONS[arguments.target]
+    ):
         return 1
 
     if arguments.target == "password":

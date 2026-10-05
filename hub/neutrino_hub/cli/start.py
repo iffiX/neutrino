@@ -27,7 +27,11 @@ import argparse
 import subprocess
 import sys
 
-from neutrino_hub.cli.stop import STOP_ORDER, STOP_PER_INTERFACE
+from neutrino_hub.cli.stop import (
+    STOP_ORDER,
+    STOP_PER_INTERFACE,
+    is_confirmed_on_terminal,
+)
 from neutrino_hub.modules.router.dhcp_client import RouterDhcpClient
 from neutrino_hub.modules.router.supplicant import RouterWifiClient
 from neutrino_hub.platforms.constants import PLATFORM_SERVICE_RUNNING
@@ -38,11 +42,6 @@ from neutrino_hub.utils.subprocess_run import command_failure_text
 # --- config ---
 # The routing state first, the panel last: each stands on the one before it.
 START_ORDER = tuple(reversed(STOP_ORDER))
-# What a command that asks says when there is no terminal to ask on.
-CLI_NO_TERMINAL_LINE = (
-    "error: no terminal to answer on; run it again with --yes to go ahead "
-    "without asking"
-)
 
 
 def main() -> int:
@@ -174,29 +173,6 @@ def start_engine(name: str, interface: str) -> int:
     engine.start()
     print(f"  {engine.unit}: started")
     return 0
-
-
-def is_confirmed_on_terminal(question: str) -> bool:
-    """Ask one yes-or-no question on the terminal.
-
-    With no terminal on stdin nothing is asked: one line on stderr says that
-    ``--yes`` goes ahead without asking.
-
-    Args:
-        question: The question, without ``[y/N]``.
-
-    Returns:
-        True only for ``y`` or ``yes``; no input and no terminal are a no.
-    """
-    if sys.stdin is None or not sys.stdin.isatty():
-        print(CLI_NO_TERMINAL_LINE, file=sys.stderr)
-        return False
-    try:
-        answer = input(f"{question} [y/N] ")
-    except EOFError:
-        print()
-        return False
-    return answer.strip().lower() in ("y", "yes")
 
 
 if __name__ == "__main__":
