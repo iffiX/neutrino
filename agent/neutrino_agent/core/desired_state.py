@@ -22,7 +22,9 @@ The applied hash is what the hub compares against: it moves to the state's
 hash only once every mentioned module applied. A state whose apply failed
 is reported with its code under the old hash, and is tried again only when
 a state with another hash arrives; the one exception is a failure the
-socket caused, which the next state frame tries again. A module whose apply
+socket caused, which the next state frame tries again. The hash last tried
+is kept beside the state on disk, so an agent that starts again does not
+try a failed state again either. A module whose apply
 waits on an install that still runs is no failure: unless another module
 failed, the state is applied again every recheck interval until the
 install has ended.
@@ -72,6 +74,8 @@ RETRIED_CODE = "hub_unreachable"
 # What an apply that waits on a running install answers inside this file;
 # it is never reported.
 PENDING_CODE = "install_pending"
+# The file beside the state that keeps the hash last tried.
+TRIED_SUFFIX = ".tried"
 
 
 class DesiredStateStore:
@@ -116,6 +120,40 @@ class DesiredStateStore:
                 json.dump(document, stream)
             os.chmod(temporary, 0o600)
             os.replace(temporary, self._path)
+        except BaseException:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+            raise
+
+    def read_tried(self) -> str:
+        """The hash of the last state an apply was tried for.
+
+        Returns:
+            The hash, empty when none is kept or the file cannot be read.
+        """
+        try:
+            with open(self._path + TRIED_SUFFIX, "r", encoding="utf-8") as stream:
+                return stream.read().strip()
+        except OSError:
+            return ""
+
+    def write_tried(self, state_hash: str) -> None:
+        """Keep the hash of the state an apply was just tried for, root-only.
+
+        Args:
+            state_hash: The hash; empty forgets it.
+
+        Raises:
+            OSError: When the file cannot be written.
+        """
+        directory = os.path.dirname(self._path)
+        os.makedirs(directory, mode=0o700, exist_ok=True)
+        handle, temporary = tempfile.mkstemp(dir=directory, prefix=".tried_")
+        try:
+            with os.fdopen(handle, "w", encoding="utf-8") as stream:
+                stream.write(state_hash)
+            os.chmod(temporary, 0o600)
+            os.replace(temporary, self._path + TRIED_SUFFIX)
         except BaseException:
             if os.path.exists(temporary):
                 os.unlink(temporary)
@@ -166,7 +204,7 @@ class DesiredStateApplier:
         self._is_applying = False
         self._pending: "dict | None" = None
         self._applied_hash = ""
-        self._tried_hash = ""
+        self._tried_hash = store.read_tried()
         self._state_error: "dict | None" = None
         # The state whose apply waits on a running install, applied again.
         self._rechecked: "dict | None" = None
@@ -271,6 +309,7 @@ class DesiredStateApplier:
             )
             is_rechecked = is_pending and first_failure is None
             self._tried_hash = "" if is_retried or is_rechecked else state_hash
+            tried = self._tried_hash
             self._rechecked = dict(document) if is_rechecked else None
             if first_failure is None and is_pending:
                 self._state_error = None
@@ -285,6 +324,10 @@ class DesiredStateApplier:
                         **first_failure["params"],
                     },
                 }
+        try:
+            self._store.write_tried(tried)
+        except OSError as error:
+            self._log(f"could not keep the tried state: {error}")
         self._engine.refresh_now()
 
     def _apply_desktop(self, wanted) -> None:

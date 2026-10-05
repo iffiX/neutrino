@@ -457,9 +457,13 @@ def test_progress_is_written_every_five_percent_and_at_the_end(cache, monkeypatc
         name="fakedesk", manifest=manifest, platform=AMD64, on_progress=lines.append
     )
 
-    assert lines[0] == "hub: downloading VS Code 1.140.0 from Microsoft, 0.1 / 20.0 MB"
     assert (
-        lines[-1] == "hub: downloading VS Code 1.140.0 from Microsoft, 20.0 / 20.0 MB"
+        lines[0]
+        == "hub: downloading VS Code 1.140.0 from vendor.example, 0.1 / 20.0 MB"
+    )
+    assert (
+        lines[-1]
+        == "hub: downloading VS Code 1.140.0 from vendor.example, 20.0 / 20.0 MB"
     )
     # The first chunk, one line per 5 percent after it, and the last again.
     assert len(lines) == 22
@@ -469,7 +473,7 @@ def test_progress_is_written_every_two_seconds_when_the_size_is_unknown():
     lines: list = []
     clock = StoppedClock()
     progress = AgentModuleFetchProgress(
-        title="Gitea 1.27.3", source="", on_line=lines.append, clock=clock
+        title="Gitea 1.27.3", on_line=lines.append, clock=clock
     )
 
     progress.note(MEGABYTE, 0)
@@ -499,7 +503,7 @@ def test_a_fetch_tells_its_progress_and_a_held_artifact_says_it_is_cached(
     )
 
     assert set(lines[:-1]) == {
-        "hub: downloading FakeDesk 2.0 from Vendor, 0.0 / 0.0 MB"
+        "hub: downloading FakeDesk 2.0 from vendor.example, 0.0 / 0.0 MB"
     }
     assert lines[-1] == "hub: FakeDesk 2.0 is in the cache"
 
@@ -653,3 +657,21 @@ def test_the_latest_file_is_the_pinned_name_with_its_version_left_open():
 
     assert version == "4.141.0"
     assert url.endswith("/LatestRelease/code-server-4.141.0-linux-amd64.tar.gz")
+
+
+def test_a_line_names_the_host_it_fetched_from_not_the_publisher(monkeypatch, tmp_path):
+    lines: list = []
+    fetches = MirrorFetches(served=TARBALL)
+    cache = mirrored(monkeypatch, tmp_path, "cn", fetches)
+
+    cache.artifact(
+        name="code_server",
+        manifest={**MIRRORED_MANIFEST, "source": "Coder"},
+        platform=LINUX_AMD,
+        on_progress=lines.append,
+    )
+
+    assert lines[0].startswith(
+        "hub: downloading code-server 4.140.0 from mirror.example,"
+    )
+    assert not any("Coder" in line for line in lines)

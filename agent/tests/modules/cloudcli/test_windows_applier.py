@@ -192,15 +192,26 @@ def test_an_instance_is_a_task_running_its_script(applier, powershell, ready):
             NATIVE_CHECK_EXIT,
             "npm ok\nnode-pty\n",
             False,
-            ("cloudcli_native_module_failed", {"account": "ann", "module": "node-pty"}),
+            (
+                "cloudcli_native_module_failed",
+                {"account": "ann", "module": "node-pty", "detail": "node-pty"},
+            ),
         ),
         (
             1,
             "npm error network",
             False,
-            ("cloudcli_npm_install_failed", {"account": "ann"}),
+            (
+                "cloudcli_npm_install_failed",
+                {"account": "ann", "detail": "npm error network"},
+            ),
         ),
-        (0, "", False, ("cloudcli_npm_install_failed", {"account": "ann"})),
+        (
+            0,
+            "",
+            False,
+            ("cloudcli_npm_install_failed", {"account": "ann", "detail": ""}),
+        ),
         (0x8007052E, "", False, ("credential_invalid", {"account": "ann"})),
     ],
 )

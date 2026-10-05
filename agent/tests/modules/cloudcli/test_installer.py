@@ -156,11 +156,27 @@ def test_npm_keeps_to_the_app_directory():
         (
             "prebuild-install warn install No prebuilt binaries found\n"
             "gyp ERR! build error\nnpm error path .../node_modules/node-pty",
-            ("cloudcli_native_module_failed", {"account": "ann", "module": "node-pty"}),
+            (
+                "cloudcli_native_module_failed",
+                {
+                    "account": "ann",
+                    "module": "node-pty",
+                    "detail": "prebuild-install warn install No prebuilt binaries "
+                    "found | gyp ERR! build error | npm error path "
+                    ".../node_modules/node-pty",
+                },
+            ),
         ),
         (
             "npm error code ETIMEDOUT\nnpm error network request failed",
-            ("cloudcli_npm_install_failed", {"account": "ann"}),
+            (
+                "cloudcli_npm_install_failed",
+                {
+                    "account": "ann",
+                    "detail": "npm error code ETIMEDOUT | npm error network "
+                    "request failed",
+                },
+            ),
         ),
     ],
 )
@@ -257,3 +273,44 @@ def test_an_app_is_ready_with_the_pinned_package_and_every_native_module(tmp_pat
     assert installer.is_app_ready(str(app)) is True
     (package / "package.json").write_text('{"version": "1.37.2"}')
     assert installer.is_app_ready(str(app)) is False
+
+
+def test_the_editions_npm_settings_join_the_environment_and_never_replace_it():
+    app = "/home/ann/app"
+
+    held = installer.npm_environment(
+        app,
+        registry="https://registry.npmmirror.com",
+        extra={
+            "npm_config_better_sqlite3_binary_host": "https://m.example/bs3",
+            "npm_config_cache": "/elsewhere",
+        },
+    )
+
+    assert held["npm_config_better_sqlite3_binary_host"] == "https://m.example/bs3"
+    assert held["npm_config_cache"] == app + "/.npm"
+
+
+def test_a_failure_keeps_the_tools_last_words():
+    output = "\n".join(
+        [
+            "added 1 package",
+            "prebuild-install warn install Request timed out",
+            "gyp info it worked if it ends with ok",
+            "gyp ERR! stack Error: not found: make",
+            "npm error code 1",
+        ]
+    )
+
+    assert installer.failure_detail(output) == (
+        "prebuild-install warn install Request timed out | gyp ERR! stack Error: "
+        "not found: make | npm error code 1"
+    )
+    assert installer.failure_detail("just one line") == "just one line"
+
+
+def test_the_install_line_names_the_registry_host():
+    assert installer.registry_host("https://registry.npmmirror.com") == (
+        "registry.npmmirror.com"
+    )
+    assert installer.registry_host("") == "registry.npmjs.org"

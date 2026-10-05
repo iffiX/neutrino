@@ -22,8 +22,10 @@ import os
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.cloudcli import installer
 from neutrino_agent.modules.cloudcli.constants import (
+    CLOUDCLI_INSTALL_SCOPE_PREFIX,
     CLOUDCLI_INSTALL_TIMEOUT_S,
     CLOUDCLI_LOOKUP_TIMEOUT_S,
+    CLOUDCLI_OOM_RESULT,
     CLOUDCLI_SYSTEMD_DIR,
     CLOUDCLI_UNIT_PREFIX,
     CLOUDCLI_UNIT_TEMPLATE,
@@ -43,7 +45,9 @@ ENVIRONMENT_SUFFIX = ".env"
 SERVER_VARIABLE = "CLOUDCLI_SERVER"
 # What an account's install runs under ``sh``: the app directory and the
 # empty npm configuration made as the account, then npm.
-INSTALL_SHELL = 'mkdir -p "$0" && : > "$0/.npmrc" && exec "$@"'
+INSTALL_SHELL = (
+    'mkdir -p "$0" && rm -rf "$0/node_modules" && : > "$0/.npmrc" && exec "$@"'
+)
 CHECK_SHELL = 'cd "$0" && exec "$@"'
 
 
@@ -91,6 +95,18 @@ def render_environment(environment: dict) -> str:
         quoted = str(value).replace("\\", "\\\\").replace('"', '\\"')
         lines.append(f'{name}="{quoted}"\n')
     return "".join(lines)
+
+
+def install_scope(account: str) -> str:
+    """The transient scope one account's npm install runs in.
+
+    Args:
+        account: The account.
+
+    Returns:
+        ``neutrino_cloudcli_install_<account>.scope``.
+    """
+    return f"{CLOUDCLI_INSTALL_SCOPE_PREFIX}{account}.scope"
 
 
 def instance_unit(account: str) -> str:
@@ -201,6 +217,7 @@ class CloudcliLinuxApplier:
                 homes[instance.account],
                 node,
                 registry=config.npm_registry,
+                extra=config.npm_environment,
             ):
                 notes.append(f"installed CloudCLI for {instance.account}")
         os.makedirs(self._etc_dir, mode=0o700, exist_ok=True)
@@ -302,7 +319,13 @@ class CloudcliLinuxApplier:
         return found
 
     def _install_app(
-        self, account: str, home: str, node: str, *, registry: str = ""
+        self,
+        account: str,
+        home: str,
+        node: str,
+        *,
+        registry: str = "",
+        extra: "dict | None" = None,
     ) -> bool:
         """Install CloudCLI into the account's app directory unless it is there."""
         app = installer.app_dir(home, "linux")
@@ -316,15 +339,29 @@ class CloudcliLinuxApplier:
                 "USER": account,
                 "LOGNAME": account,
                 "PATH": f"{node_bin}:/usr/bin:/bin",
-                **installer.npm_environment(app, registry=registry),
+                **installer.npm_environment(app, registry=registry, extra=extra),
             }
             prefix = ["runuser", "-u", account, "--", "env", "-i"] + [
                 f"{name}={value}" for name, value in environment.items()
             ]
             npm = installer.npm_path(os.path.dirname(node_bin), "linux")
-            self._log(f"cloudcli: installing CloudCLI for {account}")
+            self._log(
+                f"cloudcli: installing CloudCLI for {account} "
+                f"from {installer.registry_host(registry)}"
+            )
+            scope = install_scope(account)
+            self._run(["systemctl", "reset-failed", scope], is_checked=False)
             result = self._run(
-                prefix
+                [
+                    "systemd-run",
+                    "--scope",
+                    "--quiet",
+                    f"--unit={scope}",
+                    "-p",
+                    "OOMPolicy=stop",
+                    "--",
+                ]
+                + prefix
                 + ["sh", "-c", INSTALL_SHELL, app, node, npm]
                 + installer.npm_arguments(app),
                 is_checked=False,
@@ -333,6 +370,10 @@ class CloudcliLinuxApplier:
             if not result.is_success:
                 output = (result.stdout + "\n" + result.stderr).strip()
                 self._log(f"cloudcli: npm for {account}: {output[-2000:]}")
+                if self._is_out_of_memory(scope):
+                    raise ModuleApplyError(
+                        "cloudcli_install_out_of_memory", {"account": account}
+                    )
                 raise installer.npm_failure(output, account)
             check = self._run(
                 prefix
@@ -351,11 +392,23 @@ class CloudcliLinuxApplier:
             if check.exit_code == installer.NATIVE_CHECK_EXIT:
                 raise ModuleApplyError(
                     "cloudcli_native_module_failed",
-                    {"account": account, "module": check.stdout.strip()},
+                    {
+                        "account": account,
+                        "module": check.stdout.strip(),
+                        "detail": installer.failure_detail(check.stderr),
+                    },
                 )
             return True
         finally:
             self.installing = frozenset()
+
+    def _is_out_of_memory(self, scope: str) -> bool:
+        """Whether the kernel killed an install's scope for want of memory; forgets the scope."""
+        shown = self._run(
+            ["systemctl", "show", "-p", "Result", "--value", scope], is_checked=False
+        )
+        self._run(["systemctl", "reset-failed", scope], is_checked=False)
+        return shown.stdout.strip() == CLOUDCLI_OOM_RESULT
 
     def _held_accounts(self) -> list:
         """The accounts an environment file names an instance for."""

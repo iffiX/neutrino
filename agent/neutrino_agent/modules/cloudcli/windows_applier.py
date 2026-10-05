@@ -228,7 +228,9 @@ def render_script(environment: dict, *, node: str, server: str) -> str:
     return "\r\n".join(lines) + "\r\n"
 
 
-def render_install_script(*, app: str, node: str, npm: str, registry: str = "") -> str:
+def render_install_script(
+    *, app: str, node: str, npm: str, registry: str = "", extra: "dict | None" = None
+) -> str:
     """The script an account's install task runs.
 
     Args:
@@ -236,6 +238,7 @@ def render_install_script(*, app: str, node: str, npm: str, registry: str = "") 
         node: The Node.js interpreter.
         npm: npm's script.
         registry: The registry npm installs from; empty for npm's own.
+        extra: More ``npm_config_*`` settings the hub's state names.
 
     Returns:
         The ``.cmd`` text, CRLF line ends: the app directory and the empty
@@ -244,7 +247,9 @@ def render_install_script(*, app: str, node: str, npm: str, registry: str = "") 
     """
     environment = {
         "PATH": ";".join([ntpath.dirname(node), *CLOUDCLI_WINDOWS_NPM_PATH]),
-        **installer.npm_environment(app, join=ntpath.join, registry=registry),
+        **installer.npm_environment(
+            app, join=ntpath.join, registry=registry, extra=extra
+        ),
     }
     lines = ["@echo off", f'if not exist "{app}" mkdir "{app}"']
     lines.append(f'type nul > "{environment["npm_config_userconfig"]}"')
@@ -363,6 +368,7 @@ class CloudcliWindowsApplier:
                     node,
                     tasks.get(CLOUDCLI_INSTALL_TASK_PREFIX + instance.account),
                     registry=config.npm_registry,
+                    extra=config.npm_environment,
                 )
                 if step == INSTALL_RUNNING:
                     running.append(instance.account)
@@ -513,6 +519,7 @@ class CloudcliWindowsApplier:
         task: "dict | None",
         *,
         registry: str = "",
+        extra: "dict | None" = None,
     ) -> str:
         """Judge an account's install task, or start one when CloudCLI is not there.
 
@@ -544,7 +551,7 @@ class CloudcliWindowsApplier:
                 "task": name,
                 "script": script,
                 "script_text": render_install_script(
-                    app=app, node=node, npm=npm, registry=registry
+                    app=app, node=node, npm=npm, registry=registry, extra=extra
                 ),
                 "log": log_file,
                 "program": CLOUDCLI_WINDOWS_SHELL,
@@ -569,7 +576,11 @@ class CloudcliWindowsApplier:
             lines = output.strip().splitlines()
             raise ModuleApplyError(
                 "cloudcli_native_module_failed",
-                {"account": account, "module": lines[-1] if lines else ""},
+                {
+                    "account": account,
+                    "module": lines[-1] if lines else "",
+                    "detail": installer.failure_detail(output),
+                },
             )
         if result != 0 or not installer.is_app_ready(app):
             raise installer.npm_failure(output, account)

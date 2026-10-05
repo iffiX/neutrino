@@ -226,6 +226,7 @@ and `cn` in the mainland source tree.
 | The install scripts | `https://github.com/iffiX/neutrino/releases/latest/download/` | `https://gitee.com/iffiX/neutrino/raw/main/packaging/install/` |
 | Node.js, for CloudCLI | `https://nodejs.org/dist/` | `https://registry.npmmirror.com/-/binary/node/` |
 | The npm registry, for CloudCLI | `https://registry.npmjs.org` | `https://registry.npmmirror.com` |
+| better-sqlite3's prebuilt binary, for CloudCLI | its GitHub releases | `https://registry.npmmirror.com/-/binary/better-sqlite3` |
 | code-server | `https://github.com/coder/code-server/releases/download/` | `https://mirrors.ustc.edu.cn/github-release/coder/code-server/` |
 
 - An edition updates only to its own edition: the update check and the
@@ -235,7 +236,12 @@ and `cn` in the mainland source tree.
   address in `cn_url` beside `url`, and a `cn` hub's installer fetches from
   `cn_url` when the entry has one.
 - The hub sends the npm registry of its edition in the module's state, and
-  the agent runs `npm` with the registry the state names.
+  the agent runs `npm` with the registry the state names. Beside it the
+  state carries `npm_environment`, the settings `cloudcli.json` names for
+  the edition: in `cn`, `npm_config_better_sqlite3_binary_host`, which
+  prebuild-install reads in place of GitHub.
+- A download's progress line names the host it fetched from, the mirror's
+  in `cn`.
 - The USTC mirror keeps the latest code-server release alone, and npmmirror
   carries none. A `cn` installer tries the pinned version at the mirror and
   checks its sha256; when the mirror no longer carries that version, it

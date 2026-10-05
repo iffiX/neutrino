@@ -88,6 +88,15 @@ CLOUDCLI_UPSTREAM_TIMEOUT_S = 10.0
 CLOUDCLI_READY_POLL_S = 3.0
 CLOUDCLI_REGISTER_RETRY_S = 30.0
 
+# Linux: an account's npm install runs in a transient scope of its own, so a
+# kill for want of memory ends that scope and not the agent's own unit.
+CLOUDCLI_INSTALL_SCOPE_PREFIX = "neutrino_cloudcli_install_"
+# What systemd records for a scope the kernel killed for want of memory.
+CLOUDCLI_OOM_RESULT = "oom-kill"
+# How many lines of an installer's own words a refusal carries, and how long.
+CLOUDCLI_FAILURE_LINES = 4
+CLOUDCLI_FAILURE_DETAIL_CHARS = 400
+
 # Linux: one systemd unit per account, from a template, its environment in
 # a root-only file beside the instance's record.
 CLOUDCLI_UNIT_TEMPLATE = "neutrino_cloudcli@.service"

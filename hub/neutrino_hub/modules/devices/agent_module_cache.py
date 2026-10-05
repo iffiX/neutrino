@@ -243,7 +243,6 @@ class AgentModuleFetchProgress:
         self,
         *,
         title: str,
-        source: str,
         on_line: Callable[[str], None],
         clock: Callable[[], float] = time.monotonic,
     ):
@@ -251,13 +250,11 @@ class AgentModuleFetchProgress:
         Args:
             title: The artifact's title and version, from
                 :func:`artifact_title`.
-            source: Where it comes from, such as ``Microsoft``; empty leaves
-                the ``from`` part out.
             on_line: Called with each line.
             clock: Seconds, monotonic; injected by tests.
         """
         self._title = title
-        self._source = source
+        self._source = ""
         self._on_line = on_line
         self._clock = clock
         self._last_at: "float | None" = None
@@ -284,6 +281,16 @@ class AgentModuleFetchProgress:
         self._last_at = now
         self._last_percent = percent
         self._on_line(self._line(received, total))
+
+    def fetching(self, url: str) -> None:
+        """Name the host a download now comes from in the lines that follow.
+
+        Args:
+            url: The address being fetched.
+        """
+        self._source = urllib.parse.urlsplit(url).hostname or ""
+        self._last_at = None
+        self._last_percent = 0
 
     def say(self, line: str) -> None:
         """Write one line of the fetch's own beside the progress.
@@ -382,9 +389,7 @@ class AgentModuleCache:
                 progress = None
                 if on_progress is not None:
                     progress = AgentModuleFetchProgress(
-                        title=title,
-                        source=str(manifest.get("source", "") or ""),
-                        on_line=on_progress,
+                        title=title, on_line=on_progress
                     )
                 download = self._fetch(entry, progress=progress)
                 self._place(download, path)
@@ -661,6 +666,8 @@ class AgentModuleCache:
                 "module_cache_unwritable", detail=str(error)[:200]
             ) from error
         request = urllib.request.Request(url, headers=AGENT_MODULE_BROWSER_HEADERS)
+        if progress is not None:
+            progress.fetching(url)
         try:
             response = self._open(request)
         except urllib.error.HTTPError as error:

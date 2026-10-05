@@ -94,3 +94,21 @@ def test_the_npm_registry_is_read_from_the_state():
 
     assert config.npm_registry == "https://registry.npmmirror.com"
     assert CloudcliConfig.from_dict({}).npm_registry == ""
+
+
+def test_only_npm_settings_are_taken_from_the_state():
+    config = CloudcliConfig.from_dict(
+        {
+            "npm_environment": {
+                "npm_config_better_sqlite3_binary_host": "https://m.example/bs3",
+                "PATH": "/evil",
+                "npm_config_Upper": "x",
+                "npm_config_number": 3,
+            }
+        }
+    )
+
+    assert config.npm_environment == {
+        "npm_config_better_sqlite3_binary_host": "https://m.example/bs3"
+    }
+    assert CloudcliConfig.from_dict({"npm_environment": "x"}).npm_environment == {}

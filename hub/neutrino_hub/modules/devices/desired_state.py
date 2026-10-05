@@ -41,6 +41,7 @@ from neutrino_hub.modules.credentials.vault import (
 from neutrino_hub.modules.channel.constants import CHANNEL_MODULE_WANTS
 from neutrino_hub.modules.clients.ai_keys import device_gateway
 from neutrino_hub.modules.devices.catalog import resolved_modules
+from neutrino_hub.modules.devices.manifests import load_module_manifests
 from neutrino_hub.modules.devices.constants import (
     DEVICE_CLOUDCLI_LOGIN_KEY,
     DEVICE_CLOUDCLI_MODULE,
@@ -145,9 +146,11 @@ def cloudcli_agent_config(
             CloudCLI from.
 
     Returns:
-        ``{gateway_url, gateway_key, npm_registry, instances: [{account,
-        port, web_password, token_secret, password}]}``, both secrets opened
-        and the password taken from the instance's login.
+        ``{gateway_url, gateway_key, npm_registry, npm_environment,
+        instances: [{account, port, web_password, token_secret, password}]}``,
+        ``npm_environment`` being what the manifest names for the edition,
+        both secrets opened and the password taken from the instance's
+        login.
     """
     is_windows = platform.get("os") == VSCODE_PASSWORD_OS
     instances = []
@@ -173,6 +176,11 @@ def cloudcli_agent_config(
         "gateway_url": str(gateway.get("gateway_url", "") or ""),
         "gateway_key": str(gateway.get("gateway_key", "") or ""),
         "npm_registry": DEVICE_CLOUDCLI_NPM_REGISTRIES[edition],
+        "npm_environment": dict(
+            (load_module_manifests().get(DEVICE_CLOUDCLI_MODULE) or {})
+            .get("npm_environment", {})
+            .get(edition, {})
+        ),
         "instances": instances,
     }
 

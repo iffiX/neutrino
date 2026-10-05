@@ -127,6 +127,15 @@ def test_a_set_is_checked_as_the_agent_receives_it_with_the_devices_key(api, tmp
         "gateway_url": f"http://{HUB}:8317",
         "gateway_key": held.open_key(),
         "npm_registry": DEVICE_CLOUDCLI_NPM_REGISTRIES[EDITION],
+        "npm_environment": (
+            {}
+            if EDITION == "intl"
+            else {
+                "npm_config_better_sqlite3_binary_host": (
+                    "https://registry.npmmirror.com/-/binary/better-sqlite3"
+                )
+            }
+        ),
         "instances": [
             {
                 "account": "alice",

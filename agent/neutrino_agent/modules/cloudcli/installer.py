@@ -20,12 +20,15 @@ import os
 import shutil
 import tarfile
 import tempfile
+import urllib.parse
 import zipfile
 
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.cloudcli.config import jwt_secret
 from neutrino_agent.modules.cloudcli.constants import (
     CLOUDCLI_ACCOUNT_PARTS,
+    CLOUDCLI_FAILURE_DETAIL_CHARS,
+    CLOUDCLI_FAILURE_LINES,
     CLOUDCLI_APP_DIR_NAME,
     CLOUDCLI_DATABASE_NAME,
     CLOUDCLI_NATIVE_MODULES,
@@ -51,6 +54,10 @@ from neutrino_agent.modules.unpacked_tree import (
 # The words in npm's output that say a native module could not get its
 # binary: prebuild-install gave up, and node-gyp could not build it either.
 NATIVE_FAILURE_WORDS = ("gyp", "prebuild")
+# The lines of npm's output that are its tools' own account of a failure.
+FAILURE_LINE_WORDS = ("prebuild-install", "gyp err", "npm error", "npm err!")
+# The registry npm uses when the state names none.
+NPM_DEFAULT_REGISTRY_HOST = "registry.npmjs.org"
 # The exit status the native check ends with, the module's name printed.
 NATIVE_CHECK_EXIT = 3
 NATIVE_CHECK_SCRIPT = (
@@ -218,18 +225,21 @@ def is_app_ready(app: str) -> bool:
     )
 
 
-def npm_environment(app: str, join=os.path.join, *, registry: str = "") -> dict:
+def npm_environment(
+    app: str, join=os.path.join, *, registry: str = "", extra: "dict | None" = None
+) -> dict:
     """What npm runs with besides ``PATH`` and the account's own names.
 
     Args:
         app: The app directory.
         join: How the system joins a path.
         registry: The registry the hub's state names; empty for npm's own.
+        extra: More ``npm_config_*`` settings the hub's state names.
 
     Returns:
         npm's cache inside the app directory, an empty file as the
-        account's configuration, no audit, funding or update notes, and the
-        registry when one is named.
+        account's configuration, no audit, funding or update notes, the
+        registry when one is named, and the state's other settings.
     """
     environment = {
         "npm_config_cache": join(app, CLOUDCLI_NPM_CACHE_NAME),
@@ -240,6 +250,8 @@ def npm_environment(app: str, join=os.path.join, *, registry: str = "") -> dict:
     }
     if registry:
         environment["npm_config_registry"] = registry
+    for name, value in (extra or {}).items():
+        environment.setdefault(name, value)
     return environment
 
 
@@ -249,26 +261,62 @@ def npm_arguments(app: str) -> list:
 
 
 def npm_failure(output: str, account: str) -> ModuleApplyError:
-    """Which step an install that failed failed at.
+    """Which step an install that failed failed at, in the tools' own words.
 
     Args:
         output: What npm printed.
         account: The account it ran as.
 
     Returns:
-        ``cloudcli_native_module_failed {account, module}`` when a native
-        module could not get its binary, else
-        ``cloudcli_npm_install_failed {account}``.
+        ``cloudcli_native_module_failed {account, module, detail}`` when a
+        native module could not get its binary, else
+        ``cloudcli_npm_install_failed {account, detail}``; ``detail`` is the
+        last lines prebuild-install, node-gyp and npm wrote about it.
     """
+    detail = failure_detail(output)
     lowered = output.lower()
     if any(word in lowered for word in NATIVE_FAILURE_WORDS):
         for name in CLOUDCLI_NATIVE_MODULES:
             if name in lowered:
                 return ModuleApplyError(
                     "cloudcli_native_module_failed",
-                    {"account": account, "module": name},
+                    {"account": account, "module": name, "detail": detail},
                 )
-    return ModuleApplyError("cloudcli_npm_install_failed", {"account": account})
+    return ModuleApplyError(
+        "cloudcli_npm_install_failed", {"account": account, "detail": detail}
+    )
+
+
+def failure_detail(output: str) -> str:
+    """The last lines an installer's tools wrote about a failure.
+
+    Args:
+        output: What npm printed.
+
+    Returns:
+        Up to four lines naming prebuild-install, node-gyp or npm's own
+        errors, joined by `` | ``; the output's last line when none does.
+    """
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    named = [
+        line
+        for line in lines
+        if any(word in line.lower() for word in FAILURE_LINE_WORDS)
+    ]
+    kept = named[-CLOUDCLI_FAILURE_LINES:] or lines[-1:]
+    return " | ".join(kept)[-CLOUDCLI_FAILURE_DETAIL_CHARS:]
+
+
+def registry_host(registry: str) -> str:
+    """The host npm fetches from, for the install's log line.
+
+    Args:
+        registry: The registry the state names; empty for npm's own.
+
+    Returns:
+        The registry's host name.
+    """
+    return urllib.parse.urlsplit(registry).hostname or NPM_DEFAULT_REGISTRY_HOST
 
 
 def service_environment(
