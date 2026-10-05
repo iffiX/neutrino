@@ -38,11 +38,3 @@
   font-size: 12px;
   overflow-wrap: anywhere;
 }
-
-.relay_guide {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  margin-top: var(--space-3);
-  font-size: 13px;
-}

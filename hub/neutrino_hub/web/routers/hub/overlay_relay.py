@@ -1,6 +1,7 @@
-"""The relay section of the Access page.
+"""The SSH Relay section of the Access page.
 
-The relay is a reverse SSH forward to a server the person owns. Its settings
+The relay is a reverse SSH forward to a server the person owns, logged in to
+with an SSH key or a login's password from the vault. Its settings
 are stored in ``config/overlay/relay.json`` and made true by the converge
 step; where it stands is read from the runtime's monitor.
 """
@@ -24,6 +25,7 @@ from neutrino_hub.modules.overlay.relay_config import (
 from neutrino_hub.modules.overlay.relay_ops import (
     forget_host_key,
     is_key_stored,
+    is_login_stored,
     is_relay_configured,
 )
 from neutrino_hub.utils.subprocess_run import command_failure_text
@@ -68,7 +70,9 @@ async def update_settings(
     Raises:
         HTTPException: 400 ``relay_host_invalid {host}``,
             ``relay_account_invalid {account}``, ``unknown_credential
-            {field}`` or ``port_out_of_range {minimum, maximum, value}``;
+            {field}`` for a key or a login the vault does not hold or for a
+            request naming both or neither, or ``port_out_of_range {minimum,
+            maximum, value}``;
             502 ``relay_apply_failed {detail}`` when the converge step fails.
     """
     host = request.host.strip()
@@ -85,8 +89,14 @@ async def update_settings(
                 maximum=OVERLAY_RELAY_PORT_MAX,
                 value=value,
             )
-    if not is_key_stored(request.key_id):
+    key_id = request.key_id or ""
+    login_id = request.login_id or ""
+    if bool(key_id) == bool(login_id):
         raise _bad_request("unknown_credential", field="key_id")
+    if key_id and not is_key_stored(key_id):
+        raise _bad_request("unknown_credential", field="key_id")
+    if login_id and not is_login_stored(login_id):
+        raise _bad_request("unknown_credential", field="login_id")
     stored = _stored()
     if (host, request.ssh_port) != (stored.host, stored.ssh_port):
         forget_host_key()
@@ -96,8 +106,9 @@ async def update_settings(
             host=host,
             ssh_port=request.ssh_port,
             account=account,
-            key_id=request.key_id,
+            key_id=key_id,
             public_port=request.public_port,
+            login_id=login_id,
         )
     )
     await _converge(runtime)
@@ -145,6 +156,7 @@ def relay_view(runtime: PanelRuntime) -> RelayView:
         ssh_port=config.ssh_port,
         account=config.account,
         key_id=config.key_id,
+        login_id=config.login_id,
         public_port=config.public_port,
         url=config.url if is_relay_configured(config) else "",
         state=seen["state"],

@@ -80,3 +80,15 @@ def test_an_account_that_could_split_or_hold_a_host_is_refused(account):
 def test_an_ordinary_host_and_account_pass():
     assert not is_host_refused("vps.example.org")
     assert not is_account_refused("relay")
+
+
+def test_a_relay_with_a_login_is_configured_and_logs_in_with_its_password(
+    config_dir,
+):
+    written = OverlayRelayConfig(host="h", account="a", login_id="l1")
+    write_relay(written)
+
+    assert read_relay() == written
+    assert written.has_settings
+    assert written.is_password_login
+    assert not OverlayRelayConfig(host="h", account="a", key_id="k").is_password_login

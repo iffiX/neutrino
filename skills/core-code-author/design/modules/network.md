@@ -355,10 +355,14 @@ IP address or a host name of letters, digits, hyphens and dots.
 ## The relay, the third way in
 
 The relay is a reverse SSH forward from the hub to a server the person owns,
-called the VPS on this page. The hub logs in to the VPS with one SSH key from
-the Credentials page and has the VPS's sshd listen on a public port; every
-connection to that port reaches the hub's agent port on loopback. TLS and the
-fingerprint pin run end to end, so the VPS forwards ciphertext.
+called the VPS on this page. The hub logs in to the VPS with an SSH key or a
+password from the Credentials page and has the VPS's sshd listen on a public
+port; every connection to that port reaches the hub's agent port on loopback.
+TLS and the fingerprint pin run end to end, so the VPS forwards ciphertext.
+
+A person reads the method's name as **SSH Relay**, in Chinese **SSH 中继**:
+the card, the section, the clients' hub row and the guide. The configuration,
+the files, the routes, the protocol's `relay` and the codes keep `relay`.
 
 `config/overlay/relay.json` holds the relay:
 
@@ -368,11 +372,14 @@ fingerprint pin run end to end, so the VPS forwards ciphertext.
 | `host` | the VPS's name or address |
 | `ssh_port` | its sshd's port, 22 by default |
 | `account` | the account the hub logs in as |
-| `key_id` | the id of an SSH key on the Credentials page, the same key a device's `ssh.key_id` names |
+| `key_id` | the id of an SSH key on the Credentials page, the same key a device's `ssh.key_id` names; empty when the relay logs in with a password |
+| `login_id` | the id of a login on the Credentials page whose password the hub logs in with, the same login a device's `ssh.login_id` names; empty when the relay logs in with a key |
 | `public_port` | the port the VPS listens on for peers, 8443 by default |
 
-The relay is configured when `host`, `account` and `key_id` are set and the
-key exists. `host` and `account` reach a command line that runs as root, so a
+At most one of `key_id` and `login_id` is set, and which one is set is the
+relay's credential kind, as a device's `ssh` block records it. The relay is
+configured when `host` and `account` are set and the key or the login it
+names exists. `host` and `account` reach a command line that runs as root, so a
 value that is empty, holds whitespace or starts with `-`, and an `account`
 holding `@`, is refused at save.
 
@@ -395,7 +402,24 @@ ssh -N -T -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCo
 
 `<state>` is the hub's state root ([files.md](../files.md)), `<agent-port>` is
 `agent_listen_port`, and the other placeholders are the `relay.json` keys of
-the same names. The program is the system's OpenSSH client: `ssh` on
+the same names. With a login, the line logs in with its password and offers
+no key:
+
+```text
+ssh -N -T -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3
+    -o ConnectTimeout=15 -o BatchMode=no -o PubkeyAuthentication=no
+    -o PreferredAuthentications=password,keyboard-interactive -o NumberOfPasswordPrompts=1
+    -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=<state>/relay/known_hosts
+    -p <ssh-port> -R 0.0.0.0:<public-port>:127.0.0.1:<agent-port> <account>@<host>
+```
+
+and runs with `SSH_ASKPASS=<state>/relay/askpass`, `SSH_ASKPASS_REQUIRE=force`
+and `DISPLAY=neutrino` added to its environment. ssh then reads the password
+from the askpass program, which prints the password file, and never from a
+terminal: the password is on no command line and in no environment.
+`SSH_ASKPASS_REQUIRE` is OpenSSH 8.4's; an older client takes `SSH_ASKPASS`
+when it has no terminal and `DISPLAY` is set, which is why the line sets
+`DISPLAY` ([../min_support.md](../min_support.md)). The program is the system's OpenSSH client: `ssh` on
 Linux and macOS, `%SystemRoot%\System32\OpenSSH\ssh.exe` on Windows. A process
 that exits is started again: by the unit's `RestartSec=10` on Linux, and on
 macOS and Windows by the supervisor's backoff, `SYSTEM_CHILD_RESTART_MIN_S` 1
@@ -403,10 +427,16 @@ doubled up to `SYSTEM_CHILD_RESTART_MAX_S` 60.
 
 | File | Written | Holds |
 | --- | --- | --- |
-| `<state>/relay/key` | by the converge step from the vault, mode 0600; deleted when the relay stops | the private key in OpenSSH form, without the passphrase it was stored with |
+| `<state>/relay/key` | by the converge step from the vault, mode 0600, with a key; deleted when the relay stops or logs in with a password | the private key in OpenSSH form, without the passphrase it was stored with |
+| `<state>/relay/password` | by the converge step from the vault, mode 0600, with a login; deleted when the relay stops or logs in with a key | the login's password, no newline |
+| `<state>/relay/askpass` (`askpass.cmd` on Windows) | by the converge step with the password file, mode 0700; deleted with it | `exec cat <state>/relay/password` (`@type "<state>\relay\password"` on Windows): the program ssh asks for the password |
 | `<state>/relay/known_hosts` | by `ssh` on its first connection, mode 0600 | the VPS's host key |
 
-A locked vault leaves the key file unwritten and the relay in `vault_locked`.
+The password file and the askpass program are root-only as the key file is,
+through the same `make_root_only`. On Linux the unit starts only while the key
+file or the password file exists, `ConditionPathExists=|` on each, so a relay
+that was stopped does not start with the machine. A locked vault leaves the key file or the
+password file unwritten and the relay in `vault_locked`.
 A save that changes `host` or `ssh_port` deletes `known_hosts`, so the next
 connection records the new server's key. A recorded key that no longer
 matches stops every connection, and the card's **Forget host key** deletes
@@ -418,7 +448,8 @@ The hub runs no command on the VPS and changes nothing there: `-N` opens no
 session and `-T` no terminal. The VPS's own setup is the person's: an account
 for the forward, `GatewayPorts clientspecified` in its sshd, the key in that
 account's `authorized_keys` behind
-`restrict,port-forwarding,permitlisten="<public-port>"`, and the public port
+`restrict,port-forwarding,permitlisten="<public-port>"`, or a password for
+that account with `PasswordAuthentication yes` for it, and the public port
 open in the provider's firewall. A guide page lists these steps and sends the
 person to their provider's terms on forwarded traffic.
 
@@ -435,12 +466,12 @@ are in `modules/overlay/constants.py`.
 | `state` | When |
 | --- | --- |
 | `disabled` | `is_enabled` is false |
-| `not_configured` | on, and `host`, `account` or `key_id` is missing, or the key is gone from the vault |
-| `vault_locked` | on and configured, and the vault cannot open the key |
+| `not_configured` | on, and `host` or `account` is missing, or neither `key_id` nor `login_id` is set, or the key or the login it names is gone from the vault |
+| `vault_locked` | on and configured, and the vault cannot open the key or the login |
 | `connecting` | `ssh` runs and no check has finished since it started |
 | `connected` | `ssh` runs and the last check met the hub's own certificate |
 | `port_closed` | `ssh` runs and the last check got no answer or another certificate: the VPS's sshd binds loopback only, or a firewall closes the port |
-| `auth_failed` | `ssh` exited after writing `Permission denied` |
+| `auth_failed` | `ssh` exited after writing `Permission denied`: the server refused the key or the password |
 | `host_key_changed` | `ssh` exited after writing `REMOTE HOST IDENTIFICATION HAS CHANGED` or `Host key verification failed` |
 | `forward_refused` | `ssh` exited after writing `remote port forwarding failed`: the sshd refuses the forward, or the port is taken |
 | `unreachable` | `ssh` exited for any other reason: no answer, a refused connection, a name that does not resolve, a keepalive left unanswered |

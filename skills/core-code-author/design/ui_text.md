@@ -149,7 +149,7 @@ its own word, and a string in one language carries no word of the other.
 | the hub | hub, this hub | 中枢，这台中枢 | English never writes 中枢 and Chinese never writes `hub`. Neither calls the hub a gateway (网关): that word names the AI gateway, the side gateway mode and a network's router. |
 | the product | Neutrino | 微子 | Neutrino is described as remote access to a person's own machines (远程访问). No surface calls it a VPN or a proxy (代理, 翻墙); the proxy is one feature, named on its own page. |
 | the page of the ways in | **Access** | **外部访问** | The page, its sidebar entry and every link to it use this name. The configuration, the routes and the protocol keep `overlay`, and so do the catalog keys (`ui.nav.overlay`, `ui.overlay.*`). |
-| the third way in | Relay | 中继 | The card, the client's hub row and the docs use it. The server it reaches is "your server" (你的服务器) in a label and VPS in the guide. |
+| the third way in | SSH Relay | SSH 中继 | The card, the section, the client's hub row and the docs use it; a sentence that names it again may say "the relay" (中继). The server it reaches is "your server" (你的服务器) in a label and VPS in the guide. The configuration, routes, protocol values and codes keep `relay`. |
 
 The sidebar's lines under the two renamed entries:
 
@@ -281,20 +281,26 @@ A client's Hubs row names the way it reached the hub; `reached_through`
 
 | Key | English | Chinese |
 | --- | --- | --- |
-| `ui.overlay.relay_title` | Relay | 中继 |
+| `ui.overlay.relay_title` | SSH Relay | SSH 中继 |
 | `ui.overlay.summary_relay` | Through a server you own, over SSH | 经你自己的服务器，用 SSH 转发 |
 | `ui.overlay.relay_host` | Server | 服务器 |
 | `ui.overlay.relay_ssh_port` | SSH port | SSH 端口 |
 | `ui.overlay.relay_account` | Account | 账户 |
-| `ui.overlay.relay_key` | SSH key | SSH 密钥 |
+| `ui.overlay.relay_credential_hint` | How the hub signs in to your server. | 中枢用什么方式登录你的服务器。 |
 | `ui.overlay.relay_public_port` | Public port | 对外端口 |
 | `ui.overlay.relay_address` | Address for clients | 客户端连接地址 |
 | `ui.overlay.relay_host_key` | Host key | 主机密钥 |
 | `ui.overlay.relay_forget_host_key` | Forget host key | 忘记主机密钥 |
-| `ui.overlay.relay_apply` | Apply relay | 应用中继 |
-| `ui.overlay.relay_apply_hint` | Saves the relay and connects it again. | 保存中继设置并重新连接。 |
-| `ui.overlay.relay_apply_warning` | Clients connected through the relay disconnect and connect again. | 经中继连着的客户端会断开再重连。 |
-| `ui.overlay.relay_guide` | What to set up on your server | 服务器上要做的设置 |
+| `ui.overlay.relay_apply` | Apply SSH Relay | 应用 SSH 中继 |
+| `ui.overlay.relay_apply_hint` | Saves the SSH Relay and connects it again. | 保存 SSH 中继设置并重新连接。 |
+| `ui.overlay.relay_apply_warning` | Clients connected through the SSH Relay disconnect and connect again. | 经 SSH 中继连着的客户端会断开再重连。 |
+
+The credential's controls are the agent install's, with its words:
+`ui.install_agent.credential` (**Credential** / **凭据**) choosing
+`ui.install_agent.kind_key` (**SSH key**) or `ui.install_agent.kind_login`
+(**Password** / **密码**), then the vault picker labelled
+`ui.install_agent.key` with `ui.install_agent.key_hint`, or
+`ui.install_agent.login` with `ui.install_agent.login_hint`.
 
 The state words, `state.relay_<code>`:
 

@@ -83,13 +83,13 @@ The window, titled **Neutrino client**, has a sidebar with **Hubs**, **Web**, **
 
 On the **Hubs** page, each row holds one hub: its name, its state, its address and the package it runs. While the channel is open, the state names the way it reached the hub:
 
-| State                    | The channel reached the hub through                                 |
-| ------------------------ | ------------------------------------------------------------------- |
-| **Connected · LAN**      | the hub's address on a network it serves                            |
-| **Connected · Direct**   | one of the hub's own addresses, from outside the networks it serves |
-| **Connected · NetBird**  | the hub's NetBird address                                           |
-| **Connected · EasyTier** | the hub's EasyTier address                                          |
-| **Connected · Relay**    | the public port of the hub's relay server                           |
+| State                     | The channel reached the hub through                                 |
+| ------------------------- | ------------------------------------------------------------------- |
+| **Connected · LAN**       | the hub's address on a network it serves                            |
+| **Connected · Direct**    | one of the hub's own addresses, from outside the networks it serves |
+| **Connected · NetBird**   | the hub's NetBird address                                           |
+| **Connected · EasyTier**  | the hub's EasyTier address                                          |
+| **Connected · SSH Relay** | the public port of the hub's SSH Relay server                       |
 
 The dot before the name shows the state:
 

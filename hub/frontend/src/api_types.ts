@@ -559,6 +559,8 @@ export interface LoginView {
   username: string | null;
   created_at: string;
   device_count: number;
+  /** Whether `config/overlay/relay.json` names this login. */
+  is_relay_login: boolean;
 }
 
 /** The Credentials page's login section payload. */
@@ -1694,7 +1696,10 @@ export interface RelayView {
   host: string;
   ssh_port: number;
   account: string;
+  /** The SSH key the relay logs in with; empty with a login. */
   key_id: string;
+  /** The login whose password the relay logs in with; empty with a key. */
+  login_id: string;
   public_port: number;
   /** The address the relay adds to `urls`; empty while not configured. */
   url: string;
@@ -1706,11 +1711,13 @@ export interface RelayView {
   checked_at: string;
 }
 
+/** Exactly one of `key_id` and `login_id`, as the agent install names it. */
 export interface RelaySetRequest {
   host: string;
   ssh_port: number;
   account: string;
-  key_id: string;
+  key_id: string | null;
+  login_id: string | null;
   public_port: number;
 }
 

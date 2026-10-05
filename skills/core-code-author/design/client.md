@@ -96,7 +96,7 @@ languages, and the English column is the wording the English catalog holds.
 | `ui.through.direct` | Direct |
 | `ui.through.netbird` | NetBird |
 | `ui.through.easytier` | EasyTier |
-| `ui.through.relay` | Relay |
+| `ui.through.relay` | SSH Relay |
 | `ui.state.connecting` | Connecting… |
 | `ui.state.down` | Not connected |
 | `ui.state.pending` | Joined; the hub has not been reached yet |
@@ -118,7 +118,7 @@ languages, and the English column is the wording the English catalog holds.
 | `ui.job.clearing` | Clearing… |
 
 The Chinese catalog's words for the ways in are 局域网, 直连, NetBird,
-EasyTier and 中继, the relay's word being the one [ui_text.md](ui_text.md) fixes.
+EasyTier and SSH 中继, the relay's word being the one [ui_text.md](ui_text.md) fixes.
 
 The dot follows [visual.md](visual.md):
 

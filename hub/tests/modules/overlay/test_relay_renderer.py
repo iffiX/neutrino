@@ -10,6 +10,7 @@ import pytest
 from neutrino_hub.modules.overlay.relay_config import OverlayRelayConfig
 from neutrino_hub.modules.overlay.relay_renderer import (
     OverlayRelayRenderer,
+    askpass_program,
     judge_exit,
 )
 
@@ -196,3 +197,81 @@ def test_the_unit_drop_in_hands_ssh_the_same_whole_path():
     line = [row for row in dropin.splitlines() if row.startswith('ExecStart="')]
 
     assert shlex.split(line[0].removeprefix("ExecStart=")) == argv
+
+
+# --- a relay that logs in with a password ---
+
+
+def test_a_login_s_start_line_asks_a_password_once_and_offers_no_key():
+    login = OverlayRelayConfig(**{**vars(RELAY), "key_id": "", "login_id": "l1"})
+
+    argv = OverlayRelayRenderer(
+        ssh_path="/usr/bin/ssh",
+        key_path="/var/lib/neutrino/hub/relay/key",
+        known_hosts_path="/var/lib/neutrino/hub/relay/known_hosts",
+        agent_port=8443,
+        askpass_path="/var/lib/neutrino/hub/relay/askpass",
+    ).render(login)
+
+    assert argv == [
+        "/usr/bin/ssh",
+        "-N",
+        "-T",
+        "-o",
+        "ExitOnForwardFailure=yes",
+        "-o",
+        "ServerAliveInterval=15",
+        "-o",
+        "ServerAliveCountMax=3",
+        "-o",
+        "ConnectTimeout=15",
+        "-o",
+        "BatchMode=no",
+        "-o",
+        "PubkeyAuthentication=no",
+        "-o",
+        "PreferredAuthentications=password,keyboard-interactive",
+        "-o",
+        "NumberOfPasswordPrompts=1",
+        "-o",
+        "StrictHostKeyChecking=accept-new",
+        "-o",
+        'UserKnownHostsFile="/var/lib/neutrino/hub/relay/known_hosts"',
+        "-p",
+        "2222",
+        "-R",
+        "0.0.0.0:18443:127.0.0.1:8443",
+        "relay@203.0.113.5",
+    ]
+
+
+def test_only_a_login_runs_with_the_askpass_environment():
+    login = OverlayRelayConfig(**{**vars(RELAY), "key_id": "", "login_id": "l1"})
+    made = OverlayRelayRenderer(
+        ssh_path="/usr/bin/ssh",
+        key_path="/k",
+        known_hosts_path="/h",
+        agent_port=8443,
+        askpass_path="/var/lib/neutrino/hub/relay/askpass",
+    )
+
+    assert made.environment(login) == {
+        "SSH_ASKPASS": "/var/lib/neutrino/hub/relay/askpass",
+        "SSH_ASKPASS_REQUIRE": "force",
+        "DISPLAY": "neutrino",
+    }
+    assert made.environment(RELAY) == {}
+
+
+@pytest.mark.parametrize(
+    ("is_windows", "program"),
+    [
+        (False, "#!/bin/sh\nexec cat '/var/lib/neutrino hub/relay/password'\n"),
+        (True, '@type "/var/lib/neutrino hub/relay/password"\r\n'),
+    ],
+)
+def test_the_askpass_program_prints_the_password_file(is_windows, program):
+    assert (
+        askpass_program("/var/lib/neutrino hub/relay/password", is_windows=is_windows)
+        == program
+    )

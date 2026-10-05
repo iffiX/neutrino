@@ -118,9 +118,13 @@ export function OverlayPage() {
         <EasyTierSection />
       )}
 
-      {selected === PROVIDER_DIRECT && <DirectSection />}
+      {selected === PROVIDER_DIRECT && isEnabled(PROVIDER_DIRECT) && (
+        <DirectSection />
+      )}
 
-      {selected === PROVIDER_RELAY && <RelaySection />}
+      {selected === PROVIDER_RELAY && isEnabled(PROVIDER_RELAY) && (
+        <RelaySection />
+      )}
     </div>
   );
 }

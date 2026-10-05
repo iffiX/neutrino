@@ -92,7 +92,7 @@ OVERLAY_DIRECT_HOST_MAX = 253
 # It is a way in beside the engines, not an engine, so it is not a row of the
 # engine table.
 OVERLAY_RELAY = "relay"
-OVERLAY_RELAY_TITLE = "Relay"
+OVERLAY_RELAY_TITLE = "SSH Relay"
 OVERLAY_RELAY_CONFIG_NAME = "overlay/relay.json"
 OVERLAY_RELAY_DEFAULT_SSH_PORT = 22
 OVERLAY_RELAY_DEFAULT_PUBLIC_PORT = 8443
@@ -108,6 +108,12 @@ OVERLAY_RELAY_KEY_NAME = "key"
 OVERLAY_RELAY_KNOWN_HOSTS_NAME = "known_hosts"
 OVERLAY_RELAY_DIR_MODE = 0o700
 OVERLAY_RELAY_FILE_MODE = 0o600
+# With a login: the password file, and the program ssh asks for it, which
+# prints that file. Windows runs a command script.
+OVERLAY_RELAY_PASSWORD_NAME = "password"
+OVERLAY_RELAY_ASKPASS_NAME = "askpass"
+OVERLAY_RELAY_ASKPASS_WINDOWS_NAME = "askpass.cmd"
+OVERLAY_RELAY_ASKPASS_MODE = 0o700
 # The system's OpenSSH client: found on the path on Linux and macOS, at this
 # place under the system root on Windows.
 OVERLAY_RELAY_SSH_NAME = "ssh"
@@ -125,6 +131,27 @@ OVERLAY_RELAY_SSH_OPTIONS = (
     "StrictHostKeyChecking=accept-new",
 )
 OVERLAY_RELAY_KNOWN_HOSTS_OPTION = "UserKnownHostsFile"
+# The options a start line with a login takes in place of the key's
+# BatchMode and IdentitiesOnly: a password asked once, through askpass.
+OVERLAY_RELAY_PASSWORD_SSH_OPTIONS = (
+    "ExitOnForwardFailure=yes",
+    "ServerAliveInterval=15",
+    "ServerAliveCountMax=3",
+    "ConnectTimeout=15",
+    "BatchMode=no",
+    "PubkeyAuthentication=no",
+    "PreferredAuthentications=password,keyboard-interactive",
+    "NumberOfPasswordPrompts=1",
+    "StrictHostKeyChecking=accept-new",
+)
+# The environment that start line runs with. SSH_ASKPASS_REQUIRE is OpenSSH
+# 8.4's; an older ssh asks the askpass program when it has no terminal and
+# DISPLAY is set.
+OVERLAY_RELAY_ASKPASS_ENV = "SSH_ASKPASS"
+OVERLAY_RELAY_ASKPASS_REQUIRE_ENV = "SSH_ASKPASS_REQUIRE"
+OVERLAY_RELAY_ASKPASS_REQUIRE = "force"
+OVERLAY_RELAY_DISPLAY_ENV = "DISPLAY"
+OVERLAY_RELAY_DISPLAY = "neutrino"
 OVERLAY_RELAY_LISTEN_ADDRESS = "0.0.0.0"
 OVERLAY_RELAY_TARGET_ADDRESS = "127.0.0.1"
 

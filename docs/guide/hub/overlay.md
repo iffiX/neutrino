@@ -4,7 +4,7 @@ title: Access
 
 # Access
 
-The **Access** page holds the ways a client or an agent outside your network reaches the hub: Direct, Relay, NetBird and EasyTier. Direct opens the hub's own addresses to clients. NetBird and EasyTier are overlays, private networks laid over the internet. The relay is a server you rent or own that forwards one public port to the hub, as [Relay](./relay.md) describes. Each way in has its own card, switch and settings, and any of them can run at once.
+The **Access** page holds the ways a client or an agent outside your network reaches the hub: Direct, SSH Relay, NetBird and EasyTier. Direct opens the hub's own addresses to clients. NetBird and EasyTier are overlays, private networks laid over the internet. The relay is a server you rent or own that forwards one public port to the hub, as [Relay](./relay.md) describes. Each way in has its own card, switch and settings, and any of them can run at once.
 
 ## What a client needs from outside
 
@@ -12,13 +12,13 @@ A client away from home needs one thing: the hub's agent port, 8443, through any
 
 By default the hub advertises its LAN routes on each overlay. The client's pages do not use them. A route matters to a peer that reaches a LAN machine by its own address, such as an SSH session from a laptop on NetBird.
 
-The mainland edition has the Direct, Relay and EasyTier cards, and no NetBird card.
+The mainland edition has the Direct, SSH Relay and EasyTier cards, and no NetBird card.
 
 ## Turn an engine on
 
 ![The two engine cards, both switched on](/guide/en/overlay_switches.webp)
 
-**Engine** holds one card per way in. The **Enable** switch on a card says whether that engine runs. Selecting the card itself only picks which settings show under the cards. The **Direct** card is below. The **Relay** card's settings are on [Relay](./relay.md).
+**Engine** holds one card per way in. The **Enable** switch on a card says whether that engine runs. Selecting the card itself only picks which settings show under the cards, and a card shows its settings only while it is turned on and applied. The **Direct** card is below. The **SSH Relay** card's settings are on [Relay](./relay.md).
 
 1. Turn on the engine's switch.
 1. Select **Apply overlays**. The hub installs the engine when it is absent, starts the engines turned on, then stops the ones turned off.

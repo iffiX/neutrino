@@ -251,3 +251,66 @@ def test_a_converge_that_fails_is_relay_apply_failed(api):
         "code": "relay_apply_failed",
         "params": {"detail": "unit refused"},
     }
+
+
+# --- a login in place of a key ---
+
+
+def stored_login(name: str = "relay") -> str:
+    from neutrino_hub.modules.credentials.vault import SecretVault
+
+    return (
+        SecretVault()
+        .add(kind="login", name=name, secret={"password": "lab-only-7"})  # scan: allow
+        .id
+    )
+
+
+def test_saving_with_a_login_stores_it_in_place_of_a_key(api):
+    client, runtime, _ = api
+    login_id = stored_login()
+
+    response = client.post(
+        "/api/hub/overlay/relay/set",
+        json=settings(None, login_id=login_id),
+    )
+
+    assert response.status_code == 200, response.json()
+    assert response.json()["login_id"] == login_id
+    assert response.json()["key_id"] == ""
+    assert read_relay().login_id == login_id
+    assert read_relay().key_id == ""
+    assert runtime.converged == 1
+
+
+@pytest.mark.parametrize("both", [True, False])
+def test_both_credentials_or_neither_is_refused(api, both):
+    client, runtime, key_id = api
+    body = (
+        settings(key_id, login_id=stored_login())
+        if both
+        else settings(None, login_id=None)
+    )
+
+    response = client.post("/api/hub/overlay/relay/set", json=body)
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == {
+        "code": "unknown_credential",
+        "params": {"field": "key_id"},
+    }
+    assert runtime.converged == 0
+
+
+def test_a_login_the_vault_does_not_hold_is_refused(api):
+    client, _, _ = api
+
+    response = client.post(
+        "/api/hub/overlay/relay/set", json=settings(None, login_id="gone")
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == {
+        "code": "unknown_credential",
+        "params": {"field": "login_id"},
+    }

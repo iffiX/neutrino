@@ -63,7 +63,7 @@ To join another hub, select **Join a hub** again with that hub's link. Each hub 
 
 The **Hubs** screen holds one row per hub: its name, its state, its address and the package it runs. In portrait, a bar at the bottom opens **Hubs**, **Web**, **Ports**, **AI**, **Files**, **Terminals**, **Remote desktops** and **Settings**. In landscape, and on a tablet at least 720 dp wide, a sidebar replaces the bar.
 
-While the channel is open, the state names the way it reached the hub: **Connected · LAN**, **Connected · Direct**, **Connected · NetBird**, **Connected · EasyTier** or **Connected · Relay**. Direct means the phone reached the hub's agent port from outside every network the hub is on, at an address the hub exposes, as [Turn on Direct](../hub/overlay.md#turn-on-direct) describes. A way this app has no word for reads as **Connected**. Relay means the phone reached the public port of a server the hub's owner set up, as [Relay](../hub/relay.md) describes.
+While the channel is open, the state names the way it reached the hub: **Connected · LAN**, **Connected · Direct**, **Connected · NetBird**, **Connected · EasyTier** or **Connected · SSH Relay**. Direct means the phone reached the hub's agent port from outside every network the hub is on, at an address the hub exposes, as [Turn on Direct](../hub/overlay.md#turn-on-direct) describes. A way this app has no word for reads as **Connected**. SSH Relay means the phone reached the public port of a server the hub's owner set up, as [SSH Relay](../hub/relay.md) describes.
 
 ### Leave and reconnect
 

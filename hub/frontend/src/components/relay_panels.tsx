@@ -1,43 +1,35 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 
 import { ApplyBar } from "./apply_bar";
 import { ErrorPanel } from "./error_panel";
 import { Icon } from "./icon";
+import { Picker } from "./picker";
 import { StatusDot } from "./status_dot";
 import type { StatusTone } from "./status_dot";
 import { VaultPicker } from "./vault_picker";
 import { apiPost, describeError } from "../api_client";
-import { getLanguage, t, useLanguage } from "../i18n";
+import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import { useConfirm } from "../use_confirm";
 import { useDraft } from "../use_draft";
-import type {
-  KeysResponse,
-  RelaySetRequest,
-  RelayState,
-  RelayView,
-} from "../api_types";
+import type { RelaySetRequest, RelayState, RelayView } from "../api_types";
 
 import "./relay_panels.css";
 
 /**
- * The relay: a reverse SSH forward to a server the person owns. A status
+ * The SSH Relay: a reverse SSH forward to a server the person owns. A status
  * panel reads where it stands, and a settings panel with its own apply bar
- * stores where it goes.
+ * stores where it goes and how the hub signs in there: with an SSH key or a
+ * login's password, chosen with the agent install's controls.
  */
 
 const RELAY_PATH = "/hub/overlay/relay";
-const KEYS_PATH = "/hub/credential/ssh_key";
 
 /** How often the status is read; the check runs on the hub's own clock. */
 const RELAY_RELOAD_MS = 10000;
 
-/** The guide page that says what to set up on the server, per language. */
-const GUIDE_URLS: Record<string, string> = {
-  en: "https://neutrino.beyond-infinity.top/hub/relay.html",
-  "zh-CN": "https://neutrino.beyond-infinity.top/zh-CN/hub/relay.html",
-};
+/** Which of the two the hub signs in with, as the agent install names them. */
+type CredentialKind = "key" | "login";
 
 const STATE_TONES: Record<RelayState, StatusTone> = {
   disabled: "idle",
@@ -160,15 +152,6 @@ function RelayStatusPanel({ view, onChanged }: RelayPanelProps) {
           </span>
         </div>
       </div>
-      <a
-        className="relay_guide"
-        href={GUIDE_URLS[getLanguage()] ?? GUIDE_URLS.en}
-        target="_blank"
-        rel="noreferrer"
-      >
-        <Icon name="link" size={13} />
-        {t("ui.overlay.relay_guide")}
-      </a>
       {error !== null && (
         <div className="notice notice--error">
           <Icon name="alert" size={15} />
@@ -185,7 +168,9 @@ interface RelayDraft {
   host: string;
   sshPort: string;
   account: string;
+  credentialKind: CredentialKind;
   keyId: string;
+  loginId: string;
   publicPort: string;
 }
 
@@ -194,16 +179,17 @@ function draftOf(view: RelayView): RelayDraft {
     host: view.host,
     sshPort: String(view.ssh_port),
     account: view.account,
+    credentialKind: view.login_id !== "" ? "login" : "key",
     keyId: view.key_id,
+    loginId: view.login_id,
     publicPort: String(view.public_port),
   };
 }
 
-/** Where the relay goes: the server, the account, the key and the ports. */
+/** Where the relay goes: the server, the account, the credential and the ports. */
 function RelaySettingsPanel({ view, onChanged }: RelayPanelProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
-  const keys = useApiResource<KeysResponse>(KEYS_PATH);
   const { draft, setDraft, isDirty, reset } = useDraft(view, draftOf);
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -224,7 +210,8 @@ function RelaySettingsPanel({ view, onChanged }: RelayPanelProps) {
       host: draft.host.trim(),
       ssh_port: Number(draft.sshPort),
       account: draft.account.trim(),
-      key_id: draft.keyId,
+      key_id: draft.credentialKind === "key" ? draft.keyId || null : null,
+      login_id: draft.credentialKind === "login" ? draft.loginId || null : null,
       public_port: Number(draft.publicPort),
     };
     try {
@@ -235,8 +222,6 @@ function RelaySettingsPanel({ view, onChanged }: RelayPanelProps) {
       setIsBusy(false);
     }
   };
-
-  const hasNoKeys = keys.data !== null && keys.data.keys.length === 0;
 
   return (
     <section
@@ -285,18 +270,33 @@ function RelaySettingsPanel({ view, onChanged }: RelayPanelProps) {
             onChange={(event) => change({ publicPort: event.target.value })}
           />
         </label>
+        <Picker
+          options={[
+            { id: "key", name: t("ui.install_agent.kind_key") },
+            { id: "login", name: t("ui.install_agent.kind_login") },
+          ]}
+          value={draft.credentialKind}
+          onChange={(id) => change({ credentialKind: id as CredentialKind })}
+          label={t("ui.install_agent.credential")}
+          hint={t("ui.overlay.relay_credential_hint")}
+        />
       </div>
-      <VaultPicker
-        kind="ssh_key"
-        value={draft.keyId === "" ? null : draft.keyId}
-        onChange={(id) => change({ keyId: id ?? "" })}
-        label={t("ui.overlay.relay_key")}
-      />
-      {hasNoKeys && (
-        <Link className="relay_guide" to="/credentials">
-          <Icon name="key" size={13} />
-          {t("ui.nav.credentials")}
-        </Link>
+      {draft.credentialKind === "key" ? (
+        <VaultPicker
+          kind="ssh_key"
+          value={draft.keyId === "" ? null : draft.keyId}
+          onChange={(id) => change({ keyId: id ?? "" })}
+          label={t("ui.install_agent.key")}
+          hint={t("ui.install_agent.key_hint")}
+        />
+      ) : (
+        <VaultPicker
+          kind="login"
+          value={draft.loginId === "" ? null : draft.loginId}
+          onChange={(id) => change({ loginId: id ?? "" })}
+          label={t("ui.install_agent.login")}
+          hint={t("ui.install_agent.login_hint")}
+        />
       )}
       <ApplyBar
         isDirty={isDirty}

@@ -1,11 +1,12 @@
 """Running the relay's ssh, and reading where it stands.
 
-The applier makes the stored relay true: the key file from the vault, the
-start line, and the process under the controller's name ``relay``, which is
-the unit ``neutrino_hub_relay.service`` on Linux and a child of the hub's
-service on macOS and Windows. The monitor reads the process every second
-and checks the public address from outside, and its view is the relay's
-state. Neither ever prints the key.
+The applier makes the stored relay true: the key file, or the password file
+and the askpass program that prints it, from the vault; the start line; and
+the process under the controller's name ``relay``, which is the unit
+``neutrino_hub_relay.service`` on Linux and a child of the hub's service on
+macOS and Windows. The monitor reads the process every second and checks the
+public address from outside, and its view is the relay's state. Neither ever
+prints the key or the password.
 """
 
 import base64
@@ -24,10 +25,14 @@ from typing import Callable
 import asyncssh
 
 from neutrino_hub.exceptions import KeyMaterialError, VaultLockedError
+from neutrino_hub.modules.devices.ssh_ops import LOGIN_KIND
 from neutrino_hub.modules.credentials.vault import SecretVault
 from neutrino_hub.modules.devices.constants import DEVICE_KEY_ERROR_UNREADABLE
 from neutrino_hub.modules.devices.key_registry import KeyRegistry
 from neutrino_hub.modules.overlay.constants import (
+    OVERLAY_RELAY_ASKPASS_MODE,
+    OVERLAY_RELAY_ASKPASS_NAME,
+    OVERLAY_RELAY_ASKPASS_WINDOWS_NAME,
     OVERLAY_RELAY_CHANGE_STARTED,
     OVERLAY_RELAY_CHANGE_STOPPED,
     OVERLAY_RELAY_CHECK_FIRST_S,
@@ -41,6 +46,7 @@ from neutrino_hub.modules.overlay.constants import (
     OVERLAY_RELAY_KEY_NAME,
     OVERLAY_RELAY_KNOWN_HOSTS_NAME,
     OVERLAY_RELAY_LOG_LINES,
+    OVERLAY_RELAY_PASSWORD_NAME,
     OVERLAY_RELAY_SERVICE_NAME,
     OVERLAY_RELAY_SSH_NAME,
     OVERLAY_RELAY_STATE_CONNECTED,
@@ -58,6 +64,7 @@ from neutrino_hub.modules.overlay.constants import (
 from neutrino_hub.modules.overlay.relay_config import OverlayRelayConfig, read_relay
 from neutrino_hub.modules.overlay.relay_renderer import (
     OverlayRelayRenderer,
+    askpass_program,
     judge_exit,
 )
 from neutrino_hub.platforms.constants import PLATFORM_OS_WINDOWS
@@ -93,6 +100,30 @@ def key_path() -> Path:
 def known_hosts_path() -> Path:
     """The file ssh records the server's host key in."""
     return relay_dir() / OVERLAY_RELAY_KNOWN_HOSTS_NAME
+
+
+def password_path() -> Path:
+    """The file holding the login's password, with a login."""
+    return relay_dir() / OVERLAY_RELAY_PASSWORD_NAME
+
+
+def askpass_path() -> Path:
+    """The program ssh asks for the password, which prints the password file."""
+    if hub_os() == PLATFORM_OS_WINDOWS:
+        return relay_dir() / OVERLAY_RELAY_ASKPASS_WINDOWS_NAME
+    return relay_dir() / OVERLAY_RELAY_ASKPASS_NAME
+
+
+def credential_path(config: OverlayRelayConfig) -> Path:
+    """The file the relay's credential is written to: the password or the key.
+
+    Args:
+        config: The stored relay.
+
+    Returns:
+        The password file with a login, else the key file.
+    """
+    return password_path() if config.is_password_login else key_path()
 
 
 def ssh_path() -> str:
@@ -164,8 +195,27 @@ def is_key_stored(key_id: str) -> bool:
         return False
 
 
+def is_login_stored(login_id: str) -> bool:
+    """Whether the vault holds a login under this id.
+
+    Args:
+        login_id: The login's id.
+
+    Returns:
+        True when it does.
+    """
+    if not login_id:
+        return False
+    try:
+        record = SecretVault().get(login_id)
+    except (OSError, ValueError):
+        return False
+    return record is not None and record.kind == LOGIN_KIND
+
+
 def is_relay_configured(config: OverlayRelayConfig) -> bool:
-    """Whether the relay names a host, an account and a key the vault holds.
+    """Whether the relay names a host, an account, and a key or a login the
+    vault holds.
 
     Args:
         config: The stored relay.
@@ -173,7 +223,38 @@ def is_relay_configured(config: OverlayRelayConfig) -> bool:
     Returns:
         True when it does.
     """
-    return config.has_settings and is_key_stored(config.key_id)
+    if not config.has_settings:
+        return False
+    if config.is_password_login:
+        return is_login_stored(config.login_id)
+    return is_key_stored(config.key_id)
+
+
+def login_password_text(login_id: str) -> str:
+    """One stored login's password.
+
+    Args:
+        login_id: The login's id.
+
+    Returns:
+        The password.
+
+    Raises:
+        VaultLockedError: If the vault cannot be opened.
+        KeyMaterialError: If the login is not there, does not open, or holds
+            no password.
+    """
+    try:
+        password = SecretVault().open(login_id).get("password")
+    except VaultLockedError:
+        raise
+    except ValueError as error:
+        raise KeyMaterialError(
+            DEVICE_KEY_ERROR_UNREADABLE, {"detail": str(error)}
+        ) from error
+    if not password:
+        raise KeyMaterialError(DEVICE_KEY_ERROR_UNREADABLE, {"detail": "no password"})
+    return str(password)
 
 
 def openssh_key_text(key_id: str) -> str:
@@ -259,29 +340,41 @@ class OverlayRelayApplier:
             if not (config.is_enabled and program and is_relay_configured(config)):
                 return self._stop()
             try:
-                key_text = openssh_key_text(config.key_id)
+                secret = (
+                    login_password_text(config.login_id)
+                    if config.is_password_login
+                    else openssh_key_text(config.key_id)
+                )
             except VaultLockedError:
-                if key_path().is_file():
+                if credential_path(config).is_file():
                     return ""
                 return self._stop()
             except KeyMaterialError:
                 return self._stop()
-            argv = OverlayRelayRenderer(
+            renderer = OverlayRelayRenderer(
                 ssh_path=program,
                 key_path=str(key_path()),
                 known_hosts_path=str(known_hosts_path()),
                 agent_port=self._agent_port,
-            ).render(config)
-            is_changed = self._write_key(key_text)
-            hub_platform().make_root_only(key_path())
+                askpass_path=str(askpass_path()),
+            )
+            argv = renderer.render(config)
+            env = renderer.environment(config)
+            if config.is_password_login:
+                is_changed = self._write_password(secret)
+                key_path().unlink(missing_ok=True)
+            else:
+                is_changed = self._write_key(secret)
+                hub_platform().make_root_only(key_path())
+                self._remove_password()
             self._hold_known_hosts()
-            if not self._is_start_line_current(argv):
+            if not self._is_start_line_current(argv, env):
                 is_changed = True
             if not self._is_unit_owned():
                 return ""
             if not is_changed and not is_restarted and self._is_running():
                 return ""
-            self._start(argv)
+            self._start(argv, env)
             return OVERLAY_RELAY_CHANGE_STARTED
 
     def _hold_known_hosts(self) -> None:
@@ -314,11 +407,46 @@ class OverlayRelayApplier:
         write_generated(path, text, mode=OVERLAY_RELAY_FILE_MODE)
         return True
 
-    def _start(self, argv: list) -> None:
+    def _write_password(self, password: str) -> bool:
+        """Write the password file and the askpass program root-only, telling
+        whether either changed.
+
+        The askpass program stays executable: mode 0700 outside Windows, and
+        the root-only access list on Windows, which lets its owners run it.
+        """
+        relay_dir().mkdir(mode=OVERLAY_RELAY_DIR_MODE, parents=True, exist_ok=True)
+        program = askpass_program(
+            str(password_path()), is_windows=hub_os() == PLATFORM_OS_WINDOWS
+        )
+        is_changed = False
+        for path, text, mode in (
+            (password_path(), password, OVERLAY_RELAY_FILE_MODE),
+            (askpass_path(), program, OVERLAY_RELAY_ASKPASS_MODE),
+        ):
+            try:
+                is_held = path.read_text(encoding="utf-8") == text
+            except OSError:
+                is_held = False
+            if not is_held:
+                write_generated(path, text, mode=mode)
+                is_changed = True
+        hub_platform().make_root_only(password_path())
+        if hub_os() == PLATFORM_OS_WINDOWS:
+            hub_platform().make_root_only(askpass_path())
+        else:
+            os.chmod(askpass_path(), OVERLAY_RELAY_ASKPASS_MODE)
+        return is_changed
+
+    def _remove_password(self) -> None:
+        """Delete the password file and the askpass program."""
+        password_path().unlink(missing_ok=True)
+        askpass_path().unlink(missing_ok=True)
+
+    def _start(self, argv: list, env: dict) -> None:
         """Hand the start line over and run the process on it."""
         if is_linux():
             self._refresh_unit()
-        self._controller.set_start_line(OVERLAY_RELAY_SERVICE_NAME, argv, {}, None)
+        self._controller.set_start_line(OVERLAY_RELAY_SERVICE_NAME, argv, env, None)
         if self._controller.is_enabled(OVERLAY_RELAY_SERVICE_NAME):
             self._controller.restart(OVERLAY_RELAY_SERVICE_NAME)
             return
@@ -327,7 +455,8 @@ class OverlayRelayApplier:
             self._controller.restart(OVERLAY_RELAY_SERVICE_NAME)
 
     def _stop(self) -> str:
-        """Stop the process, forget its start line and delete the key file."""
+        """Stop the process, forget its start line and delete the key file,
+        the password file and the askpass program."""
         note = ""
         if self._is_unit_owned() and self._is_standing():
             try:
@@ -338,6 +467,7 @@ class OverlayRelayApplier:
             self._controller.set_start_line(OVERLAY_RELAY_SERVICE_NAME, None, {}, None)
             note = OVERLAY_RELAY_CHANGE_STOPPED
         key_path().unlink(missing_ok=True)
+        self._remove_password()
         return note
 
     def _is_standing(self) -> bool:
@@ -355,18 +485,18 @@ class OverlayRelayApplier:
         except (KeyError, OSError):
             return False
 
-    def _is_start_line_current(self, argv: list) -> bool:
-        """Whether the held start line is this one."""
+    def _is_start_line_current(self, argv: list, env: dict) -> bool:
+        """Whether the held start line is this one, its environment included."""
         if not is_linux():
             held = read_services_state(SYSTEM_SERVICES_STATE_PATH)["start_lines"]
             line = held.get(OVERLAY_RELAY_SERVICE_NAME) or {}
-            return line.get("argv") == argv
+            return line.get("argv") == argv and (line.get("env") or {}) == env
         path = SYSTEM_SYSTEMD_DIR / f"{OVERLAY_RELAY_UNIT}.d"
         try:
             text = (path / SYSTEM_START_LINE_DROPIN_NAME).read_text(encoding="utf-8")
         except OSError:
             return False
-        return text == start_line_dropin(argv, {}, None)
+        return text == start_line_dropin(argv, env, None)
 
     def _is_unit_owned(self) -> bool:
         """Whether this hub drives the relay's process; a development root
@@ -492,7 +622,7 @@ class OverlayRelayMonitor:
             return OVERLAY_RELAY_STATE_DISABLED, ""
         if not is_relay_configured(config):
             return OVERLAY_RELAY_STATE_NOT_CONFIGURED, ""
-        if not key_path().is_file():
+        if not credential_path(config).is_file():
             try:
                 is_locked = SecretVault().is_locked()
             except (OSError, ValueError):

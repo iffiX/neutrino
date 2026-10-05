@@ -68,7 +68,7 @@ An agent shows these codes in `nagent status`, and a desktop client on its hub's
 | EasyTier reads **No machine has joined yet.**                                                  | the other machine's network name or secret differs                                             | copy the command again with **Copy with the secret**                                                                   |
 | an EasyTier peer joins and the LAN is unreachable                                              | the subnet is not exported                                                                     | add it under **Exported networks** and apply                                                                           |
 | the box is silent on the overlay with either engine                                            | the overlay is not in **Exposure**                                                             | tick it under **Exposure** on **Network**                                                                              |
-| the **Relay** card's **Status** reads anything but **Connected**                               | the hub's SSH forward to your server is down, or the public port is closed                     | read the status table on [Relay](../hub/relay.md#read-the-status); each status there has its fix                       |
+| the **SSH Relay** card's **Status** reads anything but **Connected**                           | the hub's SSH forward to your server is down, or the public port is closed                     | read the status table on [SSH Relay](../hub/relay.md#read-the-status); each status there has its fix                   |
 
 ## A terminal closes
 
@@ -81,18 +81,18 @@ An agent shows these codes in `nagent status`, and a desktop client on its hub's
 
 ## The client does not connect
 
-| Symptom                 | Cause                                                                  | Fix                                                                                                         |
-| ----------------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `hub_unreachable`       | port 8443 on the hub is not reachable from this computer               | check the network, the way in on **Access** (NetBird, EasyTier or the relay), and **Exposure** on the hub   |
-| `ticket_spent`          | the link expired or was used                                           | leave the hub in the client and join with a fresh link from **Clients**; a link is valid for thirty minutes |
-| `admission_paused`      | the hub paused new joins after too many failed ones                    | wait; the client joins again after the seconds the code names                                               |
-| `link_unreadable`       | the paste was cut short                                                | copy the whole line from the hub                                                                            |
-| `link_not_for_client`   | the link is from **Devices**                                           | create one on **Clients**                                                                                   |
-| `client_disabled`       | the client is switched off on **Clients**                              | select **Enable** on its row there                                                                          |
-| `permission_denied`     | the client's permission leaves out that kind of entry, or that machine | widen the client's permission on **Clients**                                                                |
-| `gui_webkitgtk_missing` | WebKitGTK is absent on Linux                                           | install the packages the message names, then start the client again                                         |
-| `gui_webview2_missing`  | WebView2 is absent on Windows                                          | install the runtime the message names, then start the client again                                          |
-| `root_refused`          | the client was started with `sudo`                                     | start it from your own account                                                                              |
+| Symptom                 | Cause                                                                  | Fix                                                                                                           |
+| ----------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `hub_unreachable`       | port 8443 on the hub is not reachable from this computer               | check the network, the way in on **Access** (NetBird, EasyTier or the SSH Relay), and **Exposure** on the hub |
+| `ticket_spent`          | the link expired or was used                                           | leave the hub in the client and join with a fresh link from **Clients**; a link is valid for thirty minutes   |
+| `admission_paused`      | the hub paused new joins after too many failed ones                    | wait; the client joins again after the seconds the code names                                                 |
+| `link_unreadable`       | the paste was cut short                                                | copy the whole line from the hub                                                                              |
+| `link_not_for_client`   | the link is from **Devices**                                           | create one on **Clients**                                                                                     |
+| `client_disabled`       | the client is switched off on **Clients**                              | select **Enable** on its row there                                                                            |
+| `permission_denied`     | the client's permission leaves out that kind of entry, or that machine | widen the client's permission on **Clients**                                                                  |
+| `gui_webkitgtk_missing` | WebKitGTK is absent on Linux                                           | install the packages the message names, then start the client again                                           |
+| `gui_webview2_missing`  | WebView2 is absent on Windows                                          | install the runtime the message names, then start the client again                                            |
+| `root_refused`          | the client was started with `sudo`                                     | start it from your own account                                                                                |
 
 ## A client page cannot reach its service
 
@@ -125,11 +125,11 @@ The client opens every page through the hub, so these codes come from the hub or
 
 The system's Files app shows the Android app's shares, and reports a failure as the code's sentence.
 
-| Symptom                                                               | Cause                                                                | Fix                                                                                                            |
-| --------------------------------------------------------------------- | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `share_unreachable`, with the hub's row not **Connected**             | the phone cannot reach the hub's port 8443                           | bring the hub's row to **Connected** through any way in on **Access**: the LAN, NetBird, EasyTier or the relay |
-| `share_unreachable` while the hub's row reads **Connected**           | the machine that serves the share is off or not connected to the hub | bring the machine back                                                                                         |
-| Files reads **Give this share's password on the Files screen first.** | the share has no login on this phone yet                             | open the share on the app's Files screen, enter the username and password, and select **Connect**              |
+| Symptom                                                               | Cause                                                                | Fix                                                                                                                |
+| --------------------------------------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `share_unreachable`, with the hub's row not **Connected**             | the phone cannot reach the hub's port 8443                           | bring the hub's row to **Connected** through any way in on **Access**: the LAN, NetBird, EasyTier or the SSH Relay |
+| `share_unreachable` while the hub's row reads **Connected**           | the machine that serves the share is off or not connected to the hub | bring the machine back                                                                                             |
+| Files reads **Give this share's password on the Files screen first.** | the share has no login on this phone yet                             | open the share on the app's Files screen, enter the username and password, and select **Connect**                  |
 
 ## An AI tool ignores the gateway
 
