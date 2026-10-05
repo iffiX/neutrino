@@ -432,6 +432,38 @@ server presents.` / 「下次连接时记录服务器出示的密钥。」, and 
 **Forget** / **忘记**. It acts at once, outside the settings draft, the
 way a revocation does ("When an effect happens").
 
+## The Modules page
+
+The **Modules** page has three panels, top to bottom:
+
+| Panel | Holds |
+| --- | --- |
+| the machine picker | the managed machines, as before |
+| **Global configuration** | the settings of the picked machine that belong to no module; today one part, its AI tools |
+| **Module configuration** | the tab strip of the machine's modules and the picked module's panels, as before under the title `ui.modules.tabs_title` |
+
+The tabs of **Module configuration** come in one order, the modules every
+system runs first: File share, Gitea, VS Code, code-server, CloudCLI,
+Containers, ZFS storage. A module the machine cannot run is left out, as
+before ([agent.md](agent.md), "Which modules each system runs").
+
+The AI tools part follows the client's AI page ([client.md](client.md), "The
+AI page") and adds nothing to it:
+
+| Control | Enabled | Does |
+| --- | --- | --- |
+| **This machine's AI tools use the hub's AI gateway** (a chip) | when the machine's agent is online and no write of this part is in flight; turning it on also needs the gateway to serve a model, else the reason `code.gateway_not_serving` is under the chip | at once, as a module's buttons on this page act: `ai_tool/enable` or `ai_tool/disable` ([protocol.md](protocol.md), `/api/agent/module`) |
+| **Configure** | when the machine's agent is online | opens the client's dialog in place, the inline-form idiom with a dirty frame: a picker per tool for its model over the gateway's models and, for Codex, its effort; **Save** sends `ai_tool/set` and **Cancel** closes it |
+
+Under the controls, the line `ui.ai_tools.accounts` names the accounts the
+setting acts on, and a row per account follows: its name, the modules it has
+an instance in, and its last result as a `StatusDot` with a word (`switched`
+`ok`, `switched_back` `idle`, `failed` `error` with the code's words, and
+`ui.device_monitor.waiting` `idle` before the machine reported it). With no
+such account the line is `ui.ai_tools.no_accounts` and no row is drawn; the
+chip can be turned on all the same, and an account gained later is switched
+then.
+
 ## An interaction this document does not cover
 
 Before designing one, establish that it is not generic. **Where an established
