@@ -25,7 +25,7 @@ from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.services.collector import resolve_entries
 from neutrino_hub.modules.services.host_scope import HostScope, link_scope
-from neutrino_hub.web import channel_state
+from neutrino_hub.web import channel_state, identity
 from tests.conftest import FakeChannelSessions
 from tests.modules.channel.test_sessions import FakeWebSocket
 
@@ -631,3 +631,56 @@ def test_an_ipv6_peer_is_judged_by_the_box_s_ipv6_networks(config_dir, peer, way
 
     assert channel_state.client_state(runtime, client_id)["reached_through"] == way
     assert asked == [not peer.startswith("::ffff:")]
+
+
+# --- the hub's own entries through the relay ---
+
+
+@pytest.mark.parametrize("peer", ["127.0.0.1", "::1", "::ffff:127.0.0.1"])
+def test_through_the_relay_the_hubs_own_entries_name_the_hub(config_dir, peer):
+    """The relay's address is no address of this hub, and two hubs behind
+    one server would show the same one: the hub's own name stands in."""
+    identity.ensure_hub_identity()
+    identity.set_hub_name("hub-one")
+    runtime = FakeRuntime()
+    client_id = ClientRegistry().create("alice")
+
+    scope = channel_state.note_client_scope(
+        runtime, client_id, peer_host=peer, reached_host="192.168.10.164"
+    )
+    state = channel_state.client_state(runtime, client_id)
+
+    assert scope == link_scope("hub-one")
+    assert state["services"][0]["payload"] == {"url": "http://hub-one:3000"}
+
+
+def test_a_state_pushed_again_keeps_naming_the_hub_through_the_relay(config_dir):
+    identity.ensure_hub_identity()
+    identity.set_hub_name("hub-one")
+    runtime = FakeRuntime()
+    client_id = ClientRegistry().create("alice")
+    channel_state.note_client_scope(
+        runtime, client_id, peer_host="127.0.0.1", reached_host="192.168.10.164"
+    )
+    identity.set_hub_name("hub-two")
+
+    held = runtime.client_scope[client_id]
+    rescoped = channel_state._client_scope(
+        runtime, "127.0.0.1", held.hub_address, [LAN]
+    )
+
+    assert rescoped == link_scope("hub-two")
+
+
+def test_a_client_from_outside_through_direct_is_given_the_address_it_dialled(
+    config_dir,
+):
+    runtime = FakeRuntime()
+    client_id = ClientRegistry().create("alice")
+
+    channel_state.note_client_scope(
+        runtime, client_id, peer_host="203.0.113.5", reached_host="198.51.100.2"
+    )
+    state = channel_state.client_state(runtime, client_id)
+
+    assert state["services"][0]["payload"] == {"url": "http://198.51.100.2:3000"}

@@ -37,7 +37,10 @@ from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.clients.services import device_owners
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.services.collector import catalog_entries
-from neutrino_hub.modules.services.constants import SERVICES_SOURCE_DECLARED
+from neutrino_hub.modules.services.constants import (
+    SERVICES_REACHED_RELAY,
+    SERVICES_SOURCE_DECLARED,
+)
 from neutrino_hub.modules.services.host_scope import (
     HostScope,
     link_scope,
@@ -47,6 +50,7 @@ from neutrino_hub.modules.services.host_scope import (
 from neutrino_hub.utils.peer_address import unmapped
 from neutrino_hub.web import channel_overlay
 from neutrino_hub.web.channel_addresses import channel_urls
+from neutrino_hub.web.identity import hub_name
 from neutrino_hub.web.shell_bridge import client_owner, device_name, sessions_for
 
 
@@ -150,7 +154,7 @@ def note_client_scope(
     Returns:
         The scope.
     """
-    scope = scope_of(peer_host, reached_host, runtime.host_scopes())
+    scope = _client_scope(runtime, peer_host, reached_host)
     runtime.client_scope[client_id] = scope
     is_ipv6 = ":" in unmapped(peer_host)
     runtime.client_reached[client_id] = reached_through(
@@ -188,14 +192,46 @@ def push_states(runtime, role: str) -> None:
     for session in registry.sessions():
         if role != CHANNEL_ROLE_AGENT:
             held = runtime.client_scope.get(session.key)
-            runtime.client_scope[session.key] = scope_of(
-                session.address, held.hub_address if held else "", served
+            runtime.client_scope[session.key] = _client_scope(
+                runtime, session.address, held.hub_address if held else "", served
             )
         document = _compose(runtime, role, session.key)
         if document["hash"] == session.offered_hash:
             continue
         registry.send_json_from_thread(session.key, {"type": "state", **document})
         session.offered_hash = document["hash"]
+
+
+def _client_scope(runtime, peer_host: str, reached_host: str, served=None):
+    """The scope a client's socket arrived from.
+
+    A client that came through the relay arrives from loopback and dialled
+    the relay's address, which is no address of this hub; its scope names
+    the hub by the hub's own name, so the hub's own entries show that name.
+
+    Args:
+        runtime: The shared runtime.
+        peer_host: Where its socket comes from.
+        reached_host: The address it connected to.
+        served: The scopes the box serves; None reads them.
+
+    Returns:
+        ``link`` with the hub's name for a peer on loopback; else
+        :func:`scope_of`'s answer.
+    """
+    if reached_through(peer_host, {}) == SERVICES_REACHED_RELAY:
+        return link_scope(_hub_name())
+    return scope_of(
+        peer_host, reached_host, runtime.host_scopes() if served is None else served
+    )
+
+
+def _hub_name() -> str:
+    """The hub's own name; empty when its identity does not read."""
+    try:
+        return hub_name()
+    except (FileNotFoundError, ValueError):
+        return ""
 
 
 def _terminals(runtime, viewer: str) -> list:

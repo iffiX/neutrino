@@ -195,3 +195,82 @@ def test_the_command_is_offered_without_privilege():
     from neutrino_hub.cli import entry
 
     assert entry.COMMANDS["open"][0] == "neutrino_hub.cli.open"
+
+
+# --- the address another machine reaches this one at ---
+
+
+class RoutedLinks:
+    """Link status whose default routes leave by the named devices."""
+
+    routed: tuple = ()
+
+    def gateway_for(self, name):
+        return "192.0.2.1" if name in RoutedLinks.routed else None
+
+
+def reachable(monkeypatch, addresses: dict, stored=None, routed=()) -> str:
+    def read(name):
+        if stored is None:
+            raise FileNotFoundError(name)
+        return stored
+
+    RoutedLinks.routed = routed
+    monkeypatch.setattr(open_command, "device_addresses", lambda: dict(addresses))
+    monkeypatch.setattr(open_command, "read_config", read)
+    monkeypatch.setattr(open_command, "RouterLinkStatus", RoutedLinks)
+    return open_command._reachable_host()
+
+
+def test_an_exposed_interface_s_address_comes_first(monkeypatch):
+    stored = {
+        "mode": "server",
+        "interfaces": [
+            {"name": "eno1", "is_exposed": False},
+            {"name": "eno2", "is_exposed": True},
+        ],
+    }
+
+    host = reachable(
+        monkeypatch,
+        {"docker0": "172.17.0.1/16", "eno1": "10.0.0.5/24", "eno2": "192.168.8.5/24"},
+        stored=stored,
+        routed=("eno1",),
+    )
+
+    assert host == "192.168.8.5"
+
+
+def test_before_setup_the_interface_holding_the_default_route_comes_first(
+    monkeypatch,
+):
+    host = reachable(
+        monkeypatch,
+        {"docker0": "172.17.0.1/16", "enp3s0": "192.168.8.5/24"},
+        routed=("enp3s0",),
+    )
+
+    assert host == "192.168.8.5"
+
+
+def test_with_no_route_the_first_address_the_box_holds_answers(monkeypatch):
+    assert reachable(monkeypatch, {"enp3s0": "192.168.8.5/24"}) == "192.168.8.5"
+
+
+def test_with_no_address_the_hostname_answers(monkeypatch):
+    monkeypatch.setattr(open_command.socket, "gethostname", lambda: "hub")
+
+    assert reachable(monkeypatch, {}) == "hub"
+
+
+@pytest.mark.parametrize("system", ["darwin", "win32"])
+def test_outside_linux_an_interface_not_named_counts_as_answering(monkeypatch, system):
+    """The hidden adapters never reach here: ``device_addresses`` leaves out
+    the proxy's TUN and the client's files adapter."""
+    from neutrino_hub.platforms import detect
+
+    monkeypatch.setattr(detect.sys, "platform", system)
+
+    host = reachable(monkeypatch, {"Ethernet": "192.168.8.5/24"})
+
+    assert host == "192.168.8.5"
