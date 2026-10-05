@@ -104,6 +104,10 @@ CONFIGURABLE_TYPES = ("port", "web")
 PANEL_HOST_PREFIX = "panel-"
 # How long a burst of changes is left to settle before the watchers hear.
 ANNOUNCE_SETTLE_S = 0.05
+# How long one watcher is waited for before the announcements go on without
+# it, and how many of its calls may be held at once before it is skipped.
+ANNOUNCE_WATCHER_WAIT_S = 5
+ANNOUNCE_WATCHER_HELD_MAX = 4
 # The fields of a binding that make it another hub, or another join: a
 # session outlives a change to any other field, the addresses included,
 # which the session itself writes.
@@ -243,6 +247,8 @@ class ClientResident:
         # Whoever draws the state, told after every change of it; the
         # announcements of one burst are folded into one.
         self._watchers: list = []
+        # How many calls of each watcher, by its id, have not returned yet.
+        self._held_watchers: dict = {}
         self._announce_lock = threading.Lock()
         self._is_announcing = False
         self._is_pending_announcement = False
@@ -1355,14 +1361,43 @@ class ClientResident:
             with self._lock:
                 watchers = list(self._watchers)
             for watcher in watchers:
-                try:
-                    watcher()
-                except Exception as error:  # noqa: BLE001 - a watcher's own
-                    self._log(f"a state watcher failed: {error}")
+                self._tell_watcher(watcher)
             with self._announce_lock:
                 if not self._is_pending_announcement:
                     self._is_announcing = False
                     return
+
+    def _tell_watcher(self, watcher) -> None:
+        """Tell one watcher, waiting for it no longer than ``ANNOUNCE_WATCHER_WAIT_S``.
+
+        A watcher that does not come back, as a window whose script call
+        never answers, holds its own thread and never the announcements:
+        the next change is told on a thread of its own, up to
+        ``ANNOUNCE_WATCHER_HELD_MAX`` held at once.
+        """
+        with self._lock:
+            held = self._held_watchers.get(id(watcher), 0)
+            if held >= ANNOUNCE_WATCHER_HELD_MAX:
+                return
+            self._held_watchers[id(watcher)] = held + 1
+
+        def tell() -> None:
+            try:
+                watcher()
+            except Exception as error:  # noqa: BLE001 - a watcher's own
+                self._log(f"a state watcher failed: {error}")
+            finally:
+                with self._lock:
+                    self._held_watchers[id(watcher)] -= 1
+
+        teller = threading.Thread(target=tell, name="client_announce", daemon=True)
+        teller.start()
+        teller.join(timeout=ANNOUNCE_WATCHER_WAIT_S)
+        if teller.is_alive():
+            self._log(
+                f"a state watcher did not return in {ANNOUNCE_WATCHER_WAIT_S}s; "
+                "the next change is told without it"
+            )
 
     def _entry_job(self, service_type: str, body: dict) -> "tuple[str, str]":
         """The service key a press acts on and the job it starts; no job for an instant one."""

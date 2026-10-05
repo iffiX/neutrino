@@ -280,6 +280,8 @@ class ClientHubSession:
         on_unbound=None,
         on_joined=None,
         refresh_timeout_s: float = CLIENT_REFRESH_TIMEOUT_S,
+        clock=time.monotonic,
+        wall_clock=time.time,
     ):
         """
         Args:
@@ -301,6 +303,10 @@ class ClientHubSession:
                 pending join completed, by :meth:`adopt_join`, raising
                 OSError when it cannot; None adopts it directly.
             refresh_timeout_s: How long a refresh waits for its answer.
+            clock: The monotonic clock a refresh's limit is measured on.
+            wall_clock: The wall clock, read beside it, so a jump of either
+                clock, as a machine waking from sleep makes, ends the
+                refresh instead of holding it.
         """
         self._log = log
         self._lock = threading.Lock()
@@ -358,6 +364,10 @@ class ClientHubSession:
         self._is_refreshing = False
         self._refresh_count = 0
         self._refresh_timeout_s = refresh_timeout_s
+        self._clock = clock
+        self._wall_clock = wall_clock
+        # When the refresh in flight began, on both clocks.
+        self._refresh_since = (0.0, 0.0)
         # The hosts of the virtual network this machine is on, tried first,
         # or alone while the network's ``hub`` stage holds the channel there.
         self._preferred_hosts: list = []
@@ -426,8 +436,15 @@ class ClientHubSession:
             return self._connection()
 
     def is_refreshing(self) -> bool:
-        """Whether a refresh waits for its answer."""
+        """Whether a refresh waits for its answer, within its limit.
+
+        A refresh whose limit has passed on either clock, or whose wall
+        clock moved back, is over here and now, whether or not its timer
+        has fired.
+        """
         with self._lock:
+            if self._is_refreshing and self._is_refresh_over():
+                self._is_refreshing = False
             return self._is_refreshing
 
     def is_disabled(self) -> bool:
@@ -630,9 +647,12 @@ class ClientHubSession:
         """
         with self._lock:
             connection = self._connection()
+            if self._is_refreshing and self._is_refresh_over():
+                self._is_refreshing = False
             if connection not in CONNECTION_REFRESHABLE or self._is_refreshing:
                 return False
             self._is_refreshing = True
+            self._refresh_since = (self._clock(), self._wall_clock())
             self._refresh_count += 1
             count = self._refresh_count
             self._last_error = None
@@ -647,13 +667,24 @@ class ClientHubSession:
         if client is None:
             self._news.set()
         else:
-            try:
-                self._report(client, is_refresh=True)
-            except GatewayUnreachable:
-                # The reader sees the socket's end.
-                pass
+            # Sent from a thread of its own: a socket that takes no bytes
+            # holds that thread until its send timeout, never the press.
+            threading.Thread(
+                target=self._send_refresh,
+                args=(client,),
+                name="client_refresh",
+                daemon=True,
+            ).start()
         self._on_change()
         return True
+
+    def _send_refresh(self, client) -> None:
+        """Send the report a refresh asks for; a dead socket ends the socket."""
+        try:
+            self._report(client, is_refresh=True)
+        except GatewayUnreachable:
+            # The reader sees the socket's end.
+            pass
 
     def open_service(
         self, entry_id: str, timeout_s: float = CLIENT_STREAM_TIMEOUT_S
@@ -1557,6 +1588,14 @@ class ClientHubSession:
         if self._is_welcomed:
             return CONNECTION_DISABLED if self._is_disabled else CONNECTION_CONNECTED
         return CONNECTION_DOWN if self._is_down else CONNECTION_CONNECTING
+
+    def _is_refresh_over(self) -> bool:
+        """Whether the refresh in flight is past its limit; the lock is held."""
+        started, started_wall = self._refresh_since
+        elapsed = self._clock() - started
+        elapsed_wall = self._wall_clock() - started_wall
+        limit = self._refresh_timeout_s
+        return elapsed >= limit or elapsed_wall >= limit or elapsed_wall < 0
 
     def _refresh_timed_out(self, count: int) -> None:
         """End the refresh numbered ``count`` when nothing answered it."""
