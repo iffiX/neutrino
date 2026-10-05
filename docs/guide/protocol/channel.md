@@ -211,7 +211,7 @@ A report goes up after the welcome, every 30 seconds after that, and after each 
 
 ## The service entries
 
-Each entry of `services` is `{id, type, title, payload, is_healthy, source, description, description_code, description_params, device_name}`.
+Each entry of `services` is `{id, type, title, payload, is_healthy, source, description, description_code, description_params, device_id, device_name}`.
 
 | `type` | `payload`                                                                                                                                         |
 | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -229,6 +229,7 @@ Every `host`, `port`, `url` and `endpoint` in a payload is where the service sta
 | `source`             | `module`, `declared` or `device`                                                                                                                                                                 |
 | `description_code`   | the provenance as a code a program words itself: `ai_gateway`, `container`, `declared`, `device_share`, `gitea_module`, `samba_module`, `vscode_module`, `code_server_module`, `cloudcli_module` |
 | `description_params` | the values that sentence names; `vscode_module`, `code_server_module` and `cloudcli_module` take `{host, account}`                                                                               |
+| `device_id`          | the id of the managed machine providing the entry; empty for a declared record and for the hub's own gateway. A program keeps what it holds per machine under this id                            |
 | `device_name`        | the name of the machine providing the entry, empty when no machine on the record of the hub provides it                                                                                          |
 
 ## The streams a client opens
