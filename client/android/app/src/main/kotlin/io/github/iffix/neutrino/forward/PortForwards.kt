@@ -7,6 +7,7 @@ import io.github.iffix.neutrino.CLIENT_LOG_TAG
 import io.github.iffix.neutrino.FORWARD_BIND_HOST
 import io.github.iffix.neutrino.FORWARD_PANEL_ENTRY
 import io.github.iffix.neutrino.FORWARD_PANEL_SLUG_PREFIX
+import io.github.iffix.neutrino.LocalPortTakenException
 import io.github.iffix.neutrino.WEB_LOOPBACK_DOMAIN
 import io.github.iffix.neutrino.WEB_TOKEN_PARAMETER
 import io.github.iffix.neutrino.channel.ChannelFrames
@@ -178,7 +179,8 @@ class PortForwards(
      * @param bindingId The hub.
      * @param entryId The entry.
      * @param port The entry's own port, which the local port table tries first.
-     * @return The loopback number, or `forward_failed`.
+     * @return The loopback number, `port_taken {port}` when another program listens on the fixed number,
+     *   or `forward_failed`.
      */
     fun hold(bindingId: String, entryId: String, port: Int): ChannelResult<Int> =
         forward(keyOf(bindingId, entryId), bindingId, entryArgs(entryId), port)
@@ -298,6 +300,8 @@ class PortForwards(
             synchronized(relays) { relays.put(key, relay) }?.close()
             Log.i(CLIENT_LOG_TAG, "forwarding $FORWARD_BIND_HOST:$bound to $key through the hub")
             ChannelResult.Ok(bound)
+        } catch (error: LocalPortTakenException) {
+            ChannelResult.refused("port_taken", "port" to error.port.toString())
         } catch (error: IOException) {
             ChannelResult.refused("forward_failed", "detail" to (error.message ?: "IOException").take(200))
         }
