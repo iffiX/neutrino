@@ -56,8 +56,9 @@ makes true for the accounts it names ("The machine's AI tools").
 | Read and set up a person's own AnyDesk or TeamViewer | Read the binding and status |
 | | Start and stop the agent's service |
 
-Root is uid 0. `nagent` refuses any other account; the one thing anybody can
-run is `nagent --version`.
+Root is uid 0. `nagent` refuses any other account, with two exceptions:
+`nagent --version`, and `nagent answer`, which the agent runs as an account
+on Windows ("The machine's AI tools").
 
 ## One socket, everything on it
 
@@ -147,9 +148,10 @@ by name as the rest are. An agent installed again finds the shares and
 accounts that were left and takes them back by the rule above: they are
 displayed, and the first report imports them.
 
-Before anything else, `nagent service uninstall` switches every account's AI
-tools back ("The machine's AI tools"), since the cc-switch it runs leaves
-with the package.
+`nagent service uninstall` stops the agent's service first, so no apply of
+its own runs beside what follows, then switches every account's AI tools
+back ("The machine's AI tools") before it removes anything, since the
+cc-switch it runs leaves with the package.
 
 **Status is typed.** A module reports `state`, `is_active` and
 `{code, params}`, never an English sentence, and every surface does its own
@@ -290,6 +292,7 @@ is its only client:
 | `rdp start`, `rdp stop` | share and unshare the desktop |
 | `start`, `stop` | start and stop the agent's service through systemd, the service control manager or launchd; the binding is not touched |
 | `run` | the foreground entry systemd and launchd start; `service run` is Windows' |
+| `answer --prompt <text> --answer <keys> -- <program…>` | starts the program on a terminal of its own, types the keys and Enter once the text shows, prints what the terminal drew, and exits with the program's code; it does not reach this socket, and any account may run it ("The machine's AI tools") |
 
 Connections persist between requests and each is served on its own thread.
 Every refusal is `{"code": ...}`; a handler exception never drops the
@@ -340,7 +343,8 @@ wanted settings is not run again. An account is switched back by the same
 steps as the client's deactivation:
 
 - when the section turns off, or the state names it no longer;
-- before `nagent service uninstall` removes anything;
+- by `nagent service uninstall`, once the agent's service has stopped and
+  before anything is removed;
 - on `nagent leave`, and when a refusal of `binding_unknown` ends the
   binding ("What a refusal means to the agent").
 
@@ -350,10 +354,53 @@ never in the account's home. cc-switch keeps its own store in the account's
 home, as on a person's computer. An account whose records are all gone after
 a switch back has its directory removed.
 
+**Every step in an account's home runs as that account, reads included.**
 cc-switch runs as the account, with the account's home and its own
-environment, never as root or SYSTEM in an account's home ("Running as an
-account" in the platform table). `provider delete` asks `(y/N)` on a
-terminal, so the agent runs it on a terminal of its own as the client does.
+environment ("Running as an account" in the platform table), and so does
+each file step of the client's sequence: reading a tool's file, writing
+Codex's effort into `config.toml`, removing a file cc-switch made. An
+account can replace any file in its home with a link to a file only root
+reads, so a read made as root would hand that file to cc-switch and through
+it back to the account. On Linux and macOS the file steps are `cat`,
+`test -f`, `sh -c` writing what arrives on standard input, and `rm -f`; on
+Windows each is one PowerShell script in the account's task, the path
+written into it as a literal.
+
+`config common extract` and `config common set` read their input from a
+file. The agent writes that input to `~/.neutrino_ai_tools_payload` as the
+account, runs the one cc-switch call that reads it, and removes it as the
+account straight after: it holds a tool's live configuration in the shape
+`extract` reads, or the shared settings `set` stores, and stands only for
+that one call ([files.md](files.md), "One root, three names").
+
+**The delete is answered on a terminal.** `provider delete` prints `(y/N)`
+and reads the reply from its terminal; with a pipe on its standard input it
+exits with `The input device is not a TTY`, and no flag stands in for the
+reply. On Linux and macOS the agent makes a pseudo-terminal itself, starts
+cc-switch on it as the account, and types `y` and Enter once the prompt
+shows. On Windows the agent reaches an account only through a scheduled
+task, so the terminal is made inside that task: the task runs
+`nagent answer --prompt "(y/N)" --answer y -- <cc-switch> --app <tool>
+provider delete neutrino`, `<cc-switch>` being the path of the agent's own
+cc-switch and `<tool>` the tool, and the agent's own program makes a pseudo
+console there, starts cc-switch on it, types the reply, and prints what the
+console drew.
+
+`answer` is the one `nagent` verb any account may run. It starts the
+program it is given as the account that runs it, with that account's
+rights and no other; it reads no binding, opens neither the control socket
+nor a socket to the hub, and changes nothing the account could not change by
+running the program itself.
+
+**Windows keeps the login until the switch back.** A task runs as an account
+only with the account's password, and the state carries each account's login
+only while the section is on. The agent therefore keeps the login an account
+was switched with in `ai_tools/<account>/login.json` under the state root,
+readable by SYSTEM and the administrators alone as everything under
+`%ProgramData%\Neutrino\agent` is ([files.md](files.md)), and deletes it with
+the account's records. Every switch back reads it from there: after the
+section turns off, after the account leaves the list, at an uninstall, at a
+leave.
 
 The report names each account the state names and each one switched back
 under the current state's hash, `{account, state, code, params}`, `state`
@@ -363,6 +410,10 @@ codes where they fit, `switch_failed {account, detail}` and `bundle_missing
 `account_unknown {account}`, and on Windows `credential_missing {account}`
 and `credential_invalid {account}`. A failed account is not tried again
 while the state's hash is unchanged, as a failed module is not.
+
+After the agent restarts it reports each account whose records stand as
+`switched` until a new state arrives, and acts on no state whose hash it
+already tried, so a restart switches nothing and switches nothing back.
 
 ## The platform layer
 
@@ -375,7 +426,10 @@ host metrics, read the machine's interfaces, read the machine id, install and
 remove a package of a kind, and where the agent keeps its state and its work.
 
 A platform advertises the capabilities it has; invoking an absent one is
-refused with `{"code": "unsupported_platform"}`, never guessed at. The engine
+refused with `{"code": "unsupported_platform"}`, never guessed at. Every
+system has `run_as`: the contract's `run_as_account`, and
+`run_as_account_answering` for a program that reads a reply from its
+terminal, each done the way the "Running as an account" row below says. The engine
 builds the package-backed runners only on a platform with `packages`. A
 platform with `smb_server` gets the file share, driving the SMB server the
 system carries, with nothing to install or uninstall; there, any other
@@ -403,7 +457,7 @@ only POSIX has is guarded, so one package imports on all three systems.
 | Machine id | `/etc/machine-id` | the registry's `MachineGuid` | `IOPlatformUUID` from `ioreg` |
 | Accounts | uid 1000 and above with a login shell | the enabled local accounts from `Get-LocalUser`, without Administrator, Guest, DefaultAccount, WDAGUtilityAccount and the file share's own, read at most every 30 seconds; the home is the profile `Win32_UserProfile` names | `dscl`, uid 501 and above, home under `/Users` |
 | Power | `systemctl reboot` or `poweroff --force` | `shutdown /r` or `/s /t 0` | `shutdown -r` or `-h now` |
-| Running as an account | `runuser -u <account> --`, with the account's home and environment | a one-shot scheduled task registered with the login the Credentials page holds for the account's instance, a limited token, its output written to a file under the state root and read back; an account with no login is reported `credential_missing {account}` | a child process with the account's uid and group and no other groups, in its home, with `HOME`, `USER` and `LOGNAME` set |
+| Running as an account | `runuser -u <account> --`, with the account's home and environment; an answered run on a pseudo-terminal the agent makes | a one-shot scheduled task `neutrino_run_as_<account>`, registered with the login the Credentials page holds for the account's instance and a limited token, started in the account's profile; its script, standard input, output and exit code are files in `state\run_as\<account>\`, whose ACL grants the account modify and SYSTEM and the administrators full control; the task and the files are removed once the exit code is read, and an uninstall removes a task or files a stopped run left; a login Windows rejects at registration (`0x8007052E`) is `credential_invalid {account}`, an account with no login `credential_missing {account}`; an answered run is `nagent answer` inside the task | a child process with the account's uid and group and no other groups, in its home, with `HOME`, `USER` and `LOGNAME` set; an answered run on a pseudo-terminal the agent makes |
 | Refused | nothing | packages | packages |
 | Kill | SIGTERM, then SIGKILL after two seconds | `OpenProcess` with `PROCESS_TERMINATE` and `TerminateProcess` | SIGTERM, then SIGKILL after two seconds |
 | Shell stream | the login shell on a pseudo-terminal, which is its controlling terminal so a resize reaches it as `SIGWINCH`, started in root's home | PowerShell on a pseudo console, in a job that kills it on close, started in the signed-in account's profile directory, and in the system drive's root when nobody is signed in or the profile cannot be found (a domain account, a directory that is not there), never in the service's own directory | `zsh -il` on a pseudo-terminal, its controlling terminal as on Linux, started in root's home |

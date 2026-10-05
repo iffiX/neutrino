@@ -15,7 +15,12 @@ appear is the application entry a person launches, on every platform alike:
 the macOS bundles `/Applications/Neutrino Hub.app` and `/Applications/Neutrino
 Client.app`, the Windows Start menu shortcuts, the Linux desktop entries. A
 package that has nothing to say for a question has
-no directory there. Names that are not directories keep the `neutrino_<package>…` form:
+no directory there. One file name stands outside the tree:
+`.neutrino_ai_tools_payload` in a managed account's home, the input of one
+cc-switch call, which the agent writes as the account and removes as the
+account straight after the call ([agent.md](agent.md), "The machine's AI
+tools"). It names no directory, and it lives in the home because cc-switch,
+run as the account, reads it there. Names that are not directories keep the `neutrino_<package>…` form:
 sockets, pipes, systemd units, launchd labels and Windows services.
 
 A layout change is a reinstall. Nothing moves an older layout into place, and
@@ -170,7 +175,12 @@ overrides both, which is what makes a second instance testable. Details of the f
         vscode/             the VS Code CLI, read and run by every account
         cloudcli/           CloudCLI's Node.js, read and run by every account
         ai_tools/           per account, the record of each AI tool the
-                            agent pointed at the hub, root only
+                            agent pointed at the hub, root only; on
+                            Windows also login.json, the login the account
+                            was switched with, kept until it is switched back
+        run_as/             Windows only: per account, the script, input,
+                            output and exit code of one one-shot task,
+                            removed once the task ends
     client/
         netbird/            the client's NetBird configuration and profile
         easytier/           the client's EasyTier networks and console file
@@ -216,6 +226,11 @@ again on the next connection.
 anybody else had: router mode stops the manager that was running and writes
 down which units those were, so handing the machine back starts exactly
 those. Losing the file costs one `systemctl unmask` by hand.
+
+`agent/run_as/<account>/` is the one place under the agent's state an
+account writes: its ACL grants that account modify, so the account's
+one-shot task can read its script and input and write its output and exit
+code, and every file in it goes when the task ends.
 
 `agent/vscode/` and `agent/cloudcli/` hold programs the accounts of the
 machine run, so those two directories alone are readable and executable by
