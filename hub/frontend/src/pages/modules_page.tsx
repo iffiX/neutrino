@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import type { ReactNode } from "react";
 
 import { apiPath, apiPost, describeError } from "../api_client";
+import { AiToolsPanel } from "../components/ai_tools_panel";
 import { CloudcliPanels } from "../components/cloudcli_panels";
 import { CodeServerPanels } from "../components/code_server_panels";
 import { ContainersPanels } from "../components/containers_panels";
@@ -142,7 +143,17 @@ const MODULE_PANELS: Record<string, (target: PanelTarget) => ReactNode> = {
   ),
 };
 
-const PAGE_MODULES = Object.keys(MODULE_PANELS);
+/** The tabs' order: the modules every system runs first. */
+const TAB_ORDER = [
+  "samba",
+  "gitea",
+  "vscode",
+  "code_server",
+  "cloudcli",
+  "podman",
+  "zfs",
+];
+const PAGE_MODULES = TAB_ORDER.filter((name) => name in MODULE_PANELS);
 
 /** The one system whose file share is Samba; the others serve with their own. */
 const LINUX_OS = "linux";
@@ -437,6 +448,8 @@ export function ModulesPage() {
         selected={selectedId}
         onSelect={setSelectedId}
       />
+
+      {deviceId !== null && <AiToolsPanel deviceId={deviceId} />}
 
       <section className="settings_group">
         <div className="settings_group_title">

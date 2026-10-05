@@ -1,0 +1,113 @@
+/* The Modules page's Global configuration: the AI tools part. */
+
+.ai_tools {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.ai_tools_title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.ai_tools_controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+/* The client's chip: off is plain, on is lit. */
+.ai_tools_chip {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  padding: 7px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.ai_tools_chip:hover:not(:disabled) {
+  border-color: var(--color-accent);
+}
+
+.ai_tools_chip--on {
+  border-color: var(--color-accent);
+  background: var(--color-accent-wash);
+  color: var(--color-text);
+}
+
+.ai_tools_chip:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.ai_tools_form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.ai_tools_form_tool {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.ai_tools_form_row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--space-2);
+}
+
+.ai_tools_form_actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.ai_tools_accounts {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--color-border);
+}
+
+.ai_tools_account {
+  display: grid;
+  grid-template-columns: minmax(100px, 160px) 1fr auto;
+  gap: var(--space-2);
+  align-items: center;
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 13px;
+}
+
+.ai_tools_account_state {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.ai_tools_skeleton {
+  height: 72px;
+}
+
+@media (max-width: 640px) {
+  .ai_tools_account {
+    grid-template-columns: 1fr auto;
+  }
+
+  .ai_tools_account_modules {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
