@@ -387,8 +387,19 @@ resident checks at its start and each time it takes a state from a hub.
 | The Android app has no gate. | No agent runs on a phone. |
 
 A phone forwards the gateway as a Ports row: **Connect** and
-**Disconnect**, and the forwarded row shows the loopback address with
-**Copy**, for an app on the same phone. Under it, this client's key on one
+**Disconnect**, and the forwarded row shows two loopback addresses for an
+app on the same phone, each on a line of its own with its label above it
+and its own **Copy** at its right; on a narrow screen the address shrinks
+and the button keeps its size:
+
+| Line | Label | Address |
+| --- | --- | --- |
+| first | `ui.ai_address_plain` | `http://127.0.0.1:<local-port>` with the path of the entry's `endpoint` as the hub publishes it |
+| second | `ui.ai_address_v1` | the same with `/v1` after it, unless the path already ends in `/v1` |
+
+An app that speaks the OpenAI interface either adds `/v1` to the address
+itself or wants it in the address, and each line is the one address that
+kind of app answers on. Under them, this client's key on one
 row: the key in a mono field with the eye toggle inside the field at its
 right end (the panel's password field), then **Copy**; on a narrow screen
 the field shrinks and the button keeps its size.
