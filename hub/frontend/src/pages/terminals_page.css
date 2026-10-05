@@ -65,7 +65,11 @@
 }
 
 .terminal_panel_status_text {
+  flex: 1 1 auto;
   min-width: 0;
+  /* A path in a refusal is one long word: it wraps rather than run under
+     the switches. */
+  overflow-wrap: anywhere;
 }
 
 /* Persistent and Shared at the right of the status line, with who opened

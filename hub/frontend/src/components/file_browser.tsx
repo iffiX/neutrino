@@ -507,21 +507,26 @@ export function FileBrowser({
       {isPicking ? (
         <div className="file_browser_pick_foot">
           <span className="file_browser_pick_path">
-            {isDriveList ? t("ui.files.pick_drive") : path}
+            {!isDriveList
+              ? path
+              : isPickingFile
+                ? ""
+                : t("ui.files.pick_drive")}
           </span>
           <button type="button" className="button" onClick={onCancel}>
             {t("ui.confirm.cancel")}
           </button>
-          <button
-            type="button"
-            className="button button--primary"
-            hidden={isPickingFile}
-            disabled={listing === null || isDriveList}
-            onClick={() => onPickDirectory?.(path)}
-          >
-            <Icon name="check" size={14} />
-            {t("ui.files.pick_choose")}
-          </button>
+          {!isPickingFile && (
+            <button
+              type="button"
+              className="button button--primary"
+              disabled={listing === null || isDriveList}
+              onClick={() => onPickDirectory?.(path)}
+            >
+              <Icon name="check" size={14} />
+              {t("ui.files.pick_choose")}
+            </button>
+          )}
         </div>
       ) : (
         <div className="file_browser_status">
