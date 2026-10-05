@@ -120,6 +120,13 @@ const PROTOCOL_OPTIONS: PickerOption[] = [
   { id: "udp", name: "UDP" },
 ];
 
+/** What the Host field takes, said for each type. */
+const HOST_HINT_KEYS: Record<DeclaredServiceCreate["kind"], string> = {
+  web: "ui.services.host_hint_web",
+  port: "ui.services.host_hint_port",
+  file: "ui.services.host_hint_file",
+};
+
 const KIND_KEYS: Record<DeclaredServiceCreate["kind"], string> = {
   web: "ui.services.kind_web",
   port: "ui.services.kind_port",
@@ -516,7 +523,7 @@ function DeclareForm({ hostPlaceholder, onSaved, onCancel }: DeclareFormProps) {
             spellCheck={false}
             onChange={(event) => setHost(event.target.value)}
           />
-          <span className="field_hint">{t("ui.services.host_hint")}</span>
+          <span className="field_hint">{t(HOST_HINT_KEYS[kind])}</span>
         </label>
         <label className="field">
           <span className="field_label">{t("ui.services.field_port")}</span>

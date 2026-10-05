@@ -378,7 +378,6 @@
   "ui.services.group_port": "端口",
   "ui.services.group_rdp": "远程桌面",
   "ui.services.group_web": "网页",
-  "ui.services.host_hint": "回环地址，或这个中枢自己持有的地址。",
   "ui.services.invalid_host": "服务需要一个主机。",
   "ui.services.invalid_kind": "中枢不认识这个类型。",
   "ui.services.invalid_name": "服务需要一个名称。",
@@ -452,5 +451,8 @@
   "ui.vault.token_none": "未选择令牌",
   "ui.vault.token_save": "保存令牌",
   "ui.vault.token_value_hint": "保存后不会再次显示。",
-  "ui.vault.token_value_label": "令牌"
+  "ui.vault.token_value_label": "令牌",
+  "ui.services.host_hint_web": "提供这个网页的机器的主机名或 IP 地址，要这台中枢能连到。",
+  "ui.services.host_hint_port": "在这个端口上应答的机器的主机名或 IP 地址，要这台中枢能连到。",
+  "ui.services.host_hint_file": "文件服务器的主机名或 IP 地址，要这台中枢能连到。"
 }

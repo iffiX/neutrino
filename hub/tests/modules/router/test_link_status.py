@@ -5,16 +5,19 @@ port is every interface holding an IPv4 address outside loopback, and the
 default route comes from ``route -n get default`` on macOS and from
 ``Get-NetRoute`` on Windows, lowest metric first. The IPv6 addresses kept
 for a peer elsewhere are the global ones no system mark calls temporary,
-deprecated, tentative or duplicate, read on Linux, macOS and Windows.
+deprecated, tentative or duplicate, read on Linux, macOS and Windows. The
+proxy's TUN and the desktop client's files adapter are no network of the box.
 """
 
 import json
 import socket
+from pathlib import Path
 
 import pytest
 
 from tests.conftest import FakePowerShell, FakePsutil, FakeTools
 from neutrino_hub.modules.router import link_status
+from neutrino_hub.modules.router.constants import ROUTER_CLIENT_FILES_ADAPTER_NAME
 from neutrino_hub.modules.router.link_status import (
     LINK_KIND_ETHERNET,
     LINK_WINDOWS_IPV6_SCRIPT,
@@ -349,3 +352,76 @@ def test_windows_that_cannot_run_powershell_has_no_ipv6_address(
     )
 
     assert device_ipv6_addresses() == {}
+
+
+# --- the desktop client's files adapter ---
+
+# The address the client gives its files adapter on Windows.
+ADAPTER_ADDRESS = "198.19.255.1"  # scan: allow
+
+CLIENT_CONSTANTS = (
+    Path(__file__).resolve().parents[4] / "client/desktop/neutrino_client/constants.py"
+)
+
+
+@pytest.mark.parametrize("system", ["darwin", "win32"])
+def test_the_clients_files_adapter_is_no_network_of_the_box(
+    monkeypatch, machine, system
+):
+    """It was listed as exposed, opened in the firewall and named in links."""
+    from neutrino_hub.platforms import detect
+
+    monkeypatch.setattr(detect.sys, "platform", system)
+    adapter = ROUTER_CLIENT_FILES_ADAPTER_NAME
+    machine.addresses[adapter] = [(socket.AF_INET, ADAPTER_ADDRESS, "255.255.255.0")]
+    machine.stats[adapter] = (True, 0)
+
+    assert adapter not in device_addresses()
+    assert adapter not in [link.name for link in RouterLinkStatus().all_links()]
+    assert adapter not in admin_up_interfaces()
+
+
+def test_the_clients_files_adapter_is_left_out_on_linux_too(monkeypatch):
+    from types import SimpleNamespace
+
+    listed = [
+        {
+            "ifname": "lo",
+            "addr_info": [{"family": "inet", "local": "127.0.0.1", "prefixlen": 8}],
+        },
+        {
+            "ifname": "enp1s0",
+            "addr_info": [{"family": "inet", "local": "192.168.1.2", "prefixlen": 24}],
+        },
+        {
+            "ifname": ROUTER_CLIENT_FILES_ADAPTER_NAME,
+            "addr_info": [
+                {"family": "inet", "local": ADAPTER_ADDRESS, "prefixlen": 24},
+                {
+                    "family": "inet6",
+                    "scope": "global",
+                    "local": "2001:db8::1",
+                    "prefixlen": 64,
+                },
+            ],
+        },
+    ]
+    monkeypatch.setattr(link_status, "is_linux", lambda: True)
+    monkeypatch.setattr(link_status, "hub_os", lambda: "linux")
+    monkeypatch.setattr(
+        link_status,
+        "run",
+        lambda *arguments, **keywords: SimpleNamespace(
+            is_success=True, stdout=json.dumps(listed)
+        ),
+    )
+
+    assert device_addresses() == {"enp1s0": "192.168.1.2/24"}
+    assert device_ipv6_addresses() == {}
+
+
+def test_the_adapters_name_is_the_one_the_client_gives_it():
+    assert (
+        f'CLIENT_FILES_ADAPTER_NAME = "{ROUTER_CLIENT_FILES_ADAPTER_NAME}"'
+        in CLIENT_CONSTANTS.read_text(encoding="utf-8")
+    )

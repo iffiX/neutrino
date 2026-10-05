@@ -15,6 +15,9 @@ socket connected to the record's host and port for each source, closes one
 that carried nothing either way for ``CHANNEL_UDP_IDLE_TIMEOUT_S``, keeps at
 most ``CHANNEL_UDP_SOURCES_MAX`` and gives the one idle the longest away for
 a new source. An error on a source's socket loses that datagram alone.
+Each socket is read with the loop's own ``sock_recv``, which the selector
+loop of Linux and macOS and the proactor loop of Windows both carry, so one
+reader serves every system; a datagram of zero bytes is carried both ways.
 """
 
 import asyncio
@@ -34,6 +37,8 @@ from neutrino_hub.modules.channel.sessions import ChannelStream
 
 # How often the far end looks for sources that went idle.
 UDP_SWEEP_INTERVAL_S = 5.0
+# The largest datagram a socket is read for.
+UDP_DATAGRAM_MAX = 65535
 
 
 class UdpSourceTable:
@@ -321,7 +326,11 @@ def _check_route(address: tuple) -> None:
 
 
 class _Endpoint:
-    """One source's socket, connected to the record, read as replies arrive."""
+    """One source's socket, connected to the record, read as replies arrive.
+
+    A task of its own reads the socket with the loop's ``sock_recv``; the
+    socket is closed once that task has ended.
+    """
 
     def __init__(self, loop, address: tuple, stream, table, source: int):
         """
@@ -347,8 +356,7 @@ class _Endpoint:
         self._stream = stream
         self._table = table
         self._source = source
-        self._sending: set = set()
-        loop.add_reader(self._socket.fileno(), self._read)
+        self._reader = loop.create_task(self._read())
 
     def send(self, datagram: bytes) -> None:
         """Send one datagram; an error loses it alone."""
@@ -356,21 +364,26 @@ class _Endpoint:
             self._socket.send(datagram)
 
     def close(self) -> None:
-        self._loop.remove_reader(self._socket.fileno())
-        self._socket.close()
+        """Stop reading; the socket closes as the reader ends."""
+        self._reader.cancel()
 
-    def _read(self) -> None:
-        """Hand every waiting reply into the stream; an error loses one."""
-        while True:
-            try:
-                data = self._socket.recv(65535)
-            except OSError:
-                return
-            self._table.touch(self._source, time.monotonic())
-            task = asyncio.ensure_future(self._send(frame_of(self._source, data)))
-            self._sending.add(task)
-            task.add_done_callback(self._sending.discard)
+    async def _read(self) -> None:
+        """Hand every reply into the stream until closed.
 
-    async def _send(self, frame: bytes) -> None:
-        with contextlib.suppress(AgentOfflineError):
-            await self._stream.send_datagram(frame)
+        A reply the system turned into an error, a port unreachable report
+        on Linux and macOS, a reset on Windows, loses that one; any other
+        error ends the reading.
+        """
+        try:
+            while True:
+                try:
+                    data = await self._loop.sock_recv(self._socket, UDP_DATAGRAM_MAX)
+                except ConnectionError:
+                    continue
+                except OSError:
+                    return
+                self._table.touch(self._source, time.monotonic())
+                with contextlib.suppress(AgentOfflineError):
+                    await self._stream.send_datagram(frame_of(self._source, data))
+        finally:
+            self._socket.close()

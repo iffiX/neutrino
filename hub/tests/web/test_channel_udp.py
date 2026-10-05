@@ -12,7 +12,8 @@ a client sends before the agent's stream has its first credit held, 16 at
 most, and passed on in order when the credit comes, dropped when the agent
 refuses the open, and held again on the stream a client opens after such a
 refusal; and the table of sources forgetting one after the idle time and
-giving the idlest away for a 65th.
+giving the idlest away for a 65th; and the far end served on a loop that
+cannot watch a descriptor, as Windows' proactor loop cannot.
 """
 
 import asyncio
@@ -396,3 +397,36 @@ def test_a_stream_opened_again_at_a_datagram_after_a_refusal_carries_it():
     assert refused.close_info["code"] == "port_not_published"
     assert sent == [(40002, b"again")]
     assert answered == [(40002, b"answer")]
+
+
+def test_the_far_end_needs_no_descriptor_watch_as_on_windows(monkeypatch):
+    """Windows' proactor loop has no ``add_reader``; the far end reads with
+    ``sock_recv``, which both loops carry. What stays unproven until a run
+    on Windows: the proactor's own ``sock_recv`` on a UDP socket, a reset
+    from a port unreachable report, and a zero-length datagram there."""
+
+    async def scenario():
+        loop = asyncio.get_running_loop()
+
+        def cannot_watch(*arguments):
+            raise NotImplementedError
+
+        monkeypatch.setattr(loop, "add_reader", cannot_watch)
+        monkeypatch.setattr(loop, "remove_reader", cannot_watch)
+        transport, echo, port = await echo_server()
+        stream, socket = stream_on(CHANNEL_ROLE_CLIENT, {"id": "dns"})
+        stream._grant(10_000)
+        relay = asyncio.ensure_future(
+            relay_to_socket(stream, "127.0.0.1", port, reason_of=dial_reason)
+        )
+        stream._deliver(("data", frame_of(40001, b"one")))
+        stream._deliver(("data", frame_of(40002, b"")))
+        await until(lambda: len(socket.datagrams()) == 2)
+        await stream.close()
+        await asyncio.wait_for(relay, 3)
+        transport.close()
+        return socket
+
+    socket = asyncio.run(scenario())
+
+    assert sorted(socket.datagrams()) == [(40001, b"echo:one"), (40002, b"echo:")]
