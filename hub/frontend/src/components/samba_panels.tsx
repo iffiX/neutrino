@@ -17,6 +17,7 @@ import {
 } from "../api_client";
 import { formatBytes } from "../format_bytes";
 import { t, useLanguage } from "../i18n";
+import { useHubHost } from "../origins";
 import { useApiResource } from "../use_api_resource";
 import { useDraft } from "../use_draft";
 import { HUB_EVENT_CONFIG, HUB_EVENT_DEVICE_REPORT } from "../use_hub_events";
@@ -403,6 +404,7 @@ function ShareEditor({
   onChange,
   onRemove,
 }: ShareEditorProps) {
+  const host = useHubHost();
   const [isCopied, setIsCopied] = useState(false);
   const [isBrowsing, setIsBrowsing] = useState(false);
   const isPathRefused =
@@ -412,7 +414,8 @@ function ShareEditor({
 
   // The host the browser reached this panel by is the host the share answers
   // on — true on the LAN today and still true over an overlay later.
-  const shareUrl = `smb://${window.location.hostname}/${encodeURIComponent(share.name)}`;
+  // Through a client's forward the hub is named by a placeholder.
+  const shareUrl = `smb://${host}/${encodeURIComponent(share.name)}`;
 
   const toggleUser = (name: string) => {
     onChange({

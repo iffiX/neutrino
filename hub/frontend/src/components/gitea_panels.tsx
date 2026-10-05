@@ -12,6 +12,7 @@ import {
   describeError,
 } from "../api_client";
 import { t, useLanguage } from "../i18n";
+import { useHubHost } from "../origins";
 import { useApiResource } from "../use_api_resource";
 import { useDraft } from "../use_draft";
 import type {
@@ -50,6 +51,7 @@ export function GiteaPanels({
 }: GiteaPanelsProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
+  const host = useHubHost();
   const resource = useApiResource<GiteaDeviceView>(
     apiPath(basePath, { device_id: deviceId }),
   );
@@ -99,7 +101,9 @@ export function GiteaPanels({
 
   // The host the browser reached this panel by is a host Gitea answers on
   // too, whatever root_url advertises — right on the LAN and over an overlay.
-  const openUrl = `http://${window.location.hostname}:${saved.listen_port}/`;
+  // Through a client's forward that host is the client's own, and the hub is
+  // named by a placeholder.
+  const openUrl = `http://${host}:${saved.listen_port}/`;
 
   return (
     <>
@@ -160,7 +164,7 @@ export function GiteaPanels({
             <input
               className="input"
               placeholder={t("ui.gitea.root_url_placeholder", {
-                url: `http://${window.location.hostname}:${draft.listen_port}/`,
+                url: `http://${host}:${draft.listen_port}/`,
               })}
               value={draft.root_url}
               onChange={(event) =>

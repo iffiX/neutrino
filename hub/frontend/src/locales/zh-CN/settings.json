@@ -46,6 +46,7 @@
   "ui.settings.https_regenerated": "装上新证书，重启浏览器，再开启。",
   "ui.settings.https_renewed": "上次自动续签",
   "ui.settings.https_renewed_none": "面板启动以来没有续签过",
+  "ui.settings.https_through_client": "经客户端",
   "ui.settings.https_title": "HTTPS",
   "ui.settings.https_trusted": "这个浏览器已信任证书。",
   "ui.settings.https_turn_off_first": "先关闭 HTTPS，才能重新生成证书。",
