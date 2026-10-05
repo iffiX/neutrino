@@ -134,26 +134,21 @@ def may_open_panel(client) -> bool:
 
 
 def end_client_panel_sessions(runtime, *, why: str) -> list:
-    """End every panel session whose client may no longer open the panel.
+    """Close what clients no longer hold, after a client left the hub.
 
-    Called after a client is switched off, removed, leaves, or a permission
-    changes; a client that still may open the panel keeps its sessions.
+    The decision is :func:`neutrino_hub.web.client_access.close_lost_access`;
+    this is its name at the channel's leave.
 
     Args:
-        runtime: The shared runtime, which holds the sessions.
-        why: What the hub's log says ended them.
+        runtime: The shared runtime.
+        why: What the hub's log says ended a panel session.
 
     Returns:
-        The ids of the clients whose sessions ended.
+        The ids of the clients whose panel sessions ended.
     """
-    registry = ClientRegistry()
-    ended = []
-    for token, client_id in runtime.sessions.client_sessions():
-        client = registry.get(client_id)
-        if client is not None and may_open_panel(client):
-            continue
-        runtime.sessions.logout(token)
-        name = client.name if client is not None else client_id
-        LOGGER.info("panel: session of client %s ended (%s)", name, why)
-        ended.append(client_id)
-    return ended
+    from neutrino_hub.web.client_access import close_lost_access
+
+    closed = close_lost_access(runtime, why=why)
+    return [
+        client_id for client_id, what in closed.items() if what.get("panel_sessions")
+    ]

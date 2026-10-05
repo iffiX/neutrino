@@ -227,11 +227,21 @@ that moment:
 
 Any other port is refused `port_not_published {port}` and nothing is
 dialled. A dial that fails closes the stream `connect_failed {reason}`, `reason` being
-`refused`, `timeout` or `unreachable`. Every service in the table, a
-container published on one address aside, answers on loopback: Gitea listens on every address, the editors and the forwarders
-listen on `127.0.0.1`, RustDesk's direct port answers on loopback, Samba's
-`hosts allow` names `127.0.0.1`, and the file share's fence on Windows and
-macOS leaves `127.0.0.0/8` out of what it blocks.
+`refused`, `timeout` or `unreachable`.
+
+A machine's own services stay reachable on its LAN at their own ports, under
+each service's own login ([connection.md](connection.md), "One port, one
+connection"), and each also answers the agent's dial on loopback:
+
+| Service | Where it listens |
+| --- | --- |
+| Samba on Linux | every address; `hosts allow` names the networks the hub composed and `127.0.0.1` |
+| the file share on Windows and macOS | the system's SMB server on every address; the fence blocks every network outside the composed ones and leaves `127.0.0.0/8` and `::1` out of what it blocks |
+| Gitea | every address (`HTTP_ADDR = 0.0.0.0`) |
+| RustDesk's direct port | every address, as RustDesk opens it; the share is declared once the port answers on `127.0.0.1` |
+| a Podman container's published port | every address, or the one address it is published on, which the agent dials |
+| VS Code | `127.0.0.1` alone |
+| the CloudCLI and code-server forwarders | `127.0.0.1` alone, in front of CloudCLI on loopback and code-server on its account's socket |
 
 ## The local control channel
 

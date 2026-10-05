@@ -33,7 +33,7 @@ DEVICE = "device-one"
 class FakeSession:
     def __init__(self, key: str = "client-one"):
         self.key = key
-        self.connects: set = set()
+        self.connects: dict = {}
 
 
 class FakeRuntime:
@@ -47,7 +47,11 @@ class Judge:
 
     def __init__(self):
         self.asks: list = []
-        self.verdict = ("", {}, ConnectTarget(DEVICE, "", 8000))
+        self.verdict = (
+            "",
+            {},
+            ConnectTarget(DEVICE, "", 8000, kind="web", provider=DEVICE),
+        )
 
     def __call__(self, runtime, client_id, args, *, open_count, panel_port):
         self.asks.append((client_id, dict(args), open_count, panel_port))
@@ -80,7 +84,7 @@ def test_a_refusal_closes_the_stream_before_anything_is_dialled(judged):
     judged.verdict = ("connect_limit", {"limit": 256}, None)
     runtime = FakeRuntime()
     session = FakeSession()
-    session.connects.update({3, 5})
+    session.connects.update({3: ("web", ""), 5: ("web", "")})
 
     async def scenario():
         stream = ScriptedChannelStream("connect", {"id": "x"}, 7)
@@ -92,7 +96,7 @@ def test_a_refusal_closes_the_stream_before_anything_is_dialled(judged):
     assert stream.close_info == {"code": "connect_limit", "params": {"limit": 256}}
     assert judged.asks == [("client-one", {"id": "x"}, 2, 8090)]
     assert runtime.agent_sessions.streams == []
-    assert session.connects == {3, 5}
+    assert set(session.connects) == {3, 5}
 
 
 def test_a_machines_entry_opens_its_agents_connect_and_bytes_cross(judged):
@@ -104,7 +108,7 @@ def test_a_machines_entry_opens_its_agents_connect_and_bytes_cross(judged):
         serving = asyncio.create_task(serve_connect_stream(runtime, session, stream))
         await until(lambda: runtime.agent_sessions.streams)
         (far,) = runtime.agent_sessions.streams
-        held = set(session.connects)
+        held = dict(session.connects)
         stream._deliver(("data", b"GET / HTTP/1.1\r\n\r\n"))
         far._deliver(("data", b"HTTP/1.1 200 OK\r\n"))
         await until(lambda: far.sent and stream.sent)
@@ -118,8 +122,8 @@ def test_a_machines_entry_opens_its_agents_connect_and_bytes_cross(judged):
     assert far.sent_bytes() == b"GET / HTTP/1.1\r\n\r\n"
     assert stream.sent_bytes() == b"HTTP/1.1 200 OK\r\n"
     assert stream.close_info == {"code": "", "params": {}}
-    assert held == {1}
-    assert session.connects == set()
+    assert held == {1: ("web", DEVICE)}
+    assert session.connects == {}
 
 
 @pytest.mark.parametrize(
@@ -284,7 +288,7 @@ def test_the_far_ends_bytes_reach_the_client_only_as_its_credit_allows(judged):
             websocket=websocket,
             loop=asyncio.get_running_loop(),
         )
-        session.connects = set()
+        session.connects = {}
         stream = ChannelStream(session, 1, "connect", {"id": "x"})
         serving = asyncio.create_task(serve_connect_stream(runtime, session, stream))
         await until(lambda: runtime.agent_sessions.streams)

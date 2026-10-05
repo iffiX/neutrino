@@ -39,12 +39,13 @@ async def serve_connect_stream(
 
     Args:
         runtime: The shared runtime.
-        session: The client's session; its ``connects`` holds the stream
-            while it is open.
+        session: The client's session; its ``connects`` holds the stream,
+            with the kind and the machine it was judged by, while it is
+            open.
         stream: The client's stream, closed here.
     """
     open_count = len(session.connects)
-    session.connects.add(stream.id)
+    session.connects[stream.id] = ("", "")
     try:
         code, params, target = await asyncio.to_thread(
             connect_target,
@@ -57,12 +58,13 @@ async def serve_connect_stream(
         if code:
             await stream.close(code, params)
             return
+        session.connects[stream.id] = (target.kind, target.provider)
         if target.device_id:
             await _relay_to_agent(runtime, stream, target)
             return
         await _relay_to_socket(stream, target)
     finally:
-        session.connects.discard(stream.id)
+        session.connects.pop(stream.id, None)
 
 
 async def _relay_to_agent(runtime, stream: ChannelStream, target) -> None:
