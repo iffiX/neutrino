@@ -223,6 +223,33 @@ def test_attach_answers_101_with_the_header_and_what_is_typed_reaches_the_bridge
     assert b"".join(resident.typed) == b"ls\n"
 
 
+def test_a_terminal_nobody_types_in_stays_past_the_requests_deadline(
+    control, monkeypatch
+):
+    """The fault on the Mac: the request's ten-second read deadline stayed on
+    the kept connection, so a terminal left alone ended by itself."""
+    from neutrino_client.control import server as server_module
+
+    monkeypatch.setattr(server_module._ControlRequestHandler, "timeout", 0.2)
+    server, resident, _platform = control
+
+    status, _reply, connection = client.upgrade(
+        socket_path=server.socket_path,
+        path="/api/terminal/attach",
+        body={"hub_id": "h1", "device_id": "d_lepton", "cols": 80, "rows": 24},
+    )
+    time.sleep(0.8)
+    connection.send(b"late\n")
+    connection.close()
+    deadline = time.monotonic() + 5
+    while not resident.typed:
+        assert time.monotonic() < deadline
+        time.sleep(0.01)
+
+    assert status == 101
+    assert b"".join(resident.typed) == b"late\n"
+
+
 def test_the_output_connection_carries_the_shells_bytes_then_ends(control):
     server, resident, _platform = control
     resident.shown = [b"$ ", b"bye"]

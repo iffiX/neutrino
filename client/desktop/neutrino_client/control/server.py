@@ -216,7 +216,12 @@ class _ControlRequestHandler(BaseHTTPRequestHandler):
                 return
 
     def _switch(self, reply: dict) -> None:
-        """Answer 101 naming the terminal, then carry its bytes until it ends."""
+        """Answer 101 naming the terminal, then carry its bytes until it ends.
+
+        The request's read deadline goes: a person may type nothing for as
+        long as they like, and the kept connection waits for them.
+        """
+        self.connection.settimeout(None)
         self.send_response(101)
         self.send_header(routes.TERMINAL_HEADER, str(reply.get("terminal_id", "")))
         self.end_headers()

@@ -1775,3 +1775,61 @@ def test_the_managed_reason_is_one_text_with_its_code_in_both_languages():
     assert CATALOGS["zh-CN"]["ui.reason.ai_managed"] == (
         "这是已管理的设备，请到中枢面板的“模块”页，在“全局配置”里设置它的 AI 工具。"
     )
+
+
+def provider_lines(entries: list) -> list:
+    """The page's own providerLine, run in node for each entry of hub nmxhub."""
+    import json
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("no node to run the page's script")
+    words = {
+        "ui.provided_by": EN_WORDS["ui.provided_by"],
+        "ui.machine_provided_by": EN_WORDS["ui.machine_provided_by"],
+        "ui.module_ai_gateway": EN_WORDS["ui.module_ai_gateway"],
+    }
+    script = "\n".join(
+        [
+            "const WORDS = " + json.dumps(words) + ";",
+            "const t = (key, values) => WORDS[key].replace(/\\{(\\w+)\\}/g,",
+            "  (_m, name) => String((values || {})[name]));",
+            "function hubName(hub)" + function_body("function hubName(hub)") + "\n}",
+            "function entryHost(entry) { return (entry.payload || {}).host || ''; }",
+            "const ENTRY_MODULES = {};",
+            "function entryModule(entry)"
+            + function_body("function entryModule(entry)")
+            + "\n}",
+            "function providerLine(hub, entry)"
+            + function_body("function providerLine(hub, entry)")
+            + "\n}",
+            "const hub = {hub_name: 'nmxhub'};",
+            "console.log(JSON.stringify(" + json.dumps(entries) + ".map(",
+            "  (entry) => providerLine(hub, entry))));",
+        ]
+    )
+    result = subprocess.run(
+        [node, "-e", script], capture_output=True, text=True, timeout=30
+    )
+    assert result.returncode == 0, result.stderr
+    return json.loads(result.stdout)
+
+
+def test_an_entry_the_hubs_own_machine_serves_names_the_hub_once():
+    lines = provider_lines(
+        [
+            {"device_name": "nmxhub", "description_code": "ai_gateway"},
+            {"device_name": "nmxhub", "title": "Panel"},
+            {"device_name": "", "payload": {"host": "nmxhub"}, "title": "dns"},
+            {"device_name": "nmxclient", "title": "share", "description_code": ""},
+        ]
+    )
+
+    assert lines == [
+        "from nmxhub:AI gateway",
+        "from nmxhub:Panel",
+        "from nmxhub:dns",
+        "from nmxhub:nmxclient:share",
+    ]

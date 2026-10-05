@@ -870,12 +870,15 @@ function panelCard(title, isDirty) {
 // --- the entries of the service pages ---
 
 // Which hub, which of its machines and which module an entry comes from; a
-// hub that names no machine leaves the address the entry points at.
+// hub that names no machine leaves the address the entry points at, and an
+// entry the hub's own machine serves names the hub once.
 function providerLine(hub, entry) {
-  return t('ui.provided_by', {
-    hub: hubName(hub), device: entry.device_name || entryHost(entry),
-    module: entryModule(entry),
-  });
+  const name = hubName(hub);
+  const device = entry.device_name || entryHost(entry);
+  if (device === name) {
+    return t('ui.machine_provided_by', { hub: name, device: entryModule(entry) });
+  }
+  return t('ui.provided_by', { hub: name, device: device, module: entryModule(entry) });
 }
 
 // The module names an origin code stands for; the AI gateway is worded in
