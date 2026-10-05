@@ -9,7 +9,8 @@ bytes asked for down a ``package {module}`` stream and its output sent up
 a ``log {module}`` stream closed with the module's state, the applied
 hash moving only when every mentioned module applied, a failed state
 reported under the old hash and tried again only under another hash
-unless the socket caused it, the first failure naming the state error,
+unless the socket caused it, the hub's retry mark being such another hash
+with the configuration unchanged, the first failure naming the state error,
 the file's mode, the latest state winning when several arrive, and a state
 whose apply waits on a running install neither applied nor failed and
 applied again until the install has ended.
@@ -859,3 +860,28 @@ def test_the_ai_tools_section_is_handed_on_after_the_modules(tmp_path):
 
     assert tools.applied == [({"is_enabled": False}, "h1")]
     assert journal
+
+
+def test_the_same_state_with_a_retry_mark_tries_a_failed_install_again(tmp_path):
+    """The hub's press on a failed module adds ``retry_mark`` to its entry;
+    the hash moves, so the agent tries again, and the module's configuration
+    is the same as before."""
+    runners = {"samba": FakeRunner()}
+    engine = FakeEngine(
+        runners,
+        absent=("samba",),
+        install_refusal={"code": "install_failed", "params": {"detail": "dpkg"}},
+    )
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+    held.apply(state("h1", samba="running"))
+    engine.install_refusal = None
+    retried = state("h1-retry", samba="running")
+    retried["modules"]["samba"]["retry_mark"] = "a1b2c3d4"
+
+    held.take(retried)
+    drive_once(held)
+
+    assert len(engine.installs) == 2
+    assert held.applied_hash == "h1-retry"
+    assert held.state_error is None
+    assert runners["samba"].applied == [{"n": "samba"}]

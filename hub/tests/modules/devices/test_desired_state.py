@@ -371,3 +371,53 @@ def test_the_setting_is_sent_off_while_it_is_off_or_the_gateway_serves_nothing(
     assert keyless["ai_tools"] == {"is_enabled": False}
     assert served_hash != stopped_hash
     assert store.ai_tools(DEVICE)["is_enabled"] is True
+
+
+# --- the retry marks ---
+
+
+def test_a_retry_mark_rides_its_module_entry_and_moves_the_hash(config):
+    store = DesiredStateStore()
+    store.set_want(DEVICE, "samba", "running")
+    store.write(DEVICE, "samba", {"shares": [], "users": []})
+
+    plain, plain_hash = store.compose(DEVICE, PLATFORM)
+    marked, marked_hash = store.compose(
+        DEVICE, PLATFORM, retry_marks={"samba": "a1b2", "gitea": "c3d4"}
+    )
+    again, again_hash = store.compose(DEVICE, PLATFORM, retry_marks={"samba": "e5f6"})
+
+    assert "retry_mark" not in plain["modules"]["samba"]
+    assert marked["modules"]["samba"]["retry_mark"] == "a1b2"
+    assert marked["modules"]["samba"]["config"] == plain["modules"]["samba"]["config"]
+    assert "gitea" not in marked["modules"]
+    assert len({plain_hash, marked_hash, again_hash}) == 3
+
+
+def test_the_ai_tools_mark_rides_the_section_only_while_it_is_on(config, monkeypatch):
+    store, models = ai_tools_box(monkeypatch)
+    marks = {"ai_tools": "a1b2"}
+
+    off, _ = store.compose(DEVICE, PLATFORM, ai_models=models, retry_marks=marks)
+    store.set_ai_tools(DEVICE, is_enabled=True)
+    on, _ = store.compose(DEVICE, PLATFORM, ai_models=models, retry_marks=marks)
+
+    assert off["ai_tools"] == {"is_enabled": False}
+    assert on["ai_tools"]["retry_mark"] == "a1b2"
+
+
+def test_the_retry_marks_keep_one_per_module_and_go_with_the_device(tmp_path):
+    from neutrino_hub.modules.devices.retry_marks import DeviceRetryMarks
+
+    marks = DeviceRetryMarks(path=tmp_path / "marks.json")
+    first = marks.mark(DEVICE, "code_server")
+    second = marks.mark(DEVICE, "code_server")
+    marks.mark("other", "samba")
+
+    assert first != second
+    assert DeviceRetryMarks(path=tmp_path / "marks.json").marks(DEVICE) == {
+        "code_server": second
+    }
+    marks.forget(DEVICE)
+    assert marks.marks(DEVICE) == {}
+    assert set(marks.marks("other")) == {"samba"}

@@ -86,6 +86,13 @@ AGENT_MODULE_LISTING_LIMIT_BYTES = 1024 * 1024
 # and in the release.
 AGENT_PACKAGE_CACHE_DIR = UTILS_STATE_ROOT / "agent_cache"
 
+# The retry marks a press on a failed module puts into a device's state: one
+# per module and device, under the state root, and the key each takes in the
+# state. A mark is this many random bytes, written in hex.
+DEVICE_RETRY_MARKS_PATH = UTILS_STATE_ROOT / "device_retry_marks.json"
+DEVICE_RETRY_MARK_KEY = "retry_mark"
+DEVICE_RETRY_MARK_BYTES = 8
+
 # Per platform key, ``{name, url, sha256, size}``. Stamped by the build that
 # seeded the cache: a release names every platform it publishes, with the URL
 # and the hash of each, and a local build names the one it seeded alone, which

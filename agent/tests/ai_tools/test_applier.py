@@ -195,6 +195,35 @@ def test_a_refusing_account_keeps_its_tools_and_the_next_is_switched(tmp_path, b
     }
 
 
+def test_a_retry_mark_tries_a_failed_account_again_and_leaves_the_others(
+    tmp_path, binary
+):
+    """The hub's press on the chip adds ``retry_mark`` to the section; the
+    state's hash moves, the failed account runs again, a switched one not."""
+    applier, platform = make(
+        tmp_path, binary, homes={"ann": "/home/ann", "bob": "/home/bob"}
+    )
+    store = platform.store("ann")
+    original = store.answer
+
+    def refuse(session, arguments, app):
+        if tuple(arguments)[:2] == ("provider", "add"):
+            return 1, "", "store is locked"
+        return original(session, arguments, app)
+
+    store.answer = refuse
+    applier.apply(section("ann", "bob"), "h1")
+    store.answer = original
+    platform.runs.clear()
+
+    retried = section("ann", "bob")
+    retried["retry_mark"] = "a1b2"
+    applier.apply(retried, "h1-retry")
+
+    assert states(applier) == {"ann": ("switched", ""), "bob": ("switched", "")}
+    assert {run[0] for run in platform.runs} == {"ann"}
+
+
 def test_windows_needs_the_account_s_login_and_keeps_it_for_the_switch_back(
     tmp_path, binary
 ):
