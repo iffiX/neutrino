@@ -257,6 +257,7 @@ def test_clear_sends_ctrl_c_and_draws_the_first_output_after_the_quiet():
     registry.take_bytes(1, b"$ ")
 
     assert wait_for(lambda: written == [b"$ "])
+    # Ctrl+C at the press and nothing else: the box stays empty.
     assert wire.binary == [(1, b"\x03")]
     assert bridge.is_clearing is False
     registry.take_close({"type": "close", "stream": 1, "params": {}})

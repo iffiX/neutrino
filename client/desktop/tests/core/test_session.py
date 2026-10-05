@@ -2123,9 +2123,118 @@ def test_a_refresh_of_a_connected_hub_asks_for_the_whole_state(bound, monkeypatc
 
     assert session.is_refreshing() is True
     assert session.last_error() is None
+    deadline = time.monotonic() + 5
+    while not made.sent[-1].get("is_refresh") and time.monotonic() < deadline:
+        time.sleep(0.01)
     assert made.sent[-1]["type"] == "report"
     assert made.sent[-1]["is_refresh"] is True
     assert listener.changes == changes + 1
+
+
+class Clocks:
+    """A monotonic clock and a wall clock, each moved by hand."""
+
+    def __init__(self):
+        self.now = 1000.0
+        self.wall = 1_700_000_000.0
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def time(self) -> float:
+        return self.wall
+
+
+@pytest.mark.parametrize(
+    "jump",
+    [
+        {"wall": 4.5 * 3600},
+        {"wall": -4.5 * 3600},
+        {"now": 4.5 * 3600},
+    ],
+)
+def test_a_clock_jump_ends_the_refresh_whatever_its_timer_does(
+    monkeypatch, config_path, jump
+):
+    """A machine waking from sleep moves its clocks; the refresh ends then."""
+    bind(config_path)
+    clocks = Clocks()
+    monkeypatch.setattr(session_module.threading, "Timer", NoTimer)
+    session = session_for(
+        refresh_timeout_s=10, clock=clocks.monotonic, wall_clock=clocks.time
+    )
+    assert session.refresh() is True
+    assert session.is_refreshing() is True
+
+    clocks.wall += jump.get("wall", 0)
+    clocks.now += jump.get("now", 0)
+
+    assert session.is_refreshing() is False
+    assert session.connection() == "connecting"
+    assert session.refresh() is True
+
+
+def test_a_refresh_past_its_limit_ends_when_its_timer_never_fires(
+    monkeypatch, config_path
+):
+    bind(config_path)
+    clocks = Clocks()
+    monkeypatch.setattr(session_module.threading, "Timer", NoTimer)
+    session = session_for(
+        refresh_timeout_s=10, clock=clocks.monotonic, wall_clock=clocks.time
+    )
+    session.refresh()
+
+    clocks.now += 9.9
+    clocks.wall += 9.9
+    assert session.is_refreshing() is True
+    clocks.now += 0.1
+    clocks.wall += 0.1
+    assert session.is_refreshing() is False
+
+
+class NoTimer:
+    """A timer that never fires."""
+
+    def __init__(self, *args, **kwargs):
+        self.daemon = False
+
+    def start(self) -> None:
+        pass
+
+
+class SilentSocket(ScriptedSocket):
+    """A socket whose sends never return: the far end takes no bytes."""
+
+    def __init__(self, frames):
+        super().__init__(frames)
+        self.held = threading.Event()
+
+    def send_text(self, text: str) -> None:
+        if json.loads(text).get("is_refresh"):
+            self.held.wait(timeout=10)
+            return
+        super().send_text(text)
+
+
+def test_a_socket_that_never_answers_holds_neither_the_press_nor_the_refresh(
+    monkeypatch, config_path
+):
+    bind(config_path)
+    session = session_for(refresh_timeout_s=0.2)
+    made = SilentSocket([WELCOME])
+    session._connect(made)
+
+    started = time.monotonic()
+    assert session.refresh() is True
+    assert time.monotonic() - started < 1
+    deadline = time.monotonic() + 5
+    while session.is_refreshing() and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+    assert session.is_refreshing() is False
+    assert session.connection() == "connected"
+    made.held.set()
 
 
 def test_a_plain_report_carries_no_refresh(bound, monkeypatch):

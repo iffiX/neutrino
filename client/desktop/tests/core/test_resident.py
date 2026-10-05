@@ -1269,6 +1269,59 @@ def test_a_watcher_that_fails_does_not_stop_the_others(two_hubs, monkeypatch):
     assert heard.wait(timeout=5)
 
 
+def test_a_watcher_that_never_returns_holds_no_later_announcement(
+    two_hubs, monkeypatch
+):
+    """A window whose script call never answers, as WebView2's can after the
+    machine slept: the next change still reaches it, and every other
+    watcher, on threads of their own."""
+    monkeypatch.setattr(resident_module, "ANNOUNCE_SETTLE_S", 0.01)
+    monkeypatch.setattr(resident_module, "ANNOUNCE_WATCHER_WAIT_S", 0.05)
+    held = threading.Event()
+    calls = []
+    other = []
+
+    def stuck():
+        calls.append(1)
+        if len(calls) == 1:
+            held.wait(timeout=10)
+
+    two_hubs.subscribe(stuck)
+    two_hubs.subscribe(lambda: other.append(1))
+    two_hubs.notify()
+    wait_until(lambda: other == [1])
+    two_hubs.notify()
+    wait_until(lambda: other == [1, 1])
+
+    assert other == [1, 1]
+    assert calls == [1, 1]
+    held.set()
+
+
+def test_a_watcher_held_too_often_is_skipped_until_it_returns(two_hubs, monkeypatch):
+    monkeypatch.setattr(resident_module, "ANNOUNCE_SETTLE_S", 0.01)
+    monkeypatch.setattr(resident_module, "ANNOUNCE_WATCHER_WAIT_S", 0.01)
+    monkeypatch.setattr(resident_module, "ANNOUNCE_WATCHER_HELD_MAX", 2)
+    held = threading.Event()
+    calls = []
+
+    def stuck():
+        calls.append(1)
+        held.wait(timeout=10)
+
+    two_hubs.subscribe(stuck)
+    for _ in range(4):
+        two_hubs.notify()
+        time.sleep(0.1)
+
+    assert calls == [1, 1]
+    held.set()
+    wait_until(lambda: two_hubs._held_watchers[id(stuck)] == 0)
+    two_hubs.notify()
+    wait_until(lambda: len(calls) == 3)
+    assert len(calls) == 3
+
+
 def test_the_resident_forwards_a_sessions_changes_to_the_watchers(
     two_hubs, monkeypatch
 ):

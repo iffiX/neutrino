@@ -789,7 +789,7 @@ def test_the_menus_clear_sends_ctrl_c_before_it_clears_the_screen():
     clear = function_body("function clearTerminal(tab)")
 
     assert "[t('ui.menu.clear'), false, () => clearTerminal(tab)]," in menu
-    assert "tab.term.clear();" in clear
+    assert "showClearing(tab, true);" in clear
     assert "tab.isClearAsked = true;" in clear
     flush = function_body("function flushShellKeys(tab)")
     # What was typed before the Clear goes first; the resident sends Ctrl+C.
@@ -803,9 +803,17 @@ def test_the_clearing_word_covers_the_terminal_while_the_resident_drops():
     piece = function_body("function takeShellPiece(piece)")
     assert "if (piece.clearing !== undefined) {" in piece
     assert "showClearing(tab, piece.clearing === true);" in piece
+    # Output read before the drop began reaches the page after it began, and
+    # is not drawn.
+    assert "if (!tab.isClearing) tab.term.write(base64Bytes(piece.data));" in piece
+    assert "if (tab.isClearing) showClearing(tab, false);" in piece
     shown = function_body("function showClearing(tab, isClearing)")
     assert "t('ui.job.clearing')" in shown
-    assert "tab.term.write('', () => tab.term.clear());" in shown
+    assert "tab.isClearing = isClearing;" in shown
+    assert "tab.term.write(TERMINAL_ERASE);" in shown
+    assert "const TERMINAL_ERASE = '\\x1b[2J\\x1b[3J\\x1b[H';" in PAGE_JS
+    flush = function_body("function flushShellKeys(tab)")
+    assert "if (!reply || reply.code) showClearing(tab, false);" in flush
     assert EN_WORDS["ui.job.clearing"] == "Clearing…"
     assert CATALOGS["zh-CN"]["ui.job.clearing"] == "清屏中…"
     assert ".term_clearing {" in PAGE_CSS
@@ -1173,7 +1181,25 @@ def test_a_mount_waits_for_a_user_name_and_a_path():
     assert "!isMountFormFilled(staged, state)" in body_of("drawFileEntry")
     filled = body_of("isMountFormFilled")
     assert "!!staged.username && (!!staged.path || !asksMountPlace(state))" in filled
-    assert "t('ui.reason.mount_form')" in body_of("mountReason")
+    assert "t(MOUNT_FORM_REASONS[state.mount_location_shape || 'path']" in (
+        body_of("mountReason")
+    )
+
+
+def test_each_system_says_what_its_own_mount_form_asks_for():
+    reasons = PAGE_JS.split("const MOUNT_FORM_REASONS = {")[1].split("};")[0]
+    assert "path: 'ui.reason.mount_form'," in reasons
+    assert "drive_letter: 'ui.reason.mount_form_drive'," in reasons
+    assert "volume: 'ui.reason.mount_form_volume'," in reasons
+    for key in (
+        "ui.reason.mount_form",
+        "ui.reason.mount_form_drive",
+        "ui.reason.mount_form_volume",
+    ):
+        assert key in EN_WORDS and key in CATALOGS["zh-CN"]
+    assert "drive letter" in EN_WORDS["ui.reason.mount_form_drive"]
+    assert "path" not in EN_WORDS["ui.reason.mount_form_drive"]
+    assert "盘符" in CATALOGS["zh-CN"]["ui.reason.mount_form_drive"]
 
 
 def test_a_volume_form_asks_for_no_place_and_names_the_server():
@@ -1187,7 +1213,6 @@ def test_a_volume_form_asks_for_no_place_and_names_the_server():
     assert "t('ui.mount_volume_caption', { server: server })" in caption
     files = body_of("drawFileEntry")
     assert "drawFileForm(staged, state, LOOPBACK_SERVER, key, onSave, () => {" in files
-    assert "t('ui.reason.mount_form_volume')" in body_of("mountReason")
     assert EN_WORDS["ui.mount_volume_caption"] == "Appears in the Finder under {server}"
     assert (
         EN_WORDS["ui.reason.mount_form_volume"]
