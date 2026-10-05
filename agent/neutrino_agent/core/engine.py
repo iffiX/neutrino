@@ -205,6 +205,7 @@ class ModuleEngine(ReconcileWorker):
             if "smb_server" in platform.capabilities:
                 kinds.append(SambaNativeServerRunner)
             if "hub_packages" in platform.capabilities:
+                kinds.append(GiteaModuleRunner)
                 kinds.append(VscodeModuleRunner)
                 if platform.os_name == "darwin":
                     kinds.append(CodeServerModuleRunner)

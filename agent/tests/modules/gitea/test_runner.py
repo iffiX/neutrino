@@ -292,3 +292,122 @@ def test_journal_reads_the_servers_unit(runner, monkeypatch):
     assert outcome["exit_code"] == 0
     assert outcome["output"].endswith("Starting")
     assert asked == [(["neutrino_gitea.service"], 50)]
+
+
+class SystemApplier:
+    """A macOS or Windows applier as the runner sees it."""
+
+    is_git_required = True
+
+    def __init__(self, tmp_path, git=""):
+        self.git = git
+        self.binary_path = str(tmp_path / "gitea")
+        self.applied: list = []
+        self.installed: list = []
+        self.log = tmp_path / "gitea.log"
+
+    def find_git(self):
+        return self.git
+
+    def layout(self, git_path):
+        from neutrino_agent.modules.gitea.renderer import GiteaLayout
+
+        return GiteaLayout(
+            run_user="neutrino_gitea",
+            work_path="/state/gitea_data",
+            git_path=git_path,
+            is_ssh_served=False,
+        )
+
+    def install(self, binary_path):
+        self.installed.append(binary_path)
+
+    def apply(self, rendered, *, git_path):
+        self.applied.append((rendered, git_path))
+        return "started"
+
+    def is_active(self):
+        return True
+
+    def survey(self):
+        return GiteaState(True, "1.27.3", [])
+
+    def read_listen_port(self):
+        return 0
+
+    def journal_units(self):
+        return []
+
+    def log_path(self):
+        return str(self.log)
+
+
+class MacPlatform(AgentPlatform):
+    os_name = "darwin"
+
+
+def test_without_git_an_install_and_an_apply_are_refused(tmp_path):
+    applier = SystemApplier(tmp_path)
+    runner = GiteaModuleRunner(
+        platform=MacPlatform(), log=lambda m: None, applier=applier
+    )
+
+    for step in (
+        lambda: runner.install({"entry": {"packages": []}}, "/tmp/gitea"),
+        lambda: runner.apply(CONFIG),
+    ):
+        with pytest.raises(ModuleApplyError) as refused:
+            step()
+        assert refused.value.code == "gitea_git_missing"
+    assert applier.installed == []
+    assert applier.applied == []
+
+
+def test_the_git_found_is_named_in_app_ini_and_ssh_is_off(tmp_path):
+    applier = SystemApplier(tmp_path, git="/opt/homebrew/bin/git")
+    runner = GiteaModuleRunner(
+        platform=MacPlatform(), log=lambda m: None, applier=applier
+    )
+
+    runner.install({"entry": {"packages": []}}, "/tmp/gitea")
+    runner.apply(CONFIG)
+
+    ((rendered, git_path),) = applier.applied
+    assert git_path == "/opt/homebrew/bin/git"
+    assert "RUN_USER = neutrino_gitea" in rendered
+    assert "DISABLE_SSH = true" in rendered
+    assert "PATH = /state/gitea_data/data/gitea.db" in rendered
+    assert "[git]\nPATH = /opt/homebrew/bin/git\n" in rendered
+    assert applier.installed == ["/tmp/gitea"]
+
+
+def test_the_journal_on_macos_and_windows_is_the_servers_own_log(tmp_path):
+    applier = SystemApplier(tmp_path, git="/opt/homebrew/bin/git")
+    applier.log.write_text(
+        "2026/10/05 10:00:00 ...s/web.go:87:serveInstalled() Listen\n"
+    )
+    runner = GiteaModuleRunner(
+        platform=MacPlatform(), log=lambda m: None, applier=applier
+    )
+
+    outcome = runner.command("journal", {"lines": 20})
+
+    assert outcome["output"].endswith("Listen")
+
+
+@pytest.mark.parametrize(
+    "os_name, kind",
+    [("darwin", "GiteaDarwinApplier"), ("windows", "GiteaWindowsApplier")],
+)
+def test_each_system_gets_its_own_applier(os_name, kind, tmp_path):
+    class Platform(AgentPlatform):
+        pass
+
+    Platform.os_name = os_name
+    platform = Platform()
+    platform.agent_var_dir = lambda: str(tmp_path)
+
+    applier = runner_module.gitea_applier_for(platform)
+
+    assert type(applier).__name__ == kind
+    assert applier.is_git_required is True

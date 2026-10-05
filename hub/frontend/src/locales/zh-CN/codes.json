@@ -67,6 +67,7 @@
   "code.gateway_settings_refused": "AI 网关不接受这些设置：{detail}",
   "code.gateway_unreachable": "AI 网关没有应答。",
   "code.geodata_unreachable": "读不到 geodata 的最新版本。",
+  "code.gitea_git_missing": "Gitea 需要这台机器上有 git。在 Mac 上装好开发者工具或 Homebrew 的 git，在 Windows 上装好 Git for Windows，再安装一次 Gitea。",
   "code.health_gate_failed": "新版本没有在限定时间内应答。",
   "code.hello_invalid": "对方的协议这台中枢读不懂。",
   "code.hub_name_required": "中枢需要一个名称。",
