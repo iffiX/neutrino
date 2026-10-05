@@ -292,6 +292,28 @@ class TerminalTabsTest {
     }
 
     @Test
+    fun aTabWithNoOpenShellRefusesTheClear() = runTest {
+        val tabs = TerminalTabs({ null }, backgroundScope)
+        val id = tabs.create("b1", "d1", "Argon")
+        tabs.sized(id, 80, 24)
+        assertEquals(false, tabs.clear(id))
+        assertEquals(emptySet<String>(), tabs.clearing.value)
+    }
+
+    @Test
+    fun aShellThatEndsWhileClearingLeavesTheClearingState() = runTest {
+        val tabs = TerminalTabs({ opener }, backgroundScope, clock = { testScheduler.currentTime })
+        val id = tabs.create("b1", "d1", "Argon")
+        tabs.sized(id, 80, 24)
+        tabs.watch { _, _ -> }
+        assertEquals(true, tabs.clear(id))
+        assertEquals(setOf(id), tabs.clearing.value)
+        closeStream(1)
+        runCurrent()
+        assertEquals(emptySet<String>(), tabs.clearing.value)
+    }
+
+    @Test
     fun clearingEndsAtTheCap() = runTest {
         val tabs = TerminalTabs({ opener }, backgroundScope, clock = { testScheduler.currentTime })
         val id = tabs.create("b1", "d1", "Argon")

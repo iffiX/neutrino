@@ -173,11 +173,14 @@ class TerminalTabs(
     /**
      * Clear a tab: Ctrl+C goes to the shell after what was typed before it, the kept output is
      * dropped, and so is what arrives until the stream has been quiet for
-     * [CLIENT_TERMINAL_CLEAR_QUIET_MS], for [CLIENT_TERMINAL_CLEAR_MAX_MS] at most.
+     * [CLIENT_TERMINAL_CLEAR_QUIET_MS], for [CLIENT_TERMINAL_CLEAR_MAX_MS] at most, or until the
+     * shell ends. A tab with no open shell takes no Clear.
      *
      * @param sessionId The tab.
+     * @return Whether the Clear was taken; the tab is then in [clearing] until its dropping ends.
      */
-    fun clear(sessionId: String) {
+    fun clear(sessionId: String): Boolean {
+        if (synchronized(streams) { streams[sessionId] } == null) return false
         val drop = synchronized(outputs) {
             outputs.remove(sessionId)
             val now = clock()
@@ -186,6 +189,7 @@ class TerminalTabs(
         dropping.update { it + sessionId }
         input(sessionId, byteArrayOf(CTRL_C))
         scope.launch { endDrop(sessionId, drop) }
+        return true
     }
 
     /**
@@ -321,6 +325,7 @@ class TerminalTabs(
             }
         }
         synchronized(streams) { if (streams[sessionId] === stream) streams.remove(sessionId) }
+        synchronized(outputs) { if (drops.containsKey(sessionId)) stopDropping(sessionId) }
         val result = stream.awaitClose(CLIENT_STREAM_TIMEOUT_S * 1000)
         change(sessionId) { tab ->
             when {
