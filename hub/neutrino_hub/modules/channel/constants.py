@@ -126,6 +126,13 @@ CHANNEL_UNADMITTED_MAX = 128
 CHANNEL_SOCKETS_MAX = 512
 CHANNEL_ADMISSION_FAILURES_MAX = 30
 CHANNEL_ADMISSION_WINDOW_S = 60.0
+# The least time between two log lines of one kind of close the port
+# makes on its own: a socket closed to make room, or one past its first
+# byte or its TLS handshake time.
+CHANNEL_CLOSE_LOG_INTERVAL_S = 60.0
+CHANNEL_CLOSE_ROOM = "room"
+CHANNEL_CLOSE_FIRST_BYTE = "first_byte"
+CHANNEL_CLOSE_HANDSHAKE = "handshake"
 # The largest WebSocket message the agent port takes, admitted or not. Four
 # times the largest message measured on a hub of 64 machines with every
 # module and 32 shares, 256 entries and every terminal, rounded up to a power
