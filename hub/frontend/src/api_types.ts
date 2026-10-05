@@ -1659,7 +1659,12 @@ export interface DirectView {
   /** What Direct adds to `urls`: every enabled interface's address that is
    * not exposed, then the stated public address. */
   urls: string[];
+  /** Whether Direct adds an interface's address (`added`), adds none because
+   * every one already answers (`exposed`), or finds none (`none`). */
+  interface_state: DirectInterfaceState;
 }
+
+export type DirectInterfaceState = "added" | "exposed" | "none";
 
 export interface DirectSetRequest {
   public_host: string;

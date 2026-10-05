@@ -398,6 +398,7 @@
   "ui.overlay.direct_public_host_hint": "A host name or IP address that reaches this hub from outside; leave it empty for none.",
   "ui.overlay.direct_addresses": "Addresses for clients",
   "ui.overlay.direct_addresses_empty": "No enabled interface has an address.",
+  "ui.overlay.direct_addresses_exposed": "Every enabled interface with an address is already exposed and answers on the connection port, so Direct adds none of them. A public address can still be set.",
   "ui.overlay.direct_apply": "Apply Direct",
   "ui.overlay.direct_apply_hint": "Saves the public address and gives it to clients and agents.",
   "ui.overlay.summary_relay": "Through a server you own, over SSH",

@@ -20,7 +20,7 @@ from neutrino_hub.modules.overlay.direct_config import (
     write_direct,
 )
 from neutrino_hub.utils.subprocess_run import command_failure_text
-from neutrino_hub.web.channel_addresses import direct_urls
+from neutrino_hub.web.channel_addresses import direct_interface_state, direct_urls
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import DirectSetRequest, DirectView
 from neutrino_hub.web.panel_runtime import PanelRuntime
@@ -111,6 +111,7 @@ def direct_view(runtime: PanelRuntime) -> DirectView:
         public_host=config.public_host,
         public_port=config.public_port,
         urls=direct_urls(runtime, config),
+        interface_state=direct_interface_state(runtime),
     )
 
 

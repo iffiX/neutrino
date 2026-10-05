@@ -79,6 +79,12 @@ OVERLAY_DIRECT_CONFIG_NAME = "overlay/direct.json"
 OVERLAY_DIRECT_DEFAULT_PUBLIC_PORT = 8443
 OVERLAY_DIRECT_PORT_MIN = 1
 OVERLAY_DIRECT_PORT_MAX = 65535
+# How Direct stands with the hub's interface addresses: it adds some; it adds
+# none because every one already answers on the agent port; no interface has
+# an address.
+OVERLAY_DIRECT_INTERFACES_ADDED = "added"
+OVERLAY_DIRECT_INTERFACES_EXPOSED = "exposed"
+OVERLAY_DIRECT_INTERFACES_NONE = "none"
 # The longest host name DNS carries.
 OVERLAY_DIRECT_HOST_MAX = 253
 

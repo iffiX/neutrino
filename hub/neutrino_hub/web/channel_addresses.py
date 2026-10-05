@@ -10,6 +10,11 @@ import ipaddress
 
 from fastapi import HTTPException, status
 
+from neutrino_hub.modules.overlay.constants import (
+    OVERLAY_DIRECT_INTERFACES_ADDED,
+    OVERLAY_DIRECT_INTERFACES_EXPOSED,
+    OVERLAY_DIRECT_INTERFACES_NONE,
+)
 from neutrino_hub.modules.overlay.ops import overlay_parts
 from neutrino_hub.modules.overlay.direct_config import (
     OverlayDirectConfig,
@@ -68,6 +73,28 @@ def direct_urls(runtime, direct: OverlayDirectConfig) -> list[str]:
     return [
         url for url in _own_urls(runtime, direct, is_direct=True) if url not in without
     ]
+
+
+def direct_interface_state(runtime) -> str:
+    """How Direct stands with the hub's interface addresses.
+
+    Args:
+        runtime: The shared runtime, for the network configuration and the
+            port.
+
+    Returns:
+        ``added`` when Direct adds an interface's address to ``urls``;
+        ``exposed`` when it adds none because every address the hub holds
+        already answers on the agent port; ``none`` when the hub holds no
+        address to answer on.
+    """
+    unstated = OverlayDirectConfig()
+    without = _own_urls(runtime, unstated, is_direct=False)
+    if any(url not in without for url in _own_urls(runtime, unstated, is_direct=True)):
+        return OVERLAY_DIRECT_INTERFACES_ADDED
+    if without:
+        return OVERLAY_DIRECT_INTERFACES_EXPOSED
+    return OVERLAY_DIRECT_INTERFACES_NONE
 
 
 def channel_url(host: str, port: int) -> str:

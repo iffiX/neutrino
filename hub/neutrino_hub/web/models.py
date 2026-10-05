@@ -2457,6 +2457,9 @@ class DirectView(BaseModel):
     # What Direct adds to ``urls`` while it is on: every enabled interface's
     # address that is not exposed, then the stated public address.
     urls: list[str] = Field(default_factory=list)
+    # ``added``, ``exposed`` or ``none``: whether Direct adds an interface's
+    # address, adds none because every one already answers, or finds none.
+    interface_state: str
 
 
 class DirectSetRequest(BaseModel):
