@@ -17,7 +17,11 @@ import neutrino_agent.core.metrics as metrics_module
 import neutrino_agent.platforms.windows as windows_module
 from neutrino_agent.constants import AGENT_PROCESS_TOP_COUNT
 from neutrino_agent.platforms import win32
-from neutrino_agent.platforms.windows import WindowsHostMetricsReader, WindowsPlatform
+from neutrino_agent.platforms.windows import (
+    cmd_argument,
+    WindowsHostMetricsReader,
+    WindowsPlatform,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -1144,3 +1148,76 @@ def test_the_removal_script_ends_processes_under_the_state_root_without_case():
     assert "Remove-NetFirewallRule -Name $name" in script
     assert "OrdinalIgnoreCase" in script
     assert script.index("Unregister-ScheduledTask") < script.index("Stop-Process")
+
+
+class RunAsPowershell:
+    """Answers the one-shot task's script and records its document."""
+
+    def __init__(self, answer):
+        self.answer = answer
+        self.documents: list = []
+
+    def __call__(self, script, document):
+        self.documents.append((script, document))
+        return dict(self.answer)
+
+
+def test_windows_runs_as_an_account_in_a_one_shot_task_under_its_login(monkeypatch):
+    monkeypatch.setenv("ProgramData", "C:\\ProgramData")
+    powershell = RunAsPowershell({"exit_code": 3, "output": "drawn"})
+    platform = WindowsPlatform(kernel32=FakeKernel32(), powershell=powershell)
+
+    done = platform.run_as_account(
+        "ann",
+        ["C:\\P F\\cc-switch.exe", "--app", "claude"],
+        stdin="in",
+        password="pw",  # scan: allow
+    )
+
+    assert (done.returncode, done.stdout) == (3, "drawn")
+    ((script, document),) = powershell.documents
+    assert "Register-ScheduledTask" in script and "-RunLevel Limited" in script
+    assert "Unregister-ScheduledTask" in script
+    assert (document["account"], document["password"]) == ("ann", "pw")
+    assert document["task"] == "neutrino_run_as_ann"
+    assert document["dir"].endswith("\\agent\\state\\run_as\\ann")
+    assert document["input_text"] == "in"
+    assert document["script_text"].split("\r\n")[2] == (
+        '"C:\\P F\\cc-switch.exe" "--app" "claude" < '
+        + f'"{document["input"]}" > "{document["output"]}" 2>&1'
+    )
+    assert 'cd /d "%USERPROFILE%"' in document["script_text"]
+
+
+def test_windows_answers_a_question_through_its_own_program_inside_the_task(
+    monkeypatch,
+):
+    monkeypatch.setenv("ProgramFiles", "C:\\Program Files")
+    powershell = RunAsPowershell({"exit_code": 0, "output": "Deleted"})
+    platform = WindowsPlatform(kernel32=FakeKernel32(), powershell=powershell)
+
+    answered = platform.run_as_account_answering(
+        "ann",
+        ["cc.exe", "provider", "delete", "neutrino"],
+        prompt="(y/N)",
+        answer="y\n",
+        password="pw",
+    )
+
+    assert answered == (0, "Deleted")
+    ((_script, document),) = powershell.documents
+    assert (
+        document["script_text"]
+        .split("\r\n")[2]
+        .startswith(
+            '"C:\\Program Files\\Neutrino\\agent\\nagent.exe" "answer" "--prompt" "(y/N)" '
+            '"--answer" "y" "--" "cc.exe" "provider" "delete" "neutrino" <'
+        )
+    )
+
+
+def test_every_argument_of_a_task_s_command_is_quoted_and_expands_nothing():
+    assert cmd_argument("a&b") == '"a&b"'
+    assert cmd_argument("50%") == '"50%%"'
+    assert cmd_argument("C:\\dir\\") == '"C:\\dir\\\\"'
+    assert cmd_argument("") == '""'

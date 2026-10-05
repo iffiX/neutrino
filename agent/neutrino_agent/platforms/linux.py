@@ -38,6 +38,7 @@ from neutrino_agent.core.metrics import (
     read_nvidia_gpus,
 )
 from neutrino_agent.modules import installers
+from neutrino_agent.platforms.answered_run import run_on_pty
 from neutrino_agent.platforms.base import AgentPlatform, is_added_name
 
 try:
@@ -215,6 +216,7 @@ class LinuxPlatform(AgentPlatform):
         *,
         stdin: str = "",
         timeout_s: int = AGENT_STEP_DOWN_TIMEOUT_S,
+        password: str = "",
     ) -> "subprocess.CompletedProcess":
         """Run a process as an account, through ``runuser`` when root.
 
@@ -227,6 +229,7 @@ class LinuxPlatform(AgentPlatform):
             argv: Argument vector.
             stdin: Sent to the process's standard input.
             timeout_s: How long to wait.
+            password: Unused here; Windows needs it.
 
         Returns:
             The completed process, with text output captured.
@@ -243,6 +246,42 @@ class LinuxPlatform(AgentPlatform):
             text=True,
             timeout=timeout_s,
             env=env,
+        )
+
+    def run_as_account_answering(
+        self,
+        account: str,
+        argv: list,
+        *,
+        prompt: str,
+        answer: str,
+        timeout_s: int = AGENT_STEP_DOWN_TIMEOUT_S,
+        password: str = "",
+    ) -> tuple:
+        """Run a process as an account on a pseudo-terminal, answering one question.
+
+        Args:
+            account: The account.
+            argv: Argument vector.
+            prompt: The text the answer follows.
+            answer: The keystrokes to send, newline included.
+            timeout_s: How long to wait.
+            password: Unused here; Windows needs it.
+
+        Returns:
+            ``(returncode, output)``; 127 when it could not start.
+
+        Raises:
+            PlatformUnsupportedError: Where this interpreter has no
+                pseudo-terminal.
+        """
+        command = list(argv)
+        env = None
+        if account and os.geteuid() == 0:
+            command = ["runuser", "-u", account, "--"] + command
+            env = self._account_env(account)
+        return run_on_pty(
+            command, prompt=prompt, answer=answer, timeout_s=timeout_s, env=env
         )
 
     def install_system_packages(self, names: list) -> str:

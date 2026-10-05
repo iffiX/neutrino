@@ -25,8 +25,16 @@ import time
 
 from neutrino_agent.constants import (
     AGENT_ADDED_NAME_PREFIX,
+    AGENT_ANSWER_VERB,
     AGENT_COMMAND_TIMEOUT_S,
     AGENT_CONTROL_PIPE_NAME,
+    AGENT_RUN_AS_DIR_NAME,
+    AGENT_RUN_AS_POLL_S,
+    AGENT_RUN_AS_TASK_PREFIX,
+    AGENT_STEP_DOWN_TIMEOUT_S,
+    AGENT_WINDOWS_BINARY_NAME,
+    AGENT_WINDOWS_PROGRAM_FILES_DEFAULT,
+    AGENT_WINDOWS_PROGRAM_SUBDIR,
     AGENT_WINDOWS_AGENT_SUBDIR,
     AGENT_WINDOWS_CONFIG_DIR_NAME,
     AGENT_WINDOWS_LOG_DIR_NAME,
@@ -101,6 +109,66 @@ foreach ($user in @(Get-LocalUser | Where-Object { $_.Enabled })) {
 @{users = $users} | ConvertTo-Json -Compress -Depth 3
 """
 # One account's profile directory, empty when it has signed in nowhere yet.
+# Runs one command as an account in a one-shot scheduled task registered with
+# the account's login and a limited token: the command's script, its
+# standard input and its output live in a directory only the account, SYSTEM
+# and the administrators open; the end is the exit code the script writes
+# last; the task and the files go afterwards.
+WINDOWS_RUN_AS_SCRIPT = """
+if (-not (Test-Path -LiteralPath $d.dir)) {
+  New-Item -ItemType Directory -Path $d.dir -Force | Out-Null
+}
+$code = Invoke-Icacls $d.dir /inheritance:r /grant:r "$($d.account):(OI)(CI)M" `
+  '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F'
+if ($code -ne 0) { throw "icacls refused $($d.dir)" }
+foreach ($file in @($d.output, $d.done)) {
+  Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
+}
+$utf8 = New-Object Text.UTF8Encoding $false
+[IO.File]::WriteAllText($d.script, $d.script_text)
+[IO.File]::WriteAllText($d.input, $d.input_text, $utf8)
+$action = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument "/d /c `"$($d.script)`""
+$settings = New-ScheduledTaskSettingsSet `
+  -ExecutionTimeLimit (New-TimeSpan -Seconds $d.timeout_s) `
+  -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+try {
+  Register-ScheduledTask -TaskName $d.task -Action $action -Settings $settings `
+    -User $d.account -Password $d.password -RunLevel Limited -Force | Out-Null
+} catch {
+  if ("$($_.Exception.Message)" -match '0x8007052E') {
+    Send-Refusal 'credential_invalid' @{account = $d.account}
+  }
+  throw
+}
+$exit = -1
+$output = ''
+try {
+  Start-ScheduledTask -TaskName $d.task
+  $deadline = (Get-Date).AddSeconds($d.timeout_s)
+  while (-not (Test-Path -LiteralPath $d.done) -and (Get-Date) -lt $deadline) {
+    Start-Sleep -Milliseconds $d.poll_ms
+  }
+  if (Test-Path -LiteralPath $d.done) {
+    $exit = [int]([IO.File]::ReadAllText($d.done).Trim())
+  }
+  if (Test-Path -LiteralPath $d.output) {
+    $output = [IO.File]::ReadAllText($d.output, $utf8)
+  }
+} finally {
+  Stop-ScheduledTask -TaskName $d.task -ErrorAction SilentlyContinue
+  Unregister-ScheduledTask -TaskName $d.task -Confirm:$false -ErrorAction SilentlyContinue
+  foreach ($file in @($d.script, $d.input, $d.output, $d.done)) {
+    Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
+  }
+}
+@{exit_code = $exit; output = $output} | ConvertTo-Json -Compress -Depth 3
+"""
+# The extra seconds PowerShell is given beyond the command's own time, for
+# registering the task and cleaning up after it.
+WINDOWS_RUN_AS_MARGIN_S = 60
+# The exit code a command reports when its end was never written.
+WINDOWS_RUN_AS_NO_EXIT = -1
+
 WINDOWS_ACCOUNT_HOME_SCRIPT = """
 $user = Get-LocalUser -Name $d.name -ErrorAction SilentlyContinue
 $home_path = ''
@@ -231,6 +299,56 @@ def windows_agent_dir(name: str) -> str:
     return ntpath.join(program_data, *AGENT_WINDOWS_AGENT_SUBDIR, name)
 
 
+def cmd_argument(argument: str) -> str:
+    """One argument as a ``.cmd`` script's command line must carry it.
+
+    Every argument is quoted, so ``&``, ``|``, ``<`` and ``>`` stay text,
+    with the program's own rules for quotes and backslashes, and ``%`` is
+    doubled so the script expands nothing.
+
+    Args:
+        argument: The argument.
+
+    Returns:
+        Its quoted form.
+    """
+    text = subprocess.list2cmdline([argument])
+    if not text.startswith('"'):
+        bare = text.rstrip("\\")
+        text = '"' + bare + "\\" * (2 * (len(text) - len(bare))) + '"'
+    return text.replace("%", "%%")
+
+
+def run_as_script(
+    argv: list, *, input_path: str, output_path: str, done_path: str
+) -> str:
+    """The ``.cmd`` script a one-shot task runs a command with.
+
+    Args:
+        argv: Argument vector.
+        input_path: The file its standard input is read from.
+        output_path: The file its output and errors go to.
+        done_path: The file its exit code is written to last.
+
+    Returns:
+        The script's text, CRLF line ends, starting in the account's profile.
+    """
+    command = " ".join(cmd_argument(argument) for argument in argv)
+    lines = [
+        "@echo off",
+        'cd /d "%USERPROFILE%"',
+        f"{command} < {cmd_argument(input_path)} > {cmd_argument(output_path)} 2>&1",
+        f">{cmd_argument(done_path)} echo %errorlevel%",
+    ]
+    return "\r\n".join(lines) + "\r\n"
+
+
+def agent_program_path() -> str:
+    """The agent's own program, ``nagent.exe``, under Program Files."""
+    root = os.environ.get("ProgramFiles", "") or AGENT_WINDOWS_PROGRAM_FILES_DEFAULT
+    return ntpath.join(root, *AGENT_WINDOWS_PROGRAM_SUBDIR, AGENT_WINDOWS_BINARY_NAME)
+
+
 def system_drive_root() -> str:
     """The root of the drive Windows is installed on, such as ``C:\\``.
 
@@ -302,6 +420,7 @@ class WindowsPlatform(AgentPlatform):
     os_name = "windows"
     capabilities = frozenset(
         {
+            "run_as",
             "accounts",
             "control_socket",
             "agent_service",
@@ -407,6 +526,130 @@ class WindowsPlatform(AgentPlatform):
         if not read.get("is_present") or not home:
             raise KeyError(account)
         return home
+
+    def run_as_account(
+        self,
+        account: str,
+        argv: list,
+        *,
+        stdin: str = "",
+        timeout_s: int = AGENT_STEP_DOWN_TIMEOUT_S,
+        password: str = "",
+    ) -> "subprocess.CompletedProcess":
+        """Run a command as an account, in a one-shot scheduled task under its login.
+
+        The task runs with a limited token in the account's profile; its
+        output, errors included, comes back as standard output.
+
+        Args:
+            account: The account.
+            argv: Argument vector.
+            stdin: What the command reads on its standard input.
+            timeout_s: How long the command may take.
+            password: The account's login.
+
+        Returns:
+            The completed process; its return code is -1 when the command
+            never wrote its end.
+
+        Raises:
+            ModuleApplyError: ``credential_invalid {account}`` when Windows
+                refuses the login.
+            OSError: When PowerShell cannot register or run the task.
+        """
+        directory = ntpath.join(self.agent_var_dir(), AGENT_RUN_AS_DIR_NAME, account)
+        paths = {
+            name: ntpath.join(directory, f"command.{name}")
+            for name in ("cmd", "input", "output", "done")
+        }
+        answer = self._powershell_timed(
+            WINDOWS_RUN_AS_SCRIPT,
+            {
+                "account": account,
+                "password": password,
+                "task": AGENT_RUN_AS_TASK_PREFIX + account,
+                "dir": directory,
+                "script": paths["cmd"],
+                "script_text": run_as_script(
+                    argv,
+                    input_path=paths["input"],
+                    output_path=paths["output"],
+                    done_path=paths["done"],
+                ),
+                "input": paths["input"],
+                "input_text": stdin,
+                "output": paths["output"],
+                "done": paths["done"],
+                "timeout_s": int(timeout_s),
+                "poll_ms": int(AGENT_RUN_AS_POLL_S * 1000),
+            },
+            timeout_s=int(timeout_s) + WINDOWS_RUN_AS_MARGIN_S,
+        )
+        try:
+            code = int(answer.get("exit_code", WINDOWS_RUN_AS_NO_EXIT))
+        except (TypeError, ValueError):
+            code = WINDOWS_RUN_AS_NO_EXIT
+        return subprocess.CompletedProcess(
+            list(argv), code, str(answer.get("output", "") or ""), ""
+        )
+
+    def run_as_account_answering(
+        self,
+        account: str,
+        argv: list,
+        *,
+        prompt: str,
+        answer: str,
+        timeout_s: int = AGENT_STEP_DOWN_TIMEOUT_S,
+        password: str = "",
+    ) -> tuple:
+        """Run a command as an account on a pseudo console, answering one question.
+
+        The one-shot task runs the agent's own ``nagent answer``, which makes
+        the console inside the account's task and answers there.
+
+        Args:
+            account: The account.
+            argv: Argument vector.
+            prompt: The text the answer follows.
+            answer: The keystrokes to send, newline included; the console's
+                own Enter replaces the newline.
+            timeout_s: How long to wait.
+            password: The account's login.
+
+        Returns:
+            ``(returncode, output)``, the output as the console drew it.
+
+        Raises:
+            ModuleApplyError: ``credential_invalid {account}`` when Windows
+                refuses the login.
+            OSError: When PowerShell cannot register or run the task.
+        """
+        command = [
+            agent_program_path(),
+            AGENT_ANSWER_VERB,
+            "--prompt",
+            prompt,
+            "--answer",
+            answer.rstrip("\r\n"),
+            "--",
+            *argv,
+        ]
+        done = self.run_as_account(
+            account, command, timeout_s=timeout_s, password=password
+        )
+        return done.returncode, done.stdout
+
+    def _powershell_timed(self, script: str, document: dict, *, timeout_s: int) -> dict:
+        """One PowerShell script given longer than the default to answer.
+
+        Raises:
+            ModuleApplyError: The refusal the script sent.
+            OSError: When PowerShell cannot run or fails.
+        """
+        if self._powershell is run_powershell:
+            return run_powershell(script, document, timeout_s=timeout_s)
+        return self._powershell(script, document)
 
     def shell_start_dir(self) -> str:
         """Where a shell here starts.

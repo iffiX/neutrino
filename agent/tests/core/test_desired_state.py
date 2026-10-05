@@ -179,6 +179,7 @@ def applier(runners, engine=None, tmp_path=None, rdp=None, open_stream=None):
     held._log = lambda message: None
     held._open_stream = open_stream
     held._package_dir = str(tmp_path / "packages")
+    held._ai_tools = None
     held._lock = threading.Lock()
     held._idle = threading.Condition(held._lock)
     held._is_applying = False
@@ -835,3 +836,26 @@ def test_a_refusal_s_log_line_carries_its_reason(tmp_path):
         "samba: user_record_unusable user=t3user3 "
         "detail=DS Error: -14120 (eDSPermissionError)"
     ) in lines
+
+
+class RecordedAiToolsSection:
+    def __init__(self):
+        self.applied: list = []
+
+    def apply(self, section, state_hash):
+        self.applied.append((section, state_hash))
+
+
+def test_the_ai_tools_section_is_handed_on_after_the_modules(tmp_path):
+    journal: list = []
+    runners = {"samba": FakeRunner(journal=journal)}
+    held, _engine = applier(runners, tmp_path=tmp_path)
+    tools = RecordedAiToolsSection()
+    held._ai_tools = tools
+    document = state(samba="running")
+    document["ai_tools"] = {"is_enabled": False}
+
+    held.apply(document)
+
+    assert tools.applied == [({"is_enabled": False}, "h1")]
+    assert journal

@@ -385,7 +385,6 @@ class CloudcliWindowsApplier:
             log_file = self.log_path(instance.account)
             arguments = task_arguments(script, [], log_file)
             environment = installer.service_environment(
-                config,
                 instance,
                 upstream_port=upstream_ports[instance.account],
                 home=home,

@@ -166,7 +166,7 @@ def test_an_instance_is_installed_as_the_account_then_started(
     text = environment.read_text()
     assert 'HOST="127.0.0.1"\n' in text
     assert 'SERVER_PORT="41234"\n' in text
-    assert 'ANTHROPIC_AUTH_TOKEN="device-key"\n' in text
+    assert "ANTHROPIC" not in text and "OPENAI" not in text
     node_bin = tmp_path / "var" / "cloudcli" / NODE_DIR / "bin"
     assert (
         f'PATH="{node_bin}:/home/ann/.local/bin:/usr/local/bin:/usr/bin:/bin"\n' in text
@@ -371,3 +371,21 @@ def test_the_editions_npm_settings_reach_npm_and_a_half_install_is_cleared(
     assert "PATH=/evil" not in install
     assert 'rm -rf "$0/node_modules"' in install[install.index("sh") + 2]
     assert "cloudcli: installing CloudCLI for ann from registry.npmmirror.com" in lines
+
+
+def test_an_instance_running_with_the_gateway_in_its_environment_is_restarted_once(
+    applier, machine, tmp_path
+):
+    (tmp_path / "etc").mkdir()
+    (tmp_path / "etc" / "ann.env").write_text(
+        'ANTHROPIC_BASE_URL="http://10.0.0.1:8317"\n'
+    )
+    applier.apply(CONFIG, {"ann": 41234})
+    first = [call for call in machine.systemctl() if call[1] == "restart"]
+    machine.calls.clear()
+
+    applier.apply(CONFIG, {"ann": 41234})
+
+    assert first == [["systemctl", "restart", "neutrino_cloudcli@ann.service"]]
+    assert "ANTHROPIC" not in (tmp_path / "etc" / "ann.env").read_text()
+    assert [call for call in machine.systemctl() if call[1] == "restart"] == []

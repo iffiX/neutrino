@@ -420,3 +420,38 @@ def test_linux_removal_with_no_systemctl_and_no_unit_dir_removes_nothing(
     monkeypatch.setattr(linux_module, "AGENT_SYSTEMD_UNIT_DIR", str(tmp_path / "no"))
 
     assert LinuxPlatform().remove_added() == []
+
+
+def test_linux_answers_a_question_as_the_account_on_a_pty(monkeypatch):
+    entry = PwdEntry("alice", 1000, "/bin/bash", "/home/alice")
+    monkeypatch.setattr(linux_module.pwd, "getpwnam", lambda name: entry)
+    monkeypatch.setattr(linux_module.os, "geteuid", lambda: 0)
+    seen = {}
+
+    def on_pty(argv, **kwargs):
+        seen["argv"] = list(argv)
+        seen.update(kwargs)
+        return 0, "Deleted"
+
+    monkeypatch.setattr(linux_module, "run_on_pty", on_pty)
+
+    answered = LinuxPlatform().run_as_account_answering(
+        "alice",
+        ["cc-switch", "provider", "delete", "neutrino"],
+        prompt="(y/N)",
+        answer="y\n",
+    )
+
+    assert answered == (0, "Deleted")
+    assert seen["argv"] == [
+        "runuser",
+        "-u",
+        "alice",
+        "--",
+        "cc-switch",
+        "provider",
+        "delete",
+        "neutrino",
+    ]
+    assert (seen["prompt"], seen["answer"]) == ("(y/N)", "y\n")
+    assert seen["env"]["HOME"] == "/home/alice"

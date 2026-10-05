@@ -177,7 +177,7 @@ def test_an_instance_is_a_task_running_its_script(applier, powershell, ready):
     text = instance["script_text"]
     assert 'set "HOST=127.0.0.1"' in text
     assert 'set "SERVER_PORT=41234"' in text
-    assert 'set "ANTHROPIC_AUTH_TOKEN=device-key"' in text
+    assert "ANTHROPIC" not in text and "OPENAI" not in text
     node_dir = ntpath.dirname(applier.node)
     assert f'set "PATH={node_dir};%PATH%"' in text
     assert "node.exe" in text and "index.js" in text

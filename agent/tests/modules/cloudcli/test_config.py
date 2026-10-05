@@ -2,8 +2,8 @@
 
 What these pin: a bad account, a repeated account or port, a port out of
 range and a missing password or secret are refused naming the instance;
-Windows also needs each account's login; the gateway's three variables
-are present only when the hub serves a gateway; the login secret is a
+Windows also needs each account's login; a gateway an older state still
+names is not read; the login secret is a
 function of the instance's secret alone; and a short account is padded to
 the length CloudCLI asks for.
 """
@@ -61,17 +61,14 @@ def test_windows_needs_each_accounts_login():
     )
 
 
-def test_the_gateway_reaches_the_environment_only_when_there_is_one():
+def test_a_gateway_an_older_state_names_is_not_read():
     config = CloudcliConfig.from_dict(
         {"gateway_url": "http://10.0.0.1:8317/", "gateway_key": "k"}
     )
 
-    assert config.environment() == {
-        "ANTHROPIC_BASE_URL": "http://10.0.0.1:8317",
-        "ANTHROPIC_AUTH_TOKEN": "k",
-        "OPENAI_BASE_URL": "http://10.0.0.1:8317/v1",
-    }
-    assert CloudcliConfig.from_dict({}).environment() == {}
+    assert not hasattr(config, "gateway_url")
+    assert not hasattr(config, "gateway_key")
+    assert not hasattr(config, "environment")
 
 
 def test_the_login_secret_follows_the_instance_secret():

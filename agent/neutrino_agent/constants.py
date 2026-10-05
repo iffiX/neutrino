@@ -179,6 +179,24 @@ AGENT_KILL_PROTECTED_PIDS = frozenset({0, 1, 4})
 
 # How long a stepped-down account command may take.
 AGENT_STEP_DOWN_TIMEOUT_S = 120
+# A program answered on a terminal of its own: how long its question may
+# take to show, how long its exit is waited for after the terminal ends, and
+# how much one read takes.
+AGENT_ANSWER_PROMPT_TIMEOUT_S = 10
+AGENT_ANSWER_EXIT_TIMEOUT_S = 5
+AGENT_ANSWER_READ_BYTES = 4096
+# Windows runs a command as an account in a one-shot scheduled task: the
+# task's name prefix, the directory under the state root that holds each
+# account's script, input and output, how often the end is looked for, and
+# the verb of the agent's own program that answers a question on a pseudo
+# console inside such a task.
+AGENT_RUN_AS_TASK_PREFIX = "neutrino_run_as_"
+AGENT_RUN_AS_DIR_NAME = "run_as"
+AGENT_RUN_AS_POLL_S = 0.5
+AGENT_ANSWER_VERB = "answer"
+AGENT_WINDOWS_PROGRAM_SUBDIR = ("Neutrino", "agent")
+AGENT_WINDOWS_PROGRAM_FILES_DEFAULT = "C:\\Program Files"
+AGENT_WINDOWS_BINARY_NAME = "nagent.exe"
 
 # The local control channel: a socket the agent serves as root. Its file is
 # 0600 under a 0700 directory, so only root reaches it.

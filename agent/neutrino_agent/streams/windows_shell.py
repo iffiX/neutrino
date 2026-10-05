@@ -25,10 +25,13 @@ from __future__ import annotations
 
 import contextlib
 import ctypes
+import queue
 import subprocess
 import threading
+import time
 
 from neutrino_agent.constants import (
+    AGENT_ANSWER_PROMPT_TIMEOUT_S,
     AGENT_SHELL_COMMANDS,
     AGENT_SHELL_KILL_TIMEOUT_S,
     AGENT_SHELL_READ_BYTES,
@@ -36,6 +39,7 @@ from neutrino_agent.constants import (
 )
 from neutrino_agent.exceptions import StreamRefused
 from neutrino_agent.platforms import win32
+from neutrino_agent.platforms.answered_run import answer_on_prompt
 from neutrino_agent.platforms.windows import WindowsPlatform
 from neutrino_agent.streams.shell_session import SessionShellStream, ShellSession
 
@@ -43,6 +47,9 @@ from neutrino_agent.streams.shell_session import SessionShellStream, ShellSessio
 WINDOWS_SHELL_POLL_MS = 500
 # The exit code a shell that was ended is terminated with.
 WINDOWS_SHELL_TERMINATED_CODE = 1
+# The size of the console a question is answered on.
+WINDOWS_ANSWER_COLUMNS = 120
+WINDOWS_ANSWER_ROWS = 40
 
 
 def _write(kernel32, handle, data: bytes) -> None:
@@ -187,18 +194,28 @@ def _kill_on_close_job(kernel32):
 
 
 class ConsoleTerminal:
-    """PowerShell on a pseudo console, as a shell session drives it."""
+    """PowerShell, or another program, on a pseudo console."""
 
-    def __init__(self, kernel32, *, cols: int, rows: int, start_dir: str):
+    def __init__(
+        self,
+        kernel32,
+        *,
+        cols: int,
+        rows: int,
+        start_dir: str,
+        argv: "list | None" = None,
+    ):
         """
         Args:
             kernel32: The bound kernel32.
             cols: The console's first width.
             rows: The console's first height.
-            start_dir: The shell's working directory.
+            start_dir: The program's working directory.
+            argv: The program; None is the shell.
         """
         self._kernel32 = kernel32
         self._start_dir = start_dir
+        self._argv = list(argv) if argv else list(AGENT_SHELL_COMMANDS["win32"])
         self._columns = cols
         self._rows = rows
         self._console = None
@@ -238,7 +255,7 @@ class ConsoleTerminal:
             self._attributes = _attribute_list(kernel32, console)
             self._process = _start(
                 kernel32,
-                list(AGENT_SHELL_COMMANDS["win32"]),
+                self._argv,
                 self._attributes,
                 self._start_dir,
             )
@@ -351,6 +368,72 @@ class ConsoleTerminal:
             if handle is not None:
                 with contextlib.suppress(OSError):
                     kernel32.CloseHandle(handle)
+
+
+def run_answering(
+    argv: list,
+    *,
+    prompt: str,
+    answer: str,
+    timeout_s: float,
+    start_dir: str,
+    kernel32=None,
+) -> tuple:
+    """Run a program on a pseudo console of its own and answer one question.
+
+    Args:
+        argv: Argument vector.
+        prompt: The text the answer follows.
+        answer: The keystrokes to send; Enter on a console is a carriage
+            return.
+        timeout_s: How long the whole run may take.
+        start_dir: The program's working directory.
+        kernel32: The bound kernel32; None binds the real one.
+
+    Returns:
+        ``(returncode, output)``, the output as the console drew it.
+
+    Raises:
+        OSError: When the console or the program cannot be made.
+    """
+    kernel32 = kernel32 if kernel32 is not None else win32.libraries().kernel32
+    terminal = ConsoleTerminal(
+        kernel32,
+        cols=WINDOWS_ANSWER_COLUMNS,
+        rows=WINDOWS_ANSWER_ROWS,
+        start_dir=start_dir,
+        argv=argv,
+    )
+    terminal.start()
+    chunks: "queue.Queue[bytes]" = queue.Queue()
+
+    def pump() -> None:
+        while True:
+            chunk = terminal.read()
+            chunks.put(chunk)
+            if not chunk:
+                return
+
+    def read(wait_s: float):
+        try:
+            return chunks.get(timeout=wait_s)
+        except queue.Empty:
+            return None
+
+    threading.Thread(target=pump, name="agent_answer_console", daemon=True).start()
+    started = time.monotonic()
+    try:
+        output = answer_on_prompt(
+            read,
+            terminal.write,
+            prompt=prompt,
+            answer=answer,
+            deadline=started + timeout_s,
+            prompt_deadline=started + min(timeout_s, AGENT_ANSWER_PROMPT_TIMEOUT_S),
+        )
+    finally:
+        terminal.terminate()
+    return terminal.finish(), output.decode("utf-8", "replace")
 
 
 class WindowsShellStream(SessionShellStream):

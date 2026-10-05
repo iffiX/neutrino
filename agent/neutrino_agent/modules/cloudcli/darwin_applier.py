@@ -242,7 +242,6 @@ class CloudcliDarwinApplier:
                 server=installer.server_path(installer.app_dir(home, "darwin")),
                 home=home,
                 environment=installer.service_environment(
-                    config,
                     instance,
                     upstream_port=upstream_ports[instance.account],
                     home=home,
