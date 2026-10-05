@@ -141,7 +141,7 @@ The hub sends a client its `state` on any report whose `state_hash` differs from
 | `overlays`         | what the client joins each of the hub's overlays with, the preferred first                                                |
 | `terminals`        | the managed machines the client is allowed to open a shell on, each `{device_id, name, is_online, sessions}`              |
 | `is_panel_allowed` | `true` while the client is switched on and its permission includes `panel`: it may open the hub's panel through `connect` |
-| `reached_through`  | the way this client's socket reached the hub: `lan`, `netbird`, `easytier` or `relay`                                     |
+| `reached_through`  | the way this client's socket reached the hub: `lan`, `netbird`, `easytier`, `relay` or `direct`                           |
 
 ### Overlays
 

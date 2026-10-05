@@ -44,6 +44,7 @@ from neutrino_hub.modules.router.constants import (
 )
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.router.link_status import admin_up_interfaces
+from neutrino_hub.modules.overlay.direct_config import direct_agent_port
 from neutrino_hub.modules.router.nft_renderer import RouterNftRenderer
 from neutrino_hub.modules.router.routes import (
     RouterInterfaceApplier,
@@ -161,6 +162,7 @@ class RouterStateController:
             xray_uid=proxy_uid(),
             overlay_devices=devices,
             engine_cgroups=list(cgroups),
+            direct_port=direct_agent_port(),
         ).render()
         is_diverting = ROUTER_NFT_DIVERT_MARKER in ruleset
         rules = RouterRulesetApplier()

@@ -172,3 +172,45 @@ def test_macos_allows_the_hub_xray_and_the_enabled_overlays_daemons():
         "/app/bin/cli-proxy-api",
         "/app/bin/easytier-core",
     ]
+
+
+def test_direct_adds_its_interfaces_to_the_agent_port_rule_alone():
+    """The panel, the AI gateway and the SOCKS ports keep the exposed
+    interfaces; the agent port answers on Direct's as well."""
+    rules = render_port_rules(
+        panel_http_port=80,
+        panel_https_port=443,
+        agent_port=8443,
+        ai_gateway_port=8317,
+        socks_ports=[1080],
+        overlays=[],
+        exposed_interfaces=["en0"],
+        exposed_overlays=[],
+        direct_interfaces=["en0", "en1"],
+    )
+
+    by_name = {rule.name: rule.interfaces for rule in rules}
+    assert by_name["neutrino_hub_agent"] == ("en0", "en1")
+    assert by_name["neutrino_hub_panel_http"] == ("en0",)
+    assert by_name["neutrino_hub_panel_https"] == ("en0",)
+    assert by_name["neutrino_hub_ai_gateway"] == ("en0",)
+    assert by_name["neutrino_hub_socks_1080_tcp"] == ("en0",)
+
+
+def test_the_pf_anchor_leaves_the_agent_port_open_where_direct_opens_it():
+    rules = render_port_rules(
+        panel_http_port=80,
+        panel_https_port=443,
+        agent_port=8443,
+        ai_gateway_port=8317,
+        socks_ports=[],
+        overlays=[],
+        exposed_interfaces=[],
+        exposed_overlays=[],
+        direct_interfaces=["en0"],
+    )
+
+    anchor = render_pf_anchor(rules, interfaces=["en0"])
+
+    assert "port 8443" not in anchor
+    assert "port 80\n" in anchor

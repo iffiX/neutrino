@@ -54,6 +54,7 @@ def render_port_rules(
     overlays: list,
     exposed_interfaces: list,
     exposed_overlays: list,
+    direct_interfaces: list = (),
 ) -> list:
     """The rules for the ports the hub serves.
 
@@ -68,6 +69,8 @@ def render_port_rules(
             overlays' devices among them, as the system names them.
         exposed_overlays: The enabled overlays' keys that are exposed; a
             closed one's peer port answers on no interface.
+        direct_interfaces: The enabled interfaces Direct opens the agent
+            port alone on; empty while Direct is off.
 
     Returns:
         One :class:`FirewallPortRule` per purpose, in a stable order.
@@ -86,7 +89,12 @@ def render_port_rules(
             panel_https_port,
             answering,
         ),
-        _rule(FIREWALL_PURPOSE_AGENT, FIREWALL_PROTOCOL_TCP, agent_port, answering),
+        _rule(
+            FIREWALL_PURPOSE_AGENT,
+            FIREWALL_PROTOCOL_TCP,
+            agent_port,
+            tuple(dict.fromkeys([*answering, *direct_interfaces])),
+        ),
         _rule(
             FIREWALL_PURPOSE_AI_GATEWAY,
             FIREWALL_PROTOCOL_TCP,

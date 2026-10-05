@@ -141,7 +141,7 @@ title: 通道
 | `overlays`         | 客户端加入中枢每个虚拟网要用的材料，首选的排在前面                                           |
 | `terminals`        | 客户端有权打开 shell 的受管机器，每台是 `{device_id, name, is_online, sessions}`             |
 | `is_panel_allowed` | 客户端未停用且权限含 `panel` 时为 `true`：可以经 `connect` 打开中枢的面板                    |
-| `reached_through`  | 这个客户端的套接字以哪种方式连到中枢：`lan`、`netbird`、`easytier` 或 `relay`                |
+| `reached_through`  | 这个客户端的套接字以哪种方式连到中枢：`lan`、`netbird`、`easytier`、`relay` 或 `direct`      |
 
 ### 虚拟网
 

@@ -656,6 +656,41 @@ class RouterNetworkConfig:
             if interface.is_exposed
         )
 
+    def is_interface_enabled(self, name: str) -> bool:
+        """Whether an interface is one the hub uses, exposed or not.
+
+        Where the hub addresses the machine, an interface whose role is
+        ``disabled`` is left to the system and is off; every other role is
+        on. Where it addresses nothing, ``server`` and ``side_gateway``, no
+        role says whether a port is used, so every port the **Network** page
+        lists is on. Direct opens the agent port on every enabled interface;
+        whether the rest of the box answers there is :attr:`RouterInterface.is_exposed`
+        alone.
+
+        Args:
+            name: Kernel interface name.
+
+        Returns:
+            True when the interface is enabled.
+        """
+        if not self.is_addressing_owned:
+            return True
+        stored = self.interface(name)
+        return stored is not None and not stored.is_disabled
+
+    @property
+    def enabled_device_names(self) -> list[str]:
+        """The kernel devices of the enabled interfaces the configuration names.
+
+        Returns:
+            One name per device, in configuration order, deduplicated.
+        """
+        return _unique(
+            interface.device_name
+            for interface in self.interfaces
+            if self.is_interface_enabled(interface.name)
+        )
+
     @property
     def enabled_overlays(self) -> list[RouterOverlay]:
         """The overlays the hub runs, in engine order."""

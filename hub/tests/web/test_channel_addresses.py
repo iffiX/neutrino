@@ -9,6 +9,7 @@ settings, and one address appears once.
 
 import pytest
 
+from neutrino_hub.modules.overlay.direct_config import OverlayDirectConfig
 from neutrino_hub.modules.overlay.relay_config import OverlayRelayConfig
 from neutrino_hub.web import channel_addresses
 from fastapi import HTTPException
@@ -65,6 +66,7 @@ def live(monkeypatch):
     monkeypatch.setattr(channel_addresses, "device_addresses", lambda: dict(LIVE))
     monkeypatch.setattr(channel_addresses, "overlay_parts", _parts(NamedOverlay))
     monkeypatch.setattr(channel_addresses, "read_relay", OverlayRelayConfig)
+    monkeypatch.setattr(channel_addresses, "read_direct", OverlayDirectConfig)
 
 
 def test_a_served_network_is_named_by_its_configured_address(live):
@@ -253,6 +255,79 @@ def test_a_relay_that_is_off_or_not_configured_adds_nothing(live, monkeypatch):
         is_key_stored=False,
     )
     assert channel_urls(unstored) == ["https://192.168.8.1:8443"]
+
+
+# --- Direct ---
+
+
+@pytest.mark.parametrize("is_direct", [False, True])
+@pytest.mark.parametrize("has_public", [False, True])
+@pytest.mark.parametrize("is_relay", [False, True])
+def test_urls_list_the_exposed_set_then_direct_then_its_public_address_then_the_relay(
+    live, monkeypatch, is_direct, has_public, is_relay
+):
+    runtime = relay_box(
+        monkeypatch,
+        OverlayRelayConfig(
+            is_enabled=is_relay, host="vps.example.org", account="r", key_id="k"
+        ),
+    )
+    direct = OverlayDirectConfig(
+        is_enabled=is_direct,
+        public_host="hub.example.org" if has_public else "",
+        public_port=443,
+    )
+    monkeypatch.setattr(channel_addresses, "read_direct", lambda: direct)
+
+    expected = ["https://192.168.8.1:8443"]
+    if is_direct:
+        expected.append("https://203.0.113.7:8443")
+        if has_public:
+            expected.append("https://hub.example.org:443")
+    if is_relay:
+        expected.append("https://vps.example.org:8443")
+    assert channel_urls(runtime) == expected
+
+
+def test_direct_adds_no_interface_whose_role_is_disabled(live, monkeypatch):
+    monkeypatch.setattr(
+        channel_addresses, "read_direct", lambda: OverlayDirectConfig(is_enabled=True)
+    )
+    runtime = FakeRuntime(
+        network_config(
+            lan_entry("enp1s0", address="192.168.8.1"),
+            {"name": "enp2s0", "role": "disabled", "is_exposed": False},
+            overlays=[],
+        )
+    )
+
+    assert channel_urls(runtime) == ["https://192.168.8.1:8443"]
+
+
+def test_a_direct_file_that_does_not_read_is_direct_off(live, monkeypatch):
+    def unreadable():
+        raise ValueError("not JSON")
+
+    monkeypatch.setattr(channel_addresses, "read_direct", unreadable)
+    runtime = relay_box(monkeypatch, OverlayRelayConfig())
+
+    assert channel_urls(runtime) == ["https://192.168.8.1:8443"]
+
+
+def test_the_hubs_own_agent_is_given_loopback_before_direct(live, monkeypatch):
+    monkeypatch.setattr(
+        channel_addresses,
+        "read_direct",
+        lambda: OverlayDirectConfig(is_enabled=True, public_host="hub.example.org"),
+    )
+    runtime = relay_box(monkeypatch, OverlayRelayConfig())
+
+    assert own_agent_urls(runtime) == [
+        "https://127.0.0.1:8443",
+        "https://192.168.8.1:8443",
+        "https://203.0.113.7:8443",
+        "https://hub.example.org:8443",
+    ]
 
 
 # --- the hub's own agent ---

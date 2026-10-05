@@ -13,9 +13,15 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from neutrino_hub.modules.overlay.constants import (
+    OVERLAY_DIRECT,
     OVERLAY_EASYTIER,
     OVERLAY_NETBIRD,
     OVERLAY_RELAY,
+)
+from neutrino_hub.modules.overlay.direct_config import (
+    OverlayDirectConfig,
+    read_direct,
+    write_direct,
 )
 from neutrino_hub.modules.overlay.relay_config import (
     OverlayRelayConfig,
@@ -74,6 +80,9 @@ class FakeSessions:
     def sessions(self) -> list:
         return list(self._sessions)
 
+    def keys(self) -> list:
+        return [f"client-{index}" for index in range(len(self._sessions))]
+
 
 class FakeRuntime:
     """Just the parts of :class:`PanelRuntime` the Overlay routes reach for."""
@@ -86,6 +95,7 @@ class FakeRuntime:
         self.refusal: Exception | None = None
         self.overlay_route_conflicts: list = []
         self.relay_monitor = FakeRelayMonitor()
+        self.client_reached: dict = {}
 
     def network(self) -> RouterNetworkConfig:
         return RouterNetworkConfig.from_dict(self._config.to_dict())
@@ -147,15 +157,18 @@ def kinds_of(payload: dict) -> dict:
 
 
 @pytest.mark.feature("netbird")
-def test_the_view_has_one_switch_per_engine_then_the_relay_and_no_none(box):
+def test_the_view_is_direct_the_relay_then_one_switch_per_engine(box):
+    """iffi's order for the Access page's cards: Direct, Relay, NetBird,
+    EasyTier."""
     client, _ = box
 
     payload = client.get("/api/hub/overlay").json()
 
     assert [entry["key"] for entry in payload["kinds"]] == [
+        OVERLAY_DIRECT,
+        OVERLAY_RELAY,
         OVERLAY_NETBIRD,
         OVERLAY_EASYTIER,
-        OVERLAY_RELAY,
     ]
     kinds = kinds_of(payload)
     assert kinds[OVERLAY_NETBIRD]["is_enabled"] is True
@@ -493,3 +506,49 @@ def test_the_refused_routes_are_named_on_the_page(box):
             "is_withdrawn": False,
         },
     ]
+
+
+# --- Direct -----------------------------------------------------------------
+
+
+def test_direct_is_off_until_turned_on_and_counts_no_client(box):
+    client, runtime = box
+    runtime.client_reached = {"client-0": "direct"}
+
+    direct = kinds_of(client.get("/api/hub/overlay").json())[OVERLAY_DIRECT]
+
+    assert direct["title"] == "Direct"
+    assert direct["is_enabled"] is False
+    assert direct["is_installed"] is True
+    assert direct["client_count"] == 0
+
+
+def test_turning_direct_on_writes_its_file_and_converges(box):
+    client, runtime = box
+    write_direct(OverlayDirectConfig(public_host="hub.example.org", public_port=443))
+
+    payload = client.post(
+        "/api/hub/overlay/set", json={"direct": {"is_enabled": True}}
+    ).json()
+
+    direct = kinds_of(payload)[OVERLAY_DIRECT]
+    assert direct["is_enabled"] is True
+    assert direct["is_active"] is True
+    assert read_direct() == OverlayDirectConfig(
+        is_enabled=True, public_host="hub.example.org", public_port=443
+    )
+    assert runtime.converged == [[OVERLAY_NETBIRD]]
+
+
+def test_direct_counts_the_online_clients_that_came_from_outside(box):
+    client, runtime = box
+    write_direct(OverlayDirectConfig(is_enabled=True))
+    runtime.client_reached = {
+        "client-0": "direct",
+        "client-1": "lan",
+        "gone": "direct",
+    }
+
+    direct = kinds_of(client.get("/api/hub/overlay").json())[OVERLAY_DIRECT]
+
+    assert direct["client_count"] == 1

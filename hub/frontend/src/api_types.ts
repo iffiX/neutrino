@@ -1611,6 +1611,23 @@ export interface OverlayChoiceRequest {
   netbird?: OverlayEngineSwitch;
   easytier?: OverlayEngineSwitch;
   relay?: OverlayEngineSwitch;
+  direct?: OverlayEngineSwitch;
+}
+
+// --- Direct ---
+
+export interface DirectView {
+  is_enabled: boolean;
+  public_host: string;
+  public_port: number;
+  /** What Direct adds to `urls`: every enabled interface's address that is
+   * not exposed, then the stated public address. */
+  urls: string[];
+}
+
+export interface DirectSetRequest {
+  public_host: string;
+  public_port: number;
 }
 
 // --- Relay ---

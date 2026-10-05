@@ -277,6 +277,8 @@
   "code.wol_no_mac": "This device has never reported a MAC address, so there is nothing to wake.",
   "code.write_failed": "The machine could not write that.",
   "code.overlay_subnet_overlap": "{title}'s network {subnet} overlaps {conflict}. Change one of them first.",
+  "code.direct_host_invalid": "The public address {host} is neither a host name nor an IP address.",
+  "code.direct_apply_failed": "Direct did not apply: {detail}",
   "code.relay_host_invalid": "The server {host} cannot be used: it is empty, holds a space, or starts with a dash.",
   "code.relay_account_invalid": "The account {account} cannot be used: it is empty, holds a space or @, or starts with a dash.",
   "code.relay_ssh_missing": "This machine has no OpenSSH client, so the relay cannot run.",

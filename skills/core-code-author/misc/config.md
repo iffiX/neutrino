@@ -45,6 +45,7 @@ password and is turned on for one client at a time.
 | `config/cliproxyapi/cliproxyapi.json` | `cliproxyapi.example.json` | yes: the AI gateway's client keys, device keys and the hub's own key, sealed |
 | `config/netbird/netbird.json` | `netbird.example.json` | yes: the reusable setup key clients join the overlay with, sealed |
 | `config/easytier/easytier.json` | `easytier.example.json` | yes: the mode, the network secret and the console address with its token, both sealed |
+| `config/overlay/direct.json` | `direct.example.json` | no: Direct's `is_enabled`, `public_host` and `public_port` |
 | `config/overlay/relay.json` | `relay.example.json` | no: the relay's `is_enabled`, `host`, `ssh_port`, `account`, `public_port`, and `key_id`, the id of the SSH key in the vault |
 | `config/credentials/vault.json` | `vault.example.json` | yes — every sealed secret |
 | `config/devices/packages/*` | — | no (build artifacts, just large) |
@@ -193,6 +194,9 @@ Each `*.example.json` is annotated field-by-field. The load-bearing ones:
   runs that engine and no other; the next write stores `is_enabled` on every
   row. A file with no `overlays` at all reads as one enabled, exposed NetBird
   row.
+- **`direct.json`**, in `config/overlay/`: `is_enabled`, `public_host` (empty
+  for none) and `public_port` (default 8443); a missing file reads as Direct
+  off ([../design/modules/network.md](../design/modules/network.md), "Direct").
 - **`relay.json`**, in `config/overlay/`: `is_enabled`, `host`, `ssh_port`
   (default 22), `account`, `key_id` and `public_port` (default 8443). The
   relay is configured when `host`, `account` and `key_id` are set; a missing

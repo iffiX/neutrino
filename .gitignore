@@ -14,6 +14,7 @@ config/credentials/vault.json
 config/netbird/netbird.json
 config/easytier/easytier.json
 config/overlay/relay.json
+config/overlay/direct.json
 config/cliproxyapi/cliproxyapi.json
 config/cliproxyapi/management_key.sealed
 config/services/declared.json

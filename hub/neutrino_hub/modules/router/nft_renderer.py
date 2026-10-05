@@ -41,6 +41,7 @@ class RouterNftRenderer:
         xray_uid: int,
         overlay_devices: dict | None = None,
         engine_cgroups: list | None = None,
+        direct_port: "int | None" = None,
     ):
         """
         Args:
@@ -57,6 +58,9 @@ class RouterNftRenderer:
                 ``system.slice/neutrino_hub_netbird.service``. Their packets
                 leave directly while the local proxy is on. Only paths that
                 exist: nft refuses one that does not.
+            direct_port: The agent port while Direct is on, which opens that
+                port alone on every enabled interface not already answering;
+                None while Direct is off.
         """
         if overlay_devices is not None:
             network = network.with_overlay_devices(overlay_devices)
@@ -72,6 +76,16 @@ class RouterNftRenderer:
             if network.devices_of(overlay)
         ]
         self._answering = network.exposed_interfaces
+        self._direct_port = direct_port
+        self._direct_devices = (
+            []
+            if direct_port is None
+            else [
+                name
+                for name in network.enabled_device_names
+                if name not in self._answering
+            ]
+        )
         self._overlay_ports = network.exposed_overlay_peer_ports
         self._side_lans = _side_lan_subnets(network)
         self._is_inter_lan_allowed = network.is_inter_lan_allowed
@@ -266,6 +280,13 @@ class RouterNftRenderer:
                 "        # them is the whole of the question, and it is one answer",
                 "        # per interface, an overlay included.",
                 f"        iifname {_interface_set(self._answering)} accept",
+            ]
+        if self._direct_devices:
+            lines += [
+                "        # Direct: the agent port alone on every other enabled",
+                "        # interface; the rest of this box stays as exposed.",
+                f"        iifname {_interface_set(self._direct_devices)} "
+                f"tcp dport {self._direct_port} accept",
             ]
         lines.append("")
         closed_wans = [name for name in self._wans if name not in self._exposed]

@@ -406,3 +406,39 @@ def test_a_row_with_no_address_is_dropped_and_a_bad_port_reads_as_53():
     )
 
     assert config.interface("enp2s0").wan.dns == [{"address": "192.0.2.53", "port": 53}]
+
+
+# --- the enabled interfaces Direct opens the agent port on ---
+
+
+def test_in_router_mode_an_interface_is_enabled_unless_its_role_is_disabled():
+    network = RouterNetworkConfig.from_dict(
+        {
+            "mode": "router",
+            "interfaces": [
+                {"name": "enp1s0", "role": "wan"},
+                {"name": "enp2s0", "role": "lan", "lan": {"address": "192.168.1.1"}},
+                {"name": "enp3s0", "role": "disabled", "is_exposed": True},
+            ],
+        }
+    )
+
+    assert network.enabled_device_names == ["enp1s0", "enp2s0"]
+    assert not network.is_interface_enabled("enp3s0")
+    assert not network.is_interface_enabled("not-listed")
+
+
+@pytest.mark.parametrize("mode", ["server", "side_gateway"])
+def test_where_the_hub_addresses_nothing_every_listed_interface_is_enabled(mode):
+    network = RouterNetworkConfig.from_dict(
+        {
+            "mode": mode,
+            "interfaces": [
+                {"name": "eno1", "role": "disabled", "is_exposed": True},
+                {"name": "eno2", "role": "disabled", "is_exposed": False},
+            ],
+        }
+    )
+
+    assert network.enabled_device_names == ["eno1", "eno2"]
+    assert network.exposed_device_names == ["eno1"]

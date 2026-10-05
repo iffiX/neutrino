@@ -2442,6 +2442,25 @@ class OverlayChoiceRequest(BaseModel):
     netbird: OverlayEngineSwitch | None = None
     easytier: OverlayEngineSwitch | None = None
     relay: OverlayEngineSwitch | None = None
+    direct: OverlayEngineSwitch | None = None
+
+
+class DirectView(BaseModel):
+    """Direct: its settings and the addresses it gives clients."""
+
+    is_enabled: bool
+    public_host: str
+    public_port: int
+    # What Direct adds to ``urls`` while it is on: every enabled interface's
+    # address that is not exposed, then the stated public address.
+    urls: list[str] = Field(default_factory=list)
+
+
+class DirectSetRequest(BaseModel):
+    """Direct's public address, stored at once; an empty host states none."""
+
+    public_host: str
+    public_port: int
 
 
 class RelayView(BaseModel):

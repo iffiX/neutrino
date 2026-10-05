@@ -277,6 +277,8 @@
   "code.wol_no_mac": "这台设备从未上报过 MAC 地址，无法唤醒。",
   "code.write_failed": "这台机器写不进去。",
   "code.overlay_subnet_overlap": "{title} 的网段 {subnet} 和 {conflict} 重叠。先改掉其中一个。",
+  "code.direct_host_invalid": "公网地址 {host} 既不是主机名，也不是 IP 地址。",
+  "code.direct_apply_failed": "直连没能应用：{detail}",
   "code.relay_host_invalid": "服务器 {host} 不能用：它为空、含空格，或以短横线开头。",
   "code.relay_account_invalid": "账户 {account} 不能用：它为空、含空格或 @，或以短横线开头。",
   "code.relay_ssh_missing": "这台机器没有 OpenSSH 客户端，中继无法运行。",

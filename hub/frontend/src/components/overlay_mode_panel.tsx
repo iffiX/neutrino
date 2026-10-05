@@ -29,15 +29,21 @@ const KIND_SUMMARY_KEYS: Record<string, string> = {
   netbird: "ui.overlay.summary_netbird",
   easytier: "ui.overlay.summary_easytier",
   relay: "ui.overlay.summary_relay",
+  direct: "ui.overlay.summary_direct",
 };
 
 const KIND_ICONS: Record<string, IconName> = {
   netbird: "mesh",
   easytier: "nodes",
   relay: "server",
+  direct: "globe",
 };
 
-/** The relay's row, whose name is a word rather than a product's. */
+/** The rows whose names are words rather than a product's, by their key. */
+const KIND_TITLE_KEYS: Record<string, string> = {
+  relay: "ui.overlay.relay_title",
+  direct: "ui.overlay.direct_title",
+};
 const KIND_RELAY = "relay";
 
 const KIND_ICON_OTHER: IconName = "mesh";
@@ -190,9 +196,11 @@ export function OverlayModePanel({
   );
 }
 
-/** What a card is called: an engine's own name, or the relay's word. */
+/** What a card is called: an engine's own name, or the word for Direct
+ * and the relay. */
 function kindTitle(kind: OverlayKindView): string {
-  return kind.key === KIND_RELAY ? t("ui.overlay.relay_title") : kind.title;
+  const titleKey = KIND_TITLE_KEYS[kind.key];
+  return titleKey === undefined ? kind.title : t(titleKey);
 }
 
 /** Why this card's engine cannot be turned on, or null when it can. */

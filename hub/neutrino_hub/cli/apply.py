@@ -69,6 +69,7 @@ from neutrino_hub.modules.router.controller import (
 )
 from neutrino_hub.modules.router.dnsmasq_renderer import RouterDnsmasqRenderer
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
+from neutrino_hub.modules.overlay.direct_config import direct_agent_port
 from neutrino_hub.modules.router.nft_renderer import RouterNftRenderer
 from neutrino_hub.modules.router.routes import (
     install_dnsmasq,
@@ -232,6 +233,7 @@ def _render(selected: tuple[str, ...]) -> dict:
             xray_uid=proxy_uid(),
             overlay_devices=overlay_devices(network),
             engine_cgroups=list(engine_cgroups(routing)),
+            direct_port=direct_agent_port(),
         ).render()
     if "dnsmasq" in selected:
         artifacts["dnsmasq"] = RouterDnsmasqRenderer(

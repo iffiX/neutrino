@@ -4,7 +4,7 @@ title: Access
 
 # Access
 
-The **Access** page holds the ways a client or an agent outside your network reaches the hub: NetBird, EasyTier and Relay. NetBird and EasyTier are overlays, private networks laid over the internet. The relay is a server you rent or own that forwards one public port to the hub, as [Relay](./relay.md) describes. Each way in has its own card, switch and settings, and any of them can run at once.
+The **Access** page holds the ways a client or an agent outside your network reaches the hub: Direct, Relay, NetBird and EasyTier. Direct opens the hub's own addresses to clients. NetBird and EasyTier are overlays, private networks laid over the internet. The relay is a server you rent or own that forwards one public port to the hub, as [Relay](./relay.md) describes. Each way in has its own card, switch and settings, and any of them can run at once.
 
 ## What a client needs from outside
 
@@ -12,13 +12,13 @@ A client away from home needs one thing: the hub's agent port, 8443, through any
 
 By default the hub advertises its LAN routes on each overlay. The client's pages do not use them. A route matters to a peer that reaches a LAN machine by its own address, such as an SSH session from a laptop on NetBird.
 
-The mainland edition has the EasyTier and Relay cards, and no NetBird card.
+The mainland edition has the Direct, Relay and EasyTier cards, and no NetBird card.
 
 ## Turn an engine on
 
 ![The two engine cards, both switched on](/guide/en/overlay_switches.webp)
 
-**Engine** holds one card per way in. The **Enable** switch on a card says whether that engine runs. Selecting the card itself only picks which settings show under the cards. The **Relay** card's settings are on [Relay](./relay.md).
+**Engine** holds one card per way in. The **Enable** switch on a card says whether that engine runs. Selecting the card itself only picks which settings show under the cards. The **Direct** card is below. The **Relay** card's settings are on [Relay](./relay.md).
 
 1. Turn on the engine's switch.
 1. Select **Apply overlays**. The hub installs the engine when it is absent, starts the engines turned on, then stops the ones turned off.
@@ -26,6 +26,22 @@ The mainland edition has the EasyTier and Relay cards, and no NetBird card.
 A card marked **active** has its engine running. A card that reads **No build for this machine** cannot be turned on. With no engine on, the page reads **No overlay is running. Turn one on above.**, and only machines on your own network reach the hub.
 
 The hub rejects turning an engine on with `overlay_subnet_overlap` when its network overlaps another network. That is the other overlay's network, or any network this box holds an address on. NetBird's network is `100.64.0.0/10`. EasyTier's is the network of this box's address on it.
+
+## Turn on Direct
+
+Direct lets a client reach the hub at the hub's own addresses, with no other server in between. Use it when a client can reach one of the hub's interfaces, or when your router forwards a public port to the hub.
+
+The **Direct** card's **Enable** switch says whether the hub's connection port, 8443, answers on every enabled interface. In router mode an enabled interface is one whose role is not **Disabled**; in server and side gateway mode it is every interface the **Network** page lists. Direct opens that one port and no other. The panel and the AI gateway keep the exposure the **Network** page gives them, so an interface that is not exposed still refuses the panel.
+
+1. Turn on the **Direct** switch.
+1. Select **Apply overlays**.
+1. Optional: under the cards, fill in **Public address** and **Public port** with a host name or IP address that reaches this hub from outside, such as the address your router forwards to the hub. Select **Apply Direct**.
+
+**Addresses for clients** lists what Direct gives clients and agents: each enabled interface's address that the **Network** page does not already expose, then the public address. A client tries the hub's own addresses first, then the public address, then the relay's. The client's hub row reads **Connected · Direct** when it came in this way.
+
+Every host that can reach an enabled interface can reach the connection port. The port admits only a client or agent that holds a token from this hub. Direct uses IPv4 addresses.
+
+The hub refuses a public address that is neither an IP address nor a host name with `direct_host_invalid`, and a port outside 1 to 65535 with `port_out_of_range`.
 
 ## Join NetBird
 

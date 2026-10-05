@@ -680,3 +680,71 @@ def test_loopback_reaches_every_port_in_every_topology(entries):
     chain = ruleset.split("chain input {", 1)[1].split("}", 1)[0]
 
     assert 'iifname "lo" accept' in chain
+
+
+# --- Direct ---
+
+
+def _input_chain(ruleset: str) -> str:
+    return without_comments(ruleset).split("chain input {", 1)[1].split("chain ", 1)[0]
+
+
+def _answering_lines(chain: str) -> list:
+    """The input chain's rules that accept everything on a set of interfaces."""
+    return [
+        line
+        for line in chain.splitlines()
+        if line.strip().startswith("iifname {") and line.strip().endswith("} accept")
+    ]
+
+
+def test_direct_off_opens_nothing_on_a_closed_uplink():
+    chain = _input_chain(
+        render(wan_entry("enp2s0"), lan_entry("enp1s0", address="192.168.100.1"))
+    )
+
+    assert "tcp dport 8443" not in chain
+
+
+def test_direct_opens_the_agent_port_alone_on_every_enabled_interface_not_exposed():
+    """The panel, the AI gateway and every other listener keep the exposure
+    the Network page gives them: the closed uplink gains one port."""
+    network = network_config(
+        wan_entry("enp2s0"),
+        lan_entry("enp1s0", address="192.168.100.1"),
+        {"name": "enp4s0", "role": "disabled", "is_exposed": False},
+    )
+
+    chain = _input_chain(
+        RouterNftRenderer(
+            network=network,
+            routing=ROUTING_DIRECT,
+            xray_uid=999,
+            direct_port=8443,
+        ).render()
+    )
+
+    assert 'iifname { "enp2s0" } tcp dport 8443 accept' in chain
+    (answering,) = _answering_lines(chain)
+    assert '"enp1s0"' in answering
+    assert '"enp2s0"' not in answering
+    assert "enp4s0" not in chain
+
+
+def test_in_server_mode_every_listed_interface_is_enabled():
+    network = network_config(
+        {"name": "eno1", "role": "disabled", "is_exposed": True},
+        {"name": "eno2", "role": "disabled", "is_exposed": False},
+        mode="server",
+    )
+
+    chain = _input_chain(
+        RouterNftRenderer(
+            network=network, routing=ROUTING_DIRECT, xray_uid=999, direct_port=9443
+        ).render()
+    )
+
+    assert 'iifname { "eno2" } tcp dport 9443 accept' in chain
+    (answering,) = _answering_lines(chain)
+    assert '"eno1"' in answering
+    assert '"eno2"' not in answering

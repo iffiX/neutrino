@@ -88,6 +88,9 @@ class FakeRuntime:
     def overlay_networks(self):
         return {}
 
+    def interface_networks(self):
+        return []
+
     def desired_state_for(self, device):
         return self.desired
 
@@ -574,11 +577,12 @@ def test_the_way_a_socket_reached_the_hub_is_settled_at_hello_and_hashed(
 ):
     runtime = FakeRuntime()
     runtime.overlay_networks = lambda: {"netbird": ["100.64.0.1/16"]}
+    runtime.interface_networks = lambda: ["192.168.100.1/24"]
     client_id = ClientRegistry().create("alice")
 
     ways = []
     hashes = []
-    for peer in ("192.168.100.9", "100.64.3.3", "127.0.0.1"):
+    for peer in ("192.168.100.9", "100.64.3.3", "127.0.0.1", "203.0.113.9"):
         channel_state.note_client_scope(
             runtime, client_id, peer_host=peer, reached_host="192.168.100.1"
         )
@@ -586,5 +590,5 @@ def test_the_way_a_socket_reached_the_hub_is_settled_at_hello_and_hashed(
         ways.append(state["reached_through"])
         hashes.append(state["hash"])
 
-    assert ways == ["lan", "netbird", "relay"]
-    assert len(set(hashes)) == 3
+    assert ways == ["lan", "netbird", "relay", "direct"]
+    assert len(set(hashes)) == 4
