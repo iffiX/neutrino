@@ -563,14 +563,15 @@ def relaunch_box(check, monkeypatch, tmp_path):
             return box["windows"]
         return ""
 
-    def msiexec(action, msi, log):
-        box["repairs"].append(action)
+    def msiexec(action, msi, log, properties=()):
+        box["repairs"].append((action, properties))
         if box["starts"]:
             marker.write_text("started")
         return 0
 
     monkeypatch.setattr(check, "_answer", answer)
     monkeypatch.setattr(check, "_msiexec", msiexec)
+    monkeypatch.setattr(check, "_pending_renames", list)
     return box, marker
 
 
@@ -583,7 +584,7 @@ def test_a_repair_that_starts_the_planted_relaunch_task_passes(check, relaunch_b
     (planted,) = [c for c in box["commands"] if c[:2] == ["schtasks", "/create"]]
     assert planted[3] == "NeutrinoClientRelaunch_cicheck"
     assert planted[planted.index("/ru") + 1] == "SYSTEM"
-    assert box["repairs"] == ["/fa"]
+    assert box["repairs"] == [("/i", ("REINSTALL=ALL", "REINSTALLMODE=vomus"))]
     assert not marker.exists()
 
 
@@ -981,3 +982,84 @@ def test_the_macos_check_finds_no_copy_where_none_was_laid(
     )
 
     assert check._macos_rustdesk_problem().startswith("the agent's .pkg laid down no ")
+
+
+def test_every_msiexec_of_a_check_suppresses_the_restart_by_its_property_too(
+    check, monkeypatch, tmp_path
+):
+    """``/norestart`` is not applied to every form of the command; the
+    property is, and a restart takes the runner away."""
+    commands = []
+
+    def run(command, **kwargs):
+        commands.append(command)
+        return check.subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(check.subprocess, "run", run)
+
+    check._msiexec(
+        "/i",
+        tmp_path / "client.msi",
+        tmp_path / "repair.log",
+        properties=check.CLIENT_WINDOWS_REPAIR_PROPERTIES,
+    )
+    check._remove_windows_package(tmp_path / "client.msi")
+
+    repair, removal = commands
+    assert repair[:5] == [
+        "msiexec",
+        "/i",
+        str(tmp_path / "client.msi"),
+        "REINSTALL=ALL",
+        "REINSTALLMODE=vomus",
+    ]
+    for command in (repair, removal):
+        assert "REBOOT=ReallySuppress" in command and "/norestart" in command
+        assert not any(word.startswith("/f") for word in command)
+
+
+@pytest.mark.parametrize("code", [3010, 1641])
+def test_an_msiexec_that_wants_a_restart_fails_with_what_held_a_file(
+    check, monkeypatch, tmp_path, capsys, code
+):
+    log = tmp_path / "repair.log"
+    log.write_text(
+        "Info 1603. The file C:\\Program Files\\Neutrino\\client\\bin\\netbird.exe "
+        "is being held in use.  Close that application and retry.\n"
+        "an unrelated line\n"
+    )
+    monkeypatch.setattr(
+        check.subprocess,
+        "run",
+        lambda command, **kwargs: check.subprocess.CompletedProcess(command, code),
+    )
+
+    with pytest.raises(SystemExit, match=f"wants a restart \\(exit {code}\\)"):
+        check._msiexec("/i", tmp_path / "client.msi", log)
+
+    out = capsys.readouterr().out
+    assert "netbird.exe is being held in use" in out
+    assert "an unrelated line" not in out
+
+
+def test_a_file_of_ours_left_for_the_next_restart_fails_the_check(check, monkeypatch):
+    monkeypatch.setattr(
+        check,
+        "_pending_renames",
+        lambda: [
+            "\\??\\C:\\Windows\\Temp\\other.tmp",
+            "",
+            "\\??\\C:\\Program Files\\Neutrino\\client\\bin\\netbird.exe",
+        ],
+    )
+
+    with pytest.raises(SystemExit, match="netbird.exe"):
+        check._check_no_pending_rename()
+
+
+def test_someone_elses_pending_rename_does_not_fail_the_check(check, monkeypatch):
+    monkeypatch.setattr(
+        check, "_pending_renames", lambda: ["\\??\\C:\\Windows\\Temp\\other.tmp"]
+    )
+
+    check._check_no_pending_rename()
