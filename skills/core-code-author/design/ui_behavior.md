@@ -394,13 +394,26 @@ shows in place under the button, which stays live. CloudCLI, Gitea and
 code-server tabs carry no notice ([ui_text.md](ui_text.md), "Software the
 owner installs").
 
-## The relay card on the Access page
+## The Direct and relay cards on the Access page
 
-The **Access** page draws the ways in as cards in the engine panel:
-NetBird, EasyTier, Relay. The relay's card is shaped like the other two: its
-switch stages into the engine panel's draft and that panel's apply bar turns
-it on or off, and pressing the card shows the relay's section under the
-panel ([ui_text.md](ui_text.md), "The relay's words").
+The **Access** page draws the ways in as cards in the engine panel, in this
+order: Direct, Relay, NetBird, EasyTier; a tree without NetBird draws
+Direct, Relay, EasyTier. Every card is shaped alike: its switch stages into
+the engine panel's draft and that panel's apply bar turns it on or off, and
+pressing the card shows its section under the panel.
+
+Direct's section is one configurable panel, a `settings_group` with its own
+apply bar ([ui_text.md](ui_text.md), "Direct's words"): the switch's
+description `ui.overlay.direct_switch_hint`, which says that the switch
+opens the hub's connection port to every host that can reach the enabled
+interfaces; **Public address** and **Public port**; and **Addresses for
+clients**, the `urls` of `GET /api/hub/overlay/direct` in mono, or
+`ui.overlay.direct_addresses_empty` when there are none. The bar's label is
+**Apply Direct** and its hint `ui.overlay.direct_apply_hint`. The section
+shows whether the switch is on or off, so the person states the address
+first.
+
+The relay's words are in [ui_text.md](ui_text.md), "The relay's words".
 
 The relay's section holds two panels:
 

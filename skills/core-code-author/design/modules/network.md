@@ -294,16 +294,46 @@ assumed.
 ## The ways in from outside
 
 A way in is how a client or an agent away from the hub's LAN reaches the
-agent port. The hub offers three: NetBird, EasyTier and the relay. The panel
-draws them on one page, **Access** (外部访问 in Chinese), as three cards in
-that order; the configuration, the routes and the protocol keep the word
-`overlay` ([ui_text.md](../ui_text.md), "Names that are fixed").
+agent port. The hub offers Direct, the relay, NetBird and EasyTier. The
+panel draws them on one page, **Access** (外部访问 in Chinese), as one card
+each in that order, NetBird's from the edition table, so a tree without
+NetBird draws Direct, Relay and EasyTier; the configuration, the routes and
+the protocol keep the word `overlay` ([ui_text.md](../ui_text.md), "Names
+that are fixed"). Where each way reaches the port is
+[../connection.md](../connection.md), "Where the port is reached".
 
 | Rule | Reason |
 | --- | --- |
 | The hub stands on the LAN of the machines it manages and is not placed on a public address. No way in needs an uplink exposed, and from outside a person opens the panel through a client's **Panel** entry. | The hub dials every machine's services on its own LAN for the clients; a hub on a public address is a panel and an agent port open to every scanner on the internet. |
 | Every way in reaches the one agent port, and the link's and the state's `urls` hold one address per way in. | A peer tries the set in turn and pins one fingerprint, so a way in adds an address and nothing else. |
 | The served networks stay offered as routes on both overlay engines: the NetBird page names them for the routing peer the person sets up in its console, and the EasyTier form lists them to export. The hub withdraws none. | A client reaches a published service as a stream through the hub and needs no route. A route reaches every port of a machine, which is the advanced use the person chooses. |
+
+## Direct
+
+Direct opens the agent port on every enabled interface, and adds the public
+address the person states for the hub to `urls`. One switch on the **Access**
+page turns it on.
+
+`config/overlay/direct.json` holds it:
+
+| Key | Holds |
+| --- | --- |
+| `is_enabled` | whether Direct is on; written by the **Access** page's switch together with the other ways in |
+| `public_host` | the host name or IP address the person states for the hub, empty for none |
+| `public_port` | the port at that address, 8443 by default |
+
+| Rule | Reason |
+| --- | --- |
+| An enabled interface is one the hub uses. Where the hub addresses the machine, `router`, that is every interface whose role is not `disabled`. Where it addresses nothing, `server` and `side_gateway`, no role says whether a port is used, so it is every interface the **Network** page lists. `RouterNetworkConfig.is_interface_enabled` answers it in one place. | One notion serves the firewall, `urls` and the page alike. |
+| Direct opens the agent port alone. On Linux the input chain gains `iifname { <enabled, not exposed> } tcp dport <agent-port> accept`; on macOS and Windows the agent port's own rule names those interfaces beside the exposed ones. Every other rule is left as it is. | The panel, the AI gateway and every other listener keep the exposure the **Network** page gives them. |
+| Turning Direct off renders the same rules without that addition. | The converge step takes exactly what Direct added. |
+| An interface Direct opens the agent port on is not thereby exposed. Wake-on-LAN, the served scopes and everything else that reads `is_exposed` read it unchanged. | Exposure is the whole interface; Direct is one port. |
+| While Direct is on, `urls` holds every enabled interface's address after the exposed ones, then `https://<public-host>:<public-port>`, then the relay's. An IPv6 host is written in brackets. | The hub's own addresses are tried first and the path through another server last. |
+| A stated host name needs nothing of the certificate. | A peer pins the certificate's fingerprint and does not check its names. |
+| Direct is IPv4. The interfaces' addresses come from the same live IPv4 reading as the exposed ones. | Whether the port also listens on IPv6 is not decided. |
+
+A host is refused at save with `direct_host_invalid {host}` unless it is an
+IP address or a host name of letters, digits, hyphens and dots.
 
 ## The relay, the third way in
 

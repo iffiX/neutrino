@@ -183,6 +183,24 @@ The VS Code notice and its button:
 | `ui.vscode.terms_accept` | Open and accept the terms | 打开并接受条款 |
 | `ui.vscode.terms_accepted` | Terms accepted | 已接受条款 |
 
+## Direct's words
+
+| Key | English | Chinese |
+| --- | --- | --- |
+| `ui.overlay.direct_title` | Direct | 直连 |
+| `ui.overlay.summary_direct` | Clients reach the hub's connection port at its own addresses | 客户端直接连中枢自己地址上的连接端口 |
+| `ui.overlay.direct_switch_hint` | Whether the hub's connection port answers on every enabled interface. It opens that port, and no other, to every host that can reach those interfaces. | 是否在每个启用的网口上开放中枢的连接端口。只开放这一个端口，所有能连到这些网口的主机都能连上它。 |
+| `ui.overlay.direct_public_host` | Public address | 公网地址 |
+| `ui.overlay.direct_public_port` | Public port | 公网端口 |
+| `ui.overlay.direct_public_host_hint` | A host name or IP address that reaches this hub from outside; leave it empty for none. | 从外面能连到这台中枢的主机名或 IP 地址；没有就留空。 |
+| `ui.overlay.direct_addresses` | Addresses for clients | 客户端连接地址 |
+| `ui.overlay.direct_addresses_empty` | No enabled interface has an address. | 没有哪个启用的网口有地址。 |
+| `ui.overlay.direct_apply` | Apply Direct | 应用直连 |
+| `ui.overlay.direct_apply_hint` | Saves the public address and gives it to clients and agents. | 保存公网地址，并发给客户端和被控端。 |
+
+A client's Hubs row names the way it reached the hub; `reached_through`
+`direct` is `ui.through.direct`, **Direct** / **直连**.
+
 ## The relay's words
 
 | Key | English | Chinese |
