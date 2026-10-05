@@ -215,7 +215,10 @@ account the machine does not have refuses the open `account_unknown
 `shell_program_unusable {path}`; neither falls back to root or to the
 default. A shell for an account starts in that account's home with that
 account's environment, through `run_as_account`'s step-down ("Acting for an
-account"), on a pseudo-terminal of its own as before. On Windows this
+account"), on a pseudo-terminal of its own as before, which is handed to
+that account. On Linux and macOS the module's shell program starts as a
+login shell, `<program> -l`, as the agent or as the account alike; an
+account with no program named gets its own login shell. On Windows this
 version sets the shell program alone: the hub sends no account, and the
 shell runs as SYSTEM.
 
@@ -561,7 +564,11 @@ A platform advertises the capabilities it has; invoking an absent one is
 refused with `{"code": "unsupported_platform"}`, never guessed at. Every
 system has `run_as`: the contract's `run_as_account`, and
 `run_as_account_answering` for a program that reads a reply from its
-terminal, each done the way the "Running as an account" row below says. The engine
+terminal, each done the way the "Running as an account" row below says.
+Linux and macOS also have `account_shell`, the contract's `account_process`,
+which hands back how a long-lived process starts as an account by the same
+step-down without running it; the shell stream starts the Terminal
+module's shell for an account with it. The engine
 builds the package-backed runners only on a platform with `packages`. A
 platform with `smb_server` gets the file share, driving the SMB server the
 system carries, with nothing to install or uninstall; there, any other

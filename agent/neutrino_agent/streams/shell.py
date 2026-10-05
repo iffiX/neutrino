@@ -12,9 +12,14 @@ of them. A ``shell`` opened with
 Windows the shell is PowerShell on a pseudo console, served by
 :class:`~neutrino_agent.streams.windows_shell.WindowsShellStream`.
 
-The shell runs as the agent runs, which is root. Ending a shell kills its
-whole terminal session, background jobs included, so a closed tab leaves
-nothing behind.
+A new shell runs as the Terminal module says: as the agent runs, which is
+root, with the shell picked here while its settings are empty; as the
+account it names, through the platform's step-down, in that account's home
+with its environment; with the shell program it names. A named account the
+machine does not have, or a shell program that cannot be run, refuses the
+open with no fallback. A shell already running keeps what it runs, and a
+container's shell reads none of it. Ending a shell kills its whole terminal
+session, background jobs included, so a closed tab leaves nothing behind.
 
 Not pure: starts processes and owns file descriptors.
 """
@@ -39,9 +44,23 @@ from neutrino_agent.constants import (
     AGENT_SHELL_READ_BYTES,
     AGENT_SHELL_WINDOWS_ACCOUNT,
 )
-from neutrino_agent.exceptions import StreamRefused
+from neutrino_agent.exceptions import (
+    ModuleApplyError,
+    PlatformUnsupportedError,
+    StreamRefused,
+)
 from neutrino_agent.modules.podman.applier import PodmanStatusReader
 from neutrino_agent.modules.podman.constants import PODMAN_BINARY
+from neutrino_agent.modules.terminal.config import (
+    TerminalConfig,
+    account_entry,
+    check_shell_program,
+)
+from neutrino_agent.modules.terminal.constants import (
+    TERMINAL_CODE_ACCOUNT_UNKNOWN,
+    TERMINAL_LOGIN_ARGUMENTS,
+    TERMINAL_NOLOGIN_MARK,
+)
 from neutrino_agent.streams.shell_session import SessionShellStream, ShellSession
 
 try:
@@ -75,18 +94,21 @@ def login_home() -> str:
     return home if home and os.path.isdir(home) else "/"
 
 
-def login_shell() -> str:
+def login_shell(shell: str = "") -> str:
     """The shell to start.
 
+    Args:
+        shell: An account's own login shell; empty reads the agent's.
+
     Returns:
-        The agent account's own shell where it can run one, else the first
-        usable fallback.
+        That shell where it can run one, else the first usable fallback.
     """
-    try:
-        shell = pwd.getpwuid(os.getuid()).pw_shell
-    except (KeyError, AttributeError):
-        shell = ""
-    if shell and os.access(shell, os.X_OK) and "nologin" not in shell:
+    if not shell:
+        try:
+            shell = pwd.getpwuid(os.getuid()).pw_shell
+        except (KeyError, AttributeError):
+            shell = ""
+    if shell and os.access(shell, os.X_OK) and TERMINAL_NOLOGIN_MARK not in shell:
         return shell
     for candidate in AGENT_SHELL_FALLBACKS:
         if os.access(candidate, os.X_OK):
@@ -127,7 +149,9 @@ def listed_containers() -> list:
     return [state.name for state in reader.survey(declared_names=[])]
 
 
-def open_shell_stream(channel, args: dict, *, sessions=None):
+def open_shell_stream(
+    channel, args: dict, *, sessions=None, terminal=None, platform=None
+):
     """The handler for one ``shell`` stream: this machine's, or a container's.
 
     Args:
@@ -137,6 +161,10 @@ def open_shell_stream(channel, args: dict, *, sessions=None):
             inside a container.
         sessions: The agent's shell registry; None keeps no shell past its
             stream.
+        terminal: Returns the Terminal module's
+            :class:`~neutrino_agent.modules.terminal.config.TerminalConfig`
+            a new shell runs with; None runs every shell as the agent.
+        platform: The machine's platform, which steps down to an account.
 
     Returns:
         The handler, not yet opened.
@@ -150,20 +178,87 @@ def open_shell_stream(channel, args: dict, *, sessions=None):
         if sys.platform == "win32":
             from neutrino_agent.streams.windows_shell import WindowsShellStream
 
-            return WindowsShellStream(channel, args, sessions=sessions)
-        return ShellStream(channel, args, sessions=sessions)
+            return WindowsShellStream(
+                channel, args, sessions=sessions, terminal=terminal, platform=platform
+            )
+        return ShellStream(
+            channel, args, sessions=sessions, terminal=terminal, platform=platform
+        )
     if module != CONTAINER_MODULE:
         raise StreamRefused("verb_unknown", {"module": module})
     return ContainerShellStream(channel, args)
 
 
-def shell_environment() -> dict:
-    """The environment the shell starts with."""
-    environment = dict(os.environ)
+def shell_environment(base: "dict | None" = None) -> dict:
+    """The environment the shell starts with.
+
+    Args:
+        base: An account's environment as the platform steps down to it;
+            None is the agent's own, with its home.
+    """
+    if base is None:
+        environment = dict(os.environ)
+        environment["HOME"] = login_home()
+    else:
+        environment = dict(base)
     environment["TERM"] = "xterm-256color"
-    environment["HOME"] = login_home()
     environment.setdefault("LANG", "C.UTF-8")
     return environment
+
+
+def refusal(error: ModuleApplyError) -> StreamRefused:
+    """A Terminal module refusal as the stream's."""
+    return StreamRefused(error.code, dict(error.params))
+
+
+def shell_plan(settings: TerminalConfig, platform) -> tuple:
+    """What a new shell runs, as whom, and how it starts, by the Terminal module's settings.
+
+    Args:
+        settings: The module's settings.
+        platform: The machine's platform, which steps down to an account.
+
+    Returns:
+        ``(command, process, account, title)``: the argument vector, what
+        :class:`subprocess.Popen` takes beside it (``cwd``, ``env``, and
+        ``owner``, the uid the terminal is handed to; empty for the agent's
+        own), the account the shell runs as, and the shell's name.
+
+    Raises:
+        StreamRefused: ``account_unknown {account}`` for an account the
+            machine does not have, ``shell_program_unusable {path}`` for a
+            shell program that cannot be run.
+    """
+    try:
+        if settings.shell_path:
+            check_shell_program(settings.shell_path)
+        if not settings.account:
+            if settings.shell_path:
+                command = [settings.shell_path, *TERMINAL_LOGIN_ARGUMENTS]
+            else:
+                command = shell_command()
+            return command, {}, shell_account(), os.path.basename(command[0])
+        entry = account_entry(settings.account)
+    except ModuleApplyError as error:
+        raise refusal(error) from None
+    shell = settings.shell_path or login_shell(entry.pw_shell)
+    try:
+        if platform is None:
+            raise PlatformUnsupportedError("no platform to step down with")
+        command, process = platform.account_process(
+            settings.account, [shell, *TERMINAL_LOGIN_ARGUMENTS]
+        )
+    except KeyError:
+        raise StreamRefused(
+            TERMINAL_CODE_ACCOUNT_UNKNOWN, {"account": settings.account}
+        ) from None
+    except PlatformUnsupportedError:
+        raise StreamRefused("unsupported_platform") from None
+    process = dict(process)
+    process["env"] = dict(process.get("env") or os.environ)
+    process["env"]["SHELL"] = shell
+    process["owner"] = entry.pw_uid
+    return command, process, settings.account, os.path.basename(shell)
 
 
 def _session_members(session_id: int) -> list:
@@ -213,14 +308,21 @@ def _take_controlling_terminal() -> None:
 class PtyTerminal:
     """One process on a pseudo-terminal, as a shell session drives it."""
 
-    def __init__(self, command: list, *, cols: int, rows: int):
+    def __init__(
+        self, command: list, *, cols: int, rows: int, process: "dict | None" = None
+    ):
         """
         Args:
             command: What runs on the terminal.
             cols: The terminal's first width.
             rows: The terminal's first height.
+            process: What :class:`subprocess.Popen` takes beside the
+                command for a shell that runs as an account: ``cwd``,
+                ``env``, the identity, and ``owner``, the uid the terminal
+                is handed to. None starts it as the agent, in its home.
         """
         self._command = list(command)
+        self._process_arguments = dict(process or {})
         self._columns = cols
         self._rows = rows
         self._master_fd: "int | None" = None
@@ -236,7 +338,15 @@ class PtyTerminal:
         master_fd, slave_fd = pty.openpty()
         self._master_fd = master_fd
         self.resize(self._columns, self._rows)
+        arguments = dict(self._process_arguments)
+        owner = arguments.pop("owner", None)
+        base = arguments.pop("env", None)
+        cwd = arguments.pop("cwd", "") or login_home()
+        if not os.path.isdir(cwd):
+            cwd = "/"
         try:
+            if owner is not None:
+                os.fchown(slave_fd, int(owner), -1)
             self._process = subprocess.Popen(
                 self._command,
                 stdin=slave_fd,
@@ -244,8 +354,9 @@ class PtyTerminal:
                 stderr=slave_fd,
                 start_new_session=True,
                 preexec_fn=_take_controlling_terminal,
-                cwd=login_home(),
-                env=shell_environment(),
+                cwd=cwd,
+                env=shell_environment(base),
+                **arguments,
             )
         except OSError:
             os.close(master_fd)
@@ -349,20 +460,34 @@ class ShellStream(SessionShellStream):
     """A shell on a pseudo-terminal, kept by id when the open names one."""
 
     def __init__(
-        self, channel, args: dict, *, command: "list | None" = None, sessions=None
+        self,
+        channel,
+        args: dict,
+        *,
+        command: "list | None" = None,
+        sessions=None,
+        terminal=None,
+        platform=None,
     ):
         """
         Args:
             channel: The stream's channel.
             args: ``{"cols", "rows"}``, the terminal's first size, with
                 ``session_id`` and ``is_resumed`` for a kept shell.
-            command: What to run on the terminal. None is the platform's
-                shell.
+            command: What to run on the terminal, as the agent and with no
+                Terminal module settings read. None is the shell the
+                settings say.
             sessions: The agent's shell registry; None keeps no shell past
                 its stream.
+            terminal: Returns the Terminal module's settings; None is the
+                defaults.
+            platform: The machine's platform, which steps down to an
+                account.
         """
         super().__init__(channel, args, sessions=sessions)
         self._command = list(command) if command else None
+        self._terminal = terminal
+        self._platform = platform
 
     def _check_platform(self) -> None:
         """Refuse a platform with no pseudo-terminals."""
@@ -370,12 +495,25 @@ class ShellStream(SessionShellStream):
             raise StreamRefused("unsupported_platform")
 
     def _make_session(self, *, on_change=None, on_end=None) -> ShellSession:
-        command = self._command or shell_command()
+        """A new shell, as the Terminal module's settings say.
+
+        Raises:
+            StreamRefused: ``account_unknown {account}`` or
+                ``shell_program_unusable {path}``.
+        """
+        if self._command:
+            command, process = self._command, {}
+            account, title = shell_account(), os.path.basename(self._command[0])
+        else:
+            settings = self._terminal() if self._terminal else TerminalConfig()
+            command, process, account, title = shell_plan(settings, self._platform)
         return ShellSession(
             session_id=self._session_id,
-            terminal=PtyTerminal(command, cols=self._columns, rows=self._rows),
-            account=shell_account(),
-            title=os.path.basename(command[0]),
+            terminal=PtyTerminal(
+                command, cols=self._columns, rows=self._rows, process=process
+            ),
+            account=account,
+            title=title,
             on_change=on_change,
             on_end=on_end,
         )

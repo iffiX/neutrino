@@ -166,6 +166,24 @@ class AgentPlatform:
         """
         raise PlatformUnsupportedError("cannot run as another account here")
 
+    def account_process(self, account: str, argv: list) -> tuple:
+        """How a long-lived process starts as an account, the way ``run_as_account`` steps down.
+
+        Args:
+            account: The account.
+            argv: Argument vector.
+
+        Returns:
+            ``(argv, popen_arguments)``: what to start, and what
+            :class:`subprocess.Popen` takes beside it to put the process in
+            the account's home with its environment and identity.
+
+        Raises:
+            KeyError: When the account database has no such account.
+            PlatformUnsupportedError: When the platform cannot step down.
+        """
+        raise PlatformUnsupportedError("cannot run as another account here")
+
     def run_as_account_answering(
         self,
         account: str,

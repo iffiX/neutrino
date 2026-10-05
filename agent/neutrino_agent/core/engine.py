@@ -53,6 +53,7 @@ from neutrino_agent.modules.samba.runner import (
     SambaNativeServerRunner,
 )
 from neutrino_agent.modules.system_package import SystemPackageModuleRunner
+from neutrino_agent.modules.terminal.runner import TerminalModuleRunner
 from neutrino_agent.modules.vscode.runner import VscodeModuleRunner
 from neutrino_agent.modules.zfs.runner import ZfsModuleRunner
 from neutrino_agent.platforms.detect import platform_tuple
@@ -210,6 +211,7 @@ class ModuleEngine(ReconcileWorker):
                 if platform.os_name == "darwin":
                     kinds.append(CodeServerModuleRunner)
                 kinds.append(CloudcliModuleRunner)
+        kinds.append(TerminalModuleRunner)
         self._module_runners = {}
         for kind in kinds:
             runner = kind(platform=platform, log=self._collect, publish=self._publish)

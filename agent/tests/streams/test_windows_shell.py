@@ -414,3 +414,53 @@ def test_linux_runs_the_login_shell_interactively(monkeypatch):
     monkeypatch.setattr(shell_module.sys, "platform", "linux")
 
     assert shell_module.shell_command() == [shell_module.login_shell(), "-i"]
+
+
+def terminal_settings(shell_path):
+    from neutrino_agent.modules.terminal.config import TerminalConfig
+
+    return lambda: TerminalConfig(shell_path=shell_path)
+
+
+def test_the_terminal_modules_program_runs_as_system_in_place_of_powershell(
+    tmp_path,
+):
+    program = tmp_path / "pwsh.exe"
+    program.write_bytes(b"MZ")
+    program.chmod(0o755)
+    kernel32 = FakeKernel32()
+    channel = FakeChannel()
+    channel.feed(("data", b"exit 0\r"))
+    stream = WindowsShellStream(
+        channel,
+        {"cols": 80, "rows": 24},
+        kernel32=kernel32,
+        platform=FakePlatform(),
+        terminal=terminal_settings(str(program)),
+    )
+
+    stream.open()
+    stream.run()
+
+    create = next(call for call in kernel32.calls if call[0] == "CreateProcessW")
+    assert str(program) in create[1]
+    assert "powershell" not in create[1]
+    assert stream._session.account == "SYSTEM"
+
+
+def test_a_program_windows_cannot_run_refuses_the_open(tmp_path):
+    stream = WindowsShellStream(
+        FakeChannel(),
+        {"cols": 80, "rows": 24},
+        kernel32=FakeKernel32(),
+        platform=FakePlatform(),
+        terminal=terminal_settings(str(tmp_path / "gone.exe")),
+    )
+
+    with pytest.raises(StreamRefused) as refused:
+        stream.open()
+
+    assert (refused.value.code, refused.value.params) == (
+        "shell_program_unusable",
+        {"path": str(tmp_path / "gone.exe")},
+    )

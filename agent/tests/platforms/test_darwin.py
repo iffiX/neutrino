@@ -694,3 +694,22 @@ def test_a_mac_account_the_database_lacks_is_a_key_error(monkeypatch):
 
     with pytest.raises(KeyError):
         DarwinPlatform().run_as_account("ghost", ["id"])
+
+
+def test_a_mac_starts_a_long_lived_process_with_the_accounts_identity(monkeypatch):
+    monkeypatch.setattr(
+        darwin_module.pwd,
+        "getpwnam",
+        lambda name: AccountEntry("alice", 501, 20, "/Users/alice"),
+    )
+
+    command, process = DarwinPlatform().account_process("alice", ["/bin/zsh", "-l"])
+
+    assert command == ["/bin/zsh", "-l"]
+    assert (process["user"], process["group"], process["extra_groups"]) == (
+        501,
+        20,
+        [],
+    )
+    assert process["cwd"] == "/Users/alice"
+    assert process["env"]["HOME"] == "/Users/alice"

@@ -303,6 +303,7 @@ class DarwinPlatform(AgentPlatform):
         {
             "run_as",
             "accounts",
+            "account_shell",
             "control_socket",
             "agent_service",
             "power",
@@ -441,6 +442,22 @@ class DarwinPlatform(AgentPlatform):
             timeout=timeout_s,
             **extra,
         )
+
+    def account_process(self, account: str, argv: list) -> tuple:
+        """How a long-lived process starts as an account: its uid and group, no other groups, in its home.
+
+        Args:
+            account: The account.
+            argv: Argument vector.
+
+        Returns:
+            ``(argv, popen_arguments)``: the argument vector as it is, and
+            the account's uid, group, home and identity variables.
+
+        Raises:
+            KeyError: When the account database has no such account.
+        """
+        return list(argv), self._account_process(account)
 
     def run_as_account_answering(
         self,

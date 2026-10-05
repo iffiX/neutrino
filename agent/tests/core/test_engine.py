@@ -824,7 +824,7 @@ class NoPackagesPlatform(AgentPlatform):
     capabilities = frozenset({"metrics", "power"})
 
 
-def test_a_platform_without_packages_reports_only_the_built_in_row(
+def test_a_platform_without_packages_reports_only_what_the_agent_carries(
     monkeypatch, tmp_path
 ):
     monkeypatch.setattr(engine_module.rustdesk, "binary_path", lambda: "")
@@ -834,8 +834,8 @@ def test_a_platform_without_packages_reports_only_the_built_in_row(
 
     engine._refresh(is_forced=True)
 
-    assert engine.module_runners == {}
-    assert set(engine.report()) == {"rustdesk"}
+    assert set(engine.module_runners) == {"terminal"}
+    assert set(engine.report()) == {"rustdesk", "terminal"}
 
 
 def test_a_module_the_state_names_there_is_unsupported_never_failed(
@@ -905,7 +905,7 @@ def test_a_system_with_its_own_smb_server_runs_the_file_share_alone(
     engine._refresh(is_forced=True)
     report = engine.report()
 
-    assert set(engine.module_runners) == {"samba"}
+    assert set(engine.module_runners) == {"samba", "terminal"}
     assert report["samba"]["state"] == "installed"
     assert report["fakedesk"]["state"] == "unsupported"
     assert engine.install("samba", receive=None) == {}
@@ -948,7 +948,13 @@ def test_a_system_that_unpacks_the_hub_s_software_runs_vs_code_from_its_bytes(
 
     engine._refresh(is_forced=True)
 
-    assert set(engine.module_runners) == {"samba", "gitea", "vscode", "cloudcli"}
+    assert set(engine.module_runners) == {
+        "samba",
+        "gitea",
+        "vscode",
+        "cloudcli",
+        "terminal",
+    }
     assert engine.report()["vscode"]["state"] == "absent"
     assert engine.install("vscode", receive=receive) == {
         "code": "hub_unreachable",
@@ -990,4 +996,5 @@ def test_a_platform_with_packages_builds_the_vs_code_runner(tmp_path):
         "vscode",
         "code_server",
         "cloudcli",
+        "terminal",
     }

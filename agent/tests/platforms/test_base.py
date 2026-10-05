@@ -33,6 +33,7 @@ CONTRACT_CALLS = {
         ("alice", ["id"]),
         {"prompt": "(y/N)", "answer": "y\n"},
     ),
+    "account_process": ("account_shell", ("alice", ["id"]), {}),
     "install_system_packages": ("system_packages", (["cifs-utils"],), {}),
     "remove_system_packages": ("system_packages", (["cifs-utils"],), {}),
     "read_agent_service_state": ("agent_service", (), {}),
