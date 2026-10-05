@@ -53,7 +53,30 @@ HTTPS address, whose 301 removes the old cookie. The running app reads the
 setting at every request, so turning it on or off restarts nothing. A
 request whose peer is on loopback is served on the HTTP port with no 301,
 whatever the setting says: it is the hub's own forward of a client's
-**Panel** ("The connect stream"), which the channel already encrypts. The certificate is signed by the hub's
+**Panel** ("The connect stream"), which the channel already encrypts.
+
+A request on the HTTP port whose peer is on loopback and whose query
+carries `tkn` is a sign-in from a client holding `panel`. The token is the
+material of a `service {is_panel: true}` stream ("The service stream's
+close"): 32 random bytes in base64url, minted for that one answer, bound to
+the client's id, held in the panel's memory alone, spent by its first use,
+and dead after `WEB_PANEL_TOKEN_TTL_S` (60) seconds; a client holds at most
+`WEB_PANEL_TOKENS_MAX` (8) unspent, and a ninth pushes out the oldest. A
+token that spends opens an ordinary session marked with the client's id,
+sets the session cookie, and answers 302 to the same address without
+`tkn`. One that is unknown, spent, expired, or whose client has since been
+switched off or lost `panel` opens nothing and answers the same 302, so the
+browser lands on the login page; the hub logs why and shows nothing. A
+`tkn` from any other peer is never looked up and is dropped by the same
+302. Loopback is the socket's peer address as the HTTP server sees it,
+read by the one test the 301 above uses. A session a client opened ends
+when that client is switched off, removed, leaves, or loses `panel` from its
+own permission or from the default it follows; the hub logs `panel: signed
+in by client <name>` and `panel: session of client <name> ended (<why>)`.
+Inside such a session the vault's passphrase still unlocks the vault and
+`password/set` still asks for the current password.
+
+The certificate is signed by the hub's
 own certificate authority: EC P-256, valid for ten years, `CA:TRUE` with a
 path length of 0, and name constraints that permit `10.0.0.0/8`,
 `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`, `127.0.0.0/8` and the
@@ -436,7 +459,7 @@ moved. Its steps and their order are [network.md](modules/network.md),
 | `POST /api/hub/device/enrollment/create` | `{device_id?, name?, is_hub?}` | a link for that row, or for a new one; `is_hub` makes the link for the agent on the hub's own machine, which names loopback first and is not refused `no_reachable_address` |
 | `POST /api/hub/device/set` | `{device_id, name, icon, ssh, shown_module}`, each optional | the name, the icon, the stored SSH credential the hub reaches it with, and which module tabs its Modules page shows |
 | `POST /api/hub/device/remove` | `{device_id}` | forgets the device; its socket is closed with `binding_unknown` |
-| `POST /api/hub/device/wake` | `{device_id}` | Wake-on-LAN to the last link MAC; `wol_no_mac` when none is stored |
+| `POST /api/hub/device/wake` | `{device_id}` | Wake-on-LAN to the last link MAC, broadcast on every network the hub serves, or in `server` mode on the network of every exposed interface that holds an IPv4 address, never on an overlay; `wol_no_mac` when none is stored, `no_reachable_address` when there is no such network |
 | `POST /api/hub/device/agent/install` | `{device_id, ...}` | installs the agent over SSH; `TaskStarted` |
 | `POST /api/hub/device/agent/reinstall` | `{device_id}` | the `reinstall` verb over the channel |
 | `POST /api/hub/device/reboot` | `{device_id}` | the `reboot` verb |
@@ -478,13 +501,17 @@ a ticket lives `ENROLLMENT_TTL_S` 30 minutes whether the hub restarted or not.
 A permission kind is a published service type (`web`, `port`, `ai`, `file`,
 `rdp`), `overlay`, `terminal` or `panel`, `CLIENT_PERMISSION_KINDS` in
 `modules/clients/constants.py`. `panel` is the hub's own panel, opened from
-a client through `connect {is_panel: true}`. A permission may narrow each
+a client through `connect {is_panel: true}` and signed in with the token of
+`service {is_panel: true}` ("The panel ports"); it is off unless a
+permission names it, since it manages the hub without the panel password. A permission may narrow each
 kind but `overlay` and `panel` to the entries some devices provide: `devices` maps a kind to a list
 of device ids, and a kind with no list, or an empty one, allows every device.
 `config/clients/clients.json` holds `default_permission: {kinds, devices}`
 beside `clients`, and each client a `permission` that is null or `{kinds,
 devices}`, `devices` written only when it names a list; a file with no
-default allows every kind on every device. The device providing an entry is
+default allows every kind but `panel` on every device, and the default a
+fresh hub copies from `clients.example.json` names every kind but `panel`.
+The device providing an entry is
 the device that hosts it; the hub's own modules belong to the hub's own
 device when it has one; a declared record belongs to the device at its
 address, and one at no device's address passes only a kind with no list. A
@@ -492,7 +519,10 @@ client's `services` section holds only the entries whose type and device it
 is allowed, its `terminals` only the machines its `terminal` list allows, and
 a `shell` on a machine outside that list is refused `permission_denied {kind:
 terminal}`. A `connect` is judged as the `service` stream is, and a panel
-`connect` without `panel` is refused `permission_denied {kind: panel}`.
+`connect` or `service` without `panel` is refused `permission_denied {kind:
+panel}`. Switching a client off, removing it, its leave, and taking `panel`
+from it, through its own permission or the default it follows, end the
+panel sessions it opened.
 Taking `ai` away revokes its gateway key. Deleting a device takes
 its id out of every list, the default's and each client's, turns off each kind
 whose list named only that device, and pushes every client its state. A kind
@@ -1206,7 +1236,7 @@ is added without a change to the protocol; a kind is added by a row here.
 | agent, to the hub | `log` | `{module}`: opened for an install or an uninstall, output up as binary frames line by line, closed with `params: {state}` |
 | hub, to an agent | `command` | `{module, verb, ...args}`: `{agent, reboot}`, `{samba, reload}`, `{zfs, validate, config}`; an unknown kind is closed `kind_unknown` and an unknown verb `verb_unknown`, which the panel shows as `unsupported`; closed with `params: {exit_code, output, result}` |
 | agent, to the hub | `package` | `{module}` for a module's package bytes from the hub's cache, `{}` for the agent's own package; the close's `params` has the `sha256` of the bytes sent and `name`, the file's own name as its release gave it, with no directory |
-| client, to the hub | `service` | `{id}`: one published entry. The close is the whole answer, its `params` the material that entry takes from the hub and its `code` the reason it takes none; a new service type adds no kind |
+| client, to the hub | `service` | `{id}`: one published entry, or `{is_panel: true}`: a sign-in to the hub's own panel. The close is the whole answer, its `params` the material that entry takes from the hub and its `code` the reason it takes none; a new service type adds no kind |
 | client, to the hub | `shell` | `{device_id, cols, rows, session_id, is_resumed, is_shared}`: a shell on a managed machine, which the hub opens as the agent's own `shell` with the same `session_id`, `is_resumed` and `is_shared`, stamped `owner: client:<id>`, and relays terminal bytes both ways, each side under the other's credit; closed with `params: {exit_code}`, or refused `binding_unknown`, `client_disabled`, `permission_denied {kind: terminal}` (no `terminal`, or a machine outside its device list) or `agent_offline {device}` before any agent stream opens |
 | client, to the hub | `command` | `{module: agent, verb: resize, shell, cols, rows}`, `shell` being the client's own `shell` stream id, which the hub maps to the agent's; closed empty once sent on, `shell_unknown {shell}` when no such shell is open. `{module: agent, verb: persist, session_id, is_persistent, is_shared}` and `{module: agent, verb: stop_session, session_id}` go unchanged to the machine holding the session, the one this client's open `shell` names for the id or else the online machine whose report lists it, and close with the agent's close; `session_unknown {session_id}` when no machine holds it, `session_not_owned {session_id}` for a `persist` on a session the machine reports under another owner, and the `shell` stream's permission refusals for that machine. A `persist` names only the flags it carries. `verb_unknown` for any other module or verb. A hub before 0.4.0 closes both kinds `kind_unknown`, which a client reads as a refusal |
 | client, to the hub | `connect` | `{id}`, one published entry by the id a `service` stream takes, or `{is_panel: true}`, the hub's own panel: one TCP connection to that service. Bytes both ways under credit; closed empty when either end's socket ends, or with a refusal's code. "The connect stream" has the checks, the far ends and the codes |
@@ -1258,9 +1288,11 @@ every one.
 
 ### The service stream's close
 
-A `service` stream names one published entry by `id`, and the hub judges it
-for that client at that moment. The checks run in the order below and the
-first that fails gives the close its code:
+A `service` stream names one published entry by `id`, or the panel by
+`is_panel: true`, and the hub judges it for that client at that moment.
+The checks run in the order below and the first that fails gives the close
+its code; the panel's are `binding_unknown`, `client_disabled` and
+`permission_denied {kind: panel}`:
 
 | `code` | Given when |
 | --- | --- |
@@ -1283,6 +1315,7 @@ first that fails gives the close its code:
 | `web` with `description_code` `vscode_module` | `{token}`: the instance's connection token |
 | `web` with `description_code` `code_server_module` or `cloudcli_module` | `{token}`: `base64url(expiry \|\| nonce \|\| HMAC-SHA256(secret, expiry \|\| nonce))`, minted by the hub for this answer alone with `expiry` 60 seconds ahead and `secret` the instance's own ([agent.md](agent.md), "CloudCLI"); it works once |
 | `web`, `port`, `file` | empty: the entry's `payload` is already everything the client needs |
+| the panel, `{is_panel: true}` | `{token}`: a sign-in for one browser, minted for this answer alone, which the client opens at its panel forward's address with `?tkn=<token>` ("The panel ports") |
 
 A client opens every `web` entry with `is_token_required` at its forward's
 own address with `?tkn=<token>` added ([client.md](client.md), "The Web
@@ -1425,7 +1458,7 @@ agent has reported on its link.
 | --- | --- |
 | a blank link joins: which row | the row whose `machine_id` matches, else a new one |
 | a scan row merges into which device | any stored MAC |
-| Wake-on-LAN goes to | the most recent link MAC |
+| Wake-on-LAN goes to | the most recent link MAC, on the served networks, or a `server` hub's exposed ones |
 | `is_hub` | `machine_id` equals the hub box's own |
 
 The device's address is the report's `network.link.address`; the socket's peer

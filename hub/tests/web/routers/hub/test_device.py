@@ -516,21 +516,21 @@ def test_the_packet_goes_to_the_served_network_and_never_the_overlay(
     monkeypatch.setattr(
         devices_router,
         "send_magic_packet",
-        lambda mac, *, broadcast_address: sent.append((mac, broadcast_address)),
+        lambda mac, *, broadcast_address, source_address: sent.append(
+            (mac, broadcast_address, source_address)
+        ),
     )
 
     result = devices_router.wake(DeviceRequest(device_id=DEVICE), runtime=gateway)
 
     assert result.is_sent is True
-    assert sent == [(LINK_MAC, "192.168.100.255")]
+    assert sent == [(LINK_MAC, "192.168.100.255", "192.168.100.1")]
     assert result.code == "wol_sent"
 
 
 def test_a_device_that_never_reported_a_mac_is_refused(gateway, monkeypatch):
     WakeRegistry.device.link_mac = ""
-    monkeypatch.setattr(
-        devices_router, "send_magic_packet", lambda mac, *, broadcast_address: None
-    )
+    monkeypatch.setattr(devices_router, "send_magic_packet", lambda mac, **kwargs: None)
 
     with pytest.raises(HTTPException) as refused:
         devices_router.wake(DeviceRequest(device_id=DEVICE), runtime=gateway)
@@ -556,7 +556,7 @@ def test_one_domain_refusing_does_not_stop_the_others(monkeypatch, sleeping):
         lan_entry("wlp3s0", address="192.168.101.1"),
     )
 
-    def send(mac, *, broadcast_address):
+    def send(mac, *, broadcast_address, source_address):
         if broadcast_address.startswith("192.168.100."):
             raise OSError(126, "Required key not available")
 
@@ -573,7 +573,7 @@ def test_one_domain_refusing_does_not_stop_the_others(monkeypatch, sleeping):
 def test_every_domain_refusing_is_the_failure_it_says(monkeypatch, sleeping):
     network = network_config(lan_entry("enp1s0", address="192.168.100.1"))
 
-    def send(mac, *, broadcast_address):
+    def send(mac, *, broadcast_address, source_address):
         raise OSError(126, "Required key not available")
 
     monkeypatch.setattr(devices_router, "send_magic_packet", send)
@@ -586,6 +586,61 @@ def test_every_domain_refusing_is_the_failure_it_says(monkeypatch, sleeping):
     assert result.code == "wol_failed"
     assert "192.168.100.255" in result.params["detail"]
     assert "Required key" in result.params["detail"]
+
+
+def test_a_server_wakes_on_every_network_it_is_exposed_on(monkeypatch, sleeping):
+    network = network_config(
+        {"name": "enp3s0", "role": "disabled", "is_exposed": True},
+        {"name": "wlp4s0", "role": "disabled", "is_exposed": True},
+        overlays=[{"provider": "easytier", "is_exposed": True, "is_enabled": True}],
+        mode="server",
+    )
+    monkeypatch.setattr(
+        devices_router,
+        "device_addresses",
+        lambda: {
+            "enp3s0": "192.168.1.54/24",
+            "wlp4s0": "10.20.0.7/16",
+            "easytier": "10.126.126.1/24",
+        },
+    )
+    sent = []
+    monkeypatch.setattr(
+        devices_router,
+        "send_magic_packet",
+        lambda mac, *, broadcast_address, source_address: sent.append(
+            (broadcast_address, source_address)
+        ),
+    )
+
+    result = devices_router.wake(
+        DeviceRequest(device_id=DEVICE), runtime=WakeRuntime(network)
+    )
+
+    assert result.code == "wol_sent"
+    assert sent == [("192.168.1.255", "192.168.1.54"), ("10.20.255.255", "10.20.0.7")]
+
+
+def test_a_server_exposed_nowhere_has_no_reachable_address(monkeypatch, sleeping):
+    network = network_config(
+        {"name": "enp3s0", "role": "disabled", "is_exposed": False},
+        overlays=[],
+        mode="server",
+    )
+    monkeypatch.setattr(
+        devices_router, "device_addresses", lambda: {"enp3s0": "192.168.1.54/24"}
+    )
+    monkeypatch.setattr(
+        devices_router,
+        "send_magic_packet",
+        lambda mac, **kwargs: pytest.fail("nowhere to send"),
+    )
+
+    result = devices_router.wake(
+        DeviceRequest(device_id=DEVICE), runtime=WakeRuntime(network)
+    )
+
+    assert (result.is_sent, result.code) == (False, "no_reachable_address")
 
 
 # --- the seat password: reset, sealed, and handed down ---

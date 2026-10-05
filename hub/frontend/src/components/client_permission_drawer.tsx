@@ -32,6 +32,9 @@ const KIND_DISPLAY_ORDER = [
 /** The kinds that belong to the hub alone and take no device filter. */
 const HUB_KINDS = ["overlay", "panel"];
 
+/** The kind that signs a client in to the panel without the password. */
+const KIND_PANEL = "panel";
+
 /** Device ids by kind; a kind with no list allows every device. */
 export type PermissionDevices = Record<string, string[]>;
 
@@ -198,6 +201,11 @@ export function ClientPermissionDrawer({
                       isOn={isOn}
                       onChange={(next) => toggle(kind, next)}
                       label={t(`ui.clients.kind_${kind}`)}
+                      description={
+                        kind === KIND_PANEL
+                          ? t("ui.clients.kind_panel_description")
+                          : undefined
+                      }
                       isDisabled={isKindLocked}
                     />
                     {!HUB_KINDS.includes(kind) && (

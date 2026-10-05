@@ -58,6 +58,11 @@ left `accept` — docker, libvirt and whatever else forwards across that machine
 are not the hub's to police, and a drop policy there cuts every one of them off
 without saying so.
 
+A `server` hub's exposed networks stand where a router's served ones do for
+reaching the machines around it: a Wake-on-LAN packet is broadcast on the
+network of each exposed interface that holds an IPv4 address, and never on an
+overlay, which has no broadcast domain.
+
 **`server` and `side_gateway` touch nothing at all.** No connection is edited,
 no manager is stopped, no file outside the hub's own roots is written. A
 kernel switch is flipped only for a rule that needs it: `server` forwards

@@ -1,5 +1,8 @@
 """What a client is handed when it opens a ``service`` or a ``connect`` stream.
 
+A ``service {is_panel: true}`` stream is answered with a panel sign-in
+token for a client that holds the ``panel`` permission.
+
 A ``service`` stream's close is the material: ``{password}`` for a desktop,
 ``{api_key, model}`` for the AI gateway, ``{token}`` for a VS Code
 instance, and for a CloudCLI or code-server instance a ``{token}`` minted for that
@@ -131,6 +134,28 @@ def service_material(runtime, client_id: str, entry_id: str) -> tuple:
             return VaultLockedError.code, {}
         return "", {"token": token}
     return "", {}
+
+
+def panel_material(runtime, client_id: str) -> tuple:
+    """A panel sign-in token for one client, judged now.
+
+    Args:
+        runtime: The shared runtime, which holds the panel's tokens.
+        client_id: The client asking.
+
+    Returns:
+        ``(code, params)``: the close of a ``service {is_panel: true}``
+        stream; an empty code with ``{token}``, or ``binding_unknown``,
+        ``client_disabled`` or ``permission_denied {kind: panel}``.
+    """
+    registry = ClientRegistry()
+    client = registry.get(client_id)
+    code, params = _client_refusal(client)
+    if code:
+        return code, params
+    if CLIENT_PERMISSION_PANEL not in permitted_kinds(registry, client):
+        return CLIENT_CODE_PERMISSION_DENIED, {"kind": CLIENT_PERMISSION_PANEL}
+    return "", {"token": runtime.panel_tokens.mint(client.id)}
 
 
 def connect_target(

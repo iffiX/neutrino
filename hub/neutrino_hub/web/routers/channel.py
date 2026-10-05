@@ -59,6 +59,7 @@ from neutrino_hub.web.models import (
     ChannelLeaveRequest,
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
+from neutrino_hub.web.panel_sign_in import SESSION_END_LEFT, end_client_panel_sessions
 
 router = APIRouter(prefix="/api/channel", tags=["channel"])
 
@@ -164,6 +165,7 @@ def leave(
         revoke_client_key(registry, client)
     registry.forget(binding.id)
     runtime.forget_client(binding.id)
+    end_client_panel_sessions(runtime, why=SESSION_END_LEFT)
     runtime.events.publish(WEB_EVENT_CLIENTS)
     return {}
 

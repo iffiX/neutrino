@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 
 from neutrino_hub.modules.clients.constants import (
     CLIENT_PERMISSION_FILTERED_KINDS,
+    CLIENT_DEFAULT_PERMISSION_KINDS,
     CLIENT_PERMISSION_KINDS,
     CLIENT_TOKEN_BYTES,
     CLIENTS_CONFIG_PATH,
@@ -335,10 +336,11 @@ class ClientRegistry:
         """The kinds a client with no set of its own is allowed.
 
         Returns:
-            The kinds; every kind when the file names no default.
+            The kinds; every kind but ``panel`` when the file names no
+            default.
         """
         if self._default is None:
-            return list(CLIENT_PERMISSION_KINDS)
+            return list(CLIENT_DEFAULT_PERMISSION_KINDS)
         return list(self._default)
 
     def default_permission_devices(self) -> dict:

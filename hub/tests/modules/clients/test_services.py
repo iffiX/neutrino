@@ -19,6 +19,7 @@ from neutrino_hub.modules.clients.services import (
     ConnectTarget,
     connect_target,
     entry_port,
+    panel_material,
     service_material,
 )
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
@@ -471,6 +472,7 @@ def test_the_panel_is_its_own_kind_on_loopback_at_the_panels_http_port(config_di
     runtime = FakeRuntime()
     registry = ClientRegistry()
     client_id = registry.create("alice")
+    registry.set_permission(client_id, ["web", "panel"])
 
     assert target(runtime, client_id, {"is_panel": True}) == (
         "",
@@ -545,3 +547,46 @@ def test_the_gateway_is_dialled_on_loopback_at_its_port(config_dir, gateway_port
 )
 def test_an_entrys_port_follows_its_type(entry, port):
     assert entry_port(entry) == port
+
+
+# --- the panel's sign-in token ---
+
+
+class TokenRuntime(FakeRuntime):
+    def __init__(self):
+        super().__init__()
+        self.minted: list = []
+        self.panel_tokens = self
+
+    def mint(self, client_id):
+        self.minted.append(client_id)
+        return f"token-{len(self.minted)}"
+
+
+def test_a_client_holding_the_panel_is_handed_a_fresh_token_each_time(config_dir):
+    runtime = TokenRuntime()
+    registry = ClientRegistry()
+    client_id = registry.create("alice")
+    registry.set_permission(client_id, ["panel"])
+
+    first = panel_material(runtime, client_id)
+    second = panel_material(runtime, client_id)
+
+    assert (first, second) == (("", {"token": "token-1"}), ("", {"token": "token-2"}))
+    assert runtime.minted == [client_id, client_id]
+
+
+def test_a_panel_token_is_refused_in_the_service_streams_order(config_dir):
+    runtime = TokenRuntime()
+    registry = ClientRegistry()
+    client_id = registry.create("alice")
+
+    assert panel_material(runtime, "nobody") == ("binding_unknown", {})
+    assert panel_material(runtime, client_id) == (
+        "permission_denied",
+        {"kind": "panel"},
+    )
+    registry.set_permission(client_id, ["panel"])
+    registry.set_disabled(client_id, True)
+    assert panel_material(runtime, client_id) == ("client_disabled", {})
+    assert runtime.minted == []

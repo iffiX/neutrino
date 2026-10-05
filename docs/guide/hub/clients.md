@@ -28,24 +28,24 @@ Each row shows the client's **Name**, **Hostname**, **Platform**, **Version**, *
 
 Each kind has its own switch:
 
-| Kind                | What the client gets                                                                 |
-| ------------------- | ------------------------------------------------------------------------------------ |
-| **Virtual network** | joins the hub's overlay networks as a peer                                           |
-| **Web pages**       | the web entries, opened in a browser                                                 |
-| **Ports**           | TCP ports forwarded to the computer's `127.0.0.1`                                    |
-| **AI gateway**      | its own key and the gateway's address                                                |
-| **Files**           | SMB shares to mount                                                                  |
-| **Terminals**       | shells on managed machines                                                           |
-| **Remote desktops** | the desktops machines share                                                          |
-| **Hub panel**       | the **Panel** button on the client's hub row, which opens this panel through the hub |
+| Kind                               | What the client gets                                                                                   |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| **Virtual network**                | joins the hub's overlay networks as a peer                                                             |
+| **Web pages**                      | the web entries, opened in a browser                                                                   |
+| **Ports**                          | TCP ports forwarded to the computer's `127.0.0.1`                                                      |
+| **AI gateway**                     | its own key and the gateway's address                                                                  |
+| **Files**                          | SMB shares to mount                                                                                    |
+| **Terminals**                      | shells on managed machines                                                                             |
+| **Remote desktops**                | the desktops machines share                                                                            |
+| **Hub panel without the password** | the **Panel** button on the client's hub row, which opens this panel through the hub already signed in |
 
-Every kind is on by default. **Hub panel** opens the panel's sign-in page and nothing more; the panel password still guards it.
+Every kind but **Hub panel without the password** is on by default. That one lets the client change everything this panel can without the panel password, so turn it on only for a device of your own. Its panel sessions end when you disable or remove the client, when it leaves, and when you turn the switch off again. Unlocking the vault still asks for the vault's passphrase, and changing the panel password still asks for the current one.
 
 After changing switches, select **Apply permissions**. The hub sends the new list to that client, or to every client that follows the default.
 
 ## Device filters
 
-Beside every switch but **Virtual network** and **Hub panel**, a filter reads **All agents**. To narrow a kind:
+Beside every switch but **Virtual network** and **Hub panel without the password**, a filter reads **All agents**. To narrow a kind:
 
 1. Select the filter beside the kind.
 1. Tick the managed devices whose entries the client can reach.

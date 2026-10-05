@@ -87,7 +87,7 @@ from neutrino_hub.utils.json_file import (
     write_config,
 )
 from neutrino_hub.utils.subprocess_run import command_failure_text
-from neutrino_hub.web.auth import SessionStore, session_secret
+from neutrino_hub.web.auth import PanelTokenStore, SessionStore, session_secret
 from neutrino_hub.web import channel_state
 from neutrino_hub.web.address_sampler import PanelAddressSampler
 from neutrino_hub.web.agent_tls import certificate_fingerprint
@@ -125,6 +125,8 @@ class PanelRuntime:
             password_hash=settings.get("admin_password_hash", ""),
             session_ttl_hours=settings.get("session_ttl_hours", 168),
         )
+        # The sign-in tokens minted for clients that hold the panel permission.
+        self.panel_tokens = PanelTokenStore()
         # The one channel the panel hears about everything on. Built first,
         # since what follows publishes through it.
         self.events = PanelEventBus()

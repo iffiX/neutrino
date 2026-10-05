@@ -26,6 +26,7 @@ from neutrino_hub.web import ws
 from neutrino_hub.web.constants import WEB_CODE_BODY_INVALID, WEB_FRONTEND_DIST_DIR
 from neutrino_hub.web.https_redirect import PanelHttpsRedirectMiddleware
 from neutrino_hub.web.origin_guard import OriginGuardMiddleware
+from neutrino_hub.web.panel_sign_in import PanelSignInMiddleware
 from neutrino_hub.web.panel_runtime import PanelRuntime
 from neutrino_hub.web.usage_collector import PanelUsageCollector
 from neutrino_hub.web.routers import channel
@@ -104,6 +105,7 @@ def create_app() -> FastAPI:
     app.state.runtime = shared_runtime()
     app.add_exception_handler(VaultLockedError, _vault_locked)
     app.add_exception_handler(RequestValidationError, _body_invalid)
+    app.add_middleware(PanelSignInMiddleware, runtime=app.state.runtime)
     app.add_middleware(OriginGuardMiddleware)
     app.add_middleware(PanelHttpsRedirectMiddleware, runtime=app.state.runtime)
     _settle_gateway_key()

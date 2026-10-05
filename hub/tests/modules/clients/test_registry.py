@@ -24,7 +24,7 @@ def stored(config_dir) -> dict:
     return data["clients"]
 
 
-def test_a_hub_set_up_from_the_examples_allows_every_kind_the_panel_among_them(
+def test_a_hub_set_up_from_the_examples_allows_every_kind_but_the_panel(
     config_dir,
 ):
     copy_example(
@@ -34,8 +34,9 @@ def test_a_hub_set_up_from_the_examples_allows_every_kind_the_panel_among_them(
 
     registry = ClientRegistry()
 
-    assert registry.default_permission() == list(CLIENT_PERMISSION_KINDS)
-    assert "panel" in registry.default_permission()
+    assert registry.default_permission() == [
+        kind for kind in CLIENT_PERMISSION_KINDS if kind != "panel"
+    ]
     assert registry.default_permission_devices() == {}
 
 
@@ -165,7 +166,7 @@ def test_the_switch_and_the_key_id_are_written_and_forget_removes_the_row(
     assert ClientRegistry().all() == []
 
 
-def test_a_file_with_no_default_allows_every_kind(config_dir):
+def test_a_file_with_no_default_allows_every_kind_but_the_panel(config_dir):
     registry = ClientRegistry()
     client_id = registry.create("alice")
 
@@ -177,7 +178,6 @@ def test_a_file_with_no_default_allows_every_kind(config_dir):
         "rdp",
         "overlay",
         "terminal",
-        "panel",
     ]
     assert ClientRegistry().get(client_id).permission is None
 
