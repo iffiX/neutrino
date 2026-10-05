@@ -1574,9 +1574,12 @@ shows and never dials, since its bytes go over `connect`:
    one `overlay` scope per overlay interface holding an IPv4 address, told
    apart by the CIDR that address and its prefix name. The first scope whose
    network holds the peer is the answer. Anything else (an exposed WAN, the
-   interface in server mode, a client behind NAT) is `link`. A peer on
-   loopback came through the relay: it is `link` with no hub address of its
-   own, so every entry keeps the host it was composed with.
+   interface in server mode, a client behind NAT, a client that came
+   through Direct) is `link`, with the address the client dialled as the
+   hub's own. A peer on loopback came through the relay and dialled the
+   relay's address, which is no address of this hub: it is `link` with the
+   hub's own name as the hub's own, so the hub's own entries show that name
+   and two hubs behind one server do not look like one host.
 1. `device_host_for(scope, interfaces, link_address)` takes the first of the
    device's reported `interfaces[].addresses` inside that scope, the link
    address first when it is among them. With none inside, it takes
