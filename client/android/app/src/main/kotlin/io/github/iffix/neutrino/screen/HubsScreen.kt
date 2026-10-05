@@ -179,6 +179,16 @@ fun hubStateKey(hub: HubView): String = when {
 fun hubStateWord(hub: HubView, words: WordCatalog): String =
     words.word(hubStateKey(hub), mapOf("way" to words.word("ui.through.${hub.reachedThrough}")))
 
+/**
+ * Whether a hub row draws its virtual network line: a hub that publishes no network has none,
+ * unless a network of its is still on or stopping.
+ *
+ * @param hub The hub.
+ * @return True when the row shows the line, its button and its reason.
+ */
+fun hasNetworkLine(hub: HubView): Boolean = hub.binding.overlays.isNotEmpty() ||
+    hub.overlay.state != OverlayState.OFF || hub.overlay.job != OverlayJob.NONE
+
 @Composable
 private fun waitedSeconds(line: OverlayLine): Long {
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -224,8 +234,6 @@ private fun HubRow(
 
         hub.isDisabled -> words.word("ui.reason.disabled")
 
-        networks.isEmpty() -> words.word("ui.reason.no_network")
-
         otherNetwork != null -> words.refusal(
             "overlay_other_network",
             mapOf("network" to (networks.firstOrNull { it.provider == chosen }?.title ?: chosen)),
@@ -248,7 +256,7 @@ private fun HubRow(
                 )
             }
             when {
-                hub.isJoinRefused -> Unit
+                hub.isJoinRefused || !hasNetworkLine(hub) -> Unit
 
                 line.state == OverlayState.CONNECTING -> NeutrinoButton(
                     words.word("ui.network_cancel"),
@@ -310,25 +318,37 @@ private fun HubRow(
         }
         BasicText(hub.connectedAddress.ifEmpty { hub.binding.gatewayUrl } + software, style = NeutrinoTheme.mono)
         ErrorLine(hub.jobError ?: hub.lastError?.takeIf { !hub.jobs.isRefreshing })
-        Row(
-            modifier = Modifier.padding(top = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            StatusDot(
-                when (line.state) {
-                    OverlayState.ON -> if (line.job == OverlayJob.NONE) DotTone.OK else DotTone.PULSE
-                    OverlayState.CONNECTING -> DotTone.PULSE
-                    OverlayState.OFF -> DotTone.OFF
-                },
-            )
-            val state = words.word("ui.overlay.${line.state.wireName}", mapOf("address" to line.address))
-            val engine = if (networks.size == 1) " · " + networks.first().title else ""
-            BasicText(words.word("ui.overlay") + " · " + state + engine, style = NeutrinoTheme.note)
+        if (hasNetworkLine(hub)) {
+            NetworkLine(hub, networkReason)
+        } else {
+            ReasonLine(words.word("ui.reason.disabled").takeIf { hub.isDisabled })
         }
-        ErrorLine(line.error)
-        ReasonLine(networkReason ?: words.word("ui.reason.disabled").takeIf { hub.isDisabled })
     }
+}
+
+@Composable
+private fun NetworkLine(hub: HubView, networkReason: String?) {
+    val words = NeutrinoTheme.words
+    val networks = hub.binding.overlays
+    val line = hub.overlay
+    Row(
+        modifier = Modifier.padding(top = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        StatusDot(
+            when (line.state) {
+                OverlayState.ON -> if (line.job == OverlayJob.NONE) DotTone.OK else DotTone.PULSE
+                OverlayState.CONNECTING -> DotTone.PULSE
+                OverlayState.OFF -> DotTone.OFF
+            },
+        )
+        val state = words.word("ui.overlay.${line.state.wireName}", mapOf("address" to line.address))
+        val engine = if (networks.size == 1) " · " + networks.first().title else ""
+        BasicText(words.word("ui.overlay") + " · " + state + engine, style = NeutrinoTheme.note)
+    }
+    ErrorLine(line.error)
+    ReasonLine(networkReason ?: words.word("ui.reason.disabled").takeIf { hub.isDisabled })
 }
 
 @Preview(widthDp = 400, heightDp = 700)
