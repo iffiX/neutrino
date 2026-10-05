@@ -11,6 +11,11 @@ import io.github.iffix.neutrino.design.NeutrinoTheme
 import io.github.iffix.neutrino.design.ScreenList
 import io.github.iffix.neutrino.design.cardRows
 import io.github.iffix.neutrino.design.gap
+import io.github.iffix.neutrino.words.WordCatalog
+import kotlinx.serialization.json.JsonPrimitive
+
+/** The module names the desktop client words an entry's origin code with. */
+private val ENTRY_MODULES = mapOf("gitea_module" to "Gitea", "samba_module" to "Samba", "device_share" to "RustDesk")
 
 /**
  * A service screen's body: every connected hub's entries of one type in one card, a row for
@@ -79,10 +84,35 @@ fun entryTone(hub: HubView, entry: ChannelServiceEntry, isBusy: Boolean = false)
  * @return The line.
  */
 @Composable
-fun providedBy(hub: HubView, entry: ChannelServiceEntry, fallbackHost: String): String = NeutrinoTheme.words.word(
-    "ui.machine_provided_by",
-    mapOf("hub" to hub.binding.title, "device" to entry.deviceName.ifEmpty { fallbackHost }),
-)
+fun providedBy(hub: HubView, entry: ChannelServiceEntry, fallbackHost: String): String =
+    providerLine(hub, entry, fallbackHost, NeutrinoTheme.words)
+
+/**
+ * Who provides an entry: `<hub>:<machine>`, the machine being the address the entry points at when
+ * the hub names none. An entry the hub's own machine serves, whose machine has the hub's name,
+ * names the hub once and then what the entry is, as the desktop client does.
+ *
+ * @param hub The hub that publishes it.
+ * @param entry The entry.
+ * @param fallbackHost The address to name when the hub names no machine.
+ * @param words The catalog.
+ * @return The line.
+ */
+fun providerLine(hub: HubView, entry: ChannelServiceEntry, fallbackHost: String, words: WordCatalog): String {
+    val name = hub.binding.title
+    val device = entry.deviceName.ifEmpty { fallbackHost }
+    val second = if (device == name) entryModule(entry, words) else device
+    return words.word("ui.machine_provided_by", mapOf("hub" to name, "device" to second))
+}
+
+private fun entryModule(entry: ChannelServiceEntry, words: WordCatalog): String = when (entry.descriptionCode) {
+    "ai_gateway" -> words.word("ui.module_ai_gateway")
+
+    "container" -> (entry.descriptionParams["image"] as? JsonPrimitive)?.content.orEmpty()
+        .substringAfterLast('/').ifEmpty { entry.title }
+
+    else -> ENTRY_MODULES[entry.descriptionCode] ?: entry.title
+}
 
 private fun androidx.compose.foundation.lazy.LazyListScope.sentence(text: String) {
     cardRows(listOf(text), key = { "sentence" }) { line, _ ->
