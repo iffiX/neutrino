@@ -273,6 +273,7 @@ class ClientHubSession:
         binding: dict,
         hostname: str,
         platform_tuple: dict,
+        os_machine_id: str = "",
         log=print,
         on_change=None,
         on_services=None,
@@ -289,6 +290,8 @@ class ClientHubSession:
             hostname: This machine's hostname, sent in every report.
             platform_tuple: This machine's platform tuple, sent in every
                 report.
+            os_machine_id: The operating system's id for this machine, sent
+                in every report; empty sends none.
             log: Callable used for progress messages.
             on_change: Called with no arguments after every change of what
                 a page draws; None for nobody listening.
@@ -313,6 +316,7 @@ class ClientHubSession:
         self._binding = dict(binding)
         self._hostname = hostname
         self._platform_tuple = dict(platform_tuple)
+        self._os_machine_id = os_machine_id
         self._on_change = on_change if on_change is not None else _nobody
         self._on_services = on_services if on_services is not None else _nobody
         self._on_disabled = on_disabled if on_disabled is not None else _nobody
@@ -1456,6 +1460,8 @@ class ClientHubSession:
                 "platform": dict(self._platform_tuple),
             },
         }
+        if self._os_machine_id:
+            report["machine"]["os_machine_id"] = self._os_machine_id
         if is_refresh:
             report["is_refresh"] = True
         client.send_text(json.dumps(report))

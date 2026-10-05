@@ -168,6 +168,15 @@ class ClientPlatform:
         """This person's home directory."""
         return os.path.expanduser("~")
 
+    def os_machine_id(self) -> str:
+        """The operating system's id for this machine, read where an agent
+        reads its own.
+
+        Returns:
+            The id; empty where the platform has none or it cannot be read.
+        """
+        return ""
+
     def agent_program_dir(self) -> str:
         """Where the agent's package puts its program on this platform.
 

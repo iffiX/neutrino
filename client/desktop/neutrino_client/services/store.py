@@ -39,8 +39,17 @@ from neutrino_client.constants import (
     CLIENT_THEMES,
 )
 
-# What one mount record keeps; a record's other fields are dropped.
-STORE_MOUNT_KEYS = ("hub_id", "entry_id", "host", "share", "username", "path")
+# What one mount record keeps, whether its share was on this machine at its
+# last mount among them; a record's other fields are dropped.
+STORE_MOUNT_KEYS = (
+    "hub_id",
+    "entry_id",
+    "host",
+    "share",
+    "username",
+    "path",
+    "is_own_machine",
+)
 # How often, and how far apart, a replace the system refuses with the
 # file held open is tried.
 STORE_REPLACE_TRIES = 20

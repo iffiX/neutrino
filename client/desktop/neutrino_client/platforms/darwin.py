@@ -97,6 +97,11 @@ LANGUAGE_TIMEOUT_S = 5
 # The first quoted entry of the array ``defaults`` prints.
 LANGUAGE_ENTRY = re.compile(r'"([^"]+)"')
 
+# The platform UUID the firmware reports; the agent reads the same.
+MACHINE_ID_COMMAND = ["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"]
+MACHINE_ID_TIMEOUT_S = 10
+MACHINE_ID_ENTRY = re.compile(r'"IOPlatformUUID"\s*=\s*"([^"]+)"')
+
 OPEN_TOOL = "open"
 OPEN_TIMEOUT_S = 10
 
@@ -158,6 +163,15 @@ class DarwinPlatform(ClientPlatform):
     def log_dir(self) -> str:
         """``~/Library/Logs/Neutrino/client``."""
         return os.path.join(self.home(), DARWIN_LOG_DIR)
+
+    def os_machine_id(self) -> str:
+        """The platform UUID the firmware reports."""
+        try:
+            result = run_quietly(MACHINE_ID_COMMAND, timeout_s=MACHINE_ID_TIMEOUT_S)
+        except (OSError, subprocess.SubprocessError):
+            return ""
+        found = MACHINE_ID_ENTRY.search(result.stdout or "")
+        return found.group(1) if result.returncode == 0 and found else ""
 
     def agent_program_dir(self) -> str:
         """``/Library/Application Support/Neutrino/agent/app``."""

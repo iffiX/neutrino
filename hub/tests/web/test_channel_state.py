@@ -633,6 +633,88 @@ def test_an_ipv6_peer_is_judged_by_the_box_s_ipv6_networks(config_dir, peer, way
     assert asked == [not peer.startswith("::ffff:")]
 
 
+def own_machine_runtime(config_dir, monkeypatch) -> tuple:
+    """A hub on machine ``hub-machine`` with two devices and four entries."""
+    monkeypatch.setattr(channel_state, "machine_id", lambda: "hub-machine")
+    monkeypatch.setattr(clients_services, "machine_id", lambda: "hub-machine")
+    runtime = FakeRuntime()
+    devices = DeviceRegistry()
+    argon = devices.create("argon", machine_id="argon-machine")
+    muon = devices.create("muon")
+    runtime.device_address[argon.id] = "192.168.100.7"
+    runtime.published_services.entries = [
+        dict(ENTRY, id="share_on_argon", type="file", device_id=argon.id),
+        dict(ENTRY, id="share_on_muon", type="file", device_id=muon.id),
+        dict(ENTRY, id="ai_gateway", type="ai", payload={"endpoint": "http://x/v1"}),
+        dict(
+            ENTRY,
+            id="declared_on_argon",
+            source="declared",
+            payload={"url": "http://192.168.100.7:8080/"},
+        ),
+        dict(
+            ENTRY,
+            id="declared_elsewhere",
+            type="port",
+            source="declared",
+            payload={"host": "203.0.113.9", "port": 22},
+        ),
+    ]
+    return runtime, ClientRegistry().create("alice")
+
+
+def own_flags(state: dict) -> dict:
+    return {entry["id"]: entry["is_own_machine"] for entry in state["services"]}
+
+
+def test_the_entries_a_clients_own_machine_provides_say_so(config_dir, monkeypatch):
+    runtime, client_id = own_machine_runtime(config_dir, monkeypatch)
+    ClientRegistry().record_seen(
+        client_id, hostname="", platform={}, version="", os_machine_id="argon-machine"
+    )
+
+    state = channel_state.client_state(runtime, client_id)
+
+    assert own_flags(state) == {
+        "share_on_argon": True,
+        "share_on_muon": False,
+        "ai_gateway": False,
+        "declared_on_argon": True,
+        "declared_elsewhere": False,
+    }
+
+
+def test_a_client_on_the_hubs_machine_owns_the_hubs_entries(config_dir, monkeypatch):
+    runtime, client_id = own_machine_runtime(config_dir, monkeypatch)
+    ClientRegistry().record_seen(
+        client_id, hostname="", platform={}, version="", os_machine_id="hub-machine"
+    )
+
+    state = channel_state.client_state(runtime, client_id)
+
+    assert own_flags(state) == {
+        "share_on_argon": False,
+        "share_on_muon": False,
+        "ai_gateway": True,
+        "declared_on_argon": False,
+        "declared_elsewhere": False,
+    }
+
+
+def test_a_client_that_names_no_machine_owns_nothing(config_dir, monkeypatch):
+    runtime, client_id = own_machine_runtime(config_dir, monkeypatch)
+    before = channel_state.client_state(runtime, client_id)
+
+    assert not any(entry.get("is_own_machine") for entry in before["services"])
+
+    ClientRegistry().record_seen(
+        client_id, hostname="", platform={}, version="", os_machine_id="argon-machine"
+    )
+    after = channel_state.client_state(runtime, client_id)
+
+    assert after["hash"] != before["hash"]
+
+
 # --- the hub's own entries through the relay ---
 
 

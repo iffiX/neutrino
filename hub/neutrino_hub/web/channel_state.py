@@ -28,6 +28,7 @@ from neutrino_hub.modules.clients.constants import (
 from neutrino_hub.modules.clients.permissions import (
     entry_device_id,
     entry_host,
+    entry_machine_id,
     is_device_permitted,
     permitted_devices,
     permitted_entries,
@@ -41,6 +42,7 @@ from neutrino_hub.modules.services.constants import (
     SERVICES_REACHED_RELAY,
     SERVICES_SOURCE_DECLARED,
 )
+from neutrino_hub.system.machine import machine_id
 from neutrino_hub.modules.services.host_scope import (
     HostScope,
     link_scope,
@@ -96,8 +98,9 @@ def client_state(runtime, client_id: str) -> dict:
         kinds = permitted_kinds(registry, client)
         devices = permitted_devices(registry, client)
         scope = runtime.client_scope.get(client_id) or link_scope("")
+        own_machine_id = client.os_machine_id
         hub_device_id, device_ids_by_address = (
-            device_owners(runtime) if devices else ("", {})
+            device_owners(runtime) if devices or own_machine_id else ("", {})
         )
         allowed = [
             entry
@@ -115,6 +118,12 @@ def client_state(runtime, client_id: str) -> dict:
             )
         ]
         services = _named_entries(runtime, allowed)
+        _mark_own_machine(
+            allowed,
+            services,
+            own_machine_id=own_machine_id,
+            device_ids_by_address=device_ids_by_address,
+        )
         if CLIENT_PERMISSION_OVERLAY in kinds:
             overlays = channel_overlay.overlay_materials(runtime)
         if CLIENT_PERMISSION_TERMINAL in kinds:
@@ -284,6 +293,31 @@ def _named_entries(runtime, entries: list) -> list:
             provider = hub_machine
         named.append({**catalog, "device_id": device_id, "device_name": provider})
     return named
+
+
+def _mark_own_machine(
+    entries: list, named: list, *, own_machine_id: str, device_ids_by_address: dict
+) -> None:
+    """Set ``is_own_machine`` on each named entry: whether the client's machine
+    provides it; false on every one while the client names no machine."""
+    if not own_machine_id:
+        for composed in named:
+            composed["is_own_machine"] = False
+        return
+    hub_machine_id = machine_id()
+    machine_ids_by_device = {
+        device.id: device.machine_id for device in DeviceRegistry().all_stored()
+    }
+    for entry, composed in zip(entries, named):
+        composed["is_own_machine"] = (
+            entry_machine_id(
+                entry,
+                hub_machine_id=hub_machine_id,
+                device_ids_by_address=device_ids_by_address,
+                machine_ids_by_device=machine_ids_by_device,
+            )
+            == own_machine_id
+        )
 
 
 def _compose(runtime, role: str, key: str) -> dict:

@@ -444,3 +444,70 @@ def test_the_agent_is_installed_while_its_program_directory_stands(
 
 def test_a_platform_without_an_agent_is_never_managed():
     assert ClientPlatform().is_agent_installed() is False
+
+
+def test_linux_reads_the_machine_id_systemd_or_dbus_wrote(monkeypatch, tmp_path):
+    import neutrino_client.platforms.linux as linux_module
+
+    systemd = tmp_path / "machine-id"
+    dbus = tmp_path / "dbus-machine-id"
+    monkeypatch.setattr(
+        linux_module, "LINUX_MACHINE_ID_PATHS", (str(systemd), str(dbus))
+    )
+    assert LinuxPlatform().os_machine_id() == ""
+    dbus.write_text("dbus-id\n")
+    assert LinuxPlatform().os_machine_id() == "dbus-id"
+    systemd.write_text("  systemd-id\n")
+    assert LinuxPlatform().os_machine_id() == "systemd-id"
+
+
+def test_macos_reads_the_platform_uuid_ioreg_names(monkeypatch):
+    import neutrino_client.platforms.darwin as darwin_module
+
+    printed = '  "IOPlatformUUID" = "12345678-ABCD-EF01-2345-6789ABCDEF01"\n'
+    monkeypatch.setattr(
+        darwin_module,
+        "run_quietly",
+        lambda command, timeout_s: subprocess.CompletedProcess(command, 0, printed, ""),
+    )
+    assert DarwinPlatform().os_machine_id() == "12345678-ABCD-EF01-2345-6789ABCDEF01"
+
+    def refuse(command, timeout_s):
+        raise OSError("no ioreg")
+
+    monkeypatch.setattr(darwin_module, "run_quietly", refuse)
+    assert DarwinPlatform().os_machine_id() == ""
+
+
+def test_windows_reads_the_machine_guid_from_the_64_bit_registry(monkeypatch):
+    import types
+
+    opened = []
+
+    class Key:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def open_key(root, path, reserved, access):
+        opened.append((root, path, access))
+        return Key()
+
+    winreg = types.SimpleNamespace(
+        HKEY_LOCAL_MACHINE="HKLM",
+        KEY_READ=0x20019,
+        OpenKey=open_key,
+        QueryValueEx=lambda key, name: (
+            (" guid-1 ", 1) if name == "MachineGuid" else None
+        ),
+    )
+    monkeypatch.setitem(sys.modules, "winreg", winreg)
+
+    assert WindowsPlatform().os_machine_id() == "guid-1"
+    assert opened == [("HKLM", "SOFTWARE\\Microsoft\\Cryptography", 0x20019 | 0x0100)]
+
+
+def test_a_platform_without_an_id_names_none():
+    assert ClientPlatform().os_machine_id() == ""

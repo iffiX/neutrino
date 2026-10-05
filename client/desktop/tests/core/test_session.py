@@ -2543,3 +2543,17 @@ def test_a_networks_ipv6_address_is_reached_in_brackets(bound_everywhere, monkey
     session.run_once()
 
     assert script.hosts == ["fd7a:115c::1"]
+
+
+def test_the_report_names_the_systems_id_for_the_machine(config_path, monkeypatch):
+    bind(config_path, url="https://hub.lan:8443")
+    session = session_for(os_machine_id="os-id-1")
+    script = socket_of(monkeypatch, [WELCOME])
+
+    session.run_once()
+
+    assert script.made[0].sent[1]["machine"] == {
+        "hostname": "box",
+        "platform": PLATFORM,
+        "os_machine_id": "os-id-1",
+    }

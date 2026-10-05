@@ -59,6 +59,7 @@ def test_create_makes_a_row_that_has_not_joined(config_dir):
         "token_sha256",
         "hostname",
         "machine_id",
+        "os_machine_id",
         "platform",
         "version",
         "is_disabled",
@@ -290,3 +291,15 @@ def test_a_list_the_device_emptied_turns_its_kind_off(config_dir):
     assert registry.get(alice).permission == ["rdp"]
     assert registry.get(alice).permission_devices == {"rdp": ["d2"]}
     assert registry.get(bob).permission is None
+
+
+def test_the_os_machine_id_is_kept_and_an_empty_one_keeps_it(config_dir):
+    registry = ClientRegistry()
+    client_id = registry.create("alice")
+
+    registry.record_seen(
+        client_id, hostname="", platform={}, version="", os_machine_id="m-1"
+    )
+    registry.record_seen(client_id, hostname="", platform={}, version="")
+
+    assert ClientRegistry().get(client_id).os_machine_id == "m-1"

@@ -961,3 +961,75 @@ def test_a_handler_with_no_adapter_refuses_the_windows_mount(tmp_path):
     assert attach(subject, path="Z:") == {}
 
     assert subject.rows()[0]["code"] == "files_adapter_unavailable"
+
+
+# --- a share of this machine itself ---
+
+
+def test_windows_mounts_its_own_machines_share_from_the_loopback(tmp_path):
+    asked = []
+
+    def adapter_host(hub_id, machine):
+        asked.append((hub_id, machine))
+        return "198.19.255.2"  # scan: allow
+
+    entry = dict(entry_for(PAYLOAD), device_id="d_self", is_own_machine=True)
+    subject, platform = drive_service(tmp_path, adapter_host, [entry])
+
+    assert attach(subject, path="Z:") == {}
+
+    call = platform.attach_calls[0]
+    assert call["share_url"] == "//127.0.0.1/media"
+    assert (call["port"], call["location"]) == (0, "Z:")
+    assert asked == []
+    assert subject._forwards.ensured == []
+    row = subject.rows()[0]
+    assert (row["state"], row["code"], row["server"]) == ("mounted", "", "127.0.0.1")
+    assert subject.machines() == set()
+
+
+def test_windows_keeps_the_adapter_for_another_machines_share(tmp_path):
+    entry = dict(entry_for(PAYLOAD), device_id="d_nas", is_own_machine=False)
+    subject, platform = drive_service(
+        tmp_path, lambda hub_id, machine: "198.19.255.2", [entry]  # scan: allow
+    )
+
+    assert attach(subject, path="Z:") == {}
+
+    assert (
+        platform.attach_calls[0]["share_url"] == "//198.19.255.2/media"
+    )  # scan: allow
+    assert subject.machines() == {("h1", "d_nas")}
+
+
+def test_linux_mounts_its_own_machines_share_through_its_forward(tmp_path):
+    entry = dict(entry_for(PAYLOAD), device_id="d_self", is_own_machine=True)
+    platform = FakeClientPlatform()
+    subject = FileServiceHandler(
+        platform=platform,
+        store=ClientServiceStore(path=str(tmp_path / "state.json")),
+        credentials_dir=str(tmp_path / "config" / "mount_credentials"),
+        forwards=FakeForwards(),
+        log=discard,
+        entries_of=lambda: [entry],
+    )
+
+    assert attach(subject, path=str(tmp_path / "nas")) == {}
+
+    call = platform.attach_calls[0]
+    assert (call["share_url"], call["port"]) == ("//127.0.0.1/media", FORWARD_PORT)
+    assert subject._forwards.ensured
+
+
+def test_an_adapter_another_account_holds_does_not_stop_the_own_share(tmp_path):
+    def adapter_host(hub_id, machine):
+        raise ShareAttachError("files_adapter_in_use")
+
+    entry = dict(entry_for(PAYLOAD), device_id="d_self", is_own_machine=True)
+    subject, platform = drive_service(tmp_path, adapter_host, [entry])
+
+    assert attach(subject, path="Z:") == {}
+
+    row = subject.rows()[0]
+    assert (row["state"], row["code"]) == ("mounted", "")
+    assert platform.attach_calls[0]["share_url"] == "//127.0.0.1/media"

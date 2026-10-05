@@ -364,6 +364,11 @@
           "title": "Hostname",
           "type": "string"
         },
+        "os_machine_id": {
+          "default": "",
+          "title": "Os Machine Id",
+          "type": "string"
+        },
         "platform": {
           "additionalProperties": true,
           "title": "Platform",
@@ -381,6 +386,11 @@
             "hostname": {
               "default": "",
               "title": "Hostname",
+              "type": "string"
+            },
+            "os_machine_id": {
+              "default": "",
+              "title": "Os Machine Id",
               "type": "string"
             },
             "platform": {
@@ -538,6 +548,11 @@
               "default": "",
               "title": "Device Name",
               "type": "string"
+            },
+            "is_own_machine": {
+              "default": false,
+              "title": "Is Own Machine",
+              "type": "boolean"
             }
           },
           "required": [
@@ -1352,6 +1367,11 @@
           ],
           "default": null,
           "title": "Is Healthy"
+        },
+        "is_own_machine": {
+          "default": false,
+          "title": "Is Own Machine",
+          "type": "boolean"
         },
         "payload": {
           "additionalProperties": true,

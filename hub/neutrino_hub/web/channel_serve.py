@@ -483,6 +483,7 @@ class _ClientFrames:
                 else {}
             ),
             version="",
+            os_machine_id=str(machine.get("os_machine_id", "") or ""),
         )
         session.note_report_recorded()
         document = await asyncio.to_thread(

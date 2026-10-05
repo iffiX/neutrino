@@ -93,6 +93,8 @@ class Client:
         hostname: What the program's machine called itself.
         machine_id: The id the machine reports for itself, empty until it
             has joined.
+        os_machine_id: The operating system's id for the machine the
+            program runs on, from its reports; empty until one names it.
         platform: ``{os, arch, family}`` as the program reported it.
         version: The client release it last reported.
         is_disabled: Whether the admin has switched it off.
@@ -107,6 +109,7 @@ class Client:
     token_sha256: "str | None" = None
     hostname: str = ""
     machine_id: str = ""
+    os_machine_id: str = ""
     platform: dict = field(default_factory=dict)
     version: str = ""
     is_disabled: bool = False
@@ -137,6 +140,7 @@ class Client:
             token_sha256=data.get("token_sha256") or None,
             hostname=str(data.get("hostname", "") or ""),
             machine_id=str(data.get("machine_id", "") or ""),
+            os_machine_id=str(data.get("os_machine_id", "") or ""),
             platform=dict(platform) if isinstance(platform, dict) else {},
             version=str(data.get("version", "") or ""),
             is_disabled=bool(data.get("is_disabled", False)),
@@ -152,6 +156,7 @@ class Client:
             "token_sha256": self.token_sha256,
             "hostname": self.hostname,
             "machine_id": self.machine_id,
+            "os_machine_id": self.os_machine_id,
             "platform": dict(self.platform),
             "version": self.version,
             "is_disabled": self.is_disabled,
@@ -256,6 +261,7 @@ class ClientRegistry:
         platform: dict,
         version: str,
         machine_id: str = "",
+        os_machine_id: str = "",
     ) -> None:
         """Keep what the program said it is, written only when it changed.
 
@@ -265,12 +271,16 @@ class ClientRegistry:
             platform: ``{os, arch, family}``; empty keeps what is stored.
             version: The client release; empty keeps what is stored.
             machine_id: The machine's own id; empty keeps what is stored.
+            os_machine_id: The operating system's id for the machine;
+                empty keeps what is stored.
         """
         changes = {}
         if hostname:
             changes["hostname"] = str(hostname)
         if machine_id:
             changes["machine_id"] = str(machine_id)
+        if os_machine_id:
+            changes["os_machine_id"] = str(os_machine_id)
         if platform:
             changes["platform"] = dict(platform)
         if version:
