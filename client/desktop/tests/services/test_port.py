@@ -136,15 +136,16 @@ def test_two_hubs_publishing_one_id_are_two_forwards(service, forwards):
     assert ports["h1/db"] != ports["h2/db"]
 
 
-def test_a_port_the_system_holds_fails_the_forward(service, forwards):
+def test_a_fixed_port_another_program_holds_is_taken(service, forwards):
     held = socket.create_server(("127.0.0.1", 0))
-    forwards.ports.configure("h1/db", held.getsockname()[1])
+    port = held.getsockname()[1]
+    forwards.ports.configure("h1/db", port)
 
     outcome = service.act(
         entries=[entry_for(5432)],
         body={"hub_id": "h1", "id": "db", "is_enabled": True},
     )
 
-    assert outcome["code"] == "forward_failed"
+    assert outcome == {"code": "port_taken", "params": {"port": port}}
     assert forwards.forwards() == {}
     held.close()

@@ -12,7 +12,7 @@ same entry id never collide.
 from __future__ import annotations
 
 from neutrino_client.services.base import ServiceTypeHandler, find_entry
-from neutrino_client.services.forward import FORWARD_BIND_HOST
+from neutrino_client.services.forward import FORWARD_BIND_HOST, forward_refusal
 
 
 class PortServiceHandler(ServiceTypeHandler):
@@ -73,7 +73,8 @@ class PortServiceHandler(ServiceTypeHandler):
                 entry's from the table.
 
         Returns:
-            Empty on success, ``forward_failed`` when the port cannot be
+            Empty on success; ``port_taken`` for a fixed port another program
+            listens on, ``forward_failed`` when the port cannot otherwise be
             listened on.
         """
         try:
@@ -85,7 +86,7 @@ class PortServiceHandler(ServiceTypeHandler):
                 local_port=local_port,
             )
         except OSError as error:
-            return {"code": "forward_failed", "params": {"detail": str(error)[:200]}}
+            return forward_refusal(error)
         self._log(f"port {entry_id} is on {FORWARD_BIND_HOST}:{bound}")
         return {}
 

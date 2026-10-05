@@ -21,7 +21,7 @@ from neutrino_client.services.base import (
     channel_refusal,
     find_entry,
 )
-from neutrino_client.services.forward import FORWARD_BIND_HOST
+from neutrino_client.services.forward import FORWARD_BIND_HOST, forward_refusal
 
 # The query parameter a token page takes its token in.
 WEB_TOKEN_PARAMETER = "tkn"
@@ -161,7 +161,7 @@ class WebServiceHandler(ServiceTypeHandler):
                 kind=self.service_type,
             )
         except OSError as error:
-            return {"code": "forward_failed", "params": {"detail": str(error)[:200]}}
+            return forward_refusal(error)
         token = ""
         if payload.get("is_token_required") is True:
             if self._open_service is None:

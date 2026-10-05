@@ -25,7 +25,11 @@ import socket
 import threading
 
 from neutrino_client.constants import CLIENT_WS_CHUNK_BYTES
-from neutrino_client.exceptions import GatewayRefusedDetail, GatewayUnreachable
+from neutrino_client.exceptions import (
+    GatewayRefusedDetail,
+    GatewayUnreachable,
+    LocalPortTakenError,
+)
 from neutrino_client.services.base import hub_of_key, service_key
 from neutrino_client.services.store import STORE_LOCAL_PORT_AUTO
 
@@ -54,14 +58,18 @@ FORWARD_PROBE_ADDRESSES = (
 FORWARD_NO_IPV6_ERRNOS = (errno.EADDRNOTAVAIL, errno.EAFNOSUPPORT)
 
 
-def is_port_free(port: int) -> bool:
+def is_port_free(port: int, is_kept: bool = False) -> bool:
     """Whether nothing listens on a port on any address of the machine.
 
     The port is bound on the IPv4 wildcard address, and on the IPv6 one
     where the machine has IPv6, with no address-reuse option, then let go.
+    A port the table already keeps for an entry is bound with the reuse
+    option off Windows, so the client's own closed connections still
+    lingering on it do not count while another program's listener does.
 
     Args:
         port: The port number.
+        is_kept: Whether the table keeps the port for an entry already.
 
     Returns:
         True when every probe binds it.
@@ -78,6 +86,8 @@ def is_port_free(port: int) -> bool:
                 probe.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
             if os.name == "nt":
                 probe.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+            elif is_kept:
+                probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             probe.bind((address, port))
         except OverflowError:
             return False
@@ -88,6 +98,33 @@ def is_port_free(port: int) -> bool:
         finally:
             probe.close()
     return True
+
+
+def is_kept_port_free(port: int) -> bool:
+    """Whether a port the table keeps is still free on every address.
+
+    Args:
+        port: The port number.
+
+    Returns:
+        True when no other program listens on it.
+    """
+    return is_port_free(port, is_kept=True)
+
+
+def forward_refusal(error: OSError) -> dict:
+    """The typed refusal a forward that cannot listen answers with.
+
+    Args:
+        error: What making the forward raised.
+
+    Returns:
+        ``port_taken`` with the port for a fixed port another program
+        listens on, ``forward_failed`` with the detail otherwise.
+    """
+    if isinstance(error, LocalPortTakenError):
+        return {"code": "port_taken", "params": {"port": error.port}}
+    return {"code": "forward_failed", "params": {"detail": str(error)[:200]}}
 
 
 def relay_socket(connection, stream, log=print) -> None:
@@ -222,19 +259,26 @@ class PortLocalTable:
     entry's own port when no other entry holds it and it is free on every
     address, else the first free one from ``FORWARD_AUTO_FIRST_PORT`` up,
     and the pick is kept for every later forward. No number is held by two
-    entries.
+    entries. A kept or fixed port is looked at again each time its forward
+    is about to listen: an auto pick another program now listens on is
+    picked again and kept, and a fixed one is refused.
     """
 
-    def __init__(self, *, store=None, is_free=None):
+    def __init__(self, *, store=None, is_free=None, is_kept_free=None):
         """
         Args:
             store: The :class:`~neutrino_client.services.store.ClientServiceStore`
                 the table is kept in; None keeps it in memory.
             is_free: ``is_free(port)`` says whether nothing listens on the
                 port on any address; None asks the system.
+            is_kept_free: The same for a port the table keeps already; None
+                is ``is_free`` when that is given, else asks the system.
         """
         self._store = store
         self._is_free = is_free if is_free is not None else is_port_free
+        if is_kept_free is None:
+            is_kept_free = is_free if is_free is not None else is_kept_port_free
+        self._is_kept_free = is_kept_free
         self._lock = threading.Lock()
         self._memory: dict = {}
 
@@ -294,13 +338,18 @@ class PortLocalTable:
             The port number.
 
         Raises:
+            LocalPortTakenError: When a fixed port is listened on by
+                another program.
             OSError: When auto finds no free port.
         """
         with self._lock:
             records = self._records()
             record = records.get(key)
             if record and record["port"]:
-                return record["port"]
+                if self._is_kept_free(record["port"]):
+                    return record["port"]
+                if record["setting"] != FORWARD_PORT_AUTO:
+                    raise LocalPortTakenError(record["port"])
             held = self._held(records, key)
             port = self._pick(own_port, held)
             self._keep(key, FORWARD_PORT_AUTO, port)

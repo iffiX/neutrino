@@ -69,7 +69,7 @@ CLIENT_CODE_WORDS = {
     "clipboard_unreadable": "the clipboard could not be read: {detail}",
     "clipboard_unwritable": "the clipboard could not be written: {detail}",
     "web_token_missing": "the hub sent no token for this page; try again",
-    "port_taken": "another entry already holds local port {port}",
+    "port_taken": "local port {port} is already in use; pick another one",
     "ticket_spent": (
         "the hub refused this link; it was used already or has expired, "
         "so leave this hub and join with a fresh link"
