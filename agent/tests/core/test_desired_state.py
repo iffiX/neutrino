@@ -773,3 +773,43 @@ def test_nothing_here_forces_a_state_again():
     pass to ask for after it."""
     assert not hasattr(DesiredStateApplier, "apply_again")
     assert pytest is not None
+
+
+# --- a failed state is not tried again by an agent that starts again ---
+
+
+def test_the_tried_hash_outlives_a_restart_and_the_same_state_is_not_tried_again(
+    tmp_path,
+):
+    tries: list = []
+
+    class TriedRunner(FakeRunner):
+        def apply(self, config):
+            tries.append(config)
+            super().apply(config)
+
+    runner = TriedRunner(failure=ModuleApplyError("cloudcli_install_out_of_memory"))
+    runners = {"cloudcli": runner}
+    store = DesiredStateStore(path=str(tmp_path / "desired.json"))
+    first = DesiredStateApplier(
+        engine=FakeEngine(runners),
+        runners=runners,
+        store=store,
+        log=lambda message: None,
+    )
+    first.apply(state(cloudcli="running"))
+    assert store.read_tried() == "h1"
+    assert len(tries) == 1
+
+    again = DesiredStateApplier(
+        engine=FakeEngine(runners),
+        runners=runners,
+        store=DesiredStateStore(path=str(tmp_path / "desired.json")),
+        log=lambda message: None,
+    )
+    again.take(state(cloudcli="running"))
+    assert again.settle(5.0)
+
+    assert len(tries) == 1
+    assert again._tried_hash == "h1"
+    assert oct(os.stat(str(tmp_path / "desired.json.tried")).st_mode & 0o777) == "0o600"

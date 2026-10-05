@@ -482,7 +482,21 @@ path that answers to it.
 
 **A failed install names its step**: `cloudcli_node_download_failed`,
 `cloudcli_npm_install_failed`, or `cloudcli_native_module_failed` when
-better-sqlite3, node-pty or bcrypt cannot fetch its prebuilt binary.
+better-sqlite3, node-pty or bcrypt cannot fetch its prebuilt binary; both
+npm codes carry `detail`, the last lines prebuild-install, node-gyp and npm
+wrote. node-pty and bcrypt carry their binaries inside their npm packages;
+better-sqlite3 fetches its own, from where the state's `npm_environment`
+says ("Where each edition fetches from" in
+[install_and_dev.md](install_and_dev.md)).
+
+**npm cannot take the agent down.** On Linux an account's npm runs in a
+transient scope of its own, `neutrino_cloudcli_install_<account>.scope`,
+and the agent's unit has `OOMPolicy=continue`. When the kernel kills the
+install for want of memory, the install ends
+`cloudcli_install_out_of_memory {account}` and the agent keeps running. A
+failed install is tried again only with a state of another hash, and the
+hash last tried is kept on disk, so an agent that starts again does not try
+it again either.
 
 **The install's state is `installing` until it ends.** On Linux and macOS
 npm runs inside the apply; on Windows the apply starts the install task and

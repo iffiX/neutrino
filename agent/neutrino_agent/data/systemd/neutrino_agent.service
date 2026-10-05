@@ -13,6 +13,9 @@ Environment=PYTHONUNBUFFERED=1
 ExecStart=/usr/bin/nagent run
 Restart=always
 RestartSec=10
+# A child the kernel kills for want of memory ends that child alone; the
+# agent keeps its socket and its shells.
+OOMPolicy=continue
 
 [Install]
 WantedBy=multi-user.target

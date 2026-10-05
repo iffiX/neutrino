@@ -47,7 +47,9 @@ except ImportError:  # Windows has no account database module.
 PLIST_SUFFIX = ".plist"
 # The PATH a command run as an account starts from.
 ACCOUNT_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
-INSTALL_SHELL = 'mkdir -p "$0" && : > "$0/.npmrc" && exec "$@"'
+INSTALL_SHELL = (
+    'mkdir -p "$0" && rm -rf "$0/node_modules" && : > "$0/.npmrc" && exec "$@"'
+)
 CHECK_SHELL = 'cd "$0" && exec "$@"'
 
 
@@ -219,6 +221,7 @@ class CloudcliDarwinApplier:
                 entries[instance.account],
                 node,
                 registry=config.npm_registry,
+                extra=config.npm_environment,
             ):
                 notes.append(f"installed CloudCLI for {instance.account}")
         os.makedirs(self._log_dir, mode=0o755, exist_ok=True)
@@ -344,7 +347,13 @@ class CloudcliDarwinApplier:
         return found
 
     def _install_app(
-        self, account: str, entry: tuple, node: str, *, registry: str = ""
+        self,
+        account: str,
+        entry: tuple,
+        node: str,
+        *,
+        registry: str = "",
+        extra: "dict | None" = None,
     ) -> bool:
         """Install CloudCLI into the account's app directory unless it is there."""
         home = entry[2]
@@ -359,10 +368,13 @@ class CloudcliDarwinApplier:
                 "USER": account,
                 "LOGNAME": account,
                 "PATH": f"{node_bin}:{ACCOUNT_PATH}",
-                **installer.npm_environment(app, registry=registry),
+                **installer.npm_environment(app, registry=registry, extra=extra),
             }
             npm = installer.npm_path(os.path.dirname(node_bin), "darwin")
-            self._log(f"cloudcli: installing CloudCLI for {account}")
+            self._log(
+                f"cloudcli: installing CloudCLI for {account} "
+                f"from {installer.registry_host(registry)}"
+            )
             result = self._run_as(
                 entry,
                 ["/bin/sh", "-c", INSTALL_SHELL, app, node, npm]
@@ -384,7 +396,11 @@ class CloudcliDarwinApplier:
             if check.exit_code == installer.NATIVE_CHECK_EXIT:
                 raise ModuleApplyError(
                     "cloudcli_native_module_failed",
-                    {"account": account, "module": check.stdout.strip()},
+                    {
+                        "account": account,
+                        "module": check.stdout.strip(),
+                        "detail": installer.failure_detail(check.stderr),
+                    },
                 )
             return True
         finally:

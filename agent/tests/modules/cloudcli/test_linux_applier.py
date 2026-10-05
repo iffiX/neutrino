@@ -48,10 +48,15 @@ class Machine:
         self.npm_output = ""
         self.check_exit = 0
         self.check_output = ""
+        self.scope_result = "success"
         self.home = home
 
     def __call__(self, command, *, is_checked=True, input_text=None, timeout_s=0):
         self.calls.append(list(command))
+        if command[:2] == ["systemctl", "show"]:
+            return CommandResult(list(command), 0, self.scope_result + "\n", "")
+        if command[0] == "systemd-run":
+            command = command[command.index("--") + 1 :]
         if command[:2] == ["runuser", "-l"]:
             return CommandResult(
                 list(command), 0 if self.claude else 1, self.claude, ""
@@ -76,7 +81,14 @@ class Machine:
         return "active" if unit in self.active else "inactive"
 
     def systemctl(self):
-        return [call for call in self.calls if call[0] == "systemctl"]
+        return [
+            call
+            for call in self.calls
+            if call[0] == "systemctl" and not call[-1].endswith(".scope")
+        ]
+
+    def install_call(self):
+        return next(call for call in self.calls if call[0] == "systemd-run")
 
 
 @pytest.fixture
@@ -129,7 +141,16 @@ def test_an_instance_is_installed_as_the_account_then_started(
     notes = applier.apply(CONFIG, {"ann": 41234})
 
     assert machine.calls[0] == ["runuser", "-l", "ann", "-c", "command -v claude"]
-    install = machine.calls[1]
+    scoped = machine.install_call()
+    assert scoped[: scoped.index("--")] == [
+        "systemd-run",
+        "--scope",
+        "--quiet",
+        "--unit=neutrino_cloudcli_install_ann.scope",
+        "-p",
+        "OOMPolicy=stop",
+    ]
+    install = scoped[scoped.index("--") + 1 :]
     app = os.path.join(
         machine.home, ".local", "share", "neutrino", "agent", "cloudcli", "app"
     )
@@ -139,7 +160,7 @@ def test_an_instance_is_installed_as_the_account_then_started(
     assert f"HOME={machine.home}" in install
     assert install[-4:] == ["install", "@cloudcli-ai/cloudcli@1.37.3", "--prefix", app]
     assert install[install.index("sh") + 3] == app
-    assert "-e" in machine.calls[2]
+    assert any("-e" in call for call in machine.calls[machine.calls.index(scoped) :])
     environment = tmp_path / "etc" / "ann.env"
     assert stat.S_IMODE(os.stat(environment).st_mode) == 0o600
     text = environment.read_text()
@@ -227,9 +248,9 @@ def test_a_native_module_without_its_binary_names_it(applier, machine):
     with pytest.raises(ModuleApplyError) as caught:
         applier.apply(CONFIG, {"ann": 41234})
 
-    assert (caught.value.code, caught.value.params) == (
+    assert (caught.value.code, caught.value.params["module"]) == (
         "cloudcli_native_module_failed",
-        {"account": "ann", "module": "better-sqlite3"},
+        "better-sqlite3",
     )
 
 
@@ -299,3 +320,54 @@ def test_a_failed_install_reads_installing_no_more(applier, machine):
         applier.apply(CONFIG, {"ann": 41234})
 
     assert applier.installing == frozenset()
+
+
+def test_an_install_the_kernel_killed_for_memory_is_its_own_refusal(applier, machine):
+    machine.npm_exit = 137
+    machine.scope_result = "oom-kill"
+
+    with pytest.raises(ModuleApplyError) as caught:
+        applier.apply(CONFIG, {"ann": 41234})
+
+    assert (caught.value.code, caught.value.params) == (
+        "cloudcli_install_out_of_memory",
+        {"account": "ann"},
+    )
+    assert [
+        "systemctl",
+        "reset-failed",
+        "neutrino_cloudcli_install_ann.scope",
+    ] in machine.calls
+    assert applier.installing == frozenset()
+
+
+def test_the_editions_npm_settings_reach_npm_and_a_half_install_is_cleared(
+    applier, machine
+):
+    config = CloudcliConfig.from_dict(
+        {
+            "npm_registry": "https://registry.npmmirror.com",
+            "npm_environment": {
+                "npm_config_better_sqlite3_binary_host": "https://m.example/bs3",
+                "PATH": "/evil",
+            },
+            "instances": [
+                {
+                    "account": "ann",
+                    "port": 3001,
+                    "web_password": "p",
+                    "token_secret": "s",
+                }
+            ],
+        }
+    )
+    lines = []
+    applier._log = lines.append
+
+    applier.apply(config, {"ann": 41234})
+
+    install = machine.install_call()
+    assert "npm_config_better_sqlite3_binary_host=https://m.example/bs3" in install
+    assert "PATH=/evil" not in install
+    assert 'rm -rf "$0/node_modules"' in install[install.index("sh") + 2]
+    assert "cloudcli: installing CloudCLI for ann from registry.npmmirror.com" in lines
