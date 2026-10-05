@@ -349,6 +349,62 @@ class PortForwardsTest {
     }
 
     @Test
+    fun aForwardThatEndsWritesOneLineWithWhy() = runTest {
+        val lines = mutableListOf<String>()
+        val forwards = PortForwards(noMaterial, streams, backgroundScope, table, log = {
+            synchronized(lines) {
+                lines +=
+                    it
+            }
+        })
+        forwards.connect("b1", "p1", 30080)
+        forwards.connect("b1", "p2", 30081)
+        forwards.connect("b2", "p1", 30082)
+        forwards.connect("b1", "u1_udp", 30083, "udp")
+        runCurrent()
+        val ports = listOf("b1/p1", "b1/p2", "b2/p1", "b1/u1_udp").associateWith {
+            forwards.rows.value.getValue(it).localPort
+        }
+        forwards.disconnect("b1", "p1")
+        runCurrent()
+        forwards.take(listOf(hub("b1", HubConnection.CONNECTED, "u1_udp"), hub("b2", HubConnection.CONNECTED, "p1")))
+        forwards.forget("b2")
+        forwards.stopAll()
+        forwards.stopAll()
+        val stopped = synchronized(lines) { lines.filter { it.startsWith("stopped") } }
+        assertEquals(
+            listOf(
+                "stopped forwarding 127.0.0.1:${ports["b1/p1"]} to b1/p1: the person disconnected",
+                "stopped forwarding 127.0.0.1:${ports["b1/p2"]} to b1/p2: the hub withdrew the entry",
+                "stopped forwarding 127.0.0.1:${ports["b2/p1"]} to b2/p1: the hub was left",
+                "stopped forwarding 127.0.0.1:${ports["b1/u1_udp"]} to b1/u1_udp: the app core stopped",
+            ),
+            stopped,
+        )
+    }
+
+    @Test
+    fun aUdpForwardTheHubEndsWritesOneLineWithTheCode() = runTest {
+        val lines = mutableListOf<String>()
+        val refusing = FakeConnectHub(refusal = ChannelResult.refused("permission_denied", "kind" to "port"))
+        val forwards = PortForwards(
+            noMaterial,
+            { _, args -> refusing.open(args) },
+            backgroundScope,
+            table,
+            log = { synchronized(lines) { lines += it } },
+        )
+        forwards.connect("b1", "u1_udp", 30084, "udp")
+        runCurrent()
+        waitFor { synchronized(lines) { lines.any { it.startsWith("stopped") } } }
+        forwards.stopAll()
+        assertEquals(
+            listOf("stopped forwarding 127.0.0.1:30084 to b1/u1_udp: the hub refused it: permission_denied"),
+            synchronized(lines) { lines.filter { it.startsWith("stopped") } },
+        )
+    }
+
+    @Test
     fun aUdpEntryIsOneUdpSocketAndOneStreamBesideATcpOneOnTheSameNumber() = runTest {
         val forwards = PortForwards(noMaterial, streams, backgroundScope, table)
         forwards.connect("b1", "dns", 30053)

@@ -48,6 +48,7 @@ import kotlinx.serialization.json.JsonPrimitive
  * @param streams Opens one `connect` stream on a hub, by binding id and the stream's arguments.
  * @param scope Where the jobs run.
  * @param table The local port of every forwarded entry.
+ * @param log Writes one line to the app's log: a forward made, a forward ended and why.
  * @param udpRelayOf A UDP entry's forward by what the log calls it, how it opens its stream, its
  *   loopback number, and what a refusal of its stream does, with whether it ended the forward.
  * @param relayOf A relay by what the log calls it, how it opens a stream, and its loopback number.
@@ -57,6 +58,7 @@ class PortForwards(
     private val streams: (String, Map<String, JsonElement>) -> ChannelResult<ChannelStream>,
     private val scope: CoroutineScope,
     private val table: LocalPortTable,
+    private val log: (String) -> Unit = { Log.i(CLIENT_LOG_TAG, it) },
     private val udpRelayOf: (
         String,
         () -> ChannelResult<ChannelStream>,
@@ -109,7 +111,7 @@ class PortForwards(
         val key = keyOf(bindingId, entryId)
         if (!begin(key, PortForwardJob.DISCONNECTING)) return
         scope.launch {
-            synchronized(relays) { relays.remove(key) }?.close()
+            stop(key, "the person disconnected")
             settle(key) { null }
         }
     }
@@ -226,7 +228,7 @@ class PortForwards(
      * @param bindingId The hub.
      * @param entryId The entry.
      */
-    fun release(bindingId: String, entryId: String) = stop(keyOf(bindingId, entryId))
+    fun release(bindingId: String, entryId: String) = stop(keyOf(bindingId, entryId), "its viewer closed")
 
     /**
      * One entry's local port, as the Configure dialog opens on it.
@@ -279,18 +281,23 @@ class PortForwards(
     fun take(hubs: List<HubView>) {
         val byId = hubs.associateBy { it.binding.id }
         val gone = synchronized(relays) {
-            relays.keys.filter { key ->
+            relays.keys.mapNotNull { key ->
                 val hub = byId[key.substringBefore('/')]
                 val entryId = key.substringAfter('/')
                 when {
-                    hub == null -> true
-                    !hub.isConnected -> false
-                    entryId == FORWARD_PANEL_ENTRY -> !hub.isPanelAllowed
-                    else -> hub.services.none { it.id == entryId }
+                    hub == null -> key to "the hub was left"
+
+                    !hub.isConnected -> null
+
+                    entryId == FORWARD_PANEL_ENTRY -> (key to "the hub took the panel away").takeIf {
+                        !hub.isPanelAllowed
+                    }
+
+                    else -> (key to "the hub withdrew the entry").takeIf { hub.services.none { it.id == entryId } }
                 }
             }
         }
-        for (key in gone) stop(key)
+        for ((key, why) in gone) stop(key, why)
     }
 
     /**
@@ -300,7 +307,7 @@ class PortForwards(
      */
     fun forget(bindingId: String) {
         val keys = synchronized(relays) { relays.keys.filter { it.startsWith("$bindingId/") } }
-        for (key in keys) stop(key)
+        for (key in keys) stop(key, "the hub was left")
         current.update { rows -> rows.filterKeys { !it.startsWith("$bindingId/") } }
         table.forget(bindingId)
     }
@@ -308,7 +315,7 @@ class PortForwards(
     /** Stop every forward, as when the app core's service ends. */
     fun stopAll() {
         val keys = synchronized(relays) { relays.keys.toList() }
-        for (key in keys) stop(key)
+        for (key in keys) stop(key, "the app core stopped")
     }
 
     /** A refresh: every row's error goes. */
@@ -329,7 +336,7 @@ class PortForwards(
                 rows + (key to row.copy(job = job, error = null))
             }
         }
-        if (!isStarted) Log.i(CLIENT_LOG_TAG, "a forward job runs on $key; the press is dropped")
+        if (!isStarted) log("a forward job runs on $key; the press is dropped")
         return isStarted
     }
 
@@ -351,7 +358,7 @@ class PortForwards(
             }
             val bound = relay.start()
             synchronized(relays) { relays.put(key, relay) }?.close()
-            Log.i(CLIENT_LOG_TAG, "forwarding $FORWARD_BIND_HOST:$bound to $key through the hub")
+            log("forwarding $FORWARD_BIND_HOST:$bound to $key through the hub")
             ChannelResult.Ok(bound)
         } catch (error: LocalPortTakenException) {
             ChannelResult.refused("port_taken", "port" to error.port.toString())
@@ -362,10 +369,10 @@ class PortForwards(
         }
     }
 
-    private fun stop(key: String) {
+    private fun stop(key: String, why: String) {
         val relay = synchronized(relays) { relays.remove(key) } ?: return
         relay.close()
-        Log.i(CLIENT_LOG_TAG, "stopped forwarding to ${relay.name}")
+        logStopped(relay, why)
         current.update { rows ->
             val row = rows[key] ?: return@update rows
             val left = row.copy(localPort = 0)
@@ -374,12 +381,17 @@ class PortForwards(
     }
 
     private fun refused(key: String, refusal: ChannelResult.Refused, isEnded: Boolean) {
-        if (isEnded) synchronized(relays) { relays.remove(key) }
+        if (isEnded) {
+            synchronized(relays) { relays.remove(key) }?.let { logStopped(it, "the hub refused it: ${refusal.code}") }
+        }
         settle(key) { row ->
             val kept = row ?: PortForwardRow()
             if (isEnded) kept.copy(localPort = 0, error = refusal) else kept.copy(error = refusal)
         }
     }
+
+    private fun logStopped(relay: PortForwardListener, why: String) =
+        log("stopped forwarding $FORWARD_BIND_HOST:${relay.localPort} to ${relay.name}: $why")
 
     private fun settle(key: String, next: (PortForwardRow?) -> PortForwardRow?) {
         current.update { rows ->

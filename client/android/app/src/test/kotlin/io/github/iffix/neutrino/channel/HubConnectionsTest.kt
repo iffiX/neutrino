@@ -155,6 +155,24 @@ class HubConnectionsTest {
     }
 
     @Test
+    fun aHubWhoseIdentityChangedIsLeftWithOnePress() = runTest {
+        val untrusted = FakeHubTransport { FakeHubTransport.impostor }
+        untrusted.answers[leaveAt] = ChannelResult.refused("hub_untrusted", "url" to "x")
+        val store = BindingStore(folder.root.resolve("b.sealed"), FakeSecretSealer())
+        val connections = HubConnections(store, untrusted, Samples.machine, { null }, backgroundScope)
+        store.put(Samples.binding)
+        connections.start()
+        advanceTimeBy(1000)
+        assertEquals("hub_untrusted", connections.views.first().single().lastError?.code)
+        connections.startLeave("b1")
+        runCurrent()
+        assertEquals(emptyList<HubView>(), connections.views.first())
+        advanceTimeBy(120_000)
+        assertEquals(emptyList<HubView>(), connections.views.first())
+        assertNull(store.get("b1"))
+    }
+
+    @Test
     fun aLeaveIsAJobOnTheRowThatEndsWithTheRowAndNoErrorLine() = runTest {
         transport.answers[leaveAt] = ChannelResult.refused("token_rejected")
         val gate = CompletableDeferred<Unit>()

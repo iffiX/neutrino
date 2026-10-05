@@ -1,5 +1,8 @@
 package io.github.iffix.neutrino.screen
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -7,6 +10,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
 import io.github.iffix.neutrino.FORWARD_BIND_HOST
 import io.github.iffix.neutrino.PORT_PROTOCOL_UDP
 import io.github.iffix.neutrino.channel.ChannelResult
@@ -99,7 +103,7 @@ fun PortsScreen(
             BasicText(entry.title, style = NeutrinoTheme.rowTitle)
             if (!isHealthy) BasicText(words.word("ui.unhealthy"), style = NeutrinoTheme.note)
             val forwardedTo = words.word("ui.forwarding_to", mapOf("port" to row.localPort)).takeIf { row.isForwarded }
-            BasicText(portLine(entry, forwardedTo), style = NeutrinoTheme.mono)
+            PortLine(portPieces(entry, forwardedTo))
             BasicText(providedBy(hub, entry, host), style = NeutrinoTheme.note)
             ErrorLine(row.error)
             ReasonLine(reason)
@@ -118,17 +122,27 @@ fun PortsScreen(
 }
 
 /**
- * A Ports row's mono line: `host:port`, then `→ <loopback address>` once forwarded, each with
- * `/udp` after it for a UDP entry.
+ * A Ports row's mono line, in the pieces it is drawn in: `host:port`, then `→ <loopback address>`
+ * once forwarded, each with `/udp` after it for a UDP entry. A piece never breaks inside itself;
+ * when the row is too narrow for both, the second goes to the next line whole, on a TCP row and a
+ * UDP row alike.
  *
  * @param entry The `port` entry.
  * @param forwardedTo The worded loopback address, or null while not forwarded.
- * @return The line.
+ * @return One piece, or two once forwarded.
  */
-internal fun portLine(entry: ChannelServiceEntry, forwardedTo: String?): String {
+internal fun portPieces(entry: ChannelServiceEntry, forwardedTo: String?): List<String> {
     val suffix = if (entry.portProtocol == PORT_PROTOCOL_UDP) "/$PORT_PROTOCOL_UDP" else ""
     val own = "${entry.text("host")}:${entry.number("port") ?: ""}$suffix"
-    return if (forwardedTo == null) own else "$own → $forwardedTo$suffix"
+    return if (forwardedTo == null) listOf(own) else listOf(own, "→ $forwardedTo$suffix")
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PortLine(pieces: List<String>) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        for (piece in pieces) BasicText(piece, style = NeutrinoTheme.mono, softWrap = false, maxLines = 1)
+    }
 }
 
 @Preview(widthDp = 400, heightDp = 600)
