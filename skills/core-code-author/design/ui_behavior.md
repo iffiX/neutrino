@@ -501,7 +501,10 @@ Under the controls, the line `ui.ai_tools.accounts` names the accounts the
 setting acts on, and a row per account follows: its name, the modules it has
 an instance in, and its last result as a `StatusDot` with a word (`switched`
 `ok`, `switched_back` `idle`, `failed` `error` with the code's words, and
-`ui.device_monitor.waiting` `idle` before the machine reported it). With no
+`ui.device_monitor.waiting` `idle` before the machine reported it while the
+setting is on; with the setting off, an account the machine does not name
+keeps its own settings and reads as `switched_back`, since no report of it
+will come). With no
 such account the line is `ui.ai_tools.no_accounts` and no row is drawn; the
 chip can be turned on all the same, and an account gained later is switched
 then.
