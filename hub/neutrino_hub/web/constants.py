@@ -199,6 +199,10 @@ WEB_LOGIN_LOCKOUT_STEPS_S = (30, 60, 300, 3600, 86400)
 WEB_LOGIN_LOCKOUT_STATE_PATH = UTILS_RUNTIME_ROOT / "login_lockout.json"
 
 WEB_STATS_PUSH_INTERVAL_S = 1.0
+# How often an open panel socket checks that its session still holds.
+WEB_SOCKET_SESSION_CHECK_INTERVAL_S = 1.0
+# How long a socket whose session ended has to finish before it is cut.
+WEB_SOCKET_SESSION_END_GRACE_S = 5.0
 # Who answered a query, as far as dnsmasq can tell. One word per answer it
 # can write beside a query: xray's DNS inbound, which splits the lookup
 # between the two resolvers itself and reports nothing back about which one

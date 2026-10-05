@@ -154,15 +154,15 @@ def exposed_devices(network: RouterNetworkConfig, present: list) -> list:
         present: The devices this box has, as the system names them.
 
     Returns:
-        Each present interface that is exposed, an interface the
-        configuration does not name counting as exposed, then each present
-        device of an exposed running overlay.
+        Each present interface that is exposed, as
+        :meth:`RouterNetworkConfig.exposed_device_names_on` reads it, then
+        each present device of an exposed running overlay.
     """
     overlay_devices = set(network.overlay_device_names)
     interfaces = [
         name
-        for name in present
-        if name not in overlay_devices and network.interface_or_new(name).is_exposed
+        for name in network.exposed_device_names_on(present)
+        if name in present and name not in overlay_devices
     ]
     overlays = [
         name for name in network.exposed_overlay_device_names if name in present

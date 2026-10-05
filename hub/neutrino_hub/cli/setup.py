@@ -48,7 +48,7 @@ from pathlib import Path
 from neutrino_hub import edition
 from neutrino_hub.exceptions import WizardAborted
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
-from neutrino_hub.modules.router.link_status import RouterLinkStatus
+from neutrino_hub.modules.router.link_status import RouterLinkStatus, device_addresses
 from neutrino_hub.modules.router.controller import (
     RouterStateController,
     failure_text,
@@ -1222,7 +1222,7 @@ def _panel_host() -> str:
         if interface.role == "lan" and interface.lan.address:
             return interface.lan.address
     status = RouterLinkStatus()
-    for name in network.exposed_device_names:
+    for name in network.exposed_device_names_on(list(device_addresses())):
         address = status.link(name).ipv4_address
         if address:
             return address.partition("/")[0]

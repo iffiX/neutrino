@@ -656,6 +656,28 @@ class RouterNetworkConfig:
             if interface.is_exposed
         )
 
+    def exposed_device_names_on(self, present) -> list[str]:
+        """The kernel devices this box answers on, of the ones it names and has.
+
+        Args:
+            present: The devices the box has now, as the system names them.
+
+        Returns:
+            :attr:`exposed_device_names`, then each present device the
+            configuration does not name that :meth:`interface_or_new` reads
+            as exposed, which is none on Linux. An overlay's device is never
+            among the second part.
+        """
+        overlays = set(self.overlay_device_names)
+        unnamed = [
+            name
+            for name in present
+            if name not in overlays
+            and self.interface(name) is None
+            and self.interface_or_new(name).is_exposed
+        ]
+        return _unique(self.exposed_device_names + unnamed)
+
     def is_interface_enabled(self, name: str) -> bool:
         """Whether an interface is one the hub uses, exposed or not.
 

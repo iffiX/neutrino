@@ -93,7 +93,9 @@ def channel_hosts(network, *, is_direct: bool = False) -> list[str]:
     """Every address and name the box answers on.
 
     A served network contributes its configured address, every other exposed
-    interface the address its live link holds, and an exposed NetBird
+    interface the address its live link holds, an interface the configuration
+    does not name counting as :meth:`RouterNetworkConfig.exposed_device_names_on`
+    reads it, and an exposed NetBird
     overlay its name as well, so a peer on the overlay reaches the hub after
     its overlay address moved. While Direct is on, every enabled interface
     that is not exposed follows the exposed ones: the agent port answers
@@ -111,17 +113,16 @@ def channel_hosts(network, *, is_direct: bool = False) -> list[str]:
         for interface in network.lan_interfaces
         if interface.lan.address
     }
-    live = None
+    live = device_addresses()
     hosts = []
-    names = list(network.exposed_interfaces)
+    names = network.exposed_device_names_on(list(live))
+    names += [
+        name for name in network.exposed_overlay_device_names if name not in names
+    ]
     if is_direct:
         names += [name for name in network.enabled_device_names if name not in names]
     for name in names:
-        address = configured.get(name, "")
-        if not address:
-            if live is None:
-                live = device_addresses()
-            address = live.get(name, "").split("/")[0]
+        address = configured.get(name, "") or live.get(name, "").split("/")[0]
         if address and address not in hosts:
             hosts.append(address)
     name = overlay_name(network)

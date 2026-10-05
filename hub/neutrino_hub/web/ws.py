@@ -2,7 +2,10 @@
 
 Everything that streams lives here. Each socket checks the session cookie itself
 and closes with a policy-violation code when it is missing, since a websocket
-route cannot answer with a 401 the way an HTTP route does.
+route cannot answer with a 401 the way an HTTP route does. An open socket
+checks its session every ``WEB_SOCKET_SESSION_CHECK_INTERVAL_S`` and closes
+with the same code once the session has ended: signed out, expired, or
+ended by the Clients page.
 
 A terminal reaches a device through its agent: the browser's socket and the
 agent's shell stream are bridged here, frame for frame. The browser sends
@@ -33,6 +36,8 @@ from neutrino_hub.modules.channel.constants import (
 )
 from neutrino_hub.web.constants import (
     WEB_EVENT_HELLO,
+    WEB_SOCKET_SESSION_CHECK_INTERVAL_S,
+    WEB_SOCKET_SESSION_END_GRACE_S,
     WEB_STATS_PUSH_INTERVAL_S,
 )
 from neutrino_hub.web.dependencies import session_cookie
@@ -68,14 +73,7 @@ async def stats_socket(websocket: WebSocket) -> None:
     """
     if not await _accept(websocket):
         return
-    collector = PanelStatsCollector(runtime=websocket.app.state.runtime)
-    try:
-        while True:
-            frame = await asyncio.to_thread(collector.collect)
-            await websocket.send_json(frame.model_dump())
-            await asyncio.sleep(WEB_STATS_PUSH_INTERVAL_S)
-    except (WebSocketDisconnect, RuntimeError):
-        return
+    await _while_signed_in(websocket, _push_stats(websocket))
 
 
 @router.websocket("/ws/hub/event")
@@ -90,16 +88,7 @@ async def events_socket(websocket: WebSocket) -> None:
     """
     if not await _accept(websocket):
         return
-    events = websocket.app.state.runtime.events
-    queue = events.subscribe()
-    pump = asyncio.create_task(_pump_events(websocket, queue))
-    try:
-        await _await_disconnect(websocket)
-    finally:
-        pump.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await pump
-        events.unsubscribe(queue)
+    await _while_signed_in(websocket, _follow_events(websocket))
 
 
 @router.websocket("/ws/hub/dashboard/dns_log")
@@ -111,21 +100,7 @@ async def dns_log_socket(websocket: WebSocket) -> None:
     """
     if not await _accept(websocket):
         return
-    reader = DnsLogReader()
-    try:
-        initial = await asyncio.to_thread(reader.tail)
-        await websocket.send_json(
-            {"entries": [entry.model_dump() for entry in reversed(initial)]}
-        )
-        while True:
-            await asyncio.sleep(DNS_LOG_POLL_INTERVAL_S)
-            entries = await asyncio.to_thread(reader.follow)
-            if entries:
-                await websocket.send_json(
-                    {"entries": [entry.model_dump() for entry in entries]}
-                )
-    except (WebSocketDisconnect, RuntimeError):
-        return
+    await _while_signed_in(websocket, _follow_dns_log(websocket))
 
 
 @router.websocket("/ws/hub/task")
@@ -139,16 +114,7 @@ async def task_socket(websocket: WebSocket, task_id: str) -> None:
     """
     if not await _accept(websocket):
         return
-    stream = websocket.app.state.runtime.tasks.get(task_id)
-    if stream is None:
-        await websocket.close(code=POLICY_VIOLATION_CODE, reason="unknown task")
-        return
-    try:
-        async for chunk in stream.subscribe():
-            await websocket.send_json({"type": "output", "data": chunk})
-        await websocket.send_json({"type": "done", "exit_code": stream.exit_code or 0})
-    except (WebSocketDisconnect, RuntimeError):
-        return
+    await _while_signed_in(websocket, _follow_task(websocket, task_id))
 
 
 @router.websocket("/ws/agent/terminal")
@@ -192,6 +158,65 @@ async def terminal_socket(
     await _serve_agent_stream(websocket, device_id, args)
 
 
+async def _push_stats(websocket: WebSocket) -> None:
+    """Send a statistics frame every second until the socket goes."""
+    collector = PanelStatsCollector(runtime=websocket.app.state.runtime)
+    try:
+        while True:
+            frame = await asyncio.to_thread(collector.collect)
+            await websocket.send_json(frame.model_dump())
+            await asyncio.sleep(WEB_STATS_PUSH_INTERVAL_S)
+    except (WebSocketDisconnect, RuntimeError):
+        return
+
+
+async def _follow_events(websocket: WebSocket) -> None:
+    """Send every event until the browser closes the socket."""
+    events = websocket.app.state.runtime.events
+    queue = events.subscribe()
+    pump = asyncio.create_task(_pump_events(websocket, queue))
+    try:
+        await _await_disconnect(websocket)
+    finally:
+        pump.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await pump
+        events.unsubscribe(queue)
+
+
+async def _follow_dns_log(websocket: WebSocket) -> None:
+    """Send the recent queries, then each new one, until the socket goes."""
+    reader = DnsLogReader()
+    try:
+        initial = await asyncio.to_thread(reader.tail)
+        await websocket.send_json(
+            {"entries": [entry.model_dump() for entry in reversed(initial)]}
+        )
+        while True:
+            await asyncio.sleep(DNS_LOG_POLL_INTERVAL_S)
+            entries = await asyncio.to_thread(reader.follow)
+            if entries:
+                await websocket.send_json(
+                    {"entries": [entry.model_dump() for entry in entries]}
+                )
+    except (WebSocketDisconnect, RuntimeError):
+        return
+
+
+async def _follow_task(websocket: WebSocket, task_id: str) -> None:
+    """Send one job's output, then its exit code."""
+    stream = websocket.app.state.runtime.tasks.get(task_id)
+    if stream is None:
+        await websocket.close(code=POLICY_VIOLATION_CODE, reason="unknown task")
+        return
+    try:
+        async for chunk in stream.subscribe():
+            await websocket.send_json({"type": "output", "data": chunk})
+        await websocket.send_json({"type": "done", "exit_code": stream.exit_code or 0})
+    except (WebSocketDisconnect, RuntimeError):
+        return
+
+
 async def _pump_events(websocket: WebSocket, queue: asyncio.Queue) -> None:
     """Send the hello frame, then every event, until the socket goes away."""
     with contextlib.suppress(WebSocketDisconnect, RuntimeError):
@@ -222,6 +247,11 @@ async def _serve_agent_stream(websocket: WebSocket, device_id: str, args: dict) 
     """
     if not await _accept(websocket):
         return
+    await _while_signed_in(websocket, _bridge_shell(websocket, device_id, args))
+
+
+async def _bridge_shell(websocket: WebSocket, device_id: str, args: dict) -> None:
+    """Bridge an accepted socket to a new shell stream until either ends."""
     sessions = websocket.app.state.runtime.agent_sessions
     try:
         stream = await sessions.open_stream(device_id, CHANNEL_STREAM_SHELL, args)
@@ -330,6 +360,43 @@ async def _read_input(
         return
     except AgentOfflineError:
         return
+
+
+async def _while_signed_in(websocket: WebSocket, serving) -> None:
+    """Serve an accepted socket until it ends or its session does.
+
+    A session that ended closes the socket with the policy-violation code,
+    which ends what the socket serves by its own path; what is still running
+    ``WEB_SOCKET_SESSION_END_GRACE_S`` later is cancelled.
+
+    Args:
+        websocket: The accepted socket.
+        serving: The coroutine that serves it.
+    """
+    work = asyncio.ensure_future(serving)
+    watch = asyncio.ensure_future(_session_ended(websocket))
+    await asyncio.wait({work, watch}, return_when=asyncio.FIRST_COMPLETED)
+    if work.done():
+        watch.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await watch
+        work.result()
+        return
+    with contextlib.suppress(WebSocketDisconnect):
+        await _close(websocket, code=POLICY_VIOLATION_CODE, reason="session ended")
+    done, _ = await asyncio.wait({work}, timeout=WEB_SOCKET_SESSION_END_GRACE_S)
+    if not done:
+        work.cancel()
+    with contextlib.suppress(asyncio.CancelledError, WebSocketDisconnect):
+        await work
+
+
+async def _session_ended(websocket: WebSocket) -> None:
+    """Return once the socket's session is no longer valid."""
+    runtime = websocket.app.state.runtime
+    token = websocket.cookies.get(session_cookie(runtime))
+    while runtime.sessions.is_valid(token):
+        await asyncio.sleep(WEB_SOCKET_SESSION_CHECK_INTERVAL_S)
 
 
 async def _accept(websocket: WebSocket) -> bool:

@@ -1,8 +1,9 @@
 """Where a magic packet is broadcast, and how it leaves.
 
 A router or side gateway hub broadcasts on each network it serves; a server
-hub on the network of each exposed interface that holds an IPv4 address; an
-overlay never gets one. The packet goes to the network's own broadcast
+hub on the network of each exposed interface that holds an IPv4 address, an
+interface the configuration does not name exposed on macOS and Windows and
+not on Linux; an overlay never gets one. The packet goes to the network's own broadcast
 address from a socket bound to the hub's address on that network, the same
 calls on Linux, macOS and Windows.
 """
@@ -12,6 +13,7 @@ import socket
 import pytest
 
 from neutrino_hub.modules.devices import wake_on_lan
+from neutrino_hub.modules.router import interfaces
 from neutrino_hub.modules.devices.wake_on_lan import (
     WakeTarget,
     send_magic_packet,
@@ -166,3 +168,53 @@ def test_a_malformed_mac_is_refused(sockets):
     with pytest.raises(ValueError):
         send_magic_packet("aa:bb", broadcast_address="192.168.1.255")
     assert sockets == []
+
+
+# One interface stored, two exposed on the machine: what the panel shows as
+# exposed for the one the configuration does not name differs by system.
+MAC_ADDRESSES = {
+    "en0": "192.168.10.125/24",
+    "en1": "192.168.122.127/24",
+    "utun4": "10.126.126.1/24",
+}
+
+
+@pytest.mark.parametrize(
+    "is_linux, broadcasts",
+    [
+        (True, ["192.168.10.255"]),
+        (False, ["192.168.10.255", "192.168.122.255"]),
+    ],
+)
+def test_a_server_broadcasts_on_an_interface_the_config_does_not_name_as_the_panel_shows_it(
+    monkeypatch, is_linux, broadcasts
+):
+    monkeypatch.setattr(interfaces, "is_linux", lambda: is_linux)
+    network = network_config(
+        exposed("en0"),
+        overlays=[{"provider": "easytier", "is_exposed": True, "is_enabled": True}],
+        mode="server",
+    ).with_overlay_devices({"easytier": ["utun4"]})
+
+    shown = [
+        name
+        for name in MAC_ADDRESSES
+        if name != "utun4" and network.interface_or_new(name).is_exposed
+    ]
+    targets = wake_targets(network, lambda: dict(MAC_ADDRESSES))
+
+    assert [target.broadcast_address for target in targets] == broadcasts
+    assert len(shown) == len(broadcasts)
+
+
+def test_an_interface_closed_in_the_config_gets_nothing_on_any_system(monkeypatch):
+    monkeypatch.setattr(interfaces, "is_linux", lambda: False)
+    network = network_config(
+        exposed("en0"), exposed("en1", is_exposed=False), overlays=[], mode="server"
+    )
+
+    addresses = {"en0": "192.168.10.125/24", "en1": "192.168.122.127/24"}
+
+    assert wake_targets(network, lambda: addresses) == [
+        WakeTarget("192.168.10.255", "192.168.10.125")
+    ]

@@ -50,15 +50,16 @@ def wake_targets(network, read_addresses) -> list[WakeTarget]:
 
     Returns:
         For a server hub, the network of each exposed interface holding an
-        IPv4 address; for a router or side gateway hub, each served network.
-        Never an overlay's: a tunnel has no broadcast domain, and its device
+        IPv4 address, an interface the configuration does not name read as
+        :meth:`RouterNetworkConfig.exposed_device_names_on` reads it; for a
+        router or side gateway hub, each served network. Never an overlay's: a tunnel has no broadcast domain, and its device
         refuses the packet rather than dropping it.
     """
     held: list = []
     if network.mode == ROUTER_MODE_SERVER:
         overlays = set(network.overlay_device_names)
         addresses = read_addresses()
-        for name in network.exposed_device_names:
+        for name in network.exposed_device_names_on(list(addresses)):
             if name not in overlays:
                 held.append(str(addresses.get(name, "") or ""))
     else:

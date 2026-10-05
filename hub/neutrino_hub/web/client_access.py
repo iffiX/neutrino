@@ -34,13 +34,15 @@ from neutrino_hub.web.panel_sign_in import may_open_panel
 LOGGER = logging.getLogger(__name__)
 
 
-def close_lost_access(runtime, *, why: str) -> dict:
+def close_lost_access(runtime, *, why: str, names: "dict | None" = None) -> dict:
     """Close everything each client no longer holds, after a change.
 
     Args:
         runtime: The shared runtime, which holds the clients' sockets and the
             panel's sessions.
         why: What the hub's log says ended a panel session.
+        names: Client id to name for clients whose row is already gone, so
+            the log names them.
 
     Returns:
         What was closed, by client id: ``socket``, and the ids of the
@@ -72,7 +74,11 @@ def close_lost_access(runtime, *, why: str) -> dict:
         if client is not None and may_open_panel(client):
             continue
         runtime.sessions.logout(token)
-        name = client.name if client is not None else client_id
+        name = (
+            client.name
+            if client is not None
+            else (names or {}).get(client_id, client_id)
+        )
         LOGGER.info("panel: session of client %s ended (%s)", name, why)
         closed.setdefault(client_id, {}).setdefault("panel_sessions", 0)
         closed[client_id]["panel_sessions"] += 1
