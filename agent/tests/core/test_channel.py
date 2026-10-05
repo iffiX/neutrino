@@ -53,6 +53,7 @@ class RecordingHandler(BaseHTTPRequestHandler):
     """Answers every POST with one canned JSON body and records the path."""
 
     requests: list = []
+    hosts: list = []
     answer = b'{"id": "d1", "token": "t1"}'
 
     def do_GET(self):
@@ -65,6 +66,7 @@ class RecordingHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length)
         RecordingHandler.requests.append((self.path, body))
+        RecordingHandler.hosts.append(self.headers.get("Host"))
         answer = RecordingHandler.answer
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -81,9 +83,24 @@ class QuietTlsServer(ThreadingHTTPServer):
         """A connection dropped after the handshake is the refusal working."""
 
 
+class QuietTlsServerIpv6(QuietTlsServer):
+    address_family = socket.AF_INET6
+
+
 @pytest.fixture
 def tls_server(tmp_path):
     """A live TLS server and the fingerprint of its runtime-generated certificate."""
+    yield from serving_tls(tmp_path, QuietTlsServer, "127.0.0.1")
+
+
+@pytest.fixture
+def tls_server_ipv6(tmp_path):
+    """The TLS server on the IPv6 loopback, its URL's host in brackets."""
+    yield from serving_tls(tmp_path, QuietTlsServerIpv6, "::1")
+
+
+def serving_tls(tmp_path, server_class, host):
+    """Run a live TLS server on a host; yield its URL and fingerprint."""
     if shutil.which("openssl") is None:
         pytest.skip("openssl is not installed; the pin needs a certificate")
     certificate_path = tmp_path / "certificate.pem"
@@ -113,14 +130,16 @@ def tls_server(tmp_path):
     fingerprint = hashlib.sha256(der).hexdigest()
 
     RecordingHandler.requests = []
-    server = QuietTlsServer(("127.0.0.1", 0), RecordingHandler)
+    RecordingHandler.hosts = []
+    server = server_class((host, 0), RecordingHandler)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(str(certificate_path), str(key_path))
     server.socket = context.wrap_socket(server.socket, server_side=True)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        yield f"https://127.0.0.1:{server.server_address[1]}", fingerprint
+        named = f"[{host}]" if ":" in host else host
+        yield f"https://{named}:{server.server_address[1]}", fingerprint
     finally:
         server.shutdown()
         server.server_close()
@@ -312,3 +331,14 @@ def test_a_dead_port_raises_unreachable():
 
     with pytest.raises(GatewayUnreachable):
         made.join(JOIN_PAYLOAD)
+
+
+def test_an_ipv6_hub_is_reached_at_its_bracketed_address(tls_server_ipv6):
+    url, fingerprint = tls_server_ipv6
+    client = BindingHttpClient(gateway_url=url, fingerprint=fingerprint)
+
+    reply = client.join(JOIN_PAYLOAD)
+
+    assert url.startswith("https://[::1]:")
+    assert reply == {"id": "d1", "token": "t1"}
+    assert RecordingHandler.hosts == [url.removeprefix("https://")]
