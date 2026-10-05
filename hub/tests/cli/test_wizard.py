@@ -903,3 +903,30 @@ def test_the_last_screen_does_not_wait_when_nobody_is_at_a_terminal(
     printed = capsys.readouterr().out
     assert "http://192.0.2.1:8080/" in printed
     assert "Press Enter" not in printed
+
+
+def test_a_servers_review_says_its_ports_answer():
+    """Every port of a server answers to begin with; the review said
+    "disabled" for each while the screen before it, the browser's review
+    and the panel said they answer."""
+    asked = wizard.SetupWizard(links=[])
+    asked._mode = "server"
+    asked._names = ["enp1s0", "enp2s0"]
+
+    planned = asked._plan().interfaces
+
+    assert [wizard._review_role(interface) for interface in planned] == [
+        "answers",
+        "answers",
+    ]
+
+
+def test_a_routers_review_names_each_ports_role():
+    asked = wizard.SetupWizard(links=[])
+    asked._mode = "router"
+    asked._names = ["enp1s0", "enp2s0"]
+    asked._wan, asked._lan = "enp2s0", "enp1s0"
+
+    roles = {i.name: wizard._review_role(i) for i in asked._plan().interfaces}
+
+    assert roles == {"enp1s0": "lan", "enp2s0": "wan"}
