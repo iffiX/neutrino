@@ -302,6 +302,21 @@ def test_a_stamped_manifest_alone_is_a_hub_that_carries_something(cache, tmp_pat
     assert cache.serves(family="deb", architecture="amd64")
 
 
+def test_the_release_url_is_where_the_build_stamped_the_packages(cache, tmp_path):
+    write_manifest(
+        tmp_path / "agent_packages.json",
+        {"deb-amd64": entry(DEB_NAME, url=RELEASE_URL)},
+    )
+
+    assert cache.release_url() == "https://example.invalid"
+
+
+def test_a_build_that_stamped_no_url_names_no_release(cache, tmp_path):
+    write_manifest(tmp_path / "agent_packages.json", {"deb-amd64": entry(DEB_NAME)})
+
+    assert cache.release_url() == ""
+
+
 def test_a_pinned_build_alone_is_a_hub_that_carries_something(cache, tmp_path):
     (tmp_path / "pinned" / "neutrino-agent_0.2.0_amd64.deb").write_bytes(b"pinned")
 

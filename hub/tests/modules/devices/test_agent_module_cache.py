@@ -675,3 +675,77 @@ def test_a_line_names_the_host_it_fetched_from_not_the_publisher(monkeypatch, tm
         "hub: downloading code-server 4.140.0 from mirror.example,"
     )
     assert not any("Coder" in line for line in lines)
+
+
+RELEASE = "https://gitee.com/iffiX/neutrino/releases/download/v0.5.0"
+RELEASED_MANIFEST = {
+    "name": "cc_switch",
+    "platforms": {
+        "linux-amd64": {
+            "url": "https://github.com/SaladDay/cc-switch-cli/releases/download/v5.10.4/cc.tar.gz",
+            "cn_url": "{release}/cc.tar.gz",
+            "sha256": hashlib.sha256(TARBALL).hexdigest(),
+            "package_kind": "tar",
+        }
+    },
+}
+
+
+def released(monkeypatch, tmp_path, fetches, release_url=RELEASE):
+    monkeypatch.setattr(AgentModuleCache, "_open", staticmethod(fetches.open))
+    return AgentModuleCache(
+        root=tmp_path / "cache", edition="cn", release_url=release_url
+    )
+
+
+def test_a_cn_hub_fetches_a_released_file_from_its_own_release(monkeypatch, tmp_path):
+    fetches = MirrorFetches()
+    cache = released(monkeypatch, tmp_path, fetches)
+
+    artifact = cache.artifact(
+        name="cc_switch", manifest=RELEASED_MANIFEST, platform=LINUX_AMD
+    )
+
+    assert fetches.urls == [f"{RELEASE}/cc.tar.gz"]
+    assert artifact.digest == hashlib.sha256(TARBALL).hexdigest()
+
+
+def test_a_file_its_release_no_longer_carries_says_the_hub_is_behind(
+    monkeypatch, tmp_path
+):
+    fetches = MirrorFetches(missing={f"{RELEASE}/cc.tar.gz"})
+    cache = released(monkeypatch, tmp_path, fetches)
+
+    with pytest.raises(AgentArtifactFetchError) as refusal:
+        cache.artifact(name="cc_switch", manifest=RELEASED_MANIFEST, platform=LINUX_AMD)
+
+    assert (refusal.value.code, refusal.value.params) == (
+        "hub_release_file_gone",
+        {"file": "cc.tar.gz"},
+    )
+    assert left_on_disk(cache) == []
+
+
+def test_a_cn_hub_no_release_stamped_names_no_download(monkeypatch, tmp_path):
+    fetches = MirrorFetches()
+    cache = released(monkeypatch, tmp_path, fetches, release_url="")
+
+    with pytest.raises(AgentArtifactFetchError) as refusal:
+        cache.artifact(name="cc_switch", manifest=RELEASED_MANIFEST, platform=LINUX_AMD)
+
+    assert refusal.value.code == "no_download_named"
+    assert fetches.urls == []
+
+
+def test_an_intl_hub_fetches_the_publishers_file_and_not_the_release(
+    monkeypatch, tmp_path
+):
+    fetches = MirrorFetches()
+    monkeypatch.setattr(AgentModuleCache, "_open", staticmethod(fetches.open))
+    cache = AgentModuleCache(
+        root=tmp_path / "cache", edition="intl", release_url=RELEASE
+    )
+
+    cache.artifact(name="cc_switch", manifest=RELEASED_MANIFEST, platform=LINUX_AMD)
+
+    assert fetches.urls == [RELEASED_MANIFEST["platforms"]["linux-amd64"]["url"]]

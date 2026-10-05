@@ -265,6 +265,22 @@ class AgentPackageCache:
             return {}
         return loaded if isinstance(loaded, dict) else {}
 
+    def release_url(self) -> str:
+        """Where the release this hub was built for publishes its files.
+
+        Returns:
+            The address the build stamped before each agent package's name,
+            empty for a build that publishes nothing.
+        """
+        for entry in self.manifest().values():
+            if not isinstance(entry, dict):
+                continue
+            name = package_name(entry)
+            url = str(entry.get("url", "") or "")
+            if name and url.endswith("/" + name):
+                return url[: -len(name) - 1]
+        return ""
+
     @staticmethod
     def _is_fetchable(entry: dict) -> bool:
         """Whether one entry names a file, where it is published, and its hash.

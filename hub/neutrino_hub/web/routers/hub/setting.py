@@ -1361,8 +1361,8 @@ def _unreachable(error: Exception) -> HTTPException:
 
 # What the hub package itself carries, credited with the exact tag each
 # binary was built from, and the systems whose package carries it: None for
-# every system. The agent and the client carry RustDesk and cc-switch and
-# credit those in their own packages. What the proxy and NetBird carry comes
+# every system. The agent and the client carry RustDesk, the client
+# cc-switch, and each credits those in its own package. What the proxy and NetBird carry comes
 # from the edition table.
 CARRIED_COMPONENTS = (
     (

@@ -41,7 +41,10 @@ from neutrino_hub.modules.devices.agent_reports import (
     record_offline,
     record_report,
 )
-from neutrino_hub.modules.devices.manifests import load_module_manifests
+from neutrino_hub.modules.devices.manifests import (
+    load_module_manifests,
+    load_tool_manifests,
+)
 from neutrino_hub.web import channel_state
 from neutrino_hub.web.channel_connect import serve_connect_stream
 from neutrino_hub.web.channel_shell import serve_command_stream, serve_shell_stream
@@ -154,8 +157,9 @@ async def serve_package_stream(
 ) -> None:
     """Serve a ``package`` stream an agent opened: the bytes, then their digest.
 
-    ``{module}`` names a module's package from the hub's cache; ``{}`` is
-    the agent's own package for its platform. The bytes go down under the
+    ``{module}`` names a module's package from the hub's cache, or a
+    program the agent runs itself, such as cc-switch; ``{}`` is the agent's
+    own package for its platform. The bytes go down under the
     agent's credit and the close carries their ``sha256`` and the file's
     own ``name``, the release's file name with no directory.
 
@@ -166,8 +170,9 @@ async def serve_package_stream(
     """
     module = str(stream.args.get("module", "") or "")
     platform = dict(runtime.device_platform.get(session.key, {}))
+    is_module = bool(module) and module in load_module_manifests()
     on_progress = None
-    if module:
+    if is_module:
         on_progress = functools.partial(
             _publish_module_line_from_thread,
             asyncio.get_running_loop(),
@@ -179,7 +184,7 @@ async def serve_package_stream(
             _package_path, runtime, module, platform, on_progress
         )
     except AgentArtifactFetchError as error:
-        if module:
+        if is_module:
             detail = " ".join(f"{k}={v}" for k, v in sorted(error.params.items()))
             publish_module_line(
                 runtime,
@@ -194,7 +199,7 @@ async def serve_package_stream(
         )
         await stream.close(error.code, error.params)
         return
-    if module:
+    if is_module:
         size = await asyncio.to_thread(_file_size, path)
         publish_module_line(
             runtime,
@@ -334,14 +339,14 @@ def _package_path(runtime, module: str, platform: dict, on_progress=None):
     """Where the package a ``package`` stream asks for is on this hub.
 
     Raises:
-        AgentArtifactFetchError: ``module_unknown`` for a module no manifest
+        AgentArtifactFetchError: ``module_unknown`` for a name no manifest
             names, and the caches' own typed reasons.
     """
     if not module:
         return runtime.agent_packages.package(
             family=platform_family(platform), architecture=str(platform.get("arch", ""))
         )
-    manifest = load_module_manifests().get(module)
+    manifest = load_module_manifests().get(module) or load_tool_manifests().get(module)
     if manifest is None:
         raise AgentArtifactFetchError("module_unknown", name=module)
     return runtime.agent_modules.artifact(
