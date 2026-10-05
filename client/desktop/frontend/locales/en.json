@@ -201,7 +201,6 @@
   "ui.reason.mount_form_drive": "Enter a user name and pick a drive letter in Configure first.",
   "ui.reason.mount_form_volume": "Enter a user name in Configure first.",
   "ui.reason.no_machine": "Pick a machine above first.",
-  "ui.reason.no_network": "The hub publishes no virtual network.",
   "ui.reason.not_owned": "Opened by {owner}",
   "ui.reason.offline": "The machine is offline.",
   "ui.reason.port_range": "Enter a number from 1024 to 65535.",
