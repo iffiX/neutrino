@@ -3,7 +3,6 @@
 import asyncio
 import base64
 import codecs
-import ipaddress
 import json
 import zlib
 from collections.abc import AsyncIterator
@@ -41,7 +40,11 @@ from neutrino_hub.modules.devices.ssh_ops import (
     SshCredentials,
     login_password,
 )
-from neutrino_hub.modules.devices.wake_on_lan import send_magic_packet
+from neutrino_hub.modules.router.link_status import device_addresses
+from neutrino_hub.modules.devices.wake_on_lan import (
+    send_magic_packet,
+    wake_targets,
+)
 from neutrino_hub.system.machine import machine_id
 from neutrino_hub import HUB_VERSION
 from neutrino_hub.web import channel_state
@@ -373,6 +376,9 @@ def wake(
 ) -> WolResult:
     """Broadcast a Wake-on-LAN packet to a device, on its most recent link MAC.
 
+    The packet goes to every network the hub serves, or, in server mode,
+    every network it is exposed on, never to an overlay.
+
     Args:
         request: The device.
         runtime: The shared runtime.
@@ -396,19 +402,9 @@ def wake(
             detail={"code": "wol_no_mac", "params": {"device_id": device_id}},
         )
     # A magic packet reaches only its own broadcast domain, and which of the
-    # gateway's networks the sleeping device is on is exactly what cannot be
-    # known while it is asleep. So send one to each; they are 102 bytes. Not
-    # to an overlay: a tunnel has no broadcast domain, and its device refuses
-    # the packet rather than dropping it.
-    targets = []
-    for interface in runtime.network().lan_interfaces:
-        if not interface.lan.address:
-            continue
-        try:
-            subnet = ipaddress.ip_network(interface.lan.cidr, strict=False)
-        except ValueError:
-            continue
-        targets.append(str(subnet.broadcast_address))
+    # hub's networks the sleeping device is on is exactly what cannot be
+    # known while it is asleep. So send one to each; they are 102 bytes.
+    targets = wake_targets(runtime.network(), device_addresses)
     if not targets:
         return WolResult(is_sent=False, code="no_reachable_address")
 
@@ -416,9 +412,13 @@ def wake(
     failures = []
     for target in targets:
         try:
-            send_magic_packet(device.link_mac, broadcast_address=target)
+            send_magic_packet(
+                device.link_mac,
+                broadcast_address=target.broadcast_address,
+                source_address=target.source_address,
+            )
         except (ValueError, OSError) as error:
-            failures.append(f"{target}: {error}")
+            failures.append(f"{target.broadcast_address}: {error}")
             continue
         sent.append(target)
     if not sent:
