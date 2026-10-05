@@ -319,7 +319,8 @@ function AccountRow({ entry }: { entry: AiToolAccountView }) {
 }
 
 /** What the machine said of one account, worded from its state or code,
- * and a detail that is itself a worded code in its words. */
+ * and a detail that is itself a code worded with no placeholder in its
+ * words. */
 function describeResult(entry: AiToolAccountView): string {
   if (entry.state === "failed") {
     const key = `code.${entry.code}`;
@@ -328,8 +329,13 @@ function describeResult(entry: AiToolAccountView): string {
       ...entry.params,
     };
     const detailKey = `code.${String(params.detail ?? "")}`;
-    if (params.detail !== undefined && hasWord(detailKey)) {
-      params.detail = t(detailKey, params);
+    const detailWords = t(detailKey);
+    if (
+      params.detail !== undefined &&
+      hasWord(detailKey) &&
+      !/\{\w+\}/.test(detailWords)
+    ) {
+      params.detail = detailWords;
     }
     return hasWord(key)
       ? t(key, params)
