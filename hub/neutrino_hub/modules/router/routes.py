@@ -37,6 +37,7 @@ from neutrino_hub.modules.router.constants import (
     ROUTER_TRIGGER_APPLY,
     router_dhcp_config_path,
     ROUTER_FWMARK_TPROXY,
+    ROUTER_LOOPBACK_RESOLVER,
     ROUTER_METRIC_BALANCE,
     ROUTER_METRIC_MULTIPATH,
     ROUTER_METRIC_SIDE_GATEWAY,
@@ -521,21 +522,24 @@ class RouterInterfaceApplier:
         at a time: a router given its LAN from the page rather than by a
         whole-network apply must end up resolving at its own dnsmasq too.
 
+        A router that serves no network resolves at its dnsmasq on
+        loopback, the one place that dnsmasq answers then.
+
         Returns:
             One line when name resolution changed hands.
         """
         if not self._network.is_addressing_owned:
             return []
-        # The interface rather than `primary_lan_address`, which answers
-        # loopback for a box that serves nothing. That is the right answer for
-        # binding a listener and the wrong one here: naming an address no
-        # dnsmasq is on would leave the box resolving nothing at all.
         lan = self._network.primary_lan
-        if lan is None or not lan.lan.address:
+        if lan is None:
+            address = ROUTER_LOOPBACK_RESOLVER
+        elif lan.lan.address:
+            address = lan.lan.address
+        else:
             return []
-        if not resolver.point_at(lan.lan.address):
+        if not resolver.point_at(address):
             return []
-        return [f"resolving at {lan.lan.address}"]
+        return [f"resolving at {address}"]
 
     def apply(self, interface: RouterInterface) -> list[str]:
         """Apply one interface's role.
