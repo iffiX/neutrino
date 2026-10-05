@@ -577,7 +577,8 @@ def relaunch_box(check, monkeypatch, tmp_path):
 def test_a_repair_that_starts_the_planted_relaunch_task_passes(check, relaunch_box):
     box, marker = relaunch_box
 
-    check._check_client_windows_relaunch(Path("client.msi"))
+    check._client_windows_repair(Path("client.msi"))
+    check._client_windows_marker(Path("client.msi"))
 
     (planted,) = [c for c in box["commands"] if c[:2] == ["schtasks", "/create"]]
     assert planted[3] == "NeutrinoClientRelaunch_cicheck"
@@ -591,7 +592,7 @@ def test_an_install_that_left_a_relaunch_task_fails_the_check(check, relaunch_bo
     box["tasks"] = ["NeutrinoClientRelaunch_runner"]
 
     with pytest.raises(SystemExit, match="left relaunch tasks"):
-        check._check_client_windows_relaunch(Path("client.msi"))
+        check._check_client_windows_nothing_started()
 
 
 def test_an_install_that_started_a_window_fails_the_check(check, relaunch_box):
@@ -599,15 +600,132 @@ def test_an_install_that_started_a_window_fails_the_check(check, relaunch_box):
     box["windows"] = '"nclientw.exe","4100","Console","1","40,000 K"'
 
     with pytest.raises(SystemExit, match="started one"):
-        check._check_client_windows_relaunch(Path("client.msi"))
+        check._check_client_windows_nothing_started()
 
 
 def test_a_repair_that_starts_no_relaunch_task_fails_the_check(check, relaunch_box):
     box, _ = relaunch_box
     box["starts"] = False
 
+    check._client_windows_repair(Path("client.msi"))
     with pytest.raises(SystemExit, match="did not start the relaunch task"):
-        check._check_client_windows_relaunch(Path("client.msi"))
+        check._client_windows_marker(Path("client.msi"))
+
+
+@pytest.fixture
+def phases(check, monkeypatch, tmp_path):
+    """The client check's phases with their work recorded, evidence in tmp_path."""
+    ran = []
+    failing = set()
+
+    def run_of(phase):
+        def run(msi):
+            ran.append(phase)
+            if phase in failing:
+                raise SystemExit(f"{phase} failed")
+
+        return run
+
+    monkeypatch.setattr(
+        check,
+        "CLIENT_WINDOWS_PHASE_RUNS",
+        {phase: run_of(phase) for phase in check.CLIENT_WINDOWS_PHASES},
+    )
+    monkeypatch.setattr(check, "CHECK_EVIDENCE", tmp_path)
+    monkeypatch.setattr(check, "CHECK_RESCUES", [])
+    monkeypatch.setattr(check, "_require_host", lambda *args: None)
+    monkeypatch.setattr(check, "_snapshot", lambda: "the machine\n")
+    monkeypatch.setattr(check, "_push_status", lambda text: None)
+    return ran, failing, tmp_path
+
+
+def test_each_phase_runs_after_the_one_before_and_leaves_its_evidence(check, phases):
+    ran, _, evidence = phases
+
+    for phase in check.CLIENT_WINDOWS_PHASES:
+        check.run_client_windows_phase(Path("client.msi"), phase)
+
+    assert ran == list(check.CLIENT_WINDOWS_PHASES)
+    state = json.loads((evidence / "state.json").read_text())
+    assert state["passed"] == list(check.CLIENT_WINDOWS_PHASES)
+    for phase in check.CLIENT_WINDOWS_PHASES:
+        assert (evidence / f"{phase}.snapshot.txt").read_text() == "the machine\n"
+    progress = (evidence / "progress.txt").read_text()
+    assert "repair: starting" in progress and "repair: passed" in progress
+
+
+def test_a_phase_whose_phase_before_did_not_pass_is_refused(check, phases):
+    ran, failing, evidence = phases
+    failing.add("installed")
+    check.run_client_windows_phase(Path("client.msi"), "install")
+    with pytest.raises(SystemExit, match="installed failed"):
+        check.run_client_windows_phase(Path("client.msi"), "installed")
+
+    with pytest.raises(SystemExit, match="needs installed to have passed"):
+        check.run_client_windows_phase(Path("client.msi"), "repair")
+
+    assert ran == ["install", "installed"]
+    assert (evidence / "installed.snapshot.txt").is_file()
+
+
+def test_a_phase_after_the_install_can_take_the_client_away(check, phases):
+    check.run_client_windows_phase(Path("client.msi"), "install")
+    check.CHECK_RESCUES.clear()
+
+    check.run_client_windows_phase(Path("client.msi"), "installed")
+
+    assert len(check.CHECK_RESCUES) == 1
+
+
+def test_a_status_line_goes_to_this_runs_commit(check, monkeypatch):
+    sent = []
+
+    class Answer:
+        def close(self):
+            pass
+
+    def urlopen(request, timeout):
+        sent.append((request.full_url, json.loads(request.data), timeout))
+        return Answer()
+
+    monkeypatch.setenv("GITHUB_TOKEN", "t0ken")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "iffiX/neutrino")
+    monkeypatch.setenv("GITHUB_SHA", "abc123")
+    monkeypatch.setattr(check.urllib.request, "urlopen", urlopen)
+
+    check._push_status("repair: msiexec /fa starting")
+
+    ((url, body, timeout),) = sent
+    assert url == "https://api.github.com/repos/iffiX/neutrino/statuses/abc123"
+    assert body == {
+        "state": "pending",
+        "context": "client_windows check",
+        "description": "repair: msiexec /fa starting",
+    }
+    assert timeout == check.CHECK_STATUS_TIMEOUT_S
+
+
+def test_a_status_that_cannot_be_sent_never_fails_the_step(check, monkeypatch):
+    def refuse(request, timeout):
+        raise OSError("network is down")
+
+    monkeypatch.setenv("GITHUB_TOKEN", "t0ken")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "iffiX/neutrino")
+    monkeypatch.setenv("GITHUB_SHA", "abc123")
+    monkeypatch.setattr(check.urllib.request, "urlopen", refuse)
+
+    check._push_status("repair: planting the relaunch task")
+
+
+def test_no_token_sends_no_status(check, monkeypatch):
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+
+    def unexpected(request, timeout):
+        raise AssertionError("nothing is sent")
+
+    monkeypatch.setattr(check.urllib.request, "urlopen", unexpected)
+
+    check._push_status("install: starting")
 
 
 @pytest.mark.parametrize(
