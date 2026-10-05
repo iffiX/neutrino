@@ -281,14 +281,16 @@ export function DashboardPage() {
                     </span>
                   </span>
                 </div>
-                <RangeSwitch
-                  options={SCOPE_OPTIONS.map((option) => ({
-                    value: option.value,
-                    label: t(option.labelKey),
-                  }))}
-                  value={scope}
-                  onChange={setScope}
-                />
+                {IS_PROXY_CARRIED && (
+                  <RangeSwitch
+                    options={SCOPE_OPTIONS.map((option) => ({
+                      value: option.value,
+                      label: t(option.labelKey),
+                    }))}
+                    value={scope}
+                    onChange={setScope}
+                  />
+                )}
               </div>
             </div>
             {trafficSeries.length === 0 ? (

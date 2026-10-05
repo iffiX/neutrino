@@ -38,9 +38,14 @@ export const NAV_ITEMS: NavItem[] = [
     path: "/",
     labelKey: "ui.nav.dashboard",
     icon: "dashboard",
-    descriptionKey: "ui.nav.dashboard_description",
+    // A tree without the proxy has no exits to describe.
+    descriptionKey: hasFeature("proxy")
+      ? "ui.nav.dashboard_description"
+      : "ui.nav.dashboard_description_no_exits",
     modeDescriptionKeys: {
-      server: "ui.nav.dashboard_description_server",
+      server: hasFeature("proxy")
+        ? "ui.nav.dashboard_description_server"
+        : "ui.nav.dashboard_description_server_no_exits",
     },
     group: "hub",
   },
