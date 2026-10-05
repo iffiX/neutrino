@@ -17,6 +17,13 @@ from pathlib import Path
 # rather than something carried, so pinned by version.
 NUITKA_VERSION = "4.2.1"
 
+# A compiled program refuses any command line holding ``-c`` or ``-m``
+# followed by another argument, wherever it stands, to stop a program that
+# starts itself through ``sys.executable``. A program that carries another
+# program's argument vector after ``--`` turns it off; it never starts
+# itself that way.
+NUITKA_ARGV_PASSTHROUGH = "--no-deployment-flag=self-execution"
+
 
 def pip_install_command(python: Path) -> list:
     """The command that installs the pinned compiler into an interpreter.

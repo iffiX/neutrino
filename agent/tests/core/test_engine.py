@@ -741,6 +741,31 @@ def test_an_apply_failure_makes_the_row_failed_with_its_code(tmp_path):
     assert engine.report()["samba"]["code"] == ""
 
 
+def test_an_install_that_failed_reads_failed_with_its_code_though_nothing_is_there(
+    tmp_path,
+):
+    """The retry press exists only for a module reported failed: an install
+    that got no package leaves nothing installed and must still say so."""
+    engine = module_engine(ConfigurableRunner(is_installed=False), tmp_path=tmp_path)
+    engine.record_apply(
+        "samba", "code_server_download_failed", {"detail": "download_failed"}
+    )
+
+    engine._refresh(is_forced=True)
+
+    row = engine.report()["samba"]
+    assert row["state"] == "failed"
+    assert (row["code"], row["params"]) == (
+        "code_server_download_failed",
+        {"detail": "download_failed"},
+    )
+
+    engine.record_apply("samba", "", {})
+    engine._refresh(is_forced=True)
+    assert engine.report()["samba"]["state"] == "absent"
+    assert engine.report()["samba"]["code"] == ""
+
+
 def test_a_runner_that_cannot_read_the_machine_is_failed_typed():
     class BrokenRunner(ConfigurableRunner):
         def verify(self, resolved):

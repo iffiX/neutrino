@@ -552,7 +552,10 @@ class ModuleEngine(ReconcileWorker):
         try:
             observed = runner.observe(_row(recipe))
             if not self._verify(runner, recipe, observed):
-                return _typed(AGENT_MODULE_STATE_ABSENT)
+                # An install that failed leaves nothing installed; its row
+                # still says it failed, so the press that tries again exists.
+                status = _typed(AGENT_MODULE_STATE_ABSENT)
+                return self._with_failure(name, status)
             is_active = bool(observed.get("is_active", False))
             status = _typed(
                 _steady_state(
@@ -571,6 +574,10 @@ class ModuleEngine(ReconcileWorker):
             return _typed(
                 AGENT_MODULE_STATE_FAILED, "verify_failed", detail=str(error)[:200]
             )
+        return self._with_failure(name, status)
+
+    def _with_failure(self, name: str, status: dict) -> dict:
+        """One row, marked failed with its code when the last apply failed."""
         with self._lock:
             failure = self._apply_results.get(name)
         if failure is not None:

@@ -421,7 +421,7 @@ def test_a_failed_install_closes_the_log_with_its_code_and_fails_the_state(
     (log,) = socket.channels
     assert log.closed == {
         "code": "install_unconfirmed",
-        "params": {"state": "absent"},
+        "params": {"state": "failed"},
     }
     assert runners["samba"].applied == []
     assert held.applied_hash == ""
