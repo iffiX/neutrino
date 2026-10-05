@@ -105,7 +105,7 @@ systemctl daemon-reload >/dev/null 2>&1 || true
 if [ "$1" -ge 2 ]; then
     systemctl try-restart neutrino_agent.service >/dev/null 2>&1 || true
 fi
-if [ "$1" = 1 ]; then
+if [ "$1" = 1 ] && ! {bound_test}; then
     echo ""
     echo "  Neutrino agent installed. Start it and join a hub:"
     echo ""
@@ -195,6 +195,9 @@ def main() -> int:
                 vendor=payload.VENDOR_PREFIX,
                 unit_dir=UNIT_DIR,
                 rustdesk_unit=payload.RUSTDESK_UNIT_NAME,
+                bound_test=payload.AGENT_BOUND_TEST.format(
+                    path=payload.AGENT_BINDING_PATH
+                ),
                 prune=payload.PRUNE_UNTRACKED,
             ),
             encoding="utf-8",

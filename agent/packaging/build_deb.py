@@ -17,6 +17,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import payload  # noqa: E402
+from shared import deb_build  # noqa: E402
 
 AGENT_ROOT = payload.AGENT_ROOT
 PACKAGE_NAME = payload.PACKAGE_NAME
@@ -48,6 +49,7 @@ Version: {version}
 Section: admin
 Priority: optional
 Architecture: {architecture}
+Installed-Size: {size}
 Depends: {depends}
 Maintainer: {maintainer}
 Description: Neutrino device agent
@@ -82,11 +84,13 @@ if [ "$1" = configure ] && [ -n "$2" ]; then
 fi
 systemctl enable --now neutrino_agent.service >/dev/null 2>&1 || true
 
-echo ""
-echo "  Neutrino agent installed. Join a hub with:"
-echo ""
-echo "      sudo nagent join <enrollment link>"
-echo ""
+if ! {bound_test}; then
+    echo ""
+    echo "  Neutrino agent installed. Join a hub with:"
+    echo ""
+    echo "      sudo nagent join <enrollment link>"
+    echo ""
+fi
 """
 
 PRERM = """#!/bin/sh
@@ -221,6 +225,7 @@ def _lay_out(tree: Path, version: str, architecture: str, maintainer: str) -> No
 
     control = CONTROL.format(
         name=PACKAGE_NAME,
+        size=deb_build.installed_size_kib(tree),
         version=version,
         architecture=architecture,
         depends=", ".join(RUNTIME_DEPENDENCIES),
@@ -233,6 +238,7 @@ def _lay_out(tree: Path, version: str, architecture: str, maintainer: str) -> No
             prune=payload.PRUNE_UNTRACKED,
             package=PACKAGE_NAME,
             prefix=payload.INSTALL_PREFIX,
+            bound_test=payload.AGENT_BOUND_TEST.format(path=payload.AGENT_BINDING_PATH),
         ),
         is_executable=True,
     )

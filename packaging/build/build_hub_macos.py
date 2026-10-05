@@ -217,6 +217,7 @@ def main() -> int:
             min_os_version=(
                 HUB_PKG_CN_MIN_OS_VERSION if arguments.edition == "cn" else ""
             ),
+            title="Neutrino Hub",
         )
 
     if not target.is_file():

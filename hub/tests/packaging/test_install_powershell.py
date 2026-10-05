@@ -109,6 +109,7 @@ def run(tmp_path):
             "FAKE_EXIT": str(exit_code),
             "PROCESSOR_ARCHITECTURE": architecture,
             "ProgramFiles": str(tmp_path / "Program Files"),
+            "ProgramData": str(tmp_path / "ProgramData"),
             **(env or {}),
         }
         result = subprocess.run(
@@ -372,3 +373,14 @@ def test_the_hub_without_a_terminal_names_its_next_step(run):
 
     assert run.said[-1].startswith("Next, in this window: & '")
     assert run.said[-1].endswith("nhub.exe' open")
+
+
+def test_a_joined_machine_is_given_no_join_line(run, tmp_path):
+    config = tmp_path / "ProgramData" / "Neutrino" / "agent" / "config"
+    config.mkdir(parents=True)
+    (config / "agent.json").write_text('{\n  "id": "d1",\n  "token": "t0k"\n}\n')
+
+    outcome, _asked = run("agent")
+
+    assert outcome == "ok"
+    assert not any("nagent join" in line for line in run.said)

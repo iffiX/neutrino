@@ -67,6 +67,8 @@ INSTALL_ROOT_DIR = Path("/Library/Application Support/Neutrino/agent")
 INSTALL_AGENT_DIR = INSTALL_ROOT_DIR / "app"
 INSTALL_CONFIG_DIR = INSTALL_ROOT_DIR / "config"
 INSTALL_STATE_DIR = INSTALL_ROOT_DIR / "state"
+# The agent's binding to its hub, which a machine that already joined holds.
+INSTALL_BINDING_PATH = INSTALL_CONFIG_DIR / "agent.json"
 INSTALL_LINK_PATH = Path("/usr/local/bin") / AGENT_BINARY_NAME
 # The agent's copy of RustDesk, under the agent's own program directory.
 INSTALL_RUSTDESK_DIR = INSTALL_AGENT_DIR / "rustdesk"
@@ -138,11 +140,13 @@ start_daemon {AGENT_LAUNCHD_LABEL} /Library/LaunchDaemons/{AGENT_LAUNCHD_LABEL}.
     echo "  The agent's service did not start: {AGENT_LAUNCHD_LABEL}" >&2
     exit 1
 }}
-echo ""
-echo "  Neutrino agent installed. Join a hub with:"
-echo ""
-echo "      sudo nagent join <enrollment link>"
-echo ""
+if ! {payload.AGENT_BOUND_TEST.format(path=INSTALL_BINDING_PATH)}; then
+    echo ""
+    echo "  Neutrino agent installed. Join a hub with:"
+    echo ""
+    echo "      sudo nagent join <enrollment link>"
+    echo ""
+fi
 exit 0
 """
 
@@ -186,6 +190,7 @@ def main() -> int:
             identifier=PACKAGE_IDENTIFIER,
             version=version,
             scripts_dir=staged["scripts"],
+            title="Neutrino Agent",
         )
 
     if not target.is_file():

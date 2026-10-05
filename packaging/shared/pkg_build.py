@@ -18,9 +18,14 @@ pkgbuild and productbuild.
 from __future__ import annotations
 
 import plistlib
+import re
 import shutil
 import subprocess
 from pathlib import Path
+from xml.sax.saxutils import escape
+
+# The distribution's root element, which the title goes inside.
+PKG_DISTRIBUTION_ROOT = re.compile(r"<installer-gui-script\b[^>]*>")
 
 # Where launchd reads system daemons and per-session agents from.
 LAUNCH_DAEMONS_DIR = "Library/LaunchDaemons"
@@ -272,8 +277,13 @@ def build(
     version: str,
     scripts_dir: Path | None = None,
     min_os_version: str = "",
+    title: str = "",
 ) -> None:
     """Run pkgbuild over the package root, then productbuild around it.
+
+    With a title, productbuild first writes the distribution it would build
+    from, the title goes into it, and the package is built from that, so
+    ``installer`` names the package by it.
 
     Args:
         package_root: The directory standing in for the filesystem root.
@@ -284,6 +294,7 @@ def build(
             runs any.
         min_os_version: The oldest macOS the package installs on; given, the
             payload takes the strongest compression that version reads.
+        title: The name ``installer`` shows for the package.
 
     Raises:
         SystemExit: When the tools are not installed, or refuse.
@@ -312,11 +323,57 @@ def build(
     if min_os_version:
         command += ["--compression", "latest", "--min-os-version", min_os_version]
     _run(command + ["--install-location", "/", str(component)])
+    distribution = target.parent / f"{identifier}.distribution.xml"
     try:
-        _run(["productbuild", "--package", str(component), str(target)])
+        if title and _write_titled_distribution(component, distribution, title):
+            _run(
+                [
+                    "productbuild",
+                    "--distribution",
+                    str(distribution),
+                    "--package-path",
+                    str(component.parent),
+                    str(target),
+                ]
+            )
+        else:
+            _run(["productbuild", "--package", str(component), str(target)])
     finally:
         component.unlink(missing_ok=True)
         component_plist.unlink(missing_ok=True)
+        distribution.unlink(missing_ok=True)
+
+
+def _write_titled_distribution(component: Path, distribution: Path, title: str) -> bool:
+    """Write the distribution productbuild would build a component into,
+    with a title.
+
+    Args:
+        component: The component package.
+        distribution: Where the distribution goes.
+        title: The title.
+
+    Returns:
+        False when the distribution has no root element to put the title
+        under, so the package is built from the component as it is.
+
+    Raises:
+        SystemExit: When productbuild refuses.
+    """
+    _run(
+        ["productbuild", "--synthesize", "--package", str(component), str(distribution)]
+    )
+    text = distribution.read_text(encoding="utf-8")
+    titled = PKG_DISTRIBUTION_ROOT.sub(
+        lambda found: f"{found.group(0)}\n    <title>{escape(title)}</title>",
+        text,
+        count=1,
+    )
+    if titled == text:
+        print(f"  {distribution.name} has no root element; the package goes untitled")
+        return False
+    distribution.write_text(titled, encoding="utf-8")
+    return True
 
 
 def write_component_plist(package_root: Path, path: Path) -> Path:
