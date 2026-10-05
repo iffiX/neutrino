@@ -77,6 +77,13 @@ PROGRAM_DATA = Path(os.environ.get("ProgramData", "C:/ProgramData"))
 CLIENT_WINDOWS_EASYTIER_STATE = (
     PROGRAM_DATA / "Neutrino" / "client" / "state" / "easytier"
 )
+# The client's data folder, the folders under it whose access lists the check
+# reads, and what an earlier build is made to have left there before the
+# install: each readable by every person, as ProgramData's grants make it.
+CLIENT_WINDOWS_DATA = PROGRAM_DATA / "Neutrino" / "client"
+CLIENT_WINDOWS_DATA_FOLDERS = ("", "state", "log")
+CLIENT_WINDOWS_DATA_NETBIRD = "state/netbird"
+CLIENT_WINDOWS_DATA_LEFTOVERS = ("log/earlier_build.log", "state/earlier_build.txt")
 CLIENT_WINDOWS_EASYTIER_SERVICE = "NeutrinoClientEasytier"
 CLIENT_WINDOWS_EASYTIER_PIPE = "neutrino_client_easytier"
 # What ``sc query`` exits with for a service that does not exist.
@@ -313,6 +320,7 @@ def check_client_windows(msi: Path) -> None:
         SystemExit: When a step fails.
     """
     _require_host("win32", "Windows")
+    _plant_client_windows_leftovers()
     log = Path(tempfile.gettempdir()) / "client_install.log"
     code = _msiexec("/i", msi, log)
     print(f"msiexec /i exited {code}")
@@ -336,6 +344,7 @@ def check_client_windows(msi: Path) -> None:
         raise SystemExit("the EasyTier daemon has no pipe")
     if not CLIENT_WINDOWS_EASYTIER_STATE.is_dir():
         raise SystemExit(f"no EasyTier state at {CLIENT_WINDOWS_EASYTIER_STATE}")
+    _check_client_windows_data()
 
     log = Path(tempfile.gettempdir()) / "client_remove.log"
     print(f"msiexec /x exited {_msiexec('/x', msi, log)}")
@@ -343,6 +352,38 @@ def check_client_windows(msi: Path) -> None:
         raise SystemExit("the folder outlived the uninstaller")
     if _service_exists(CLIENT_WINDOWS_EASYTIER_SERVICE):
         raise SystemExit("the EasyTier daemon outlived the uninstaller")
+
+
+def _plant_client_windows_leftovers() -> None:
+    """Leave what an earlier build would have, with ProgramData's grants on it."""
+    for relative in CLIENT_WINDOWS_DATA_LEFTOVERS:
+        path = CLIENT_WINDOWS_DATA / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("left by an earlier build\n", encoding="utf-8")
+
+
+def _check_client_windows_data() -> None:
+    """Every folder and file under the client's data folder is closed to people.
+
+    Raises:
+        SystemExit: When a folder the check names is missing, or an access
+            list under the data folder names an account every person is in.
+    """
+    paths = [CLIENT_WINDOWS_DATA / relative for relative in CLIENT_WINDOWS_DATA_FOLDERS]
+    netbird = CLIENT_WINDOWS_DATA / CLIENT_WINDOWS_DATA_NETBIRD
+    if netbird.is_dir():
+        paths.append(netbird)
+    paths += [
+        CLIENT_WINDOWS_DATA / relative for relative in CLIENT_WINDOWS_DATA_LEFTOVERS
+    ]
+    for path in paths:
+        if not path.exists():
+            raise SystemExit(f"no {path} after the install")
+        access = _answer(["icacls", str(path)])
+        print(access)
+        named = [account for account in WINDOWS_EVERY_PERSON if account in access]
+        if named:
+            raise SystemExit(f"{path} is open to {', '.join(named)}")
 
 
 def check_agent_macos(pkg: Path) -> None:

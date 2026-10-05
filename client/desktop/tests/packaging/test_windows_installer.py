@@ -838,3 +838,42 @@ def test_the_data_folder_admits_system_and_the_administrators_alone(source):
         node for node in root.iter(f"{WXS}Feature") if node.get("Id") == "Main"
     ]
     assert "Data" in [ref.get("Id") for ref in feature.iter(f"{WXS}ComponentGroupRef")]
+
+
+def test_everything_under_the_data_folder_is_reset_to_what_it_inherits(source):
+    """The folders the installer makes under it are made before the folder
+    gets its descriptor, and one an earlier build left keeps its grants; so
+    each access list under it is reset to the folder's alone, as SYSTEM, on
+    every install, upgrade and repair."""
+    root = xml.etree.ElementTree.fromstring(source)
+    actions = {
+        action.get("Id"): action
+        for action in root.iter(WXS + "CustomAction")
+        if action.get("Id") in ("SetSecureClientData", "SecureClientData")
+    }
+    scheduled = {
+        custom.get("Action"): custom
+        for custom in root.iter(WXS + "Custom")
+        if custom.get("Action") in actions
+    }
+
+    assert actions["SetSecureClientData"].get("Property") == "SecureClientData"
+    assert actions["SetSecureClientData"].get("Value") == (
+        '"[SystemFolder]icacls.exe" "[CLIENTDATAFOLDER]*" /reset /T /C /Q'
+    )
+    assert actions["SecureClientData"].get("DllEntry") == "WixQuietExec"
+    assert actions["SecureClientData"].get("Execute") == "deferred"
+    assert actions["SecureClientData"].get("Impersonate") == "no"
+    assert scheduled["SecureClientData"].get("Before") == "InstallFinalize"
+    assert scheduled["SetSecureClientData"].get("Before") == "SecureClientData"
+    for custom in scheduled.values():
+        assert custom.get("Condition") == 'NOT REMOVE~="ALL"'
+
+
+def test_the_reset_leaves_the_data_folder_its_own_descriptor():
+    """``icacls <folder>\\* /reset`` names what is under the folder, never the
+    folder, which would take ProgramData's grants back."""
+    command = build_client_windows.SECURE_DATA_COMMAND
+    assert '"[CLIENTDATAFOLDER]*"' in command
+    assert '"[CLIENTDATAFOLDER]"' not in command
+    assert "/T" in command.split()

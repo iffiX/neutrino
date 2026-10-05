@@ -231,6 +231,16 @@ UPGRADE_CODE = "0221A508-0A7E-4CFE-B517-B901D9318962"
 # read. The overlay daemons' state under it holds their private keys.
 DATA_FOLDER_SDDL = "D:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
 
+# Everything under the data folder, after the folder has its descriptor:
+# each access list reset to what it inherits from the folder alone. The
+# installer creates the folders under it before it sets the folder's
+# descriptor, which reaches no folder or file that already stands, so a
+# clean install leaves state and state\netbird with ProgramData's grants and
+# an upgrade leaves whatever an earlier build left. Run as SYSTEM on every
+# install, upgrade and repair.
+SECURE_DATA_COMMAND = '"[SystemFolder]icacls.exe" "[CLIENTDATAFOLDER]*" /reset /T /C /Q'
+SECURE_DATA_CONDITION = 'NOT REMOVE~="ALL"'
+
 # The quit, run as the person installing, through the windowed program: an
 # installer's custom action has no console, and a console program started by
 # one opens a black window over the wizard. The ask itself is bounded by the
@@ -435,6 +445,20 @@ WIX_BODY = r"""
                   Impersonate="no"
                   Return="ignore" />
 
+    <!-- Every folder and file under the data folder, closed as the folder
+         is: after the extension has set the folder's descriptor, which it
+         does in its own deferred action before InstallFinalize. -->
+    <CustomAction Id="SetSecureClientData"
+                  Property="SecureClientData"
+                  Value="@SECURE_DATA_COMMAND@"
+                  Execute="immediate" />
+    <CustomAction Id="SecureClientData"
+                  DllEntry="WixQuietExec"
+                  BinaryRef="@UTIL_LIBRARY@"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
     <InstallExecuteSequence>
       <!-- After costing, which resolves [INSTALLFOLDER], and before the
            extension's own close, which it schedules on InstallInitialize. -->
@@ -450,6 +474,12 @@ WIX_BODY = r"""
       <Custom Action="RemoveClientConfig"
               After="RemoveFiles"
               Condition="@CONFIG_GOES@" />
+      <Custom Action="SetSecureClientData"
+              Before="SecureClientData"
+              Condition="@SECURE_DATA@" />
+      <Custom Action="SecureClientData"
+              Before="InstallFinalize"
+              Condition="@SECURE_DATA@" />
     </InstallExecuteSequence>
 
 @DAEMONS@
@@ -706,6 +736,8 @@ def _wix_source(staged: dict, version: str, publisher: str, machine: str) -> str
             "DATA_SDDL": DATA_FOLDER_SDDL,
             "QUIT_COMMAND": QUIT_COMMAND,
             "REMOVE_CONFIG_COMMAND": REMOVE_CONFIG_COMMAND,
+            "SECURE_DATA_COMMAND": SECURE_DATA_COMMAND,
+            "SECURE_DATA": SECURE_DATA_CONDITION,
             "CONFIG_GOES": CONFIG_GOES_CONDITION,
             "PATH_DECLINED": PATH_DECLINED_CONDITION,
             "CLIENT_EXE": Path(staged["payload"]) / CLIENT_BINARY_NAME,

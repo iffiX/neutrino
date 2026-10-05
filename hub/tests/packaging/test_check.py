@@ -388,3 +388,70 @@ def test_no_vault_under_programdata_fails_the_check(
 
     with pytest.raises(SystemExit, match="no vault"):
         check._check_hub_windows_config()
+
+
+@pytest.fixture
+def client_data(check, monkeypatch, tmp_path):
+    """The client's data folder of this test's own, and icacls answered per path."""
+    data = tmp_path / "ProgramData" / "Neutrino" / "client"
+    for relative in check.CLIENT_WINDOWS_DATA_FOLDERS:
+        (data / relative).mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(check, "CLIENT_WINDOWS_DATA", data)
+    closed = (
+        "NT AUTHORITY\\SYSTEM:(I)(OI)(CI)(F)\n BUILTIN\\Administrators:(I)(OI)(CI)(F)"
+    )
+    access = {}
+    asked = []
+
+    def answer(command):
+        asked.append(command[1])
+        return command[1] + " " + access.get(command[1], closed)
+
+    monkeypatch.setattr(check, "_answer", answer)
+    check._plant_client_windows_leftovers()
+    return data, access, asked
+
+
+def test_a_client_data_tree_closed_to_people_passes(check, client_data):
+    data, _, asked = client_data
+    (data / "state" / "netbird").mkdir()
+
+    check._check_client_windows_data()
+
+    assert asked == [
+        str(data / ""),
+        str(data / "state"),
+        str(data / "log"),
+        str(data / "state" / "netbird"),
+        str(data / "log" / "earlier_build.log"),
+        str(data / "state" / "earlier_build.txt"),
+    ]
+
+
+@pytest.mark.parametrize(
+    "relative, grant",
+    [
+        ("state", "\n BUILTIN\\Users:(I)(OI)(CI)(RX)"),
+        ("state/netbird", "\n NT AUTHORITY\\Authenticated Users:(I)(M)"),
+        ("log/earlier_build.log", "\n Everyone:(I)(R)"),
+    ],
+)
+def test_a_folder_or_leftover_every_person_can_read_fails_the_check(
+    check, client_data, relative, grant
+):
+    data, access, _ = client_data
+    (data / "state" / "netbird").mkdir()
+    access[str(data / relative)] = "NT AUTHORITY\\SYSTEM:(I)(F)" + grant
+
+    with pytest.raises(SystemExit, match="is open to"):
+        check._check_client_windows_data()
+
+
+def test_a_client_data_tree_with_no_log_folder_fails_the_check(check, client_data):
+    data, _, _ = client_data
+    for item in (data / "log").iterdir():
+        item.unlink()
+    (data / "log").rmdir()
+
+    with pytest.raises(SystemExit, match="no .*log"):
+        check._check_client_windows_data()
