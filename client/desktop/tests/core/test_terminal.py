@@ -292,3 +292,22 @@ def test_output_before_a_clear_is_written_as_ever():
     assert bridge.is_clearing is False
     registry.take_close({"type": "close", "stream": 1, "params": {}})
     pump.join(timeout=5)
+
+
+def test_keys_that_cannot_be_read_end_the_shell_with_the_reason():
+    """The control connection's read gave up: the client ended the shell, and
+    the outcome says so rather than reading as a shell that closed."""
+    registry, stream, wire = shell()
+    registry.take_credit({"type": "credit", "stream": 1, "bytes": 100})
+    bridge = TerminalBridge(stream=stream)
+
+    def read(size):
+        raise TimeoutError("timed out")
+
+    bridge.pump_in(read)
+
+    assert wire.text[-1] == {"type": "close", "stream": 1, "code": "", "params": {}}
+    assert bridge.outcome() == {
+        "code": "terminal_input_failed",
+        "params": {"detail": "timed out"},
+    }

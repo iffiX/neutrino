@@ -58,6 +58,9 @@ class TerminalBridge:
         self._session_id = session_id
         self._clock = clock
         self._is_closed_here = False
+        # Why this side ended the shell when it did so on a failure of its
+        # own, as ``{"code", "params"}``; empty otherwise.
+        self._failure: dict = {}
         self._drop_lock = threading.Lock()
         # While a Clear drops the output: when it began, and when the last
         # dropped bytes arrived; None otherwise.
@@ -125,12 +128,18 @@ class TerminalBridge:
 
         Args:
             read: ``read(size)`` returns the next bytes typed, empty at the
-                end; an ``OSError`` counts as the end.
+                end; an ``OSError`` ends it too, and the shell's outcome
+                then says ``terminal_input_failed``.
         """
         while True:
             try:
                 data = read(TERMINAL_READ_BYTES)
-            except OSError:
+            except OSError as error:
+                if not self._stream.is_done:
+                    self._failure = {
+                        "code": "terminal_input_failed",
+                        "params": {"detail": str(error)[:200] or type(error).__name__},
+                    }
                 data = b""
             if not data:
                 break
@@ -223,9 +232,11 @@ class TerminalBridge:
         Returns:
             ``{"exit_code"}`` for a shell the hub closed with a result or
             one closed from here, its code None when the hub named none;
-            ``{"code", "params"}`` for a refusal or a socket that ended
-            first.
+            ``{"code", "params"}`` for a refusal, a socket that ended
+            first, or keys this side could no longer read.
         """
+        if self._failure:
+            return dict(self._failure)
         if self._is_closed_here:
             return {"exit_code": None}
         try:

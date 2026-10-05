@@ -82,6 +82,7 @@
   "code.share_session_conflict": "Windows already holds a connection to this server under another login; disconnect it first.",
   "code.share_unreachable": "The host cannot be reached.",
   "code.shell_unknown": "The hub no longer has that terminal open",
+  "code.terminal_input_failed": "The client ended this terminal: its keys could not be read ({detail})",
   "code.ticket_spent": "The hub refused this link; it was used already or has expired, so leave this hub and join with a fresh link",
   "code.unknown_hub": "This client has not joined that hub",
   "code.unknown_request": "The client does not know this request",
