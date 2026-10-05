@@ -27,7 +27,7 @@ The document has these parts:
 
 | Part | Holds |
 | --- | --- |
-| `hubs[]` | `hub_id`, `hub_name`, `gateway_url`, `software`, `connection`, `reached_through` (the hub's word for the way the channel reached it: `lan`, `netbird`, `easytier`, `relay`, or empty before the first state), `is_panel_allowed` (the hub's state says whether this client's permission holds `panel`), `panel_forward` (empty, or the loopback port the panel's forward listens on), `last_error`, `is_exit`, `overlay`, `jobs` |
+| `hubs[]` | `hub_id`, `hub_name`, `gateway_url`, `software`, `connection`, `reached_through` (the hub's word for the way the channel reached it: `lan`, `direct`, `netbird`, `easytier`, `relay`, or empty before the first state), `is_panel_allowed` (the hub's state says whether this client's permission holds `panel`), `panel_forward` (empty, or the loopback port the panel's forward listens on), `last_error`, `is_exit`, `overlay`, `jobs` |
 | `hubs[].overlay` | `network` (the chosen engine), `networks[]` (what the hub publishes), `state`, `stage` (empty, `login` or `hub` while connecting), `address`, `error` |
 | `hubs[].jobs` | `is_refreshing`, `overlay_job` (empty, `connecting`, `disconnecting`), `is_leaving`, `is_opening_panel` |
 | `services[]` | one per published service, with the hub's wire fields (`hub_id`, `device_id`, `module`, `kind`, `payload`, `is_healthy`, `unhealthy_code`), plus `job`, `last_error` and, for every entry the client forwards ("The local port table"), `local_port` (the setting: `auto` or a number) and `forward` (empty, or the loopback port the forward listens on) |
@@ -92,6 +92,7 @@ languages, and the English column is the wording the English catalog holds.
 | `ui.state.connected` | Connected |
 | `ui.state.connected_through` | Connected · `<way>` |
 | `ui.through.lan` | LAN |
+| `ui.through.direct` | Direct |
 | `ui.through.netbird` | NetBird |
 | `ui.through.easytier` | EasyTier |
 | `ui.through.relay` | Relay |
@@ -115,8 +116,8 @@ languages, and the English column is the wording the English catalog holds.
 | `ui.job.opening` | Opening… |
 | `ui.job.clearing` | Clearing… |
 
-The Chinese catalog's words for the ways in are 局域网, NetBird, EasyTier and
-中继, the relay's word being the one [ui_text.md](ui_text.md) fixes.
+The Chinese catalog's words for the ways in are 局域网, 直连, NetBird,
+EasyTier and 中继, the relay's word being the one [ui_text.md](ui_text.md) fixes.
 
 The dot follows [visual.md](visual.md):
 

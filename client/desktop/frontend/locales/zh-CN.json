@@ -236,6 +236,7 @@
   "ui.theme_name.dark": "深色",
   "ui.theme_name.light": "浅色",
   "ui.theme_name.system": "跟随系统",
+  "ui.through.direct": "直连",
   "ui.through.easytier": "EasyTier",
   "ui.through.lan": "局域网",
   "ui.through.netbird": "NetBird",

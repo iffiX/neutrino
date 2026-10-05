@@ -80,4 +80,4 @@ resident   running
 }
 ```
 
-`reached_through` 说明通道是从哪条路连上中枢的：`lan`、`netbird`、`easytier` 或 `relay`。客户端没有运行时，`connection` 和 `reached_through` 为空，`is_running` 为 `false`。
+`reached_through` 说明通道是从哪条路连上中枢的：`lan`、`direct`、`netbird`、`easytier` 或 `relay`。客户端没有运行时，`connection` 和 `reached_through` 为空，`is_running` 为 `false`。
