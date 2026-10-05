@@ -436,7 +436,7 @@ moved. Its steps and their order are [network.md](modules/network.md),
 | `POST /api/hub/device/enrollment/create` | `{device_id?, name?, is_hub?}` | a link for that row, or for a new one; `is_hub` makes the link for the agent on the hub's own machine, which names loopback first and is not refused `no_reachable_address` |
 | `POST /api/hub/device/set` | `{device_id, name, icon, ssh, shown_module}`, each optional | the name, the icon, the stored SSH credential the hub reaches it with, and which module tabs its Modules page shows |
 | `POST /api/hub/device/remove` | `{device_id}` | forgets the device; its socket is closed with `binding_unknown` |
-| `POST /api/hub/device/wake` | `{device_id}` | Wake-on-LAN to the last link MAC; `wol_no_mac` when none is stored |
+| `POST /api/hub/device/wake` | `{device_id}` | Wake-on-LAN to the last link MAC, broadcast on every network the hub serves, or in `server` mode on the network of every exposed interface that holds an IPv4 address, never on an overlay; `wol_no_mac` when none is stored, `no_reachable_address` when there is no such network |
 | `POST /api/hub/device/agent/install` | `{device_id, ...}` | installs the agent over SSH; `TaskStarted` |
 | `POST /api/hub/device/agent/reinstall` | `{device_id}` | the `reinstall` verb over the channel |
 | `POST /api/hub/device/reboot` | `{device_id}` | the `reboot` verb |
@@ -1425,7 +1425,7 @@ agent has reported on its link.
 | --- | --- |
 | a blank link joins: which row | the row whose `machine_id` matches, else a new one |
 | a scan row merges into which device | any stored MAC |
-| Wake-on-LAN goes to | the most recent link MAC |
+| Wake-on-LAN goes to | the most recent link MAC, on the served networks, or a `server` hub's exposed ones |
 | `is_hub` | `machine_id` equals the hub box's own |
 
 The device's address is the report's `network.link.address`; the socket's peer
