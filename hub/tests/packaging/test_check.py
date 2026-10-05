@@ -608,3 +608,92 @@ def test_the_macos_agent_check_fails_when_cc_switch_outlives_the_removal(
 
     assert "outlived nagent service uninstall" in str(failed.value)
     assert "cc-switch" in str(failed.value)
+
+
+class FakeMac:
+    """The runner as the client's upgrade check sees it: the app's pids move
+    as the steps say."""
+
+    def __init__(self, *, is_at_screen=True, is_reopened=True, is_opened_unasked=False):
+        self.is_at_screen = is_at_screen
+        self.is_reopened = is_reopened
+        self.is_opened_unasked = is_opened_unasked
+        self.pids: set = set()
+        self.next_pid = 100
+        self.steps: list = []
+
+    def run(self, command, **kwargs):
+        self.steps.append(list(command))
+        if command[:2] == ["open", "-a"]:
+            self._start()
+        if command[-1] == "quit":
+            self.pids = set()
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    def sudo(self, command):
+        self.steps.append(["sudo", *command])
+        if self.pids:
+            self.pids = set()
+            if self.is_reopened:
+                self._start()
+        elif self.is_opened_unasked:
+            self._start()
+
+    def _start(self):
+        self.next_pid += 1
+        self.pids = {self.next_pid}
+
+
+def _upgrade_check(check, monkeypatch, mac):
+    monkeypatch.setattr(check.subprocess, "run", mac.run)
+    monkeypatch.setattr(check, "_sudo", mac.sudo)
+    monkeypatch.setattr(check, "_client_app_pids", lambda: set(mac.pids))
+    monkeypatch.setattr(check.time, "sleep", lambda seconds: None)
+    uid = check.os.getuid()
+    monkeypatch.setattr(
+        check, "_console_uid", lambda: uid if mac.is_at_screen else uid + 1
+    )
+    check._check_client_macos_upgrade(Path("client.pkg"))
+
+
+def test_an_upgrade_over_the_running_client_app_leaves_a_new_one(check, monkeypatch):
+    mac = FakeMac()
+
+    _upgrade_check(check, monkeypatch, mac)
+
+    assert [step[0] for step in mac.steps] == [
+        "open",
+        "sudo",
+        check.CLIENT_MACOS_PROGRAM,
+        "sudo",
+    ]
+    assert mac.pids == set()
+
+
+def test_an_upgrade_that_leaves_no_client_app_fails_the_check(check, monkeypatch):
+    monkeypatch.setattr(check, "CLIENT_MACOS_APP_WAIT_S", 0)
+
+    with pytest.raises(SystemExit) as failed:
+        _upgrade_check(check, monkeypatch, FakeMac(is_reopened=False))
+
+    assert "no new client app" in str(failed.value)
+
+
+def test_an_install_that_opens_an_app_nobody_had_open_fails_the_check(
+    check, monkeypatch
+):
+    with pytest.raises(SystemExit) as failed:
+        _upgrade_check(check, monkeypatch, FakeMac(is_opened_unasked=True))
+
+    assert "opened one" in str(failed.value)
+
+
+def test_a_runner_whose_account_is_not_at_the_screen_checks_no_reopen(
+    check, monkeypatch, capsys
+):
+    mac = FakeMac(is_at_screen=False)
+
+    _upgrade_check(check, monkeypatch, mac)
+
+    assert mac.steps == []
+    assert "not checked" in capsys.readouterr().out
