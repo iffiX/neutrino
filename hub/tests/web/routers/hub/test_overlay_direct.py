@@ -27,13 +27,10 @@ class FakeRuntime:
         self.settings = {"agent_listen_port": 9443}
         self.converged = 0
         self.refusal: Exception | None = None
+        self.entries = [wan_entry("enp2s0"), lan_entry("enp1s0", address="192.168.8.1")]
 
     def network(self):
-        return network_config(
-            wan_entry("enp2s0"),
-            lan_entry("enp1s0", address="192.168.8.1"),
-            overlays=[],
-        )
+        return network_config(*self.entries, overlays=[])
 
     async def converge_network(self, *, only=None):
         self.converged += 1
@@ -76,6 +73,7 @@ def test_an_unset_direct_reads_off_and_lists_what_turning_it_on_adds(api):
             "https://203.0.113.7:9443",
             "https://[2001:db8::7]:9443",
         ],
+        "interface_state": "added",
     }
 
 
@@ -191,3 +189,61 @@ def test_a_public_address_that_is_an_interface_s_is_listed_once(api, public_host
     assert response.status_code == 200
     assert response.json()["urls"].count(url) == 1
     assert len(response.json()["urls"]) == 3
+
+
+# --- what the section says under the addresses ---
+
+
+def test_direct_adding_an_interface_s_address_reads_added(api):
+    client, _ = api
+
+    view = client.get("/api/hub/overlay/direct").json()
+
+    assert view["interface_state"] == "added"
+    assert "https://203.0.113.7:9443" in view["urls"]
+
+
+def test_every_interface_already_exposed_reads_exposed(api, monkeypatch):
+    """A hub with one network card, exposed, and IPv4 alone: Direct adds none
+    of its addresses, and the public address can still be set."""
+    client, runtime = api
+    runtime.entries = [lan_entry("enp1s0", address="192.168.8.1")]
+    monkeypatch.setattr(
+        channel_addresses, "device_addresses", lambda: {"enp1s0": "192.168.8.1/24"}
+    )
+    monkeypatch.setattr(channel_addresses, "device_ipv6_addresses", dict)
+
+    unset = client.get("/api/hub/overlay/direct").json()
+    stated = client.post(
+        "/api/hub/overlay/direct/set",
+        json={"public_host": "hub.example.org", "public_port": 443},
+    ).json()
+
+    assert (unset["interface_state"], unset["urls"]) == ("exposed", [])
+    assert stated["interface_state"] == "exposed"
+    assert stated["urls"] == ["https://hub.example.org:443"]
+
+
+def test_an_exposed_interface_s_ipv6_address_is_one_direct_adds(api, monkeypatch):
+    client, runtime = api
+    runtime.entries = [lan_entry("enp1s0", address="192.168.8.1")]
+    monkeypatch.setattr(
+        channel_addresses, "device_ipv6_addresses", lambda: {"enp1s0": ["fd00:8::1/64"]}
+    )
+
+    view = client.get("/api/hub/overlay/direct").json()
+
+    assert view["interface_state"] == "added"
+    assert view["urls"] == ["https://[fd00:8::1]:9443"]
+
+
+def test_no_interface_with_an_address_reads_none(api, monkeypatch):
+    client, runtime = api
+    runtime.entries = []
+    monkeypatch.setattr(channel_addresses, "device_addresses", dict)
+    monkeypatch.setattr(channel_addresses, "device_ipv6_addresses", dict)
+
+    view = client.get("/api/hub/overlay/direct").json()
+
+    assert view["interface_state"] == "none"
+    assert view["urls"] == []

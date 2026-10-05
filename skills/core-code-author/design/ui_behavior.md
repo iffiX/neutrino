@@ -407,8 +407,11 @@ apply bar ([ui_text.md](ui_text.md), "Direct's words"): the switch's
 description `ui.overlay.direct_switch_hint`, which says that the switch
 opens the hub's connection port to every host that can reach the enabled
 interfaces; **Public address** and **Public port**; and **Addresses for
-clients**, the `urls` of `GET /api/hub/overlay/direct` in mono, or
-`ui.overlay.direct_addresses_empty` when there are none. The bar's label is
+clients**, the `urls` of `GET /api/hub/overlay/direct` in mono, and under
+them the sentence its `interface_state` names: none for `added`,
+`ui.overlay.direct_addresses_exposed` for `exposed`, and
+`ui.overlay.direct_addresses_empty` for `none`. The page words the state
+and does not work it out. The bar's label is
 **Apply Direct** and its hint `ui.overlay.direct_apply_hint`. The section
 shows whether the switch is on or off, so the person states the address
 first.

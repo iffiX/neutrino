@@ -7,7 +7,11 @@ import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import { useDraft } from "../use_draft";
 import { HUB_EVENT_CONFIG } from "../use_hub_events";
-import type { DirectSetRequest, DirectView } from "../api_types";
+import type {
+  DirectInterfaceState,
+  DirectSetRequest,
+  DirectView,
+} from "../api_types";
 
 import "./relay_panels.css";
 
@@ -19,6 +23,14 @@ import "./relay_panels.css";
  */
 
 const DIRECT_PATH = "/hub/overlay/direct";
+
+// The sentence under the addresses for each way Direct stands with the
+// hub's interface addresses; none while it adds some.
+const INTERFACE_STATE_KEYS: Record<DirectInterfaceState, string | null> = {
+  added: null,
+  exposed: "ui.overlay.direct_addresses_exposed",
+  none: "ui.overlay.direct_addresses_empty",
+};
 
 // The switch above writes the hub's configuration, which moves this view.
 const DIRECT_INVALIDATE_ON = [{ type: HUB_EVENT_CONFIG }];
@@ -81,6 +93,8 @@ function DirectSettingsPanel({ view, onChanged }: DirectPanelProps) {
     return null;
   }
 
+  const stateKey = INTERFACE_STATE_KEYS[view.interface_state];
+
   const change = (patch: Partial<DirectDraft>) => {
     setError(null);
     setDraft((current) => ({ ...current, ...patch }));
@@ -138,16 +152,13 @@ function DirectSettingsPanel({ view, onChanged }: DirectPanelProps) {
       <p className="field_hint">{t("ui.overlay.direct_public_host_hint")}</p>
       <div className="relay_fact">
         <span className="field_label">{t("ui.overlay.direct_addresses")}</span>
-        {view.urls.length === 0 ? (
-          <span className="relay_fact_value">
-            {t("ui.overlay.direct_addresses_empty")}
+        {view.urls.map((url) => (
+          <span key={url} className="relay_fact_value">
+            {url}
           </span>
-        ) : (
-          view.urls.map((url) => (
-            <span key={url} className="relay_fact_value">
-              {url}
-            </span>
-          ))
+        ))}
+        {stateKey !== null && (
+          <span className="relay_fact_value">{t(stateKey)}</span>
         )}
       </div>
       <ApplyBar

@@ -398,6 +398,7 @@
   "ui.overlay.direct_public_host_hint": "从外面能连到这台中枢的主机名或 IP 地址；没有就留空。",
   "ui.overlay.direct_addresses": "客户端连接地址",
   "ui.overlay.direct_addresses_empty": "没有哪个启用的网口有地址。",
+  "ui.overlay.direct_addresses_exposed": "每个有地址的启用网口都已开放，已经能连上连接端口，所以直连不再添加它们的地址。公网地址仍然可以设置。",
   "ui.overlay.direct_apply": "应用直连",
   "ui.overlay.direct_apply_hint": "保存公网地址，并发给客户端和被控端。",
   "ui.overlay.summary_relay": "经你自己的服务器，用 SSH 转发",

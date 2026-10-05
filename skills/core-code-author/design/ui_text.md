@@ -239,6 +239,7 @@ A UDP port record is in neither number of the page's badge, `{healthy} of
 | `ui.overlay.direct_public_host_hint` | A host name or IP address that reaches this hub from outside; leave it empty for none. | 从外面能连到这台中枢的主机名或 IP 地址；没有就留空。 |
 | `ui.overlay.direct_addresses` | Addresses for clients | 客户端连接地址 |
 | `ui.overlay.direct_addresses_empty` | No enabled interface has an address. | 没有哪个启用的网口有地址。 |
+| `ui.overlay.direct_addresses_exposed` | Every enabled interface with an address is already exposed and answers on the connection port, so Direct adds none of them. A public address can still be set. | 每个有地址的启用网口都已开放，已经能连上连接端口，所以直连不再添加它们的地址。公网地址仍然可以设置。 |
 | `ui.overlay.direct_apply` | Apply Direct | 应用直连 |
 | `ui.overlay.direct_apply_hint` | Saves the public address and gives it to clients and agents. | 保存公网地址，并发给客户端和被控端。 |
 
