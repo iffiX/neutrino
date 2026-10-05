@@ -379,8 +379,13 @@ jobs:
 
       - run: python packaging/build/build_client_windows.py --output-dir dist --architecture x64 --packet-dll build/packet_stub/packet.dll
 
+      # The check ends itself after 25 minutes with a snapshot of the machine;
+      # the step's own limit is behind it.
       - run: python packaging/ci/check.py client_windows dist/*.msi
         shell: bash
+        timeout-minutes: 30
+        env:
+          PYTHONUNBUFFERED: "1"
 
       - uses: actions/upload-artifact@v7
         if: always()
@@ -980,6 +985,9 @@ jobs:
       - run: python packaging/ci/check.py client_windows dist/*.msi
         shell: bash
         working-directory: cn
+        timeout-minutes: 30
+        env:
+          PYTHONUNBUFFERED: "1"
 
       - uses: actions/upload-artifact@v7
         with:
