@@ -1196,6 +1196,17 @@ release installed. An apply refuses `account_invalid`,
 each naming the `account` or the `port`, and `account_unknown {account}`
 for an account the machine does not have.
 
+The `gitea` module runs Gitea on Linux, macOS and Windows ([agent.md](agent.md),
+"Gitea"). Its configuration is `{listen_port, root_url,
+is_registration_enabled, address, secrets}` on every system. Its recipe names
+the release binary `data/manifests/gitea.json` pins for the platform,
+`package_kind` `binary`, which the cache recognises by the ELF, Mach-O or PE
+header and the agent opens `package {module: gitea}` for. `details` is
+`{is_running, port, url, version, admins}`. On macOS and Windows an install
+and an apply refuse `gitea_git_missing` while the machine has no usable
+`git`, and an install on macOS refuses `user_create_failed {user, detail}`
+when the system will not make the server's account.
+
 Package bytes come to the agent down a `package {module}` stream it opens, the
 same stream that serves its own upgrade. An install's or an uninstall's output
 goes up a `log {module}` stream line by line, and the Modules page shows it

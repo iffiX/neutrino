@@ -180,7 +180,11 @@ Samba, Gitea, NetBird, podman and ZFS are capabilities, not parts of a
 gateway. Each has a provisioner that installs its own system packages, its own
 vendor binary and its own unit at the moment somebody asks for it, and each
 declares its packages in its own `<PREFIX>_PACKAGES`. `git` belongs to Gitea
-this way; the hub itself never runs it.
+this way; the hub itself never runs it. On a managed Mac or Windows machine
+the Gitea module installs no `git`: the machine's owner installs it, the
+developer tools or Homebrew on a Mac and Git for Windows on Windows, and the
+module refuses `gitea_git_missing` until one is there
+([agent.md](agent.md), "Gitea").
 
 A provisioner that would do more than install (build a kernel module, add a
 third-party repository, replace a system service) returns that as a consent
