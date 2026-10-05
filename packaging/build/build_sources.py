@@ -42,7 +42,7 @@ CN_LEFT_OUT_SOURCES = ("netbird-", "xray-core-")
 # The source of everything the packages carry, pinned to the archive at the
 # tag the binaries were built from: RustDesk (AGPL-3.0) in the agent and the
 # client, EasyTier (LGPL-3.0), NetBird (BSD-3), xray (MPL-2.0) and
-# CLIProxyAPI (MIT) in the hub, cc-switch (MIT) in the client and the agent,
+# CLIProxyAPI (MIT) in the hub, cc-switch (MIT) in the client,
 # at the version of its pin in shared.constants. Each goes into
 # the release's source archive unmodified.
 SOURCE_ARCHIVES = (

@@ -10,7 +10,6 @@ libraries beside it. The installer registers it as the ``neutrino_agent``
 service, run as LocalSystem at boot with ``service run``, puts its folder on
 PATH so an administrator's terminal answers ``nagent``, and creates the data
 folder under ``%ProgramData%`` open to SYSTEM and the administrators alone.
-The pinned cc-switch CLI rides in the folder's ``bin``.
 
 RustDesk comes as upstream's own executable, pinned by hash, and installs
 itself: after the files are laid down, a deferred action run as the system
@@ -26,8 +25,8 @@ accounts stay, and an upgrade runs neither action.
 Needs WiX 6 and its Util extension: ``dotnet tool install --global wix
 --version 6.0.2`` and ``wix extension add -g WixToolset.Util.wixext/6.0.2``.
 
-Not pure: makes a virtual environment, downloads a compiler, RustDesk and
-cc-switch, compiles, writes a package tree, runs wix.
+Not pure: makes a virtual environment, downloads a compiler and RustDesk,
+compiles, writes a package tree, runs wix.
 """
 
 import argparse
@@ -40,7 +39,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "agent" / "packaging"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "packaging"))
 from shared import edition_build  # noqa: E402
-from shared import cc_switch_assets  # noqa: E402
 from shared import nuitka_build  # noqa: E402
 import payload  # noqa: E402
 from shared import rustdesk_assets  # noqa: E402
@@ -331,7 +329,7 @@ def _lay_out(root: Path, version: str, machine: str) -> dict:
     Raises:
         SystemExit: When this Python is not the pinned minor, when the
             machine asked for is not this one, when the compile writes no
-            binary, or when RustDesk or cc-switch is not what was pinned.
+            binary, or when RustDesk is not what was pinned.
     """
     _check_build_machine(machine)
     tree = root / "tree"
@@ -351,11 +349,6 @@ def _lay_out(root: Path, version: str, machine: str) -> dict:
             shutil.copyfile(item, installed / item.name)
     binary = root / AGENT_BINARY_NAME
     shutil.copyfile(dist / AGENT_BINARY_NAME, binary)
-    cc_switch_assets.stage(
-        installed / "bin" / cc_switch_assets.binary_name("windows"),
-        "windows",
-        payload.machine_name(machine),
-    )
     _stage_licenses(installed)
 
     rustdesk = rustdesk_assets.stage_windows_exe(

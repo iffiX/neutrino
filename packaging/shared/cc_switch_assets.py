@@ -1,7 +1,7 @@
 """The cc-switch CLI a package carries, pinned by hash and unpacked.
 
-The client's packages and the agent's take the same build for a system and a
-machine, at the pin in ``shared.constants``. The binary lands at the path the
+The client's packages take the build for a system and a machine at the pin
+in ``shared.constants``. The binary lands at the path the
 package names, executable by every account and writable by none but its
 owner.
 

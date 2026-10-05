@@ -104,9 +104,9 @@ PACKAGING_TUN2SOCKS_ASSET_MEMBER = "tun2socks-{os_name}-{machine}"
 PACKAGING_TUN2SOCKS_LICENSE = "tun2socks.txt"
 
 # The cc-switch CLI, which every client package carries for the person's AI
-# tools and every agent package carries for the AI tools of the accounts it
-# serves, in both editions: the release, the asset each system and machine
-# takes and its hash (machines named as the interpreter releases name them;
+# tools in both editions, and which the hub offers its agents at the same
+# version when their AI tools are used: the release, the asset each system
+# and machine takes and its hash (machines named as the interpreter releases name them;
 # the musl builds on Linux need nothing of the machine's C library), the
 # program's name inside each archive, and its licence under licenses/.
 PACKAGING_CC_SWITCH_VERSION = "5.10.4"
