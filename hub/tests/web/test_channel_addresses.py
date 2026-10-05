@@ -451,6 +451,7 @@ def test_without_direct_urls_hold_ipv4_alone_and_ipv6_is_not_read(live, monkeypa
     assert asked == []
 
 
+@pytest.mark.feature("netbird")
 def test_an_exposed_overlays_ipv6_address_is_not_direct_s(live, monkeypatch):
     runtime, _ = ipv6_box(monkeypatch, is_direct=True, is_relay=False)
     runtime._network = network_config(
