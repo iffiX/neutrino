@@ -11,12 +11,17 @@ before it ends, which deletes the client row the link made.
     python3 connect_probe.py --link-file link.txt --entry gitea_<device id>
     python3 connect_probe.py --link-file link.txt --panel
     python3 connect_probe.py --link-file link.txt --entry samba_<id>_media --raw
+    python3 connect_probe.py --link-file link.txt --entry podman_<id>_dns_53_udp --udp
     cat link.txt | python3 connect_probe.py --entry ai
 
 Without ``--raw`` the probe sends ``GET / HTTP/1.1`` and reports the status
 line of the answer. With ``--raw`` it sends nothing, since an SMB or a
 RustDesk port answers only after the client speaks, and reports whether the
 stream stayed open for two seconds and the first bytes the far end sent.
+With ``--udp`` the entry is a UDP port: the probe sends one DNS query for
+``--dns-name`` as a datagram from one source and reports the first datagram
+that comes back to that source. A DNS server answers it, and an echo
+service sends it back, so either proves the round trip.
 
 Standard library only; the socket and the pinned TLS are the agent's own,
 imported from ``agent/`` in this checkout or from an installed agent.
@@ -78,6 +83,11 @@ ANSWER_TIMEOUT_S = 15.0
 RAW_WINDOW_S = 2.0
 FIRST_BYTES_SHOWN = 64
 HTTP_REQUEST = b"GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
+# A UDP frame: the source port the datagram left from, big-endian, first.
+UDP_SOURCE = 40001
+UDP_SOURCE_BYTES = 2
+DNS_QUERY_ID = 0x4E55
+DNS_NAME_DEFAULT = "neutrino.invalid"
 
 
 def read_link(path: str) -> str:
@@ -268,6 +278,60 @@ def probe(channel: Channel, open_args: dict, *, is_raw: bool) -> dict:
     }
 
 
+def dns_query(name: str) -> bytes:
+    """One DNS query for the name's A record, recursion asked."""
+    header = DNS_QUERY_ID.to_bytes(2, "big") + bytes([1, 0, 0, 1, 0, 0, 0, 0, 0, 0])
+    labels = b"".join(
+        bytes([len(label)]) + label.encode("ascii")
+        for label in name.strip(".").split(".")
+        if label
+    )
+    return header + labels + b"\x00" + (1).to_bytes(2, "big") + (1).to_bytes(2, "big")
+
+
+def probe_udp(channel: Channel, open_args: dict, *, name: str) -> dict:
+    """Open one UDP ``connect`` stream, send one query, report the reply."""
+    channel.send({"type": "open", "stream": STREAM_ID, "kind": "connect", **open_args})
+    channel.send({"type": "credit", "stream": STREAM_ID, "bytes": CREDIT_BYTES})
+    query = dns_query(name)
+    channel.client.send_bytes(
+        STREAM_ID.to_bytes(4, "big")
+        + UDP_SOURCE.to_bytes(UDP_SOURCE_BYTES, "big")
+        + query
+    )
+    deadline = time.monotonic() + ANSWER_TIMEOUT_S
+    while time.monotonic() < deadline:
+        item = channel.next(deadline - time.monotonic())
+        if item is None:
+            break
+        kind, payload = item
+        if kind == "gone":
+            return {"ok": False, "code": "socket_closed", "params": {}}
+        if kind == "binary" and int.from_bytes(payload[:4], "big") == STREAM_ID:
+            frame = payload[4:]
+            source = int.from_bytes(frame[:UDP_SOURCE_BYTES], "big")
+            datagram = frame[UDP_SOURCE_BYTES:]
+            channel.send({"type": "credit", "stream": STREAM_ID, "bytes": len(frame)})
+            return {
+                "ok": source == UDP_SOURCE and datagram[:2] == query[:2],
+                "source": source,
+                "bytes": len(datagram),
+                "is_echo": datagram == query,
+                "dns_rcode": datagram[3] & 0x0F if len(datagram) >= 4 else None,
+            }
+        if (
+            kind == "text"
+            and payload.get("stream") == STREAM_ID
+            and payload.get("type") == "close"
+        ):
+            return {
+                "ok": False,
+                "code": str(payload.get("code", "") or ""),
+                "params": payload.get("params") or {},
+            }
+    return {"ok": False, "code": "no_reply", "params": {}}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument(
@@ -279,6 +343,12 @@ def main() -> int:
     target.add_argument("--list", action="store_true", help="only list the entries")
     parser.add_argument(
         "--raw", action="store_true", help="send nothing; report the first bytes"
+    )
+    parser.add_argument(
+        "--udp", action="store_true", help="the entry is a UDP port; send one query"
+    )
+    parser.add_argument(
+        "--dns-name", default=DNS_NAME_DEFAULT, help="the name --udp asks for"
     )
     arguments = parser.parse_args()
     report: dict = {"ok": False}
@@ -302,7 +372,11 @@ def main() -> int:
             "reached_through": state.get("reached_through", ""),
             "is_panel_allowed": state.get("is_panel_allowed", False),
             "services": [
-                {"id": entry.get("id"), "type": entry.get("type")}
+                {
+                    "id": entry.get("id"),
+                    "type": entry.get("type"),
+                    "protocol": (entry.get("payload") or {}).get("protocol", ""),
+                }
                 for entry in state.get("services") or []
             ],
         }
@@ -311,7 +385,10 @@ def main() -> int:
                 {"is_panel": True} if arguments.panel else {"id": arguments.entry}
             )
             report["target"] = "panel" if arguments.panel else arguments.entry
-            report.update(probe(channel, open_args, is_raw=arguments.raw))
+            if arguments.udp:
+                report.update(probe_udp(channel, open_args, name=arguments.dns_name))
+            else:
+                report.update(probe(channel, open_args, is_raw=arguments.raw))
     except (GatewayUnreachable, GatewayUntrusted, SocketClosed, OSError) as error:
         report = {**report, "ok": False, "code": "channel_failed", "error": str(error)}
     finally:
