@@ -7,17 +7,21 @@ agent closes itself. A shell is a session its opener names by a generated
 id: the hub stamps the opener as its ``owner``, the agent reports every
 session it holds, a ``persist`` command from the owner keeps one past its
 streams or shares it, and ``stop_session`` ends one. Which sessions a viewer
-sees is :func:`sessions_for`.
+sees is :func:`sessions_for`; which it may join or change is
+:func:`is_session_refused`, read from what the hub stamped and relayed
+itself before the machines' reports.
 """
 
 import asyncio
 import contextlib
 import functools
+import time
 
 from neutrino_hub.exceptions import AgentOfflineError
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_CALL_TIMEOUT_S,
     CHANNEL_CODE_NEVER_REPORTED,
+    CHANNEL_CODE_SESSION_NOT_OWNED,
     CHANNEL_COMMAND_MODULE_AGENT,
     CHANNEL_SHELL_OWNER_CLIENT_PREFIX,
     CHANNEL_SHELL_OWNER_HUB,
@@ -34,11 +38,67 @@ from neutrino_hub.modules.clients.permissions import (
 )
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.devices.registry import DeviceRegistry
+from neutrino_hub.web.constants import WEB_SHELL_LEDGER_GRACE_S
 from neutrino_hub.web.identity import hub_name
 
 # The size a shell opens at when the viewer names none.
 DEFAULT_COLUMNS = 80
 DEFAULT_ROWS = 24
+
+
+class ShellSessionLedger:
+    """The owner and the sharing of each session as the hub set them.
+
+    The hub records the owner it stamps on a new session and the sharing of
+    every ``persist`` it relays, so both hold before the machine's next
+    report says so. A record the machine's report no longer lists is
+    dropped ``WEB_SHELL_LEDGER_GRACE_S`` after it was last set.
+    """
+
+    def __init__(
+        self, *, clock=time.monotonic, grace_s: float = WEB_SHELL_LEDGER_GRACE_S
+    ):
+        """
+        Args:
+            clock: The time source, a clock that never goes back.
+            grace_s: How long a record the report does not list is kept.
+        """
+        self._clock = clock
+        self._grace_s = grace_s
+        self._held: dict = {}
+
+    def get(self, device_id: str, session_id: str) -> "tuple | None":
+        """``(owner, is_shared)`` of one session, None when not recorded."""
+        held = self._held.get((device_id, session_id))
+        return None if held is None else (held[0], held[1])
+
+    def set(self, device_id: str, session_id: str, owner: str, is_shared: bool) -> None:
+        """Record one session's owner and sharing.
+
+        Args:
+            device_id: The machine holding the session.
+            session_id: The session.
+            owner: Its owner stamp.
+            is_shared: Whether it is shared.
+        """
+        self._held[(device_id, session_id)] = (owner, bool(is_shared), self._clock())
+
+    def prune(self, listed: set, reporting: set) -> None:
+        """Drop the records the machines' reports no longer list.
+
+        Args:
+            listed: ``(device_id, session_id)`` of every reported session.
+            reporting: The machines that have a report; a record on any other
+                machine is kept.
+        """
+        now = self._clock()
+        for key, held in list(self._held.items()):
+            if (
+                key[0] in reporting
+                and key not in listed
+                and now - held[2] >= self._grace_s
+            ):
+                del self._held[key]
 
 
 async def shell_output(stream):
@@ -166,27 +226,142 @@ def client_owner(client_id: str) -> str:
     return f"{CHANNEL_SHELL_OWNER_CLIENT_PREFIX}{client_id}"
 
 
-def is_persist_refused(
-    agent_sessions, device_id: str, session_id: str, viewer: str
-) -> bool:
-    """Whether a ``persist`` from this viewer is refused ``session_not_owned``.
+def known_session(runtime, device_id: str, session_id: str) -> "tuple | None":
+    """One session's owner and sharing, as the hub last knew them.
 
     Args:
-        agent_sessions: The agents' sessions, whose reports name each
-            session's owner.
+        runtime: The shared runtime, holding the hub's own record and the
+            machines' reports.
+        device_id: The machine holding the session.
+        session_id: The session.
+
+    Returns:
+        ``(owner, is_shared)`` from the hub's own record, else from the
+        machine's last report; None for a session neither names.
+    """
+    reported = reported_sessions(runtime.agent_sessions)
+    runtime.shell_ledger.prune(
+        {(session["device_id"], session["session_id"]) for session in reported},
+        set(runtime.agent_sessions.reports()),
+    )
+    held = runtime.shell_ledger.get(device_id, session_id)
+    if held is not None:
+        return held
+    for session in reported:
+        if session["device_id"] == device_id and session["session_id"] == session_id:
+            return session["owner"], session["is_shared"]
+    return None
+
+
+def is_session_refused(
+    runtime, device_id: str, session_id: str, viewer: str, *, is_join: bool
+) -> bool:
+    """Whether a ``shell`` or a ``persist`` is refused ``session_not_owned``.
+
+    Args:
+        runtime: The shared runtime.
         device_id: The machine holding the session.
         session_id: The session.
         viewer: The owner stamp of whoever sent it: ``hub`` or
             ``client:<id>``.
+        is_join: True for a ``shell`` naming the session, False for a
+            ``persist``.
 
     Returns:
-        True when the machine reports the session under another owner; a
-        session it does not list yet is the viewer's own new one.
+        For a ``persist``, True when the session has another owner. For a
+        ``shell``, True when a client names a session another viewer owns
+        and has not shared; the panel joins any session. A session the hub
+        knows nothing of is the viewer's own new one, and one with no owner
+        stamp is nobody's.
     """
-    for session in reported_sessions(agent_sessions):
-        if session["device_id"] == device_id and session["session_id"] == session_id:
-            return session["owner"] != "" and session["owner"] != viewer
-    return False
+    known = known_session(runtime, device_id, session_id)
+    if known is None:
+        return False
+    owner, is_shared = known
+    if not owner or owner == viewer:
+        return False
+    if is_join:
+        return viewer != CHANNEL_SHELL_OWNER_HUB and not is_shared
+    return True
+
+
+def record_opened(
+    runtime, device_id: str, session_id: str, owner: str, is_shared: bool
+) -> None:
+    """Record the owner the hub stamps on a session it does not know yet.
+
+    Args:
+        runtime: The shared runtime.
+        device_id: The machine.
+        session_id: The session the open names.
+        owner: The stamp the open carries.
+        is_shared: The sharing the open carries.
+    """
+    if known_session(runtime, device_id, session_id) is None:
+        runtime.shell_ledger.set(device_id, session_id, owner, is_shared)
+
+
+async def record_sharing(
+    runtime, device_id: str, session_id: str, viewer: str, flags: dict
+) -> None:
+    """Record a relayed ``persist`` and close what an unshare takes away.
+
+    When the session was shared and the ``persist`` turns ``is_shared``
+    off, every client ``shell`` stream on it whose client is not the owner
+    closes with ``session_not_owned {session_id}``.
+
+    Args:
+        runtime: The shared runtime.
+        device_id: The machine holding the session.
+        session_id: The session.
+        viewer: Who sent the ``persist``, its owner.
+        flags: The flags it carried.
+    """
+    if "is_shared" not in flags:
+        return
+    known = known_session(runtime, device_id, session_id)
+    owner = known[0] if known is not None and known[0] else viewer
+    runtime.shell_ledger.set(device_id, session_id, owner, flags["is_shared"])
+    if known is None or not known[1] or flags["is_shared"]:
+        return
+    await close_other_viewers(runtime, device_id, session_id, owner)
+
+
+async def close_other_viewers(
+    runtime, device_id: str, session_id: str, owner: str
+) -> list:
+    """Close every client ``shell`` stream on a session but its owner's.
+
+    Args:
+        runtime: The shared runtime, holding the clients' sockets.
+        device_id: The machine holding the session.
+        session_id: The session.
+        owner: The session's owner stamp; its own streams stay.
+
+    Returns:
+        ``(client_id, stream_id)`` of each stream closed.
+    """
+    closed = []
+    for session in runtime.client_sessions.sessions():
+        if client_owner(session.key) == owner:
+            continue
+        for stream_id, bridged in dict(session.shells).items():
+            if bridged[0] != device_id or bridged[2] != session_id:
+                continue
+            params = {"session_id": session_id}
+            if session.loop is asyncio.get_running_loop():
+                await session.close_stream(
+                    stream_id, CHANNEL_CODE_SESSION_NOT_OWNED, params
+                )
+            else:
+                await asyncio.to_thread(
+                    session.close_stream_from_thread,
+                    stream_id,
+                    CHANNEL_CODE_SESSION_NOT_OWNED,
+                    params,
+                )
+            closed.append((session.key, stream_id))
+    return closed
 
 
 def sessions_for(runtime, viewer: str) -> list:

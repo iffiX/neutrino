@@ -10,7 +10,9 @@ the close of a socket the browser already left raising nothing; the
 session id the page generated riding the open stamped ``owner: hub``, a
 persist message opening one ``command {agent, persist}`` naming it with
 both flags, and a persist on a session another viewer owns answered with
-a ``session_not_owned`` frame and sent nowhere.
+a ``session_not_owned`` frame and sent nowhere; the panel joining a
+client's unshared session, and the panel's unshare of its own session
+closing every client's stream on it.
 """
 
 import asyncio
@@ -24,6 +26,9 @@ from starlette.websockets import WebSocketDisconnect
 
 from neutrino_hub.web import ws
 from neutrino_hub.web.dependencies import session_cookie
+from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_CLIENT
+from neutrino_hub.modules.channel.sessions import ChannelSessionRegistry
+from neutrino_hub.web.shell_bridge import ShellSessionLedger
 from tests.conftest import FakeChannelSessions
 
 MAC = "aa:bb:cc:dd:ee:ff"
@@ -44,6 +49,8 @@ class FakeRuntime:
         self.settings: dict = {}
         self.sessions = StubSessions()
         self.agent_sessions = FakeChannelSessions(online=[MAC])
+        self.client_sessions = ChannelSessionRegistry(CHANNEL_ROLE_CLIENT)
+        self.shell_ledger = ShellSessionLedger()
 
 
 @pytest.fixture
@@ -301,5 +308,71 @@ def test_attaching_a_listed_session_asks_the_agent_to_resume_it(api):
             "is_shared": False,
             "is_resumed": True,
         }
+    finally:
+        socket.__exit__(None, None, None)
+
+
+def test_the_panel_joins_a_clients_session_that_is_not_shared(api, monkeypatch):
+    client, runtime = api
+    reports = {
+        MAC: {
+            "machine": {
+                "sessions": [
+                    {"session_id": "4f1c2a", "owner": "client:c1", "is_shared": False}
+                ]
+            }
+        }
+    }
+    monkeypatch.setattr(runtime.agent_sessions, "reports", lambda: reports)
+    socket = open_terminal(
+        client,
+        f"/ws/agent/terminal?device_id={MAC}&session_id=4f1c2a&is_resumed=true",
+    )
+    try:
+        assert wait_until(lambda: runtime.agent_sessions.streams)
+        assert runtime.agent_sessions.streams[0].args["session_id"] == "4f1c2a"
+    finally:
+        socket.__exit__(None, None, None)
+
+
+class ViewerSession:
+    """A client's socket holding one shell on a session."""
+
+    def __init__(self, key: str, shells: dict):
+        self.key = key
+        self.shells = shells
+        self.loop = None
+        self.closed: list = []
+
+    def close_stream_from_thread(self, stream_id, code, params=None) -> bool:
+        self.closed.append((stream_id, code, dict(params or {})))
+        return True
+
+
+def test_the_panels_unshare_closes_every_clients_stream_on_its_session(
+    api, monkeypatch
+):
+    client, runtime = api
+    reports = {
+        MAC: {
+            "machine": {
+                "sessions": [
+                    {"session_id": "4f1c2a", "owner": "hub", "is_shared": True}
+                ]
+            }
+        }
+    }
+    monkeypatch.setattr(runtime.agent_sessions, "reports", lambda: reports)
+    viewer = ViewerSession("c1", {4: (MAC, 11, "4f1c2a")})
+    monkeypatch.setattr(runtime.client_sessions, "sessions", lambda: [viewer])
+    socket = open_terminal(
+        client,
+        f"/ws/agent/terminal?device_id={MAC}&session_id=4f1c2a&is_resumed=true",
+    )
+    try:
+        assert wait_until(lambda: runtime.agent_sessions.streams)
+        socket.send_json({"type": "persist", "is_shared": False})
+        assert wait_until(lambda: viewer.closed)
+        assert viewer.closed == [(4, "session_not_owned", {"session_id": "4f1c2a"})]
     finally:
         socket.__exit__(None, None, None)

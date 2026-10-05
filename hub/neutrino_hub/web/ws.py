@@ -46,9 +46,11 @@ from neutrino_hub.web.events import event_frame
 from neutrino_hub.web.shell_bridge import (
     DEFAULT_COLUMNS,
     DEFAULT_ROWS,
-    is_persist_refused,
+    is_session_refused,
     persist_flags,
     persist_session,
+    record_opened,
+    record_sharing,
     resize_shell,
     settle_shell,
     shell_output,
@@ -129,6 +131,7 @@ async def terminal_socket(
     """Bridge a browser terminal to a shell on a device, over its agent.
 
     A shell with a session id is opened as the panel's own, ``owner: hub``.
+    The panel joins any session, whoever owns it.
 
     Args:
         websocket: The client socket.
@@ -252,7 +255,17 @@ async def _serve_agent_stream(websocket: WebSocket, device_id: str, args: dict) 
 
 async def _bridge_shell(websocket: WebSocket, device_id: str, args: dict) -> None:
     """Bridge an accepted socket to a new shell stream until either ends."""
-    sessions = websocket.app.state.runtime.agent_sessions
+    runtime = websocket.app.state.runtime
+    sessions = runtime.agent_sessions
+    session_id = str(args.get("session_id", "") or "")
+    if session_id and args.get("is_resumed") is not True:
+        record_opened(
+            runtime,
+            device_id,
+            session_id,
+            CHANNEL_SHELL_OWNER_HUB,
+            args.get("is_shared") is True,
+        )
     try:
         stream = await sessions.open_stream(device_id, CHANNEL_STREAM_SHELL, args)
     except AgentOfflineError as offline:
@@ -342,8 +355,13 @@ async def _read_input(
                     int(message.get("rows", DEFAULT_ROWS)),
                 )
             elif kind == "persist" and session_id:
-                if is_persist_refused(
-                    sessions, device_id, session_id, CHANNEL_SHELL_OWNER_HUB
+                runtime = websocket.app.state.runtime
+                if is_session_refused(
+                    runtime,
+                    device_id,
+                    session_id,
+                    CHANNEL_SHELL_OWNER_HUB,
+                    is_join=False,
                 ):
                     await websocket.send_json(
                         {
@@ -353,8 +371,10 @@ async def _read_input(
                         }
                     )
                     continue
-                await persist_session(
-                    sessions, device_id, session_id, persist_flags(message)
+                flags = persist_flags(message)
+                await persist_session(sessions, device_id, session_id, flags)
+                await record_sharing(
+                    runtime, device_id, session_id, CHANNEL_SHELL_OWNER_HUB, flags
                 )
     except (WebSocketDisconnect, RuntimeError, ValueError, KeyError):
         return

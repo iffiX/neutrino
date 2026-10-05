@@ -107,6 +107,7 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_ROLE_CLIENT,
 )
 from neutrino_hub.modules.channel.sessions import ChannelSessionRegistry
+from neutrino_hub.web.shell_bridge import ShellSessionLedger
 from neutrino_hub.web.task_stream import TaskStreamRegistry
 
 from neutrino_hub.modules.router.constants import ROUTER_NFT_PATH
@@ -163,6 +164,9 @@ class PanelRuntime:
         # Every managed machine's live socket, and the streams on it.
         self.agent_sessions = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
         self.agent_sessions.on_presence_change = self._publish_devices
+        # The owner and the sharing of each terminal session as the hub
+        # stamped and relayed them, ahead of the machines' reports.
+        self.shell_ledger = ShellSessionLedger()
         # Every client program's live socket, keyed by client id.
         self.client_sessions = ChannelSessionRegistry(CHANNEL_ROLE_CLIENT)
         self.client_sessions.on_presence_change = self._publish_clients

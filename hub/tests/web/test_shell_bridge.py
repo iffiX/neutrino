@@ -8,8 +8,11 @@ sessions are the online reports' ``machine.sessions``, normalized and
 oldest first; a session verb is answered by the agent's close, and one the
 agent never closes by ``agent_never_reported``. Which sessions a viewer sees:
 its own and the shared ones on machines it has terminal rights on, each
-saying whether the viewer owns it; a persist is refused only for a session
-reported under another owner.
+saying whether the viewer owns it; a persist is refused for a session
+under another owner, and a client's join for one another viewer owns and has
+not shared, the panel joining any; what the hub stamped and relayed itself
+holds before the next report, and is forgotten once the report has stopped
+listing it for the grace time.
 """
 
 import asyncio
@@ -21,8 +24,9 @@ from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.web import shell_bridge
 from neutrino_hub.web.shell_bridge import (
+    ShellSessionLedger,
     device_of_session,
-    is_persist_refused,
+    is_session_refused,
     owner_name,
     persist_flags,
     reported_sessions,
@@ -164,7 +168,11 @@ def viewers(tmp_path, monkeypatch):
         xenon.id: held(("s4", "hub", True), ("s5", f"client:{alice}", True)),
     }
     monkeypatch.setattr(agent_sessions, "reports", lambda: reports)
-    runtime = SimpleNamespace(agent_sessions=agent_sessions, device_hostname={})
+    runtime = SimpleNamespace(
+        agent_sessions=agent_sessions,
+        device_hostname={},
+        shell_ledger=ShellSessionLedger(),
+    )
     return runtime, alice, bob, carol, lepton
 
 
@@ -232,13 +240,59 @@ def test_a_row_names_its_owner(viewers, monkeypatch):
     assert owner_name("", ClientRegistry()) == ""
 
 
+def refused(runtime, device, session_id, viewer, *, is_join) -> bool:
+    return is_session_refused(runtime, device.id, session_id, viewer, is_join=is_join)
+
+
 def test_a_persist_is_refused_only_on_a_session_another_viewer_owns(viewers):
     runtime, alice, _, _, lepton = viewers
-    sessions = runtime.agent_sessions
 
-    assert is_persist_refused(sessions, lepton.id, "s2", "hub") is True
-    assert is_persist_refused(sessions, lepton.id, "s2", f"client:{alice}") is False
-    assert is_persist_refused(sessions, lepton.id, "new", "hub") is False
+    assert refused(runtime, lepton, "s2", "hub", is_join=False) is True
+    assert refused(runtime, lepton, "s2", f"client:{alice}", is_join=False) is False
+    assert refused(runtime, lepton, "s3", f"client:{alice}", is_join=False) is True
+    assert refused(runtime, lepton, "new", "hub", is_join=False) is False
+
+
+def test_a_client_joins_its_own_session_or_a_shared_one_and_the_panel_any(viewers):
+    runtime, alice, bob, _, lepton = viewers
+
+    assert refused(runtime, lepton, "s2", f"client:{bob}", is_join=True) is True
+    assert refused(runtime, lepton, "s2", f"client:{alice}", is_join=True) is False
+    assert refused(runtime, lepton, "s3", f"client:{alice}", is_join=True) is False
+    assert refused(runtime, lepton, "s1", f"client:{alice}", is_join=True) is True
+    assert refused(runtime, lepton, "s2", "hub", is_join=True) is False
+    assert refused(runtime, lepton, "new", f"client:{bob}", is_join=True) is False
+
+
+def test_an_unshare_the_hub_relayed_holds_before_the_next_report(viewers):
+    runtime, alice, bob, _, lepton = viewers
+
+    runtime.shell_ledger.set(lepton.id, "s3", f"client:{bob}", False)
+
+    assert refused(runtime, lepton, "s3", f"client:{alice}", is_join=True) is True
+    assert refused(runtime, lepton, "s3", f"client:{bob}", is_join=True) is False
+
+
+def test_a_session_opened_a_moment_ago_is_not_joined_by_its_id(viewers):
+    runtime, alice, bob, _, lepton = viewers
+
+    shell_bridge.record_opened(runtime, lepton.id, "fresh", f"client:{bob}", False)
+
+    assert refused(runtime, lepton, "fresh", f"client:{alice}", is_join=True) is True
+    assert refused(runtime, lepton, "fresh", f"client:{bob}", is_join=True) is False
+    assert refused(runtime, lepton, "fresh", "hub", is_join=True) is False
+
+
+def test_a_record_the_report_stopped_listing_goes_after_the_grace_time(viewers):
+    runtime, alice, bob, _, lepton = viewers
+    now = [1000.0]
+    runtime.shell_ledger = ShellSessionLedger(clock=lambda: now[0], grace_s=60.0)
+    shell_bridge.record_opened(runtime, lepton.id, "gone", f"client:{bob}", False)
+
+    now[0] += 59.0
+    assert refused(runtime, lepton, "gone", f"client:{alice}", is_join=True) is True
+    now[0] += 1.0
+    assert refused(runtime, lepton, "gone", f"client:{alice}", is_join=True) is False
 
 
 def test_a_persist_names_only_the_flags_it_was_given():
