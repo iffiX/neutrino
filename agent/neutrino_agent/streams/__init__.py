@@ -38,8 +38,8 @@ STREAM_KIND_CONNECT = "connect"
 # The kinds the hub opens, each to what serves it, called with
 # ``(channel, args)``. The command kind is bound to what runs commands by
 # the session that serves it, and the connect kind,
-# :class:`~neutrino_agent.streams.connect.ConnectStream`, to what the machine
-# publishes by the agent that opens the session.
+# :func:`~neutrino_agent.streams.connect_udp.open_connect_stream`, to what
+# the machine publishes by the agent that opens the session.
 STREAM_KINDS = {
     STREAM_KIND_SHELL: open_shell_stream,
     STREAM_KIND_FILE: open_file_stream,

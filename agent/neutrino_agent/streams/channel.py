@@ -89,6 +89,32 @@ class StreamChannel:
             self._session._send_bytes(self.id, bytes(view[:size]))
             view = view[size:]
 
+    def try_send_frame(self, data: bytes) -> bool:
+        """Send one frame whole when the hub's credit covers it, else drop it.
+
+        Never waits on credit, for a UDP stream, whose datagrams are not
+        queued.
+
+        Args:
+            data: The frame's bytes after the stream id.
+
+        Returns:
+            Whether it was sent; False when the credit held is less than
+            its size.
+
+        Raises:
+            StreamClosed: When the stream has ended.
+            GatewayUnreachable: When the socket is gone.
+        """
+        with self._granted:
+            if self._is_closed:
+                raise StreamClosed(self.id)
+            if self._credit < len(data):
+                return False
+            self._credit -= len(data)
+        self._session._send_bytes(self.id, bytes(data))
+        return True
+
     def send_line(self, text: str) -> None:
         """Send one line of text as one binary frame.
 

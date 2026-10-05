@@ -160,21 +160,30 @@ def test_a_declared_but_never_started_container_still_appears(commands):
     assert by_name["webdav"].host_ports == [8081]
 
 
-def test_each_tcp_host_port_is_bound_to_the_address_it_is_published_on(commands):
+def test_each_host_port_is_bound_with_its_address_and_protocol(commands):
+    """TCP and UDP alike; a port podman names no protocol for is TCP, and
+    one on any other protocol is no binding."""
     commands.answers[("/usr/bin/podman", "ps")] = (
         0,
         '[{"Names": ["db"], "Image": "postgres", "Status": "Up", "State": "running", '
         '"Ports": [{"host_ip": "192.168.1.5", "host_port": 5432, "protocol": "tcp"}, '
         '{"host_ip": "", "host_port": 8080}, '
-        '{"host_ip": "", "host_port": 5353, "protocol": "udp"}]}]',
+        '{"host_ip": "", "host_port": 5353, "protocol": "udp"}, '
+        '{"host_ip": "", "host_port": 53, "protocol": "tcp"}, '
+        '{"host_ip": "", "host_port": 53, "protocol": "udp"}, '
+        '{"host_ip": "", "host_port": 9899, "protocol": "sctp"}]}]',
     )
 
     (state,) = PodmanStatusReader().survey(declared_names=[])
 
     assert state.host_bindings == [
-        {"address": "192.168.1.5", "port": 5432},
-        {"address": "", "port": 8080},
+        {"address": "192.168.1.5", "port": 5432, "protocol": "tcp"},
+        {"address": "", "port": 8080, "protocol": "tcp"},
+        {"address": "", "port": 5353, "protocol": "udp"},
+        {"address": "", "port": 53, "protocol": "tcp"},
+        {"address": "", "port": 53, "protocol": "udp"},
     ]
+    assert state.host_ports == [53, 5353, 5432, 8080, 9899]
 
 
 def test_no_podman_surveys_as_nothing(commands):
