@@ -1,11 +1,15 @@
 package io.github.iffix.neutrino.screen
 
+import io.github.iffix.neutrino.RepositoryFiles
+import io.github.iffix.neutrino.channel.ChannelOverlay
 import io.github.iffix.neutrino.channel.ChannelResult
 import io.github.iffix.neutrino.channel.HubConnection
 import io.github.iffix.neutrino.channel.HubJobs
 import io.github.iffix.neutrino.channel.HubView
 import io.github.iffix.neutrino.channel.Samples
 import io.github.iffix.neutrino.design.DotTone
+import io.github.iffix.neutrino.overlay.OverlayLine
+import io.github.iffix.neutrino.overlay.OverlayState
 import io.github.iffix.neutrino.words.WordCatalog
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -61,6 +65,21 @@ class HubsScreenTest {
         val row = HubView(Samples.binding, HubConnection.CONNECTED)
         assertEquals("Connected · Direct", hubStateWord(row.copy(reachedThrough = "direct"), words))
         assertEquals("Connected", hubStateWord(row.copy(reachedThrough = "pigeon"), words))
+    }
+
+    @Test
+    fun aHubThatPublishesNoNetworkHasNoNetworkLine() {
+        val bare = HubView(Samples.binding.copy(overlays = emptyList()), HubConnection.CONNECTED)
+        assertEquals(false, hasNetworkLine(bare))
+        assertEquals(false, hasNetworkLine(bare.copy(connection = HubConnection.DISABLED)))
+        val published = bare.copy(binding = bare.binding.copy(overlays = listOf(ChannelOverlay("easytier"))))
+        assertEquals(true, hasNetworkLine(published))
+        val stillOn = bare.copy(overlay = OverlayLine(state = OverlayState.ON, network = "easytier"))
+        assertEquals(true, hasNetworkLine(stillOn))
+        val screen = RepositoryFiles.text(
+            "client/android/app/src/main/kotlin/io/github/iffix/neutrino/screen/HubsScreen.kt",
+        )
+        assertEquals(false, screen.contains("ui.reason.no_network"))
     }
 
     @Test
