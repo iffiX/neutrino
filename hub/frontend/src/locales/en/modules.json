@@ -119,6 +119,7 @@
   "ui.ai.save_provider": "Save provider",
   "ui.ai.saving": "Saving…",
   "ui.ai.serving_count": "Serving {count} models",
+  "ui.ai.serving_count_one": "Serving 1 model",
   "ui.ai.serving_label": "Serving",
   "ui.ai.sign_in": "Sign in",
   "ui.ai.sign_in_failed": "The sign-in did not finish.",

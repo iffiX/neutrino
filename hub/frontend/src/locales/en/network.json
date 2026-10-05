@@ -508,6 +508,7 @@
   "ui.proxy.reference_url_label": "Reference URL",
   "ui.proxy.remote_dns_hint": "Asked in order, through the exit node. At least one row.",
   "ui.proxy.remote_dns_label": "Remote resolvers (proxied names)",
+  "ui.proxy.remote_dns_required": "At least one resolver is needed.",
   "ui.proxy.route_hint": "Whose traffic goes through the exit nodes, and which destinations are left out of it.",
   "ui.proxy.route_title": "Route",
   "ui.proxy.share_link_hint": "Paste the link as the provider gives it.",
