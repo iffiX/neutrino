@@ -1056,7 +1056,87 @@ def test_a_hub_with_one_network_names_that_engine_on_its_line():
 def test_a_disabled_network_button_says_why():
     reason = body_of("overlayReason")
     assert "t('ui.reason.disabled')" in reason
-    assert "t('ui.reason.no_network')" in reason
+    assert "no_network" not in PAGE_JS
+    for words in CATALOGS.values():
+        assert "ui.reason.no_network" not in words
+
+
+def run_hub_row(hub: dict) -> dict:
+    """The page's own hubRow and overlayReason, run in node with the row's
+    pieces stubbed, returning what the row is drawn with."""
+    import json
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("no node to run the page's script")
+    script = "\n".join(
+        [
+            "const t = (key) => key;",
+            "const noteLine = (text) => 'note:' + text;",
+            "const reasonLine = (text) => ({classList: {add: () => {}},",
+            "  dataset: {}, text: 'reason:' + text});",
+            "const errorLine = (text) => 'error:' + text;",
+            "const wordError = (error) => error.code;",
+            "const overlayLine = () => 'network line';",
+            "const overlayStage = () => '';",
+            "const overlayPicker = () => null;",
+            "const overlayButton = (hub) => ({name: 'network button',",
+            "  disabled: hub.connection === 'disabled'});",
+            "const panelButton = () => ({name: 'panel'});",
+            "const leaveButton = () => ({name: 'leave'});",
+            "const isJoinRefused = () => false;",
+            "const hubTone = () => 'ok';",
+            "const hubName = (hub) => hub.hub_name;",
+            "const hubWord = () => 'connected';",
+            "const rowElement = (options) => options;",
+            "function hubRow(hub)" + function_body("function hubRow(hub)") + "\n}",
+            "function overlayReason(hub)"
+            + function_body("function overlayReason(hub)")
+            + "\n}",
+            "const row = hubRow(" + json.dumps(hub) + ");",
+            "console.log(JSON.stringify({extras: row.extras, reason: row.reason,",
+            "  actions: row.actions.map((action) => action.name)}));",
+        ]
+    )
+    result = subprocess.run(
+        [node, "-e", script], capture_output=True, text=True, timeout=30
+    )
+    assert result.returncode == 0, result.stderr
+    return json.loads(result.stdout)
+
+
+HUB_ROW = {
+    "hub_name": "home",
+    "gateway_url": "https://hub:8443",
+    "connection": "connected",
+    "jobs": {},
+}
+
+
+def test_a_hub_that_publishes_no_network_draws_no_network_line():
+    row = run_hub_row(
+        dict(HUB_ROW, overlay={"networks": [], "state": "off", "error": None})
+    )
+
+    assert row == {"extras": [], "reason": "", "actions": ["leave"]}
+
+
+def test_a_hub_that_publishes_a_network_draws_its_line_and_button():
+    row = run_hub_row(
+        dict(HUB_ROW, overlay={"networks": [{"provider": "netbird"}], "state": "off"})
+    )
+
+    assert row["extras"] == ["network line"]
+    assert row["actions"] == ["network button", "leave"]
+
+
+def test_a_disabled_hub_with_no_network_still_says_it_is_switched_off():
+    row = run_hub_row(dict(HUB_ROW, connection="disabled", overlay={"networks": []}))
+
+    assert row["reason"] == "ui.reason.disabled"
+    assert row["actions"] == ["leave"]
 
 
 def test_the_join_button_shows_joining_and_a_refusal_under_the_input():

@@ -614,26 +614,30 @@ function hubWord(hub) {
 
 // One hub: its name, its state word, its address, the AI marker, its
 // virtual network's line, the error line; and the picker, the network
-// button, Reconnect while replaced, and Leave.
+// button, Reconnect while replaced, and Leave. A hub that publishes no
+// virtual network has no network line, picker or button.
 function hubRow(hub) {
   const jobs = hub.jobs || {};
   const software = hub.software ? ' · ' + t('ui.hub_software', { software: hub.software }) : '';
   const extras = [];
   if (hub.is_exit) extras.push(noteLine(t('ui.hub_is_exit')));
-  extras.push(overlayLine(hub));
   const overlay = hub.overlay || {};
-  const stage = overlayStage(overlay);
-  if (stage) {
-    const line = reasonLine(stage);
-    if (overlay.state === 'connecting' && overlay.stage === 'hub' && !overlay.is_waiting) {
-      line.classList.add('stage_clock');
-      line.dataset.address = overlay.address || '';
-      line.dataset.since = String(overlay.stage_since || 0);
+  const hasNetwork = (overlay.networks || []).length > 0;
+  if (hasNetwork) {
+    extras.push(overlayLine(hub));
+    const stage = overlayStage(overlay);
+    if (stage) {
+      const line = reasonLine(stage);
+      if (overlay.state === 'connecting' && overlay.stage === 'hub' && !overlay.is_waiting) {
+        line.classList.add('stage_clock');
+        line.dataset.address = overlay.address || '';
+        line.dataset.since = String(overlay.stage_since || 0);
+      }
+      extras.push(line);
     }
-    extras.push(line);
-  }
-  if (overlay.state === 'off' && overlay.error) {
-    extras.push(errorLine(wordError(overlay.error)));
+    if (overlay.state === 'off' && overlay.error) {
+      extras.push(errorLine(wordError(overlay.error)));
+    }
   }
   if (hub.last_error) extras.push(errorLine(wordError(hub.last_error)));
   if (isJoinRefused(hub)) {
@@ -647,10 +651,10 @@ function hubRow(hub) {
     });
   }
   const actions = [];
-  const networkPicker = overlayPicker(hub);
+  const networkPicker = hasNetwork ? overlayPicker(hub) : null;
   if (networkPicker) actions.push(networkPicker);
-  const network = overlayButton(hub);
-  actions.push(network);
+  const network = hasNetwork ? overlayButton(hub) : null;
+  if (network) actions.push(network);
   if (hub.is_panel_allowed) actions.push(panelButton(hub));
   if (hub.connection === 'replaced') {
     const reconnect = document.createElement('button');
@@ -666,7 +670,7 @@ function hubRow(hub) {
     word: hubWord(hub),
     mono: hub.gateway_url + software,
     extras: extras,
-    reason: network.disabled && !jobs.is_leaving ? overlayReason(hub) : '',
+    reason: (!network || network.disabled) && !jobs.is_leaving ? overlayReason(hub) : '',
     actions: actions,
   });
 }
@@ -788,15 +792,13 @@ function overlayButton(hub) {
     button.textContent = t('ui.network_connect');
     button.onclick = () => send('/api/overlay/connect', { hub_id: key });
   }
-  button.disabled = (overlay.networks || []).length === 0
-    || hub.connection === 'disabled' || !!jobs.is_leaving;
+  button.disabled = hub.connection === 'disabled' || !!jobs.is_leaving;
   return button;
 }
 
-// Why the network button cannot act.
+// Why the network button cannot act, and why a hub with no network is idle.
 function overlayReason(hub) {
   if (hub.connection === 'disabled') return t('ui.reason.disabled');
-  if (((hub.overlay || {}).networks || []).length === 0) return t('ui.reason.no_network');
   return '';
 }
 

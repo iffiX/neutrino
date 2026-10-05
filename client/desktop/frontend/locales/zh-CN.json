@@ -201,7 +201,6 @@
   "ui.reason.mount_form_drive": "先在配置里填用户名并选一个盘符。",
   "ui.reason.mount_form_volume": "先在配置里填用户名。",
   "ui.reason.no_machine": "先在上面选一台机器。",
-  "ui.reason.no_network": "中枢没有发布虚拟网。",
   "ui.reason.not_owned": "由 {owner} 开的",
   "ui.reason.offline": "机器离线。",
   "ui.reason.port_range": "请输入 1024 到 65535 之间的数字。",
