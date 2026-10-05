@@ -12,6 +12,7 @@ import os
 import pytest
 
 import neutrino_client.cli.files_daemon as daemon_cli
+import neutrino_client.core.files_daemon as files_daemon_module
 from neutrino_client.cli import entry
 from neutrino_client.control.easytier_socket import ask_easytier_daemon
 from neutrino_client.platforms.base import ClientPlatform
@@ -75,6 +76,7 @@ def started(monkeypatch):
 
     monkeypatch.setattr(supervisor_module, "start_core_process", start)
     monkeypatch.setattr(daemon_cli, "bundled_path", lambda binary: "C:\\" + binary)
+    monkeypatch.setattr(files_daemon_module, "adapter_carries", lambda: True)
     return processes
 
 

@@ -12,10 +12,16 @@ import pytest
 
 from neutrino_client.core.files_daemon import (
     FilesAdapterDaemon,
+    adapter_carries,
     tun2socks_command,
 )
 
 UP = {"verb": "up", "port": 40001, "user": "u1", "password": "p-Secret_1"}
+
+
+def answered():
+    """A probe through the adapter that is answered at once."""
+    return True
 
 
 class FakeTun2socks:
@@ -79,6 +85,7 @@ def daemon(started, adapter, lines):
         configure_adapter=adapter.configure,
         log=lines.append,
         start_process=start,
+        probe=answered,
     )
 
 
@@ -174,7 +181,10 @@ def test_a_request_of_another_shape_is_refused(daemon, started, request_):
 
 def test_an_install_with_no_tun2socks_is_refused(adapter, lines):
     daemon = FilesAdapterDaemon(
-        tun2socks_path="", configure_adapter=adapter.configure, log=lines.append
+        tun2socks_path="",
+        configure_adapter=adapter.configure,
+        log=lines.append,
+        probe=answered,
     )
 
     assert daemon.handle(dict(UP)) == {
@@ -193,6 +203,7 @@ def test_a_tun2socks_that_cannot_start_is_refused(adapter, lines):
         configure_adapter=adapter.configure,
         log=lines.append,
         start_process=refuse,
+        probe=answered,
     )
 
     assert daemon.handle(dict(UP)) == {
@@ -256,6 +267,7 @@ def test_a_started_tun2socks_is_tied_to_the_daemon(adapter):
         bind_child=tied.append,
         log=print,
         start_process=FakeTun2socks,
+        probe=answered,
     )
 
     daemon.handle(dict(UP))
@@ -269,3 +281,128 @@ def test_a_stop_ends_tun2socks_and_serves_nobody(daemon, started):
 
     assert started[0].status == -15
     assert daemon.status() == {"is_up": False, "port": 0}
+
+
+class Clock:
+    """Time that moves only when a probe or a pause spends it."""
+
+    def __init__(self):
+        self.now = 100.0
+
+    def __call__(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.now += seconds
+
+
+class LateProbe:
+    """Lost for the first probes, then answered, each probe spending its timeout."""
+
+    def __init__(self, clock, lost):
+        self.clock = clock
+        self.lost = lost
+        self.count = 0
+
+    def __call__(self):
+        self.count += 1
+        self.clock.now += 2
+        return self.count > self.lost
+
+
+def test_up_is_answered_only_once_a_connection_through_the_adapter_is(
+    started, adapter, lines
+):
+    """For some seconds after its address the adapter loses what it accepts,
+    and a mount sent then fails as a refused login."""
+    clock = Clock()
+    probe = LateProbe(clock, lost=3)
+    daemon = FilesAdapterDaemon(
+        tun2socks_path="t.exe",
+        configure_adapter=adapter.configure,
+        log=lines.append,
+        start_process=FakeTun2socks,
+        probe=probe,
+        clock=clock,
+        sleep=clock.sleep,
+    )
+
+    answer = daemon.handle(dict(UP))
+
+    assert answer == {"is_up": True, "port": 40001}
+    assert probe.count == 4
+    assert "the adapter carries connections after 9.5 s" in lines
+
+
+def test_an_adapter_that_never_carries_a_connection_is_refused(adapter, lines):
+    clock = Clock()
+    processes = []
+
+    def start(argv, env):
+        processes.append(FakeTun2socks(argv, env))
+        return processes[-1]
+
+    daemon = FilesAdapterDaemon(
+        tun2socks_path="t.exe",
+        configure_adapter=adapter.configure,
+        log=lines.append,
+        start_process=start,
+        probe=LateProbe(clock, lost=1000),
+        clock=clock,
+        sleep=clock.sleep,
+    )
+
+    answer = daemon.handle(dict(UP))
+
+    assert answer == {
+        "code": "files_adapter_unavailable",
+        "params": {"detail": "the adapter neutrino_files carries no connection"},
+    }
+    assert processes[0].status == -15
+    assert daemon.status() == {"is_up": False, "port": 0}
+
+
+class ProbeSocket:
+    def __init__(self, outcome):
+        self.outcome = outcome
+        self.timeouts = []
+        self.is_closed = False
+
+    def settimeout(self, value):
+        self.timeouts.append(value)
+
+    def recv(self, size):
+        if isinstance(self.outcome, BaseException):
+            raise self.outcome
+        return self.outcome
+
+    def close(self):
+        self.is_closed = True
+
+
+@pytest.mark.parametrize(
+    "outcome, is_carried",
+    [
+        (b"", True),
+        (ConnectionResetError(10054, "reset"), True),
+        (TimeoutError("timed out"), False),
+    ],
+)
+def test_the_probe_counts_an_ended_connection_and_not_a_silent_one(outcome, is_carried):
+    dialled = []
+    connection = ProbeSocket(outcome)
+
+    def dial(address, timeout):
+        dialled.append((address, timeout))
+        return connection
+
+    assert adapter_carries(dial) is is_carried
+    assert dialled == [(("198.19.255.254", 9), 2)]  # scan: allow
+    assert connection.is_closed
+
+
+def test_a_probe_that_cannot_connect_is_not_carried():
+    def dial(address, timeout):
+        raise OSError("no route")
+
+    assert adapter_carries(dial) is False

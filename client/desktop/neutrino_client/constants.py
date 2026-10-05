@@ -301,6 +301,16 @@ CLIENT_FILES_ADAPTER_MTU = 1500
 CLIENT_FILES_ADAPTER_METRIC = 9999
 # How long the adapter may take to appear once tun2socks starts.
 CLIENT_FILES_ADAPTER_WAIT_S = 15
+# The adapter carries no connection for some seconds after it has its
+# address; until then a connection is accepted and its bytes are lost. The
+# daemon answers up only once a probe to this address and port, which the
+# endpoint refuses, is answered, each probe given its timeout, all of them
+# the readiness limit.
+CLIENT_FILES_PROBE_ADDRESS = "198.19.255.254"  # scan: allow
+CLIENT_FILES_PROBE_PORT = 9
+CLIENT_FILES_PROBE_TIMEOUT_S = 2
+CLIENT_FILES_PROBE_PAUSE_S = 0.5
+CLIENT_FILES_ADAPTER_READY_S = 45
 # How long giving the adapter its address may take in all.
 CLIENT_FILES_ADAPTER_SCRIPT_TIMEOUT_S = 60
 # The one port the SMB client dials, and the one the endpoint accepts.
