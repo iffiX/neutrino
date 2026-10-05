@@ -43,6 +43,10 @@ AGENT_WS_PATH = "/api/channel/socket"
 # How long the socket may stay silent before it is taken for dead. The hub
 # pings well inside this.
 AGENT_WS_SILENCE_TIMEOUT_S = 45
+# What a send or a read says once the socket was already dropped by
+# the other side of the connection's own threads: an echo of a cause
+# recorded elsewhere, never the cause itself.
+AGENT_WS_SOCKET_CLOSED_DETAIL = "the socket is closed"
 # A binary frame starts with the stream id, a big-endian unsigned integer
 # of this many bytes.
 AGENT_WS_STREAM_ID_BYTES = 4

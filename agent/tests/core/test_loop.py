@@ -1097,7 +1097,10 @@ def test_a_stored_address_off_the_pin_is_logged_and_the_round_goes_on(
 
     assert hosts_tried(script) == ["192.0.2.1", "100.64.0.1"]
     assert delay == AGENT_BACKOFF_MIN_S
-    assert agent.last_error()["code"] == "hub_unreachable"
+    assert agent.last_error() == {
+        "code": "hub_unreachable",
+        "params": {"detail": "hung up"},
+    }
     assert f"{LAN_URL} presented a certificate that is not the hub's" in lines
     assert stored()["gateway_url"] == OVERLAY_URL
 
