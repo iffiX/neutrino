@@ -39,6 +39,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import bundled  # noqa: E402
 import payload  # noqa: E402
+from shared import deb_build  # noqa: E402
 from gui_assets import ICONS_DIR  # noqa: E402
 
 # The helper's path and the desktop name are the client's own, named here so
@@ -88,6 +89,7 @@ Version: {version}
 Section: net
 Priority: optional
 Architecture: {architecture}
+Installed-Size: {size}
 Depends: {depends}
 {conflicts}Maintainer: {maintainer}
 Description: Neutrino client
@@ -214,6 +216,7 @@ def _lay_out(tree: Path, version: str, architecture: str, maintainer: str) -> No
 
     control = CONTROL.format(
         name=PACKAGE_NAME,
+        size=deb_build.installed_size_kib(tree),
         version=version,
         architecture=architecture,
         depends=", ".join(RUNTIME_DEPENDENCIES),

@@ -276,6 +276,7 @@ def _spec(architecture="aarch64"):
         vendor=payload.VENDOR_PREFIX,
         unit_dir=build_rpm.UNIT_DIR,
         rustdesk_unit=payload.RUSTDESK_UNIT_NAME,
+        bound_test=payload.AGENT_BOUND_TEST.format(path=payload.AGENT_BINDING_PATH),
         prune=payload.PRUNE_UNTRACKED,
     )
 
@@ -375,3 +376,76 @@ def test_the_agent_package_carries_no_cc_switch(tmp_path, carried):
 
     assert not list(tmp_path.rglob("cc-switch*"))
     assert "cc_switch.txt" not in payload.CARRIED_LICENSES
+
+
+# --- a machine that has joined is not told to join ---
+
+BINDING = (
+    '{\n  "gateway_url": "https://hub:8443",\n  "id": "d1",\n  "token": "t0k"\n}\n'
+)
+
+
+def _run_printing(tmp_path, text, argument):
+    """Run a maintainer script with systemctl faked, the binding read from
+    tmp_path; what it printed."""
+    fakes = tmp_path / "fakes"
+    fakes.mkdir(exist_ok=True)
+    systemctl = fakes / "systemctl"
+    systemctl.write_text("#!/bin/sh\nexit 0\n")
+    systemctl.chmod(0o755)
+    script = tmp_path / "script"
+    script.write_text(
+        text.replace(payload.AGENT_BINDING_PATH, str(tmp_path / "agent.json"))
+    )
+    result = subprocess.run(
+        ["sh", str(script), *argument],
+        env=dict(os.environ, PATH=f"{fakes}:/usr/bin:/bin"),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return result.stdout
+
+
+@pytest.mark.parametrize("is_bound", [False, True])
+def test_the_deb_tells_only_a_machine_that_has_not_joined_to_join(
+    tmp_path, carried, is_bound
+):
+    build_deb._lay_out(tmp_path / "tree", "9.9.9", "amd64", "somebody")
+    if is_bound:
+        (tmp_path / "agent.json").write_text(BINDING)
+
+    printed = _run_printing(
+        tmp_path,
+        (tmp_path / "tree/DEBIAN/postinst").read_text(),
+        ["configure", "9.9.8"],
+    )
+
+    assert ("sudo nagent join" in printed) is (not is_bound)
+
+
+@pytest.mark.parametrize("is_bound", [False, True])
+def test_the_rpm_tells_only_a_machine_that_has_not_joined_to_join(tmp_path, is_bound):
+    if is_bound:
+        (tmp_path / "agent.json").write_text(BINDING)
+    post = _spec().split("%post\n")[1].split("\n%preun")[0]
+
+    printed = _run_printing(tmp_path, "#!/bin/sh\n" + post, ["1"])
+
+    assert ("nagent join" in printed) is (not is_bound)
+
+
+def test_the_packages_read_the_binding_where_the_agent_writes_it():
+    from neutrino_agent.constants import AGENT_CONFIG_NAME, AGENT_DATA_DIR_POSIX
+
+    assert payload.AGENT_BINDING_PATH == os.path.join(
+        AGENT_DATA_DIR_POSIX, AGENT_CONFIG_NAME
+    )
+
+
+def test_the_deb_names_its_installed_size(tmp_path, carried):
+    build_deb._lay_out(tmp_path, "9.9.9", "amd64", "somebody")
+
+    control = (tmp_path / "DEBIAN/control").read_text()
+    size = int(control.split("Installed-Size: ")[1].split("\n")[0])
+    assert size > 0

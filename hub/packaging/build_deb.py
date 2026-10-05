@@ -47,6 +47,7 @@ from venv_tree import (
     stage_desktop_entry,
 )
 from constants import HUB_DEB_CN_COMPRESSION  # noqa: E402
+from shared import deb_build  # noqa: E402
 from shared import edition_build  # noqa: E402
 
 CONTROL = """Package: {name}
@@ -213,7 +214,7 @@ def _lay_out(
     write(tree / "lib/systemd/system/neutrino_hub_web.service", panel_unit())
     stage_desktop_entry(tree)
 
-    size = sum(f.stat().st_size for f in tree.rglob("*") if f.is_file()) // 1024
+    size = deb_build.installed_size_kib(tree)
     control = CONTROL.format(
         name=PACKAGE_NAME,
         version=package_version,

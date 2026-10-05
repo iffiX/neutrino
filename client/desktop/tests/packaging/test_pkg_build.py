@@ -416,3 +416,99 @@ def test_a_bundle_inside_a_bundle_inside_a_bundle_is_kept_from_moving():
         "RootRelativeBundlePath": "Applications/A.app/B/C.bundle",
         "BundleIsRelocatable": False,
     }
+
+
+SYNTHESIZED = """<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="2">
+    <pkg-ref id="com.neutrino.agent"/>
+    <choices-outline><line choice="default"/></choices-outline>
+</installer-gui-script>
+"""
+
+
+def test_a_titled_package_is_built_from_its_distribution_with_the_title(
+    monkeypatch, tmp_path
+):
+    """installer names a package by its distribution's title."""
+    commands = []
+    written = {}
+    plain = fake_tools(commands)
+
+    def run(command):
+        if "--synthesize" in command:
+            commands.append(list(command))
+            Path(command[-1]).write_text(SYNTHESIZED, encoding="utf-8")
+            return
+        if "--distribution" in command:
+            written["distribution"] = Path(command[2]).read_text(encoding="utf-8")
+        plain(command)
+
+    monkeypatch.setattr(pkg_build, "_run", run)
+    monkeypatch.setattr(pkg_build.shutil, "which", lambda name: f"/usr/bin/{name}")
+
+    pkg_build.build(
+        tmp_path / "root",
+        tmp_path / "out.pkg",
+        identifier="com.neutrino.agent",
+        version="9.9.9",
+        title="Neutrino Agent & Co",
+    )
+
+    synthesize, product = commands[2], commands[3]
+    assert synthesize[:4] == [
+        "productbuild",
+        "--synthesize",
+        "--package",
+        str(tmp_path / "com.neutrino.agent.component.pkg"),
+    ]
+    assert product == [
+        "productbuild",
+        "--distribution",
+        str(tmp_path / "com.neutrino.agent.distribution.xml"),
+        "--package-path",
+        str(tmp_path),
+        str(tmp_path / "out.pkg"),
+    ]
+    assert (
+        '<installer-gui-script minSpecVersion="2">\n'
+        "    <title>Neutrino Agent &amp; Co</title>"
+    ) in written["distribution"]
+    assert not (tmp_path / "com.neutrino.agent.distribution.xml").exists()
+
+
+def test_a_distribution_without_its_root_falls_back_to_the_component(
+    monkeypatch, tmp_path
+):
+    commands = []
+    monkeypatch.setattr(pkg_build, "_run", fake_tools(commands))
+    monkeypatch.setattr(pkg_build.shutil, "which", lambda name: f"/usr/bin/{name}")
+
+    pkg_build.build(
+        tmp_path / "root",
+        tmp_path / "out.pkg",
+        identifier="com.neutrino.agent",
+        version="9.9.9",
+        title="Neutrino Agent",
+    )
+
+    assert commands[-1] == [
+        "productbuild",
+        "--package",
+        str(tmp_path / "com.neutrino.agent.component.pkg"),
+        str(tmp_path / "out.pkg"),
+    ]
+
+
+@pytest.mark.parametrize(
+    "script, title",
+    [
+        ("build_agent_macos.py", "Neutrino Agent"),
+        ("build_client_macos.py", "Neutrino Client"),
+        ("build_hub_macos.py", "Neutrino Hub"),
+    ],
+)
+def test_every_package_is_built_with_its_title(script, title):
+    repository = Path(pkg_build.__file__).resolve().parents[2]
+    source = (repository / "packaging" / "build" / script).read_text(encoding="utf-8")
+
+    assert f'title="{title}"' in source

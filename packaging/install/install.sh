@@ -23,6 +23,10 @@ RELEASES="https://github.com/iffiX/neutrino/releases"
 CN_RELEASES="https://gitee.com/iffiX/neutrino/releases"
 CN_LATEST_RELEASE_API="https://gitee.com/api/v5/repos/iffiX/neutrino/releases/latest"
 OS_RELEASE=/etc/os-release
+# The agent's binding to its hub on each system: a machine that holds one
+# has joined, and is not told to join again.
+AGENT_BINDING_LINUX=/etc/neutrino/agent/agent.json
+AGENT_BINDING_MACOS="/Library/Application Support/Neutrino/agent/config/agent.json"
 
 fail() {
     echo "$1" >&2
@@ -198,6 +202,14 @@ main() {
 
     case "$component" in
         agent)
+            if [ "$kind" = macos ]; then
+                binding=$AGENT_BINDING_MACOS
+            else
+                binding=$AGENT_BINDING_LINUX
+            fi
+            if $as_root ${as_root:+-n} grep -Eq '"token"[[:space:]]*:[[:space:]]*"[^"]' "$binding" 2>/dev/null; then
+                return 0
+            fi
             echo "Next, join this machine to a hub: ${as_root:+$as_root }nagent join '<enrollment link from the hub's Devices page>'"
             return 0
             ;;

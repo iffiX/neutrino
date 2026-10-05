@@ -138,7 +138,9 @@ def stand_ins(tmp_path):
             [
                 "sh",
                 "-c",
-                f'. "{functions}"; OS_RELEASE="{release_file}"; main "$@"',
+                f'. "{functions}"; OS_RELEASE="{release_file}"; '
+                f'AGENT_BINDING_LINUX="{tmp_path}/agent.json"; '
+                f'AGENT_BINDING_MACOS="{tmp_path}/agent.json"; main "$@"',
                 "install.sh",
                 *arguments,
             ],
@@ -577,3 +579,51 @@ def _publish_all(served):
             continue
         lines.append(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}")
     (served / "SHA256SUMS").write_text("\n".join(lines) + "\n")
+
+
+# --- a machine that has joined is not told to join ---
+
+BINDING = (
+    '{\n  "gateway_url": "https://hub:8443",\n  "id": "d1",\n  "token": "t0k"\n}\n'
+)
+
+
+@pytest.mark.parametrize("system, machine", [("Linux", "x86_64"), ("Darwin", "arm64")])
+def test_a_joined_machine_is_given_no_join_line(stand_ins, tmp_path, system, machine):
+    _publish_all(stand_ins.served)
+    (tmp_path / "agent.json").write_text(BINDING)
+
+    result, asked = stand_ins("agent", system=system, machine=machine)
+
+    assert result.returncode == 0, result.stderr
+    assert "nagent join" not in result.stdout
+    assert any("grep -Eq" in line for line in asked if line.startswith("sudo -n"))
+
+
+def test_a_binding_without_its_token_is_no_binding(stand_ins, tmp_path):
+    _publish_all(stand_ins.served)
+    (tmp_path / "agent.json").write_text('{\n  "token": ""\n}\n')
+
+    result, _asked = stand_ins("agent")
+
+    assert (
+        result.stdout.strip()
+        .splitlines()[-1]
+        .startswith("Next, join this machine to a hub: ")
+    )
+
+
+def test_the_script_reads_the_binding_where_the_agent_writes_it():
+    import os
+
+    from neutrino_agent.constants import (
+        AGENT_CONFIG_NAME,
+        AGENT_DATA_DIR_DARWIN,
+        AGENT_DATA_DIR_POSIX,
+    )
+
+    text = SCRIPT.read_text()
+    linux = os.path.join(AGENT_DATA_DIR_POSIX, AGENT_CONFIG_NAME)
+    darwin = os.path.join(AGENT_DATA_DIR_DARWIN, AGENT_CONFIG_NAME)
+    assert f"\nAGENT_BINDING_LINUX={linux}\n" in text
+    assert f'\nAGENT_BINDING_MACOS="{darwin}"\n' in text

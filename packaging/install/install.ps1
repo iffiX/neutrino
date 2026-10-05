@@ -32,6 +32,16 @@ function Test-NeutrinoAdministrator {
     return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
+# Whether this machine's agent holds a binding to a hub: a machine that has
+# joined is not told to join again.
+function Test-NeutrinoAgentBound {
+    $programData = if ($env:ProgramData) { $env:ProgramData } else { 'C:\ProgramData' }
+    $binding = Join-Path $programData 'Neutrino\agent\config\agent.json'
+    if (-not (Test-Path -LiteralPath $binding)) { return $false }
+    $text = Get-Content -Raw -LiteralPath $binding -ErrorAction SilentlyContinue
+    return [bool]($text -match '"token"\s*:\s*"[^"]')
+}
+
 function Get-NeutrinoMachine {
     param([string]$Architecture)
     switch ($Architecture.ToUpperInvariant()) {
@@ -178,7 +188,9 @@ function Install-Neutrino {
     Update-NeutrinoPath
 
     if ($Component -eq 'agent') {
-        Write-Output "Next, in this window: nagent join '<enrollment link from the hub's Devices page>'"
+        if (-not (Test-NeutrinoAgentBound)) {
+            Write-Output "Next, in this window: nagent join '<enrollment link from the hub's Devices page>'"
+        }
         return
     }
     if ($Component -eq 'client') {

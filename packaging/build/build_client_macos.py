@@ -281,6 +281,7 @@ def main() -> int:
             identifier=PACKAGE_IDENTIFIER,
             version=version,
             scripts_dir=staged["scripts"],
+            title="Neutrino Client",
         )
 
     if not target.is_file():

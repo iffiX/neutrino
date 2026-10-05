@@ -45,6 +45,13 @@ GLIBC_VERSION = re.compile(r"GLIBC_(\d+)\.(\d+)")
 # may run both, and removing either deletes only its own.
 INSTALL_PREFIX = Path("/opt/neutrino/agent")
 PYTHON_DIR = INSTALL_PREFIX / "python"
+# The agent's binding to its hub, and the shell test that is true when a
+# binding holds a token: a machine that already joined is told nothing about
+# joining.
+AGENT_BINDING_PATH = "/etc/neutrino/agent/agent.json"
+AGENT_BOUND_TEST = (
+    'grep -Eq \'"token"[[:space:]]*:[[:space:]]*"[^"]\' "{path}" 2>/dev/null'
+)
 
 # The interpreter the Linux packages carry, pinned by hash. The same build the
 # hub's packages carry, so one machine running both carries two copies of one

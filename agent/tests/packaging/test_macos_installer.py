@@ -306,3 +306,19 @@ def test_a_rustdesk_the_receipt_does_not_list_is_left_alone(
     calls = _run_preinstall(tmp_path, laid_out, receipt)
 
     assert calls == ["launchctl bootout system/com.neutrino.agent"]
+
+
+def test_the_postinstall_tells_only_a_machine_that_has_not_joined_to_join(laid_out):
+    import os
+
+    from neutrino_agent.constants import AGENT_CONFIG_NAME, AGENT_DATA_DIR_DARWIN
+
+    staged, _signed, _checked = laid_out
+    postinstall = (staged["scripts"] / "postinstall").read_text()
+    binding = os.path.join(AGENT_DATA_DIR_DARWIN, AGENT_CONFIG_NAME)
+
+    assert str(build_agent_macos.INSTALL_BINDING_PATH) == binding
+    test = postinstall.split("if ! ")[1].split("; then")[0]
+    assert test.startswith("grep -Eq ")
+    assert f'"{binding}"' in test
+    assert postinstall.index(test) < postinstall.index("sudo nagent join")
