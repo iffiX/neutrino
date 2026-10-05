@@ -206,10 +206,6 @@ class _ControlRequestHandler(BaseHTTPRequestHandler):
             self._leave()
         elif route == "/api/sync":
             self._sync()
-        elif route == "/api/rdp/start":
-            self._rdp_start(body)
-        elif route == "/api/rdp/stop":
-            self._rdp_stop()
         else:
             self._send_json({"code": "unknown_request"}, status=404)
 
@@ -232,22 +228,6 @@ class _ControlRequestHandler(BaseHTTPRequestHandler):
     def _sync(self) -> None:
         agent = self.server.control_agent
         outcome = agent.sync()
-        if outcome:
-            self._send_refusal(outcome)
-            return
-        self._send_json(_state(agent))
-
-    def _rdp_start(self, body: dict) -> None:
-        agent = self.server.control_agent
-        outcome = agent.rdp_share(account=str(body.get("user", "")))
-        if outcome:
-            self._send_refusal(outcome)
-            return
-        self._send_json(_state(agent))
-
-    def _rdp_stop(self) -> None:
-        agent = self.server.control_agent
-        outcome = agent.rdp_unshare()
         if outcome:
             self._send_refusal(outcome)
             return

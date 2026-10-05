@@ -70,6 +70,7 @@ APPLY_ORDER = (
     "vscode",
     "code_server",
     "cloudcli",
+    "remote_desktop",
 )
 
 # The wants under which the software must be there.
@@ -351,9 +352,8 @@ class DesiredStateApplier:
     def _apply_desktop(self, wanted) -> None:
         """Give the desktop host the seat password the hub holds.
 
-        The password is set into RustDesk only when it is not the one this
-        machine already set. A refusal is logged rather than raised: it says
-        nothing about whether the modules applied.
+        The Remote desktop module writes it into RustDesk's settings when it
+        applies, and only when it is not the one written there.
 
         Args:
             wanted: The state's ``desktop`` section, or anything else when
@@ -361,9 +361,7 @@ class DesiredStateApplier:
         """
         if self._rdp is None or not isinstance(wanted, dict):
             return
-        refusal = self._rdp.apply_seat_password(str(wanted.get("seat_password", "")))
-        if refusal:
-            self._log(f"rdp: {refusal['code']}")
+        self._rdp.take_seat_password(str(wanted.get("seat_password", "")))
 
     def _reconcile_one(self, name: str, runner, wanted: dict) -> "dict | None":
         """Make one module's actual state equal its ``want``.

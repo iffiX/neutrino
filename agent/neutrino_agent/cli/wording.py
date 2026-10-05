@@ -87,11 +87,8 @@ CLI_CODE_WORDS = {
     "state_not_settled": "the machine is still applying its configuration; try again",
     "unsupported_platform": "this machine cannot do this",
     "no_target_user": "that account does not exist on this machine",
-    "rdp_no_seat": "say whose desktop to share: nagent rdp start --user <name>",
-    "rdp_no_desktop": "this machine has no desktop session to share",
-    "rdp_wrong_seat": "{account} is not signed in at this machine's screen",
-    "rdp_configure_failed": "RustDesk could not be configured: {detail}",
-    "rdp_password_refused": "RustDesk refused the seat password: {detail}",  # scan: allow
+    "rdp_takeover_failed": "RustDesk could not be taken over ({step}): {detail}",
+    "rdp_restore_failed": "RustDesk could not be given back ({step}): {detail}",
     "rdp_nobody_seated": "nobody is signed in at that machine's screen",
     "rdp_screen_not_allowed": "allow screen sharing once at that machine's screen",
     "agent_internal": "the agent hit an unexpected error; check its log",

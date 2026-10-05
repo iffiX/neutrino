@@ -108,13 +108,11 @@ class FakeEngine:
 class FakeShareHost:
     """A desktop host that records the seat passwords it was handed."""
 
-    def __init__(self, refusal=None):
+    def __init__(self):
         self.passwords: list = []
-        self.refusal = refusal
 
-    def apply_seat_password(self, password):
+    def take_seat_password(self, password):
         self.passwords.append(password)
-        return dict(self.refusal) if self.refusal else {}
 
 
 class FakeRunner:
@@ -756,20 +754,6 @@ def test_a_state_with_no_desktop_section_hands_the_host_nothing(tmp_path):
     assert host.passwords == []
 
 
-def test_a_password_the_host_refuses_does_not_fail_the_state(tmp_path):
-    """What RustDesk did with a password says nothing about whether the
-    modules applied."""
-    host = FakeShareHost(refusal={"code": "rdp_password_refused", "params": {}})
-    held, _engine = applier({"samba": FakeRunner()}, tmp_path=tmp_path, rdp=host)
-    document = state(samba="running")
-    document["desktop"] = {"seat_password": "hunter2"}  # scan: allow
-
-    held.apply(document)
-
-    assert held.applied_hash == "h1"
-    assert held.state_error is None
-
-
 def test_nothing_here_forces_a_state_again():
     """An install is the reconcile's own step now; there is no second
     pass to ask for after it."""
@@ -892,7 +876,6 @@ def test_the_same_state_with_a_retry_mark_tries_a_failed_install_again(tmp_path)
 def test_the_terminal_module_installs_nothing_and_runs_with_the_settings_held(
     monkeypatch, tmp_path
 ):
-    from neutrino_agent.core import engine as engine_module
     from neutrino_agent.core.engine import ModuleEngine
     from neutrino_agent.platforms.base import AgentPlatform
 
@@ -900,7 +883,6 @@ def test_the_terminal_module_installs_nothing_and_runs_with_the_settings_held(
         os_name = "linux"
         capabilities = frozenset({"metrics"})
 
-    monkeypatch.setattr(engine_module.rustdesk, "binary_path", lambda: "")
     engine = ModuleEngine(platform=Carried(), configured_dir=str(tmp_path / "marks"))
     held, _ = applier(engine.module_runners, engine=engine, tmp_path=tmp_path)
     settings = {"account": "ann", "shell_path": "/bin/zsh"}

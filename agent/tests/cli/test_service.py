@@ -11,6 +11,7 @@ is ``agent.log`` under the data root.
 import pytest
 
 import neutrino_agent.cli.service as service_cli
+from neutrino_agent.exceptions import ModuleApplyError
 from tests.conftest import FakeControlPlatform
 
 
@@ -179,6 +180,79 @@ class RemovalPlatform(FakeControlPlatform):
         return ["com.neutrino.agent"]
 
 
+@pytest.fixture(autouse=True)
+def desktop_off(monkeypatch):
+    """The desktop share's turning off, recorded on the platform's calls."""
+
+    def record(platform):
+        if hasattr(platform, "calls"):
+            platform.calls.append("desktop_off")
+
+    monkeypatch.setattr(service_cli, "turn_desktop_off", record)
+
+
+class OffHost:
+    """A desktop host as the uninstall builds it."""
+
+    made = []
+    error = None
+
+    def __init__(self, **kwargs):
+        OffHost.made.append(kwargs)
+
+    def turn_off(self):
+        if OffHost.error is not None:
+            raise OffHost.error
+
+
+def test_turning_the_desktop_off_builds_the_host_on_the_agents_own_roots(
+    monkeypatch, tmp_path
+):
+    class Roots:
+        os_name = "linux"
+
+        def agent_data_dir(self):
+            return str(tmp_path / "data")
+
+        def agent_var_dir(self):
+            return str(tmp_path / "var")
+
+    OffHost.made = []
+    OffHost.error = None
+    # The real turning off, not the autouse fixture's record of it.
+    monkeypatch.undo()
+    monkeypatch.setattr(service_cli, "RdpShareHost", OffHost)
+
+    service_cli.turn_desktop_off(Roots())
+
+    assert OffHost.made[0]["state_dir"] == str(tmp_path / "var")
+    assert OffHost.made[0]["credentials_dir"] == str(tmp_path / "data" / "credentials")
+
+
+def test_a_desktop_that_cannot_be_given_back_is_said_and_the_removal_goes_on(
+    monkeypatch, capsys, tmp_path
+):
+    class Roots:
+        os_name = "linux"
+
+        def agent_data_dir(self):
+            return str(tmp_path / "data")
+
+        def agent_var_dir(self):
+            return str(tmp_path / "var")
+
+    monkeypatch.undo()
+    monkeypatch.setattr(service_cli, "RdpShareHost", OffHost)
+    OffHost.error = ModuleApplyError(
+        "rdp_restore_failed", {"step": "restore", "detail": "busy"}
+    )
+
+    service_cli.turn_desktop_off(Roots())
+
+    OffHost.error = None
+    assert "rdp_restore_failed step=restore detail=busy" in capsys.readouterr().err
+
+
 def test_uninstall_stops_the_agent_before_taking_what_its_modules_added(
     monkeypatch, capsys
 ):
@@ -187,7 +261,7 @@ def test_uninstall_stops_the_agent_before_taking_what_its_modules_added(
 
     assert service_cli.main_uninstall(is_forced=True) == 0
 
-    assert platform.calls == ["stop", "remove_added"]
+    assert platform.calls == ["stop", "desktop_off", "remove_added"]
     assert "removed    neutrino_vscode@ann.service" in capsys.readouterr().out
 
 
@@ -197,7 +271,12 @@ def test_uninstall_on_a_mac_removes_the_agent_itself_as_well(monkeypatch, capsys
 
     assert service_cli.main_uninstall(is_forced=True) == 0
 
-    assert platform.calls == ["stop", "remove_added", "remove_agent_program"]
+    assert platform.calls == [
+        "stop",
+        "desktop_off",
+        "remove_added",
+        "remove_agent_program",
+    ]
     assert "removed    com.neutrino.agent" in capsys.readouterr().out
 
 
@@ -256,7 +335,13 @@ def test_uninstall_switches_the_ai_tools_back_once_the_service_stopped(
 
     assert service_cli.main_uninstall(is_forced=True) == 0
 
-    assert platform.calls == ["stop", "switch_back", "remove_copy", "remove_added"]
+    assert platform.calls == [
+        "stop",
+        "desktop_off",
+        "switch_back",
+        "remove_copy",
+        "remove_added",
+    ]
     printed = capsys.readouterr().out
     assert "ai tools   ann: switched_back" in printed
     assert "removed    /var/lib/neutrino/agent/ai_tools/bin" in printed

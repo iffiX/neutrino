@@ -38,7 +38,16 @@ def test_a_host_given_no_seat_reads_its_platforms(tmp_path, platform_class, seat
         platform=platform_class(),
         store=None,
         credentials_dir=str(tmp_path),
+        state_dir=str(tmp_path),
         log=print,
     )
 
     assert type(host._seat) is seat_class
+    assert (
+        type(host._applier).__name__
+        == {
+            LinuxSeat: "RemoteDesktopLinuxApplier",
+            WindowsSeat: "RemoteDesktopWindowsApplier",
+            DarwinSeat: "RemoteDesktopDarwinApplier",
+        }[seat_class]
+    )

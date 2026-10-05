@@ -69,6 +69,7 @@ from neutrino_agent.exceptions import (
     SelfUpdateError,
 )
 from neutrino_agent.platforms.detect import detect_platform
+from neutrino_agent.modules.remote_desktop.constants import REMOTE_DESKTOP_NAME
 from neutrino_agent.rdp.host import RdpShareHost
 from neutrino_agent.streams import (
     STREAM_KIND_CONNECT,
@@ -171,8 +172,10 @@ class Agent:
             platform=self._platform,
             store=self._store,
             credentials_dir=os.path.join(data_dir, AGENT_CREDENTIALS_DIR_NAME),
+            state_dir=var_dir,
             log=log,
         )
+        self._engine.module_runners[REMOTE_DESKTOP_NAME].bind_host(self._rdp)
         # The machine's AI tools, switched as each account the state names.
         self._ai_tools = AiToolsApplier(
             platform=self._platform, log=log, is_bound=enrollment.is_bound
@@ -189,9 +192,6 @@ class Agent:
             package_dir=self._package_dir,
             ai_tools=self._ai_tools,
         )
-        # The share flow refuses before it configures anything when RustDesk
-        # is not on the machine, which is what the engine's report answers.
-        self._rdp.bind_modules(self._engine.report)
         self._backoff_s = AGENT_BACKOFF_MIN_S
         self._last_error: "dict | None" = None
         self._operator = None
@@ -324,29 +324,6 @@ class Agent:
         self._news.set()
         return {}
 
-    def rdp_share(self, *, account: str) -> dict:
-        """Share this machine's desktop behind the hub's seat password.
-
-        Args:
-            account: The account sitting at the machine's screen.
-
-        Returns:
-            Empty on success, ``{"code", "params"}`` on a refusal.
-        """
-        outcome = self._rdp.share(account)
-        self._news.set()
-        return outcome
-
-    def rdp_unshare(self) -> dict:
-        """Stop sharing this machine's desktop.
-
-        Returns:
-            Empty on success, ``{"code", "params"}`` on a refusal.
-        """
-        outcome = self._rdp.unshare()
-        self._news.set()
-        return outcome
-
     # --- the loop ---
 
     def stop(self) -> None:
@@ -371,9 +348,11 @@ class Agent:
             self_update.package_kind(self._engine.platform_tuple)
         ):
             self._log(f"removed the stale update job {AGENT_UPDATE_UNIT}")
-        # The desktop host runs on every machine this package installed on,
-        # and reaches the LAN and nothing else from the first start.
-        self._rdp.apply_baseline()
+        # A share an earlier agent's command made runs again on this agent's
+        # copy, beside the connection rather than before it.
+        threading.Thread(
+            target=self._rdp.resume_old_share, name="rdp_resume", daemon=True
+        ).start()
         while not self._is_stop_asked.is_set():
             # Cleared before the turn: news set during it is still standing
             # when the wait begins.

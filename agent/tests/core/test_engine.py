@@ -257,13 +257,16 @@ def test_a_module_the_state_does_not_name_is_refused_not_attempted(tmp_path):
     assert refusal == {"code": "unknown_module", "params": {"module": "fakedesk"}}
 
 
-def test_the_built_in_module_takes_no_operation(tmp_path):
+def test_the_module_the_agent_carries_takes_no_operation(tmp_path):
     engine = bare_engine(tmp_path=tmp_path)
 
-    refusal = engine.install("rustdesk", receive=landing_receive([], tmp_path))
+    refusal = engine.install("remote_desktop", receive=landing_receive([], tmp_path))
 
-    assert refusal == {"code": "module_not_orderable", "params": {"module": "rustdesk"}}
-    assert engine.uninstall("rustdesk") == refusal
+    assert refusal == {
+        "code": "module_not_orderable",
+        "params": {"module": "remote_desktop"},
+    }
+    assert engine.uninstall("remote_desktop") == refusal
 
 
 def test_an_idle_pass_reruns_nothing(tmp_path):
@@ -803,18 +806,15 @@ def test_uninstalling_software_the_hub_never_configured_leaves_its_files(tmp_pat
     assert (runner.stops, runner.removals) == (0, 0)
 
 
-def test_the_built_in_rustdesk_row_follows_the_platforms_binary(monkeypatch, tmp_path):
-    engine = bare_engine()
-    engine._wanted = {}
-    found = [""]
-    monkeypatch.setattr(engine_module.rustdesk, "binary_path", lambda: found[0])
+def test_the_old_rustdesk_row_is_gone_and_remote_desktop_is_reported(tmp_path):
+    engine = ModuleEngine(
+        platform=NoPackagesPlatform(), configured_dir=str(tmp_path / "configured")
+    )
 
     engine._refresh(is_forced=True)
-    assert engine.report()["rustdesk"]["state"] == "absent"
 
-    found[0] = str(tmp_path / "rustdesk")
-    engine._refresh(is_forced=True)
-    assert engine.report()["rustdesk"]["state"] == "installed"
+    assert "rustdesk" not in engine.report()
+    assert engine.report()["remote_desktop"]["state"] == "installed"
 
 
 class NoPackagesPlatform(AgentPlatform):
@@ -827,21 +827,19 @@ class NoPackagesPlatform(AgentPlatform):
 def test_a_platform_without_packages_reports_only_what_the_agent_carries(
     monkeypatch, tmp_path
 ):
-    monkeypatch.setattr(engine_module.rustdesk, "binary_path", lambda: "")
     engine = ModuleEngine(
         platform=NoPackagesPlatform(), configured_dir=str(tmp_path / "configured")
     )
 
     engine._refresh(is_forced=True)
 
-    assert set(engine.module_runners) == {"terminal"}
-    assert set(engine.report()) == {"rustdesk", "terminal"}
+    assert set(engine.module_runners) == {"terminal", "remote_desktop"}
+    assert set(engine.report()) == {"terminal", "remote_desktop"}
 
 
 def test_a_module_the_state_names_there_is_unsupported_never_failed(
     monkeypatch, tmp_path
 ):
-    monkeypatch.setattr(engine_module.rustdesk, "binary_path", lambda: "")
     engine = ModuleEngine(
         platform=NoPackagesPlatform(), configured_dir=str(tmp_path / "configured")
     )
@@ -887,7 +885,6 @@ class SmbServerPlatform(AgentPlatform):
 def test_a_system_with_its_own_smb_server_runs_the_file_share_alone(
     monkeypatch, tmp_path
 ):
-    monkeypatch.setattr(engine_module.rustdesk, "binary_path", lambda: "")
     engine = ModuleEngine(
         platform=SmbServerPlatform(), configured_dir=str(tmp_path / "configured")
     )
@@ -905,7 +902,7 @@ def test_a_system_with_its_own_smb_server_runs_the_file_share_alone(
     engine._refresh(is_forced=True)
     report = engine.report()
 
-    assert set(engine.module_runners) == {"samba", "terminal"}
+    assert set(engine.module_runners) == {"samba", "terminal", "remote_desktop"}
     assert report["samba"]["state"] == "installed"
     assert report["fakedesk"]["state"] == "unsupported"
     assert engine.install("samba", receive=None) == {}
@@ -926,7 +923,6 @@ class HubPackagesPlatform(SmbServerPlatform):
 def test_a_system_that_unpacks_the_hub_s_software_runs_vs_code_from_its_bytes(
     monkeypatch, tmp_path
 ):
-    monkeypatch.setattr(engine_module.rustdesk, "binary_path", lambda: "")
     engine = ModuleEngine(
         platform=HubPackagesPlatform(str(tmp_path / "Neutrino")),
         configured_dir=str(tmp_path / "configured"),
@@ -954,6 +950,7 @@ def test_a_system_that_unpacks_the_hub_s_software_runs_vs_code_from_its_bytes(
         "vscode",
         "cloudcli",
         "terminal",
+        "remote_desktop",
     }
     assert engine.report()["vscode"]["state"] == "absent"
     assert engine.install("vscode", receive=receive) == {
@@ -997,4 +994,5 @@ def test_a_platform_with_packages_builds_the_vs_code_runner(tmp_path):
         "code_server",
         "cloudcli",
         "terminal",
+        "remote_desktop",
     }

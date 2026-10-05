@@ -54,6 +54,8 @@ UNSTRUCTURED_CODES = (
 # a literal, and what the engine records against a built-in row.
 MODULE_CODES = (
     "module_not_orderable",
+    "rdp_takeover_failed",
+    "rdp_restore_failed",
     "verb_unknown",
     "samba_missing",
     "samba_config_rejected",
@@ -131,7 +133,7 @@ def test_the_scan_finds_the_codes_it_is_meant_to():
     # A scan that matched nothing would pass the completeness test silently.
     found = emitted_codes()
 
-    assert "rdp_wrong_seat" in found
+    assert "module_not_orderable" in found
     assert "hub_unreachable" in found
     assert len(found) > 10
 
@@ -211,9 +213,9 @@ def test_a_state_outside_the_table_reads_as_unknown():
 
 
 def test_a_codes_params_fill_its_wording():
-    assert wording.word_code("rdp_wrong_seat", {"account": "alice"}) == (
-        "alice is not signed in at this machine's screen"
-    )
+    assert wording.word_code(
+        "rdp_takeover_failed", {"step": "stop", "detail": "busy"}
+    ) == ("RustDesk could not be taken over (stop): busy")
     assert wording.word_code("module_missing", {}) == "install the  module first"
 
 

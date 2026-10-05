@@ -1,225 +1,256 @@
-"""Sharing this machine's desktop.
+"""Sharing this machine's desktop, as the hub's switch orders.
 
-Which desktop is shared is decided on the machine: the agent configures
-RustDesk for direct connection and declares the share upward, and every
-other machine's fleet list shows it. The seat password a peer connects with
-is the hub's — it arrives in the desired state, is set into RustDesk salted
-whenever it changed, and is kept in a root-only file so the machine knows
-what it already set. It enters neither the store nor any heartbeat.
+The Remote desktop module's switch is the one place a share is decided.
+On, the host takes the machine's RustDesk over: it keeps aside what is
+registered under RustDesk's names and is not the agent's, stops and ends
+every RustDesk host but a viewer, writes the options and the seat password
+into the settings files while nothing runs, and registers and starts the
+agent's own copy under RustDesk's names. Off, it removes what it registered,
+ends its copy and puts back what it kept, settings files included. Each
+system's registration is its applier's (``modules/remote_desktop/``).
 
-**A machine with no desktop is refused before anything is configured.**
-RustDesk on a box with no graphical session answers nothing, and the share
-says so rather than passing the connection refusal on raw.
+The seat password is the hub's: it arrives in the state's ``desktop``
+section, is written into ``RustDesk.toml`` whenever it changed, and is kept
+in a root-only file. It enters neither the store nor any report.
 
-**A share is declared only once it answers.** Configuring is not sharing:
-the share probes the direct port and says ``starting`` until it opens.
+**A share is declared only once it listens.** The host reads the system's
+socket table for its copy on the direct port; it opens no connection to it.
+A share an agent of an earlier version recorded is taken over the same way
+when the agent starts, and kept and reported until the first state names
+the module.
 
 Who is at the screen, how many peers are connected, and what a peer would
 wait on are each platform's own, read through the seat
 (:func:`~neutrino_agent.rdp.seat.seat_for`).
 
-Not pure: writes RustDesk's configuration, drives its service, and opens a
-local socket to see whether it answers.
+Not pure: writes RustDesk's settings, drives its registration through the
+applier, and reads the socket table.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
+import contextlib
 import os
-import socket
+import shutil
+import subprocess
+import threading
 import time
 import uuid
 
-from neutrino_agent.exceptions import InstallError, PlatformUnsupportedError
+from neutrino_agent.exceptions import (
+    InstallError,
+    ModuleApplyError,
+    PlatformUnsupportedError,
+)
 from neutrino_agent.modules import rustdesk
+from neutrino_agent.modules.remote_desktop.constants import (
+    REMOTE_DESKTOP_DIR_NAME,
+    REMOTE_DESKTOP_DIRECT_PORT,
+    REMOTE_DESKTOP_KEPT_DIR_NAME,
+    REMOTE_DESKTOP_KEPT_SETTINGS_DIR_NAME,
+    REMOTE_DESKTOP_LISTEN_TTL_S,
+    REMOTE_DESKTOP_OPTIONS,
+    REMOTE_DESKTOP_OPTIONS_FILE,
+    REMOTE_DESKTOP_PASSWORD_FILE,
+    REMOTE_DESKTOP_REGISTERED_NAME,
+)
+from neutrino_agent.modules.remote_desktop.records import read_json, write_json
+from neutrino_agent.modules.subprocess_run import command_detail
 from neutrino_agent.rdp.constants import (
     RDP_ATTENTION_NOBODY_SEATED,
     RDP_ATTENTION_TTL_S,
     RDP_GREETER_ACCOUNTS,
-    RDP_MODULE_NAME,
     RDP_PASSWORD_FILE,
-    RDP_PROBE_HOST,
-    RDP_PROBE_TIMEOUT_S,
-    RDP_PROBE_TTL_S,
     RDP_STATE_NOT_SHARED,
     RDP_STATE_SHARING,
     RDP_STATE_STARTING,
 )
 from neutrino_agent.rdp.seat import seat_for
 
+# The codes a failed step of the switch reports.
+CODE_TAKEOVER_FAILED = "rdp_takeover_failed"
+CODE_RESTORE_FAILED = "rdp_restore_failed"
+# The steps they name.
+STEP_COPY = "copy"
+STEP_KEEP = "keep"
+STEP_STOP = "stop"
+STEP_SETTINGS = "settings"
+STEP_REGISTER = "register"
+STEP_START = "start"
+STEP_RESTORE = "restore"
+# What a step that failed may have raised.
+STEP_ERRORS = (OSError, subprocess.SubprocessError, InstallError, ValueError)
 
-def closed_options() -> tuple:
-    """The share configuration with the direct server shut again.
+
+def applier_for(os_name: str, kept_dir: str):
+    """The registration of one operating system.
+
+    Args:
+        os_name: ``linux``, ``windows`` or ``darwin``.
+        kept_dir: Where what is kept aside goes.
 
     Returns:
-        The ``(key, value)`` pairs to write.
+        That system's applier.
     """
-    return tuple(
-        (key, value) if key != "direct-server" else (key, "N")
-        for key, value in rustdesk.RUSTDESK_SHARE_OPTIONS
+    if os_name == "windows":
+        from neutrino_agent.modules.remote_desktop.windows_applier import (
+            RemoteDesktopWindowsApplier,
+        )
+
+        return RemoteDesktopWindowsApplier(kept_dir=kept_dir)
+    if os_name == "darwin":
+        from neutrino_agent.modules.remote_desktop.darwin_applier import (
+            RemoteDesktopDarwinApplier,
+        )
+
+        return RemoteDesktopDarwinApplier(kept_dir=kept_dir)
+    from neutrino_agent.modules.remote_desktop.linux_applier import (
+        RemoteDesktopLinuxApplier,
     )
+
+    return RemoteDesktopLinuxApplier(kept_dir=kept_dir)
 
 
 class RdpShareHost:
-    """Shares this machine's desktop, and says where the share stands."""
+    """Shares this machine's desktop as the switch says, and says where the
+    share stands."""
 
-    def __init__(self, *, platform, store, credentials_dir: str, log=print, seat=None):
+    def __init__(
+        self,
+        *,
+        platform,
+        store,
+        credentials_dir: str,
+        state_dir: str,
+        log=print,
+        seat=None,
+        applier=None,
+    ):
         """
         Args:
             platform: The machine's platform, behind the contract.
             store: The :class:`MachineStateStore` holding the share record.
             credentials_dir: Where the seat password file lives.
+            state_dir: The state root, under which ``remote_desktop/``
+                keeps what was registered and what was kept aside.
             log: Callable used for progress messages.
             seat: Who is at the screen and what a peer would wait on; None
                 is the platform's own.
+            applier: The system's registration; None is the platform's own.
         """
         self._platform = platform
         self._seat = seat if seat is not None else seat_for(platform.os_name)
         self._store = store
         self._credentials_dir = credentials_dir
+        self._dir = os.path.join(state_dir, REMOTE_DESKTOP_DIR_NAME)
+        self._kept_dir = os.path.join(self._dir, REMOTE_DESKTOP_KEPT_DIR_NAME)
+        self._applier = (
+            applier
+            if applier is not None
+            else applier_for(platform.os_name, self._kept_dir)
+        )
         self._log = log
-        self._module_reader = None
-        self._probed_at = 0.0
-        self._is_answering = False
+        self._lock = threading.Lock()
+        self._seat_password = ""
+        self._listened_at = 0.0
+        self._listeners: list = []
         self._attention_at = 0.0
         self._attention = ""
 
-    def bind_modules(self, reader) -> None:
-        """Say where the machine's module states are read from.
+    def take_seat_password(self, password: str) -> None:
+        """Keep the seat password the hub holds, for the next write.
 
         Args:
-            reader: Called with no arguments for the module report, so the
-                share flow can refuse before it configures anything.
+            password: The seat password from the state's ``desktop``
+                section.
         """
-        self._module_reader = reader
+        if password:
+            self._seat_password = password
 
-    def share(self, account: str) -> dict:
-        """Configure RustDesk for direct connection and declare the share.
+    def set_switch(self, is_enabled: bool) -> None:
+        """Make the switch true on this machine.
 
-        A machine shares one seat at a time: naming another account closes
-        the copy the previous one was shared through. Once RustDesk is
-        configured the seat asks the person at the screen for whatever
-        RustDesk needs granted there, without waiting for an answer.
+        The first call ends a share an earlier agent recorded: from here on
+        the switch alone decides.
 
         Args:
-            account: The account sitting at the machine's screen.
+            is_enabled: Whether the desktop is shared.
 
-        Returns:
-            Empty on success, ``{"code", "params"}`` on a refusal.
+        Raises:
+            ModuleApplyError: ``rdp_takeover_failed {step, detail}`` or
+                ``rdp_restore_failed {step, detail}`` naming the step that
+                failed.
         """
-        if not account:
-            return {"code": "rdp_no_seat", "params": {}}
-        status = self._module_states().get(RDP_MODULE_NAME) or {}
-        if status.get("state") != "installed":
-            return {"code": "module_missing", "params": {"module": RDP_MODULE_NAME}}
-        if not self._seat.has_desktop_session():
-            return {"code": "rdp_no_desktop", "params": {}}
-        refusal = self._seat_refusal(account)
-        if refusal:
-            return refusal
-        record = self._store.rdp_share()
-        share_id = str(record.get("share_id", "")) or uuid.uuid4().hex
-        replaced = str(record.get("account", "") or "")
-        try:
-            if replaced and replaced != account:
-                self._configure(replaced, closed_options(), is_restarted=False)
-            self._configure(account, rustdesk.RUSTDESK_SHARE_OPTIONS)
-            seat_password = self._read_password()
-            if seat_password:
-                rustdesk.set_password(seat_password)
-        except InstallError as error:
-            return {"code": "rdp_configure_failed", "params": {"detail": str(error)}}
-        self._seat.ask_for_permissions(account)
-        self._store.set_rdp_share(
-            {
-                "share_id": share_id,
-                "is_shared": True,
-                "port": rustdesk.RUSTDESK_DIRECT_PORT,
-                # Whose session copy was written, so unsharing closes every
-                # file sharing opened rather than only the service's own.
-                "account": account,
-            }
-        )
-        self._probed_at = 0.0
-        return {}
+        with self._lock:
+            record = self._store.rdp_share()
+            if not record.get("is_ordered"):
+                self._store.set_rdp_share(
+                    {
+                        "is_ordered": True,
+                        "share_id": str(record.get("share_id", "") or ""),
+                    }
+                )
+            if is_enabled:
+                self._take_over()
+            else:
+                self._give_back()
+            self._listened_at = 0.0
 
-    def unshare(self) -> dict:
-        """Close the direct server, drop the record, and stop declaring.
+    def resume_old_share(self) -> None:
+        """Take RustDesk over for a share an earlier agent's command made.
 
-        Returns:
-            Empty on success, ``{"code", "params"}`` on a refusal.
+        The upgrade took that agent's RustDesk away, so the share runs again
+        on the agent's copy until the first state names the module. A
+        failure is logged: the state that follows tries again.
         """
-        account = str(self._store.rdp_share().get("account", ""))
-        try:
-            self._configure(account, closed_options(), is_restarted=False)
-        except InstallError as error:
-            return {"code": "rdp_configure_failed", "params": {"detail": str(error)}}
-        self._store.clear_rdp_share()
-        self._probed_at = 0.0
-        return {}
-
-    def apply_baseline(self) -> None:
-        """Point RustDesk at the LAN and nothing else, wherever it reads.
-
-        A service already running reads its configuration once, so a
-        baseline that changed anything is followed by a restart. Best
-        effort: a machine that cannot take the write still runs.
-        """
-        is_changed = False
-        for path in rustdesk.config_paths(""):
+        with self._lock:
+            record = self._store.rdp_share()
+            if record.get("is_ordered") or not record.get("is_shared"):
+                return
             try:
-                if rustdesk.write_config(path, rustdesk.RUSTDESK_BASE_OPTIONS):
-                    is_changed = True
-            except InstallError as error:
-                self._log(f"rdp: {error}")
-        if not is_changed:
-            return
-        try:
-            rustdesk.control_service(rustdesk.RUSTDESK_ACTION_RESTART)
-        except InstallError as error:
-            self._log(f"rdp: {error}")
+                self._take_over()
+            except ModuleApplyError as error:
+                said = " ".join(f"{key}={value}" for key, value in error.params.items())
+                self._log(f"remote_desktop: {error.code} {said}"[:500])
 
-    def apply_seat_password(self, password: str) -> dict:
-        """Set the seat password the hub holds, when it is not the one set.
+    def turn_off(self) -> None:
+        """Give RustDesk back, whatever the switch says: the agent is leaving.
 
-        RustDesk stores it salted, so the root-only file beside the store is
-        the only record of what this machine already set.
-
-        Args:
-            password: The seat password from the desired state.
-
-        Returns:
-            Empty when it took or there was nothing to do,
-            ``{"code", "params"}`` when RustDesk refused it.
+        Raises:
+            ModuleApplyError: ``rdp_restore_failed {step, detail}``.
         """
-        if not password or password == self._read_password():
-            return {}
+        with self._lock:
+            self._give_back()
+
+    def is_running(self) -> bool:
+        """Whether the agent's copy listens on the direct port."""
+        program = self._applier.program
+        return any(_is_same(program, listener) for listener in self._listening())
+
+    def has_copy_processes(self) -> bool:
+        """Whether any process of the agent's copy runs."""
         try:
-            rustdesk.set_password(password)
-        except InstallError as error:
-            return {"code": "rdp_password_refused", "params": {"detail": str(error)}}
-        self._write_password(password)
-        return {}
+            return bool(self._applier.copy_pids())
+        except STEP_ERRORS:
+            return False
 
     def state(self) -> dict:
         """What the control channel reads about this machine's share.
 
         Returns:
             ``{"is_shared", "state", "port", "account", "attention",
-            "rustdesk_id", "has_password"}``. The seat password itself is
-            in none of it.
+            "has_password"}``. The seat password itself is in none of it.
         """
-        record = self._store.rdp_share()
-        is_shared = bool(record.get("is_shared"))
-        account = str(record.get("account", ""))
+        is_on = self._is_on()
+        account = self._account() if is_on else ""
         return {
-            "is_shared": is_shared,
-            "state": self._state(is_shared),
-            "port": int(record.get("port") or rustdesk.RUSTDESK_DIRECT_PORT),
+            "is_shared": is_on,
+            "state": self._state(is_on),
+            "port": REMOTE_DESKTOP_DIRECT_PORT,
             "account": account,
-            "attention": self.attention(account) if is_shared else "",
-            "rustdesk_id": rustdesk.read_id(),
+            "attention": self.attention(account) if is_on else "",
             "has_password": self._read_password() != "",
         }
 
@@ -229,39 +260,31 @@ class RdpShareHost:
         Returns:
             ``{"is_shared", "account", "share_id", "port", "attention",
             "connected_count"}``. ``is_shared`` is true only while the share
-            actually answers, so a fleet list never offers a desktop that
-            cannot be reached; ``attention`` names what a peer would wait on
-            if it dialed now. The seat password is in none of it and never
-            crosses the wire.
+            listens, so a fleet list never offers a desktop that cannot be
+            reached; ``account`` is whoever sits at the screen and decides
+            nothing; ``attention`` names what a peer would wait on if it
+            dialed now. The seat password is in none of it.
         """
-        record = self._store.rdp_share()
-        is_shared = bool(record.get("is_shared"))
-        port = int(record.get("port") or rustdesk.RUSTDESK_DIRECT_PORT)
+        is_on = self._is_on()
+        account = self._account() if is_on else ""
+        port = REMOTE_DESKTOP_DIRECT_PORT
         return {
-            "is_shared": is_shared and self._state(is_shared) == RDP_STATE_SHARING,
-            "account": str(record.get("account", "") or ""),
-            "share_id": str(record.get("share_id", "")),
+            "is_shared": is_on and self._state(is_on) == RDP_STATE_SHARING,
+            "account": account,
+            "share_id": self._share_id() if is_on else "",
             "port": port,
-            # Only a share has anything for a peer to wait on, and only a
-            # sharing machine should pay for asking.
-            "attention": (
-                self.attention(str(record.get("account", ""))) if is_shared else ""
-            ),
-            "connected_count": self._seat.connected_count(port) if is_shared else 0,
+            "attention": self.attention(account) if is_on else "",
+            "connected_count": self._seat.connected_count(port) if is_on else 0,
         }
 
     def attention(self, account: str) -> str:
         """What somebody has to do at this machine before a peer sees it.
 
-        Wayland hands screen capture out through a dialog on the shared
-        machine's own screen. Until then a peer that dials waits on
-        something it cannot see.
-
         Believed for :data:`RDP_ATTENTION_TTL_S`: the heartbeat asks every
         few seconds and the answer costs the session table and a file.
 
         Args:
-            account: The account the share is for.
+            account: The account at the screen.
 
         Returns:
             A typed code, empty when a peer would be shown the desktop.
@@ -273,9 +296,203 @@ class RdpShareHost:
         self._attention_at = now
         return self._attention
 
-    def _module_states(self) -> dict:
-        """What each module on this machine is, empty until that is bound."""
-        return {} if self._module_reader is None else self._module_reader()
+    def _take_over(self) -> None:
+        """Turn the share on, or leave it alone when it already stands.
+
+        Raises:
+            ModuleApplyError: ``rdp_takeover_failed {step, detail}``.
+        """
+        applier = self._applier
+        if not applier.is_copy_present():
+            raise ModuleApplyError(
+                CODE_TAKEOVER_FAILED,
+                {"step": STEP_COPY, "detail": f"{applier.program} is missing"},
+            )
+        account, home, uid = self._seat_of()
+        password = self._seat_password or self._read_password()
+        paths = self._settings_paths(home)
+        # The password goes into the service's own file alone: the session's
+        # host takes it from the service and stores it in its own form.
+        service_password = paths[1] if password else ""
+        written = [
+            path
+            for path in paths
+            if not _is_password_file(path) or path == service_password
+        ]
+        registered = read_json(self._registered_path())
+        is_changed = any(
+            rustdesk.would_change(path, self._render(path, password))
+            for path in written
+        )
+        if (
+            registered
+            and not is_changed
+            and applier.is_registered()
+            and applier.copy_pids()
+        ):
+            return
+        was_on = bool(registered)
+        step = STEP_KEEP
+        try:
+            if not registered:
+                applier.keep_aside()
+                registered = {"share_id": self._share_id() or uuid.uuid4().hex}
+                registered["settings"] = {}
+                write_json(self._registered_path(), registered)
+            step = STEP_STOP
+            applier.stop_hosts()
+            step = STEP_SETTINGS
+            for path in paths:
+                self._keep_settings(registered, path)
+            write_json(self._registered_path(), registered)
+            for path in written:
+                rustdesk.write_settings(path, self._render(path, password))
+            step = STEP_REGISTER
+            applier.register()
+            step = STEP_START
+            applier.start(uid)
+        except STEP_ERRORS as error:
+            raise ModuleApplyError(
+                CODE_TAKEOVER_FAILED, {"step": step, "detail": command_detail(error)}
+            )
+        if password:
+            self._write_password(password)
+        self._log("remote_desktop: the agent's RustDesk runs")
+        if not was_on and account:
+            self._seat.ask_for_permissions(account)
+
+    def _give_back(self) -> None:
+        """Turn the share off and put back what was there before.
+
+        Raises:
+            ModuleApplyError: ``rdp_restore_failed {step, detail}``.
+        """
+        applier = self._applier
+        registered = read_json(self._registered_path())
+        if not registered and not applier.is_registered() and not applier.copy_pids():
+            return
+        step = STEP_STOP
+        try:
+            applier.unregister()
+            step = STEP_SETTINGS
+            self._restore_settings(registered)
+            step = STEP_RESTORE
+            applier.restore()
+        except STEP_ERRORS as error:
+            raise ModuleApplyError(
+                CODE_RESTORE_FAILED, {"step": step, "detail": command_detail(error)}
+            )
+        with contextlib.suppress(OSError):
+            os.unlink(self._registered_path())
+        shutil.rmtree(self._kept_dir, ignore_errors=True)
+        self._log("remote_desktop: RustDesk is given back")
+
+    def _render(self, path: str, password: str):
+        """What one settings file is written through."""
+        if _is_password_file(path):
+            return lambda existing: rustdesk.render_password(existing, password)
+        return lambda existing: rustdesk.render_config(existing, REMOTE_DESKTOP_OPTIONS)
+
+    def _settings_paths(self, home: str) -> list:
+        """Every settings file the share keeps aside: the service's options
+        and password first, then the seat's."""
+        return [
+            os.path.join(directory, name)
+            for directory in self._applier.settings_dirs(home)
+            for name in (REMOTE_DESKTOP_OPTIONS_FILE, REMOTE_DESKTOP_PASSWORD_FILE)
+        ]
+
+    def _keep_settings(self, registered: dict, path: str) -> None:
+        """Copy one settings file aside before its first write.
+
+        Args:
+            registered: The record, whose ``settings`` maps each path to its
+                kept copy, empty for a file that was not there.
+            path: The file.
+
+        Raises:
+            OSError: When the copy cannot be made.
+        """
+        settings = registered.setdefault("settings", {})
+        if path in settings:
+            return
+        if not os.path.isfile(path):
+            settings[path] = ""
+            return
+        kept_dir = os.path.join(self._kept_dir, REMOTE_DESKTOP_KEPT_SETTINGS_DIR_NAME)
+        os.makedirs(kept_dir, mode=0o700, exist_ok=True)
+        kept = os.path.join(kept_dir, f"{len(settings)}.toml")
+        shutil.copy2(path, kept)
+        status = os.stat(path)
+        settings[path] = kept
+        registered.setdefault("owners", {})[path] = [
+            status.st_uid,
+            status.st_gid,
+            status.st_mode & 0o777,
+        ]
+
+    def _restore_settings(self, registered: dict) -> None:
+        """Put every settings file back as it was before the first write.
+
+        Raises:
+            OSError: When a file cannot be put back.
+        """
+        owners = registered.get("owners") or {}
+        for path, kept in (registered.get("settings") or {}).items():
+            if not kept:
+                if os.path.isfile(path):
+                    os.unlink(path)
+                continue
+            if not os.path.isfile(kept):
+                continue
+            shutil.copy2(kept, path)
+            owner = owners.get(path)
+            if owner and hasattr(os, "chown"):
+                os.chown(path, int(owner[0]), int(owner[1]))
+                os.chmod(path, int(owner[2]))
+
+    def _is_on(self) -> bool:
+        """Whether the switch, or before the first state an earlier agent's
+        record, says the desktop is shared."""
+        record = self._store.rdp_share()
+        if record.get("is_ordered"):
+            return os.path.isfile(self._registered_path())
+        return bool(record.get("is_shared"))
+
+    def _share_id(self) -> str:
+        record = self._store.rdp_share()
+        if record.get("is_ordered"):
+            registered = read_json(self._registered_path())
+            return str(registered.get("share_id", "") or record.get("share_id", ""))
+        return str(record.get("share_id", "") or "")
+
+    def _account(self) -> str:
+        """Whoever sits at the screen, for the report alone."""
+        seated = self._seat.graphical_accounts()
+        if seated:
+            return str(seated[0])
+        record = self._store.rdp_share()
+        return "" if record.get("is_ordered") else str(record.get("account", "") or "")
+
+    def _seat_of(self) -> tuple:
+        """The account at the screen, its home and its uid.
+
+        Returns:
+            ``(account, home, uid)``; empty, empty and None for nobody.
+        """
+        seated = self._seat.graphical_accounts() or []
+        account = str(seated[0]) if seated else ""
+        if not account or account.split("@")[0] in RDP_GREETER_ACCOUNTS:
+            return "", "", None
+        home = self._account_home(account)
+        uid = None
+        try:
+            import pwd
+
+            uid = pwd.getpwnam(account).pw_uid
+        except (ImportError, KeyError):
+            uid = None
+        return account, home, uid
 
     def _read_attention(self, account: str) -> str:
         """Ask the machine what a peer would wait on, without the cache."""
@@ -286,60 +503,6 @@ class RdpShareHost:
             return RDP_ATTENTION_NOBODY_SEATED
         return self._seat.screen_attention(self._account_home(account))
 
-    def _seat_refusal(self, account: str) -> dict:
-        """Why one account's desktop cannot be shared, empty when it can.
-
-        The seat decides what a peer is shown — RustDesk's service spawns
-        its screen server into the signed-in session, whoever asked for the
-        share — so the account a share names must be the one at the screen.
-        Where the machine cannot say who that is, the account only has to
-        exist.
-
-        Args:
-            account: The account the share names.
-
-        Returns:
-            Empty when the account can be shared, ``{"code", "params"}``
-            when it cannot.
-        """
-        seated = self._seat.graphical_accounts()
-        if seated is not None:
-            if account in seated:
-                return {}
-            return {"code": "rdp_wrong_seat", "params": {"account": account}}
-        if account in self._human_accounts():
-            return {}
-        return {"code": "no_target_user", "params": {}}
-
-    def _human_accounts(self) -> list:
-        """The machine's human accounts, empty when it cannot be asked."""
-        try:
-            return self._platform.human_accounts()
-        except PlatformUnsupportedError:
-            return []
-
-    def _configure(self, account: str, options: tuple, is_restarted: bool = True):
-        """Write RustDesk's configuration everywhere it is read.
-
-        The service is stopped first: it rewrites its own file as it exits,
-        and a write underneath a running service is one it overwrites. On a
-        Mac the account's session job is stopped and started with it.
-
-        Args:
-            account: The account sitting at the machine, for the session's
-                own copy; empty writes only the service's.
-            options: The ``(key, value)`` pairs to set.
-            is_restarted: Whether to bring the service back up afterwards.
-
-        Raises:
-            InstallError: If a file cannot be written.
-        """
-        rustdesk.control_service(rustdesk.RUSTDESK_ACTION_STOP, account)
-        for path in rustdesk.config_paths(self._account_home(account)):
-            rustdesk.write_config(path, options)
-        if is_restarted:
-            rustdesk.control_service(rustdesk.RUSTDESK_ACTION_START, account)
-
     def _account_home(self, account: str) -> str:
         """One account's home, empty when it cannot be resolved."""
         if not account:
@@ -349,27 +512,29 @@ class RdpShareHost:
         except (KeyError, OSError, PlatformUnsupportedError):
             return ""
 
-    def _state(self, is_shared: bool) -> str:
-        """Where the share stands, by what the direct port actually does."""
-        if not is_shared:
+    def _state(self, is_on: bool) -> str:
+        """Where the share stands, by what listens on the direct port."""
+        if not is_on:
             return RDP_STATE_NOT_SHARED
-        return RDP_STATE_SHARING if self._answers() else RDP_STATE_STARTING
+        return RDP_STATE_SHARING if self.is_running() else RDP_STATE_STARTING
 
-    def _answers(self) -> bool:
-        """Whether the direct port is open, re-probed at most every few seconds."""
+    def _listening(self) -> list:
+        """The programs on the direct port, read again at most every few
+        seconds."""
         now = time.monotonic()
-        if now - self._probed_at <= RDP_PROBE_TTL_S:
-            return self._is_answering
-        port = int(self._store.rdp_share().get("port") or rustdesk.RUSTDESK_DIRECT_PORT)
+        if self._listened_at and now - self._listened_at <= REMOTE_DESKTOP_LISTEN_TTL_S:
+            return self._listeners
         try:
-            with socket.create_connection(
-                (RDP_PROBE_HOST, port), timeout=RDP_PROBE_TIMEOUT_S
-            ):
-                self._is_answering = True
-        except OSError:
-            self._is_answering = False
-        self._probed_at = now
-        return self._is_answering
+            self._listeners = list(
+                self._applier.listening_programs(REMOTE_DESKTOP_DIRECT_PORT)
+            )
+        except STEP_ERRORS:
+            self._listeners = []
+        self._listened_at = now
+        return self._listeners
+
+    def _registered_path(self) -> str:
+        return os.path.join(self._dir, REMOTE_DESKTOP_REGISTERED_NAME)
 
     def _password_path(self) -> str:
         return os.path.join(self._credentials_dir, RDP_PASSWORD_FILE)
@@ -392,3 +557,18 @@ class RdpShareHost:
                 stream.write(password)
         except OSError as error:
             self._log(f"rdp: could not keep the seat password: {error}")
+
+
+def _is_same(program: str, listener: str) -> bool:
+    """Whether a listener's program is the given one; Windows paths ignore
+    case."""
+    if not listener:
+        return False
+    if os.name == "nt" or "\\" in program:
+        return program.lower() == listener.lower()
+    return program == listener
+
+
+def _is_password_file(path: str) -> bool:
+    """Whether a settings file is the one the permanent password is in."""
+    return os.path.basename(path) == REMOTE_DESKTOP_PASSWORD_FILE
