@@ -15,6 +15,7 @@ from neutrino_agent.modules.podman.applier import (
     is_version_at_least,
     journal_lines,
 )
+from neutrino_agent.modules.podman.config import PORT_MAPPING_PATTERN
 from neutrino_agent.modules.podman.constants import (
     PODMAN_GENERATED_MARKER,
     PODMAN_QUADLET_DIR,
@@ -223,3 +224,24 @@ def test_the_journal_is_read_by_unit(commands):
         "--output",
         "short-iso",
     ] in commands.calls
+
+
+def test_the_inspected_ports_keep_their_protocol_as_the_configuration_writes_it():
+    """The same number on both protocols reads back as two ports, the UDP one
+    with ``/udp``, so an imported container keeps what it publishes."""
+    detail = {
+        "HostConfig": {
+            "PortBindings": {
+                "53/udp": [{"HostIp": "", "HostPort": "5353"}],
+                "53/tcp": [{"HostIp": "", "HostPort": "5353"}],
+                "80": [{"HostIp": "", "HostPort": "8080"}],
+                "9899/sctp": [{"HostIp": "", "HostPort": "9899"}],
+            }
+        }
+    }
+
+    ports = applier_module._inspected_ports(detail)
+
+    assert ports == ["5353:53", "5353:53/udp", "8080:80"]
+    for port in ports:
+        assert PORT_MAPPING_PATTERN.match(port)
