@@ -112,6 +112,43 @@ def test_the_agent_app_serves_the_channel_routes_and_nothing_else(factories):
     }
 
 
+def test_every_other_path_on_the_agent_app_is_404(factories):
+    from fastapi.testclient import TestClient
+
+    app = factories.create_agent_app()
+    with TestClient(app) as client:
+        statuses = {
+            path: client.get(path).status_code
+            for path in (
+                "/openapi.json",
+                "/docs",
+                "/redoc",
+                "/",
+                "/api/hub/client",
+                "/api/channel",
+            )
+        }
+
+    assert set(statuses.values()) == {404}
+
+
+def test_an_oversize_join_body_is_413_on_the_agent_app(factories):
+    from fastapi.testclient import TestClient
+
+    from neutrino_hub.modules.channel.constants import CHANNEL_REQUEST_BYTES_MAX
+
+    app = factories.create_agent_app()
+    with TestClient(app) as client:
+        answer = client.post(
+            "/api/channel/join",
+            content=b"{" + b" " * CHANNEL_REQUEST_BYTES_MAX + b"}",
+            headers={"Content-Type": "application/json"},
+        )
+
+    assert answer.status_code == 413
+    assert answer.json()["detail"]["code"] == "request_too_large"
+
+
 def test_the_panel_app_serves_no_channel_route(factories):
     app = factories.create_app()
     paths = api_paths(app)

@@ -285,6 +285,7 @@
   "code.relay_stopped": "中继已停止。",
   "code.admission_paused": "失败的加入太多；{retry_after_s} 秒后链接才能再用。",
   "code.channel_full": "中枢的连接已达上限 {limit}；程序会再试。",
+  "code.request_too_large": "请求超过中枢接受的大小（{limit} 字节）。",
   "code.overlay_default_route_refused": "{title} 的默认路由已删除，这台机器仍从自己的上行出网。",
   "code.overlay_route_overlap": "{title} 的路由 {route} 和 {conflict} 重叠。",
   "code.https_authority_missing": "这台中枢还没有证书颁发机构。",

@@ -285,6 +285,7 @@
   "code.relay_stopped": "The relay stopped.",
   "code.admission_paused": "Too many failed joins; links work again in {retry_after_s} seconds.",
   "code.channel_full": "The hub holds its limit of {limit} connections; the program tries again.",
+  "code.request_too_large": "The request is larger than the hub takes ({limit} bytes).",
   "code.overlay_default_route_refused": "{title}'s default route was removed; this box still goes out through its own uplink.",
   "code.overlay_route_overlap": "{title} routes {route}, which overlaps {conflict}.",
   "code.https_authority_missing": "This hub has no certificate authority yet.",

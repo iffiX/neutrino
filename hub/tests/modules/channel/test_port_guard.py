@@ -66,13 +66,40 @@ def test_a_connection_that_ended_frees_its_place():
     assert not second.is_closed
 
 
-def test_a_connection_past_its_admission_time_is_closed_and_counted():
-    guard = ChannelPortGuard()
+def test_a_connection_past_its_admission_time_is_closed_and_not_counted():
+    guard = ChannelPortGuard(failures_max=1)
     connection = accept(guard, ("127.0.0.1", 1))
 
     assert guard.expire(("127.0.0.1", 1), connection.close) is True
     assert connection.is_closed
     assert guard.unadmitted_count == 0
+    assert guard.pause_remaining_s() == 0
+
+
+def test_the_cap_closes_the_oldest_that_has_not_finished_tls():
+    guard = ChannelPortGuard(unadmitted_max=3)
+    first = accept(guard, ("127.0.0.1", 1))
+    second = accept(guard, ("127.0.0.1", 2))
+    third = accept(guard, ("127.0.0.1", 3))
+    guard.handshaken(("127.0.0.1", 1))
+
+    fourth = accept(guard, ("127.0.0.1", 4))
+
+    assert second.is_closed
+    assert not (first.is_closed or third.is_closed or fourth.is_closed)
+
+
+def test_the_cap_closes_the_oldest_of_all_when_every_one_finished_tls():
+    guard = ChannelPortGuard(unadmitted_max=2)
+    first = accept(guard, ("127.0.0.1", 1))
+    second = accept(guard, ("127.0.0.1", 2))
+    guard.handshaken(("127.0.0.1", 1))
+    guard.handshaken(("127.0.0.1", 2))
+
+    third = accept(guard, ("127.0.0.1", 3))
+
+    assert first.is_closed
+    assert not (second.is_closed or third.is_closed)
 
 
 def test_an_admitted_connection_is_not_expired():

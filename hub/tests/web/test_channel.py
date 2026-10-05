@@ -664,20 +664,28 @@ def test_a_bound_peer_with_a_valid_token_is_admitted_while_join_is_paused(api):
     assert wait_until(lambda: runtime.channel_port.admitted_count == 0)
 
 
-def test_an_unknown_token_and_an_unreadable_hello_count_as_failed_admissions(api):
+def test_an_unknown_token_counts_as_a_failed_admission(api):
     client, runtime = api
     binding = joined_device(client, runtime)
-    runtime.channel_port = ChannelPortGuard(failures_max=2)
+    runtime.channel_port = ChannelPortGuard(failures_max=1)
 
     with client.websocket_connect("/api/channel/socket") as socket:
         socket.send_json(hello(binding, token="nonsense"))  # scan: allow
         refused_with(socket)
-    assert runtime.channel_port.pause_remaining_s() == 0
-    with client.websocket_connect("/api/channel/socket") as socket:
-        socket.send_text("not a frame")
-        refused_with(socket)
 
     assert runtime.channel_port.pause_remaining_s() > 0
+
+
+def test_an_unreadable_hello_is_not_a_failed_admission(api):
+    """A port scan writes malformed bytes; counted, they would pause joins."""
+    client, runtime = api
+    runtime.channel_port = ChannelPortGuard(failures_max=1)
+
+    with client.websocket_connect("/api/channel/socket") as socket:
+        socket.send_text("not a frame")
+        assert refused_with(socket)["code"] == "hello_invalid"
+
+    assert runtime.channel_port.pause_remaining_s() == 0
 
 
 def test_a_hello_past_the_cap_on_sockets_is_channel_full(api):

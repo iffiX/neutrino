@@ -181,7 +181,6 @@ async def socket(websocket: WebSocket) -> None:
     await websocket.accept()
     hello = await _read_hello(websocket)
     if hello is None:
-        runtime.channel_port.record_failure()
         # A rejected hello gets a refused frame and then the close, like
         # every other; the socket may already be gone, and then only the
         # close is left to try.
