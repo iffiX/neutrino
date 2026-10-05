@@ -33,10 +33,12 @@ from neutrino_client.core.ws_client import (
     OPCODE_PING,
     OPCODE_PONG,
     OPCODE_TEXT,
+    WS_ZERO_MASK_KEY,
     WebSocketClient,
     accept_key,
     close_error,
     decode_frame,
+    _mask,
     encode_frame,
 )
 from neutrino_client.exceptions import (
@@ -589,3 +591,135 @@ def test_waiting_for_a_frame_leaves_the_socket_free_to_send(tls_stub):
     reader.join(timeout=5)
     assert not reader.is_alive()
     assert len(outcomes) == 1
+
+
+# --- the frames against the hub's own WebSocket server ---
+
+# Every length a frame's header spells differently, around each edge.
+FRAME_SIZES = (0, 1, 3, 4, 5, 125, 126, 65535, 65536, 1024 * 1024)
+
+
+@pytest.fixture
+def echo_server():
+    """uvicorn as the hub runs it (``ws`` auto, which is ``websockets``),
+    echoing every message back."""
+    uvicorn = pytest.importorskip("uvicorn")
+    pytest.importorskip("websockets")
+
+    async def app(scope, receive, send):
+        if scope["type"] != "websocket":
+            return
+        await receive()
+        await send({"type": "websocket.accept"})
+        while True:
+            event = await receive()
+            if event["type"] == "websocket.disconnect":
+                return
+            if event.get("bytes") is not None:
+                await send({"type": "websocket.send", "bytes": event["bytes"]})
+            else:
+                await send({"type": "websocket.send", "text": event["text"]})
+
+    probe = socket.create_server(("127.0.0.1", 0))
+    port = probe.getsockname()[1]
+    probe.close()
+    server = uvicorn.Server(
+        uvicorn.Config(
+            app,
+            host="127.0.0.1",
+            port=port,
+            log_level="warning",
+            ws="auto",
+            ws_max_size=4 * 1024 * 1024,
+        )
+    )
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    deadline = time.monotonic() + 10
+    while not server.started and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert server.started
+    yield port
+    server.should_exit = True
+    thread.join(timeout=10)
+
+
+def upgraded(port: int) -> socket.socket:
+    """A plain socket past the WebSocket handshake with the echo server."""
+    sock = socket.create_connection(("127.0.0.1", port), timeout=10)
+    sock.sendall(
+        b"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nUpgrade: websocket\r\n"
+        b"Connection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+        b"Sec-WebSocket-Version: 13\r\n\r\n"
+    )
+    head = b""
+    while b"\r\n\r\n" not in head:
+        head += sock.recv(1)
+    assert head.startswith(b"HTTP/1.1 101")
+    return sock
+
+
+def echoed(sock, opcode: int, payload: bytes, mask_key: bytes):
+    """Send one frame and read the frame the server answers with."""
+    sock.sendall(encode_frame(opcode, payload, mask_key=mask_key))
+    buffer = b""
+    while True:
+        decoded = decode_frame(buffer)
+        if decoded is not None:
+            return decoded[0]
+        chunk = sock.recv(1 << 20)
+        assert chunk, "the server closed the socket"
+        buffer += chunk
+
+
+@pytest.mark.parametrize("size", FRAME_SIZES)
+def test_the_zero_masked_frame_of_every_length_round_trips_through_the_hubs_server(
+    echo_server, size
+):
+    sock = upgraded(echo_server)
+    payload = os.urandom(size)
+
+    frame = echoed(sock, OPCODE_BINARY, payload, WS_ZERO_MASK_KEY)
+
+    assert (frame.opcode, frame.payload) == (OPCODE_BINARY, payload)
+    sock.close()
+
+
+@pytest.mark.parametrize("size", FRAME_SIZES)
+def test_a_random_mask_of_every_length_round_trips_through_the_hubs_server(
+    echo_server, size
+):
+    sock = upgraded(echo_server)
+    payload = os.urandom(size)
+
+    frame = echoed(sock, OPCODE_BINARY, payload, os.urandom(4))
+
+    assert frame.payload == payload
+    sock.close()
+
+
+def test_text_with_the_zero_key_round_trips(echo_server):
+    sock = upgraded(echo_server)
+
+    frame = echoed(sock, OPCODE_TEXT, "état ✓".encode("utf-8"), WS_ZERO_MASK_KEY)
+
+    assert frame.payload.decode("utf-8") == "état ✓"
+    sock.close()
+
+
+@pytest.mark.parametrize("size", FRAME_SIZES)
+def test_masking_twice_is_the_payload_and_matches_the_rfc_byte_by_byte(size):
+    payload = os.urandom(size)
+    key = os.urandom(4)
+
+    masked = _mask(payload, key)
+
+    assert masked == bytes(byte ^ key[index % 4] for index, byte in enumerate(payload))
+    assert _mask(masked, key) == payload
+    assert _mask(payload, WS_ZERO_MASK_KEY) == payload
+
+
+def test_every_frame_this_side_sends_carries_the_zero_key():
+    frame = encode_frame(OPCODE_BINARY, b"abc", mask_key=WS_ZERO_MASK_KEY)
+
+    assert frame == bytes((0x82, 0x83)) + WS_ZERO_MASK_KEY + b"abc"
