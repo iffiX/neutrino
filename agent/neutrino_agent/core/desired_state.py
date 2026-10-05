@@ -47,6 +47,7 @@ import threading
 from neutrino_agent.constants import (
     AGENT_DESIRED_STATE_PATH,
     AGENT_MODULE_INSTALL_RECHECK_S,
+    AGENT_MODULE_STATE_FAILED,
     AGENT_WANT_ABSENT,
     AGENT_WANT_INSTALLED,
     AGENT_WANT_RUNNING,
@@ -441,7 +442,11 @@ class DesiredStateApplier:
         log = self._open_log(name)
         refusal = operation(name, log.send if log is not None else None)
         if log is not None:
-            state = str((self._engine.report().get(name) or {}).get("state", ""))
+            state = (
+                AGENT_MODULE_STATE_FAILED
+                if refusal
+                else str((self._engine.report().get(name) or {}).get("state", ""))
+            )
             log.close(
                 state,
                 str(refusal.get("code", "") or "") if refusal else "",
