@@ -400,6 +400,49 @@ def test_port_forward_posts_the_pages_body_and_prints_the_loopback(stack, capsys
     assert "127.0.0.1:15432" in capsys.readouterr().out
 
 
+UDP_ENTRY = {
+    "id": "svc_dns_udp",
+    "type": "port",
+    "title": "dns",
+    "payload": {"host": "hub", "port": 53, "protocol": "udp"},
+    "is_healthy": None,
+    "source": "declared",
+    "description": "",
+}
+
+
+@pytest.fixture
+def with_udp(monkeypatch):
+    """The hub publishes one more port: a UDP record no probe has reached."""
+    monkeypatch.setattr(
+        sys.modules[__name__], "SERVICE_ENTRIES", SERVICE_ENTRIES + [UDP_ENTRY]
+    )
+
+
+def test_a_udp_port_with_empty_health_is_forwarded_and_named_udp(
+    stack, with_udp, capsys
+):
+    assert service_cli.main_port("svc_dns_udp", is_enabled=True) == 0
+
+    assert stack.service_calls == [
+        ("port", {"hub_id": "h1", "id": "svc_dns_udp", "is_enabled": True})
+    ]
+    assert capsys.readouterr().out.strip() == "127.0.0.1:15432/udp"
+
+
+def test_the_listing_names_a_udp_port_and_its_forward_udp(stack, with_udp, capsys):
+    stack.forward_ports["h1/svc_dns_udp"] = 20053
+
+    assert service_cli.main_list() == 0
+
+    out = capsys.readouterr().out
+    assert "hub:53/udp -> 127.0.0.1:20053/udp" in out
+    assert "hub:5432 " in out or "hub:5432\n" in out
+    assert (
+        "dns" in out and "not reachable now" not in out.split("dns")[1].split("\n")[0]
+    )
+
+
 def test_port_forward_carries_a_preferred_local_port(stack, capsys):
     assert service_cli.main_port("1", is_enabled=True, local_port=9000) == 0
 

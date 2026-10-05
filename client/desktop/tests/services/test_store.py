@@ -131,12 +131,24 @@ def test_the_local_ports_are_kept_and_one_of_another_shape_is_dropped(tmp_path):
     )
     store = ClientServiceStore(path=str(path))
 
-    assert store.local_ports() == {"h1/a": {"setting": "auto", "port": 20000}}
+    # A record from before UDP entries names no protocol and reads as TCP.
+    assert store.local_ports() == {
+        "h1/a": {"setting": "auto", "port": 20000, "protocol": "tcp"}
+    }
     store.set_local_port("h1/b", 9000, 9000)
     assert ClientServiceStore(path=str(path)).local_ports()["h1/b"] == {
         "setting": 9000,
         "port": 9000,
+        "protocol": "tcp",
     }
+    store.set_local_port("h1/u", "auto", 53, "udp")
+    assert ClientServiceStore(path=str(path)).local_ports()["h1/u"] == {
+        "setting": "auto",
+        "port": 53,
+        "protocol": "udp",
+    }
+    with pytest.raises(ValueError):
+        store.set_local_port("h1/u", "auto", 53, "sctp")
     with pytest.raises(ValueError):
         store.set_local_port("h1/c", 9000, 9001)
 

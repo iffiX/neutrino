@@ -69,6 +69,19 @@ def hub_of_key(key: str) -> str:
     return key.partition(SERVICE_KEY_SEPARATOR)[0]
 
 
+def is_unhealthy(entry: dict) -> bool:
+    """Whether a published entry is unhealthy.
+
+    Args:
+        entry: The entry.
+
+    Returns:
+        True only when its ``is_healthy`` is false; an entry with empty
+        health, a record no probe has reached, is not unhealthy.
+    """
+    return entry.get("is_healthy") is False
+
+
 def find_entry(
     entries: list, service_type: str, hub_id: str, entry_id: str
 ) -> "dict | None":

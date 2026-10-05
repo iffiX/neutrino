@@ -2321,6 +2321,39 @@ def test_leaving_a_hub_ends_its_panel_forward(two_hubs_up, monkeypatch):
         socket.create_connection(("127.0.0.1", port), timeout=1)
 
 
+def test_a_udp_stream_refused_later_is_the_entrys_error_until_a_refresh(
+    two_hubs_up,
+):
+    resident, _scripts = two_hubs_up
+
+    resident._forward_refused(
+        "h1", "svc_tcp", {"code": "agent_offline", "params": {"device": "d1"}}
+    )
+
+    assert entry(resident, "h1", "svc_tcp")["last_error"] == {
+        "code": "agent_offline",
+        "params": {"device": "d1"},
+    }
+    resident.refresh()
+    assert entry(resident, "h1", "svc_tcp")["last_error"] is None
+
+
+def test_a_udp_entrys_local_port_is_configured_on_its_own_protocol(two_hubs_up):
+    resident, _scripts = two_hubs_up
+    udp = dict(
+        HUB_SERVICES[2],
+        id="svc_dns_udp",
+        payload={"host": "h", "port": 53, "protocol": "udp"},
+    )
+    resident._sessions["c1"]._take_state(
+        dict(HOME_STATE, hash="s8", services=HUB_SERVICES + [udp])
+    )
+
+    assert resident.configure_forward("h1", "svc_tcp", 15353) == {}
+    assert resident.configure_forward("h1", "svc_dns_udp", 15353) == {}
+    assert resident._store.local_ports()["h1/svc_dns_udp"]["protocol"] == "udp"
+
+
 def test_an_entry_gone_from_the_hubs_list_ends_its_forward(two_hubs_up):
     resident, _scripts = two_hubs_up
     resident._services["port"].forward(hub_id="h1", entry_id="svc_tcp", port=0)

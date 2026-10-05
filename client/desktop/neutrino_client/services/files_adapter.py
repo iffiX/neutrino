@@ -36,6 +36,7 @@ from neutrino_client.constants import (
 )
 from neutrino_client.control.easytier_socket import ask_easytier_daemon
 from neutrino_client.exceptions import PlatformUnsupportedError, ShareAttachError
+from neutrino_client.services.base import is_unhealthy
 
 FILES_ENDPOINT_HOST = "127.0.0.1"
 FILES_ENDPOINT_BACKLOG = 64
@@ -459,7 +460,7 @@ class FilesSocksEndpoint:
     def _entry_of(self, hub_id: str, machine: str) -> str:
         """The id of a ``file`` entry the machine provides, healthy ones first."""
         found = sorted(
-            (not bool(entry.get("is_healthy", True)), str(entry.get("id", "")))
+            (is_unhealthy(entry), str(entry.get("id", "")))
             for entry in self._entries_of()
             if entry.get("type") == "file"
             and entry.get("hub_id") == hub_id

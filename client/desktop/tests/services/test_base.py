@@ -13,6 +13,7 @@ from neutrino_client.services.base import (
     channel_refusal,
     find_entry,
     hub_of_key,
+    is_unhealthy,
     service_key,
 )
 from tests.conftest import SERVICES
@@ -69,3 +70,13 @@ def test_the_base_handler_refuses_and_holds_nothing():
 )
 def test_a_hub_that_did_not_answer_reads_as_its_code(error, refusal):
     assert channel_refusal(error) == refusal
+
+
+@pytest.mark.parametrize(
+    "health, is_bad",
+    [(True, False), (False, True), (None, False), ("missing", False)],
+)
+def test_only_a_false_health_is_unhealthy(health, is_bad):
+    entry = {"id": "x"} if health == "missing" else {"id": "x", "is_healthy": health}
+
+    assert is_unhealthy(entry) is is_bad

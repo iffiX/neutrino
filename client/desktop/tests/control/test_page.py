@@ -1176,7 +1176,78 @@ def test_a_forwardable_entry_sets_its_local_port_only_while_not_forwarded():
 
 def test_a_forward_disconnects_even_while_its_entry_is_unhealthy():
     port = body_of("drawPortEntry")
-    assert "(!entry.is_healthy && !isOn)" in port
+    assert "(isUnhealthy(entry) && !isOn)" in port
+
+
+def test_only_a_false_health_is_unhealthy_on_every_page():
+    """Empty health, a record no probe has reached, keeps every action
+    enabled and carries no health word."""
+    assert "return entry.is_healthy === false;" in body_of("isUnhealthy")
+    assert PAGE_JS.count("is_healthy") == 1
+    assert "return isUnhealthy(entry) ? 'wait' : 'ok';" in body_of("entryTone")
+    assert "if (isUnhealthy(entry)) return t('ui.unhealthy');" in body_of("entryWord")
+
+
+def test_empty_health_leaves_connect_enabled_when_the_page_runs_it():
+    """The page's own functions, run: Connect on a port entry with empty
+    health is enabled and its dot is green; only false disables it."""
+    import json
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("no node to run the page's script")
+    script = "\n".join(
+        [
+            "function isUnhealthy(entry)"
+            + function_body("function isUnhealthy(entry)")
+            + "\n}",
+            "function isRefreshing(hub)"
+            + function_body("function isRefreshing(hub)")
+            + "\n}",
+            "function entryWork(hub, entry)"
+            + function_body("function entryWork(hub, entry)")
+            + "\n}",
+            "function isEntryFree(hub, entry)"
+            + function_body("function isEntryFree(hub, entry)")
+            + "\n}",
+            "function entryTone(hub, entry)"
+            + function_body("function entryTone(hub, entry)")
+            + "\n}",
+            "const hub = {connection: 'connected', jobs: {}};",
+            "const out = [true, false, null, undefined].map((health) => {",
+            "  const entry = {is_healthy: health, job: ''};",
+            "  const isConnectDisabled = !isEntryFree(hub, entry)",
+            "    || (isUnhealthy(entry) && true);",
+            "  return [isConnectDisabled, entryTone(hub, entry)];",
+            "});",
+            "console.log(JSON.stringify(out));",
+        ]
+    )
+    result = subprocess.run(
+        [node, "-e", script], capture_output=True, text=True, timeout=30
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == [
+        [False, "ok"],
+        [True, "wait"],
+        [False, "ok"],
+        [False, "ok"],
+    ]
+
+
+def test_a_udp_port_row_names_its_protocol_after_both_addresses():
+    port = body_of("drawPortEntry")
+    assert "(payload.host || '') + ':' + (payload.port || '') + suffix" in port
+    assert "return (entry.payload || {}).protocol === 'udp' ? '/udp' : '';" in (
+        body_of("protocolSuffix")
+    )
+    assert (
+        "t('ui.forwarding_to', { port: entry.forward }) + protocolSuffix(entry)"
+        in body_of("forwardedTo")
+    )
 
 
 def test_the_ai_switch_and_configure_wait_for_any_switch_running():

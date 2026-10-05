@@ -97,6 +97,12 @@ CLIENT_WS_CREDIT_TIMEOUT_S = 60
 # long, and for this long at most.
 CLIENT_TERMINAL_CLEAR_QUIET_S = 0.5
 CLIENT_TERMINAL_CLEAR_MAX_S = 20
+# A UDP forward: the sources it remembers an address for, the datagrams it
+# holds while its stream waits for its first credit, and how often a stream
+# refused after it carried a datagram is opened again.
+CLIENT_UDP_SOURCES_MAX = 64
+CLIENT_UDP_HELD_DATAGRAMS_MAX = 16
+CLIENT_UDP_REOPEN_INTERVAL_S = 1
 
 # What the hub's close codes mean: a refused hello, and a second socket for
 # the same binding replacing this one.

@@ -80,6 +80,8 @@ class ClientStream:
         self._condition = threading.Condition()
         self._incoming: collections.deque = collections.deque()
         self._credit = 0
+        # Set once the hub has granted any credit.
+        self._is_credited = False
         self._consumed = 0
         self._is_closed_here = False
 
@@ -165,6 +167,84 @@ class ClientStream:
             self._send_bytes(encode_binary(self.stream_id, bytes(view[:size])))
             view = view[size:]
 
+    def try_send(self, data: bytes) -> bool:
+        """Send one frame now if the hub's credit covers it, never waiting.
+
+        Args:
+            data: The frame's bytes, at most ``CLIENT_WS_CHUNK_BYTES``.
+
+        Returns:
+            Whether it went; False when the credit is short, the stream has
+            ended, or the socket is gone.
+        """
+        if self._send_bytes is None or len(data) > CLIENT_WS_CHUNK_BYTES:
+            return False
+        with self._condition:
+            if self.is_done or self._credit < len(data):
+                return False
+            self._credit -= len(data)
+        try:
+            self._send_bytes(encode_binary(self.stream_id, bytes(data)))
+        except GatewayUnreachable:
+            return False
+        return True
+
+    def wait_credit(self, timeout_s: float) -> bool:
+        """Wait until the hub has granted any credit, or the stream ends.
+
+        Args:
+            timeout_s: How long to wait.
+
+        Returns:
+            True once the hub has granted credit while the stream is open.
+        """
+        deadline = time.monotonic() + timeout_s
+        with self._condition:
+            while not self._is_credited and not self.is_done:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return False
+                self._condition.wait(timeout=remaining)
+            return self._is_credited and not self.is_done
+
+    def read_frame(self, timeout_s: float) -> "bytes | None":
+        """The next binary frame the hub sent, its bytes granted back at once.
+
+        Args:
+            timeout_s: How long to wait for a frame.
+
+        Returns:
+            The frame's bytes; empty once the stream is over and nothing is
+            left; None when nothing arrived in time.
+        """
+        deadline = time.monotonic() + timeout_s
+        with self._condition:
+            while not self._incoming:
+                if self.is_done:
+                    return b""
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return None
+                self._condition.wait(timeout=remaining)
+            data = self._incoming.popleft()
+        if data and not self.is_done:
+            try:
+                self._grant(len(data))
+            except GatewayUnreachable:
+                pass
+        return data
+
+    def refusal(self) -> "dict | None":
+        """The hub's close as a refusal, once the stream has ended.
+
+        Returns:
+            ``{"code", "params"}`` when the hub closed the stream with a
+            code; None while it is open, or when it ended without one.
+        """
+        if not self._closed.is_set() or self._is_ended or not self._code:
+            return None
+        return {"code": self._code, "params": dict(self._params)}
+
     def close(self) -> None:
         """End the stream from this side; the hub sends no close back. Idempotent."""
         with self._condition:
@@ -195,6 +275,8 @@ class ClientStream:
         """
         with self._condition:
             self._credit += max(int(nbytes), 0)
+            if self._credit > 0:
+                self._is_credited = True
             self._condition.notify_all()
 
     def take_close(self, *, code: str, params: dict) -> None:

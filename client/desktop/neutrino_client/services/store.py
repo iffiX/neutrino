@@ -39,6 +39,9 @@ from neutrino_client.constants import (
 STORE_MOUNT_KEYS = ("hub_id", "entry_id", "host", "share", "username", "path")
 # The setting of a local port the client picks itself.
 STORE_LOCAL_PORT_AUTO = "auto"
+# The protocols a local port is held on; a record with none is TCP.
+STORE_LOCAL_PORT_PROTOCOLS = ("tcp", "udp")
+STORE_LOCAL_PORT_TCP = "tcp"
 
 
 def _tool_configs(raw) -> dict:
@@ -66,19 +69,23 @@ def _local_port(raw) -> "dict | None":
         raw: What the file held for one entry under ``local_ports``.
 
     Returns:
-        ``{"setting": "auto" or a number, "port": number}``, the port 0
-        while auto has picked none.
+        ``{"setting": "auto" or a number, "port": number, "protocol"}``, the
+        port 0 while auto has picked none, the protocol ``tcp`` for a record
+        that names none.
     """
     if not isinstance(raw, dict):
         return None
     setting = raw.get("setting")
     port = raw.get("port")
+    protocol = raw.get("protocol", STORE_LOCAL_PORT_TCP)
+    if protocol not in STORE_LOCAL_PORT_PROTOCOLS:
+        return None
     if not isinstance(port, int) or isinstance(port, bool) or not 0 <= port <= 65535:
         return None
     if setting == STORE_LOCAL_PORT_AUTO:
-        return {"setting": setting, "port": port}
+        return {"setting": setting, "port": port, "protocol": protocol}
     if isinstance(setting, int) and not isinstance(setting, bool) and setting == port:
-        return {"setting": setting, "port": port}
+        return {"setting": setting, "port": port, "protocol": protocol}
     return None
 
 
@@ -320,13 +327,16 @@ class ClientServiceStore:
         """The local port each forwardable entry takes.
 
         Returns:
-            Service key to ``{"setting", "port"}``: the setting is
-            ``"auto"`` or a fixed number, and the port the one the entry
-            takes, 0 while auto has picked none.
+            Service key to ``{"setting", "port", "protocol"}``: the setting
+            is ``"auto"`` or a fixed number, the port the one the entry
+            takes, 0 while auto has picked none, and the protocol it is
+            held on.
         """
         return self._read()["local_ports"]
 
-    def set_local_port(self, key: str, setting, port: int) -> None:
+    def set_local_port(
+        self, key: str, setting, port: int, protocol: str = STORE_LOCAL_PORT_TCP
+    ) -> None:
         """Keep one entry's local port.
 
         Args:
@@ -334,11 +344,13 @@ class ClientServiceStore:
             setting: ``"auto"`` or a fixed number.
             port: The port the entry takes; for a fixed setting, that
                 number.
+            protocol: ``tcp`` or ``udp``, the protocol the number is held on.
 
         Raises:
-            ValueError: When the setting and the port do not make a record.
+            ValueError: When the setting, the port and the protocol do not
+                make a record.
         """
-        record = _local_port({"setting": setting, "port": port})
+        record = _local_port({"setting": setting, "port": port, "protocol": protocol})
         if record is None:
             raise ValueError(f"no local port record of {setting!r} and {port!r}")
 
