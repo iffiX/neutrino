@@ -58,8 +58,20 @@ SAMBA_DARWIN_SMBD_TARGET = "system/com.apple.smbd"
 SAMBA_DARWIN_SMBD_PLIST = "/System/Library/LaunchDaemons/com.apple.smbd.plist"
 # The start of the record name of every share point the module made.
 SAMBA_DARWIN_SHARE_PREFIX = "neutrino_"
-# The full name of every account the module made.
+# The words every full name of an account the module made starts with;
+# the account's own name follows them, since sysadminctl refuses a second
+# account with a full name that exists. Accounts made before carry the
+# words alone.
 SAMBA_DARWIN_ACCOUNT_NAME = "neutrino file share"
+# What an account's record holds once it can sign in.
+SAMBA_DARWIN_ACCOUNT_KEYS = (
+    "UniqueID",
+    "PrimaryGroupID",
+    "UserShell",
+    "NFSHomeDirectory",
+)
+# The prefix NSLog writes before a tool's line: date, time, tool[pid:tid].
+SAMBA_DARWIN_LOG_PREFIX = r"^\S+ \S+ \S+\[\d+:\d+\] "
 # The group macOS limits SMB to, where the system has one.
 SAMBA_DARWIN_ACCESS_GROUP = "com.apple.access_smb"
 # What the unified log holds of smbd over the last quarter hour.

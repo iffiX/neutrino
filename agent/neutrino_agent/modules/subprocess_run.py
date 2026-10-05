@@ -98,12 +98,16 @@ def command_detail(error: BaseException) -> str:
         error: What running the command raised.
 
     Returns:
-        The command's own words for a non-zero exit, its failure to start
-        otherwise.
+        The command's own words for a non-zero exit, standard error first
+        and standard output when it is blank, else the command's name and
+        exit status; its failure to start otherwise.
     """
     if isinstance(error, subprocess.CalledProcessError):
-        text = (error.stderr or error.output or "").strip()
-        return text[-AGENT_MODULE_OUTPUT_LIMIT_BYTES:]
+        for text in (error.stderr, error.output):
+            if (text or "").strip():
+                return text.strip()[-AGENT_MODULE_OUTPUT_LIMIT_BYTES:]
+        command = error.cmd[0] if isinstance(error.cmd, list) else str(error.cmd)
+        return f"{command} exited {error.returncode}"
     return str(error)[:AGENT_MODULE_OUTPUT_LIMIT_BYTES]
 
 

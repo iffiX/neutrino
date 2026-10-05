@@ -122,6 +122,7 @@ CLI_CODE_WORDS = {
     "session_unknown": "this machine keeps no terminal session {session_id}",
     "share_name_taken": "a share named {name} exists that this module did not make",
     "user_name_taken": "an account named {user} exists that this module did not make",
+    "user_create_failed": "the system would not make the account {user}: {detail}",
     "port_invalid": "{port} is not a port",
     "port_reserved": "port {port} already belongs to the hub",
     "root_url_invalid": "the root URL must start with http:// or https://",

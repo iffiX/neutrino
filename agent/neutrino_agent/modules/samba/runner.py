@@ -412,6 +412,8 @@ class SambaNativeServerRunner(ModuleRunner):
             return command_outcome(1, "user_unknown", {"user": name})
         try:
             self._applier.set_password(name, str(args.get("password", "")))
+        except ModuleApplyError as error:
+            return command_outcome(1, error.code, dict(error.params))
         except (OSError, subprocess.SubprocessError) as error:
             return command_outcome(
                 1, "command_failed", {"detail": command_detail(error)[:500]}
