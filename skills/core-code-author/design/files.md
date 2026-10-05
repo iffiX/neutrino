@@ -230,7 +230,11 @@ administrators alone, and the vault key, the TLS private keys and the session
 secret inherit it. The hub's installer also creates `config` under its folder
 with the same descriptor, so the vault is protected from the first write. The
 client's folder holds the overlay daemons' state, NetBird's private key among
-it, and has the same descriptor. On macOS the postinstall creates `config` and `state`
+it, and has the same descriptor. The rule covers the whole tree: every folder
+and file under the folder carries only what it inherits from it. A descriptor
+set on a folder does not reach what already stands under it, so the client's
+installer resets each access list under its folder on every install, upgrade
+and repair. On macOS the postinstall creates `config` and `state`
 owned by root:wheel with mode 0700, and the `chmod 0600` on each secret holds
 as on Linux. The agent's `state` alone is mode 755, so every account reaches
 `vscode/` and `cloudcli/` under it.
