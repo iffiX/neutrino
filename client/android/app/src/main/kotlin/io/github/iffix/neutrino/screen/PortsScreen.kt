@@ -8,7 +8,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.tooling.preview.Preview
 import io.github.iffix.neutrino.FORWARD_BIND_HOST
+import io.github.iffix.neutrino.PORT_PROTOCOL_UDP
 import io.github.iffix.neutrino.channel.ChannelResult
+import io.github.iffix.neutrino.channel.ChannelServiceEntry
 import io.github.iffix.neutrino.channel.HubView
 import io.github.iffix.neutrino.design.ButtonTier
 import io.github.iffix.neutrino.design.CopyButton
@@ -26,11 +28,12 @@ import io.github.iffix.neutrino.shell.LocalClientActions
  * The ports the joined hubs publish, each forwarded to this phone's loopback through the hub on Connect: the
  * button shows the job, a forwarded row names its loopback address with Copy beside Disconnect,
  * and Connect is disabled with its reason while the entry is unhealthy. Configure, at the left,
- * opens the local port dialog while the entry is not forwarded.
+ * opens the local port dialog while the entry is not forwarded. A UDP entry's addresses carry
+ * `/udp`; Copy copies the loopback address without it.
  *
  * @param hubs Every hub joined.
  * @param forwards Each entry's forward, by entry key.
- * @param onConnect What pressing Connect does, with the binding id, the entry id and the port.
+ * @param onConnect What pressing Connect does, with the binding id, the entry id, the port and the protocol.
  * @param onDisconnect What pressing Disconnect does, with the binding id and the entry id.
  * @param onCopy What copying an address does.
  */
@@ -38,13 +41,13 @@ import io.github.iffix.neutrino.shell.LocalClientActions
 fun PortsScreen(
     hubs: List<HubView>,
     forwards: Map<String, PortForwardRow>,
-    onConnect: (String, String, Int) -> Unit,
+    onConnect: (String, String, Int, String) -> Unit,
     onDisconnect: (String, String) -> Unit,
     onCopy: (String) -> Unit,
 ) {
     val words = NeutrinoTheme.words
     val actions = LocalClientActions.current
-    var configuring by remember { mutableStateOf<Triple<String, String, String>?>(null) }
+    var configuring by remember { mutableStateOf<Pair<String, ChannelServiceEntry>?>(null) }
     ServiceList(hubs, "port", "ui.empty_ports") { hub, entry, hasDivider ->
         val host = entry.text("host")
         val port = entry.number("port")
@@ -66,7 +69,7 @@ fun PortsScreen(
             actions = {
                 NeutrinoButton(
                     label = words.word("ui.configure"),
-                    onClick = { configuring = Triple(hub.binding.id, entry.id, entry.title) },
+                    onClick = { configuring = hub.binding.id to entry },
                     isEnabled = isFree && !row.isForwarded,
                     isSmall = true,
                 )
@@ -83,7 +86,7 @@ fun PortsScreen(
                         if (row.isForwarded) {
                             onDisconnect(hub.binding.id, entry.id)
                         } else if (port != null) {
-                            onConnect(hub.binding.id, entry.id, port)
+                            onConnect(hub.binding.id, entry.id, port, entry.portProtocol)
                         }
                     },
                     tier = if (row.isForwarded && job == null) ButtonTier.DANGER else ButtonTier.PLAIN,
@@ -95,25 +98,37 @@ fun PortsScreen(
         ) {
             BasicText(entry.title, style = NeutrinoTheme.rowTitle)
             if (!isHealthy) BasicText(words.word("ui.unhealthy"), style = NeutrinoTheme.note)
-            val forwarded = if (row.isForwarded) {
-                " → " + words.word("ui.forwarding_to", mapOf("port" to row.localPort))
-            } else {
-                ""
-            }
-            BasicText("$host:${port ?: ""}$forwarded", style = NeutrinoTheme.mono)
+            val forwardedTo = words.word("ui.forwarding_to", mapOf("port" to row.localPort)).takeIf { row.isForwarded }
+            BasicText(portLine(entry, forwardedTo), style = NeutrinoTheme.mono)
             BasicText(providedBy(hub, entry, host), style = NeutrinoTheme.note)
             ErrorLine(row.error)
             ReasonLine(reason)
         }
     }
-    configuring?.let { (bindingId, entryId, title) ->
+    configuring?.let { (bindingId, entry) ->
         LocalPortDialog(
-            title = title,
-            initial = remember(bindingId, entryId) { actions?.localPortOf(bindingId, entryId) ?: LocalPortChoice() },
-            onSave = { actions?.configurePort(bindingId, entryId, it) ?: ChannelResult.Ok(Unit) },
+            title = entry.title,
+            initial = remember(bindingId, entry.id) { actions?.localPortOf(bindingId, entry.id) ?: LocalPortChoice() },
+            onSave = {
+                actions?.configurePort(bindingId, entry.id, it, entry.portProtocol) ?: ChannelResult.Ok(Unit)
+            },
             onClose = { configuring = null },
         )
     }
+}
+
+/**
+ * A Ports row's mono line: `host:port`, then `→ <loopback address>` once forwarded, each with
+ * `/udp` after it for a UDP entry.
+ *
+ * @param entry The `port` entry.
+ * @param forwardedTo The worded loopback address, or null while not forwarded.
+ * @return The line.
+ */
+internal fun portLine(entry: ChannelServiceEntry, forwardedTo: String?): String {
+    val suffix = if (entry.portProtocol == PORT_PROTOCOL_UDP) "/$PORT_PROTOCOL_UDP" else ""
+    val own = "${entry.text("host")}:${entry.number("port") ?: ""}$suffix"
+    return if (forwardedTo == null) own else "$own → $forwardedTo$suffix"
 }
 
 @Preview(widthDp = 400, heightDp = 600)
@@ -128,6 +143,6 @@ private fun PortsScreenPreview() {
             "ui.copy" to "复制",
         ),
     ) {
-        PortsScreen(PreviewHubs.all, emptyMap(), onConnect = { _, _, _ -> }, onDisconnect = { _, _ -> }, onCopy = {})
+        PortsScreen(PreviewHubs.all, emptyMap(), onConnect = { _, _, _, _ -> }, onDisconnect = { _, _ -> }, onCopy = {})
     }
 }

@@ -1,6 +1,7 @@
 package io.github.iffix.neutrino.shell
 
 import android.content.Intent
+import io.github.iffix.neutrino.PORT_PROTOCOL_TCP
 import io.github.iffix.neutrino.channel.ChannelResult
 import io.github.iffix.neutrino.channel.HubNotice
 import io.github.iffix.neutrino.files.ShareLogin
@@ -179,8 +180,9 @@ interface ClientActions {
      * @param bindingId The hub.
      * @param entryId The entry.
      * @param port The entry's own port, which the forward tries first on the loopback.
+     * @param protocol `tcp` or `udp`.
      */
-    fun connectPort(bindingId: String, entryId: String, port: Int)
+    fun connectPort(bindingId: String, entryId: String, port: Int, protocol: String = PORT_PROTOCOL_TCP)
 
     /**
      * Press Disconnect on a forwarded port entry.
@@ -205,9 +207,15 @@ interface ClientActions {
      * @param bindingId The hub.
      * @param entryId The entry.
      * @param choice Automatic, or fixed with a number from 1024 to 65535.
+     * @param protocol The entry's protocol, `tcp` or `udp`.
      * @return Ok once kept, or the refusal the dialog words as `ui.reason.<code>`.
      */
-    fun configurePort(bindingId: String, entryId: String, choice: LocalPortChoice): ChannelResult<Unit>
+    fun configurePort(
+        bindingId: String,
+        entryId: String,
+        choice: LocalPortChoice,
+        protocol: String = PORT_PROTOCOL_TCP,
+    ): ChannelResult<Unit>
 
     /**
      * Press Open on a web entry: its forward, its token when it needs one, then the browser.

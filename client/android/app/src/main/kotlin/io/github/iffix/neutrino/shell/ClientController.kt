@@ -168,15 +168,20 @@ class ClientController(
 
     override fun closeDesktop() = desktops.close()
 
-    override fun connectPort(bindingId: String, entryId: String, port: Int) = forwards.connect(bindingId, entryId, port)
+    override fun connectPort(bindingId: String, entryId: String, port: Int, protocol: String) =
+        forwards.connect(bindingId, entryId, port, protocol)
 
     override fun disconnectPort(bindingId: String, entryId: String) = forwards.disconnect(bindingId, entryId)
 
     override fun localPortOf(bindingId: String, entryId: String): LocalPortChoice =
         forwards.localPortOf(bindingId, entryId)
 
-    override fun configurePort(bindingId: String, entryId: String, choice: LocalPortChoice): ChannelResult<Unit> =
-        forwards.configure(bindingId, entryId, choice)
+    override fun configurePort(
+        bindingId: String,
+        entryId: String,
+        choice: LocalPortChoice,
+        protocol: String,
+    ): ChannelResult<Unit> = forwards.configure(bindingId, entryId, choice, protocol)
 
     override fun openWeb(bindingId: String, entryId: String, url: String, isTokenRequired: Boolean) =
         forwards.open(bindingId, entryId, url, isTokenRequired, ::openOnMain)

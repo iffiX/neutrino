@@ -103,6 +103,45 @@ class ChannelStream internal constructor(
         return ChannelResult.Ok(Unit)
     }
 
+    /**
+     * The next frame the hub sent, its bytes granted back to the hub at once, as a UDP stream
+     * takes each datagram.
+     *
+     * @return The frame's bytes, or null once the stream is over and nothing is left.
+     */
+    suspend fun receive(): ByteArray? {
+        val data = incoming.receiveCatching().getOrNull() ?: return null
+        if (!isDone && data.isNotEmpty()) socket.sendText(ChannelFrames.credit(id, data.size).toString())
+        return data
+    }
+
+    /**
+     * Wait until the hub has granted any credit, or the stream ended.
+     *
+     * @return Whether credit came.
+     */
+    suspend fun awaitCredit(): Boolean {
+        combine(credit, isEnded) { bytes, ended -> bytes > 0 || ended }.first { it }
+        return !isDone
+    }
+
+    /**
+     * Send one frame whole if the hub's credit covers it, and drop it otherwise; it never waits.
+     *
+     * @param data The frame's bytes, at most 64 KiB.
+     * @return Whether it was sent.
+     */
+    fun trySend(data: ByteArray): Boolean {
+        if (!hasBytes || isDone || data.size > CLIENT_WS_CHUNK_BYTES) return false
+        while (true) {
+            val held = credit.value
+            if (held < data.size) return false
+            if (credit.compareAndSet(held, held - data.size)) break
+        }
+        val frame = ByteBuffer.allocate(CHANNEL_STREAM_ID_BYTES + data.size).putInt(id).put(data).array()
+        return socket.sendBytes(frame)
+    }
+
     /** End the stream from this side; the hub sends no close back. */
     fun close() {
         if (!outcome.complete(ChannelResult.Ok(JsonObject(emptyMap())))) return
