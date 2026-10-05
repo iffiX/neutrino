@@ -38,6 +38,7 @@ from neutrino_client.exceptions import (
     GatewayUnreachable,
     LocalPortTakenError,
 )
+from neutrino_client.platforms import win32
 from neutrino_client.services.base import hub_of_key, service_key
 from neutrino_client.services.store import STORE_LOCAL_PORT_AUTO
 
@@ -67,6 +68,10 @@ FORWARD_PROBE_ADDRESSES = (
 )
 # What binding the IPv6 wildcard answers on a machine that has no IPv6.
 FORWARD_NO_IPV6_ERRNOS = (errno.EADDRNOTAVAIL, errno.EAFNOSUPPORT)
+# Where a UDP port is looked up in the system's table instead of bound: a
+# UDP socket on a wildcard address makes the Windows firewall ask.
+FORWARD_IS_UDP_TABLE = os.name == "nt"
+FORWARD_UDP_TABLE_FAMILIES = (win32.WIN_AF_INET, win32.WIN_AF_INET6)
 
 
 def is_port_free(
@@ -79,7 +84,8 @@ def is_port_free(
     with TCP sockets for a TCP entry, UDP sockets for a UDP one. A TCP port
     the table already keeps for an entry is bound with the reuse option off
     Windows, so the client's own closed connections still lingering on it
-    do not count while another program's listener does.
+    do not count while another program's listener does. On Windows a UDP
+    port is not bound: the system's table of UDP endpoints is read instead.
 
     Args:
         port: The port number.
@@ -89,6 +95,8 @@ def is_port_free(
     Returns:
         True when every probe binds it.
     """
+    if protocol == FORWARD_PROTOCOL_UDP and FORWARD_IS_UDP_TABLE:
+        return not is_udp_port_held(port)
     kind = socket.SOCK_DGRAM if protocol == FORWARD_PROTOCOL_UDP else socket.SOCK_STREAM
     is_reused = is_kept and protocol == FORWARD_PROTOCOL_TCP
     for family, address in FORWARD_PROBE_ADDRESSES:
@@ -115,6 +123,30 @@ def is_port_free(
         finally:
             probe.close()
     return True
+
+
+def is_udp_port_held(port: int) -> bool:
+    """Whether the system's table lists a UDP endpoint on a port, any address.
+
+    Both families are read; a table that cannot be read counts as held,
+    so no number is taken on a guess.
+
+    Args:
+        port: The port number.
+
+    Returns:
+        True when some endpoint holds it, or the port is no port number.
+    """
+    if not 0 < port <= FORWARD_PORT_MAX:
+        return True
+    for family in FORWARD_UDP_TABLE_FAMILIES:
+        try:
+            endpoints = win32.udp_table_endpoints(win32.udp_table(family), family)
+        except (OSError, ValueError):
+            return True
+        if any(held == port for _address, held in endpoints):
+            return True
+    return False
 
 
 def is_udp_port_free(port: int) -> bool:

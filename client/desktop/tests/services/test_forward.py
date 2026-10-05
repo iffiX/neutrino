@@ -9,13 +9,16 @@ entries.
 
 import functools
 import socket
+import struct
 import sys
 import threading
 import time
 
 import pytest
 
+import neutrino_client.services.forward as forward_module
 from neutrino_client.exceptions import GatewayUnreachable
+from neutrino_client.platforms import win32
 from neutrino_client.services.forward import (
     FORWARD_PANEL_ID,
     ConnectStreamSocket,
@@ -956,3 +959,112 @@ def test_the_udp_probe_binds_udp_sockets_on_the_wildcard():
     assert is_port_free(port) is True
     held.close()
     assert is_udp_port_free(port) is True
+
+
+# --- the UDP probe on Windows: the system's table, never a wildcard bind ---
+
+IPV4_ANY = "0.0.0.0"  # scan: allow
+
+
+def udp_table(family: int, endpoints: list) -> bytes:
+    """A table laid out as GetExtendedUdpTable writes it with UDP_TABLE_BASIC."""
+    rows = [struct.pack("<I", len(endpoints))]
+    for address, port in endpoints:
+        if family == win32.WIN_AF_INET6:
+            packed = socket.inet_pton(socket.AF_INET6, address)
+            rows.append(packed + struct.pack("<I", 0) + struct.pack(">HH", port, 0))
+        else:
+            packed = socket.inet_pton(socket.AF_INET, address)
+            rows.append(packed + struct.pack(">HH", port, 0))
+    return b"".join(rows)
+
+
+class NoSockets:
+    """Stands in for socket.socket and records every socket asked for."""
+
+    made = []
+
+    def __init__(self, *args, **kwargs):
+        NoSockets.made.append(args)
+        raise AssertionError("a socket was made")
+
+
+@pytest.fixture
+def windows_udp(monkeypatch):
+    """The Windows UDP probe, its table call scripted per family."""
+    tables = {win32.WIN_AF_INET: [], win32.WIN_AF_INET6: []}
+    asked = []
+
+    def read(family: int) -> bytes:
+        asked.append(family)
+        return udp_table(family, tables[family])
+
+    monkeypatch.setattr(forward_module, "FORWARD_IS_UDP_TABLE", True)
+    monkeypatch.setattr(win32, "udp_table", read)
+    NoSockets.made = []
+    monkeypatch.setattr(socket, "socket", NoSockets)
+    return tables, asked
+
+
+@pytest.mark.parametrize(
+    "family, address",
+    [
+        (win32.WIN_AF_INET, IPV4_ANY),
+        (win32.WIN_AF_INET6, "::"),
+        (win32.WIN_AF_INET, "192.168.10.5"),
+        (win32.WIN_AF_INET, "127.0.0.1"),
+        (win32.WIN_AF_INET6, "fe80::1"),
+    ],
+)
+def test_a_udp_port_held_on_any_address_is_not_free_on_windows(
+    windows_udp, family, address
+):
+    tables, _asked = windows_udp
+    tables[family].append((address, 5353))
+
+    assert is_udp_port_free(5353) is False
+    assert is_port_free(5353, protocol="udp") is False
+    assert NoSockets.made == []
+
+
+def test_a_udp_port_nobody_holds_is_free_on_windows_and_both_tables_are_read(
+    windows_udp,
+):
+    tables, asked = windows_udp
+    tables[win32.WIN_AF_INET].append((IPV4_ANY, 5354))
+    tables[win32.WIN_AF_INET6].append(("::", 5355))
+
+    assert is_udp_port_free(5353) is True
+    assert asked == [win32.WIN_AF_INET, win32.WIN_AF_INET6]
+    assert NoSockets.made == []
+
+
+def test_a_udp_table_that_cannot_be_read_holds_every_port(windows_udp, monkeypatch):
+    def refuse(family: int) -> bytes:
+        raise OSError("GetExtendedUdpTable: refused")
+
+    monkeypatch.setattr(win32, "udp_table", refuse)
+
+    assert is_udp_port_free(5353) is False
+    assert is_udp_port_free(70000) is False
+    assert NoSockets.made == []
+
+
+def test_the_udp_tables_rows_are_read_with_their_addresses():
+    v4 = udp_table(win32.WIN_AF_INET, [(IPV4_ANY, 5353), ("10.1.2.3", 53)])
+    v6 = udp_table(win32.WIN_AF_INET6, [("::", 5353), ("fe80::1", 546)])
+
+    assert win32.udp_table_endpoints(v4, win32.WIN_AF_INET) == [
+        (IPV4_ANY, 5353),
+        ("10.1.2.3", 53),
+    ]
+    assert win32.udp_table_endpoints(v6, win32.WIN_AF_INET6) == [
+        ("::", 5353),
+        ("fe80::1", 546),
+    ]
+    with pytest.raises(ValueError):
+        win32.udp_table_endpoints(v4[:-1], win32.WIN_AF_INET)
+
+
+def test_only_windows_reads_the_udp_table():
+    assert forward_module.FORWARD_IS_UDP_TABLE is (sys.platform == "win32")

@@ -11,6 +11,8 @@ readily as on Windows and the seams above it stay replaceable in tests.
 from __future__ import annotations
 
 import ctypes
+import socket
+import struct
 
 # Process creation.
 CREATE_NO_WINDOW = 0x08000000
@@ -129,6 +131,23 @@ LR_DEFAULTSIZE = 0x0040
 IDI_APPLICATION = 32512
 NOTIFY_ICON_TIP_LENGTH = 128
 
+# The system's table of UDP endpoints: the address families as Windows
+# numbers them, the table class that carries address and port alone, and
+# how each family's row is laid out after the table's count.
+WIN_AF_INET = 2
+WIN_AF_INET6 = 23
+UDP_TABLE_BASIC = 0
+ERROR_INSUFFICIENT_BUFFER = 122
+# A table that grows between the size asked and the copy is asked again.
+UDP_TABLE_TRIES = 4
+UDP_TABLE_COUNT_BYTES = 4
+# MIB_UDPROW: the address, then the port in network order in a DWORD.
+UDP_ROW_BYTES = 8
+UDP_ROW_PORT_AT = 4
+# MIB_UDP6ROW: the address, its scope id, then the port as above.
+UDP6_ROW_BYTES = 24
+UDP6_ROW_PORT_AT = 20
+
 # The clipboard's text, as UTF-16.
 CF_UNICODETEXT = 13
 # Memory the clipboard takes over once it is handed the data.
@@ -234,6 +253,71 @@ def libraries() -> "Win32Libraries":
     if _LIBRARIES is None:
         _LIBRARIES = Win32Libraries()
     return _LIBRARIES
+
+
+def udp_table(family: int) -> bytes:
+    """The system's table of bound UDP endpoints for one address family.
+
+    Args:
+        family: :data:`WIN_AF_INET` or :data:`WIN_AF_INET6`.
+
+    Returns:
+        The table as ``GetExtendedUdpTable`` writes it with
+        :data:`UDP_TABLE_BASIC`.
+
+    Raises:
+        OSError: When the call fails, which is every call off Windows.
+    """
+    call = libraries().iphlpapi.GetExtendedUdpTable
+    size = DWORD(0)
+    code = call(None, ctypes.byref(size), False, family, UDP_TABLE_BASIC, 0)
+    for _ in range(UDP_TABLE_TRIES):
+        if code not in (NO_ERROR, ERROR_INSUFFICIENT_BUFFER):
+            break
+        buffer = ctypes.create_string_buffer(max(size.value, UDP_TABLE_COUNT_BYTES))
+        code = call(buffer, ctypes.byref(size), False, family, UDP_TABLE_BASIC, 0)
+        if code == NO_ERROR:
+            return buffer.raw
+    raise OSError(f"GetExtendedUdpTable: {win_error(code)}")
+
+
+def udp_table_endpoints(table: bytes, family: int) -> list:
+    """The endpoints one UDP table lists.
+
+    Args:
+        table: What :func:`udp_table` returned for ``family``.
+        family: :data:`WIN_AF_INET` or :data:`WIN_AF_INET6`.
+
+    Returns:
+        ``(address, port)`` for each row, the address as text.
+
+    Raises:
+        ValueError: When the table is shorter than its count says.
+    """
+    (count,) = struct.unpack_from("<I", table, 0)
+    if family == WIN_AF_INET6:
+        row_bytes, port_at, socket_family, address_bytes = (
+            UDP6_ROW_BYTES,
+            UDP6_ROW_PORT_AT,
+            socket.AF_INET6,
+            16,
+        )
+    else:
+        row_bytes, port_at, socket_family, address_bytes = (
+            UDP_ROW_BYTES,
+            UDP_ROW_PORT_AT,
+            socket.AF_INET,
+            4,
+        )
+    if len(table) < UDP_TABLE_COUNT_BYTES + count * row_bytes:
+        raise ValueError("the UDP table is shorter than its count")
+    endpoints = []
+    for index in range(count):
+        row = UDP_TABLE_COUNT_BYTES + index * row_bytes
+        address = socket.inet_ntop(socket_family, table[row : row + address_bytes])
+        (port,) = struct.unpack_from(">H", table, row + port_at)
+        endpoints.append((address, port))
+    return endpoints
 
 
 class TokenUser:
@@ -496,11 +580,25 @@ class Win32Libraries:
         self.mpr = ctypes.WinDLL("mpr", use_last_error=True)
         self.shell32 = ctypes.WinDLL("shell32", use_last_error=True)
         self.user32 = ctypes.WinDLL("user32", use_last_error=True)
+        self.iphlpapi = ctypes.WinDLL("iphlpapi", use_last_error=True)
         self._describe_kernel32()
         self._describe_advapi32()
         self._describe_mpr()
         self._describe_shell32()
         self._describe_user32()
+        self._describe_iphlpapi()
+
+    def _describe_iphlpapi(self) -> None:
+        """Prototype the iphlpapi call."""
+        self.iphlpapi.GetExtendedUdpTable.restype = DWORD
+        self.iphlpapi.GetExtendedUdpTable.argtypes = [
+            ctypes.c_void_p,
+            ctypes.POINTER(DWORD),
+            ctypes.c_int,
+            ctypes.c_ulong,
+            ctypes.c_int,
+            ctypes.c_ulong,
+        ]
 
     def _describe_kernel32(self) -> None:
         """Prototype the kernel32 calls."""
