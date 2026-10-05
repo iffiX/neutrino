@@ -9,8 +9,10 @@ neutrino_vm_lab`` when it is unset), which qemu's own user must be able to
 reach: a directory under ``/home`` usually is not.
 
 ``setup_vms.sh`` builds the hub VM and the client VM on the named distro and
-version, the suite under ``packaging/integration`` and the package are pushed
-into the hub VM, and ``run_mode_matrix.sh --client`` runs there. With
+version, the suite under ``packaging/integration`` is pushed into the hub VM,
+and the package goes into ``/tmp/neutrino_assets`` beside ``install.sh`` and a
+``SHA256SUMS`` naming it, so the suite installs it through the one-command
+script as a person would, and ``run_mode_matrix.sh --client`` runs there. With
 ``--lifecycle`` the two VMs are built again from their images and
 ``run_on_box.sh`` runs on the fresh hub in the named mode. Each run prints
 its phases; the exit status is the number of phases that failed.
@@ -19,6 +21,7 @@ Not pure: creates and boots VMs, runs the suite inside them.
 """
 
 import argparse
+import hashlib
 import os
 import re
 import shutil
@@ -41,6 +44,10 @@ LAB_ROOT_FORBIDDEN = Path("/home")
 # inside it, and the libvirt connection it uses.
 LAB_HUB = "nmxhub"
 LAB_SUITE_DIR = "/opt/integration"
+# Where the package lands beside the install script and its checksum, which is
+# the folder the script installs from with nothing downloaded.
+LAB_ASSET_DIR = "/tmp/neutrino_assets"
+INSTALL_SCRIPT = LAB_DIR.parent / "install" / "install.sh"
 LAB_LIBVIRT_URI = "qemu:///system"
 
 # What a run prints at the start of each phase.
@@ -83,11 +90,10 @@ def main() -> int:
         os.environ, NEUTRINO_VM_LAB=str(lab), LIBVIRT_DEFAULT_URI=LAB_LIBVIRT_URI
     )
 
-    runs = [("matrix", f"run_mode_matrix.sh /tmp/{package.name} --client")]
+    pushed = f"{LAB_ASSET_DIR}/{package.name}"
+    runs = [("matrix", f"run_mode_matrix.sh {pushed} --client")]
     if arguments.lifecycle:
-        runs.append(
-            ("lifecycle", f"run_on_box.sh /tmp/{package.name} {arguments.mode}")
-        )
+        runs.append(("lifecycle", f"run_on_box.sh {pushed} {arguments.mode}"))
     failed_total = 0
     for name, script in runs:
         _say(f"lab: {arguments.distro} {arguments.version}, {package.name}, {name}")
@@ -116,7 +122,8 @@ def main() -> int:
 
 
 def _push_suite(lab: Path, package: Path, environment: dict) -> None:
-    """Copy the suite, the lab's key and the package into the hub VM.
+    """Copy the suite, the lab's key, and the package with the install script
+    and a SHA256SUMS naming it, into the hub VM.
 
     Args:
         lab: The lab's root directory, which holds ``id_lab``.
@@ -132,7 +139,25 @@ def _push_suite(lab: Path, package: Path, environment: dict) -> None:
         _vm(["push", str(path), f"{LAB_SUITE_DIR}/{path.name}"], environment)
     _vm(["push", str(lab / "id_lab"), f"{LAB_SUITE_DIR}/id_lab"], environment)
     _vm([f"chmod 600 {LAB_SUITE_DIR}/id_lab"], environment)
-    _vm(["push", str(package), f"/tmp/{package.name}"], environment)
+    _vm([f"rm -rf {LAB_ASSET_DIR} && mkdir -p {LAB_ASSET_DIR}"], environment)
+    _vm(["push", str(package), f"{LAB_ASSET_DIR}/{package.name}"], environment)
+    _vm(["push", str(INSTALL_SCRIPT), f"{LAB_ASSET_DIR}/install.sh"], environment)
+    sums = lab / "SHA256SUMS"
+    sums.write_text(asset_sums(package), encoding="utf-8")
+    _vm(["push", str(sums), f"{LAB_ASSET_DIR}/SHA256SUMS"], environment)
+
+
+def asset_sums(package: Path) -> str:
+    """The SHA256SUMS of a folder holding one package, as a release writes it.
+
+    Args:
+        package: The package.
+
+    Returns:
+        The file's text: the package's sha256, two spaces, its name.
+    """
+    digest = hashlib.sha256(package.read_bytes()).hexdigest()
+    return f"{digest}  {package.name}\n"
 
 
 def _run_on_hub(command: str, environment: dict) -> tuple:

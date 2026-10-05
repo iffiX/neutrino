@@ -1,5 +1,7 @@
 # The msi walk, run as SYSTEM: remove any earlier install, install the fresh
-# msi, then check what the package promises.
+# msi, then check what the package promises. With install.ps1 and SHA256SUMS
+# beside the msi in C:\out, the install goes through the one-command script,
+# as a person's does.
 $ErrorActionPreference = "Continue"
 function Step($t) { Write-Output "=== $t" }
 $msi = (Get-ChildItem C:\out\*.msi | Select-Object -First 1).FullName
@@ -11,8 +13,14 @@ foreach ($p in $products) {
   Write-Output "uninstall $($p.PSChildName): exit $($r.ExitCode)"
 }
 Step "install"
-$r = Start-Process msiexec -Wait -PassThru -ArgumentList '/i', $msi, '/quiet', '/norestart', '/l*v', 'C:\out\install.log'
-Write-Output "msiexec exit $($r.ExitCode)"
+if ((Test-Path C:\out\install.ps1) -and (Test-Path C:\out\SHA256SUMS)) {
+  $env:NEUTRINO_ASSET_DIR = 'C:\out'
+  & C:\out\install.ps1 client
+  Write-Output "install.ps1 done"
+} else {
+  $r = Start-Process msiexec -Wait -PassThru -ArgumentList '/i', $msi, '/quiet', '/norestart', '/l*v', 'C:\out\install.log'
+  Write-Output "msiexec exit $($r.ExitCode)"
+}
 Step "what landed"
 Get-ChildItem "$env:ProgramFiles\Neutrino\client" | Select-Object Name, Length | Format-Table -AutoSize | Out-String -Width 120
 Get-ChildItem "$env:ProgramFiles\Neutrino\client\bin" | Select-Object Name, Length | Format-Table -AutoSize | Out-String -Width 120

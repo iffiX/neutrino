@@ -11,6 +11,10 @@
 # NEUTRINO_VERSION names the release, such as v0.5.0; the latest when unset.
 # NEUTRINO_ASSET_DIR names a directory holding SHA256SUMS and the packages,
 # which are installed from there with nothing downloaded.
+#
+# Run as a person, the script asks for the sudo password once, before it
+# downloads anything, and keeps sudo's ticket fresh until it ends: the
+# install, the hub's setup and the hub's own agent ask nothing more.
 set -eu
 
 # The edition this script installs; the mainland source tree stamps it cn.
@@ -92,6 +96,22 @@ fetch() {
     curl -fsSL --retry 3 -o "$2" "$1" || fail "Downloading $1 failed."
 }
 
+# Ask for the sudo password once, and keep the ticket fresh in the background
+# while the script runs. Prints the keeper's pid; nothing when run as root.
+hold_root() {
+    [ -n "$1" ] || return 0
+    command -v sudo >/dev/null 2>&1 \
+        || fail "Run this as root, or install sudo first."
+    echo "Neutrino asks for administrator rights once, to install the package." >&2
+    sudo -v || fail "sudo did not grant administrator rights; nothing was installed."
+    (
+        while sleep 30 && kill -0 "$2" 2>/dev/null; do
+            sudo -n -v 2>/dev/null || exit 0
+        done
+    ) </dev/null >/dev/null 2>&1 &
+    echo "$!"
+}
+
 # Where the release's files are, for this script's edition. A cn release is
 # found by its tag, which the API names for the latest one.
 release_base() {
@@ -139,8 +159,9 @@ main() {
         as_root=sudo
     fi
 
+    keeper=$(hold_root "$as_root" "$$") || exit 1
     work=$(mktemp -d)
-    trap 'rm -rf "$work"' EXIT
+    trap 'rm -rf "$work"; [ -z "$keeper" ] || kill "$keeper" 2>/dev/null || true' EXIT
     if [ -n "${NEUTRINO_ASSET_DIR:-}" ]; then
         source_dir=$NEUTRINO_ASSET_DIR
         [ -f "$source_dir/SHA256SUMS" ] || fail "There is no SHA256SUMS in $source_dir."
@@ -175,16 +196,25 @@ main() {
         arch) $as_root pacman -U --noconfirm "$package" ;;
     esac
 
-    [ "$component" = hub ] || return 0
+    case "$component" in
+        agent)
+            echo "Next, join this machine to a hub: ${as_root:+$as_root }nagent join '<enrollment link from the hub's Devices page>'"
+            return 0
+            ;;
+        client)
+            echo "Next, join this computer to a hub: nclient join '<client link from the hub's Clients page>'"
+            return 0
+            ;;
+    esac
     if (: </dev/tty) 2>/dev/null; then
         $as_root nhub setup </dev/tty
         return
     fi
-    address=$($as_root nhub open --print 2>/dev/null) || address=""
+    address=$($as_root ${as_root:+-n} nhub open --print 2>/dev/null) || address=""
     if [ -n "$address" ]; then
-        echo "Set the hub up in a browser at: $address"
+        echo "Next, set the hub up in a browser at: $address"
     else
-        echo "Set the hub up with: sudo nhub open"
+        echo "Next, set the hub up: ${as_root:+$as_root }nhub open"
     fi
 }
 
