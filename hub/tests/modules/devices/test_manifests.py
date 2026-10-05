@@ -658,3 +658,28 @@ def test_cloudclis_state_names_the_npm_registry_of_the_hubs_edition(edition, reg
     sent = cloudcli_agent_config({}, {}, {}, edition=edition)
 
     assert sent["npm_registry"] == registry
+
+
+@pytest.mark.parametrize(
+    ("edition", "environment"),
+    [
+        ("intl", {}),
+        (
+            "cn",
+            {
+                "npm_config_better_sqlite3_binary_host": (
+                    "https://registry.npmmirror.com/-/binary/better-sqlite3"
+                )
+            },
+        ),
+    ],
+)
+def test_cloudclis_state_carries_the_npm_environment_the_manifest_names(
+    edition, environment
+):
+    from neutrino_hub.modules.devices.desired_state import cloudcli_agent_config
+
+    sent = cloudcli_agent_config({}, {}, {}, edition=edition)
+
+    assert sent["npm_environment"] == environment
+    assert all(name.startswith("npm_config_") for name in environment)

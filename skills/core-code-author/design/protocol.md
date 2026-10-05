@@ -1109,10 +1109,13 @@ account a Linux machine or a Mac does not have; and `credential_invalid
 The `cloudcli` module runs CloudCLI once per account
 ([agent.md](agent.md), "CloudCLI"). Its recipe names the Node.js archive
 `data/manifests/cloudcli.json` pins for the platform, which the agent opens
-`package {module: cloudcli}` for. An install that fails reports the step:
-`cloudcli_node_download_failed`, `cloudcli_npm_install_failed` or
-`cloudcli_native_module_failed`; an instance whose account has no `claude`
-reports `cloudcli_claude_missing {account}`.
+`package {module: cloudcli}` for, and its configuration carries the
+edition's `npm_registry` and `npm_environment`, the `npm_config_*` settings
+the manifest names for that edition. An install that fails reports the
+step: `cloudcli_node_download_failed`, `cloudcli_npm_install_failed
+{account, detail}`, `cloudcli_native_module_failed {account, module,
+detail}` or `cloudcli_install_out_of_memory {account}`; an instance whose
+account has no `claude` reports `cloudcli_claude_missing {account}`.
 
 The `code_server` module runs code-server once per account, on Linux and
 macOS ([agent.md](agent.md), "code-server"). Its configuration is
