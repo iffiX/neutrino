@@ -30,7 +30,10 @@ table, made before the mount and ended once the share is unmounted, and
 the system mounts ``//127.0.0.1/<share>`` at that port. On Windows the
 system mounts the share at the files adapter's address for the share's
 machine, which the resident's adapter names and brings up for it; once no
-record of this run wants a share mounted any more, the adapter is let go.
+record of this run wants a share mounted any more, the adapter is let go. A
+share of this machine itself, an entry with ``is_own_machine``, is mounted
+on Windows from ``//127.0.0.1/<share>`` at the system's own port, through
+no adapter, since Windows refuses a login that comes back to the machine.
 A mount an earlier run left
 standing, at a device's address by an older build among them, is unmounted
 at start like every leftover, and the person's next Mount goes through the
@@ -580,10 +583,11 @@ class FileServiceHandler(ServiceTypeHandler):
         self._log(f"mounted {_share_url(record)} at {location}")
 
     def _follow_entry(self, record_id: str, record: dict) -> dict:
-        """The record with the host and share its entry names now.
+        """The record with the host and share its entry names now, and
+        whether its share is on this machine.
 
-        A record whose entry moved is written back to the store; one whose
-        entry is absent, its hub being away, stands as it is.
+        A record whose entry moved or changed machine is written back to the
+        store; one whose entry is absent, its hub being away, stands as it is.
         """
         entry = find_entry(
             self._entries_of(),
@@ -596,6 +600,11 @@ class FileServiceHandler(ServiceTypeHandler):
         payload = entry.get("payload") or {}
         host = str(payload.get("host", "") or "")
         share = str(payload.get("share", "") or "")
+        is_own = entry.get("is_own_machine") is True
+        if is_own != bool(record.get("is_own_machine")):
+            record = dict(record, is_own_machine=is_own)
+            with self._lock:
+                self._store.set_mount(record_id, record)
         if not host or (host, share) == (record.get("host"), record.get("share")):
             return record
         moved = dict(record, host=host, share=share)
@@ -613,7 +622,8 @@ class FileServiceHandler(ServiceTypeHandler):
         Returns:
             ``(share_url, port)``: the files adapter's address for the
             share's machine and port 0 where the system mounts through the
-            adapter, else ``//127.0.0.1/<share>`` and the port of the
+            adapter, the loopback and port 0 there for a share of this
+            machine itself, else ``//127.0.0.1/<share>`` and the port of the
             entry's forward, made here when it has none.
 
         Raises:
@@ -625,6 +635,8 @@ class FileServiceHandler(ServiceTypeHandler):
         entry_id = str(record.get("entry_id", ""))
         share = str(record.get("share", ""))
         if self._platform.mount_location_shape == MOUNT_SHAPE_ADAPTER:
+            if self._is_own_share(record):
+                return f"//{FORWARD_BIND_HOST}/{share}", 0
             host = self._adapter_host(hub_id, self._machine_of(record))
             return f"//{host}/{share}", 0
         port = self._forwards.ensure(
@@ -634,8 +646,11 @@ class FileServiceHandler(ServiceTypeHandler):
 
     def _server_of(self, record: dict) -> str:
         """The server the system lists a record's share under: the loopback
-        a forwarded share is mounted from, else the share's own host."""
+        a forwarded share, and one of this machine, is mounted from, else
+        the share's own host."""
         if self._platform.mount_location_shape == MOUNT_SHAPE_ADAPTER:
+            if self._is_own_share(record):
+                return FORWARD_BIND_HOST
             return str(record.get("host", ""))
         return FORWARD_BIND_HOST
 
@@ -643,12 +658,19 @@ class FileServiceHandler(ServiceTypeHandler):
         """The machines every kept record names, for the adapter's address plan.
 
         Returns:
-            ``{(hub_id, machine)}`` as :func:`files_machine` names the machine.
+            ``{(hub_id, machine)}`` as :func:`files_machine` names the machine;
+            this machine itself, which takes no address, is left out.
         """
         return {
             (str(record.get("hub_id", "")), self._machine_of(record))
             for record in self._store.mounts().values()
+            if not self._is_own_share(record)
         }
+
+    @staticmethod
+    def _is_own_share(record: dict) -> bool:
+        """Whether a record's share is on this machine, as its entry last said."""
+        return record.get("is_own_machine") is True
 
     def _machine_of(self, record: dict) -> str:
         """The machine that provides a record's share: its device, else its host."""

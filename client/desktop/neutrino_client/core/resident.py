@@ -221,6 +221,7 @@ class ClientResident:
         self._binding_lock = threading.RLock()
         self.platform = platform if platform is not None else detect_platform()
         self._platform_tuple = platform_tuple()
+        self._os_machine_id = self.platform.os_machine_id()
         config_dir = self.platform.config_dir()
         self._store = ClientServiceStore(
             path=os.path.join(config_dir, CLIENT_STATE_FILE_NAME)
@@ -1542,6 +1543,7 @@ class ClientResident:
             binding=binding,
             hostname=self.hostname(),
             platform_tuple=self._platform_tuple,
+            os_machine_id=self._os_machine_id,
             log=self._log,
             on_change=self.notify,
             on_services=self._hub_services,

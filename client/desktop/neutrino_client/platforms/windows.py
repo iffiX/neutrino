@@ -68,6 +68,11 @@ WINDOWS_CLIENT_DIR_PARTS = ("Neutrino", "client")
 WINDOWS_MOUNT_TIMEOUT_S = 60
 WINDOWS_PROGRAM_DATA_DEFAULT = "C:\\ProgramData"
 WINDOWS_PROGRAM_FILES_DEFAULT = "C:\\Program Files"
+# The id Windows gave this installation, read from the 64-bit view of the
+# registry whatever the process is; the agent reads the same.
+WINDOWS_MACHINE_GUID_KEY = "SOFTWARE\\Microsoft\\Cryptography"
+WINDOWS_MACHINE_GUID_VALUE = "MachineGuid"
+WINDOWS_KEY_WOW64_64KEY = 0x0100
 WINDOWS_SYSTEM_ROOT_DEFAULT = "C:\\Windows"
 
 # A share that File Explorer never hears about stands there as a disconnected
@@ -195,6 +200,24 @@ class WindowsPlatform(ClientPlatform):
             self.home(), "AppData", "Roaming"
         )
         return os.path.join(root, *WINDOWS_CLIENT_DIR_PARTS)
+
+    def os_machine_id(self) -> str:
+        """The ``MachineGuid`` Windows keeps in the registry."""
+        try:
+            import winreg
+        except ImportError:
+            return ""
+        try:
+            with winreg.OpenKey(
+                winreg.HKEY_LOCAL_MACHINE,
+                WINDOWS_MACHINE_GUID_KEY,
+                0,
+                winreg.KEY_READ | WINDOWS_KEY_WOW64_64KEY,
+            ) as key:
+                value, _kind = winreg.QueryValueEx(key, WINDOWS_MACHINE_GUID_VALUE)
+        except OSError:
+            return ""
+        return str(value or "").strip()
 
     def agent_program_dir(self) -> str:
         """``%ProgramFiles%\\Neutrino\\agent``."""

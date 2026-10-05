@@ -58,6 +58,8 @@ PROC_MOUNTS_ESCAPES = (
 # This person's client directory under the configuration root, and the
 # directory its socket sits in under the runtime root.
 CONFIG_DIR_NAME = os.path.join("neutrino", "client")
+# Where systemd, else dbus, keeps the machine's id; the agent reads the same.
+LINUX_MACHINE_ID_PATHS = ("/etc/machine-id", "/var/lib/dbus/machine-id")
 SOCKET_DIR_NAME = "neutrino"
 # The clipboard tools, each with the variable naming the session it serves.
 CLIPBOARD_TOOLS = (
@@ -104,6 +106,18 @@ class LinuxPlatform(ClientPlatform):
             self.home(), ".config"
         )
         return os.path.join(root, CONFIG_DIR_NAME)
+
+    def os_machine_id(self) -> str:
+        """The machine id systemd or dbus wrote."""
+        for path in LINUX_MACHINE_ID_PATHS:
+            try:
+                with open(path, "r", encoding="utf-8") as stream:
+                    value = stream.read().strip()
+            except OSError:
+                continue
+            if value:
+                return value
+        return ""
 
     def agent_program_dir(self) -> str:
         """``/opt/neutrino/agent``."""
