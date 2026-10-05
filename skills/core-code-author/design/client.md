@@ -81,6 +81,7 @@ A page with nothing to show has one row with one sentence
 | A destructive action arms on the first press (the label changes to `Press again to <verb>`, the fill turns red) and acts on the second press within 5 s; a press elsewhere disarms it. There is no confirmation dialog. | The arming idiom in ui_behavior.md, and a dialog on a phone covers the row it asks about. |
 | A failed job writes its code's wording on the row's error line, and the line stays until the next press on that row or a refresh. | The person reads what failed where they pressed. |
 | A running job survives a page switch; the page it belongs to shows it again when reopened. | The job runs in the core, and the page is a view of it. |
+| An entry is unhealthy only when its `is_healthy` is `false`. An entry with empty health carries no health word and its actions stay enabled, on every page. | Empty health is a record no probe has reached, and a `generic_udp` record is never probed; read as unhealthy, its row could never be used. |
 
 ## Words and colours
 
@@ -123,7 +124,7 @@ The dot follows [visual.md](visual.md):
 
 | Dot | Means |
 | --- | --- |
-| green | `connected`, or the overlay `on`, or a healthy entry |
+| green | `connected`, or the overlay `on`, or an entry that is not unhealthy |
 | amber, pulsing | `connecting`, or any job running on the row |
 | amber, still | `down` with a code nobody has to act on (`hub_unreachable`), `disabled`, or an unhealthy entry |
 | red | `down` with a code a person has to act on: `hub_untrusted`, `binding_unknown`, `protocol_too_old`, `protocol_too_new` |
@@ -264,7 +265,7 @@ controls:
 
 | Control | Shown | Enabled | Does |
 | --- | --- | --- | --- |
-| **Open** | always | when the entry is healthy and the hub is not disabled | job `ui.job.opening`: makes the entry's forward when it has none, reads `{token}` on the `service` stream when the entry has `is_token_required`, and opens the system browser on the entry's forwarded URL below; a failure writes the code |
+| **Open** | always | when the entry is not unhealthy and the hub is not disabled | job `ui.job.opening`: makes the entry's forward when it has none, reads `{token}` on the `service` stream when the entry has `is_token_required`, and opens the system browser on the entry's forwarded URL below; a failure writes the code |
 | **Configure** | always | when the entry is not forwarded | the local port dialog ("The local port table") |
 | **Disconnect** | when the entry is forwarded | always | ends the forward, as on the Ports page |
 
@@ -292,13 +293,14 @@ once and dies after 60 seconds, so every press of **Open** reads a new one.
 ## The Ports page
 
 A row per `port` entry: the title, `host:port` as the mono line, where the
-service is on the hub's networks, and the provider line. On a desktop the
+service is on the hub's networks, and the provider line. A UDP entry's mono
+line reads `host:port/udp`; a TCP entry's has no suffix. On a desktop the
 forward is a state of the row:
 
 | State | Event | Next | Control shown |
 | --- | --- | --- | --- |
 | not forwarded | press **Connect** | forwarding (job) | the button shows `ui.job.forwarding` |
-| forwarding | the listener is up | forwarded | **Disconnect**; the mono line adds `→ 127.0.0.1:<local-port>` |
+| forwarding | the listener is up, and for a UDP entry its stream is open | forwarded | **Disconnect**; the mono line adds `→ 127.0.0.1:<local-port>`, with `/udp` after it for a UDP entry |
 | forwarding | a code | not forwarded, with the error line | **Connect** |
 | forwarded | press **Disconnect** | disconnecting (job), then not forwarded | the button shows `ui.job.disconnecting` |
 | forwarded | the entry turns unhealthy | forwarded | **Disconnect** stays enabled; the state word is `ui.unhealthy` |
@@ -306,13 +308,26 @@ forward is a state of the row:
 **Connect** is disabled while the entry is unhealthy or the hub is disabled,
 with the reason on the row. A phone has the same states; its forward lives in
 the app's foreground service, and the forwarded row adds **Copy** for the
-loopback address, since the phone has no shell to type it into.
+loopback address, `127.0.0.1:<local-port>` without the `/udp` suffix, since
+the phone has no shell to type it into.
+
+A UDP entry's forward is one UDP socket bound to `127.0.0.1:<local port>`
+from **Connect** until **Disconnect**, and one `connect` stream:
+
+| Rule | Reason |
+| --- | --- |
+| The forward opens its stream at **Connect**, and again at the first datagram that finds it has none, after the hub's socket was replaced or the far end closed the stream. | A UDP program has no connection to start a stream with, and a stream that ended is opened again by the next datagram that needs it. |
+| An open refused at **Connect** ends the forward and writes the code on the row's error line, as a failed bind does. An open refused later writes the code on the error line; the forward goes on listening and tries again at a later datagram, at most once a second. | A refusal at the press is the answer to the press; a refusal later is a state the hub can leave without the person pressing again. |
+| Datagrams that arrive while an open waits for its first credit are held, at most `CLIENT_UDP_HELD_DATAGRAMS_MAX`, 16, and sent when the credit comes; more are dropped. No datagram waits anywhere else. | A program's first datagram is often its only one, and a bounded hold keeps it without a queue. |
+| Each datagram goes into the stream with the port it came from as `source`. The forward remembers, per `source`, the address it last came from, for at most `CLIENT_UDP_SOURCES_MAX`, 64, sources, the one idle the longest giving way; a frame for a `source` it no longer remembers is dropped. | A reply returns to the local program that asked, and two programs on one forward stay two peers. |
 
 ## The local port table
 
 A forward is a listener on `127.0.0.1:<local-port>` that opens one
 `connect` stream to the hub for every connection it accepts and relays the
-bytes both ways ([protocol.md](protocol.md), "The connect stream"). No page
+bytes both ways, or, for a UDP `port` entry, one UDP socket with one stream
+for every datagram it carries ([protocol.md](protocol.md), "The connect
+stream"). No page
 of any client dials a service's own address; the hub's agent port is the
 one address a client dials.
 
@@ -337,9 +352,9 @@ The local port is the client's to manage:
 | --- | --- |
 | A `port` or `web` entry has a **Configure** button at the left of its action, a small button like the row's others; it opens a dialog with one choice, **Local port**: **Auto** (the default) or **Fixed** with a number from 1024 to 65535, and **Save** and **Cancel**. The button is disabled while the entry is forwarded, with the reason `ui.reason.disconnect_first`. Every other forward is **Auto**. | The port a tool is told to use must not change under it; changing it under a running forward is the change nobody asked for. |
 | **Auto** picks the entry's own port when no other entry holds it and it is free, else the first free port from 20000 up; the client records the pick for the entry and gives it the same port on every later forward and after a restart. The panel has no port of its own and starts at 20000. | Two instances on the same remote port must land on two local ports, and the local port of each must stay put. |
-| A port is free only when nothing listens on it on any address of the machine: a probe binds it on the IPv4 wildcard address, and on the IPv6 one where the machine has IPv6, with no address-reuse option, and closes it. The forward itself listens on `127.0.0.1` alone. | A loopback listener beside a server on every address takes that server's local traffic, and on macOS a loopback bind succeeds beside it. |
+| A port is free only when nothing listens on it on any address of the machine: a probe binds it on the IPv4 wildcard address, and on the IPv6 one where the machine has IPv6, with no address-reuse option, and closes it; a TCP entry's probe binds TCP sockets and a UDP entry's binds UDP sockets. The forward itself listens on `127.0.0.1` alone. | A loopback listener beside a server on every address takes that server's local traffic, and on macOS a loopback bind succeeds beside it. |
 | A kept pick or a **Fixed** number is probed again each time its forward is about to listen, with the address-reuse option off Windows so the client's own closed connections still on the port do not count. A kept **Auto** pick another program now listens on is picked again by the rule above and the new pick is kept; a **Fixed** number another program listens on is not listened on, and the row's error line says `port_taken` with the number. | A machine changes between two forwards; a port free when it was picked can have a server on it now, and the rule holds only if it is asked at every bind. |
-| The client keeps one table of local ports: every entry's pick or fixed number is in it, no two entries hold one number, and a **Fixed** number another entry holds is refused in the dialog with `ui.reason.port_taken`. | One table is the only way two forwards never collide. |
+| The client keeps one table of local ports: every entry's pick or fixed number is in it with its protocol, no two entries of one protocol hold one number, and a **Fixed** number another entry of the same protocol holds is refused in the dialog with `ui.reason.port_taken`, the `port_taken` of a bind likewise. A TCP entry and a UDP entry can hold one number, so **Auto** gives 53/tcp and 53/udp the same local number when both are free. The stored table reads an entry with no protocol as TCP. | One table is the only way two forwards never collide, and a TCP port and a UDP port of one number are two ports. |
 | A forwarded row always shows `→ 127.0.0.1:<local port>`, on the Web, Ports and AI pages. | A port the person cannot see is a port they cannot type. |
 
 ## The AI page
@@ -350,7 +365,7 @@ the forward listens. The desktop controls:
 
 | Control | Enabled | Does |
 | --- | --- | --- |
-| **AI tools use this gateway** (a chip) | when the entry is healthy, the hub is not disabled and no switch runs | job `ui.job.switching`: makes the entry's forward, reads this client's key on the `service` stream, and points Claude Code, Codex and Gemini at `http://127.0.0.1:<local-port>` with that key ([modules/ai.md](modules/ai.md)); one hub is the exit at a time, and only a chip the person turned on makes it so: with no chip turned on no hub is the exit; the chip of the other hub turns off in the same push, and its forward ends |
+| **AI tools use this gateway** (a chip) | when the entry is not unhealthy, the hub is not disabled and no switch runs | job `ui.job.switching`: makes the entry's forward, reads this client's key on the `service` stream, and points Claude Code, Codex and Gemini at `http://127.0.0.1:<local-port>` with that key ([modules/ai.md](modules/ai.md)); one hub is the exit at a time, and only a chip the person turned on makes it so: with no chip turned on no hub is the exit; the chip of the other hub turns off in the same push, and its forward ends |
 | **Configure** | the same | opens the configuration dialog: a picker per tool for its model and, for Codex, its effort; **Save** and **Cancel**; the dialog is the inline-form idiom with a dirty frame |
 
 Under the controls is the line `ui.ai_needs_client`: the tools reach the
@@ -572,9 +587,9 @@ word. The controls:
 
 | Control | Enabled | Does |
 | --- | --- | --- |
-| **Connect** | when the entry is healthy, the hub is not disabled and no viewer runs on it | job `ui.job.connecting`: reads `{password}` on the `service` stream and makes the entry's forward; on a desktop starts the viewer at `127.0.0.1:<local-port>` with the seat password on its command line, the one channel RustDesk 1.4.9 has for a connect password (its peer file takes only a hash salted by the host), and follows the viewer process, on Windows the copy the bundled viewer starts of itself from its own data directory; on a phone opens the viewer page, whose core dials the same forward. The forward ends with the viewer |
+| **Connect** | when the entry is not unhealthy, the hub is not disabled and no viewer runs on it | job `ui.job.connecting`: reads `{password}` on the `service` stream and makes the entry's forward; on a desktop starts the viewer at `127.0.0.1:<local-port>` with the seat password on its command line, the one channel RustDesk 1.4.9 has for a connect password (its peer file takes only a hash salted by the host), and follows the viewer process, on Windows the copy the bundled viewer starts of itself from its own data directory; on a phone opens the viewer page, whose core dials the same forward. The forward ends with the viewer |
 | the viewer | | on a desktop a separate window, and the row then shows `ui.rdp_open`; on a phone a page of the app whose three round buttons open the keyboard, the key bar of Esc, Tab, Ctrl, Shift, Alt, Win, **Paste** and the arrows, and close the session |
-| **Configure** | on a phone, when the entry is healthy | the dialog of the inline-form idiom with two pickers: **Codec** (Auto, then each codec the core offers) and **Quality** (Balanced, Low bandwidth, Best); **Save** and **Cancel**; the choice is kept per entry in the app's settings and applied at the next connect |
+| **Configure** | on a phone, when the entry is not unhealthy | the dialog of the inline-form idiom with two pickers: **Codec** (Auto, then each codec the core offers) and **Quality** (Balanced, Low bandwidth, Best); **Save** and **Cancel**; the choice is kept per entry in the app's settings and applied at the next connect |
 
 The row's mono line is the entry's host and port, where the desktop is on
 the hub's networks; the viewer dials the forward on the loopback and never

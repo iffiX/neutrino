@@ -255,7 +255,7 @@ A service is anything the hub can publish: a device's Samba shares, its
 Gitea, a container's published port, the hub's own AI gateway, a desktop a
 machine is sharing, and the services somebody declares by hand on machines
 the hub does not run. A module's entries live only while the module runs on
-an enabled device; a hand-declared entry is probed; a desktop entry is the
+an enabled device; a hand-declared entry is probed, a UDP port excepted; a desktop entry is the
 machine's own word and lives only while it keeps reporting.
 
 ```
@@ -263,6 +263,7 @@ module on a device (samba, gitea, podman)   -> service entry
 the hub's AI gateway                        -> the one ai entry
 a machine sharing its desktop               -> an rdp entry, from its reports
 declared by hand (web, port, file)          -> the same shape, probed
+                                                (a UDP port never)
   service entry: {id, type, title, payload, is_healthy, source, description}
   types: web | port | ai | file | rdp
 ```

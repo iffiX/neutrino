@@ -210,12 +210,13 @@ configuration.
 
 ## The connect stream
 
-A `connect {port}` stream is one TCP connection the hub relays for a client
-to a service on this machine ([protocol.md](protocol.md), "The connect
-stream"). The agent dials `127.0.0.1:<port>`, within
-`AGENT_CONNECT_DIAL_TIMEOUT_S`, and relays bytes both ways under credit
-until either socket ends. It dials only a port the machine publishes at
-that moment:
+A `connect {port, protocol}` stream is one TCP connection the hub relays
+for a client to a service on this machine, or, with `protocol` `udp`, every
+datagram of one UDP entry ([protocol.md](protocol.md), "The connect
+stream"); `protocol` absent means `tcp`. For TCP the agent dials
+`127.0.0.1:<port>`, within `AGENT_CONNECT_DIAL_TIMEOUT_S`, and relays bytes
+both ways under credit until either socket ends. It serves only a port the
+machine publishes at that moment on the stream's protocol:
 
 | Published while | The port |
 | --- | --- |
@@ -223,11 +224,34 @@ that moment:
 | the desktop is shared | the RustDesk direct port the `desktop` section reports |
 | the Gitea module reports its URL | that URL's port |
 | a VS Code, code-server or CloudCLI instance is configured | the instance's port |
-| a Podman container publishes a host port | that port, dialled on the host address it is published on when it names one |
+| a Podman container publishes a host port | that port on the protocol it is published on, dialled on the host address it is published on when it names one |
 
-Any other port is refused `port_not_published {port}` and nothing is
-dialled. A dial that fails closes the stream `connect_failed {reason}`, `reason` being
-`refused`, `timeout` or `unreachable`.
+Every other port in the table is published on TCP alone. Any other port,
+and a number published on the other protocol alone, is refused
+`port_not_published {port}` and nothing is dialled. A dial that fails closes
+the stream `connect_failed {reason}`, `reason` being `refused`, `timeout` or
+`unreachable`.
+
+The Podman report gives each container's `host_bindings` as one `{address,
+port, protocol}` per published host port, on TCP and UDP alike, `address`
+empty for every address; `published_ports` reads the ports the machine
+publishes, per protocol, from it.
+
+A UDP stream keeps a table from each datagram's `source` to one UDP socket
+connected to the target, `127.0.0.1` or the address the binding names, so
+it reads only the target's replies:
+
+| Rule | Value |
+| --- | --- |
+| a datagram whose `source` has no socket | gets one; a reply read from a source's socket goes into the stream with that `source` |
+| a source with no datagram either way | its socket is closed and forgotten after `AGENT_UDP_IDLE_TIMEOUT_S`, 60 seconds; a later datagram gets a new one |
+| sources one stream keeps | at most `AGENT_UDP_SOURCES_MAX`, 64; one more replaces the one idle the longest |
+| an error on a source's socket | loses that datagram alone, and the stream stays open |
+| a datagram without the credit its frame needs | dropped, with no wait and no queue; credit taken is granted back once a datagram is passed on or dropped |
+| the stream's end | none while idle; it ends with the hub's close, the hub's socket, or `port_not_published {port}` once the port is no longer published |
+
+The two constants have the hub's values ([protocol.md](protocol.md), "The
+timings"); the agent imports nothing from the hub.
 
 A machine's own services stay reachable on its LAN at their own ports, under
 each service's own login ([connection.md](connection.md), "One port, one

@@ -23,7 +23,7 @@ peer.
 | The hub relays every stream, on the LAN and from outside alike. Each of a client's streams ends at the hub. | A relayed stream works with the routes a home already has. One path has one set of permission checks. |
 | A machine's own services stay reachable on its LAN at their own ports, under each service's own login. | A person at home keeps the tools they already use. The connection is the way from a client, and it closes no other way. |
 | A stream is one TCP connection, or every datagram of one UDP `port` entry. A `port` entry states one protocol, TCP or UDP, and every other kind is TCP. | A container or a declared service on UDP is published the same way as one on TCP. One protocol for each entry gives each entry one permission check and one health check. |
-| A UDP stream sends one datagram in one frame, with the port the datagram left from on the client's machine in front of it. The far end keeps one socket for each such port and closes a socket after `CHANNEL_UDP_IDLE_TIMEOUT_S`, 60 seconds, with no datagram. A datagram that arrives without credit is dropped. | A reply returns to the local program that asked, and two programs on one forward stay two peers to the service. UDP has no close of its own and permits loss. A queue of datagrams adds delay and has no bound. |
+| A UDP stream sends one datagram in one frame, with the port the datagram left from on the client's machine in front of it. The far end keeps one socket for each such port, at most `CHANNEL_UDP_SOURCES_MAX`, 64, the one idle the longest giving way, and closes a socket after `CHANNEL_UDP_IDLE_TIMEOUT_S`, 60 seconds, with no datagram. A datagram that arrives without credit is dropped. | A reply returns to the local program that asked, and two programs on one forward stay two peers to the service. UDP has no close of its own and permits loss. A queue of datagrams adds delay and has no bound. |
 
 ## Where the port is reached
 
@@ -133,6 +133,7 @@ the entry, and reads the secret a service needs from its own store.
 | Rule | Reason |
 | --- | --- |
 | A forwarder listens on `127.0.0.1` and accepts any connection made on that machine. | The machine's accounts are the person's own. Loopback is the one boundary Linux, macOS and Windows share. |
+| A UDP forward holds at most `CLIENT_UDP_HELD_DATAGRAMS_MAX`, 16, datagrams while its stream waits for its first credit, and drops the rest; no datagram waits anywhere else. | A program's first datagram is often its only one. A bounded hold keeps it without a queue. |
 | A page behind a forwarder keeps its own token or login where it has one. | A program on the client machine that finds the port still needs the page's secret. |
 | The Windows file network card has an address of its own, and its gateway and DNS fields are empty. Its endpoint returns an error for UDP. | Windows mounts SMB only on port 445 of an address. The card gives each share an address that leads to the client's own endpoint. |
 

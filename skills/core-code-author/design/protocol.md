@@ -546,7 +546,7 @@ has is refused 400 `permission_device_unknown {device_id}`.
 | --- | --- | --- |
 | `GET /api/hub/service` | | the published list |
 | `GET /api/hub/service/share` | | the shares devices declared |
-| `POST /api/hub/service/declaration/add` | a declaration | |
+| `POST /api/hub/service/declaration/add` | `{name, kind, host, port, scheme, path, shares, description, protocol}`: `kind` is `web`, `port` or `file`; `protocol` is `tcp` or `udp`, `tcp` when absent, read for a `port` alone, and stores the record as `generic_tcp` or `generic_udp` | |
 | `POST /api/hub/service/declaration/remove` | `{service_id}` | |
 | `POST /api/hub/service/declaration/probe` | `{service_id}` | one health probe |
 
@@ -834,7 +834,7 @@ hash; the first `report` has it.
 | `open` | both | `{stream, kind, ...args}`: a stream begins |
 | `close` | both | `{stream, code, params}`: it ends, with its result |
 | `credit` | both | `{stream, bytes}`: the sender can send that many more |
-| binary | both | `<u32 stream id><bytes>` |
+| binary | both | `<u32 stream id><bytes>`; on a UDP `connect` stream `<u32 stream id><u16 source><one datagram>` |
 
 Every action is a stream: its `open` is the request, its `close` is the reply,
 and `kind` is the whole method vocabulary.
@@ -866,6 +866,9 @@ the three packages, named here so that changing one is a change to this table.
 | reconnect backoff | | `AGENT_BACKOFF_MIN_S` 5, doubled to `AGENT_BACKOFF_MAX_S` 60 | `CLIENT_BACKOFF_MIN_S` 5, doubled to `CLIENT_BACKOFF_MAX_S` 60 |
 | a stream's credit window | `CHANNEL_STREAM_CREDIT_BYTES` 1 MiB | `AGENT_WS_STREAM_CREDIT_BYTES` 1 MiB | `CLIENT_STREAM_CREDIT_BYTES` 1 MiB |
 | one binary frame | `CHANNEL_CHUNK_BYTES` 64 KiB | `AGENT_WS_CHUNK_BYTES` 64 KiB | `CLIENT_WS_CHUNK_BYTES` 64 KiB |
+| a UDP stream's source with no datagram either way, before its far-end socket closes | `CHANNEL_UDP_IDLE_TIMEOUT_S` 60 | `AGENT_UDP_IDLE_TIMEOUT_S` 60 | |
+| sources one UDP stream's far end keeps a socket for | `CHANNEL_UDP_SOURCES_MAX` 64 | `AGENT_UDP_SOURCES_MAX` 64 | `CLIENT_UDP_SOURCES_MAX` 64 |
+| datagrams a UDP forward holds while its stream waits for its first credit | | | `CLIENT_UDP_HELD_DATAGRAMS_MAX` 16 |
 | a stream waiting on credit | | `AGENT_WS_CREDIT_TIMEOUT_S` 60 | `CLIENT_WS_CREDIT_TIMEOUT_S` 60 |
 | a stream waiting for its close | | | `CLIENT_STREAM_TIMEOUT_S` 15 |
 | dialling the far end of a `connect` stream | `CHANNEL_CONNECT_DIAL_TIMEOUT_S` 10 | `AGENT_CONNECT_DIAL_TIMEOUT_S` 10 | |
@@ -873,8 +876,8 @@ the three packages, named here so that changing one is a change to this table.
 | a hub thread's call onto the loop | `CHANNEL_CALL_TIMEOUT_S` 15 | | |
 | address rotation: the pause before the next address of the set | | `AGENT_ROTATE_DELAY_S` 1 | `CLIENT_ROTATE_DELAY_S` 1 |
 
-Every number is seconds except the two rows in bytes and the count of
-streams. The client's credit and frame size hold on every stream that
+Every number is seconds except the two rows in bytes and the counts of
+streams, sources and datagrams. The client's credit and frame size hold on every stream that
 has binary frames, `shell` and `connect` alike. The hello timeout and the
 admission timeout both run: a socket closes when either ends first, so the
 handshake, the upgrade and the `hello` together fit in 30 seconds and the
@@ -1108,7 +1111,7 @@ the whole file back.
 | Module | What `details` reports, and what import reads |
 | --- | --- |
 | Samba | `testparm -s` parsed into the global section and each share, `pdbedit -L` into the user list |
-| Podman | `podman ps -a --format json` and `podman inspect`: each container's image, ports, volumes, environment, and whether a unit exists; the registry mirrors |
+| Podman | `podman ps -a --format json` and `podman inspect`: each container's image, ports, volumes, environment, and whether a unit exists; its `host_bindings`, one `{address, port, protocol}` per published host port, `protocol` being `tcp` or `udp` and `address` empty for every address; the registry mirrors |
 | ZFS | pools, vdevs and datasets; there is no wanted pool list, so nothing is imported |
 | Gitea | the hub's own instance; a hand-installed one reports as running on its port and is not imported |
 | VS Code | each server's account, port, url and whether it runs; nothing is imported |
@@ -1194,7 +1197,7 @@ what the entry's `payload` names:
 | `type` | `payload` | An entry is in the list while |
 | --- | --- | --- |
 | `web` | `{url, is_token_required}`, `is_token_required` present and true only on a VS Code, code-server or CloudCLI instance, whose page opens with a token the `service` stream hands | a device's Gitea module reports a URL, a device's VS Code, code-server or CloudCLI module runs an instance, or an `http` record is declared |
-| `port` | `{host, port}` | a device's Podman container publishes a host port, or a `generic_tcp` record is declared |
+| `port` | `{host, port, protocol}`, `protocol` being `tcp` or `udp`; it is an added field and keeps `PROTOCOL`, and a reader that finds none reads `tcp`. One entry has one protocol, so a number published on both is two entries; a container's UDP entry has the id of its TCP one with `_udp` after it, `podman_<device>_<container>_<port>_udp` | a device's Podman container publishes a host port on either protocol, one entry for each item of its `host_bindings` (a report with no `host_bindings`, from an agent before 0.5.0, gives each `host_ports` number as `tcp`), or a `generic_tcp` or `generic_udp` record is declared |
 | `ai` | `{endpoint, protocol, models}`, `protocol` being `openai` | the AI gateway is installed and enabled |
 | `file` | `{protocol, host, share, users}`, `protocol` being `smb`; `users` is the share's `valid_users`, or every user of the device's Samba module when the share names none, and empty on a declared record; it is an added field, absent from a hub before 0.5.0, and keeps `PROTOCOL` | a device's Samba module reports the share, or a `samba` record is declared |
 | `rdp` | `{protocol, host, port, attention, platform_os}`, `protocol` being `rustdesk`, `platform_os` the sharing machine's `linux`, `windows` or `darwin` | a machine keeps reporting that it shares its desktop; `attention` is what somebody must do at that machine before a peer sees the desktop, as a code, empty when nothing is in the way and always empty from a Mac |
@@ -1207,7 +1210,11 @@ address a caller is given"). A client shows it to the person and dials none
 of it: every byte to a service goes over a `connect` stream.
 `source` is `module`, `declared` or `device`. `is_healthy` is the module's own
 health, the declared record's last probe, or true for a share a machine is
-reporting now, and empty on a record no probe has reached.
+reporting now, and empty on a record no probe has reached. A `generic_udp`
+record is never probed, so its health stays empty. Only `false` is
+unhealthy: an entry with empty health carries no health word and keeps its
+actions ([client.md](client.md), "The button rule"). A container's
+entry on either protocol is healthy while the container runs.
 
 `description` is the English provenance line the composer writes, and
 `description_code` names the same provenance for a surface that words it in
@@ -1256,8 +1263,8 @@ is added without a change to the protocol; a kind is added by a row here.
 | client, to the hub | `service` | `{id}`: one published entry, or `{is_panel: true}`: a sign-in to the hub's own panel. The close is the whole answer, its `params` the material that entry takes from the hub and its `code` the reason it takes none; a new service type adds no kind |
 | client, to the hub | `shell` | `{device_id, cols, rows, session_id, is_resumed, is_shared}`: a shell on a managed machine, which the hub opens as the agent's own `shell` with the same `session_id`, `is_resumed` and `is_shared`, stamped `owner: client:<id>`, and relays terminal bytes both ways, each side under the other's credit; closed with `params: {exit_code}`, or refused `binding_unknown`, `client_disabled`, `permission_denied {kind: terminal}` (no `terminal`, or a machine outside its device list) or `agent_offline {device}` before any agent stream opens |
 | client, to the hub | `command` | `{module: agent, verb: resize, shell, cols, rows}`, `shell` being the client's own `shell` stream id, which the hub maps to the agent's; closed empty once sent on, `shell_unknown {shell}` when no such shell is open. `{module: agent, verb: persist, session_id, is_persistent, is_shared}` and `{module: agent, verb: stop_session, session_id}` go unchanged to the machine holding the session, the one this client's open `shell` names for the id or else the online machine whose report lists it, and close with the agent's close; `session_unknown {session_id}` when no machine holds it, `session_not_owned {session_id}` for a `persist` on a session the machine reports under another owner, and the `shell` stream's permission refusals for that machine. A `persist` names only the flags it carries. `verb_unknown` for any other module or verb. A hub before 0.4.0 closes both kinds `kind_unknown`, which a client reads as a refusal |
-| client, to the hub | `connect` | `{id}`, one published entry by the id a `service` stream takes, or `{is_panel: true}`, the hub's own panel: one TCP connection to that service. Bytes both ways under credit; closed empty when either end's socket ends, or with a refusal's code. "The connect stream" has the checks, the far ends and the codes |
-| hub, to an agent | `connect` | `{port}`: one TCP connection to `127.0.0.1:<port>` on the machine, a port the machine publishes now; bytes both ways under credit; closed empty when either socket ends, `port_not_published {port}` for any other port, `connect_failed {reason}` when the dial fails |
+| client, to the hub | `connect` | `{id}`, one published entry by the id a `service` stream takes, or `{is_panel: true}`, the hub's own panel: one TCP connection to that service, or every datagram of one UDP `port` entry. Bytes both ways under credit; closed empty when either end's socket ends, or with a refusal's code. "The connect stream" has the checks, the far ends and the codes |
+| hub, to an agent | `connect` | `{port, protocol}`, `protocol` being `tcp` or `udp` and `tcp` when absent: one TCP connection to `127.0.0.1:<port>` on the machine, or every datagram of one UDP entry to that port, a port the machine publishes now on that protocol; bytes both ways under credit; closed empty when either socket ends, `port_not_published {port}` for any other port or protocol, `connect_failed {reason}` when the dial fails |
 
 Installing and uninstalling are no kind and no verb: they follow from `want`.
 
@@ -1341,10 +1348,12 @@ page"), and never at the entry's address.
 ### The connect stream
 
 A `connect` stream carries the bytes of one TCP connection between a client
-and one service the hub publishes, or the hub's own panel. With it a client
-reaches every service through the hub's agent port and dials nothing else.
-A client opens one stream per connection its local listener accepts
-([client.md](client.md), "The local port table").
+and one service the hub publishes, or the hub's own panel, or every datagram
+of one UDP `port` entry. With it a client reaches every service through the
+hub's agent port and dials nothing else. A client opens one stream per
+connection its local listener accepts, and one stream for a UDP entry for as
+long as that entry is forwarded ([client.md](client.md), "The local port
+table").
 
 The hub judges the `open` before it dials anything. The checks are the
 `service` stream's, in its order, with the stream limit among them;
@@ -1364,7 +1373,7 @@ The far end follows from where the entry is, and the hub alone dials it:
 
 | The entry | The hub connects the stream to |
 | --- | --- |
-| provided by a managed machine, `source` `module` or `device` | that machine's agent, with `connect {port}`; `agent_offline {device}` when the machine has no socket, and the same code when its socket ends under an open stream |
+| provided by a managed machine, `source` `module` or `device` | that machine's agent, with `connect {port, protocol}`; `agent_offline {device}` when the machine has no socket, and the same code when its socket ends under an open stream |
 | a declared record, `source` `declared` | the record's own host and port, dialled by the hub itself, since the hub is on the LAN of the machines it serves |
 | the `ai` entry | the gateway on `127.0.0.1` at its `listen_port` |
 | the panel | the panel's HTTP port on `127.0.0.1`, over plain HTTP; the panel's login guards it as on the LAN ("The panel ports") |
@@ -1378,15 +1387,27 @@ closes with whatever the agent closed it with.
 
 The agent's end dials `127.0.0.1:<port>`, or the host address a container
 port is published on when it names one, and only a port the machine
-publishes at that moment ([agent.md](agent.md), "The connect stream"); any
-other port is refused `port_not_published {port}`.
+publishes at that moment on the stream's protocol ([agent.md](agent.md), "The
+connect stream"); any other port, and a number published on the other
+protocol alone, is refused `port_not_published {port}`.
 
 | Concern | Rule |
 | --- | --- |
 | Bytes | Binary frames both ways, each at most the sender's chunk size, under the receiver's credit, with the `shell` stream's window and chunk sizes. The hub relays each side under the other's credit, as it does a client's `shell`. |
 | End | End of file on either end's socket closes the stream with empty params once everything read from that socket is sent. The side that receives the close writes what it holds and closes its own socket. There is no half-close. |
 | A dropped socket | A client socket that ends ends every `connect` stream on it, and the hub closes the far ends. |
-| Transport | TCP alone. |
+| Transport | TCP for every entry, and UDP for a `port` entry whose `protocol` is `udp`. |
+
+A UDP stream is the one stream of a UDP entry, and its rules differ from a
+TCP stream's where a datagram differs from a byte stream:
+
+| Concern | Rule |
+| --- | --- |
+| Frame | One datagram is one binary frame: `<u32 stream id><u16 source, big-endian><the datagram>`. `source` is the port the datagram left from on the client's machine, and towards the client it names the local program the reply is for. A frame shorter than the two source bytes is dropped. The largest datagram, 65507 bytes, fits one frame of `CHANNEL_CHUNK_BYTES`, so nothing is split or joined; a datagram of zero bytes is a frame of two bytes and is carried. |
+| Credit | Counted on the bytes after the stream id, as on every stream. A sender holding less credit than a frame needs drops the datagram; it does not wait and keeps no queue. A receiver grants back what it took once it has passed the datagram on or dropped it. The hub relays each frame unchanged, source bytes included, and drops a frame for a side that has granted too little, granting the sending side its bytes back all the same. |
+| The far end | The agent for a machine's port, the hub itself for a declared record, keeps for the stream a table from `source` to one connected UDP socket to the target: `127.0.0.1`, the address a binding names, or the record's host. A datagram from a new `source` gets a socket; a reply goes into the stream with its socket's `source`. A source with no datagram either way for `CHANNEL_UDP_IDLE_TIMEOUT_S` has its socket closed and is forgotten. A table holds at most `CHANNEL_UDP_SOURCES_MAX` sources, and one more replaces the one idle the longest. |
+| Errors | An error on a source's socket, a port the system reports unreachable or a send that fails, loses that datagram and nothing else, and the stream stays open. A first socket that cannot be opened at all closes the stream `connect_failed {reason}` with the TCP reasons. |
+| End | The stream has no idle close. It ends when the client closes it, when the hub or the agent closes it with a code, `agent_offline`, `permission_denied` after a change on the Clients page or `port_not_published` once the port is no longer published, or with the client's socket. It holds one of the socket's `CHANNEL_CONNECT_STREAMS_MAX` streams while it is open. |
 
 ### The rules the details settle
 
