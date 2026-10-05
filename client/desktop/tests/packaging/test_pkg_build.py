@@ -93,12 +93,95 @@ def test_only_the_scripts_given_are_written_and_executable(tmp_path):
     assert (scripts / "postinstall").stat().st_mode & 0o111
 
 
-def test_scripts_are_handed_to_pkgbuild(monkeypatch, tmp_path):
-    commands = []
+def fake_tools(commands: list):
+    """A pkgbuild and productbuild that record and write their output; the
+    analysis lists one app holding one app."""
 
     def run(command):
         commands.append(list(command))
+        if "--analyze" in command:
+            Path(command[-1]).write_bytes(plistlib.dumps(ANALYZED))
+            return
         Path(command[-1]).write_bytes(b"xar!")
+
+    return run
+
+
+# What pkgbuild --analyze writes for the agent's root: RustDesk.app, as its
+# defaults stand.
+ANALYZED = [
+    {
+        "BundleHasStrictIdentifier": True,
+        "BundleIsRelocatable": True,
+        "BundleIsVersionChecked": True,
+        "BundleOverwriteAction": "upgrade",
+        "RootRelativeBundlePath": "Applications/RustDesk.app",
+        "ChildBundles": [
+            {
+                "BundleOverwriteAction": "",
+                "RootRelativeBundlePath": (
+                    "Applications/RustDesk.app/Contents/Frameworks/x.framework"
+                ),
+            }
+        ],
+    }
+]
+
+
+def test_every_bundle_is_pinned_where_the_payload_puts_it(monkeypatch, tmp_path):
+    """Installer moves a relocatable bundle to where one of the same
+    identifier lies, and skips one whose installed copy is not older."""
+    commands = []
+    written = {}
+    monkeypatch.setattr(pkg_build, "_run", fake_tools(commands))
+    monkeypatch.setattr(pkg_build.shutil, "which", lambda name: f"/usr/bin/{name}")
+    original = pkg_build.write_component_plist
+
+    def keep(package_root, path):
+        original(package_root, path)
+        written["plist"] = plistlib.loads(path.read_bytes())
+        return path
+
+    monkeypatch.setattr(pkg_build, "write_component_plist", keep)
+
+    pkg_build.build(
+        tmp_path / "root",
+        tmp_path / "out.pkg",
+        identifier="com.neutrino.agent",
+        version="9.9.9",
+    )
+
+    plist = tmp_path / "com.neutrino.agent.component.plist"
+    assert commands[0] == [
+        "pkgbuild",
+        "--analyze",
+        "--root",
+        str(tmp_path / "root"),
+        str(plist),
+    ]
+    pkgbuild = commands[1]
+    assert pkgbuild[pkgbuild.index("--component-plist") + 1] == str(plist)
+    (app,) = written["plist"]
+    assert app["BundleIsRelocatable"] is False
+    assert app["BundleIsVersionChecked"] is False
+    assert app["BundleHasStrictIdentifier"] is True
+    assert app["BundleOverwriteAction"] == "upgrade"
+    assert app["RootRelativeBundlePath"] == "Applications/RustDesk.app"
+    assert app["ChildBundles"] == [
+        {
+            "BundleIsRelocatable": False,
+            "BundleOverwriteAction": "",
+            "RootRelativeBundlePath": (
+                "Applications/RustDesk.app/Contents/Frameworks/x.framework"
+            ),
+        }
+    ]
+    assert not plist.exists()
+
+
+def test_scripts_are_handed_to_pkgbuild(monkeypatch, tmp_path):
+    commands = []
+    run = fake_tools(commands)
 
     monkeypatch.setattr(pkg_build, "_run", run)
     monkeypatch.setattr(pkg_build.shutil, "which", lambda name: f"/usr/bin/{name}")
@@ -111,7 +194,7 @@ def test_scripts_are_handed_to_pkgbuild(monkeypatch, tmp_path):
         scripts_dir=tmp_path / "scripts",
     )
 
-    pkgbuild = commands[0]
+    pkgbuild = commands[1]
     assert pkgbuild[pkgbuild.index("--scripts") + 1] == str(tmp_path / "scripts")
     assert pkgbuild[-3:] == [
         "--install-location",
@@ -128,12 +211,7 @@ def test_a_floor_given_takes_the_strongest_compression_it_reads(
     monkeypatch, tmp_path, min_os_version, expected
 ):
     commands = []
-
-    def run(command):
-        commands.append(list(command))
-        Path(command[-1]).write_bytes(b"xar!")
-
-    monkeypatch.setattr(pkg_build, "_run", run)
+    monkeypatch.setattr(pkg_build, "_run", fake_tools(commands))
     monkeypatch.setattr(pkg_build.shutil, "which", lambda name: f"/usr/bin/{name}")
 
     pkg_build.build(
@@ -144,9 +222,9 @@ def test_a_floor_given_takes_the_strongest_compression_it_reads(
         min_os_version=min_os_version,
     )
 
-    pkgbuild = commands[0]
+    pkgbuild = commands[1]
     found = pkgbuild[
-        pkgbuild.index("--version") + 2 : pkgbuild.index("--install-location")
+        pkgbuild.index("--component-plist") + 2 : pkgbuild.index("--install-location")
     ]
     assert found == expected
 
@@ -311,3 +389,30 @@ def test_a_daemon_that_never_starts_fails_with_launchctl_s_status(tmp_path):
     assert status == 5
     assert calls.count("print system/com.x") == 60
     assert calls.count("bootstrap system /L/com.x.plist") == 5
+
+
+def test_a_bundle_inside_a_bundle_inside_a_bundle_is_kept_from_moving():
+    nested = [
+        {
+            "RootRelativeBundlePath": "Applications/A.app",
+            "ChildBundles": [
+                {
+                    "RootRelativeBundlePath": "Applications/A.app/B.framework",
+                    "ChildBundles": [
+                        {"RootRelativeBundlePath": "Applications/A.app/B/C.bundle"}
+                    ],
+                }
+            ],
+        }
+    ]
+
+    (top,) = pkg_build.pin_bundles(nested)
+
+    (child,) = top["ChildBundles"]
+    (grandchild,) = child["ChildBundles"]
+    assert top["BundleIsVersionChecked"] is False
+    assert child["BundleIsRelocatable"] is False
+    assert grandchild == {
+        "RootRelativeBundlePath": "Applications/A.app/B/C.bundle",
+        "BundleIsRelocatable": False,
+    }

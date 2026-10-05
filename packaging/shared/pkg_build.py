@@ -50,6 +50,21 @@ LAUNCHD_START_FUNCTION = """start_daemon() {
 }
 """
 
+# What every bundle in a payload is marked with in the component property
+# list. Installer moves a relocatable bundle to wherever a bundle of the same
+# identifier already lies, as it moved the agent's RustDesk.app into the
+# client's app; one whose version is checked is skipped when the installed
+# copy is newer or equal. Every top bundle goes where the payload puts it
+# and replaces what is there; a bundle inside one, which pkgbuild lists with
+# its path and an empty overwrite action alone, is only kept from moving.
+PINNED_BUNDLE = {
+    "BundleIsRelocatable": False,
+    "BundleIsVersionChecked": False,
+    "BundleHasStrictIdentifier": True,
+    "BundleOverwriteAction": "upgrade",
+}
+PINNED_CHILD_BUNDLE = {"BundleIsRelocatable": False}
+
 # The first bytes of every Mach-O file, thin or universal, either order.
 MACH_O_MAGICS = (
     b"\xcf\xfa\xed\xfe",
@@ -259,6 +274,8 @@ def build(
                 f"{tool} is needed to build a macOS installer: xcode-select --install"
             )
     component = target.parent / f"{identifier}.component.pkg"
+    component_plist = target.parent / f"{identifier}.component.plist"
+    write_component_plist(package_root, component_plist)
     command = [
         "pkgbuild",
         "--root",
@@ -267,6 +284,8 @@ def build(
         identifier,
         "--version",
         version,
+        "--component-plist",
+        str(component_plist),
     ]
     if scripts_dir is not None:
         command += ["--scripts", str(scripts_dir)]
@@ -277,6 +296,55 @@ def build(
         _run(["productbuild", "--package", str(component), str(target)])
     finally:
         component.unlink(missing_ok=True)
+        component_plist.unlink(missing_ok=True)
+
+
+def write_component_plist(package_root: Path, path: Path) -> Path:
+    """Write the component property list with every bundle pinned.
+
+    ``pkgbuild --analyze`` lists the bundles the root holds; each is given
+    :data:`PINNED_BUNDLE`, and each bundle inside one
+    :data:`PINNED_CHILD_BUNDLE`.
+
+    Args:
+        package_root: The directory standing in for the filesystem root.
+        path: Where the property list goes.
+
+    Returns:
+        The path written.
+
+    Raises:
+        SystemExit: When pkgbuild refuses.
+    """
+    _run(["pkgbuild", "--analyze", "--root", str(package_root), str(path)])
+    with path.open("rb") as stream:
+        bundles = plistlib.load(stream)
+    with path.open("wb") as stream:
+        plistlib.dump(pin_bundles(bundles), stream)
+    return path
+
+
+def pin_bundles(bundles: list, *, pinned_keys: dict = PINNED_BUNDLE) -> list:
+    """Every bundle of an analyzed component list, pinned. Pure.
+
+    Args:
+        bundles: What ``pkgbuild --analyze`` wrote: one dict per bundle,
+            with the bundles inside it under ``ChildBundles``.
+        pinned_keys: What each entry at this level is given.
+
+    Returns:
+        The same entries with ``pinned_keys`` set on each, and
+        :data:`PINNED_CHILD_BUNDLE` on every bundle inside one.
+    """
+    pinned = []
+    for bundle in bundles:
+        entry = dict(bundle, **pinned_keys)
+        if bundle.get("ChildBundles"):
+            entry["ChildBundles"] = pin_bundles(
+                bundle["ChildBundles"], pinned_keys=PINNED_CHILD_BUNDLE
+            )
+        pinned.append(entry)
+    return pinned
 
 
 def _run(command: list) -> None:
