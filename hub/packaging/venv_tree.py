@@ -840,6 +840,50 @@ def _drop_tk(staged_python: Path) -> None:
         path.unlink(missing_ok=True)
 
 
+def stop_hub_lines(*, indent: str = "    ") -> str:
+    """The removal scripts' lines that hand the network back and stop the hub.
+
+    The units are the code's own list, the panel's first, so a unit added
+    there is stopped by every package's removal without another edit.
+
+    Args:
+        indent: What each line starts with.
+
+    Returns:
+        Shell lines, each ending in a newline.
+    """
+    from neutrino_hub.system.constants import SYSTEM_MANAGED_UNITS
+    from neutrino_hub.system.units import SYSTEM_UNIT_TEMPLATES
+
+    units = [unit.removesuffix(".service") for unit in SYSTEM_MANAGED_UNITS.values()]
+    panel = "neutrino_hub_web"
+    units = [panel, *(unit for unit in units if unit != panel)]
+    templates = [
+        name.removesuffix("@.service")
+        for name in SYSTEM_UNIT_TEMPLATES
+        if name.endswith("@.service")
+    ]
+    lines = [
+        "# The network goes back to the machine while the hub's code is still",
+        "# here: the firewall, the engines it started, and the resolver.",
+        "nhub reset network >/dev/null 2>&1 || true",
+        f"for unit in {' '.join(units)}; do",
+        '    systemctl stop "${unit}.service" >/dev/null 2>&1 || true',
+        '    systemctl disable "${unit}.service" >/dev/null 2>&1 || true',
+        "done",
+        "# One instance per radio and per uplink, named at runtime, so each",
+        "# family is stopped by its pattern.",
+        f"for template in {' '.join(templates)}; do",
+        '    systemctl stop "${template}@*.service" >/dev/null 2>&1 || true',
+        "done",
+        "# The router unit stops without tearing anything down, so removing the",
+        "# package is where the firewall and the policy route go.",
+        "nft delete table inet neutrino >/dev/null 2>&1 || true",
+        "ip rule del fwmark 0x1 lookup 100 >/dev/null 2>&1 || true",
+    ]
+    return "".join(f"{indent}{line}\n" for line in lines)
+
+
 def panel_unit(documentation_url: str = "https://github.com/iffiX/neutrino") -> str:
     """The panel's systemd unit with the checkout's assumptions taken out.
 

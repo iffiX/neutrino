@@ -27,6 +27,7 @@ from venv_tree import (
     asset_name,
     build_environment,
     panel_unit,
+    stop_hub_lines,
     require_built_frontend,
     version,
     write,
@@ -117,20 +118,7 @@ else
 
 %preun
 if [ "$1" = 0 ]; then
-    for unit in neutrino_hub_web neutrino_hub_router neutrino_hub_xray neutrino_hub_dnsmasq neutrino_hub_cliproxyapi neutrino_hub_netbird neutrino_hub_easytier; do
-        systemctl stop "${{unit}}.service" >/dev/null 2>&1 || true
-        systemctl disable "${{unit}}.service" >/dev/null 2>&1 || true
-    done
-    # One instance per radio and per uplink, named at runtime rather than
-    # here, so each family is stopped by its pattern.
-    for template in neutrino_hub_dhcpcd neutrino_hub_hostapd neutrino_hub_supplicant; do
-        systemctl stop "${{template}}@*.service" >/dev/null 2>&1 || true
-    done
-    # The router unit stops without tearing anything down, so removing the
-    # package is where the firewall and the policy route go.
-    nft delete table inet neutrino >/dev/null 2>&1 || true
-    ip rule del fwmark 0x1 lookup 100 >/dev/null 2>&1 || true
-fi
+@STOP_HUB@fi
 
 %postun
 if [ "$1" = 0 ]; then
@@ -142,6 +130,7 @@ if [ "$1" = 0 ]; then
     rmdir /opt/neutrino 2>/dev/null || true
     rm -f /etc/systemd/system/neutrino_hub_*.service
     rm -f /etc/systemd/system/*.wants/neutrino_hub_*.service
+    rm -rf /etc/systemd/system/neutrino_hub_*.service.d
     echo "  Leaving /etc/neutrino/hub in place; remove it by hand if you"
     echo "  no longer need the node credentials and device keys it holds."
 fi
@@ -210,7 +199,7 @@ def main() -> int:
                 prune=PRUNE_UNTRACKED,
                 desktop=DESKTOP_ENTRY_NAME,
                 first_install=FIRST_INSTALL,
-            ),
+            ).replace("@STOP_HUB@", stop_hub_lines()),
             encoding="utf-8",
         )
         target = _build(spec, root, output_dir, package_version, arguments.architecture)
