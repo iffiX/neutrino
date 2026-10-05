@@ -90,7 +90,7 @@ The phone is on one hub's network at a time. While one hub's network is on, **Co
 
 A forward is the port on the phone's `127.0.0.1` that the app opens for one entry. A foreground service of the app holds every forward and every hub connection, so they keep running while you use other apps; its notification reads **Connected to** and the number of hubs. A forwarded row shows `→ 127.0.0.1:` and the port.
 
-On the **Web** and **Ports** screens, **Configure** on a row sets the **Local port**: **Auto** keeps the entry's own port when it is free and otherwise takes one from 20000 up, and **Fixed** takes a number from 1024 to 65535. **Configure** is greyed while the entry is forwarded.
+On the **Web** and **Ports** screens, **Configure** on a row sets the **Local port**: **Auto** keeps the entry's own port when it is free on the entry's protocol and otherwise takes one from 20000 up, and **Fixed** takes a number from 1024 to 65535. One number can be held once for TCP and once for UDP. **Configure** is greyed while the entry is forwarded.
 
 A screen whose forward cannot reach its service shows the code on the row:
 
@@ -115,6 +115,10 @@ The **Ports** screen lists each port the hubs publish, with the machine's addres
 
 1. Select **Connect** on the entry. The row adds `→ 127.0.0.1:` and the local port, and the button reads **Disconnect**.
 1. Select **Copy** to copy that loopback address, and paste it into the app on the phone that uses the port.
+
+A UDP entry reads `host:port/udp`, and once connected `→ 127.0.0.1:` with the local port and `/udp`; **Copy** copies the address without `/udp`. An app on the phone sends its datagrams to that local address, and the replies come back to it. A declared UDP port shows no health word, and **Connect** stays available.
+
+Everything the app sends goes through one TCP connection to the hub. A lost packet therefore holds up every stream on it until it is sent again, the UDP ones too. A UDP port through the hub suits question-and-answer traffic of small volume: DNS, time, discovery, a small game server. Voice, video and fast games need a direct path to the machine, which you set up as a subnet route in the overlay's own console, NetBird's or EasyTier's.
 
 ## AI
 

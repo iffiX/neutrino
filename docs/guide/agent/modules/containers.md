@@ -41,4 +41,4 @@ The first **Configure** takes the containers already on the machine as declarati
 
 ## Where it is published
 
-Each host port a container publishes is a row under **Ports** on the [Services](../../hub/services.md) page, described as published by that container's image. In the [Desktop client](../../client/desktop.md), it is an entry in the **Ports** panel with **Connect**.
+Each host port a container publishes is a row under **Ports** on the [Services](../../hub/services.md) page, described as published by that container's image. In the [Desktop client](../../client/desktop.md), it is an entry in the **Ports** panel with **Connect**. A port published with `/udp`, such as `5353:5353/udp`, is an entry of its own, and its address reads `host:port/udp`.

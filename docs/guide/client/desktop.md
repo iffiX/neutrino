@@ -170,8 +170,8 @@ Every program and every account on this computer can reach a forward while it li
 
 On the **Web** and **Ports** pages, **Configure** on a row opens the **Local port** choice:
 
-- **Auto** takes the entry's own port when nothing on this computer listens on it, on any address. Otherwise it takes the first free port from 20000 up. The client keeps that port for the entry, also after a restart.
-- **Fixed** takes the number you type, from 1024 to 65535. A number another entry holds is rejected with **Another entry holds port** and the number.
+- **Auto** takes the entry's own port when nothing on this computer listens on it, on any address, on the entry's protocol. Otherwise it takes the first free port from 20000 up. The client keeps that port for the entry, also after a restart.
+- **Fixed** takes the number you type, from 1024 to 65535. A number another entry of the same protocol holds is rejected with **Another entry holds port** and the number. One number can be held once for TCP and once for UDP.
 
 **Configure** is greyed while the entry is forwarded, with the reason **Disconnect first to change the local port.**
 
@@ -208,11 +208,15 @@ An entry the hub cannot reach is greyed and reads **Not reachable now**. A page 
 
 ## Ports
 
-The **Ports** page relays a port a hub publishes to this computer's loopback address. An entry is a container's host port on a managed machine, or a TCP port declared by hand on the hub's **Services** page.
+The **Ports** page relays a port a hub publishes to this computer's loopback address. An entry is a container's host port on a managed machine, or a TCP or UDP port declared by hand on the hub's **Services** page.
 
 - Select **Connect** on the entry.
 
 The button reads **Forwarding…**, then **Disconnect**, and the row adds `→ 127.0.0.1:` with the local port. Point any program on this computer at that address. Select **Disconnect** to end the forward.
+
+A UDP entry reads `host:port/udp`, and once connected `→ 127.0.0.1:` with the local port and `/udp`. A program on this computer sends its datagrams to that local address, and the replies come back to it. A declared UDP port shows no health word, and **Connect** stays available.
+
+Everything this client sends goes through one TCP connection to the hub. A lost packet therefore holds up every stream on it until it is sent again, the UDP ones too. A UDP port through the hub suits question-and-answer traffic of small volume: DNS, time, discovery, a small game server. Voice, video and fast games need a direct path to the machine, which you set up as a subnet route in the overlay's own console, NetBird's or EasyTier's.
 
 ## AI
 
