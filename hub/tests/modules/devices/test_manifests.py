@@ -27,9 +27,28 @@ DOWNLOAD_FIELDS = ("url", "github_repo", "asset_pattern", "download")
 GITEA_VERSION = "1.27.3"
 # The checksums dl.gitea.com publishes beside each release binary, in its
 # own .sha256 files. Each is a published checksum of a public download.
+# Each platform key to the asset's name after the version, and its digest.
 GITEA_DIGESTS = {
-    "linux-amd64": "4da93c2c10b6980c359bcb86d5573ebfd7770e2e151756534edee24c8c12d971",  # scan: allow
-    "linux-arm64": "04c086d36dba793546e331484a9da34571763efdfa77dc526cc98e0f10917e7b",  # scan: allow
+    "linux-amd64": (
+        "linux-amd64",
+        "4da93c2c10b6980c359bcb86d5573ebfd7770e2e151756534edee24c8c12d971",  # scan: allow
+    ),
+    "linux-arm64": (
+        "linux-arm64",
+        "04c086d36dba793546e331484a9da34571763efdfa77dc526cc98e0f10917e7b",  # scan: allow
+    ),
+    "darwin-amd64": (
+        "darwin-10.12-amd64",
+        "23964155add4490ed73733fa90ea63154b724ab6fe389b7a979db4ef3d7ed8ce",  # scan: allow
+    ),
+    "darwin-arm64": (
+        "darwin-10.12-arm64",
+        "fd83383e05a4185e8f852563a7599f5d8f3e18ede00d412c0f9f044771aef162",  # scan: allow
+    ),
+    "windows-amd64": (
+        "windows-4.0-amd64.exe",
+        "d9ed1fc48ec33a8cb97d7fed3882b4e159efc3fcae3a77d0d240e250d5bf6e21",  # scan: allow
+    ),
 }
 
 VSCODE_VERSION = "1.140.0"
@@ -167,14 +186,20 @@ def test_gitea_pins_the_release_binary_and_its_published_digest_per_machine():
     assert manifest["corresponding_source"] == (
         f"https://github.com/go-gitea/gitea/tree/v{GITEA_VERSION}"
     )
-    for key, digest in GITEA_DIGESTS.items():
+    assert set(manifest["platforms"]) == set(GITEA_DIGESTS)
+    for key, (asset, digest) in GITEA_DIGESTS.items():
         entry = manifest["platforms"][key]
         assert entry["url"] == (
-            f"https://dl.gitea.com/gitea/{GITEA_VERSION}/gitea-{GITEA_VERSION}-{key}"
+            f"https://dl.gitea.com/gitea/{GITEA_VERSION}/gitea-{GITEA_VERSION}-{asset}"
         )
         assert entry["sha256"] == digest
         assert entry["package_kind"] == "binary"
-        assert entry["packages"] == ["git"]
+        assert "cn_url" not in entry
+        assert entry["packages"] == (["git"] if key.startswith("linux") else [])
+    assert "gitea\\gitea.exe" in manifest["platforms"]["windows-amd64"]["verify"]
+    assert manifest["platforms"]["darwin-arm64"]["verify"] == (
+        '"/Library/Application Support/Neutrino/agent/state/gitea/gitea" --version'
+    )
 
 
 def test_gitea_resolves_by_machine_and_refuses_the_rest():
@@ -185,10 +210,18 @@ def test_gitea_resolves_by_machine_and_refuses_the_rest():
         "linux-arm64"
     )
     assert resolve_platform_entry(manifest, {**DEBIAN, "arch": "armhf"}) == ("", None)
+    windows = {"os": "windows", "family": "", "arch": "amd64", "version": "17763"}
+    assert resolve_platform_entry(manifest, windows)[0] == "windows-amd64"
+    assert resolve_platform_entry(manifest, {**windows, "arch": "arm64"}) == ("", None)
+    for arch in ("arm64", "amd64"):
+        mac = {"os": "darwin", "family": "", "arch": arch, "version": "12.3"}
+        assert resolve_platform_entry(manifest, mac)[0] == f"darwin-{arch}"
 
 
-def test_a_binary_package_is_recognised_by_its_elf_magic():
+def test_a_binary_package_is_recognised_by_its_elf_mach_o_or_pe_magic():
     assert looks_like_package(b"\x7fELF\x02\x01\x01", "binary")
+    assert looks_like_package(b"\xcf\xfa\xed\xfe\x0c\x00\x00\x01", "binary")
+    assert looks_like_package(b"MZ\x90\x00", "binary")
     assert not looks_like_package(b"<!doctype html>", "binary")
 
 

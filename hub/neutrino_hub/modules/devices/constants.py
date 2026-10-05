@@ -133,7 +133,9 @@ AGENT_MODULE_PACKAGE_MAGIC = {
     # An archive the agent unpacks one member of: VS Code's CLI.
     "tar": (b"\x1f\x8b", b"BZh", b"\xfd7zXZ"),
     "zip": (b"PK\x03\x04",),
-    "binary": (b"\x7fELF",),
+    # A release binary: ELF on Linux, a 64-bit Mach-O on macOS, PE on
+    # Windows.
+    "binary": (b"\x7fELF", b"\xcf\xfa\xed\xfe", b"MZ"),
 }
 
 # The modules a device hosts from the hub's desired state, in the order the
