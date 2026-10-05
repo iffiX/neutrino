@@ -29,7 +29,15 @@ class ConstantsTest {
         val rustdesk = CLIENT_CARRIED_CORES.single { it.name == CLIENT_RUSTDESK_CORE }
         assertEquals("https://github.com/EasyTier/EasyTier/tree/v${easytier.version}", easytier.sourceUrl)
         assertEquals(CLIENT_RUSTDESK_SOURCE_URL, rustdesk.sourceUrl)
+        assertEquals("https://gitee.com/easytier/EasyTier/tree/v${easytier.version}", easytier.mainlandSourceUrl)
+        assertEquals("https://gitee.com/mirrors/rustdesk/tree/${rustdesk.version}", rustdesk.mainlandSourceUrl)
         for (core in Edition.carriedCores) {
+            val expected = if (Edition.current == EDITION_CN && core.mainlandSourceUrl.isNotEmpty()) {
+                core.mainlandSourceUrl
+            } else {
+                core.sourceUrl
+            }
+            assertEquals(core.name, expected, Edition.sourceUrlOf(core))
             val patch = "packaging/build/build_core_${core.name.lowercase()}.patch"
             val hasPatch = RepositoryFiles.file(patch).exists()
             assertEquals(core.name, hasPatch, core.patchUrl.isNotEmpty())
