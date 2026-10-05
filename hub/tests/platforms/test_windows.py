@@ -389,3 +389,47 @@ def test_powershell_that_does_not_answer_names_no_resolver(monkeypatch):
     )
 
     assert WindowsHubPlatform().system_resolvers() == []
+
+
+class _Icacls:
+    """icacls.exe, answering with the exit code a test set."""
+
+    def __init__(self, returncode: int = 0):
+        self.returncode = returncode
+        self.calls: list = []
+
+    def __call__(self, argv, **keywords):
+        self.calls.append((list(argv), keywords.get("creationflags")))
+        return subprocess.CompletedProcess(
+            argv, self.returncode, "", "Access is denied."
+        )
+
+
+def test_a_root_only_file_is_left_to_system_and_the_administrators(monkeypatch):
+    """ssh.exe refuses a key file another account can read, and the state
+    root's folders hand their entries down to every file in them."""
+    icacls = _Icacls()
+    monkeypatch.setattr(windows.subprocess, "run", icacls)
+
+    _platform().make_root_only("C:\\ProgramData\\Neutrino\\hub\\state\\relay\\key")
+
+    assert icacls.calls == [
+        (
+            [
+                "icacls.exe",
+                "C:\\ProgramData\\Neutrino\\hub\\state\\relay\\key",
+                "/inheritance:r",
+                "/grant:r",
+                "*S-1-5-18:F",
+                "*S-1-5-32-544:F",
+            ],
+            0x08000000,
+        )
+    ]
+
+
+def test_a_refused_access_list_is_raised(monkeypatch):
+    monkeypatch.setattr(windows.subprocess, "run", _Icacls(returncode=5))
+
+    with pytest.raises(OSError, match="Access is denied"):
+        _platform().make_root_only("C:\\key")

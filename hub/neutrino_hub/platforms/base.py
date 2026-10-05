@@ -81,6 +81,17 @@ class HubPlatform:
         """
         raise NotImplementedError(f"no process controller for {sys.platform}")
 
+    def make_root_only(self, path) -> None:
+        """Leave one file readable and writable by root alone.
+
+        Args:
+            path: The file.
+
+        Raises:
+            OSError: When its permissions cannot be set.
+        """
+        os.chmod(path, 0o600)
+
     def open_browser(self, url: str) -> bool:
         """Open a page in this machine's browser.
 
