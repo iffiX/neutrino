@@ -21,7 +21,10 @@ from starlette.requests import Request
 
 from neutrino_hub import edition
 from neutrino_hub.exceptions import VaultLockedError
+from neutrino_hub.modules.clients.ai_keys import settle_device_keys
 from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiConfigApplier, load_config
+from neutrino_hub.modules.devices.desired_state import DesiredStateStore
+from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.web import ws
 from neutrino_hub.web.agent_port import ChannelRequestLimitMiddleware
 from neutrino_hub.web.constants import WEB_CODE_BODY_INVALID, WEB_FRONTEND_DIST_DIR
@@ -37,6 +40,7 @@ from neutrino_hub.web.routers.agent import (
     module_gitea,
     module_podman,
     module_samba,
+    module_ai_tool,
     module_cloudcli,
     module_code_server,
     module_vscode,
@@ -90,6 +94,7 @@ API_ROUTERS = (
     module_vscode.router,
     module_code_server.router,
     module_cloudcli.router,
+    module_ai_tool.router,
     terminal.router,
 )
 
@@ -112,6 +117,7 @@ def create_app() -> FastAPI:
     app.add_middleware(OriginGuardMiddleware)
     app.add_middleware(PanelHttpsRedirectMiddleware, runtime=app.state.runtime)
     _settle_gateway_key()
+    _settle_device_keys()
     _start_samplers()
 
     for router in API_ROUTERS:
@@ -219,6 +225,28 @@ def _settle_gateway_key() -> None:
         LOGGER.info("gateway: %s", applier.apply())
     except (VaultLockedError, ValueError, OSError, subprocess.SubprocessError) as error:
         LOGGER.warning("gateway key not minted: %s", error)
+
+
+def _settle_device_keys() -> None:
+    """Revoke the device keys no AI tools setting holds on, at the panel's start.
+
+    A device key follows its machine's AI tools setting. A hub upgraded from
+    a build that minted one for every device with CloudCLI holds keys no
+    setting asks for; they go here, once, and the gateway reloads its list.
+    """
+    store = DesiredStateStore()
+    try:
+        enabled = [
+            device.id
+            for device in DeviceRegistry().all_stored()
+            if store.is_ai_tools_enabled(device.id)
+        ]
+        dropped = settle_device_keys(enabled)
+    except (VaultLockedError, ValueError, OSError, subprocess.SubprocessError) as error:
+        LOGGER.warning("device keys not settled: %s", error)
+        return
+    if dropped:
+        LOGGER.info("gateway: revoked the keys of %s", ", ".join(dropped))
 
 
 def _start_samplers() -> None:

@@ -172,7 +172,7 @@ def test_a_new_key_is_handed_to_the_gateway_as_one_to_await_and_a_revoke_is_not(
     assert handed == [material, None]
 
 
-# --- a CloudCLI device's key ---
+# --- a managed device's key ---
 
 
 def test_a_devices_key_is_minted_once_under_its_id_and_revoked(unlocked):
@@ -208,3 +208,43 @@ def test_a_devices_gateway_is_the_hubs_address_and_its_own_key(unlocked):
         "gateway_key": material,
     }
     assert ai_keys.device_gateway("dev-1", "")["gateway_url"] == ""
+
+
+def test_a_key_no_setting_holds_on_is_revoked_and_the_others_kept(
+    unlocked, monkeypatch
+):
+    applied: list = []
+    monkeypatch.setattr(ai_keys, "_apply", lambda **kwargs: applied.append(kwargs))
+    kept = ai_keys.ensure_device_key("dev-on", "on")
+    ai_keys.ensure_device_key("dev-cloudcli", "old")
+    applied.clear()
+
+    dropped = ai_keys.settle_device_keys(["dev-on"])
+    again = ai_keys.settle_device_keys(["dev-on"])
+
+    assert dropped == ["dev-cloudcli"]
+    assert again == []
+    assert applied == [{}]
+    assert ai_keys.ensure_device_key("dev-on", "on") == kept
+
+
+def test_the_served_models_are_probed_with_the_hubs_own_key(unlocked, monkeypatch):
+    from neutrino_hub.modules.cliproxyapi.config import CliproxyApiClientKey
+    from neutrino_hub.modules.cliproxyapi.ops import load_config, save_config
+
+    class Served:
+        def __init__(self):
+            self.asked: list = []
+
+        def served(self, *, port, client_key):
+            self.asked.append((port, client_key))
+            return True, ["m1", "m2"]
+
+    served = Served()
+    assert ai_keys.gateway_models(served) == []
+    config = load_config()
+    config.hub_key = CliproxyApiClientKey.generated("hub")
+    save_config(config)
+
+    assert ai_keys.gateway_models(served) == ["m1", "m2"]
+    assert served.asked == [(config.listen_port, config.hub_key.open_key())]

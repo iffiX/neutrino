@@ -9,7 +9,10 @@ about the machine, the address it sits at and the networks its shares
 answer, under one hash the agent compares against. The document is the
 ``state`` frame's sections: ``modules``, one entry
 ``{want, config, install, uninstall}`` per module ``modules.json`` names
-and has not settled, and ``desktop`` with the seat password.
+and has not settled, ``desktop`` with the seat password, and ``ai_tools``,
+the machine's AI tools setting from ``ai_tools.json`` with the gateway's
+address and the device's key, for the accounts the VS Code, CloudCLI and
+code-server instances name.
 
 A module the state does not mention is left as it is, and the agent
 reports it all the same. A module the person uninstalled is mentioned
@@ -38,11 +41,20 @@ from neutrino_hub.modules.credentials.vault import (
     seal_bytes,
     unseal_bytes,
 )
-from neutrino_hub.modules.channel.constants import CHANNEL_MODULE_WANTS
+from neutrino_hub.modules.channel.constants import (
+    CHANNEL_MODULE_STATE_ABSENT,
+    CHANNEL_MODULE_WANTS,
+)
 from neutrino_hub.modules.clients.ai_keys import device_gateway
+from neutrino_hub.modules.devices.ai_tools import (
+    clean_tool_configs,
+    resolved_tool_configs,
+)
 from neutrino_hub.modules.devices.catalog import resolved_modules
 from neutrino_hub.modules.devices.manifests import load_module_manifests
 from neutrino_hub.modules.devices.constants import (
+    DEVICE_AI_TOOL_MODULES,
+    DEVICE_AI_TOOLS_NAME,
     DEVICE_CLOUDCLI_LOGIN_KEY,
     DEVICE_CLOUDCLI_MODULE,
     DEVICE_CLOUDCLI_NPM_REGISTRIES,
@@ -131,7 +143,7 @@ def vscode_agent_config(stored: dict, platform: dict) -> dict:
 
 
 def cloudcli_agent_config(
-    stored: dict, platform: dict, gateway: dict, *, edition: str = EDITION
+    stored: dict, platform: dict, *, edition: str = EDITION
 ) -> dict:
     """What the agent is sent for CloudCLI.
 
@@ -140,14 +152,12 @@ def cloudcli_agent_config(
             secrets and the login it runs as.
         platform: The tuple the agent reported; only a Windows machine is
             sent a password.
-        gateway: ``{gateway_url, gateway_key}``: the AI gateway as the
-            device reaches it, and the device's own key.
         edition: The hub's edition, whose npm registry the agent installs
             CloudCLI from.
 
     Returns:
-        ``{gateway_url, gateway_key, npm_registry, npm_environment,
-        instances: [{account, port, web_password, token_secret, password}]}``,
+        ``{npm_registry, npm_environment, instances: [{account, port,
+        web_password, token_secret, password}]}``,
         ``npm_environment`` being what the manifest names for the edition,
         both secrets opened and the password taken from the instance's
         login.
@@ -173,8 +183,6 @@ def cloudcli_agent_config(
             sent["password"] = _login_password(login_id)
         instances.append(sent)
     return {
-        "gateway_url": str(gateway.get("gateway_url", "") or ""),
-        "gateway_key": str(gateway.get("gateway_key", "") or ""),
         "npm_registry": DEVICE_CLOUDCLI_NPM_REGISTRIES[edition],
         "npm_environment": dict(
             (load_module_manifests().get(DEVICE_CLOUDCLI_MODULE) or {})
@@ -182,6 +190,51 @@ def cloudcli_agent_config(
             .get(edition, {})
         ),
         "instances": instances,
+    }
+
+
+def ai_tools_agent_config(
+    stored: dict, accounts: list, platform: dict, gateway: dict, models: list
+) -> dict:
+    """What the agent is sent for the machine's AI tools.
+
+    Args:
+        stored: The setting, as :meth:`DesiredStateStore.ai_tools` reads it.
+        accounts: ``(account, login_id)`` of each account the setting acts
+            on, as :meth:`DesiredStateStore.ai_tool_accounts` gives them.
+        platform: The tuple the agent reported; only a Windows machine is
+            sent a password.
+        gateway: ``{gateway_url, gateway_key}``: the gateway as the device
+            reaches it, and the device's own key.
+        models: The names the gateway serves now.
+
+    Returns:
+        ``{is_enabled: false}`` while the setting is off, the gateway serves
+        no model, or the device has no key or no address for it; else
+        ``{is_enabled, base_url, api_key, tool_configs, accounts: [{account,
+        password}]}``, every Claude slot filled with the first served model
+        where none was chosen and ``password`` sent to a Windows machine
+        alone.
+    """
+    base_url = str(gateway.get("gateway_url", "") or "")
+    api_key = str(gateway.get("gateway_key", "") or "")
+    if not stored.get("is_enabled") or not models or not base_url or not api_key:
+        return {"is_enabled": False}
+    is_windows = platform.get("os") == VSCODE_PASSWORD_OS
+    sent_accounts = []
+    for account, login_id in accounts:
+        sent = {"account": account}
+        if is_windows and login_id:
+            sent["password"] = _login_password(login_id)
+        sent_accounts.append(sent)
+    return {
+        "is_enabled": True,
+        "base_url": base_url,
+        "api_key": api_key,
+        "tool_configs": resolved_tool_configs(
+            stored.get("tool_configs") or {}, str(models[0])
+        ),
+        "accounts": sent_accounts,
     }
 
 
@@ -588,6 +641,87 @@ class DesiredStateStore:
             return _fresh_token(secret, now)
         return ""
 
+    def ai_tools(self, key: str) -> dict:
+        """One device's AI tools setting.
+
+        Args:
+            key: The device key.
+
+        Returns:
+            ``{is_enabled, tool_configs}``, off and empty when the device has
+            none, the choices cleaned as the client cleans them.
+        """
+        stored = self.read(key, DEVICE_AI_TOOLS_NAME)
+        return {
+            "is_enabled": stored.get("is_enabled") is True,
+            "tool_configs": clean_tool_configs(stored.get("tool_configs") or {}),
+        }
+
+    def set_ai_tools(
+        self,
+        key: str,
+        *,
+        is_enabled: "bool | None" = None,
+        tool_configs: "dict | None" = None,
+    ) -> dict:
+        """Write one device's AI tools setting.
+
+        Args:
+            key: The device key.
+            is_enabled: Whether the machine's tools use the gateway; None
+                keeps the stored value.
+            tool_configs: The tool choices; None keeps the stored ones.
+
+        Returns:
+            The setting as written.
+        """
+        held = self.ai_tools(key)
+        if is_enabled is not None:
+            held["is_enabled"] = bool(is_enabled)
+        if tool_configs is not None:
+            held["tool_configs"] = clean_tool_configs(tool_configs)
+        self.write(key, DEVICE_AI_TOOLS_NAME, held)
+        return held
+
+    def ai_tool_accounts(self, key: str) -> list:
+        """The accounts one device's AI tools setting acts on.
+
+        Args:
+            key: The device key.
+
+        Returns:
+            ``(account, login_id, modules)`` for every account with an
+            instance in a VS Code, CloudCLI or code-server configuration
+            whose module is asked for and not withdrawn, sorted by account;
+            ``login_id`` the first instance's in that module order, empty
+            where none names one, and ``modules`` the modules it has an
+            instance in.
+        """
+        wanted = self.modules(key)
+        found: dict = {}
+        for module in DEVICE_AI_TOOL_MODULES:
+            entry = wanted.get(module)
+            if entry is None or entry["want"] == CHANNEL_MODULE_STATE_ABSENT:
+                continue
+            for instance in self.read(key, module).get("instances") or []:
+                if not isinstance(instance, dict):
+                    continue
+                account = str(instance.get("account", "") or "")
+                if not account:
+                    continue
+                login_id, modules = found.get(account, ("", []))
+                if module not in modules:
+                    modules = [*modules, module]
+                login_id = login_id or str(instance.get("login_id", "") or "")
+                found[account] = (login_id, modules)
+        return [
+            (account, found[account][0], found[account][1]) for account in sorted(found)
+        ]
+
+    def is_ai_tools_enabled(self, key: str) -> bool:
+        """Whether one device's AI tools setting is on."""
+        return self.ai_tools(key)["is_enabled"]
+
     def compose(
         self,
         key: str,
@@ -597,6 +731,7 @@ class DesiredStateStore:
         allowed_subnets: "list | tuple" = (),
         urls: "list | tuple" = (),
         hub_address: str = "",
+        ai_models: "list | tuple" = (),
     ) -> tuple:
         """One device's whole desired state and its hash.
 
@@ -611,11 +746,13 @@ class DesiredStateStore:
             allowed_subnets: The networks its shares answer.
             urls: Every address the hub answers the channel on.
             hub_address: The hub's own address on the device's network, for
-                the AI gateway CloudCLI reaches.
+                the AI gateway the machine's tools reach.
+            ai_models: The names the gateway serves now; none sends the AI
+                tools setting as off.
 
         Returns:
             ``(desired, hash)``, the document being
-            ``{modules, desktop, urls}``.
+            ``{modules, desktop, urls, ai_tools}``.
         """
         resolved = resolved_modules(platform)
         modules = {}
@@ -633,9 +770,7 @@ class DesiredStateStore:
             elif name == DEVICE_CODE_SERVER_MODULE:
                 config = code_server_agent_config(config)
             elif name == DEVICE_CLOUDCLI_MODULE:
-                config = cloudcli_agent_config(
-                    config, platform, device_gateway(key, hub_address)
-                )
+                config = cloudcli_agent_config(config, platform)
             modules[name] = {
                 "want": entry["want"],
                 "config": config,
@@ -645,6 +780,13 @@ class DesiredStateStore:
             "modules": modules,
             "desktop": {"seat_password": self.seat_password(key)},
             "urls": [str(url) for url in urls],
+            "ai_tools": ai_tools_agent_config(
+                self.ai_tools(key),
+                [entry[:2] for entry in self.ai_tool_accounts(key)],
+                platform,
+                device_gateway(key, hub_address),
+                list(ai_models),
+            ),
         }
         return desired, state_hash(desired)
 

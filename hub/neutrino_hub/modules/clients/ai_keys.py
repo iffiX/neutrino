@@ -1,4 +1,4 @@
-"""The gateway key each client is handed, and each CloudCLI device's.
+"""The gateway key each client is handed, and each managed device's.
 
 One :class:`CliproxyApiClientKey` per client, labelled ``client/<name>``:
 minted the first time the client connects with the vault unlocked, revoked
@@ -6,10 +6,12 @@ when it is disabled or deleted, minted again when it is enabled. The key's
 id lives on the client record; the material lives sealed in the gateway's
 own config and is handed to the client as a ``service`` stream's close.
 
-One more per managed device whose CloudCLI module is enabled, labelled
+One more per managed device whose AI tools setting is on, labelled
 ``device/<name>`` and kept under the device's id in the gateway's
-``device_keys``: minted when the module's instances are saved, revoked when
-the module is withdrawn, and handed to the device in its desired state.
+``device_keys``: minted when the setting goes on, revoked when it goes off
+and when the device is removed, and handed to the device in its desired
+state's ``ai_tools`` section. A key no setting holds on, as one minted for
+CloudCLI by an earlier build, is revoked when the panel starts.
 """
 
 from neutrino_hub.modules.clients.constants import (
@@ -147,6 +149,50 @@ def device_gateway(device_id: str, hub_address: str) -> dict:
         "gateway_url": f"http://{hub_address}:{held.listen_port}",
         "gateway_key": material,
     }
+
+
+def gateway_models(served_models) -> list:
+    """The names the gateway serves now, probed with the hub's own key.
+
+    Args:
+        served_models: The shared
+            :class:`neutrino_hub.modules.cliproxyapi.ops.CliproxyApiServedModelCache`.
+
+    Returns:
+        The served names; empty while the gateway has no hub key, the key
+        does not open, the gateway does not answer, or it serves nothing.
+    """
+    held = load_config()
+    if held.hub_key is None:
+        return []
+    try:
+        material = held.hub_key.open_key()
+    except ValueError:
+        return []
+    _, models = served_models.served(port=held.listen_port, client_key=material)
+    return list(models)
+
+
+def settle_device_keys(enabled_ids) -> list:
+    """Revoke every device key whose device's AI tools setting is not on.
+
+    Args:
+        enabled_ids: The devices whose setting is on.
+
+    Returns:
+        The ids whose key was revoked.
+    """
+    kept = set(enabled_ids)
+    with CONFIG_WRITE_LOCK:
+        config = load_config()
+        dropped = sorted(key for key in config.device_keys if key not in kept)
+        if not dropped:
+            return []
+        for device_id in dropped:
+            config.device_keys.pop(device_id, None)
+        save_config(config)
+    _apply()
+    return dropped
 
 
 def client_credential(

@@ -1,0 +1,9 @@
+{
+  "_comment": "One machine's AI tools setting, the Modules page's Global configuration, under config/devices/<id>/. is_enabled says whether the AI tools of every account with a VS Code, code-server or CloudCLI instance on the machine use the hub's AI gateway; the agent points them at it with cc-switch run as each account, and points them back when it goes off. tool_configs is the desktop client's own shape: Claude Code's four slots, Codex's model and reasoning effort, Gemini's model; a slot left out takes the gateway's first model. Off and empty on a new machine.",
+  "is_enabled": true,
+  "tool_configs": {
+    "claude": {"opus": "claude-opus-4"},
+    "codex": {"model_reasoning_effort": "high"},
+    "gemini": {}
+  }
+}

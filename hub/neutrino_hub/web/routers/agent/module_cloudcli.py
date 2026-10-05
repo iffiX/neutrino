@@ -6,14 +6,12 @@ instance's administrator password and token secret once and keeps both
 sealed in the device's ``cloudcli.json``; the agent receives them opened. A
 Windows machine starts an instance as its account only with that account's
 password, so each instance there names a login from the Credentials page.
-Saving the instances gives the device its own key to the AI gateway. Each
-instance is published to clients as a web entry they open at the device's
+Each instance is published to clients as a web entry they open at the device's
 address with a token the ``service`` stream mints for one open.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from neutrino_hub.modules.clients.ai_keys import device_gateway, ensure_device_key
 from neutrino_hub.modules.credentials.vault import SecretVault
 from neutrino_hub.modules.devices.constants import (
     DEVICE_CLOUDCLI_LOGIN_KEY,
@@ -102,10 +100,9 @@ def update_settings(
     """Replace the instances.
 
     An instance's password and token secret are generated the first time
-    its account is saved, and sealed beside it; the device's gateway key is
-    minted when it holds none. The agent checks the instances as it will
-    receive them: each with both secrets opened, the gateway and the
-    device's key, and on Windows its login's password.
+    its account is saved, and sealed beside it. The agent checks the
+    instances as it will receive them: each with both secrets opened, and
+    on Windows its login's password.
 
     Args:
         update: The device and its instances.
@@ -160,13 +157,7 @@ def update_settings(
             for instance in update.instances
         ]
     }
-    ensure_device_key(context.key, context.device.name)
-    scope = runtime.device_scope.get(context.key)
-    sent = cloudcli_agent_config(
-        stored,
-        platform,
-        device_gateway(context.key, scope.hub_address if scope is not None else ""),
-    )
+    sent = cloudcli_agent_config(stored, platform)
     store_config(runtime, context, sent, stored=stored)
     return device_view(runtime, context)
 

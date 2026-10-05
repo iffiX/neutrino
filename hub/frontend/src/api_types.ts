@@ -1523,6 +1523,39 @@ export interface CloudcliConfigUpdate {
   instances: CloudcliInstance[];
 }
 
+/** A tool's choices: Claude's slots, Codex's model and effort, Gemini's model. */
+export type AiToolConfigs = Record<string, Record<string, string>>;
+
+/** One account the AI tools setting acts on, and what the machine says. */
+export interface AiToolAccountView {
+  account: string;
+  /** The modules it has an instance in. */
+  modules: string[];
+  /** `switched`, `switched_back` or `failed`; empty before the machine
+   * reported the account. */
+  state: string;
+  code: string;
+  params: Record<string, string | number>;
+}
+
+/** One machine's AI tools setting: the Modules page's Global configuration. */
+export interface AiToolDeviceView {
+  device_id: string;
+  is_online: boolean;
+  is_enabled: boolean;
+  /** Whether the gateway serves a model now; the setting turns on only then. */
+  is_gateway_serving: boolean;
+  tool_configs: AiToolConfigs;
+  /** The names the gateway serves, for the Configure dialog's pickers. */
+  models: string[];
+  accounts: AiToolAccountView[];
+}
+
+export interface AiToolConfigUpdate {
+  device_id: string;
+  tool_configs: AiToolConfigs;
+}
+
 /** One code-server instance: the account it runs as and the port its
  * forwarder listens on. */
 export interface CodeServerInstance {

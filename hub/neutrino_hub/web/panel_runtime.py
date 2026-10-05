@@ -40,6 +40,7 @@ from neutrino_hub.modules.channel.port_guard import ChannelPortGuard
 from neutrino_hub.modules.channel.tickets import ChannelTicketRegistry
 from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiServedModelCache
 from neutrino_hub.modules.devices.catalog import DeviceCatalogCache
+from neutrino_hub.modules.clients.ai_keys import gateway_models
 from neutrino_hub.modules.devices.desired_state import DesiredStateStore
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.system.machine import machine_id
@@ -721,6 +722,11 @@ class PanelRuntime:
         """
         key = device if isinstance(device, str) else device.id
         scope = self.device_scope.get(key)
+        ai_models = (
+            gateway_models(self.served_models)
+            if self.desired_states.is_ai_tools_enabled(key)
+            else []
+        )
         desired, state_hash = self.desired_states.compose(
             key,
             self.device_platform.get(key, {}),
@@ -728,6 +734,7 @@ class PanelRuntime:
             allowed_subnets=self.share_subnets(),
             urls=self._device_urls(key),
             hub_address=scope.hub_address if scope is not None else "",
+            ai_models=ai_models,
         )
         return state_hash, desired
 

@@ -144,7 +144,8 @@ def test_compose_is_every_named_module_with_its_want_and_recipes_and_the_desktop
         DEVICE, PLATFORM, address="192.168.100.7", allowed_subnets=["192.168.100.0/24"]
     )
 
-    assert set(desired) == {"modules", "desktop", "urls"}
+    assert set(desired) == {"modules", "desktop", "urls", "ai_tools"}
+    assert desired["ai_tools"] == {"is_enabled": False}
     assert set(desired["modules"]) == {"samba", "gitea"}
     samba = desired["modules"]["samba"]
     assert set(samba) == {"want", "config", "install", "uninstall"}
@@ -194,7 +195,8 @@ def test_compose_names_the_hubs_addresses_under_the_hash(config):
     moved = store.compose(DEVICE, PLATFORM, urls=urls[:1])
 
     assert desired["urls"] == urls
-    assert set(desired) == {"modules", "desktop", "urls"}
+    assert set(desired) == {"modules", "desktop", "urls", "ai_tools"}
+    assert desired["ai_tools"] == {"is_enabled": False}
     assert digest == state_hash(desired)
     assert moved[0]["urls"] == urls[:1]
     assert moved[1] != digest
@@ -248,3 +250,124 @@ def test_the_sweep_removes_a_directory_no_stored_id_names_and_keeps_the_rest(
     assert (config / "devices" / "devices.json").exists()
     assert not (config / "devices" / "aa-bb-cc-dd-ee-ff").exists()
     assert store.forget_orphans({DEVICE}) == []
+
+
+# --- the machine's AI tools ---
+
+AI_GATEWAY = {"gateway_url": "http://192.168.100.1:8317", "gateway_key": "dev-key"}
+WINDOWS = {"os": "windows", "family": "", "arch": "amd64", "version": "26100"}
+
+
+def ai_tools_box(monkeypatch, *, models=("gw-model", "other")):
+    """Three modules naming accounts, the gateway reachable with a key."""
+    from neutrino_hub.modules.devices import desired_state
+
+    monkeypatch.setattr(desired_state, "device_gateway", lambda key, hub: AI_GATEWAY)
+    monkeypatch.setattr(
+        desired_state, "_login_password", lambda login_id: f"pw-{login_id}"
+    )
+    store = DesiredStateStore()
+    store.set_want(DEVICE, "vscode", "running")
+    store.set_want(DEVICE, "cloudcli", "running")
+    store.set_want(DEVICE, "code_server", "absent")
+    store.write(
+        DEVICE,
+        "vscode",
+        {"instances": [{"account": "bob", "port": 8001, "login_id": "login-bob"}]},
+    )
+    store.write(
+        DEVICE,
+        "cloudcli",
+        {
+            "instances": [
+                {"account": "alice", "port": 3001, "login_id": "login-alice"},
+                {"account": "bob", "port": 3002, "login_id": "login-other"},
+            ]
+        },
+    )
+    store.write(DEVICE, "code_server", {"instances": [{"account": "carol", "port": 9}]})
+    return store, list(models)
+
+
+def test_the_ai_tools_accounts_are_every_instance_of_a_module_not_withdrawn(
+    config,
+    monkeypatch,
+):
+    store, _ = ai_tools_box(monkeypatch)
+
+    assert store.ai_tool_accounts(DEVICE) == [
+        ("alice", "login-alice", ["cloudcli"]),
+        ("bob", "login-bob", ["vscode", "cloudcli"]),
+    ]
+
+
+def test_a_setting_that_is_on_sends_the_gateway_the_key_and_the_accounts(
+    config, monkeypatch
+):
+    store, models = ai_tools_box(monkeypatch)
+    store.set_ai_tools(
+        DEVICE,
+        is_enabled=True,
+        tool_configs={
+            "claude": {"opus": "big", "nonsense": "x"},
+            "codex": {"model_reasoning_effort": "extreme"},
+            "lisp": {"model": "y"},
+        },
+    )
+
+    desired, _ = store.compose(DEVICE, PLATFORM, ai_models=models)
+
+    assert desired["ai_tools"] == {
+        "is_enabled": True,
+        "base_url": "http://192.168.100.1:8317",
+        "api_key": "dev-key",
+        "tool_configs": {
+            "claude": {
+                "default": "gw-model",
+                "opus": "big",
+                "sonnet": "gw-model",
+                "haiku": "gw-model",
+            },
+            "codex": {"model": "", "model_reasoning_effort": ""},
+            "gemini": {"model": ""},
+        },
+        "accounts": [{"account": "alice"}, {"account": "bob"}],
+    }
+
+
+def test_a_windows_machine_is_sent_each_accounts_login_password(config, monkeypatch):
+    store, models = ai_tools_box(monkeypatch)
+    store.set_ai_tools(DEVICE, is_enabled=True)
+
+    desired, _ = store.compose(DEVICE, WINDOWS, ai_models=models)
+
+    assert desired["ai_tools"]["accounts"] == [
+        {"account": "alice", "password": "pw-login-alice"},
+        {"account": "bob", "password": "pw-login-bob"},
+    ]
+
+
+def test_the_setting_is_sent_off_while_it_is_off_or_the_gateway_serves_nothing(
+    config,
+    monkeypatch,
+):
+    from neutrino_hub.modules.devices import desired_state
+
+    store, models = ai_tools_box(monkeypatch)
+    off, _ = store.compose(DEVICE, PLATFORM, ai_models=models)
+    store.set_ai_tools(DEVICE, is_enabled=True)
+    serving, served_hash = store.compose(DEVICE, PLATFORM, ai_models=models)
+    stopped, stopped_hash = store.compose(DEVICE, PLATFORM, ai_models=[])
+    monkeypatch.setattr(
+        desired_state,
+        "device_gateway",
+        lambda key, hub: {"gateway_url": "", "gateway_key": ""},
+    )
+    keyless, _ = store.compose(DEVICE, PLATFORM, ai_models=models)
+
+    assert off["ai_tools"] == {"is_enabled": False}
+    assert serving["ai_tools"]["is_enabled"] is True
+    assert stopped["ai_tools"] == {"is_enabled": False}
+    assert keyless["ai_tools"] == {"is_enabled": False}
+    assert served_hash != stopped_hash
+    assert store.ai_tools(DEVICE)["is_enabled"] is True

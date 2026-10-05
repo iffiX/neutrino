@@ -1,16 +1,16 @@
-"""The CloudCLI block: the instances, their logins, their secrets and the device's key.
+"""The CloudCLI block: the instances, their logins and their secrets.
 
 What these pin: the view reads the instances, each with its login and what
 the machine reports of it, and the accounts; a set is checked on the agent
-as the agent will receive it, both secrets opened, the gateway on the
-hub's address in the device's network with the device's own key, and on
-Windows each login's password; each instance's password and token secret
-are sealed once per account and kept across sets; two instances sharing an
-account or a port, a login the vault does not hold, and a Windows instance
-with no login are refused by code before the agent is asked; the state the
-agent is sent holds the opened secrets and never a seal or a login's id; a
-token minted for an instance is its secret's, for 60 seconds and one
-nonce; and withdrawing the module revokes the device's key.
+as the agent will receive it, both secrets opened and on Windows each
+login's password, with no gateway and no device key, which a set no longer
+mints; each instance's password and token secret are sealed once per
+account and kept across sets; two instances sharing an account or a port, a
+login the vault does not hold, and a Windows instance with no login are
+refused by code before the agent is asked; the state the agent is sent
+holds the opened secrets and never a seal, a login's id or the gateway; and
+a token minted for an instance is its secret's, for 60 seconds and one
+nonce.
 """
 
 import base64
@@ -31,7 +31,6 @@ from neutrino_hub.modules.devices.constants import (
 from neutrino_hub.modules.devices.desired_state import DesiredStateStore
 from neutrino_hub.modules.credentials.vault import unseal_bytes
 from neutrino_hub.modules.services.host_scope import HostScope
-from neutrino_hub.web.routers.agent import module as device_modules
 from neutrino_hub.web.routers.agent import module_cloudcli
 from tests.conftest import unlock_vault
 from tests.web.module_api_box import DEVICE, module_box
@@ -104,15 +103,14 @@ def test_the_view_reads_the_instances_what_the_machine_says_and_the_accounts(api
     assert view["accounts"] == ["alice", "bob"]
 
 
-def test_a_set_is_checked_as_the_agent_receives_it_with_the_devices_key(api, tmp_path):
+def test_a_set_is_checked_as_the_agent_receives_it_and_mints_no_key(api, tmp_path):
     client, runtime = api
     body = {"device_id": DEVICE, "instances": [{"account": "alice", "port": 3001}]}
 
     answer = client.post(f"{BASE}/set", json=body)
 
     assert answer.status_code == 200
-    held = load_config().device_keys[DEVICE]
-    assert held.name == "device/box"
+    assert DEVICE not in load_config().device_keys
     (instance,) = stored(tmp_path)
     assert set(instance) == {
         "account",
@@ -124,8 +122,6 @@ def test_a_set_is_checked_as_the_agent_receives_it_with_the_devices_key(api, tmp
     _device, module, checked = runtime.agent_sessions.validations[0]
     assert module == "cloudcli"
     assert checked == {
-        "gateway_url": f"http://{HUB}:8317",
-        "gateway_key": held.open_key(),
         "npm_registry": DEVICE_CLOUDCLI_NPM_REGISTRIES[EDITION],
         "npm_environment": (
             {}
@@ -154,12 +150,11 @@ def test_a_set_is_checked_as_the_agent_receives_it_with_the_devices_key(api, tmp
     assert len(runtime.agent_sessions.pushes) == 1
 
 
-def test_the_secrets_and_the_key_are_made_once_and_kept(api, tmp_path):
+def test_the_secrets_are_made_once_and_kept(api, tmp_path):
     client, _runtime = api
     body = {"device_id": DEVICE, "instances": [{"account": "alice", "port": 3001}]}
     client.post(f"{BASE}/set", json=body)
     first = stored(tmp_path)[0]
-    key_id = load_config().device_keys[DEVICE].id
 
     body["instances"].append({"account": "bob", "port": 3002})
     client.post(f"{BASE}/set", json=body)
@@ -168,7 +163,6 @@ def test_the_secrets_and_the_key_are_made_once_and_kept(api, tmp_path):
     assert alice["web_password_sealed"] == first["web_password_sealed"]
     assert alice["token_secret_sealed"] == first["token_secret_sealed"]
     assert bob["token_secret_sealed"] != alice["token_secret_sealed"]
-    assert load_config().device_keys[DEVICE].id == key_id
 
 
 @pytest.mark.parametrize(
@@ -253,7 +247,8 @@ def test_the_state_carries_the_opened_secrets_and_never_a_seal(
     assert set(instance) == {"account", "port", "web_password", "token_secret"} | (
         {"password"} if has_password else set()
     )
-    assert module["config"]["gateway_url"] == f"http://{HUB}:8317"
+    assert "gateway_url" not in module["config"]
+    assert "gateway_key" not in module["config"]
     assert module["install"]["kind"] == "cloudcli"
     assert module["install"]["package_kind"] == ("zip" if has_password else "tar")
     assert "sealed" not in json.dumps(desired)
@@ -279,26 +274,3 @@ def test_a_token_is_the_instances_secret_signing_an_expiry_and_a_nonce(api):
     assert raw[24:] == hmac.new(secret.encode(), raw[:24], hashlib.sha256).digest()
     assert first != second
     assert store.cloudcli_token(DEVICE, "nobody") == ""
-
-
-def test_withdrawing_the_module_revokes_the_devices_key(api, monkeypatch):
-    client, runtime = api
-    client.post(
-        f"{BASE}/set",
-        json={"device_id": DEVICE, "instances": [{"account": "alice", "port": 3001}]},
-    )
-    assert DEVICE in load_config().device_keys
-    monkeypatch.setattr(
-        device_modules,
-        "load_module_manifests",
-        lambda: {"cloudcli": {"installer": "hub", "platforms": {}}},
-    )
-
-    device_modules._set_want(
-        runtime,
-        device_modules.DeviceModuleRequest(device_id=DEVICE, module="cloudcli"),
-        "absent",
-    )
-
-    assert DEVICE not in load_config().device_keys
-    assert ai_keys.device_gateway(DEVICE, HUB) == {"gateway_url": "", "gateway_key": ""}

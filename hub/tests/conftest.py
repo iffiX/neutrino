@@ -554,6 +554,9 @@ class StubDesiredStates:
         self.settled.append(pair)
         return True
 
+    def is_ai_tools_enabled(self, key: str) -> bool:
+        return False
+
 
 class StubPublishedServices:
     """The published list as the paths that can move it reach for it.
