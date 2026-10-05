@@ -98,6 +98,10 @@ conventions explicit so nobody drifts.
      the three ports, how a path is grouped and named, refusals as
      `{code, params}`, every route, the channel's frames, sections and
      kinds, admission and versioning by protocol number.
+   - [design/connection.md](design/connection.md) — the one socket to the
+     agent port: what an unadmitted peer can cost the hub and the limits on
+     it, the ways in, what an admitted client reaches, what a client opens on
+     its own machine.
    - [design/modules/ai.md](design/modules/ai.md) — the AI gateway's behavior:
      how a request routes, the gateway-owned model namespace, what each AI
      panel surface owns, and how usage is metered.
