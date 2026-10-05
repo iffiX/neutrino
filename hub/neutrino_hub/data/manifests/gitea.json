@@ -1,5 +1,5 @@
 {
-  "_comment": "The git server, hub-tier: the cache fetches the pinned release binary from the vendor's downloads and the agent installs it beside git from the machine's own packages. Every sha256 is the one dl.gitea.com publishes in the release's own .sha256 file. MIT obliges the license notice beside the binary; corresponding_source names the exact tag.",
+  "_comment": "The git server, hub-tier: the cache fetches the pinned release binary from the vendor's downloads, the same version for every system. On Linux the agent installs it beside git from the machine's own packages; on macOS and Windows it installs no git and refuses gitea_git_missing until the machine has one. The Windows build is the one that runs git, not the gogit build. Every sha256 is the one dl.gitea.com publishes in the release's own .sha256 file. dl.gitea.com is reached from both editions, so no entry names a cn_url. MIT obliges the license notice beside the binary; corresponding_source names the exact tag.",
   "name": "gitea",
   "title": "Gitea",
   "kind": "gitea",
@@ -28,6 +28,42 @@
       "package_kind": "binary",
       "packages": ["git"],
       "verify": "/usr/local/bin/gitea --version",
+      "uninstall": {
+        "packages": [],
+        "post_uninstall": [],
+        "is_data_kept": true
+      }
+    },
+    "darwin-amd64": {
+      "url": "https://dl.gitea.com/gitea/1.27.3/gitea-1.27.3-darwin-10.12-amd64",
+      "sha256": "23964155add4490ed73733fa90ea63154b724ab6fe389b7a979db4ef3d7ed8ce", "_sha256_scan": "scan: allow",
+      "package_kind": "binary",
+      "packages": [],
+      "verify": "\"/Library/Application Support/Neutrino/agent/state/gitea/gitea\" --version",
+      "uninstall": {
+        "packages": [],
+        "post_uninstall": [],
+        "is_data_kept": true
+      }
+    },
+    "darwin-arm64": {
+      "url": "https://dl.gitea.com/gitea/1.27.3/gitea-1.27.3-darwin-10.12-arm64",
+      "sha256": "fd83383e05a4185e8f852563a7599f5d8f3e18ede00d412c0f9f044771aef162", "_sha256_scan": "scan: allow",
+      "package_kind": "binary",
+      "packages": [],
+      "verify": "\"/Library/Application Support/Neutrino/agent/state/gitea/gitea\" --version",
+      "uninstall": {
+        "packages": [],
+        "post_uninstall": [],
+        "is_data_kept": true
+      }
+    },
+    "windows-amd64": {
+      "url": "https://dl.gitea.com/gitea/1.27.3/gitea-1.27.3-windows-4.0-amd64.exe",
+      "sha256": "d9ed1fc48ec33a8cb97d7fed3882b4e159efc3fcae3a77d0d240e250d5bf6e21", "_sha256_scan": "scan: allow",
+      "package_kind": "binary",
+      "packages": [],
+      "verify": "powershell -NoProfile -Command \"$p = Join-Path $env:ProgramData 'Neutrino\\agent\\state\\gitea\\gitea.exe'; if (-not (Test-Path $p)) { exit 1 }; & $p --version; exit $LASTEXITCODE\"",
       "uninstall": {
         "packages": [],
         "post_uninstall": [],

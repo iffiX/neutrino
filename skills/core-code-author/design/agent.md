@@ -142,7 +142,8 @@ Removing the agent's package takes away what the agent added in order to
 run and to fence, and leaves what the machine serves. On every system the
 shares and the accounts stay as they are and the system's SMB server goes on
 serving them. The agent's own units, scheduled tasks, firewall rules and
-fence go with the package. An agent installed again finds the shares and
+fence go with the package, and so do its modules' Windows services, found
+by name as the rest are. An agent installed again finds the shares and
 accounts that were left and takes them back by the rule above: they are
 displayed, and the first report imports them.
 
@@ -268,7 +269,7 @@ connection"), and each also answers the agent's dial on loopback:
 | --- | --- |
 | Samba on Linux | every address; `hosts allow` names the networks the hub composed and `127.0.0.1` |
 | the file share on Windows and macOS | the system's SMB server on every address; the fence blocks every network outside the composed ones and leaves `127.0.0.0/8` and `::1` out of what it blocks |
-| Gitea | every address (`HTTP_ADDR = 0.0.0.0`) |
+| Gitea | every address (`HTTP_ADDR = 0.0.0.0`); on Windows the system firewall decides who on the LAN reaches it, and the module opens no port in it |
 | RustDesk's direct port | every address, as RustDesk opens it; the share is declared once the port answers on `127.0.0.1` |
 | a Podman container's published port | every address, or the one address it is published on, which the agent dials |
 | VS Code | `127.0.0.1` alone |
@@ -379,8 +380,9 @@ builds the package-backed runners only on a platform with `packages`. A
 platform with `smb_server` gets the file share, driving the SMB server the
 system carries, with nothing to install or uninstall; there, any other
 module the state names reads `unsupported`, never `failed`, beside the
-built-in RustDesk row. A platform with `hub_packages` gets the VS Code
-module, and macOS the code-server module beside it; on Linux both are among
+built-in RustDesk row. A platform with `hub_packages` gets the Gitea and
+VS Code modules, and macOS the code-server module beside them; on Linux all
+three are among
 the runners `packages` builds. On every
 system, software the hub sends down a package stream is unpacked into a
 directory of the module's own name under the state root, and that directory
@@ -392,7 +394,7 @@ only POSIX has is guarded, so one package imports on all three systems.
 | --- | --- | --- | --- |
 | Program, with cc-switch in its `bin` | `/opt/neutrino/agent` | `C:\Program Files\Neutrino\agent` | `/Library/Application Support/Neutrino/agent/app` |
 | Configuration root: the binding, the credentials, the desired state | `/etc/neutrino/agent` | `%ProgramData%\Neutrino\agent\config`, under `%ProgramData%\Neutrino\agent`, whose ACL, SYSTEM and the administrators alone, the `.msi` sets | `/Library/Application Support/Neutrino/agent/config`, mode 700 |
-| State root: configured marks, packages, the last reinstall, `vscode/`, `code_server/`, `cloudcli/`, `ai_tools/` | `/var/lib/neutrino/agent` | `%ProgramData%\Neutrino\agent\state` | `/Library/Application Support/Neutrino/agent/state`, mode 755 |
+| State root: configured marks, packages, the last reinstall, `vscode/`, `code_server/`, `cloudcli/`, `ai_tools/`, and on Windows and macOS `gitea/` and `gitea_data/` | `/var/lib/neutrino/agent` | `%ProgramData%\Neutrino\agent\state` | `/Library/Application Support/Neutrino/agent/state`, mode 755 |
 | Log | the journal | `%ProgramData%\Neutrino\agent\log\agent.log` | `/Library/Logs/Neutrino/agent/agent.log` |
 | Service | systemd `neutrino_agent.service` runs `nagent run` | the `neutrino_agent` service, LocalSystem, runs `nagent service run` | the `com.neutrino.agent` LaunchDaemon runs `nagent run` |
 | Control transport | Unix socket `/run/neutrino/agent/agent.sock` | named pipe `\\.\pipe\neutrino_agent`, its descriptor SYSTEM and the administrators | Unix socket `/var/run/neutrino/agent/agent.sock` |
@@ -449,7 +451,7 @@ module a system cannot run is left out on that system.
 | Module | Linux | Windows | macOS |
 | --- | --- | --- | --- |
 | File share | Samba | the system's own SMB server | the system's own SMB server |
-| Gitea | amd64 and arm64 | no | no |
+| Gitea | amd64 and arm64 | amd64 | arm64 and amd64 |
 | Containers (Podman) | yes | no | no |
 | ZFS storage | yes | no | no |
 | VS Code | glibc 2.28 and above, amd64 and arm64 | amd64 | arm64 and amd64 |
@@ -473,7 +475,8 @@ to `<account>.log` beside the CLI, and a CloudCLI install still running
 shows `run\install_<account>.log`; on macOS the LaunchDaemon's
 `StandardOutPath` and `StandardErrorPath` name
 `/Library/Logs/Neutrino/agent/<module>_<account>.log`, `<module>` being
-`vscode`, `code_server` or `cloudcli`.
+`vscode`, `code_server` or `cloudcli`. Gitea on Windows and macOS reads the
+end of its own log, `log/gitea.log` under its data directory.
 A source that cannot be read leaves one line in the agent's log naming it,
 so the next journal shows why. `journal` answers while an apply runs; it
 does not wait for the state to settle. Every log comes oldest line first,
@@ -687,6 +690,50 @@ Each instance a running module serves is published as one `web` entry,
 `is_token_required: true` and `description_code` `code_server_module`
 ([protocol.md](protocol.md), "The services section, one entry per published
 service").
+
+### Gitea
+
+The `gitea` module runs Gitea, the release binary its publisher builds
+(MIT), one instance per machine, on Linux, macOS and Windows, the way
+Gitea's own page "Installation from binary" describes. One applier per
+system sits behind one runner in `agent/neutrino_agent/modules/gitea/`, and
+the configuration, the rendered `app.ini`, the accounts made through the
+gitea CLI, the published `web` entry and the verbs are the same on every
+system.
+
+| | Linux | macOS | Windows |
+| --- | --- | --- | --- |
+| Binary | `/usr/local/bin/gitea` | `gitea/gitea` under the state root | `gitea\gitea.exe` under the state root |
+| Data: the database, the repositories, the log, `custom/` | `/var/lib/gitea` | `gitea_data/` under the state root, owned by the account, mode 700 | `gitea_data\` under the state root, SYSTEM and the administrators alone as the root is |
+| `app.ini` | `/etc/gitea/app.ini`, root and the group `git`, mode 640 | `gitea_data/custom/conf/app.ini`, the account's, mode 600 | `gitea_data\custom\conf\app.ini` |
+| Runs as | the system account `git` the module makes | the hidden account `neutrino_gitea`, made with `sysadminctl` the way the file share makes its accounts, with the full name `Neutrino Gitea`, the shell `/usr/bin/false` and the data directory as its home, and read back before it counts | LocalSystem, `RUN_USER` being `<computer name>$` as Gitea's page prescribes |
+| Service | `neutrino_gitea.service` | the LaunchDaemon `com.neutrino.gitea` with `UserName`, its output in `/Library/Logs/Neutrino/agent/gitea.log` | the service `neutrino_gitea`, made with `sc.exe`, started at boot and again after a failure |
+| Git | the distribution's `git`, installed with the binary | the command line tools' or Xcode's own `git`, else Homebrew's, never `/usr/bin/git` | Git for Windows, found on the machine's `Path` as the service reads it, else under `%ProgramFiles%\Git\cmd` |
+| SSH | the system's `sshd` as `git` | none; clones and pushes over HTTP | none; clones and pushes over HTTP |
+
+**Git is the machine's.** The module installs none on macOS and Windows: an
+install or an apply there that finds no usable `git` is refused
+`gitea_git_missing`, and `app.ini` names the one found in `[git] PATH`. On a
+Mac without the developer tools `/usr/bin/git` is a stub that opens a dialog
+on the screen, so it is never run and never named.
+
+**The binary comes from its publisher.** `data/manifests/gitea.json` pins
+the release at one version for every system: `linux-amd64`, `linux-arm64`,
+`darwin-10.12-amd64`, `darwin-10.12-arm64` and `windows-4.0-amd64`, each with
+the sha256 dl.gitea.com publishes beside it. The Windows build is the one
+that runs `git`, as on Linux; the `gogit` build is not used. The hub's cache
+fetches it and sends it down `package {module: gitea}`.
+
+**The accounts are made through the gitea CLI as the server's own account**:
+`runuser -u git` on Linux, a process with the account's uid, gid, home and
+`USER` on macOS, and the agent itself on Windows, which is LocalSystem as
+the service is.
+
+**Uninstall takes what the module added and keeps the data**: the unit,
+the LaunchDaemon or the service, the binary and `app.ini` go; the data
+directory and the account stay, so an install afterwards serves the same
+repositories and accounts. Removing the agent takes the LaunchDaemon and
+the service with its own ("One socket, everything on it").
 
 ## Two ports, one process
 

@@ -106,6 +106,8 @@ releases a supported family provides.
 | util-linux | any | `runuser` for stepping down to an account | `agent/neutrino_agent/platforms/linux.py:211` |
 | Windows PowerShell | 5.1, with the SmbShare, NetSecurity and LocalAccounts modules, all in Windows 10 1607 | the file share on Windows | `agent/neutrino_agent/modules/samba/windows_applier.py` |
 | `sharing`, `sysadminctl`, `pwpolicy`, `dscl`, `pfctl` | macOS 12 | the file share on macOS | `agent/neutrino_agent/modules/samba/darwin_applier.py` |
+| git | 2.0, Gitea's own floor | Gitea on every system; the machine's own on macOS and Windows, never installed by the module there | `agent/neutrino_agent/modules/gitea/` |
+| Gitea's release binaries | macOS 10.12 and Windows 10 by their builds, below the agent's own floors | the Gitea module on macOS and Windows | `hub/neutrino_hub/data/manifests/gitea.json` |
 | glibc | 2.28 | the VS Code server that Microsoft's CLI downloads for `serve-web`; below it the module reads as one the machine cannot run | `min_version` of the Linux entries in `hub/neutrino_hub/data/manifests/vscode.json` |
 | glibc | 2.28, VS Code's `min_version` | the Node.js build CloudCLI runs on | `min_version` of the Linux entries in `hub/neutrino_hub/data/manifests/cloudcli.json` |
 | glibc, libstdc++ | glibc 2.28 and `GLIBCXX_3.4.21` | code-server's standalone release builds, the only builds the module installs; on macOS they name no minimum beyond the agent's own; no Windows build is offered | `min_version` of the Linux entries in `hub/neutrino_hub/data/manifests/code_server.json` |

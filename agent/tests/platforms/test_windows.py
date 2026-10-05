@@ -1079,6 +1079,7 @@ def test_windows_removal_takes_the_modules_tasks_and_rules_and_leaves_the_hubs(
         ran.append((script, document))
         if script is windows_module.WINDOWS_ADDED_LIST_SCRIPT:
             return {
+                "services": ["neutrino_gitea", "neutrino_agent", "neutrino_hub"],
                 "tasks": [
                     "neutrino_vscode_ann",
                     "neutrino_cloudcli_install_bob",
@@ -1098,11 +1099,13 @@ def test_windows_removal_takes_the_modules_tasks_and_rules_and_leaves_the_hubs(
     script, document = ran[1]
     assert script is windows_module.WINDOWS_ADDED_REMOVE_SCRIPT
     assert document == {
+        "services": ["neutrino_gitea"],
         "tasks": ["neutrino_cloudcli_install_bob", "neutrino_vscode_ann"],
         "rules": ["neutrino_smb_fence", "neutrino_vscode_port_ann"],
         "state_root": "C:\\ProgramData\\Neutrino\\agent\\state",
     }
     assert removed == [
+        "service neutrino_gitea",
         "task neutrino_cloudcli_install_bob",
         "task neutrino_vscode_ann",
         "firewall rule neutrino_smb_fence",
@@ -1123,6 +1126,7 @@ def test_windows_removal_with_one_task_and_no_rules_reads_powershells_bare_value
 
     assert removed == ["task neutrino_vscode_ann"]
     assert ran[1]["rules"] == []
+    assert ran[1]["services"] == []
 
 
 def test_windows_removal_says_when_powershell_does_not_answer():

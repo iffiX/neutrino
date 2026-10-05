@@ -1,7 +1,7 @@
 """The rendered app.ini, checked for the choices that keep the box usable."""
 
 from neutrino_agent.modules.gitea.config import GiteaConfig
-from neutrino_agent.modules.gitea.renderer import GiteaConfigRenderer
+from neutrino_agent.modules.gitea.renderer import GiteaConfigRenderer, GiteaLayout
 
 SECRETS = {
     "SECRET_KEY": "sk",
@@ -53,3 +53,37 @@ def test_every_secret_lands():
 
 def test_the_ui_never_reaches_for_a_cdn():
     assert "OFFLINE_MODE = true" in render()
+
+
+def test_the_linux_layout_names_the_git_account_the_work_root_and_ssh():
+    rendered = render()
+
+    assert "RUN_USER = git\n" in rendered
+    assert "WORK_PATH = /var/lib/gitea\n" in rendered
+    assert "DISABLE_SSH = false\n" in rendered
+    assert "[git]" not in rendered
+    assert "[windows]" not in rendered
+
+
+def test_a_windows_layout_names_localsystem_its_paths_its_git_and_its_service():
+    config = GiteaConfig.from_dict({"secrets": SECRETS, "address": "192.168.100.7"})
+    layout = GiteaLayout(
+        run_user="NMXWIN$",
+        work_path="C:/ProgramData/Neutrino/agent/state/gitea_data",
+        git_path="C:/Program Files/Git/cmd/git.exe",
+        is_ssh_served=False,
+        windows_service_name="neutrino_gitea",
+    )
+
+    rendered = GiteaConfigRenderer(config=config, layout=layout).render()
+
+    data = "C:/ProgramData/Neutrino/agent/state/gitea_data"
+    assert "RUN_USER = NMXWIN$\n" in rendered
+    assert f"WORK_PATH = {data}\n" in rendered
+    assert f"PATH = {data}/data/gitea.db\n" in rendered
+    assert f"ROOT_PATH = {data}/log\n" in rendered
+    assert "DISABLE_SSH = true\n" in rendered
+    assert rendered.endswith(
+        "\n[git]\nPATH = C:/Program Files/Git/cmd/git.exe\n"
+        "\n[windows]\nSERVICE_NAME = neutrino_gitea\n"
+    )

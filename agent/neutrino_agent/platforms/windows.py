@@ -118,18 +118,26 @@ $code = Invoke-Icacls $d.directory '/grant' '*S-1-5-32-545:(OI)(CI)RX'
 if ($code -ne 0) { throw "icacls exited $code" }
 @{is_open = $true} | ConvertTo-Json -Compress
 """
-# The scheduled tasks and the firewall rules whose names carry a prefix.
+# The services, the scheduled tasks and the firewall rules whose names
+# carry a prefix.
 WINDOWS_ADDED_LIST_SCRIPT = """
+$services = @(Get-Service -Name "$($d.prefix)*" -ErrorAction SilentlyContinue |
+  ForEach-Object { [string]$_.Name })
 $tasks = @(Get-ScheduledTask -TaskName "$($d.prefix)*" -ErrorAction SilentlyContinue |
   ForEach-Object { [string]$_.TaskName })
 $rules = @(Get-NetFirewallRule -Name "$($d.prefix)*" -ErrorAction SilentlyContinue |
   ForEach-Object { [string]$_.Name })
-@{tasks = $tasks; rules = $rules} | ConvertTo-Json -Compress -Depth 3
+@{services = $services; tasks = $tasks; rules = $rules} | ConvertTo-Json -Compress -Depth 3
 """
-# Stops and unregisters the tasks named, ends every process whose command
-# line or program lies under the state root and their descendants, a child
-# never older than its parent, and removes the rules named.
+# Stops and deletes the services named, stops and unregisters the tasks
+# named, ends every process whose command line or program lies under the
+# state root and their descendants, a child never older than its parent,
+# and removes the rules named.
 WINDOWS_ADDED_REMOVE_SCRIPT = """
+foreach ($name in @($d.services)) {
+  Stop-Service -Name $name -Force -ErrorAction SilentlyContinue
+  & sc.exe delete $name | Out-Null
+}
 foreach ($name in @($d.tasks)) {
   Stop-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
   Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue
@@ -569,11 +577,13 @@ class WindowsPlatform(AgentPlatform):
             raise OSError(f"powershell did not answer: {error}") from error
 
     def remove_added(self) -> list:
-        """Unregister the scheduled tasks and remove the firewall rules the
-        agent's modules added, the file share's fence among them.
+        """Delete the services, unregister the scheduled tasks and remove the
+        firewall rules the agent's modules added, the file share's fence
+        among them.
 
-        A task or a rule is the modules' when :func:`is_added_name` says so;
-        the hub's and the client's are not touched. Every process running
+        A service, a task or a rule is the modules' when
+        :func:`is_added_name` says so; the agent's own service, the hub's
+        and the client's are not touched. Every process running
         from under the state root is ended with its descendants, so no
         instance outlives its task. Shares and accounts stay.
 
@@ -587,6 +597,11 @@ class WindowsPlatform(AgentPlatform):
             found = self._powershell(
                 WINDOWS_ADDED_LIST_SCRIPT, {"prefix": AGENT_ADDED_NAME_PREFIX}
             )
+            services = sorted(
+                str(name)
+                for name in listed(found.get("services"))
+                if is_added_name(str(name), AGENT_ADDED_NAME_PREFIX)
+            )
             tasks = sorted(
                 str(name)
                 for name in listed(found.get("tasks"))
@@ -599,13 +614,20 @@ class WindowsPlatform(AgentPlatform):
             )
             self._powershell(
                 WINDOWS_ADDED_REMOVE_SCRIPT,
-                {"tasks": tasks, "rules": rules, "state_root": self.agent_var_dir()},
+                {
+                    "services": services,
+                    "tasks": tasks,
+                    "rules": rules,
+                    "state_root": self.agent_var_dir(),
+                },
             )
         except subprocess.SubprocessError as error:
             raise OSError(f"powershell did not answer: {error}") from error
-        return [f"task {name}" for name in tasks] + [
-            f"firewall rule {name}" for name in rules
-        ]
+        return (
+            [f"service {name}" for name in services]
+            + [f"task {name}" for name in tasks]
+            + [f"firewall rule {name}" for name in rules]
+        )
 
     def smb_server_applier(self) -> SambaWindowsApplier:
         """The applier that drives Windows' own SMB server.

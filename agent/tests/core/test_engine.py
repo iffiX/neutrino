@@ -948,7 +948,7 @@ def test_a_system_that_unpacks_the_hub_s_software_runs_vs_code_from_its_bytes(
 
     engine._refresh(is_forced=True)
 
-    assert set(engine.module_runners) == {"samba", "vscode", "cloudcli"}
+    assert set(engine.module_runners) == {"samba", "gitea", "vscode", "cloudcli"}
     assert engine.report()["vscode"]["state"] == "absent"
     assert engine.install("vscode", receive=receive) == {
         "code": "hub_unreachable",

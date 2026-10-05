@@ -68,6 +68,7 @@ MODULE_CODES = (
     "share_name_taken",
     "user_name_taken",
     "user_create_failed",
+    "gitea_git_missing",
     "user_record_unusable",
     "account_invalid",
     "account_duplicate",

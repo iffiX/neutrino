@@ -404,7 +404,7 @@ SUPPORTED_OFF_LINUX = {
     "anydesk": (True, True),
     "cloudcli": (True, True),
     "code_server": (False, True),
-    "gitea": (False, False),
+    "gitea": (True, True),
     "podman": (False, False),
     "samba": (True, True),
     "teamviewer": (True, True),

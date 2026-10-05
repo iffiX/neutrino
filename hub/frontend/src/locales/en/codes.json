@@ -67,6 +67,7 @@
   "code.gateway_settings_refused": "The AI gateway will not take these settings: {detail}",
   "code.gateway_unreachable": "The AI gateway is not answering.",
   "code.geodata_unreachable": "The latest geodata release could not be read.",
+  "code.gitea_git_missing": "Gitea needs git on this machine. Install the developer tools or Homebrew's git on a Mac, or Git for Windows on Windows, then install Gitea again.",
   "code.health_gate_failed": "The new version did not answer within the time allowed.",
   "code.hello_invalid": "The other side speaks a protocol this hub cannot read.",
   "code.hub_name_required": "The hub needs a name.",

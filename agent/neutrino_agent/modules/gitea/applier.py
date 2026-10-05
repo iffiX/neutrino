@@ -1,4 +1,4 @@
-"""Making the git server true on the machine.
+"""Making the git server true on a Linux machine.
 
 Installing the binary the hub handed down with its user, directories and
 unit; installing a rendered ``app.ini``; administering accounts through
@@ -328,14 +328,17 @@ class GiteaAdminManager:
         ]
 
 
-def read_listen_port() -> int:
+def read_listen_port(path: str = "") -> int:
     """The port the installed ``app.ini`` has the server answer on.
+
+    Args:
+        path: The ``app.ini``; the Linux one when not named.
 
     Returns:
         ``HTTP_PORT`` from the file, or 0 when no readable one names it.
     """
     try:
-        with open(GITEA_CONF_PATH, "r", encoding="utf-8") as stream:
+        with open(path or GITEA_CONF_PATH, "r", encoding="utf-8") as stream:
             lines = stream.read().splitlines()
     except OSError:
         return 0

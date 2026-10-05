@@ -122,6 +122,10 @@ CLI_CODE_WORDS = {
     "session_unknown": "this machine keeps no terminal session {session_id}",
     "share_name_taken": "a share named {name} exists that this module did not make",
     "user_name_taken": "an account named {user} exists that this module did not make",
+    "gitea_git_missing": (
+        "Gitea needs git on this machine: the developer tools or Homebrew's "
+        "git on a Mac, Git for Windows on Windows"
+    ),
     "user_create_failed": "the system would not make the account {user}: {detail}",
     "user_record_unusable": (
         "macOS holds a leftover record named {user} that cannot be used as "
