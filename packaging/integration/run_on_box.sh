@@ -70,13 +70,13 @@ panel_scheme() {
         "$base/api/hub/setting/https/$verb" -o /dev/null || return 1
     rm -f "$jar"
     # The panel answers loopback over plain HTTP whatever the switch says, so
-    # the HTTPS port is what shows the switch: it serves once HTTPS is on and
-    # is closed once it is off.
+    # the HTTPS port is what shows the switch: it serves once HTTPS is on, and
+    # once it is off it sends a caller back to the HTTP port or is closed.
     for _ in $(seq 1 60); do
         status=$(curl -s -o /dev/null -w '%{http_code}' --cacert "$PANEL_AUTHORITY" \
             "https://127.0.0.1:$https_port/api/hub/display")
         [ "$wanted" = https ] && [ "$status" = 200 ] && return 0
-        if [ "$wanted" = http ] && [ "$status" = 000 ]; then
+        if [ "$wanted" = http ] && { [ "$status" = 301 ] || [ "$status" = 000 ]; }; then
             status=$(curl -s -o /dev/null -w '%{http_code}' \
                 "http://127.0.0.1:$http_port/api/hub/display")
             [ "$status" = 200 ] && return 0
