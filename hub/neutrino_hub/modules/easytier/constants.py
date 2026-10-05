@@ -8,6 +8,13 @@ from neutrino_hub.utils.constants import UTILS_STATE_ROOT, carried_program
 # checksum file for these archives, so the hashes are ours, taken from the
 # files this version was built against.
 EASYTIER_VERSION = "2.6.4"
+# Where the source of that version is read, by edition: GitHub, and in
+# the mainland edition EasyTier's own Gitee repository, whose tag is the
+# same commit.
+EASYTIER_SOURCE_URLS = {
+    "intl": "https://github.com/EasyTier/EasyTier/tree/v{}",
+    "cn": "https://gitee.com/easytier/EasyTier/tree/v{}",
+}
 EASYTIER_DOWNLOAD_URL = (
     "https://github.com/EasyTier/EasyTier/releases/download/"
     "v{version}/easytier-linux-{asset_arch}-v{version}.zip"
