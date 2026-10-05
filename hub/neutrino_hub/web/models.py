@@ -1828,6 +1828,9 @@ class ChannelServiceEntry(BaseModel):
     description: str = ""
     description_code: str = ""
     description_params: dict = Field(default_factory=dict)
+    # The id of the managed machine providing it; empty for a declared record
+    # and for the hub's own gateway.
+    device_id: str = ""
     # What the hub calls the machine providing it; empty when no machine it
     # knows does.
     device_name: str = ""

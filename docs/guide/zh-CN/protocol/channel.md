@@ -211,7 +211,7 @@ title: 通道
 
 ## 服务条目
 
-`services` 里每个条目是 `{id, type, title, payload, is_healthy, source, description, description_code, description_params, device_name}`。
+`services` 里每个条目是 `{id, type, title, payload, is_healthy, source, description, description_code, description_params, device_id, device_name}`。
 
 | `type` | `payload`                                                                                                                             |
 | ------ | ------------------------------------------------------------------------------------------------------------------------------------- |
@@ -229,6 +229,7 @@ payload 里的 `host`、`port`、`url` 和 `endpoint` 是服务在中枢网络�
 | `source`             | `module`、`declared` 或 `device`                                                                                                                                                          |
 | `description_code`   | 来源说明的错误码形式，由程序自己翻成文字：`ai_gateway`、`container`、`declared`、`device_share`、`gitea_module`、`samba_module`、`vscode_module`、`code_server_module`、`cloudcli_module` |
 | `description_params` | 那句话要用的值；`vscode_module`、`code_server_module` 和 `cloudcli_module` 用 `{host, account}`                                                                                           |
+| `device_id`          | 提供这个条目的受管机器的 id；手动声明的记录和中枢自己的网关为空。程序按机器保存的东西，以这个 id 为键                                                                                     |
 | `device_name`        | 提供这个条目的机器名；中枢记录里没有这台机器时为空                                                                                                                                        |
 
 ## 客户端打开的流

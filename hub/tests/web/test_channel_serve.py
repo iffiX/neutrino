@@ -983,6 +983,7 @@ def test_a_clients_first_report_is_handed_the_published_list(api):
             "description",
             "description_code",
             "description_params",
+            "device_id",
             "device_name",
         }
         # The TestClient's peer is "testclient": on no served network, so
