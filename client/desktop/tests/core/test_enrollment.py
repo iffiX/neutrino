@@ -21,6 +21,7 @@ binding.
 import base64
 import json
 import os
+import urllib.parse
 import zlib
 
 import pytest
@@ -862,3 +863,23 @@ def test_a_binding_file_with_overlays_is_0600(config_path):
     enrollment.add_binding(dict(BINDING, overlays=[NETBIRD]))
 
     assert config_path.stat().st_mode & 0o777 == 0o600
+
+
+def test_a_link_s_ipv6_address_is_kept_in_brackets_and_split_by_the_url_reader():
+    urls, _, _, _ = parse_link(
+        link_for(
+            {
+                "urls": ["https://192.168.100.1:8443", "https://[2001:db8::1]:8443"],
+                "token": "abc123",
+                "fp": "AB" * 32,
+            }
+        )
+    )
+
+    assert urls[1] == "https://[2001:db8::1]:8443"
+    parts = urllib.parse.urlsplit(urls[1])
+    assert (parts.hostname, parts.port) == ("2001:db8::1", 8443)
+
+
+def test_the_source_address_is_read_off_an_ipv4_literal_only():
+    assert default_source_address(["https://[2001:db8::1]:8443"]) == ""

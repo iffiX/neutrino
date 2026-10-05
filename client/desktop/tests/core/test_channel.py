@@ -49,12 +49,14 @@ class RecordingHandler(BaseHTTPRequestHandler):
     """Answers every request with its canned body and records the path."""
 
     requests: list = []
+    hosts: list = []
     post_answer: bytes = b"{}"
 
     def do_POST(self):
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length)
         RecordingHandler.requests.append((self.path, body))
+        RecordingHandler.hosts.append(self.headers.get("Host"))
         answer = RecordingHandler.post_answer
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -71,9 +73,24 @@ class QuietTlsServer(ThreadingHTTPServer):
         """A connection dropped after the handshake is the refusal working."""
 
 
+class QuietTlsServerIpv6(QuietTlsServer):
+    address_family = socket.AF_INET6
+
+
 @pytest.fixture
 def tls_server(tmp_path):
     """A live TLS server and the fingerprint of its runtime-generated certificate."""
+    yield from serving_tls(tmp_path, QuietTlsServer, "127.0.0.1")
+
+
+@pytest.fixture
+def tls_server_ipv6(tmp_path):
+    """The TLS server on the IPv6 loopback, its URL's host in brackets."""
+    yield from serving_tls(tmp_path, QuietTlsServerIpv6, "::1")
+
+
+def serving_tls(tmp_path, server_class, host):
+    """Run a live TLS server on a host; yield its URL and fingerprint."""
     if shutil.which("openssl") is None:
         pytest.skip("openssl is not installed; the pin needs a certificate")
     certificate_path = tmp_path / "certificate.pem"
@@ -103,15 +120,17 @@ def tls_server(tmp_path):
     fingerprint = hashlib.sha256(der).hexdigest()
 
     RecordingHandler.requests = []
+    RecordingHandler.hosts = []
     RecordingHandler.post_answer = b"{}"
-    server = QuietTlsServer(("127.0.0.1", 0), RecordingHandler)
+    server = server_class((host, 0), RecordingHandler)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(str(certificate_path), str(key_path))
     server.socket = context.wrap_socket(server.socket, server_side=True)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        yield f"https://127.0.0.1:{server.server_address[1]}", fingerprint
+        named = f"[{host}]" if ":" in host else host
+        yield f"https://{named}:{server.server_address[1]}", fingerprint
     finally:
         server.shutdown()
         server.server_close()
@@ -385,3 +404,14 @@ def test_a_scanned_link_on_another_certificate_is_untrusted_and_asks_nothing(
     assert session.last_error() == {"code": "hub_untrusted", "params": {}}
     assert session.connection() == "pending"
     assert RecordingHandler.requests == []
+
+
+def test_an_ipv6_hub_is_reached_at_its_bracketed_address(tls_server_ipv6):
+    url, fingerprint = tls_server_ipv6
+    channel = GatewayHttpChannel(gateway_url=url, fingerprint=fingerprint)
+
+    reply = channel.post(CLIENT_LEAVE_PATH, {"id": "c1", "token": "tok"})
+
+    assert url.startswith("https://[::1]:")
+    assert reply == {}
+    assert RecordingHandler.hosts == [url.removeprefix("https://")]

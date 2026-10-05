@@ -2533,3 +2533,13 @@ def test_an_address_that_stops_answering_mid_join_lets_the_round_go_on(
 
     assert [url for url, _sent in desk.asked] == [LAN_URL, OVERLAY_URL]
     assert session.binding_id == "c7"
+
+
+def test_a_networks_ipv6_address_is_reached_in_brackets(bound_everywhere, monkeypatch):
+    session, _lines = bound_everywhere
+    script = addresses_of(monkeypatch, {"fd7a:115c::1": [WELCOME]})
+
+    session.reconnect_through(["fd7a:115c::1"])
+    session.run_once()
+
+    assert script.hosts == ["fd7a:115c::1"]
