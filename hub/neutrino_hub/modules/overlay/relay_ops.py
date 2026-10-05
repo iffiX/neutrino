@@ -273,6 +273,7 @@ class OverlayRelayApplier:
                 agent_port=self._agent_port,
             ).render(config)
             is_changed = self._write_key(key_text)
+            self._hold_known_hosts()
             if not self._is_start_line_current(argv):
                 is_changed = True
             if not self._is_unit_owned():
@@ -281,6 +282,17 @@ class OverlayRelayApplier:
                 return ""
             self._start(argv)
             return OVERLAY_RELAY_CHANGE_STARTED
+
+    def _hold_known_hosts(self) -> None:
+        """Make the known-hosts file root-only, empty when ssh has not written it.
+
+        ssh appends to the file it finds, keeping its mode, so a file made here
+        stays 0600 after the first connection records the host key.
+        """
+        path = known_hosts_path()
+        if not path.exists():
+            path.touch(mode=OVERLAY_RELAY_FILE_MODE)
+        os.chmod(path, OVERLAY_RELAY_FILE_MODE)
 
     def _write_key(self, text: str) -> bool:
         """Write the key file root-only, telling whether it changed.

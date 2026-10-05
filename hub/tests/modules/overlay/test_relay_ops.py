@@ -493,3 +493,23 @@ def test_a_closed_address_answers_with_no_certificate():
     listener.close()
 
     assert check_public_address("127.0.0.1", port, timeout_s=2) == ""
+
+
+def test_the_known_hosts_file_is_root_only_before_ssh_first_runs(box):
+    applier(box).apply(box["relay"])
+
+    path = box["state"] / "relay" / "known_hosts"
+    assert path.read_text() == ""
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+
+
+def test_a_known_hosts_file_ssh_left_readable_is_made_root_only(box):
+    path = box["state"] / "relay" / "known_hosts"
+    path.parent.mkdir(parents=True, mode=0o700)
+    path.write_text("203.0.113.5 ssh-ed25519 AAAA\n")
+    path.chmod(0o644)
+
+    applier(box).apply(box["relay"])
+
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert path.read_text() == "203.0.113.5 ssh-ed25519 AAAA\n"
