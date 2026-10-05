@@ -649,7 +649,11 @@ patch), where **Source** and **Patch** are short link words that open the
 repository or the patch in the browser; no URL is ever written out. The
 client's own **Source** and its patches open the repository of the client's
 edition: GitHub for `intl`, Gitee for `cn`; the desktop window reads the
-edition from the `edition` field of its state document. A row
+edition from the `edition` field of its state document. In `cn`, a carried
+core's **Source** opens a Gitee repository that holds the same tag at the
+same commit where one exists: EasyTier's own `gitee.com/easytier/EasyTier`
+and Gitee's `gitee.com/mirrors/rustdesk`; the other cores keep their
+upstream link. A row
 is the label at the left in the muted colour and the value in mono at the
 right, rows parted by the panel's faint rule. The second card holds a
 **Language** picker, a **Theme** picker (System, Dark, Light), **Save**
