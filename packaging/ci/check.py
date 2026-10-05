@@ -124,6 +124,14 @@ CLIENT_WINDOWS_DATA = PROGRAM_DATA / "Neutrino" / "client"
 CLIENT_WINDOWS_DATA_FOLDERS = ("", "state", "log")
 CLIENT_WINDOWS_DATA_NETBIRD = "state/netbird"
 CLIENT_WINDOWS_DATA_LEFTOVERS = ("log/earlier_build.log", "state/earlier_build.txt")
+# The relaunch tasks an upgrade starts, and the one the check plants in their
+# name: run as SYSTEM, it writes a marker, which shows the installer's last
+# step starts every such task. A runner has no signed-in person to start a
+# client for.
+CLIENT_WINDOWS_RELAUNCH_TASKS = "NeutrinoClientRelaunch_*"
+CLIENT_WINDOWS_RELAUNCH_PLANTED = "NeutrinoClientRelaunch_cicheck"
+CLIENT_WINDOWS_RELAUNCH_MARKER = Path(tempfile.gettempdir()) / "relaunch_marker.txt"
+CLIENT_WINDOWS_RELAUNCH_WAIT_S = 60
 CLIENT_WINDOWS_EASYTIER_SERVICE = "NeutrinoClientEasytier"
 CLIENT_WINDOWS_EASYTIER_PIPE = "neutrino_client_easytier"
 # What ``sc query`` exits with for a service that does not exist.
@@ -388,6 +396,7 @@ def check_client_windows(msi: Path) -> None:
     if not CLIENT_WINDOWS_EASYTIER_STATE.is_dir():
         raise SystemExit(f"no EasyTier state at {CLIENT_WINDOWS_EASYTIER_STATE}")
     _check_client_windows_data()
+    _check_client_windows_relaunch(msi)
 
     log = Path(tempfile.gettempdir()) / "client_remove.log"
     print(f"msiexec /x exited {_msiexec('/x', msi, log)}")
@@ -395,6 +404,64 @@ def check_client_windows(msi: Path) -> None:
         raise SystemExit("the folder outlived the uninstaller")
     if _service_exists(CLIENT_WINDOWS_EASYTIER_SERVICE):
         raise SystemExit("the EasyTier daemon outlived the uninstaller")
+    if _relaunch_tasks():
+        raise SystemExit(
+            f"relaunch tasks outlived the uninstaller: {_relaunch_tasks()}"
+        )
+
+
+def _check_client_windows_relaunch(msi: Path) -> None:
+    """An install over no running client starts nothing; a repair starts the relaunch tasks.
+
+    Args:
+        msi: The installer, run again as a repair.
+
+    Raises:
+        SystemExit: When the install left a relaunch task or a running
+            window, or the repair did not start the planted task.
+    """
+    if _relaunch_tasks():
+        raise SystemExit(f"the install left relaunch tasks: {_relaunch_tasks()}")
+    windows = _answer(["tasklist", "/fi", "imagename eq nclientw.exe", "/fo", "csv"])
+    if "nclientw.exe" in windows.lower():
+        raise SystemExit("an install over no running client started one")
+    CLIENT_WINDOWS_RELAUNCH_MARKER.unlink(missing_ok=True)
+    _answer(
+        [
+            "schtasks",
+            "/create",
+            "/tn",
+            CLIENT_WINDOWS_RELAUNCH_PLANTED,
+            "/tr",
+            f'cmd.exe /c echo started > "{CLIENT_WINDOWS_RELAUNCH_MARKER}"',
+            "/sc",
+            "once",
+            "/st",
+            "00:00",
+            "/ru",
+            "SYSTEM",
+            "/f",
+        ]
+    )
+    log = Path(tempfile.gettempdir()) / "client_repair.log"
+    print(f"msiexec /fa exited {_msiexec('/fa', msi, log)}")
+    deadline = time.monotonic() + CLIENT_WINDOWS_RELAUNCH_WAIT_S
+    while not CLIENT_WINDOWS_RELAUNCH_MARKER.is_file():
+        if time.monotonic() >= deadline:
+            _print_log(log, ("RelaunchClients", "WixQuietExec"), 10)
+            raise SystemExit("the repair did not start the relaunch task")
+        time.sleep(SERVICE_POLL_S)
+    CLIENT_WINDOWS_RELAUNCH_MARKER.unlink(missing_ok=True)
+    print("the repair started the relaunch task")
+
+
+def _relaunch_tasks() -> list:
+    """The names of the relaunch tasks that stand."""
+    names = _powershell(
+        f"Get-ScheduledTask -TaskName '{CLIENT_WINDOWS_RELAUNCH_TASKS}' "
+        "-ErrorAction SilentlyContinue | ForEach-Object { $_.TaskName }"
+    )
+    return [name for name in names.splitlines() if name.strip()]
 
 
 def _plant_client_windows_leftovers() -> None:

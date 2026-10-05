@@ -608,3 +608,65 @@ def test_the_macos_agent_check_fails_when_cc_switch_outlives_the_removal(
 
     assert "outlived nagent service uninstall" in str(failed.value)
     assert "cc-switch" in str(failed.value)
+
+
+@pytest.fixture
+def relaunch_box(check, monkeypatch, tmp_path):
+    """The runner's tasks, processes and msiexec, scripted."""
+    marker = tmp_path / "relaunch_marker.txt"
+    box = {"tasks": [], "windows": "", "commands": [], "repairs": [], "starts": True}
+    monkeypatch.setattr(check, "CLIENT_WINDOWS_RELAUNCH_MARKER", marker)
+    monkeypatch.setattr(check, "CLIENT_WINDOWS_RELAUNCH_WAIT_S", 0)
+    monkeypatch.setattr(check, "_relaunch_tasks", lambda: list(box["tasks"]))
+
+    def answer(command):
+        box["commands"].append(command)
+        if command[0] == "tasklist":
+            return box["windows"]
+        return ""
+
+    def msiexec(action, msi, log):
+        box["repairs"].append(action)
+        if box["starts"]:
+            marker.write_text("started")
+        return 0
+
+    monkeypatch.setattr(check, "_answer", answer)
+    monkeypatch.setattr(check, "_msiexec", msiexec)
+    return box, marker
+
+
+def test_a_repair_that_starts_the_planted_relaunch_task_passes(check, relaunch_box):
+    box, marker = relaunch_box
+
+    check._check_client_windows_relaunch(Path("client.msi"))
+
+    (planted,) = [c for c in box["commands"] if c[:2] == ["schtasks", "/create"]]
+    assert planted[3] == "NeutrinoClientRelaunch_cicheck"
+    assert planted[planted.index("/ru") + 1] == "SYSTEM"
+    assert box["repairs"] == ["/fa"]
+    assert not marker.exists()
+
+
+def test_an_install_that_left_a_relaunch_task_fails_the_check(check, relaunch_box):
+    box, _ = relaunch_box
+    box["tasks"] = ["NeutrinoClientRelaunch_runner"]
+
+    with pytest.raises(SystemExit, match="left relaunch tasks"):
+        check._check_client_windows_relaunch(Path("client.msi"))
+
+
+def test_an_install_that_started_a_window_fails_the_check(check, relaunch_box):
+    box, _ = relaunch_box
+    box["windows"] = '"nclientw.exe","4100","Console","1","40,000 K"'
+
+    with pytest.raises(SystemExit, match="started one"):
+        check._check_client_windows_relaunch(Path("client.msi"))
+
+
+def test_a_repair_that_starts_no_relaunch_task_fails_the_check(check, relaunch_box):
+    box, _ = relaunch_box
+    box["starts"] = False
+
+    with pytest.raises(SystemExit, match="did not start the relaunch task"):
+        check._check_client_windows_relaunch(Path("client.msi"))
