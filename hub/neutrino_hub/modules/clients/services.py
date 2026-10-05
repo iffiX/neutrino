@@ -14,7 +14,7 @@ among them, and is answered with where its bytes go: a managed machine's
 agent at a port, or an address the hub dials itself.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from urllib.parse import urlsplit
 
 from neutrino_hub.exceptions import VaultLockedError
@@ -75,11 +75,17 @@ class ConnectTarget:
             {port}``; empty when the hub dials ``host`` itself.
         host: The address the hub dials; empty for a machine's agent.
         port: The port, on the machine or at ``host``.
+        kind: The permission kind the stream falls under: the entry's type,
+            or ``panel``.
+        provider: The machine the permission's device lists judge it by,
+            empty for none.
     """
 
     device_id: str
     host: str
     port: int
+    kind: str = field(default="", compare=False)
+    provider: str = field(default="", compare=False)
 
 
 def service_material(runtime, client_id: str, entry_id: str) -> tuple:
@@ -193,21 +199,44 @@ def connect_target(
                 {"kind": CLIENT_PERMISSION_PANEL},
                 None,
             )
-        return "", {}, ConnectTarget("", CHANNEL_CONNECT_LOOPBACK, int(panel_port))
+        return (
+            "",
+            {},
+            ConnectTarget(
+                "",
+                CHANNEL_CONNECT_LOOPBACK,
+                int(panel_port),
+                kind=CLIENT_PERMISSION_PANEL,
+            ),
+        )
     entry_id = str(args.get("id", "") or "")
     code, params, entry, raw = _judge_entry(runtime, registry, client, entry_id)
     if code:
         return code, params, None
-    if entry["type"] == SERVICES_TYPE_AI:
+    kind = entry["type"]
+    hub_device_id, device_ids_by_address = device_owners(runtime)
+    provider = entry_device_id(
+        raw,
+        hub_device_id=hub_device_id,
+        device_ids_by_address=device_ids_by_address,
+    )
+    if kind == SERVICES_TYPE_AI:
         port = load_config().listen_port
-        return "", {}, ConnectTarget("", CHANNEL_CONNECT_LOOPBACK, port)
-    device_id = str(raw.get("device_id") or "")
-    if device_id:
-        return "", {}, ConnectTarget(device_id, "", entry_port(raw))
-    if raw.get("source") == SERVICES_SOURCE_DECLARED:
+        target = ConnectTarget("", CHANNEL_CONNECT_LOOPBACK, port)
+    elif raw.get("device_id"):
+        target = ConnectTarget(str(raw["device_id"]), "", entry_port(raw))
+    elif raw.get("source") == SERVICES_SOURCE_DECLARED:
         declared = _unresolved_entry(runtime, entry_id) or raw
-        return "", {}, ConnectTarget("", entry_host(declared), entry_port(declared))
-    return CLIENT_CODE_SERVICE_UNKNOWN, {"service_id": entry_id}, None
+        target = ConnectTarget("", entry_host(declared), entry_port(declared))
+    else:
+        return CLIENT_CODE_SERVICE_UNKNOWN, {"service_id": entry_id}, None
+    return (
+        "",
+        {},
+        ConnectTarget(
+            target.device_id, target.host, target.port, kind=kind, provider=provider
+        ),
+    )
 
 
 def entry_port(entry: dict) -> int:

@@ -212,7 +212,8 @@ class ChannelSession:
             stream the peer opens, called with ``(session, stream)``.
         shells: A client's open ``shell`` streams by id, each the
             ``(device_id, agent_stream_id, session_id)`` it is bridged to.
-        connects: The ids of a client's open ``connect`` streams.
+        connects: A client's open ``connect`` streams by id, each the
+            ``(kind, provider)`` its permission was judged by.
         loop: The loop the socket is served on.
     """
 
@@ -239,7 +240,7 @@ class ChannelSession:
         self.offered_hash: "str | None" = None
         self.stream_handlers: dict = {}
         self.shells: dict = {}
-        self.connects: set = set()
+        self.connects: dict = {}
         self.loop = loop
         self.opened_at = time.monotonic()
         self._reported = asyncio.Event()
@@ -370,6 +371,41 @@ class ChannelSession:
         await self.send_credit(stream_id, credit)
         self.loop.create_task(self._serve_accepted(handler, stream))
         return stream
+
+    async def close_stream(
+        self, stream_id: int, code: str, params: "dict | None" = None
+    ) -> bool:
+        """End one open stream from this side, with a refusal.
+
+        Args:
+            stream_id: The stream.
+            code: The refusal.
+            params: What the code's wording names.
+
+        Returns:
+            Whether a stream of that id was open.
+        """
+        stream = self._streams.get(stream_id)
+        if stream is None:
+            return False
+        try:
+            await stream.close(code, params)
+        except AgentOfflineError:
+            return False
+        return True
+
+    def close_stream_from_thread(
+        self, stream_id: int, code: str, params: "dict | None" = None
+    ) -> bool:
+        """:meth:`close_stream` for a caller outside the loop.
+
+        Raises:
+            StreamRefusedError: With ``agent_never_reported`` when the loop
+                does not take it within ``CHANNEL_CALL_TIMEOUT_S``.
+        """
+        return self.call(
+            self.close_stream(stream_id, code, params), timeout=CHANNEL_CALL_TIMEOUT_S
+        )
 
     async def push_state(self, document: dict) -> None:
         """Send the peer its state.

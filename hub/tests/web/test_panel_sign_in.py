@@ -15,6 +15,8 @@ import asyncio
 
 import pytest
 
+from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_CLIENT
+from neutrino_hub.modules.channel.sessions import ChannelSessionRegistry
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.web import auth
 from neutrino_hub.web.auth import PanelTokenStore, SessionStore, hash_password
@@ -44,6 +46,7 @@ class Runtime:
             password_hash=hash_password(PASSWORD), session_ttl_hours=1
         )
         self.settings = {"listen_port": 8080, "session_ttl_hours": 1}
+        self.client_sessions = ChannelSessionRegistry(CHANNEL_ROLE_CLIENT)
 
 
 @pytest.fixture
