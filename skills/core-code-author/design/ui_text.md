@@ -227,6 +227,12 @@ opinion when the row holds no health:
 A UDP port record is in neither number of the page's badge, `{healthy} of
 {total} healthy`, since the hub holds no health for it.
 
+## The Network page's words
+
+| Key | English | Chinese |
+| --- | --- | --- |
+| `ui.network.unsaved_interface` | New, not in use until turned on and applied | 新网口，打开并应用后才使用 |
+
 ## Direct's words
 
 | Key | English | Chinese |

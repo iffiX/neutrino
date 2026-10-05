@@ -384,7 +384,7 @@ the page's whole view.
 
 | Route | Parameters | Does |
 | --- | --- | --- |
-| `GET /api/hub/network` | | `NetworkView`, with `hub_os` (`linux`, `darwin` or `windows`) and `modes`, which holds `server` alone outside Linux; each interface's `link.lease_dns` lists the resolvers its DHCP lease names, empty for a static uplink and for an interface holding no lease |
+| `GET /api/hub/network` | | `NetworkView`, with `hub_os` (`linux`, `darwin` or `windows`) and `modes`, which holds `server` alone outside Linux; each interface's `link.lease_dns` lists the resolvers its DHCP lease names, empty for a static uplink and for an interface holding no lease; `is_unsaved` is true for an interface the configuration does not name and the hub does not use, which is every such interface on Linux and none on macOS and Windows |
 | `POST /api/hub/network/set` | the page's own settings, `{uplink_policy, is_inter_lan_allowed, exposed_interfaces, exposed_overlays, static_leases}`; absent lists leave the exposure as it is | `NetworkView` |
 | `POST /api/hub/network/mode/set` | `{mode, ...}` | replaces the whole shape; `NetworkView` |
 | `POST /api/hub/network/interface/set` | `{name, ...}`; a static uplink's `wan.dns` is its resolvers, `[{address, port}]`, `port` 53 when absent, in the order they are asked | one interface's role and settings; `NetworkView`; 400 `resolver_address_invalid {address}` for a row that is not an IP address, `port_out_of_range {minimum, maximum, value}` |

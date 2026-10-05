@@ -96,6 +96,14 @@ device. Never a machine word — a socket's `open` is `live` to a reader.
 
 Badges say one word and report state; they are never pressed.
 
+An interface the hub detects and the configuration does not name
+carries `ui.network.unsaved_interface` as an accent badge on the
+**Network** page, on its exposure chip and in its summary, the way a
+VLAN the next apply creates carries `ui.network.vlan_new_on_apply`.
+The page reads it from the interface's `is_unsaved` and works out
+nothing itself ([modules/network.md](modules/network.md), "An
+interface the configuration does not name").
+
 ## Filters
 
 A filter row is single-select chips over a list already in memory, `All` first
