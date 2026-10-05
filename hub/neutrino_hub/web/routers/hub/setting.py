@@ -54,7 +54,9 @@ from neutrino_hub.modules.hub_update.release import (
     unreachable_reason,
 )
 from neutrino_hub.modules.hub_update.state import HubUpdateRecord, HubUpdateStateFile
+from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.system.installation import is_packaged
+from neutrino_hub.system.machine import machine_id
 from neutrino_hub.modules.credentials.vault import (
     unwrap_data_key,
     write_state_key,
@@ -86,6 +88,7 @@ from neutrino_hub.web.constants import (
     WEB_PORT_MAX,
     WEB_PORT_MIN,
     WEB_RESTART_DELAY_S,
+    WEB_RESTORE_LOCAL_AGENT_PATH,
     WEB_SETTING_HTTPS,
     WEB_SETTING_HTTPS_PORT,
     WEB_THEMES,
@@ -605,13 +608,18 @@ def backup() -> StreamingResponse:
     passphrase, which is what a restore asks for.
 
     Returns:
-        A streaming ``.tar.gz`` download: the manifest, the digest list, then
-        the ``config/`` tree.
+        A streaming ``.tar.gz`` download: the manifest, naming this machine's
+        id, the digest list, then the ``config/`` tree.
     """
     with CONFIG_WRITE_LOCK:
         directories, files = _config_snapshot()
     manifest = json.dumps(
-        {"kind": BACKUP_KIND, "version": BACKUP_FORMAT_VERSION}, indent=2
+        {
+            "kind": BACKUP_KIND,
+            "version": BACKUP_FORMAT_VERSION,
+            "hub_machine_id": machine_id(),
+        },
+        indent=2,
     ).encode()
     sums = "".join(
         f"{hashlib.sha256(content).hexdigest()}  {path}\n" for path, content in files
@@ -731,6 +739,7 @@ async def restore(
         except (tarfile.TarError, EOFError, OSError) as error:
             raise _coded_bad_request(BACKUP_ERROR_CORRUPT) from error
         write_state_key(data_key)
+    _mark_local_agent_join(contents)
     # The restored decisions are made true without another command: apply
     # runs as a streamed task the modal shows, and the panel restarts itself
     # last, because the password hash and settings it holds are the old
@@ -739,6 +748,33 @@ async def restore(
         label="apply the restored configuration", source=_restore_apply_source()
     )
     return {"is_restored": True, "task_id": stream.id}
+
+
+def _mark_local_agent_join(contents: dict[str, bytes]) -> None:
+    """Leave the restarted panel the restored row this machine's agent joins.
+
+    The row is the one with this machine's id, else the one of the machine
+    the backup was made on; with neither, the join makes a new row.
+
+    Args:
+        contents: The archive's regular members, the manifest among them.
+
+    Raises:
+        OSError: When the mark cannot be written.
+    """
+    try:
+        manifest = json.loads(contents[BACKUP_MANIFEST_MEMBER])
+    except (KeyError, ValueError):
+        manifest = {}
+    row = DeviceRegistry().hub_row_after_restore(
+        own_machine_id=machine_id(),
+        backup_machine_id=str(manifest.get("hub_machine_id", "") or ""),
+    )
+    WEB_RESTORE_LOCAL_AGENT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    WEB_RESTORE_LOCAL_AGENT_PATH.write_text(
+        json.dumps({"device_id": row.id if row is not None else ""}),
+        encoding="utf-8",
+    )
 
 
 async def _restore_apply_source():

@@ -493,3 +493,23 @@ def test_the_panel_installs_the_local_agent_the_first_run_left_to_it(
     mark.touch()
     run._finish_first_run()
     assert finished.wait(5)
+
+
+def test_the_panel_joins_the_local_agent_again_after_a_restore(monkeypatch, tmp_path):
+    from neutrino_hub.cli import setup
+
+    mark = tmp_path / "restore_local_agent"
+    monkeypatch.setattr(
+        "neutrino_hub.web.constants.WEB_SETUP_LOCAL_AGENT_PATH",
+        tmp_path / "setup_local_agent",
+    )
+    monkeypatch.setattr("neutrino_hub.web.constants.WEB_RESTORE_LOCAL_AGENT_PATH", mark)
+    joined = threading.Event()
+    monkeypatch.setattr(setup, "rejoin_local_agent", joined.set)
+
+    run._finish_first_run()
+    assert not joined.wait(0.2)
+
+    mark.touch()
+    run._finish_first_run()
+    assert joined.wait(5)

@@ -28,6 +28,7 @@ from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.testclient import TestClient
 
 import neutrino_hub.utils.json_file
+from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub import edition
 from neutrino_hub.modules.cliproxyapi.constants import CLIPROXYAPI_VERSION
 from neutrino_hub.modules.credentials.vault import SecretVault
@@ -589,6 +590,7 @@ def test_no_module_a_machine_installs_is_credited(monkeypatch):
 
 
 PASSPHRASE = "correct horse battery"  # scan: allow
+THIS_MACHINE = "machine-of-this-box"
 SEALED_PASSWORD = "hunter2hunter2"  # scan: allow
 
 
@@ -686,6 +688,12 @@ def client(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(settings_router, "UTILS_CONFIG_DIR", config_dir, raising=True)
     monkeypatch.setattr("neutrino_hub.utils.constants.UTILS_STATE_ROOT", state_dir)
+    monkeypatch.setattr(
+        settings_router,
+        "WEB_RESTORE_LOCAL_AGENT_PATH",
+        state_dir / "restore_local_agent",
+    )
+    monkeypatch.setattr(settings_router, "machine_id", lambda: THIS_MACHINE)
     app = FastAPI()
     app.include_router(settings_router.router)
     app.dependency_overrides[require_session] = lambda: None
@@ -772,6 +780,7 @@ def test_a_backup_is_the_manifest_the_digests_and_the_plain_tree(client):
     assert json.loads(contents["neutrino_backup.json"]) == {
         "kind": "neutrino_config_backup",
         "version": 2,
+        "hub_machine_id": THIS_MACHINE,
     }
     listed = {
         path: digest
@@ -1928,3 +1937,57 @@ def test_a_restore_outside_linux_runs_nhub_itself_and_restarts_the_service(
     assert environment["PYTHONUNBUFFERED"] == "1"
     assert controller.restarted == ["web"]
     assert lines[-1].startswith("restarting the panel")
+
+
+# --- the hub's own agent after a restore ---
+
+
+def restored_mark(config_dir) -> dict:
+    """The row a restore left for the restarted panel to join this machine's agent to."""
+    mark = config_dir.parent / "state" / "restore_local_agent"
+    return json.loads(mark.read_text(encoding="utf-8"))
+
+
+def test_a_backup_restored_on_its_own_machine_joins_the_agent_to_that_machines_row(
+    client,
+):
+    opened, config_dir = client
+    seed_config(config_dir)
+    own = DeviceRegistry().create("hub-box", machine_id=THIS_MACHINE)
+    DeviceRegistry().create("laptop", machine_id="machine-of-a-laptop")
+    archive_bytes = download_backup(opened)
+    wipe_box(config_dir)
+    DeviceRegistry().create("hub-box", machine_id=THIS_MACHINE)
+
+    assert upload_restore(opened, archive_bytes, PASSPHRASE).status_code == 200
+
+    assert restored_mark(config_dir) == {"device_id": own.id}
+
+
+def test_a_backup_from_another_machine_hands_this_machine_the_old_hubs_row(
+    client, monkeypatch
+):
+    opened, config_dir = client
+    seed_config(config_dir)
+    monkeypatch.setattr(settings_router, "machine_id", lambda: "machine-of-the-old-box")
+    old_hub = DeviceRegistry().create("old-box", machine_id="machine-of-the-old-box")
+    DeviceRegistry().create("laptop", machine_id="machine-of-a-laptop")
+    archive_bytes = download_backup(opened)
+    wipe_box(config_dir)
+    monkeypatch.setattr(settings_router, "machine_id", lambda: THIS_MACHINE)
+
+    assert upload_restore(opened, archive_bytes, PASSPHRASE).status_code == 200
+
+    assert restored_mark(config_dir) == {"device_id": old_hub.id}
+
+
+def test_a_backup_naming_no_row_of_either_machine_leaves_the_join_a_new_row(client):
+    opened, config_dir = client
+    seed_config(config_dir)
+    DeviceRegistry().create("laptop", machine_id="machine-of-a-laptop")
+    archive_bytes = download_backup(opened)
+    wipe_box(config_dir)
+
+    assert upload_restore(opened, archive_bytes, PASSPHRASE).status_code == 200
+
+    assert restored_mark(config_dir) == {"device_id": ""}

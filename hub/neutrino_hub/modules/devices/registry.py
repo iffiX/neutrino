@@ -426,6 +426,29 @@ class DeviceRegistry:
                 return self._from_stored(device_id, entry)
         return None
 
+    def hub_row_after_restore(
+        self, *, own_machine_id: str, backup_machine_id: str
+    ) -> "ManagedDevice | None":
+        """The restored row the agent of the hub's own machine joins.
+
+        A backup restored onto the machine it came from holds a row with
+        this machine's id. One restored onto another machine holds the row
+        of the machine that made it, which this machine takes over with the
+        modules configured on it.
+
+        Args:
+            own_machine_id: This machine's own id.
+            backup_machine_id: The id of the machine the backup was made on,
+                as its manifest names it; empty when it names none.
+
+        Returns:
+            The row with this machine's id, else the row with the backup's
+            machine id, else None, and the agent's join makes a new row.
+        """
+        return self.find_by_machine_id(own_machine_id) or self.find_by_machine_id(
+            backup_machine_id
+        )
+
     def drop_token(self, device_id: str) -> None:
         """Record that a device's agent has left.
 

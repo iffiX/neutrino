@@ -242,6 +242,11 @@ WEB_CODE_SETUP_IN_PROGRESS = "setup_in_progress"
 # Left by the service's first run for the panel, which installs this
 # machine's agent and joins it once it serves.
 WEB_SETUP_LOCAL_AGENT_PATH = UTILS_STATE_ROOT / "setup_local_agent"
+# Left by a restore for the panel it restarts, which joins this machine's
+# agent again to the restored row of this machine. The file holds
+# ``{"device_id"}``, the row to join, empty for whichever row the machine
+# id finds or a new one.
+WEB_RESTORE_LOCAL_AGENT_PATH = UTILS_STATE_ROOT / "restore_local_agent"
 
 # What the proxy is actually taking, read from the applied ruleset rather than
 # from `config/`. One word per answer the status strip can give: the master

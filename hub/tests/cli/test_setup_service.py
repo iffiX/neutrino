@@ -9,6 +9,7 @@ whichever process starts the steps first holds the lock the other is
 refused by.
 """
 
+import json
 import threading
 
 import pytest
@@ -261,3 +262,76 @@ def test_a_terminal_beside_the_serving_service_points_at_it_and_asks_here(
 
     assert "http://192.0.2.7:8080/?token=kept-token" in capsys.readouterr().out
     assert welcomed == [True]
+
+
+# --- the hub's own agent after a restore ---
+
+
+@pytest.fixture
+def rejoining(monkeypatch, setup_files):
+    """A restore's mark in place, the panel answering, and every join recorded."""
+    joins: list = []
+    minted: list = []
+    monkeypatch.setattr(setup, "is_dev_root_set", lambda: False)
+    monkeypatch.setattr(setup, "_wait_for_panel", lambda: None)
+    monkeypatch.setattr(setup, "UTILS_SETUP_LOG_PATH", setup_files / "setup.log")
+    monkeypatch.setattr(setup, "is_local_agent_installed", lambda: True)
+    monkeypatch.setattr(
+        setup,
+        "_minted_link",
+        lambda device_id=None: minted.append(device_id) or ("neutrino://enroll/x", ""),
+    )
+    monkeypatch.setattr(setup, "run", lambda command, **kwargs: joins.append(command))
+    mark = setup_files / "restore_local_agent"
+    mark.parent.mkdir(parents=True, exist_ok=True)
+    return mark, minted, joins
+
+
+def test_after_a_restore_the_agent_joins_the_row_the_restore_named(rejoining):
+    mark, minted, joins = rejoining
+    mark.write_text(json.dumps({"device_id": "dev-hub"}))
+
+    setup.rejoin_local_agent()
+
+    assert minted == ["dev-hub"]
+    assert joins == [
+        [
+            setup.hub_platform().agent_command(),
+            "join",
+            "neutrino://enroll/x",
+            "--yes",
+        ]
+    ]
+    assert not mark.exists()
+
+
+def test_after_a_restore_naming_no_row_the_agent_joins_by_its_machine(rejoining):
+    mark, minted, joins = rejoining
+    mark.write_text(json.dumps({"device_id": ""}))
+
+    setup.rejoin_local_agent()
+
+    assert minted == [None]
+    assert len(joins) == 1
+    assert not mark.exists()
+
+
+def test_a_machine_without_its_agent_joins_nothing_after_a_restore(
+    rejoining, monkeypatch
+):
+    mark, minted, joins = rejoining
+    mark.write_text(json.dumps({"device_id": "dev-hub"}))
+    monkeypatch.setattr(setup, "is_local_agent_installed", lambda: False)
+
+    setup.rejoin_local_agent()
+
+    assert (minted, joins) == ([], [])
+    assert not mark.exists()
+
+
+def test_with_no_restore_mark_nothing_joins(rejoining):
+    _mark, minted, joins = rejoining
+
+    setup.rejoin_local_agent()
+
+    assert (minted, joins) == ([], [])
