@@ -16,7 +16,9 @@ from neutrino_hub.web import channel_addresses
 from fastapi import HTTPException
 
 from neutrino_hub.web.channel_addresses import (
+    channel_url,
     channel_urls,
+    direct_urls,
     enrollment_link_parts,
     own_agent_urls,
 )
@@ -481,3 +483,45 @@ def test_an_interface_with_ipv6_alone_is_named_by_it(live, monkeypatch):
         "https://[2001:db8::7]:8443",
         "https://[2001:db8::8]:8443",
     ]
+
+
+# --- each address once, however it is spelled ---
+
+
+@pytest.mark.parametrize(
+    ("host", "url"),
+    [
+        ("hub.example.org", "https://hub.example.org:443"),
+        ("Hub.Example.ORG", "https://hub.example.org:443"),
+        ("203.0.113.7", "https://203.0.113.7:443"),
+        ("2001:db8::7", "https://[2001:db8::7]:443"),
+        ("2001:DB8:0:0::7", "https://[2001:db8::7]:443"),
+    ],
+)
+def test_a_url_spells_each_address_one_way(host, url):
+    assert channel_url(host, 443) == url
+
+
+@pytest.mark.parametrize(
+    "public_host", ["203.0.113.7", "2001:DB8:0:0::7", "2001:db8::7"]
+)
+def test_a_public_address_that_is_an_interface_s_is_listed_once(
+    live, monkeypatch, public_host
+):
+    runtime, _ = ipv6_box(monkeypatch, is_direct=True, is_relay=False)
+    direct = OverlayDirectConfig(
+        is_enabled=True, public_host=public_host, public_port=8443
+    )
+    monkeypatch.setattr(channel_addresses, "read_direct", lambda: direct)
+
+    urls = channel_urls(runtime)
+    added = direct_urls(runtime, direct)
+
+    assert urls == [
+        "https://192.168.8.1:8443",
+        "https://[fd00:8::1]:8443",
+        "https://203.0.113.7:8443",
+        "https://[2001:db8::7]:8443",
+        "https://[2001:db8::8]:8443",
+    ]
+    assert added == urls[1:]

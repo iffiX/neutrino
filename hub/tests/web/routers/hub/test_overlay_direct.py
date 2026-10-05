@@ -171,3 +171,23 @@ def test_an_ipv6_public_address_is_stored_bare_and_listed_in_brackets(api):
     assert read_direct().public_host == "2001:db8::99"
     assert response.json()["public_host"] == "2001:db8::99"
     assert response.json()["urls"][-1] == "https://[2001:db8::99]:443"
+
+
+@pytest.mark.parametrize(
+    ("public_host", "url"),
+    [
+        ("203.0.113.7", "https://203.0.113.7:9443"),
+        ("2001:DB8:0::7", "https://[2001:db8::7]:9443"),
+    ],
+)
+def test_a_public_address_that_is_an_interface_s_is_listed_once(api, public_host, url):
+    client, _ = api
+
+    response = client.post(
+        "/api/hub/overlay/direct/set",
+        json={"public_host": public_host, "public_port": 9443},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["urls"].count(url) == 1
+    assert len(response.json()["urls"]) == 3
