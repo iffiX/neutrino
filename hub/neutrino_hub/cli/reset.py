@@ -2,6 +2,7 @@
 
     sudo nhub reset                 # what can be reset, and nothing done
     sudo nhub reset password
+    sudo nhub reset network
     sudo nhub reset all
 
 Resetting is always named: the bare command lists and stops, so nothing here
@@ -100,6 +101,8 @@ RESET_TARGETS = {
     "password": "the panel password, leaving every other setting alone",  # scan: allow
     "all": "every module's config, the panel password, and the keys and tokens "
     "this box collected; stops the hub's services too",
+    "network": "hands the machine's network back (the firewall, the engines, "
+    "the resolver) and changes no config; removing the package runs it",
 }
 
 
@@ -139,6 +142,8 @@ def main() -> int:
 
     if arguments.target == "password":
         return _reset_password(is_stdin=arguments.stdin)
+    if arguments.target == "network":
+        return _reset_network()
     return _reset_all()
 
 
@@ -195,6 +200,26 @@ def _reset_all() -> int:
     # answers, on a configuration nobody chose.
     stop_everything()
     print("the panel password is cleared; run `sudo nhub setup`")
+    return 0
+
+
+def _reset_network() -> int:
+    """Hand the machine's network back and leave every config as it is.
+
+    The panel and the router unit stop first, as for ``all``, so neither
+    applies the configuration again behind the hand-back.
+
+    Returns:
+        Process exit status.
+    """
+    if is_linux():
+        stop(["web", "router"])
+    else:
+        stop_service()
+    with router_lock():
+        network = _hand_back_network()
+    for line in network:
+        print(line)
     return 0
 
 

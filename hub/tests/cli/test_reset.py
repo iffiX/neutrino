@@ -335,3 +335,29 @@ def test_a_firewall_that_will_not_hand_back_is_reported(monkeypatch, elsewhere):
     assert reset._hand_back_network() == [
         "firewall not handed back: powershell exited 1"
     ]
+
+
+def test_reset_network_hands_back_and_keeps_every_config(monkeypatch, box, capsys):
+    """Removing the package runs it while the hub's code is still there, so a
+    removed hub leaves the machine resolving names."""
+    order: list = []
+    monkeypatch.setattr(reset, "is_linux", lambda: True)
+    monkeypatch.setattr(
+        reset, "stop", lambda names: order.append(("stop", tuple(names))) or 0
+    )
+    monkeypatch.setattr(
+        reset,
+        "_hand_back_network",
+        lambda: order.append(("hand_back",)) or ["name resolution is back"],
+    )
+
+    assert reset._reset_network() == 0
+
+    assert order == [("stop", ("web", "router")), ("hand_back",)]
+    assert "name resolution is back" in capsys.readouterr().out
+    assert json.loads((box / "xray/nodes.json").read_text()) == {
+        "nodes": [{"id": "hk"}]
+    }
+    assert json.loads((box / "web/settings.json").read_text()) == {
+        "admin_password_hash": "real-hash"
+    }
