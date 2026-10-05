@@ -5,6 +5,7 @@ Not pure: runs ``launchctl``, ``open``, ``osascript`` and the children.
 
 import os
 import pwd
+import re
 import shlex
 import subprocess
 
@@ -14,6 +15,9 @@ from neutrino_hub.platforms.constants import (
     PLATFORM_COMMAND_TIMEOUT_S,
     PLATFORM_DARWIN_BROWSER_OPENER,
     PLATFORM_DARWIN_CONSOLE,
+    PLATFORM_DARWIN_CONSOLE_USER_QUERY,
+    PLATFORM_DARWIN_NOBODY_NAMES,
+    PLATFORM_DARWIN_SCUTIL,
     PLATFORM_DARWIN_ELEVATOR,
     PLATFORM_DARWIN_SERVICE_PLIST,
     PLATFORM_DARWIN_SERVICE_TARGET,
@@ -203,18 +207,49 @@ class DarwinHubPlatform(HubPlatform):
         return f"unix://{UTILS_RUNTIME_ROOT / PLATFORM_NETBIRD_SOCKET_NAME}"
 
 
+def console_uid() -> int:
+    """The uid of the account at the screen.
+
+    The system configuration's console user answers; the owner of
+    ``/dev/console`` answers only when ``scutil`` cannot be run.
+
+    Returns:
+        The uid; 0 for nobody: the login window, root, or no name.
+    """
+    try:
+        result = subprocess.run(
+            [PLATFORM_DARWIN_SCUTIL],
+            input=PLATFORM_DARWIN_CONSOLE_USER_QUERY,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        result = None
+    if result is not None and result.returncode == 0:
+        name = re.search(r"^\s*Name\s*:\s*(\S+)\s*$", result.stdout, re.MULTILINE)
+        uid = re.search(r"^\s*UID\s*:\s*(\d+)\s*$", result.stdout, re.MULTILINE)
+        if name is None or uid is None:
+            return 0
+        if name.group(1) in PLATFORM_DARWIN_NOBODY_NAMES:
+            return 0
+        return int(uid.group(1))
+    try:
+        return os.stat(PLATFORM_DARWIN_CONSOLE).st_uid
+    except OSError:
+        return 0
+
+
 def _seated_account():
-    """The account root opens pages for: the one sudo names, else the console's.
+    """The account root opens pages for: the one sudo names, else the one at
+    the screen.
 
     Returns:
         Its ``pwd`` entry, or None when that is root or nobody.
     """
     uid = os.environ.get("SUDO_UID", "")
     if not uid.isdigit():
-        try:
-            uid = str(os.stat(PLATFORM_DARWIN_CONSOLE).st_uid)
-        except OSError:
-            return None
+        uid = str(console_uid())
     if int(uid) == 0:
         return None
     try:
