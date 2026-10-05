@@ -12,7 +12,7 @@ The **Remote desktop** module shares a managed machine's desktop with the client
 1. Select **Apply remote desktop**.
 1. In a client, under **Remote desktops**, select **Connect**.
 
-With the switch on, the agent stops every other RustDesk host on the machine and runs its own copy under RustDesk's own service names, so the share comes back after the machine restarts. A RustDesk viewer someone has open on the machine keeps running. The share uses the direct port 21118 and no public server. Whose desktop a viewer sees is whoever is signed in at the screen.
+With the switch on, the agent stops every other RustDesk host on the machine and runs its own copy under RustDesk's own service names, so the share comes back after the machine restarts. A RustDesk viewer someone has open on the machine keeps running. The share uses the direct port 21118 and none of RustDesk's servers. RustDesk 1.4.9 asks three public STUN servers (`stun.l.google.com`, `stun.cloudflare.com`, `stun.nextcloud.com`) for the machine's IPv6 address each time its host starts; the request carries no id and registers nothing, and no RustDesk option turns it off. Whose desktop a viewer sees is whoever is signed in at the screen.
 
 The hub generates the seat password the first time the switch goes on and keeps it. The device drawer's **Reset seat password** gives the machine a new one at once and disconnects every viewer.
 

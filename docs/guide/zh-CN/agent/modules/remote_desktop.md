@@ -12,7 +12,7 @@ title: Remote desktop
 1. 点**应用远程桌面**（Apply remote desktop）。
 1. 在客户端的**远程桌面**（Remote desktops）里点**连接**（Connect）。
 
-开关打开后，被控端会停掉机器上其它的 RustDesk 主机，用 RustDesk 自己的服务名运行它自带的那一份，所以机器重启后共享会自动恢复。有人正在这台机器上用的 RustDesk 查看器不受影响。共享走直连端口 21118，不经过任何公共服务器。观看者看到的，是正坐在屏幕前登录的那个人的桌面。
+开关打开后，被控端会停掉机器上其它的 RustDesk 主机，用 RustDesk 自己的服务名运行它自带的那一份，所以机器重启后共享会自动恢复。有人正在这台机器上用的 RustDesk 查看器不受影响。共享走直连端口 21118，不经过 RustDesk 的任何服务器。RustDesk 1.4.9 的主机每次启动时，会向三个公共 STUN 服务器（`stun.l.google.com`、`stun.cloudflare.com`、`stun.nextcloud.com`）查询本机的 IPv6 地址；这个请求不带任何标识，也不登记任何东西，RustDesk 没有选项可以关掉它。观看者看到的，是正坐在屏幕前登录的那个人的桌面。
 
 开关第一次打开时，中枢生成坐席密码并保管。设备抽屉里的**重置坐席密码**（Reset seat password）会立即给机器换一个，并断开所有观看者。
 
