@@ -11,6 +11,7 @@ import pytest
 
 from neutrino_hub.modules.overlay.direct_config import OverlayDirectConfig
 from neutrino_hub.modules.overlay.relay_config import OverlayRelayConfig
+from neutrino_hub.modules.router import interfaces
 from neutrino_hub.web import channel_addresses
 from fastapi import HTTPException
 
@@ -366,3 +367,30 @@ def test_only_a_link_for_another_machine_is_refused_with_nothing_exposed(
     assert urls == ["https://127.0.0.1:8443"]
     assert fingerprint == "f" * 64
     assert refused.value.detail["code"] == "no_reachable_address"
+
+
+@pytest.mark.parametrize(
+    "is_linux, urls",
+    [
+        (True, ["https://203.0.113.7:8443"]),
+        (False, ["https://203.0.113.7:8443", "https://192.168.8.1:8443"]),
+    ],
+)
+def test_a_server_names_an_interface_the_config_does_not_as_the_firewall_opens_it(
+    live, monkeypatch, is_linux, urls
+):
+    monkeypatch.setattr(interfaces, "is_linux", lambda: is_linux)
+    monkeypatch.setattr(
+        channel_addresses,
+        "device_addresses",
+        lambda: {"enp2s0": "203.0.113.7/24", "enp1s0": "192.168.8.1/24"},
+    )
+    runtime = FakeRuntime(
+        network_config(
+            {"name": "enp2s0", "role": "disabled", "is_exposed": True},
+            overlays=[],
+            mode="server",
+        )
+    )
+
+    assert channel_urls(runtime) == urls
