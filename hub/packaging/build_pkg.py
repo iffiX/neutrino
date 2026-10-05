@@ -28,6 +28,7 @@ from venv_tree import (
     asset_name,
     build_environment,
     panel_unit,
+    stop_hub_lines,
     require_built_frontend,
     version,
     write,
@@ -104,20 +105,7 @@ post_upgrade() {
 }
 
 pre_remove() {
-    for unit in neutrino_hub_web neutrino_hub_router neutrino_hub_xray neutrino_hub_dnsmasq neutrino_hub_cliproxyapi neutrino_hub_netbird neutrino_hub_easytier; do
-        systemctl stop "${unit}.service" >/dev/null 2>&1 || true
-        systemctl disable "${unit}.service" >/dev/null 2>&1 || true
-    done
-    # One instance per radio and per uplink, named at runtime rather than
-    # here, so each family is stopped by its pattern.
-    for template in neutrino_hub_dhcpcd neutrino_hub_hostapd neutrino_hub_supplicant; do
-        systemctl stop "${template}@*.service" >/dev/null 2>&1 || true
-    done
-    # The router unit stops without tearing anything down, so removing the
-    # package is where the firewall and the policy route go.
-    nft delete table inet neutrino >/dev/null 2>&1 || true
-    ip rule del fwmark 0x1 lookup 100 >/dev/null 2>&1 || true
-}
+@STOP_HUB@}
 
 post_remove() {
     # What is left once pacman removes its own files is the bytecode the
@@ -128,11 +116,23 @@ post_remove() {
     rmdir /opt/neutrino 2>/dev/null || true
     rm -f /etc/systemd/system/neutrino_hub_*.service
     rm -f /etc/systemd/system/*.wants/neutrino_hub_*.service
+    rm -rf /etc/systemd/system/neutrino_hub_*.service.d
     systemctl daemon-reload >/dev/null 2>&1 || true
     echo "  Leaving /etc/neutrino/hub in place; remove it by hand if you"
     echo "  no longer need the node credentials and device keys it holds."
 }
 """
+
+
+def install_script() -> str:
+    """The pacman install script, with the code's own units in its stop list.
+
+    Returns:
+        The script's text.
+    """
+    return INSTALL_SCRIPT.replace("@FIRST_INSTALL@", FIRST_INSTALL).replace(
+        "@STOP_HUB@", stop_hub_lines()
+    )
 
 
 def main() -> int:
@@ -181,7 +181,7 @@ def main() -> int:
 
         write(
             root / f"{PACKAGE_NAME}.install",
-            INSTALL_SCRIPT.replace("@FIRST_INSTALL@", FIRST_INSTALL),
+            install_script(),
         )
         write(
             root / "PKGBUILD",

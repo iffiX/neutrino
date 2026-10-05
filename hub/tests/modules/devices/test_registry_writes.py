@@ -88,6 +88,24 @@ def test_a_machine_id_finds_its_row(stored):
     assert DeviceRegistry().find_by_machine_id("m-9") is None
 
 
+def test_after_a_restore_the_hub_joins_its_own_row_else_the_old_hubs(stored):
+    registry, first, second = stored
+    registry.note_machine(first, machine_id="m-this")
+    registry.note_machine(second, machine_id="m-old")
+
+    same = DeviceRegistry().hub_row_after_restore(
+        own_machine_id="m-this", backup_machine_id="m-this"
+    )
+    other = DeviceRegistry().hub_row_after_restore(
+        own_machine_id="m-new", backup_machine_id="m-old"
+    )
+    neither = DeviceRegistry().hub_row_after_restore(
+        own_machine_id="m-new", backup_machine_id=""
+    )
+
+    assert (same.id, other.id, neither) == (first, second, None)
+
+
 # --- what a report notes on the row ---
 
 
