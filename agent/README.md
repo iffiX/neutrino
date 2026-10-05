@@ -39,14 +39,14 @@ binding to report.
 `sudo` line, then exits with status 2. `status` and `sync` reach the running
 service over its control socket.
 
-| Command              | What it does                                                                                                                                                                      |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `nagent join <link>` | Spends the link's ticket at the hub, writes the binding and starts the service. With the link omitted it prompts for one; `--yes` replaces an existing binding.                   |
-| `nagent leave`       | Posts the binding to the hub and deletes it. The agent and its service stay, and the machine joins again with a fresh link.                                                       |
-| `nagent status`      | Prints the version, the hub this machine is bound to, the service state and whether the socket is up. An error line names the refusal and the step after it.                      |
-| `nagent sync`        | Sends this machine's report to the hub now.                                                                                                                                       |
-| `nagent run`         | Runs the agent in the foreground, which is what the systemd unit starts.                                                                                                          |
-| `nagent --version`   | Prints the package version.                                                                                                                                                       |
+| Command              | What it does                                                                                                                                                             |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `nagent join <link>` | Spends the link's ticket at the hub, writes the binding and starts the service. With the link omitted it prompts for one; `--yes` replaces an existing binding.          |
+| `nagent leave`       | Asks first, `--yes` skips the question; then posts the binding to the hub and deletes it. The agent and its service stay, and the machine joins again with a fresh link. |
+| `nagent status`      | Prints the version, the hub this machine is bound to, the service state and whether the socket is up. An error line names the refusal and the step after it.             |
+| `nagent sync`        | Sends this machine's report to the hub now.                                                                                                                              |
+| `nagent run`         | Runs the agent in the foreground, which is what the systemd unit starts.                                                                                                 |
+| `nagent --version`   | Prints the package version.                                                                                                                                              |
 
 ## The socket to the hub
 
@@ -83,21 +83,21 @@ alone, observed and reported all the same.
 
 ## Where its files are
 
-| Path                                  | Holds                                                                                            |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `/etc/neutrino/agent/agent.json`      | the binding: `{gateway_url, id, token, fingerprint, machine_id}`, mode 0600                      |
-| `/etc/neutrino/agent/state.json`      | what the machine decided for itself                                                              |
-| `/etc/neutrino/agent/desired.json`    | the last state the hub sent                                                                      |
-| `/etc/neutrino/agent/credentials/`    | the desktop's seat password, in its own root-only file                                           |
-| `/etc/neutrino/agent/cloudcli/`       | each CloudCLI instance's record and environment, root-only                                       |
-| `/var/lib/neutrino/agent/configured/` | one mark per module the hub has configured, which tells `installed` from `stopped` and `running` |
-| `/var/lib/neutrino/agent/packages/`   | a package coming down a `package` stream, until its digest is checked                            |
-| `/var/lib/neutrino/agent/vscode/`     | the VS Code CLI, read and run by every account, and each account's own token file                |
-| `/var/lib/neutrino/agent/cloudcli/`   | CloudCLI's Node.js, read and run by every account                                                |
-| `/var/lib/neutrino/agent/remote_desktop/` | what the switch registered under RustDesk's names, and what was there before, root-only      |
-| `/run/neutrino/agent/agent.sock`      | the control socket, 0600 under a 0700 directory, so the kernel admits root alone                 |
-| `/opt/neutrino/agent/`                | the interpreter and the agent's own code                                                         |
-| `/usr/lib/neutrino/agent/rustdesk/`   | the agent's copy of RustDesk, run as `rustdesk.service` while the switch is on                   |
+| Path                                      | Holds                                                                                            |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `/etc/neutrino/agent/agent.json`          | the binding: `{gateway_url, id, token, fingerprint, machine_id}`, mode 0600                      |
+| `/etc/neutrino/agent/state.json`          | what the machine decided for itself                                                              |
+| `/etc/neutrino/agent/desired.json`        | the last state the hub sent                                                                      |
+| `/etc/neutrino/agent/credentials/`        | the desktop's seat password, in its own root-only file                                           |
+| `/etc/neutrino/agent/cloudcli/`           | each CloudCLI instance's record and environment, root-only                                       |
+| `/var/lib/neutrino/agent/configured/`     | one mark per module the hub has configured, which tells `installed` from `stopped` and `running` |
+| `/var/lib/neutrino/agent/packages/`       | a package coming down a `package` stream, until its digest is checked                            |
+| `/var/lib/neutrino/agent/vscode/`         | the VS Code CLI, read and run by every account, and each account's own token file                |
+| `/var/lib/neutrino/agent/cloudcli/`       | CloudCLI's Node.js, read and run by every account                                                |
+| `/var/lib/neutrino/agent/remote_desktop/` | what the switch registered under RustDesk's names, and what was there before, root-only          |
+| `/run/neutrino/agent/agent.sock`          | the control socket, 0600 under a 0700 directory, so the kernel admits root alone                 |
+| `/opt/neutrino/agent/`                    | the interpreter and the agent's own code                                                         |
+| `/usr/lib/neutrino/agent/rustdesk/`       | the agent's copy of RustDesk, run as `rustdesk.service` while the switch is on                   |
 
 ## The package tree
 

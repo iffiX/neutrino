@@ -163,7 +163,7 @@ def managed(panel, serving):
         INSTALL_TIMEOUT_S,
     )
     yield device_id
-    lifecycle.ssh_to(host, "sudo nagent leave")
+    lifecycle.ssh_to(host, "sudo nagent leave --yes")
     panel.call("POST", "/hub/device/remove", {"device_id": device_id})
     panel.call("POST", "/hub/credential/ssh_key/remove", {"key_id": key["id"]})
 

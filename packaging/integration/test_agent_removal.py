@@ -131,7 +131,7 @@ def machine(panel, serving):  # noqa: F811
 
     yield {"device_id": device_id, "host": host, "key_id": key["id"]}
     lifecycle.ssh_to(host, f"sudo rm -f {UNIT_DIR}/{FOREIGN_UNIT}")
-    lifecycle.ssh_to(host, "sudo nagent leave")
+    lifecycle.ssh_to(host, "sudo nagent leave --yes")
     panel.call("POST", "/hub/device/remove", {"device_id": device_id})
     panel.call("POST", "/hub/credential/ssh_key/remove", {"key_id": key["id"]})
 

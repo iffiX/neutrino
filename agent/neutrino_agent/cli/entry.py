@@ -1,7 +1,7 @@
 """The ``nagent`` command.
 
     nagent join neutrino://enroll/...
-    nagent leave
+    nagent leave [--yes]
     nagent status
     nagent sync
     nagent start [--yes]
@@ -73,7 +73,10 @@ def main() -> int:
         help="replace an existing binding without asking",
     )
 
-    subparsers.add_parser("leave", help="leave the hub")
+    leave_parser = subparsers.add_parser("leave", help="leave the hub")
+    leave_parser.add_argument(
+        "--yes", action="store_true", help="leave without asking first"
+    )
     subparsers.add_parser("status", help="what this machine is bound to")
     subparsers.add_parser("sync", help="ask the hub for this machine's state now")
     start_parser = subparsers.add_parser("start", help="start the agent's service")
@@ -143,7 +146,7 @@ def main() -> int:
     if arguments.command == "join":
         return join.main(arguments.link, is_forced=arguments.yes)
     if arguments.command == "leave":
-        return leave.main()
+        return leave.main(is_forced=arguments.yes)
     if arguments.command == "start":
         return start.main(is_forced=arguments.yes)
     if arguments.command == "stop":
