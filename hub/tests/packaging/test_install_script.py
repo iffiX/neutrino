@@ -57,6 +57,10 @@ echo "$FAKE_UID"
 """,
     "sudo": """#!/bin/sh
 echo "sudo $*" >> "$FAKE_LOG"
+case "$1" in
+    -v) [ -z "$FAKE_SUDO_REFUSED" ] || exit 1; exit 0 ;;
+    -n) shift ;;
+esac
 exec "$@"
 """,
     "curl": """#!/bin/sh
@@ -156,6 +160,15 @@ def _installs(asked):
     return [line for line in asked if not line.startswith(("curl", "sudo", "nhub"))]
 
 
+def _fetches(asked):
+    return [line for line in asked if line.startswith("curl")]
+
+
+def _said(result):
+    """The one sentence a refusal ends on."""
+    return result.stderr.strip().splitlines()[-1]
+
+
 def test_the_script_is_posix_sh_and_ends_by_running_main():
     result = subprocess.run(["sh", "-n", str(SCRIPT)], capture_output=True, text=True)
 
@@ -168,21 +181,23 @@ def test_a_debian_machine_installs_the_hub_deb_from_the_latest_release(stand_ins
     result, asked = stand_ins()
 
     assert result.returncode == 0, result.stderr
-    assert asked[:2] == [
+    assert _fetches(asked) == [
         f"curl {RELEASE}/latest/download/SHA256SUMS",
         f"curl {RELEASE}/latest/download/neutrino-hub_9.9.9_amd64.deb",
     ]
     (install,) = _installs(asked)
     assert install.startswith("apt-get install -y /")
     assert install.endswith("/neutrino-hub_9.9.9_amd64.deb")
-    assert "sudo apt-get install -y" in asked[2]
+    assert any(line.startswith("sudo apt-get install -y") for line in asked)
 
 
 def test_a_pinned_version_comes_from_that_release(stand_ins):
     _result, asked = stand_ins(environment={"NEUTRINO_VERSION": "v9.9.9"})
 
-    assert asked[0] == f"curl {RELEASE}/download/v9.9.9/SHA256SUMS"
-    assert asked[1] == f"curl {RELEASE}/download/v9.9.9/neutrino-hub_9.9.9_amd64.deb"
+    assert _fetches(asked) == [
+        f"curl {RELEASE}/download/v9.9.9/SHA256SUMS",
+        f"curl {RELEASE}/download/v9.9.9/neutrino-hub_9.9.9_amd64.deb",
+    ]
 
 
 def test_the_component_names_the_package(stand_ins):
@@ -240,15 +255,19 @@ def test_without_a_terminal_the_hub_prints_the_wizard_address(stand_ins):
         system="Darwin", machine="arm64", environment={"FAKE_ADDRESS": address}
     )
 
-    assert f"Set the hub up in a browser at: {address}" in result.stdout
-    assert "nhub open --print" in asked
+    assert result.stdout.strip().splitlines()[-1] == (
+        f"Next, set the hub up in a browser at: {address}"
+    )
+    assert "sudo -n nhub open --print" in asked
     assert not any(line.startswith("nhub setup") for line in asked)
 
 
 def test_without_an_address_the_hub_says_how_to_open_the_wizard(stand_ins):
     result, _asked = stand_ins(system="Darwin", machine="arm64")
 
-    assert "Set the hub up with: sudo nhub open" in result.stdout
+    assert result.stdout.strip().splitlines()[-1] == (
+        "Next, set the hub up: sudo nhub open"
+    )
 
 
 def test_an_agent_prints_no_wizard_address(stand_ins):
@@ -285,7 +304,7 @@ def test_a_package_that_does_not_match_its_checksum_is_never_installed(stand_ins
     result, asked = stand_ins()
 
     assert result.returncode == 1
-    assert result.stderr.strip() == (
+    assert _said(result) == (
         "neutrino-hub_9.9.9_amd64.deb does not match its SHA256SUMS line; "
         "nothing was installed."
     )
@@ -333,7 +352,7 @@ def test_a_system_with_no_package_stops_with_one_sentence(
     result, asked = stand_ins(*arguments, **options)
 
     assert result.returncode == 1
-    assert result.stderr.strip() == said
+    assert _said(result) == said
     assert _installs(asked) == []
 
 
@@ -343,7 +362,7 @@ def test_a_release_that_cannot_be_reached_stops_with_one_sentence(stand_ins):
     result, _asked = stand_ins()
 
     assert result.returncode == 1
-    assert result.stderr.strip() == (
+    assert _said(result) == (
         f"Downloading {RELEASE}/latest/download/SHA256SUMS failed."
     )
 
@@ -362,7 +381,7 @@ def test_a_cn_script_reads_the_latest_tag_from_gitee_then_its_files(stand_ins):
     result, asked = stand_ins(edition="cn")
 
     assert result.returncode == 0, result.stderr
-    assert asked[:3] == [
+    assert _fetches(asked)[:3] == [
         f"curl {CN_LATEST}",
         f"curl {CN_RELEASE}/download/v9.9.9/SHA256SUMS",
         f"curl {CN_RELEASE}/download/v9.9.9/neutrino-hub_9.9.9_amd64.deb",
@@ -375,7 +394,7 @@ def test_a_cn_script_given_a_version_asks_the_api_nothing(stand_ins):
     result, asked = stand_ins(edition="cn", environment={"NEUTRINO_VERSION": "v9.9.9"})
 
     assert result.returncode == 0, result.stderr
-    assert asked[0] == f"curl {CN_RELEASE}/download/v9.9.9/SHA256SUMS"
+    assert _fetches(asked)[0] == f"curl {CN_RELEASE}/download/v9.9.9/SHA256SUMS"
 
 
 def test_a_cn_latest_release_with_no_tag_stops_with_one_sentence(stand_ins):
@@ -384,7 +403,7 @@ def test_a_cn_latest_release_with_no_tag_stops_with_one_sentence(stand_ins):
     result, asked = stand_ins(edition="cn")
 
     assert result.returncode == 1
-    assert result.stderr.strip() == (f"The latest release at {CN_LATEST} names no tag.")
+    assert _said(result) == (f"The latest release at {CN_LATEST} names no tag.")
     assert _installs(asked) == []
 
 
@@ -397,7 +416,7 @@ def test_a_cn_release_with_its_files_not_yet_uploaded_stops_with_one_sentence(
     result, asked = stand_ins(edition="cn")
 
     assert result.returncode == 1
-    assert result.stderr.strip() == (
+    assert _said(result) == (
         f"Downloading {CN_RELEASE}/download/v9.9.9/SHA256SUMS failed."
     )
     assert _installs(asked) == []
@@ -446,8 +465,115 @@ def test_the_mainland_script_installs_from_gitee(stand_ins, mainland_tree):
     )
 
     assert result.returncode == 0, result.stderr
-    assert asked[:3] == [
+    assert _fetches(asked)[:3] == [
         f"curl {CN_LATEST}",
         f"curl {CN_RELEASE}/download/v9.9.9/SHA256SUMS",
         f"curl {CN_RELEASE}/download/v9.9.9/neutrino-hub_9.9.9_amd64.deb",
     ]
+
+
+# --- one request for administrator rights ---
+
+
+@pytest.mark.parametrize("component", ["hub", "agent", "client"])
+@pytest.mark.parametrize(
+    "system, machine, os_release",
+    [
+        ("Linux", "x86_64", "ubuntu"),
+        ("Linux", "x86_64", "fedora"),
+        ("Darwin", "arm64", "ubuntu"),
+    ],
+)
+def test_a_run_asks_for_the_password_once_before_it_downloads(
+    stand_ins, component, system, machine, os_release
+):
+    _publish_all(stand_ins.served)
+    result, asked = stand_ins(
+        component, system=system, machine=machine, os_release=os_release
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert asked[0] == "sudo -v"
+    assert asked.count("sudo -v") == 1
+    assert all(
+        line.startswith(("sudo -n", "sudo installer", "sudo apt-get", "sudo dnf"))
+        for line in asked[1:]
+        if line.startswith("sudo")
+    )
+
+
+def test_root_is_asked_for_nothing(stand_ins):
+    _result, asked = stand_ins("agent", uid="0")
+
+    assert not any(line.startswith("sudo") for line in asked)
+
+
+def test_a_refused_password_installs_nothing_and_downloads_nothing(stand_ins):
+    result, asked = stand_ins(environment={"FAKE_SUDO_REFUSED": "1"})
+
+    assert result.returncode == 1
+    assert _said(result) == (
+        "sudo did not grant administrator rights; nothing was installed."
+    )
+    assert asked == ["sudo -v"]
+
+
+def test_a_system_with_no_package_asks_for_no_password(stand_ins):
+    _result, asked = stand_ins(machine="armv7l")
+
+    assert asked == []
+
+
+@pytest.mark.parametrize(
+    "component, uid, last",
+    [
+        (
+            "agent",
+            "1000",
+            "Next, join this machine to a hub: sudo nagent join "
+            "'<enrollment link from the hub's Devices page>'",
+        ),
+        (
+            "agent",
+            "0",
+            "Next, join this machine to a hub: nagent join "
+            "'<enrollment link from the hub's Devices page>'",
+        ),
+        (
+            "client",
+            "1000",
+            "Next, join this computer to a hub: nclient join "
+            "'<client link from the hub's Clients page>'",
+        ),
+    ],
+)
+def test_the_last_line_names_the_one_next_thing(stand_ins, component, uid, last):
+    _publish_all(stand_ins.served)
+    result, _asked = stand_ins(component, uid=uid)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip().splitlines()[-1] == last
+
+
+def test_the_hub_set_up_on_a_terminal_asks_nothing_again(tmp_path, stand_ins):
+    """With a terminal the script runs setup itself, under the ticket it took."""
+    script = SCRIPT.read_text()
+    assert "\n        $as_root nhub setup </dev/tty\n" in script
+    assert script.index("hold_root") < script.index("nhub setup")
+
+
+def _publish_all(served):
+    """Every component for a deb, an rpm and an Apple silicon Mac."""
+    for component in ("hub", "agent", "client"):
+        for name in (
+            f"neutrino-{component}_9.9.9_amd64.deb",
+            f"neutrino-{component}-9.9.9-1.x86_64.rpm",
+            f"neutrino-{component}-9.9.9-macos-arm64.pkg",
+        ):
+            (served / name).write_bytes(name.encode())
+    lines = []
+    for path in sorted(served.iterdir()):
+        if path.name == "SHA256SUMS":
+            continue
+        lines.append(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}")
+    (served / "SHA256SUMS").write_text("\n".join(lines) + "\n")

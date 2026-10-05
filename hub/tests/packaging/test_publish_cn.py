@@ -7,6 +7,7 @@ attachments deleted before the first upload, and a second run for the same
 tag reusing its release and uploading only what is missing.
 """
 
+import hashlib
 import importlib.util
 import json
 import re
@@ -23,12 +24,38 @@ TOKEN = "fake-token-0123"  # scan: allow
 TAG = "v9.9.9"
 
 
+# Stand-ins for the five pinned cc-switch files, small and pinned by their own
+# hashes, so a release can carry them without a download.
+CC_SWITCH_FILES = {
+    f"cc-switch-cli-v5.10.4-{asset}": asset.encode()
+    for asset in (
+        "linux-x64-musl.tar.gz",
+        "linux-arm64-musl.tar.gz",
+        "windows-x64.zip",
+        "darwin-arm64.tar.gz",
+        "darwin-x64.tar.gz",
+    )
+}
+CC_SWITCH_LICENSE = "cc-switch-cli-v5.10.4-LICENSE.txt"
+
+
 @pytest.fixture(scope="module")
 def publish_cn():
     spec = importlib.util.spec_from_file_location("publish_cn", PUBLISH)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+@pytest.fixture(autouse=True)
+def pinned_cc_switch(publish_cn, monkeypatch):
+    """The cc-switch pins named by the stand-ins' own hashes."""
+    pins = {
+        name: (f"https://upstream.invalid/{name}", hashlib.sha256(data).hexdigest())
+        for name, data in CC_SWITCH_FILES.items()
+    }
+    monkeypatch.setattr(publish_cn.cc_switch_assets, "release_files", lambda: pins)
+    return pins
 
 
 class FakeGitee:
@@ -120,6 +147,9 @@ def _dist(tmp_path, extra=None):
         archive.add(tree, arcname="neutrino-9.9.9")
     (dist / "neutrino-hub_9.9.9_amd64.deb").write_bytes(b"hub package")
     (dist / "install.sh").write_bytes(b'EDITION="cn"\n')
+    for name, data in CC_SWITCH_FILES.items():
+        (dist / name).write_bytes(data)
+    (dist / CC_SWITCH_LICENSE).write_text("MIT License\n")
     for name, size in (extra or {}).items():
         with open(dist / name, "wb") as handle:
             handle.truncate(size)
@@ -177,7 +207,7 @@ def test_a_set_over_1_gb_fails_before_anything_changes(run, tmp_path):
     assert "over Gitee's limit of 1000000000 bytes for all attachments" in str(
         refused.value
     )
-    assert re.search(r"the 14 files are 10890\d+ bytes", str(refused.value))
+    assert re.search(r"the 20 files are 10890\d+ bytes", str(refused.value))
     assert gitee.calls == []
     assert run.pushed == []
 
@@ -222,7 +252,7 @@ def test_the_earlier_attachments_go_before_the_first_upload(run, tmp_path):
         if call[0] == "POST" and call[1].endswith("/attach_files")
     ]
     assert len(deletes) == 3
-    assert len(uploads) == 3
+    assert len(uploads) == 9
     assert max(deletes) < min(uploads)
     assert changes[max(deletes) + 1] == ("POST", "/releases")
     assert run.pushed[0][1] == TAG
@@ -252,7 +282,7 @@ def test_a_second_run_for_the_tag_reuses_its_release_and_uploads_what_is_missing
     changes = gitee.changes()
     assert ("POST", "/releases") not in changes
     uploaded = [call for call in changes if call[1].endswith("/attach_files")]
-    assert len(uploaded) == 2
+    assert len(uploaded) == 8
     names = sorted(item["name"] for item in gitee.releases[release_id]["files"])
     assert names == sorted(path.name for path in dist.iterdir())
 
@@ -347,15 +377,74 @@ def test_a_refusal_names_the_call_and_never_the_token(publish_cn):
     )
 
 
-def test_check_only_reads_the_files_and_reaches_nothing(tmp_path, monkeypatch):
+def test_check_only_reads_the_files_and_reaches_nothing(
+    publish_cn, tmp_path, monkeypatch, capsys
+):
     dist = _dist(tmp_path)
     monkeypatch.delenv("GITEE_TOKEN", raising=False)
+    monkeypatch.setattr(
+        publish_cn.sys, "argv", ["publish_cn.py", "--check-only", "--dist", str(dist)]
+    )
+
+    assert publish_cn.main() == 0
+    assert capsys.readouterr().out.strip() == "9 files are within Gitee's limits"
+
+
+def test_check_only_needs_no_secret_and_no_network(tmp_path):
+    """The real pins: a cc-switch file that is not the pinned one is refused
+    by name, with no token and nothing fetched."""
+    dist = _dist(tmp_path)
 
     result = subprocess.run(
         [sys.executable, str(PUBLISH), "--check-only", "--dist", str(dist)],
         capture_output=True,
         text=True,
+        env={"PATH": "/usr/bin:/bin"},
     )
 
-    assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "3 files are within Gitee's limits"
+    assert result.returncode == 1
+    assert result.stderr.strip().startswith(
+        "cc-switch-cli-v5.10.4-darwin-arm64.tar.gz hashes to "
+    )
+
+
+@pytest.mark.parametrize(
+    "change, said",
+    [
+        (
+            "missing",
+            "the release carries no cc-switch-cli-v5.10.4-darwin-x64.tar.gz",
+        ),
+        ("tampered", "cc-switch-cli-v5.10.4-darwin-x64.tar.gz hashes to "),
+        ("licence", "the release carries no cc-switch-cli-v5.10.4-LICENSE.txt"),
+    ],
+)
+def test_a_release_without_the_pinned_cc_switch_files_is_refused_before_anything(
+    run, tmp_path, change, said
+):
+    gitee = FakeGitee()
+    dist = _dist(tmp_path)
+    if change == "missing":
+        (dist / "cc-switch-cli-v5.10.4-darwin-x64.tar.gz").unlink()
+    if change == "tampered":
+        (dist / "cc-switch-cli-v5.10.4-darwin-x64.tar.gz").write_bytes(b"other")
+    if change == "licence":
+        (dist / CC_SWITCH_LICENSE).unlink()
+
+    with pytest.raises(SystemExit) as refused:
+        run(gitee, dist)
+
+    assert str(refused.value).startswith(said)
+    assert gitee.calls == []
+    assert run.pushed == []
+
+
+def test_the_cc_switch_files_go_up_beside_the_packages(run, tmp_path):
+    gitee = FakeGitee()
+
+    run(gitee, _dist(tmp_path))
+
+    (release,) = [r for r in gitee.releases.values() if r["tag_name"] == TAG]
+    names = {item["name"] for item in release["files"]}
+    assert set(CC_SWITCH_FILES) <= names
+    assert CC_SWITCH_LICENSE in names

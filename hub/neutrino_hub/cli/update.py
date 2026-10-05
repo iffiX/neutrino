@@ -15,7 +15,7 @@ import time
 from pathlib import Path
 
 from neutrino_hub import HUB_VERSION
-from neutrino_hub.cli.start import is_confirmed_on_terminal
+from neutrino_hub.cli.stop import is_confirmed_on_terminal
 from neutrino_hub.exceptions import HubUpdateError
 from neutrino_hub.modules.hub_update.constants import (
     HUB_UPDATE_REASON_PACKAGE_MISSING,

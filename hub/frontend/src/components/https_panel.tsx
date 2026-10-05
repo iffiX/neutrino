@@ -11,7 +11,13 @@ import { useConfirm } from "../use_confirm";
 import type { PanelHttpsResetView, PanelHttpsView } from "../api_types";
 
 import "./apply_bar.css";
-import { httpOrigin, httpsOrigin } from "../origins";
+import {
+  hubHost,
+  httpOrigin,
+  httpsOrigin,
+  isOffPanelPort,
+  isThroughClient,
+} from "../origins";
 
 import "./https_panel.css";
 
@@ -24,10 +30,13 @@ import "./https_panel.css";
  * port to learn whether this browser trusts the certificate, and offers
  * Enable only once it does. A page reached on another port than the hub's
  * port for its scheme comes through a forward, where the hub's other port is
- * not this host's: nothing is probed, Enable is offered, and a switch in
- * either direction leaves the page where it is and names the port the
- * forward must reach. Regenerating is an HTTP-only action, and the new
- * authority downloads from the answer itself.
+ * not this host's: nothing is probed, Enable is offered, the addresses list
+ * this page's own as the one in use and name the hub by a placeholder, and a
+ * switch in either direction leaves the page where it is. Behind a port
+ * forward the card names the port the forward must reach. Through a
+ * client's Panel button, which the hub serves on its HTTP port whatever the
+ * setting, the card says the button goes on working. Regenerating is an
+ * HTTP-only action, and the new authority downloads from the answer itself.
  */
 
 /** Where the authority downloads, with or without a session. */
@@ -37,10 +46,6 @@ const PROBE_PATH = "/api/hub/setting/https/probe";
 /** How long a probe waits before the certificate counts as untrusted. */
 const PROBE_TIMEOUT_MS = 5000;
 const AUTHORITY_MEDIA_TYPE = "application/x-x509-ca-cert";
-/** The port a page is on when its address names none. */
-const HTTP_SCHEME_PORT = 80;
-const HTTPS_SCHEME_PORT = 443;
-
 type Trust = "checking" | "trusted" | "untrusted";
 
 /** Where a switch through a forward left the panel. */
@@ -65,10 +70,9 @@ export function HttpsPanel() {
   const view = resource.data;
   const isOnHttps = window.location.protocol === "https:";
   const httpsPort = view?.https_listen_port ?? null;
-  const isForwarded =
-    view !== null &&
-    pagePort(isOnHttps) !==
-      (isOnHttps ? view.https_listen_port : view.listen_port);
+  const isForwarded = isOffPanelPort(view);
+  const isClientPage = isThroughClient(view);
+  const host = hubHost(isForwarded);
 
   const probe = useCallback(async () => {
     if (httpsPort === null) {
@@ -76,9 +80,9 @@ export function HttpsPanel() {
     }
     setTrust("checking");
     setTrust(
-      (await isTrusted(httpsOrigin(httpsPort))) ? "trusted" : "untrusted",
+      (await isTrusted(httpsOrigin(httpsPort, host))) ? "trusted" : "untrusted",
     );
-  }, [httpsPort]);
+  }, [httpsPort, host]);
 
   useEffect(() => {
     if (!isOnHttps && !isForwarded) {
@@ -107,26 +111,28 @@ export function HttpsPanel() {
         isOn ? "/hub/setting/https/enable" : "/hub/setting/https/disable",
       );
       resource.setData(next);
-      if (isForwarded) {
+      if (isForwarded && !isClientPage) {
         setSwitchedTo(
           isOn
             ? {
                 isOn,
                 port: next.https_listen_port,
-                origin: httpsOrigin(next.https_listen_port),
+                origin: httpsOrigin(next.https_listen_port, host),
               }
             : {
                 isOn,
                 port: next.listen_port,
-                origin: httpOrigin(next.listen_port),
+                origin: httpOrigin(next.listen_port, host),
               },
         );
-      } else if (isOn && !isOnHttps) {
+      } else if (!isForwarded && isOn && !isOnHttps) {
         window.location.replace(
-          `${httpsOrigin(next.https_listen_port)}${here()}`,
+          `${httpsOrigin(next.https_listen_port, host)}${here()}`,
         );
-      } else if (!isOn && isOnHttps) {
-        window.location.replace(`${httpOrigin(next.listen_port)}${here()}`);
+      } else if (!isForwarded && !isOn && isOnHttps) {
+        window.location.replace(
+          `${httpOrigin(next.listen_port, host)}${here()}`,
+        );
       }
     } catch (cause: unknown) {
       setError(describeError(cause));
@@ -189,7 +195,14 @@ export function HttpsPanel() {
           <dl className="https_status">
             <StatusLine
               label={t("ui.settings.https_addresses")}
-              value={<Addresses view={view} isOnHttps={isOnHttps} />}
+              value={
+                <Addresses
+                  view={view}
+                  isOnHttps={isOnHttps}
+                  isForwarded={isForwarded}
+                  isClientPage={isClientPage}
+                />
+              }
             />
             <StatusLine
               label={t("ui.settings.https_fingerprint")}
@@ -250,25 +263,29 @@ export function HttpsPanel() {
                       : "ui.settings.https_forwarded_off",
                     { port: switchedTo.port },
                   )}
-                  <a href={`${switchedTo.origin}${here()}`}>
-                    {t("ui.settings.https_open_address", {
-                      address: switchedTo.origin,
-                    })}
-                  </a>
+                  {host === window.location.hostname && (
+                    <a href={`${switchedTo.origin}${here()}`}>
+                      {t("ui.settings.https_open_address", {
+                        address: switchedTo.origin,
+                      })}
+                    </a>
+                  )}
                 </div>
               </div>
             )}
             <div className="apply_bar_row">
               <span className="field_hint">
-                {isForwarded && !isRegenerated
-                  ? view.is_https_enabled
-                    ? t("ui.settings.https_forwarded_disable", {
-                        port: view.listen_port,
-                      })
-                    : t("ui.settings.https_forwarded", {
-                        port: view.https_listen_port,
-                      })
-                  : t(hintKey(view, isOnHttps, trust, isRegenerated))}
+                {isClientPage && !isRegenerated
+                  ? t("ui.settings.https_client_kept")
+                  : isForwarded && !isRegenerated
+                    ? view.is_https_enabled
+                      ? t("ui.settings.https_forwarded_disable", {
+                          port: view.listen_port,
+                        })
+                      : t("ui.settings.https_forwarded", {
+                          port: view.https_listen_port,
+                        })
+                    : t(hintKey(view, isOnHttps, trust, isRegenerated))}
               </span>
               <div className="button_row">
                 <button
@@ -339,18 +356,37 @@ function StatusLine({
   );
 }
 
-/** Both of the panel's addresses on this host, the one in use marked. */
+/**
+ * Both of the panel's addresses, the one in use marked. Through a forward the
+ * page's own address comes first as the one in use, marked as a client's
+ * where it is one, and the hub's two are named with a placeholder for its
+ * host.
+ */
 function Addresses({
   view,
   isOnHttps,
+  isForwarded,
+  isClientPage,
 }: {
   view: PanelHttpsView;
   isOnHttps: boolean;
+  isForwarded: boolean;
+  isClientPage: boolean;
 }) {
-  const addresses = [
-    { origin: httpOrigin(view.listen_port), isCurrent: !isOnHttps },
-    { origin: httpsOrigin(view.https_listen_port), isCurrent: isOnHttps },
+  const host = hubHost(isForwarded);
+  const hubAddresses = [
+    { origin: httpOrigin(view.listen_port, host), isCurrent: !isOnHttps },
+    {
+      origin: httpsOrigin(view.https_listen_port, host),
+      isCurrent: isOnHttps,
+    },
   ];
+  const addresses = isForwarded
+    ? [
+        { origin: window.location.origin, isCurrent: true },
+        ...hubAddresses.map((address) => ({ ...address, isCurrent: false })),
+      ]
+    : hubAddresses;
   return (
     <div className="https_addresses">
       {addresses.map((address) => (
@@ -358,7 +394,11 @@ function Addresses({
           <span className="https_status_value--mono">{address.origin}</span>
           {address.isCurrent && (
             <span className="badge badge--accent">
-              {t("ui.settings.https_current")}
+              {t(
+                isClientPage
+                  ? "ui.settings.https_through_client"
+                  : "ui.settings.https_current",
+              )}
             </span>
           )}
         </span>
@@ -425,15 +465,6 @@ function downloadAuthority(derBase64: string, fileName: string): void {
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
-}
-
-/** The port this page is on, from its own address. */
-function pagePort(isOnHttps: boolean): number {
-  const { port } = window.location;
-  if (port !== "") {
-    return Number(port);
-  }
-  return isOnHttps ? HTTPS_SCHEME_PORT : HTTP_SCHEME_PORT;
 }
 
 /** This page's path, query and fragment, kept across a scheme change. */

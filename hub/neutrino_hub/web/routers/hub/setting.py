@@ -121,7 +121,10 @@ from neutrino_hub.modules.router.constants import (
     ROUTER_MODES_KEYS,
 )
 from neutrino_hub.modules.cliproxyapi.constants import CLIPROXYAPI_VERSION
-from neutrino_hub.modules.easytier.constants import EASYTIER_VERSION
+from neutrino_hub.modules.easytier.constants import (
+    EASYTIER_SOURCE_URLS,
+    EASYTIER_VERSION,
+)
 
 router = APIRouter(
     prefix="/api/hub/setting", tags=["setting"], dependencies=[Depends(require_session)]
@@ -1363,7 +1366,8 @@ def _unreachable(error: Exception) -> HTTPException:
 # binary was built from, and the systems whose package carries it: None for
 # every system. The agent and the client carry RustDesk and cc-switch and
 # credit those in their own packages. What the proxy and NetBird carry comes
-# from the edition table.
+# from the edition table, and EasyTier's source is read where the hub's
+# edition reads it.
 CARRIED_COMPONENTS = (
     (
         "CLIProxyAPI",
@@ -1376,7 +1380,7 @@ CARRIED_COMPONENTS = (
         "EasyTier",
         EASYTIER_VERSION,
         "LGPL-3.0",
-        "https://github.com/EasyTier/EasyTier/tree/v{}",
+        EASYTIER_SOURCE_URLS,
         None,
     ),
     (
@@ -1387,6 +1391,18 @@ CARRIED_COMPONENTS = (
         (PLATFORM_OS_WINDOWS,),
     ),
 )
+
+
+def _source_of(source) -> str:
+    """One component's source address, the hub's edition's where it names one.
+
+    Args:
+        source: The address, or edition to address.
+
+    Returns:
+        The address, with ``{}`` open for the version.
+    """
+    return source[edition.EDITION] if isinstance(source, dict) else source
 
 
 def _acknowledgements() -> list[AcknowledgementView]:
@@ -1408,7 +1424,7 @@ def _acknowledgements() -> list[AcknowledgementView]:
             name=name,
             version=version,
             license=license_name,
-            corresponding_source=source.format(version),
+            corresponding_source=_source_of(source).format(version),
         )
         for name, version, license_name, source, systems in components
         if systems is None or system in systems

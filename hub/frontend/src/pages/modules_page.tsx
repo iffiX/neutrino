@@ -534,11 +534,13 @@ export function ModulesPage() {
                 <div className="modules_actions">
                   <ActionButton
                     action="install"
-                    isEnabled={canAct && activeRow.state === "absent"}
+                    isEnabled={
+                      canAct &&
+                      (activeRow.state === "absent" ||
+                        isRetried(activeRow, "installed"))
+                    }
                     disabledReason={
-                      isPresent || activeRow.state === "failed"
-                        ? t("ui.modules.install_present")
-                        : undefined
+                      isPresent ? t("ui.modules.install_present") : undefined
                     }
                     isBusy={busyAction === "install"}
                     onClick={() => void act("install")}
@@ -548,7 +550,8 @@ export function ModulesPage() {
                     isEnabled={
                       canAct &&
                       (activeRow.state === "installed" ||
-                        activeRow.state === "stopped")
+                        activeRow.state === "stopped" ||
+                        isRetried(activeRow, "running"))
                     }
                     isBusy={busyAction === "start"}
                     onClick={() => void act("start")}
@@ -559,7 +562,8 @@ export function ModulesPage() {
                       canAct &&
                       (activeRow.state === "running" ||
                         (activeRow.state === "installed" &&
-                          activeRow.is_active))
+                          activeRow.is_active) ||
+                        isRetried(activeRow, "stopped"))
                     }
                     isBusy={busyAction === "stop"}
                     onClick={() => void act("stop")}
@@ -695,6 +699,12 @@ function shownModules(
     return runnable.filter((name) => device.shown_module.includes(name));
   }
   return runnable.filter((name) => rows[name]?.state !== "unknown");
+}
+
+/** Whether a failed module's own press tries again: the one of what it was
+ * asked for. */
+function isRetried(row: DeviceModuleView, want: string): boolean {
+  return row.state === "failed" && row.want === want;
 }
 
 /** Every module the picker can show, named as its manifest names it. */

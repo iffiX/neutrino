@@ -33,6 +33,15 @@ object Edition {
         get() = overlayParts.map { it.carriedCore } + CLIENT_CARRIED_CORES
 
     /**
+     * The source of one carried core as this edition links it.
+     *
+     * @param core The core.
+     * @return Its mirror in the mainland edition where it has one, else its own source.
+     */
+    fun sourceUrlOf(core: CarriedCore): String =
+        core.mainlandSourceUrl.takeIf { current == EDITION_CN && it.isNotEmpty() } ?: core.sourceUrl
+
+    /**
      * Whether a left-out feature is in this app.
      *
      * @param name `netbird`.

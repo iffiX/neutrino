@@ -1,4 +1,4 @@
-cc-switch CLI 5.10.4, carried in the Neutrino client packages under the terms below.
+cc-switch CLI 5.10.4, carried in the Neutrino client packages and attached to the mainland release under the terms below.
 Corresponding source: https://github.com/SaladDay/cc-switch-cli/tree/v5.10.4
 
 MIT License

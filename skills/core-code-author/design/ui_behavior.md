@@ -96,6 +96,14 @@ device. Never a machine word — a socket's `open` is `live` to a reader.
 
 Badges say one word and report state; they are never pressed.
 
+An interface the hub detects and the configuration does not name
+carries `ui.network.unsaved_interface` as an accent badge on the
+**Network** page, on its exposure chip and in its summary, the way a
+VLAN the next apply creates carries `ui.network.vlan_new_on_apply`.
+The page reads it from the interface's `is_unsaved` and works out
+nothing itself ([modules/network.md](modules/network.md), "An
+interface the configuration does not name").
+
 ## Filters
 
 A filter row is single-select chips over a list already in memory, `All` first
@@ -444,6 +452,14 @@ The **Modules** page has three panels, top to bottom:
 | the machine picker | the managed machines, as before |
 | **Global configuration** | the settings of the picked machine that belong to no module; today one part, its AI tools |
 | **Module configuration** | the tab strip of the machine's modules and the picked module's panels, as before under the title `ui.modules.tabs_title` |
+
+A module whose last report is `failed` keeps the button of what it was
+asked for live: **Install** while its `want` is `installed`, **Start** while
+it is `running`, **Stop** while it is `stopped`, and **Uninstall** always.
+That press tries the same step again ([agent.md](agent.md), "A retry is the
+same press again"); there is no other retry button. A module panel's apply
+and **Configure** on a refused configuration try again the same way. A
+press on a module that did not fail asks for nothing new.
 
 The tabs of **Module configuration** come in one order, the modules every
 system runs first: File share, Gitea, VS Code, code-server, CloudCLI,

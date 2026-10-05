@@ -1333,6 +1333,19 @@ class ClientResident:
                 self._log(f"could not read the bindings: {error}")
             self._news.wait(timeout=CLIENT_IDLE_POLL_INTERVAL_S)
 
+    def arrange_relaunch(self) -> None:
+        """Have this client started again once the installer that asked it to quit is done.
+
+        A refusal is logged; the quit goes on either way.
+        """
+        try:
+            is_arranged = self.platform.register_relaunch()
+        except OSError as error:
+            self._log(f"the restart after the upgrade could not be arranged: {error}")
+            return
+        if is_arranged:
+            self._log("the client starts again once the upgrade is installed")
+
     def shutdown(self) -> None:
         """Let go of everything and stop every loop. Idempotent.
 

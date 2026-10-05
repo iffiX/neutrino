@@ -684,10 +684,12 @@ class RouterNetworkConfig:
         Where the hub addresses the machine, an interface whose role is
         ``disabled`` is left to the system and is off; every other role is
         on. Where it addresses nothing, ``server`` and ``side_gateway``, no
-        role says whether a port is used, so every port the **Network** page
-        lists is on. Direct opens the agent port on every enabled interface;
-        whether the rest of the box answers there is :attr:`RouterInterface.is_exposed`
-        alone.
+        role says whether a port is used, so every port the configuration
+        names is on. A port it does not name is on exactly where
+        :meth:`interface_or_new` reads it as exposed: never on Linux, always
+        on macOS and Windows. Direct opens the agent port on every enabled
+        interface; whether the rest of the box answers there is
+        :attr:`RouterInterface.is_exposed` alone.
 
         Args:
             name: Kernel interface name.
@@ -695,10 +697,10 @@ class RouterNetworkConfig:
         Returns:
             True when the interface is enabled.
         """
-        if not self.is_addressing_owned:
-            return True
         stored = self.interface(name)
-        return stored is not None and not stored.is_disabled
+        if stored is None:
+            return self.interface_or_new(name).is_exposed
+        return not self.is_addressing_owned or not stored.is_disabled
 
     @property
     def enabled_device_names(self) -> list[str]:

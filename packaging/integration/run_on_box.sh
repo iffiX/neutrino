@@ -97,7 +97,17 @@ printf '  %-22s %s\n' "interface" "$INTERFACE $CIDR via $GATEWAY"
 phase "install"
 # The log is kept rather than discarded: an install that fails takes every
 # check after it with it, and "it failed" on its own says nothing about why.
-if command -v apt-get >/dev/null; then
+# A package beside SHA256SUMS and install.sh is installed the way a person
+# installs it, through the one-command script; a package on its own goes in
+# through the package manager.
+ASSET_DIR="$(cd "$(dirname "$PACKAGE")" && pwd)"
+if [ -f "$ASSET_DIR/SHA256SUMS" ] && [ -f "$ASSET_DIR/install.sh" ]; then
+    if command -v dnf >/dev/null; then
+        dnf -q -y install epel-release > /tmp/install.log 2>&1
+    fi
+    NEUTRINO_ASSET_DIR="$ASSET_DIR" sh "$ASSET_DIR/install.sh" hub \
+        </dev/null >> /tmp/install.log 2>&1
+elif command -v apt-get >/dev/null; then
     DEBIAN_FRONTEND=noninteractive apt-get -qq install -y "$PACKAGE" > /tmp/install.log 2>&1
 elif command -v dnf >/dev/null; then
     dnf -q -y install epel-release > /tmp/install.log 2>&1
@@ -200,7 +210,7 @@ panel_scheme http
 ran $?
 
 phase "reset"
-nhub reset all > /tmp/reset.log 2>&1
+nhub reset all --yes > /tmp/reset.log 2>&1
 ran $?
 python3 -m pytest "$HERE/test_reset_hands_back.py" -q
 ran $?
@@ -254,7 +264,7 @@ ran $?
 # The walks above leave the box a router whose resolver file is the hub's.
 # A reset after them has to give the machine a resolver that answers.
 phase "reset, after the box has been a router"
-nhub reset all > /tmp/reset2.log 2>&1
+nhub reset all --yes > /tmp/reset2.log 2>&1
 ran $?
 python3 -m pytest "$HERE/test_reset_hands_back.py" -q -k still_resolves
 ran $?

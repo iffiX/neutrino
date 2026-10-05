@@ -139,6 +139,10 @@ CLIENT_CODE_WORDS = {
         "the saved login is gone; enter it again: nclient service file config"
     ),
     "fs_refused": "this account may not use that folder",
+    "files_adapter_in_use": (
+        "the files adapter is in use by another account on this machine; the "
+        "mount is tried again once that account's client has quit"
+    ),
     "files_adapter_unavailable": (
         "the files adapter could not start: {detail}; check the "
         "NeutrinoClientFiles service"

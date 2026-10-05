@@ -4,7 +4,9 @@
 #   & ([scriptblock]::Create((irm https://github.com/iffiX/neutrino/releases/latest/download/install.ps1))) agent
 #   irm https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.ps1 | iex
 #
-# Run in a PowerShell opened as administrator. $NeutrinoEdition is the edition this
+# Run in any PowerShell. Started without administrator rights, the script
+# asks Windows for them once and goes on in the window Windows opens, which
+# stays open for the next command. $NeutrinoEdition is the edition this
 # script installs: intl from GitHub, cn from Gitee, where the latest
 # release's tag is read from the API first. $env:NEUTRINO_VERSION names the
 # release, such as v0.5.0; the latest when unset. $env:NEUTRINO_ASSET_DIR
@@ -21,6 +23,8 @@ $NeutrinoCnReleases = 'https://gitee.com/iffiX/neutrino/releases'
 $NeutrinoCnLatestReleaseApi = 'https://gitee.com/api/v5/repos/iffiX/neutrino/releases/latest'
 # What msiexec answers for a finished install, with and without a reboot owed.
 $NeutrinoInstalledCodes = @(0, 3010)
+# What the script carries into the window opened as administrator.
+$NeutrinoCarriedVariables = @('NEUTRINO_VERSION', 'NEUTRINO_ASSET_DIR')
 
 function Test-NeutrinoAdministrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -70,18 +74,62 @@ function Get-NeutrinoReleaseBase {
     return "$NeutrinoCnReleases/download/$tag"
 }
 
+# This script's own text, however it was started: from a file, or fetched
+# and run with Invoke-Expression.
+function Get-NeutrinoScriptText {
+    $ast = (Get-Command Install-Neutrino).ScriptBlock.Ast
+    while ($ast.Parent) { $ast = $ast.Parent }
+    return $ast.Extent.Text
+}
+
+# Ask Windows once for administrator rights: the same script, with what it
+# was given, runs again in a PowerShell window opened as administrator, which
+# stays open afterwards.
+function Start-NeutrinoElevated {
+    param([string]$Component)
+    $copy = Join-Path ([IO.Path]::GetTempPath()) ('neutrino_install_' + [guid]::NewGuid().ToString('N') + '.ps1')
+    Set-Content -LiteralPath $copy -Value (Get-NeutrinoScriptText) -Encoding UTF8
+    $settings = ''
+    foreach ($name in $NeutrinoCarriedVariables) {
+        $value = [Environment]::GetEnvironmentVariable($name)
+        if ($value) {
+            $settings += "`$env:$name = '$($value.Replace("'", "''"))'; "
+        }
+    }
+    $command = "$settings& '$($copy.Replace("'", "''"))' $Component"
+    $shell = (Get-Process -Id $PID).Path
+    Write-Output 'Neutrino asks Windows for administrator rights once, and goes on in the window it opens.'
+    try {
+        Start-Process -FilePath $shell -Verb RunAs -ArgumentList @(
+            '-NoProfile', '-NoExit', '-ExecutionPolicy', 'Bypass', '-Command', $command
+        ) | Out-Null
+    } catch {
+        throw 'Windows did not grant administrator rights; nothing was installed.'
+    }
+}
+
+# What the machine's and the person's PATH say now, so a program the install
+# put on it answers in this window.
+function Update-NeutrinoPath {
+    $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+    $user = [Environment]::GetEnvironmentVariable('Path', 'User')
+    $found = (@($machine, $user) | Where-Object { $_ }) -join ';'
+    if ($found) { $env:Path = $found }
+}
+
 function Install-Neutrino {
     param([string]$Component = 'hub')
 
-    if (-not (Test-NeutrinoAdministrator)) {
-        throw 'Run this in a PowerShell opened as administrator.'
-    }
     if ($Component -notin @('hub', 'agent', 'client')) {
         throw "Name hub, agent or client to install, not $Component."
     }
     $machine = Get-NeutrinoMachine -Architecture $env:PROCESSOR_ARCHITECTURE
     if (-not $machine) {
         throw "No Neutrino package is published for Windows on $env:PROCESSOR_ARCHITECTURE."
+    }
+    if (-not (Test-NeutrinoAdministrator)) {
+        Start-NeutrinoElevated -Component $Component
+        return
     }
 
     $work = Join-Path ([IO.Path]::GetTempPath()) ('neutrino_' + [guid]::NewGuid().ToString('N'))
@@ -124,8 +172,16 @@ function Install-Neutrino {
     } finally {
         Remove-Item -Recurse -Force -LiteralPath $work -ErrorAction SilentlyContinue
     }
+    Update-NeutrinoPath
 
-    if ($Component -ne 'hub') { return }
+    if ($Component -eq 'agent') {
+        Write-Output "Next, in this window: nagent join '<enrollment link from the hub's Devices page>'"
+        return
+    }
+    if ($Component -eq 'client') {
+        Write-Output "Next, in a PowerShell of your own: nclient join '<client link from the hub's Clients page>'"
+        return
+    }
     $nhub = Join-Path $env:ProgramFiles 'Neutrino\hub\nhub.exe'
     if (-not [Console]::IsInputRedirected) {
         & $nhub setup
@@ -137,9 +193,9 @@ function Install-Neutrino {
         $address = $null
     }
     if ($address) {
-        Write-Output "Set the hub up in a browser at: $address"
+        Write-Output "Next, set the hub up in a browser at: $address"
     } else {
-        Write-Output "Set the hub up with: & '$nhub' open"
+        Write-Output "Next, in this window: & '$nhub' open"
     }
 }
 

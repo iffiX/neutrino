@@ -406,3 +406,145 @@ def test_a_probe_that_cannot_connect_is_not_carried():
         raise OSError("no route")
 
     assert adapter_carries(dial) is False
+
+
+ALICE = {"account": "alice", "pid": 4100}
+ALICE_AGAIN = {"account": "Alice", "pid": 4200}
+BOB = {"account": "bob", "pid": 5100}
+IN_USE = {"code": "files_adapter_in_use", "params": {}}
+
+
+class Watches:
+    """Each watched process, running until the test ends it."""
+
+    def __init__(self):
+        self.ended = set()
+        self.opened = []
+        self.closed = []
+
+    def __call__(self, pid):
+        self.opened.append(pid)
+        watches = self
+
+        class Watch:
+            def is_running(self):
+                return pid not in watches.ended
+
+            def close(self):
+                watches.closed.append(pid)
+
+        return Watch()
+
+
+@pytest.fixture
+def watches():
+    return Watches()
+
+
+@pytest.fixture
+def shared(started, adapter, lines, watches):
+    """A daemon two accounts reach through the pipe."""
+
+    def start(argv, env):
+        process = FakeTun2socks(argv, env)
+        started.append(process)
+        return process
+
+    return FilesAdapterDaemon(
+        tun2socks_path="C:\\nc\\bin\\tun2socks.exe",
+        configure_adapter=adapter.configure,
+        log=lines.append,
+        start_process=start,
+        probe=answered,
+        watch_process=watches,
+    )
+
+
+def test_a_second_account_is_refused_and_the_first_keeps_its_adapter(
+    shared, started, lines
+):
+    assert shared.handle(dict(UP), peer=ALICE) == {"is_up": True, "port": 40001}
+
+    answer = shared.handle(dict(UP, port=40009, password="p9"), peer=BOB)
+
+    assert answer == IN_USE
+    assert len(started) == 1 and started[0].status is None
+    assert "socks5://u1:p-Secret_1@127.0.0.1:40001" in started[0].argv  # scan: allow
+    assert shared.status() == {"is_up": True, "port": 40001}
+    assert "up from bob refused: the adapter is held by alice" in lines
+
+
+def test_a_second_account_cannot_take_the_adapter_down(shared, started):
+    shared.handle(dict(UP), peer=ALICE)
+
+    assert shared.handle({"verb": "down"}, peer=BOB) == IN_USE
+    assert started[0].status is None
+    assert shared.handle({"verb": "status"}, peer=BOB) == {
+        "is_up": True,
+        "port": 40001,
+    }
+
+
+def test_a_later_client_of_the_same_account_is_served_in_its_place(
+    shared, started, watches
+):
+    shared.handle(dict(UP), peer=ALICE)
+
+    answer = shared.handle(dict(UP, port=40002, password="p2"), peer=ALICE_AGAIN)
+
+    assert answer == {"is_up": True, "port": 40002}
+    assert len(started) == 2
+    assert watches.opened == [4100, 4200]
+    assert watches.closed == [4100]
+
+
+def test_the_holders_down_frees_the_adapter_for_another_account(shared, started):
+    shared.handle(dict(UP), peer=ALICE)
+    shared.handle({"verb": "down"}, peer=ALICE)
+
+    answer = shared.handle(dict(UP, port=40009, password="p9"), peer=BOB)
+
+    assert answer == {"is_up": True, "port": 40009}
+
+
+def test_a_holder_that_ended_without_down_frees_the_adapter_within_a_tick(
+    shared, started, watches, lines
+):
+    shared.handle(dict(UP), peer=ALICE)
+    watches.ended.add(4100)
+
+    shared.tick()
+
+    assert started[0].status == -15
+    assert shared.status() == {"is_up": False, "port": 0}
+    assert "the client of alice that held the adapter has ended" in lines
+    assert watches.closed == [4100]
+    assert shared.handle(dict(UP, port=40009, password="p9"), peer=BOB) == {
+        "is_up": True,
+        "port": 40009,
+    }
+
+
+def test_a_request_whose_asker_the_pipe_cannot_tell_is_refused_while_held(shared):
+    shared.handle(dict(UP), peer=ALICE)
+
+    assert shared.handle(dict(UP, port=40009, password="p9"), peer=None) == IN_USE
+    assert shared.handle({"verb": "down"}, peer=None) == IN_USE
+
+
+def test_a_holder_that_cannot_be_watched_still_holds(started, adapter, lines):
+    def refuse(pid):
+        raise OSError("access denied")
+
+    daemon = FilesAdapterDaemon(
+        tun2socks_path="t.exe",
+        configure_adapter=adapter.configure,
+        log=lines.append,
+        start_process=FakeTun2socks,
+        probe=answered,
+        watch_process=refuse,
+    )
+    daemon.handle(dict(UP), peer=ALICE)
+
+    assert daemon.handle(dict(UP, port=40009), peer=BOB) == IN_USE
+    assert "the holding client cannot be watched: access denied" in lines

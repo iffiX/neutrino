@@ -266,3 +266,55 @@ def test_an_answer_that_is_no_object_is_a_value_error():
 
     with pytest.raises(ValueError):
         ask_easytier_daemon(PIPE_NAME, {"verb": "status"}, pipe_api=api)
+
+
+class PeerDaemon:
+    """Records the peer each request came with."""
+
+    def __init__(self):
+        self.peers = []
+
+    def handle(self, request, peer=None):
+        self.peers.append(peer)
+        return {"is_up": False, "port": 0}
+
+
+def test_a_server_that_identifies_hands_the_daemon_its_peer(tmp_path):
+    address = str(tmp_path / "files.sock")
+    daemon = PeerDaemon()
+    seen = []
+
+    def identify(connection):
+        seen.append(connection)
+        return {"account": "alice", "pid": 4100}
+
+    server = EasytierSocketServer(
+        daemon=daemon, address=address, log=discard, identify=identify
+    )
+    server.start()
+    try:
+        ask_easytier_daemon(address, {"verb": "status"})
+    finally:
+        server.stop()
+
+    assert daemon.peers == [{"account": "alice", "pid": 4100}]
+    assert len(seen) == 1
+
+
+def test_a_peer_that_cannot_be_read_reaches_the_daemon_as_none(tmp_path):
+    address = str(tmp_path / "files.sock")
+    daemon = PeerDaemon()
+
+    def identify(connection):
+        raise OSError("no token")
+
+    server = EasytierSocketServer(
+        daemon=daemon, address=address, log=discard, identify=identify
+    )
+    server.start()
+    try:
+        ask_easytier_daemon(address, {"verb": "status"})
+    finally:
+        server.stop()
+
+    assert daemon.peers == [None]

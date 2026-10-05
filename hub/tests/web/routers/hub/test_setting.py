@@ -1991,3 +1991,27 @@ def test_a_backup_naming_no_row_of_either_machine_leaves_the_join_a_new_row(clie
     assert upload_restore(opened, archive_bytes, PASSPHRASE).status_code == 200
 
     assert restored_mark(config_dir) == {"device_id": ""}
+
+
+@pytest.mark.parametrize(
+    ("edition_name", "source"),
+    [
+        ("intl", "https://github.com/EasyTier/EasyTier/tree/v{}"),
+        ("cn", "https://gitee.com/easytier/EasyTier/tree/v{}"),
+    ],
+)
+def test_easytiers_source_is_linked_where_the_hubs_edition_reads_it(
+    monkeypatch, edition_name, source
+):
+    """The mainland edition links EasyTier's own Gitee repository, whose tag is
+    the commit GitHub's names; CLIProxyAPI keeps its GitHub link in both."""
+    from neutrino_hub.modules.easytier.constants import EASYTIER_VERSION
+
+    monkeypatch.setattr(edition, "EDITION", edition_name)
+    monkeypatch.setattr(settings_router, "hub_os", lambda: "linux")
+    by_name = {credit.name: credit for credit in settings_router._acknowledgements()}
+
+    assert by_name["EasyTier"].corresponding_source == source.format(EASYTIER_VERSION)
+    assert by_name["CLIProxyAPI"].corresponding_source.startswith(
+        "https://github.com/router-for-me/CLIProxyAPI/tree/v"
+    )

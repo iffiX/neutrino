@@ -191,6 +191,21 @@ that record and runs the pass again when they differ. With no network from
 the console yet, the rules name no device for it. The found name is run-time
 state and never reaches `config/`.
 
+### An interface the configuration does not name
+
+An interface the box has and `config/router/network.json` does not name, such
+as a card plugged in after setup, is read through
+`RouterNetworkConfig.interface_or_new`, the one reading the firewall, the
+links, Wake-on-LAN, Direct and the **Network** page share.
+
+| System | Such an interface | Reason |
+| --- | --- | --- |
+| Linux, every mode | is shown on the **Network** page with its switches off and a badge saying it is not in use until turned on and applied. Until then it is not exposed and not enabled: no nftables rule names it, Direct opens nothing on it, it is in no link's `urls` and it is no wake target. Turning it on and applying writes it into the configuration. | A Linux hub is a machine whose network the person set up; a port appearing on its own is not a reason to open it, and a card plugged into the wrong network would otherwise answer there at once. |
+| macOS and Windows | counts as exposed, and so as enabled, until the person closes it on the **Network** page. | The hub there is a person's own computer whose network the system manages. A fresh install names no interface, and it must stay reachable on the network the computer is on; an adapter the system adds is the person's own. |
+
+Router mode reads it the same way on Linux: an interface the configuration
+does not name has the role `disabled` and is not exposed.
+
 ### An overlay's daemon is a second firewall, and it wins
 
 Rendering the rules does not close an overlay. Measured on a running NetBird
@@ -324,7 +339,7 @@ page turns it on.
 
 | Rule | Reason |
 | --- | --- |
-| An enabled interface is one the hub uses. Where the hub addresses the machine, `router`, that is every interface whose role is not `disabled`. Where it addresses nothing, `server` and `side_gateway`, no role says whether a port is used, so it is every interface the **Network** page lists. `RouterNetworkConfig.is_interface_enabled` answers it in one place. | One notion serves the firewall, `urls` and the page alike. |
+| An enabled interface is one the hub uses. Where the hub addresses the machine, `router`, that is every interface whose role is not `disabled`. Where it addresses nothing, `server` and `side_gateway`, no role says whether a port is used, so it is every interface the configuration names. An interface the configuration does not name is enabled exactly where it counts as exposed: never on Linux, always on macOS and Windows ("An interface the configuration does not name" above). `RouterNetworkConfig.is_interface_enabled` answers it in one place. | One notion serves the firewall, `urls` and the page alike. |
 | Direct opens the agent port alone. On Linux the input chain gains `iifname { <enabled, not exposed> } tcp dport <agent-port> accept`; on macOS and Windows the agent port's own rule names those interfaces beside the exposed ones. Every other rule is left as it is. | The panel, the AI gateway and every other listener keep the exposure the **Network** page gives them. |
 | Turning Direct off renders the same rules without that addition. | The converge step takes exactly what Direct added. |
 | An interface Direct opens the agent port on is not thereby exposed. Wake-on-LAN, the served scopes and everything else that reads `is_exposed` read it unchanged. | Exposure is the whole interface; Direct is one port. |
@@ -675,6 +690,9 @@ file of theirs was ever read or written.
 The resolver file is the one file put back. Router mode replaces
 `/etc/resolv.conf`, and the first write copies what was there to
 `resolv.conf.original` under the state root, a symlink as the same symlink.
+The file names the box's own dnsmasq: the first served network's address, or
+`127.0.0.1` on a router that serves no network, where dnsmasq answers on
+loopback alone.
 Handing back links the file to the stub of `systemd-resolved` when that unit
 is enabled. Otherwise it puts the copy back and deletes it, and with no copy
 it writes the network's resolvers, so the

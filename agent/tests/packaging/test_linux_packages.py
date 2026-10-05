@@ -333,29 +333,9 @@ def _run_with_fakes(tmp_path, script, argument):
     return record.read_text().splitlines() if record.exists() else []
 
 
-@pytest.mark.parametrize("build", [build_deb, build_rpm], ids=["deb", "rpm"])
-@pytest.mark.parametrize("architecture", ["amd64", "arm64"])
-def test_every_linux_package_carries_cc_switch_at_the_shared_pin(
-    tmp_path, carried, cc_switch_fetched, build, architecture
-):
-    from shared import cc_switch_assets
-
-    if build is build_deb:
-        build._lay_out(tmp_path, "9.9.9", architecture, "somebody")
-    else:
-        machine = payload.machine_name(architecture)
-        build._lay_out(tmp_path, "9.9.9", payload.RPM_ARCHITECTURES[machine])
-
-    binary = next(tmp_path.rglob("opt/neutrino/agent/bin/cc-switch"))
-    assert binary.read_bytes() == b"cc-switch"
-    assert binary.stat().st_mode & 0o777 == 0o755
-    machine = payload.machine_name(architecture)
-    assert cc_switch_fetched == [cc_switch_assets.asset_url("linux", machine)[0]]
-
-
-def test_the_deb_carries_the_licence_of_cc_switch(tmp_path, carried):
+def test_the_agent_package_carries_no_cc_switch(tmp_path, carried):
+    """The agent fetches cc-switch from its hub when its AI tools are used."""
     build_deb._lay_out(tmp_path, "9.9.9", "amd64", "somebody")
 
-    licence = tmp_path / "usr/share/doc/neutrino-agent/licenses/cc_switch.txt"
-
-    assert "MIT License" in licence.read_text()
+    assert not list(tmp_path.rglob("cc-switch*"))
+    assert "cc_switch.txt" not in payload.CARRIED_LICENSES

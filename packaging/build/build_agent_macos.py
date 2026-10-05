@@ -9,8 +9,7 @@ The installer carries the agent compiled: Nuitka turns the package and the
 interpreter it runs on into a standalone ``nagent`` with the libraries beside
 it, under ``/Library/Application Support/Neutrino/agent/app``, linked into
 ``/usr/local/bin``. The ``com.neutrino.agent`` LaunchDaemon runs it as root at
-boot with ``run``, its output in ``/Library/Logs/Neutrino/agent``. The
-pinned cc-switch CLI rides in ``bin`` under the same directory.
+boot with ``run``, its output in ``/Library/Logs/Neutrino/agent``.
 
 RustDesk comes as upstream's app bundle out of its pinned disk image, under
 ``/Applications``, with the two launchd jobs its own installer would write:
@@ -30,8 +29,8 @@ keeps upstream's own.
 Needs the Xcode command line tools for ``codesign``, ``otool``, ``pkgbuild``
 and ``productbuild``, and ``hdiutil``, which every Mac has.
 
-Not pure: makes a virtual environment, downloads a compiler, RustDesk and
-cc-switch, compiles, signs, writes a package tree, runs pkgbuild and productbuild.
+Not pure: makes a virtual environment, downloads a compiler and RustDesk,
+compiles, signs, writes a package tree, runs pkgbuild and productbuild.
 """
 
 import argparse
@@ -44,7 +43,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "agent" / "packaging"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "packaging"))
 from shared import edition_build  # noqa: E402
-from shared import cc_switch_assets  # noqa: E402
 from shared import nuitka_build  # noqa: E402
 import payload  # noqa: E402
 from shared import pkg_build  # noqa: E402
@@ -257,8 +255,8 @@ def _lay_out(root: Path, version: str, machine: str) -> dict:
 
     Raises:
         SystemExit: When this is not a Mac of the pinned Python and
-            machine, when the compile writes no binary, or when RustDesk or
-            cc-switch is not what was pinned.
+            machine, when the compile writes no binary, or when RustDesk is
+            not what was pinned.
     """
     _check_build_machine(machine)
     tree = root / "tree"
@@ -271,11 +269,6 @@ def _lay_out(root: Path, version: str, machine: str) -> dict:
     installed = package_root / str(INSTALL_AGENT_DIR).lstrip("/")
     installed.parent.mkdir(parents=True)
     shutil.copytree(dist, installed, symlinks=True)
-    cc_switch_assets.stage(
-        installed / "bin" / cc_switch_assets.binary_name("darwin"),
-        "darwin",
-        payload.machine_name(machine),
-    )
     _stage_licenses(installed / "licenses")
     pkg_build.require_system_links(installed)
     _sign_tree(installed)

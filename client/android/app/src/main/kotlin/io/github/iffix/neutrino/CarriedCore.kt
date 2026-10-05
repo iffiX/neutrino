@@ -9,6 +9,8 @@ package io.github.iffix.neutrino
  * @property sourceUrl Its source at that version.
  * @property patchUrl The patch it is built with, under the app's source `{source}` at its release tag
  *   `v{version}`; empty for none.
+ * @property mainlandSourceUrl The same source at the same version on a mirror a mainland reader can open,
+ *   which the mainland edition links instead; empty for none.
  */
 data class CarriedCore(
     val name: String,
@@ -16,4 +18,5 @@ data class CarriedCore(
     val licence: String,
     val sourceUrl: String,
     val patchUrl: String = "",
+    val mainlandSourceUrl: String = "",
 )

@@ -10,7 +10,9 @@ key the push uses; ``--check-only`` needs neither.
 
 In order: the workflow artifact ``release_dist_cn`` of the latest
 successful run of ``release.yml`` for the tag is downloaded; every file is
-checked against Gitee's limits before anything changes on Gitee; the
+checked against Gitee's limits, and the pinned cc-switch release files the
+mainland hubs fetch from the release against their pins, before anything
+changes on Gitee; the
 mainland source tree, without ``third_party/``, is committed as one commit
 with no parent and force-pushed to ``main`` with the tag on it; the
 attachments of every earlier release are deleted; the release for the tag is
@@ -23,6 +25,7 @@ Not pure: runs gh, git and ssh, and changes the repository on Gitee.
 """
 
 import argparse
+import hashlib
 import json
 import os
 import subprocess
@@ -37,6 +40,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "packaging"))
+from shared import cc_switch_assets  # noqa: E402
 from shared.constants import (  # noqa: E402
     PACKAGING_GITEE_API,
     PACKAGING_GITEE_ATTACHMENT_BYTES_MAX,
@@ -249,6 +253,7 @@ def main() -> int:
         with tempfile.TemporaryDirectory() as workdir:
             tree, _stamp = unpack_tree(files, Path(workdir))
             check_limits(files, tree)
+        check_cc_switch(files)
         print(f"{len(files)} files are within Gitee's limits")
         return 0
 
@@ -301,11 +306,12 @@ def publish(
             that changes Gitee.
 
     Raises:
-        SystemExit: When a file is over a limit, the push fails, or Gitee
-            refuses a call.
+        SystemExit: When a file is over a limit, a cc-switch file is missing
+            or not its pin, the push fails, or Gitee refuses a call.
     """
     tree, stamp = unpack_tree(files, work)
     check_limits(files, tree)
+    check_cc_switch(files)
     commit_tree(tree, tag, stamp)
     if is_dry_run:
         print(f"would push the tree to {PUBLISH_BRANCH} and tag it {tag}")
@@ -358,6 +364,27 @@ def release_files(dist: Path) -> list:
     if not any(path.name.endswith(PUBLISH_SOURCE_SUFFIX) for path in files):
         raise SystemExit(f"{dist} holds no *{PUBLISH_SOURCE_SUFFIX}")
     return files
+
+
+def check_cc_switch(files: list) -> None:
+    """Check that the release carries every pinned cc-switch file, as its pin
+    says, and the licence beside them.
+
+    Args:
+        files: The release's files.
+
+    Raises:
+        SystemExit: Naming the first file missing or not its pin.
+    """
+    held = {path.name: path for path in files}
+    for name, (_url, digest) in cc_switch_assets.release_files().items():
+        if name not in held:
+            raise SystemExit(f"the release carries no {name}")
+        found = hashlib.sha256(held[name].read_bytes()).hexdigest()
+        if found != digest:
+            raise SystemExit(f"{name} hashes to {found}, not the pinned {digest}")
+    if cc_switch_assets.license_name() not in held:
+        raise SystemExit(f"the release carries no {cc_switch_assets.license_name()}")
 
 
 def check_limits(files: list, tree: Path) -> None:

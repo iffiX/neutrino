@@ -121,7 +121,7 @@ private fun AboutCard(deviceName: String, platform: String, version: String) {
         )
         for (core in Edition.carriedCores) {
             val links = buildList {
-                add(source to core.sourceUrl)
+                add(source to Edition.sourceUrlOf(core))
                 if (core.patchUrl.isNotEmpty()) {
                     add(patch to core.patchUrl.replace("{source}", Edition.sourceUrl).replace("{version}", version))
                 }

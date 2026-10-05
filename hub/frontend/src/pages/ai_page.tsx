@@ -14,6 +14,7 @@ import { apiPath, apiPost, describeCode, describeError } from "../api_client";
 import { copyText } from "../copy_text";
 import { formatCompact } from "../format_compact";
 import { t, useLanguage } from "../i18n";
+import { useHubHost } from "../origins";
 import { useApiResource } from "../use_api_resource";
 import { HUB_EVENT_AI_USAGE, HUB_EVENT_CONFIG } from "../use_hub_events";
 import type { AiUsageResponse, CliproxyApiStatusView } from "../api_types";
@@ -67,6 +68,7 @@ function toModelFamilies(models: string[]): ModelFamily[] {
 export function AiPage() {
   // Redrawn when the panel's language changes.
   useLanguage();
+  const host = useHubHost();
   const status = useApiResource<CliproxyApiStatusView>(STATUS_PATH, {
     invalidateOn: AI_INVALIDATE_ON,
   });
@@ -120,7 +122,7 @@ export function AiPage() {
     );
   }
 
-  const endpoint = originWith(view.listen_port);
+  const endpoint = originWith(view.listen_port, host);
   const isPortDirty = port !== null && port !== view.listen_port;
   const isPortValid = port !== null && port >= PORT_MIN && port <= PORT_MAX;
   const hasToday =
@@ -356,7 +358,9 @@ export function AiPage() {
             />
             <span className="field_hint">
               {isPortDirty
-                ? t("ui.ai.port_moves_to", { origin: originWith(port ?? 0) })
+                ? t("ui.ai.port_moves_to", {
+                    origin: originWith(port ?? 0, host),
+                  })
                 : t("ui.ai.port_reached_at", { origin: endpoint })}
             </span>
           </label>
@@ -385,6 +389,6 @@ export function AiPage() {
 }
 
 // The gateway answers plain HTTP, whichever scheme the panel is on.
-function originWith(port: number): string {
-  return `http://${window.location.hostname}:${port}`;
+function originWith(port: number, host: string): string {
+  return `http://${host}:${port}`;
 }

@@ -47,6 +47,13 @@ on any path.
 `setup` runs once. A box with a panel password is a box somebody configured,
 and `nhub reset all` is how one goes back to fresh.
 
+Every `nhub` command that changes the box, `start`, `stop`, `update` and
+each form of `reset`, asks `[y/N]` before it acts and takes `--yes` to go
+ahead without asking. With no terminal on stdin and no `--yes` it asks
+nothing, prints one line naming `--yes` and exits 1, so every script that
+runs one passes `--yes`: the deb's and the rpm's removal script runs
+`nhub reset network --yes`.
+
 The questions are answered in the terminal or in a browser. The hub's
 service serves the browser's questions from the install on the panel's HTTP
 port, the port that is in somebody's address bar afterwards, behind a
@@ -368,6 +375,24 @@ which is the system. The compile is native, so each package comes off a
 machine of its own architecture. A checkout pays none of it: `pip install -e
 client` runs on the checkout's interpreter, and `nclient gui` uses whatever
 can import `gi`.
+
+## A client upgraded while it runs comes back
+
+An install over a running client closes it to replace its files, and the
+client is running again when the install ends, in the same person's session,
+as that person, never as SYSTEM or elevated, with no second prompt. An
+install over no running client starts nothing.
+
+On Windows the installer asks the installing account's client to quit for
+an upgrade. That client registers, as its own account, the task
+`NeutrinoClientRelaunch_<account>`: no trigger, the limited run level, run
+only while the account is signed in, starting `nclientw.exe gui --hidden`.
+The installer's last step, as SYSTEM, starts every such task, and the client
+deletes its own task when it starts. An account that is not signed in, as
+under an install from ssh or a management tool with nobody at the desktop,
+does not run its task, and the install does not fail. A removal deletes
+every such task. A client of another account, which the installer closes
+without asking, is not brought back.
 
 ## A hub package carries its own agent package and fetches the others
 

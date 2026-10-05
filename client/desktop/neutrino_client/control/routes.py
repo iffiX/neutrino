@@ -210,7 +210,7 @@ def dispatch(method: str, path: str, body: "dict | None", resident):
         if route == "/api/open_link":
             return _open_link(resident, payload)
         if route == "/api/quit":
-            return _quit(resident)
+            return _quit(resident, payload)
         return 404, {"code": "unknown_request", "params": {}}
     return 404, {"code": "unknown_request", "params": {}}
 
@@ -254,15 +254,19 @@ def refusal_status(code: str) -> int:
     return 400
 
 
-def _quit(resident):
+def _quit(resident, body: dict):
     """Answer, then shut the resident down and end its process.
 
     Args:
         resident: The running resident.
+        body: ``{"is_upgrade": true}`` when an installer asks, which has the
+            client started again once the install ends.
 
     Returns:
         ``(200, {})``, sent before the shutdown begins.
     """
+    if body.get("is_upgrade") is True:
+        resident.arrange_relaunch()
     threading.Thread(
         target=_shut_down_and_end, args=(resident,), name="client_quit", daemon=True
     ).start()

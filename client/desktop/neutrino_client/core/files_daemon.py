@@ -1,13 +1,20 @@
 """What the files daemon keeps up on Windows, and what it answers.
 
 The daemon runs tun2socks on the wintun adapter ``neutrino_files``, pointed
-at the SOCKS endpoint of the resident that asked last, and gives the adapter
+at the SOCKS endpoint of the resident that holds it, and gives the adapter
 its address each time tun2socks has opened it, then answers ``up`` only
 once a connection through the adapter is answered: for some seconds after
 the address is given the adapter accepts a connection and loses its bytes,
 and the system's SMB client then reports a refused login or a lost
 network name for a share that is fine. Nothing is kept on disk: a
 daemon that starts serves nobody until a resident asks.
+
+The adapter serves one account at a time. The pipe says who asks: the
+account and the calling process. While a resident of one account holds the
+adapter, an ``up`` or a ``down`` from another account is refused
+``files_adapter_in_use``; a later resident of the same account is served in
+its place. The daemon watches the holding process and takes the adapter
+down once it has ended, so a resident that crashed does not hold it.
 
 One request is one JSON object with a ``verb``:
 
@@ -16,7 +23,8 @@ One request is one JSON object with a ``verb``:
     {"verb": "status"}
 
 Every accepted request is answered with the status, ``{"is_up", "port"}``; a
-refusal is ``{"code": "files_adapter_unavailable", "params": {"detail"}}``.
+refusal is ``{"code": "files_adapter_unavailable", "params": {"detail"}}``,
+or ``{"code": "files_adapter_in_use", "params": {}}``.
 Neither ever carries the user name or the password.
 """
 
@@ -47,6 +55,7 @@ VERB_UP = "up"
 VERB_DOWN = "down"
 VERB_STATUS = "status"
 FILES_REFUSAL_CODE = "files_adapter_unavailable"
+FILES_IN_USE_CODE = "files_adapter_in_use"
 # What the endpoint's user name and password may hold: the characters a
 # proxy address carries without escaping.
 FILES_CREDENTIAL_PATTERN = re.compile(r"[A-Za-z0-9_-]{1,128}")
@@ -128,6 +137,15 @@ def files_refusal(detail: str) -> dict:
     return {"code": FILES_REFUSAL_CODE, "params": {"detail": detail}}
 
 
+def files_in_use() -> dict:
+    """The refusal of a request from an account other than the holder's.
+
+    Returns:
+        ``{"code": "files_adapter_in_use", "params": {}}``.
+    """
+    return {"code": FILES_IN_USE_CODE, "params": {}}
+
+
 def _endpoint_of(request: dict) -> "dict | None":
     """The endpoint an ``up`` names, or None when it names none usable."""
     port = request.get("port")
@@ -145,13 +163,18 @@ def _nobody(*_args) -> None:
     """Nobody listening."""
 
 
+def _account_of(peer) -> str:
+    """The account a peer names, empty for none."""
+    return str((peer or {}).get("account", "") or "")
+
+
 def _detail(error: OSError) -> str:
     """An error's words, cut to what a refusal carries."""
     return str(error.strerror or error)[:FILES_DETAIL_LIMIT_CHARS]
 
 
 class FilesAdapterDaemon:
-    """tun2socks on the adapter for the resident that asked last, and the requests."""
+    """tun2socks on the adapter for the one account that holds it, and the requests."""
 
     def __init__(
         self,
@@ -165,6 +188,7 @@ class FilesAdapterDaemon:
         probe=None,
         clock=None,
         sleep=None,
+        watch_process=None,
     ):
         """
         Args:
@@ -185,6 +209,10 @@ class FilesAdapterDaemon:
                 answered; None is :func:`adapter_carries`.
             clock: Returns the time in seconds; None is ``time.monotonic``.
             sleep: Waits a number of seconds; None is ``time.sleep``.
+            watch_process: ``watch_process(pid)`` returns a watch with
+                ``is_running()`` and ``close()`` on the holding process;
+                None watches nothing, and a holder then holds until it asks
+                ``down``.
         """
         self._tun2socks_path = tun2socks_path
         self._configure_adapter = configure_adapter
@@ -193,8 +221,12 @@ class FilesAdapterDaemon:
         self._clock = clock if clock is not None else time.monotonic
         self._sleep = sleep if sleep is not None else time.sleep
         self._log = log
+        self._watch_process = watch_process
         self._lock = threading.Lock()
         self._endpoint: "dict | None" = None
+        # The account and process of the resident the adapter serves.
+        self._holder: "dict | None" = None
+        self._holder_watch = None
         self._is_configured = False
         self._is_address_due = threading.Event()
         self._stop = threading.Event()
@@ -225,6 +257,7 @@ class FilesAdapterDaemon:
         with self._lock:
             self._endpoint = None
             self._is_configured = False
+            self._release_holder()
         self._supervisor.stop()
 
     def command(self) -> "tuple[list, dict] | None":
@@ -273,11 +306,14 @@ class FilesAdapterDaemon:
             "port": endpoint["port"] if endpoint is not None else 0,
         }
 
-    def handle(self, request) -> dict:
+    def handle(self, request, peer=None) -> dict:
         """Answer one request.
 
         Args:
             request: The decoded request.
+            peer: Who asks, as the pipe says, ``{"account", "pid"}``; None
+                where the pipe could not tell, which is refused while an
+                account holds the adapter.
 
         Returns:
             The status after it, or the refusal.
@@ -289,6 +325,8 @@ class FilesAdapterDaemon:
             return self.status()
         if verb == VERB_DOWN:
             with self._lock:
+                if self._is_held_by_another(peer):
+                    return files_in_use()
                 self._take_down()
             return self.status()
         if verb != VERB_UP:
@@ -300,11 +338,27 @@ class FilesAdapterDaemon:
             self._log("no tun2socks in this install")
             return files_refusal("bundle_missing")
         with self._lock:
-            return self._bring_up(endpoint)
+            if self._is_held_by_another(peer):
+                self._log(
+                    f"up from {_account_of(peer)} refused: the adapter is held by "
+                    f"{_account_of(self._holder)}"
+                )
+                return files_in_use()
+            answer = self._bring_up(endpoint)
+            if self._endpoint is not None and peer is not None:
+                self._hold_for(peer)
+            return answer
 
     def tick(self) -> None:
-        """Give a restarted tun2socks's adapter its address again."""
+        """Free the adapter once its holder has ended; give a restarted tun2socks's adapter its address again."""
         with self._lock:
+            if self._holder is not None and not self._is_holder_running():
+                self._log(
+                    f"the client of {_account_of(self._holder)} that held the "
+                    "adapter has ended"
+                )
+                self._take_down()
+                return
             if self._endpoint is None or not self._is_address_due.is_set():
                 return
             if not self._supervisor.is_running:
@@ -367,8 +421,56 @@ class FilesAdapterDaemon:
         )
         self._is_configured = True
 
+    def _is_held_by_another(self, peer) -> bool:
+        """Whether a running resident of another account, or of no account the pipe could tell, holds the adapter; under the lock."""
+        if self._holder is None:
+            return False
+        if not self._is_holder_running():
+            self._log(
+                f"the client of {_account_of(self._holder)} that held the "
+                "adapter has ended"
+            )
+            self._take_down()
+            return False
+        if peer is None:
+            return True
+        return _account_of(self._holder).lower() != _account_of(peer).lower()
+
+    def _is_holder_running(self) -> bool:
+        """Whether the holding process still runs; under the lock."""
+        if self._holder_watch is None:
+            return True
+        try:
+            return bool(self._holder_watch.is_running())
+        except OSError:
+            return False
+
+    def _hold_for(self, peer: dict) -> None:
+        """Make one resident the holder and watch its process; under the lock."""
+        if self._holder is not None and self._holder.get("pid") == peer.get("pid"):
+            return
+        self._release_holder()
+        self._holder = {"account": _account_of(peer), "pid": peer.get("pid") or 0}
+        if self._watch_process is not None and self._holder["pid"]:
+            try:
+                self._holder_watch = self._watch_process(self._holder["pid"])
+            except (OSError, NotImplementedError) as error:
+                self._log(f"the holding client cannot be watched: {error}")
+
+    def _release_holder(self) -> None:
+        """Forget the holder and close its watch; under the lock."""
+        watch = self._holder_watch
+        self._holder = None
+        self._holder_watch = None
+        if watch is not None:
+            try:
+                watch.close()
+            except OSError:
+                pass
+
     def _take_down(self) -> None:
         """Serve nobody and end tun2socks, under the lock."""
+        self._release_holder()
         was_serving = self._endpoint is not None
         self._endpoint = None
         self._is_configured = False

@@ -445,3 +445,33 @@ def test_where_the_hub_addresses_nothing_every_listed_interface_is_enabled(mode)
 
     assert network.enabled_device_names == ["eno1", "eno2"]
     assert network.exposed_device_names == ["eno1"]
+
+
+# --- an interface the configuration does not name ---
+
+
+@pytest.mark.parametrize("mode", ROUTER_MODES_KEYS)
+def test_on_linux_an_unnamed_interface_is_neither_exposed_nor_enabled(mode):
+    """A card plugged in after setup: shown, off, until the person turns it
+    on. Every reader agrees, through the one reading they share."""
+    network = RouterNetworkConfig.from_dict(
+        {"mode": mode, "interfaces": [{"name": "eno1", "is_exposed": True}]}
+    )
+
+    assert not network.is_interface_enabled("eno9")
+    assert "eno9" not in network.enabled_device_names
+    assert network.exposed_device_names_on(["eno1", "eno9"]) == ["eno1"]
+    assert not network.interface_or_new("eno9").is_exposed
+
+
+@pytest.mark.parametrize("system", ["darwin", "win32"])
+def test_on_macos_and_windows_an_unnamed_interface_counts_as_exposed_and_enabled(
+    monkeypatch, system
+):
+    from neutrino_hub.platforms import detect
+
+    monkeypatch.setattr(detect.sys, "platform", system)
+    network = RouterNetworkConfig.from_dict({"mode": "server", "interfaces": []})
+
+    assert network.is_interface_enabled("Ethernet 3")
+    assert network.exposed_device_names_on(["Ethernet 3"]) == ["Ethernet 3"]

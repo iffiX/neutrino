@@ -794,3 +794,128 @@ def test_a_script_that_runs_out_its_time_is_an_os_error(platform, monkeypatch):
         platform.configure_files_adapter()
 
     assert "PowerShell did not finish" in str(raised.value)
+
+
+class FilesPeerWin32(FakeWin32):
+    """The identity seam plus the pipe's client process and process waits."""
+
+    def __init__(self):
+        super().__init__(account="Bob")
+        self.ended = set()
+        self.closed = []
+
+    def pipe_client_process_id(self, handle):
+        self.calls.append(("pipe_client_process_id", handle))
+        return 5100
+
+    def open_process_to_wait(self, pid):
+        if pid == 0:
+            raise OSError("no such process")
+        return 900 + pid
+
+    def is_waitable_running(self, handle):
+        return handle not in self.ended
+
+    def close_handle(self, handle):
+        self.closed.append(handle)
+
+
+class PipePeer:
+    pipe_handle = 77
+
+
+def test_the_files_pipes_peer_is_its_account_and_process():
+    platform = WindowsPlatform(win32=FilesPeerWin32())
+
+    assert platform.files_peer(PipePeer()) == {"account": "Bob", "pid": 5100}
+
+
+def test_a_watched_process_runs_until_it_ends_and_its_handle_closes_once():
+    api = FilesPeerWin32()
+    watch = WindowsPlatform(win32=api).watch_process(5100)
+
+    assert watch.is_running() is True
+    api.ended.add(6000)
+    assert watch.is_running() is False
+    watch.close()
+    watch.close()
+
+    assert api.closed == [6000]
+    assert watch.is_running() is False
+
+
+def test_a_process_that_cannot_be_opened_is_an_os_error():
+    with pytest.raises(OSError):
+        WindowsPlatform(win32=FilesPeerWin32()).watch_process(0)
+
+
+def test_the_relaunch_task_runs_the_windowed_program_limited_and_signed_in_only():
+    command = windows_module.relaunch_task_command(
+        "NeutrinoClientRelaunch_alice",
+        "C:\\Program Files\\Neutrino\\client\\nclientw.exe",
+    )
+
+    assert command == [
+        "schtasks",
+        "/create",
+        "/tn",
+        "NeutrinoClientRelaunch_alice",
+        "/tr",
+        '"C:\\Program Files\\Neutrino\\client\\nclientw.exe" gui --hidden',
+        "/sc",
+        "once",
+        "/st",
+        "00:00",
+        "/rl",
+        "limited",
+        "/it",
+        "/f",
+    ]
+    assert "/ru" not in command and "highest" not in command
+
+
+def test_an_upgrade_quit_registers_this_accounts_task(platform, monkeypatch, tmp_path):
+    (tmp_path / "nclientw.exe").write_text("")
+    monkeypatch.setattr(windows_module.sys, "executable", str(tmp_path / "nclient.exe"))
+    recorder = CommandRecorder([completed()])
+    monkeypatch.setattr(windows_module, "run_quietly", recorder)
+
+    assert platform.register_relaunch() is True
+
+    (command,) = recorder.commands
+    assert command[:4] == ["schtasks", "/create", "/tn", "NeutrinoClientRelaunch_alice"]
+    assert str(tmp_path / "nclientw.exe") in command[5]
+
+
+def test_a_checkout_with_no_windowed_program_registers_nothing(
+    platform, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(windows_module.sys, "executable", str(tmp_path / "python.exe"))
+    recorder = CommandRecorder()
+    monkeypatch.setattr(windows_module, "run_quietly", recorder)
+
+    assert platform.register_relaunch() is False
+    assert recorder.commands == []
+
+
+def test_a_task_schtasks_refuses_is_an_os_error(platform, monkeypatch, tmp_path):
+    (tmp_path / "nclientw.exe").write_text("")
+    monkeypatch.setattr(windows_module.sys, "executable", str(tmp_path / "nclient.exe"))
+    recorder = CommandRecorder(
+        [completed(returncode=1, stderr="ERROR: Access is denied.")]
+    )
+    monkeypatch.setattr(windows_module, "run_quietly", recorder)
+
+    with pytest.raises(OSError, match="Access is denied"):
+        platform.register_relaunch()
+
+
+def test_a_starting_client_deletes_its_task(platform, monkeypatch):
+    recorder = CommandRecorder([completed(returncode=1)])
+    monkeypatch.setattr(windows_module, "run_quietly", recorder)
+
+    platform.forget_relaunch()
+
+    assert recorder.commands == [
+        ["schtasks", "/delete", "/tn", "NeutrinoClientRelaunch_alice", "/f"]
+    ]

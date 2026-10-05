@@ -246,6 +246,27 @@ SECURE_DATA_CONDITION = 'NOT REMOVE~="ALL"'
 # one opens a black window over the wizard. The ask itself is bounded by the
 # control socket's own timeout, so nothing here has to time it out.
 QUIT_COMMAND = f'"[INSTALLFOLDER]{CLIENT_WINDOWED_BINARY_NAME}" quit'
+# The same quit by an install that keeps the client: the client registers its
+# account's relaunch task before it goes. A build older than the flag refuses
+# it, and the plain quit that follows quits that one.
+QUIT_FOR_UPGRADE_COMMAND = QUIT_COMMAND + " --upgrade"
+QUIT_FOR_UPGRADE_CONDITION = '(Installed OR WIX_UPGRADE_DETECTED) AND NOT REMOVE~="ALL"'
+
+# The installer's last step, as SYSTEM: every account's relaunch task is
+# started, which runs only where that account is signed in, as that account
+# and never elevated. A removal deletes every such task instead.
+RELAUNCH_TASKS = "Get-ScheduledTask -TaskName 'NeutrinoClientRelaunch_*' -ErrorAction SilentlyContinue"
+RELAUNCH_COMMAND = (
+    '"[System64Folder]WindowsPowerShell\\v1.0\\powershell.exe" -NoProfile '
+    f'-NonInteractive -Command "{RELAUNCH_TASKS} | Start-ScheduledTask"'
+)
+RELAUNCH_CONDITION = 'NOT REMOVE~="ALL"'
+FORGET_RELAUNCH_COMMAND = (
+    '"[System64Folder]WindowsPowerShell\\v1.0\\powershell.exe" -NoProfile '
+    f'-NonInteractive -Command "{RELAUNCH_TASKS} | '
+    'Unregister-ScheduledTask -Confirm:$false"'
+)
+FORGET_RELAUNCH_CONDITION = 'REMOVE~="ALL" AND NOT UPGRADINGPRODUCTCODE'
 
 # When the configuration goes. Unticking the box clears the property, and a
 # silent removal may set it to anything; what it is never equal to then is
@@ -299,6 +320,11 @@ WIX_BODY = r"""
     <!-- The client's services live only as long as the resident does, so it
          is asked to quit before its files are replaced or taken away. No
          resident to answer is not a failed install. -->
+    <CustomAction Id="QuitClientResidentForUpgrade"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="@QUIT_FOR_UPGRADE_COMMAND@"
+                  Execute="immediate"
+                  Return="ignore" />
     <CustomAction Id="QuitClientResident"
                   Directory="INSTALLFOLDER"
                   ExeCommand="@QUIT_COMMAND@"
@@ -459,11 +485,37 @@ WIX_BODY = r"""
                   Impersonate="no"
                   Return="ignore" />
 
+    <!-- The clients an upgrade quit, started again in their own sessions;
+         and on a removal, every task that would. -->
+    <CustomAction Id="SetRelaunchClients"
+                  Property="RelaunchClients"
+                  Value="@RELAUNCH_COMMAND@"
+                  Execute="immediate" />
+    <CustomAction Id="RelaunchClients"
+                  DllEntry="WixQuietExec"
+                  BinaryRef="@UTIL_LIBRARY@"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+    <CustomAction Id="SetForgetRelaunches"
+                  Property="ForgetRelaunches"
+                  Value="@FORGET_RELAUNCH_COMMAND@"
+                  Execute="immediate" />
+    <CustomAction Id="ForgetRelaunches"
+                  DllEntry="WixQuietExec"
+                  BinaryRef="@UTIL_LIBRARY@"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
     <InstallExecuteSequence>
       <!-- After costing, which resolves [INSTALLFOLDER], and before the
            extension's own close, which it schedules on InstallInitialize. -->
-      <Custom Action="QuitClientResident"
+      <Custom Action="QuitClientResidentForUpgrade"
               After="CostFinalize"
+              Condition="@QUIT_FOR_UPGRADE@" />
+      <Custom Action="QuitClientResident"
+              After="QuitClientResidentForUpgrade"
               Condition="Installed OR WIX_UPGRADE_DETECTED" />
       <Custom Action="InstallWebView2"
               After="InstallFiles"
@@ -480,6 +532,18 @@ WIX_BODY = r"""
       <Custom Action="SecureClientData"
               Before="InstallFinalize"
               Condition="@SECURE_DATA@" />
+      <Custom Action="SetRelaunchClients"
+              Before="RelaunchClients"
+              Condition="@RELAUNCH@" />
+      <Custom Action="RelaunchClients"
+              After="SecureClientData"
+              Condition="@RELAUNCH@" />
+      <Custom Action="SetForgetRelaunches"
+              Before="ForgetRelaunches"
+              Condition="@FORGET_RELAUNCH@" />
+      <Custom Action="ForgetRelaunches"
+              After="RemoveFiles"
+              Condition="@FORGET_RELAUNCH@" />
     </InstallExecuteSequence>
 
 @DAEMONS@
@@ -735,6 +799,12 @@ def _wix_source(staged: dict, version: str, publisher: str, machine: str) -> str
             "UTIL_LIBRARY": wix_build.UTIL_LIBRARY[machine],
             "DATA_SDDL": DATA_FOLDER_SDDL,
             "QUIT_COMMAND": QUIT_COMMAND,
+            "QUIT_FOR_UPGRADE_COMMAND": QUIT_FOR_UPGRADE_COMMAND,
+            "QUIT_FOR_UPGRADE": QUIT_FOR_UPGRADE_CONDITION,
+            "RELAUNCH_COMMAND": RELAUNCH_COMMAND,
+            "RELAUNCH": RELAUNCH_CONDITION,
+            "FORGET_RELAUNCH_COMMAND": FORGET_RELAUNCH_COMMAND,
+            "FORGET_RELAUNCH": FORGET_RELAUNCH_CONDITION,
             "REMOVE_CONFIG_COMMAND": REMOVE_CONFIG_COMMAND,
             "SECURE_DATA_COMMAND": SECURE_DATA_COMMAND,
             "SECURE_DATA": SECURE_DATA_CONDITION,

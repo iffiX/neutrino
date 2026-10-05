@@ -837,6 +837,11 @@ function LinkSummary({ entry }: { entry: InterfaceView }) {
         {link.ssid !== null && (
           <span className="badge badge--accent">{link.ssid}</span>
         )}
+        {entry.is_unsaved && (
+          <span className="badge badge--accent">
+            {t("ui.network.unsaved_interface")}
+          </span>
+        )}
         {link.signal_percent !== null && (
           <SignalBars percent={link.signal_percent} isLabelled />
         )}

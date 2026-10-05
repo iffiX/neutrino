@@ -10,10 +10,8 @@ it runs on, so run it on a throwaway one.
 The targets:
 
 - ``agent_windows``: the .msi installs, the ``neutrino_agent`` and
-  ``RustDesk`` services run, ``nagent --version`` answers, ``bin\\cc-switch.exe``
-  prints the pinned version, belongs to the administrators and is the users'
-  to run and no one else's to change, and removing it takes both services
-  and cc-switch away, with a scheduled task and a firewall rule named
+  ``RustDesk`` services run, ``nagent --version`` answers, and removing it
+  takes both services away, with a scheduled task and a firewall rule named
   as a module names them, and leaves a rule named as the hub names its
   own. Windows.
 - ``client_windows``: the .msi installs, ``nclient --version`` answers,
@@ -22,14 +20,14 @@ The targets:
   pipe and makes its state under ``Neutrino\\client\\state``, and removing
   it takes the folder and the daemon away. Windows.
 - ``agent_macos``: the .pkg installs, its LaunchDaemon runs, ``nagent
-  --version`` answers, ``app/bin/cc-switch`` prints the pinned version, is
-  root's and is mode 755, its ``config`` is root's alone and its ``state`` open
+  --version`` answers, its ``config`` is root's alone and its ``state`` open
   to every account, and ``nagent service uninstall --yes`` leaves no job,
-  no ``nagent``, no cc-switch, no receipt and no LaunchDaemon named as a
-  module names
+  no ``nagent``, no receipt and no LaunchDaemon named as a module names
   them, and keeps one named as the hub names its own. macOS.
 - ``client_macos``: the .pkg installs, ``nclient --version`` answers and
-  ``nclient status`` exits 1 unbound. macOS.
+  ``nclient status`` exits 1 unbound. Where the runner's own account is at
+  the screen, the app opened and the .pkg installed again leaves a new app
+  running, and an install with the app quit opens none. macOS.
 - ``hub_windows``: the .msi installs, ``nhub --version`` answers, the
   ``neutrino_hub`` service runs and serves the setup wizard on the panel's
   port, ``nhub setup --json`` sets a ``server`` hub up and installs its local
@@ -47,8 +45,7 @@ The targets:
   fresh container of its family and its command answers ``--version``; the
   hub's install prints the setup wizard's address with its token, and its
   agent cache holds the agent package of its own family and machine alone,
-  none for Arch; the agent's ``/opt/neutrino/agent/bin/cc-switch`` prints
-  the pinned version, is root's and is mode 755. Linux with podman or docker; another architecture needs QEMU registered with
+  none for Arch. Linux with podman or docker; another architecture needs QEMU registered with
   binfmt_misc.
 
 Not pure: installs and removes packages.
@@ -71,45 +68,10 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 INSTALL_SCRIPTS_DIR = REPO_ROOT / "packaging" / "install"
-sys.path.insert(0, str(REPO_ROOT / "packaging"))
-from shared.constants import PACKAGING_CC_SWITCH_VERSION  # noqa: E402
-
-# --- The cc-switch every agent package carries ---
-# Where each system's agent package puts it.
-AGENT_LINUX_CC_SWITCH = "/opt/neutrino/agent/bin/cc-switch"
-AGENT_MACOS_CC_SWITCH = "/Library/Application Support/Neutrino/agent/app/bin/cc-switch"
-# What its --version prints.
-CC_SWITCH_VERSION_LINE = f"cc-switch {PACKAGING_CC_SWITCH_VERSION}"
-# The prefix of the lines the Linux check prints about it inside the
-# container.
-CC_SWITCH_LINE = "cc-switch: "
-# The well-known SIDs of the accounts every user is in, and of the owners an
-# installed program may have.
-WINDOWS_EVERY_ACCOUNT_SIDS = ("S-1-1-0", "S-1-5-11", "S-1-5-32-545")
-WINDOWS_ADMIN_SIDS = ("S-1-5-18", "S-1-5-32-544")
-# Prints the owner's SID, then whether any account of every user may change
-# the file, then whether the users may run it: one line, three words.
-WINDOWS_CC_SWITCH_ACL_SCRIPT = (
-    "$acl = Get-Acl -LiteralPath '{path}'; "
-    "$sid = [System.Security.Principal.SecurityIdentifier]; "
-    "$rules = $acl.GetAccessRules($true, $true, $sid) | "
-    "Where-Object {{ $_.AccessControlType -eq 'Allow' -and "
-    "@({everyone}) -contains $_.IdentityReference.Value }}; "
-    "$write = [int][System.Security.AccessControl.FileSystemRights]"
-    "'WriteData, AppendData, Delete, ChangePermissions, TakeOwnership'; "
-    "$run = [int][System.Security.AccessControl.FileSystemRights]'ExecuteFile'; "
-    "$writable = [bool]($rules | Where-Object {{ "
-    "([int]$_.FileSystemRights -band $write) -ne 0 }}); "
-    "$runnable = [bool]($rules | Where-Object {{ "
-    "$_.IdentityReference.Value -eq 'S-1-5-32-545' -and "
-    "([int]$_.FileSystemRights -band $run) -ne 0 }}); "
-    "Write-Output (@($acl.GetOwner($sid).Value, $writable, $runnable) -join ' ')"
-)
 
 # --- Windows ---
 PROGRAM_FILES = Path(os.environ.get("ProgramFiles", "C:/Program Files"))
 AGENT_WINDOWS_FOLDER = PROGRAM_FILES / "Neutrino" / "agent"
-AGENT_WINDOWS_CC_SWITCH = AGENT_WINDOWS_FOLDER / "bin" / "cc-switch.exe"
 AGENT_WINDOWS_SERVICES = ("neutrino_agent", "RustDesk")
 RUSTDESK_WINDOWS_FOLDER = PROGRAM_FILES / "RustDesk"
 CLIENT_WINDOWS_FOLDER = PROGRAM_FILES / "Neutrino" / "client"
@@ -124,6 +86,14 @@ CLIENT_WINDOWS_DATA = PROGRAM_DATA / "Neutrino" / "client"
 CLIENT_WINDOWS_DATA_FOLDERS = ("", "state", "log")
 CLIENT_WINDOWS_DATA_NETBIRD = "state/netbird"
 CLIENT_WINDOWS_DATA_LEFTOVERS = ("log/earlier_build.log", "state/earlier_build.txt")
+# The relaunch tasks an upgrade starts, and the one the check plants in their
+# name: run as SYSTEM, it writes a marker, which shows the installer's last
+# step starts every such task. A runner has no signed-in person to start a
+# client for.
+CLIENT_WINDOWS_RELAUNCH_TASKS = "NeutrinoClientRelaunch_*"
+CLIENT_WINDOWS_RELAUNCH_PLANTED = "NeutrinoClientRelaunch_cicheck"
+CLIENT_WINDOWS_RELAUNCH_MARKER = Path(tempfile.gettempdir()) / "relaunch_marker.txt"
+CLIENT_WINDOWS_RELAUNCH_WAIT_S = 60
 CLIENT_WINDOWS_EASYTIER_SERVICE = "NeutrinoClientEasytier"
 CLIENT_WINDOWS_EASYTIER_PIPE = "neutrino_client_easytier"
 # What ``sc query`` exits with for a service that does not exist.
@@ -176,6 +146,12 @@ AGENT_WINDOWS_FOUND_SCRIPT = (
 
 # --- macOS ---
 AGENT_MACOS_JOB = "system/com.neutrino.agent"
+CLIENT_MACOS_APP = "/Applications/Neutrino Client.app"
+CLIENT_MACOS_PROGRAM = CLIENT_MACOS_APP + "/Contents/MacOS/nclient"
+# How long the app is given to come up or to go, and how long an install
+# with no app running is watched for one that opens.
+CLIENT_MACOS_APP_WAIT_S = 60
+CLIENT_MACOS_QUIET_S = 10
 # The agent's two roots the postinstall makes, and their modes: what the
 # hub decided is root's alone, what the machine accumulated is open to
 # every account for the software the hub sends.
@@ -324,7 +300,6 @@ def check_agent_windows(msi: Path) -> None:
         if "RUNNING" not in state:
             raise SystemExit(f"{service} is not running")
     print(f"nagent {_answer([str(AGENT_WINDOWS_FOLDER / 'nagent.exe'), '--version'])}")
-    _check_cc_switch_windows()
     names = {
         "task": AGENT_WINDOWS_ADDED_TASK,
         "rule": AGENT_WINDOWS_ADDED_RULE,
@@ -341,8 +316,6 @@ def check_agent_windows(msi: Path) -> None:
         if not _wait_for_service(service, is_running=False):
             raise SystemExit(f"{service} outlived the uninstaller")
         print(f"{service} is gone")
-    if AGENT_WINDOWS_CC_SWITCH.exists():
-        raise SystemExit(f"{AGENT_WINDOWS_CC_SWITCH} outlived the uninstaller")
     found = _powershell(AGENT_WINDOWS_FOUND_SCRIPT.format(**names))
     _powershell(f"Remove-NetFirewallRule -Name {AGENT_WINDOWS_FOREIGN_RULE}")
     if found != "False False True":
@@ -388,6 +361,7 @@ def check_client_windows(msi: Path) -> None:
     if not CLIENT_WINDOWS_EASYTIER_STATE.is_dir():
         raise SystemExit(f"no EasyTier state at {CLIENT_WINDOWS_EASYTIER_STATE}")
     _check_client_windows_data()
+    _check_client_windows_relaunch(msi)
 
     log = Path(tempfile.gettempdir()) / "client_remove.log"
     print(f"msiexec /x exited {_msiexec('/x', msi, log)}")
@@ -395,6 +369,64 @@ def check_client_windows(msi: Path) -> None:
         raise SystemExit("the folder outlived the uninstaller")
     if _service_exists(CLIENT_WINDOWS_EASYTIER_SERVICE):
         raise SystemExit("the EasyTier daemon outlived the uninstaller")
+    if _relaunch_tasks():
+        raise SystemExit(
+            f"relaunch tasks outlived the uninstaller: {_relaunch_tasks()}"
+        )
+
+
+def _check_client_windows_relaunch(msi: Path) -> None:
+    """An install over no running client starts nothing; a repair starts the relaunch tasks.
+
+    Args:
+        msi: The installer, run again as a repair.
+
+    Raises:
+        SystemExit: When the install left a relaunch task or a running
+            window, or the repair did not start the planted task.
+    """
+    if _relaunch_tasks():
+        raise SystemExit(f"the install left relaunch tasks: {_relaunch_tasks()}")
+    windows = _answer(["tasklist", "/fi", "imagename eq nclientw.exe", "/fo", "csv"])
+    if "nclientw.exe" in windows.lower():
+        raise SystemExit("an install over no running client started one")
+    CLIENT_WINDOWS_RELAUNCH_MARKER.unlink(missing_ok=True)
+    _answer(
+        [
+            "schtasks",
+            "/create",
+            "/tn",
+            CLIENT_WINDOWS_RELAUNCH_PLANTED,
+            "/tr",
+            f'cmd.exe /c echo started > "{CLIENT_WINDOWS_RELAUNCH_MARKER}"',
+            "/sc",
+            "once",
+            "/st",
+            "00:00",
+            "/ru",
+            "SYSTEM",
+            "/f",
+        ]
+    )
+    log = Path(tempfile.gettempdir()) / "client_repair.log"
+    print(f"msiexec /fa exited {_msiexec('/fa', msi, log)}")
+    deadline = time.monotonic() + CLIENT_WINDOWS_RELAUNCH_WAIT_S
+    while not CLIENT_WINDOWS_RELAUNCH_MARKER.is_file():
+        if time.monotonic() >= deadline:
+            _print_log(log, ("RelaunchClients", "WixQuietExec"), 10)
+            raise SystemExit("the repair did not start the relaunch task")
+        time.sleep(SERVICE_POLL_S)
+    CLIENT_WINDOWS_RELAUNCH_MARKER.unlink(missing_ok=True)
+    print("the repair started the relaunch task")
+
+
+def _relaunch_tasks() -> list:
+    """The names of the relaunch tasks that stand."""
+    names = _powershell(
+        f"Get-ScheduledTask -TaskName '{CLIENT_WINDOWS_RELAUNCH_TASKS}' "
+        "-ErrorAction SilentlyContinue | ForEach-Object { $_.TaskName }"
+    )
+    return [name for name in names.splitlines() if name.strip()]
 
 
 def _plant_client_windows_leftovers() -> None:
@@ -444,10 +476,6 @@ def check_agent_macos(pkg: Path) -> None:
     if "state = running" not in job:
         raise SystemExit(f"{AGENT_MACOS_JOB} is not running")
     print(f"nagent {_answer(['/usr/local/bin/nagent', '--version'])}")
-    problem = _darwin_cc_switch_problem(AGENT_MACOS_CC_SWITCH)
-    if problem:
-        raise SystemExit(problem)
-    print(f"{AGENT_MACOS_CC_SWITCH}: {CC_SWITCH_VERSION_LINE}")
     for directory, mode in AGENT_MACOS_ROOT_MODES.items():
         found = os.stat(directory).st_mode & 0o777
         if found != mode:
@@ -460,8 +488,6 @@ def check_agent_macos(pkg: Path) -> None:
     _sudo([AGENT_MACOS_COMMAND, "service", "uninstall", "--yes"])
     if not _wait_for_job_gone(AGENT_MACOS_JOB):
         raise SystemExit("the agent's job outlived its removal")
-    if Path(AGENT_MACOS_CC_SWITCH).exists():
-        raise SystemExit(f"{AGENT_MACOS_CC_SWITCH} outlived nagent service uninstall")
     is_forgotten = (
         subprocess.run(
             ["pkgutil", "--pkg-info", AGENT_MACOS_PACKAGE_ID], capture_output=True
@@ -496,6 +522,74 @@ def check_client_macos(pkg: Path) -> None:
     status = subprocess.run(["/usr/local/bin/nclient", "status"]).returncode
     if status != 1:
         raise SystemExit(f"nclient status exited {status}, expected 1")
+    _check_client_macos_upgrade(pkg)
+
+
+def _check_client_macos_upgrade(pkg: Path) -> None:
+    """An upgrade over a running app leaves the new app running; an install
+    with none running opens none.
+
+    Checked only where this account is the one at the screen; elsewhere the
+    install is the one asserted and the reopen is named as not checked.
+
+    Args:
+        pkg: The installer.
+
+    Raises:
+        SystemExit: When an upgrade leaves no new app, or an install opens
+            one nobody had open.
+    """
+    if _console_uid() != os.getuid():
+        print("this account is not at the screen: the reopen is not checked")
+        return
+    subprocess.run(["open", "-a", CLIENT_MACOS_APP])
+    first = _wait_for_client_app(lambda pids: bool(pids))
+    if not first:
+        print("the app did not come up on this runner: the reopen is not checked")
+        return
+    _sudo(["installer", "-pkg", str(pkg), "-target", "/"])
+    second = _wait_for_client_app(lambda pids: bool(pids) and not pids & first)
+    if not second:
+        raise SystemExit("after the upgrade no new client app runs")
+    print(f"the client app ran as {sorted(first)} and runs as {sorted(second)}")
+    subprocess.run([CLIENT_MACOS_PROGRAM, "quit"])
+    if _wait_for_client_app(lambda pids: not pids) is None:
+        raise SystemExit("the client app did not quit")
+    _sudo(["installer", "-pkg", str(pkg), "-target", "/"])
+    time.sleep(CLIENT_MACOS_QUIET_S)
+    if _client_app_pids():
+        raise SystemExit("an install with no client app running opened one")
+
+
+def _console_uid() -> int:
+    """The uid of the account at the screen; root's at the login window."""
+    return os.stat("/dev/console").st_uid
+
+
+def _client_app_pids() -> set:
+    """The client app's processes of this account."""
+    result = subprocess.run(
+        ["pgrep", "-U", str(os.getuid()), "-f", CLIENT_MACOS_PROGRAM],
+        capture_output=True,
+        text=True,
+    )
+    return {int(word) for word in result.stdout.split() if word.isdigit()}
+
+
+def _wait_for_client_app(is_wanted) -> "set | None":
+    """Wait until the client app's processes are what ``is_wanted`` takes.
+
+    Returns:
+        The processes then, or None when the wait ran out.
+    """
+    deadline = time.monotonic() + CLIENT_MACOS_APP_WAIT_S
+    while True:
+        pids = _client_app_pids()
+        if is_wanted(pids):
+            return pids
+        if time.monotonic() >= deadline:
+            return None
+        time.sleep(1)
 
 
 def check_hub_windows(msi: Path) -> None:
@@ -527,7 +621,7 @@ def check_hub_windows(msi: Path) -> None:
         raise SystemExit("the hub's service is not running after setup")
     _wait_for_panel()
     _check_hub_windows_config()
-    _answer([str(nhub), "stop"])
+    _answer([str(nhub), "stop", "--yes"])
 
     log = Path(tempfile.gettempdir()) / "hub_remove.log"
     print(f"msiexec /x exited {_msiexec('/x', msi, log)}")
@@ -598,7 +692,7 @@ def check_hub_macos(pkg: Path) -> None:
     if "state = running" not in job:
         raise SystemExit(f"{HUB_MACOS_JOB} is not running after setup")
     _wait_for_panel()
-    _sudo([HUB_MACOS_COMMAND, "stop"])
+    _sudo([HUB_MACOS_COMMAND, "stop", "--yes"])
 
     for job_name in (HUB_MACOS_JOB, AGENT_MACOS_JOB):
         subprocess.run(["sudo", "launchctl", "bootout", job_name])
@@ -660,11 +754,6 @@ def check_linux(package: Path) -> None:
             f" && {{ ls -1 {HUB_AGENT_CACHE_DIR} 2>/dev/null || true; }}"
             f" | sed 's/^/{HUB_AGENT_CACHE_LINE}/'"
         )
-    if command == LINUX_COMMANDS["neutrino-agent"]:
-        script += (
-            f" && stat -c '{CC_SWITCH_LINE}%u %a' {AGENT_LINUX_CC_SWITCH}"
-            f" && {AGENT_LINUX_CC_SWITCH} --version | sed 's/^/{CC_SWITCH_LINE}/'"
-        )
     script += f" && {command} --version"
     if command == LINUX_COMMANDS["neutrino-hub"]:
         script += f" && {command} open --print"
@@ -717,137 +806,6 @@ def check_linux(package: Path) -> None:
         print(f"agent cache: {', '.join(carried) or 'empty'}")
     else:
         print(f"{command} {result.stdout.strip().splitlines()[-1]}")
-    if command == LINUX_COMMANDS["neutrino-agent"]:
-        problem = linux_cc_switch_problem(result.stdout)
-        if problem:
-            raise SystemExit(problem)
-        print(f"{AGENT_LINUX_CC_SWITCH}: {CC_SWITCH_VERSION_LINE}")
-
-
-def linux_cc_switch_problem(output: str) -> str:
-    """What is wrong with the cc-switch a Linux agent package installed.
-
-    Args:
-        output: What the install in the container printed: a line with the
-            binary's owner and mode, then its ``--version``, each after
-            :data:`CC_SWITCH_LINE`.
-
-    Returns:
-        The one sentence naming the first fault, or an empty string.
-    """
-    lines = [
-        line[len(CC_SWITCH_LINE) :]
-        for line in output.splitlines()
-        if line.startswith(CC_SWITCH_LINE)
-    ]
-    if len(lines) < 2:
-        return f"{AGENT_LINUX_CC_SWITCH} printed no owner, mode and version"
-    owner, mode = lines[0].split()
-    bits = int(mode, 8)
-    return cc_switch_problem(
-        is_admin_owned=owner == "0",
-        is_writable_by_others=bool(bits & 0o022),
-        is_runnable_by_all=bits & 0o111 == 0o111,
-        version_output="\n".join(lines[1:]),
-    )
-
-
-def cc_switch_problem(
-    *,
-    is_admin_owned: bool,
-    is_writable_by_others: bool,
-    is_runnable_by_all: bool,
-    version_output: str,
-) -> str:
-    """What is wrong with an installed cc-switch.
-
-    Args:
-        is_admin_owned: Whether root, or on Windows an administrator or the
-            system, owns it.
-        is_writable_by_others: Whether an account other than its owner may
-            change it.
-        is_runnable_by_all: Whether every account may run it.
-        version_output: What ``cc-switch --version`` printed.
-
-    Returns:
-        The one sentence naming the first fault, or an empty string.
-    """
-    if not is_admin_owned:
-        return "cc-switch is not owned by root or the administrators"
-    if is_writable_by_others:
-        return "cc-switch can be changed by accounts other than its owner"
-    if not is_runnable_by_all:
-        return "cc-switch cannot be run by every account"
-    if CC_SWITCH_VERSION_LINE not in version_output:
-        return (
-            f"cc-switch --version printed {version_output.strip()!r}, "
-            f"not {CC_SWITCH_VERSION_LINE!r}"
-        )
-    return ""
-
-
-def _darwin_cc_switch_problem(path: str) -> str:
-    """What is wrong with the cc-switch the agent's .pkg installed.
-
-    Args:
-        path: Where the package puts it.
-
-    Returns:
-        The one sentence naming the first fault, or an empty string.
-    """
-    if not Path(path).is_file():
-        return f"the agent's .pkg installed no {path}"
-    found = os.stat(path)
-    return cc_switch_problem(
-        is_admin_owned=found.st_uid == 0,
-        is_writable_by_others=bool(found.st_mode & 0o022),
-        is_runnable_by_all=found.st_mode & 0o111 == 0o111,
-        version_output=_answer([path, "--version"]),
-    )
-
-
-def windows_cc_switch_problem(acl_answer: str, version_output: str) -> str:
-    """What is wrong with the cc-switch the agent's .msi installed.
-
-    Args:
-        acl_answer: What :data:`WINDOWS_CC_SWITCH_ACL_SCRIPT` printed: the
-            owner's SID, whether every account may change the file, and
-            whether the users may run it.
-        version_output: What ``cc-switch.exe --version`` printed.
-
-    Returns:
-        The one sentence naming the first fault, or an empty string.
-    """
-    owner, writable, runnable = acl_answer.split()
-    return cc_switch_problem(
-        is_admin_owned=owner in WINDOWS_ADMIN_SIDS,
-        is_writable_by_others=writable == "True",
-        is_runnable_by_all=runnable == "True",
-        version_output=version_output,
-    )
-
-
-def _check_cc_switch_windows() -> None:
-    """Check the cc-switch the agent's .msi installed.
-
-    Raises:
-        SystemExit: When it is missing, open to change by every account, not
-            runnable by the users, or not the pinned version.
-    """
-    if not AGENT_WINDOWS_CC_SWITCH.is_file():
-        raise SystemExit(f"the agent's .msi installed no {AGENT_WINDOWS_CC_SWITCH}")
-    everyone = ", ".join(f"'{sid}'" for sid in WINDOWS_EVERY_ACCOUNT_SIDS)
-    problem = windows_cc_switch_problem(
-        _powershell(
-            WINDOWS_CC_SWITCH_ACL_SCRIPT.format(
-                path=AGENT_WINDOWS_CC_SWITCH, everyone=everyone
-            )
-        ),
-        _answer([str(AGENT_WINDOWS_CC_SWITCH), "--version"]),
-    )
-    if problem:
-        raise SystemExit(problem)
-    print(f"{AGENT_WINDOWS_CC_SWITCH}: {CC_SWITCH_VERSION_LINE}")
 
 
 def hub_agent_cache(name: str) -> list:

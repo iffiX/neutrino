@@ -4,7 +4,9 @@ The page: management is a completed handshake, so a failed install or a
 forgotten device never reads managed here; each row is what the agent last
 reported beside what the hub asks of it; the four presses write one
 ``want`` each and push it, refuse an offline device before writing, and a
-user-tier module takes none; the task carrying a module's install lines is
+user-tier module takes none; a press on a module whose last report is
+``failed`` puts a fresh retry mark, and one on any other module puts none;
+the task carrying a module's install lines is
 named on its row. The door: the per-device read carrying the module's own
 fields beside the shared ones, an import that writes what the machine
 reports only where the hub holds no configuration yet, a configuration
@@ -824,3 +826,47 @@ def test_apply_pushes_the_state_again(box):
         client.post(f"{BLOCK_PATH}/apply", json={"device_id": OFFLINE}).status_code
         == 409
     )
+
+
+# --- a press on a failed module tries again ---
+
+
+def retry_marks() -> dict:
+    from neutrino_hub.modules.devices.retry_marks import DeviceRetryMarks
+
+    return DeviceRetryMarks().marks(DEVICE)
+
+
+@pytest.mark.parametrize("press", ["install", "start", "stop", "uninstall"])
+def test_a_press_on_a_failed_module_puts_a_fresh_retry_mark(api, press):
+    client, runtime = api
+    runtime.agent_sessions.online.add(DEVICE)
+    runtime.device_modules[DEVICE] = {
+        "fakedesk": {"state": "failed", "code": "download_failed", "params": {}}
+    }
+
+    client.post(
+        f"{MODULE_PATH}/{press}", json={"device_id": DEVICE, "module": "fakedesk"}
+    )
+    first = retry_marks()
+    client.post(
+        f"{MODULE_PATH}/{press}", json={"device_id": DEVICE, "module": "fakedesk"}
+    )
+    second = retry_marks()
+
+    assert set(first) == {"fakedesk"}
+    assert first["fakedesk"] != second["fakedesk"]
+    assert len(runtime.agent_sessions.pushes) == 2
+
+
+@pytest.mark.parametrize("state", ["installed", "running", "unknown"])
+def test_a_press_on_a_module_that_did_not_fail_puts_no_mark(api, state):
+    client, runtime = api
+    runtime.agent_sessions.online.add(DEVICE)
+    runtime.device_modules[DEVICE] = {"fakedesk": {"state": state}}
+
+    client.post(
+        f"{MODULE_PATH}/install", json={"device_id": DEVICE, "module": "fakedesk"}
+    )
+
+    assert retry_marks() == {}

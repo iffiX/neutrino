@@ -150,6 +150,16 @@ def _no_test_reaches_the_machine(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _retry_marks_in_the_test(monkeypatch, tmp_path):
+    """Keep the retry marks a press writes inside the test's own directory."""
+    from neutrino_hub.modules.devices import retry_marks
+
+    monkeypatch.setattr(
+        retry_marks, "DEVICE_RETRY_MARKS_PATH", tmp_path / "device_retry_marks.json"
+    )
+
+
+@pytest.fixture(autouse=True)
 def _one_controller_per_test(monkeypatch):
     """Start every test with no process controller handed out yet."""
     from neutrino_hub.platforms import detect

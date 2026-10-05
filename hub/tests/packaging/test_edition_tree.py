@@ -151,7 +151,7 @@ def test_the_cn_archive_carries_no_upstream_source_of_a_left_out_feature():
 
 
 def test_both_archives_carry_the_source_of_the_pinned_cc_switch():
-    """The client and every agent package carry cc-switch in both editions."""
+    """The client's packages carry cc-switch in both editions."""
     from shared.constants import PACKAGING_CC_SWITCH_VERSION
 
     name = f"cc-switch-cli-{PACKAGING_CC_SWITCH_VERSION}-source.tar.gz"

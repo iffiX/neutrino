@@ -130,17 +130,22 @@ def test_a_machine_the_hub_only_answers_on_keeps_its_own_resolver(monkeypatch):
     assert written == []
 
 
-def test_a_gateway_serving_nothing_is_left_resolving_as_it_was(monkeypatch):
-    """No served network means no dnsmasq of ours to point at."""
+def test_a_router_serving_nothing_resolves_at_its_dnsmasq_on_loopback(monkeypatch):
+    """With no served network dnsmasq answers on loopback alone, and the box
+    resolves there rather than at whatever the C library falls back to."""
     written = []
-    monkeypatch.setattr(resolver, "point_at", lambda address: written.append(address))
-    network = RouterNetworkConfig(interfaces=[RouterInterface(name="eth0", role="wan")])
+    monkeypatch.setattr(
+        resolver, "point_at", lambda address: written.append(address) or True
+    )
+    network = RouterNetworkConfig(
+        mode=ROUTER_MODE_ROUTER, interfaces=[RouterInterface(name="eth0", role="wan")]
+    )
 
     applier = routes.RouterInterfaceApplier.__new__(routes.RouterInterfaceApplier)
     applier._network = network
 
-    assert applier.apply_resolver() == []
-    assert written == []
+    assert applier.apply_resolver() == ["resolving at 127.0.0.1"]
+    assert written == ["127.0.0.1"]
 
 
 def test_saving_one_interface_still_points_the_box_at_its_own_dnsmasq(monkeypatch):

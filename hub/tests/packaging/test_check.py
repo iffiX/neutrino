@@ -278,9 +278,7 @@ def test_the_linux_hub_check_reads_dnf_scriptlet_words_from_its_error_stream(
     assert calls[0][-1].startswith("dnf -y install ")
 
 
-def _macos_agent_check(
-    check, monkeypatch, tmp_path, *, is_foreign_taken, is_cc_switch_kept=False
-):
+def _macos_agent_check(check, monkeypatch, tmp_path, *, is_foreign_taken):
     """Run the macOS agent check with the Mac stood in for.
 
     ``nagent service uninstall`` is faked to delete the module's plist, the
@@ -290,8 +288,6 @@ def _macos_agent_check(
     foreign = tmp_path / "com.neutrino.hub_check.plist"
     command = tmp_path / "nagent"
     command.write_text("")
-    switcher = tmp_path / "cc-switch"
-    switcher.write_text("")
     ran = []
 
     def sudo(arguments):
@@ -301,16 +297,12 @@ def _macos_agent_check(
         if arguments[1:] == ["service", "uninstall", "--yes"]:
             added.unlink()
             command.unlink()
-            if not is_cc_switch_kept:
-                switcher.unlink()
             if is_foreign_taken:
                 foreign.unlink()
 
     monkeypatch.setattr(check, "AGENT_MACOS_ADDED_PLIST", added)
     monkeypatch.setattr(check, "AGENT_MACOS_FOREIGN_PLIST", foreign)
     monkeypatch.setattr(check, "AGENT_MACOS_COMMAND", str(command))
-    monkeypatch.setattr(check, "AGENT_MACOS_CC_SWITCH", str(switcher))
-    monkeypatch.setattr(check, "_darwin_cc_switch_problem", lambda path: "")
     monkeypatch.setattr(check, "AGENT_MACOS_ROOT_MODES", {})
     monkeypatch.setattr(check, "_require_host", lambda platform, name: None)
     monkeypatch.setattr(check, "_sudo", sudo)
@@ -465,146 +457,152 @@ def test_a_client_data_tree_with_no_log_folder_fails_the_check(check, client_dat
         check._check_client_windows_data()
 
 
-# --- the cc-switch every agent package carries ---
+class FakeMac:
+    """The runner as the client's upgrade check sees it: the app's pids move
+    as the steps say."""
+
+    def __init__(self, *, is_at_screen=True, is_reopened=True, is_opened_unasked=False):
+        self.is_at_screen = is_at_screen
+        self.is_reopened = is_reopened
+        self.is_opened_unasked = is_opened_unasked
+        self.pids: set = set()
+        self.next_pid = 100
+        self.steps: list = []
+
+    def run(self, command, **kwargs):
+        self.steps.append(list(command))
+        if command[:2] == ["open", "-a"]:
+            self._start()
+        if command[-1] == "quit":
+            self.pids = set()
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    def sudo(self, command):
+        self.steps.append(["sudo", *command])
+        if self.pids:
+            self.pids = set()
+            if self.is_reopened:
+                self._start()
+        elif self.is_opened_unasked:
+            self._start()
+
+    def _start(self):
+        self.next_pid += 1
+        self.pids = {self.next_pid}
 
 
-def _agent_linux_output(check, owner="0", mode="755", version=None):
-    version = version or check.CC_SWITCH_VERSION_LINE
-    return (
-        "Setting up neutrino-agent (0.5.0) ...\n"
-        f"{check.CC_SWITCH_LINE}{owner} {mode}\n"
-        f"{check.CC_SWITCH_LINE}{version}\n"
-        "nagent 0.5.0\n"
-    )
-
-
-def test_the_linux_agent_check_reads_cc_switch_before_nagent(
-    check, monkeypatch, tmp_path
-):
-    calls = []
+def _upgrade_check(check, monkeypatch, mac):
+    monkeypatch.setattr(check.subprocess, "run", mac.run)
+    monkeypatch.setattr(check, "_sudo", mac.sudo)
+    monkeypatch.setattr(check, "_client_app_pids", lambda: set(mac.pids))
+    monkeypatch.setattr(check.time, "sleep", lambda seconds: None)
+    uid = check.os.getuid()
     monkeypatch.setattr(
-        check.shutil,
-        "which",
-        lambda name: "/usr/bin/docker" if name == "docker" else None,
+        check, "_console_uid", lambda: uid if mac.is_at_screen else uid + 1
     )
-    monkeypatch.setattr(
-        check.subprocess,
-        "run",
-        _fake_container_run(_agent_linux_output(check), calls),
-    )
-    package = tmp_path / "neutrino-agent_0.5.0_arm64.deb"
-    package.write_bytes(b"deb")
-
-    check.check_linux(package)
-
-    script = calls[0][-1]
-    assert (
-        f"stat -c '{check.CC_SWITCH_LINE}%u %a' /opt/neutrino/agent/bin/cc-switch"
-        in script
-    )
-    assert script.index("/opt/neutrino/agent/bin/cc-switch --version") < script.index(
-        "nagent --version"
-    )
-    assert script.endswith(" && nagent --version")
+    check._check_client_macos_upgrade(Path("client.pkg"))
 
 
-def test_the_linux_hub_and_client_checks_ask_nothing_of_cc_switch_in_bin(
-    check, monkeypatch, tmp_path
-):
-    calls = []
-    monkeypatch.setattr(
-        check.shutil,
-        "which",
-        lambda name: "/usr/bin/docker" if name == "docker" else None,
-    )
-    monkeypatch.setattr(
-        check.subprocess, "run", _fake_container_run("nclient 0.5.0\n", calls)
-    )
-    package = tmp_path / "neutrino-client_0.5.0_amd64.deb"
-    package.write_bytes(b"deb")
+def test_an_upgrade_over_the_running_client_app_leaves_a_new_one(check, monkeypatch):
+    mac = FakeMac()
 
-    check.check_linux(package)
+    _upgrade_check(check, monkeypatch, mac)
 
-    assert check.AGENT_LINUX_CC_SWITCH not in calls[0][-1]
+    assert [step[0] for step in mac.steps] == [
+        "open",
+        "sudo",
+        check.CLIENT_MACOS_PROGRAM,
+        "sudo",
+    ]
+    assert mac.pids == set()
 
 
-@pytest.mark.parametrize(
-    ("owner", "mode", "version", "said"),
-    [
-        ("0", "755", None, ""),
-        ("1000", "755", None, "cc-switch is not owned by root or the administrators"),
-        ("0", "775", None, "cc-switch can be changed by accounts other than its owner"),
-        ("0", "757", None, "cc-switch can be changed by accounts other than its owner"),
-        ("0", "750", None, "cc-switch cannot be run by every account"),
-        (
-            "0",
-            "755",
-            "cc-switch 5.0.0",
-            "cc-switch --version printed 'cc-switch 5.0.0'",
-        ),
-    ],
-)
-def test_the_linux_agent_s_cc_switch_is_root_s_and_every_account_s_to_run(
-    check, owner, mode, version, said
-):
-    problem = check.linux_cc_switch_problem(
-        _agent_linux_output(check, owner, mode, version)
-    )
+def test_an_upgrade_that_leaves_no_client_app_fails_the_check(check, monkeypatch):
+    monkeypatch.setattr(check, "CLIENT_MACOS_APP_WAIT_S", 0)
 
-    assert problem.startswith(said)
-    assert bool(problem) == bool(said)
+    with pytest.raises(SystemExit) as failed:
+        _upgrade_check(check, monkeypatch, FakeMac(is_reopened=False))
+
+    assert "no new client app" in str(failed.value)
 
 
-def test_a_linux_agent_that_printed_nothing_of_cc_switch_fails(check):
-    assert check.linux_cc_switch_problem("nagent 0.5.0\n") == (
-        "/opt/neutrino/agent/bin/cc-switch printed no owner, mode and version"
-    )
-
-
-def test_the_pinned_version_is_the_one_the_check_expects(check):
-    from shared.constants import PACKAGING_CC_SWITCH_VERSION
-
-    assert check.CC_SWITCH_VERSION_LINE == f"cc-switch {PACKAGING_CC_SWITCH_VERSION}"
-
-
-@pytest.mark.parametrize(
-    ("answer", "said"),
-    [
-        ("S-1-5-32-544 False True", ""),
-        ("S-1-5-18 False True", ""),
-        ("S-1-5-21-1-2-3-1001 False True", "cc-switch is not owned"),
-        ("S-1-5-32-544 True True", "cc-switch can be changed"),
-        ("S-1-5-32-544 False False", "cc-switch cannot be run"),
-    ],
-)
-def test_the_windows_agent_s_cc_switch_is_the_administrators_and_the_users_to_run(
-    check, answer, said
-):
-    problem = check.windows_cc_switch_problem(answer, check.CC_SWITCH_VERSION_LINE)
-
-    assert problem.startswith(said)
-    assert bool(problem) == bool(said)
-
-
-def test_the_windows_acl_script_names_every_account_by_sid(check):
-    everyone = ", ".join(f"'{sid}'" for sid in check.WINDOWS_EVERY_ACCOUNT_SIDS)
-    script = check.WINDOWS_CC_SWITCH_ACL_SCRIPT.format(
-        path=check.AGENT_WINDOWS_CC_SWITCH, everyone=everyone
-    )
-
-    assert "'S-1-5-32-545'" in script
-    assert "'S-1-1-0'" in script
-    assert str(check.AGENT_WINDOWS_CC_SWITCH) in script
-    assert "{" not in script.replace("{ $_", "").replace("{ ([int]", "")
-
-
-def test_the_macos_agent_check_fails_when_cc_switch_outlives_the_removal(
-    check, monkeypatch, tmp_path
+def test_an_install_that_opens_an_app_nobody_had_open_fails_the_check(
+    check, monkeypatch
 ):
     with pytest.raises(SystemExit) as failed:
-        _macos_agent_check(
-            check, monkeypatch, tmp_path, is_foreign_taken=False, is_cc_switch_kept=True
-        )
+        _upgrade_check(check, monkeypatch, FakeMac(is_opened_unasked=True))
 
-    assert "outlived nagent service uninstall" in str(failed.value)
-    assert "cc-switch" in str(failed.value)
+    assert "opened one" in str(failed.value)
+
+
+def test_a_runner_whose_account_is_not_at_the_screen_checks_no_reopen(
+    check, monkeypatch, capsys
+):
+    mac = FakeMac(is_at_screen=False)
+
+    _upgrade_check(check, monkeypatch, mac)
+
+    assert mac.steps == []
+    assert "not checked" in capsys.readouterr().out
+
+
+@pytest.fixture
+def relaunch_box(check, monkeypatch, tmp_path):
+    """The runner's tasks, processes and msiexec, scripted."""
+    marker = tmp_path / "relaunch_marker.txt"
+    box = {"tasks": [], "windows": "", "commands": [], "repairs": [], "starts": True}
+    monkeypatch.setattr(check, "CLIENT_WINDOWS_RELAUNCH_MARKER", marker)
+    monkeypatch.setattr(check, "CLIENT_WINDOWS_RELAUNCH_WAIT_S", 0)
+    monkeypatch.setattr(check, "_relaunch_tasks", lambda: list(box["tasks"]))
+
+    def answer(command):
+        box["commands"].append(command)
+        if command[0] == "tasklist":
+            return box["windows"]
+        return ""
+
+    def msiexec(action, msi, log):
+        box["repairs"].append(action)
+        if box["starts"]:
+            marker.write_text("started")
+        return 0
+
+    monkeypatch.setattr(check, "_answer", answer)
+    monkeypatch.setattr(check, "_msiexec", msiexec)
+    return box, marker
+
+
+def test_a_repair_that_starts_the_planted_relaunch_task_passes(check, relaunch_box):
+    box, marker = relaunch_box
+
+    check._check_client_windows_relaunch(Path("client.msi"))
+
+    (planted,) = [c for c in box["commands"] if c[:2] == ["schtasks", "/create"]]
+    assert planted[3] == "NeutrinoClientRelaunch_cicheck"
+    assert planted[planted.index("/ru") + 1] == "SYSTEM"
+    assert box["repairs"] == ["/fa"]
+    assert not marker.exists()
+
+
+def test_an_install_that_left_a_relaunch_task_fails_the_check(check, relaunch_box):
+    box, _ = relaunch_box
+    box["tasks"] = ["NeutrinoClientRelaunch_runner"]
+
+    with pytest.raises(SystemExit, match="left relaunch tasks"):
+        check._check_client_windows_relaunch(Path("client.msi"))
+
+
+def test_an_install_that_started_a_window_fails_the_check(check, relaunch_box):
+    box, _ = relaunch_box
+    box["windows"] = '"nclientw.exe","4100","Console","1","40,000 K"'
+
+    with pytest.raises(SystemExit, match="started one"):
+        check._check_client_windows_relaunch(Path("client.msi"))
+
+
+def test_a_repair_that_starts_no_relaunch_task_fails_the_check(check, relaunch_box):
+    box, _ = relaunch_box
+    box["starts"] = False
+
+    with pytest.raises(SystemExit, match="did not start the relaunch task"):
+        check._check_client_windows_relaunch(Path("client.msi"))

@@ -1586,8 +1586,15 @@ def test_about_carries_the_client_and_each_core_as_credits_rows_with_a_source_wo
     assert "CARRIED.filter((core) => !core.os || core.os === platform.os)" in (
         body_of("aboutSection")
     )
-    assert "core.repository + '/tree/' + fill(core.tag, { version: version })" in (
-        body_of("carriedSource")
+    carried = body_of("carriedSource")
+    assert "(edition === 'cn' && core.mainland) || core.repository" in carried
+    assert "repository + '/tree/' + fill(core.tag, { version: version })" in carried
+    assert "carriedSource(core, version, state.edition)" in body_of("aboutSection")
+    assert "mainland: 'https://gitee.com/easytier/EasyTier', tag: 'v{version}' }" in (
+        PAGE_JS
+    )
+    assert "mainland: 'https://gitee.com/mirrors/rustdesk', tag: '{version}' }" in (
+        PAGE_JS
     )
 
 

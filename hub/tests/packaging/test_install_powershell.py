@@ -39,7 +39,16 @@ function Invoke-WebRequest {
     Copy-Item -LiteralPath (Join-Path $env:FAKE_SERVED (Split-Path -Leaf $Uri)) $OutFile
 }
 function Start-Process {
-    param([string]$FilePath, [switch]$Wait, [switch]$PassThru, [string[]]$ArgumentList)
+    param(
+        [string]$FilePath, [switch]$Wait, [switch]$PassThru, [string]$Verb,
+        [string[]]$ArgumentList
+    )
+    if ($Verb) {
+        if ($env:FAKE_UAC_REFUSED) { throw 'The operation was canceled by the user.' }
+        $global:Asked += "$Verb $FilePath"
+        $global:Asked += $ArgumentList
+        return
+    }
     $global:Asked += "$FilePath $($ArgumentList -join ' ')"
     return [pscustomobject]@{ ExitCode = [int]$env:FAKE_EXIT }
 }
@@ -85,9 +94,11 @@ def run(tmp_path):
             + STAND_INS
             + "$outcome = 'ok'\n"
             + f"$given = @({quoted})\n"
-            + "try { Install-Neutrino @given | Out-Null }"
+            + "$said = @()\n"
+            + "try { $said = @(Install-Neutrino @given) }"
             + " catch { $outcome = $_.Exception.Message }\n"
-            + "@{ outcome = $outcome; asked = @($global:Asked) }"
+            + "@{ outcome = $outcome; asked = @($global:Asked);"
+            + " said = @($said | ForEach-Object { [string]$_ }) }"
             + " | ConvertTo-Json -Compress\n"
         )
         environment = {
@@ -109,6 +120,7 @@ def run(tmp_path):
         )
         assert result.returncode == 0, result.stderr
         answer = json.loads(result.stdout.strip().splitlines()[-1])
+        invoke.said = answer["said"]
         return answer["outcome"], answer["asked"]
 
     invoke.served = served
@@ -159,7 +171,6 @@ def test_a_package_that_does_not_match_its_checksum_is_never_installed(run):
 @pytest.mark.parametrize(
     "arguments, options, said",
     [
-        ((), {"is_admin": False}, "Run this in a PowerShell opened as administrator."),
         (
             (),
             {"architecture": "ARM64"},
@@ -253,3 +264,101 @@ def test_the_mainland_script_installs_from_gitee(run, tmp_path):
         f"fetch {CN_LATEST}",
         f"fetch {CN_RELEASE}/download/v9.9.9/SHA256SUMS",
     ]
+
+
+# --- one request for administrator rights ---
+
+
+def test_without_administrator_rights_the_script_asks_windows_once_and_goes_on(
+    run, tmp_path
+):
+    outcome, asked = run(
+        "agent", is_admin=False, env={"NEUTRINO_ASSET_DIR": str(run.served)}
+    )
+
+    assert outcome == "ok"
+    verb, *arguments = asked
+    assert verb == f"RunAs {pwsh}"
+    assert arguments[:5] == [
+        "-NoProfile",
+        "-NoExit",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+    ]
+    command = arguments[5]
+    assert command.startswith(f"$env:NEUTRINO_ASSET_DIR = '{run.served}'; & '")
+    assert command.endswith("' agent")
+    copy = Path(command.split("& '")[1].split("'")[0])
+    assert "function Install-Neutrino" in copy.read_text(encoding="utf-8-sig")
+    assert not any(line.startswith("fetch") for line in asked)
+    assert run.said == [
+        "Neutrino asks Windows for administrator rights once, and goes on in the "
+        "window it opens."
+    ]
+
+
+def test_a_refused_elevation_installs_nothing(run):
+    outcome, asked = run(is_admin=False, env={"FAKE_UAC_REFUSED": "1"})
+
+    assert (
+        outcome == "Windows did not grant administrator rights; nothing was installed."
+    )
+    assert asked == []
+
+
+def test_a_script_run_from_invoke_expression_copies_itself_whole(tmp_path):
+    """irm | iex has no file: the copy is the text the functions came from."""
+    driver = tmp_path / "driver.ps1"
+    text = SCRIPT.read_text().rstrip()[: -len(LAST_LINE)]
+    whole = text + STAND_INS + LAST_LINE + "\n"
+    (tmp_path / "whole.ps1").write_text(whole)
+    driver.write_text(
+        f"Get-Content -Raw -LiteralPath '{tmp_path / 'whole.ps1'}' | Invoke-Expression\n"
+        "$global:Asked | ConvertTo-Json -Compress\n"
+    )
+    result = subprocess.run(
+        [pwsh, "-NoProfile", "-NonInteractive", "-File", str(driver)],
+        capture_output=True,
+        text=True,
+        env={
+            "PATH": "/usr/bin:/bin",
+            "HOME": str(tmp_path),
+            "FAKE_ADMIN": "",
+            "PROCESSOR_ARCHITECTURE": "AMD64",
+        },
+        stdin=subprocess.DEVNULL,
+    )
+
+    assert result.returncode == 0, result.stderr
+    asked = json.loads(result.stdout.strip().splitlines()[-1])
+    command = asked[-1]
+    copy = Path(command.split("& '")[1].split("'")[0])
+    copied = copy.read_text(encoding="utf-8-sig")
+    assert copied.rstrip().endswith(LAST_LINE)
+    assert "function Get-NeutrinoScriptText" in copied
+    assert command.endswith("' hub")
+
+
+def test_an_administrator_s_run_asks_windows_for_nothing(run):
+    outcome, asked = run("agent")
+
+    assert outcome == "ok"
+    assert not any(line.startswith("RunAs") for line in asked)
+    assert any(line.startswith("msiexec.exe /i ") for line in asked)
+
+
+def test_the_agent_names_its_next_command_in_this_window(run):
+    run("agent")
+
+    assert run.said[-1] == (
+        "Next, in this window: nagent join '<enrollment link from the hub's "
+        "Devices page>'"
+    )
+
+
+def test_the_hub_without_a_terminal_names_its_next_step(run):
+    run()
+
+    assert run.said[-1].startswith("Next, in this window: & '")
+    assert run.said[-1].endswith("nhub.exe' open")
