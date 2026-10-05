@@ -23,6 +23,7 @@
   "ui.settings.download_backup": "Download backup",
   "ui.settings.https_addresses": "Addresses",
   "ui.settings.https_checking": "Checking whether this browser trusts the certificate.",
+  "ui.settings.https_client_kept": "This page comes through a client's Panel button, which goes on working when HTTPS is switched on or off.",
   "ui.settings.https_created": "Authority created",
   "ui.settings.https_current": "current",
   "ui.settings.https_disable": "Disable HTTPS",

@@ -6,7 +6,7 @@ import { Spinner } from "./spinner";
 import { apiPost, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
 import { interruptionWarning } from "../network_warnings";
-import { hubHost, isThroughClient } from "../origins";
+import { hubHost, isOffPanelPort } from "../origins";
 import { useApiResource } from "../use_api_resource";
 import { useDraft } from "../use_draft";
 import type { PanelSettings } from "../api_types";
@@ -47,8 +47,8 @@ export function PanelPortPanel() {
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [movingTo, setMovingTo] = useState<string | null>(null);
-  const isClientPage = isThroughClient(resource.data);
-  const host = hubHost(isClientPage);
+  const isForwarded = isOffPanelPort(resource.data);
+  const host = hubHost(isForwarded);
 
   const applied = resource.data?.listen_port ?? null;
   const appliedHttps = resource.data?.https_listen_port ?? null;
@@ -72,7 +72,7 @@ export function PanelPortPanel() {
       });
       resource.setData(saved);
       setMovingTo(
-        isClientPage ? window.location.origin : currentOrigin(saved, host),
+        isForwarded ? window.location.origin : currentOrigin(saved, host),
       );
     } catch (cause: unknown) {
       setError(describeError(cause));

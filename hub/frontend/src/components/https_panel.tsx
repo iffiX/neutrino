@@ -11,7 +11,13 @@ import { useConfirm } from "../use_confirm";
 import type { PanelHttpsResetView, PanelHttpsView } from "../api_types";
 
 import "./apply_bar.css";
-import { hubHost, httpOrigin, httpsOrigin, isThroughClient } from "../origins";
+import {
+  hubHost,
+  httpOrigin,
+  httpsOrigin,
+  isOffPanelPort,
+  isThroughClient,
+} from "../origins";
 
 import "./https_panel.css";
 
@@ -23,13 +29,14 @@ import "./https_panel.css";
  * no draft and no restart. A page on HTTP fetches the probe from the HTTPS
  * port to learn whether this browser trusts the certificate, and offers
  * Enable only once it does. A page reached on another port than the hub's
- * port for its scheme comes through a forward, a client's Panel button
- * among them, where the hub's other port is not this host's: nothing is
- * probed, Enable is offered, the addresses list this page's own as the one
- * in use and name the hub by a placeholder, and a switch in either
- * direction leaves the page where it is and names the port the forward must
- * reach. Regenerating is an HTTP-only action, and the new
- * authority downloads from the answer itself.
+ * port for its scheme comes through a forward, where the hub's other port is
+ * not this host's: nothing is probed, Enable is offered, the addresses list
+ * this page's own as the one in use and name the hub by a placeholder, and a
+ * switch in either direction leaves the page where it is. Behind a port
+ * forward the card names the port the forward must reach. Through a
+ * client's Panel button, which the hub serves on its HTTP port whatever the
+ * setting, the card says the button goes on working. Regenerating is an
+ * HTTP-only action, and the new authority downloads from the answer itself.
  */
 
 /** Where the authority downloads, with or without a session. */
@@ -63,7 +70,8 @@ export function HttpsPanel() {
   const view = resource.data;
   const isOnHttps = window.location.protocol === "https:";
   const httpsPort = view?.https_listen_port ?? null;
-  const isForwarded = isThroughClient(view);
+  const isForwarded = isOffPanelPort(view);
+  const isClientPage = isThroughClient(view);
   const host = hubHost(isForwarded);
 
   const probe = useCallback(async () => {
@@ -103,7 +111,7 @@ export function HttpsPanel() {
         isOn ? "/hub/setting/https/enable" : "/hub/setting/https/disable",
       );
       resource.setData(next);
-      if (isForwarded) {
+      if (isForwarded && !isClientPage) {
         setSwitchedTo(
           isOn
             ? {
@@ -117,11 +125,11 @@ export function HttpsPanel() {
                 origin: httpOrigin(next.listen_port, host),
               },
         );
-      } else if (isOn && !isOnHttps) {
+      } else if (!isForwarded && isOn && !isOnHttps) {
         window.location.replace(
           `${httpsOrigin(next.https_listen_port, host)}${here()}`,
         );
-      } else if (!isOn && isOnHttps) {
+      } else if (!isForwarded && !isOn && isOnHttps) {
         window.location.replace(
           `${httpOrigin(next.listen_port, host)}${here()}`,
         );
@@ -192,6 +200,7 @@ export function HttpsPanel() {
                   view={view}
                   isOnHttps={isOnHttps}
                   isForwarded={isForwarded}
+                  isClientPage={isClientPage}
                 />
               }
             />
@@ -266,15 +275,17 @@ export function HttpsPanel() {
             )}
             <div className="apply_bar_row">
               <span className="field_hint">
-                {isForwarded && !isRegenerated
-                  ? view.is_https_enabled
-                    ? t("ui.settings.https_forwarded_disable", {
-                        port: view.listen_port,
-                      })
-                    : t("ui.settings.https_forwarded", {
-                        port: view.https_listen_port,
-                      })
-                  : t(hintKey(view, isOnHttps, trust, isRegenerated))}
+                {isClientPage && !isRegenerated
+                  ? t("ui.settings.https_client_kept")
+                  : isForwarded && !isRegenerated
+                    ? view.is_https_enabled
+                      ? t("ui.settings.https_forwarded_disable", {
+                          port: view.listen_port,
+                        })
+                      : t("ui.settings.https_forwarded", {
+                          port: view.https_listen_port,
+                        })
+                    : t(hintKey(view, isOnHttps, trust, isRegenerated))}
               </span>
               <div className="button_row">
                 <button
@@ -347,17 +358,20 @@ function StatusLine({
 
 /**
  * Both of the panel's addresses, the one in use marked. Through a forward the
- * page's own address comes first as the one in use, and the hub's two are
- * named with a placeholder for its host.
+ * page's own address comes first as the one in use, marked as a client's
+ * where it is one, and the hub's two are named with a placeholder for its
+ * host.
  */
 function Addresses({
   view,
   isOnHttps,
   isForwarded,
+  isClientPage,
 }: {
   view: PanelHttpsView;
   isOnHttps: boolean;
   isForwarded: boolean;
+  isClientPage: boolean;
 }) {
   const host = hubHost(isForwarded);
   const hubAddresses = [
@@ -381,7 +395,7 @@ function Addresses({
           {address.isCurrent && (
             <span className="badge badge--accent">
               {t(
-                isForwarded
+                isClientPage
                   ? "ui.settings.https_through_client"
                   : "ui.settings.https_current",
               )}
