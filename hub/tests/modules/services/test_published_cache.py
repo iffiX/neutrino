@@ -184,6 +184,8 @@ def test_a_module_that_is_on_but_not_installed_publishes_nothing(box):
 
 
 def test_a_devices_gitea_and_containers_come_from_its_report(box, monkeypatch):
+    """A report with no ``host_bindings``, as an agent before 0.5.0 sends
+    it, gives each ``host_ports`` number as TCP."""
     store = DesiredStateStore()
     store.set_want(DEVICE, "gitea", "running")
     store.set_want(DEVICE, "podman", "running")
@@ -218,6 +220,7 @@ def test_a_devices_gitea_and_containers_come_from_its_report(box, monkeypatch):
     assert by_id["podman_device-one_web_8080"]["payload"] == {
         "host": "192.168.100.7",
         "port": 8080,
+        "protocol": "tcp",
     }
 
 
@@ -557,3 +560,43 @@ def test_a_devices_code_server_instances_are_listed_only_while_they_run(box):
     assert alice["id"] == "code_server_device-one_alice"
     assert alice["payload"]["is_token_required"] is True
     assert alice["description_code"] == "code_server_module"
+
+
+def test_a_containers_bindings_give_one_entry_per_port_and_protocol(box):
+    DesiredStateStore().set_want(DEVICE, "podman", "running")
+    bindings = [
+        {"address": "", "port": 8080, "protocol": "tcp"},
+        {"address": "", "port": 53, "protocol": "udp"},
+        {"address": "192.168.100.7", "port": 53, "protocol": "udp"},
+        {"address": "", "port": 53, "protocol": "tcp"},
+        {"address": "", "port": 5000},
+    ]
+    sessions = StubSessions(
+        {
+            DEVICE: report(
+                podman={
+                    "containers": [
+                        {
+                            "name": "dns",
+                            "image": "coredns",
+                            "is_running": True,
+                            "host_ports": [8080, 53, 5000],
+                            "host_bindings": bindings,
+                        }
+                    ]
+                },
+            )
+        }
+    )
+
+    entries, _ = cache(
+        StubUnits(), sessions=sessions, addresses={DEVICE: "192.168.100.7"}
+    ).entries()
+
+    assert {entry["id"]: entry["payload"]["protocol"] for entry in entries} == {
+        "podman_device-one_dns_8080": "tcp",
+        "podman_device-one_dns_53_udp": "udp",
+        "podman_device-one_dns_53": "tcp",
+        "podman_device-one_dns_5000": "tcp",
+    }
+    assert all(entry["is_healthy"] is True for entry in entries)

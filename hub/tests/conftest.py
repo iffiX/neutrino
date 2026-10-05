@@ -330,6 +330,10 @@ class ScriptedChannelStream:
             raise AgentOfflineError("scripted")
         self.sent.append(bytes(data))
 
+    async def send_datagram(self, data: bytes) -> bool:
+        await self.send_bytes(data)
+        return True
+
     async def close(self, code: str = "", params=None) -> None:
         self.is_close_asked = True
         if not self._closed.is_set():

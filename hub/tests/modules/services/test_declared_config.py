@@ -189,3 +189,13 @@ def test_a_refused_record_writes_nothing(config_dir):
     with pytest.raises(ServiceFieldInvalidError):
         DeclaredServiceRegistry().add(name="a", kind="nope", host="h", port=1)
     assert not (config_dir / SERVICES_DECLARED_PATH).exists()
+
+
+def test_a_udp_port_round_trips_as_its_own_kind(config_dir):
+    record = DeclaredServiceRegistry().add(
+        name="dns", kind="generic_udp", host="10.0.0.5", port=53
+    )
+
+    stored = DeclaredServiceRegistry().get(record.id)
+    assert (stored.kind, stored.port) == ("generic_udp", 53)
+    assert _stored(config_dir)["services"][0]["kind"] == "generic_udp"

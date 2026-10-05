@@ -24,7 +24,7 @@ reconfigures a box's network, installs packages, or both.
 | `test_enrollment_ticket.py` | That a client link outlives a panel restart: the ticket file holds its hash at mode 0600, and the link joins once over the pinned agent port and is refused `ticket_spent` the second time. Run as root. |
 | `test_relay.py` | That the relay reads `connected` against a server the tester owns, a client link ends with the relay's address, and a client handed only that address joins through it and is told `reached_through: relay`. Needs `NEUTRINO_RELAY_HOST` and `NEUTRINO_RELAY_KEY_FILE`; `../lab/make_vps.sh` builds a server for it. |
 | `test_reset_hands_back.py` | That `nhub reset all` gave the network back. |
-| `connect_probe.py` | Not a test: run by hand on any machine that reaches a hub's agent port. It joins with a client link read from a file or stdin, opens one `connect` stream to an entry or the panel, prints one JSON line, and leaves. |
+| `connect_probe.py` | Not a test: run by hand on any machine that reaches a hub's agent port. It joins with a client link read from a file or stdin, opens one `connect` stream to an entry or the panel, sends one DNS query as a datagram when `--udp` names a UDP entry, prints one JSON line, and leaves. |
 | `run_on_box.sh` | The single-mode lifecycle, from an uninstalled machine and back to one. |
 | `run_mode_matrix.sh` | The matrix lifecycle: install, server, the whole walk, reset. |
 

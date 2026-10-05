@@ -19,6 +19,7 @@ from neutrino_hub.modules.clients.services import (
     ConnectTarget,
     connect_target,
     entry_port,
+    entry_protocol,
     panel_material,
     service_material,
 )
@@ -547,6 +548,54 @@ def test_the_gateway_is_dialled_on_loopback_at_its_port(config_dir, gateway_port
 )
 def test_an_entrys_port_follows_its_type(entry, port):
     assert entry_port(entry) == port
+
+
+UDP_ENTRY = {
+    **ENTRY,
+    "id": "podman_dev_dns_53_udp",
+    "type": "port",
+    "title": "dns",
+    "payload": {"host": "192.168.100.7", "port": 53, "protocol": "udp"},
+    "device_id": "dev",
+}
+DECLARED_UDP_ENTRY = {
+    **DECLARED_ENTRY,
+    "id": "declared_dns",
+    "type": "port",
+    "payload": {"host": "192.168.100.9", "port": 53, "protocol": "udp"},
+    "record_id": "declared_dns",
+}
+
+
+def test_a_udp_port_entry_goes_out_as_udp_to_its_agent_or_its_record(config_dir):
+    runtime = FakeRuntime(entries=(UDP_ENTRY, DECLARED_UDP_ENTRY, FILE_ENTRY))
+    sharing(runtime)
+    client_id = ClientRegistry().create("alice")
+
+    found = [
+        target(runtime, client_id, {"id": entry_id})[2]
+        for entry_id in ("podman_dev_dns_53_udp", "declared_dns", "samba_dev_media")
+    ]
+
+    assert found == [
+        ConnectTarget("dev", "", 53, protocol="udp"),
+        ConnectTarget("", "192.168.100.9", 53, protocol="udp"),
+        ConnectTarget("dev", "", 445),
+    ]
+    assert [one.protocol for one in found] == ["udp", "udp", "tcp"]
+
+
+@pytest.mark.parametrize(
+    "entry, protocol",
+    [
+        ({"type": "port", "payload": {"host": "h", "port": 53}}, "tcp"),
+        ({"type": "port", "payload": {"port": 53, "protocol": "udp"}}, "udp"),
+        ({"type": "port", "payload": {"port": 53, "protocol": "sctp"}}, "tcp"),
+        ({"type": "file", "payload": {"host": "h", "protocol": "smb"}}, "tcp"),
+    ],
+)
+def test_an_entrys_protocol_is_udp_only_for_a_udp_port(entry, protocol):
+    assert entry_protocol(entry) == protocol
 
 
 # --- the panel's sign-in token ---

@@ -114,6 +114,12 @@ const SCHEME_OPTIONS: PickerOption[] = [
   { id: "https", name: "https" },
 ];
 
+/** The protocols a port service is reached over. */
+const PROTOCOL_OPTIONS: PickerOption[] = [
+  { id: "tcp", name: "TCP" },
+  { id: "udp", name: "UDP" },
+];
+
 const KIND_KEYS: Record<DeclaredServiceCreate["kind"], string> = {
   web: "ui.services.kind_web",
   port: "ui.services.kind_port",
@@ -127,6 +133,7 @@ const DECLARED_INVALID_KEYS: Record<string, string> = {
   host: "ui.services.invalid_host",
   port: "ui.services.invalid_port",
   scheme: "ui.services.invalid_scheme",
+  protocol: "ui.services.invalid_protocol",
   path: "ui.services.invalid_path",
   shares: "ui.services.invalid_shares",
 };
@@ -397,6 +404,8 @@ function DeclareForm({ hostPlaceholder, onSaved, onCancel }: DeclareFormProps) {
   const [host, setHost] = useState("");
   const [port, setPort] = useState("");
   const [scheme, setScheme] = useState("http");
+  const [protocol, setProtocol] =
+    useState<DeclaredServiceCreate["protocol"]>("tcp");
   const [path, setPath] = useState("/");
   const [shares, setShares] = useState<string[]>([]);
   const [description, setDescription] = useState("");
@@ -454,6 +463,7 @@ function DeclareForm({ hostPlaceholder, onSaved, onCancel }: DeclareFormProps) {
       path: kind === "web" ? path.trim() : null,
       shares: kind === "file" ? shares : null,
       description: description.trim(),
+      protocol,
     };
     try {
       const answer = await apiPost<ServicesResponse>(
@@ -518,6 +528,18 @@ function DeclareForm({ hostPlaceholder, onSaved, onCancel }: DeclareFormProps) {
           )}
         </label>
       </div>
+      {kind === "port" && (
+        <div className="declared_form_row">
+          <Picker
+            options={PROTOCOL_OPTIONS}
+            value={protocol}
+            onChange={(id) =>
+              setProtocol(id as DeclaredServiceCreate["protocol"])
+            }
+            label={t("ui.services.field_protocol")}
+          />
+        </div>
+      )}
       {kind === "web" && (
         <div className="declared_form_row">
           <Picker
@@ -618,7 +640,10 @@ function payloadLine(service: PublishedService): string {
   if (service.type === "file") {
     return `//${service.payload.host ?? ""}/${service.payload.share ?? ""}`;
   }
-  return `${service.payload.host ?? ""}:${service.payload.port ?? ""}`;
+  const address = `${service.payload.host ?? ""}:${service.payload.port ?? ""}`;
+  return service.type === "port" && service.payload.protocol === "udp"
+    ? `${address}/udp`
+    : address;
 }
 
 /** The first address one of the hub's own interfaces holds, without its

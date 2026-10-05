@@ -44,7 +44,9 @@ from neutrino_hub.modules.services.constants import (
     SERVICES_GITEA_ID,
     SERVICES_GITEA_TITLE,
     SERVICES_HUB_SELF_HOSTS,
-    SERVICES_KIND_GENERIC_TCP,
+    SERVICES_PORT_KIND_BY_PROTOCOL,
+    SERVICES_PROTOCOL_UDP,
+    SERVICES_UDP_ID_SUFFIX,
     SERVICES_KIND_HTTP,
     SERVICES_KIND_SAMBA,
     SERVICES_PODMAN_DESCRIPTION,
@@ -114,7 +116,8 @@ class ServiceListCollector:
                 ``cloudcli`` and ``code_server``: ``{"instances":
                 [{"account", "port", "is_healthy"}]}`` and
                 ``podman: {"containers": [{"name", "image", "is_running",
-                "host_ports"}]}``.
+                "bindings"}]}``, ``bindings`` being ``(port, protocol)``
+                pairs.
             declared_services: Every declared service.
             declared_healths: Declared record id to its
                 :class:`neutrino_hub.modules.services.probe.DeclaredServiceHealth`;
@@ -295,13 +298,18 @@ class ServiceListCollector:
             if not podman or not host:
                 continue
             for container in podman.get("containers") or []:
-                for port in container.get("host_ports") or []:
+                for port, protocol in container.get("bindings") or []:
+                    suffix = (
+                        SERVICES_UDP_ID_SUFFIX
+                        if protocol == SERVICES_PROTOCOL_UDP
+                        else ""
+                    )
                     entries.append(
                         _entry(
-                            id=f"podman_{_device_id(device)}_{container['name']}_{port}",
+                            id=f"podman_{_device_id(device)}_{container['name']}_{port}{suffix}",
                             type=SERVICES_TYPE_PORT,
                             title=container["name"],
-                            payload={"host": host, "port": port},
+                            payload={"host": host, "port": port, "protocol": protocol},
                             is_healthy=bool(container.get("is_running")),
                             description=SERVICES_PODMAN_DESCRIPTION.format(
                                 name=container["name"],
@@ -313,14 +321,21 @@ class ServiceListCollector:
                             device_id=_device_id(device),
                         )
                     )
-        for record in self._declared_of(SERVICES_KIND_GENERIC_TCP):
+        for record in self._declared_services:
+            protocol = _port_protocol(record.kind)
+            if not protocol:
+                continue
             is_healthy, detail_code = self._declared_health(record.id)
             entries.append(
                 _entry(
                     id=record.id,
                     type=SERVICES_TYPE_PORT,
                     title=record.name,
-                    payload={"host": record.host, "port": record.port},
+                    payload={
+                        "host": record.host,
+                        "port": record.port,
+                        "protocol": protocol,
+                    },
                     is_healthy=is_healthy,
                     description=record.description,
                     description_code=_declared_code(record),
@@ -481,6 +496,14 @@ def _declared_code(record: DeclaredService) -> str:
         The declared code, or nothing where the person wrote their own line.
     """
     return "" if record.description else SERVICES_DESCRIPTION_DECLARED
+
+
+def _port_protocol(kind: str) -> str:
+    """The protocol a declared port kind states, empty for any other kind."""
+    for protocol, port_kind in SERVICES_PORT_KIND_BY_PROTOCOL.items():
+        if kind == port_kind:
+            return protocol
+    return ""
 
 
 def _device_id(device: dict) -> str:

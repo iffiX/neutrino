@@ -1173,6 +1173,7 @@ export interface PublishedServicePayload {
   host?: string;
   port?: number;
   endpoint?: string;
+  /** port: `tcp` or `udp`; file: `smb`. */
   protocol?: string;
   models?: string[];
   share?: string;
@@ -1220,6 +1221,8 @@ export interface DeclaredServiceCreate {
   path: string | null;
   shares: string[] | null;
   description: string;
+  /** Read for a port alone. */
+  protocol: "tcp" | "udp";
 }
 
 export interface ServicesResponse {

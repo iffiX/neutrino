@@ -7,7 +7,8 @@ it opened with ``client_disabled`` and then its socket; deleting it refuses
 its socket; taking ``terminal`` or one of its machines closes the shells on
 that machine with ``permission_denied {kind: terminal}``; taking a kind or a
 machine closes the ``connect`` streams it covers with ``permission_denied
-{kind}``, the panel's forward among them; a change to the default reaches
+{kind}``, the panel's forward and a UDP ``port`` entry's one stream among
+them; a change to the default reaches
 only the clients that follow it; and everything still allowed stays open.
 """
 
@@ -232,3 +233,26 @@ def test_a_change_that_takes_nothing_closes_nothing(channel):
 
     assert close_lost_access(runtime, why="permission taken") == {}
     assert socket.closes() == {}
+
+
+def test_taking_port_closes_a_udp_entrys_stream_at_once(channel):
+    client, runtime, loop = channel
+    registry = ClientRegistry()
+    client_id = registry.create("laptop")
+    registry.set_permission(client_id, ["web", "terminal", "panel", "port"])
+    session, socket = connected(runtime, loop, client_id)
+
+    async def open_udp():
+        session._streams[11] = ChannelStream(
+            session, 11, "connect", {"id": "podman_dev-a_dns_53_udp"}
+        )
+        session.connects[11] = ("port", DEVICE_A)
+
+    on_loop(loop, open_udp())
+
+    client.post(
+        "/api/hub/client/permission/set",
+        json={"client_id": client_id, "kinds": ["web", "terminal", "panel"]},
+    )
+
+    assert socket.closes() == {11: ("permission_denied", {"kind": "port"})}

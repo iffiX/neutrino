@@ -7,7 +7,8 @@ is a service that is up, because a 401 comes from something alive enough to
 refuse — and for ``samba`` the server's own list of exports. A share may be
 called missing only off a listing that actually shows shares; a server that
 refuses anonymous listing degrades to the port answering, healthy with the
-share itself marked unverified.
+share itself marked unverified. A ``generic_udp`` record has no exchange
+to try and is never probed; its health stays empty.
 
 Results are cached for a short while and never written to disk: health is
 what the service is doing now, and a stored answer would only ever be stale.
@@ -24,6 +25,7 @@ import httpx
 
 from neutrino_hub.modules.services.config import DeclaredService
 from neutrino_hub.modules.services.constants import (
+    SERVICES_KIND_GENERIC_UDP,
     SERVICES_KIND_HTTP,
     SERVICES_KIND_SAMBA,
     SERVICES_PROBE_CACHE_TTL_S,
@@ -86,6 +88,11 @@ class DeclaredServiceHealth:
         )
 
 
+def _is_probed(service: DeclaredService) -> bool:
+    """Whether a declared record is probed: every kind but ``generic_udp``."""
+    return service.kind != SERVICES_KIND_GENERIC_UDP
+
+
 class DeclaredServiceProbe:
     """Probes declared services and caches the results for a short while.
 
@@ -136,6 +143,7 @@ class DeclaredServiceProbe:
         Returns:
             One fresh result per service.
         """
+        services = [service for service in services if _is_probed(service)]
         if not services:
             self._cache = {}
             self._probed_at = time.monotonic()
@@ -157,8 +165,11 @@ class DeclaredServiceProbe:
             service: The service to reach.
 
         Returns:
-            The fresh measurement.
+            The fresh measurement; for a ``generic_udp`` record, which has
+            no connect to try, a result that was never probed.
         """
+        if not _is_probed(service):
+            return DeclaredServiceHealth(service.id, None, None, None)
         result = self._measure(service, listings=self._listings([service]))
         self._cache[service.id] = result
         return result

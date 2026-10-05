@@ -340,3 +340,22 @@ def test_probing_one_service_replaces_its_cached_result(tcp_listener):
 
     assert result.is_healthy is False
     assert probe.cached(service.id).is_healthy is False
+
+
+def test_a_udp_record_is_never_probed_and_its_health_stays_empty(monkeypatch):
+    def refuse(*args, **kwargs):
+        pytest.fail("a UDP record has no connect to try")
+
+    monkeypatch.setattr(probe_module.socket, "create_connection", refuse)
+    udp = declared("generic_udp", 53)
+    probe = DeclaredServiceProbe(timeout_s=PROBE_TIMEOUT_S)
+
+    assert probe.refresh([udp]) == []
+    (result,) = probe.results([udp])
+    assert (result.is_healthy, result.checked_at, result.detail_code) == (
+        None,
+        None,
+        None,
+    )
+    assert probe.probe(udp).is_healthy is None
+    assert probe.cached(udp.id) is None

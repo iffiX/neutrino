@@ -1,4 +1,5 @@
-"""A client's ``connect`` stream: one TCP connection the hub carries.
+"""A client's ``connect`` stream: one TCP connection the hub carries, or
+every datagram of a UDP ``port`` entry (:mod:`neutrino_hub.web.channel_udp`).
 
 A client opens ``connect {id}`` for a published entry or ``connect
 {is_panel: true}`` for the hub's own panel. The hub judges it with the
@@ -26,6 +27,8 @@ from neutrino_hub.modules.channel.constants import (
 )
 from neutrino_hub.modules.channel.sessions import ChannelSession, ChannelStream
 from neutrino_hub.modules.clients.services import connect_target
+from neutrino_hub.modules.services.constants import SERVICES_PROTOCOL_UDP
+from neutrino_hub.web.channel_udp import relay_to_agent, relay_to_socket
 from neutrino_hub.web.constants import WEB_DEFAULT_LISTEN_PORT
 
 # The errors a refused dial raises, beside ConnectionRefusedError.
@@ -59,12 +62,32 @@ async def serve_connect_stream(
             await stream.close(code, params)
             return
         session.connects[stream.id] = (target.kind, target.provider)
+        if target.protocol == SERVICES_PROTOCOL_UDP:
+            await _relay_datagrams(runtime, stream, target)
+            return
         if target.device_id:
             await _relay_to_agent(runtime, stream, target)
             return
         await _relay_to_socket(stream, target)
     finally:
         session.connects.pop(stream.id, None)
+
+
+async def _relay_datagrams(runtime, stream: ChannelStream, target) -> None:
+    """Carry a UDP entry's stream to its machine's agent, or be its far end."""
+    if not target.device_id:
+        await relay_to_socket(stream, target.host, target.port, reason_of=dial_reason)
+        return
+    try:
+        far = await runtime.agent_sessions.open_stream(
+            target.device_id,
+            CHANNEL_STREAM_CONNECT,
+            {"port": target.port, "protocol": SERVICES_PROTOCOL_UDP},
+        )
+    except AgentOfflineError as offline:
+        await stream.close(offline.code, {"device": target.device_id})
+        return
+    await relay_to_agent(stream, far)
 
 
 async def _relay_to_agent(runtime, stream: ChannelStream, target) -> None:
