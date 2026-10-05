@@ -57,6 +57,7 @@ from neutrino_hub.modules.cliproxyapi.constants import (
     CLIPROXYAPI_GENERATED_NAME,
 )
 from neutrino_hub.modules.channel.constants import (
+    CHANNEL_MESSAGE_BYTES_MAX,
     CHANNEL_PING_INTERVAL_S,
     CHANNEL_PING_TIMEOUT_S,
 )
@@ -482,6 +483,7 @@ def _serve_panel(arguments) -> int:
             host=arguments.host,
             port=port,
             reload=True,
+            proxy_headers=False,
             log_level="info",
             access_log=False,
         )
@@ -536,6 +538,8 @@ def _agent_config(host: str, key_path) -> uvicorn.Config:
         timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_S,
         ws_ping_interval=CHANNEL_PING_INTERVAL_S,
         ws_ping_timeout=CHANNEL_PING_TIMEOUT_S,
+        ws_max_size=CHANNEL_MESSAGE_BYTES_MAX,
+        proxy_headers=False,
     )
 
 
@@ -590,6 +594,7 @@ def _panel_config(host: str, port: int, **tls) -> uvicorn.Config:
         # A browser's open websockets otherwise hold a graceful shutdown
         # until systemd's own timeout; a stop is allowed seconds, not it.
         timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_S,
+        proxy_headers=False,
         **tls,
     )
 

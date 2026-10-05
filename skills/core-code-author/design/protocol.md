@@ -111,6 +111,9 @@ One test asserts that the link's address set equals the firewall's open set,
 with one extra member: the relay's address while the relay is on and
 configured, which no local interface holds. Enrolling a device on a LAN begins with exposing that LAN.
 
+What the port does with a peer before it is admitted, and every limit on it,
+is in [connection.md](connection.md), "Before a peer is admitted".
+
 ### The identity agents and clients pin
 
 `nhub setup` writes a self-signed pair under `config/web/agent_tls/`:
@@ -291,6 +294,7 @@ The HTTP status names the class of the refusal:
 | 400 | a body, a query or a path that does not validate, or a value the route refuses | `body_invalid` for what the models refuse, then the route's own: `password_wrong`, `path_invalid`, `unknown_credential`, `login_refused`, `vault_locked`, `language_unknown`, `theme_unknown`, `hub_name_required`, `invalid_range`, `unsupported_kind`, `permission_kind_unknown {kind}`, `permission_device_unknown {device_id}`, `easytier_mode_unknown {mode}`, `easytier_config_server_invalid`, `overlay_subnet_overlap {title, subnet, conflict}`, `account_duplicate {account}`, `port_duplicate {port}`, `credential_missing {account}`, `proxy_scope_unsupported {switch}`, `relay_host_invalid {host}`, `relay_account_invalid {account}`, `relay_ssh_missing`, `resolver_required {field}`, `resolver_address_invalid {address}` |
 | 401 | a missing session, a dead ticket, or a token that names no binding | `ticket_spent`, `binding_unknown` |
 | 404 | an unknown member | `device_unknown`, `https_authority_missing`, `session_unknown {session_id}` |
+| 413 | a body past the agent port's limit | `request_too_large {limit}` |
 | 409 | a state the action cannot run in | `agent_offline`, `protocol_too_old`, `protocol_too_new`, `role_mismatch`, `update_in_progress`, `release_not_latest`, `no_platform_build {module}`, `admission_paused {retry_after_s}`, `terms_not_accepted {module}` |
 | 500 | the hub could not write its own `config/` | `config_unwritable {detail}`, from the per-device module routes |
 | 502 | a service the hub asked did not answer as one | `gateway_unreachable`, `geodata_unreachable`, `release_dns_failed`, `release_timed_out`, `release_refused`, `release_http_error {status}`, `release_unreachable`, `relay_apply_failed {detail}` |
@@ -688,8 +692,10 @@ A session is started by opening `/ws/agent/terminal` with a new
 | `WS /api/channel/socket` | | the channel; a `hello` past the cap on channel sockets is refused `channel_full {limit}` |
 
 The agent port's caps, timeouts and the count of failed admissions are in
-[network.md](modules/network.md), "The agent port's limits". None of them is
-keyed by the peer's address.
+[connection.md](connection.md), "What an unadmitted peer can cost the hub".
+None of them is keyed by the peer's address. A `join` or a `leave` whose body
+is past `CHANNEL_REQUEST_BYTES_MAX` is refused 413 `request_too_large {limit}`
+before it is parsed.
 
 ### The router files
 
@@ -842,7 +848,8 @@ the three packages, named here so that changing one is a change to this table.
 
 | What it bounds | Hub | Agent | Client |
 | --- | --- | --- | --- |
-| a TLS handshake on the agent port | `CHANNEL_TLS_HANDSHAKE_TIMEOUT_S` 10 | | |
+| a socket's first byte on the agent port, from accept | `CHANNEL_FIRST_BYTE_TIMEOUT_S` 3 | | |
+| a TLS handshake on the agent port, from its first byte | `CHANNEL_TLS_HANDSHAKE_TIMEOUT_S` 10 | | |
 | a fresh socket's hello, from its upgrade | `CHANNEL_HELLO_TIMEOUT_S` 10 | | |
 | a connection's admission, from accept to an admitted `hello` | `CHANNEL_ADMISSION_TIMEOUT_S` 30 | | |
 | connecting and the handshake on top of it | | `AGENT_REQUEST_TIMEOUT_S` 10 | `CLIENT_CONNECT_TIMEOUT_S` 10 |
@@ -865,8 +872,9 @@ has binary frames, `shell` and `connect` alike. The hello timeout and the
 admission timeout both run: a socket closes when either ends first, so the
 handshake, the upgrade and the `hello` together fit in 30 seconds and the
 `hello` alone in 10. The agent port's counts, `CHANNEL_UNADMITTED_MAX`,
-`CHANNEL_SOCKETS_MAX` and the failed admissions per window, are in
-[network.md](modules/network.md), "The agent port's limits". The hub's ping interval
+`CHANNEL_SOCKETS_MAX`, `CHANNEL_MESSAGE_BYTES_MAX` and the failed admissions
+per window, are in [connection.md](connection.md), "What an unadmitted peer can
+cost the hub". The hub's ping interval
 is inside both silence windows, so a socket with nothing to say is kept open
 by the pings alone, and a peer that reaches its window closes and reconnects.
 A refused `hello` is retried at the backoff's maximum, the minute named under

@@ -48,7 +48,8 @@ class ChannelPortGuard:
         self._window_s = window_s
         self._clock = clock
         self._lock = threading.Lock()
-        # Connection key to its close, oldest first.
+        # Connection key to its close, its check and whether its TLS
+        # handshake is done, oldest first.
         self._unadmitted: collections.OrderedDict = collections.OrderedDict()
         self._admitted: set = set()
         self._failures: collections.deque = collections.deque()
@@ -59,7 +60,8 @@ class ChannelPortGuard:
         return self._sockets_max
 
     def accepted(self, key, close: Callable[[], None], is_closed: Callable[[], bool]):
-        """Count a new connection, closing the oldest open one at the cap.
+        """Count a new connection, closing one to make room at the cap: the
+        oldest that has not finished TLS, else the oldest of all.
 
         Args:
             key: The connection's peer address and port.
@@ -67,15 +69,27 @@ class ChannelPortGuard:
             is_closed: Whether the connection has already ended.
         """
         with self._lock:
-            for known in [k for k, (_, ended) in self._unadmitted.items() if ended()]:
+            for known in [k for k, held in self._unadmitted.items() if held[1]()]:
                 del self._unadmitted[known]
             evicted = []
             while len(self._unadmitted) >= self._unadmitted_max:
-                _, (oldest_close, _) = self._unadmitted.popitem(last=False)
-                evicted.append(oldest_close)
-            self._unadmitted[key] = (close, is_closed)
-        for oldest_close in evicted:
-            oldest_close()
+                bare = [k for k, held in self._unadmitted.items() if not held[2]]
+                victim = bare[0] if bare else next(iter(self._unadmitted))
+                evicted.append(self._unadmitted.pop(victim)[0])
+            self._unadmitted[key] = [close, is_closed, False]
+        for victim_close in evicted:
+            victim_close()
+
+    def handshaken(self, key) -> None:
+        """Mark a connection whose TLS handshake is done.
+
+        Args:
+            key: The connection's peer address and port.
+        """
+        with self._lock:
+            held = self._unadmitted.get(key)
+            if held is not None:
+                held[2] = True
 
     def closed(self, key) -> None:
         """Forget a connection that ended before its ``hello`` passed.
@@ -95,8 +109,7 @@ class ChannelPortGuard:
                 from the same address and port is left alone.
 
         Returns:
-            True when it was still waiting and is closed now, which counts
-            as a failed admission.
+            True when it was still waiting and is closed now.
         """
         with self._lock:
             entry = self._unadmitted.get(key)
@@ -106,7 +119,6 @@ class ChannelPortGuard:
         if entry[1]():
             return False
         close()
-        self.record_failure()
         return True
 
     def admit(self, key) -> "object | None":

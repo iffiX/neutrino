@@ -23,6 +23,7 @@ from neutrino_hub import edition
 from neutrino_hub.exceptions import VaultLockedError
 from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiConfigApplier, load_config
 from neutrino_hub.web import ws
+from neutrino_hub.web.agent_port import ChannelRequestLimitMiddleware
 from neutrino_hub.web.constants import WEB_CODE_BODY_INVALID, WEB_FRONTEND_DIST_DIR
 from neutrino_hub.web.https_redirect import PanelHttpsRedirectMiddleware
 from neutrino_hub.web.origin_guard import OriginGuardMiddleware
@@ -120,15 +121,22 @@ def create_app() -> FastAPI:
 
 
 def create_agent_app() -> FastAPI:
-    """Build the agent channel: the ``/api/channel`` routes and nothing else.
+    """Build the agent channel: the ``/api/channel`` routes and nothing else,
+    no API description among them, with each body held to the port's limit.
 
     Returns:
         The configured application, sharing the panel's runtime.
     """
-    app = FastAPI(title="Neutrino Hub Agent Channel", docs_url=None, redoc_url=None)
+    app = FastAPI(
+        title="Neutrino Hub Agent Channel",
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+    )
     app.state.runtime = shared_runtime()
     app.add_exception_handler(VaultLockedError, _vault_locked)
     app.add_exception_handler(RequestValidationError, _body_invalid)
+    app.add_middleware(ChannelRequestLimitMiddleware)
     app.include_router(channel.router)
     return app
 

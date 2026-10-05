@@ -421,47 +421,10 @@ online clients whose socket comes from a loopback address.
 
 ## The agent port's limits
 
-The agent port is reached through every way in, and through the relay every
-peer arrives from loopback. So no limit on the port is keyed by the peer's
-address: each one counts the whole port. The constants are in the hub's
-`modules/channel/constants.py`.
-
-| Limit | Constant | At the limit |
-| --- | --- | --- |
-| a TLS handshake's time | `CHANNEL_TLS_HANDSHAKE_TIMEOUT_S` 10 | the connection is closed |
-| the time from accept to an admitted `hello` | `CHANNEL_ADMISSION_TIMEOUT_S` 30 | the connection is closed; a `join` or `leave` request in flight counts toward that time |
-| connections that have not passed `hello` | `CHANNEL_UNADMITTED_MAX` 128 | the oldest of them is closed to make room for the new one |
-| channel sockets past `hello` | `CHANNEL_SOCKETS_MAX` 512 | the next `hello` is refused `channel_full {limit}`, which a peer retries as it retries any transient refusal |
-| failed admissions across the hub | `CHANNEL_ADMISSION_FAILURES_MAX` 30 within `CHANNEL_ADMISSION_WINDOW_S` 60 | `join` pauses, as the next paragraphs state |
-
-`CHANNEL_HELLO_TIMEOUT_S` 10, a socket's time from its upgrade to its
-`hello`, keeps the value the channel's timings table gives it
-([protocol.md](../protocol.md), "The timings").
-
-A failed admission is a `join` refused `ticket_spent` (an unknown, expired or
-spent ticket alike) or `role_mismatch`, a
-`hello` refused `binding_unknown` or `hello_invalid`, or a connection closed
-by either timeout. A protocol refusal, `channel_full`, a connection closed to
-make room and a connection that closes on its own are not counted.
-
-While the window holds `CHANNEL_ADMISSION_FAILURES_MAX` failures, every
-`join` is refused 409 `admission_paused {retry_after_s}` before its ticket is
-looked up, so no ticket is spent or tested; `retry_after_s` is the time until
-the oldest failure leaves the window. A `hello` is judged as always, so every
-bound agent and client with a valid token is admitted throughout. The pause
-holds back new enrolments only, and a ticket stays valid behind it.
-
-The cap on open handshakes closes no admitted socket. A flood that keeps
-`CHANNEL_UNADMITTED_MAX` handshakes open can close a reconnecting peer's
-handshake to make room; that peer tries again after its own backoff, and its
-binding is untouched.
-
-The numbers sit above a home's own load. One binding holds one socket, so 512
-sockets is far above the machines and clients one hub manages. After a hub
-restart every peer reconnects within its backoff and each handshake takes
-under a second, so 128 open handshakes is more than a home starts at once. A
-home's own failures are a removed device's one refused `hello` and a client's
-spent link, a few in an hour.
+The agent port's limits, what counts as a failed admission and the pause on
+`join` are in [connection.md](../connection.md), "What an unadmitted peer can
+cost the hub". Each one counts the whole port and none is keyed by a peer's
+address, because through the relay every peer arrives from loopback.
 
 ## The converge step
 
