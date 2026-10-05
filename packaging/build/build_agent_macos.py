@@ -96,13 +96,19 @@ exit 0
 """
 
 POSTINSTALL = f"""#!/bin/sh
+{pkg_build.LAUNCHD_START_FUNCTION}
 mkdir -p "{INSTALL_CONFIG_DIR}" "{INSTALL_STATE_DIR}"
 chown root:wheel "{INSTALL_CONFIG_DIR}" "{INSTALL_STATE_DIR}"
 chmod 700 "{INSTALL_CONFIG_DIR}"
 chmod 755 "{INSTALL_STATE_DIR}"
 mkdir -p "{AGENT_LOG_DIR}"
-launchctl bootstrap system /Library/LaunchDaemons/{RUSTDESK_SERVICE_LABEL}.plist || true
-launchctl bootstrap system /Library/LaunchDaemons/{AGENT_LAUNCHD_LABEL}.plist
+start_daemon {RUSTDESK_SERVICE_LABEL} \\
+    /Library/LaunchDaemons/{RUSTDESK_SERVICE_LABEL}.plist ||
+    echo "  RustDesk's service did not start: {RUSTDESK_SERVICE_LABEL}" >&2
+start_daemon {AGENT_LAUNCHD_LABEL} /Library/LaunchDaemons/{AGENT_LAUNCHD_LABEL}.plist || {{
+    echo "  The agent's service did not start: {AGENT_LAUNCHD_LABEL}" >&2
+    exit 1
+}}
 # The session server goes into the session at the screen now; later sessions
 # load it themselves.
 seat=$(stat -f %u /dev/console)

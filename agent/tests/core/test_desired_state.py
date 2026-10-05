@@ -813,3 +813,25 @@ def test_the_tried_hash_outlives_a_restart_and_the_same_state_is_not_tried_again
     assert len(tries) == 1
     assert again._tried_hash == "h1"
     assert oct(os.stat(str(tmp_path / "desired.json.tried")).st_mode & 0o777) == "0o600"
+
+
+def test_a_refusal_s_log_line_carries_its_reason(tmp_path):
+    """The agent's log says why, not only the code."""
+    runners = {
+        "samba": FakeRunner(
+            failure=ModuleApplyError(
+                "user_record_unusable",
+                {"user": "t3user3", "detail": "DS Error: -14120 (eDSPermissionError)"},
+            )
+        )
+    }
+    held, _ = applier(runners, tmp_path=tmp_path)
+    lines = []
+    held._log = lines.append
+
+    held.apply(state(samba="running"))
+
+    assert (
+        "samba: user_record_unusable user=t3user3 "
+        "detail=DS Error: -14120 (eDSPermissionError)"
+    ) in lines

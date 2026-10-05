@@ -713,3 +713,22 @@ def test_a_server_log_that_fails_is_warned_of_and_the_agent_s_lines_stay(
         "powershell exited 1",
     ]
     assert second == first
+
+
+def test_an_account_passed_over_keeps_the_rest_recorded_and_says_why(native):
+    """The applier made every other account and share; the record lists
+    them so their passwords can be set, and the refusal still surfaces."""
+    lines = []
+    native._log = lines.append
+    native.applier.error = ModuleApplyError(
+        "user_record_unusable", {"user": "ann", "detail": "eDSPermissionError"}
+    )
+
+    with pytest.raises(ModuleApplyError) as refused:
+        native.apply(dict(WINDOWS_CONFIG, users=["ann", "bob"]))
+
+    assert refused.value.code == "user_record_unusable"
+    record = record_of(native)
+    assert record["accounts"] == ["ann", "bob"]
+    assert record["shares"] == {"share": "D:\\share"}
+    assert lines == ["samba: passed over account ann"]

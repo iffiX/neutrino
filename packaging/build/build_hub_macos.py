@@ -113,6 +113,7 @@ exit 0
 """
 
 POSTINSTALL = f"""#!/bin/sh
+{pkg_build.LAUNCHD_START_FUNCTION}
 for directory in "{INSTALL_CONFIG_DIR}" "{INSTALL_STATE_DIR}"; do
     mkdir -p "$directory"
     chown root:wheel "$directory"
@@ -121,10 +122,16 @@ done
 mkdir -p "{INSTALL_LOG_DIR}"
 if [ -f "{RELOAD_MARKER}" ]; then
     rm -f "{RELOAD_MARKER}"
-    launchctl bootstrap system {HUB_LAUNCHD_PLIST} || true
+    start_daemon {HUB_LAUNCHD_LABEL} {HUB_LAUNCHD_PLIST} || {{
+        echo "  The hub's service did not start again: {HUB_LAUNCHD_LABEL}" >&2
+        exit 1
+    }}
     exit 0
 fi
-launchctl bootstrap system {HUB_LAUNCHD_PLIST} 2>/dev/null || true
+start_daemon {HUB_LAUNCHD_LABEL} {HUB_LAUNCHD_PLIST} || {{
+    echo "  The hub's service did not start: {HUB_LAUNCHD_LABEL}" >&2
+    exit 1
+}}
 launchctl kickstart system/{HUB_LAUNCHD_LABEL} 2>/dev/null || true
 address="$("{INSTALL_LINK_PATH}" open --print 2>/dev/null)" || address=""
 echo ""

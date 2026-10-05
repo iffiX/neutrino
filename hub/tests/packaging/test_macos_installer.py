@@ -240,7 +240,7 @@ def test_the_postinstall_makes_the_roots_and_starts_the_service(
     upgrade_end = postinstall.index("fi\n", upgrade)
     fresh = postinstall[upgrade_end:]
     assert (
-        "launchctl bootstrap system /Library/LaunchDaemons/com.neutrino.hub.plist"
+        "start_daemon com.neutrino.hub /Library/LaunchDaemons/com.neutrino.hub.plist"
         in (fresh)
     )
     assert "launchctl kickstart system/com.neutrino.hub" in fresh
@@ -325,3 +325,18 @@ def test_the_build_refuses_a_machine_this_is_not(monkeypatch):
     assert "arm64" in str(refused.value)
 
     build_hub_macos._check_build_machine("amd64")
+
+
+def test_an_upgrade_starts_the_hub_again_or_fails_the_install(tmp_path):
+    """The preinstall's bootout leaves launchd holding the label for a moment,
+    and a bootstrap then answers "5: Input/output error"; the postinstall
+    waits and tries again, and an install that cannot start the hub fails."""
+    script = build_hub_macos.POSTINSTALL
+    assert "|| true" not in script.split("launchctl kickstart")[0]
+    reload_branch = script.split(str(build_hub_macos.RELOAD_MARKER))[2]
+    assert reload_branch.index("start_daemon com.neutrino.hub ") < (
+        reload_branch.index("exit 1")
+    )
+    assert script.index("start_daemon() {") < script.index(
+        "start_daemon com.neutrino.hub "
+    )

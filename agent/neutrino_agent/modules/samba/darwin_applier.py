@@ -223,8 +223,10 @@ class SambaDarwinApplier:
 
         Raises:
             ModuleApplyError: ``share_name_taken`` or ``user_name_taken`` for
-                a name the module did not make, ``user_create_failed`` for
-                an account the system would not make.
+                a name the module did not make, before anything is touched;
+                ``user_create_failed`` or ``user_record_unusable`` for the
+                first account the system would not make, once every other
+                account and every share is applied.
             OSError: When a command cannot run.
             subprocess.CalledProcessError: When a command refuses.
         """
@@ -245,8 +247,14 @@ class SambaDarwinApplier:
                 raise ModuleApplyError("user_name_taken", {"user": name})
         notes = self._serve()
         self._load_fence(render_pf_rules(config.allowed_subnets))
-        notes += self._converge_accounts(config, owned_accounts)
-        notes += self._converge_shares(config, owned_shares, owned_accounts, points)
+        account_notes, refusals = self._converge_accounts(config, owned_accounts)
+        notes += account_notes
+        refused = {refusal.params["user"] for refusal in refusals}
+        notes += self._converge_shares(
+            config, owned_shares, owned_accounts, points, refused=refused
+        )
+        if refusals:
+            raise refusals[0]
         return notes
 
     def withdraw(self, record: dict, *, is_removed: bool) -> None:
@@ -412,19 +420,33 @@ class SambaDarwinApplier:
         if "Status: Enabled" not in self._read(["pfctl", "-s", "info"]):
             self._run(["pfctl", "-E"])
 
-    def _converge_accounts(self, config: SambaConfig, owned: list) -> list:
-        """Make every configured account, hidden and in the SMB group."""
+    def _converge_accounts(self, config: SambaConfig, owned: list) -> tuple:
+        """Make every configured account, hidden and in the SMB group.
+
+        An account the system will not make is passed over so the others
+        are still made.
+
+        Returns:
+            ``(notes, refusals)``: what changed, and one
+            :class:`ModuleApplyError` per account passed over.
+        """
         notes = []
+        refusals = []
         has_access_group = self._has_access_group()
         for name in config.users:
-            note = self._ensure_account(name, has_access_group=has_access_group)
+            try:
+                note = self._ensure_account(name, has_access_group=has_access_group)
+            except ModuleApplyError as refusal:
+                refusals.append(refusal)
+                notes.append(f"passed over account {name}: {refusal.code}")
+                continue
             if note:
                 notes.append(note)
         for name in owned:
             if name not in config.users:
                 self._run(["pwpolicy", "-u", name, "-disableuser"], is_checked=False)
                 notes.append(f"retired {name}")
-        return notes
+        return notes, refusals
 
     def _has_access_group(self) -> bool:
         return self._run(
@@ -435,18 +457,31 @@ class SambaDarwinApplier:
     def _ensure_account(self, name: str, *, has_access_group: bool) -> str:
         """Make one of the module's accounts usable, hidden, in the SMB group.
 
-        A record of the name that holds only its name, which a failed
-        attempt leaves, is deleted and the account made again. Callers have
-        refused a record the module did not make.
+        A record of the name that is not a usable account, which a failed
+        attempt of an earlier build left, is deleted and the account made
+        again. Callers have refused a record the module did not make.
 
         Returns:
             What changed, empty when the account was already usable.
+
+        Raises:
+            ModuleApplyError: ``user_record_unusable`` with the system's own
+                line when such a record cannot be deleted, which macOS 15
+                answers even to root; ``user_create_failed`` when the
+                system would not make the account.
         """
         if self._is_usable(name):
             self._settle_account(name, has_access_group=has_access_group)
             return ""
         if self._record_exists(name):
-            self._run(["dscl", ".", "-delete", f"/Users/{name}"])
+            deleted = self._run(
+                ["dscl", ".", "-delete", f"/Users/{name}"], is_checked=False
+            )
+            if not deleted.is_success:
+                raise ModuleApplyError(
+                    "user_record_unusable",
+                    {"user": name, "detail": tool_line(deleted)},
+                )
             self._make_account(name, has_access_group=has_access_group)
             return f"made account {name} again"
         self._make_account(name, has_access_group=has_access_group)
@@ -501,9 +536,20 @@ class SambaDarwinApplier:
             )
 
     def _converge_shares(
-        self, config: SambaConfig, owned: dict, accounts: list, points: list
+        self,
+        config: SambaConfig,
+        owned: dict,
+        accounts: list,
+        points: list,
+        *,
+        refused: "set | None" = None,
     ) -> list:
-        """Keep one point per configured share, and remove the module's others."""
+        """Keep one point per configured share, and remove the module's others.
+
+        An account in ``refused`` does not exist as one, so no folder names
+        it.
+        """
+        refused = refused or set()
         notes = []
         wanted = {share.name for share in config.shares}
         ours = [
@@ -518,8 +564,13 @@ class SambaDarwinApplier:
             if held:
                 notes.append(f"removed share {name}")
         known = accounts + [name for name in config.users if name not in accounts]
+        known = [name for name in known if name not in refused]
         for share in config.shares:
-            granted = list(share.valid_users or config.users)
+            granted = [
+                name
+                for name in share.valid_users or config.users
+                if name not in refused
+            ]
             self._run(["mkdir", "-p", share.path])
             for name in known:
                 for entry in (SAMBA_DARWIN_ACL_CHANGE, SAMBA_DARWIN_ACL_READ):

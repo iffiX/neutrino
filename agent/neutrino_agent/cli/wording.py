@@ -123,6 +123,12 @@ CLI_CODE_WORDS = {
     "share_name_taken": "a share named {name} exists that this module did not make",
     "user_name_taken": "an account named {user} exists that this module did not make",
     "user_create_failed": "the system would not make the account {user}: {detail}",
+    "user_record_unusable": (
+        "{user} is a record that is not a usable account and the system will "
+        "not remove it ({detail}); remove it as an administrator in System "
+        "Settings, Users & Groups, or with sysadminctl -deleteUser {user}, "
+        "or pick another name"
+    ),
     "port_invalid": "{port} is not a port",
     "port_reserved": "port {port} already belongs to the hub",
     "root_url_invalid": "the root URL must start with http:// or https://",

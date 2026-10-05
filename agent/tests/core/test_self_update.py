@@ -864,3 +864,77 @@ def test_the_pkg_job_writes_what_installer_said_in_the_same_shape(tmp_path, stub
     assert written["kind"] == "pkg"
     assert written["exit_code"] == 0
     assert written["output"] == "installer: The upgrade was successful.\n"
+
+
+@pytest.mark.parametrize("installer_exit", [0, 1])
+def test_the_pkg_job_removes_itself_last_whatever_installer_did(
+    tmp_path, stubbed, installer_exit
+):
+    """launchd runs a submitted job again every ten seconds until it is
+    removed, so the job's last act is its own removal, after the result."""
+    stub_manager(stubbed, "installer", body=f"echo installing; exit {installer_exit}")
+    calls = tmp_path / "launchctl_calls"
+    stub_manager(
+        stubbed,
+        "launchctl",
+        body=f'test -s {tmp_path}/reinstall.json && echo "$*" >> {calls}',
+    )
+
+    written = json.loads(run_unit(tmp_path, kind="pkg", package="agent.pkg"))
+
+    assert written["exit_code"] == installer_exit
+    assert calls.read_text() == "remove neutrino_agent_update\n"
+    script = self_update.install_command(
+        "pkg", str(tmp_path / "agent.pkg"), state_dir=str(tmp_path)
+    )[-1]
+    assert script.splitlines()[-1] == "launchctl remove neutrino_agent_update"
+
+
+def test_the_linux_unit_and_the_windows_install_run_once():
+    """A transient unit with no restart runs once and --collect unloads it
+    even after a failure; the Windows install is one detached process."""
+    unit = self_update.install_command("deb", "/tmp/a.deb", state_dir="/var/x")
+    assert unit[:4] == ["systemd-run", "--unit", "neutrino_agent_update", "--collect"]
+    assert not any(word.startswith("--property=Restart") for word in unit)
+    assert "launchctl" not in unit[-1]
+
+
+def launchctl_answering(monkeypatch, *, printed_rc, printed=""):
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append(list(command))
+        if command[1] == "print":
+            return subprocess.CompletedProcess(command, printed_rc, printed, "")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(self_update.subprocess, "run", run)
+    return calls
+
+
+def test_a_starting_agent_removes_a_stale_update_job(monkeypatch):
+    calls = launchctl_answering(
+        monkeypatch, printed_rc=0, printed="\tstate = spawn scheduled\n\truns = 643\n"
+    )
+
+    assert self_update.remove_stale_job("pkg") is True
+    assert calls[-1] == ["launchctl", "remove", "neutrino_agent_update"]
+
+
+def test_a_running_update_job_is_the_install_starting_this_agent_and_stays(
+    monkeypatch,
+):
+    calls = launchctl_answering(
+        monkeypatch, printed_rc=0, printed="\tstate = running\n"
+    )
+
+    assert self_update.remove_stale_job("pkg") is False
+    assert ["launchctl", "remove", "neutrino_agent_update"] not in calls
+
+
+def test_no_job_and_no_launchd_remove_nothing(monkeypatch):
+    calls = launchctl_answering(monkeypatch, printed_rc=113)
+
+    assert self_update.remove_stale_job("pkg") is False
+    assert self_update.remove_stale_job("deb") is False
+    assert len(calls) == 1

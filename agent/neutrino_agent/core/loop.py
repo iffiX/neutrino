@@ -46,6 +46,7 @@ from neutrino_agent.constants import (
     AGENT_ROTATE_DELAY_S,
     AGENT_SOFTWARE_PREFIX,
     AGENT_STATE_NAME,
+    AGENT_UPDATE_UNIT,
     AGENT_WS_PATH,
     PROTOCOL,
 )
@@ -355,6 +356,10 @@ class Agent:
         # A package the last process received and could not delete: the
         # one that installed this agent, or one an install was mid-way on.
         remove_stale(self._package_dir)
+        if self_update.remove_stale_job(
+            self_update.package_kind(self._engine.platform_tuple)
+        ):
+            self._log(f"removed the stale update job {AGENT_UPDATE_UNIT}")
         # The desktop host runs on every machine this package installed on,
         # and reaches the LAN and nothing else from the first start.
         self._rdp.apply_baseline()

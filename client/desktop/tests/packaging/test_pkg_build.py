@@ -262,3 +262,52 @@ def test_otool_refusing_a_file_stops_the_build(monkeypatch, tmp_path):
         pkg_build.require_system_links(tmp_path)
 
     assert "not an object file" in str(refused.value)
+
+
+def run_start_daemon(tmp_path, *, held_for: int, refused_for: int):
+    """Run ``start_daemon`` against a launchd that still holds the label for
+    ``held_for`` prints and refuses the first ``refused_for`` bootstraps.
+
+    Returns:
+        The exit status and the launchctl calls, one line each.
+    """
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    calls = tmp_path / "calls"
+    (bin_dir / "launchctl").write_text(f"""#!/bin/sh
+echo "$*" >> {calls}
+count() {{ grep -c "^$1" {calls}; }}
+if [ "$1" = print ]; then
+    [ "$(count print)" -le {held_for} ] && exit 0
+    exit 113
+fi
+if [ "$(count bootstrap)" -le {refused_for} ]; then
+    echo "Bootstrap failed: 5: Input/output error" >&2
+    exit 5
+fi
+exit 0
+""")
+    (bin_dir / "sleep").write_text("#!/bin/sh\nexit 0\n")
+    for program in bin_dir.iterdir():
+        program.chmod(0o755)
+    script = pkg_build.LAUNCHD_START_FUNCTION + 'start_daemon com.x "/L/com.x.plist"\n'
+    result = subprocess.run(
+        ["sh", "-c", script], env={"PATH": f"{bin_dir}:/usr/bin:/bin"}
+    )
+    return result.returncode, calls.read_text().splitlines()
+
+
+def test_a_daemon_is_started_once_launchd_lets_go_of_its_label(tmp_path):
+    status, calls = run_start_daemon(tmp_path, held_for=3, refused_for=2)
+
+    assert status == 0
+    assert calls[:4] == ["print system/com.x"] * 4
+    assert calls[4:] == ["bootstrap system /L/com.x.plist"] * 3
+
+
+def test_a_daemon_that_never_starts_fails_with_launchctl_s_status(tmp_path):
+    status, calls = run_start_daemon(tmp_path, held_for=1000, refused_for=1000)
+
+    assert status == 5
+    assert calls.count("print system/com.x") == 60
+    assert calls.count("bootstrap system /L/com.x.plist") == 5

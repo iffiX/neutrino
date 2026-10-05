@@ -68,6 +68,7 @@ MODULE_CODES = (
     "share_name_taken",
     "user_name_taken",
     "user_create_failed",
+    "user_record_unusable",
     "account_invalid",
     "account_duplicate",
     "account_unknown",
