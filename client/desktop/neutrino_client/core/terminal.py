@@ -13,7 +13,9 @@ kept on the machine outlives the stream and is attached to again by that id.
 A Clear sends Ctrl+C after what was typed before it, and the output is
 dropped, what had arrived and was not yet written among it, until the stream
 has been quiet for ``CLIENT_TERMINAL_CLEAR_QUIET_S``, for
-``CLIENT_TERMINAL_CLEAR_MAX_S`` at most.
+``CLIENT_TERMINAL_CLEAR_MAX_S`` at most. When the drop ends one Enter goes
+to the shell, which draws a fresh prompt on the empty box: the prompt the
+shell printed after Ctrl+C was dropped with the rest.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -36,8 +38,9 @@ TERMINAL_READ_BYTES = 4096
 TERMINAL_WAIT_S = 0.5
 # How much output already arrived is handed on in one piece.
 TERMINAL_BATCH_BYTES = 65536
-# The key a Clear sends first.
+# The key a Clear sends first, and the one it sends once the drop ends.
 TERMINAL_CTRL_C = b"\x03"
+TERMINAL_PROMPT_KEY = b"\r"
 
 
 def _nobody(*_args) -> None:
@@ -215,6 +218,8 @@ class TerminalBridge:
                 self._drop_since = None
         if is_due:
             on_cleared()
+            # The prompt the drop took away is asked for once more.
+            self.send(TERMINAL_PROMPT_KEY)
         return True
 
     def outcome(self) -> dict:

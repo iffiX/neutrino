@@ -257,7 +257,8 @@ def test_clear_sends_ctrl_c_and_draws_the_first_output_after_the_quiet():
     registry.take_bytes(1, b"$ ")
 
     assert wait_for(lambda: written == [b"$ "])
-    assert wire.binary == [(1, b"\x03")]
+    # Ctrl+C at the press, one Enter for a fresh prompt once the drop ends.
+    assert wire.binary == [(1, b"\x03"), (1, b"\r")]
     assert bridge.is_clearing is False
     registry.take_close({"type": "close", "stream": 1, "params": {}})
     pump.join(timeout=5)

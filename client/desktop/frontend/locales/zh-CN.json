@@ -195,6 +195,7 @@
   "ui.reason.disabled": "中枢已把本机停用。",
   "ui.reason.disconnect_first": "先断开，才能改本地端口。",
   "ui.reason.mount_form": "先在配置里填用户名和路径。",
+  "ui.reason.mount_form_drive": "先在配置里填用户名并选一个盘符。",
   "ui.reason.mount_form_volume": "先在配置里填用户名。",
   "ui.reason.no_machine": "先在上面选一台机器。",
   "ui.reason.no_network": "中枢没有发布虚拟网。",

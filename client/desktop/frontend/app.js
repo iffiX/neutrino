@@ -1638,7 +1638,7 @@ function newTab(hubId, machine, sessionId) {
     device_id: machine.device_id, name: machine.name, term: term, fit: fit,
     pane: pane, state: 'connecting', note: '', isRefused: false, typed: '',
     isSending: false, hint: '', session_id: sessionId || '', isListed: false,
-    isDropped: false, droppedAt: 0, flags: {}, isClearAsked: false,
+    isDropped: false, droppedAt: 0, flags: {}, isClearAsked: false, isClearing: false,
     clearMark: document.createElement('div'),
   };
   tab.clearMark.className = 'term_clearing hidden';
@@ -1767,17 +1767,24 @@ function openTerminalMenu(tab, x, y) {
 // telling the page when the dropping starts and ends.
 function clearTerminal(tab) {
   if (tab.state !== 'open') return;
-  tab.term.clear();
+  showClearing(tab, true);
   tab.isClearAsked = true;
   if (!tab.isSending) flushShellKeys(tab);
 }
 
-// The Clearing word over a terminal's box: shown while the resident drops
-// its output. What the terminal still had to draw is cleared after it.
+// Erases the screen and the scrollback and puts the cursor home, the
+// terminal's modes kept.
+const TERMINAL_ERASE = '\x1b[2J\x1b[3J\x1b[H';
+
+// The Clearing word over a terminal's box: shown while the output is
+// dropped. Output that reaches the page meanwhile was read before the drop
+// began and is not drawn; the box is erased when the drop begins, after
+// what the terminal still had to draw, and again when it ends.
 function showClearing(tab, isClearing) {
+  tab.isClearing = isClearing;
   tab.clearMark.textContent = t('ui.job.clearing');
   tab.clearMark.className = isClearing ? 'term_clearing' : 'term_clearing hidden';
-  if (isClearing) tab.term.write('', () => tab.term.clear());
+  tab.term.write(TERMINAL_ERASE);
 }
 
 function closeTerminalMenu() {
@@ -1892,14 +1899,16 @@ function takeShellPiece(piece) {
     return;
   }
   if (piece.data !== undefined) {
-    tab.term.write(base64Bytes(piece.data));
+    if (!tab.isClearing) tab.term.write(base64Bytes(piece.data));
     return;
   }
   if (piece.clearing !== undefined) {
-    showClearing(tab, piece.clearing === true);
+    if (piece.clearing === true || tab.isClearing) {
+      showClearing(tab, piece.clearing === true);
+    }
     return;
   }
-  showClearing(tab, false);
+  if (tab.isClearing) showClearing(tab, false);
   const end = piece.end || {};
   if (!end.code && !tab.isListed && !isGuarded(tab)) { dropShell(tab); return; }
   if (end.code === 'hub_unreachable' && tab.session_id) {
@@ -1958,7 +1967,10 @@ function flushShellKeys(tab) {
     tab.isClearAsked = false;
     tab.isSending = true;
     api('/api/terminal/clear', { terminal_id: tab.terminal_id })
-      .then(() => flushShellKeys(tab));
+      .then((reply) => {
+        if (!reply || reply.code) showClearing(tab, false);
+        flushShellKeys(tab);
+      });
     return;
   }
   if (!tab.typed) { tab.isSending = false; return; }
@@ -2135,13 +2147,21 @@ function drawFileEntry(card, state, hub, entry) {
   card.appendChild(row);
 }
 
-// Why Mount cannot run, empty while it can.
+// Why Mount cannot run, empty while it can. Each system's sentence names
+// what its own form asks for: a path, a drive letter, or a user name alone.
 function mountReason(state, hub, entry, record, mount) {
   if (!mount.disabled || entryWork(hub, entry)) return '';
   return entryReason(hub, entry, !(record && record.is_attached))
-    || (asksMountPlace(state) ? t('ui.reason.mount_form')
-      : t('ui.reason.mount_form_volume'));
+    || t(MOUNT_FORM_REASONS[state.mount_location_shape || 'path']
+      || 'ui.reason.mount_form');
 }
+
+// The empty form's reason, by the system's mount location shape.
+const MOUNT_FORM_REASONS = {
+  path: 'ui.reason.mount_form',
+  drive_letter: 'ui.reason.mount_form_drive',
+  volume: 'ui.reason.mount_form_volume',
+};
 
 // A row's faint reason line set to a text, or removed with none.
 function setReasonLine(row, text) {
