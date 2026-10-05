@@ -65,6 +65,26 @@ PINNED_BUNDLE = {
 }
 PINNED_CHILD_BUNDLE = {"BundleIsRelocatable": False}
 
+# The shell function an install script asks who is at the screen with:
+# ``console_user`` prints the account, or nothing for nobody. It reads the
+# system configuration's console user through scutil, and the owner of
+# /dev/console only where scutil cannot be run; under auto-login that owner
+# stays root while a person is signed in. The login window, root and no
+# name are nobody.
+CONSOLE_USER_FUNCTION = """console_user() {
+    if [ -x /usr/sbin/scutil ]; then
+        name=$(printf 'show State:/Users/ConsoleUser\\n' | /usr/sbin/scutil |
+            awk '$1 == "Name" && $2 == ":" { print $3; exit }')
+    else
+        name=$(stat -f %Su /dev/console)
+    fi
+    case "$name" in
+    "" | root | loginwindow) ;;
+    *) echo "$name" ;;
+    esac
+}
+"""
+
 # The first bytes of every Mach-O file, thin or universal, either order.
 MACH_O_MAGICS = (
     b"\xcf\xfa\xed\xfe",

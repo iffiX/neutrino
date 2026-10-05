@@ -164,7 +164,9 @@ def test_the_scripts_unload_before_and_load_all_three_after(laid_out):
         'launchctl bootstrap gui/"$seat" '
         "/Library/LaunchAgents/com.carriez.RustDesk_server.plist" in postinstall
     )
-    assert "stat -f %u /dev/console" in postinstall
+    assert "console_user() {" in postinstall
+    assert "user=$(console_user)" in postinstall
+    assert "/usr/sbin/scutil" in postinstall
     assert postinstall.index('mkdir -p "/Library/Logs/Neutrino/agent"') < (
         postinstall.index("start_daemon com.")
     )

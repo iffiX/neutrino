@@ -89,6 +89,10 @@ APP_ENTRY_NAME = "Neutrino Hub"
 APP_BUNDLE_DIR = Path("/Applications") / f"{APP_ENTRY_NAME}.app"
 APP_BUNDLE_IDENTIFIER = "com.neutrino.hub.open"
 APP_ICON_NAME = "neutrino_hub"
+# The architectures the entry declares, by the package it is built into.
+# Its executable is a script, which LaunchServices takes for an Intel
+# program unless the bundle says otherwise, and asks for Rosetta to run.
+APP_ARCHITECTURES = {"arm64": ["arm64", "x86_64"], "amd64": ["x86_64"]}
 APP_SCRIPT = f"""#!/bin/sh
 exec "{INSTALL_LINK_PATH}" open
 """
@@ -276,12 +280,14 @@ def write_launchd_job(package_root: Path) -> Path:
     )
 
 
-def write_app_entry(package_root: Path, version: str) -> Path:
+def write_app_entry(package_root: Path, version: str, machine: str) -> Path:
     """Write ``Neutrino Hub.app`` into the package root.
 
     Args:
         package_root: The directory standing in for the filesystem root.
         version: The version the bundle declares.
+        machine: ``arm64`` or ``amd64``, whose architectures the bundle
+            declares in ``LSArchitecturePriority``.
 
     Returns:
         The bundle written.
@@ -307,6 +313,7 @@ def write_app_entry(package_root: Path, version: str) -> Path:
         "CFBundlePackageType": "APPL",
         "CFBundleShortVersionString": version,
         "CFBundleVersion": version,
+        "LSArchitecturePriority": list(APP_ARCHITECTURES[machine]),
     }
     (contents / "Info.plist").write_bytes(plistlib.dumps(information))
     return bundle
@@ -365,7 +372,7 @@ def _lay_out(
     link.symlink_to(INSTALL_APP_DIR / HUB_BINARY_NAME)
 
     write_launchd_job(package_root)
-    pkg_build.sign_ad_hoc(write_app_entry(package_root, version))
+    pkg_build.sign_ad_hoc(write_app_entry(package_root, version, machine))
     scripts = pkg_build.write_scripts(
         root / "scripts", preinstall=PREINSTALL, postinstall=POSTINSTALL
     )
