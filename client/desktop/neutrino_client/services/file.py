@@ -17,8 +17,9 @@ absent, its hub being away, leaves the record as it is. A record whose
 credentials file is gone reports
 ``credentials_missing`` and waits for the password to be entered again, and
 one the share refused for its login, its access or its name waits the same
-way: mounting it again would only be refused again. A failed record holds no
-place: it is dropped once its hub's list lacks its entry, and when another
+way: mounting it again would only be refused again. A failed record, and one
+left unmounted, hold no place: each is dropped once its hub's list lacks its
+entry, as after the hub is left, and when another
 record is set to mount where it was. A record that names no
 hub was written by an older build and is dropped at start, after whatever it
 left mounted is unmounted by path.
@@ -244,7 +245,7 @@ class FileServiceHandler(ServiceTypeHandler):
         return detached
 
     def drop_withdrawn(self, *, hub_id: str, entries: list) -> int:
-        """Drop the failed records of one hub whose entry its list no longer has.
+        """Drop the records holding no place of one hub whose entry its list no longer has.
 
         Args:
             hub_id: The hub whose list arrived.
@@ -266,11 +267,11 @@ class FileServiceHandler(ServiceTypeHandler):
                     continue
                 if str(record.get("entry_id", "")) in listed:
                     continue
-                if not self._is_failed(record_id, record):
+                if not self._holds_no_place(record_id, record):
                     continue
                 self._drop_record(record_id)
                 dropped += 1
-                self._log(f"dropped the failed mount record {record_id}: not shared")
+                self._log(f"dropped the mount record {record_id}: not shared")
         if dropped:
             self._on_change()
         return dropped
@@ -336,13 +337,13 @@ class FileServiceHandler(ServiceTypeHandler):
             for old_id, old in list(self._store.mounts().items()):
                 if old.get("hub_id") != hub_id or old.get("entry_id") != entry_id:
                     if location and str(old.get("path", "")) == location:
-                        if not self._is_failed(old_id, old):
+                        if not self._holds_no_place(old_id, old):
                             return {
                                 "code": "mountpoint_in_use",
                                 "params": {"path": path},
                             }
                         self._drop_record(old_id)
-                        self._log(f"dropped the failed mount record at {location}")
+                        self._log(f"dropped the idle mount record at {location}")
                     continue
                 old_location = str(old.get("path", ""))
                 try:
@@ -692,14 +693,20 @@ class FileServiceHandler(ServiceTypeHandler):
             self._end_forward(record)
         return detached
 
-    def _is_failed(self, record_id: str, record: dict) -> bool:
-        """Whether a record stands failed and holds nothing mounted; under the lock."""
+    def _holds_no_place(self, record_id: str, record: dict) -> bool:
+        """Whether a record holds no mount place; under the lock.
+
+        A record holds its place while its share is mounted or being
+        mounted: on its way, mounted on the system, or wanted mounted by
+        this run and not failed. A failed record, and one left unmounted,
+        hold none.
+        """
         if record_id in self._stages:
             return False
         is_failed = record_id in self._problems or not os.path.isfile(
             self._credentials_path(record_id)
         )
-        if not is_failed:
+        if not is_failed and record_id in self._attached:
             return False
         try:
             return not self._platform.is_share_attached(

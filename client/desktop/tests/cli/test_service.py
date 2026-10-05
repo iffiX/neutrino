@@ -709,3 +709,13 @@ def test_desktop_connect_to_nothing_published_is_refused(stack, capsys):
     assert service_cli.main_desktop_connect("7") == 2
 
     assert "no rdp entry 7" in capsys.readouterr().err
+
+
+def test_a_drive_letter_takes_one_colon_as_a_path_does():
+    assert service_cli._placed("Z:", "asked") == "Z: asked"
+    assert service_cli._placed("/home/alice/nas/media", "mounted") == (
+        "/home/alice/nas/media: mounted"
+    )
+    assert service_cli._record_line(
+        {"path": "Z:", "state": "mounted", "is_attached": True}
+    ).startswith("Z: ")

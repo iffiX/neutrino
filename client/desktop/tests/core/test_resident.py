@@ -2441,6 +2441,27 @@ def test_leaving_a_hub_forgets_the_files_addresses_no_record_names(
     assert resident._store.files_addresses() == {}
 
 
+def test_leaving_a_hub_frees_its_drive_letters_in_the_state_file(
+    windows_hub, monkeypatch, config_path
+):
+    """The lab's LETTER row: a leave ends the hub's mounts and drops their
+    records, so the letter the picker offers is one Mount takes."""
+    resident, platform, _daemon, _made = windows_hub
+    monkeypatch.setattr(channel.GatewayHttpChannel, "post", lambda *a: {})
+    mount_z(resident)
+    assert platform.attached == {"Z:"}
+
+    resident.disconnect("h1")
+
+    state = json.loads((config_path.parent / "state.json").read_text())
+    assert state.get("mounts", {}) == {}
+    assert state.get("files_addresses", {}) == {}
+    assert platform.attached == set()
+    assert "Z:" in platform.detach_calls
+    credentials = config_path.parent / "mount_credentials"
+    assert not credentials.exists() or list(credentials.iterdir()) == []
+
+
 def test_a_kept_record_holds_its_machines_address(windows_hub):
     resident, _platform, _daemon, _made = windows_hub
     mount_z(resident)
