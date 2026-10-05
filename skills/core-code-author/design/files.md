@@ -116,9 +116,11 @@ Why the hub carries an interpreter at all, and what that costs, is in
 Backing up `/etc/neutrino/` reproduces the appliance; nothing else at the
 machine level needs backing up.
 
-`config/` in a checkout is the hub's directory. The environment variable
-`NEUTRINO_CONFIG_DIR` overrides both, which is what makes a second instance
-testable. Details of the files themselves:
+A built hub, one whose package carries the build's `_version.py`, keeps its
+configuration in the system directory from its first run, whether or not the
+directory exists yet. A checkout uses the system directory when it exists and
+its own `config/` otherwise. The environment variable `NEUTRINO_CONFIG_DIR`
+overrides both, which is what makes a second instance testable. Details of the files themselves:
 [../misc/config.md](../misc/config.md).
 
 ## /var/lib/neutrino: what the machine accumulated
@@ -225,7 +227,10 @@ it is accepted.
 nothing there, so the installers create `C:\ProgramData\Neutrino\<package>`
 with the descriptor `D:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)`, SYSTEM and the
 administrators alone, and the vault key, the TLS private keys and the session
-secret inherit it. On macOS the postinstall creates `config` and `state`
+secret inherit it. The hub's installer also creates `config` under its folder
+with the same descriptor, so the vault is protected from the first write. The
+client's folder holds the overlay daemons' state, NetBird's private key among
+it, and has the same descriptor. On macOS the postinstall creates `config` and `state`
 owned by root:wheel with mode 0700, and the `chmod 0600` on each secret holds
 as on Linux. The agent's `state` alone is mode 755, so every account reaches
 `vscode/` and `cloudcli/` under it.
