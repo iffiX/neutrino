@@ -675,6 +675,9 @@ file of theirs was ever read or written.
 The resolver file is the one file put back. Router mode replaces
 `/etc/resolv.conf`, and the first write copies what was there to
 `resolv.conf.original` under the state root, a symlink as the same symlink.
+The file names the box's own dnsmasq: the first served network's address, or
+`127.0.0.1` on a router that serves no network, where dnsmasq answers on
+loopback alone.
 Handing back links the file to the stub of `systemd-resolved` when that unit
 is enabled. Otherwise it puts the copy back and deletes it, and with no copy
 it writes the network's resolvers, so the
