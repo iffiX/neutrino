@@ -5,8 +5,11 @@ and waits for the process to call ``StartServiceCtrlDispatcherW``; a process
 that has not within 30 seconds is failed with error 1053. The dispatcher
 calls the service's main on a thread of its own, which registers the control
 handler, reports ``START_PENDING`` and then ``RUNNING``, and runs the
-daemon. A stop or a shutdown reports ``STOP_PENDING``, runs the stop
-callback, reports ``STOPPED`` and ends the process. A daemon that ends by
+daemon. A stop or a shutdown reports ``STOP_PENDING`` and returns to the
+manager at once; the service's main thread then runs the stop callback,
+reports ``STOPPED`` and returns, and the process ends once the dispatcher
+hands its thread back. A control handler that does not return is a stop
+the manager reports as failed. A daemon that ends by
 itself ends the process without reporting ``STOPPED``, which the manager
 reads as a crash and answers with the service's recovery actions.
 
@@ -56,6 +59,8 @@ class ServiceControlDispatcher:
     def run(self) -> None:
         """Hand this thread to the service control manager until the service ends.
 
+        The process ends with status 0 once the service has stopped.
+
         Raises:
             OSError: When the process was not started by the service control
                 manager (error 1063), or the dispatcher could not start.
@@ -68,6 +73,7 @@ class ServiceControlDispatcher:
         table[0].lpServiceProc = ctypes.cast(main, ctypes.c_void_p)
         if not advapi32.StartServiceCtrlDispatcherW(table):
             raise win32.last_error()
+        self._exit(0)
 
     def _bound_advapi32(self):
         """advapi32, bound on first use."""
@@ -76,7 +82,7 @@ class ServiceControlDispatcher:
         return self._advapi32
 
     def _service_main(self, argument_count, arguments) -> None:
-        """The service's main: register, report, run the daemon, wait for stop."""
+        """The service's main: register, report, run the daemon, stop on request."""
         handler = win32.service_handler_type()(self._handle_control)
         self._callbacks.append(handler)
         self._status_handle = self._advapi32.RegisterServiceCtrlHandlerExW(
@@ -90,7 +96,12 @@ class ServiceControlDispatcher:
         )
         worker.start()
         self._report(win32.SERVICE_RUNNING)
-        self._is_stopped.wait()
+        self._is_stop_asked.wait()
+        try:
+            self._on_stop()
+        finally:
+            self._report(win32.SERVICE_STOPPED)
+            self._is_stopped.set()
 
     def _run_daemon(self) -> None:
         """Run the daemon; one that ends by itself ends the process as a crash."""
@@ -105,14 +116,8 @@ class ServiceControlDispatcher:
         if control in (win32.SERVICE_CONTROL_STOP, win32.SERVICE_CONTROL_SHUTDOWN):
             if self._is_stop_asked.is_set():
                 return win32.NO_ERROR
-            self._is_stop_asked.set()
             self._report(win32.SERVICE_STOP_PENDING, wait_hint_ms=SERVICE_WAIT_HINT_MS)
-            try:
-                self._on_stop()
-            finally:
-                self._report(win32.SERVICE_STOPPED)
-                self._is_stopped.set()
-                self._exit(0)
+            self._is_stop_asked.set()
             return win32.NO_ERROR
         if control == win32.SERVICE_CONTROL_INTERROGATE:
             return win32.NO_ERROR

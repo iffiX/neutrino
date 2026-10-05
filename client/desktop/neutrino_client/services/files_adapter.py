@@ -69,11 +69,18 @@ def files_machine(entry: dict) -> str:
         entry: The entry, as the merged service list carries it.
 
     Returns:
-        Its ``device_id``, or the host of a declared record's payload.
+        Its ``device_id``; else, for an entry a managed machine provides,
+        the ``device_name`` the hub gives it, since the payload's host
+        follows the way the hub was reached; else the payload's host, as
+        for a declared record.
     """
     device_id = entry.get("device_id")
     if isinstance(device_id, str) and device_id:
         return device_id
+    device_name = entry.get("device_name")
+    if entry.get("source") != "declared" and isinstance(device_name, str):
+        if device_name:
+            return device_name
     payload = entry.get("payload") or {}
     return str(payload.get("host", "")) if isinstance(payload, dict) else ""
 
