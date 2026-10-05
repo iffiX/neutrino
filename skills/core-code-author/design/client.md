@@ -529,6 +529,7 @@ Each has `session_id`, `device_id`, `owner`, `is_owned`, `is_persistent`,
 | a tab's session is gone from the list | the tab's label becomes `ui.terminal_ended`; the terminal keeps its last output; **×** removes the tab |
 | the page opens with listed sessions | tabs for all; the first one is active and attaches as the page opens, with its kept output replayed |
 | a tab's session reports `attached_count` | the tab shows the count as a badge when above one |
+| a tab's stream is closed `session_not_owned`, as when the owner stops sharing the session | the tab keeps its output and writes the code's words below it, as for every stream the hub closes with a code; the next state frame no longer lists the session, and the tab's label becomes `ui.terminal_ended` |
 | the hub's channel drops and comes back | a tab whose session is in the new list attaches again by itself and replays the kept output; a tab whose session is gone reads `ui.terminal_ended`; nothing stays on "not connected" after the hub is back |
 
 A tab shows these badges after its label: `kept` for a persistent session,
