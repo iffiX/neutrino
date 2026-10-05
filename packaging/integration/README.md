@@ -50,7 +50,39 @@ the distribution's pytest if the box has none:
 
 The package file keeps its release name, `neutrino-hub_<version>_<arch>.deb`
 for a deb, because `nhub update --package` reads the version off the name and
-rejects any other name with `package_name_mismatch`.
+rejects any other name with `package_name_mismatch`. When the folder holding
+it also holds `install.sh` and a `SHA256SUMS` naming it, both lifecycle
+scripts install it through `install.sh`, as a person does; `run_lab.py` lays
+the folder out that way.
+
+## Installing from a folder of packages
+
+Every lab install goes through the one-command script, pointed at a folder
+that holds the packages, `SHA256SUMS` and the two scripts. The release
+workflow's `release_dist` or `release_dist_cn` artifact is such a folder; a
+folder of local builds becomes one with:
+
+```bash
+cp packaging/install/install.sh packaging/install/install.ps1 dist/
+python3 packaging/build/build_checksums.py --output-dir dist
+```
+
+The script installs from the folder with nothing downloaded. `hub`, `agent` or
+`client` names the package; `hub` when none is given.
+
+| System | Command |
+| --- | --- |
+| Linux, as a person with sudo, or as root | `NEUTRINO_ASSET_DIR=/path/to/dist sh /path/to/dist/install.sh agent` |
+| macOS, as a person who may use sudo | `NEUTRINO_ASSET_DIR=/path/to/dist sh /path/to/dist/install.sh client` |
+| Windows, in any PowerShell | `$env:NEUTRINO_ASSET_DIR = 'C:\dist'; & 'C:\dist\install.ps1' hub` |
+| Windows, as SYSTEM or from another shell | `powershell -NoProfile -ExecutionPolicy Bypass -Command "$env:NEUTRINO_ASSET_DIR='C:\dist'; & 'C:\dist\install.ps1' client"` |
+
+A person's run asks for administrator rights once: the `sudo` password on
+Linux and macOS, before anything is installed, or one Windows elevation
+prompt, after which the script goes on in the administrator window Windows
+opens. The script's last line names the next command. A hub installed from a
+terminal is set up in the same run, and that setup installs the hub's own
+agent.
 
 Options, each also readable from the environment:
 

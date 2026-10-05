@@ -378,6 +378,7 @@ sentence when a tool it needs is missing.
 | `build_client_ios.py` | nothing: it prints the `xcodebuild` steps; paused with the app | macOS with Xcode |
 | `build_core_netbird.py`, `build_core_easytier.py`, `build_core_rustdesk.py` | one core the phones carry | Linux |
 | `build_sources.py`, `build_checksums.py` | the source archive, or with `--edition cn` the mainland source tree; `SHA256SUMS` over a directory | anywhere |
+| `build_cc_switch.py` | the pinned cc-switch release files under upstream's names, each checked against its pin, and their licence | anywhere |
 
 ```bash
 python3 packaging/build/build_agent.py --architecture amd64 --output-dir dist/
@@ -490,8 +491,10 @@ The same workflow builds `cn`. The `sources` job also writes the mainland
 source tree, and each build job runs a second time for `cn`, only for the
 platforms the `cn` release carries: it downloads that tree, unpacks it, and
 runs its `packaging/build/` script inside it with `--edition cn`, then
-`packaging/ci/check.py`. The `draft_cn` job writes `SHA256SUMS` over the `cn`
-packages, the `cn` install scripts and the mainland source tree, runs
+`packaging/ci/check.py`. The `draft_cn` job fetches the pinned cc-switch
+release files with `build_cc_switch.py`, writes `SHA256SUMS` over the `cn`
+packages, the `cn` install scripts, the mainland source tree and those
+files, runs
 `packaging/ci/publish_cn.py --check-only` over them, and uploads them as the
 workflow artifact `release_dist_cn`. Nothing of `cn` is attached to the
 GitHub release.
@@ -528,6 +531,8 @@ lists them.
 | `neutrino-client-<version>-android.apk` | Android 8 or newer, arm64-v8a |
 | `install.sh`, `install.ps1` | the one-command installers, stamped `cn` |
 | `neutrino-<version>-cn-source.tar.gz` | the mainland source tree |
+| `cc-switch-cli-v<cc-switch version>-<asset>`, five files | cc-switch for the agents of a mainland hub, which fetches it from here: the files `PACKAGING_CC_SWITCH_ASSETS` in `packaging/shared/constants.py` pins, under the names upstream gives them, each checked against its pin before the upload |
+| `cc-switch-cli-v<cc-switch version>-LICENSE.txt` | cc-switch's MIT licence, beside the files it covers |
 | `SHA256SUMS` | every file above |
 
 The script checks Gitee's limits over every file before it changes anything

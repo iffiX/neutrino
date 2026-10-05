@@ -223,5 +223,8 @@ echo "  for f in $SUITE/*.py $SUITE/*.sh $SUITE/pytest.ini; do python3 $HERE/vm_
 # without it rather than passing by skipping.
 echo "  python3 $HERE/vm_exec.py $HUB push $KEY /opt/integration/id_lab"
 echo "  python3 $HERE/vm_exec.py $HUB 'chmod 600 /opt/integration/id_lab'"
-echo "  python3 $HERE/vm_exec.py $HUB push <package.deb> /tmp/<package.deb>"
-echo "  python3 $HERE/vm_exec.py $HUB 'bash /opt/integration/run_mode_matrix.sh /tmp/<package.deb> --client'"
+echo "  python3 $HERE/vm_exec.py $HUB 'mkdir -p /tmp/neutrino_assets'"
+echo "  python3 $HERE/vm_exec.py $HUB push <package.deb> /tmp/neutrino_assets/<package.deb>"
+echo "  python3 $HERE/vm_exec.py $HUB push $HERE/../install/install.sh /tmp/neutrino_assets/install.sh"
+echo "  (cd <folder of package.deb> && sha256sum <package.deb>) > SHA256SUMS && python3 $HERE/vm_exec.py $HUB push SHA256SUMS /tmp/neutrino_assets/SHA256SUMS"
+echo "  python3 $HERE/vm_exec.py $HUB 'bash /opt/integration/run_mode_matrix.sh /tmp/neutrino_assets/<package.deb> --client'"

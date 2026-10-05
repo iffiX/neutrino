@@ -219,7 +219,6 @@ def _lay_out(staged: Path, version: str, architecture: str) -> None:
     payload.compile_bytecode(staged_python, payload.PYTHON_DIR)
     payload.strip_build_paths(staged_python, staged)
     payload.stage_rustdesk(staged, architecture, "rpm")
-    payload.stage_cc_switch(staged, architecture)
     payload.stage_licenses(staged)
     payload.require_glibc_floor(staged)
 

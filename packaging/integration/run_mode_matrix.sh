@@ -24,7 +24,17 @@ phase "the machine as it arrived"
 python3 -c "import sys; sys.path.insert(0, '$HERE'); import machine_state; machine_state.write_snapshot('$BEFORE')"
 
 phase "install"
-if command -v apt-get >/dev/null; then
+# A package beside SHA256SUMS and install.sh is installed the way a person
+# installs it, through the one-command script; a package on its own goes in
+# through the package manager.
+ASSET_DIR="$(cd "$(dirname "$PACKAGE")" && pwd)"
+if [ -f "$ASSET_DIR/SHA256SUMS" ] && [ -f "$ASSET_DIR/install.sh" ]; then
+    if command -v dnf >/dev/null; then
+        dnf -q -y install epel-release > /tmp/install.log 2>&1
+    fi
+    NEUTRINO_ASSET_DIR="$ASSET_DIR" sh "$ASSET_DIR/install.sh" hub \
+        </dev/null >> /tmp/install.log 2>&1
+elif command -v apt-get >/dev/null; then
     DEBIAN_FRONTEND=noninteractive apt-get -qq install -y "$PACKAGE" > /tmp/install.log 2>&1
 elif command -v dnf >/dev/null; then
     dnf -q -y install epel-release > /tmp/install.log 2>&1
