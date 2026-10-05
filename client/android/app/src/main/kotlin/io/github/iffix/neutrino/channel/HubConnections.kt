@@ -171,6 +171,7 @@ class HubConnections(
             Log.i(CLIENT_LOG_TAG, "a leave of $bindingId is running; the second press is dropped")
             return
         }
+        Log.i(CLIENT_LOG_TAG, "leaving the hub of $bindingId: its binding is forgotten now")
         leaving.update { it + bindingId }
         jobErrors.update { it - bindingId }
         onLeaving(bindingId)
