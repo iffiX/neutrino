@@ -4,10 +4,16 @@ The environment itself is built in a container; what is asserted here is the
 maintainer scripts written beside it.
 """
 
+import os
+import subprocess
+
+import pytest
+
 import build_deb
 import build_pkg
 import build_rpm
 import venv_tree
+from neutrino_hub.system.constants import SYSTEM_MANAGED_UNITS
 
 
 def _spec():
@@ -152,3 +158,91 @@ def test_the_panel_unit_starts_again_when_the_wizard_exits_into_the_panel():
 
     assert "Restart=on-failure\n" in unit
     assert "RestartForceExitStatus=75\n" in unit
+
+
+def _run_with_fakes(tmp_path, command: list) -> list:
+    """Run a maintainer script with nhub, systemctl, nft and ip recording calls.
+
+    Args:
+        tmp_path: Where the fakes and their record go.
+        command: The script's command line.
+
+    Returns:
+        The commands it ran, one line each.
+    """
+    fakes = tmp_path / "fakes"
+    fakes.mkdir(exist_ok=True)
+    record = tmp_path / "calls"
+    for name in ("nhub", "systemctl", "nft", "ip"):
+        fake = fakes / name
+        fake.write_text(f'#!/bin/sh\necho "{name} $*" >>"{record}"\n')
+        fake.chmod(0o755)
+    environment = dict(os.environ, PATH=f"{fakes}:/usr/bin:/bin")
+    subprocess.run(command, env=environment, check=True)
+    return record.read_text().splitlines() if record.exists() else []
+
+
+def _every_unit() -> list:
+    return [unit for unit in SYSTEM_MANAGED_UNITS.values()]
+
+
+def _assert_removal(calls: list) -> None:
+    """The network is handed back first, then every unit of the code's list,
+    the relay among them, is stopped and disabled."""
+    assert calls[0] == "nhub reset network"
+    for unit in _every_unit():
+        assert f"systemctl stop {unit}" in calls
+        assert f"systemctl disable {unit}" in calls
+    assert "systemctl stop neutrino_hub_relay.service" in calls
+    assert calls.index("systemctl stop neutrino_hub_web.service") == 1
+
+
+@pytest.mark.parametrize(
+    "argument, is_removed",
+    [("remove", True), ("deconfigure", True), ("upgrade", False)],
+)
+def test_the_deb_hands_back_and_stops_every_unit_on_a_removal_alone(
+    tmp_path, argument, is_removed
+):
+    script = tmp_path / "prerm"
+    script.write_text(build_deb.prerm_script())
+
+    calls = _run_with_fakes(tmp_path, ["sh", str(script), argument])
+
+    if is_removed:
+        _assert_removal(calls)
+    else:
+        assert calls == []
+
+
+@pytest.mark.parametrize("count, is_removed", [("0", True), ("1", False)])
+def test_the_rpm_hands_back_and_stops_every_unit_on_a_removal_alone(
+    tmp_path, count, is_removed
+):
+    spec = _spec().replace("@STOP_HUB@", venv_tree.stop_hub_lines())
+    script = tmp_path / "preun"
+    script.write_text("#!/bin/sh\n" + spec.split("%preun\n")[1].split("\n%postun")[0])
+
+    calls = _run_with_fakes(tmp_path, ["sh", str(script), count])
+
+    if is_removed:
+        _assert_removal(calls)
+    else:
+        assert calls == []
+
+
+def test_the_arch_package_hands_back_and_stops_every_unit_on_a_removal(tmp_path):
+    script = tmp_path / "neutrino-hub.install"
+    script.write_text(build_pkg.install_script())
+
+    calls = _run_with_fakes(tmp_path, ["sh", "-c", f'. "{script}"; pre_remove'])
+
+    _assert_removal(calls)
+
+
+def test_the_removal_takes_the_units_drop_ins_too():
+    """The relay's start line is a drop-in the hub wrote at runtime."""
+    drop_ins = "rm -rf /etc/systemd/system/neutrino_hub_*.service.d"
+    assert drop_ins in build_deb.POSTRM
+    assert drop_ins in _spec()
+    assert drop_ins in build_pkg.INSTALL_SCRIPT
