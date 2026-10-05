@@ -2399,7 +2399,11 @@ def test_the_endpoint_refuses_another_port_or_address(windows_hub):
     stranger.close()
 
 
-def test_unmounting_the_last_drive_takes_the_adapter_down(windows_hub):
+def test_the_adapter_stays_up_after_the_last_unmount_and_goes_with_a_quit(
+    windows_hub,
+):
+    """Windows keeps its SMB connection to an address after the unmount, and
+    an adapter taken away and brought back under it fails the next mount."""
     resident, _platform, daemon, _made = windows_hub
     mount_z(resident)
     (row,) = resident._services["file"].rows()
@@ -2410,6 +2414,9 @@ def test_unmounting_the_last_drive_takes_the_adapter_down(windows_hub):
         )
         == {}
     )
+    assert daemon.verbs == ["up"]
+
+    resident.shutdown()
 
     assert daemon.verbs == ["up", "status", "down"]
 

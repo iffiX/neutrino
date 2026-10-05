@@ -142,8 +142,12 @@ class FileServiceHandler(ServiceTypeHandler):
                 :class:`ShareAttachError` ``files_adapter_unavailable``;
                 None has no adapter.
             on_adapter_idle: Called with no arguments where the system
-                mounts through the adapter, once no record of this run
-                wants its share mounted; None for nobody listening.
+                mounts through the adapter, once every record is released
+                for a quit; an unmount, a failed mount or a hub's release
+                leaves the adapter up, since the system's SMB client keeps a
+                connection to an address for a while and one taken away and
+                brought back under it fails the next mounts there. None for
+                nobody listening.
         """
         self._platform = platform
         self._store = store
@@ -239,7 +243,6 @@ class FileServiceHandler(ServiceTypeHandler):
                     if record.get("hub_id") == hub_id
                 ]
             )
-        self._settle_adapter()
         if detached:
             self._on_change()
         return detached
@@ -431,7 +434,6 @@ class FileServiceHandler(ServiceTypeHandler):
             self._attached.discard(record_id)
             self._end_forward(record)
             self._log(f"unmounted {location}; the record and login stay")
-        self._settle_adapter()
         return {}
 
     def rows(self) -> list:
@@ -558,7 +560,6 @@ class FileServiceHandler(ServiceTypeHandler):
             if error.code in CLIENT_MOUNT_SETTLED_CODES:
                 self._attached.discard(record_id)
                 self._end_forward(record)
-                self._settle_adapter()
             return
         except PlatformUnsupportedError:
             self._stages.pop(record_id, None)
@@ -662,7 +663,7 @@ class FileServiceHandler(ServiceTypeHandler):
         return files_machine(entry) or str(record.get("host", ""))
 
     def _settle_adapter(self) -> None:
-        """Let the files adapter go once no record of this run wants a share mounted."""
+        """Let the files adapter go once no record of this run wants a share mounted; for a quit."""
         if self._platform.mount_location_shape != MOUNT_SHAPE_ADAPTER:
             return
         with self._lock:

@@ -28,6 +28,7 @@ import threading
 from neutrino_client.constants import (
     CLIENT_FILES_ADAPTER_ADDRESS,
     CLIENT_FILES_NETWORK,
+    CLIENT_FILES_PROBE_ADDRESS,
     CLIENT_FILES_RELAY_CHUNK_BYTES,
     CLIENT_FILES_SERVICE_WINDOWS,
     CLIENT_FILES_SHARE_PORT,
@@ -89,13 +90,15 @@ def files_addresses() -> list:
     """Every address a machine may take on the adapter's network, in order.
 
     Returns:
-        The addresses from the second of the network up, as text.
+        The addresses from the second of the network up, the daemon's probe
+        address left out, as text.
     """
     network = ipaddress.ip_network(CLIENT_FILES_NETWORK)
     return [
         str(address)
         for address in network.hosts()
-        if str(address) != CLIENT_FILES_ADAPTER_ADDRESS
+        if str(address)
+        not in (CLIENT_FILES_ADAPTER_ADDRESS, CLIENT_FILES_PROBE_ADDRESS)
     ]
 
 
@@ -427,7 +430,8 @@ class FilesSocksEndpoint:
         target = self._plan.target_of(address)
         if port != CLIENT_FILES_SHARE_PORT or target is None:
             _reply(client, SOCKS_REPLY_NOT_ALLOWED)
-            self._log(f"files endpoint refused {address}:{port}")
+            if address != CLIENT_FILES_PROBE_ADDRESS:
+                self._log(f"files endpoint refused {address}:{port}")
             return None
         hub_id, machine = target
         entry_id = self._entry_of(hub_id, machine)

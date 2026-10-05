@@ -30,7 +30,7 @@ from tests.conftest import discard
 
 FIRST = "198.19.255.2"  # scan: allow
 SECOND = "198.19.255.3"  # scan: allow
-LAST = "198.19.255.254"  # scan: allow
+LAST = "198.19.255.253"  # scan: allow
 ADAPTER = "198.19.255.1"  # scan: allow
 SHARE_ENTRY = {
     "hub_id": "h1",
@@ -138,7 +138,8 @@ def test_the_adapter_takes_the_first_address_and_machines_the_rest():
     assert addresses[0] == FIRST
     assert addresses[-1] == LAST
     assert ADAPTER not in addresses
-    assert len(addresses) == 253
+    assert len(addresses) == 252
+    assert "198.19.255.254" not in addresses  # scan: allow
 
 
 def test_a_machine_is_its_device_or_a_declared_records_host():
@@ -521,3 +522,20 @@ def test_two_threads_mounting_at_once_both_get_their_address(adapter, daemon):
         thread.join()
 
     assert len(set(found.values())) == 8
+
+
+def test_the_daemons_probe_is_refused_without_a_log_line(plan, connector):
+    lines = []
+    endpoint = FilesSocksEndpoint(plan=plan, connector=connector, log=lines.append)
+    endpoint.start()
+    try:
+        client = socks_client(endpoint)
+        reply = connect(client, "198.19.255.254", 9)  # scan: allow
+        other = socks_client(endpoint)
+        connect(other, "198.19.255.9", 445)  # scan: allow
+    finally:
+        endpoint.stop()
+
+    assert reply[:2] == b"\x05\x02"
+    assert not any("198.19.255.254" in line for line in lines)  # scan: allow
+    assert "files endpoint refused 198.19.255.9:445" in lines  # scan: allow

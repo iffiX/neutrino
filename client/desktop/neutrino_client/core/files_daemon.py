@@ -2,7 +2,11 @@
 
 The daemon runs tun2socks on the wintun adapter ``neutrino_files``, pointed
 at the SOCKS endpoint of the resident that asked last, and gives the adapter
-its address each time tun2socks has opened it. Nothing is kept on disk: a
+its address each time tun2socks has opened it, then answers ``up`` only
+once a connection through the adapter is answered: for some seconds after
+the address is given the adapter accepts a connection and loses its bytes,
+and the system's SMB client then reports a refused login or a lost
+network name for a share that is fine. Nothing is kept on disk: a
 daemon that starts serves nobody until a resident asks.
 
 One request is one JSON object with a ``verb``:
@@ -22,12 +26,19 @@ from __future__ import annotations
 
 import os
 import re
+import socket
 import threading
+import time
 
 from neutrino_client.constants import (
     CLIENT_FILES_ADAPTER_MTU,
     CLIENT_FILES_ADAPTER_NAME,
+    CLIENT_FILES_ADAPTER_READY_S,
     CLIENT_FILES_DAEMON_TICK_S,
+    CLIENT_FILES_PROBE_ADDRESS,
+    CLIENT_FILES_PROBE_PAUSE_S,
+    CLIENT_FILES_PROBE_PORT,
+    CLIENT_FILES_PROBE_TIMEOUT_S,
     CLIENT_FILES_TUN2SOCKS_LOG_LEVEL,
 )
 from neutrino_client.core.easytier_supervisor import EasytierCoreSupervisor
@@ -68,6 +79,41 @@ def tun2socks_command(binary: str, *, port: int, user: str, password: str) -> li
         "--loglevel",
         CLIENT_FILES_TUN2SOCKS_LOG_LEVEL,
     ]
+
+
+def adapter_carries(dial=None) -> bool:
+    """Whether one connection through the adapter is answered.
+
+    The probe goes to an address and port the resident's endpoint refuses,
+    so tun2socks ends it at once while the adapter carries connections, and
+    nothing answers while it does not.
+
+    Args:
+        dial: ``dial(address, timeout)`` returns a connected socket; None
+            is :func:`socket.create_connection`.
+
+    Returns:
+        True when the far side ended the connection or sent anything within
+        the probe's timeout.
+    """
+    dial = dial if dial is not None else socket.create_connection
+    try:
+        connection = dial(
+            (CLIENT_FILES_PROBE_ADDRESS, CLIENT_FILES_PROBE_PORT),
+            CLIENT_FILES_PROBE_TIMEOUT_S,
+        )
+    except OSError:
+        return False
+    try:
+        connection.settimeout(CLIENT_FILES_PROBE_TIMEOUT_S)
+        connection.recv(1)
+        return True
+    except ConnectionError:
+        return True
+    except OSError:
+        return False
+    finally:
+        connection.close()
 
 
 def files_refusal(detail: str) -> dict:
@@ -116,6 +162,9 @@ class FilesAdapterDaemon:
         log=print,
         tun2socks_log=None,
         start_process=None,
+        probe=None,
+        clock=None,
+        sleep=None,
     ):
         """
         Args:
@@ -132,10 +181,17 @@ class FilesAdapterDaemon:
                 drops them.
             start_process: ``start_process(argv, env)`` starts tun2socks;
                 None starts a real process.
+            probe: Returns whether a connection through the adapter is
+                answered; None is :func:`adapter_carries`.
+            clock: Returns the time in seconds; None is ``time.monotonic``.
+            sleep: Waits a number of seconds; None is ``time.sleep``.
         """
         self._tun2socks_path = tun2socks_path
         self._configure_adapter = configure_adapter
         self._bind_child = bind_child if bind_child is not None else _nobody
+        self._probe = probe if probe is not None else adapter_carries
+        self._clock = clock if clock is not None else time.monotonic
+        self._sleep = sleep if sleep is not None else time.sleep
         self._log = log
         self._lock = threading.Lock()
         self._endpoint: "dict | None" = None
@@ -289,10 +345,26 @@ class FilesAdapterDaemon:
         return self.status()
 
     def _configure(self) -> None:
-        """Give the adapter its address, under the lock."""
+        """Give the adapter its address and wait until it carries a connection, under the lock.
+
+        Raises:
+            OSError: When the address cannot be given, or no probe is
+                answered within ``CLIENT_FILES_ADAPTER_READY_S``.
+        """
         self._is_address_due.clear()
         self._is_configured = False
         self._configure_adapter()
+        deadline = self._clock() + CLIENT_FILES_ADAPTER_READY_S
+        started = self._clock()
+        while not self._probe():
+            if self._clock() >= deadline:
+                raise OSError(
+                    f"the adapter {CLIENT_FILES_ADAPTER_NAME} carries no connection"
+                )
+            self._sleep(CLIENT_FILES_PROBE_PAUSE_S)
+        self._log(
+            f"the adapter carries connections after {self._clock() - started:.1f} s"
+        )
         self._is_configured = True
 
     def _take_down(self) -> None:

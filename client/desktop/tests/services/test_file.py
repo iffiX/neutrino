@@ -926,7 +926,10 @@ def test_an_adapter_that_cannot_be_made_fails_the_record_once(tmp_path):
     assert platform.attach_calls == []
 
 
-def test_the_last_unmount_lets_the_adapter_go(tmp_path):
+def test_only_a_quit_lets_the_adapter_go(tmp_path):
+    """Windows keeps an SMB connection to an address after its unmount; an
+    adapter taken down and brought back under it fails the next mounts there
+    as a refused login or a lost network name."""
     idle = []
     platform = FakeDrivePlatform()
     subject = FileServiceHandler(
@@ -943,8 +946,11 @@ def test_the_last_unmount_lets_the_adapter_go(tmp_path):
     first, second = sorted(subject.rows(), key=lambda row: row["path"])
 
     assert subject.detach(record_id=first["record_id"]) == {}
-    assert idle == []
     assert subject.detach(record_id=second["record_id"]) == {}
+    assert subject.release_hub("h1") == 0
+    assert idle == []
+
+    subject.release()
 
     assert idle == [1]
 
