@@ -2,8 +2,8 @@
 
 The mainland tree is a checkout's tree with every path of
 ``PACKAGING_CN_LEFT_OUT_PATHS`` deleted, the root ``EDITION`` file naming
-``cn``, both install scripts stamped ``cn`` and the READMEs pointing at
-Gitee. A ``cn`` build refuses a tree that holds a left-out path, and an
+``cn``, both install scripts stamped ``cn`` and the Gitee README as its
+only README. A ``cn`` build refuses a tree that holds a left-out path, and an
 ``intl`` build one that lacks it.
 
 Not pure: deletes and writes files under the tree it is given.
@@ -19,14 +19,10 @@ from shared.constants import (
     PACKAGING_INSTALL_EDITION_LINES,
 )
 
-# The READMEs of the mainland tree name the mainland release.
-EDITION_CN_README_NAMES = ("README.md", "README.zh-CN.md")
-EDITION_CN_README_ADDRESSES = (
-    (
-        "https://github.com/iffiX/neutrino/releases",
-        "https://gitee.com/iffiX/neutrino/releases",
-    ),
-)
+# The mainland tree's README is the Gitee one, under the name Gitee shows.
+EDITION_README = "README.md"
+EDITION_CN_README_SOURCE = "README.zh-CN-Gitee.md"
+EDITION_CN_DROPPED_READMES = ("README.zh-CN.md", EDITION_CN_README_SOURCE)
 
 
 def make_cn_tree(root: Path) -> None:
@@ -37,7 +33,8 @@ def make_cn_tree(root: Path) -> None:
 
     Raises:
         SystemExit: When an install script holds no ``intl`` edition line to
-            stamp, or the result still holds a left-out path.
+            stamp, the tree holds no Gitee README, or the result still holds
+            a left-out path.
     """
     for relative in PACKAGING_CN_LEFT_OUT_PATHS:
         path = root / relative
@@ -48,14 +45,14 @@ def make_cn_tree(root: Path) -> None:
     (root / PACKAGING_EDITION_FILE).write_text("cn\n", encoding="utf-8")
     for relative, line in PACKAGING_INSTALL_EDITION_LINES.items():
         stamp_install_script(root / relative, line)
-    for name in EDITION_CN_README_NAMES:
-        path = root / name
-        if not path.is_file():
-            continue
-        text = path.read_text(encoding="utf-8")
-        for international, mainland in EDITION_CN_README_ADDRESSES:
-            text = text.replace(international, mainland)
-        path.write_text(text, encoding="utf-8")
+    source = root / EDITION_CN_README_SOURCE
+    if not source.is_file():
+        raise SystemExit(f"the tree holds no {EDITION_CN_README_SOURCE}")
+    (root / EDITION_README).write_text(
+        source.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    for name in EDITION_CN_DROPPED_READMES:
+        (root / name).unlink(missing_ok=True)
     check_tree(root, "cn")
 
 
@@ -87,8 +84,9 @@ def check_tree(root: Path, edition: str) -> None:
 
     Raises:
         SystemExit: One sentence naming the first path a ``cn`` tree holds
-            or an ``intl`` tree lacks, or an install script not stamped with
-            the edition.
+            or an ``intl`` tree lacks, the Gitee README a ``cn`` tree holds or
+            an ``intl`` tree lacks, or an install script not stamped with the
+            edition.
         ValueError: When ``edition`` is neither.
     """
     if edition not in PACKAGING_EDITIONS:
@@ -109,6 +107,11 @@ def check_tree(root: Path, edition: str) -> None:
             raise SystemExit(f"a cn tree holds {relative}, which cn leaves out")
         if edition == "intl" and not is_present:
             raise SystemExit(f"an intl tree lacks {relative}")
+    is_gitee_readme_present = (root / EDITION_CN_README_SOURCE).exists()
+    if edition == "cn" and is_gitee_readme_present:
+        raise SystemExit(f"a cn tree holds {EDITION_CN_README_SOURCE}")
+    if edition == "intl" and not is_gitee_readme_present:
+        raise SystemExit(f"an intl tree lacks {EDITION_CN_README_SOURCE}")
     for relative, line in PACKAGING_INSTALL_EDITION_LINES.items():
         path = root / relative
         if line.format(edition=edition) not in path.read_text(encoding="utf-8"):

@@ -34,9 +34,9 @@ def intl_tree(root: Path) -> Path:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(f"# a script\n{line.format(edition='intl')}\n", "utf-8")
     (root / "EDITION").write_text("intl\n", encoding="utf-8")
-    (root / "README.md").write_text(
-        "[releases](https://github.com/iffiX/neutrino/releases)\n", encoding="utf-8"
-    )
+    (root / "README.md").write_text("# the full README\n", encoding="utf-8")
+    (root / "README.zh-CN.md").write_text("# 完整的中文 README\n", encoding="utf-8")
+    (root / "README.zh-CN-Gitee.md").write_text("# Gitee 的 README\n", "utf-8")
     (root / "hub" / "neutrino_hub" / "kept.py").write_text("", encoding="utf-8")
     return root
 
@@ -71,14 +71,39 @@ def test_both_install_scripts_are_stamped_cn(tmp_path):
         assert line.format(edition="intl") not in text
 
 
-def test_the_readme_points_at_gitee(tmp_path):
+def test_the_mainland_readme_is_the_gitee_one_and_the_only_one(tmp_path):
     root = intl_tree(tmp_path)
 
     make_cn_tree(root)
 
-    assert "https://gitee.com/iffiX/neutrino/releases" in (
-        root / "README.md"
-    ).read_text(encoding="utf-8")
+    assert (root / "README.md").read_text(encoding="utf-8") == "# Gitee 的 README\n"
+    assert not (root / "README.zh-CN.md").exists()
+    assert not (root / "README.zh-CN-Gitee.md").exists()
+
+
+def test_a_tree_without_the_gitee_readme_stops_the_mainland_tree(tmp_path):
+    root = intl_tree(tmp_path)
+    (root / "README.zh-CN-Gitee.md").unlink()
+
+    with pytest.raises(SystemExit, match="holds no README.zh-CN-Gitee.md"):
+        make_cn_tree(root)
+
+
+def test_the_gitee_readme_tells_a_mainland_tree_from_a_full_one(tmp_path):
+    root = intl_tree(tmp_path)
+    make_cn_tree(root)
+    (root / "README.zh-CN-Gitee.md").write_text("# back\n", encoding="utf-8")
+
+    with pytest.raises(SystemExit, match="a cn tree holds README.zh-CN-Gitee.md"):
+        check_tree(root, "cn")
+
+
+def test_an_intl_tree_lacking_the_gitee_readme_is_refused(tmp_path):
+    root = intl_tree(tmp_path)
+    (root / "README.zh-CN-Gitee.md").unlink()
+
+    with pytest.raises(SystemExit, match="an intl tree lacks README.zh-CN-Gitee.md"):
+        check_tree(root, "intl")
 
 
 def test_a_cn_tree_holding_a_left_out_path_is_refused_by_name(tmp_path):
