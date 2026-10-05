@@ -256,6 +256,7 @@
   "ui.network.title": "网络",
   "ui.network.topology_title": "拓扑",
   "ui.network.unconfigured_hint": "{name} 未配置，没有可设置的项。",
+  "ui.network.unsaved_interface": "新网口，打开并应用后才使用",
   "ui.network.upstream_address_hint": "这台机器把转发的流量送往哪里。",
   "ui.network.upstream_hint": "这个网络原来的路由器。设备把这个中枢设为网关就走代理，租约仍由原路由器发放。",
   "ui.network.upstream_title": "上游网关",

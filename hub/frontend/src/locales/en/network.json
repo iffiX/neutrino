@@ -256,6 +256,7 @@
   "ui.network.title": "Network",
   "ui.network.topology_title": "Topology",
   "ui.network.unconfigured_hint": "{name} is unconfigured; nothing to set.",
+  "ui.network.unsaved_interface": "New, not in use until turned on and applied",
   "ui.network.upstream_address_hint": "Where this box sends what it forwards.",
   "ui.network.upstream_hint": "The network's own router. A device that names this hub its gateway goes through the proxy; the router keeps handing out leases.",
   "ui.network.upstream_title": "Upstream gateway",

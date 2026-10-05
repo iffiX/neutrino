@@ -226,6 +226,11 @@ function ExposureChip({ entry, isOn, onToggle }: ExposureChipProps) {
       {settings.role !== "disabled" && (
         <span className="badge">{settings.role}</span>
       )}
+      {entry.is_unsaved && (
+        <span className="badge badge--accent">
+          {t("ui.network.unsaved_interface")}
+        </span>
+      )}
     </button>
   );
 }

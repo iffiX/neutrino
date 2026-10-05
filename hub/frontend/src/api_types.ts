@@ -334,6 +334,9 @@ export interface InterfaceLink {
 export interface InterfaceView {
   settings: InterfaceSettings;
   link: InterfaceLink;
+  /** The configuration does not name it and the hub does not use it until
+   * the person turns it on: every such interface on Linux, none elsewhere. */
+  is_unsaved: boolean;
 }
 
 /** One overlay network this box is a member of. */
