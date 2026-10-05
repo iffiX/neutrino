@@ -124,10 +124,10 @@ CLI_CODE_WORDS = {
     "user_name_taken": "an account named {user} exists that this module did not make",
     "user_create_failed": "the system would not make the account {user}: {detail}",
     "user_record_unusable": (
-        "{user} is a record that is not a usable account and the system will "
-        "not remove it ({detail}); remove it as an administrator in System "
-        "Settings, Users & Groups, or with sysadminctl -deleteUser {user}, "
-        "or pick another name"
+        "macOS holds a leftover record named {user} that cannot be used as "
+        "an account and did not let the agent remove it ({detail}); choose "
+        "another user name for the share; the other users and the shares "
+        "are applied"
     ),
     "port_invalid": "{port} is not a port",
     "port_reserved": "port {port} already belongs to the hub",

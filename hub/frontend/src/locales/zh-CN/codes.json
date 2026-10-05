@@ -262,7 +262,7 @@
   "code.user_unknown": "这个用户还没有在这台机器上生效。",
   "code.user_name_taken": "这台机器上已经有一个不是共享模块建的账户叫 {user}。",
   "code.user_create_failed": "这台机器没有建出账户 {user}：{detail}",
-  "code.user_record_unusable": "这台 Mac 上有一条名为 {user} 的记录，它不是能用的账户，macOS 也不让被控端删掉它（{detail}）。请用管理员身份在“系统设置”的“用户与群组”里删掉它，或在终端里运行 sysadminctl -deleteUser {user}，或者换一个名字。其他用户和共享都已生效。",
+  "code.user_record_unusable": "macOS 里留着一条名为 {user} 的记录，它不能当作账户使用，macOS 也没有让被控端删掉它（{detail}）。请给这个共享换一个用户名。其他用户和共享都已生效。",
   "code.validate_failed": "这台机器不接受这份配置：{detail}",
   "code.vault_locked": "保管库已锁定，解锁后才能使用已存凭据。",
   "code.vault_passphrase_needed": "请输入这份备份封存时用的保险库口令。",
