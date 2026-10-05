@@ -22,6 +22,7 @@ import kotlinx.serialization.json.intOrNull
  * @property descriptionParams The values that sentence names.
  * @property deviceName The machine that provides it, empty when the hub knows none.
  * @property deviceId That machine's id, empty when no managed machine provides it.
+ * @property isOwnMachine Whether the machine that provides it is the one the client runs on.
  */
 @Serializable
 data class ChannelServiceEntry(
@@ -36,6 +37,7 @@ data class ChannelServiceEntry(
     @SerialName("description_params") val descriptionParams: JsonObject = JsonObject(emptyMap()),
     @SerialName("device_name") val deviceName: String = "",
     @SerialName("device_id") val deviceId: String = "",
+    @SerialName("is_own_machine") val isOwnMachine: Boolean = false,
 ) {
     /** A `port` entry's protocol, `tcp` or `udp`, from the payload's `protocol`; `tcp` when it names none. */
     val portProtocol: String
