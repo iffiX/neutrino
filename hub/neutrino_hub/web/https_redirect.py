@@ -82,8 +82,16 @@ def _location(
     return f"{location}?{query}" if query else location
 
 
-def _is_loopback_peer(scope) -> bool:
-    """Whether a request comes from this machine's own loopback."""
+def is_loopback_peer(scope) -> bool:
+    """Whether a request comes from this machine's own loopback.
+
+    Args:
+        scope: The ASGI scope; its ``client`` is the socket's peer as the
+            server accepted it, never a header.
+
+    Returns:
+        True when the peer's address is a loopback address.
+    """
     client = scope.get("client")
     if not client:
         return False
@@ -151,7 +159,7 @@ class PanelHttpsRedirectMiddleware:
         if scope.get("path") in PORT_SHARED_PATHS:
             return False
         is_secure = scope.get("scheme") in SECURE_SCHEMES
-        if not is_secure and _is_loopback_peer(scope):
+        if not is_secure and is_loopback_peer(scope):
             return False
         is_on = bool(self._runtime.settings.get(WEB_SETTING_HTTPS, False))
         return is_secure != is_on

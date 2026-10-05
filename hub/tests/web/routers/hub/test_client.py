@@ -20,6 +20,7 @@ from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiConfigApplier, load_
 from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_CLIENT
 from neutrino_hub.modules.channel.sessions import ChannelSessionRegistry
 from neutrino_hub.modules.devices.registry import DeviceRegistry
+from neutrino_hub.web.auth import SessionStore
 from neutrino_hub.web import channel_addresses, channel_state
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers.hub import client as clients_router
@@ -56,6 +57,7 @@ class FakeRuntime:
         self.pushed: list = []
         self.overlays: list = []
         self.scopes: list = []
+        self.sessions = SessionStore(password_hash="", session_ttl_hours=1)
 
     def host_scopes(self) -> list:
         return self.scopes
@@ -313,7 +315,7 @@ def test_the_list_carries_the_default_and_every_kind(api):
 
     payload = client.get("/api/hub/client").json()
 
-    assert payload["default_permission"] == ALL_KINDS
+    assert payload["default_permission"] == ALL_KINDS[:-1]
     assert payload["permission_kinds"] == ALL_KINDS
     assert payload["clients"][0]["id"] == client_id
     assert payload["clients"][0]["permission"] is None
@@ -498,3 +500,60 @@ def test_the_enrollment_view_carries_one_link_and_no_qr_link(api):
     reply = client.post("/api/hub/client/enrollment/create", json={"name": "a"})
 
     assert set(reply.json()) == {"link", "expires_at", "expires_in_s"}
+
+
+# --- the panel sessions a client's sign-in opened ---
+
+
+def signed_in(runtime, name: str = "laptop") -> tuple:
+    """A client holding the panel permission, signed in to the panel."""
+    registry = ClientRegistry()
+    client_id = registry.create(name)
+    registry.set_permission(client_id, ["web", "panel"])
+    return client_id, runtime.sessions.open_for_client(client_id)
+
+
+def test_disabling_a_client_ends_its_panel_session(api):
+    client, runtime = api
+    client_id, session = signed_in(runtime)
+
+    client.post("/api/hub/client/disable", json={"client_id": client_id})
+
+    assert not runtime.sessions.is_valid(session)
+
+
+def test_removing_a_client_ends_its_panel_session(api):
+    client, runtime = api
+    client_id, session = signed_in(runtime)
+
+    client.post("/api/hub/client/remove", json={"client_id": client_id})
+
+    assert not runtime.sessions.is_valid(session)
+
+
+def test_taking_the_panel_from_a_client_ends_its_session_and_no_others(api):
+    client, runtime = api
+    client_id, session = signed_in(runtime)
+    other_id, other_session = signed_in(runtime, "desk")
+
+    client.post(
+        "/api/hub/client/permission/set",
+        json={"client_id": client_id, "kinds": ["web"]},
+    )
+
+    assert not runtime.sessions.is_valid(session)
+    assert runtime.sessions.is_valid(other_session)
+
+
+def test_taking_the_panel_from_the_default_ends_its_followers_sessions(api):
+    client, runtime = api
+    registry = ClientRegistry()
+    follower = registry.create("laptop")
+    registry.set_default_permission(["web", "panel"])
+    session = runtime.sessions.open_for_client(follower)
+    own_id, own_session = signed_in(runtime, "desk")
+
+    client.post("/api/hub/client/default_permission/set", json={"kinds": ["web"]})
+
+    assert not runtime.sessions.is_valid(session)
+    assert runtime.sessions.is_valid(own_session)

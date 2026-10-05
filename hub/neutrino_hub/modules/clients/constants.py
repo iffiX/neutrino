@@ -25,7 +25,7 @@ CLIENT_CODE_PERMISSION_KIND_UNKNOWN = "permission_kind_unknown"
 # What a client may be allowed, one switch per kind: each published service
 # type, joining the hub's overlay, opening a shell on a managed machine, and
 # opening the hub's own panel. A client follows the default set unless it
-# has a set of its own; a file with no default allows every kind.
+# has a set of its own.
 CLIENT_PERMISSION_OVERLAY = "overlay"
 CLIENT_PERMISSION_TERMINAL = "terminal"
 CLIENT_PERMISSION_PANEL = "panel"
@@ -33,6 +33,12 @@ CLIENT_PERMISSION_KINDS = SERVICES_TYPES + (
     CLIENT_PERMISSION_OVERLAY,
     CLIENT_PERMISSION_TERMINAL,
     CLIENT_PERMISSION_PANEL,
+)
+# What a client is allowed when the clients file names no default: every kind
+# but the panel, which signs a client in without the panel password and is
+# named for one client at a time.
+CLIENT_DEFAULT_PERMISSION_KINDS = tuple(
+    kind for kind in CLIENT_PERMISSION_KINDS if kind != CLIENT_PERMISSION_PANEL
 )
 # The kinds a permission may narrow to the entries of some devices; the
 # overlay and the panel are the hub's own and belong to no device.

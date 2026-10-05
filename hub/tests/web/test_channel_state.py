@@ -552,6 +552,8 @@ def test_the_panel_is_allowed_while_the_client_is_on_and_holds_panel(config_dir)
     runtime = FakeRuntime()
     registry = ClientRegistry()
     client_id = registry.create("alice")
+    by_default = channel_state.client_state(runtime, client_id)
+    registry.set_permission(client_id, ["web", "panel"])
     allowed = channel_state.client_state(runtime, client_id)
 
     registry.set_permission(client_id, ["web"])
@@ -560,6 +562,7 @@ def test_the_panel_is_allowed_while_the_client_is_on_and_holds_panel(config_dir)
     registry.set_disabled(client_id, True)
     disabled = channel_state.client_state(runtime, client_id)
 
+    assert by_default["is_panel_allowed"] is False
     assert allowed["is_panel_allowed"] is True
     assert without["is_panel_allowed"] is False
     assert disabled["is_panel_allowed"] is False

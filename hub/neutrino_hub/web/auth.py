@@ -12,6 +12,7 @@ import math
 import os
 import secrets
 import stat
+import threading
 import time
 from dataclasses import dataclass
 
@@ -19,6 +20,9 @@ from neutrino_hub.web.constants import (
     WEB_LOGIN_ATTEMPT_LIMIT,
     WEB_LOGIN_LOCKOUT_STATE_PATH,
     WEB_LOGIN_LOCKOUT_STEPS_S,
+    WEB_PANEL_TOKEN_BYTES,
+    WEB_PANEL_TOKEN_TTL_S,
+    WEB_PANEL_TOKENS_MAX,
     WEB_SCRYPT_BLOCK_SIZE,
     WEB_SCRYPT_COST,
     WEB_SCRYPT_KEY_BYTES,
@@ -98,10 +102,13 @@ class Session:
     Attributes:
         token: Opaque session identifier stored in the cookie.
         expires_at: Unix time after which the session is no longer valid.
+        client_id: The client whose sign-in opened it; empty for a session
+            the panel password opened.
     """
 
     token: str
     expires_at: float
+    client_id: str = ""
 
     @property
     def is_expired(self) -> bool:
@@ -156,6 +163,35 @@ class SessionStore:
             token=token, expires_at=time.time() + self._session_ttl_s
         )
         return token
+
+    def open_for_client(self, client_id: str) -> str:
+        """Start a session for a client's sign-in, with no password.
+
+        Args:
+            client_id: The client whose token was spent.
+
+        Returns:
+            The new session token.
+        """
+        token = secrets.token_urlsafe(32)
+        self._sessions[token] = Session(
+            token=token,
+            expires_at=time.time() + self._session_ttl_s,
+            client_id=client_id,
+        )
+        return token
+
+    def client_sessions(self) -> list:
+        """Every live session a client's sign-in opened.
+
+        Returns:
+            ``(token, client_id)`` pairs.
+        """
+        return [
+            (session.token, session.client_id)
+            for session in list(self._sessions.values())
+            if session.client_id and not session.is_expired
+        ]
 
     def logout(self, token: str) -> None:
         """End one session.
@@ -255,6 +291,64 @@ class SessionStore:
             self._is_state_on_disk = True
         except (OSError, ValueError):
             pass
+
+
+class PanelTokenStore:
+    """The panel sign-in tokens minted for clients, in memory alone.
+
+    A token is spent by its first use, dies after ``WEB_PANEL_TOKEN_TTL_S``,
+    and a client holds at most ``WEB_PANEL_TOKENS_MAX``: the oldest goes when
+    another is minted. A restart forgets every token.
+    """
+
+    def __init__(self, *, clock=time.monotonic):
+        """
+        Args:
+            clock: Seconds on a clock that never goes back.
+        """
+        self._clock = clock
+        self._lock = threading.Lock()
+        # Token to (client id, when it was minted), oldest first.
+        self._tokens: dict[str, tuple] = {}
+
+    def mint(self, client_id: str) -> str:
+        """A new token for one client.
+
+        Args:
+            client_id: The client it signs in.
+
+        Returns:
+            32 random bytes in base64url.
+        """
+        token = secrets.token_urlsafe(WEB_PANEL_TOKEN_BYTES)
+        with self._lock:
+            held = [
+                key for key, (owner, _) in self._tokens.items() if owner == client_id
+            ]
+            for key in held[: max(0, len(held) - WEB_PANEL_TOKENS_MAX + 1)]:
+                self._tokens.pop(key, None)
+            self._tokens[token] = (client_id, self._clock())
+        return token
+
+    def spend(self, token: str) -> tuple:
+        """Take a token out of the store, whatever it is worth.
+
+        Args:
+            token: What the request carried.
+
+        Returns:
+            ``(client_id, reason)``: the client and an empty reason for a
+            token that spends; an empty client and ``unknown`` or
+            ``expired`` for one that does not.
+        """
+        with self._lock:
+            held = self._tokens.pop(token, None)
+        if held is None:
+            return "", "unknown"
+        client_id, minted_at = held
+        if self._clock() - minted_at > WEB_PANEL_TOKEN_TTL_S:
+            return "", "expired"
+        return client_id, ""
 
 
 def _derive_key(password: str, salt: bytes) -> bytes:

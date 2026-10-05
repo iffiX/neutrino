@@ -33,6 +33,7 @@ from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.devices.desired_state import DesiredStateStore
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
+from neutrino_hub.web.auth import SessionStore
 from neutrino_hub.web import identity
 from neutrino_hub.web.dependencies import get_runtime
 from neutrino_hub.web.events import PanelEventBus
@@ -51,6 +52,7 @@ class FakeRuntime:
         self.events = PanelEventBus()
         self.enrollments = ChannelTicketRegistry()
         self.channel_port = ChannelPortGuard()
+        self.sessions = SessionStore(password_hash="", session_ttl_hours=1)
         self.device_metrics = {}
         self.device_modules = {}
         self.device_platform = {}
@@ -695,3 +697,14 @@ def test_a_hello_past_the_cap_on_sockets_is_channel_full(api):
     }
     assert runtime.channel_port.pause_remaining_s() == 0
     assert not runtime.agent_sessions.is_online(binding["id"])
+
+
+def test_a_client_leaving_ends_its_panel_session(api):
+    client, runtime = api
+    client_id, binding = joined_client(client, runtime)
+    ClientRegistry().set_permission(client_id, ["panel"])
+    session = runtime.sessions.open_for_client(client_id)
+
+    client.post("/api/channel/leave", json=binding)
+
+    assert not runtime.sessions.is_valid(session)

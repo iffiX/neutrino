@@ -13,6 +13,13 @@ WEB_FRONTEND_DIST_DIR = UTILS_DATA_DIR / "frontend"
 # one hostname keep their own session instead of evicting each other's. The
 # name is composed in one place, ``web/dependencies.session_cookie``.
 WEB_SESSION_COOKIE_PREFIX = "neutrino_session_"
+# A client's sign-in to the panel: the query parameter the token rides in,
+# its random bytes, how long it may wait to be spent, and how many one
+# client may hold unspent.
+WEB_PANEL_TOKEN_PARAM = "tkn"
+WEB_PANEL_TOKEN_BYTES = 32
+WEB_PANEL_TOKEN_TTL_S = 60
+WEB_PANEL_TOKENS_MAX = 8
 
 # --- the shape of every path ---
 # A route is `/api/<group>/<page>/...` or `/ws/<group>/...`, grouped the way

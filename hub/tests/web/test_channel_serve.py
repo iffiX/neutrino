@@ -37,6 +37,7 @@ from neutrino_hub.modules.devices.desired_state import DesiredStateStore
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
 from neutrino_hub.web import channel_serve, channel_state, identity
+from neutrino_hub.web.auth import PanelTokenStore
 from neutrino_hub.web.events import PanelEventBus
 from neutrino_hub.web.routers import channel as channel_router
 from neutrino_hub.web.task_stream import TaskStreamRegistry
@@ -1203,3 +1204,31 @@ def test_a_clients_connect_reaches_the_agent_and_bytes_cross_both_ways(api):
     finally:
         person.__exit__(None, None, None)
         agent.__exit__(None, None, None)
+
+
+def test_a_panel_service_stream_closes_with_a_sign_in_token_or_its_refusal(api):
+    client, runtime = api
+    runtime.panel_tokens = PanelTokenStore()
+    client_id, token = bound_client()
+    socket = welcomed(client, client_id, token, role="client")
+    try:
+        socket.send_json(
+            {"type": "open", "stream": 1, "kind": "service", "is_panel": True}
+        )
+        socket.receive_json()
+        refused = socket.receive_json()
+        ClientRegistry().set_permission(client_id, ["panel"])
+        socket.send_json(
+            {"type": "open", "stream": 3, "kind": "service", "is_panel": True}
+        )
+        socket.receive_json()
+        answered = socket.receive_json()
+    finally:
+        socket.__exit__(None, None, None)
+
+    assert (refused["code"], refused["params"]) == (
+        "permission_denied",
+        {"kind": "panel"},
+    )
+    assert answered["code"] == ""
+    assert runtime.panel_tokens.spend(answered["params"]["token"]) == (client_id, "")

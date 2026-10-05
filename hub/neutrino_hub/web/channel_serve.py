@@ -33,7 +33,7 @@ from neutrino_hub.modules.channel.constants import (
 )
 from neutrino_hub.modules.channel.sessions import ChannelSession, ChannelStream
 from neutrino_hub.modules.clients.registry import ClientRegistry
-from neutrino_hub.modules.clients.services import service_material
+from neutrino_hub.modules.clients.services import panel_material, service_material
 from neutrino_hub.modules.devices.agent_module_cache import format_megabytes
 from neutrino_hub.modules.devices.agent_package import platform_family
 from neutrino_hub.modules.devices.agent_reports import (
@@ -287,13 +287,18 @@ async def _log_lines(stream: ChannelStream):
 async def serve_service_stream(
     runtime, session: ChannelSession, stream: ChannelStream
 ) -> None:
-    """Serve a ``service`` stream a client opened: the entry's material as the close.
+    """Serve a ``service`` stream a client opened: the entry's material as the
+    close, or a panel sign-in token for ``{is_panel: true}``.
 
     Args:
         runtime: The shared runtime.
         session: The client's session.
         stream: The stream, closed here.
     """
+    if stream.args.get("is_panel") is True:
+        code, params = await asyncio.to_thread(panel_material, runtime, session.key)
+        await stream.close(code, params)
+        return
     entry_id = str(stream.args.get("id", "") or "")
     code, params = await asyncio.to_thread(
         service_material, runtime, session.key, entry_id

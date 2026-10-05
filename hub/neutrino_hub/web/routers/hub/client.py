@@ -30,6 +30,12 @@ from neutrino_hub.modules.clients.registry import Client, ClientRegistry
 from neutrino_hub.modules.services.constants import SERVICES_TYPE_AI
 from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
 from neutrino_hub.web import channel_overlay, channel_state
+from neutrino_hub.web.panel_sign_in import (
+    SESSION_END_DISABLED,
+    SESSION_END_PERMISSION,
+    SESSION_END_REMOVED,
+    end_client_panel_sessions,
+)
 from neutrino_hub.web.constants import WEB_EVENT_CLIENTS
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import (
@@ -205,6 +211,7 @@ def delete_client(
     revoke_client_key(registry, client)
     registry.forget(client.id)
     runtime.forget_client(client.id)
+    end_client_panel_sessions(runtime, why=SESSION_END_REMOVED)
     runtime.events.publish(WEB_EVENT_CLIENTS)
     return _list_view(runtime)
 
@@ -235,6 +242,7 @@ def set_default_permission(
     registry.set_default_permission(request.kinds, request.devices)
     for client in registry.all():
         _settle_ai_key(registry, client)
+    end_client_panel_sessions(runtime, why=SESSION_END_PERMISSION)
     channel_state.push_states(runtime, CHANNEL_ROLE_CLIENT)
     runtime.events.publish(WEB_EVENT_CLIENTS)
     return _list_view(runtime)
@@ -268,6 +276,7 @@ def set_permission(
     client = _require(registry, request.client_id)
     registry.set_permission(client.id, request.kinds, request.devices)
     _settle_ai_key(registry, registry.get(client.id))
+    end_client_panel_sessions(runtime, why=SESSION_END_PERMISSION)
     _push_one(runtime, client.id)
     runtime.events.publish(WEB_EVENT_CLIENTS)
     return _list_view(runtime)
@@ -283,6 +292,7 @@ def _set_disabled(
     client = registry.get(client.id)
     if is_disabled:
         revoke_client_key(registry, client)
+        end_client_panel_sessions(runtime, why=SESSION_END_DISABLED)
     else:
         ensure_client_key(registry, client)
     _push_one(runtime, client.id)

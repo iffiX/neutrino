@@ -459,6 +459,7 @@ def _serve_panel(arguments) -> int:
     Returns:
         Process exit status.
     """
+    _log_to_service_file()
     port = arguments.port if arguments.port is not None else _configured_port()
     try:
         ensure_hub_identity()
