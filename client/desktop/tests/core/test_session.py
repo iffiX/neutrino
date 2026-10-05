@@ -666,6 +666,24 @@ def test_a_connect_stream_for_the_panel_names_it(bound, monkeypatch):
     )
 
 
+def test_the_panels_sign_in_is_a_service_stream_naming_the_panel(bound, monkeypatch):
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+    token = "once"  # scan: allow
+
+    answered = _open_while(
+        session,
+        made,
+        {"type": "close", "stream": 1, "params": {"token": token}},
+        opener=session.open_panel_service,
+    )
+
+    assert {"type": "open", "stream": 1, "kind": "service", "is_panel": True} in (
+        made.sent
+    )
+    assert answered == {"token": token}
+
+
 def test_a_connect_stream_needs_the_socket(bound):
     session, _listener = bound
 
@@ -1676,7 +1694,7 @@ def test_every_change_the_page_draws_is_announced(bound, monkeypatch):
     assert script.made[0].is_closed is True
 
 
-def _open_while(session, made, close_frame):
+def _open_while(session, made, close_frame, opener=None):
     """Open a service stream on one thread while the test closes it.
 
     Args:
@@ -1684,6 +1702,7 @@ def _open_while(session, made, close_frame):
         made: The scripted socket the open lands on.
         close_frame: The close the hub answers with, handed to the session
             once the open has gone up.
+        opener: Opens the stream, with a timeout; None opens ``rdp_s9``'s.
 
     Returns:
         What :meth:`ClientHubSession.open_service` returned.
@@ -1696,7 +1715,10 @@ def _open_while(session, made, close_frame):
 
     def run() -> None:
         try:
-            outcome["result"] = session.open_service("rdp_s9", timeout_s=5)
+            if opener is None:
+                outcome["result"] = session.open_service("rdp_s9", timeout_s=5)
+            else:
+                outcome["result"] = opener(timeout_s=5)
         except Exception as error:  # noqa: BLE001 - handed back to the test
             outcome["error"] = error
 

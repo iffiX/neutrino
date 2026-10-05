@@ -65,7 +65,7 @@ from neutrino_client.exceptions import (
 )
 from neutrino_client.platforms.detect import detect_platform, platform_tuple
 from neutrino_client.services.ai import AiServiceHandler
-from neutrino_client.services.base import service_key
+from neutrino_client.services.base import channel_refusal, service_key
 from neutrino_client.services.file import MOUNT_SHAPE_ADAPTER, FileServiceHandler
 from neutrino_client.services.files_adapter import (
     FilesAdapter,
@@ -77,11 +77,12 @@ from neutrino_client.services.forward import (
     ConnectStreamSocket,
     ForwardListenerRegistry,
     PortLocalTable,
+    forward_refusal,
 )
 from neutrino_client.services.port import PortServiceHandler
 from neutrino_client.services.rdp import RdpViewerHandler
 from neutrino_client.services.store import ClientServiceStore
-from neutrino_client.services.web import WebServiceHandler, loopback_host
+from neutrino_client.services.web import WebServiceHandler, local_url
 
 # How long a shutdown waits for the watch thread to come back.
 SHUTDOWN_JOIN_TIMEOUT_S = 5
@@ -102,6 +103,8 @@ CONFIGURABLE_TYPES = ("port", "web")
 # The panel's address on the loopback: its own name per hub, so each hub's
 # panel keeps its own session cookie.
 PANEL_HOST_PREFIX = "panel-"
+# The panel's own address before the forward's host, port and token go in.
+PANEL_PAGE_URL = "http://panel/"
 # How long a burst of changes is left to settle before the watchers hear.
 ANNOUNCE_SETTLE_S = 0.05
 # How long one watcher is waited for before the announcements go on without
@@ -1820,20 +1823,40 @@ class ClientResident:
         }
 
     def _open_panel_now(self, session: ClientHubSession) -> None:
-        """Make the panel's forward when the hub has none and open the browser at it."""
+        """Take a sign-in token, make the panel's forward when the hub has none,
+        and open the browser at it, signed in.
+
+        The token goes into the address the browser is told to open and
+        nowhere else: no log line, no state, nothing kept after.
+        """
         key = session.local_key
         hub_id = session.hub_id()
         outcome: dict = {}
         try:
-            port = self._forwards.ensure(
-                hub_id=hub_id, entry_id=FORWARD_PANEL_ID, own_port=0, kind="panel"
-            )
-            host = loopback_host(PANEL_HOST_PREFIX + hub_id, self.platform.os_name)
-            self.platform.open_url(f"http://{host}:{port}/")
+            material = session.open_panel_service()
+            token = str((material or {}).get("token", "") or "")
+            if not token:
+                outcome = {"code": "web_token_missing", "params": {}}
+            else:
+                port = self._forwards.ensure(
+                    hub_id=hub_id, entry_id=FORWARD_PANEL_ID, own_port=0, kind="panel"
+                )
+                self.platform.open_url(
+                    local_url(
+                        PANEL_PAGE_URL,
+                        PANEL_HOST_PREFIX + hub_id,
+                        port,
+                        token,
+                        self.platform.os_name,
+                    )
+                )
+            token = ""
+        except (GatewayRefusedDetail, GatewayUnreachable, GatewayUntrusted) as error:
+            outcome = channel_refusal(error)
         except OSError as error:
-            outcome = {"code": "forward_failed", "params": {"detail": str(error)[:200]}}
+            outcome = forward_refusal(error)
         except Exception as error:  # noqa: BLE001 - reported on the row
-            outcome = {"code": "crashed", "params": {"detail": str(error)[:200]}}
+            outcome = {"code": "crashed", "params": {"detail": type(error).__name__}}
         with self._lock:
             self._opening_panels.discard(key)
             if outcome:

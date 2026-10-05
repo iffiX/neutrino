@@ -706,6 +706,26 @@ class ClientHubSession:
         stream = self._live_streams().open(CLIENT_STREAM_KIND_SERVICE, {"id": entry_id})
         return stream.wait_close(timeout_s)
 
+    def open_panel_service(self, timeout_s: float = CLIENT_STREAM_TIMEOUT_S) -> dict:
+        """Open a ``service`` stream for the hub's own panel and take the close.
+
+        Args:
+            timeout_s: How long to wait for the close.
+
+        Returns:
+            The close's ``params``: ``{token}``, a sign-in usable once.
+
+        Raises:
+            GatewayRefusedDetail: When the hub closed the stream with a code,
+                ``permission_denied {kind: panel}`` among them.
+            GatewayUnreachable: When there is no socket, the socket ends, or
+                the close does not arrive in time.
+        """
+        stream = self._live_streams().open(
+            CLIENT_STREAM_KIND_SERVICE, {"is_panel": True}
+        )
+        return stream.wait_close(timeout_s)
+
     def open_connect(self, args: dict) -> ClientStream:
         """Open a ``connect`` stream: one TCP connection the hub carries.
 
