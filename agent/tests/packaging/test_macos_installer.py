@@ -148,21 +148,25 @@ def test_the_scripts_unload_before_and_load_all_three_after(laid_out):
 
     assert "launchctl bootout system/com.neutrino.agent" in preinstall
     assert "launchctl bootout system/com.carriez.RustDesk_service" in preinstall
+    assert postinstall.startswith("#!/bin/sh\nstart_daemon() {")
     assert (
-        "launchctl bootstrap system /Library/LaunchDaemons/com.neutrino.agent.plist"
-        in postinstall
+        "start_daemon com.neutrino.agent "
+        "/Library/LaunchDaemons/com.neutrino.agent.plist || {\n" in postinstall
     )
+    agent_start = postinstall.split("start_daemon com.neutrino.agent ")[1]
+    assert agent_start.split("}")[0].rstrip().endswith("exit 1")
     assert (
-        "launchctl bootstrap system "
-        "/Library/LaunchDaemons/com.carriez.RustDesk_service.plist" in postinstall
+        "start_daemon com.carriez.RustDesk_service \\\n"
+        "    /Library/LaunchDaemons/com.carriez.RustDesk_service.plist" in postinstall
     )
+    assert "|| true" not in agent_start.split("seat=")[0]
     assert (
         'launchctl bootstrap gui/"$seat" '
         "/Library/LaunchAgents/com.carriez.RustDesk_server.plist" in postinstall
     )
     assert "stat -f %u /dev/console" in postinstall
     assert postinstall.index('mkdir -p "/Library/Logs/Neutrino/agent"') < (
-        postinstall.index("launchctl bootstrap")
+        postinstall.index("start_daemon com.")
     )
     support = "/Library/Application Support/Neutrino/agent"
     assert f'chmod 700 "{support}/config"' in postinstall

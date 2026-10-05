@@ -117,7 +117,8 @@ DAEMON_STATE_DIRS = " ".join(
 )
 
 # What the install runs around the files: every daemon unloaded before; their
-# directories made, root's alone, and every daemon loaded after.
+# directories made, root's alone, and every daemon loaded after, the install
+# failing when one does not start.
 PREINSTALL = f"""#!/bin/sh
 for label in {DAEMON_LABELS}; do
     launchctl bootout "system/$label" >/dev/null 2>&1 || true
@@ -125,16 +126,22 @@ done
 exit 0
 """
 POSTINSTALL = f"""#!/bin/sh
+{pkg_build.LAUNCHD_START_FUNCTION}
 mkdir -p "{LOG_DIR}"
 for directory in {DAEMON_STATE_DIRS}; do
     mkdir -p "$directory"
     chown root:wheel "$directory"
     chmod 700 "$directory"
 done
+failed=""
 for label in {DAEMON_LABELS}; do
-    launchctl bootstrap system "{CLIENT_LAUNCHD_DAEMONS_DIR}/$label.plist" \\
-        >/dev/null 2>&1 || true
+    start_daemon "$label" "{CLIENT_LAUNCHD_DAEMONS_DIR}/$label.plist" ||
+        failed="$failed $label"
 done
+if [ -n "$failed" ]; then
+    echo "  These services did not start:$failed" >&2
+    exit 1
+fi
 exit 0
 """
 

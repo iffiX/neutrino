@@ -392,7 +392,14 @@ def test_the_install_scripts_unload_then_make_the_directories_and_load(tmp_path)
     assert 'launchctl bootout "system/$label"' in build_client_macos.PREINSTALL
     assert "chmod 700" in build_client_macos.POSTINSTALL
     assert "chown root:wheel" in build_client_macos.POSTINSTALL
-    assert "launchctl bootstrap system" in build_client_macos.POSTINSTALL
+    assert (
+        'start_daemon "$label" "/Library/LaunchDaemons/$label.plist"'
+        in build_client_macos.POSTINSTALL
+    )
+    assert "|| true" not in build_client_macos.POSTINSTALL
+    assert 'echo "  These services did not start:$failed" >&2\n    exit 1' in (
+        build_client_macos.POSTINSTALL
+    )
     assert (
         '"/Library/Application Support/Neutrino/client/state/easytier"'
         in build_client_macos.POSTINSTALL

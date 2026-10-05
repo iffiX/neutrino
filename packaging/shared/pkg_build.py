@@ -27,6 +27,29 @@ LAUNCH_DAEMONS_DIR = "Library/LaunchDaemons"
 LAUNCHD_LANG = "en_US.UTF-8"
 LAUNCH_AGENTS_DIR = "Library/LaunchAgents"
 
+# The shell function a postinstall starts one LaunchDaemon with:
+# ``start_daemon <label> <plist>``. launchd still holds a label for about a
+# second after ``bootout`` returns, and answers a ``bootstrap`` of it, or of
+# a label that is loaded, with "5: Input/output error". So it waits until
+# the label is gone, at most 30 seconds, then bootstraps up to five times
+# two seconds apart, and returns the last try's status.
+LAUNCHD_START_FUNCTION = """start_daemon() {
+    waited=0
+    while launchctl print "system/$1" >/dev/null 2>&1; do
+        waited=$((waited + 1))
+        [ "$waited" -ge 60 ] && break
+        sleep 0.5
+    done
+    tries=1
+    while [ "$tries" -lt 5 ]; do
+        launchctl bootstrap system "$2" && return 0
+        tries=$((tries + 1))
+        sleep 2
+    done
+    launchctl bootstrap system "$2"
+}
+"""
+
 # The first bytes of every Mach-O file, thin or universal, either order.
 MACH_O_MAGICS = (
     b"\xcf\xfa\xed\xfe",
