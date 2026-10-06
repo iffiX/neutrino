@@ -38,6 +38,19 @@ class FakePeerConnection:
         return self._credential[:length]
 
 
+@pytest.fixture(autouse=True)
+def _pkexec_on_the_machine(monkeypatch):
+    """Every test's machine has pkexec, unless the test says otherwise."""
+    real_which = linux_module.shutil.which
+
+    def which(name, *args, **kwargs):
+        if name == linux_module.PKEXEC:
+            return "/usr/bin/pkexec"
+        return real_which(name, *args, **kwargs)
+
+    monkeypatch.setattr(linux_module.shutil, "which", which)
+
+
 class CommandRecorder:
     """Stands in for ``subprocess.run``, remembering every call."""
 
@@ -535,3 +548,27 @@ def test_a_process_that_is_gone_cannot_be_watched():
 
     with pytest.raises(OSError):
         LinuxPlatform().watch_process(child.pid)
+
+
+@pytest.mark.parametrize("act", ["mount", "unmount"])
+def test_a_machine_with_no_pkexec_refuses_the_mount_by_name(monkeypatch, tmp_path, act):
+    """Debian 12's polkitd carries no pkexec; the refusal says so instead of
+    a mount that never starts."""
+    credentials = tmp_path / "r1.credentials"
+    credentials.write_text("username=media\npassword=s3cret\n")  # scan: allow
+    recorder = CommandRecorder()
+    monkeypatch.setattr(linux_module.subprocess, "run", recorder)
+    monkeypatch.setattr(linux_module.shutil, "which", lambda name, path=None: None)
+
+    with pytest.raises(ShareAttachError) as caught:
+        if act == "mount":
+            LinuxPlatform().attach_share(
+                share_url="//hub/media",
+                location="/home/alice/nas/media",
+                credentials_path=str(credentials),
+            )
+        else:
+            LinuxPlatform().detach_share(location="/home/alice/nas/media")
+
+    assert caught.value.code == "pkexec_missing"
+    assert recorder.commands == []

@@ -59,13 +59,16 @@ PACKAGE_NAME = payload.PACKAGE_NAME
 # (upstream's own list, with the alternatives Debian's t64 transition split
 # names over). All of it is depended on, so a package that installed is a
 # client whose every feature works; `apt install ./<file>.deb` brings the
-# list in, and `dpkg -i` stops and names what is missing.
+# list in, and `dpkg -i` stops and names what is missing. The mount goes
+# through `pkexec`, its own package since Debian 12 and Ubuntu 22.04, where
+# `polkitd` carries none; `policykit-1` carries it on older releases, and
+# both bring `polkitd`.
 RUNTIME_DEPENDENCIES = (
     "gir1.2-webkit2-4.1 | gir1.2-webkit2-4.0",
     "libwebkit2gtk-4.1-0 | libwebkit2gtk-4.0-37",
     "libgirepository-1.0-1",
     "libgtk-3-0t64 | libgtk-3-0",
-    "polkitd | policykit-1",
+    "pkexec | policykit-1",
     "gir1.2-ayatanaappindicator3-0.1",
     "cifs-utils",
     "libxcb-randr0",

@@ -97,6 +97,10 @@ def mount_helper_arguments(
     return arguments + ["--location", location, "--credentials", credentials_path]
 
 
+# What runs the mount helper as root, on the person's own approval.
+PKEXEC = "pkexec"
+
+
 class LinuxPlatform(ClientPlatform):
     """Linux behind the platform contract."""
 
@@ -366,8 +370,11 @@ class LinuxPlatform(ClientPlatform):
         """Run the mount helper and judge its exit status.
 
         Raises:
-            ShareAttachError: Typed from the exit status.
+            ShareAttachError: ``pkexec_missing`` when this machine has no
+                ``pkexec``; otherwise typed from the exit status.
         """
+        if shutil.which(PKEXEC) is None:
+            raise ShareAttachError("pkexec_missing")
         outcome = run_root_helper(
             CLIENT_MOUNT_HELPER_PATH,
             arguments,
@@ -476,7 +483,7 @@ def run_root_helper(
         None on success, otherwise ``(code, detail)``, the detail being the
         tool's last words.
     """
-    command = ["pkexec", helper] + list(arguments)
+    command = [PKEXEC, helper] + list(arguments)
     try:
         result = subprocess.run(
             command, capture_output=True, text=True, timeout=timeout_s

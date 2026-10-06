@@ -313,6 +313,7 @@ def test_a_declined_authorization_is_typed_and_not_retried(service):
         "share_not_found",
         "share_session_conflict",
         "mount_timed_out",
+        "pkexec_missing",
     ],
 )
 def test_a_share_refusal_the_person_must_act_on_is_not_retried(service, code):
@@ -1033,3 +1034,19 @@ def test_an_adapter_another_account_holds_does_not_stop_the_own_share(tmp_path):
     row = subject.rows()[0]
     assert (row["state"], row["code"]) == ("mounted", "")
     assert platform.attach_calls[0]["share_url"] == "//127.0.0.1/media"
+
+
+def test_a_refused_mount_says_so_in_the_log(tmp_path):
+    """A mount that cannot start leaves a line naming why, not a log that
+    ends at the queue."""
+    subject, platform, _store, lines = following_entries(tmp_path, [entry_for(PAYLOAD)])
+    platform.attach_error = ShareAttachError("pkexec_missing")
+
+    assert attach(subject, path=str(tmp_path / "nas")) == {}
+    subject.reconcile()
+
+    assert subject.rows()[0]["code"] == "pkexec_missing"
+    assert any(
+        line.startswith("could not mount //") and line.endswith(": pkexec_missing")
+        for line in lines
+    )

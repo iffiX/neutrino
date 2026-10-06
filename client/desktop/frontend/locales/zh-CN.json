@@ -62,6 +62,7 @@
   "code.overlay_secret_missing": "虚拟网的密钥没有送到；请再试一次",
   "code.overlay_withdrawn": "中枢不再提供 {network}",
   "code.permission_denied": "中枢不允许这个客户端使用 {kind}",
+  "code.pkexec_missing": "这台电脑没有 pkexec，挂载要经过它；请安装 pkexec 后再挂载",
   "code.port_not_published": "那台机器现在没有发布 {port} 端口",
   "code.port_taken": "本地端口 {port} 已被占用，请在配置里另选一个",
   "code.protocol_too_new": "此客户端使用协议 {peer}，中枢使用 {hub}，请先升级中枢",

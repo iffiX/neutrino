@@ -556,6 +556,7 @@ class FileServiceHandler(ServiceTypeHandler):
         except ShareAttachError as error:
             self._problems[record_id] = _share_refusal(error)
             self._stages.pop(record_id, None)
+            self._log(f"could not mount {_share_url(record)}: {error.code}")
             # A refusal the person has to act on, a wrong password first
             # among them, is not retried on the timer: the record waits for
             # the login or the share to be changed. A host out of reach is
