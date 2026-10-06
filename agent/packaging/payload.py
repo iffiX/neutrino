@@ -417,6 +417,8 @@ def trim_interpreter(staged_python: Path) -> None:
 
     Tkinter draws no window here, and its libraries carry the rpath of the
     machine the interpreter was built on, which rpmbuild rejects outright.
+    ``_dbm`` links Berkeley DB 6, which is under the AGPL; nothing in the
+    agent opens a dbm file, and ``dbm.open`` uses the modules left.
 
     Args:
         staged_python: The interpreter tree as staged.
@@ -432,6 +434,8 @@ def trim_interpreter(staged_python: Path) -> None:
         for path in library.rglob(pattern):
             shutil.rmtree(path, ignore_errors=True)
     for path in library.rglob("_tkinter*.so"):
+        path.unlink(missing_ok=True)
+    for path in library.rglob("_dbm*.so"):
         path.unlink(missing_ok=True)
 
     # The interpreter is linked statically, which `readelf -d bin/python3`
