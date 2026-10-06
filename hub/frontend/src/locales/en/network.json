@@ -302,7 +302,7 @@
   "ui.overlay.add": "Add",
   "ui.overlay.address_assigning": "assigning…",
   "ui.overlay.address_label": "Overlay address",
-  "ui.overlay.apply_engine": "Apply overlays",
+  "ui.overlay.apply_engine": "Apply access",
   "ui.overlay.apply_engine_hint": "Starts the engines turned on, then stops the ones turned off.",
   "ui.overlay.apply_join_hint": "Joins with this setup key and keeps the key for clients.",
   "ui.overlay.apply_settings": "Apply EasyTier settings",

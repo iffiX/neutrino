@@ -37,6 +37,8 @@ from neutrino_hub.web.routers.agent.module import (
 CODE_GATEWAY_NOT_SERVING = "gateway_not_serving"
 # An account's result in the report that a press on the chip tries again.
 AI_TOOL_STATE_FAILED = "failed"
+# An account's result that leaves it on the gateway.
+AI_TOOL_STATE_SWITCHED = "switched"
 CODE_CONFIG_UNWRITABLE = "config_unwritable"
 
 router = APIRouter(
@@ -83,6 +85,11 @@ def device_view(
         device_id=context.key,
         is_online=context.is_online,
         is_enabled=stored["is_enabled"],
+        is_in_use=_is_in_use(
+            stored["is_enabled"],
+            [entry.account for entry in accounts],
+            reported if _is_settled(runtime, context.key) else {},
+        ),
         is_gateway_serving=bool(models),
         tool_configs=stored["tool_configs"],
         models=models,
@@ -215,6 +222,38 @@ def set_tool_configs(
     if held["is_enabled"]:
         push_state(runtime, context.key)
     return device_view(runtime, context)
+
+
+def _is_in_use(is_enabled: bool, listed: list, reported: dict) -> bool:
+    """Whether any account of the machine is still on the gateway.
+
+    Args:
+        is_enabled: The stored setting.
+        listed: The accounts the setting acts on.
+        reported: Each account's result under the state the machine holds,
+            empty while the machine has not reported on the latest one.
+
+    Returns:
+        True for an account ``switched``, one ``failed`` while the setting
+        is off, since its switch back could not run, and one not reported
+        while the setting is on; with no account at all, the setting.
+    """
+    if not listed and not reported:
+        return is_enabled
+    for entry in reported.values():
+        state = entry.get("state")
+        if state == AI_TOOL_STATE_SWITCHED:
+            return True
+        if state == AI_TOOL_STATE_FAILED and not is_enabled:
+            return True
+    return is_enabled and any(account not in reported for account in listed)
+
+
+def _is_settled(runtime: PanelRuntime, key: str) -> bool:
+    """Whether the machine's last report answers the state it was last handed."""
+    session = runtime.agent_sessions.get(key)
+    offered = getattr(session, "offered_hash", None)
+    return not offered or getattr(session, "state_hash", "") == offered
 
 
 def _has_failed_account(runtime: PanelRuntime, key: str) -> bool:

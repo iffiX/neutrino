@@ -2798,6 +2798,9 @@ class AiToolDeviceView(BaseModel):
     device_id: str
     is_online: bool = False
     is_enabled: bool = False
+    # Whether any account is still on the gateway: what the chip reads, and
+    # whether its press sends disable rather than enable.
+    is_in_use: bool = False
     # Whether the gateway serves a model now; the setting turns on only then.
     is_gateway_serving: bool = False
     # ``{claude: {default, opus, sonnet, haiku}, codex: {model,

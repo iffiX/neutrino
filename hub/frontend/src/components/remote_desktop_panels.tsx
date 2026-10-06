@@ -62,6 +62,8 @@ export function RemoteDesktopPanels({
   }
 
   const isFailed = saved.state === "failed";
+  // An agent older than the module: the switch and the bar stay off.
+  const isUnsupported = saved.state === "unsupported";
 
   const apply = async () => {
     setIsBusy(true);
@@ -95,7 +97,7 @@ export function RemoteDesktopPanels({
         onChange={(isOn) => setDraft({ is_enabled: isOn })}
         label={t("ui.remote_desktop_module.switch")}
         description={t("ui.remote_desktop_module.switch_hint")}
-        isDisabled={!isEditable}
+        isDisabled={!isEditable || isUnsupported}
       />
       <ApplyBar
         isDirty={isDirty || isFailed}
@@ -103,6 +105,7 @@ export function RemoteDesktopPanels({
         label={t("ui.remote_desktop_module.apply")}
         hint={t("ui.remote_desktop_module.apply_hint")}
         blockedHint={isEditable ? null : t("ui.modules.agent_offline")}
+        isApplyDisabled={isUnsupported}
         error={error}
         onReset={() => {
           reset();

@@ -414,7 +414,12 @@ pressing the card shows its section under the panel while the card is on as
 applied. A card that is off, or switched on and not yet applied, draws
 nothing under the panel, the same for all four; once the relay is applied on,
 its section appears with the state it has then, `not_configured` until it is
-set up.
+set up. The engine panel's bar reads **Apply access**
+(`ui.overlay.apply_engine`).
+
+EasyTier's apply bar is disabled while **Manual bootstrap peers** is chosen
+and no peer is filled in, with no sentence beside it; the hub refuses that
+configuration with `easytier_invalid {field: peers}`.
 
 Direct's section is one configurable panel, a `settings_group` with its own
 apply bar ([ui_text.md](ui_text.md), "Direct's words"): the switch's
@@ -489,12 +494,16 @@ at the machine's root, lists files beside folders, and a press on a file
 hands its path back. The device drawer's desktop section names the switch
 and links to this tab instead of offering a way to share.
 
+A tab whose module the machine reports `unsupported`, an agent older than the
+module, keeps its state word `unsupported` and draws its panel with every
+field, the switch and the apply bar disabled, and no sentence added.
+
 The AI tools part follows the client's AI page ([client.md](client.md), "The
 AI page") and adds nothing to it:
 
 | Control | Enabled | Does |
 | --- | --- | --- |
-| **This machine's AI tools use the hub's AI gateway** (a chip) | when the machine's agent is online and no write of this part is in flight; turning it on also needs the gateway to serve a model, else the reason `code.gateway_not_serving` is under the chip | at once, as a module's buttons on this page act: `ai_tool/enable` or `ai_tool/disable` ([protocol.md](protocol.md), `/api/agent/module`) |
+| **This machine's AI tools use the hub's AI gateway** (a chip) | when the machine's agent is online and no write of this part is in flight; turning it on also needs the gateway to serve a model, else the reason `code.gateway_not_serving` is under the chip | reads on while `is_in_use`, any account still on the gateway, and off only once every account is on its own settings; pressed while on it sends `ai_tool/disable`, while off `ai_tool/enable`, at once, as a module's buttons on this page act ([protocol.md](protocol.md), `/api/agent/module`); so after a switch back that failed it still reads on, and a press tries the switch back again |
 | **Configure** | when the machine's agent is online | opens the client's dialog in place, the inline-form idiom with a dirty frame: a picker per tool for its model over the gateway's models and, for Codex, its effort; **Save** sends `ai_tool/set` and **Cancel** closes it |
 
 Under the controls, the line `ui.ai_tools.accounts` names the accounts the
