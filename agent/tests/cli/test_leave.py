@@ -143,3 +143,32 @@ def test_yes_on_the_command_line_leaves_without_asking(
 
     assert posted == [BINDING_ID]
     assert not enrollment.is_bound()
+
+
+def test_a_leave_says_each_account_it_switched_back(monkeypatch, config_path, capsys):
+    import neutrino_agent.core.loop as loop
+
+    bind(config_path, url="https://hub.lan:8443")
+    monkeypatch.setattr(
+        channel.BindingHttpClient, "leave", lambda self, binding_id, token: None
+    )
+    monkeypatch.setattr(
+        loop.AiToolsApplier,
+        "switch_back_all",
+        lambda self: [
+            {"account": "alice", "state": "switched_back", "code": "", "params": {}},
+            {
+                "account": "lab",
+                "state": "failed",
+                "code": "switch_failed",
+                "params": {},
+            },
+        ],
+    )
+
+    assert leave_cli.main(is_forced=True) == 0
+
+    out = capsys.readouterr().out
+    assert "ai tools   alice: switched_back\n" in out
+    assert "ai tools   lab: failed switch_failed\n" in out
+    assert out.index("ai tools   alice") < out.index(LEAVE_WORDS)

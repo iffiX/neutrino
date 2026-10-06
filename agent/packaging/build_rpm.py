@@ -121,7 +121,7 @@ if [ "$1" = 0 ]; then
     # What the modules added in order to run goes with the agent: their
     # units. Shares, accounts and the modules' data stay. An upgrade runs
     # this scriptlet with 1 and keeps them.
-    nagent service uninstall --yes >/dev/null 2>&1 || true
+    nagent service uninstall --yes 2>&1 || true
 fi
 
 %postun

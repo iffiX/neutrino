@@ -324,3 +324,18 @@ def _fill(template: str, params: dict) -> str:
         return str(params.get(match.group(1), ""))
 
     return re.sub(r"\{(\w+)\}", _value, template)
+
+
+def ai_tools_lines(results: list) -> list:
+    """Each account's switch-back result as one line of a command's output.
+
+    Args:
+        results: ``[{account, state, code, params}]``.
+
+    Returns:
+        ``ai tools   <account>: <state> <code>``, one per account.
+    """
+    return [
+        f"ai tools   {result['account']}: {result['state']} {result['code']}".rstrip()
+        for result in results
+    ]

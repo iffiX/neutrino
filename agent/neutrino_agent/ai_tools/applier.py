@@ -126,9 +126,9 @@ class AiToolsApplier:
         names = [str(entry["account"]) for entry in named]
         leaving = [name for name in self.switched_accounts() if name not in names]
         if names or leaving:
-            version = (
-                str(section.get("cc_switch_version", "") or "") if is_enabled else ""
-            )
+            version = str(section.get("cc_switch_version", "") or "")
+            if not is_enabled and os.path.isfile(self._binary):
+                version = ""
             refusal = self._ensure_copy(version, receive)
             if refusal is not None:
                 with self._lock:
@@ -317,7 +317,8 @@ class AiToolsApplier:
         finally:
             with contextlib.suppress(OSError):
                 os.unlink(path)
-        self._log(f"ai_tools: cc-switch {version or '?'} fetched from the hub")
+        named = f"cc-switch {version}" if version else "cc-switch"
+        self._log(f"ai_tools: {named} fetched from the hub")
         return None
 
     def _refused_all(self, accounts: list, refusal: dict) -> list:

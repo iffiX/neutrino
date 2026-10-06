@@ -164,6 +164,16 @@ def test_the_rpm_takes_away_what_the_modules_added_on_a_removal_alone(
         )
 
 
+def test_a_removal_shows_what_the_leave_and_the_uninstall_print(tmp_path, carried):
+    """A removal's output carries each account's switch back, so neither the
+    leave nor the uninstall has its standard output thrown away."""
+    build_deb._lay_out(tmp_path / "tree", "9.9.9", "amd64", "somebody")
+    prerm = (tmp_path / "tree/DEBIAN/prerm").read_text()
+    for line in prerm.splitlines() + _spec().splitlines():
+        if "nagent leave" in line or "nagent service uninstall" in line:
+            assert ">/dev/null" not in line, line
+
+
 def test_the_deb_restarts_the_agent_on_an_upgrade(tmp_path, carried):
     build_deb._lay_out(tmp_path, "9.9.9", "amd64", "somebody")
 

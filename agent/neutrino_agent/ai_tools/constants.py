@@ -13,6 +13,15 @@ AI_TOOLS_APP_FILES = {
     "codex": (".codex", "config.toml"),
     "gemini": (".gemini", ".env"),
 }
+# The directory cc-switch writes a tool's files into only once it is there,
+# and every file a switch may write in it, below the account's home: what
+# is kept aside before the first switch and put back after the switch back.
+AI_TOOLS_APP_DIRS = {"claude": ".claude", "codex": ".codex", "gemini": ".gemini"}
+AI_TOOLS_APP_KEPT_FILES = {
+    "claude": ("settings.json",),
+    "codex": ("config.toml", "auth.json"),
+    "gemini": (".env", "settings.json"),
+}
 
 # Claude Code's role slots, each a flag of cc-switch's provider add.
 AI_TOOLS_CLAUDE_SLOT_FLAGS = {

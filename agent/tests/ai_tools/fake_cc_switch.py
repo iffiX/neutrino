@@ -3,13 +3,30 @@
 The store answers the way cc-switch 5.10.4 does to the commands the
 switcher makes, and keeps every call in order. The account is a home of
 files in memory: whatever the session reads, writes or removes there is a
-call recorded too, so a test can say what was done and as whom.
+call recorded too, so a test can say what was done and as whom. As the
+real one does, the store writes a tool's files on ``use`` only into a tool
+directory that is there, and switching to another provider writes that
+provider's settings laid out its own way.
 """
 
 import json
 
 from neutrino_agent.ai_tools.constants import AI_TOOLS_APPS, AI_TOOLS_PROVIDER_ID
 from neutrino_agent.exceptions import ToolSwitchError
+
+# The file a provider's settings are written to for each tool.
+LIVE_FILES = {
+    "claude": (".claude", "settings.json"),
+    "codex": (".codex", "config.toml"),
+    "gemini": (".gemini", ".env"),
+}
+
+
+def has_dir(files: dict, dirs: set, path: str) -> bool:
+    """Whether a directory is in a home of files in memory."""
+    return path in dirs or any(
+        name.startswith(path + "/") or name.startswith(path + "\\") for name in files
+    )
 
 
 def flag_values(arguments) -> dict:
@@ -60,8 +77,16 @@ class FakeCcSwitch:
             return 0, "added", ""
         if key[:1] == ("use",):
             self.current[app] = key[1]
-            if app == "claude" and key[1] == AI_TOOLS_PROVIDER_ID:
-                given = flag_values(self.added.get("claude", ()))
+            folder = {"claude": ".claude", "codex": ".codex", "gemini": ".gemini"}[app]
+            if not session.has_dir(session.path(folder)):
+                return 0, "Live sync skipped: client not initialized", ""
+            given = flag_values(self.added.get(app, ()))
+            if key[1] != AI_TOOLS_PROVIDER_ID:
+                live = session.path(*LIVE_FILES[app])
+                if live in session.files:
+                    session.files[live] = session.files[live].replace(" ", "")
+                return 0, "", ""
+            if app == "claude":
                 env = {
                     "ANTHROPIC_BASE_URL": given["--base-url"],
                     "ANTHROPIC_AUTH_TOKEN": given["--api-key"],
@@ -71,6 +96,19 @@ class FakeCcSwitch:
                 session.files[session.path(".claude", "settings.json")] = json.dumps(
                     {"env": env}
                 )
+            elif app == "codex":
+                session.files[session.path(".codex", "config.toml")] = (
+                    f'model_provider = "custom"\nbase_url = "{given["--base-url"]}"\n'
+                )
+                session.files[session.path(".codex", "auth.json")] = json.dumps(
+                    {"OPENAI_API_KEY": given["--api-key"]}
+                )
+            else:
+                session.files[session.path(".gemini", ".env")] = (
+                    f"GEMINI_API_KEY={given['--api-key']}\n"
+                    f"GOOGLE_GEMINI_BASE_URL={given['--base-url']}"
+                )
+                session.files[session.path(".gemini", "settings.json")] = "{}"
             return 0, "", ""
         if key[:2] == ("provider", "delete"):
             if not self.is_delete_kept:
@@ -97,11 +135,14 @@ class FakeCcSwitch:
 class FakeSession:
     """One account as the switcher reaches it: a home in memory and the store."""
 
-    def __init__(self, cc_switch, *, account="ann", home="/home/ann", files=None):
+    def __init__(
+        self, cc_switch, *, account="ann", home="/home/ann", files=None, dirs=()
+    ):
         self.account = account
         self.home = home
         self.cc_switch = cc_switch
         self.files: dict = dict(files or {})
+        self.dirs: set = {self.path(name) for name in dirs}
         self.file_calls: list = []
         self.answered: list = []
 
@@ -148,3 +189,19 @@ class FakeSession:
     def remove(self, path):
         self.file_calls.append(("remove", path))
         self.files.pop(path, None)
+
+    def has_dir(self, path):
+        return has_dir(self.files, self.dirs, path)
+
+    def is_dir(self, path):
+        self.file_calls.append(("is_dir", path))
+        return self.has_dir(path)
+
+    def make_dir(self, path):
+        self.file_calls.append(("make_dir", path))
+        self.dirs.add(path)
+
+    def remove_empty_dir(self, path):
+        self.file_calls.append(("remove_empty_dir", path))
+        if not any(name.startswith(path + "/") for name in self.files):
+            self.dirs.discard(path)

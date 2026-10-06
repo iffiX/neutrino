@@ -79,7 +79,7 @@ def test_each_named_account_is_switched_as_itself(tmp_path, binary):
     assert states(applier) == {"ann": ("switched", ""), "bob": ("switched", "")}
     assert {account for account, _password, _argv in platform.runs} == {"ann", "bob"}
     assert all(
-        argv[0] == binary or argv[0] in ("cat", "test", "sh", "rm")
+        argv[0] == binary or argv[0] in ("cat", "test", "sh", "rm", "mkdir", "rmdir")
         for _a, _p, argv in platform.runs
     )
     added = platform.store("ann").added["claude"]
@@ -455,3 +455,33 @@ def test_the_copy_is_removed_on_its_own(tmp_path, binary):
 
     assert removed == [str(tmp_path / "state" / "ai_tools" / "bin")]
     assert applier.remove_copy() == []
+
+
+def test_a_copy_fetched_for_a_switch_back_is_the_one_the_next_switch_runs(tmp_path):
+    applier, _platform = make(tmp_path)
+    hub = Hub(tmp_path)
+    applier.apply(versioned(), "h1", receive=hub.receive)
+    applier.remove_copy()
+    lines = []
+    applier._log = lines.append
+
+    applier.apply(
+        {"is_enabled": False, "cc_switch_version": "5.10.4"}, "h2", receive=hub.receive
+    )
+    applier.apply(versioned(), "h3", receive=hub.receive)
+
+    assert hub.asked == ["cc_switch", "cc_switch"]
+    assert "ai_tools: cc-switch 5.10.4 fetched from the hub" in lines
+
+
+def test_a_switch_back_runs_any_copy_there_without_a_fetch(tmp_path, binary):
+    applier, _platform = make(tmp_path)
+    applier.apply(section("ann"), "h1")
+    hub = Hub(tmp_path)
+
+    applier.apply(
+        {"is_enabled": False, "cc_switch_version": "5.10.4"}, "h2", receive=hub.receive
+    )
+
+    assert hub.asked == []
+    assert states(applier) == {"ann": ("switched_back", "")}

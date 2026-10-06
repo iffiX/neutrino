@@ -101,7 +101,7 @@ if [ "$1" = remove ] || [ "$1" = deconfigure ]; then
         # Removal is this machine leaving: the hub is told, so its panel
         # stops showing the device as managed. Best-effort — an unreachable
         # hub does not block the removal.
-        nagent leave --yes >/dev/null 2>&1 || true
+        nagent leave --yes 2>&1 || true
     fi
     systemctl stop neutrino_agent.service >/dev/null 2>&1 || true
     systemctl disable neutrino_agent.service >/dev/null 2>&1 || true
@@ -109,7 +109,7 @@ if [ "$1" = remove ] || [ "$1" = deconfigure ]; then
         # What the modules added in order to run goes with the agent: their
         # units. Shares, accounts and the modules' data stay. An upgrade
         # runs this script with "upgrade" and keeps them.
-        nagent service uninstall --yes >/dev/null 2>&1 || true
+        nagent service uninstall --yes 2>&1 || true
     fi
 fi
 """
