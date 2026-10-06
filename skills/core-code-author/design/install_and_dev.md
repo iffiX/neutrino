@@ -415,18 +415,20 @@ client is running again when the install ends, in the same person's session,
 as that person, never as SYSTEM or elevated, with no second prompt. An
 install over no running client starts nothing.
 
-On Windows the installer asks the installing account's client to quit for
-an upgrade. The installer runs elevated, and the client takes from its own
-account elevated that one request and no other; another account is
-refused whether elevated or not. That client registers, as its own account,
-the task `NeutrinoClientRelaunch_<account>`: no trigger, the limited run
-level, run only while the account is signed in, starting
-`nclientw.exe gui --hidden`. The installer's last step, as SYSTEM, starts
-every such task, and the client deletes its own task when it starts. An
-account that is not signed in, as under an install from ssh or a management
-tool with nobody at the desktop, does not run its task, and the install does
-not fail. A removal deletes every such task. A client of another account, which the installer closes
-without asking, is not brought back.
+On Windows the installer asks the one running client to quit for an
+upgrade, whichever account it belongs to ([client.md](client.md), "One
+client per machine"). It asks the EasyTier daemon whose client holds the
+machine and opens that account's control pipe, which admits the
+administrators besides its own account. The installer runs elevated, and
+the client takes from an elevated caller that one request and no other; a
+caller that is neither its own account nor elevated is refused. The client
+registers, as its own account, the task `NeutrinoClientRelaunch_<account>`:
+no trigger, the limited run level, run only while the account is signed
+in, starting `nclientw.exe gui --hidden`. The installer's last step, as
+SYSTEM, starts every such task, and the client deletes its own task when it
+starts. An account that is not signed in, as under an install from ssh or
+a management tool with nobody at the desktop, does not run its task, and
+the install does not fail. A removal deletes every such task.
 
 ## A hub package carries its own agent package and fetches the others
 

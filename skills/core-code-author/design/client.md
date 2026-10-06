@@ -39,6 +39,24 @@ The document has these parts:
 `services[].job` and `hubs[].jobs` are the only places a running action is
 recorded. A button reads its own job from there and from nowhere else.
 
+## One client per machine
+
+A desktop runs one person's client at a time, as RustDesk does. The
+EasyTier daemon, which every desktop install runs as root or SYSTEM and
+which keeps the machine's one virtual network, keeps which account's
+client holds the machine, as the files daemon keeps which account holds
+the adapter ("The files adapter on Windows"). The rule and its mechanism
+are the same on Linux, Windows and macOS.
+
+| Rule | Reason |
+| --- | --- |
+| The resident asks the daemon `hold` once its own control socket is bound, and again every 10 s. The daemon reads the account and the process from its socket or pipe. | A request names nothing the daemon trusts. Asking again keeps the hold after the daemon restarts. |
+| While a resident of one account holds the machine, a `hold` from another account is refused `client_held` with the holder's account; a resident of the same account is served in the first one's place. | The virtual network, the files adapter and the loopback ports belong to the machine, and two people's clients would take them from each other. |
+| The daemon keeps a handle on the holding process and frees the machine once it has ended, by a quit, a crash or the end of its session. | A crashed resident never says it is done, and the handle keeps the process id from naming another process meanwhile. |
+| `nclient gui` refused a hold exits with no window, no tray icon and no message. Every other `nclient` command of another account prints the one line `client_held`, naming the holder's account, and exits 1. | A second window that can do nothing is noise; a terminal is where a person asks why. |
+| Where no daemon answers, as in a checkout, the resident starts and holds nothing. | A checkout runs no daemon, and a client that cannot start is worse than two. |
+| An installer, which runs elevated as whichever administrator started it, asks the one running client to quit for an upgrade, whoever's account it belongs to; the client registers its return as its own account and comes back in its own session ([install_and_dev.md](install_and_dev.md), "A client upgraded while it runs comes back"). | An upgrade replaces the files of the one client that runs, whoever installs it. |
+
 ## The layout
 
 | Rule | Reason |
