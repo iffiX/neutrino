@@ -50,7 +50,8 @@ import kotlinx.serialization.json.JsonPrimitive
  * @param table The local port of every forwarded entry.
  * @param log Writes one line to the app's log: a forward made, a forward ended and why.
  * @param udpRelayOf A UDP entry's forward by what the log calls it, how it opens its stream, its
- *   loopback number, and what a refusal of its stream does, with whether it ended the forward.
+ *   loopback number, what a refusal of its stream does, with whether it ended the forward, and what
+ *   a frame coming back after a refusal does.
  * @param relayOf A relay by what the log calls it, how it opens a stream, and its loopback number.
  */
 class PortForwards(
@@ -64,8 +65,11 @@ class PortForwards(
         () -> ChannelResult<ChannelStream>,
         Int,
         (ChannelResult.Refused, Boolean) -> Unit,
+        () -> Unit,
     ) ->
-    PortForwardListener = { name, open, local, onRefused -> PortForwardUdpRelay(name, open, local, onRefused) },
+    PortForwardListener = { name, open, local, onRefused, onAnswered ->
+        PortForwardUdpRelay(name, open, local, onRefused, onAnswered)
+    },
     private val relayOf: (String, () -> ChannelResult<ChannelStream>, Int) -> PortForwardRelay = { name, open, local ->
         PortForwardRelay(name, open, local)
     },
@@ -352,7 +356,9 @@ class PortForwards(
             val local = table.portFor(key, port, protocol)
             val open = { streams(bindingId, args) }
             val relay = if (protocol == PORT_PROTOCOL_UDP) {
-                udpRelayOf(key, open, local) { refusal, isEnded -> refused(key, refusal, isEnded) }
+                udpRelayOf(key, open, local, { refusal, isEnded -> refused(key, refusal, isEnded) }) {
+                    settle(key) { it?.copy(error = null) }
+                }
             } else {
                 relayOf(key, open, local)
             }
