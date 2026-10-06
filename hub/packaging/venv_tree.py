@@ -151,8 +151,17 @@ AGENT_PACKAGE_MACHINE = _runtime(_AGENT_PACKAGE_MODULE, "package_architecture")
 AGENT_FAMILY_OF_HUB_KIND = {"deb": "deb", "rpm": "rpm", "pkg": ""}
 
 # The licences under licenses/ of what the panel's built page carries: the
-# terminal, the QR code drawing and the terminal's font.
-PANEL_LICENSES = ("xterm.txt", "qrcode_generator.txt", "meslolgs_nf.txt")
+# terminal, the QR code drawing and the three fonts; and the notice file for
+# the libraries bundled into the page, the Python interpreter and the Python
+# packages the hub runs on.
+PANEL_LICENSES = (
+    "xterm.txt",
+    "qrcode_generator.txt",
+    "meslolgs_nf.txt",
+    "inter.txt",
+    "jetbrains_mono.txt",
+    "hub_notices.txt",
+)
 # The licences of what the agent package a hub package carries holds, the
 # agent's own CARRIED_LICENSES.
 AGENT_PACKAGE_LICENSES = ("rustdesk.txt",)

@@ -28,6 +28,10 @@ OS_RELEASE=/etc/os-release
 # has joined, and is not told to join again.
 AGENT_BINDING_LINUX=/etc/neutrino/agent/agent.json
 AGENT_BINDING_MACOS="/Library/Application Support/Neutrino/agent/config/agent.json"
+# A person's client bindings under their home on each system: a person who
+# holds one has joined, and is not told to join again.
+CLIENT_BINDINGS_LINUX=.config/neutrino/client/client.json
+CLIENT_BINDINGS_MACOS="Library/Application Support/Neutrino/client/client.json"
 # The hub's command where its package puts it on each system, which a root
 # shell's PATH may not name.
 HUB_COMMAND_LINUX=/usr/bin/nhub
@@ -136,6 +140,33 @@ hub_is_set_up() {
         && ! $as_root ${as_root:+-n} grep -Eq '"admin_password_hash"[[:space:]]*:[[:space:]]*"PLACEHOLDER' "$1" 2>/dev/null
 }
 
+# The home of the person running the script, also when it runs through
+# sudo.
+person_home() {
+    if [ "$(id -u)" != 0 ] || [ -z "${SUDO_USER:-}" ]; then
+        echo "$HOME"
+    elif command -v getent >/dev/null 2>&1; then
+        getent passwd "$SUDO_USER" | cut -d: -f6
+    else
+        dscl . -read "/Users/$SUDO_USER" NFSHomeDirectory 2>/dev/null \
+            | sed -n 's/^NFSHomeDirectory: //p'
+    fi
+}
+
+# Whether the person running the script holds a client binding.
+is_client_bound() {
+    home=$(person_home)
+    [ -n "$home" ] || return 1
+    if [ "$1" = macos ]; then
+        bindings="$home/$CLIENT_BINDINGS_MACOS"
+    elif [ -n "${XDG_CONFIG_HOME:-}" ] && [ -z "${SUDO_USER:-}" ]; then
+        bindings="$XDG_CONFIG_HOME/${CLIENT_BINDINGS_LINUX#.config/}"
+    else
+        bindings="$home/$CLIENT_BINDINGS_LINUX"
+    fi
+    grep -Eq '"token"[[:space:]]*:[[:space:]]*"[^"]' "$bindings" 2>/dev/null
+}
+
 # Where the release's files are, for this script's edition. A cn release is
 # found by its tag, which the API names for the latest one.
 release_base() {
@@ -234,6 +265,7 @@ main() {
             return 0
             ;;
         client)
+            is_client_bound "$kind" && return 0
             echo "Next, join this computer to a hub: nclient join '<client link from the hub's Clients page>'"
             return 0
             ;;

@@ -350,6 +350,9 @@ def _expected_licenses(os_name, *, is_agent_carried):
         "xterm.txt",
         "qrcode_generator.txt",
         "meslolgs_nf.txt",
+        "inter.txt",
+        "jetbrains_mono.txt",
+        "hub_notices.txt",
     }
     if is_agent_carried:
         names.add("rustdesk.txt")
@@ -415,3 +418,22 @@ def test_the_agent_package_licences_are_the_agents_own():
     ]
 
     assert ast.literal_eval(assigned) == venv_tree.AGENT_PACKAGE_LICENSES
+
+
+def test_the_notice_names_every_library_the_page_and_the_hub_depend_on():
+    """A dependency added to the panel or the hub without its notice fails
+    here; xterm.js and qrcode-generator have files of their own, and
+    react-router-dom's code is react-router's."""
+    import json
+    import re
+
+    notice = (venv_tree.HUB_ROOT.parent / "licenses" / "hub_notices.txt").read_text()
+    page = json.loads((venv_tree.HUB_ROOT / "frontend" / "package.json").read_text())
+    own = {"@xterm/xterm", "@xterm/addon-fit", "qrcode-generator"}
+    for name in sorted(set(page["dependencies"]) - own):
+        name = "react-router" if name == "react-router-dom" else name
+        assert f"\n  {name} " in notice, name
+    project = (venv_tree.HUB_ROOT / "pyproject.toml").read_text()
+    listed = project.split("dependencies = [", 1)[1].split("]", 1)[0]
+    for name in re.findall(r'^\s*"([A-Za-z0-9_.-]+)', listed, re.MULTILINE):
+        assert re.search(rf"\n  {re.escape(name)}  ", notice, re.I), name

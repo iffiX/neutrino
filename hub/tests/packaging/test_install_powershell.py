@@ -450,3 +450,77 @@ def test_the_script_reads_the_hubs_settings_where_the_hub_keeps_them():
         + PASSWORD_SETTINGS_FILE.replace("/", "\\")
     )
     assert f"'{relative}'" in SCRIPT.read_text()
+
+
+# --- a person who has joined is not told to join ---
+
+CLIENT_JOIN_LINE = (
+    "Next, in a PowerShell of your own: nclient join "
+    "'<client link from the hub's Clients page>'"
+)
+CLIENT_BINDINGS = '{\n  "bindings": [{"id": "c1", "token": "t0k"}]\n}\n'
+
+
+def _publish_client(served):
+    name = "neutrino-client-9.9.9-windows-amd64.msi"
+    (served / name).write_bytes(name.encode())
+    with (served / "SHA256SUMS").open("a") as sums:
+        sums.write(f"{hashlib.sha256(name.encode()).hexdigest()}  {name}\n")
+
+
+def _roaming(root, text=None):
+    roaming = root / "AppData" / "Roaming"
+    if text is not None:
+        (roaming / "Neutrino" / "client").mkdir(parents=True)
+        (roaming / "Neutrino" / "client" / "client.json").write_text(text)
+    return roaming
+
+
+def test_a_person_with_no_client_binding_is_told_to_join(run, tmp_path):
+    _publish_client(run.served)
+
+    outcome, _asked = run("client", env={"APPDATA": str(_roaming(tmp_path))})
+
+    assert outcome == "ok"
+    assert run.said[-1] == CLIENT_JOIN_LINE
+
+
+def test_a_person_who_has_joined_is_given_no_join_line(run, tmp_path):
+    _publish_client(run.served)
+
+    outcome, _asked = run(
+        "client", env={"APPDATA": str(_roaming(tmp_path, CLIENT_BINDINGS))}
+    )
+
+    assert outcome == "ok"
+    assert not any("nclient join" in line for line in run.said)
+
+
+def test_the_elevated_window_reads_the_bindings_of_the_account_that_ran_it(
+    run, tmp_path
+):
+    """Another administrator's window has its own roaming folder; the one
+    carried in is the person's."""
+    _publish_client(run.served)
+    person = _roaming(tmp_path / "person", CLIENT_BINDINGS)
+
+    outcome, _asked = run(
+        "client",
+        env={
+            "APPDATA": str(_roaming(tmp_path / "admin")),
+            "NEUTRINO_PERSON_APPDATA": str(person),
+        },
+    )
+
+    assert outcome == "ok"
+    assert not any("nclient join" in line for line in run.said)
+
+
+def test_the_elevation_carries_the_persons_roaming_folder(run, tmp_path):
+    roaming = _roaming(tmp_path)
+
+    outcome, asked = run("client", is_admin=False, env={"APPDATA": str(roaming)})
+
+    assert outcome == "ok"
+    command = asked[6]
+    assert f"$env:NEUTRINO_PERSON_APPDATA = '{roaming}'; " in command
