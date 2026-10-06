@@ -46,7 +46,7 @@ POSIX_REMOVE_SHELL = (
     'rm -f -- "$1"; shift; for d do rmdir -- "$d" 2>/dev/null || exit 0; done'
 )
 # Makes the directory the first argument names, the account's alone.
-POSIX_PRIVATE_DIR_SHELL = 'mkdir -p -- "$1" && chmod {mode} -- "$1"'
+POSIX_PRIVATE_DIR_SHELL = 'mkdir -p -- "$1" && chmod -- {mode} "$1"'
 # Removes the tree the first argument names, then each directory after it
 # that is empty, stopping at the first that is not.
 POSIX_REMOVE_TREE_SHELL = (

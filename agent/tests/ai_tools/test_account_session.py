@@ -376,7 +376,7 @@ def test_the_store_is_made_the_account_s_alone_and_taken_away_with_its_empty_tre
     session.remove_store()
 
     made, removed = (run["argv"] for run in platform.runs)
-    assert made[:2] == ["sh", "-c"] and "chmod 700" in made[2] and made[-1] == STORE
+    assert made[:2] == ["sh", "-c"] and "chmod -- 700" in made[2] and made[-1] == STORE
     assert "rm -rf" in removed[2] and removed[4] == STORE
     assert removed[5:] == [
         "/home/ann/.local/share/neutrino/agent/ai_tools",
