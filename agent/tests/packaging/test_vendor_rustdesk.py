@@ -215,7 +215,7 @@ def test_the_rpm_is_opened_the_same_way_as_the_deb(tmp_path, downloaded):
     vendor = tmp_path / "tree/usr/lib/neutrino/agent/rustdesk"
     assert (vendor / "rustdesk").is_file()
     assert (vendor / "lib/librustdesk.so").is_file()
-    assert (tmp_path / "tree/usr/bin/rustdesk").is_symlink()
+    assert not (tmp_path / "tree/usr/bin/rustdesk").exists()
 
 
 # --- the licence that carrying it owes ---

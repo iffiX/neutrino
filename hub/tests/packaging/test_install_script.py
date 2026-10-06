@@ -90,7 +90,7 @@ if [ -n "$FAKE_ADDRESS" ]; then echo "$FAKE_ADDRESS"; fi
 """
 
 # What a set-up hub's panel settings hold, and what a fresh one's do.
-SET_UP_SETTINGS = '{\n  "admin_password_hash": "$argon2id$v=19$m=65536,t=3,p=4$c2FsdA$aGFzaA"\n}\n'  # scan: allow
+SET_UP_SETTINGS = '{\n  "admin_password_hash": "scrypt$73616c74$6b6579"\n}\n'  # scan: allow
 FRESH_SETTINGS = (
     '{\n  "admin_password_hash": "PLACEHOLDER_ARGON2ID_HASH"\n}\n'  # scan: allow
 )

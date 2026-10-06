@@ -33,7 +33,7 @@ AGENT_BINDING_MACOS="/Library/Application Support/Neutrino/agent/config/agent.js
 HUB_COMMAND_LINUX=/usr/bin/nhub
 HUB_COMMAND_MACOS=/usr/local/bin/nhub
 # The hub's panel settings on each system: a hub whose settings hold a
-# password hash has been set up.
+# password hash, not the example's placeholder, has been set up.
 HUB_SETTINGS_LINUX=/etc/neutrino/hub/web/settings.json
 HUB_SETTINGS_MACOS="/Library/Application Support/Neutrino/hub/config/web/settings.json"
 
@@ -127,6 +127,13 @@ hold_root() {
         done
     ) </dev/null >/dev/null 2>&1 &
     echo "$!"
+}
+
+# Whether the hub on this machine has been set up: its panel settings hold a
+# password hash, which is any value but the example's placeholder.
+hub_is_set_up() {
+    $as_root ${as_root:+-n} grep -Eq '"admin_password_hash"[[:space:]]*:[[:space:]]*"[^"]' "$1" 2>/dev/null \
+        && ! $as_root ${as_root:+-n} grep -Eq '"admin_password_hash"[[:space:]]*:[[:space:]]*"PLACEHOLDER' "$1" 2>/dev/null
 }
 
 # Where the release's files are, for this script's edition. A cn release is
@@ -238,7 +245,7 @@ main() {
         nhub=$HUB_COMMAND_LINUX
         settings=$HUB_SETTINGS_LINUX
     fi
-    if $as_root ${as_root:+-n} grep -Eq '"admin_password_hash"[[:space:]]*:[[:space:]]*"[$]' "$settings" 2>/dev/null; then
+    if hub_is_set_up "$settings"; then
         address=$($as_root ${as_root:+-n} "$nhub" open --print 2>/dev/null) || address=""
         if [ -n "$address" ]; then
             echo "The hub was upgraded; its panel is at: $address"

@@ -43,13 +43,13 @@ function Test-NeutrinoAgentBound {
 }
 
 # Whether this machine's hub has been set up: its panel settings hold a
-# password hash.
+# password hash, which is any value but the example's placeholder.
 function Test-NeutrinoHubSetUp {
     $programData = if ($env:ProgramData) { $env:ProgramData } else { 'C:\ProgramData' }
     $settings = Join-Path $programData 'Neutrino\hub\config\web\settings.json'
     if (-not (Test-Path -LiteralPath $settings)) { return $false }
     $text = Get-Content -Raw -LiteralPath $settings -ErrorAction SilentlyContinue
-    return [bool]($text -match '"admin_password_hash"\s*:\s*"\$')
+    return [bool]($text -match '"admin_password_hash"\s*:\s*"(?!PLACEHOLDER)[^"]')
 }
 
 function Get-NeutrinoMachine {
@@ -105,7 +105,7 @@ function Get-NeutrinoScriptText {
 # Ask Windows once for administrator rights: the same script, with what it
 # was given, runs again in a PowerShell window opened as administrator, which
 # stays open afterwards.
-function Start-NeutrinoElevated {
+function Invoke-NeutrinoElevated {
     param([string]$Component)
     $copy = Join-Path ([IO.Path]::GetTempPath()) ('neutrino_install_' + [guid]::NewGuid().ToString('N') + '.ps1')
     Set-Content -LiteralPath $copy -Value (Get-NeutrinoScriptText) -Encoding UTF8
@@ -130,7 +130,7 @@ function Start-NeutrinoElevated {
 
 # What the machine's and the person's PATH say now, so a program the install
 # put on it answers in this window.
-function Update-NeutrinoPath {
+function Import-NeutrinoPath {
     $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
     $user = [Environment]::GetEnvironmentVariable('Path', 'User')
     $found = (@($machine, $user) | Where-Object { $_ }) -join ';'
@@ -148,7 +148,7 @@ function Install-Neutrino {
         throw "No Neutrino package is published for Windows on $env:PROCESSOR_ARCHITECTURE."
     }
     if (-not (Test-NeutrinoAdministrator)) {
-        Start-NeutrinoElevated -Component $Component
+        Invoke-NeutrinoElevated -Component $Component
         return
     }
 
@@ -195,7 +195,7 @@ function Install-Neutrino {
     } finally {
         Remove-Item -Recurse -Force -LiteralPath $work -ErrorAction SilentlyContinue
     }
-    Update-NeutrinoPath
+    Import-NeutrinoPath
 
     if ($Component -eq 'agent') {
         if (-not (Test-NeutrinoAgentBound)) {

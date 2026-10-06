@@ -9,6 +9,7 @@ sentence each refusal says. Skipped where ``pwsh`` is not on the path.
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import sys
@@ -289,7 +290,7 @@ def test_without_administrator_rights_the_script_asks_windows_once_and_goes_on(
 
     assert outcome == "ok"
     verb, *arguments = asked
-    assert verb == f"RunAs {pwsh}"
+    assert verb == f"RunAs {os.path.realpath(pwsh)}"
     assert arguments[:5] == [
         "-NoProfile",
         "-NoExit",
@@ -387,7 +388,7 @@ def test_a_joined_machine_is_given_no_join_line(run, tmp_path):
 
 
 # What a set-up hub's panel settings hold, and what a fresh one's do.
-SET_UP_SETTINGS = '{\n  "admin_password_hash": "$argon2id$v=19$m=65536,t=3,p=4$c2FsdA$aGFzaA"\n}\n'  # scan: allow
+SET_UP_SETTINGS = '{\n  "admin_password_hash": "scrypt$73616c74$6b6579"\n}\n'  # scan: allow
 FRESH_SETTINGS = (
     '{\n  "admin_password_hash": "PLACEHOLDER_ARGON2ID_HASH"\n}\n'  # scan: allow
 )
