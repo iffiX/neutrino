@@ -1713,3 +1713,31 @@ def test_binding_unknown_cuts_the_desktop_share_off(config_path, monkeypatch):
     agent.run_once()
 
     assert desktop.left == 1
+
+
+def test_a_join_from_another_process_ends_a_failing_hubs_backoff(config_path):
+    """The service waits out a long backoff against a hub that refuses; a
+    nagent join in another process rewrites the binding and the wait ends
+    within the poll, the backoff back at its floor."""
+    bind(config_path, url="http://192.0.2.1:9")
+    agent = Agent(log=lambda message: None)
+    with agent._lock:
+        agent._backoff_s = 60
+    done = {}
+
+    def wait():
+        started = time.monotonic()
+        agent._wait_out(60)
+        done["s"] = time.monotonic() - started
+
+    waiter = threading.Thread(target=wait)
+    waiter.start()
+    time.sleep(0.3)
+    # Another process writes a new binding: the stamp moves.
+    bind(config_path, url="http://198.51.100.1:9")
+    os.utime(config_path, ns=(time.time_ns() + 10**9, time.time_ns() + 10**9))
+    waiter.join(10)
+
+    assert not waiter.is_alive()
+    assert done["s"] < 5
+    assert agent._backoff_s == AGENT_BACKOFF_MIN_S

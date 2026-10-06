@@ -610,25 +610,41 @@ class Agent:
         return True
 
     def _wait_out(self, delay: float) -> None:
-        """Wait for the next turn: the delay, news, or a network change.
+        """Wait for the next turn: the delay, news, a binding written on
+        disk, or a network change.
 
-        The route to the hub is looked at every report interval; a changed
-        address ends the wait and puts the backoff back to its floor.
+        The binding file is looked at every :data:`IDLE_POLL_INTERVAL_S`, so
+        a ``nagent join`` from another process is taken within seconds even
+        while a failing hub's backoff runs; the route to the hub is looked
+        at every report interval. Either change ends the wait and puts the
+        backoff back to its floor.
 
         Args:
             delay: How long the turn asked to wait.
         """
         deadline = time.monotonic() + delay
+        network_at = time.monotonic()
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 return
-            if self._news.wait(timeout=min(remaining, AGENT_REPORT_INTERVAL_S)):
+            if self._news.wait(timeout=min(remaining, IDLE_POLL_INTERVAL_S)):
                 return
-            if self._watch_network():
+            is_changed = self._is_binding_rewritten()
+            if not is_changed and time.monotonic() - network_at >= (
+                AGENT_REPORT_INTERVAL_S
+            ):
+                network_at = time.monotonic()
+                is_changed = self._watch_network()
+            if is_changed:
                 with self._lock:
                     self._backoff_s = AGENT_BACKOFF_MIN_S
                 return
+
+    def _is_binding_rewritten(self) -> bool:
+        """Whether another process wrote the binding file since it was read."""
+        with self._lock:
+            return enrollment.config_stamp() != self._binding_stamp
 
     def _hello_payload(self, binding: dict) -> dict:
         """The identity card the hello carries.
