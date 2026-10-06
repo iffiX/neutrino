@@ -103,3 +103,17 @@ def test_a_command_that_said_nothing_is_named_with_its_exit_status():
     )
 
     assert command_detail(error) == "pwpolicy exited 1"
+
+
+def test_output_a_byte_the_encoding_cannot_read_is_replaced_not_lost():
+    import sys
+
+    from neutrino_agent.modules.subprocess_run import run
+
+    result = run(
+        [sys.executable, "-c", "import sys; sys.stdout.buffer.write(b'{\\x90}')"],
+        is_checked=False,
+        encoding="cp1252",
+    )
+
+    assert result.stdout == "{\ufffd}"

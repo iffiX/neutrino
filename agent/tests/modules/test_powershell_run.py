@@ -22,8 +22,10 @@ SCRIPT = "Set-LocalUser -Name $d.name\n'{}'\n"
 def fake_run(result: CommandResult, calls: list):
     """A stand-in for the module runner's ``run`` answering one result."""
 
-    def run(command, *, is_checked=True, input_text=None, timeout_s=0):
-        calls.append({"command": list(command), "input": input_text})
+    def run(command, *, is_checked=True, input_text=None, timeout_s=0, encoding=None):
+        calls.append(
+            {"command": list(command), "input": input_text, "encoding": encoding}
+        )
         return result
 
     return run
@@ -85,3 +87,27 @@ def test_one_object_comes_back_as_a_list_of_one():
     assert listed({"a": 1}) == [{"a": 1}]
     assert listed([1, 2]) == [1, 2]
     assert listed(None) == []
+
+
+def test_powershell_output_is_read_as_the_utf_8_the_prologue_makes_it_write(
+    monkeypatch,
+):
+    calls: list = []
+    monkeypatch.setattr(
+        powershell_module,
+        "run",
+        fake_run(CommandResult(["powershell.exe"], 0, '{"ok": true}', ""), calls),
+    )
+
+    run_powershell("'x'", {})
+
+    assert calls[0]["encoding"] == "utf-8"
+
+
+def test_a_refused_login_is_found_in_the_error_s_id_and_hresult_too():
+    prologue = powershell_module.POWERSHELL_PROLOGUE
+
+    assert "function Test-LogonRefused" in prologue
+    assert "FullyQualifiedErrorId" in prologue
+    assert "Exception.HResult" in prologue
+    assert "8007052E" in prologue

@@ -80,7 +80,7 @@ try {
   Register-ScheduledTask -TaskName $d.task -Action $action -Settings $settings `
     -User $d.account -Password $d.password -RunLevel Limited -Force | Out-Null
 } catch {
-  if ("$($_.Exception.Message)" -match '0x8007052E') {
+  if (Test-LogonRefused $_) {
     Send-Refusal 'credential_invalid' @{account = $d.account}
   }
   throw
@@ -137,7 +137,7 @@ foreach ($i in @($d.instances)) {
         -Action $action -Trigger $trigger -Settings $settings `
         -User $i.account -Password $i.password -RunLevel Limited -Force | Out-Null
     } catch {
-      if ("$($_.Exception.Message)" -match '0x8007052E') {
+      if (Test-LogonRefused $_) {
         Send-Refusal 'credential_invalid' @{account = $i.account}
       }
       throw

@@ -4,8 +4,10 @@ The script travels as ``-EncodedCommand``, so no quoting of the command line
 can change it, and its document, passwords included, travels on standard
 input and never touches the command line. Every script starts with a
 prologue that reads the document as ``$d`` and defines ``Send-Refusal``,
-which prints ``{code, params}`` and exits 3; the script's answer is the last
-JSON object it prints.
+which prints ``{code, params}`` and exits 3, and ``Test-LogonRefused``,
+which says whether an error is Windows refusing a login (``0x8007052E``, in
+the error's message or only in its id and ``HResult``); the script's answer
+is the last JSON object it prints.
 
 Not pure: runs PowerShell.
 """
@@ -33,12 +35,19 @@ function Send-Refusal($code, $params) {
   @{code = $code; params = $params} | ConvertTo-Json -Compress -Depth 5
   exit 3
 }
+function Test-LogonRefused($failure) {
+  $said = "$($failure.Exception.Message) $($failure.FullyQualifiedErrorId)"
+  $hresult = '{0:X8}' -f $failure.Exception.HResult
+  return ($said -match '0x8007052E') -or ($hresult -eq '8007052E')
+}
 function Invoke-Icacls {
   $ErrorActionPreference = 'Continue'
   & icacls.exe @args 2>&1 | Out-Null
   return $LASTEXITCODE
 }
 """
+# What the prologue makes PowerShell write, and so how its output is read.
+POWERSHELL_ENCODING = "utf-8"
 # The exit status a script ends with when it prints a refusal.
 POWERSHELL_REFUSAL_EXIT = 3
 POWERSHELL_TIMEOUT_S = 120
@@ -75,6 +84,7 @@ def run_powershell(
         is_checked=False,
         input_text=json.dumps(document),
         timeout_s=timeout_s,
+        encoding=POWERSHELL_ENCODING,
     )
     answer = _last_json_object(result.stdout)
     if result.exit_code == POWERSHELL_REFUSAL_EXIT and answer is not None:
