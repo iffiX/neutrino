@@ -25,7 +25,10 @@ import threading
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from neutrino_client.constants import CLIENT_CONTROL_PIPE_PREFIX
+from neutrino_client.constants import (
+    CLIENT_CONTROL_ELEVATED_ROUTE,
+    CLIENT_CONTROL_PIPE_PREFIX,
+)
 from neutrino_client.control import routes
 from neutrino_client.control.identity import peer_identity
 from neutrino_client.exceptions import PlatformUnsupportedError
@@ -192,7 +195,7 @@ class _ControlRequestHandler(BaseHTTPRequestHandler):
             method: The HTTP method.
         """
         try:
-            if not self._is_same_user():
+            if not self._is_admitted(method):
                 return
             body = self._read_body() if method == "POST" else None
             status, reply = routes.dispatch(
@@ -240,17 +243,26 @@ class _ControlRequestHandler(BaseHTTPRequestHandler):
         self.wfile.write(data)
         self.wfile.flush()
 
-    def _is_same_user(self) -> bool:
-        """Whether the peer is the person this resident runs as.
+    def _is_admitted(self, method: str) -> bool:
+        """Whether the peer may make this request.
 
-        A refusal is sent before False is returned.
+        The person this resident runs as may make any; the same person
+        elevated, as the installer runs, may only ask it to quit. A refusal
+        is sent before False is returned.
+
+        Args:
+            method: The HTTP method.
         """
         try:
             identity = peer_identity(self.server.control_platform, self.connection)
         except PlatformUnsupportedError:
             self._send_json({"code": "unsupported_platform"}, status=403)
             return False
-        if not identity.is_same_user:
+        is_quit = (method, self.path.partition("?")[0]) == (
+            "POST",
+            CLIENT_CONTROL_ELEVATED_ROUTE,
+        )
+        if not identity.is_same_user or (identity.is_elevated and not is_quit):
             self._send_json({"code": "control_peer_refused"}, status=403)
             return False
         return True

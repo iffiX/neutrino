@@ -413,14 +413,16 @@ as that person, never as SYSTEM or elevated, with no second prompt. An
 install over no running client starts nothing.
 
 On Windows the installer asks the installing account's client to quit for
-an upgrade. That client registers, as its own account, the task
-`NeutrinoClientRelaunch_<account>`: no trigger, the limited run level, run
-only while the account is signed in, starting `nclientw.exe gui --hidden`.
-The installer's last step, as SYSTEM, starts every such task, and the client
-deletes its own task when it starts. An account that is not signed in, as
-under an install from ssh or a management tool with nobody at the desktop,
-does not run its task, and the install does not fail. A removal deletes
-every such task. A client of another account, which the installer closes
+an upgrade. The installer runs elevated, and the client takes from its own
+account elevated that one request and no other; another account is
+refused whether elevated or not. That client registers, as its own account,
+the task `NeutrinoClientRelaunch_<account>`: no trigger, the limited run
+level, run only while the account is signed in, starting
+`nclientw.exe gui --hidden`. The installer's last step, as SYSTEM, starts
+every such task, and the client deletes its own task when it starts. An
+account that is not signed in, as under an install from ssh or a management
+tool with nobody at the desktop, does not run its task, and the install does
+not fail. A removal deletes every such task. A client of another account, which the installer closes
 without asking, is not brought back.
 
 ## A hub package carries its own agent package and fetches the others

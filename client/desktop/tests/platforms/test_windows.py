@@ -25,8 +25,10 @@ from tests.conftest import completed
 class FakeWin32:
     """The identity seam, scripted."""
 
-    def __init__(self, *, account="Alice", language_id=0x0409):
+    def __init__(self, *, account="Alice", language_id=0x0409, is_elevated=False):
         self.account = account
+        self.is_elevated = is_elevated
+        self.is_impersonating = False
         self.language_id = language_id
         self.calls = []
         self.impersonate_error = None
@@ -60,9 +62,11 @@ class FakeWin32:
         self.calls.append(("impersonate", handle))
         if self.impersonate_error is not None:
             raise self.impersonate_error
+        self.is_impersonating = True
 
     def revert_to_self(self):
         self.calls.append(("revert",))
+        self.is_impersonating = False
 
     def open_thread_token(self):
         self.calls.append(("open_token",))
@@ -71,7 +75,14 @@ class FakeWin32:
         return 42
 
     def token_account(self, token):
+        """An elevated peer is impersonated at identification level, under
+        which no name can be looked up."""
+        if self.is_impersonating and self.is_elevated:
+            raise OSError("bad impersonation level")
         return self.account
+
+    def token_is_elevated(self, token):
+        return self.is_elevated
 
     def close_handle(self, handle):
         self.calls.append(("close", handle))
@@ -164,7 +175,27 @@ def test_the_peer_must_be_the_same_account(monkeypatch, account, is_same_user):
 
     identity = platform.read_peer_identity(FakePipeConnection())
 
-    assert identity == {"account": account, "uid": -1, "is_same_user": is_same_user}
+    assert identity == {
+        "account": account,
+        "uid": -1,
+        "is_same_user": is_same_user,
+        "is_elevated": False,
+    }
+
+
+def test_an_elevated_peer_of_the_same_account_is_read_and_told_apart(monkeypatch):
+    """The installer runs elevated; its name is looked up after reverting."""
+    monkeypatch.setattr(WindowsPlatform, "current_account", lambda self: "alice")
+    platform = WindowsPlatform(win32=FakeWin32(account="alice", is_elevated=True))
+
+    identity = platform.read_peer_identity(FakePipeConnection())
+
+    assert identity == {
+        "account": "alice",
+        "uid": -1,
+        "is_same_user": True,
+        "is_elevated": True,
+    }
 
 
 def test_identity_reverts_and_closes_after_reading(platform):
@@ -172,9 +203,12 @@ def test_identity_reverts_and_closes_after_reading(platform):
 
     platform.read_peer_identity(FakePipeConnection())
 
-    assert ("impersonate", 7) in win32.calls
-    assert win32.calls[-1] == ("revert",)
-    assert ("close", 42) in win32.calls
+    assert win32.calls == [
+        ("impersonate", 7),
+        ("open_token",),
+        ("revert",),
+        ("close", 42),
+    ]
 
 
 def test_identity_needs_a_pipe_peer(platform):

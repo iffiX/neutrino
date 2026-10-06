@@ -39,6 +39,7 @@ ERROR_NOT_CONNECTED = 2250
 # Tokens.
 TOKEN_QUERY = 0x0008
 TOKEN_USER_CLASS = 1
+TOKEN_ELEVATION_CLASS = 20
 
 # Security descriptors, at the one revision the SDDL converter takes.
 SDDL_REVISION_1 = 1
