@@ -1423,7 +1423,11 @@ value. `stop_session` ends a session, and
 `session_unknown {session_id}` for a session the machine does not hold.
 
 Two verbs every module answers: `validate`, as `command {module: <name>,
-verb: validate, config}`, checks a configuration before it is saved; and
+verb: validate, config}`, checks a configuration before it is saved, `config`
+being the module's section as the state will carry it, composed by the same
+step (Samba's with the networks its shares answer, Gitea's with its address
+and secrets, the tokens and logins of VS Code, code-server and CloudCLI
+opened); and
 `journal`, as `command {module: <name>, verb: journal, lines}`, closes with
 the tail of the module's log in `output`: the units' journal on Linux, merged
 by time when the module runs as more than one unit, and the module's own

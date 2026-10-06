@@ -19,7 +19,6 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_CLOUDCLI_PASSWORD_KEY,
     DEVICE_CLOUDCLI_SECRET_KEY,
 )
-from neutrino_hub.modules.devices.desired_state import cloudcli_agent_config
 from neutrino_hub.web.dependencies import get_runtime
 from neutrino_hub.web.models import (
     CloudcliConfigUpdate,
@@ -157,8 +156,7 @@ def update_settings(
             for instance in update.instances
         ]
     }
-    sent = cloudcli_agent_config(stored, platform)
-    store_config(runtime, context, sent, stored=stored)
+    store_config(runtime, context, stored)
     return device_view(runtime, context)
 
 

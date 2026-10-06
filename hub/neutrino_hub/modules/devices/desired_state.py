@@ -811,6 +811,55 @@ class DesiredStateStore:
         """Whether one device's AI tools setting is on."""
         return self.ai_tools(key)["is_enabled"]
 
+    def agent_config(
+        self,
+        key: str,
+        name: str,
+        stored: dict,
+        platform: dict,
+        *,
+        address: str = "",
+        allowed_subnets: "list | tuple" = (),
+    ) -> dict:
+        """One module's configuration as the agent receives it.
+
+        The one place a module's section is composed from its file: the
+        state pushed and the configuration a panel's apply sends to be
+        checked both come from here, so the check sees what the machine
+        will be given.
+
+        Args:
+            key: The device key.
+            name: The module.
+            stored: What the module's file holds, or is about to hold.
+            platform: The tuple the agent reported.
+            address: Where the device is, for the URLs it derives.
+            allowed_subnets: The networks its shares answer.
+
+        Returns:
+            The configuration: Samba with the networks its shares answer,
+            Gitea with its address and the secrets it signs with, and the
+            modules whose tokens and logins are sealed with them opened.
+
+        Raises:
+            VaultLockedError: When a sealed token or login cannot be opened.
+        """
+        config = dict(stored)
+        if name == "samba":
+            config["allowed_subnets"] = list(allowed_subnets)
+        elif name == "gitea":
+            config["address"] = address
+            config["secrets"] = self.gitea_secrets(key)
+        elif name == DEVICE_VSCODE_MODULE:
+            config = vscode_agent_config(config, platform)
+        elif name == DEVICE_CODE_SERVER_MODULE:
+            config = code_server_agent_config(config)
+        elif name == DEVICE_CLOUDCLI_MODULE:
+            config = cloudcli_agent_config(config, platform)
+        elif name == DEVICE_TERMINAL_MODULE:
+            config = terminal_agent_config(config, platform)
+        return config
+
     def compose(
         self,
         key: str,
@@ -855,18 +904,14 @@ class DesiredStateStore:
         for name, entry in self.modules(key).items():
             if entry["is_settled"]:
                 continue
-            config = self.read(key, name)
-            if name == "samba":
-                config["allowed_subnets"] = list(allowed_subnets)
-            elif name == "gitea":
-                config["address"] = address
-                config["secrets"] = self.gitea_secrets(key)
-            elif name == DEVICE_VSCODE_MODULE:
-                config = vscode_agent_config(config, platform)
-            elif name == DEVICE_CODE_SERVER_MODULE:
-                config = code_server_agent_config(config)
-            elif name == DEVICE_CLOUDCLI_MODULE:
-                config = cloudcli_agent_config(config, platform)
+            config = self.agent_config(
+                key,
+                name,
+                self.read(key, name),
+                platform,
+                address=address,
+                allowed_subnets=allowed_subnets,
+            )
             modules[name] = {
                 "want": entry["want"],
                 "config": config,
@@ -876,8 +921,11 @@ class DesiredStateStore:
                 modules[name][DEVICE_RETRY_MARK_KEY] = marks[name]
         modules[DEVICE_TERMINAL_MODULE] = {
             "want": self.agent_module_want(key, DEVICE_TERMINAL_MODULE),
-            "config": terminal_agent_config(
-                self.read(key, DEVICE_TERMINAL_MODULE), platform
+            "config": self.agent_config(
+                key,
+                DEVICE_TERMINAL_MODULE,
+                self.read(key, DEVICE_TERMINAL_MODULE),
+                platform,
             ),
         }
         modules[DEVICE_REMOTE_DESKTOP_MODULE] = {

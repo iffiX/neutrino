@@ -16,7 +16,6 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_TERMINAL_ACCOUNT_OS,
     DEVICE_TERMINAL_MODULE,
 )
-from neutrino_hub.modules.devices.desired_state import terminal_agent_config
 from neutrino_hub.web.dependencies import get_runtime
 from neutrino_hub.web.models import TerminalConfigUpdate, TerminalDeviceView
 from neutrino_hub.web.panel_runtime import PanelRuntime
@@ -97,9 +96,7 @@ def update_settings(
     if shell_path and not (posixpath.isabs(shell_path) or ntpath.isabs(shell_path)):
         raise _refusal(CODE_PATH_INVALID, path=shell_path)
     stored = {"account": account, "shell_path": shell_path}
-    store_config(
-        runtime, context, terminal_agent_config(stored, platform), stored=stored
-    )
+    store_config(runtime, context, stored)
     return device_view(runtime, context)
 
 

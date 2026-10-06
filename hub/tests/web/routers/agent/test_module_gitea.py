@@ -96,6 +96,15 @@ def test_saving_settings_checks_stores_and_pushes(box):
     )
 
     assert response.status_code == 200
+    # The reported bug: the check went without the secrets and the address
+    # the pushed state carries, and the agent refused it secrets_missing.
+    secrets = runtime.desired_states.gitea_secrets(DEVICE)
+    assert set(secrets) >= {
+        "SECRET_KEY",
+        "INTERNAL_TOKEN",
+        "JWT_SECRET",
+        "LFS_JWT_SECRET",
+    }
     assert runtime.agent_sessions.validations == [
         (
             DEVICE,
@@ -104,9 +113,12 @@ def test_saving_settings_checks_stores_and_pushes(box):
                 "listen_port": 3100,
                 "root_url": "http://box:3100/",
                 "is_registration_enabled": True,
+                "address": HOST,
+                "secrets": secrets,
             },
         )
     ]
+    assert "secrets" not in runtime.desired_states.read(DEVICE, "gitea")
     assert runtime.desired_states.read(DEVICE, "gitea")["listen_port"] == 3100
     assert [push[0] for push in runtime.agent_sessions.pushes] == [DEVICE]
     assert response.json()["root_url"] == "http://box:3100/"
