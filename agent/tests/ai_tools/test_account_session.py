@@ -337,9 +337,9 @@ def test_a_mode_is_read_and_set_as_the_account_and_never_on_windows():
     assert session.mode_of("/home/ann/.codex/auth.json") == 0o644
     session.set_mode("/home/ann/.codex/auth.json", 0o600)
 
-    assert [run["argv"][:2] for run in platform.runs] == [
-        ["ls", "-ldn"],
-        ["chmod", "600"],
+    assert [run["argv"][:3] for run in platform.runs] == [
+        ["ls", "-ldn", "/home/ann/.codex/auth.json"],
+        ["chmod", "--", "600"],
     ]
     assert {run["account"] for run in platform.runs} == {"ann"}
     windows = RecordingPlatform("windows")

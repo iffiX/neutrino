@@ -85,7 +85,7 @@ class FakeAccountPlatform:
                 else:
                     code = 2
             elif verb == "set_mode":
-                self.modes[path] = int(argv[1], 8)
+                self.modes[path] = int(argv[-2], 8)
             elif verb == "remove_tree":
                 for name in [n for n in self.files if n.startswith(path + "/")]:
                     del self.files[name]

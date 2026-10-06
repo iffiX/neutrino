@@ -351,7 +351,7 @@ class AiToolsAccountSession:
         """
         if self._is_windows:
             return
-        result = self._run(["chmod", format(mode, "o"), "--", path])
+        result = self._run(["chmod", "--", format(mode, "o"), path])
         if result.returncode != 0:
             words = (result.stderr or result.stdout or "").strip()
             raise self.failure(f"could not set the mode of {path}: {words}")
