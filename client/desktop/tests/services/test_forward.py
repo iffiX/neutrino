@@ -1118,3 +1118,29 @@ def test_the_udp_tables_rows_are_read_with_their_addresses():
 
 def test_only_windows_reads_the_udp_table():
     assert forward_module.FORWARD_IS_UDP_TABLE is (sys.platform == "win32")
+
+
+def test_a_hub_out_of_reach_is_one_line_for_every_connection_it_refuses():
+    from neutrino_client.services.forward import ForwardListener
+
+    lines = []
+
+    def unreachable():
+        raise GatewayUnreachable("the hub's socket is not up")
+
+    listener = ForwardListener(
+        open_stream=unreachable, local_port=0, kind="port", log=lines.append
+    )
+    port = listener.start()
+    for _ in range(4):
+        program = socket.create_connection(("127.0.0.1", port), timeout=5)
+        program.settimeout(5)
+        assert program.recv(1) == b""
+        program.close()
+    listener.close()
+
+    assert lines == [
+        f"no connect stream for 127.0.0.1:{port}: the hub's socket is not up",
+        f"no connect stream for 127.0.0.1:{port}: the hub's socket is not up"
+        " (4 times in all)",
+    ]

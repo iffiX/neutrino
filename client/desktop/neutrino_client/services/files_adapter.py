@@ -36,7 +36,7 @@ from neutrino_client.constants import (
 )
 from neutrino_client.control.easytier_socket import ask_easytier_daemon
 from neutrino_client.exceptions import PlatformUnsupportedError, ShareAttachError
-from neutrino_client.services.base import is_unhealthy
+from neutrino_client.services.base import StateLines, is_unhealthy
 
 FILES_ENDPOINT_HOST = "127.0.0.1"
 FILES_ENDPOINT_BACKLOG = 64
@@ -294,6 +294,8 @@ class FilesSocksEndpoint:
         self._user = ""
         self._password = ""
         self._open: set = set()
+        # A refusal that repeats at every connection is one line a state.
+        self._lines = StateLines(log)
 
     @property
     def port(self) -> int:
@@ -359,6 +361,7 @@ class FilesSocksEndpoint:
         _close_socket(listener)
         for connection in carried:
             _close_socket(connection)
+        self._lines.clear_all()
         self._log("files endpoint stopped")
 
     def serve(self, client) -> None:
@@ -416,9 +419,10 @@ class FilesSocksEndpoint:
             and hmac.compare_digest(password, self._password.encode("ascii"))
         )
         if not is_known:
-            self._log("files endpoint: a client gave the wrong login")
+            self._lines.note("login", "files endpoint: a client gave the wrong login")
             client.sendall(bytes((SOCKS_AUTH_VERSION, SOCKS_AUTH_FAILED)))
             return None
+        self._lines.clear("login")
         client.sendall(bytes((SOCKS_AUTH_VERSION, SOCKS_AUTH_SUCCEEDED)))
         _, command, _, address_type = _received(client, 4)
         if command != SOCKS_COMMAND_CONNECT:
@@ -432,24 +436,32 @@ class FilesSocksEndpoint:
         target = self._plan.target_of(address)
         if port != CLIENT_FILES_SHARE_PORT or target is None:
             if address != CLIENT_FILES_PROBE_ADDRESS:
-                self._log(f"files endpoint refused {address}:{port}")
+                self._lines.note(
+                    ("target", address, port),
+                    f"files endpoint refused {address}:{port}",
+                )
             _reply(client, SOCKS_REPLY_NOT_ALLOWED)
             return None
         hub_id, machine = target
+        share = ("share", hub_id, machine)
         entry_id = self._entry_of(hub_id, machine)
         if not entry_id:
-            self._log(f"files endpoint: {hub_id} publishes no share on {machine}")
+            self._lines.note(
+                share, f"files endpoint: {hub_id} publishes no share on {machine}"
+            )
             _reply(client, SOCKS_REPLY_HOST_UNREACHABLE)
             return None
         try:
             far = self._connector(hub_id, entry_id)
         except Exception as error:  # noqa: BLE001 - any refusal is one reply
-            self._log(
+            self._lines.note(
+                share,
                 f"files endpoint: {hub_id} refused {entry_id}: "
-                f"{getattr(error, 'code', '') or type(error).__name__}"
+                f"{getattr(error, 'code', '') or type(error).__name__}",
             )
             _reply(client, SOCKS_REPLY_REFUSED)
             return None
+        self._lines.clear(share)
         try:
             _reply(client, SOCKS_REPLY_SUCCEEDED)
             client.settimeout(None)

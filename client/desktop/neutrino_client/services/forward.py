@@ -39,7 +39,7 @@ from neutrino_client.exceptions import (
     LocalPortTakenError,
 )
 from neutrino_client.platforms import win32
-from neutrino_client.services.base import hub_of_key, service_key
+from neutrino_client.services.base import StateLines, hub_of_key, service_key
 from neutrino_client.services.store import STORE_LOCAL_PORT_AUTO
 
 FORWARD_BIND_HOST = "127.0.0.1"
@@ -188,7 +188,7 @@ def forward_refusal(error: OSError) -> dict:
     return {"code": "forward_failed", "params": {"detail": str(error)[:200]}}
 
 
-def relay_socket(connection, stream, log=print) -> None:
+def relay_socket(connection, stream, log=print) -> bool:
     """Carry one TCP connection over one open ``connect`` stream until either ends.
 
     End of file on the connection closes the stream once everything read
@@ -200,6 +200,9 @@ def relay_socket(connection, stream, log=print) -> None:
         connection: The connected socket.
         stream: The open ``connect`` stream, credit granted.
         log: Callable used for progress messages.
+
+    Returns:
+        Whether the hub refused the stream.
     """
     upward = threading.Thread(
         target=_socket_to_stream,
@@ -216,8 +219,10 @@ def relay_socket(connection, stream, log=print) -> None:
         stream.wait_close(0)
     except GatewayRefusedDetail as refused:
         log(f"the hub refused a connect stream: {refused.code} {refused.params}")
+        return True
     except GatewayUnreachable:
         pass
+    return False
 
 
 class ConnectStreamSocket:
@@ -495,6 +500,8 @@ class ForwardListener:
         self._open_stream = open_stream
         self._bind_port = local_port
         self._log = log
+        # A failure that repeats at every connection is one line a state.
+        self._lines = StateLines(log)
         self._listener = None
         self._is_closed = False
         self._lock = threading.Lock()
@@ -532,6 +539,7 @@ class ForwardListener:
             self._connections.clear()
         for connection in connections:
             _close_socket(connection)
+        self._lines.clear_all()
 
     def _accept(self) -> None:
         while not self._is_closed:
@@ -553,16 +561,23 @@ class ForwardListener:
         try:
             stream = self._open_stream()
         except GatewayUnreachable as error:
-            self._log(f"no connect stream for 127.0.0.1:{self.local_port}: {error}")
+            self._lines.note(
+                "open", f"no connect stream for 127.0.0.1:{self.local_port}: {error}"
+            )
             _close_socket(connection)
             return
+        self._lines.clear("open")
         with self._lock:
             if self._is_closed:
                 stream.close()
                 _close_socket(connection)
                 return
             self._connections.add(connection)
-        relay_socket(connection, stream, self._log)
+        is_refused = relay_socket(
+            connection, stream, lambda line: self._lines.note("refused", line)
+        )
+        if not is_refused:
+            self._lines.clear("refused")
         with self._lock:
             self._connections.discard(connection)
 
@@ -631,6 +646,8 @@ class UdpForwardListener:
         self._log = log
         self._on_refused = on_refused if on_refused is not None else _nobody_told
         self._on_answered = on_answered if on_answered is not None else _nobody_told
+        # A failure that repeats at every reopen is one line a state.
+        self._lines = StateLines(log)
         self._clock = clock
         # Whether a refusal the forward outlived still stands: the first
         # frame back on a later stream ends it, its first credit does not.
@@ -694,6 +711,7 @@ class UdpForwardListener:
             self._held = []
         if stream is not None:
             stream.close()
+        self._lines.clear_all()
 
     def take_datagram(self, data: bytes, address) -> None:
         """Carry one datagram a local program sent to the forward.
@@ -774,8 +792,11 @@ class UdpForwardListener:
         try:
             stream = self._open_stream()
         except GatewayUnreachable as error:
-            self._log(f"no stream for udp 127.0.0.1:{self.local_port}: {error}")
+            self._lines.note(
+                "open", f"no stream for udp 127.0.0.1:{self.local_port}: {error}"
+            )
             return None
+        self._lines.clear("open")
         self._stream = stream
         self._is_waiting_credit = True
         self._held = []
@@ -823,6 +844,7 @@ class UdpForwardListener:
                 if is_answer:
                     self._is_refused = False
             if is_answer:
+                self._lines.clear("refused")
                 self._on_answered()
             self.take_frame(frame)
         refusal = stream.refusal()
@@ -834,7 +856,9 @@ class UdpForwardListener:
             self._first_stream = None
         if refusal is None or not is_current or self._is_closed:
             return
-        self._log(f"the hub refused udp 127.0.0.1:{self.local_port}: {refusal}")
+        self._lines.note(
+            "refused", f"the hub refused udp 127.0.0.1:{self.local_port}: {refusal}"
+        )
         if is_ended:
             self.close()
         else:
