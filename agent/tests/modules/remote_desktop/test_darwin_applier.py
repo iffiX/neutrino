@@ -252,3 +252,18 @@ def test_a_copy_process_older_than_the_copy_on_disk_is_stale(tmp_path):
     )
 
     assert applier.stale_pids() == [51]
+
+
+def test_the_service_runs_while_the_daemon_runs_the_copy(made):
+    assert made.is_service_running() is False
+
+    made.register()
+    made.mac.loaded.add("system/com.carriez.RustDesk_service")
+
+    def run(command, **kwargs):
+        if command[1] == "print":
+            return CommandResult(list(command), 0, "\tstate = running\n", "")
+        return made.mac(command, **kwargs)
+
+    made._run = run
+    assert made.is_service_running() is True

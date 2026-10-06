@@ -169,6 +169,9 @@ class RemovalPlatform(FakeControlPlatform):
     def stop_agent_service(self):
         self.calls.append("stop")
 
+    def disable_agent_service(self):
+        self.calls.append("disable")
+
     def remove_added(self):
         self.calls.append("remove_added")
         if self._error is not None:
@@ -282,7 +285,13 @@ def test_uninstall_stops_the_agent_before_taking_what_its_modules_added(
 
     assert service_cli.main_uninstall(is_forced=True) == 0
 
-    assert platform.calls == ["stop", "forget_tried", "desktop_off", "remove_added"]
+    assert platform.calls == [
+        "stop",
+        "disable",
+        "forget_tried",
+        "desktop_off",
+        "remove_added",
+    ]
     assert "removed    neutrino_vscode@ann.service" in capsys.readouterr().out
 
 
@@ -294,6 +303,7 @@ def test_uninstall_on_a_mac_removes_the_agent_itself_as_well(monkeypatch, capsys
 
     assert platform.calls == [
         "stop",
+        "disable",
         "forget_tried",
         "desktop_off",
         "remove_added",
@@ -359,6 +369,7 @@ def test_uninstall_switches_the_ai_tools_back_once_the_service_stopped(
 
     assert platform.calls == [
         "stop",
+        "disable",
         "forget_tried",
         "desktop_off",
         "switch_back",

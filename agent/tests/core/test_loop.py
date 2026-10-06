@@ -433,6 +433,7 @@ def test_the_report_carries_every_field_from_its_source(config_path, monkeypatch
         assert set(row) == {"state", "is_active", "code", "params", "details"}
     assert set(report["desktop"]) == {
         "is_shared",
+        "origin",
         "account",
         "connected_count",
         "share_id",
@@ -941,7 +942,7 @@ def stored() -> dict:
 
 def test_the_next_address_is_tried_when_one_stops_answering(config_path, monkeypatch):
     """Two addresses fail, the third answers: it is written back as the one
-    that answered, and the next round opens there first."""
+    that answered, and the next round still starts from the top."""
     agent, script = scripted_agent(
         config_path,
         monkeypatch,
@@ -959,7 +960,7 @@ def test_the_next_address_is_tried_when_one_stops_answering(config_path, monkeyp
 
     agent.run_once()
 
-    assert hosts_tried(script)[3] == "100.64.0.1"
+    assert hosts_tried(script)[3] == "192.0.2.1"
     assert agent._operator is not None
 
 
@@ -1011,7 +1012,7 @@ def test_a_state_naming_the_same_urls_writes_nothing(config_path, monkeypatch):
     agent, _ = scripted_agent(
         config_path, monkeypatch, [[WELCOME, STATE_WITH_URLS, DROP_AFTER_REPORT]]
     )
-    bind(config_path, urls=[LAN_URL, OVERLAY_URL])
+    bind(config_path, url=LAN_URL, urls=[LAN_URL, OVERLAY_URL])
     agent._adopt_external_binding()
     before = config_path.stat().st_mtime_ns
 
@@ -1204,9 +1205,10 @@ def test_news_ends_the_wait_before_the_network_is_looked_at(config_path, monkeyp
     assert asked == []
 
 
-def test_a_live_socket_follows_the_name_to_a_stored_address(config_path, monkeypatch):
-    """Connected over the overlay, the machine comes home: the name resolves
-    to the LAN address the binding holds, and the socket is moved there."""
+def test_a_live_socket_is_never_moved(config_path, monkeypatch):
+    """Connected over the overlay, the machine comes home and the name
+    resolves to the LAN address the binding holds: the socket stays until it
+    drops, and the next round starts from the top."""
     agent, script = scripted_agent(config_path, monkeypatch, [[WELCOME]])
     lines: list = []
     agent._log = lines.append
@@ -1220,10 +1222,9 @@ def test_a_live_socket_follows_the_name_to_a_stored_address(config_path, monkeyp
 
     agent._tick()
 
-    assert script.clients[0].is_closed
-    assert session.serve() is None
-    assert f"moving to {LAN_URL}" in lines
-    assert agent._news.is_set()
+    assert not script.clients[0].is_closed
+    assert not [line for line in lines if line.startswith("moving to")]
+    session.close()
 
 
 @pytest.mark.parametrize("resolved", ["", "10.9.9.9", "100.64.0.1"])
@@ -1670,3 +1671,45 @@ def test_binding_unknown_switches_the_ai_tools_back(config_path, monkeypatch):
 
     assert tools.switched_back == 1
     assert tools.is_bound_at_switch_back == [False]
+
+
+class RecordedDesktop:
+    """The desktop host as leaving reaches it."""
+
+    def __init__(self):
+        self.left = 0
+
+    def leave_hub(self):
+        self.left += 1
+
+    def declaration(self):
+        return {"is_shared": False}
+
+    def settle_at_start(self):
+        """Nothing to settle."""
+
+
+def test_leave_cuts_the_desktop_share_off(config_path, monkeypatch):
+    agent, _ = scripted_agent(config_path, monkeypatch, [[WELCOME]])
+    monkeypatch.setattr(
+        enrollment_module.BindingHttpClient,
+        "leave",
+        lambda self, binding_id, token: None,
+    )
+    desktop = RecordedDesktop()
+    agent._rdp = desktop
+
+    agent.leave()
+
+    assert desktop.left == 1
+
+
+def test_binding_unknown_cuts_the_desktop_share_off(config_path, monkeypatch):
+    """The device was removed on the Devices page."""
+    agent, _ = scripted_agent(config_path, monkeypatch, [refused("binding_unknown")])
+    desktop = RecordedDesktop()
+    agent._rdp = desktop
+
+    agent.run_once()
+
+    assert desktop.left == 1

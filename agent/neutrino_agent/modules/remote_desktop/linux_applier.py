@@ -113,6 +113,10 @@ class RemoteDesktopLinuxApplier:
         """Whether the agent's unit file is in place."""
         return self._is_own_unit(self._unit_path)
 
+    def is_service_running(self) -> bool:
+        """Whether the agent's unit is in place and active."""
+        return self.is_registered() and self._is_active()
+
     def keep_aside(self) -> dict:
         """Record and move aside what is registered under ``rustdesk.service``
         and is not the agent's.

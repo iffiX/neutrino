@@ -69,6 +69,10 @@ from neutrino_agent.rdp.constants import (
 )
 from neutrino_agent.rdp.seat import seat_for
 
+# Where a declared share came from: the switch, or the record an old
+# ``nagent rdp start`` left, the only share a hub adopts.
+DESKTOP_ORIGIN_SWITCH = "switch"
+DESKTOP_ORIGIN_COMMAND = "command"
 # The codes a failed step of the switch reports.
 CODE_TAKEOVER_FAILED = "rdp_takeover_failed"
 CODE_RESTORE_FAILED = "rdp_restore_failed"
@@ -247,6 +251,30 @@ class RdpShareHost:
                 self._log(f"remote_desktop: {command_detail(error)}"[:500])
             self._listened_at = 0.0
 
+    def leave_hub(self) -> None:
+        """Cut the share off and give RustDesk back: the machine left the hub
+        or was removed from it. An old command's record ends with it, so the
+        next hub adopts nothing. A failure is logged.
+        """
+        with self._lock:
+            try:
+                self._give_back()
+            except ModuleApplyError as error:
+                said = " ".join(f"{key}={value}" for key, value in error.params.items())
+                self._log(f"remote_desktop: {error.code} {said}"[:500])
+            self._store.set_rdp_share({"is_ordered": True})
+            self._listened_at = 0.0
+
+    def is_service_running(self) -> bool:
+        """Whether the agent's RustDesk service runs, the switch on, whoever
+        sits at the screen."""
+        if not os.path.isfile(self._registered_path()):
+            return False
+        try:
+            return bool(self._applier.is_service_running())
+        except STEP_ERRORS:
+            return False
+
     def turn_off(self) -> None:
         """Give RustDesk back, whatever the switch says: the agent is leaving.
 
@@ -290,18 +318,22 @@ class RdpShareHost:
         """What the heartbeat carries up about this machine's share.
 
         Returns:
-            ``{"is_shared", "account", "share_id", "port", "attention",
-            "connected_count"}``. ``is_shared`` is true only while the share
-            listens, so a fleet list never offers a desktop that cannot be
-            reached; ``account`` is whoever sits at the screen and decides
-            nothing; ``attention`` names what a peer would wait on if it
-            dialed now. The seat password is in none of it.
+            ``{"is_shared", "origin", "account", "share_id", "port",
+            "attention", "connected_count"}``. ``is_shared`` is true only
+            while the share listens, so a fleet list never offers a desktop
+            that cannot be reached; ``origin`` is ``switch`` for the switch's
+            share, ``command`` for one an old command's record keeps running,
+            empty while nothing is shared; ``account`` is whoever sits at the
+            screen and decides nothing; ``attention`` names what a peer would
+            wait on if it dialed now. The seat password is in none of it.
         """
         is_on = self._is_on()
         account = self._account() if is_on else ""
         port = REMOTE_DESKTOP_DIRECT_PORT
+        is_shared = is_on and self._state(is_on) == RDP_STATE_SHARING
         return {
-            "is_shared": is_on and self._state(is_on) == RDP_STATE_SHARING,
+            "is_shared": is_shared,
+            "origin": self._origin() if is_shared else "",
             "account": account,
             "share_id": self._share_id() if is_on else "",
             "port": port,
@@ -490,6 +522,12 @@ class RdpShareHost:
         if record.get("is_ordered"):
             return os.path.isfile(self._registered_path())
         return bool(record.get("is_shared"))
+
+    def _origin(self) -> str:
+        """Where the share came from: the switch, or an old command's record."""
+        if self._store.rdp_share().get("is_ordered"):
+            return DESKTOP_ORIGIN_SWITCH
+        return DESKTOP_ORIGIN_COMMAND
 
     def _share_id(self) -> str:
         record = self._store.rdp_share()

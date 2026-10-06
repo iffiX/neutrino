@@ -295,6 +295,8 @@ def test_linux_service_state_and_power_go_through_systemd(monkeypatch):
     assert commands[-1] == ["systemctl", "poweroff", "--force"]
     platform.start_agent_service()
     assert commands[-1] == ["systemctl", "enable", "--now", AGENT_SERVICE_NAME]
+    platform.disable_agent_service()
+    assert commands[-1] == ["systemctl", "disable", AGENT_SERVICE_NAME]
 
     def refuse(command, **kwargs):
         raise OSError("no systemctl")

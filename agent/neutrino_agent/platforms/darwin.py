@@ -545,6 +545,10 @@ class DarwinPlatform(AgentPlatform):
             check=False,
         )
 
+    def disable_agent_service(self) -> None:
+        """Nothing beyond the stop: the job is booted out, and its plist goes
+        with the program the removal deletes."""
+
     def remove_added(self) -> list:
         """Unload and delete the launchd jobs the agent's modules wrote, and
         empty the file share's fence.

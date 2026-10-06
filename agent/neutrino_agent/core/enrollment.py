@@ -257,10 +257,11 @@ def candidate_urls(binding: dict, name_url: str = "") -> list:
         name_url: What :func:`hub_name_url` returned, or empty.
 
     Returns:
-        The name's address, the one that last answered, then the rest of
-        the stored list, each once.
+        The name's address, then the stored list in the hub's order, each
+        once: every round starts from the top, and the address that answered
+        last is not preferred.
     """
-    return clean_urls([name_url, binding.get("gateway_url", ""), *stored_urls(binding)])
+    return clean_urls([name_url, *stored_urls(binding)])
 
 
 def resolve_hub_address() -> str:

@@ -198,7 +198,6 @@ class Agent:
         self._operator = None
         self._session: "AgentSession | None" = None
         # The address the live socket was opened through.
-        self._session_url = ""
         self._binding: dict = {}
         self._binding_stamp = 0
         # This machine's own address on the route to the hub as last seen;
@@ -294,6 +293,7 @@ class Agent:
         if outcome:
             self._log(f"could not tell the hub we are leaving: {outcome['code']}")
         switched_back = self._ai_tools.switch_back_all()
+        self._rdp.leave_hub()
         self._desired.forget_tried()
         self._reset_binding_state()
         self._load_connection()
@@ -434,8 +434,8 @@ class Agent:
     def _connect_round(self) -> AgentSession:
         """Connect through the first of the hub's addresses that answers.
 
-        The name's address is first, then the one that last answered, then
-        the rest the binding holds. An address the name resolves to that is
+        The name's address is first, then the binding's addresses in the
+        hub's order, from the top on every round. An address the name resolves to that is
         not a stored one and fails the fingerprint check is not this hub and
         is skipped; a stored address failing it is logged and the round goes
         on. The address that answers is written onto the binding.
@@ -474,8 +474,6 @@ class Agent:
                 failure = error
             else:
                 self._note_url(url)
-                with self._lock:
-                    self._session_url = url
                 return session
         if untrusted is not None:
             raise untrusted
@@ -583,10 +581,13 @@ class Agent:
         self._log(f"the hub answers at {', '.join(cleaned)}")
 
     def _tick(self) -> None:
-        """Between reports: adopt a binding written on disk, look at the network."""
+        """Between reports: adopt a binding written on disk, look at the network.
+
+        A live socket stays where it is, whatever the network does; the
+        next round starts from the top of the hub's addresses.
+        """
         self._adopt_external_binding()
-        if self._watch_network():
-            self._follow_name()
+        self._watch_network()
 
     def _watch_network(self) -> bool:
         """Look at the route to the hub.
@@ -607,26 +608,6 @@ class Agent:
             return False
         self._log(f"this machine's address toward the hub is now {current or 'none'}")
         return True
-
-    def _follow_name(self) -> None:
-        """Move a live socket to the address the hub's name resolves to.
-
-        Only when that is a stored address other than the one in use: the
-        socket is closed here and the next round opens it there.
-        """
-        with self._lock:
-            session = self._session
-            binding = dict(self._binding)
-            in_use = self._session_url
-        if session is None or not session.is_open:
-            return
-        name_url = enrollment.hub_name_url(binding["gateway_url"])
-        if not name_url or name_url == in_use:
-            return
-        if name_url not in enrollment.stored_urls(binding):
-            return
-        self._log(f"moving to {name_url}")
-        session.close()
 
     def _wait_out(self, delay: float) -> None:
         """Wait for the next turn: the delay, news, or a network change.
@@ -881,6 +862,7 @@ class Agent:
         if code == AGENT_CODE_BINDING_UNKNOWN:
             enrollment.remove_binding()
             self._ai_tools.switch_back_all()
+            self._rdp.leave_hub()
             self._reset_binding_state()
             self._load_connection()
             with self._lock:

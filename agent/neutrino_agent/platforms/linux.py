@@ -391,6 +391,15 @@ class LinuxPlatform(AgentPlatform):
             check=False,
         )
 
+    def disable_agent_service(self) -> None:
+        """Disable the agent's own unit. Best-effort."""
+        subprocess.run(
+            ["systemctl", "disable", AGENT_SERVICE_NAME],
+            capture_output=True,
+            timeout=30,
+            check=False,
+        )
+
     def remove_added(self) -> list:
         """Disable, stop and delete the units the agent's modules wrote.
 

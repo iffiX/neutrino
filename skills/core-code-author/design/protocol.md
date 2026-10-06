@@ -932,7 +932,7 @@ and platform, which change between releases.
 | `is_refresh` | | | | bool: a refresh the person asked for, answered with the whole state |
 | `network` | | `{link: {interface, mac, address}, interfaces: [{name, mac, addresses[]}]}` | | |
 | `modules` | `{name: {want, config, install, uninstall, retry_mark}}` | `{name: {state, is_active, code, params, details}}` | | |
-| `desktop` | `{seat_password}` | `{is_shared, account, share_id, port, attention, connected_count}` | | |
+| `desktop` | `{seat_password}` | `{is_shared, origin, account, share_id, port, attention, connected_count}`, `origin` `switch` or `command` (a share an old `nagent rdp start` record keeps running), empty while nothing is shared | | |
 | `ai_tools` | `{is_enabled, base_url, api_key, tool_configs, accounts: [{account, password}], cc_switch_version, retry_mark}` | `{accounts: [{account, state, code, params}]}` | | |
 | `services` | | | `[{id, type, title, payload, is_healthy, source, description, description_code, description_params, device_id, device_name, is_own_machine}]` | |
 | `is_disabled` | | | bool | |
@@ -1120,7 +1120,8 @@ answers both `is_supported: true` on every platform, and the four presses
 refuse both 400 `module_not_optional {name}`, as a user-tier module.
 
 The agent reports `terminal` `running` once it holds the settings, and
-`remote_desktop` `running` while its copy of RustDesk listens, `stopped`
+`remote_desktop` `running` while its RustDesk service runs, with nobody at
+the screen too, `stopped`
 while the switch is off and none of its RustDesk processes runs, and
 `failed` with `rdp_takeover_failed {step, detail}` or `rdp_restore_failed
 {step, detail}`. The report's `rustdesk` row of earlier agents is gone. A

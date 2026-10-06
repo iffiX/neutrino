@@ -42,6 +42,7 @@ TASKKILL = "taskkill.exe"
 NETSTAT_COMMAND = ("netstat", "-ano", "-p", "TCP")
 NETSTAT_V6_COMMAND = ("netstat", "-ano", "-p", "TCPv6")
 STOPPED_PATTERN = re.compile(r"STATE\s*:\s*1\b")
+RUNNING_PATTERN = re.compile(r"STATE\s*:\s*4\b")
 # The start types sc.exe takes, by the word Win32_Service reports.
 START_TYPES = {"auto": "auto", "manual": "demand", "disabled": "disabled"}
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
@@ -194,6 +195,19 @@ class RemoteDesktopWindowsApplier:
     def is_registered(self) -> bool:
         """Whether the service of RustDesk's name runs the agent's copy."""
         return self._is_own(self._service())
+
+    def is_service_running(self) -> bool:
+        """Whether the service of RustDesk's name runs the agent's copy, read
+        through sc.exe, which costs no PowerShell."""
+        config = self._run(
+            [SC, "qc", REMOTE_DESKTOP_WINDOWS_SERVICE], is_checked=False
+        ).stdout
+        if self.program.lower() not in config.lower():
+            return False
+        state = self._run(
+            [SC, "query", REMOTE_DESKTOP_WINDOWS_SERVICE], is_checked=False
+        ).stdout
+        return bool(RUNNING_PATTERN.search(state))
 
     def keep_aside(self) -> dict:
         """Record the service of RustDesk's name when it is not the agent's.

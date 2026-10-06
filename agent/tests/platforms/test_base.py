@@ -39,6 +39,7 @@ CONTRACT_CALLS = {
     "read_agent_service_state": ("agent_service", (), {}),
     "start_agent_service": ("agent_service", (), {}),
     "stop_agent_service": ("agent_service", (), {}),
+    "disable_agent_service": ("agent_service", (), {}),
     "power": ("power", ("reboot",), {}),
     "read_host_metrics": ("metrics", (), {}),
     "read_network_interfaces": ("network", (), {}),

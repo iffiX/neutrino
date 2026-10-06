@@ -71,7 +71,13 @@ def report(**sections) -> dict:
         "type": "report",
         "machine": {"metrics": {}, "accounts": []},
         "modules": {"remote_desktop": {"state": "running"}},
-        "desktop": {"is_shared": True, "share_id": "s1", "port": 21118},
+        # A share an old command made: the one a hub adopts.
+        "desktop": {
+            "is_shared": True,
+            "origin": "command",
+            "share_id": "s1",
+            "port": 21118,
+        },
         "error": None,
     }
     body.update(sections)

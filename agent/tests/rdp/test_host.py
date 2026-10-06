@@ -62,6 +62,7 @@ class FakeApplier:
         self.failing = ""
         self.seen_at_register = {}
         self.stale = []
+        self.service = True
 
     def _step(self, name):
         self.calls.append(name)
@@ -117,6 +118,9 @@ class FakeApplier:
 
     def stale_pids(self):
         return list(self.stale)
+
+    def is_service_running(self):
+        return self.service
 
     def listening_programs(self, port):
         self.calls.append(("listening", port))
@@ -596,3 +600,51 @@ def test_the_start_up_check_keeps_the_mark_and_the_settings(host):
 
     assert _root_file(host, "RustDesk2.toml").read_text() == before
     assert "register" not in _steps(host.applier)[-2:]
+
+
+# --- leaving the hub, and where a share came from ---
+
+
+def test_leaving_the_hub_cuts_the_share_off_and_gives_rustdesk_back(host):
+    host.set_switch(True)
+    host.applier.calls.clear()
+
+    host.leave_hub()
+
+    assert _steps(host.applier) == ["unregister", "restore"]
+    assert host.declaration()["is_shared"] is False
+    assert host.declaration()["origin"] == ""
+
+
+def test_leaving_the_hub_ends_an_old_commands_record(host):
+    _old_share(host)
+    host.resume_old_share()
+
+    host.leave_hub()
+    host.resume_old_share()
+
+    assert host.store.rdp_share() == {"is_ordered": True}
+    assert host.declaration()["is_shared"] is False
+
+
+def test_a_share_the_switch_made_names_the_switch(host):
+    host.set_switch(True)
+
+    assert host.declaration()["origin"] == "switch"
+
+
+def test_a_share_an_old_commands_record_keeps_names_the_command(host):
+    _old_share(host)
+    host.resume_old_share()
+
+    assert host.declaration()["origin"] == "command"
+
+
+def test_the_service_runs_with_the_switch_on_whoever_is_at_the_screen(host):
+    host.applier.service = True
+    assert host.is_service_running() is False
+
+    host.set_switch(True)
+    host.seat.seated = []
+
+    assert host.is_service_running() is True

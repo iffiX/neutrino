@@ -716,6 +716,15 @@ class WindowsPlatform(AgentPlatform):
             check=False,
         )
 
+    def disable_agent_service(self) -> None:
+        """Set the agent's own service's start type to disabled. Best-effort."""
+        subprocess.run(
+            ["sc", "config", AGENT_WINDOWS_SERVICE_NAME, "start=", "disabled"],
+            capture_output=True,
+            timeout=30,
+            check=False,
+        )
+
     def agent_service_start_hint(self) -> str:
         """The command that starts the agent's own service."""
         return f"sc start {AGENT_WINDOWS_SERVICE_NAME}"

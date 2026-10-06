@@ -1,8 +1,8 @@
 """The Remote desktop module: one switch, made true by the desktop host.
 
 Nothing is installed: the agent's package carries its copy of RustDesk. The
-module reads ``running`` while that copy listens on the direct port, and
-``stopped`` otherwise. Applying the configuration hands the switch to the
+module reads ``running`` while the agent's RustDesk service runs, whoever
+sits at the screen, and ``stopped`` otherwise. Applying the configuration hands the switch to the
 :class:`~neutrino_agent.rdp.host.RdpShareHost`, which takes RustDesk over
 or gives it back.
 
@@ -52,8 +52,9 @@ class RemoteDesktopModuleRunner(ModuleRunner):
         return True
 
     def is_active(self) -> bool:
-        """Whether the agent's copy listens on the direct port."""
-        return self._host is not None and self._host.is_running()
+        """Whether the agent's RustDesk service runs, with nobody at the
+        screen too."""
+        return self._host is not None and self._host.is_service_running()
 
     def apply(self, config: dict) -> None:
         """Turn the share on or off as the switch says.
