@@ -23,6 +23,7 @@ import threading
 
 from neutrino_agent.ai_tools.applier import AiToolsApplier
 from neutrino_agent.cli.start import is_confirmed
+from neutrino_agent.cli.wording import ai_tools_lines
 from neutrino_agent.constants import (
     AGENT_CREDENTIALS_DIR_NAME,
     AGENT_DESIRED_STATE_NAME,
@@ -119,11 +120,8 @@ def main_uninstall(*, is_forced: bool) -> int:
         forget_tried(platform)
         turn_desktop_off(platform)
         ai_tools = AiToolsApplier(platform=platform, log=print)
-        for switched in ai_tools.switch_back_all():
-            print(
-                f"ai tools   {switched['account']}: "
-                f"{switched['state']} {switched['code']}".rstrip()
-            )
+        for line in ai_tools_lines(ai_tools.switch_back_all()):
+            print(line)
         removed = ai_tools.remove_copy() + platform.remove_added()
         if is_whole:
             removed += platform.remove_agent_program()

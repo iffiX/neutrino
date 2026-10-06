@@ -460,6 +460,10 @@ steps as the client's deactivation:
 - on `nagent leave`, and when a refusal of `binding_unknown` ends the
   binding ("What a refusal means to the agent").
 
+`nagent leave` and `nagent service uninstall` print one line per account
+they switched back, `ai tools   <account>: <state> <code>`, and the agent
+package's removal on Linux shows what both print.
+
 **cc-switch comes from the hub when it is needed.** The agent's package
 does not carry it. While the section is on and names an account, the agent
 needs a copy of the version the section's `cc_switch_version` names. When
@@ -471,7 +475,8 @@ state root, and writes the version beside it in `version`, replacing a copy
 of another version whole. The directory is root's own: every account may
 read and run what is in it and none may write it, as with any software the
 hub sends ("The platform layer"). A switch back while the section is off
-runs whatever copy is there. A download or an unpack that fails gives every
+runs whatever copy is there, and fetches the version the section names when
+none is. A download or an unpack that fails gives every
 account the section names, and every account it would switch back, `failed`
 with `cc_switch_download_failed {detail}`, runs nothing, and leaves the
 state to be tried again at the next state or the next retry.
@@ -481,6 +486,22 @@ kept under the state root in `ai_tools/<account>/<tool>.json`, root's own,
 never in the account's home. cc-switch keeps its own store in the account's
 home, as on a person's computer. An account whose records are all gone after
 a switch back has its directory removed.
+
+**The account's own files come back byte for byte.** Before a tool's first
+switch, its record also keeps `is_dir_present`, whether the tool's
+directory was there, and `kept`, the text of every file a switch may write
+in it, read as the account, or null for one that was absent: Claude Code's
+`~/.claude/settings.json`, Codex's `~/.codex/config.toml` and `auth.json`,
+and Gemini's `~/.gemini/.env` and `settings.json`. cc-switch writes a tool's
+files only into a directory that is there, so a switch makes the directory,
+as the account, for a tool that has none, and every tool the log names as
+switched has its files written and read back naming the hub. The switch
+back, once cc-switch has switched away and deleted the hub's provider,
+writes each kept file back as it was, takes away each that was absent, and
+takes away a directory the switch made once it is empty. A switch back that
+cannot run cc-switch, or cannot read its list of providers, is the
+account's `failed` with `switch_failed {account, detail}`, and the records,
+with the kept files, stay for the next try.
 
 Each account's switch or switch back holds that account's lock from its
 first step to its last: the file `ai_tools/.locks/<account>` under the state

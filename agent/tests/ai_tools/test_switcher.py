@@ -10,6 +10,11 @@ switching back returns to the provider before, deletes the hub's entry on a
 terminal with the client's answer and takes away a file cc-switch made; a
 delete that did not take is a refusal carrying the console's words; the
 records are kept under the state root and never in the account's home.
+A tool with no directory gets one made as the account, its files written,
+and both taken away again on the switch back; every file a switch may write
+comes back byte for byte; Codex's and Gemini's files must name the hub; a
+switch back that cannot run cc-switch is a refusal that keeps the records
+and the files.
 """
 
 import json
@@ -286,3 +291,87 @@ def test_codex_toml_merge_replaces_top_level_keys_only():
         'model_reasoning_effort = "high"\nmodel = "a"\n[x]\n'
         "model_reasoning_effort = 1\n"
     )
+
+
+def test_a_tool_with_no_directory_gets_one_and_loses_it_again(tmp_path):
+    cc_switch = FakeCcSwitch(current="")
+    switcher, session = switcher_for(tmp_path, cc_switch)
+
+    assert activate(switcher) == ["claude", "codex", "gemini"]
+
+    assert ("make_dir", "/home/ann/.claude") in session.file_calls
+    assert json.loads(session.files[SETTINGS])["env"]["ANTHROPIC_BASE_URL"] == HUB
+    assert HUB + "/v1" in session.files["/home/ann/.codex/config.toml"]
+    assert KEY in session.files["/home/ann/.codex/auth.json"]
+    assert HUB in session.files["/home/ann/.gemini/.env"]
+
+    switcher.deactivate()
+
+    assert session.files == {}
+    assert session.dirs == set()
+    assert not switcher.has_records()
+
+
+def test_every_file_a_switch_writes_comes_back_byte_for_byte(tmp_path):
+    own = '{\n  "permissions": {\n    "allow": ["Bash(ls:*)"]\n  }\n}\n'
+    toml = 'model = "mine"\n\n[tui]\nnotifications = true'
+    cc_switch = FakeCcSwitch()
+    switcher, session = switcher_for(
+        tmp_path,
+        cc_switch,
+        {SETTINGS: own, "/home/ann/.codex/config.toml": toml},
+    )
+    activate(switcher)
+    assert session.files[SETTINGS] != own
+
+    switcher.deactivate()
+
+    assert session.files[SETTINGS] == own
+    assert session.files["/home/ann/.codex/config.toml"] == toml
+    assert "/home/ann/.codex/auth.json" not in session.files
+    assert "/home/ann/.gemini/.env" not in session.files
+    assert session.has_dir("/home/ann/.claude")
+    assert session.has_dir("/home/ann/.codex")
+    assert not session.has_dir("/home/ann/.gemini")
+
+
+def test_codex_and_gemini_must_end_up_naming_the_hub(tmp_path):
+    cc_switch = FakeCcSwitch()
+    switcher, session = switcher_for(tmp_path, cc_switch)
+    original = session.make_dir
+
+    def made_elsewhere(path):
+        if not path.endswith(".codex"):
+            original(path)
+
+    session.make_dir = made_elsewhere
+
+    with pytest.raises(ToolSwitchError) as refused:
+        activate(switcher)
+
+    assert refused.value.params["detail"].startswith(
+        "codex: the settings file did not take the hub's endpoint"
+    )
+
+
+def test_a_switch_back_that_cannot_run_cc_switch_keeps_the_records(tmp_path):
+    cc_switch = FakeCcSwitch()
+    own = '{"permissions": {}}\n'
+    switcher, session = switcher_for(tmp_path, cc_switch, {SETTINGS: own})
+    activate(switcher)
+    switched = session.files[SETTINGS]
+    cc_switch.refusals[("provider", "list")] = "Permission denied"
+
+    with pytest.raises(ToolSwitchError) as refused:
+        switcher.deactivate()
+
+    assert refused.value.code == "switch_failed"
+    assert "Permission denied" in refused.value.params["detail"]
+    assert switcher.has_records()
+    assert switcher.read_record("claude")["kept"]["settings.json"] == own
+    assert session.files[SETTINGS] == switched
+
+    del cc_switch.refusals[("provider", "list")]
+    switcher.deactivate()
+
+    assert session.files[SETTINGS] == own

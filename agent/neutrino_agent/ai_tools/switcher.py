@@ -14,8 +14,14 @@ belong to no provider go into its common snippet, unless one is set. That
 adoption happens once per tool and is recorded; every activation after it is
 add and use, and none at all when nothing changed. The provider that was
 current beforehand is remembered; switching back makes it current again and
-deletes the hub's entry, and a tool that had no file has the one cc-switch
-made taken away again.
+deletes the hub's entry. Every file of the tool's that a switch may write
+is kept in the record as it was before the first switch, or as absent, and
+the switch back puts each back as it was, byte for byte: a file that was
+there gets its own text again, one that was absent is taken away, and a
+tool directory the switch had to make is taken away once it is empty.
+cc-switch writes a tool's files only into a directory that is there, so
+the switch makes it, as the account, for a tool that has none. A switch
+back that cannot run cc-switch is a failure, and the records stay.
 
 Activation is all or nothing: a tool that refuses has every tool switched
 before it put back, and the refusal is the answer. Codex's reasoning effort
@@ -37,7 +43,9 @@ import subprocess
 import tempfile
 
 from neutrino_agent.ai_tools.constants import (
+    AI_TOOLS_APP_DIRS,
     AI_TOOLS_APP_FILES,
+    AI_TOOLS_APP_KEPT_FILES,
     AI_TOOLS_APPS,
     AI_TOOLS_CLAUDE_SLOT_FLAGS,
     AI_TOOLS_CODE_SWITCH_FAILED,
@@ -279,7 +287,9 @@ class AiToolsAccountSwitcher:
             made current.
 
         Raises:
-            ToolSwitchError: When the hub's provider stays in cc-switch.
+            ToolSwitchError: When cc-switch cannot run, the hub's provider
+                stays in it, or a file cannot be put back; the records of
+                the tools not yet put back stay.
         """
         notes = []
         for app in AI_TOOLS_APPS:
@@ -335,6 +345,9 @@ class AiToolsAccountSwitcher:
         arguments += model_flags(app, config)
         if self._common_snippet(app):
             arguments.append("--common-config")
+        directory = self._session.path(AI_TOOLS_APP_DIRS[app])
+        if not self._session.is_dir(directory):
+            self._session.make_dir(directory)
         try:
             self._session.cc(arguments, app)
             self._session.cc(["use", AI_TOOLS_PROVIDER_ID], app)
@@ -358,14 +371,29 @@ class AiToolsAccountSwitcher:
         return True
 
     def _adopt_once(self, app: str) -> dict:
-        """Take the tool as it stands into cc-switch, and start its record."""
+        """Take the tool as it stands into cc-switch, and start its record.
+
+        The record keeps whether the tool's directory was there and each
+        file a switch may write as it was, None for one that was absent.
+        """
         is_present = self._session.is_file(self._app_file(app))
+        is_dir_present = self._session.is_dir(
+            self._session.path(AI_TOOLS_APP_DIRS[app])
+        )
+        kept = {}
+        for name in AI_TOOLS_APP_KEPT_FILES[app]:
+            path = self._kept_path(app, name)
+            kept[name] = (
+                self._session.read_text(path) if self._session.is_file(path) else None
+            )
         self._session.cc(["provider", "list"], app, is_checked=False)
         if is_present:
             self._adopt(app)
         current = self._current_provider(app)
         record = {
             "is_present": is_present,
+            "is_dir_present": is_dir_present,
+            "kept": kept,
             "previous": "" if current == AI_TOOLS_PROVIDER_ID else current,
             "added": None,
         }
@@ -373,12 +401,19 @@ class AiToolsAccountSwitcher:
         return record
 
     def _verify(self, app: str, base_url: str, api_key: str, config: dict) -> None:
-        """Read Claude Code's settings back and refuse when they do not name the hub.
+        """Read a tool's file back and refuse when it does not name the hub.
 
         Raises:
-            ToolSwitchError: When Claude Code's settings do not name the hub.
+            ToolSwitchError: When Claude Code's settings do not carry the
+                hub's endpoint, key and model, or Codex's or Gemini's file
+                does not name the hub's endpoint.
         """
         if app != "claude":
+            text = self._session.read_text(self._app_file(app))
+            if endpoint_for(app, base_url) not in text:
+                raise self._session.failure(
+                    "the settings file did not take the hub's endpoint"
+                )
             return
         try:
             settings = json.loads(self._session.read_text(self._app_file(app)) or "{}")
@@ -397,23 +432,55 @@ class AiToolsAccountSwitcher:
             )
 
     def _point_away(self, app: str) -> str:
-        """Return one tool to the provider it had, and take the hub's out.
+        """Return one tool to the provider it had, take the hub's out, and put its files back.
 
         Returns:
             The provider switched back to, empty when there was none.
 
         Raises:
-            ToolSwitchError: When the hub's provider stays in cc-switch.
+            ToolSwitchError: When cc-switch cannot run, the hub's provider
+                stays in it, or a file cannot be put back; the record stays.
         """
         record = self.read_record(app) or {}
         previous = str(record.get("previous", "") or "")
         returned_to = self._drop_provider(app, previous)
-        path = self._app_file(app)
-        if record and not record.get("is_present") and self._session.is_file(path):
-            self._session.remove(path)
+        kept = record.get("kept")
+        if isinstance(kept, dict):
+            self._put_back(app, kept)
+            if record.get("is_dir_present") is False:
+                self._session.remove_empty_dir(
+                    self._session.path(AI_TOOLS_APP_DIRS[app])
+                )
+        else:
+            path = self._app_file(app)
+            if record and not record.get("is_present") and self._session.is_file(path):
+                self._session.remove(path)
         with contextlib.suppress(OSError):
             os.remove(self._record_path(app))
         return returned_to
+
+    def _put_back(self, app: str, kept: dict) -> None:
+        """Put each file a switch may write back as it was before the first switch.
+
+        A file that was there gets its own text again, byte for byte; one
+        that was absent is taken away.
+
+        Raises:
+            ToolSwitchError: When a file cannot be written.
+        """
+        for name, original in kept.items():
+            path = self._kept_path(app, name)
+            is_there = self._session.is_file(path)
+            if original is None:
+                if is_there:
+                    self._session.remove(path)
+                continue
+            if not is_there or self._session.read_text(path) != original:
+                self._session.write_text(path, original)
+
+    def _kept_path(self, app: str, name: str) -> str:
+        """One file a switch may write, below the account's home."""
+        return self._session.path(AI_TOOLS_APP_DIRS[app], name)
 
     def _drop_provider(self, app: str, previous: str) -> str:
         """Remove the hub's provider, switching away first if it is current.
@@ -444,8 +511,16 @@ class AiToolsAccountSwitcher:
         return returned_to
 
     def _has_provider(self, app: str) -> bool:
-        """Whether the hub's provider is in cc-switch's list for a tool."""
-        output = self._session.cc(["provider", "list"], app, is_checked=False)
+        """Whether the hub's provider is in cc-switch's list for a tool.
+
+        Raises:
+            ToolSwitchError: When cc-switch cannot list, so nothing can be
+                said of the hub's provider.
+        """
+        try:
+            output = self._session.cc(["provider", "list"], app)
+        except subprocess.CalledProcessError as error:
+            raise self._session.failure(refusal_words(error)) from error
         for line in output.splitlines():
             if AI_TOOLS_TABLE_SEPARATOR not in line:
                 continue

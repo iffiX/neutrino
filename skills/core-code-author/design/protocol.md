@@ -1048,7 +1048,9 @@ in the machine's VS Code, code-server or CloudCLI configuration; `password`
 is the login's own for the account's first instance in that order, sent only
 to a Windows machine. `cc_switch_version` is the version
 `data/manifests/cc_switch.json` pins, the copy of cc-switch the agent runs.
-With it false the section is `{is_enabled: false}` alone. The report's
+With it false the section is `{is_enabled: false, cc_switch_version}`, the
+version there so that a copy fetched for a switch back is the one the next
+switch runs. The report's
 `ai_tools` lists each account the state names and each one switched back
 under the current hash, `state` being `switched`, `switched_back` or
 `failed`, with `{code, params}` on a failure; `cc_switch_download_failed

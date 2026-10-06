@@ -69,6 +69,21 @@ WINDOWS_REMOVE_SCRIPT = """
 Remove-Item -LiteralPath {path} -Force -ErrorAction SilentlyContinue
 exit 0
 """
+WINDOWS_IS_DIR_SCRIPT = """
+if (Test-Path -LiteralPath {path} -PathType Container) {{ exit 0 }}
+exit 1
+"""
+WINDOWS_MAKE_DIR_SCRIPT = """
+New-Item -ItemType Directory -Path {path} -Force | Out-Null
+exit 0
+"""
+WINDOWS_REMOVE_EMPTY_DIR_SCRIPT = """
+$d = {path}
+if ((Test-Path -LiteralPath $d -PathType Container) -and -not (Get-ChildItem -LiteralPath $d -Force)) {{
+    Remove-Item -LiteralPath $d -Force -ErrorAction SilentlyContinue
+}}
+exit 0
+"""
 WINDOWS_REMOVE_WITH_DIRS_SCRIPT = """
 Remove-Item -LiteralPath {path} -Force -ErrorAction SilentlyContinue
 foreach ($d in @({dirs})) {{
@@ -216,6 +231,43 @@ class AiToolsAccountSession:
         else:
             command = ["test", "-f", path]
         return self._run(command).returncode == 0
+
+    def is_dir(self, path: str) -> bool:
+        """Whether a directory of the account's is there, as the account sees it."""
+        if self._is_windows:
+            command = powershell_argv(
+                WINDOWS_IS_DIR_SCRIPT.format(path=powershell_literal(path))
+            )
+        else:
+            command = ["test", "-d", path]
+        return self._run(command).returncode == 0
+
+    def make_dir(self, path: str) -> None:
+        """Make one directory of the account's, as the account, with its parents.
+
+        Raises:
+            ToolSwitchError: When it cannot be made.
+        """
+        if self._is_windows:
+            command = powershell_argv(
+                WINDOWS_MAKE_DIR_SCRIPT.format(path=powershell_literal(path))
+            )
+        else:
+            command = ["mkdir", "-p", "--", path]
+        result = self._run(command)
+        if result.returncode != 0:
+            words = (result.stderr or result.stdout or "").strip()
+            raise self.failure(f"could not make {path}: {words}")
+
+    def remove_empty_dir(self, path: str) -> None:
+        """Delete one directory of the account's, as the account, when it holds nothing."""
+        if self._is_windows:
+            command = powershell_argv(
+                WINDOWS_REMOVE_EMPTY_DIR_SCRIPT.format(path=powershell_literal(path))
+            )
+        else:
+            command = ["rmdir", "--", path]
+        self._run(command)
 
     def write_text(self, path: str, text: str) -> None:
         """Write one file of the account's, as the account, its directory made.

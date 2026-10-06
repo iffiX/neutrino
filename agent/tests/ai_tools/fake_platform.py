@@ -12,7 +12,7 @@ import re
 import subprocess
 
 from neutrino_agent.ai_tools.account_session import POSIX_REMOVE_SHELL
-from tests.ai_tools.fake_cc_switch import FakeCcSwitch
+from tests.ai_tools.fake_cc_switch import FakeCcSwitch, has_dir
 
 # The single-quoted literal a Windows script carries its path in.
 LITERAL = re.compile(r"'((?:[^']|'')*)'")
@@ -26,6 +26,7 @@ class FakeAccountPlatform:
         self.homes = dict(homes if homes is not None else {"ann": "/home/ann"})
         self.stores: dict = {}
         self.files: dict = {}
+        self.dirs: set = set()
         self.runs: list = []
         self.answered: list = []
         self.refusal = None
@@ -68,6 +69,13 @@ class FakeAccountPlatform:
                 self.files[path] = stdin
             elif verb == "remove":
                 self.files.pop(path, None)
+            elif verb == "is_dir":
+                code = 0 if has_dir(self.files, self.dirs, path) else 1
+            elif verb == "make_dir":
+                self.dirs.add(path)
+            elif verb == "remove_empty_dir":
+                if not has_dir(self.files, set(), path):
+                    self.dirs.discard(path)
             else:
                 code, err = 127, "unknown"
         return subprocess.CompletedProcess(argv, code, out, err)
@@ -84,6 +92,12 @@ class FakeAccountPlatform:
         if argv[0] == "powershell.exe":
             script = base64.b64decode(argv[-1]).decode("utf-16-le")
             path = LITERAL.search(script).group(1).replace("''", "'")
+            if "PathType Container) -and" in script:
+                return "remove_empty_dir", path
+            if "PathType Container" in script:
+                return "is_dir", path
+            if "ItemType Directory" in script and "ReadToEnd" not in script:
+                return "make_dir", path
             if "Remove-Item" in script:
                 return "remove", path
             if "ReadToEnd" in script:
@@ -93,7 +107,16 @@ class FakeAccountPlatform:
             return "is_file", path
         if argv[:3] == ["sh", "-c", POSIX_REMOVE_SHELL]:
             return "remove", argv[4]
-        verbs = {"cat": "read", "test": "is_file", "sh": "write", "rm": "remove"}
+        if argv[:2] == ["test", "-d"]:
+            return "is_dir", argv[-1]
+        verbs = {
+            "cat": "read",
+            "test": "is_file",
+            "sh": "write",
+            "rm": "remove",
+            "mkdir": "make_dir",
+            "rmdir": "remove_empty_dir",
+        }
         return verbs.get(argv[0], ""), argv[-1]
 
 
@@ -103,7 +126,11 @@ class _Account:
     def __init__(self, platform, account):
         self.account = account
         self.files = platform.files
+        self.dirs = platform.dirs
         self.home = platform.homes[account]
+
+    def has_dir(self, path):
+        return has_dir(self.files, self.dirs, path)
 
     def path(self, *parts):
         separator = "\\" if platform_is_windows(self.home) else "/"

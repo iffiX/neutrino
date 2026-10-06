@@ -2,6 +2,7 @@
 
 from neutrino_agent.cli.start import is_confirmed
 from neutrino_agent.cli.status import STATUS_UNBOUND
+from neutrino_agent.cli.wording import ai_tools_lines
 from neutrino_agent.core import enrollment
 from neutrino_agent.core.loop import Agent
 
@@ -27,6 +28,7 @@ def main(*, is_forced: bool) -> int:
     if not is_forced and not is_confirmed(LEAVE_QUESTION):
         print("nothing changed")
         return 1
-    Agent().leave()
+    for line in ai_tools_lines(Agent().leave()):
+        print(line)
     print("left the hub; this machine keeps the agent and can join again")
     return 0
