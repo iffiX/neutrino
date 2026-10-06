@@ -193,6 +193,9 @@ private fun LoginForm(
             )
             BasicText(words.word("ui.remember"), style = NeutrinoTheme.body)
         }
+        refusal?.let {
+            BasicText(words.refusal(it.code, it.wordParams), style = NeutrinoTheme.note.copy(color = palette.error))
+        }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
@@ -206,9 +209,6 @@ private fun LoginForm(
                 isEnabled = password.isNotEmpty() && user.isNotEmpty() && !isTrying,
                 isBusy = isTrying,
             )
-        }
-        refusal?.let {
-            BasicText(words.refusal(it.code, it.wordParams), style = NeutrinoTheme.note.copy(color = palette.error))
         }
     }
 }

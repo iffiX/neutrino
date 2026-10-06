@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
@@ -89,7 +88,7 @@ fun LocalPortDialog(
                             refusal = null
                         },
                         label = words.word("ui.local_port"),
-                        modifier = Modifier.width(96.dp),
+                        modifier = Modifier.weight(1f),
                         placeholder = "${FORWARD_FIXED_PORTS.first}–${FORWARD_FIXED_PORTS.last}",
                     )
                 }
