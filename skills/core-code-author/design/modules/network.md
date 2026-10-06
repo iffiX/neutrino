@@ -558,7 +558,12 @@ dnsmasq's upstreams are the network's resolvers, the uplink's own
 ([proxy.md](proxy.md), "Where names resolve"): the ones a DHCP uplink's
 lease names, or the rows a static uplink lists under its address, prefix and
 gateway. The lease client still writes no `/etc/resolv.conf`; the hub reads
-the resolvers out of the lease and renders them into dnsmasq.
+the resolvers out of the lease and renders them into dnsmasq. It reads the
+lease file dhcpcd keeps, `/var/lib/dhcpcd/<interface>.lease`, a DHCP message
+whose option 6 lists them, and asks `dhcpcd --dumplease` only where there is
+no such file: Debian 12's dhcpcd 9.4.1, under its privilege separation,
+answers the dump with nothing, and the box then fell back to the built-in
+resolvers.
 
 dnsmasq is the DHCP server and the resolver of every served network, and
 nothing else on the box answers either. It gets one `dhcp-range` per LAN

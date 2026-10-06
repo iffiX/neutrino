@@ -7,7 +7,11 @@ from types import SimpleNamespace
 import pytest
 
 from neutrino_hub.modules.router import dhcp_client
-from neutrino_hub.modules.router.dhcp_client import RouterDhcpClient, parse_lease_dns
+from neutrino_hub.modules.router.dhcp_client import (
+    RouterDhcpClient,
+    lease_file_dns,
+    parse_lease_dns,
+)
 from neutrino_hub.utils.subprocess_run import CommandResult
 
 # What `dhcpcd --dumplease -4 enp2s0` prints for a lease naming two resolvers.
@@ -72,6 +76,7 @@ def dhcpcd(monkeypatch, tmp_path):
         return answer["result"]
 
     config = tmp_path / "dhcpcd_enp2s0.conf"
+    monkeypatch.setattr(dhcp_client, "ROUTER_DHCP_LEASE_DIR", tmp_path / "leases")
     monkeypatch.setattr(dhcp_client, "ROUTER_DHCP_BINARIES", ("/usr/sbin/dhcpcd",))
     monkeypatch.setattr(dhcp_client.os.path, "isfile", lambda path: True)
     monkeypatch.setattr(
@@ -110,8 +115,51 @@ def test_no_lease_and_no_answer_both_read_as_none(dhcpcd):
     assert RouterDhcpClient(interface="enp2s0").lease_dns() == []
 
 
-def test_without_dhcpcd_there_is_no_lease(monkeypatch):
+def test_without_dhcpcd_there_is_no_lease(monkeypatch, tmp_path):
+    monkeypatch.setattr(dhcp_client, "ROUTER_DHCP_LEASE_DIR", tmp_path)
     monkeypatch.setattr(dhcp_client, "ROUTER_DHCP_BINARIES", ())
     monkeypatch.setattr(dhcp_client.shutil, "which", lambda name: None)
 
     assert RouterDhcpClient(interface="enp2s0").lease_dns() == []
+
+
+# --- the lease file -------------------------------------------------------------
+
+
+def lease_message(*options: bytes) -> bytes:
+    """A DHCP message as dhcpcd keeps it: the fixed part, the cookie, options."""
+    return bytes(236) + bytes.fromhex("63825363") + b"".join(options) + b"\xff"
+
+
+# Option 53 (an ACK), then option 6 naming two resolvers, as Debian 12's
+# dhcpcd 9.4.1 wrote it for a libvirt network.
+RESOLVERS = bytes([6, 8, 192, 168, 122, 1, 192, 0, 2, 53])
+ACK = bytes([53, 1, 5])
+
+
+def test_the_lease_file_s_resolvers_come_in_their_order():
+    assert lease_file_dns(lease_message(ACK, b"\x00", RESOLVERS)) == [
+        "192.168.122.1",
+        "192.0.2.53",
+    ]
+
+
+@pytest.mark.parametrize(
+    "data",
+    [b"", bytes(300), lease_message(ACK), lease_message(bytes([6]))],
+    ids=["empty", "no cookie", "no resolver option", "cut short"],
+)
+def test_a_lease_file_naming_no_resolver_gives_none(data):
+    assert lease_file_dns(data) == []
+
+
+def test_the_lease_file_is_read_and_dhcpcd_is_not_asked(dhcpcd, tmp_path):
+    leases = tmp_path / "leases"
+    leases.mkdir()
+    (leases / "enp2s0.lease").write_bytes(lease_message(ACK, RESOLVERS))
+
+    assert RouterDhcpClient(interface="enp2s0").lease_dns() == [
+        "192.168.122.1",
+        "192.0.2.53",
+    ]
+    assert dhcpcd.ran == []
