@@ -14,6 +14,13 @@ import subprocess
 
 from neutrino_hub.modules.router.constants import (
     ROUTER_DHCP_BINARIES,
+    ROUTER_DHCP_LEASE_DIR,
+    ROUTER_DHCP_LEASE_SUFFIX,
+    ROUTER_DHCP_MAGIC_COOKIE,
+    ROUTER_DHCP_OPTION_DNS,
+    ROUTER_DHCP_OPTION_END,
+    ROUTER_DHCP_OPTION_PAD,
+    ROUTER_DHCP_OPTIONS_OFFSET,
     ROUTER_DHCP_UNIT,
     ROUTER_LEASE_DNS_KEY,
     ROUTER_LEASE_READ_TIMEOUT_S,
@@ -60,13 +67,19 @@ class RouterDhcpClient:
     def lease_dns(self) -> list[str]:
         """The resolvers the lease on this interface names.
 
-        Read with ``dhcpcd --dumplease``, which asks the running client and
-        reads the lease file when none runs.
+        Read from the lease file dhcpcd keeps; where there is none, from
+        ``dhcpcd --dumplease``, which asks the running client.
 
         Returns:
-            The addresses in the lease's order; empty when dhcpcd is not
-            installed, holds no lease here, or does not answer in time.
+            The addresses in the lease's order; empty when there is no lease
+            file and dhcpcd is not installed, holds no lease here, or does
+            not answer in time.
         """
+        path = ROUTER_DHCP_LEASE_DIR / f"{self._interface}{ROUTER_DHCP_LEASE_SUFFIX}"
+        try:
+            return lease_file_dns(path.read_bytes())
+        except OSError:
+            pass
         binary = next(
             (path for path in ROUTER_DHCP_BINARIES if os.path.isfile(path)), None
         ) or shutil.which("dhcpcd")
@@ -109,6 +122,42 @@ class RouterDhcpClient:
         the panel is answering on.
         """
         run(["systemctl", "disable", "--now", self.unit], is_checked=False)
+
+
+def lease_file_dns(data: bytes) -> list[str]:
+    """The resolvers in a lease file dhcpcd wrote.
+
+    Args:
+        data: The file: the DHCP message the lease came in, option 6 listing
+            the resolvers.
+
+    Returns:
+        The IPv4 addresses option 6 lists, in order; empty when the file is
+        not a DHCP message or names none.
+    """
+    if data[ROUTER_DHCP_OPTIONS_OFFSET - 4 : ROUTER_DHCP_OPTIONS_OFFSET] != (
+        ROUTER_DHCP_MAGIC_COOKIE
+    ):
+        return []
+    index = ROUTER_DHCP_OPTIONS_OFFSET
+    while index < len(data):
+        code = data[index]
+        if code == ROUTER_DHCP_OPTION_END:
+            break
+        if code == ROUTER_DHCP_OPTION_PAD:
+            index += 1
+            continue
+        if index + 1 >= len(data):
+            break
+        length = data[index + 1]
+        value = data[index + 2 : index + 2 + length]
+        if code == ROUTER_DHCP_OPTION_DNS:
+            return [
+                str(ipaddress.IPv4Address(value[start : start + 4]))
+                for start in range(0, len(value) - len(value) % 4, 4)
+            ]
+        index += 2 + length
+    return []
 
 
 def parse_lease_dns(text: str) -> list[str]:

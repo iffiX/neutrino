@@ -323,6 +323,15 @@ ROUTER_DHCP_UNIT = "neutrino_hub_dhcpcd@{interface}.service"
 ROUTER_DHCP_BINARIES = ("/usr/sbin/dhcpcd", "/usr/bin/dhcpcd")
 # How long reading one uplink's lease may take.
 ROUTER_LEASE_READ_TIMEOUT_S = 5.0
+# Where dhcpcd keeps each interface's lease, `<interface>.lease`: the DHCP
+# message it was given, whose option 6 lists the resolvers.
+ROUTER_DHCP_LEASE_DIR = Path("/var/lib/dhcpcd")
+ROUTER_DHCP_LEASE_SUFFIX = ".lease"
+ROUTER_DHCP_MAGIC_COOKIE = bytes.fromhex("63825363")
+ROUTER_DHCP_OPTIONS_OFFSET = 240
+ROUTER_DHCP_OPTION_DNS = 6
+ROUTER_DHCP_OPTION_PAD = 0
+ROUTER_DHCP_OPTION_END = 255
 
 # --- what the hub stood down ---
 # Which units the hub stopped so it could drive the interfaces itself. State
