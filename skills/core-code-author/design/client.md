@@ -181,6 +181,11 @@ state is its connection:
 | `disabled` | the frame says enabled | `connected` | no button acts on a disabled hub except **Leave** |
 | any | the code is `binding_unknown` | row removed, as after **Leave** | the hub no longer holds the client; the code's wording is a notice on the page with a close button, gone when closed, on **Refresh**, or after one minute |
 
+Every round from `connecting` tries the hub's addresses from the start of
+the order [connection.md](connection.md) gives, as the first round after a
+join does; the address the row last connected through is not tried first.
+A `connected` hub is not moved to an earlier address when one answers again.
+
 The row's controls, from left to right:
 
 | Control | Shown | Enabled | Does |
