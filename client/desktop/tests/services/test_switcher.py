@@ -901,3 +901,25 @@ def test_a_tool_switched_before_the_store_existed_goes_back_in_the_person_s_own(
     switcher._point_away("claude")
 
     assert seen and set(seen) == {None}
+
+
+def test_a_store_that_could_not_be_made_is_taken_away_when_no_record_was_kept(
+    tmp_path, monkeypatch
+):
+    home_file(tmp_path, ".claude/settings.json", "{}")
+    cli = Cli(current="deepseek")
+    wire(monkeypatch, cli)
+    store = os.path.join(switcher._platform().config_dir(), "cc_switch")
+
+    def refused(path, mode):
+        raise PermissionError("chmod refused")
+
+    monkeypatch.setattr(switcher.os, "chmod", refused)
+
+    with pytest.raises(switcher.ToolSwitchError):
+        switcher.activate(base_url="http://hub", api_key="k", tool_configs={})
+
+    assert not os.path.exists(store)
+    assert "CC_SWITCH_CONFIG_DIR" not in os.environ
+    assert cli.calls == []
+    assert not any(switcher._read_record(app) for app in switcher.SWITCHER_APPS)
