@@ -26,6 +26,7 @@ import subprocess
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.cloudcli import installer
 from neutrino_agent.modules.cloudcli.constants import (
+    CLOUDCLI_DATABASE_NAME,
     CLOUDCLI_DARWIN_LOG_DIR,
     CLOUDCLI_DARWIN_LOG_PREFIX,
     CLOUDCLI_INSTALL_TIMEOUT_S,
@@ -176,13 +177,17 @@ class CloudcliDarwinApplier:
         directory = installer.node_dir(self.module_dir)
         return installer.node_path(directory, "darwin") if directory else ""
 
-    def apply(self, config, upstream_ports: dict) -> list:
+    def apply(
+        self, config, upstream_ports: dict, databases: "dict | None" = None
+    ) -> list:
         """Install CloudCLI for each account, load one LaunchDaemon per instance, unload the rest.
 
         Args:
             config: The validated :class:`CloudcliConfig`.
             upstream_ports: Account to the loopback port its CloudCLI
                 listens on.
+            databases: Account to the database file its CloudCLI runs on;
+                ``auth.db`` for an account not named.
 
         Returns:
             What changed, one note each.
@@ -244,6 +249,9 @@ class CloudcliDarwinApplier:
                 environment=installer.service_environment(
                     instance,
                     upstream_port=upstream_ports[instance.account],
+                    database_name=(databases or {}).get(
+                        instance.account, CLOUDCLI_DATABASE_NAME
+                    ),
                     home=home,
                     os_name="darwin",
                     node_dir=os.path.dirname(node),

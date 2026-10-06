@@ -40,6 +40,10 @@ CLOUDCLI_ACCOUNT_PARTS = {
 }
 CLOUDCLI_APP_DIR_NAME = "app"
 CLOUDCLI_DATABASE_NAME = "auth.db"
+# The database file an instance starts afresh on when its CloudCLI was set
+# up for another hub, the old one left beside it; the time is UTC.
+CLOUDCLI_FRESH_DATABASE_PATTERN = "auth-{stamp}.db"
+CLOUDCLI_FRESH_STAMP_FORMAT = "%Y%m%dT%H%M%SZ"
 # Inside the app directory: npm's cache, and the empty file npm reads as the
 # account's configuration instead of ``~/.npmrc``.
 CLOUDCLI_NPM_CACHE_NAME = ".npm"

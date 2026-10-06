@@ -175,9 +175,11 @@ def app_dir(home: str, os_name: str, join=os.path.join) -> str:
     return join(account_dir(home, os_name, join), CLOUDCLI_APP_DIR_NAME)
 
 
-def database_path(home: str, os_name: str, join=os.path.join) -> str:
-    """Where one account's CloudCLI keeps its database."""
-    return join(account_dir(home, os_name, join), CLOUDCLI_DATABASE_NAME)
+def database_path(
+    home: str, os_name: str, join=os.path.join, name: str = CLOUDCLI_DATABASE_NAME
+) -> str:
+    """Where one account's CloudCLI keeps its database, ``auth.db`` unless named."""
+    return join(account_dir(home, os_name, join), name)
 
 
 def server_path(app: str, join=os.path.join) -> str:
@@ -328,6 +330,7 @@ def service_environment(
     node_dir: str = "",
     claude_path: str = "",
     join=os.path.join,
+    database_name: str = CLOUDCLI_DATABASE_NAME,
 ) -> dict:
     """The environment one instance's CloudCLI runs with, written from scratch.
 
@@ -341,6 +344,7 @@ def service_environment(
             Node's on ``PATH``. Empty on Windows, where the task keeps the
             account's own ``PATH`` after Node's directory.
         join: How the system joins a path.
+        database_name: The database file the instance runs on.
 
     Returns:
         ``HOST``, ``SERVER_PORT``, ``JWT_SECRET``, ``DATABASE_PATH``,
@@ -352,7 +356,7 @@ def service_environment(
         "HOST": CLOUDCLI_UPSTREAM_HOST,
         "SERVER_PORT": str(int(upstream_port)),
         "JWT_SECRET": jwt_secret(instance.token_secret),
-        "DATABASE_PATH": database_path(home, os_name, join),
+        "DATABASE_PATH": database_path(home, os_name, join, database_name),
     }
     if os_name == "windows":
         if node_dir:

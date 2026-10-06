@@ -31,6 +31,7 @@ import subprocess
 from neutrino_agent.exceptions import ModuleApplyError, ModuleInstallPending
 from neutrino_agent.modules.cloudcli import installer
 from neutrino_agent.modules.cloudcli.constants import (
+    CLOUDCLI_DATABASE_NAME,
     CLOUDCLI_INSTALL_TASK_PREFIX,
     CLOUDCLI_LOG_SUFFIX,
     CLOUDCLI_LOGON_FAILURES,
@@ -325,13 +326,17 @@ class CloudcliWindowsApplier:
         """
         return ntpath.join(self._script_dir, f"install_{account}{CLOUDCLI_LOG_SUFFIX}")
 
-    def apply(self, config, upstream_ports: dict) -> list:
+    def apply(
+        self, config, upstream_ports: dict, databases: "dict | None" = None
+    ) -> list:
         """Install CloudCLI for each account, register and start one task per instance, remove the rest.
 
         Args:
             config: The validated :class:`CloudcliConfig`.
             upstream_ports: Account to the loopback port its CloudCLI
                 listens on.
+            databases: Account to the database file its CloudCLI runs on;
+                ``auth.db`` for an account not named.
 
         Returns:
             What changed, one note each.
@@ -387,6 +392,9 @@ class CloudcliWindowsApplier:
             environment = installer.service_environment(
                 instance,
                 upstream_port=upstream_ports[instance.account],
+                database_name=(databases or {}).get(
+                    instance.account, CLOUDCLI_DATABASE_NAME
+                ),
                 home=home,
                 os_name="windows",
                 node_dir=ntpath.dirname(node),
