@@ -388,7 +388,9 @@ def test_a_joined_machine_is_given_no_join_line(run, tmp_path):
 
 
 # What a set-up hub's panel settings hold, and what a fresh one's do.
-SET_UP_SETTINGS = '{\n  "admin_password_hash": "scrypt$73616c74$6b6579"\n}\n'  # scan: allow
+SET_UP_SETTINGS = (
+    '{\n  "admin_password_hash": "scrypt$73616c74$6b6579"\n}\n'  # scan: allow
+)
 FRESH_SETTINGS = (
     '{\n  "admin_password_hash": "PLACEHOLDER_ARGON2ID_HASH"\n}\n'  # scan: allow
 )
