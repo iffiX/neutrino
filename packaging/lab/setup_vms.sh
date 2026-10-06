@@ -128,8 +128,44 @@ seed_for() {
             # enough. This loop keeps the contract however late the hub
             # starts serving. The client stays in the foreground once it
             # holds a lease, so the loop runs one client at a time.
+            #
+            # A walk that serves the wire on another subnet leaves the
+            # client holding a twelve-hour lease on the old one, which it
+            # would not give up for hours. So the loop also watches the
+            # router that gave the lease: when that address stops answering
+            # ARP, the client lets the lease go and asks again.
+            echo "write_files:"
+            echo "  - path: /usr/local/sbin/lab_lease_loop"
+            echo "    permissions: '0755'"
+            echo "    content: |"
+            sed 's/^/      /' <<'SCRIPT'
+#!/bin/sh
+router_is_gone() {
+    router=$(ip -4 route show default | awk '{print $3; exit}')
+    [ -n "$router" ] || return 1
+    for _ in 1 2; do
+        ping -c 1 -W 2 "$router" >/dev/null 2>&1
+        ip neigh show "$router" | grep -qE 'FAILED|INCOMPLETE' || return 1
+        sleep 3
+    done
+    return 0
+}
+while true; do
+    dhclient -1 -d >/dev/null 2>&1 &
+    client=$!
+    while kill -0 "$client" 2>/dev/null; do
+        sleep 10
+        if router_is_gone; then
+            kill "$client"
+            wait "$client"
+            timeout 10 dhclient -r >/dev/null 2>&1
+        fi
+    done
+    sleep 10
+done
+SCRIPT
             echo "runcmd:"
-            echo "  - [ sh, -c, \"nohup sh -c 'while true; do dhclient -1 -d >/dev/null 2>&1 || true; sleep 20; done' >/dev/null 2>&1 &\" ]"
+            echo "  - [ sh, -c, \"nohup /usr/local/sbin/lab_lease_loop >/dev/null 2>&1 &\" ]"
         fi
         if [ "$is_provisioned" = yes ]; then
             echo "package_update: true"

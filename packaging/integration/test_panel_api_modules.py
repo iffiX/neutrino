@@ -58,10 +58,14 @@ def test_every_row_carries_a_state_of_the_closed_set(modules):
     assert {entry["state"] for entry in modules} <= STATE_WORDS
 
 
-def test_a_device_that_never_joined_asks_nothing_of_any_module(modules):
-    """``want`` is what the hub asks; a device it has asked nothing of holds
-    no want at all."""
-    assert [entry["name"] for entry in modules if entry["want"]] == []
+def test_a_device_that_never_joined_asks_only_the_agents_own_modules(modules):
+    """``want`` is what the hub asks. Of a device it has asked nothing of, it
+    asks only the two modules the agent's package carries: the terminal is
+    always wanted running, and the remote desktop stopped while its switch
+    is off (protocol.md)."""
+    wants = {entry["name"]: entry["want"] for entry in modules if entry["want"]}
+
+    assert wants == {"terminal": "running", "remote_desktop": "stopped"}
 
 
 @pytest.mark.parametrize("verb", MODULE_VERBS)

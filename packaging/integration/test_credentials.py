@@ -26,6 +26,8 @@ import pytest
 # The device these start from is a scan row nothing on this network
 # answers for: naming one adopts it under an id of its own.
 TEST_SCAN_ID = "scan:02:00:00:00:00:71"
+# What a backup names as the hub it was taken on: this box's own id.
+MACHINE_ID_PATH = Path("/etc/machine-id")
 
 
 def _suffix() -> str:
@@ -271,6 +273,7 @@ def test_backup_is_plain_digested_and_restores_the_vault(panel, vault_passphrase
     assert json.loads(contents["neutrino_backup.json"]) == {
         "kind": "neutrino_config_backup",
         "version": 2,
+        "hub_machine_id": MACHINE_ID_PATH.read_text(encoding="utf-8").strip(),
     }
 
     listed = {}

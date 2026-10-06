@@ -10,6 +10,8 @@ The machine's interfaces are whatever it has. Nothing here names one.
 
 import pytest
 
+import machine_state
+
 MODES = ["server", "side_gateway", "router"]
 # A network no lab uses, so a served address cannot collide with the one this
 # is being read over.
@@ -17,6 +19,25 @@ SERVED_CIDR = "192.168.77.1"
 SERVED_RANGE = ("192.168.77.100", "192.168.77.200")
 # More VLANs than anybody would type, on one trunk.
 CROWD_VLAN_IDS = range(100, 130)
+
+
+@pytest.fixture(scope="module", autouse=True)
+def way_back_out(panel):
+    """Give the box its way out back once the file is done.
+
+    The checks below leave a router with every port disabled, which holds
+    no address and resolves nothing; the walks after this file start from a
+    box that reaches the internet through the port it was reached on.
+    """
+    route = machine_state.run(["ip", "-4", "route", "show", "default"]).split()
+    way_in = route[route.index("dev") + 1] if "dev" in route else ""
+    yield
+    if not way_in:
+        return
+    panel.call("POST", "/hub/network/mode/set", {"mode": "router"})
+    body = interface_body(panel, way_in, role="wan", wan={"method": "dhcp"})
+    if body:
+        panel.call("POST", "/hub/network/interface/set", body)
 
 
 @pytest.fixture(scope="module")
