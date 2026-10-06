@@ -462,3 +462,43 @@ def test_a_tool_switched_before_the_store_existed_goes_back_in_the_person_s_own(
     switcher.deactivate()
 
     assert cc_switch.stores and not any(cc_switch.stores)
+
+
+def failing_store(session):
+    """A store that is made, then refuses its mode, as macOS chmod once did."""
+
+    def prepare():
+        session.store_calls.append("prepare")
+        session.dirs.add(session.store_path())
+        raise session.failure("could not make the store: chmod refused")
+
+    session.prepare_store = prepare
+
+
+def test_a_store_that_could_not_be_made_is_taken_away_when_no_record_was_kept(
+    tmp_path,
+):
+    cc_switch = FakeCcSwitch()
+    switcher, session = switcher_for(tmp_path, cc_switch, {SETTINGS: "{}"})
+    failing_store(session)
+
+    with pytest.raises(ToolSwitchError):
+        activate(switcher)
+
+    assert session.store_calls == ["prepare", "remove"]
+    assert not session.has_dir(session.store_path())
+    assert cc_switch.calls == []
+
+
+def test_a_store_that_could_not_be_made_stays_while_a_record_stands(tmp_path):
+    cc_switch = FakeCcSwitch()
+    switcher, session = switcher_for(tmp_path, cc_switch, {SETTINGS: "{}"})
+    activate(switcher)
+    session.store_calls.clear()
+    failing_store(session)
+
+    with pytest.raises(ToolSwitchError):
+        activate(switcher, key="another-key")
+
+    assert session.store_calls == ["prepare"]
+    assert switcher.has_records()

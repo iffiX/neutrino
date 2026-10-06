@@ -259,7 +259,12 @@ class AiToolsAccountSwitcher:
         done = []
         switched = []
         self._session.is_own_store = True
-        self._session.prepare_store()
+        try:
+            self._session.prepare_store()
+        except ToolSwitchError:
+            if not self.has_records():
+                self._session.remove_store()
+            raise
         for app in AI_TOOLS_APPS:
             try:
                 if self._point_at_hub(
