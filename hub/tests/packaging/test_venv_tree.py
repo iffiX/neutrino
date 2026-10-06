@@ -206,6 +206,15 @@ def test_the_carried_interpreter_loses_the_installer_and_the_shared_build(tmp_pa
     (site_packages / "pip-26.2.1.dist-info").mkdir()
     (site_packages / "neutrino_hub").mkdir()
     (library / "python3.13" / "asyncio").mkdir()
+    (library / "python3.13" / "lib-dynload").mkdir()
+    dbm = (
+        library / "python3.13" / "lib-dynload" / "_dbm.cpython-313-x86_64-linux-gnu.so"
+    )
+    dbm.write_bytes(b"")
+    gdbm = (
+        library / "python3.13" / "lib-dynload" / "_gdbm.cpython-313-x86_64-linux-gnu.so"
+    )
+    gdbm.write_bytes(b"")
     (staged_python / "bin").mkdir(parents=True)
     (staged_python / "bin" / "pip3").write_text("")
     (staged_python / "bin" / "python3").write_text("")
@@ -218,6 +227,8 @@ def test_the_carried_interpreter_loses_the_installer_and_the_shared_build(tmp_pa
     assert not (site_packages / "pip").exists()
     assert not (site_packages / "pip-26.2.1.dist-info").exists()
     assert not (staged_python / "bin" / "pip3").exists()
+    assert not dbm.exists()
+    assert gdbm.exists()
     assert (site_packages / "neutrino_hub").is_dir()
     assert (library / "python3.13" / "asyncio").is_dir()
     assert (staged_python / "bin" / "python3").is_file()
@@ -437,3 +448,11 @@ def test_the_notice_names_every_library_the_page_and_the_hub_depend_on():
     listed = project.split("dependencies = [", 1)[1].split("]", 1)[0]
     for name in re.findall(r'^\s*"([A-Za-z0-9_.-]+)', listed, re.MULTILINE):
         assert re.search(rf"\n  {re.escape(name)}  ", notice, re.I), name
+
+
+def test_the_notice_names_no_berkeley_db():
+    """``_dbm``, which links it, is taken out of the staged interpreter."""
+    notice = (venv_tree.HUB_ROOT.parent / "licenses" / "hub_notices.txt").read_text()
+
+    assert "Berkeley DB" not in notice
+    assert "_dbm" not in notice

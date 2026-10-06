@@ -625,7 +625,6 @@ statically with these libraries, each under its own licence:
   libedit                          BSD-3-Clause
   ncurses 6.5                      X11
   libuuid (util-linux)             BSD-3-Clause
-  Berkeley DB 6.0.19 (in _dbm)     AGPL-3.0-only
 
 The macOS and Windows packages carry the hub compiled by Nuitka
 (https://nuitka.net, Apache-2.0) against CPython 3.13 as the build runner

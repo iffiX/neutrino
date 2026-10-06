@@ -868,6 +868,20 @@ def trim_interpreter(staged_python: Path) -> None:
         path.unlink(missing_ok=True)
 
     _drop_tk(staged_python)
+    _drop_dbm(staged_python)
+
+
+def _drop_dbm(staged_python: Path) -> None:
+    """Take the ``_dbm`` module out of the staged interpreter.
+
+    It links Berkeley DB 6, which is under the AGPL; nothing in the hub opens
+    a dbm file, and ``dbm.open`` uses the modules left.
+
+    Args:
+        staged_python: The interpreter tree as staged.
+    """
+    for path in (staged_python / "lib").rglob("_dbm*.so"):
+        path.unlink(missing_ok=True)
 
 
 def _drop_tk(staged_python: Path) -> None:
