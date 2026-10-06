@@ -651,6 +651,13 @@ are; the person closes the viewer, and the next Connect makes a new one.
 Two viewers on one forward would end it under each other, since the forward
 ends with the viewer.
 
+The forward lives as long as the viewer window that shows it: a viewer the
+client starts whose process ends within `RDP_HANDOFF_S` (5 s) while another
+viewer it started still runs has handed its connection to that viewer's
+window, as RustDesk does with a second `--connect` (a tab in the running
+window), so its forward stays, the row reads `ui.rdp_open`, and both end when
+that window's process ends; the rule is the same on every system.
+
 The row's mono line is the entry's host and port, where the desktop is on
 the hub's networks; the viewer dials the forward on the loopback and never
 that address. The row's state word is the entry's health, and `ui.rdp_open` while the
