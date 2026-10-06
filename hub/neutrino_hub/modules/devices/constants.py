@@ -119,16 +119,11 @@ AGENT_PACKAGE_MANIFEST_PATH = UTILS_DATA_DIR / AGENT_PACKAGE_MANIFEST_NAME
 AGENT_PACKAGE_FETCH_TIMEOUT_S = 300
 AGENT_PACKAGE_FETCH_LIMIT_BYTES = 256 * 1024 * 1024
 
-# Browser headers cost nothing; GitHub's API refuses a request that carries
-# no User-Agent at all.
-AGENT_MODULE_BROWSER_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
-    ),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9",
-}
+# The headers a module fetch carries: a program's own User-Agent, which
+# GitHub's API requires one of, and no browser's. A mirror that answers a
+# browser with a page of its own (the USTC mirror asks a browser to run a
+# script before it serves a file) hands a program the file itself.
+AGENT_MODULE_FETCH_HEADERS = {"User-Agent": "neutrino-hub"}
 
 # What each package kind starts with, so a page served in a package's place is
 # caught before anything hands it to an installer.

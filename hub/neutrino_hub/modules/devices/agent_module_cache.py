@@ -31,7 +31,7 @@ from pathlib import Path
 from neutrino_hub.exceptions import AgentArtifactFetchError
 from neutrino_hub.modules.devices.constants import (
     AGENT_MODULE_PACKAGE_MAGIC,
-    AGENT_MODULE_BROWSER_HEADERS,
+    AGENT_MODULE_FETCH_HEADERS,
     AGENT_MODULE_CACHE_DIR,
     AGENT_MODULE_EDITION_CN,
     AGENT_MODULE_EDITION_INTL,
@@ -675,7 +675,7 @@ class AgentModuleCache:
         Raises:
             AgentArtifactFetchError: ``module_fetch_failed``.
         """
-        request = urllib.request.Request(url, headers=AGENT_MODULE_BROWSER_HEADERS)
+        request = urllib.request.Request(url, headers=AGENT_MODULE_FETCH_HEADERS)
         try:
             with urllib.request.urlopen(
                 request,
@@ -692,7 +692,7 @@ class AgentModuleCache:
     def _fetch_plain(
         self, url: str, *, progress: "AgentModuleFetchProgress | None" = None
     ) -> DownloadedFile:
-        """Fetch directly, with ordinary browser headers, into a file in the cache.
+        """Fetch directly, with the module fetch headers, into a file in the cache.
 
         Args:
             url: What the manifest names.
@@ -713,7 +713,7 @@ class AgentModuleCache:
             raise AgentArtifactFetchError(
                 "module_cache_unwritable", detail=str(error)[:200]
             ) from error
-        request = urllib.request.Request(url, headers=AGENT_MODULE_BROWSER_HEADERS)
+        request = urllib.request.Request(url, headers=AGENT_MODULE_FETCH_HEADERS)
         if progress is not None:
             progress.fetching(url)
         try:
@@ -779,7 +779,7 @@ class AgentModuleCache:
         """
         request = urllib.request.Request(
             AGENT_MODULE_GITHUB_API.format(repo=repo),
-            headers=AGENT_MODULE_BROWSER_HEADERS,
+            headers=AGENT_MODULE_FETCH_HEADERS,
         )
         try:
             with urllib.request.urlopen(
