@@ -659,6 +659,7 @@ def test_each_phase_runs_after_the_one_before_and_leaves_its_evidence(check, pha
 def test_a_phase_whose_phase_before_did_not_pass_is_refused(check, phases):
     ran, failing, evidence = phases
     failing.add("installed")
+    check.run_client_windows_phase(Path("client.msi"), "upgrade")
     check.run_client_windows_phase(Path("client.msi"), "install")
     with pytest.raises(SystemExit, match="installed failed"):
         check.run_client_windows_phase(Path("client.msi"), "installed")
@@ -666,11 +667,12 @@ def test_a_phase_whose_phase_before_did_not_pass_is_refused(check, phases):
     with pytest.raises(SystemExit, match="needs installed to have passed"):
         check.run_client_windows_phase(Path("client.msi"), "repair")
 
-    assert ran == ["install", "installed"]
+    assert ran == ["upgrade", "install", "installed"]
     assert (evidence / "installed.snapshot.txt").is_file()
 
 
 def test_a_phase_after_the_install_can_take_the_client_away(check, phases):
+    check.run_client_windows_phase(Path("client.msi"), "upgrade")
     check.run_client_windows_phase(Path("client.msi"), "install")
     check.CHECK_RESCUES.clear()
 
@@ -1119,15 +1121,15 @@ def test_an_earlier_package_whose_hash_differs_is_refused_and_deleted(
 def test_an_agent_that_cannot_install_over_the_earlier_one_fails_the_check(
     check, monkeypatch, tmp_path
 ):
-    """A fault in the upgrade's sequence ends msiexec with 1603; a fresh
-    install is never what the check runs."""
+    """A fault in the upgrade's sequence ends msiexec with 1603, and the
+    check ends before its fresh install."""
     done = []
     monkeypatch.setattr(check, "_require_host", lambda *_: None)
     monkeypatch.setattr(check, "_install_earlier", done.append)
     monkeypatch.setattr(check, "RUSTDESK_WINDOWS_FOLDER", tmp_path)
     monkeypatch.setattr(check, "_print_log", lambda *_: None)
 
-    def msiexec(action, msi, log):
+    def msiexec(action, msi, log, is_restart_accepted=False):
         done.append((action, msi.name))
         return 1603
 
@@ -1148,3 +1150,110 @@ def test_an_earlier_agent_that_left_no_rustdesk_fails_the_check(
 
     with pytest.raises(SystemExit, match="left no"):
         check.check_agent_windows(tmp_path / "agent.msi")
+
+
+def test_an_install_over_an_earlier_package_may_want_a_restart_and_says_why(
+    check, monkeypatch, tmp_path, capsys
+):
+    monkeypatch.setattr(
+        check.subprocess,
+        "run",
+        lambda command, **kwargs: check.subprocess.CompletedProcess(command, 3010),
+    )
+
+    code = check._msiexec(
+        "/i", tmp_path / "client.msi", tmp_path / "log", is_restart_accepted=True
+    )
+
+    assert code == 3010
+    assert (
+        "the earlier package's removal does not wait for its services"
+        in capsys.readouterr().out
+    )
+
+
+def test_an_install_over_an_earlier_package_still_fails_a_forced_restart(
+    check, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(
+        check.subprocess,
+        "run",
+        lambda command, **kwargs: check.subprocess.CompletedProcess(command, 1641),
+    )
+
+    with pytest.raises(SystemExit, match="wants a restart \\(exit 1641\\)"):
+        check._msiexec(
+            "/i", tmp_path / "client.msi", tmp_path / "log", is_restart_accepted=True
+        )
+
+
+def test_only_our_pending_renames_are_dropped_pair_by_pair(check):
+    entries = [
+        "\\??\\C:\\Windows\\Temp\\a.tmp",
+        "",
+        "\\??\\C:\\Program Files\\Neutrino\\client\\bin\\~netbird.tmp",
+        "!\\??\\C:\\Program Files\\Neutrino\\client\\bin\\netbird.exe",
+        "\\??\\C:\\Program Files\\Neutrino\\agent\\old.dll",
+        "",
+        "\\??\\C:\\Other\\b.tmp",
+        "\\??\\C:\\Other\\b.dll",
+        "",
+    ]
+
+    kept, dropped = check.without_ours(entries)
+
+    assert kept == [
+        "\\??\\C:\\Windows\\Temp\\a.tmp",
+        "",
+        "\\??\\C:\\Other\\b.tmp",
+        "\\??\\C:\\Other\\b.dll",
+    ]
+    assert dropped == [
+        "!\\??\\C:\\Program Files\\Neutrino\\client\\bin\\netbird.exe",
+        "\\??\\C:\\Program Files\\Neutrino\\agent\\old.dll",
+    ]
+
+
+@pytest.fixture
+def upgrade_box(check, monkeypatch, tmp_path):
+    """msiexec recorded, 3010 for the install over the earlier package, the
+    removal taking the folder; then the fresh install fails, ending the check."""
+    done = []
+    folder = tmp_path / "Neutrino" / "agent"
+    monkeypatch.setattr(check, "_require_host", lambda *_: None)
+    monkeypatch.setattr(check, "_install_earlier", done.append)
+    monkeypatch.setattr(check, "RUSTDESK_WINDOWS_FOLDER", tmp_path)
+    monkeypatch.setattr(check, "AGENT_WINDOWS_EARLIER_FOLDER", tmp_path / "none")
+    monkeypatch.setattr(check, "AGENT_WINDOWS_FOLDER", folder)
+    monkeypatch.setattr(check, "_wait_for_earlier_rustdesk_gone", lambda: True)
+    monkeypatch.setattr(check, "_print_log", lambda *_: None)
+    monkeypatch.setattr(
+        check, "_drop_pending_renames_of_ours", lambda: done.append("drop") or []
+    )
+    codes = {(1, "/i"): 3010, (2, "/x"): 0, (3, "/i"): 1603}
+
+    def msiexec(action, msi, log, is_restart_accepted=False):
+        done.append((action, is_restart_accepted))
+        if action == "/i":
+            folder.mkdir(parents=True, exist_ok=True)
+        else:
+            folder.rmdir()
+        return codes[(sum(isinstance(item, tuple) for item in done), action)]
+
+    monkeypatch.setattr(check, "_msiexec", msiexec)
+    return done
+
+
+def test_the_agent_upgrade_may_owe_a_restart_and_the_fresh_install_starts_clean(
+    check, upgrade_box, tmp_path
+):
+    with pytest.raises(SystemExit, match="the agent did not install \\(exit 1603\\)"):
+        check.check_agent_windows(tmp_path / "agent.msi")
+
+    assert upgrade_box == [
+        "agent_windows",
+        ("/i", True),
+        ("/x", True),
+        "drop",
+        ("/i", False),
+    ]

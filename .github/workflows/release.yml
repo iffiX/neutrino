@@ -401,6 +401,21 @@ jobs:
       # runner died in; after each, what the phase wrote so far: its
       # progress, its msiexec log and a snapshot of the machine. Each
       # phase also posts its progress as a commit status.
+      - name: "Check: install over the released 0.4.0"
+        run: python packaging/ci/check.py client_windows dist/*.msi --phase upgrade --evidence-dir ci_evidence
+        shell: bash
+        timeout-minutes: 30
+        env:
+          PYTHONUNBUFFERED: "1"
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: check_client_windows_x64_upgrade
+          path: ci_evidence/*
+          if-no-files-found: ignore
+
       - name: "Check: install"
         run: python packaging/ci/check.py client_windows dist/*.msi --phase install --evidence-dir ci_evidence
         shell: bash
@@ -1087,6 +1102,22 @@ jobs:
       # runner died in; after each, what the phase wrote so far: its
       # progress, its msiexec log and a snapshot of the machine. Each
       # phase also posts its progress as a commit status.
+      - name: "Check: install over the released 0.4.0"
+        run: python packaging/ci/check.py client_windows dist/*.msi --phase upgrade --evidence-dir ci_evidence
+        shell: bash
+        working-directory: cn
+        timeout-minutes: 30
+        env:
+          PYTHONUNBUFFERED: "1"
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: check_cn_client_windows_amd64_upgrade
+          path: cn/ci_evidence/*
+          if-no-files-found: ignore
+
       - name: "Check: install"
         run: python packaging/ci/check.py client_windows dist/*.msi --phase install --evidence-dir ci_evidence
         shell: bash
