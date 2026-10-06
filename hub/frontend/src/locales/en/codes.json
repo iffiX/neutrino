@@ -329,5 +329,6 @@
   "code.hub_release_file_gone": "the hub's own release no longer carries the file, so update the hub to its latest release",
   "code.shell_program_unusable": "{path} is not a program this machine can run.",
   "code.rdp_takeover_failed": "Remote desktop could not start at {step}: {detail}",
-  "code.rdp_restore_failed": "Remote desktop could not put back the machine's RustDesk at {step}: {detail}"
+  "code.rdp_restore_failed": "Remote desktop could not put back the machine's RustDesk at {step}: {detail}",
+  "code.easytier_invalid": "Manual bootstrap peers needs at least one bootstrap peer."
 }

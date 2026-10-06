@@ -1545,6 +1545,8 @@ export interface AiToolAccountView {
 
 /** One machine's AI tools setting: the Modules page's Global configuration. */
 export interface AiToolDeviceView {
+  /** Whether any account is still on the gateway: what the chip reads. */
+  is_in_use: boolean;
   device_id: string;
   is_online: boolean;
   is_enabled: boolean;

@@ -388,6 +388,10 @@ function SettingsPanel({ view, onApplied }: SettingsPanelProps) {
         label={t("ui.overlay.apply_settings")}
         hint={t("ui.overlay.apply_settings_hint")}
         warning={settingsWarning(view, draft)}
+        isApplyDisabled={
+          draft.mode !== MODE_CONSOLE &&
+          draft.peers.every((peer) => peer.trim() === "")
+        }
         error={error}
         onReset={() => {
           setDraft(storedDraft(view));

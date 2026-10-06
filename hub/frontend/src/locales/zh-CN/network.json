@@ -302,7 +302,7 @@
   "ui.overlay.add": "添加",
   "ui.overlay.address_assigning": "分配中…",
   "ui.overlay.address_label": "虚拟网地址",
-  "ui.overlay.apply_engine": "应用虚拟网",
+  "ui.overlay.apply_engine": "应用外部访问",
   "ui.overlay.apply_engine_hint": "先起开着的引擎，再停关掉的引擎。",
   "ui.overlay.apply_join_hint": "用这个 setup key 加入，并把它留给 client。",
   "ui.overlay.apply_settings": "应用 EasyTier 设置",

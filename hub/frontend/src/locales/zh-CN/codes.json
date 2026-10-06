@@ -329,5 +329,6 @@
   "code.hub_release_file_gone": "中枢自己的发布已不再带有这个文件，请把中枢更新到最新发布",
   "code.shell_program_unusable": "{path} 不是这台机器能运行的程序。",
   "code.rdp_takeover_failed": "远程桌面在 {step} 这一步没能启动：{detail}",
-  "code.rdp_restore_failed": "远程桌面在 {step} 这一步没能还原机器原来的 RustDesk：{detail}"
+  "code.rdp_restore_failed": "远程桌面在 {step} 这一步没能还原机器原来的 RustDesk：{detail}",
+  "code.easytier_invalid": "选了手动碰头点，至少要填一个碰头点。"
 }

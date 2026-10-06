@@ -38,6 +38,9 @@ interface ApplyBarProps {
    * for the hint and kills both buttons, however dirty the group is.
    */
   blockedHint?: string | null;
+  /** Whether Apply is disabled while the draft cannot be applied as it
+   * stands; Reset still works and no sentence is added. */
+  isApplyDisabled?: boolean;
   error?: string | null;
   notice?: string | null;
   onReset: () => void;
@@ -51,6 +54,7 @@ export function ApplyBar({
   hint,
   warning,
   blockedHint = null,
+  isApplyDisabled = false,
   error = null,
   notice = null,
   onReset,
@@ -98,7 +102,9 @@ export function ApplyBar({
             type="button"
             className="button button--primary"
             onClick={onApply}
-            disabled={isBusy || !isDirty || blockedHint !== null}
+            disabled={
+              isBusy || !isDirty || blockedHint !== null || isApplyDisabled
+            }
           >
             {isBusy ? <Spinner size={13} /> : <Icon name="check" size={14} />}
             {isBusy ? t("ui.apply_bar.applying") : label}

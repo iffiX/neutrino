@@ -24,6 +24,9 @@ import "./terminal_panels.css";
  * ones keep what they run. A Windows machine takes the shell program alone.
  */
 
+/** What an agent older than the module reports for it. */
+const STATE_UNSUPPORTED = "unsupported";
+
 /** The picker's row for the agent's own account, which is stored empty. */
 const AGENT_ACCOUNT = "";
 
@@ -67,6 +70,7 @@ export function TerminalPanels({
     return <div className="skeleton" style={{ height: 200 }} />;
   }
 
+  const isUnsupported = saved.state === STATE_UNSUPPORTED;
   const accounts: PickerOption[] = [
     { id: AGENT_ACCOUNT, name: t("ui.terminal_module.account_agent") },
     ...saved.accounts.map((account) => ({ id: account, name: account })),
@@ -102,7 +106,7 @@ export function TerminalPanels({
               ? undefined
               : t("ui.terminal_module.account_windows")
           }
-          isDisabled={!saved.is_account_settable}
+          isDisabled={!saved.is_account_settable || isUnsupported}
         />
         <label className="field">
           <span className="field_label">
@@ -113,6 +117,7 @@ export function TerminalPanels({
               className="input mono"
               value={draft.shell_path}
               spellCheck={false}
+              disabled={isUnsupported}
               onChange={(event) =>
                 setDraft({ ...draft, shell_path: event.target.value })
               }
@@ -120,7 +125,7 @@ export function TerminalPanels({
             <button
               type="button"
               className="button"
-              disabled={!isEditable}
+              disabled={!isEditable || isUnsupported}
               onClick={() => setIsBrowsing(true)}
             >
               <Icon name="folder" size={14} />
@@ -138,6 +143,7 @@ export function TerminalPanels({
         label={t("ui.terminal_module.apply")}
         hint={t("ui.terminal_module.apply_hint")}
         blockedHint={isEditable ? null : t("ui.modules.agent_offline")}
+        isApplyDisabled={isUnsupported}
         error={error}
         onReset={() => {
           reset();

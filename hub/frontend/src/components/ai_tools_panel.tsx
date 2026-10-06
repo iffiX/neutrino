@@ -110,7 +110,7 @@ export function AiToolsPanel({ deviceId }: AiToolsPanelProps) {
       return;
     }
     const request: DeviceRequest = { device_id: deviceId };
-    void write(`${BASE}/${view.is_enabled ? "disable" : "enable"}`, request);
+    void write(`${BASE}/${view.is_in_use ? "disable" : "enable"}`, request);
   };
 
   const save = async () => {
@@ -131,14 +131,14 @@ export function AiToolsPanel({ deviceId }: AiToolsPanelProps) {
       ? null
       : !view.is_online
         ? t("ui.modules.agent_offline")
-        : !view.is_enabled && !view.is_gateway_serving
+        : !view.is_in_use && !view.is_gateway_serving
           ? t("code.gateway_not_serving")
           : null;
   const canToggle =
     view !== null &&
     view.is_online &&
     !isBusy &&
-    (view.is_enabled || view.is_gateway_serving);
+    (view.is_in_use || view.is_gateway_serving);
 
   return (
     <section
@@ -157,8 +157,8 @@ export function AiToolsPanel({ deviceId }: AiToolsPanelProps) {
           <div className="ai_tools_controls">
             <button
               type="button"
-              className={`ai_tools_chip ${view.is_enabled ? "ai_tools_chip--on" : ""}`}
-              aria-pressed={view.is_enabled}
+              className={`ai_tools_chip ${view.is_in_use ? "ai_tools_chip--on" : ""}`}
+              aria-pressed={view.is_in_use}
               disabled={!canToggle}
               onClick={toggle}
             >
