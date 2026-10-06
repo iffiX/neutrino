@@ -164,8 +164,11 @@ by name as the rest are. An agent installed again finds the shares and
 accounts that were left and takes them back by the rule above: they are
 displayed, and the first report imports them.
 
-`nagent service uninstall` stops the agent's service first, so no apply of
-its own runs beside what follows, then switches every account's AI tools
+`nagent service uninstall` stops the agent's service first and disables it
+(the Linux unit disabled, the macOS job unloaded, the Windows service's start
+type `disabled`), as the package's own removal leaves it, so no apply of its
+own runs beside what follows and nothing starts it at the next boot; then it
+switches every account's AI tools
 back ("The machine's AI tools") and removes the copy of cc-switch it ran,
 before it removes anything else.
 
@@ -265,7 +268,10 @@ what `registered.json` names, kills every host of its copy, puts back what
 `kept/` holds and starts it again when it ran before. No RustDesk process of
 the agent's and no registration of the agent's is left. A person's own
 RustDesk files are never changed or deleted. `nagent service uninstall`
-turns the switch off first.
+turns the switch off first. A machine that leaves the hub cuts its share
+off at once the same way, whatever the switch said: on `nagent leave`, and
+when a `binding_unknown` refusal ends the binding because the device was
+removed on the Devices page ("What a refusal means to the agent").
 
 A failed step reports the module `failed` with `rdp_takeover_failed {step,
 detail}` on the way on, or `rdp_restore_failed {step, detail}` on the way
@@ -291,6 +297,11 @@ machine with a global IPv6 address, it asks three public STUN servers
 (`stun.l.google.com`, `stun.cloudflare.com`, `stun.nextcloud.com`) for
 that address, and on every machine it looks their names up. The request
 carries no id and registers nothing.
+
+The module reads `running` while the agent's RustDesk service runs under
+RustDesk's names, whether anybody sits at the screen or not, so a headless
+machine with the switch on reads `running`; `stopped` while the switch is
+off and none of the agent's RustDesk processes runs.
 
 **A share is declared only once it listens.** RustDesk's root service holds
 no port of its own; it spawns a second process into the session of whoever
@@ -320,12 +331,17 @@ standard place, so the agent, when it starts and finds that record, takes
 the machine's RustDesk over with its own copy as the switch's way on does,
 and until the first state that names `remote_desktop` it keeps that share
 running and reports it.
-A hub that receives `desktop.is_shared` true from a device with no
-`remote_desktop.json` writes the switch on for it, so an upgrade closes no
+A share the agent runs for that record is declared with `origin`
+`command`. A hub that receives `desktop.is_shared` true with `origin`
+`command` from a device with no `remote_desktop.json` writes the switch on
+for it, so an upgrade closes no share; a share declared with `origin`
+`switch` is never adopted. A leave or a removal ends the record with the
 share.
 
 The declaration is the `desktop` section of every report,
-`{is_shared, account, share_id, port, attention, connected_count}`. The hub
+`{is_shared, origin, account, share_id, port, attention, connected_count}`,
+`origin` being `switch` for a share the switch made, `command` for one an
+old command's record keeps running, and empty while nothing is shared. The hub
 pairs it with the device's address, chosen for the caller's network
 ([protocol.md](protocol.md), "Devices on the channel"), and keeps it in
 memory alone. It dies when the machine stops sharing, stops reporting, or the
@@ -1050,9 +1066,11 @@ page; the client rejects a device link and the agent a client one. The
 base64url alphabet holds no character a shell splits or a URL escapes, so the
 link pastes anywhere unquoted.
 
-The agent tries each URL in turn, at enrolment and on every reconnect: the
-name `hub.neutrino.internal` where the network resolves it, then the address
-that last answered, then the rest of the set, `AGENT_ROTATE_DELAY_S` apart
+The agent tries each URL in turn, at enrolment and on every reconnect, from
+the start: the name `hub.neutrino.internal` where the network resolves it,
+then the set in the hub's order, `AGENT_ROTATE_DELAY_S` apart. The address
+that answered last is not preferred, and while the socket is connected
+nothing moves it
 ([protocol.md](protocol.md), "The address a caller is given"). For every
 `https` URL it builds a TLS connection with chain and hostname verification
 off. **It checks the peer
@@ -1100,7 +1118,9 @@ A refusal at the door keeps the binding. The agent records it as
 `last_error`, `nagent status` says which no is being heard, and the agent
 sends `hello` again a minute later. The one refusal that unbinds is
 `binding_unknown`, which only the hub holding the pinned certificate can say.
-The agent then deletes its binding file and is bound again by a fresh link.
+The agent then deletes its binding file, switches the AI tools back, turns
+the desktop share off ("The desktop is the hub's order") and is bound again
+by a fresh link.
 
 Admission by `PROTOCOL`, the two protocol codes, the close codes and the
 upgrade an agent performs when `welcome` names a newer `software` are in
