@@ -482,3 +482,23 @@ def test_linux_answers_a_question_as_the_account_on_a_pty(monkeypatch):
     ]
     assert (seen["prompt"], seen["answer"]) == ("(y/N)", "y\n")
     assert seen["env"]["HOME"] == "/home/alice"
+
+
+def test_linux_steps_down_with_the_variables_it_is_given(monkeypatch):
+    entry = PwdEntry("alice", 1000, "/bin/bash", "/home/alice")
+    monkeypatch.setattr(linux_module.pwd, "getpwnam", lambda name: entry)
+    monkeypatch.setattr(linux_module.os, "geteuid", lambda: 0)
+    recorded = {}
+
+    def record(command, **kwargs):
+        recorded["env"] = kwargs.get("env")
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(linux_module.subprocess, "run", record)
+
+    LinuxPlatform().run_as_account(
+        "alice", ["id"], environment={"CC_SWITCH_CONFIG_DIR": "/home/alice/s"}
+    )
+
+    assert recorded["env"]["CC_SWITCH_CONFIG_DIR"] == "/home/alice/s"
+    assert recorded["env"]["HOME"] == "/home/alice"

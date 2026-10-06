@@ -147,6 +147,7 @@ class AgentPlatform:
         stdin: str = "",
         timeout_s: int = AGENT_STEP_DOWN_TIMEOUT_S,
         password: str = "",
+        environment: "dict | None" = None,
     ) -> "subprocess.CompletedProcess":
         """Run a process as an account.
 
@@ -157,6 +158,8 @@ class AgentPlatform:
             timeout_s: How long to wait.
             password: The account's login, which Windows needs to run as it;
                 ignored elsewhere.
+            environment: Variables set for the process beside the account's
+                own; None sets none.
 
         Returns:
             The completed process, with text output captured.
@@ -193,6 +196,7 @@ class AgentPlatform:
         answer: str,
         timeout_s: int = AGENT_STEP_DOWN_TIMEOUT_S,
         password: str = "",
+        environment: "dict | None" = None,
     ) -> tuple:
         """Run a process as an account on a terminal of its own, answering one question.
 
@@ -204,6 +208,8 @@ class AgentPlatform:
             timeout_s: How long to wait.
             password: The account's login, which Windows needs to run as it;
                 ignored elsewhere.
+            environment: Variables set for the process beside the account's
+                own; None sets none.
 
         Returns:
             ``(returncode, output)``, the output as the terminal drew it.

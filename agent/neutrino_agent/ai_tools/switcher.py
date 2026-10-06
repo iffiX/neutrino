@@ -258,6 +258,8 @@ class AiToolsAccountSwitcher:
         """
         done = []
         switched = []
+        self._session.is_own_store = True
+        self._session.prepare_store()
         for app in AI_TOOLS_APPS:
             try:
                 if self._point_at_hub(
@@ -275,6 +277,9 @@ class AiToolsAccountSwitcher:
                         undone.append(
                             f"{earlier}: {failure.params.get('detail', failure.code)}"
                         )
+                self._session.is_own_store = True
+                if not self.has_records():
+                    self._session.remove_store()
                 if error.code != AI_TOOLS_CODE_SWITCH_FAILED:
                     raise
                 problem = f"{app}: {error.params.get('detail', '')}"
@@ -300,6 +305,8 @@ class AiToolsAccountSwitcher:
         for app in AI_TOOLS_APPS:
             previous = self._point_away(app)
             notes.append(f"{app} → {previous or 'unset'}")
+        self._session.is_own_store = True
+        self._session.remove_store()
         return notes
 
     def has_records(self) -> bool:
@@ -329,6 +336,7 @@ class AiToolsAccountSwitcher:
                 settings did not end up naming the hub.
         """
         record = self.read_record(app)
+        self._session.is_own_store = record is None or bool(record.get("is_own_store"))
         if record is None:
             record = self._adopt_once(app)
         settings = wanted(app, base_url, api_key, config)
@@ -407,6 +415,7 @@ class AiToolsAccountSwitcher:
             "is_dir_present": is_dir_present,
             "kept": kept,
             "kept_modes": kept_modes,
+            "is_own_store": True,
             "previous": "" if current == AI_TOOLS_PROVIDER_ID else current,
             "added": None,
         }
@@ -455,6 +464,9 @@ class AiToolsAccountSwitcher:
                 stays in it, or a file cannot be put back; the record stays.
         """
         record = self.read_record(app) or {}
+        self._session.is_own_store = not record or bool(record.get("is_own_store"))
+        if self._session.is_own_store:
+            self._session.prepare_store()
         previous = str(record.get("previous", "") or "")
         returned_to = self._drop_provider(app, previous)
         kept = record.get("kept")

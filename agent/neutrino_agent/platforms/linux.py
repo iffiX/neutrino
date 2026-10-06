@@ -218,6 +218,7 @@ class LinuxPlatform(AgentPlatform):
         stdin: str = "",
         timeout_s: int = AGENT_STEP_DOWN_TIMEOUT_S,
         password: str = "",
+        environment: "dict | None" = None,
     ) -> "subprocess.CompletedProcess":
         """Run a process as an account, through ``runuser`` when root.
 
@@ -231,6 +232,8 @@ class LinuxPlatform(AgentPlatform):
             stdin: Sent to the process's standard input.
             timeout_s: How long to wait.
             password: Unused here; Windows needs it.
+            environment: Variables set for the process beside the account's
+                own; None sets none.
 
         Returns:
             The completed process, with text output captured.
@@ -240,6 +243,8 @@ class LinuxPlatform(AgentPlatform):
         if account and os.geteuid() == 0:
             command = ["runuser", "-u", account, "--"] + command
             env = self._account_env(account)
+        if environment:
+            env = dict(env if env is not None else os.environ, **environment)
         return subprocess.run(
             command,
             input=stdin,
@@ -280,6 +285,7 @@ class LinuxPlatform(AgentPlatform):
         answer: str,
         timeout_s: int = AGENT_STEP_DOWN_TIMEOUT_S,
         password: str = "",
+        environment: "dict | None" = None,
     ) -> tuple:
         """Run a process as an account on a pseudo-terminal, answering one question.
 
@@ -290,6 +296,8 @@ class LinuxPlatform(AgentPlatform):
             answer: The keystrokes to send, newline included.
             timeout_s: How long to wait.
             password: Unused here; Windows needs it.
+            environment: Variables set for the process beside the account's
+                own; None sets none.
 
         Returns:
             ``(returncode, output)``; 127 when it could not start.
@@ -303,6 +311,8 @@ class LinuxPlatform(AgentPlatform):
         if account and os.geteuid() == 0:
             command = ["runuser", "-u", account, "--"] + command
             env = self._account_env(account)
+        if environment:
+            env = dict(env if env is not None else os.environ, **environment)
         return run_on_pty(
             command, prompt=prompt, answer=answer, timeout_s=timeout_s, env=env
         )

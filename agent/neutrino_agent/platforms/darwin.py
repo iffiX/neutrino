@@ -416,6 +416,7 @@ class DarwinPlatform(AgentPlatform):
         stdin: str = "",
         timeout_s: int = AGENT_STEP_DOWN_TIMEOUT_S,
         password: str = "",
+        environment: "dict | None" = None,
     ) -> "subprocess.CompletedProcess":
         """Run a process as an account: its uid and group, no other groups, in its home.
 
@@ -425,6 +426,8 @@ class DarwinPlatform(AgentPlatform):
             stdin: Sent to the process's standard input.
             timeout_s: How long to wait.
             password: Unused here; Windows needs it.
+            environment: Variables set for the process beside the account's
+                own; None sets none.
 
         Returns:
             The completed process, with text output captured.
@@ -433,6 +436,8 @@ class DarwinPlatform(AgentPlatform):
             KeyError: When the account database has no such account.
         """
         extra = self._account_process(account) if account else {}
+        if environment:
+            extra["env"] = dict(extra.get("env") or os.environ, **environment)
         return subprocess.run(
             list(argv),
             input=stdin,
@@ -467,6 +472,7 @@ class DarwinPlatform(AgentPlatform):
         answer: str,
         timeout_s: int = AGENT_STEP_DOWN_TIMEOUT_S,
         password: str = "",
+        environment: "dict | None" = None,
     ) -> tuple:
         """Run a process as an account on a pseudo-terminal, answering one question.
 
@@ -477,6 +483,8 @@ class DarwinPlatform(AgentPlatform):
             answer: The keystrokes to send, newline included.
             timeout_s: How long to wait.
             password: Unused here; Windows needs it.
+            environment: Variables set for the process beside the account's
+                own; None sets none.
 
         Returns:
             ``(returncode, output)``; 127 when it could not start.
@@ -485,6 +493,8 @@ class DarwinPlatform(AgentPlatform):
             KeyError: When the account database has no such account.
         """
         extra = self._account_process(account)
+        if environment:
+            extra["env"] = dict(extra["env"], **environment)
         return run_on_pty(
             list(argv),
             prompt=prompt,

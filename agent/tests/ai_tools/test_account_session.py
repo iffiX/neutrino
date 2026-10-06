@@ -37,9 +37,12 @@ class RecordingPlatform:
         self._result = (code, out, err)
         self._refusal = refusal
 
-    def run_as_account(self, account, argv, *, stdin="", timeout_s=0, password=""):
+    def run_as_account(
+        self, account, argv, *, stdin="", timeout_s=0, password="", environment=None
+    ):
         self.runs.append(
             {
+                "environment": environment,
                 "account": account,
                 "argv": list(argv),
                 "stdin": stdin,
@@ -52,9 +55,18 @@ class RecordingPlatform:
         return subprocess.CompletedProcess(argv, code, out, err)
 
     def run_as_account_answering(
-        self, account, argv, *, prompt, answer, timeout_s=0, password=""
+        self,
+        account,
+        argv,
+        *,
+        prompt,
+        answer,
+        timeout_s=0,
+        password="",
+        environment=None,
     ):
         self.answered.append((account, list(argv), prompt, answer, password))
+        self.answered_environment = environment
         if self._refusal is not None:
             raise self._refusal
         return 0, "drawn"
@@ -334,3 +346,41 @@ def test_a_mode_is_read_and_set_as_the_account_and_never_on_windows():
     assert session_on(windows, "C:\\Users\\ann").mode_of("C:\\x") is None
     session_on(windows, "C:\\Users\\ann").set_mode("C:\\x", 0o600)
     assert windows.runs == []
+
+
+STORE = "/home/ann/.local/share/neutrino/agent/ai_tools/cc_switch"
+
+
+def test_cc_switch_runs_on_the_store_in_the_account_s_neutrino_tree():
+    platform = RecordingPlatform()
+    session = session_on(platform)
+
+    session.cc(["provider", "list"], "claude")
+    session.cc_answering(
+        ["provider", "delete", "neutrino"], "claude", prompt="(y/N)", answer="y\n"
+    )
+    session.is_own_store = False
+    session.cc(["provider", "list"], "claude")
+
+    assert session.store_path() == STORE
+    assert platform.runs[0]["environment"] == {"CC_SWITCH_CONFIG_DIR": STORE}
+    assert platform.answered_environment == {"CC_SWITCH_CONFIG_DIR": STORE}
+    assert platform.runs[1]["environment"] is None
+
+
+def test_the_store_is_made_the_account_s_alone_and_taken_away_with_its_empty_tree():
+    platform = RecordingPlatform()
+    session = session_on(platform)
+
+    session.prepare_store()
+    session.remove_store()
+
+    made, removed = (run["argv"] for run in platform.runs)
+    assert made[:2] == ["sh", "-c"] and "chmod 700" in made[2] and made[-1] == STORE
+    assert "rm -rf" in removed[2] and removed[4] == STORE
+    assert removed[5:] == [
+        "/home/ann/.local/share/neutrino/agent/ai_tools",
+        "/home/ann/.local/share/neutrino/agent",
+        "/home/ann/.local/share/neutrino",
+    ]
+    assert {run["account"] for run in platform.runs} == {"ann"}
