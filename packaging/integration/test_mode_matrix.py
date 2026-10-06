@@ -33,6 +33,14 @@ SETTLE_LIMIT_S = 30.0
 # The panel reads the uplinks' leases again every half minute.
 RESOLVER_LIMIT_S = 75.0
 FALLBACK_RESOLVERS = ["223.5.5.5", "119.29.29.29"]  # scan: allow
+# Where dhcpcd keeps each uplink's lease, and the parts of the DHCP message
+# in it that name the resolvers.
+DHCP_LEASE_DIR = Path("/var/lib/dhcpcd")
+DHCP_MAGIC_COOKIE = bytes.fromhex("63825363")
+DHCP_OPTIONS_OFFSET = 240
+DHCP_OPTION_DNS = 6
+DHCP_OPTION_PAD = 0
+DHCP_OPTION_END = 255
 LEASE_LIMIT_S = 180.0
 
 
@@ -74,12 +82,30 @@ def dnsmasq_servers() -> list:
 
 
 def lease_resolvers(device: str) -> list:
-    """What the uplink's DHCP lease names as its resolvers, as dhcpcd says."""
-    dump = machine_state.run(["dhcpcd", "--dumplease", "-4", device])
-    for line in dump.splitlines():
-        name, _, value = line.partition("=")
-        if name.strip() == "domain_name_servers":
-            return value.strip().strip("'").split()
+    """What the uplink's DHCP lease names as its resolvers.
+
+    Read from the lease file dhcpcd keeps, the DHCP message it was given, as
+    the hub reads it: on Debian 12 `dhcpcd --dumplease` prints nothing.
+    """
+    try:
+        data = (DHCP_LEASE_DIR / f"{device}.lease").read_bytes()
+    except OSError:
+        return []
+    if data[DHCP_OPTIONS_OFFSET - 4 : DHCP_OPTIONS_OFFSET] != DHCP_MAGIC_COOKIE:
+        return []
+    index = DHCP_OPTIONS_OFFSET
+    while index + 1 < len(data) and data[index] != DHCP_OPTION_END:
+        if data[index] == DHCP_OPTION_PAD:
+            index += 1
+            continue
+        length = data[index + 1]
+        value = data[index + 2 : index + 2 + length]
+        if data[index] == DHCP_OPTION_DNS:
+            return [
+                ".".join(str(octet) for octet in value[start : start + 4])
+                for start in range(0, len(value) - len(value) % 4, 4)
+            ]
+        index += 2 + length
     return []
 
 
@@ -111,6 +137,19 @@ def settings_of(panel, name: str) -> dict:
 
 
 def put_interface(panel, name: str, **changes) -> None:
+    """Save one interface. A router refuses an exposed port with the role
+    ``disabled``, and exposure is written for the whole box, so a port about
+    to be disabled is closed first."""
+    if changes.get("role") == "disabled" and settings_of(panel, name)["is_exposed"]:
+        view = panel.read("/hub/network")
+        put_options(
+            panel,
+            exposed_interfaces=[
+                entry["settings"]["name"]
+                for entry in view["interfaces"]
+                if entry["settings"]["is_exposed"] and entry["settings"]["name"] != name
+            ],
+        )
     body = settings_of(panel, name)
     for key, value in changes.items():
         if isinstance(value, dict) and isinstance(body.get(key), dict):
@@ -122,6 +161,13 @@ def put_interface(panel, name: str, **changes) -> None:
 
 
 def put_options(panel, **changes) -> None:
+    """Save the page-wide options, the exposure as it is unless named.
+
+    A router refuses an exposed port with the role ``disabled``; a port a
+    server or a side gateway left exposed keeps that answer stored, so in
+    router mode such a port is left out of the set written, unless the
+    write gives it a role.
+    """
     view = panel.read("/hub/network")
     body = {
         "uplink_policy": view["uplink_policy"],
@@ -133,6 +179,17 @@ def put_options(panel, **changes) -> None:
         ],
     }
     body.update(changes)
+    if view["mode"] == "router":
+        roles = {
+            entry["settings"]["name"]: entry["settings"]["role"]
+            for entry in view["interfaces"]
+        }
+        given = body.get("interface_roles") or {}
+        body["exposed_interfaces"] = [
+            name
+            for name in body["exposed_interfaces"]
+            if name in given or roles.get(name) != "disabled"
+        ]
     status, answer = panel.call("POST", "/hub/network/set", body)
     assert status == 200, answer
 
@@ -357,11 +414,16 @@ def test_the_served_network_resolves_at_the_uplinks_lease(panel, wiring):
                 return entry["link"]["lease_dns"]
         return []
 
-    until(
-        lambda: dnsmasq_servers() == expected and shown() == leased,
-        limit_s=RESOLVER_LIMIT_S,
-        message=f"dnsmasq forwards to {dnsmasq_servers()}, the lease names {leased}",
-    )
+    try:
+        until(
+            lambda: dnsmasq_servers() == expected and shown() == leased,
+            limit_s=RESOLVER_LIMIT_S,
+        )
+    except AssertionError:
+        pytest.fail(
+            f"dnsmasq forwards to {dnsmasq_servers()}, the page shows {shown()}, "
+            f"the lease names {leased}"
+        )
 
 
 def test_the_router_diverts_its_lan_and_itself(panel, wiring):
