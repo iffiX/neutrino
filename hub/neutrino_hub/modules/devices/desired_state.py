@@ -905,7 +905,7 @@ class DesiredStateStore:
                 ),
             ),
         }
-        if desired["ai_tools"]["is_enabled"] and marks.get(DEVICE_AI_TOOLS_NAME):
+        if marks.get(DEVICE_AI_TOOLS_NAME):
             desired["ai_tools"][DEVICE_RETRY_MARK_KEY] = marks[DEVICE_AI_TOOLS_NAME]
         return desired, state_hash(desired)
 

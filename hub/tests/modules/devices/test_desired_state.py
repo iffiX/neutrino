@@ -397,15 +397,19 @@ def test_a_retry_mark_rides_its_module_entry_and_moves_the_hash(config):
     assert len({plain_hash, marked_hash, again_hash}) == 3
 
 
-def test_the_ai_tools_mark_rides_the_section_only_while_it_is_on(config, monkeypatch):
+def test_the_ai_tools_mark_rides_the_section_on_and_off(config, monkeypatch):
+    """Off, the mark is what retries a switch back that could not run."""
     store, models = ai_tools_box(monkeypatch)
     marks = {"ai_tools": "a1b2"}
 
-    off, _ = store.compose(DEVICE, PLATFORM, ai_models=models, retry_marks=marks)
+    plain, plain_hash = store.compose(DEVICE, PLATFORM, ai_models=models)
+    off, off_hash = store.compose(DEVICE, PLATFORM, ai_models=models, retry_marks=marks)
     store.set_ai_tools(DEVICE, is_enabled=True)
     on, _ = store.compose(DEVICE, PLATFORM, ai_models=models, retry_marks=marks)
 
-    assert off["ai_tools"] == AI_TOOLS_OFF
+    assert plain["ai_tools"] == AI_TOOLS_OFF
+    assert off["ai_tools"] == {**AI_TOOLS_OFF, "retry_mark": "a1b2"}
+    assert off_hash != plain_hash
     assert on["ai_tools"]["retry_mark"] == "a1b2"
 
 
