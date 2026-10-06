@@ -303,6 +303,16 @@ capture reports `rdp_screen_not_allowed` instead of a desktop nobody can
 see. Whose desktop a peer sees is whoever sits at the screen; the report's
 `account` names them and decides nothing.
 
+**An upgrade replaces the copy under a running host.** The package lays
+the new copy over the old one while the host registered under RustDesk's
+names keeps running the old program, which then fails to start its session
+host from a file that is gone. So the agent, when it starts with the switch
+on, compares the copy's running processes with the copy on disk (on Linux
+the file each process runs, on macOS and Windows when each started against
+when the copy was written) and, when one runs an older program, stops the
+host and starts it again under the same registration and settings. This is
+not an apply of the state, and the mark of the state last tried stays.
+
 **A share made by the old command is kept.** An agent of a version that had
 `nagent rdp start` recorded a share in its store. The package that upgrades
 it takes away the RustDesk the old package installed at the system's
