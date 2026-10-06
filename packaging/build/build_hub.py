@@ -34,10 +34,10 @@ from shared import container_build  # noqa: E402
 HUB_BUILDS = {
     "debian": {
         "image": "debian:12",
-        "install": "apt-get -qq update >/dev/null 2>&1 && "
+        "install": "apt-get -qq update && "
         "apt-get -qq install -y python3 python3-venv python3-pip dpkg-dev "
         "pkg-config build-essential libgirepository1.0-dev libcairo2-dev "
-        "ca-certificates >/dev/null 2>&1",
+        "ca-certificates",
         "script": "build_deb.py",
         "architecture": "{arch}",
     },
@@ -45,15 +45,16 @@ HUB_BUILDS = {
         "image": "fedora:41",
         "install": "dnf -q -y install python3 python3-pip rpm-build cpio gcc "
         "pkgconf-pkg-config gobject-introspection-devel cairo-devel "
-        "cairo-gobject-devel libffi-devel >/dev/null 2>&1",
+        "cairo-gobject-devel libffi-devel",
         "script": "build_rpm.py",
         "architecture": "{rpm_arch}",
     },
     "arch": {
         "image": "archlinux:latest",
-        "install": "pacman -Sy --noconfirm --needed python python-pip base-devel "
-        "gobject-introspection cairo libffi >/dev/null 2>&1 && "
-        "useradd -m builder 2>/dev/null || true",
+        "install": "pacman -Sy --noconfirm --needed archlinux-keyring && "
+        "pacman -S --noconfirm --needed python python-pip base-devel "
+        "gobject-introspection cairo libffi && "
+        "(useradd -m builder 2>/dev/null || true)",
         "script": "build_pkg.py",
         "architecture": "{pkg_arch}",
         "extra": "--build-user builder",

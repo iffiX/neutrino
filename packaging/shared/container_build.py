@@ -20,6 +20,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # The distribution families a Linux package is built for.
 CONTAINER_FAMILIES = ("debian", "rhel", "arch")
 
+# Where the install step's output waits inside the container.
+INSTALL_LOG = "/tmp/neutrino_install.log"
+
 # The container platform for each architecture the packages are published
 # for. Building for anything but the host's own needs QEMU registered with
 # binfmt_misc, which is what the tag workflow does before it calls a build.
@@ -141,7 +144,7 @@ def build_in_container(
             "sh",
             "-c",
             script.format(
-                install=build["install"],
+                install=install_step(build["install"]),
                 script=build["script"],
                 architecture=names.get(family, architecture),
                 extra=build.get("extra", ""),
@@ -174,6 +177,27 @@ def host_architecture() -> str:
     """The Debian architecture name for this machine."""
     machine = os.uname().machine
     return HOST_ARCHITECTURES.get(machine, machine)
+
+
+def install_step(install: str) -> str:
+    """The shell that installs a build's tools inside its container.
+
+    The install runs up to three times, 30 seconds apart, with its output kept
+    in a file; the file's last lines are printed when the third try fails,
+    and the build stops there.
+
+    Args:
+        install: The family's install command.
+
+    Returns:
+        The shell to run before the build.
+    """
+    return (
+        "for try in 1 2 3; do "
+        f"({install}) >{INSTALL_LOG} 2>&1 && break; "
+        f'if [ "$try" = 3 ]; then tail -n 40 {INSTALL_LOG} >&2; exit 1; fi; '
+        "sleep 30; done"
+    )
 
 
 def run(command: list) -> None:

@@ -26,9 +26,9 @@ from shared import container_build  # noqa: E402
 AGENT_BUILDS = {
     "debian": {
         "image": "debian:12",
-        "install": "apt-get -qq update >/dev/null 2>&1 && "
+        "install": "apt-get -qq update && "
         "apt-get -qq install -y python3 dpkg-dev pkg-config build-essential "
-        "libgirepository1.0-dev libcairo2-dev ca-certificates >/dev/null 2>&1 && "
+        "libgirepository1.0-dev libcairo2-dev ca-certificates && "
         "mkdir -p /build && cp -r /src/licenses /build/licenses",
         "script": "build_deb.py",
     },
@@ -36,7 +36,7 @@ AGENT_BUILDS = {
         "image": "fedora:41",
         "install": "dnf -q -y install python3 rpm-build pkgconf-pkg-config gcc "
         "gobject-introspection-devel cairo-devel cairo-gobject-devel "
-        "libffi-devel cpio >/dev/null 2>&1 && "
+        "libffi-devel cpio && "
         "mkdir -p /build && cp -r /src/licenses /build/licenses",
         "script": "build_rpm.py",
     },

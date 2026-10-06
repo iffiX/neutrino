@@ -39,22 +39,22 @@ from shared import container_build  # noqa: E402
 CLIENT_BUILDS = {
     "debian": {
         "image": "debian:12",
-        "install": "apt-get -qq update >/dev/null 2>&1 && "
+        "install": "apt-get -qq update && "
         "apt-get -qq install -y python3 dpkg dpkg-dev binutils pkg-config "
         "build-essential patchelf ccache libgirepository1.0-dev libcairo2-dev "
         "gir1.2-gtk-3.0 gir1.2-webkit2-4.1 gir1.2-webkit2-4.0 "
         "gir1.2-ayatanaappindicator3-0.1 "
-        "ca-certificates >/dev/null 2>&1",
+        "ca-certificates",
         "script": "build_deb.py",
     },
     "rhel": {
         "image": "debian:12",
-        "install": "apt-get -qq update >/dev/null 2>&1 && "
+        "install": "apt-get -qq update && "
         "apt-get -qq install -y python3 dpkg dpkg-dev binutils pkg-config "
         "build-essential patchelf ccache libgirepository1.0-dev libcairo2-dev "
         "gir1.2-gtk-3.0 gir1.2-webkit2-4.1 gir1.2-webkit2-4.0 "
         "gir1.2-ayatanaappindicator3-0.1 "
-        "rpm cpio ca-certificates >/dev/null 2>&1",
+        "rpm cpio ca-certificates",
         "script": "build_rpm.py",
     },
 }
