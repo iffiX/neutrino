@@ -46,6 +46,8 @@ RUNNING_PATTERN = re.compile(r"STATE\s*:\s*4\b")
 # The start types sc.exe takes, by the word Win32_Service reports.
 START_TYPES = {"auto": "auto", "manual": "demand", "disabled": "disabled"}
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+# Where Windows Installer parks an executable it replaced while it ran.
+INSTALLER_PARKING_FOLDER = "config.msi"
 
 # What the service of RustDesk's name is, if there is one.
 READ_SERVICE_SCRIPT = """
@@ -60,8 +62,7 @@ if ($null -eq $s) { @{is_present = $false} | ConvertTo-Json -Compress; exit 0 }
 PROCESSES_SCRIPT = """
 $found = @(Get-CimInstance Win32_Process -Filter "Name LIKE 'rustdesk%'" |
   ForEach-Object { @{pid = [int]$_.ProcessId; program = [string]$_.ExecutablePath;
-    command = [string]$_.CommandLine;
-    started = [long]([DateTimeOffset]$_.CreationDate).ToUnixTimeSeconds()} })
+    command = [string]$_.CommandLine} })
 @{processes = $found} | ConvertTo-Json -Compress -Depth 4
 """
 
@@ -90,6 +91,20 @@ def is_viewer_command(command: str) -> bool:
     """
     words = command.split()
     return any(flag in words for flag in REMOTE_DESKTOP_VIEWER_FLAGS)
+
+
+def is_replaced_image(image: str) -> bool:
+    """Whether a process's image is a program an install moved away.
+
+    Args:
+        image: The image's full path, as ``QueryFullProcessImageName`` reads
+            it.
+
+    Returns:
+        True when it lies in a ``Config.Msi`` folder or is no file on disk.
+    """
+    parts = [part.lower() for part in ntpath.normpath(image).split("\\")]
+    return INSTALLER_PARKING_FOLDER in parts or not os.path.isfile(image)
 
 
 def listening_pids(printed: str, port: int) -> list:
@@ -318,32 +333,29 @@ class RemoteDesktopWindowsApplier:
         return [pid for pid, program, _ in self._rustdesk() if program.lower() == own]
 
     def stale_pids(self) -> list:
-        """The hosts created before the copy on disk was written: an upgrade
-        replaced the executable under them.
+        """The hosts an upgrade replaced the executable under.
 
-        Windows Installer moves an executable that is in use aside into
-        ``Config.Msi`` until the next restart, so a host it left running (the
-        tray in the signed-in session) names a program that is no longer
-        there rather than the copy.
+        Windows Installer moves an executable in use into ``Config.Msi``
+        until the next restart and gives the new one the build's own time,
+        while ``Win32_Process`` still names the old path. So the image each
+        host really runs is read with ``QueryFullProcessImageName``: a host
+        whose image is no longer a file on disk, or lies in ``Config.Msi``,
+        runs a replaced program. A person's own RustDesk, installed
+        elsewhere, is a file on disk and is left alone.
 
         Returns:
             Their pids; empty when the copy is not on disk.
         """
-        try:
-            status = os.stat(self.program)
-        except OSError:
+        if not os.path.isfile(self.program):
             return []
-        written = max(status.st_mtime, status.st_ctime)
-        own = self.program.lower()
-        return [
-            pid
-            for pid, program, command, started in self._rustdesk_started()
-            if started
-            and started < written
-            and not is_viewer_command(command)
-            and program
-            and (program.lower() == own or not os.path.isfile(program))
-        ]
+        stale = []
+        for pid, program, command in self._rustdesk():
+            if is_viewer_command(command):
+                continue
+            image = self._program_of(pid) or program
+            if image and is_replaced_image(image):
+                stale.append(pid)
+        return stale
 
     def host_pids(self) -> list:
         """Every RustDesk process that is not a viewer."""
@@ -394,11 +406,6 @@ class RemoteDesktopWindowsApplier:
 
     def _rustdesk(self) -> list:
         """Every RustDesk process: ``(pid, program, command line)``."""
-        return [entry[:3] for entry in self._rustdesk_started()]
-
-    def _rustdesk_started(self) -> list:
-        """Every RustDesk process: ``(pid, program, command line, started)``,
-        ``started`` in seconds since the epoch, 0 when not known."""
         try:
             answer = self._powershell(PROCESSES_SCRIPT, {})
         except OSError:
@@ -412,7 +419,6 @@ class RemoteDesktopWindowsApplier:
                     int(process.get("pid") or 0),
                     str(process.get("program") or ""),
                     str(process.get("command") or ""),
-                    int(process.get("started") or 0),
                 )
             )
         return [entry for entry in found if entry[0]]
