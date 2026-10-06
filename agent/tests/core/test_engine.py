@@ -15,6 +15,7 @@ nothing in it ever retries anything.
 """
 
 import os
+import subprocess
 import threading
 import time
 
@@ -905,6 +906,31 @@ class SmbServerPlatform(AgentPlatform):
 
     def smb_server_applier(self):
         return SmbServerApplier()
+
+
+class FenceRefusingApplier(SmbServerApplier):
+    """An SMB applier whose kept fence pf refuses to load."""
+
+    def reload_fence(self):
+        raise subprocess.CalledProcessError(1, ["pfctl"])
+
+
+class FenceRefusingPlatform(SmbServerPlatform):
+    def smb_server_applier(self):
+        return FenceRefusingApplier()
+
+
+def test_a_fence_that_does_not_load_is_logged_while_the_engine_is_made(tmp_path):
+    lines = []
+
+    engine = ModuleEngine(
+        platform=FenceRefusingPlatform(),
+        log=lines.append,
+        configured_dir=str(tmp_path / "configured"),
+    )
+
+    assert "samba" in engine.module_runners
+    assert any(line.startswith("samba: the fence did not load") for line in lines)
 
 
 def test_a_system_with_its_own_smb_server_runs_the_file_share_alone(

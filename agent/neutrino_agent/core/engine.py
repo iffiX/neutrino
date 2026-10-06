@@ -172,6 +172,9 @@ class ModuleEngine(ReconcileWorker):
         self._configured_dir = configured_dir or AGENT_CONFIGURED_DIR
         self._platform_tuple = platform_tuple()
         self._on_line = None
+        # A runner logs while it is made (the file share's fence that did not
+        # load), so the log is set before the runners are.
+        self._log = log
         self._operation_lock = threading.Lock()
         # The modules mid-operation, whose transient state a refresh keeps.
         self._in_transit: set = set()

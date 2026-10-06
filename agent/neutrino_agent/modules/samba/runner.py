@@ -240,7 +240,8 @@ class SambaNativeServerRunner(ModuleRunner):
         try:
             self._applier.reload_fence()
         except (OSError, subprocess.SubprocessError) as error:
-            self._log(f"samba: the fence did not load: {error}")
+            said = str(getattr(error, "stderr", "") or "").strip()
+            self._log(f"samba: the fence did not load: {error} {said}".rstrip())
 
     def verify(self, resolved: dict) -> bool:
         """Whether the system's SMB server is there.
