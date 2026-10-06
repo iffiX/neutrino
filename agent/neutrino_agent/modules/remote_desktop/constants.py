@@ -11,6 +11,8 @@ REMOTE_DESKTOP_REGISTERED_NAME = "registered.json"
 REMOTE_DESKTOP_KEPT_DIR_NAME = "kept"
 REMOTE_DESKTOP_KEPT_SERVICE_NAME = "service.json"
 REMOTE_DESKTOP_KEPT_SETTINGS_DIR_NAME = "settings"
+# The lock every process takes before it changes RustDesk's registration.
+REMOTE_DESKTOP_LOCK_NAME = ".lock"
 
 # The port a direct connection lands on.
 REMOTE_DESKTOP_DIRECT_PORT = 21118

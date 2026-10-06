@@ -51,12 +51,17 @@ from neutrino_agent.modules.remote_desktop.constants import (
     REMOTE_DESKTOP_KEPT_DIR_NAME,
     REMOTE_DESKTOP_KEPT_SETTINGS_DIR_NAME,
     REMOTE_DESKTOP_LISTEN_TTL_S,
+    REMOTE_DESKTOP_LOCK_NAME,
     REMOTE_DESKTOP_OPTIONS,
     REMOTE_DESKTOP_OPTIONS_FILE,
     REMOTE_DESKTOP_PASSWORD_FILE,
     REMOTE_DESKTOP_REGISTERED_NAME,
 )
-from neutrino_agent.modules.remote_desktop.records import read_json, write_json
+from neutrino_agent.modules.remote_desktop.records import (
+    held,
+    read_json,
+    write_json,
+)
 from neutrino_agent.modules.subprocess_run import command_detail
 from neutrino_agent.rdp.constants import (
     RDP_ATTENTION_NOBODY_SEATED,
@@ -187,7 +192,7 @@ class RdpShareHost:
                 ``rdp_restore_failed {step, detail}`` naming the step that
                 failed.
         """
-        with self._lock:
+        with self._held():
             record = self._store.rdp_share()
             if not record.get("is_ordered"):
                 self._store.set_rdp_share(
@@ -209,7 +214,7 @@ class RdpShareHost:
         on the agent's copy until the first state names the module. A
         failure is logged: the state that follows tries again.
         """
-        with self._lock:
+        with self._held():
             record = self._store.rdp_share()
             if record.get("is_ordered") or not record.get("is_shared"):
                 return
@@ -236,7 +241,7 @@ class RdpShareHost:
         Not an apply of the state: the settings and the registration stay
         as they are. A failure is logged.
         """
-        with self._lock:
+        with self._held():
             if not os.path.isfile(self._registered_path()):
                 return
             applier = self._applier
@@ -256,7 +261,7 @@ class RdpShareHost:
         or was removed from it. An old command's record ends with it, so the
         next hub adopts nothing. A failure is logged.
         """
-        with self._lock:
+        with self._held():
             try:
                 self._give_back()
             except ModuleApplyError as error:
@@ -281,7 +286,7 @@ class RdpShareHost:
         Raises:
             ModuleApplyError: ``rdp_restore_failed {step, detail}``.
         """
-        with self._lock:
+        with self._held():
             self._give_back()
 
     def is_running(self) -> bool:
@@ -602,6 +607,13 @@ class RdpShareHost:
             self._listeners = []
         self._listened_at = now
         return self._listeners
+
+    @contextlib.contextmanager
+    def _held(self):
+        """This process's lock, then the lock every process shares."""
+        with self._lock:
+            with held(os.path.join(self._dir, REMOTE_DESKTOP_LOCK_NAME)):
+                yield
 
     def _registered_path(self) -> str:
         return os.path.join(self._dir, REMOTE_DESKTOP_REGISTERED_NAME)

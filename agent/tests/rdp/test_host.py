@@ -648,3 +648,33 @@ def test_the_service_runs_with_the_switch_on_whoever_is_at_the_screen(host):
     host.seat.seated = []
 
     assert host.is_service_running() is True
+
+
+def test_two_processes_giving_rustdesk_back_take_turns(host, tmp_path):
+    """nagent leave in its own process and the service answering the hub's
+    binding_unknown both give RustDesk back; the second finds it done."""
+    import threading
+
+    from neutrino_agent.modules.remote_desktop.records import held
+
+    host.set_switch(True)
+    lock = str(tmp_path / "var" / "remote_desktop" / ".lock")
+    order = []
+
+    def other_process():
+        with held(lock):
+            order.append("other")
+
+    with held(lock):
+        waiter = threading.Thread(target=other_process)
+        waiter.start()
+        waiter.join(0.5)
+        assert order == []
+        order.append("first")
+    waiter.join(5)
+
+    assert order == ["first", "other"]
+    host.leave_hub()
+    host.applier.calls.clear()
+    host.leave_hub()
+    assert _steps(host.applier) == []
