@@ -93,9 +93,10 @@ class FilesDocumentsProvider : DocumentsProvider() {
     override fun openDocument(documentId: String, mode: String, signal: CancellationSignal?): ParcelFileDescriptor {
         val document = ShareDocumentId.decode(documentId)
         val (root, login) = resolve(document) ?: throw FileNotFoundException(words().word("ui.share_login_needed"))
-        val isWrite = mode.contains('w')
         val file = try {
-            app.shares.open(root, login, document, isWrite)
+            app.shares.open(root, login, document, ShareOpenMode.parse(mode))
+        } catch (error: IllegalArgumentException) {
+            throw FileNotFoundException(error.message)
         } catch (error: IOException) {
             throw FileNotFoundException(wordOf(error))
         }
@@ -126,17 +127,12 @@ class FilesDocumentsProvider : DocumentsProvider() {
     override fun createDocument(parentDocumentId: String, mimeType: String, displayName: String): String {
         val parent = ShareDocumentId.decode(parentDocumentId)
         val (root, login) = resolve(parent) ?: throw FileNotFoundException(words().word("ui.share_login_needed"))
-        val child = parent.child(displayName)
+        val isDirectory = mimeType == Document.MIME_TYPE_DIR
         try {
-            if (mimeType == Document.MIME_TYPE_DIR) {
-                app.shares.mkdir(root, login, child)
-            } else {
-                app.shares.open(root, login, child, isWrite = true).close()
-            }
+            return app.shares.create(root, login, parent.child(displayName), isDirectory).encoded
         } catch (error: IOException) {
             throw FileNotFoundException(wordOf(error))
         }
-        return child.encoded
     }
 
     override fun deleteDocument(documentId: String) {
