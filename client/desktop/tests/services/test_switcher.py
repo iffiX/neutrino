@@ -187,12 +187,24 @@ class Cli:
             return "added"
         if key[:1] == ("use",):
             self.current[app] = key[1]
-            if (
-                app == "claude"
-                and key[1] == switcher.SWITCHER_PROVIDER_ID
-                and self.writes_claude
-            ):
-                given = flag_values(self.added.get("claude", ()))
+            # Like cc-switch 5.10.4: a tool's files are written only into a
+            # directory that is there, and a switch back re-writes the live
+            # file in its own layout.
+            folder = switcher._home_path(switcher.SWITCHER_APP_DIRS[app])
+            if not os.path.isdir(folder):
+                return "Live sync skipped: client not initialized"
+            if key[1] != switcher.SWITCHER_PROVIDER_ID:
+                live = switcher._home_path(switcher.SWITCHER_APP_FILES[app])
+                if os.path.isfile(live):
+                    text = open(live, encoding="utf-8").read()
+                    switcher._write_text(
+                        switcher.SWITCHER_APP_FILES[app], text.replace(" ", "")
+                    )
+                return ""
+            if not self.writes_claude and app == "claude":
+                return ""
+            given = flag_values(self.added.get(app, ()))
+            if app == "claude":
                 env = {
                     "ANTHROPIC_BASE_URL": given["--base-url"],
                     "ANTHROPIC_AUTH_TOKEN": given["--api-key"],
@@ -200,6 +212,22 @@ class Cli:
                 if "--model" in given:
                     env["ANTHROPIC_MODEL"] = given["--model"]
                 switcher._write_text(".claude/settings.json", json.dumps({"env": env}))
+            elif app == "codex":
+                switcher._write_text(
+                    ".codex/config.toml",
+                    f'model_provider = "custom"\nbase_url = "{given["--base-url"]}"\n',
+                )
+                switcher._write_text(
+                    ".codex/auth.json",
+                    json.dumps({"OPENAI_API_KEY": given["--api-key"]}),
+                )
+            else:
+                switcher._write_text(
+                    ".gemini/.env",
+                    f"GEMINI_API_KEY={given['--api-key']}\n"
+                    f"GOOGLE_GEMINI_BASE_URL={given['--base-url']}",
+                )
+                switcher._write_text(".gemini/settings.json", "{}")
             return ""
         if key[:2] == ("provider", "delete"):
             self.providers[app].discard(key[2])
@@ -371,11 +399,10 @@ def test_codex_effort_is_settled_after_the_switch_only_when_chosen(
         "codex", "http://hub", "k", {"model": "c1", "model_reasoning_effort": "low"}
     )
     assert config.read_text().splitlines()[0] == 'model_reasoning_effort = "low"'
-    assert 'command = "c"' in config.read_text()
+    assert 'base_url = "http://hub/v1"' in config.read_text()
 
-    config.write_text('model = "c1"\n')
     switcher._point_at_hub("codex", "http://hub", "k", {"model": "c1"})
-    assert config.read_text() == 'model = "c1"\n'
+    assert "model_reasoning_effort" not in config.read_text()
 
 
 def test_claude_must_end_up_naming_the_hub(tmp_path, monkeypatch):
@@ -687,3 +714,104 @@ def test_the_switcher_steps_down_to_nobody():
     assert "run_as" not in source
     assert "runuser" not in source
     assert "account" not in source.replace("Account", "")
+
+
+# --- the person's own files, kept and put back (one mechanism with the agent) ---
+
+
+def test_a_person_who_never_ran_the_tools_is_switched_and_left_with_nothing(
+    tmp_path, monkeypatch
+):
+    """No .claude, .codex or .gemini at all: cc-switch writes only into a
+    directory that is there, so the switch makes each, and the switch back
+    takes them away again."""
+    (tmp_path / "home").mkdir(exist_ok=True)
+    wire(monkeypatch, Cli())
+
+    switched = switcher.activate(
+        base_url="http://hub", api_key="k", tool_configs={"claude": {"default": "m1"}}
+    )
+
+    assert switched == "claude, codex, gemini"
+    home = tmp_path / "home"
+    assert "http://hub" in (home / ".claude/settings.json").read_text()
+    assert "http://hub/v1" in (home / ".codex/config.toml").read_text()
+    assert "http://hub" in (home / ".gemini/.env").read_text()
+
+    switcher.deactivate()
+
+    assert sorted(os.listdir(home)) == []
+
+
+def test_the_persons_own_files_come_back_byte_for_byte(tmp_path, monkeypatch):
+    awkward = '{ "permissions": [ "a", "b" ],\r\n\t"x": "é" }'.encode("utf-8")
+    settings = tmp_path / "home/.claude/settings.json"
+    settings.parent.mkdir(parents=True)
+    settings.write_bytes(awkward)
+    toml = home_file(tmp_path, ".codex/config.toml", 'model = "c1"\n')
+    wire(monkeypatch, Cli())
+
+    switcher.activate(base_url="http://hub", api_key="k", tool_configs={})
+    switcher.deactivate()
+
+    assert settings.read_bytes() == awkward
+    assert toml.read_bytes() == b'model = "c1"\n'
+    assert not (tmp_path / "home/.codex/auth.json").exists()
+    assert not (tmp_path / "home/.gemini").exists()
+
+
+def test_a_switch_back_that_cannot_list_keeps_the_records(tmp_path, monkeypatch):
+    awkward = b'{"permissions": {"allow": ["Bash"]}}'
+    settings = tmp_path / "home/.claude/settings.json"
+    settings.parent.mkdir(parents=True)
+    settings.write_bytes(awkward)
+    cli = Cli()
+    wire(monkeypatch, cli)
+    switcher.activate(base_url="http://hub", api_key="k", tool_configs={})
+    cli.refusals[("provider", "list")] = subprocess.CalledProcessError(
+        126, ["cc-switch"], stderr="cannot execute binary file"
+    )
+
+    with pytest.raises(switcher.ToolSwitchError) as caught:
+        switcher.deactivate()
+
+    assert "cannot execute" in str(caught.value)
+    assert switcher._read_record("claude") is not None
+    del cli.refusals[("provider", "list")]
+    switcher.deactivate()
+    assert settings.read_bytes() == awkward
+    assert switcher._read_record("claude") is None
+
+
+def test_a_cc_switch_that_will_not_start_fails_the_switch_back(tmp_path, monkeypatch):
+    home_file(tmp_path, ".claude/settings.json", "{}")
+    cli = Cli()
+    wire(monkeypatch, cli)
+    switcher.activate(base_url="http://hub", api_key="k", tool_configs={})
+
+    def broken(arguments, app, *, is_checked=True):
+        raise switcher.ToolSwitchError("cc-switch could not run: Permission denied")
+
+    monkeypatch.setattr(switcher, "_run", broken)
+
+    with pytest.raises(switcher.ToolSwitchError):
+        switcher.deactivate()
+    assert switcher._read_record("claude") is not None
+
+
+def test_codex_must_end_up_naming_the_hub(tmp_path, monkeypatch):
+    home_file(tmp_path, ".codex/config.toml", 'model = "c1"\n')
+    cli = Cli()
+
+    def silent_codex(arguments, app, *, is_checked=True):
+        if app == "codex" and tuple(arguments[:1]) == ("use",):
+            cli.current[app] = arguments[1]
+            return ""
+        return cli(arguments, app, is_checked=is_checked)
+
+    silent_codex.providers = cli.providers
+    wire(monkeypatch, silent_codex)
+
+    with pytest.raises(switcher.ToolSwitchError) as caught:
+        switcher._point_at_hub("codex", "http://hub", "k", {})
+    assert "did not take" in str(caught.value)
