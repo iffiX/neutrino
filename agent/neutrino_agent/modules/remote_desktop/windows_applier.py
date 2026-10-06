@@ -304,8 +304,13 @@ class RemoteDesktopWindowsApplier:
         return [pid for pid, program, _ in self._rustdesk() if program.lower() == own]
 
     def stale_pids(self) -> list:
-        """The copy's processes created before the copy on disk was written:
-        an upgrade replaced the executable under them.
+        """The hosts created before the copy on disk was written: an upgrade
+        replaced the executable under them.
+
+        Windows Installer moves an executable that is in use aside into
+        ``Config.Msi`` until the next restart, so a host it left running (the
+        tray in the signed-in session) names a program that is no longer
+        there rather than the copy.
 
         Returns:
             Their pids; empty when the copy is not on disk.
@@ -318,8 +323,12 @@ class RemoteDesktopWindowsApplier:
         own = self.program.lower()
         return [
             pid
-            for pid, program, _, started in self._rustdesk_started()
-            if program.lower() == own and started and started < written
+            for pid, program, command, started in self._rustdesk_started()
+            if started
+            and started < written
+            and not is_viewer_command(command)
+            and program
+            and (program.lower() == own or not os.path.isfile(program))
         ]
 
     def host_pids(self) -> list:

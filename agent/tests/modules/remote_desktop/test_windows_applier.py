@@ -258,11 +258,14 @@ def test_a_copy_process_created_before_the_copy_on_disk_is_stale(tmp_path):
     copy = tmp_path / "rustdesk.exe"
     copy.write_bytes(b"new")
     written = int(max(os.stat(copy).st_mtime, os.stat(copy).st_ctime))
+    # A person's own RustDesk, on disk where it was installed.
+    other = tmp_path / "other.exe"
+    other.write_bytes(b"theirs")
     windows = FakeWindows()
     windows.processes = [
         {"pid": 61, "program": str(copy), "command": "x", "started": written - 600},
         {"pid": 62, "program": str(copy), "command": "x", "started": written + 5},
-        {"pid": 63, "program": "C:\\other.exe", "command": "x", "started": 1},
+        {"pid": 63, "program": str(other), "command": "x", "started": 1},
     ]
     applier = RemoteDesktopWindowsApplier(
         kept_dir=str(tmp_path / "kept"),
@@ -272,3 +275,65 @@ def test_a_copy_process_created_before_the_copy_on_disk_is_stale(tmp_path):
     )
 
     assert applier.stale_pids() == [61]
+
+
+def test_a_tray_left_running_on_a_moved_aside_executable_is_stale_and_ended(
+    tmp_path,
+):
+    """The msi's Restart Manager restarts the service itself, but the tray in
+    the signed-in session keeps the old program, moved into Config.Msi."""
+    import os
+
+    copy = tmp_path / "rustdesk.exe"
+    copy.write_bytes(b"new")
+    written = int(max(os.stat(copy).st_mtime, os.stat(copy).st_ctime))
+    parked = str(tmp_path / "Config.Msi" / "3b2a1.rbf")
+    windows = FakeWindows()
+    windows.processes = [
+        {
+            "pid": 71,
+            "program": str(copy),
+            "command": f'"{copy}" --service',
+            "started": written + 3,
+        },
+        {
+            "pid": 72,
+            "program": str(copy),
+            "command": f'"{copy}" --server',
+            "started": written + 4,
+        },
+        {
+            "pid": 73,
+            "program": parked,
+            "command": f'"{copy}" --tray',
+            "started": written - 900,
+        },
+        {
+            "pid": 74,
+            "program": parked,
+            "command": f'"{copy}" --connect 1.2.3.4',
+            "started": written - 900,
+        },
+    ]
+    applier = RemoteDesktopWindowsApplier(
+        kept_dir=str(tmp_path / "kept"),
+        run=windows.run,
+        powershell=windows.powershell,
+        program=str(copy),
+        sleep=lambda seconds: None,
+    )
+
+    assert applier.stale_pids() == [73]
+
+    applier.stop_hosts()
+
+    assert windows.calls[-1] == [
+        "taskkill.exe",
+        "/F",
+        "/PID",
+        "71",
+        "/PID",
+        "72",
+        "/PID",
+        "73",
+    ]
