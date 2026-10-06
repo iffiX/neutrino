@@ -41,6 +41,7 @@ import hashlib
 import json
 import os
 import shutil
+import stat
 import subprocess
 import tempfile
 
@@ -69,6 +70,16 @@ SWITCHER_APP_KEPT_FILES = {
     "codex": ("config.toml", "auth.json"),
     "gemini": (".env", "settings.json"),
 }
+# The files of a tool that hold the gateway key once it is switched, and
+# the mode each is left with outside Windows: the person alone reads and
+# writes it. On Windows a profile's files are its owner's by their access
+# list.
+SWITCHER_APP_KEY_FILES = {
+    "claude": ("settings.json",),
+    "codex": ("auth.json",),
+    "gemini": (".env",),
+}
+SWITCHER_KEY_FILE_MODE = 0o600
 # How a kept file's bytes are held as text in the JSON record and back: any
 # byte that is not UTF-8 survives the round trip.
 KEPT_ENCODING = "utf-8"
@@ -315,6 +326,10 @@ def _point_at_hub(app: str, base_url: str, api_key: str, config: dict) -> bool:
                 relative,
                 _merge_toml_top_level(_read_text(relative), {CODEX_EFFORT_KEY: effort}),
             )
+    for name in SWITCHER_APP_KEY_FILES[app]:
+        path = _kept_path(app, name)
+        if os.path.isfile(path):
+            _set_mode(path, SWITCHER_KEY_FILE_MODE)
     _verify(app, base_url, api_key, config)
     record["added"] = wanted
     _write_record(app, record)
@@ -348,6 +363,11 @@ def _adopt_once(app: str) -> dict:
     kept = {
         name: _read_kept(_kept_path(app, name)) for name in SWITCHER_APP_KEPT_FILES[app]
     }
+    kept_modes = {}
+    for name in SWITCHER_APP_KEPT_FILES[app]:
+        mode = _mode_of(_kept_path(app, name))
+        if mode is not None:
+            kept_modes[name] = mode
     _run(["provider", "list"], app, is_checked=False)
     if is_present:
         _adopt(app)
@@ -356,6 +376,7 @@ def _adopt_once(app: str) -> dict:
         "is_present": is_present,
         "is_dir_present": is_dir_present,
         "kept": kept,
+        "kept_modes": kept_modes,
         "previous": "" if current == SWITCHER_PROVIDER_ID else current,
         "added": None,
     }
@@ -426,7 +447,7 @@ def _point_away(app: str) -> str:
     returned_to = _drop_provider(app, previous)
     kept = record.get("kept")
     if isinstance(kept, dict):
-        _put_back(app, kept)
+        _put_back(app, kept, record.get("kept_modes") or {})
         if record.get("is_dir_present") is False:
             _remove_empty_dir(_home_path(SWITCHER_APP_DIRS[app]))
     else:
@@ -437,15 +458,16 @@ def _point_away(app: str) -> str:
     return returned_to
 
 
-def _put_back(app: str, kept: dict) -> None:
+def _put_back(app: str, kept: dict, modes: dict) -> None:
     """Put each file a switch may write back as it was before the first switch.
 
-    A file that was there gets its own bytes again; one that was absent is
-    taken away.
+    A file that was there gets its own bytes again, and its own mode where
+    one was kept; one that was absent is taken away.
 
     Args:
         app: Which tool, in cc-switch's vocabulary.
         kept: Each file's text as the record keeps it, None for absent.
+        modes: Each file's permission bits as the record keeps them.
 
     Raises:
         ToolSwitchError: When a file cannot be written.
@@ -456,14 +478,16 @@ def _put_back(app: str, kept: dict) -> None:
             if os.path.isfile(path):
                 _remove_file(path)
             continue
-        if _read_kept(path) == original:
-            continue
-        try:
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            with open(path, "wb") as stream:
-                stream.write(str(original).encode(KEPT_ENCODING, KEPT_ERRORS))
-        except OSError as error:
-            raise ToolSwitchError(f"could not put back {path}: {error}") from error
+        if _read_kept(path) != original:
+            try:
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, "wb") as stream:
+                    stream.write(str(original).encode(KEPT_ENCODING, KEPT_ERRORS))
+            except OSError as error:
+                raise ToolSwitchError(f"could not put back {path}: {error}") from error
+        mode = modes.get(name)
+        if isinstance(mode, int) and _mode_of(path) != mode:
+            _set_mode(path, mode)
 
 
 def _kept_path(app: str, name: str) -> str:
@@ -480,6 +504,30 @@ def _read_kept(path: str) -> "str | None":
         return None
     except OSError as error:
         raise ToolSwitchError(f"could not read {path}: {error}") from error
+
+
+def _mode_of(path: str) -> "int | None":
+    """A file's permission bits; None on Windows and for a file not there."""
+    if os.name == "nt":
+        return None
+    try:
+        return stat.S_IMODE(os.stat(path).st_mode)
+    except OSError:
+        return None
+
+
+def _set_mode(path: str, mode: int) -> None:
+    """Set a file's permission bits; nothing on Windows.
+
+    Raises:
+        ToolSwitchError: When they cannot be set.
+    """
+    if os.name == "nt":
+        return
+    try:
+        os.chmod(path, mode)
+    except OSError as error:
+        raise ToolSwitchError(f"could not set the mode of {path}: {error}") from error
 
 
 def _remove_empty_dir(path: str) -> None:

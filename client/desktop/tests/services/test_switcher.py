@@ -815,3 +815,35 @@ def test_codex_must_end_up_naming_the_hub(tmp_path, monkeypatch):
     with pytest.raises(switcher.ToolSwitchError) as caught:
         switcher._point_at_hub("codex", "http://hub", "k", {})
     assert "did not take" in str(caught.value)
+
+
+def test_every_file_holding_the_key_is_the_person_s_alone_while_switched(
+    tmp_path, monkeypatch
+):
+    import stat
+
+    for folder in (".claude", ".codex", ".gemini"):
+        (tmp_path / "home" / folder).mkdir(parents=True, exist_ok=True)
+    wire(monkeypatch, Cli())
+
+    for app in switcher.SWITCHER_APPS:
+        switcher._point_at_hub(app, "http://hub", "k", {})
+
+    home = tmp_path / "home"
+    for relative in (".claude/settings.json", ".codex/auth.json", ".gemini/.env"):
+        assert stat.S_IMODE((home / relative).stat().st_mode) == 0o600, relative
+
+
+def test_the_switch_back_puts_the_file_s_own_mode_back(tmp_path, monkeypatch):
+    import stat
+
+    own = home_file(tmp_path, ".claude/settings.json", '{"permissions": {}}\n')
+    own.chmod(0o640)
+    wire(monkeypatch, Cli(current="deepseek"))
+
+    switcher._point_at_hub("claude", "http://hub", "k", {"default": "m1"})
+    assert stat.S_IMODE(own.stat().st_mode) == 0o600
+    switcher._point_away("claude")
+
+    assert own.read_text() == '{"permissions": {}}\n'
+    assert stat.S_IMODE(own.stat().st_mode) == 0o640
