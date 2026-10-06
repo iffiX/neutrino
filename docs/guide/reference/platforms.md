@@ -16,7 +16,7 @@ Neutrino 0.5.0 has a hub, an agent, a desktop client and an Android app, and eac
 | the same                                                                                 | ARM64        | `neutrino-hub-0.5.0-1.aarch64.rpm`        |
 | Arch, EndeavourOS, Manjaro                                                               | x86-64       | `neutrino-hub-0.5.0-1-x86_64.pkg.tar.zst` |
 
-The hub package includes its own Python and depends on systemd, nftables, dnsmasq, iproute2, wpa_supplicant, dhcpcd, fail2ban, iw, arp-scan, vnstat, curl and smbclient. It recommends hostapd for a box that serves Wi-Fi. On the Debian family the dhcpcd dependency is `dhcpcd-base | dhcpcd5`, because Ubuntu 22.04 has the daemon under the second name.
+The hub package includes its own Python and depends on systemd, nftables, dnsmasq, iproute2, wpa_supplicant, dhcpcd, fail2ban, iw, arp-scan, vnstat, curl, smbclient and pkexec. It recommends hostapd for a box that serves Wi-Fi. On the Debian family the dhcpcd dependency is `dhcpcd-base | dhcpcd5`, because Ubuntu 22.04 has the daemon under the second name, and pkexec is `pkexec | policykit-1`; on the Fedora family and Arch it comes with `polkit`.
 
 ## Agent
 

@@ -85,6 +85,23 @@ def test_the_deb_names_both_spellings_of_the_dhcp_client(tmp_path):
     assert depends.startswith("Depends: systemd, ")
 
 
+def test_the_deb_brings_the_pkexec_its_entry_asks_for_rights_through(tmp_path):
+    """`nhub open` asks through pkexec, which Debian 12's and Ubuntu's
+    `polkitd` no longer carries; `policykit-1` carries it on older releases."""
+    build_deb._lay_out(tmp_path, "9.9.9", "amd64", "somebody")
+
+    control = (tmp_path / "DEBIAN/control").read_text()
+    depends = next(line for line in control.splitlines() if line.startswith("Depends:"))
+
+    assert ", pkexec | policykit-1" in depends
+
+
+def test_the_rpm_and_the_arch_package_bring_polkit():
+    """Their `polkit` carries pkexec itself."""
+    assert "polkit" in venv_tree.dependencies("rhel")
+    assert "polkit" in venv_tree.dependencies("arch")
+
+
 def test_the_rpm_prunes_from_its_own_file_list_after_the_transaction():
     spec = _spec()
 

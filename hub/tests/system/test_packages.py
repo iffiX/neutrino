@@ -46,6 +46,7 @@ def test_the_families_disagree_only_where_they_were_measured_to():
         "wpasupplicant",
         "smbclient",
         "openssh-client",
+        "pkexec",
     }
     assert set(debian) - set(rhel) == debian_only
     assert set(rhel) - set(debian) == {
@@ -55,12 +56,14 @@ def test_the_families_disagree_only_where_they_were_measured_to():
         "wpa_supplicant",
         "samba-client",
         "openssh-clients",
+        "polkit",
     }
     assert set(debian) - set(arch) == {
         "dnsmasq-base",
         "dhcpcd-base",
         "wpasupplicant",
         "openssh-client",
+        "pkexec",
     }
 
 

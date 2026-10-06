@@ -16,7 +16,7 @@ title: 支持的平台
 | 同上                                                                            | ARM64  | `neutrino-hub-0.5.0-1.aarch64.rpm`        |
 | Arch、EndeavourOS、Manjaro                                                      | x86-64 | `neutrino-hub-0.5.0-1-x86_64.pkg.tar.zst` |
 
-中枢的安装包自带 Python，依赖 systemd、nftables、dnsmasq、iproute2、wpa_supplicant、dhcpcd、fail2ban、iw、arp-scan、vnstat、curl 和 smbclient。要发 Wi-Fi 的机器还推荐装 hostapd。Debian 系上 dhcpcd 的依赖写作 `dhcpcd-base | dhcpcd5`，因为 Ubuntu 22.04 上这个程序叫后一个名字。
+中枢的安装包自带 Python，依赖 systemd、nftables、dnsmasq、iproute2、wpa_supplicant、dhcpcd、fail2ban、iw、arp-scan、vnstat、curl、smbclient 和 pkexec。要发 Wi-Fi 的机器还推荐装 hostapd。Debian 系上 dhcpcd 的依赖写作 `dhcpcd-base | dhcpcd5`，因为 Ubuntu 22.04 上这个程序叫后一个名字；pkexec 写作 `pkexec | policykit-1`。Fedora 系和 Arch 上 pkexec 随 `polkit` 安装。
 
 ## 被控端
 
