@@ -132,7 +132,11 @@ stopped, run `nhub setup --json` with the answers of a `server` hub that
 installs its local agent, and expect the panel to answer
 `http://127.0.0.1:8080/api/hub/display` with 200. They then stop the hub,
 remove it, and run `install.sh` or `install.ps1` with `NEUTRINO_ASSET_DIR`
-naming the built files, up to `nhub --version`.
+naming the built files, up to `nhub --version`. Its `agent_windows` and
+`client_windows` checks install the released 0.4.0 `.msi` pinned in
+`packaging/shared/constants.py` first and the built one over it, so every
+build runs an upgrade's whole sequence; the hub has no Windows package
+before 0.5.0, so `hub_windows` installs on a clean machine.
 
 The VM lab under `packaging/lab/` adds machines for what no single box can
 show:

@@ -384,3 +384,66 @@ def test_a_joined_machine_is_given_no_join_line(run, tmp_path):
 
     assert outcome == "ok"
     assert not any("nagent join" in line for line in run.said)
+
+
+# What a set-up hub's panel settings hold, and what a fresh one's do.
+SET_UP_SETTINGS = '{\n  "admin_password_hash": "$argon2id$v=19$m=65536,t=3,p=4$c2FsdA$aGFzaA"\n}\n'  # scan: allow
+FRESH_SETTINGS = (
+    '{\n  "admin_password_hash": "PLACEHOLDER_ARGON2ID_HASH"\n}\n'  # scan: allow
+)
+
+
+def _hub_settings(tmp_path, text):
+    web = tmp_path / "ProgramData" / "Neutrino" / "hub" / "config" / "web"
+    web.mkdir(parents=True)
+    (web / "settings.json").write_text(text)
+
+
+def test_a_hub_already_set_up_is_upgraded_and_names_its_panel(run, tmp_path):
+    _hub_settings(tmp_path, SET_UP_SETTINGS)
+    nhub = tmp_path / "Program Files" / "Neutrino" / "hub" / "nhub.exe"
+    nhub.parent.mkdir(parents=True)
+    nhub.write_text("#!/bin/sh\necho http://192.0.2.1:8080/\n")
+    nhub.chmod(0o755)
+
+    outcome, _asked = run()
+
+    assert outcome == "ok"
+    assert (
+        run.said[-1] == "The hub was upgraded; its panel is at: http://192.0.2.1:8080/"
+    )
+
+
+def test_a_hub_already_set_up_with_no_address_says_how_to_open_it(run, tmp_path):
+    _hub_settings(tmp_path, SET_UP_SETTINGS)
+
+    outcome, _asked = run()
+
+    assert outcome == "ok"
+    assert run.said[-1].startswith("The hub was upgraded; in this window, & '")
+    assert run.said[-1].endswith("nhub.exe' open opens its panel.")
+
+
+def test_a_hub_with_the_example_settings_is_not_set_up(run, tmp_path):
+    _hub_settings(tmp_path, FRESH_SETTINGS)
+
+    run()
+
+    assert run.said[-1].startswith("Next, in this window: & '")
+
+
+def test_the_script_reads_the_hubs_settings_where_the_hub_keeps_them():
+    from neutrino_hub.cli.password import PASSWORD_SETTINGS_FILE
+    from neutrino_hub.platforms.constants import (
+        PLATFORM_OS_WINDOWS,
+        PLATFORM_ROOT_CONFIG,
+        PLATFORM_ROOTS,
+    )
+
+    root = PLATFORM_ROOTS[PLATFORM_OS_WINDOWS][PLATFORM_ROOT_CONFIG]
+    relative = (
+        root.removeprefix("C:\\ProgramData\\")
+        + "\\"
+        + PASSWORD_SETTINGS_FILE.replace("/", "\\")
+    )
+    assert f"'{relative}'" in SCRIPT.read_text()

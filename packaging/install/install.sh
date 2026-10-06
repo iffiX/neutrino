@@ -14,7 +14,8 @@
 #
 # Run as a person, the script asks for the sudo password once, before it
 # downloads anything, and keeps sudo's ticket fresh until it ends: the
-# install, the hub's setup and the hub's own agent ask nothing more.
+# install, the hub's setup and the hub's own agent ask nothing more. An
+# account sudo already lets in without a password is asked nothing.
 set -eu
 
 # The edition this script installs; the mainland source tree stamps it cn.
@@ -27,6 +28,14 @@ OS_RELEASE=/etc/os-release
 # has joined, and is not told to join again.
 AGENT_BINDING_LINUX=/etc/neutrino/agent/agent.json
 AGENT_BINDING_MACOS="/Library/Application Support/Neutrino/agent/config/agent.json"
+# The hub's command where its package puts it on each system, which a root
+# shell's PATH may not name.
+HUB_COMMAND_LINUX=/usr/bin/nhub
+HUB_COMMAND_MACOS=/usr/local/bin/nhub
+# The hub's panel settings on each system: a hub whose settings hold a
+# password hash has been set up.
+HUB_SETTINGS_LINUX=/etc/neutrino/hub/web/settings.json
+HUB_SETTINGS_MACOS="/Library/Application Support/Neutrino/hub/config/web/settings.json"
 
 fail() {
     echo "$1" >&2
@@ -100,17 +109,21 @@ fetch() {
     curl -fsSL --retry 3 -o "$2" "$1" || fail "Downloading $1 failed."
 }
 
-# Ask for the sudo password once, and keep the ticket fresh in the background
-# while the script runs. Prints the keeper's pid; nothing when run as root.
+# Ask for the sudo password once unless sudo already runs a command without
+# one, and keep the ticket fresh in the background while the script runs by
+# running a command, which an account without a password also may. Prints
+# the keeper's pid; nothing when run as root.
 hold_root() {
     [ -n "$1" ] || return 0
     command -v sudo >/dev/null 2>&1 \
         || fail "Run this as root, or install sudo first."
-    echo "Neutrino asks for administrator rights once, to install the package." >&2
-    sudo -v || fail "sudo did not grant administrator rights; nothing was installed."
+    if ! sudo -n true 2>/dev/null; then
+        echo "Neutrino asks for administrator rights once, to install the package." >&2
+        sudo -v || fail "sudo did not grant administrator rights; nothing was installed."
+    fi
     (
         while sleep 30 && kill -0 "$2" 2>/dev/null; do
-            sudo -n -v 2>/dev/null || exit 0
+            sudo -n true 2>/dev/null || exit 0
         done
     ) </dev/null >/dev/null 2>&1 &
     echo "$!"
@@ -218,11 +231,27 @@ main() {
             return 0
             ;;
     esac
+    if [ "$kind" = macos ]; then
+        nhub=$HUB_COMMAND_MACOS
+        settings=$HUB_SETTINGS_MACOS
+    else
+        nhub=$HUB_COMMAND_LINUX
+        settings=$HUB_SETTINGS_LINUX
+    fi
+    if $as_root ${as_root:+-n} grep -Eq '"admin_password_hash"[[:space:]]*:[[:space:]]*"[$]' "$settings" 2>/dev/null; then
+        address=$($as_root ${as_root:+-n} "$nhub" open --print 2>/dev/null) || address=""
+        if [ -n "$address" ]; then
+            echo "The hub was upgraded; its panel is at: $address"
+        else
+            echo "The hub was upgraded; ${as_root:+$as_root }nhub open opens its panel."
+        fi
+        return 0
+    fi
     if (: </dev/tty) 2>/dev/null; then
-        $as_root nhub setup </dev/tty
+        $as_root "$nhub" setup </dev/tty
         return
     fi
-    address=$($as_root ${as_root:+-n} nhub open --print 2>/dev/null) || address=""
+    address=$($as_root ${as_root:+-n} "$nhub" open --print 2>/dev/null) || address=""
     if [ -n "$address" ]; then
         echo "Next, set the hub up in a browser at: $address"
     else

@@ -77,6 +77,25 @@ PACKAGING_CN_LEFT_OUT_PATHS = (
     "packaging/build/build_core_netbird.py",
 )
 
+# The released packages a Windows check installs first, so the package it
+# checks goes on over an earlier version as an upgrade does: each target's
+# asset and its hash. The agent's 0.4.0 ran upstream's RustDesk installer,
+# which an upgrade takes away. The hub has no Windows package before 0.5.0.
+PACKAGING_EARLIER_RELEASE_URL = (
+    "https://github.com/iffiX/neutrino/releases/download/v{version}/{asset}"
+)
+PACKAGING_EARLIER_VERSION = "0.4.0"
+PACKAGING_EARLIER_PACKAGES = {
+    "agent_windows": (
+        "neutrino-agent-0.4.0-windows-amd64.msi",
+        "db3e80e662c1dcde0d3f88f4a47d7ad96be2d74f1af3ad5549bac81376ebf455",  # scan: allow
+    ),
+    "client_windows": (
+        "neutrino-client-0.4.0-windows-amd64.msi",
+        "550215b28ba9980f7b681d48ad388758d258e88256a11c212dd3acd977473374",  # scan: allow
+    ),
+}
+
 # tun2socks, which the hub's macOS and Windows packages carry for the
 # proxy's TUN and the client's Windows package carries for its files adapter
 # in both editions: the release, the asset each system and machine takes and

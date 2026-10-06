@@ -42,6 +42,16 @@ function Test-NeutrinoAgentBound {
     return [bool]($text -match '"token"\s*:\s*"[^"]')
 }
 
+# Whether this machine's hub has been set up: its panel settings hold a
+# password hash.
+function Test-NeutrinoHubSetUp {
+    $programData = if ($env:ProgramData) { $env:ProgramData } else { 'C:\ProgramData' }
+    $settings = Join-Path $programData 'Neutrino\hub\config\web\settings.json'
+    if (-not (Test-Path -LiteralPath $settings)) { return $false }
+    $text = Get-Content -Raw -LiteralPath $settings -ErrorAction SilentlyContinue
+    return [bool]($text -match '"admin_password_hash"\s*:\s*"\$')
+}
+
 function Get-NeutrinoMachine {
     param([string]$Architecture)
     switch ($Architecture.ToUpperInvariant()) {
@@ -198,6 +208,19 @@ function Install-Neutrino {
         return
     }
     $nhub = Join-Path $env:ProgramFiles 'Neutrino\hub\nhub.exe'
+    if (Test-NeutrinoHubSetUp) {
+        try {
+            $address = & $nhub open --print 2>$null
+        } catch {
+            $address = $null
+        }
+        if ($address) {
+            Write-Output "The hub was upgraded; its panel is at: $address"
+        } else {
+            Write-Output "The hub was upgraded; in this window, & '$nhub' open opens its panel."
+        }
+        return
+    }
     if (-not [Console]::IsInputRedirected) {
         & $nhub setup
         return
