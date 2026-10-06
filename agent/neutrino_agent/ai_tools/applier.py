@@ -175,9 +175,11 @@ class AiToolsApplier:
         """The report's ``ai_tools`` section.
 
         Returns:
-            ``{accounts: [{account, state, code, params}]}``: the results of
-            the last state applied, or, before one was applied since the
-            agent started, every account whose records stand, as switched.
+            ``{accounts: [{account, state, code, params, has_records}]}``:
+            the results of the last state applied, or, before one was
+            applied since the agent started, every account whose records
+            stand, as switched; ``has_records`` read from the records at
+            this moment.
         """
         with self._lock:
             held = self._results
@@ -186,7 +188,12 @@ class AiToolsApplier:
                 result(account, AI_TOOLS_STATE_SWITCHED)
                 for account in self.switched_accounts()
             ]
-        return {"accounts": [dict(entry) for entry in held]}
+        return {
+            "accounts": [
+                {**entry, "has_records": self._has_records(entry["account"])}
+                for entry in held
+            ]
+        }
 
     def switched_accounts(self) -> list:
         """The accounts a tool's record is kept for, sorted."""

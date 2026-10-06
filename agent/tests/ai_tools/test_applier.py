@@ -176,6 +176,8 @@ def test_a_refusing_account_keeps_its_tools_and_the_next_is_switched(tmp_path, b
 
     report = {entry["account"]: entry for entry in applier.report()["accounts"]}
     assert report["ann"]["state"] == "failed"
+    assert report["ann"]["has_records"] is False
+    assert report["bob"]["has_records"] is True
     assert report["ann"]["code"] == "switch_failed"
     assert report["ann"]["params"] == {
         "account": "ann",
@@ -284,7 +286,15 @@ def test_the_report_before_any_state_is_the_accounts_whose_records_stand(
     restarted = AiToolsApplier(platform=platform, log=lambda line: None)
 
     assert restarted.report() == {
-        "accounts": [{"account": "ann", "state": "switched", "code": "", "params": {}}]
+        "accounts": [
+            {
+                "account": "ann",
+                "state": "switched",
+                "code": "",
+                "params": {},
+                "has_records": True,
+            }
+        ]
     }
 
 
@@ -392,6 +402,7 @@ def test_a_fetch_the_hub_refuses_fails_every_account_and_is_tried_again(tmp_path
             "state": "failed",
             "code": "cc_switch_download_failed",
             "params": {"account": name, "detail": "hub_release_file_gone"},
+            "has_records": False,
         }
         for name in ("ann", "bob")
     ]
@@ -447,6 +458,18 @@ def test_a_switch_back_with_no_copy_and_no_hub_says_the_hub_is_unreachable(
     ]
     assert platform.runs == []
     assert applier.switched_accounts() == ["ann"]
+
+
+def test_a_switch_back_that_cannot_run_reports_the_records_it_keeps(tmp_path, binary):
+    """The hub reads the chip on only while a tool still points at it."""
+    applier, platform = make(tmp_path)
+    applier.apply(section("ann"), "h1")
+    applier.remove_copy()
+
+    applier.apply({"is_enabled": False}, "h2")
+
+    (entry,) = applier.report()["accounts"]
+    assert (entry["state"], entry["has_records"]) == ("failed", True)
 
 
 def test_the_copy_is_removed_on_its_own(tmp_path, binary):
