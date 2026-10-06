@@ -70,6 +70,17 @@ class TerminalSessionMergeTest {
     }
 
     @Test
+    fun anUnsharedSessionsEndedTabIsNeitherSharedNorKept() {
+        val before = merge(emptyList(), hub("b1", HubConnection.CONNECTED, shared, owned))
+        assertEquals(listOf(true, false), before.map { it.isShared })
+        val after = merge(before, hub("b1", HubConnection.CONNECTED))
+        assertEquals(listOf(TerminalPhase.ENDED, TerminalPhase.ENDED), after.map { it.phase })
+        assertEquals(listOf(false, false), after.map { it.isShared })
+        assertEquals(listOf(false, false), after.map { it.isPersistent })
+        assertEquals(listOf(false, false), after.map { it.isKept })
+    }
+
+    @Test
     fun aTabNotYetListedIsLeftAsItIs() {
         val local = TerminalTab("s0", "b1", "d-b1", "Argon", phase = TerminalPhase.OPEN)
         assertEquals(listOf(local), merge(listOf(local), hub("b1", HubConnection.CONNECTED)))

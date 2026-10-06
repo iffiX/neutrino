@@ -332,6 +332,8 @@ class TerminalTabs(
                 result is ChannelResult.Refused && result.code == "session_unknown" -> tab.copy(
                     phase = TerminalPhase.ENDED,
                     note = result,
+                    isPersistent = false,
+                    isShared = false,
                 )
 
                 result is ChannelResult.Refused -> tab.copy(phase = TerminalPhase.DETACHED, note = result)
