@@ -15,8 +15,14 @@ already set is never replaced. That adoption happens once per tool and is
 recorded; every activation after it is two calls per tool, add and use, and
 none at all when nothing changed. The provider that was current beforehand
 is remembered, and deactivating switches back to it and deletes the hub's
-entry; a tool that had no configuration file has the one cc-switch made
-taken away again.
+entry. Every file of the tool's that a switch may write is kept in the
+record as it was before the first switch, or as absent, and the switch back
+puts each back as it was, byte for byte: a file that was there gets its own
+bytes again, one that was absent is taken away, and a tool directory the
+switch had to make is taken away once it is empty. cc-switch writes a
+tool's files only into a directory that is there, so the switch makes it
+for a tool that has none. A switch back that cannot run cc-switch is a
+failure, and the records stay.
 
 Activation is all or nothing: a tool that refuses has every tool switched
 before it put back, and the refusal is the answer.
@@ -54,6 +60,19 @@ SWITCHER_APP_FILES = {
     "codex": ".codex/config.toml",
     "gemini": ".gemini/.env",
 }
+# The directory cc-switch writes a tool's files into only once it is there,
+# and every file a switch may write in it, below the person's home: what is
+# kept aside before the first switch and put back after the switch back.
+SWITCHER_APP_DIRS = {"claude": ".claude", "codex": ".codex", "gemini": ".gemini"}
+SWITCHER_APP_KEPT_FILES = {
+    "claude": ("settings.json",),
+    "codex": ("config.toml", "auth.json"),
+    "gemini": (".env", "settings.json"),
+}
+# How a kept file's bytes are held as text in the JSON record and back: any
+# byte that is not UTF-8 survives the round trip.
+KEPT_ENCODING = "utf-8"
+KEPT_ERRORS = "surrogateescape"
 
 # Claude Code's role slots, each a flag of cc-switch's provider add.
 CLAUDE_SLOT_FLAGS = {
@@ -184,6 +203,11 @@ def deactivate(*, base_url: str = "") -> str:
 
     Returns:
         What happened, in the words the page shows.
+
+    Raises:
+        ToolSwitchError: When cc-switch cannot run, the hub's provider stays
+            in it, or a file cannot be put back; the records of the tools
+            not yet put back stay.
     """
     notes = []
     for app in SWITCHER_APPS:
@@ -244,8 +268,8 @@ def _point_at_hub(app: str, base_url: str, api_key: str, config: dict) -> bool:
         the hub as asked.
 
     Raises:
-        ToolSwitchError: If cc-switch refuses, or if Claude Code's settings
-            did not end up naming the hub.
+        ToolSwitchError: If cc-switch refuses, the tool's directory cannot
+            be made, or the tool's file did not end up naming the hub.
     """
     relative = SWITCHER_APP_FILES[app]
     record = _read_record(app)
@@ -272,6 +296,12 @@ def _point_at_hub(app: str, base_url: str, api_key: str, config: dict) -> bool:
     arguments += _model_flags(app, config)
     if _common_snippet(app):
         arguments.append("--common-config")
+    directory = _home_path(SWITCHER_APP_DIRS[app])
+    if not os.path.isdir(directory):
+        try:
+            os.makedirs(directory, exist_ok=True)
+        except OSError as error:
+            raise ToolSwitchError(f"could not make {directory}: {error}") from error
     try:
         _run(arguments, app)
         _run(["use", SWITCHER_PROVIDER_ID], app)
@@ -303,7 +333,9 @@ def _adopt_once(app: str) -> dict:
     Listing is what makes cc-switch take a configuration it has never seen
     into its store, as the provider switching back will return to; the MCP
     servers and the shared settings follow. None of it happens again for
-    this tool while its record stands.
+    this tool while its record stands. The record keeps whether the tool's
+    directory was there and each file a switch may write as it was, None
+    for one that was absent.
 
     Args:
         app: Which tool, in cc-switch's vocabulary.
@@ -312,12 +344,18 @@ def _adopt_once(app: str) -> dict:
         The record written.
     """
     is_present = os.path.isfile(_home_path(SWITCHER_APP_FILES[app]))
+    is_dir_present = os.path.isdir(_home_path(SWITCHER_APP_DIRS[app]))
+    kept = {
+        name: _read_kept(_kept_path(app, name)) for name in SWITCHER_APP_KEPT_FILES[app]
+    }
     _run(["provider", "list"], app, is_checked=False)
     if is_present:
         _adopt(app)
     current = _current_provider(app)
     record = {
         "is_present": is_present,
+        "is_dir_present": is_dir_present,
+        "kept": kept,
         "previous": "" if current == SWITCHER_PROVIDER_ID else current,
         "added": None,
     }
@@ -349,9 +387,6 @@ def _wanted(app: str, base_url: str, api_key: str, config: dict) -> dict:
 def _verify(app: str, base_url: str, api_key: str, config: dict) -> None:
     """Read the tool's own file back and refuse when it does not name the hub.
 
-    Only Claude Code's file is read: it is the one the hub's grant is
-    measured by, and a tool that is not on this machine has no file.
-
     Args:
         app: Which tool, in cc-switch's vocabulary.
         base_url: The hub's AI endpoint.
@@ -359,9 +394,13 @@ def _verify(app: str, base_url: str, api_key: str, config: dict) -> None:
         config: The tool's staged choices.
 
     Raises:
-        ToolSwitchError: When Claude Code's settings do not name the hub.
+        ToolSwitchError: When Claude Code's settings do not carry the hub's
+            endpoint, key and model, or Codex's or Gemini's file does not
+            name the hub's endpoint.
     """
     if app != "claude":
+        if _endpoint_for(app, base_url) not in _read_text(SWITCHER_APP_FILES[app]):
+            raise ToolSwitchError("the settings file did not take the hub's endpoint")
         return
     if not is_active(
         base_url=base_url, api_key=api_key, model=str(config.get("default", ""))
@@ -370,22 +409,85 @@ def _verify(app: str, base_url: str, api_key: str, config: dict) -> None:
 
 
 def _point_away(app: str) -> str:
-    """Return one tool to the provider it had, and take the hub's out.
+    """Return one tool to the provider it had, take the hub's out, and put its files back.
 
     Args:
         app: Which tool, in cc-switch's vocabulary.
 
     Returns:
         The provider switched back to, empty when there was none.
+
+    Raises:
+        ToolSwitchError: When cc-switch cannot run, the hub's provider stays
+            in it, or a file cannot be put back; the record stays.
     """
     record = _read_record(app) or {}
     previous = str(record.get("previous", "") or "")
     returned_to = _drop_provider(app, previous)
-    path = _home_path(SWITCHER_APP_FILES[app])
-    if record and not record.get("is_present") and os.path.isfile(path):
-        _remove_file(path)
+    kept = record.get("kept")
+    if isinstance(kept, dict):
+        _put_back(app, kept)
+        if record.get("is_dir_present") is False:
+            _remove_empty_dir(_home_path(SWITCHER_APP_DIRS[app]))
+    else:
+        path = _home_path(SWITCHER_APP_FILES[app])
+        if record and not record.get("is_present") and os.path.isfile(path):
+            _remove_file(path)
     _remove_file(_record_path(app))
     return returned_to
+
+
+def _put_back(app: str, kept: dict) -> None:
+    """Put each file a switch may write back as it was before the first switch.
+
+    A file that was there gets its own bytes again; one that was absent is
+    taken away.
+
+    Args:
+        app: Which tool, in cc-switch's vocabulary.
+        kept: Each file's text as the record keeps it, None for absent.
+
+    Raises:
+        ToolSwitchError: When a file cannot be written.
+    """
+    for name, original in kept.items():
+        path = _kept_path(app, name)
+        if original is None:
+            if os.path.isfile(path):
+                _remove_file(path)
+            continue
+        if _read_kept(path) == original:
+            continue
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "wb") as stream:
+                stream.write(str(original).encode(KEPT_ENCODING, KEPT_ERRORS))
+        except OSError as error:
+            raise ToolSwitchError(f"could not put back {path}: {error}") from error
+
+
+def _kept_path(app: str, name: str) -> str:
+    """One file a switch may write, below this person's home."""
+    return _home_path(os.path.join(SWITCHER_APP_DIRS[app], name))
+
+
+def _read_kept(path: str) -> "str | None":
+    """One file's bytes as the record holds them, None when it is absent."""
+    try:
+        with open(path, "rb") as stream:
+            return stream.read().decode(KEPT_ENCODING, KEPT_ERRORS)
+    except FileNotFoundError:
+        return None
+    except OSError as error:
+        raise ToolSwitchError(f"could not read {path}: {error}") from error
+
+
+def _remove_empty_dir(path: str) -> None:
+    """Delete one directory when it holds nothing."""
+    try:
+        os.rmdir(path)
+    except OSError:
+        pass
 
 
 def _drop_provider(app: str, previous: str) -> str:
@@ -472,8 +574,15 @@ def _has_provider(app: str) -> bool:
 
     Returns:
         True when a row names the hub's id.
+
+    Raises:
+        ToolSwitchError: When cc-switch cannot list, so nothing can be said
+            of the hub's provider.
     """
-    output = _run(["provider", "list"], app, is_checked=False)
+    try:
+        output = _run(["provider", "list"], app)
+    except subprocess.CalledProcessError as error:
+        raise ToolSwitchError(_refusal_words(error)) from error
     for line in output.splitlines():
         if TABLE_SEPARATOR not in line:
             continue
