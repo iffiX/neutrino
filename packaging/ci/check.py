@@ -99,6 +99,14 @@ CHECK_MSIEXEC_QUIET = ("/quiet", "/norestart", "REBOOT=ReallySuppress")
 # What msiexec answers when it finished but wants a restart, and the log
 # lines that name what held a file.
 CHECK_MSIEXEC_RESTART_CODES = (3010, 1641)
+# The one restart an install over a released earlier package may want: that
+# package's own removal stops its services without waiting for them, so a
+# file of theirs can still be held when the new one is written.
+CHECK_MSIEXEC_WANTED_RESTART = 3010
+CHECK_EARLIER_RESTART_REASON = (
+    "the earlier package's removal does not wait for its services, so Windows "
+    "replaces a file they held at the next restart"
+)
 CHECK_MSIEXEC_HELD_PATTERNS = (
     "held in use",
     "in use by",
@@ -153,7 +161,14 @@ CHECK_PROGRESS_NAME = "progress.txt"
 CHECK_STATE_NAME = "state.json"
 # The Windows client check in phases, each one workflow step, so the step
 # list alone says which phase a runner was lost in.
-CLIENT_WINDOWS_PHASES = ("install", "installed", "repair", "marker", "remove")
+CLIENT_WINDOWS_PHASES = (
+    "upgrade",
+    "install",
+    "installed",
+    "repair",
+    "marker",
+    "remove",
+)
 # A line pushed off the machine as a commit status, best effort.
 CHECK_STATUS_CONTEXT = "client_windows check"
 CHECK_STATUS_TIMEOUT_S = 10
@@ -452,8 +467,9 @@ def main() -> int:
 
 
 def check_agent_windows(msi: Path) -> None:
-    """Install the released 0.4.0 agent, the agent's .msi over it, check
-    what the upgrade left, and remove it.
+    """Upgrade the released 0.4.0 agent with the agent's .msi and take it
+    away, then install the .msi on its own, check both services, and remove
+    it.
 
     Args:
         msi: The installer.
@@ -462,28 +478,14 @@ def check_agent_windows(msi: Path) -> None:
         SystemExit: When a step fails.
     """
     _require_host("win32", "Windows")
-    _install_earlier("agent_windows")
-    if not RUSTDESK_WINDOWS_FOLDER.is_dir():
-        raise SystemExit(
-            f"the earlier agent left no {RUSTDESK_WINDOWS_FOLDER} for the upgrade "
-            "to take away"
-        )
+    _agent_windows_upgrade(msi)
     log = Path(tempfile.gettempdir()) / "agent_install.log"
     code = _msiexec("/i", msi, log)
     print(f"msiexec /i exited {code}")
-    _print_log(log, ("RemoveOldRustDesk", "return value 3", "Error 2"), 40)
     if code != 0:
-        raise SystemExit(
-            f"the agent did not install over its {PACKAGING_EARLIER_VERSION}"
-        )
+        _print_log(log, ("return value 3", "Error "), 40)
+        raise SystemExit(f"the agent did not install (exit {code})")
     _check_no_pending_rename()
-    if AGENT_WINDOWS_EARLIER_FOLDER.exists():
-        raise SystemExit(f"{AGENT_WINDOWS_EARLIER_FOLDER} outlived the upgrade")
-    if not _wait_for_earlier_rustdesk_gone():
-        raise SystemExit(
-            f"the upgrade left the earlier agent's {RUSTDESK_WINDOWS_FOLDER} "
-            "or its service"
-        )
     if AGENT_WINDOWS_FOLDER.is_dir():
         print(
             f"{AGENT_WINDOWS_FOLDER}: "
@@ -522,6 +524,40 @@ def check_agent_windows(msi: Path) -> None:
             "expected False False True"
         )
     print("the module's task and rule are gone, the hub's rule stays")
+
+
+def _agent_windows_upgrade(msi: Path) -> None:
+    """Install the .msi over the released earlier agent, check that the
+    earlier one and the RustDesk it installed are gone, and take the agent
+    away again with whatever restart the upgrade left owed.
+
+    Raises:
+        SystemExit: When the earlier agent left no RustDesk, the upgrade
+            fails, or something of the earlier one outlives it.
+    """
+    _install_earlier("agent_windows")
+    if not RUSTDESK_WINDOWS_FOLDER.is_dir():
+        raise SystemExit(
+            f"the earlier agent left no {RUSTDESK_WINDOWS_FOLDER} for the upgrade "
+            "to take away"
+        )
+    log = Path(tempfile.gettempdir()) / "agent_upgrade.log"
+    code = _msiexec("/i", msi, log, is_restart_accepted=True)
+    _print_log(log, ("RemoveOldRustDesk", "return value 3", "Error 2"), 40)
+    if code not in (0, CHECK_MSIEXEC_WANTED_RESTART):
+        raise SystemExit(
+            f"the agent did not install over its {PACKAGING_EARLIER_VERSION} "
+            f"(exit {code})"
+        )
+    if AGENT_WINDOWS_EARLIER_FOLDER.exists():
+        raise SystemExit(f"{AGENT_WINDOWS_EARLIER_FOLDER} outlived the upgrade")
+    if not _wait_for_earlier_rustdesk_gone():
+        raise SystemExit(
+            f"the upgrade left the earlier agent's {RUSTDESK_WINDOWS_FOLDER} "
+            "or its service"
+        )
+    print(f"the agent installed over its {PACKAGING_EARLIER_VERSION}")
+    _take_upgrade_away(msi, "agent_windows", AGENT_WINDOWS_FOLDER)
 
 
 def _wait_for_earlier_rustdesk_gone() -> bool:
@@ -654,10 +690,28 @@ def run_client_windows_phase(msi: Path, phase: str) -> None:
     _note(f"{phase}: passed")
 
 
-def _client_windows_install(msi: Path) -> None:
-    """Install over the released 0.4.0 and what an earlier build is made to have left."""
-    _note(f"install: the client's {PACKAGING_EARLIER_VERSION} first")
+def _client_windows_upgrade(msi: Path) -> None:
+    """Install over the released 0.4.0, check the earlier one is gone, and
+    take the client away with whatever restart the upgrade left owed."""
+    _note(f"upgrade: the client's {PACKAGING_EARLIER_VERSION} first")
     _install_earlier("client_windows")
+    log = _phase_log("upgrade")
+    code = _msiexec("/i", msi, log, is_restart_accepted=True)
+    nclient = CLIENT_WINDOWS_FOLDER / "nclient.exe"
+    if code not in (0, CHECK_MSIEXEC_WANTED_RESTART) or not nclient.is_file():
+        _print_log(log, ("return value 3", "Error 19"), 25)
+        raise SystemExit(
+            f"the client did not install over its {PACKAGING_EARLIER_VERSION} "
+            f"(exit {code})"
+        )
+    if CLIENT_WINDOWS_EARLIER_FOLDER.exists():
+        raise SystemExit(f"{CLIENT_WINDOWS_EARLIER_FOLDER} outlived the upgrade")
+    _note("upgrade: taking the client away")
+    _take_upgrade_away(msi, "client_windows", CLIENT_WINDOWS_FOLDER)
+
+
+def _client_windows_install(msi: Path) -> None:
+    """Install over what an earlier build is made to have left."""
     _note("install: planting what an earlier build left")
     _plant_client_windows_leftovers()
     CHECK_RESCUES.append(
@@ -678,8 +732,6 @@ def _client_windows_install(msi: Path) -> None:
 
 def _client_windows_installed(msi: Path) -> None:
     """What the install left: the command, PATH, the daemon, the data tree."""
-    if CLIENT_WINDOWS_EARLIER_FOLDER.exists():
-        raise SystemExit(f"{CLIENT_WINDOWS_EARLIER_FOLDER} outlived the upgrade")
     nclient = CLIENT_WINDOWS_FOLDER / "nclient.exe"
     print(f"nclient {_answer([str(nclient), '--version'])}")
     _note("installed: nclient status")
@@ -776,6 +828,7 @@ def _client_windows_remove(msi: Path) -> None:
 
 
 CLIENT_WINDOWS_PHASE_RUNS = {
+    "upgrade": _client_windows_upgrade,
     "install": _client_windows_install,
     "installed": _client_windows_installed,
     "repair": _client_windows_repair,
@@ -1470,7 +1523,14 @@ def _require_host(platform: str, name: str) -> None:
         raise SystemExit(f"this check runs on {name}; this is {sys.platform}")
 
 
-def _msiexec(action: str, msi: Path, log: Path, properties: tuple = ()) -> int:
+def _msiexec(
+    action: str,
+    msi: Path,
+    log: Path,
+    properties: tuple = (),
+    *,
+    is_restart_accepted: bool = False,
+) -> int:
     """Run msiexec quietly with a verbose log, and return its exit code.
 
     Args:
@@ -1478,6 +1538,9 @@ def _msiexec(action: str, msi: Path, log: Path, properties: tuple = ()) -> int:
         msi: The installer.
         log: Where the verbose log goes.
         properties: Public properties for this run, such as a reinstall's.
+        is_restart_accepted: Whether this run goes over a released earlier
+            package, whose removal may leave a restart owed: exit 3010 is
+            then returned, with one line saying why.
 
     Returns:
         msiexec's exit code.
@@ -1487,7 +1550,7 @@ def _msiexec(action: str, msi: Path, log: Path, properties: tuple = ()) -> int:
             the machine is doing and the log's last lines are printed; or
             when it finished wanting a restart, after the log's lines that
             name what held a file: no install, upgrade or removal of ours may
-            need one.
+            need one, and an install over an earlier package only 3010.
     """
     named = " ".join((action, *properties))
     _say(f"msiexec {named} {msi.name}")
@@ -1511,8 +1574,87 @@ def _msiexec(action: str, msi: Path, log: Path, properties: tuple = ()) -> int:
     _say(f"msiexec {named} exited {code}")
     if code in CHECK_MSIEXEC_RESTART_CODES:
         _print_log(log, CHECK_MSIEXEC_HELD_PATTERNS, 40)
+        if is_restart_accepted and code == CHECK_MSIEXEC_WANTED_RESTART:
+            print(f"msiexec {named} wants a restart: {CHECK_EARLIER_RESTART_REASON}")
+            return code
         raise SystemExit(f"msiexec {named} wants a restart (exit {code})")
     return code
+
+
+def _take_upgrade_away(msi: Path, target: str, folder: Path) -> None:
+    """Remove what an install over an earlier package left, and every file
+    of ours it left for the next restart, so what follows starts clean.
+
+    Args:
+        msi: The installer.
+        target: The check, naming the log.
+        folder: The package's folder, which must be gone after.
+
+    Raises:
+        SystemExit: When the removal fails or the folder outlives it.
+    """
+    log = Path(tempfile.gettempdir()) / f"{target}_upgrade_remove.log"
+    code = _msiexec("/x", msi, log, is_restart_accepted=True)
+    if code not in (0, CHECK_MSIEXEC_WANTED_RESTART):
+        raise SystemExit(f"the upgraded package did not uninstall (exit {code})")
+    if folder.exists():
+        raise SystemExit(f"{folder} outlived the uninstaller after the upgrade")
+    dropped = _drop_pending_renames_of_ours()
+    if dropped:
+        print(
+            f"dropped the restart's {len(dropped)} renames of ours: {', '.join(dropped)}"
+        )
+
+
+def without_ours(entries: list) -> tuple:
+    """Split Windows' pending renames into what is kept and what is ours.
+
+    Args:
+        entries: The value's strings: a source, then its target or an
+            empty string for a deletion, pair after pair.
+
+    Returns:
+        The strings kept, pair after pair, and the paths of ours dropped.
+    """
+    if len(entries) % 2 and entries[-1] == "":
+        entries = entries[:-1]
+    kept, dropped = [], []
+    for source, target in zip(entries[0::2], entries[1::2]):
+        if CHECK_PENDING_RENAMES_MARK in f"{source}|{target}".lower():
+            dropped.append(target or source)
+        else:
+            kept += [source, target]
+    return kept, dropped
+
+
+def _drop_pending_renames_of_ours() -> list:
+    """Take every file of ours out of what Windows does at the next restart.
+
+    Returns:
+        The paths dropped.
+    """
+    import winreg
+
+    with winreg.OpenKey(
+        winreg.HKEY_LOCAL_MACHINE,
+        CHECK_PENDING_RENAMES_KEY,
+        0,
+        winreg.KEY_QUERY_VALUE | winreg.KEY_SET_VALUE,
+    ) as key:
+        try:
+            value, _kind = winreg.QueryValueEx(key, CHECK_PENDING_RENAMES_VALUE)
+        except OSError:
+            return []
+        kept, dropped = without_ours(list(value))
+        if not dropped:
+            return []
+        if kept:
+            winreg.SetValueEx(
+                key, CHECK_PENDING_RENAMES_VALUE, 0, winreg.REG_MULTI_SZ, kept
+            )
+        else:
+            winreg.DeleteValue(key, CHECK_PENDING_RENAMES_VALUE)
+    return dropped
 
 
 def _install_earlier(target: str) -> None:

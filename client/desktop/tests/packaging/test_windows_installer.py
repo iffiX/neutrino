@@ -699,7 +699,7 @@ def test_the_release_builds_the_stand_in_with_msvc_before_the_installer():
     assert "--packet-dll build/packet_stub/packet.dll" in job
 
 
-CHECK_PHASES = ("install", "installed", "repair", "marker", "remove")
+CHECK_PHASES = ("upgrade", "install", "installed", "repair", "marker", "remove")
 
 
 def windows_client_jobs() -> dict:
