@@ -18,6 +18,8 @@ from neutrino_hub.modules.devices.desired_state import DesiredStateStore, state_
 
 DEVICE = "device-one"
 PLATFORM = {"os": "linux", "family": "debian", "arch": "amd64"}
+# The section while the setting is off: the pinned cc-switch version beside it.
+AI_TOOLS_OFF = {"is_enabled": False, "cc_switch_version": "5.10.4"}
 
 
 @pytest.fixture
@@ -145,7 +147,7 @@ def test_compose_is_every_named_module_with_its_want_and_recipes_and_the_desktop
     )
 
     assert set(desired) == {"modules", "desktop", "urls", "ai_tools"}
-    assert desired["ai_tools"] == {"is_enabled": False}
+    assert desired["ai_tools"] == AI_TOOLS_OFF
     assert set(desired["modules"]) == {"samba", "gitea", "terminal", "remote_desktop"}
     samba = desired["modules"]["samba"]
     assert set(samba) == {"want", "config", "install", "uninstall"}
@@ -196,7 +198,7 @@ def test_compose_names_the_hubs_addresses_under_the_hash(config):
 
     assert desired["urls"] == urls
     assert set(desired) == {"modules", "desktop", "urls", "ai_tools"}
-    assert desired["ai_tools"] == {"is_enabled": False}
+    assert desired["ai_tools"] == AI_TOOLS_OFF
     assert digest == state_hash(desired)
     assert moved[0]["urls"] == urls[:1]
     assert moved[1] != digest
@@ -366,10 +368,10 @@ def test_the_setting_is_sent_off_while_it_is_off_or_the_gateway_serves_nothing(
     )
     keyless, _ = store.compose(DEVICE, PLATFORM, ai_models=models)
 
-    assert off["ai_tools"] == {"is_enabled": False}
+    assert off["ai_tools"] == AI_TOOLS_OFF
     assert serving["ai_tools"]["is_enabled"] is True
-    assert stopped["ai_tools"] == {"is_enabled": False}
-    assert keyless["ai_tools"] == {"is_enabled": False}
+    assert stopped["ai_tools"] == AI_TOOLS_OFF
+    assert keyless["ai_tools"] == AI_TOOLS_OFF
     assert served_hash != stopped_hash
     assert store.ai_tools(DEVICE)["is_enabled"] is True
 
@@ -403,7 +405,7 @@ def test_the_ai_tools_mark_rides_the_section_only_while_it_is_on(config, monkeyp
     store.set_ai_tools(DEVICE, is_enabled=True)
     on, _ = store.compose(DEVICE, PLATFORM, ai_models=models, retry_marks=marks)
 
-    assert off["ai_tools"] == {"is_enabled": False}
+    assert off["ai_tools"] == AI_TOOLS_OFF
     assert on["ai_tools"]["retry_mark"] == "a1b2"
 
 

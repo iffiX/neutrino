@@ -226,8 +226,9 @@ def ai_tools_agent_config(
         switcher_version: The cc-switch version the hub's manifest pins.
 
     Returns:
-        ``{is_enabled: false}`` while the setting is off, the gateway serves
-        no model, or the device has no key or no address for it; else
+        ``{is_enabled: false, cc_switch_version}`` while the setting is off,
+        the gateway serves no model, or the device has no key or no address
+        for it, the version left out when none is given; else
         ``{is_enabled, base_url, api_key, tool_configs, accounts: [{account,
         password}], cc_switch_version}``, every Claude slot filled with the
         first served model where none was chosen and ``password`` sent to a
@@ -236,7 +237,10 @@ def ai_tools_agent_config(
     base_url = str(gateway.get("gateway_url", "") or "")
     api_key = str(gateway.get("gateway_key", "") or "")
     if not stored.get("is_enabled") or not models or not base_url or not api_key:
-        return {"is_enabled": False}
+        off = {"is_enabled": False}
+        if switcher_version:
+            off["cc_switch_version"] = switcher_version
+        return off
     is_windows = platform.get("os") == VSCODE_PASSWORD_OS
     sent_accounts = []
     for account, login_id in accounts:
