@@ -160,6 +160,10 @@ def disable(
 ) -> AiToolDeviceView:
     """Point the machine's AI tools back where they were.
 
+    On a setting already off whose machine reported an account ``failed``,
+    a switch back that could not run, the press puts a fresh retry mark on
+    the section, so the agent tries again.
+
     Args:
         request: The device.
         runtime: The shared runtime.
@@ -173,8 +177,16 @@ def disable(
     """
     context = _context(runtime, request.device_id)
     require_online(context)
+    is_retried = not runtime.desired_states.is_ai_tools_enabled(
+        context.key
+    ) and _has_failed_account(runtime, context.key)
     _write(runtime, context.key, is_enabled=False)
     revoke_device_key(context.key)
+    if is_retried:
+        try:
+            DeviceRetryMarks().mark(context.key, DEVICE_AI_TOOLS_NAME)
+        except OSError as error:
+            raise _unwritable(error) from error
     push_state(runtime, context.key)
     return device_view(runtime, context)
 

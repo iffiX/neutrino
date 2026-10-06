@@ -61,6 +61,8 @@ const STATE_TONES: Record<string, StatusTone> = {
 };
 const NOT_REPORTED_KEY = "ui.device_monitor.waiting";
 const STATE_SWITCHED_BACK = "switched_back";
+const CODE_SWITCH_FAILED = "switch_failed";
+const SWITCH_BACK_FAILED_KEY = "ui.ai_tools.switch_back_failed";
 
 interface AiToolsPanelProps {
   deviceId: string;
@@ -328,7 +330,7 @@ function AccountRow({ entry: reported, isEnabled }: AccountRowProps) {
       </span>
       <span className="ai_tools_account_state">
         <StatusDot tone={tone} />
-        {describeResult(entry)}
+        {describeResult(entry, isEnabled)}
       </span>
     </div>
   );
@@ -336,10 +338,13 @@ function AccountRow({ entry: reported, isEnabled }: AccountRowProps) {
 
 /** What the machine said of one account, worded from its state or code,
  * and a detail that is itself a code worded with no placeholder in its
- * words. */
-function describeResult(entry: AiToolAccountView): string {
+ * words. A switch failing while the setting is off is a switch back. */
+function describeResult(entry: AiToolAccountView, isEnabled: boolean): string {
   if (entry.state === "failed") {
-    const key = `code.${entry.code}`;
+    const key =
+      !isEnabled && entry.code === CODE_SWITCH_FAILED
+        ? SWITCH_BACK_FAILED_KEY
+        : `code.${entry.code}`;
     const params: Record<string, string | number> = {
       account: entry.account,
       ...entry.params,

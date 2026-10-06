@@ -193,6 +193,37 @@ def test_on_again_while_an_account_failed_puts_a_retry_mark(api, monkeypatch):
     assert len(runtime.agent_sessions.pushes) == 2
 
 
+def test_off_again_after_a_failed_switch_back_puts_a_retry_mark(api, monkeypatch):
+    """The reported bug: cc-switch could not run for the switch back, was
+    put right, and the second off did nothing, since only on wrote a mark."""
+    from neutrino_hub.modules.devices.retry_marks import DeviceRetryMarks
+
+    client, runtime, _gateway, _ = api
+    client.post(f"{BASE}/enable", json={"device_id": DEVICE})
+    client.post(f"{BASE}/disable", json={"device_id": DEVICE})
+    assert DeviceRetryMarks().marks(DEVICE) == {}
+    failed_report(runtime, monkeypatch)
+
+    client.post(f"{BASE}/disable", json={"device_id": DEVICE})
+
+    assert set(DeviceRetryMarks().marks(DEVICE)) == {"ai_tools"}
+    assert len(runtime.agent_sessions.pushes) == 3
+
+
+def test_off_from_on_with_a_failed_account_puts_no_mark(api, monkeypatch):
+    """Turning off changes the state by itself; a failed switch on is not
+    a switch back to retry."""
+    from neutrino_hub.modules.devices.retry_marks import DeviceRetryMarks
+
+    client, runtime, _gateway, _ = api
+    client.post(f"{BASE}/enable", json={"device_id": DEVICE})
+    failed_report(runtime, monkeypatch)
+
+    client.post(f"{BASE}/disable", json={"device_id": DEVICE})
+
+    assert DeviceRetryMarks().marks(DEVICE) == {}
+
+
 def test_on_again_with_no_failed_account_puts_no_mark(api, monkeypatch):
     from neutrino_hub.modules.devices.retry_marks import DeviceRetryMarks
 

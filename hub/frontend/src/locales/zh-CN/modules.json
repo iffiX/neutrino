@@ -148,6 +148,7 @@
   "ui.ai_tools.slot_haiku": "Haiku 档位",
   "ui.ai_tools.slot_opus": "Opus 档位",
   "ui.ai_tools.slot_sonnet": "Sonnet 档位",
+  "ui.ai_tools.switch_back_failed": "cc-switch 没能把工具改回原来的设置：{detail}",
   "ui.ai_tools.title": "AI 工具",
   "ui.ai_tools.tool_claude": "Claude Code",
   "ui.ai_tools.tool_codex": "Codex",
