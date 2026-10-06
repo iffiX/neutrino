@@ -1254,7 +1254,7 @@ def test_the_next_address_is_tried_when_one_stops_answering(
     bound_everywhere, monkeypatch, config_path
 ):
     """Two addresses fail, the third answers: it is written back as the one
-    that answered, and the next round opens there first."""
+    that answered, and the next round still starts from the first (N48)."""
     session, lines = bound_everywhere
     script = addresses_of(monkeypatch, {"100.64.0.1": [WELCOME]})
 
@@ -1273,7 +1273,7 @@ def test_the_next_address_is_tried_when_one_stops_answering(
 
     session.run_once()
 
-    assert script.hosts[3] == "100.64.0.1"
+    assert script.hosts[3] == "192.0.2.1"
 
 
 def test_a_whole_round_failing_is_what_backs_off(bound_everywhere, monkeypatch):
@@ -1531,7 +1531,7 @@ def test_a_live_socket_follows_the_name_to_a_stored_address(
     served.join(timeout=5)
 
     assert not served.is_alive()
-    assert script.made[0].is_closed is True
+    assert client.is_closed is True
     assert f"moving to {LAN_URL}" in lines
     assert session._news.is_set()
     assert session.last_error() is None

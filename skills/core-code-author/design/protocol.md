@@ -1685,10 +1685,10 @@ is the hub's name on every served network: dnsmasq answers it with the hub's
 address on the network the query came in on, so the name resolves to the
 hub of the network the peer stands on, whatever that address is today. A
 binding holds the `urls` of the last state it took as `gateway_urls`, with
-`gateway_url` the last address that answered. A round tries the name where
-it resolves, then `gateway_url`, then the rest of `gateway_urls`, and the
-first that answers with the pinned fingerprint is written back as
-`gateway_url`. A fingerprint that does not match on the name is another
+`gateway_url` the last address that answered. A round, a reconnect as much
+as the first, tries the name where it resolves, then `gateway_urls` in order,
+then `gateway_url` when the list does not hold it, and the first that
+answers with the pinned fingerprint is written back as `gateway_url`. A fingerprint that does not match on the name is another
 network's hub and is skipped; one that does not match on a stored address is
 recorded as `last_error`, and the round goes on to the next address.
 
