@@ -7,6 +7,7 @@ import java.io.OutputStream
 import java.net.Socket
 import java.net.SocketAddress
 import java.net.SocketException
+import java.nio.channels.ClosedByInterruptException
 import kotlinx.coroutines.runBlocking
 
 /**
@@ -15,7 +16,9 @@ import kotlinx.coroutines.runBlocking
  * closing ends the stream. The address a caller connects to is not dialled; the stream's open
  * names its far end. A read waits until bytes come or the stream ends, whatever the read timeout
  * says. There is no half-close: shutting either direction closes the socket. A
- * stream the hub ends with a code ends a read or a write with [ConnectRefusedException].
+ * stream the hub ends with a code ends a read or a write with [ConnectRefusedException]. A thread
+ * interrupted while it waits in a read or a write closes the socket and gets
+ * [ClosedByInterruptException] with its interrupt flag kept, as an interruptible channel does.
  *
  * @param opener Opens the stream on the hub's socket.
  */
@@ -96,6 +99,14 @@ class ChannelConnectSocket(private val opener: () -> ChannelResult<ChannelStream
         return ConnectRefusedException(refusal.code, refusal.params)
     }
 
+    private fun <T> blocking(action: suspend () -> T): T = try {
+        runBlocking { action() }
+    } catch (_: InterruptedException) {
+        Thread.currentThread().interrupt()
+        close()
+        throw ClosedByInterruptException()
+    }
+
     private inner class StreamInput : InputStream() {
         private var held = ByteArray(0)
         private var offset = 0
@@ -109,7 +120,7 @@ class ChannelConnectSocket(private val opener: () -> ChannelResult<ChannelStream
             if (count == 0) return 0
             val current = stream ?: throw SocketException("the socket is not connected")
             if (offset >= held.size) {
-                val next = runBlocking { current.read() }
+                val next = blocking { current.read() }
                 if (next == null) {
                     if (current.refusal != null) throw ended(current)
                     return -1
@@ -135,7 +146,7 @@ class ChannelConnectSocket(private val opener: () -> ChannelResult<ChannelStream
             if (count == 0) return
             val current = stream ?: throw SocketException("the socket is not connected")
             if (isShut) throw SocketException("the socket is closed")
-            val sent = runBlocking { current.send(buffer.copyOfRange(at, at + count)) }
+            val sent = blocking { current.send(buffer.copyOfRange(at, at + count)) }
             if (sent is ChannelResult.Refused) throw ended(current)
         }
 

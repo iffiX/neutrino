@@ -6,7 +6,8 @@ import io.github.iffix.neutrino.channel.HubView
 /**
  * How the tab strip follows the session lists the hubs send: a listed session with no tab gets
  * one at the end, a listed tab takes the list's values, and a tab whose session left the list
- * of a connected hub has ended. A hub that is not connected leaves its tabs as they are.
+ * of a connected hub has ended and is neither kept nor shared for this phone. A hub that is not
+ * connected leaves its tabs as they are.
  */
 object TerminalSessionMerge {
     /**
@@ -56,7 +57,7 @@ object TerminalSessionMerge {
                 )
 
                 tab.isListed && tab.bindingId in listedHubs && tab.phase != TerminalPhase.ENDED ->
-                    tab.copy(phase = TerminalPhase.ENDED, attachedCount = 0)
+                    tab.copy(phase = TerminalPhase.ENDED, attachedCount = 0, isPersistent = false, isShared = false)
 
                 else -> tab
             }

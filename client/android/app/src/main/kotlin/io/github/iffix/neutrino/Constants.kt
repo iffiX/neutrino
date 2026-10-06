@@ -375,8 +375,8 @@ const val CLIENT_CLIP_SENSITIVE_EXTRA = "android.content.extra.IS_SENSITIVE"
 /** How long a copy button shows that it copied. */
 const val CLIENT_COPIED_SHOWN_MILLIS = 1500L
 
-/** How many characters of a masked key stay readable. */
-const val CLIENT_KEY_SHOWN_PREFIX = 6
+/** How many mask characters a hidden key field shows, whatever the key's length. */
+const val CLIENT_KEY_MASK_LENGTH = 16
 
 /** How long a connect's `login` stage may take: the engine's start, its login and its address. */
 const val OVERLAY_LOGIN_TIMEOUT_S = 90L

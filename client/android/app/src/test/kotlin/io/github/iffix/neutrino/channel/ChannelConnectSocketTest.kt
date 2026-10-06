@@ -3,7 +3,9 @@ package io.github.iffix.neutrino.channel
 import io.github.iffix.neutrino.CLIENT_STREAM_CREDIT_BYTES
 import io.github.iffix.neutrino.CLIENT_WS_CHUNK_BYTES
 import io.github.iffix.neutrino.ConnectRefusedException
+import java.io.IOException
 import java.net.InetSocketAddress
+import java.nio.channels.ClosedByInterruptException
 import kotlin.concurrent.thread
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertArrayEquals
@@ -144,6 +146,39 @@ class ChannelConnectSocketTest {
     }
 
     @Test
+    fun anInterruptedReaderGetsAClosedSocketAndKeepsItsInterrupt() {
+        val hub = FakeConnectHub()
+        val socket = socketOn(hub).apply { open() }
+        val outcome = blockedThen(socket) { socket.getInputStream().read() }
+        assertTrue(outcome.error is ClosedByInterruptException)
+        assertTrue(outcome.isInterrupted)
+        assertTrue(outcome.uncaught == null)
+        assertTrue(socket.isClosed)
+        assertEquals(1, synchronized(hub) { hub.closed.size })
+    }
+
+    @Test
+    fun anInterruptedWriterGetsAClosedSocketAndKeepsItsInterrupt() {
+        val hub = FakeConnectHub(isGranting = false)
+        val socket = socketOn(hub).apply { open() }
+        val outcome = blockedThen(socket) { socket.getOutputStream().write("waits for credit".toByteArray()) }
+        assertTrue(outcome.error is ClosedByInterruptException)
+        assertTrue(outcome.isInterrupted)
+        assertTrue(outcome.uncaught == null)
+        assertTrue(socket.isClosed)
+    }
+
+    @Test
+    fun closingTheSocketUnderABlockedReaderEndsTheReadAsTheEnd() {
+        val hub = FakeConnectHub()
+        val socket = socketOn(hub).apply { open() }
+        val outcome = blockedThen(socket, isInterrupting = false) { socket.getInputStream().read() }
+        assertEquals(-1, outcome.result)
+        assertTrue(outcome.error == null)
+        assertTrue(outcome.uncaught == null)
+    }
+
+    @Test
     fun theHubSocketEndingEndsAReadWithUnreachable() {
         val hub = FakeConnectHub()
         val socket = socketOn(hub).apply { open() }
@@ -154,5 +189,39 @@ class ChannelConnectSocketTest {
         } catch (error: ConnectRefusedException) {
             assertEquals("hub_unreachable", error.code)
         }
+    }
+
+    /**
+     * Run [action] on a thread of its own, wait until that thread is parked inside it, then
+     * interrupt the thread or close the socket under it.
+     */
+    private fun blockedThen(socket: ChannelConnectSocket, isInterrupting: Boolean = true, action: () -> Any?): Outcome {
+        val outcome = Outcome()
+        val worker = Thread {
+            try {
+                outcome.result = action()
+            } catch (error: IOException) {
+                outcome.error = error
+            }
+            outcome.isInterrupted = Thread.currentThread().isInterrupted
+        }
+        worker.setUncaughtExceptionHandler { _, error -> outcome.uncaught = error }
+        worker.start()
+        val deadline = System.currentTimeMillis() + 30_000
+        while (worker.state != Thread.State.WAITING && worker.state != Thread.State.TIMED_WAITING) {
+            assertTrue("the worker never waited", System.currentTimeMillis() < deadline)
+            Thread.sleep(5)
+        }
+        if (isInterrupting) worker.interrupt() else socket.close()
+        worker.join(30_000)
+        assertFalse(worker.isAlive)
+        return outcome
+    }
+
+    private class Outcome {
+        var result: Any? = null
+        var error: IOException? = null
+        var isInterrupted = false
+        var uncaught: Throwable? = null
     }
 }
