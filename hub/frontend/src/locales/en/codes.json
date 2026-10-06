@@ -124,6 +124,7 @@
   "code.module_sha256_mismatch": "The module artifact did not arrive as pinned.",
   "code.module_unknown": "This box runs nothing called {name}.",
   "code.network_mode_unknown": "This box has no mode named {mode}.",
+  "code.network_invalid": "{name} cannot answer with the role Disabled.",
   "code.no_download_named": "That release names no download for this machine.",
   "code.no_exit_node_enabled": "No exit node is enabled, so there is nothing to proxy through.",
   "code.no_platform_build": "There is no build of this module for that device.",

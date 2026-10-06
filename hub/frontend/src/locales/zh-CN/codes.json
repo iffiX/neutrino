@@ -124,6 +124,7 @@
   "code.module_sha256_mismatch": "模块安装文件与固定的校验值不符。",
   "code.module_unknown": "这台机器上没有叫 {name} 的东西。",
   "code.network_mode_unknown": "这台机器没有名为 {mode} 的模式。",
+  "code.network_invalid": "{name} 的角色是停用，不能开放。",
   "code.no_download_named": "这个发布里没有适合本机的下载。",
   "code.no_exit_node_enabled": "没有启用任何出口节点，代理无处可去。",
   "code.no_platform_build": "这个模块没有适合那台设备的构建。",

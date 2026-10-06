@@ -42,3 +42,35 @@
 .exposure_chip_state {
   font-size: 12px;
 }
+
+/* A port turned on with no role, and the roles it can take beside it. */
+.exposure_row {
+  display: inline-flex;
+  gap: var(--space-1);
+  align-items: center;
+}
+
+.exposure_roles {
+  display: inline-flex;
+  gap: var(--space-1);
+}
+
+.exposure_role {
+  padding: 6px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.exposure_role:hover {
+  border-color: var(--color-accent);
+}
+
+.exposure_role--on {
+  border-color: var(--color-accent);
+  background: var(--color-accent-wash);
+  color: var(--color-text);
+}
