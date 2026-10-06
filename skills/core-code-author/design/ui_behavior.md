@@ -104,6 +104,14 @@ The page reads it from the interface's `is_unsaved` and works out
 nothing itself ([modules/network.md](modules/network.md), "An
 interface the configuration does not name").
 
+In router mode, a chip turned on for a port whose role is `disabled` carries
+the role choice in the same row: `ui.network.role_wan`, and
+`ui.network.role_lan` for a wired port, as a two-button picker beside the
+chip. **Apply exposure** stays disabled until every such chip has a role
+chosen, and the request sends it in `interface_roles`
+([modules/network.md](modules/network.md), "An interface the configuration
+does not name").
+
 ## Filters
 
 A filter row is single-select chips over a list already in memory, `All` first

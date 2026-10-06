@@ -206,6 +206,20 @@ links, Wake-on-LAN, Direct and the **Network** page share.
 Router mode reads it the same way on Linux: an interface the configuration
 does not name has the role `disabled` and is not exposed.
 
+In router mode an exposed port never carries the role `disabled`, because a
+port with that role is stopped: its link is down and its addresses are gone.
+On the **Network** page, turning on the chip of a port whose role is
+`disabled`, a card plugged in after setup among them, puts the role choice in
+the same row, the roles a router gives a port in one step: WAN, and LAN for
+a wired port, which takes the free network the page proposes. **Apply
+exposure** sends the role with the exposure, and the hub writes and applies
+both. The hub refuses a configuration that exposes a port whose role is
+`disabled` with `network_invalid {field, name}`, `field` being `role`: on
+`POST /api/hub/network/set` and on `POST /api/hub/network/interface/set`, which
+gives an exposed port the role `disabled`. In `server` and `side_gateway`, where
+no port is the hub's to stop, a port with the role `disabled` is exposed as
+before.
+
 ### An overlay's daemon is a second firewall, and it wins
 
 Rendering the rules does not close an overlay. Measured on a running NetBird
