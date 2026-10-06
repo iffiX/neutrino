@@ -80,6 +80,12 @@ SWITCHER_APP_KEY_FILES = {
     "gemini": (".env",),
 }
 SWITCHER_KEY_FILE_MODE = 0o600
+# cc-switch's own store for the client's runs, under the client's own
+# directory, named to cc-switch by the variable it reads; the store must be
+# the person's alone, mode 700.
+SWITCHER_STORE_NAME = "cc_switch"
+SWITCHER_STORE_VARIABLE = "CC_SWITCH_CONFIG_DIR"
+SWITCHER_STORE_MODE = 0o700
 # How a kept file's bytes are held as text in the JSON record and back: any
 # byte that is not UTF-8 survives the round trip.
 KEPT_ENCODING = "utf-8"
@@ -192,11 +198,15 @@ def activate(*, base_url: str, api_key: str, tool_configs: "dict | None" = None)
                 switched.append(app)
         except ToolSwitchError as error:
             undone = []
+            if _read_record(app) is not None:
+                done.append(app)
             for switched in done:
                 try:
                     _point_away(switched)
                 except ToolSwitchError as failure:
                     undone.append(f"{switched}: {failure}")
+            if not any(_read_record(other) for other in SWITCHER_APPS):
+                _remove_store()
             problem = f"{app}: {error}"
             if undone:
                 problem += "; not put back: " + "; ".join(undone)
@@ -224,6 +234,7 @@ def deactivate(*, base_url: str = "") -> str:
     for app in SWITCHER_APPS:
         previous = _point_away(app)
         notes.append(f"{app} → {previous or 'unset'}")
+    _remove_store()
     return ", ".join(notes)
 
 
@@ -262,6 +273,7 @@ def is_active_for(app: str) -> bool:
     Returns:
         True when the hub is that tool's current provider.
     """
+    _use_store_of(_read_record(app))
     return _current_provider(app) == SWITCHER_PROVIDER_ID
 
 
@@ -283,6 +295,7 @@ def _point_at_hub(app: str, base_url: str, api_key: str, config: dict) -> bool:
             be made, or the tool's file did not end up naming the hub.
     """
     relative = SWITCHER_APP_FILES[app]
+    _use_store_of(_read_record(app))
     record = _read_record(app)
     if record is None:
         record = _adopt_once(app)
@@ -377,6 +390,7 @@ def _adopt_once(app: str) -> dict:
         "is_dir_present": is_dir_present,
         "kept": kept,
         "kept_modes": kept_modes,
+        "is_own_store": True,
         "previous": "" if current == SWITCHER_PROVIDER_ID else current,
         "added": None,
     }
@@ -443,6 +457,7 @@ def _point_away(app: str) -> str:
             in it, or a file cannot be put back; the record stays.
     """
     record = _read_record(app) or {}
+    _use_store_of(record)
     previous = str(record.get("previous", "") or "")
     returned_to = _drop_provider(app, previous)
     kept = record.get("kept")
@@ -528,6 +543,41 @@ def _set_mode(path: str, mode: int) -> None:
         os.chmod(path, mode)
     except OSError as error:
         raise ToolSwitchError(f"could not set the mode of {path}: {error}") from error
+
+
+def _store_path() -> str:
+    """cc-switch's store for the client's runs, under the client's own directory."""
+    return os.path.join(_platform().config_dir(), SWITCHER_STORE_NAME)
+
+
+def _use_store_of(record: "dict | None") -> None:
+    """Point every cc-switch this process starts at the store a tool's record names.
+
+    A tool with no record, or one switched with the client's own store, runs
+    on that store, made first as this person's alone; a tool switched before
+    the store existed runs on the person's own ``~/.cc-switch`` until it is
+    switched back.
+
+    Raises:
+        ToolSwitchError: When the store cannot be made.
+    """
+    if record and not record.get("is_own_store"):
+        os.environ.pop(SWITCHER_STORE_VARIABLE, None)
+        return
+    path = _store_path()
+    try:
+        os.makedirs(path, exist_ok=True)
+        if os.name != "nt":
+            os.chmod(path, SWITCHER_STORE_MODE)
+    except OSError as error:
+        raise ToolSwitchError(f"could not make {path}: {error}") from error
+    os.environ[SWITCHER_STORE_VARIABLE] = path
+
+
+def _remove_store() -> None:
+    """Delete the client's own store and stop naming it to cc-switch."""
+    os.environ.pop(SWITCHER_STORE_VARIABLE, None)
+    shutil.rmtree(_store_path(), ignore_errors=True)
 
 
 def _remove_empty_dir(path: str) -> None:

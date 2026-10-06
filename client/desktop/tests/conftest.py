@@ -174,6 +174,9 @@ def _isolated_person_paths(tmp_path, monkeypatch):
         monkeypatch.setattr(platform_class, "config_dir", redirected)
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(runtime_dir))
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    # cc-switch's store is named to it through the process's environment;
+    # each test starts with none named and leaves none behind.
+    monkeypatch.delenv("CC_SWITCH_CONFIG_DIR", raising=False)
     (tmp_path / "home").mkdir()
 
 

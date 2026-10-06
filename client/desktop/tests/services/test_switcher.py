@@ -847,3 +847,57 @@ def test_the_switch_back_puts_the_file_s_own_mode_back(tmp_path, monkeypatch):
 
     assert own.read_text() == '{"permissions": {}}\n'
     assert stat.S_IMODE(own.stat().st_mode) == 0o640
+
+
+def test_every_cc_switch_run_uses_the_client_s_own_store_and_the_switch_back_removes_it(
+    tmp_path, monkeypatch
+):
+    import stat
+
+    home_file(tmp_path, ".claude/settings.json", "{}")
+    cli = Cli(current="deepseek")
+    seen = []
+    original = cli.__call__
+
+    def recording(arguments, app, *, is_checked=True):
+        seen.append(os.environ.get("CC_SWITCH_CONFIG_DIR"))
+        return original(arguments, app, is_checked=is_checked)
+
+    wire(monkeypatch, cli)
+    monkeypatch.setattr(switcher, "_run", recording)
+    store = os.path.join(switcher._platform().config_dir(), "cc_switch")
+
+    switcher._point_at_hub("claude", "http://hub", "k", {"default": "m1"})
+    assert set(seen) == {store}
+    assert stat.S_IMODE(os.stat(store).st_mode) == 0o700
+    assert switcher._read_record("claude")["is_own_store"] is True
+
+    switcher.deactivate()
+
+    assert not os.path.exists(store)
+    assert "CC_SWITCH_CONFIG_DIR" not in os.environ
+    assert not (tmp_path / "home" / ".cc-switch").exists()
+
+
+def test_a_tool_switched_before_the_store_existed_goes_back_in_the_person_s_own(
+    tmp_path, monkeypatch
+):
+    home_file(tmp_path, ".claude/settings.json", "{}")
+    cli = Cli(current="deepseek")
+    wire(monkeypatch, cli)
+    switcher._point_at_hub("claude", "http://hub", "k", {"default": "m1"})
+    record = switcher._read_record("claude")
+    del record["is_own_store"]
+    switcher._write_record("claude", record)
+    seen = []
+    original = cli.__call__
+
+    def recording(arguments, app, *, is_checked=True):
+        seen.append(os.environ.get("CC_SWITCH_CONFIG_DIR"))
+        return original(arguments, app, is_checked=is_checked)
+
+    monkeypatch.setattr(switcher, "_run", recording)
+
+    switcher._point_away("claude")
+
+    assert seen and set(seen) == {None}
