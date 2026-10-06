@@ -1833,3 +1833,20 @@ def test_an_entry_the_hubs_own_machine_serves_names_the_hub_once():
         "from nmxhub:dns",
         "from nmxhub:nmxclient:share",
     ]
+
+
+def test_every_forms_button_row_is_one_row_at_the_bottom_right():
+    """N54: Save and Cancel, Choose this folder: one style on every page."""
+    actions = PAGE_CSS.split(".form_actions {")[1].split("}")[0]
+    assert "justify-content: flex-end" in actions
+    assert PAGE_JS.count("actions.className = 'form_actions';") == 5
+    assert "actions.className = 'row';" not in PAGE_JS
+    assert "actions.style.marginTop" not in PAGE_JS
+
+
+def test_every_form_field_spans_its_row():
+    """N54: no select or input is held narrower than its row."""
+    settings_picker = PAGE_CSS.split(".settings .picker {")[1].split("}")[0]
+    assert "max-width" not in settings_picker
+    assert ".modal select { width: 100%; }" in PAGE_CSS
+    assert ".form .row input { flex: 1; }" in PAGE_CSS
