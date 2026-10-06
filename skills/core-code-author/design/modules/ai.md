@@ -156,7 +156,7 @@ sections").
 | The key | the client's own, from the `service` stream | the device's own, from the `ai_tools` section |
 | The unchosen models | the gateway's first model, from the `service` stream | the gateway's first served model, filled in by the hub before the state is sent |
 | The cc-switch | the copy the client's package carries | the copy the agent fetches from the hub into `ai_tools/bin/` under its state root, the same pinned version |
-| The record per tool | `original/<tool>.json` under the client's configuration | `ai_tools/<account>/<tool>.json` under the agent's state root, never in the account's home |
+| The record per tool | `original/<tool>.json` under the client's configuration | `ai_tools/<account>/<tool>.json` under the agent's state root, never in the account's home, with the text of every file a switch may write as it was before the first switch, put back byte for byte by the switch back ([../agent.md](../agent.md), "The machine's AI tools") |
 | Switched back | when the chip goes off | when the setting goes off, when the account's last instance is removed, before `nagent service uninstall`, and when the machine leaves the hub |
 
 cc-switch keeps its own store in the account's home on a managed machine,
