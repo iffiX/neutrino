@@ -626,17 +626,21 @@ def test_the_list_is_kept_clean_and_in_the_hubs_order():
     assert enrollment.clean_urls(None) == []
 
 
-def test_a_round_is_the_name_then_the_last_answer_then_the_rest():
+def test_a_round_is_the_name_then_the_hubs_list_in_its_order():
+    """N48: the address that last answered is not moved ahead; one the list
+    does not hold comes last."""
     binding = {"gateway_url": OVERLAY_URL, "gateway_urls": [LAN_URL, OVERLAY_URL]}
 
     assert enrollment.candidate_urls(binding, NAME_URL) == [
         NAME_URL,
-        OVERLAY_URL,
         LAN_URL,
+        OVERLAY_URL,
     ]
-    assert enrollment.candidate_urls(binding) == [OVERLAY_URL, LAN_URL]
+    assert enrollment.candidate_urls(binding) == [LAN_URL, OVERLAY_URL]
     assert enrollment.candidate_urls(binding, LAN_URL) == [LAN_URL, OVERLAY_URL]
     assert enrollment.stored_urls(binding) == [LAN_URL, OVERLAY_URL]
+    elsewhere = dict(binding, gateway_url=NAME_URL)
+    assert enrollment.candidate_urls(elsewhere) == [LAN_URL, OVERLAY_URL, NAME_URL]
 
 
 def test_the_name_takes_the_stored_addresss_scheme_and_port(monkeypatch):

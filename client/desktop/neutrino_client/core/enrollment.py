@@ -30,7 +30,7 @@ first.
 
 A connection round is the addresses in ``candidate_urls`` order: the address
 ``hub.neutrino.internal`` resolves to on the network this machine stands on,
-then the one that last answered, then the rest of the list.
+then the hub's list in its own order, at a reconnect as at the first connect.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -530,10 +530,11 @@ def candidate_urls(binding: dict, name_url: str = "") -> list:
         name_url: What :func:`hub_name_url` returned, or empty.
 
     Returns:
-        The name's address, the one that last answered, then the rest of
-        the stored list, each once.
+        The name's address, then the stored list in the hub's order, each
+        once; the address that last answered keeps its place in the list,
+        or comes last when the list does not hold it.
     """
-    return clean_urls([name_url, binding.get("gateway_url", ""), *stored_urls(binding)])
+    return clean_urls([name_url, *stored_urls(binding)])
 
 
 def resolve_hub_address() -> str:
@@ -760,8 +761,8 @@ def leave(binding: dict) -> None:
     """Tell one hub this person is leaving it, once, within
     ``CLIENT_LEAVE_TELL_TIMEOUT_S``.
 
-    Each address the binding holds is tried in turn until one answers. The
-    binding itself is not touched.
+    The address that last answered is tried first, then the rest the
+    binding holds, until one answers. The binding itself is not touched.
 
     Args:
         binding: The binding to the hub.
@@ -774,7 +775,7 @@ def leave(binding: dict) -> None:
     """
     deadline = time.monotonic() + CLIENT_LEAVE_TELL_TIMEOUT_S
     unreachable = GatewayUnreachable("the binding holds no address")
-    for url in candidate_urls(binding):
+    for url in clean_urls([binding.get("gateway_url", ""), *stored_urls(binding)]):
         left_s = deadline - time.monotonic()
         if left_s <= 0:
             break

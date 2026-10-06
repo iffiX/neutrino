@@ -961,8 +961,9 @@ class ClientHubSession:
     def _connect_round(self):
         """Connect through the first of the hub's addresses that answers.
 
-        The name's address is first, then the one that last answered, then
-        the rest the binding holds. An address the name resolves to that is
+        The name's address is first, then the addresses the binding holds
+        in the hub's order, at every round alike: the one that last answered
+        is not moved ahead. An address the name resolves to that is
         not a stored one and fails the fingerprint check is not this hub and
         is skipped; a stored address failing it is logged and the round goes
         on. The address that answers is written onto the binding.
