@@ -54,6 +54,7 @@ recorded. A button reads its own job from there and from nowhere else.
 | A page changes with no transition animation. | A fade adds time to every press and tells nothing. |
 | A rotation or a window resize keeps every page's state and every running job; an attached terminal and an open viewer stay as they are. | The state is in the core, and a page is a view of it. |
 | A page's content sits in cards with a 16 px gutter; a card is one concern, as in the panel. | The panel's reader is the client's reader. |
+| In the desktop window every form field, a select or a text input, spans the full width of its row, and every form's button row (**Save** and **Cancel**, **Choose this folder**) sits at the bottom right of its panel or dialog, in one style on every page. | One form idiom is one thing to learn, and a field narrower than its row or a button row at the left reads as unfinished. |
 
 A row is the unit every page is made of:
 
