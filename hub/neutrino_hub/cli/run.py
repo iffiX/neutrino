@@ -94,6 +94,7 @@ from neutrino_hub.utils.constants import (
 from neutrino_hub.modules.cliproxyapi.management_key import resolve_management_key
 from neutrino_hub.web.agent_port import (
     AgentPortServer,
+    ChannelWebSocketProtocol,
     agent_port_context,
     agent_port_protocol,
 )
@@ -540,6 +541,7 @@ def _agent_config(host: str, key_path) -> uvicorn.Config:
             ssl_context=agent_port_context(str(WEB_AGENT_TLS_CERT_PATH), str(key_path)),
         ),
         timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_S,
+        ws=ChannelWebSocketProtocol,
         ws_ping_interval=CHANNEL_PING_INTERVAL_S,
         ws_ping_timeout=CHANNEL_PING_TIMEOUT_S,
         ws_max_size=CHANNEL_MESSAGE_BYTES_MAX,

@@ -10,6 +10,7 @@ together.
 """
 
 import asyncio
+import logging
 import socket
 import ssl
 
@@ -23,8 +24,11 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_UNADMITTED_MAX,
 )
 from neutrino_hub.modules.channel.port_guard import ChannelPortGuard
+from neutrino_hub.web import agent_port
 from neutrino_hub.web.agent_port import (
     AgentPortProtocol,
+    ChannelWebSocketProtocol,
+    LatePongJournal,
     ChannelRequestLimitMiddleware,
     agent_port_context,
     agent_port_sockets,
@@ -549,3 +553,76 @@ def test_a_silent_socket_on_ipv6_loopback_is_logged_by_its_address(tmp_path, cap
         for record in caplog.records
         if record.name == "neutrino_hub.modules.channel.port_guard"
     ] == ["agent port: closed ::1, no byte within 0.2 s"]
+
+
+class LateTransport:
+    def __init__(self):
+        self.written = []
+        self.is_closed = False
+
+    def is_closing(self):
+        return self.is_closed
+
+    def write(self, data):
+        self.written.append(data)
+
+    def close(self):
+        self.is_closed = True
+
+
+class LateConnection:
+    def __init__(self):
+        self.failed = None
+
+    def fail(self, code, reason):
+        self.failed = (code, reason)
+
+    def data_to_send(self):
+        return [b"close"]
+
+
+def late_socket(client=("::ffff:192.168.93.166", 50000)):
+    """A protocol whose pong came too late, built without a server."""
+    protocol = object.__new__(ChannelWebSocketProtocol)
+    protocol.close_sent = False
+    protocol.transport = LateTransport()
+    protocol.conn = LateConnection()
+    protocol.client = client
+    protocol.scope = {"path": "/api/channel/socket"}
+    protocol.ping_timeout = 60.0
+    protocol.pong_timer = None
+    protocol.pending_ping_payload = b"ping"
+    protocol.loop = asyncio.new_event_loop()
+    protocol.logger = logging.getLogger("uvicorn.error")
+    return protocol
+
+
+def test_a_late_pong_is_said_in_the_journal_and_the_socket_closed(monkeypatch, caplog):
+    monkeypatch.setattr(agent_port, "LATE_PONGS", LatePongJournal())
+    protocol = late_socket()
+
+    with caplog.at_level(logging.WARNING, logger="neutrino_hub.web.agent_port"):
+        protocol.keepalive_timeout()
+    protocol.loop.close()
+
+    assert protocol.conn.failed == (1011, "keepalive ping timeout")
+    assert protocol.transport.is_closed
+    assert [record.getMessage() for record in caplog.records] == [
+        "channel socket from 192.168.93.166 on /api/channel/socket closed: "
+        "no answer to the keepalive ping within 60 s"
+    ]
+
+
+def test_the_late_pong_line_is_written_once_a_minute_for_each_address(caplog):
+    journal = LatePongJournal(interval_s=60.0)
+
+    with caplog.at_level(logging.WARNING, logger="neutrino_hub.web.agent_port"):
+        said = [
+            journal.note("10.0.0.5", "/api/channel/socket", 60.0, 100.0),
+            journal.note("10.0.0.5", "/api/channel/socket", 60.0, 130.0),
+            journal.note("10.0.0.6", "/api/channel/socket", 60.0, 131.0),
+            journal.note("10.0.0.5", "/api/channel/socket", 60.0, 161.0),
+        ]
+
+    assert said == [True, False, True, True]
+    assert len(caplog.records) == 3

@@ -26,6 +26,9 @@ import sys
 import uvicorn
 from uvicorn.config import STARTUP_FAILURE
 from uvicorn.protocols.http.auto import AutoHTTPProtocol
+from uvicorn.protocols.websockets.websockets_sansio_impl import (
+    WebSocketsSansIOProtocol,
+)
 
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_ADMISSION_TIMEOUT_S,
@@ -33,6 +36,7 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_CLOSE_HANDSHAKE,
     CHANNEL_CODE_REQUEST_TOO_LARGE,
     CHANNEL_FIRST_BYTE_TIMEOUT_S,
+    CHANNEL_LATE_PONG_LOG_INTERVAL_S,
     CHANNEL_REQUEST_BYTES_MAX,
     CHANNEL_TLS_HANDSHAKE_TIMEOUT_S,
 )
@@ -156,6 +160,65 @@ def agent_port_context(certificate_path: str, key_path: str) -> ssl.SSLContext:
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(certificate_path, key_path)
     return context
+
+
+class LatePongJournal:
+    """Says in the journal that a peer's socket was dropped for a late pong,
+    at most once a minute for each peer address."""
+
+    def __init__(self, *, interval_s: float = CHANNEL_LATE_PONG_LOG_INTERVAL_S):
+        """
+        Args:
+            interval_s: The least time between two lines for one address.
+        """
+        self._interval_s = interval_s
+        self._said_at: dict = {}
+
+    def note(self, host: str, path: str, timeout_s: float, now: float) -> bool:
+        """Write the line unless one went out for this address lately.
+
+        Args:
+            host: The peer's address.
+            path: The socket's path.
+            timeout_s: How late the pong was allowed to be.
+            now: The loop's clock.
+
+        Returns:
+            Whether a line was written.
+        """
+        said_at = self._said_at.get(host)
+        if said_at is not None and now - said_at < self._interval_s:
+            return False
+        self._said_at = {
+            address: at
+            for address, at in self._said_at.items()
+            if now - at < self._interval_s
+        }
+        self._said_at[host] = now
+        LOGGER.warning(
+            "channel socket from %s on %s closed: no answer to the keepalive "
+            "ping within %g s",
+            host,
+            path or "/",
+            timeout_s,
+        )
+        return True
+
+
+LATE_PONGS = LatePongJournal()
+
+
+class ChannelWebSocketProtocol(WebSocketsSansIOProtocol):
+    """uvicorn's WebSocket protocol, which says when it drops a peer whose
+    keepalive pong came too late; uvicorn itself only closes the socket."""
+
+    def keepalive_timeout(self) -> None:
+        """Note the late pong, then close the socket as uvicorn does."""
+        if not self.close_sent and not self.transport.is_closing():
+            host = unmapped(self.client[0]) if self.client else ""
+            path = str((getattr(self, "scope", None) or {}).get("path", ""))
+            LATE_PONGS.note(host, path, float(self.ping_timeout or 0), self.loop.time())
+        super().keepalive_timeout()
 
 
 def agent_port_protocol(*, guard: ChannelPortGuard, ssl_context: ssl.SSLContext):

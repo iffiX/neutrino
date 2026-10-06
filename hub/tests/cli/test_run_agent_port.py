@@ -126,6 +126,20 @@ def agent_config(tmp_path, monkeypatch) -> uvicorn.Config:
     return run._agent_config("127.0.0.1", key)
 
 
+def test_the_agent_port_waits_a_minute_for_a_pong_and_says_when_it_drops_one(
+    tmp_path, monkeypatch
+):
+    """The reported bug: at 256 kbit/s a ping waited behind a desktop
+    stream's queue for longer than 20 s and the client was dropped unsaid."""
+    from neutrino_hub.web.agent_port import ChannelWebSocketProtocol
+
+    config = agent_config(tmp_path, monkeypatch)
+
+    assert config.ws is ChannelWebSocketProtocol
+    assert config.ws_ping_interval == 20.0
+    assert config.ws_ping_timeout == 60.0
+
+
 def test_the_agent_port_believes_the_socket_and_not_a_forwarded_header(
     tmp_path, monkeypatch
 ):
