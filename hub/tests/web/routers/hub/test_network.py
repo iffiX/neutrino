@@ -1465,3 +1465,103 @@ def test_outside_linux_a_new_adapter_is_in_use_at_once(guest_box, monkeypatch, s
 
     assert rows["Ethernet 3"]["is_unsaved"] is False
     assert rows["Ethernet 3"]["settings"]["is_exposed"] is True
+
+
+# --- a router exposes no port with the role disabled ---
+
+
+def _turned_on(roles: dict | None = None) -> dict:
+    body = _options(exposed=["enp1s0", "enp10s0"], overlays=[])
+    if roles is not None:
+        body["interface_roles"] = roles
+    return body
+
+
+def _plug_in(status) -> None:
+    status._links = [*status._links, link("enp10s0", address="10.9.0.2/24")]
+
+
+def test_a_router_refuses_a_card_turned_on_with_no_role(box):
+    client, runtime, status = box
+    _plug_in(status)
+
+    response = client.post("/api/hub/network/set", json=_turned_on())
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == {
+        "code": "network_invalid",
+        "params": {"field": "role", "name": "enp10s0"},
+    }
+    assert runtime.network().interface("enp10s0") is None
+    assert runtime.applied == []
+
+
+def test_a_card_turned_on_as_an_uplink_is_written_with_its_role_and_applied(box):
+    client, runtime, status = box
+    _plug_in(status)
+
+    response = client.post("/api/hub/network/set", json=_turned_on({"enp10s0": "wan"}))
+
+    assert response.status_code == 200, response.json()
+    stored = runtime.network().interface("enp10s0")
+    assert (stored.role, stored.is_exposed) == ("wan", True)
+    assert runtime.applied == [None]
+
+
+def test_a_wired_card_turned_on_as_a_lan_takes_the_proposed_network(box):
+    client, runtime, status = box
+    _plug_in(status)
+
+    response = client.post("/api/hub/network/set", json=_turned_on({"enp10s0": "lan"}))
+
+    assert response.status_code == 200, response.json()
+    stored = runtime.network().interface("enp10s0")
+    assert stored.role == "lan"
+    assert stored.lan.address.startswith("192.168.") and stored.lan.prefix_len == 24
+    assert stored.lan.address != "192.168.100.1"
+
+
+@pytest.mark.parametrize("role", ["disabled", "split", "lan"])
+def test_a_role_a_port_cannot_take_in_one_step_is_refused(box, role):
+    """The radio takes no served network from the row, and the row gives no
+    trunk and no stopped port."""
+    client, runtime, _ = box
+
+    response = client.post(
+        "/api/hub/network/set",
+        json={
+            **_options(exposed=["enp1s0", "wlp3s0"], overlays=[]),
+            "interface_roles": {"wlp3s0": role},
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "network_invalid"
+    assert runtime.network().interface("wlp3s0").role == "disabled"
+
+
+def test_a_router_refuses_the_role_disabled_on_an_exposed_port(box):
+    client, runtime, _ = box
+    settings = settings_of(client, "enp1s0")
+    settings["role"] = "disabled"
+
+    response = client.post("/api/hub/network/interface/set", json=settings)
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == {
+        "code": "network_invalid",
+        "params": {"field": "role", "name": "enp1s0"},
+    }
+    assert runtime.network().interface("enp1s0").role == "lan"
+
+
+def test_a_server_still_exposes_a_card_with_no_role(guest_box):
+    client, runtime, status = guest_box
+    status._links = [*status._links, link("enp9s0", address="10.9.0.2/24")]
+
+    response = client.post(
+        "/api/hub/network/set", json=_options(exposed=["enp1s0", "enp9s0"])
+    )
+
+    assert response.status_code == 200, response.json()
+    assert runtime.network().interface("enp9s0").is_exposed

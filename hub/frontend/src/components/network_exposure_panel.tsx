@@ -8,6 +8,7 @@ import { t, useLanguage } from "../i18n";
 import { interruptionWarning } from "../network_warnings";
 import { useDraftSeeding } from "../use_draft_seeding";
 import type {
+  ExposedRole,
   InterfaceView,
   NetworkOptions,
   NetworkView,
@@ -51,6 +52,7 @@ export function NetworkExposurePanel({
   const [chosen, setChosen] = useState<string[]>(applied);
   const [chosenOverlays, setChosenOverlays] =
     useState<string[]>(appliedOverlays);
+  const [roles, setRoles] = useState<Record<string, ExposedRole>>({});
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -72,13 +74,33 @@ export function NetworkExposurePanel({
     setChosenOverlays(freshOverlays);
   }, [network, isReseedable]);
 
-  const isDirty =
-    !sameSet(chosen, applied) || !sameSet(chosenOverlays, appliedOverlays);
   const isLinux = network.hub_os === "linux";
   // A trunk carries no traffic of its own; what answers is each VLAN on it.
   const offered = network.interfaces.filter(
     (entry) => entry.settings.role !== "split",
   );
+  // A router stops a port whose role is disabled, so one turned on here takes
+  // a role in the same row.
+  const roleless = offered
+    .filter(
+      (entry) =>
+        network.is_addressing_owned &&
+        entry.settings.role === "disabled" &&
+        chosen.includes(entry.settings.name),
+    )
+    .map((entry) => entry.settings.name);
+  const chosenRoles: Record<string, ExposedRole> = {};
+  for (const name of roleless) {
+    const role = roles[name];
+    if (role !== undefined) {
+      chosenRoles[name] = role;
+    }
+  }
+  const isRoleMissing = roleless.some((name) => roles[name] === undefined);
+  const isDirty =
+    !sameSet(chosen, applied) ||
+    !sameSet(chosenOverlays, appliedOverlays) ||
+    Object.keys(chosenRoles).length > 0;
   const closing = applied.filter((name) => !chosen.includes(name));
   const closingOverlays = network.overlays.filter(
     (overlay) =>
@@ -135,6 +157,7 @@ export function NetworkExposurePanel({
         is_inter_lan_allowed: network.is_inter_lan_allowed,
         exposed_interfaces: chosen,
         exposed_overlays: chosenOverlays,
+        interface_roles: chosenRoles,
       };
       onApplied(await apiPost<NetworkView>("/hub/network/set", options));
       setNotice(t("ui.network.exposure_applied"));
@@ -162,12 +185,25 @@ export function NetworkExposurePanel({
 
       <div className="exposure_chips">
         {offered.map((entry) => (
-          <ExposureChip
-            key={entry.settings.name}
-            entry={entry}
-            isOn={chosen.includes(entry.settings.name)}
-            onToggle={() => toggle(entry.settings.name)}
-          />
+          <div key={entry.settings.name} className="exposure_row">
+            <ExposureChip
+              entry={entry}
+              isOn={chosen.includes(entry.settings.name)}
+              onToggle={() => toggle(entry.settings.name)}
+            />
+            {roleless.includes(entry.settings.name) && (
+              <RolePicker
+                entry={entry}
+                role={roles[entry.settings.name]}
+                onPick={(role) =>
+                  setRoles((current) => ({
+                    ...current,
+                    [entry.settings.name]: role,
+                  }))
+                }
+              />
+            )}
+          </div>
         ))}
         {network.overlays.map((overlay) => (
           <OverlayChip
@@ -189,11 +225,15 @@ export function NetworkExposurePanel({
             : "ui.network.apply_exposure_hint_system",
         )}
         warning={exposureWarning(closingNames, openedUplinks, cutOff)}
+        blockedHint={
+          isDirty && isRoleMissing ? t("ui.network.apply_exposure_hint") : null
+        }
         error={error}
         notice={notice}
         onReset={() => {
           setChosen(applied);
           setChosenOverlays(appliedOverlays);
+          setRoles({});
         }}
         onApply={() => void apply()}
       />
@@ -232,6 +272,35 @@ function ExposureChip({ entry, isOn, onToggle }: ExposureChipProps) {
         </span>
       )}
     </button>
+  );
+}
+
+interface RolePickerProps {
+  entry: InterfaceView;
+  role: ExposedRole | undefined;
+  onPick: (role: ExposedRole) => void;
+}
+
+/** The roles a router gives a port in one step: WAN, and LAN for a wire. */
+function RolePicker({ entry, role, onPick }: RolePickerProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
+  const offered: ExposedRole[] =
+    entry.link.kind === "ethernet" ? ["wan", "lan"] : ["wan"];
+  return (
+    <div className="exposure_roles" role="group">
+      {offered.map((value) => (
+        <button
+          key={value}
+          type="button"
+          className={`exposure_role ${role === value ? "exposure_role--on" : ""}`}
+          aria-pressed={role === value}
+          onClick={() => onPick(value)}
+        >
+          {t(`ui.network.role_${value}`)}
+        </button>
+      ))}
+    </div>
   );
 }
 

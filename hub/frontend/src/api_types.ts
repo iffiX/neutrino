@@ -425,7 +425,12 @@ export interface NetworkOptions {
   exposed_overlays?: string[];
   /** The devices that always get one address, whole. */
   static_leases?: StaticLeaseSettings[];
+  /** In router mode, the role each port turned on takes with it. */
+  interface_roles?: Record<string, ExposedRole>;
 }
+
+/** The roles a router gives a port in the exposure row. */
+export type ExposedRole = "wan" | "lan";
 
 /** The mode to become. Nothing else: what each port is for is its own. */
 export interface NetworkModeRequest {
