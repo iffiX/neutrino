@@ -1127,6 +1127,7 @@ def test_an_agent_that_cannot_install_over_the_earlier_one_fails_the_check(
     monkeypatch.setattr(check, "_require_host", lambda *_: None)
     monkeypatch.setattr(check, "_install_earlier", done.append)
     monkeypatch.setattr(check, "RUSTDESK_WINDOWS_FOLDER", tmp_path)
+    monkeypatch.setattr(check, "_service_exists", lambda name: True)
     monkeypatch.setattr(check, "_print_log", lambda *_: None)
 
     def msiexec(action, msi, log, is_restart_accepted=False):
@@ -1147,9 +1148,35 @@ def test_an_earlier_agent_that_left_no_rustdesk_fails_the_check(
     monkeypatch.setattr(check, "_require_host", lambda *_: None)
     monkeypatch.setattr(check, "_install_earlier", lambda target: None)
     monkeypatch.setattr(check, "RUSTDESK_WINDOWS_FOLDER", tmp_path / "RustDesk")
+    monkeypatch.setattr(check, "_service_exists", lambda name: False)
+    monkeypatch.setattr(check, "SERVICE_WAIT_S", 0.2)
+    monkeypatch.setattr(check, "SERVICE_POLL_S", 0.05)
 
     with pytest.raises(SystemExit, match="left no"):
         check.check_agent_windows(tmp_path / "agent.msi")
+
+
+def test_the_upgrade_waits_for_the_earlier_agents_rustdesk_to_appear(
+    check, monkeypatch, tmp_path
+):
+    """Upstream's installer lays RustDesk down after the earlier agent's own
+    msiexec has returned."""
+    folder = tmp_path / "RustDesk"
+    looks = []
+    monkeypatch.setattr(check, "RUSTDESK_WINDOWS_FOLDER", folder)
+    monkeypatch.setattr(check, "SERVICE_WAIT_S", 5)
+    monkeypatch.setattr(check, "SERVICE_POLL_S", 0.01)
+
+    def service_exists(name):
+        looks.append(name)
+        if len(looks) == 3:
+            folder.mkdir()
+        return len(looks) >= 3
+
+    monkeypatch.setattr(check, "_service_exists", service_exists)
+
+    assert check._wait_for_earlier_rustdesk() is True
+    assert len(looks) == 3
 
 
 def test_an_install_over_an_earlier_package_may_want_a_restart_and_says_why(
@@ -1225,6 +1252,7 @@ def upgrade_box(check, monkeypatch, tmp_path):
     monkeypatch.setattr(check, "RUSTDESK_WINDOWS_FOLDER", tmp_path)
     monkeypatch.setattr(check, "AGENT_WINDOWS_EARLIER_FOLDER", tmp_path / "none")
     monkeypatch.setattr(check, "AGENT_WINDOWS_FOLDER", folder)
+    monkeypatch.setattr(check, "_wait_for_earlier_rustdesk", lambda: True)
     monkeypatch.setattr(check, "_wait_for_earlier_rustdesk_gone", lambda: True)
     monkeypatch.setattr(check, "_print_log", lambda *_: None)
     monkeypatch.setattr(

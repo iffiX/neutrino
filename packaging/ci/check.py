@@ -536,10 +536,10 @@ def _agent_windows_upgrade(msi: Path) -> None:
             fails, or something of the earlier one outlives it.
     """
     _install_earlier("agent_windows")
-    if not RUSTDESK_WINDOWS_FOLDER.is_dir():
+    if not _wait_for_earlier_rustdesk():
         raise SystemExit(
             f"the earlier agent left no {RUSTDESK_WINDOWS_FOLDER} for the upgrade "
-            "to take away"
+            f"to take away within {SERVICE_WAIT_S} s"
         )
     log = Path(tempfile.gettempdir()) / "agent_upgrade.log"
     code = _msiexec("/i", msi, log, is_restart_accepted=True)
@@ -558,6 +558,25 @@ def _agent_windows_upgrade(msi: Path) -> None:
         )
     print(f"the agent installed over its {PACKAGING_EARLIER_VERSION}")
     _take_upgrade_away(msi, "agent_windows", AGENT_WINDOWS_FOLDER)
+
+
+def _wait_for_earlier_rustdesk() -> bool:
+    """Wait for the earlier agent's RustDesk install, which upstream's
+    installer finishes after the agent's own msiexec has returned, to lay the
+    folder and the service down.
+
+    Returns:
+        Whether both were there in time.
+    """
+    deadline = time.monotonic() + SERVICE_WAIT_S
+    while time.monotonic() < deadline:
+        if (
+            _service_exists(RUSTDESK_WINDOWS_SERVICE)
+            and RUSTDESK_WINDOWS_FOLDER.is_dir()
+        ):
+            return True
+        time.sleep(SERVICE_POLL_S)
+    return False
 
 
 def _wait_for_earlier_rustdesk_gone() -> bool:
