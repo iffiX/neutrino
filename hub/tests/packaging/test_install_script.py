@@ -78,6 +78,10 @@ served="$FAKE_SERVED/$(basename "$url")"
 [ -f "$served" ] || exit 22
 cp "$served" "$target"
 """,
+    "getent": """#!/bin/sh
+[ "$1" = passwd ] && [ "$2" = "$FAKE_SUDO_USER_NAME" ] || exit 2
+echo "$2:x:1001:1001::$FAKE_SUDO_USER_HOME:/bin/sh"
+""",
     "installer": RECORDER,
     "apt-get": RECORDER,
     "dnf": RECORDER,
@@ -744,14 +748,128 @@ def test_a_binding_without_its_token_is_no_binding(stand_ins, tmp_path):
 
 def test_the_script_reads_the_binding_where_the_agent_writes_it():
     sys.path.insert(0, str(SCRIPT.parents[2] / "agent"))
-    from neutrino_agent.constants import (
-        AGENT_CONFIG_NAME,
-        AGENT_DATA_DIR_DARWIN,
-        AGENT_DATA_DIR_POSIX,
-    )
+    constants = "agent/neutrino_agent/constants.py"
+    AGENT_CONFIG_NAME = _stated(constants, "AGENT_CONFIG_NAME")
+    AGENT_DATA_DIR_DARWIN = _stated(constants, "AGENT_DATA_DIR_DARWIN")
+    AGENT_DATA_DIR_POSIX = _stated(constants, "AGENT_DATA_DIR_POSIX")
 
     text = SCRIPT.read_text()
     linux = os.path.join(AGENT_DATA_DIR_POSIX, AGENT_CONFIG_NAME)
     darwin = os.path.join(AGENT_DATA_DIR_DARWIN, AGENT_CONFIG_NAME)
     assert f"\nAGENT_BINDING_LINUX={linux}\n" in text
     assert f'\nAGENT_BINDING_MACOS="{darwin}"\n' in text
+
+
+# --- a person who has joined is not told to join ---
+
+CLIENT_BINDINGS = (
+    '{\n  "bindings": [{"id": "c1", "token": "t0k", "urls": ["https://hub:8443"]}],'
+    '\n  "exit_hub_id": ""\n}\n'
+)
+CLIENT_JOIN_LINE = (
+    "Next, join this computer to a hub: nclient join "
+    "'<client link from the hub's Clients page>'"
+)
+CLIENT_BINDINGS_PLACES = {
+    "Linux": ".config/neutrino/client/client.json",
+    "Darwin": "Library/Application Support/Neutrino/client/client.json",
+}
+
+
+def _bind_client(home, system, text=CLIENT_BINDINGS):
+    bindings = home / CLIENT_BINDINGS_PLACES[system]
+    bindings.parent.mkdir(parents=True, exist_ok=True)
+    bindings.write_text(text)
+
+
+@pytest.mark.parametrize("system, machine", [("Linux", "x86_64"), ("Darwin", "arm64")])
+def test_a_person_who_has_joined_is_given_no_join_line(
+    stand_ins, tmp_path, system, machine
+):
+    _publish_all(stand_ins.served)
+    _bind_client(tmp_path, system)
+
+    result, _asked = stand_ins("client", system=system, machine=machine)
+
+    assert result.returncode == 0, result.stderr
+    assert "nclient join" not in result.stdout
+
+
+def test_a_client_binding_without_its_token_is_no_binding(stand_ins, tmp_path):
+    _publish_all(stand_ins.served)
+    _bind_client(tmp_path, "Linux", '{\n  "bindings": [{"token": ""}]\n}\n')
+
+    result, _asked = stand_ins("client")
+
+    assert result.stdout.strip().splitlines()[-1] == CLIENT_JOIN_LINE
+
+
+def test_the_bindings_are_read_where_xdg_config_home_puts_them(stand_ins, tmp_path):
+    _publish_all(stand_ins.served)
+    config = tmp_path / "elsewhere"
+    (config / "neutrino/client").mkdir(parents=True)
+    (config / "neutrino/client/client.json").write_text(CLIENT_BINDINGS)
+
+    result, _asked = stand_ins("client", environment={"XDG_CONFIG_HOME": str(config)})
+
+    assert "nclient join" not in result.stdout
+
+
+@pytest.mark.parametrize("is_bound", [True, False])
+def test_through_sudo_the_invoking_persons_own_bindings_decide(
+    stand_ins, tmp_path, is_bound
+):
+    """Root's own home holds nothing; the person sudo names does or does not."""
+    _publish_all(stand_ins.served)
+    person = tmp_path / "alice"
+    if is_bound:
+        _bind_client(person, "Linux")
+
+    result, _asked = stand_ins(
+        "client",
+        uid="0",
+        environment={
+            "SUDO_USER": "alice",
+            "FAKE_SUDO_USER_NAME": "alice",
+            "FAKE_SUDO_USER_HOME": str(person),
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    if is_bound:
+        assert "nclient join" not in result.stdout
+    else:
+        assert result.stdout.strip().splitlines()[-1] == CLIENT_JOIN_LINE
+
+
+def _stated(relative, name):
+    """A path constant as a module of the repository states it, read from its
+    source, so the hub's tests need neither the agent nor the client
+    installed; ``os.path.join`` of literals reads as their ``/`` join."""
+    import ast
+
+    source = (SCRIPT.parents[2] / relative).read_text()
+    for node in ast.parse(source).body:
+        if isinstance(node, ast.Assign) and any(
+            getattr(target, "id", "") == name for target in node.targets
+        ):
+            value = node.value
+            if isinstance(value, ast.Call):
+                return "/".join(ast.literal_eval(part) for part in value.args)
+            return ast.literal_eval(value)
+    raise AssertionError(f"{relative} states no {name}")
+
+
+def test_the_script_reads_the_bindings_where_the_client_writes_them():
+    client = "client/desktop/neutrino_client"
+    CLIENT_CONFIG_FILE_NAME = _stated(
+        f"{client}/constants.py", "CLIENT_CONFIG_FILE_NAME"
+    )
+    DARWIN_CONFIG_DIR = _stated(f"{client}/platforms/darwin.py", "DARWIN_CONFIG_DIR")
+    CONFIG_DIR_NAME = _stated(f"{client}/platforms/linux.py", "CONFIG_DIR_NAME")
+
+    text = SCRIPT.read_text()
+    linux = f".config/{CONFIG_DIR_NAME}/{CLIENT_CONFIG_FILE_NAME}"
+    darwin = f"{DARWIN_CONFIG_DIR}/{CLIENT_CONFIG_FILE_NAME}"
+    assert f"\nCLIENT_BINDINGS_LINUX={linux}\n" in text
+    assert f'\nCLIENT_BINDINGS_MACOS="{darwin}"\n' in text

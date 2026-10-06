@@ -23,8 +23,10 @@ $NeutrinoCnReleases = 'https://gitee.com/iffiX/neutrino/releases'
 $NeutrinoCnLatestReleaseApi = 'https://gitee.com/api/v5/repos/iffiX/neutrino/releases/latest'
 # What msiexec answers for a finished install, with and without a reboot owed.
 $NeutrinoInstalledCodes = @(0, 3010)
-# What the script carries into the window opened as administrator.
-$NeutrinoCarriedVariables = @('NEUTRINO_VERSION', 'NEUTRINO_ASSET_DIR')
+# What the script carries into the window opened as administrator: the
+# person's settings, and the roaming folder of the account that ran it, where
+# that person's client bindings are.
+$NeutrinoCarriedVariables = @('NEUTRINO_VERSION', 'NEUTRINO_ASSET_DIR', 'NEUTRINO_PERSON_APPDATA')
 
 function Test-NeutrinoAdministrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -50,6 +52,17 @@ function Test-NeutrinoHubSetUp {
     if (-not (Test-Path -LiteralPath $settings)) { return $false }
     $text = Get-Content -Raw -LiteralPath $settings -ErrorAction SilentlyContinue
     return [bool]($text -match '"admin_password_hash"\s*:\s*"(?!PLACEHOLDER)[^"]')
+}
+
+# Whether the account that ran the script holds a client binding: a person
+# who has joined is not told to join again.
+function Test-NeutrinoClientBound {
+    $roaming = if ($env:NEUTRINO_PERSON_APPDATA) { $env:NEUTRINO_PERSON_APPDATA } else { $env:APPDATA }
+    if (-not $roaming) { return $false }
+    $bindings = Join-Path $roaming 'Neutrino\client\client.json'
+    if (-not (Test-Path -LiteralPath $bindings)) { return $false }
+    $text = Get-Content -Raw -LiteralPath $bindings -ErrorAction SilentlyContinue
+    return [bool]($text -match '"token"\s*:\s*"[^"]')
 }
 
 function Get-NeutrinoMachine {
@@ -107,6 +120,7 @@ function Get-NeutrinoScriptText {
 # stays open afterwards.
 function Invoke-NeutrinoElevated {
     param([string]$Component)
+    if (-not $env:NEUTRINO_PERSON_APPDATA) { $env:NEUTRINO_PERSON_APPDATA = $env:APPDATA }
     $copy = Join-Path ([IO.Path]::GetTempPath()) ('neutrino_install_' + [guid]::NewGuid().ToString('N') + '.ps1')
     Set-Content -LiteralPath $copy -Value (Get-NeutrinoScriptText) -Encoding UTF8
     $settings = ''
@@ -204,7 +218,9 @@ function Install-Neutrino {
         return
     }
     if ($Component -eq 'client') {
-        Write-Output "Next, in a PowerShell of your own: nclient join '<client link from the hub's Clients page>'"
+        if (-not (Test-NeutrinoClientBound)) {
+            Write-Output "Next, in a PowerShell of your own: nclient join '<client link from the hub's Clients page>'"
+        }
         return
     }
     $nhub = Join-Path $env:ProgramFiles 'Neutrino\hub\nhub.exe'
