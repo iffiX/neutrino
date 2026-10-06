@@ -56,6 +56,9 @@ from neutrino_hub.web.models import (
 from neutrino_hub.web.panel_runtime import PanelRuntime
 from neutrino_hub.web.routers.hub.overlay import subnet_overlap_refusal
 
+# Refuses a manual network with no bootstrap peer, naming the field.
+CODE_EASYTIER_INVALID = "easytier_invalid"
+
 router = APIRouter(
     prefix="/api/hub/overlay", tags=["overlay"], dependencies=[Depends(require_session)]
 )
@@ -92,7 +95,8 @@ async def update_settings(
     Raises:
         HTTPException: 400 for a mode, a console address, a name, an address,
             a peer or a network that is not one, a first manual network with
-            no secret, or, while EasyTier runs, an address whose network
+            no secret, a manual network with no peer
+            (``easytier_invalid {field: peers}``), or, while EasyTier runs, an address whose network
             overlaps another overlay's or one this box is on; 502 when the
             converge step that follows fails.
         VaultLockedError: If there is no data key to seal a secret or a
@@ -120,6 +124,8 @@ async def update_settings(
     if is_manual and not request.network_secret and not config.secret_sealed:
         raise _bad_request("easytier_secret_missing")
     peers = [entry.strip() for entry in request.peers if entry.strip()]
+    if is_manual and not peers:
+        raise _bad_request(CODE_EASYTIER_INVALID, field="peers")
     for uri in peers:
         try:
             validate_peer(uri)

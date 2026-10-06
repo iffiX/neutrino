@@ -157,7 +157,7 @@ def settings(**changes) -> dict:
         "network_secret": "a-network-secret",
         "address": "10.0.0.1/24",
         "hostname": "",
-        "peers": [],
+        "peers": ["tcp://198.51.100.7:11010"],
         "exported_networks": [],
     }
     body.update(changes)
@@ -325,6 +325,30 @@ def test_an_address_the_engine_would_not_dial_is_refused(box):
     detail = response.json()["detail"]
     assert detail["code"] == "easytier_peer_invalid"
     assert detail["params"] == {"uri": "example.com:11010"}
+
+
+def test_a_manual_network_with_no_bootstrap_peer_is_refused(box):
+    client, _ = box
+
+    response = client.post(
+        "/api/hub/overlay/easytier/set", json=settings(peers=["", "  "])
+    )
+
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert detail["code"] == "easytier_invalid"
+    assert detail["params"] == {"field": "peers"}
+
+
+def test_the_console_mode_needs_no_bootstrap_peer(box):
+    client, _ = box
+
+    response = client.post(
+        "/api/hub/overlay/easytier/set",
+        json=settings(mode="console", network_name="", peers=[]),
+    )
+
+    assert response.json().get("detail", {}).get("code") != "easytier_invalid"
 
 
 def test_the_exported_networks_are_stored(box):

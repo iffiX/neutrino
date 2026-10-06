@@ -10,6 +10,7 @@ cleans them and pushed only while the setting is on.
 """
 
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -234,3 +235,66 @@ def test_on_again_with_no_failed_account_puts_no_mark(api, monkeypatch):
     client.post(f"{BASE}/enable", json={"device_id": DEVICE})
 
     assert DeviceRetryMarks().marks(DEVICE) == {}
+
+
+def report_states(runtime, monkeypatch, states: dict) -> None:
+    accounts = [{"account": name, "state": state} for name, state in states.items()]
+    reports = {DEVICE: {"ai_tools": {"accounts": accounts}}}
+    monkeypatch.setattr(runtime.agent_sessions, "reports", lambda: reports)
+
+
+def in_use(client) -> bool:
+    return client.get(BASE, params={"device_id": DEVICE}).json()["is_in_use"]
+
+
+def test_off_with_a_switch_back_that_failed_is_still_in_use(api, monkeypatch):
+    """The chip reads on, so its press sends disable and tries again."""
+    client, runtime, _gateway, _ = api
+    report_states(runtime, monkeypatch, {"alice": "switched_back", "bob": "failed"})
+
+    assert in_use(client) is True
+
+
+def test_off_with_every_account_back_is_not_in_use(api, monkeypatch):
+    client, runtime, _gateway, _ = api
+    report_states(runtime, monkeypatch, {"alice": "switched_back"})
+
+    assert in_use(client) is False
+
+
+def test_on_with_an_account_on_the_gateway_is_in_use(api, monkeypatch):
+    client, runtime, _gateway, _ = api
+    client.post(f"{BASE}/enable", json={"device_id": DEVICE})
+    report_states(runtime, monkeypatch, {"alice": "switched", "bob": "failed"})
+
+    assert in_use(client) is True
+
+
+def test_on_with_every_switch_failed_is_not_in_use(api, monkeypatch):
+    """The chip reads off, so its press sends enable and tries again."""
+    client, runtime, _gateway, _ = api
+    client.post(f"{BASE}/enable", json={"device_id": DEVICE})
+    report_states(runtime, monkeypatch, {"alice": "failed", "bob": "failed"})
+
+    assert in_use(client) is False
+
+
+def test_on_with_an_account_not_yet_reported_is_in_use(api, monkeypatch):
+    client, runtime, _gateway, _ = api
+    client.post(f"{BASE}/enable", json={"device_id": DEVICE})
+    report_states(runtime, monkeypatch, {"alice": "failed"})
+
+    assert in_use(client) is True
+
+
+def test_a_report_on_an_older_state_is_not_read(api, monkeypatch):
+    """Right after a press the machine's last results answer the state before."""
+    client, runtime, _gateway, _ = api
+    client.post(f"{BASE}/enable", json={"device_id": DEVICE})
+    report_states(
+        runtime, monkeypatch, {"alice": "switched_back", "bob": "switched_back"}
+    )
+    session = SimpleNamespace(offered_hash="new", state_hash="old")
+    monkeypatch.setattr(runtime.agent_sessions, "get", lambda key: session)
+
+    assert in_use(client) is True
