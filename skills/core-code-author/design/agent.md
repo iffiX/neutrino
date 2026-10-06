@@ -629,8 +629,11 @@ section turns off, after the account leaves the list, at an uninstall, at a
 leave.
 
 The report names each account the state names and each one switched back
-under the current state's hash, `{account, state, code, params}`, `state`
-being `switched`, `switched_back` or `failed`. A failure carries the client's
+under the current state's hash, `{account, state, code, params,
+has_records}`, `state` being `switched`, `switched_back` or `failed`, and
+`has_records` whether the agent keeps the account's records at the moment
+of the report: a tool of it still pointed at the hub, whose original files
+wait to be written back. A failure carries the client's
 code where it fits, `switch_failed {account, detail}`, the download's
 `cc_switch_download_failed {detail}`, and the module codes for an account it
 cannot run as:
