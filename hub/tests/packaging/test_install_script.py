@@ -743,8 +743,7 @@ def test_a_binding_without_its_token_is_no_binding(stand_ins, tmp_path):
 
 
 def test_the_script_reads_the_binding_where_the_agent_writes_it():
-    import os
-
+    sys.path.insert(0, str(SCRIPT.parents[2] / "agent"))
     from neutrino_agent.constants import (
         AGENT_CONFIG_NAME,
         AGENT_DATA_DIR_DARWIN,
