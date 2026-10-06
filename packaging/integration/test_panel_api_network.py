@@ -414,11 +414,18 @@ def test_a_trunk_carries_more_vlans_than_anybody_would_type(panel, trunk):
 def test_exposure_follows_a_vlan_that_is_removed(panel, trunk):
     """A name left in the exposed set is one the firewall would name and nft
     would refuse, which is the whole ruleset failing to load."""
-    panel.call(
+    # A router exposes a port only with a role it keeps up; the VLAN was
+    # made at its default, disabled, so it takes the uplink role with it.
+    status = panel.status(
         "POST",
         "/hub/network/set",
-        options_body(panel, exposed_interfaces=[f"{trunk}.1"]),
+        options_body(
+            panel,
+            exposed_interfaces=[f"{trunk}.1"],
+            interface_roles={f"{trunk}.1": "wan"},
+        ),
     )
+    assert status == 200
     assert exposed_now(panel) == [f"{trunk}.1"]
 
     assert (
@@ -443,6 +450,14 @@ def test_one_vlan_can_be_removed(panel, trunk):
 
 
 def test_leaving_the_trunk_role_takes_every_vlan_with_it(panel, trunk):
+    # A router refuses an exposed port with the role disabled.
+    closed = [name for name in exposed_now(panel) if name != trunk]
+    assert (
+        panel.status(
+            "POST", "/hub/network/set", options_body(panel, exposed_interfaces=closed)
+        )
+        == 200
+    )
     body = interface_body(panel, trunk, role="disabled")
 
     assert panel.status("POST", "/hub/network/interface/set", body) == 200

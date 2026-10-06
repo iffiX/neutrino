@@ -26,6 +26,9 @@ CHANNEL_LAN = "192.168.94.1"
 WRONG_FINGERPRINT = "0" * 64
 
 CLIENT_TIMEOUT_S = 180
+# The first install on a fresh client runs its first `apt-get update`, which
+# fetches the full package lists: about four minutes in the lab.
+FIRST_INSTALL_TIMEOUT_S = 600
 INSTALL_TIMEOUT_S = 240
 LEAVE_TIMEOUT_S = 30
 
@@ -145,6 +148,18 @@ def test_the_channel_is_pinned_tls_end_to_end(panel, stranger):
     )
     assert status == 200, saved
     device_id = saved["id"]
+    try:
+        walk_the_channel(panel, host=host, device_id=device_id, key_id=key["id"])
+    finally:
+        # Leave the box as this file found it, a failed walk too: a stored
+        # device is one the later walks no longer accept as the stranger.
+        lifecycle.ssh_to(host, "sudo nagent leave --yes")
+        panel.call("POST", "/hub/device/remove", {"device_id": device_id})
+        panel.call("POST", "/hub/credential/ssh_key/remove", {"key_id": key["id"]})
+
+
+def walk_the_channel(panel, *, host: str, device_id: str, key_id: str) -> None:
+    """Install, leave, a refused tampered link, and a rejoin, on one device."""
     status, started = panel.call(
         "POST",
         "/hub/device/agent/install",
@@ -153,14 +168,14 @@ def test_the_channel_is_pinned_tls_end_to_end(panel, stranger):
             "host": host,
             "port": 22,
             "username": "lab",
-            "key_id": key["id"],
+            "key_id": key_id,
         },
     )
     assert status == 200, started
     lifecycle.wait_for(
         "the installed agent's first heartbeat over TLS",
         lambda: (lifecycle.device_by_id(panel, device_id) or {}).get("is_agent_online"),
-        INSTALL_TIMEOUT_S,
+        FIRST_INSTALL_TIMEOUT_S,
     )
 
     # Unbind from the device side, so the refusals below are the link's alone.
@@ -197,8 +212,3 @@ def test_the_channel_is_pinned_tls_end_to_end(panel, stranger):
         lambda: (lifecycle.device_by_id(panel, device_id) or {}).get("is_agent_online"),
         INSTALL_TIMEOUT_S,
     )
-
-    # Leave the box as this file found it.
-    lifecycle.ssh_to(host, "sudo nagent leave --yes")
-    assert panel.status("POST", "/hub/device/remove", {"device_id": device_id}) == 200
-    panel.call("POST", "/hub/credential/ssh_key/remove", {"key_id": key["id"]})
