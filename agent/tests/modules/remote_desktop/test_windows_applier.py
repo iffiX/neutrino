@@ -252,29 +252,46 @@ def test_off_windows_no_program_is_read_by_pid():
     assert windows_applier.process_program(1) == ""
 
 
-def test_a_copy_process_created_before_the_copy_on_disk_is_stale(tmp_path):
-    import os
-
+def test_a_host_whose_real_image_was_parked_by_the_installer_is_stale(tmp_path):
+    """As T21t measured on nmxwin: the msi gives the new rustdesk.exe the
+    build's own time, so every tray started after it, and Win32_Process
+    still names the Program Files path; only QueryFullProcessImageName shows
+    the image moved into Config.Msi."""
     copy = tmp_path / "rustdesk.exe"
     copy.write_bytes(b"new")
-    written = int(max(os.stat(copy).st_mtime, os.stat(copy).st_ctime))
-    # A person's own RustDesk, on disk where it was installed.
-    other = tmp_path / "other.exe"
+    other = tmp_path / "RustDesk" / "rustdesk.exe"
+    other.parent.mkdir()
     other.write_bytes(b"theirs")
+    parked = str(tmp_path / "Config.Msi" / "3b2a1.rbf")
+    images = {61: str(copy), 62: parked, 63: str(other), 64: parked, 65: ""}
     windows = FakeWindows()
     windows.processes = [
-        {"pid": 61, "program": str(copy), "command": "x", "started": written - 600},
-        {"pid": 62, "program": str(copy), "command": "x", "started": written + 5},
-        {"pid": 63, "program": str(other), "command": "x", "started": 1},
+        {"pid": 61, "program": str(copy), "command": "--service", "started": 9e9},
+        {"pid": 62, "program": str(copy), "command": "--tray", "started": 9e9},
+        {"pid": 63, "program": str(other), "command": "--tray", "started": 1},
+        {"pid": 64, "program": str(copy), "command": "--connect a", "started": 9e9},
+        {"pid": 65, "program": str(copy), "command": "--server", "started": 9e9},
     ]
     applier = RemoteDesktopWindowsApplier(
         kept_dir=str(tmp_path / "kept"),
         run=windows.run,
         powershell=windows.powershell,
         program=str(copy),
+        program_of=images.get,
     )
 
-    assert applier.stale_pids() == [61]
+    # 61 runs the copy; 63 is a person's own; 64 is a viewer; 65's image
+    # cannot be read and WMI names the copy.
+    assert applier.stale_pids() == [62]
+
+
+def test_an_image_in_config_msi_or_gone_is_replaced(tmp_path):
+    present = tmp_path / "rustdesk.exe"
+    present.write_bytes(b"x")
+
+    assert windows_applier.is_replaced_image("C:\\Config.Msi\\3b2a1.rbf")
+    assert windows_applier.is_replaced_image(str(tmp_path / "gone.exe"))
+    assert not windows_applier.is_replaced_image(str(present))
 
 
 def test_a_tray_left_running_on_a_moved_aside_executable_is_stale_and_ended(
@@ -320,6 +337,7 @@ def test_a_tray_left_running_on_a_moved_aside_executable_is_stale_and_ended(
         run=windows.run,
         powershell=windows.powershell,
         program=str(copy),
+        program_of={71: str(copy), 72: str(copy), 73: parked, 74: parked}.get,
         sleep=lambda seconds: None,
     )
 
