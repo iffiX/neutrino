@@ -229,8 +229,9 @@ class LocalPortTableTest {
         DatagramSocket(InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0)).use { loopback ->
             assertFalse(LocalPortTable.isUdpPortFree(loopback.localPort))
         }
-        ServerSocket(0, 50, InetAddress.getByName("0.0.0.0")).use { tcp ->
-            assertTrue(LocalPortTable.isUdpPortFree(tcp.localPort))
+        val port = generateSequence { ServerSocket(0).use { it.localPort } }.first { LocalPortTable.isUdpPortFree(it) }
+        ServerSocket(port, 50, InetAddress.getByName("0.0.0.0")).use {
+            assertTrue(LocalPortTable.isUdpPortFree(port))
         }
     }
 }
