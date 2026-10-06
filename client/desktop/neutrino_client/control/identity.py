@@ -2,8 +2,8 @@
 
 An identity comes from the control connection's kernel peer credentials,
 read through the platform contract; nothing a request carries can name a
-different caller. The resident answers only the person it runs as, and that
-person elevated only to ask it to quit.
+different caller. The resident answers only the person it runs as, and an
+elevated caller of any account only to ask it to quit.
 """
 
 

@@ -106,10 +106,14 @@ def start_daemon(platform, state_dir: str, log) -> dict:
         core_path=bundled_path("easytier-core"),
         supervisor=supervisor,
         log=log,
+        watch_process=platform.watch_process,
     )
     holder["daemon"] = daemon
     server = EasytierSocketServer(
-        daemon=daemon, address=platform.easytier_daemon_address(), log=log
+        daemon=daemon,
+        address=platform.easytier_daemon_address(),
+        log=log,
+        identify=platform.daemon_peer,
     )
     server.bind()
     daemon.restore()

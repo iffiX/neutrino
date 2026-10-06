@@ -9,6 +9,7 @@ asks the running one to show its window, and exits 0. Refusals are the
 wording tables' own.
 """
 
+import os
 import signal
 
 import pytest
@@ -403,3 +404,46 @@ def test_a_starting_client_drops_the_return_an_upgrade_arranged(
     assert gui_cli.main() == 0
 
     assert forgotten == [1]
+
+
+def test_a_resident_another_accounts_client_holds_the_machine_against_exits_quietly(
+    platform, residents, monkeypatch, capsys
+):
+    opened = []
+    monkeypatch.setattr(
+        gui_cli, "open_shell_window", lambda **kwargs: opened.append(kwargs)
+    )
+    monkeypatch.setattr(
+        wording,
+        "ask_hold",
+        lambda verb: {"code": "client_held", "params": {"account": "lab"}},
+    )
+
+    assert gui_cli.main() == 0
+
+    (resident,) = residents.made
+    assert resident.started == 0
+    assert opened == []
+    assert not os.path.exists(platform.control_socket_path())
+    captured = capsys.readouterr()
+    assert captured.out == "" and captured.err == ""
+
+
+def test_a_resident_that_holds_the_machine_keeps_asking(
+    platform, residents, monkeypatch
+):
+    asked = []
+    renewed = []
+    monkeypatch.setattr(gui_cli, "open_shell_window", lambda **kwargs: None)
+    monkeypatch.setattr(
+        wording,
+        "ask_hold",
+        lambda verb: asked.append(verb) or {"holder": "alice", "is_holder": True},
+    )
+    monkeypatch.setattr(gui_cli, "_keep_holding", lambda: renewed.append(1))
+
+    assert gui_cli.main() == 0
+
+    assert asked == ["hold"]
+    assert renewed == [1]
+    assert residents.made[0].started == 1

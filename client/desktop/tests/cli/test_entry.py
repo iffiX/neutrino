@@ -289,3 +289,47 @@ def test_a_bare_command_in_a_terminal_still_prints_the_usage(monkeypatch, capsys
 
     assert entry.main() == 2
     assert "usage" in capsys.readouterr().out.lower()
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["join", "neutrino://enroll/x"],
+        ["leave", "--yes"],
+        ["status"],
+        ["service", "list"],
+        ["terminal", "box"],
+    ],
+)
+def test_a_command_of_another_account_names_whose_client_holds_the_machine(
+    monkeypatch, capsys, argv
+):
+    monkeypatch.setattr(entry.sys, "argv", ["nclient"] + argv)
+    monkeypatch.setattr(entry.os, "geteuid", lambda: 1001, raising=False)
+    asked = []
+
+    def ask_hold(verb):
+        asked.append(verb)
+        return {"holder": "lab", "is_holder": False}
+
+    monkeypatch.setattr(wording, "ask_hold", ask_hold)
+
+    assert entry.main() == 1
+
+    captured = capsys.readouterr()
+    assert captured.err.strip() == wording.word_code("client_held", {"account": "lab"})
+    assert captured.err.count("\n") == 1
+    assert asked == ["holder"]
+
+
+def test_the_account_that_holds_the_machine_runs_its_commands(monkeypatch):
+    monkeypatch.setattr(entry.sys, "argv", ["nclient", "status"])
+    monkeypatch.setattr(entry.os, "geteuid", lambda: 1001, raising=False)
+    monkeypatch.setattr(
+        wording, "ask_hold", lambda verb: {"holder": "lab", "is_holder": True}
+    )
+    ran = []
+    monkeypatch.setattr(entry.status, "main", lambda is_json: ran.append(1) or 0)
+
+    assert entry.main() == 0
+    assert ran == [1]

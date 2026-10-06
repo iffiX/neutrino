@@ -17,7 +17,10 @@ import getpass
 import re
 import sys
 
+from neutrino_client.constants import CLIENT_HOLD_TIMEOUT_S
 from neutrino_client.control import client
+from neutrino_client.control.easytier_socket import ask_easytier_daemon
+from neutrino_client.core.client_hold import VERB_HOLD, VERB_HOLDER
 from neutrino_client.exceptions import PlatformUnsupportedError
 from neutrino_client.platforms.detect import detect_platform
 
@@ -142,6 +145,10 @@ CLIENT_CODE_WORDS = {
         "the saved login is gone; enter it again: nclient service file config"
     ),
     "fs_refused": "this account may not use that folder",
+    "client_held": (
+        "{account}'s client is running on this machine; one person's client "
+        "runs at a time"
+    ),
     "files_adapter_in_use": (
         "the files adapter is in use by another account on this machine; the "
         "mount is tried again once that account's client has quit"
@@ -287,6 +294,54 @@ def choose_hub(rows: list, needle: str) -> "dict | None":
             return row
     print(word_code("unknown_hub", {"hub_id": needle}), file=sys.stderr)
     return None
+
+
+def ask_hold(verb: str) -> dict:
+    """One ``hold`` or ``holder`` asked of the EasyTier daemon.
+
+    Args:
+        verb: ``hold`` or ``holder``.
+
+    Returns:
+        The daemon's answer; empty when this platform runs no daemon or
+        none answers.
+    """
+    try:
+        address = detect_platform().easytier_daemon_address()
+    except PlatformUnsupportedError:
+        return {}
+    try:
+        return ask_easytier_daemon(
+            address, {"verb": verb}, timeout_s=CLIENT_HOLD_TIMEOUT_S
+        )
+    except (OSError, ValueError):
+        return {}
+
+
+def other_holder() -> str:
+    """The account whose client holds this machine, when it is another's.
+
+    Returns:
+        That account; empty when this account holds it, nobody does, or no
+        daemon answers.
+    """
+    answer = ask_hold(VERB_HOLDER)
+    if answer.get("is_holder"):
+        return ""
+    return str(answer.get("holder", "") or "")
+
+
+def hold_machine() -> str:
+    """Ask the EasyTier daemon to hold this machine for this process.
+
+    Returns:
+        The account whose client holds it instead; empty when this process
+        holds it, or no daemon answers.
+    """
+    answer = ask_hold(VERB_HOLD)
+    if answer.get("code") != "client_held":
+        return ""
+    return str((answer.get("params") or {}).get("account", "") or "")
 
 
 def resident_state() -> "dict | None":

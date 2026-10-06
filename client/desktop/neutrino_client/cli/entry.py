@@ -108,6 +108,14 @@ def main() -> int:
     if hasattr(os, "geteuid") and os.geteuid() == 0:
         print(wording.word_code("root_refused"), file=sys.stderr)
         return 2
+    if arguments.command not in ("gui", "quit"):
+        holder = wording.other_holder()
+        if holder:
+            print(
+                wording.word_code("client_held", {"account": holder}),
+                file=sys.stderr,
+            )
+            return 1
     if arguments.command == "join":
         return join.main(arguments.link)
     if arguments.command == "leave":

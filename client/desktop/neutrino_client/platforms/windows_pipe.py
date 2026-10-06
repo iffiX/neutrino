@@ -4,8 +4,9 @@ On Windows the control socket is a named pipe of the person's own. This
 module shapes a pipe handle like an accepted socket, so the request handler
 serves it unchanged, and the platform reads the peer's identity from pipe
 impersonation through the connection's ``pipe_handle``. The pipe's security
-descriptor names the current user's SID alone, unless the server is given
-its own, as the EasyTier daemon's pipe is. Every Win32 call rides one
+descriptor gives the current user's SID full access and the administrators,
+as an elevated installer is, read and write without making an instance,
+unless the server is given its own, as the EasyTier daemon's pipe is. Every Win32 call rides one
 seam class, so nothing here needs Windows to import or to test.
 """
 
@@ -20,6 +21,9 @@ import time
 
 from neutrino_client.platforms import win32
 
+# Read and write on a pipe, without FILE_CREATE_PIPE_INSTANCE: what an
+# elevated installer needs to ask any account's client to quit.
+PIPE_ADMINISTRATORS_ACCESS = "0x12019b"
 # How long the accept loop waits after a failed ConnectNamedPipe before
 # trying again with a fresh instance.
 PIPE_RETRY_DELAY_S = 0.5
@@ -32,9 +36,12 @@ def pipe_security_sddl(owner_sid: str) -> str:
         owner_sid: The current user's string SID.
 
     Returns:
-        An SDDL granting full access to that SID and nobody else.
+        An SDDL granting full access to that SID, and to the administrators
+        read and write but not ``FILE_CREATE_PIPE_INSTANCE``; an
+        administrator's token that is not elevated holds that group for
+        denying alone.
     """
-    return f"D:(A;;GA;;;{owner_sid})"
+    return f"D:(A;;GA;;;{owner_sid})(A;;{PIPE_ADMINISTRATORS_ACCESS};;;BA)"
 
 
 def open_pipe_connection(pipe_name: str, *, api=None) -> "PipeConnection":

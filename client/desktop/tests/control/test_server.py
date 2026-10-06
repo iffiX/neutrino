@@ -284,13 +284,15 @@ def test_a_refused_attach_is_an_ordinary_answer(control):
     assert (status, reply["code"], connection) == (404, "unknown_terminal", None)
 
 
-def test_the_same_account_elevated_may_only_ask_the_client_to_quit(
-    control, monkeypatch
+@pytest.mark.parametrize("peer", [SAME_USER, OTHER_USER])
+def test_an_elevated_caller_of_any_account_may_only_ask_the_client_to_quit(
+    control, monkeypatch, peer
 ):
-    """The installer runs elevated and asks the client to quit for an upgrade;
-    an elevated caller gets nothing else."""
+    """An installer runs elevated, as whichever administrator started it, and
+    asks the one running client to quit for an upgrade; an elevated caller
+    gets nothing else."""
     server, resident, platform = control
-    platform.peer = dict(SAME_USER, is_elevated=True)
+    platform.peer = dict(peer, is_elevated=True)
     monkeypatch.setattr(routes, "QUIT_ANSWER_GRACE_S", 0)
     monkeypatch.setattr(routes, "end_process", lambda: None)
 

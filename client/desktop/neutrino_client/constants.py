@@ -122,9 +122,14 @@ CLIENT_CONTROL_SOCKET_NAME = "client.sock"
 CLIENT_CONTROL_PIPE_PREFIX = "\\\\.\\pipe\\"
 CLIENT_CONTROL_PIPE_NAME_PREFIX = "neutrino_client_"
 CLIENT_CONTROL_REQUEST_TIMEOUT_S = 5
-# The one route the resident's own account may take elevated: the
-# installer asking it to quit.
+# The one route an elevated caller of any account may take: an installer
+# asking the client to quit.
 CLIENT_CONTROL_ELEVATED_ROUTE = "/api/quit"
+# How often the resident asks the EasyTier daemon again to hold the machine,
+# so the hold outlives a restart of the daemon; and how long one ask may
+# take.
+CLIENT_HOLD_RENEW_S = 10
+CLIENT_HOLD_TIMEOUT_S = 2
 
 # The name the packages install the launcher and the icon under.
 CLIENT_DESKTOP_NAME = "neutrino_client"

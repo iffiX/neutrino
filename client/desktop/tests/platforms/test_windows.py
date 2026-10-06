@@ -858,10 +858,19 @@ class PipePeer:
     pipe_handle = 77
 
 
-def test_the_files_pipes_peer_is_its_account_and_process():
+def test_a_daemon_pipes_peer_is_its_account_and_process():
     platform = WindowsPlatform(win32=FilesPeerWin32())
 
-    assert platform.files_peer(PipePeer()) == {"account": "Bob", "pid": 5100}
+    assert platform.daemon_peer(PipePeer()) == {"account": "Bob", "pid": 5100}
+
+
+def test_another_accounts_client_is_its_own_pipe():
+    platform = WindowsPlatform(win32=FilesPeerWin32())
+
+    assert (
+        platform.control_socket_path_of("lab user")
+        == "\\\\.\\pipe\\neutrino_client_lab_user"
+    )
 
 
 def test_a_watched_process_runs_until_it_ends_and_its_handle_closes_once():
