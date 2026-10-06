@@ -250,3 +250,25 @@ def test_the_copys_processes_are_told_by_their_program(made):
 
 def test_off_windows_no_program_is_read_by_pid():
     assert windows_applier.process_program(1) == ""
+
+
+def test_a_copy_process_created_before_the_copy_on_disk_is_stale(tmp_path):
+    import os
+
+    copy = tmp_path / "rustdesk.exe"
+    copy.write_bytes(b"new")
+    written = int(max(os.stat(copy).st_mtime, os.stat(copy).st_ctime))
+    windows = FakeWindows()
+    windows.processes = [
+        {"pid": 61, "program": str(copy), "command": "x", "started": written - 600},
+        {"pid": 62, "program": str(copy), "command": "x", "started": written + 5},
+        {"pid": 63, "program": "C:\\other.exe", "command": "x", "started": 1},
+    ]
+    applier = RemoteDesktopWindowsApplier(
+        kept_dir=str(tmp_path / "kept"),
+        run=windows.run,
+        powershell=windows.powershell,
+        program=str(copy),
+    )
+
+    assert applier.stale_pids() == [61]

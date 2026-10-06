@@ -215,6 +215,38 @@ class RdpShareHost:
                 said = " ".join(f"{key}={value}" for key, value in error.params.items())
                 self._log(f"remote_desktop: {error.code} {said}"[:500])
 
+    def settle_at_start(self) -> None:
+        """What the agent does about RustDesk when it starts.
+
+        A share an earlier agent's command made is taken over; a host the
+        switch runs whose program the package has since replaced is
+        started again, so it runs the copy on disk.
+        """
+        self.resume_old_share()
+        self.renew_if_replaced()
+
+    def renew_if_replaced(self) -> None:
+        """Start the host again when its running program is not the copy on
+        disk: an upgrade replaced the copy under a host that kept running.
+
+        Not an apply of the state: the settings and the registration stay
+        as they are. A failure is logged.
+        """
+        with self._lock:
+            if not os.path.isfile(self._registered_path()):
+                return
+            applier = self._applier
+            try:
+                if not applier.is_copy_present() or not applier.stale_pids():
+                    return
+                self._log("remote_desktop: the copy was replaced; starting it again")
+                _, _, uid = self._seat_of()
+                applier.stop_hosts()
+                applier.start(uid)
+            except STEP_ERRORS as error:
+                self._log(f"remote_desktop: {command_detail(error)}"[:500])
+            self._listened_at = 0.0
+
     def turn_off(self) -> None:
         """Give RustDesk back, whatever the switch says: the agent is leaving.
 
