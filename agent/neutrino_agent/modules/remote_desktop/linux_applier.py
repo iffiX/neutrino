@@ -17,6 +17,7 @@ Not pure: drives systemd and ends processes.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
+import contextlib
 import os
 import posixpath
 import re
@@ -204,7 +205,8 @@ class RemoteDesktopLinuxApplier:
             self._run(
                 ["systemctl", "stop", REMOTE_DESKTOP_LINUX_UNIT], is_checked=False
             )
-            os.unlink(self._unit_path)
+            with contextlib.suppress(FileNotFoundError):
+                os.unlink(self._unit_path)
             self._run(["systemctl", "daemon-reload"])
         self._end(self.copy_pids())
 
