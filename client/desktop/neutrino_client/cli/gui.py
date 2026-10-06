@@ -4,7 +4,10 @@ One process is the whole client: it binds this person's control socket,
 holds one socket per hub joined, keeps the service handlers, and runs the
 window on the main thread. Closing the window hides it; the tray's Quit is what
 stops the resident. A second invocation finds the socket held, asks the
-running one to show its window, and exits.
+running one to show its window, and exits. One person's client runs on a
+machine at a time: a resident the EasyTier daemon refuses to hold the
+machine for, because another account's client holds it, exits with no
+window and no word.
 
 Every way out is the one way out: the tray's Quit, ``nclient quit``, and the
 signals a service manager, a terminal or a logout sends all run the same
@@ -21,11 +24,13 @@ import os
 import signal
 import sys
 import threading
+import time
 
 from neutrino_client import words
 from neutrino_client.cli import wording
 from neutrino_client.constants import (
     CLIENT_GUI_WINDOW_TITLE_KEY,
+    CLIENT_HOLD_RENEW_S,
     CLIENT_LOG_FILE_NAME,
     CLIENT_LOG_KEEP_BYTES,
 )
@@ -65,6 +70,10 @@ def main(*, is_hidden: bool = False) -> int:
     )
     if not server.bind():
         return _show_running(socket_path)
+    if wording.hold_machine():
+        server.stop()
+        return 0
+    _keep_holding()
     platform.forget_relaunch()
     resident.start()
     server.start()
@@ -75,6 +84,17 @@ def main(*, is_hidden: bool = False) -> int:
         resident.shutdown()
         server.stop()
     return _end(status)
+
+
+def _keep_holding() -> None:
+    """Ask the EasyTier daemon again on a timer to hold the machine."""
+
+    def renew() -> None:
+        while True:
+            time.sleep(CLIENT_HOLD_RENEW_S)
+            wording.hold_machine()
+
+    threading.Thread(target=renew, name="client_hold", daemon=True).start()
 
 
 def _end(status: int) -> int:

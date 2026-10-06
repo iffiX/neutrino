@@ -21,6 +21,9 @@ Every accepted request is answered with the status, ``{"networks",
 "console", "is_running"}``, ``console`` being ``{"digest",
 "is_secure_mode"}`` or None; a refusal is ``{"code", "params"}``. Neither
 ever carries a secret or a console's address.
+
+The daemon also keeps which account's client holds the machine, through
+``hold`` and ``holder`` (:mod:`neutrino_client.core.client_hold`).
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -39,6 +42,7 @@ from neutrino_client.constants import (
     CLIENT_EASYTIER_RPC_PORTAL,
 )
 from neutrino_client.core import files
+from neutrino_client.core.client_hold import VERB_HOLD, VERB_HOLDER, ClientHold
 from neutrino_client.core.easytier_config import (
     is_console_address,
     is_hostname,
@@ -86,7 +90,15 @@ def _text(request: dict, key: str) -> "str | None":
 class EasytierDaemon:
     """The daemon's state and the requests that change it."""
 
-    def __init__(self, *, state_dir: str, core_path: str, supervisor=None, log=print):
+    def __init__(
+        self,
+        *,
+        state_dir: str,
+        core_path: str,
+        supervisor=None,
+        log=print,
+        watch_process=None,
+    ):
         """
         Args:
             state_dir: The root-owned directory the state lives in.
@@ -97,6 +109,9 @@ class EasytierDaemon:
                 nothing.
             log: Callable used for progress messages; it never sees a
                 secret or a console's address.
+            watch_process: ``watch_process(pid)`` returns a watch on the
+                process of the client that holds the machine; None watches
+                nothing.
         """
         self._state_dir = state_dir
         self._networks_dir = os.path.join(state_dir, CLIENT_EASYTIER_NETWORKS_DIR_NAME)
@@ -105,6 +120,7 @@ class EasytierDaemon:
         self._supervisor = supervisor
         self._log = log
         self._lock = threading.Lock()
+        self._hold = ClientHold(watch_process=watch_process, log=log)
 
     @property
     def networks_dir(self) -> str:
@@ -213,18 +229,22 @@ class EasytierDaemon:
             ),
         }
 
-    def handle(self, request) -> dict:
+    def handle(self, request, peer=None) -> dict:
         """Answer one request.
 
         Args:
             request: The decoded request.
+            peer: Who asks, as the socket says, ``{"account", "pid"}``;
+                None where it could not tell.
 
         Returns:
-            The status after it, or ``{"code", "params"}``.
+            The status after it, the hold's answer, or ``{"code", "params"}``.
         """
         if not isinstance(request, dict):
             return _refusal("overlay_request_invalid")
         verb = request.get("verb")
+        if verb in (VERB_HOLD, VERB_HOLDER):
+            return self._hold.handle(verb, peer)
         handlers = {
             VERB_JOIN: self._join,
             VERB_JOIN_CONSOLE: self._join_console,

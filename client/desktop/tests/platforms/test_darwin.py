@@ -635,3 +635,24 @@ def test_a_pbcopy_that_fails_is_an_os_error(monkeypatch):
 
     with pytest.raises(OSError):
         DarwinPlatform().write_clipboard("x")
+
+
+def test_a_daemon_sockets_peer_is_its_account_and_process(monkeypatch):
+    class PeerSocket(FakePeerConnection):
+        def getsockopt(self, level, option, length=None):
+            if length is None:
+                self.asked.append((level, option))
+                return 4321
+            return super().getsockopt(level, option, length)
+
+    monkeypatch.setattr(
+        darwin_module.pwd,
+        "getpwuid",
+        lambda uid: collections.namedtuple("Pwd", "pw_name")("alice"),
+    )
+    connection = PeerSocket(xucred(501))
+
+    peer = DarwinPlatform().daemon_peer(connection)
+
+    assert peer == {"account": "alice", "pid": 4321}
+    assert (darwin_module.SOL_LOCAL, darwin_module.LOCAL_PEERPID) in connection.asked

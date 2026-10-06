@@ -7,6 +7,7 @@
   "code.bundle_missing": "此安装未包含 {binary}，请重新安装客户端",
   "code.busy": "仍在处理上一个请求",
   "code.client_disabled": "中枢已关闭此客户端",
+  "code.client_held": "{account} 的客户端正在这台电脑上运行；一台电脑同一时间只运行一个人的客户端",
   "code.client_internal": "客户端遇到意外错误（{error}），请查看它的日志",
   "code.clipboard_unreadable": "读不到剪贴板：{detail}",
   "code.clipboard_unwritable": "写不进剪贴板：{detail}",

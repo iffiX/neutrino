@@ -84,3 +84,49 @@ def test_a_plain_quit_arranges_no_return(resident):
 
     assert resident.is_shut_down.wait(timeout=5)
     assert resident.relaunches == 0
+
+
+def test_with_none_of_its_own_it_asks_the_client_that_holds_the_machine(
+    platform, monkeypatch, capsys, tmp_path
+):
+    """An installer runs as whichever administrator started it; the client it
+    must ask is the one running, whoever's it is."""
+    monkeypatch.setattr(routes, "QUIT_ANSWER_GRACE_S", 0)
+    monkeypatch.setattr(routes, "end_process", lambda: None)
+    resident = FakeResident()
+    holder_socket = str(tmp_path / "lab.sock")
+    server = ControlServer(
+        resident=resident, platform=platform, log=discard, socket_path=holder_socket
+    )
+    assert server.start()
+    monkeypatch.setattr(
+        wording, "ask_hold", lambda verb: {"holder": "lab", "is_holder": False}
+    )
+    named = []
+
+    def path_of(account):
+        named.append(account)
+        return holder_socket
+
+    platform.control_socket_path_of = path_of
+    try:
+        assert quit_cli.main(is_upgrade=True) == 0
+        assert resident.is_shut_down.wait(timeout=5)
+    finally:
+        server.stop()
+
+    assert named == ["lab"]
+    assert resident.relaunches == 1
+    assert capsys.readouterr().out.strip() == wording.QUIT_ASKED
+
+
+def test_a_holders_client_it_cannot_reach_is_named(platform, monkeypatch, capsys):
+    monkeypatch.setattr(
+        wording, "ask_hold", lambda verb: {"holder": "lab", "is_holder": False}
+    )
+
+    assert quit_cli.main() == 1
+
+    assert capsys.readouterr().err.strip() == wording.word_code(
+        "client_held", {"account": "lab"}
+    )

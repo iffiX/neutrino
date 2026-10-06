@@ -114,11 +114,13 @@ def answered_json(api):
     raise AssertionError("no response landed in the pipe")
 
 
-def test_the_descriptor_names_the_owner_alone():
+def test_the_descriptor_names_the_owner_and_lets_administrators_only_talk():
+    """An elevated installer asks any account's client to quit; no
+    administrator may stand up an instance of the pipe."""
     sddl = pipe_security_sddl("S-1-5-21-1-2-3-1001")
 
-    assert sddl == "D:(A;;GA;;;S-1-5-21-1-2-3-1001)"
-    assert "WD" not in sddl and "BA" not in sddl
+    assert sddl == "D:(A;;GA;;;S-1-5-21-1-2-3-1001)(A;;0x12019b;;;BA)"
+    assert "WD" not in sddl and "IU" not in sddl
 
 
 def test_the_first_instance_refuses_a_second_resident():

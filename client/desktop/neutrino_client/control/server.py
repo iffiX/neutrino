@@ -70,6 +70,7 @@ class ControlServer:
         self._log = log
         self._socket_path = socket_path
         self._socket_server = None
+        self._is_serving = False
 
     @property
     def socket_path(self) -> str:
@@ -118,16 +119,21 @@ class ControlServer:
         if not self.bind():
             return False
         threading.Thread(target=self._socket_server.serve_forever, daemon=True).start()
+        self._is_serving = True
         self._log(f"control socket on {self._socket_path}")
         return True
 
     def stop(self) -> None:
-        """Stop the transport when it is serving. Idempotent."""
+        """Stop serving, and let the socket or pipe go, bound or serving. Idempotent."""
         server = self._socket_server
+        is_serving = self._is_serving
         self._socket_server = None
-        if server is not None:
+        self._is_serving = False
+        if server is None:
+            return
+        if is_serving:
             server.shutdown()
-            server.server_close()
+        server.server_close()
 
 
 class _ControlSocketHttpServer(ThreadingHTTPServer):
@@ -246,8 +252,8 @@ class _ControlRequestHandler(BaseHTTPRequestHandler):
     def _is_admitted(self, method: str) -> bool:
         """Whether the peer may make this request.
 
-        The person this resident runs as may make any; the same person
-        elevated, as the installer runs, may only ask it to quit. A refusal
+        The person this resident runs as may make any; an elevated caller of
+        any account, as an installer runs, may only ask it to quit. A refusal
         is sent before False is returned.
 
         Args:
@@ -262,7 +268,11 @@ class _ControlRequestHandler(BaseHTTPRequestHandler):
             "POST",
             CLIENT_CONTROL_ELEVATED_ROUTE,
         )
-        if not identity.is_same_user or (identity.is_elevated and not is_quit):
+        if identity.is_elevated:
+            is_admitted = is_quit
+        else:
+            is_admitted = identity.is_same_user
+        if not is_admitted:
             self._send_json({"code": "control_peer_refused"}, status=403)
             return False
         return True

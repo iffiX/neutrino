@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 import re
+import select
 import shutil
 import struct
 import subprocess
@@ -53,6 +54,7 @@ DARWIN_LOG_DIR = os.path.join("Library", "Logs", "Neutrino", "client")
 # ``struct xucred`` it answers with: a version, the uid, then the groups.
 SOL_LOCAL = 0
 LOCAL_PEERCRED = 0x0001
+LOCAL_PEERPID = 0x0002
 XUCRED_FORMAT = "II"
 XUCRED_SIZE = 76
 
@@ -214,6 +216,36 @@ class DarwinPlatform(ClientPlatform):
         except KeyError:
             account = str(uid)
         return {"account": account, "uid": uid, "is_same_user": uid == os.getuid()}
+
+    def daemon_peer(self, connection) -> dict:
+        """A daemon socket's peer, from ``LOCAL_PEERCRED`` and ``LOCAL_PEERPID``.
+
+        Args:
+            connection: The accepted socket.
+
+        Returns:
+            ``{"account", "pid"}``.
+
+        Raises:
+            OSError: When the socket carries no credentials.
+        """
+        identity = self.read_peer_identity(connection)
+        pid = connection.getsockopt(SOL_LOCAL, LOCAL_PEERPID)
+        return {"account": identity["account"], "pid": pid}
+
+    def watch_process(self, pid: int) -> "DarwinProcessWatch":
+        """A kqueue watch on one running process's exit.
+
+        Args:
+            pid: The process id.
+
+        Returns:
+            The watch.
+
+        Raises:
+            OSError: When the process does not run.
+        """
+        return DarwinProcessWatch(pid)
 
     def validate_mount_location(self, *, location: str) -> "dict | None":
         """Accept any location: the system picks the mount point.
@@ -452,3 +484,49 @@ class DarwinPlatform(ClientPlatform):
             ):
                 return mounted_at
         return ""
+
+
+class DarwinProcessWatch:
+    """One process the daemon waits on, through a kqueue exit event."""
+
+    def __init__(self, pid: int):
+        """
+        Args:
+            pid: The process id.
+
+        Raises:
+            OSError: When the process does not run.
+        """
+        self._queue = select.kqueue()
+        self._has_ended = False
+        try:
+            self._queue.control(
+                [
+                    select.kevent(
+                        pid,
+                        filter=select.KQ_FILTER_PROC,
+                        flags=select.KQ_EV_ADD,
+                        fflags=select.KQ_NOTE_EXIT,
+                    )
+                ],
+                0,
+            )
+        except OSError:
+            self._queue.close()
+            raise
+
+    def is_running(self) -> bool:
+        """Whether the process has not ended.
+
+        Returns:
+            True while it runs.
+        """
+        if self._has_ended or self._queue.closed:
+            return False
+        if self._queue.control(None, 1, 0):
+            self._has_ended = True
+        return not self._has_ended
+
+    def close(self) -> None:
+        """Let the queue go. Idempotent."""
+        self._queue.close()

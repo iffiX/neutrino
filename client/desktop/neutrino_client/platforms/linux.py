@@ -11,7 +11,9 @@ socket, which needs no root of the person. Nothing else here needs root.
 # client still imports on Python 3.9.
 from __future__ import annotations
 
+import errno
 import os
+import select
 import shutil
 import socket
 import struct
@@ -153,6 +155,42 @@ class LinuxPlatform(ClientPlatform):
         except KeyError:
             account = str(uid)
         return {"account": account, "uid": uid, "is_same_user": uid == os.getuid()}
+
+    def daemon_peer(self, connection) -> dict:
+        """A daemon socket's peer, from the kernel's ``SO_PEERCRED``.
+
+        Args:
+            connection: The accepted socket.
+
+        Returns:
+            ``{"account", "pid"}``.
+
+        Raises:
+            OSError: When the socket carries no credentials.
+        """
+        data = connection.getsockopt(
+            socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i")
+        )
+        pid, uid, _gid = struct.unpack("3i", data)
+        try:
+            account = pwd.getpwuid(uid).pw_name if pwd is not None else str(uid)
+        except KeyError:
+            account = str(uid)
+        return {"account": account, "pid": pid}
+
+    def watch_process(self, pid: int) -> "LinuxProcessWatch":
+        """A process file descriptor on one running process.
+
+        Args:
+            pid: The process id.
+
+        Returns:
+            The watch.
+
+        Raises:
+            OSError: When the process cannot be opened.
+        """
+        return LinuxProcessWatch(pid)
 
     def has_mount_tooling(self) -> bool:
         """Whether the root helper and ``mount.cifs`` are on this machine."""
@@ -451,3 +489,55 @@ def run_root_helper(
     if result.returncode in CLIENT_PKEXEC_REFUSAL_EXIT_CODES:
         return refusal_code, ""
     return exit_codes.get(result.returncode, failure_code), detail
+
+
+class LinuxProcessWatch:
+    """One process the daemon waits on, through a process file descriptor.
+
+    Where the kernel has no ``pidfd_open``, the process id is asked after
+    with signal 0 instead.
+    """
+
+    def __init__(self, pid: int):
+        """
+        Args:
+            pid: The process id.
+
+        Raises:
+            OSError: When the process does not run.
+        """
+        self._pid = pid
+        self._fd: "int | None" = None
+        try:
+            self._fd = os.pidfd_open(pid)
+        except (AttributeError, OSError) as error:
+            if isinstance(error, OSError) and error.errno == errno.ESRCH:
+                raise
+            os.kill(pid, 0)
+
+    def is_running(self) -> bool:
+        """Whether the process has not ended.
+
+        Returns:
+            True while it runs.
+        """
+        if self._pid is None:
+            return False
+        if self._fd is None:
+            try:
+                os.kill(self._pid, 0)
+            except ProcessLookupError:
+                return False
+            except PermissionError:
+                return True
+            return True
+        readable, _, _ = select.select([self._fd], [], [], 0)
+        return not readable
+
+    def close(self) -> None:
+        """Let the descriptor go. Idempotent."""
+        fd = self._fd
+        self._fd = None
+        self._pid = None
+        if fd is not None:
+            os.close(fd)

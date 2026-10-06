@@ -285,10 +285,21 @@ class WindowsPlatform(ClientPlatform):
 
     def control_socket_path(self) -> str:
         """This person's own named pipe."""
+        return self.control_socket_path_of(self.current_account())
+
+    def control_socket_path_of(self, account: str) -> str:
+        """The named pipe of one account's client.
+
+        Args:
+            account: The account.
+
+        Returns:
+            The pipe name.
+        """
         return (
             CLIENT_CONTROL_PIPE_PREFIX
             + CLIENT_CONTROL_PIPE_NAME_PREFIX
-            + _pipe_safe_name(self.current_account())
+            + _pipe_safe_name(account)
         )
 
     def current_account(self) -> str:
@@ -599,8 +610,8 @@ class WindowsPlatform(ClientPlatform):
         except (OSError, subprocess.SubprocessError):
             pass
 
-    def files_peer(self, connection) -> dict:
-        """The files daemon pipe's peer: its account and its process.
+    def daemon_peer(self, connection) -> dict:
+        """A daemon pipe's peer: its account and its process.
 
         Args:
             connection: The accepted pipe connection.

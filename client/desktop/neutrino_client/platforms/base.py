@@ -566,22 +566,22 @@ class ClientPlatform:
     def forget_relaunch(self) -> None:
         """Drop a start an earlier quit arranged. Nothing here."""
 
-    def files_peer(self, connection) -> dict:
-        """Who is on the other end of the files daemon's pipe.
+    def daemon_peer(self, connection) -> dict:
+        """Who is on the other end of a daemon's socket or pipe.
 
         Args:
-            connection: The accepted pipe connection.
+            connection: The accepted connection.
 
         Returns:
-            ``{"account", "pid"}``: the account by impersonation and the
-            calling process's id.
+            ``{"account", "pid"}``: the calling account and process, as the
+            system says.
 
         Raises:
-            PlatformUnsupportedError: Everywhere but Windows, or when the
-                peer cannot be read.
+            PlatformUnsupportedError: When the platform cannot read peers,
+                or the peer cannot be read.
             OSError: When the process id cannot be read.
         """
-        raise PlatformUnsupportedError("no files adapter here")
+        raise PlatformUnsupportedError("cannot read a daemon peer here")
 
     def watch_process(self, pid: int):
         """A handle on one running process, to see whether it has ended.
@@ -594,10 +594,25 @@ class ClientPlatform:
             holds keeps the id from naming another process meanwhile.
 
         Raises:
-            PlatformUnsupportedError: Everywhere but Windows.
+            PlatformUnsupportedError: When the platform cannot watch one.
             OSError: When the process cannot be opened.
         """
-        raise PlatformUnsupportedError("no files adapter here")
+        raise PlatformUnsupportedError("cannot watch a process here")
+
+    def control_socket_path_of(self, account: str) -> str:
+        """Where another account's control socket lives.
+
+        Args:
+            account: The account.
+
+        Returns:
+            The socket path or pipe name.
+
+        Raises:
+            PlatformUnsupportedError: When no caller here may reach another
+                account's client.
+        """
+        raise PlatformUnsupportedError("no other account's client is reached here")
 
     def raw_terminal(self):
         """This process's terminal in raw mode, for a ``with`` block.

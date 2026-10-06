@@ -102,7 +102,7 @@ def start_daemon(platform, log, *, tun2socks_log=None) -> dict:
         address=platform.files_daemon_address(),
         log=log,
         invalid_code=FILES_REFUSAL_CODE,
-        identify=platform.files_peer,
+        identify=platform.daemon_peer,
     )
     server.bind()
     daemon.start()

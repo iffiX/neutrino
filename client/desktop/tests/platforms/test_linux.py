@@ -9,6 +9,7 @@ own tool, else through GTK.
 
 import collections
 import os
+import pwd
 import struct
 import subprocess
 
@@ -498,3 +499,39 @@ def test_without_a_tool_the_clipboard_is_written_through_gtk(monkeypatch):
 
     assert tools.commands == []
     assert written == [("from the terminal", CLIENT_CLIPBOARD_TIMEOUT_S)]
+
+
+def test_a_daemon_sockets_peer_is_its_account_and_process():
+    import socket as socket_module
+
+    near, far = socket_module.socketpair(socket_module.AF_UNIX)
+    try:
+        peer = LinuxPlatform().daemon_peer(near)
+    finally:
+        near.close()
+        far.close()
+
+    assert peer["pid"] == os.getpid()
+    assert peer["account"] == pwd.getpwuid(os.getuid()).pw_name
+
+
+def test_a_watched_process_runs_until_it_ends():
+    child = subprocess.Popen(["sleep", "30"])
+    watch = LinuxPlatform().watch_process(child.pid)
+    try:
+        assert watch.is_running() is True
+        child.kill()
+        child.wait()
+        assert watch.is_running() is False
+    finally:
+        watch.close()
+        watch.close()
+    assert watch.is_running() is False
+
+
+def test_a_process_that_is_gone_cannot_be_watched():
+    child = subprocess.Popen(["true"])
+    child.wait()
+
+    with pytest.raises(OSError):
+        LinuxPlatform().watch_process(child.pid)

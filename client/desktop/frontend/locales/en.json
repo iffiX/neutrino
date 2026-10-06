@@ -7,6 +7,7 @@
   "code.bundle_missing": "This install carries no {binary}; reinstall the client",
   "code.busy": "Still handling the last request",
   "code.client_disabled": "The hub has switched this client off",
+  "code.client_held": "{account}'s client is running on this machine; one person's client runs at a time",
   "code.client_internal": "The client hit an unexpected error ({error}); check its log",
   "code.clipboard_unreadable": "The clipboard could not be read: {detail}",
   "code.clipboard_unwritable": "The clipboard could not be written: {detail}",

@@ -189,3 +189,54 @@ def test_a_terminal_is_asked_without_echo(monkeypatch):
 
     assert wording.ask_secret("Share password: ") == "typed"
     assert prompts == ["Share password: "]
+
+
+def test_the_hold_is_asked_of_the_easytier_daemon(monkeypatch):
+    from tests.conftest import REAL_ASK_HOLD
+
+    asked = []
+
+    class Platform:
+        def easytier_daemon_address(self):
+            return "/run/neutrino/client/easytier.sock"
+
+    def ask(address, request, *, timeout_s):
+        asked.append((address, request, timeout_s))
+        return {"code": "client_held", "params": {"account": "lab"}}
+
+    monkeypatch.setattr(wording, "ask_hold", REAL_ASK_HOLD)
+    monkeypatch.setattr(wording, "detect_platform", Platform)
+    monkeypatch.setattr(wording, "ask_easytier_daemon", ask)
+
+    assert wording.hold_machine() == "lab"
+    assert asked == [("/run/neutrino/client/easytier.sock", {"verb": "hold"}, 2)]
+
+
+def test_no_daemon_holds_nothing_and_names_nobody(monkeypatch):
+    from tests.conftest import REAL_ASK_HOLD
+
+    class Platform:
+        def easytier_daemon_address(self):
+            return "/nowhere/easytier.sock"
+
+    def ask(address, request, *, timeout_s):
+        raise FileNotFoundError(address)
+
+    monkeypatch.setattr(wording, "ask_hold", REAL_ASK_HOLD)
+    monkeypatch.setattr(wording, "detect_platform", Platform)
+    monkeypatch.setattr(wording, "ask_easytier_daemon", ask)
+
+    assert wording.hold_machine() == ""
+    assert wording.other_holder() == ""
+
+
+def test_the_holder_is_another_only_when_the_daemon_says_so(monkeypatch):
+    monkeypatch.setattr(
+        wording, "ask_hold", lambda verb: {"holder": "lab", "is_holder": True}
+    )
+    assert wording.other_holder() == ""
+
+    monkeypatch.setattr(
+        wording, "ask_hold", lambda verb: {"holder": "lab", "is_holder": False}
+    )
+    assert wording.other_holder() == "lab"

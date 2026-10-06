@@ -241,10 +241,13 @@ DATA_FOLDER_SDDL = "D:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
 SECURE_DATA_COMMAND = '"[SystemFolder]icacls.exe" "[CLIENTDATAFOLDER]*" /reset /T /C /Q'
 SECURE_DATA_CONDITION = 'NOT REMOVE~="ALL"'
 
-# The quit, run as the person installing, through the windowed program: an
-# installer's custom action has no console, and a console program started by
-# one opens a black window over the wizard. The ask itself is bounded by the
-# control socket's own timeout, so nothing here has to time it out.
+# The quit, run elevated as the person installing, through the windowed
+# program: an installer's custom action has no console, and a console
+# program started by one opens a black window over the wizard. It reaches
+# the one client that runs on the machine, whichever account it belongs to,
+# through the account the EasyTier daemon names as the holder. The ask
+# itself is bounded by the control socket's own timeout, so nothing here has
+# to time it out.
 QUIT_COMMAND = f'"[INSTALLFOLDER]{CLIENT_WINDOWED_BINARY_NAME}" quit'
 # The same quit by an install that keeps the client: the client registers its
 # account's relaunch task before it goes. A build older than the flag refuses
