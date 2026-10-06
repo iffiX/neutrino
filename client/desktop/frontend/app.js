@@ -1084,8 +1084,7 @@ function openPortDialog(entry) {
   const why = reasonLine('');
   modal.appendChild(why);
   const actions = document.createElement('div');
-  actions.className = 'row';
-  actions.style.marginTop = '8px';
+  actions.className = 'form_actions';
   const save = document.createElement('button');
   save.textContent = t('ui.save');
   const cancel = document.createElement('button');
@@ -2358,7 +2357,7 @@ function drawFileForm(staged, state, server, key, onSave, onChange) {
     form.appendChild(mountPathLine(staged, changed));
   }
   const actions = document.createElement('div');
-  actions.className = 'row';
+  actions.className = 'form_actions';
   const save = document.createElement('button');
   save.type = 'button';
   save.textContent = t('ui.save');
@@ -2476,7 +2475,7 @@ function drawSettings(state) {
   card.appendChild(picker('theme', themeOptions, draft.theme,
     (value) => stage('theme', value), false));
   const actions = document.createElement('div');
-  actions.className = 'row';
+  actions.className = 'form_actions';
   const save = document.createElement('button');
   save.type = 'button';
   save.textContent = t('ui.save');
@@ -2727,8 +2726,7 @@ function openConfigDialog(staged, models, onSave) {
     draft.gemini.model || '', (value) => { draft.gemini.model = value; }));
 
   const actions = document.createElement('div');
-  actions.className = 'row';
-  actions.style.marginTop = '8px';
+  actions.className = 'form_actions';
   const save = document.createElement('button');
   save.textContent = t('ui.save');
   save.onclick = () => {
@@ -2821,7 +2819,7 @@ function openBrowser(startPath, onChoose) {
   }
 
   const actions = document.createElement('div');
-  actions.className = 'row';
+  actions.className = 'form_actions';
   const create = document.createElement('button');
   create.className = 'ghost';
   create.textContent = t('ui.new_folder');
