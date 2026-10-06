@@ -669,7 +669,7 @@ A session is started by opening `/ws/agent/terminal` with a new
 | `POST /api/agent/module/cloudcli/set` | `{device_id, instances: [{account, port, login_id}]}`, `port` 1024 to 65535, `login_id` for a Windows machine | replaces the instances, generating each instance's password the first time; the refusals of `vscode/set` |
 | `GET /api/agent/module/ai_tool` | `?device_id=` | `AiToolDeviceView`: `is_enabled`, the stored setting; `is_gateway_serving`, whether the gateway serves a model now; `tool_configs`, the stored choices as the client's **Configure** dialog saves them; `models`, the names the gateway serves, for the dialog's pickers; `accounts`, each account the setting acts on as `{account, modules, state, code, params}` with `modules` the module names it has an instance in and the rest as last reported, `state` empty before the machine reported it |
 | `POST /api/agent/module/ai_tool/enable` | `{device_id}` | turns the setting on, mints the device's gateway key, pushes the state; on a setting already on whose machine reported an account `failed`, writes a fresh `retry_mark` on the section and pushes; `AiToolDeviceView`; 409 `gateway_not_serving` while the gateway serves no model, 409 `agent_offline`, 400 `vault_locked` |
-| `POST /api/agent/module/ai_tool/disable` | `{device_id}` | turns the setting off, revokes the device's gateway key, pushes the state; `AiToolDeviceView`; 409 `agent_offline` |
+| `POST /api/agent/module/ai_tool/disable` | `{device_id}` | turns the setting off, revokes the device's gateway key, pushes the state; on a setting already off whose machine reported an account `failed`, a switch back that could not run, writes a fresh `retry_mark` on the section and pushes; `AiToolDeviceView`; 409 `agent_offline` |
 | `POST /api/agent/module/ai_tool/set` | `{device_id, tool_configs}` | replaces the stored choices, the unknown tools and keys dropped as the client's `clean_tool_configs` drops them, and pushes the state while the setting is on; `AiToolDeviceView`; 409 `agent_offline` |
 | `GET /api/agent/module/terminal` | `?device_id=` | `TerminalDeviceView`: the fields of every module view; `account` and `shell_path`, empty for the agent's own; `accounts`, the human accounts the machine reported; `is_account_settable`, false for a Windows machine |
 | `POST /api/agent/module/terminal/set` | `{device_id, account, shell_path}`, both strings, empty for the default | stores `config/devices/<id>/terminal.json` once the agent's `validate` took it, and pushes; 400 `account_unknown {account}` for an account the machine did not report, `path_invalid {path}` for a path that is not absolute, and the agent's own `shell_program_unusable {path}`; 409 `agent_offline`; `TerminalDeviceView` |
@@ -1050,7 +1050,8 @@ to a Windows machine. `cc_switch_version` is the version
 `data/manifests/cc_switch.json` pins, the copy of cc-switch the agent runs.
 With it false the section is `{is_enabled: false, cc_switch_version}`, the
 version there so that a copy fetched for a switch back is the one the next
-switch runs. The report's
+switch runs. The section carries the device's `retry_mark` on and off alike,
+so a press of off after a switch back that could not run tries it again. The report's
 `ai_tools` lists each account the state names and each one switched back
 under the current hash, `state` being `switched`, `switched_back` or
 `failed`, with `{code, params}` on a failure; `cc_switch_download_failed

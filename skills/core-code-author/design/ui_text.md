@@ -204,6 +204,7 @@ where they fit, and a managed machine is a managed device, as the
 | `ui.ai_tools.codex_effort` | Reasoning effort | 推理强度 |
 | `state.ai_tools_switched` | Uses the hub's AI gateway | 使用中枢的 AI 网关 |
 | `state.ai_tools_switched_back` | Uses its own settings | 使用自己原来的设置 |
+| `ui.ai_tools.switch_back_failed`, an account `failed` with `switch_failed` while the setting is off | cc-switch did not put the tools back to their own settings: {detail} | cc-switch 没能把工具改回原来的设置：{detail} |
 | `code.gateway_not_serving` | The hub's AI gateway serves no model yet; set it up on the AI page first. | 中枢的 AI 网关还没有可用的模型，先到 AI 页设置好。 |
 
 **Configure** is `ui.modules.configure`, the page's existing word. The
