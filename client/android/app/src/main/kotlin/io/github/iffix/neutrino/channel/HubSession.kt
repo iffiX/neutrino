@@ -276,7 +276,8 @@ class HubSession(
         current.update { it.copy(connection = roundState(binding)) }
         isRoundCut = false
         val only = preferredUrl.takeIf { isPreferredOnly }
-        val nameUrl = if (only != null) "" else resolveHubName()?.let { nameUrlOf(binding.gatewayUrl, it) }.orEmpty()
+        val firstUrl = binding.storedUrls.firstOrNull().orEmpty()
+        val nameUrl = if (only != null) "" else resolveHubName()?.let { nameUrlOf(firstUrl, it) }.orEmpty()
         val urls = if (only != null) listOf(only) else binding.candidateUrls(nameUrl, preferredUrl)
         var untrusted: ChannelResult.Refused? = null
         var failure: ChannelResult.Refused? = null

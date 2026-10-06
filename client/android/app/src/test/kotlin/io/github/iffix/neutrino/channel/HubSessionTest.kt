@@ -127,6 +127,29 @@ class HubSessionTest {
     }
 
     @Test
+    fun aReconnectStartsFromTheFirstAddressNotTheOneThatWorkedLast() = runTest {
+        var isNearUp = false
+        val transport = FakeHubTransport { url ->
+            if (url.contains("192.168.100.1") && !isNearUp) FakeHubTransport.silent else FakeHubTransport.welcoming
+        }
+        val (session, store) = session(transport)
+        val round = backgroundScope.async { session.runOnce() }
+        advanceTimeBy(60_000)
+        assertEquals(HubConnection.CONNECTED, session.view.value.connection)
+        assertEquals("https://100.72.4.1:8443", session.view.value.connectedAddress)
+        assertEquals("https://100.72.4.1:8443", store.get("b1")?.gatewayUrl)
+        isNearUp = true
+        transport.dialled.last().third.trySend(ChannelSocketEvent.Closed(1006, ""))
+        round.await()
+        served(session)
+        assertEquals(
+            listOf("https://192.168.100.1:8443", "https://100.72.4.1:8443", "https://192.168.100.1:8443"),
+            transport.dialled.map { it.first },
+        )
+        assertEquals("https://192.168.100.1:8443", session.view.value.connectedAddress)
+    }
+
+    @Test
     fun anotherHubAnsweringTheNameIsSkipped() = runTest {
         val transport =
             FakeHubTransport { url ->

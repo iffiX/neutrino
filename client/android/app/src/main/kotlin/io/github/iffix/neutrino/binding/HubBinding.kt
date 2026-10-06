@@ -61,8 +61,8 @@ data class HubBinding(
      *
      * @param nameUrl The address the hub's name resolves to on this network, or empty.
      * @param preferredUrl The hub's address on the virtual network this phone is on, or empty.
-     * @return The preferred address, the name's, the one that last answered, then the rest, each once.
+     * @return The preferred address, the name's, then the stored ones from the first, each once.
      */
     fun candidateUrls(nameUrl: String, preferredUrl: String = ""): List<String> =
-        (listOf(preferredUrl, nameUrl, gatewayUrl) + storedUrls).filter { it.isNotEmpty() }.distinct()
+        (listOf(preferredUrl, nameUrl) + storedUrls).filter { it.isNotEmpty() }.distinct()
 }

@@ -6,13 +6,13 @@ import org.junit.Test
 
 class HubBindingTest {
     @Test
-    fun candidateUrlsAreTheNameThenTheLastThenTheRestEachOnce() {
+    fun candidateUrlsAreTheNameThenTheListFromTheFirstWhicheverWorkedLast() {
         val binding = Samples.binding.copy(gatewayUrl = "https://100.72.4.1:8443")
         assertEquals(
-            listOf("https://10.0.0.1:8443", "https://100.72.4.1:8443", "https://192.168.100.1:8443"),
+            listOf("https://10.0.0.1:8443", "https://192.168.100.1:8443", "https://100.72.4.1:8443"),
             binding.candidateUrls("https://10.0.0.1:8443"),
         )
-        assertEquals(listOf("https://100.72.4.1:8443", "https://192.168.100.1:8443"), binding.candidateUrls(""))
+        assertEquals(listOf("https://192.168.100.1:8443", "https://100.72.4.1:8443"), binding.candidateUrls(""))
     }
 
     @Test
