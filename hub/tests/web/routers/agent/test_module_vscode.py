@@ -351,3 +351,39 @@ def test_a_device_directory_that_cannot_be_written_is_a_coded_refusal(
     assert answer.status_code == 500
     assert answer.json()["detail"]["code"] == "config_unwritable"
     assert "Operation not permitted" in answer.json()["detail"]["params"]["detail"]
+
+
+@pytest.mark.parametrize("reported", ["running", "stopped", "installed"])
+def test_a_set_on_a_module_the_machine_has_and_the_hub_never_wanted_wants_it_running(
+    api, reported
+):
+    """The reported bug: after a reset and a new join the machine still ran
+    VS Code, the hub held no want for it, and an apply reached nothing."""
+    client, runtime = api
+    runtime.report(DEVICE, "vscode", state=reported)
+    body = {"device_id": DEVICE, "instances": [{"account": "alice", "port": 8000}]}
+
+    client.post(f"{BASE}/set", json=body)
+
+    assert DesiredStateStore().want_of(DEVICE, "vscode") == "running"
+
+
+def test_a_set_keeps_the_want_the_person_gave(api):
+    client, runtime = api
+    store = DesiredStateStore()
+    store.set_want(DEVICE, "vscode", "stopped")
+    runtime.report(DEVICE, "vscode", state="stopped")
+    body = {"device_id": DEVICE, "instances": [{"account": "alice", "port": 8000}]}
+
+    client.post(f"{BASE}/set", json=body)
+
+    assert store.want_of(DEVICE, "vscode") == "stopped"
+
+
+def test_a_set_on_a_module_the_machine_does_not_have_writes_no_want(api):
+    client, _runtime = api
+    body = {"device_id": DEVICE, "instances": [{"account": "alice", "port": 8000}]}
+
+    client.post(f"{BASE}/set", json=body)
+
+    assert DesiredStateStore().want_of(DEVICE, "vscode") == ""
