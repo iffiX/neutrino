@@ -408,3 +408,72 @@ def test_once_the_viewer_ends_a_connect_opens_a_new_one(handler):
 
     assert len(platform.started) == 2
     assert subject.state()["viewers"] == {"h1/rdp_s9": {"is_running": True}}
+
+
+# --- a second viewer handed to the running viewer's window ---
+
+OTHER_BODY = {"action": "connect", "hub_id": "h2", "id": OFFICE_ENTRY["id"]}
+
+
+def wait_for(condition, timeout_s=3):
+    import time
+
+    deadline = time.monotonic() + timeout_s
+    while not condition() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    return condition()
+
+
+def test_a_second_viewer_handed_to_the_running_window_keeps_its_forward(
+    handler, monkeypatch
+):
+    """Row 6a on Windows: B's launched process ends at once, its connection a
+    tab in A's window; B's forward stays until A's window ends."""
+    subject, platform, _hub, lines = handler
+    monkeypatch.setattr(rdp_module, "RDP_WATCH_INTERVAL_S", 0.01)
+    assert subject.act(entries=SERVICES, body=CONNECT_BODY) == {}
+    assert subject.act(entries=SERVICES, body=OTHER_BODY) == {}
+    first, second = platform.started
+    b_key = f"h2/{OFFICE_ENTRY['id']}"
+
+    second.returncode = 0
+
+    assert wait_for(lambda: any("in the running viewer" in line for line in lines))
+    assert subject.forwards.port_of("h2", OFFICE_ENTRY["id"])
+    assert set(subject.state()["viewers"]) == {"h1/rdp_s9", b_key}
+    assert subject.act(entries=SERVICES, body=OTHER_BODY) == {
+        "code": "rdp_viewer_open",
+        "params": {},
+    }
+
+    first.returncode = 0
+
+    assert wait_for(lambda: subject.forwards.forwards() == {})
+    assert subject.state()["viewers"] == {}
+
+
+def test_a_viewer_closed_after_the_hand_off_window_ends_its_own_forward(
+    handler, monkeypatch
+):
+    subject, platform, _hub, _lines = handler
+    monkeypatch.setattr(rdp_module, "RDP_WATCH_INTERVAL_S", 0.01)
+    monkeypatch.setattr(rdp_module, "RDP_HANDOFF_S", 0)
+    assert subject.act(entries=SERVICES, body=CONNECT_BODY) == {}
+    assert subject.act(entries=SERVICES, body=OTHER_BODY) == {}
+    _first, second = platform.started
+
+    second.returncode = 0
+
+    assert wait_for(lambda: not subject.forwards.port_of("h2", OFFICE_ENTRY["id"]))
+    assert set(subject.state()["viewers"]) == {"h1/rdp_s9"}
+
+
+def test_a_lone_viewer_that_ends_early_ends_its_forward(handler, monkeypatch):
+    subject, platform, _hub, _lines = handler
+    monkeypatch.setattr(rdp_module, "RDP_WATCH_INTERVAL_S", 0.01)
+    assert subject.act(entries=SERVICES, body=CONNECT_BODY) == {}
+
+    platform.started[0].returncode = 0
+
+    assert wait_for(lambda: subject.forwards.forwards() == {})
+    assert subject.state()["viewers"] == {}
