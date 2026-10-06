@@ -205,6 +205,7 @@ CLIENT_MOUNT_HELPER_EXIT_CODES = {
 # comes back on its own.
 CLIENT_MOUNT_SETTLED_CODES = (
     "mount_not_authorized",
+    "pkexec_missing",
     "mount_timed_out",
     "share_login_rejected",
     "share_access_denied",

@@ -240,7 +240,8 @@ def test_the_deb_depends_on_every_features_stack_and_no_python(deb):
     assert "Architecture: amd64" in control
     assert "gir1.2-webkit2-4.1 | gir1.2-webkit2-4.0" in depends
     assert "libwebkit2gtk-4.1-0 | libwebkit2gtk-4.0-37" in depends
-    assert "polkitd | policykit-1" in depends
+    assert "pkexec | policykit-1" in depends
+    assert "polkitd" not in depends
     assert "libgtk-3-0t64 | libgtk-3-0" in depends
     assert "gir1.2-ayatanaappindicator3-0.1" in depends
     assert "cifs-utils" in depends

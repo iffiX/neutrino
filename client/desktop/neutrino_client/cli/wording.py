@@ -83,6 +83,10 @@ CLIENT_CODE_WORDS = {
     "mount_not_authorized": "mounting was not authorized on this machine",
     "mount_timed_out": "the system did not finish the mount in ten minutes; mount again",
     "mount_tooling_missing": "the mount tooling is missing on this machine",
+    "pkexec_missing": (
+        "this machine has no pkexec, which a mount goes through; install pkexec "
+        "and mount again"
+    ),
     "control_peer_refused": "the running client belongs to another account",
     "control_socket_unavailable": "this session has no place for the client's socket",
     "control_channel_closed": "the client stopped answering; open it again",
