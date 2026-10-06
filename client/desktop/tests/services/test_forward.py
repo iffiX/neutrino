@@ -806,6 +806,56 @@ def test_an_open_refused_later_keeps_listening_and_tries_again_once_a_second(udp
     listener.close()
 
 
+def test_a_refusal_is_answered_by_the_first_reply_not_by_the_first_credit(udp_far):
+    """A container stopped, then started: the error line goes when a reply
+    comes back on a later stream, never at its credit alone."""
+    far_port, _received = udp_far
+    hub = FakeUdpHub(far_port)
+    now = {"t": 100.0}
+    refusals = []
+    answers = []
+    listener = UdpForwardListener(
+        open_stream=lambda: hub.open_connect("h1", {"id": "u"}),
+        local_port=0,
+        kind="port",
+        log=discard,
+        on_refused=lambda *told: refusals.append(told),
+        on_answered=lambda: answers.append(1),
+        clock=lambda: now["t"],
+    )
+    port = listener.start()
+    assert ask(port, b"first") == b"echo:first"
+    assert answers == []
+    hub.streams[0].take_close(code="port_not_published", params={"port": 5353})
+    deadline = time.monotonic() + 5
+    while not refusals and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+    silent = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    silent.bind(("127.0.0.1", 0))
+    hub.far_port = silent.getsockname()[1]
+    now["t"] += 2.0
+    program = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    program.sendto(b"nobody answers", ("127.0.0.1", port))
+    deadline = time.monotonic() + 5
+    while len(hub.opens) < 2 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    time.sleep(0.3)
+    assert len(hub.opens) == 2 and answers == []
+
+    hub.far_port = far_port
+    assert ask(port, b"back") == b"echo:back"
+    deadline = time.monotonic() + 5
+    while not answers and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert answers == [1]
+    assert ask(port, b"again") == b"echo:again"
+    assert answers == [1]
+    silent.close()
+    program.close()
+    listener.close()
+
+
 def test_datagrams_wait_for_a_reopened_streams_first_credit_sixteen_at_most(udp_far):
     far_port, received = udp_far
     hub = FakeUdpHub(far_port)

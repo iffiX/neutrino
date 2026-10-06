@@ -233,6 +233,7 @@ class ClientResident:
             log=log,
             on_change=self.notify,
             on_refused=self._forward_refused,
+            on_answered=self._forward_answered,
         )
         # The files adapter a Windows mount goes through.
         self._files_plan = FilesAddressPlan(
@@ -322,6 +323,9 @@ class ClientResident:
         # last one ended in, by service key.
         self._entry_jobs: dict = {}
         self._entry_errors: dict = {}
+        # The refusal each UDP forward outlived, by service key, while it is
+        # still the row's error line.
+        self._forward_refusals: dict = {}
         # What the page shows above the hubs for a while: [{code, params, id}].
         self._notices: list = []
         # Every terminal open or ended and not yet asked about, by its id:
@@ -1837,7 +1841,19 @@ class ClientResident:
         """A forward's stream was refused after its start: the row's error line."""
         with self._lock:
             self._entry_errors[service_key(hub_id, entry_id)] = dict(refusal)
+            self._forward_refusals[service_key(hub_id, entry_id)] = dict(refusal)
         self.notify()
+
+    def _forward_answered(self, hub_id: str, entry_id: str) -> None:
+        """The far end answered again after a refusal: its error line goes."""
+        key = service_key(hub_id, entry_id)
+        with self._lock:
+            refusal = self._forward_refusals.pop(key, None)
+            is_gone = refusal is not None and self._entry_errors.get(key) == refusal
+            if is_gone:
+                self._entry_errors.pop(key, None)
+        if is_gone:
+            self.notify()
 
     def _files_connector(self, hub_id: str, entry_id: str) -> ConnectStreamSocket:
         """One ``connect`` stream to a file entry, as the files endpoint takes it.

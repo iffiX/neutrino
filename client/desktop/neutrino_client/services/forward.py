@@ -602,6 +602,7 @@ class UdpForwardListener:
         kind: str,
         log=print,
         on_refused=None,
+        on_answered=None,
         clock=time.monotonic,
     ):
         """
@@ -618,6 +619,9 @@ class UdpForwardListener:
                 "params"}``, and ``is_ended`` says the forward ended for it,
                 the stream of the start having carried no datagram; None for
                 nobody listening.
+            on_answered: ``on_answered()`` is told when the first frame comes
+                back on a stream opened after a refusal the forward outlived;
+                None for nobody listening.
             clock: The monotonic clock the reopen interval is measured on.
         """
         self.kind = kind
@@ -626,7 +630,11 @@ class UdpForwardListener:
         self._bind_port = local_port
         self._log = log
         self._on_refused = on_refused if on_refused is not None else _nobody_told
+        self._on_answered = on_answered if on_answered is not None else _nobody_told
         self._clock = clock
+        # Whether a refusal the forward outlived still stands: the first
+        # frame back on a later stream ends it, its first credit does not.
+        self._is_refused = False
         self._socket = None
         self._is_closed = False
         self._lock = threading.Lock()
@@ -810,6 +818,12 @@ class UdpForwardListener:
                 continue
             if not frame:
                 break
+            with self._lock:
+                is_answer = self._is_refused and self._stream is stream
+                if is_answer:
+                    self._is_refused = False
+            if is_answer:
+                self._on_answered()
             self.take_frame(frame)
         refusal = stream.refusal()
         with self._lock:
@@ -823,6 +837,9 @@ class UdpForwardListener:
         self._log(f"the hub refused udp 127.0.0.1:{self.local_port}: {refusal}")
         if is_ended:
             self.close()
+        else:
+            with self._lock:
+                self._is_refused = True
         self._on_refused(refusal, is_ended)
 
     def _receive_forever(self) -> None:
@@ -845,7 +862,14 @@ class ForwardListenerRegistry:
     """Every forward this client runs, by service key, over every hub."""
 
     def __init__(
-        self, *, open_connect, ports=None, log=print, on_change=None, on_refused=None
+        self,
+        *,
+        open_connect,
+        ports=None,
+        log=print,
+        on_change=None,
+        on_refused=None,
+        on_answered=None,
     ):
         """
         Args:
@@ -863,9 +887,13 @@ class ForwardListenerRegistry:
                 when the hub closes a UDP forward's stream with a code; the
                 forward is gone by then when the stream of its start had
                 carried no datagram. None for nobody listening.
+            on_answered: ``on_answered(hub_id, entry_id)`` is told when a UDP
+                forward that outlived a refusal gets its first frame back on
+                a later stream; None for nobody listening.
         """
         self._open_connect = open_connect
         self._on_refused = on_refused if on_refused is not None else _nobody_told
+        self._on_answered = on_answered if on_answered is not None else _nobody_told
         self.ports = ports if ports is not None else PortLocalTable()
         self._log = log
         self._on_change = on_change if on_change is not None else _nobody
@@ -921,12 +949,16 @@ class ForwardListenerRegistry:
                         self._forget(key, listener)
                     self._on_refused(hub_id, entry_id, refusal)
 
+                def answered() -> None:
+                    self._on_answered(hub_id, entry_id)
+
                 listener = UdpForwardListener(
                     open_stream=open_stream,
                     local_port=port,
                     kind=kind,
                     log=self._log,
                     on_refused=refused,
+                    on_answered=answered,
                 )
             else:
                 listener = ForwardListener(
