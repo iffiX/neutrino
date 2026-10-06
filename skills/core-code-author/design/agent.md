@@ -505,10 +505,16 @@ in it, read as the account, or null for one that was absent: Claude Code's
 and Gemini's `~/.gemini/.env` and `settings.json`. cc-switch writes a tool's
 files only into a directory that is there, so a switch makes the directory,
 as the account, for a tool that has none, and every tool the log names as
-switched has its files written and read back naming the hub. The switch
-back, once cc-switch has switched away and deleted the hub's provider,
-writes each kept file back as it was, takes away each that was absent, and
-takes away a directory the switch made once it is empty. A switch back that
+switched has its files written and read back naming the hub. cc-switch
+writes them with the account's own file mask, so once it has run, every file
+that holds the gateway key, Claude Code's `settings.json`, Codex's
+`auth.json` and Gemini's `.env`, is set to mode 600 as the account, and the
+record keeps `kept_modes`, each kept file's own mode; on Windows a profile's
+files are its owner's by their access list and no mode is set or kept. The
+switch back, once cc-switch has switched away and deleted the hub's
+provider, writes each kept file back as it was with its own mode, takes
+away each that was absent, and takes away a directory the switch made once
+it is empty. A switch back that
 cannot run cc-switch, or cannot read its list of providers, is the
 account's `failed` with `switch_failed {account, detail}`, and the records,
 with the kept files, stay for the next try.
