@@ -61,6 +61,7 @@ class FakeApplier:
         self.listeners = []
         self.failing = ""
         self.seen_at_register = {}
+        self.stale = []
 
     def _step(self, name):
         self.calls.append(name)
@@ -113,6 +114,9 @@ class FakeApplier:
 
     def copy_pids(self):
         return list(self.pids)
+
+    def stale_pids(self):
+        return list(self.stale)
 
     def listening_programs(self, port):
         self.calls.append(("listening", port))
@@ -549,3 +553,46 @@ def test_a_machine_that_shares_nothing_asks_the_seat_nothing(host):
     assert declared["attention"] == ""
     assert declared["connected_count"] == 0
     assert host.seat.attention_homes == []
+
+
+# --- an upgrade replaced the copy under a running host ---
+
+
+def test_a_host_running_a_replaced_copy_is_started_again(host):
+    host.set_switch(True)
+    host.applier.calls.clear()
+    host.applier.stale = [41]
+
+    host.renew_if_replaced()
+
+    assert _steps(host.applier) == ["stop", "start"]
+
+
+def test_a_host_running_the_copy_on_disk_is_left_alone(host):
+    host.set_switch(True)
+    host.applier.calls.clear()
+    host.applier.stale = []
+
+    host.renew_if_replaced()
+
+    assert _steps(host.applier) == []
+
+
+def test_with_the_switch_off_nothing_is_started(host):
+    host.applier.stale = [41]
+
+    host.renew_if_replaced()
+
+    assert _steps(host.applier) == []
+
+
+def test_the_start_up_check_keeps_the_mark_and_the_settings(host):
+    host.take_seat_password("seat-pass")
+    host.set_switch(True)
+    before = _root_file(host, "RustDesk2.toml").read_text()
+    host.applier.stale = [41]
+
+    host.settle_at_start()
+
+    assert _root_file(host, "RustDesk2.toml").read_text() == before
+    assert "register" not in _steps(host.applier)[-2:]

@@ -228,6 +228,27 @@ class RemoteDesktopLinuxApplier:
         """The processes of the agent's copy that are hosts."""
         return [pid for pid, program, _ in self._rustdesk() if program == self.program]
 
+    def stale_pids(self) -> list:
+        """The copy's processes that run a program the package has since
+        replaced: a deleted file, or another file than the one on disk.
+
+        Returns:
+            Their pids; empty when the copy is not on disk.
+        """
+        try:
+            current = os.stat(self.program)
+        except OSError:
+            return []
+        stale = []
+        for pid in self.copy_pids():
+            try:
+                running = os.stat(posixpath.join(self._proc_dir, str(pid), "exe"))
+            except OSError:
+                continue
+            if (running.st_dev, running.st_ino) != (current.st_dev, current.st_ino):
+                stale.append(pid)
+        return stale
+
     def host_pids(self) -> list:
         """Every RustDesk process that is not a viewer."""
         return [

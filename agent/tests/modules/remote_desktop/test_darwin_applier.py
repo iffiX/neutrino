@@ -221,3 +221,34 @@ def test_the_copys_processes_are_told_from_anybody_elses(made):
     }
 
     assert made.copy_pids() == [41]
+
+
+@pytest.mark.parametrize(
+    "printed, seconds",
+    [("00:05", 5), ("01:02:03", 3723), ("2-00:00:01", 172801), ("", None), ("x", None)],
+)
+def test_the_elapsed_time_ps_prints_is_read(printed, seconds):
+    from neutrino_agent.modules.remote_desktop.darwin_applier import elapsed_seconds
+
+    assert elapsed_seconds(printed) == seconds
+
+
+def test_a_copy_process_older_than_the_copy_on_disk_is_stale(tmp_path):
+    app = tmp_path / "RustDesk.app"
+    binary = app / "Contents" / "MacOS" / "RustDesk"
+    binary.parent.mkdir(parents=True)
+    binary.write_bytes(b"new")
+    mac = FakeMac()
+    mac.programs = {51: str(binary), 52: str(binary)}
+    ages = {"51": "10:00", "52": "00:00"}
+
+    def run(command, **kwargs):
+        if command[1:3] == ["-o", "etime="]:
+            return CommandResult(list(command), 0, ages[command[-1]] + "\n", "")
+        return mac(command, **kwargs)
+
+    applier = RemoteDesktopDarwinApplier(
+        kept_dir=str(tmp_path / "kept"), run=run, app=str(app), seat_uid=lambda: None
+    )
+
+    assert applier.stale_pids() == [51]

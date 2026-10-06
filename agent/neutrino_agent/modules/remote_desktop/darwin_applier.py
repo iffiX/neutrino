@@ -46,6 +46,27 @@ LAUNCHD_LANG = "en_US.UTF-8"
 RUSTDESK_BUNDLE_ID = "com.carriez.rustdesk"
 
 
+def elapsed_seconds(printed: str) -> "int | None":
+    """Seconds since a process started, from what ``ps -o etime=`` printed.
+
+    Args:
+        printed: ``[[dd-]hh:]mm:ss``.
+
+    Returns:
+        The seconds; None when the text is not that.
+    """
+    days, _, clock = printed.strip().rpartition("-")
+    parts = clock.split(":")
+    if not printed.strip() or len(parts) > 3 or not all(p.isdigit() for p in parts):
+        return None
+    if days and not days.isdigit():
+        return None
+    seconds = 0
+    for part in parts:
+        seconds = seconds * 60 + int(part)
+    return seconds + int(days or 0) * 86400
+
+
 def service_job(app: str) -> dict:
     """The system daemon's job for one RustDesk bundle.
 
@@ -254,6 +275,29 @@ class RemoteDesktopDarwinApplier:
         return [
             pid for pid, program, _ in self._rustdesk() if program.startswith(prefix)
         ]
+
+    def stale_pids(self) -> list:
+        """The copy's processes that started before the copy on disk was
+        written: the package replaced the bundle under them.
+
+        Returns:
+            Their pids; empty when the copy is not on disk.
+        """
+        try:
+            status = os.stat(self.program)
+        except OSError:
+            return []
+        written = max(status.st_mtime, status.st_ctime)
+        now = time.time()
+        stale = []
+        for pid in self.copy_pids():
+            elapsed = self._run(
+                [PS, "-o", "etime=", "-p", str(pid)], is_checked=False
+            ).stdout.strip()
+            seconds = elapsed_seconds(elapsed)
+            if seconds is not None and now - seconds < written:
+                stale.append(pid)
+        return stale
 
     def host_pids(self) -> list:
         """Every RustDesk process that is not a viewer."""

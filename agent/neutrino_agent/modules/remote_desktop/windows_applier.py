@@ -59,7 +59,8 @@ if ($null -eq $s) { @{is_present = $false} | ConvertTo-Json -Compress; exit 0 }
 PROCESSES_SCRIPT = """
 $found = @(Get-CimInstance Win32_Process -Filter "Name LIKE 'rustdesk%'" |
   ForEach-Object { @{pid = [int]$_.ProcessId; program = [string]$_.ExecutablePath;
-    command = [string]$_.CommandLine} })
+    command = [string]$_.CommandLine;
+    started = [long]([DateTimeOffset]$_.CreationDate).ToUnixTimeSeconds()} })
 @{processes = $found} | ConvertTo-Json -Compress -Depth 4
 """
 
@@ -302,6 +303,25 @@ class RemoteDesktopWindowsApplier:
         own = self.program.lower()
         return [pid for pid, program, _ in self._rustdesk() if program.lower() == own]
 
+    def stale_pids(self) -> list:
+        """The copy's processes created before the copy on disk was written:
+        an upgrade replaced the executable under them.
+
+        Returns:
+            Their pids; empty when the copy is not on disk.
+        """
+        try:
+            status = os.stat(self.program)
+        except OSError:
+            return []
+        written = max(status.st_mtime, status.st_ctime)
+        own = self.program.lower()
+        return [
+            pid
+            for pid, program, _, started in self._rustdesk_started()
+            if program.lower() == own and started and started < written
+        ]
+
     def host_pids(self) -> list:
         """Every RustDesk process that is not a viewer."""
         return [
@@ -351,6 +371,11 @@ class RemoteDesktopWindowsApplier:
 
     def _rustdesk(self) -> list:
         """Every RustDesk process: ``(pid, program, command line)``."""
+        return [entry[:3] for entry in self._rustdesk_started()]
+
+    def _rustdesk_started(self) -> list:
+        """Every RustDesk process: ``(pid, program, command line, started)``,
+        ``started`` in seconds since the epoch, 0 when not known."""
         try:
             answer = self._powershell(PROCESSES_SCRIPT, {})
         except OSError:
@@ -364,6 +389,7 @@ class RemoteDesktopWindowsApplier:
                     int(process.get("pid") or 0),
                     str(process.get("program") or ""),
                     str(process.get("command") or ""),
+                    int(process.get("started") or 0),
                 )
             )
         return [entry for entry in found if entry[0]]

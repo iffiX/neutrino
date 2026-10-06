@@ -358,7 +358,7 @@ class Agent:
         # A share an earlier agent's command made runs again on this agent's
         # copy, beside the connection rather than before it.
         threading.Thread(
-            target=self._rdp.resume_old_share, name="rdp_resume", daemon=True
+            target=self._rdp.settle_at_start, name="rdp_resume", daemon=True
         ).start()
         while not self._is_stop_asked.is_set():
             # Cleared before the turn: news set during it is still standing

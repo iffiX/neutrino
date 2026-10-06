@@ -306,3 +306,26 @@ def test_the_copys_processes_are_told_from_anybody_elses(made):
 
     assert made.copy_pids() == [401]
     assert sorted(made.host_pids()) == [401, 402]
+
+
+def test_a_copy_process_running_a_replaced_file_is_stale(made, tmp_path):
+    """An upgrade lays a new file where the copy was; a process that kept
+    running runs the old one, which /proc/<pid>/exe still reaches."""
+    copy = tmp_path / "copy" / "rustdesk"
+    copy.parent.mkdir()
+    copy.write_bytes(b"new")
+    old = tmp_path / "old_rustdesk"
+    old.write_bytes(b"old")
+    made.program = str(copy)
+    _process(made.proc, 501, str(copy), "--service")
+    _process(made.proc, 502, str(copy), "--server")
+    # 502 runs the file the upgrade replaced.
+    (made.proc / "502" / "exe").unlink()
+    (made.proc / "502" / "exe").symlink_to(old)
+    made._program_of = lambda pid: str(copy)
+
+    assert made.stale_pids() == [502]
+
+
+def test_without_the_copy_on_disk_nothing_is_stale(made):
+    assert made.stale_pids() == []
