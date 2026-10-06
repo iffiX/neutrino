@@ -343,7 +343,7 @@ machine publishes at that moment on the stream's protocol:
 | the desktop is shared | the RustDesk direct port the `desktop` section reports |
 | the Gitea module reports its URL | that URL's port |
 | a VS Code, code-server or CloudCLI instance is configured | the instance's port |
-| a Podman container publishes a host port | that port on the protocol it is published on, dialled on the host address it is published on when it names one |
+| a running Podman container publishes a host port | that port on the protocol it is published on, dialled on the host address it is published on when it names one; a stopped container's ports are not published, so a stream on one ends `port_not_published` within a second of the stop |
 
 Every other port in the table is published on TCP alone. Any other port,
 and a number published on the other protocol alone, is refused

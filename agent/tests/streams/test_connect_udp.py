@@ -215,12 +215,13 @@ def test_what_is_published_is_counted_per_protocol():
         "details": {
             "containers": [
                 {
+                    "is_running": True,
                     "host_bindings": [
                         {"address": "", "port": 53, "protocol": "udp"},
                         {"address": "", "port": 53, "protocol": "tcp"},
                         {"address": "192.168.1.5", "port": 5353, "protocol": "udp"},
                         {"address": "", "port": 8080},
-                    ]
+                    ],
                 }
             ]
         },

@@ -39,6 +39,7 @@ PODMAN = {
         "containers": [
             {
                 "name": "db",
+                "is_running": True,
                 "host_bindings": [
                     {"address": "192.168.1.5", "port": 5432},
                     {"address": "", "port": 8080},
@@ -88,6 +89,23 @@ def test_a_port_leaves_the_table_once_it_is_not_published():
         )
         == {}
     )
+
+
+def test_a_stopped_containers_ports_are_not_published():
+    stopped = {
+        "state": "running",
+        "details": {
+            "containers": [
+                {
+                    "name": "db",
+                    "is_running": False,
+                    "host_bindings": [{"address": "", "port": 8080}],
+                }
+            ]
+        },
+    }
+
+    assert published_ports({"podman": stopped}, {}, None) == {}
 
 
 def test_a_gitea_url_with_no_port_publishes_its_schemes():

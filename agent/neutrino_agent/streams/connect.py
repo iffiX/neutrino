@@ -71,11 +71,11 @@ def published_ports(
         Port to address. On TCP: 445 while the file share reports a share,
         the desktop's direct port while it is shared, the port of the url
         the Gitea module reports, each configured editor or CloudCLI
-        instance's port, and each port a container publishes on TCP. On
-        UDP: each port a container publishes on UDP, and nothing else. A
-        container's port goes to the one address it is published on when
-        it names one; every other to loopback. A binding that names no
-        protocol is TCP.
+        instance's port, and each port a running container publishes on
+        TCP. On UDP: each port a running container publishes on UDP, and
+        nothing else. A container's port goes to the one address it is
+        published on when it names one; every other to loopback. A binding
+        that names no protocol is TCP.
     """
     if protocol != AGENT_CONNECT_TCP:
         return _container_ports(modules, protocol)
@@ -265,11 +265,11 @@ class ConnectStream:
 
 
 def _container_ports(modules: dict, protocol: str) -> dict:
-    """The ports the Podman module's containers publish on one protocol."""
+    """The ports the Podman module's running containers publish on one protocol."""
     ports: dict = {}
     podman = _configured(modules.get("podman"))
     for container in (podman or {}).get("containers") or []:
-        if not isinstance(container, dict):
+        if not isinstance(container, dict) or not container.get("is_running"):
             continue
         for binding in container.get("host_bindings") or []:
             if not isinstance(binding, dict):
