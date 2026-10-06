@@ -148,6 +148,7 @@
   "ui.ai_tools.slot_haiku": "Haiku slot",
   "ui.ai_tools.slot_opus": "Opus slot",
   "ui.ai_tools.slot_sonnet": "Sonnet slot",
+  "ui.ai_tools.switch_back_failed": "cc-switch did not put the tools back to their own settings: {detail}",
   "ui.ai_tools.title": "AI tools",
   "ui.ai_tools.tool_claude": "Claude Code",
   "ui.ai_tools.tool_codex": "Codex",
