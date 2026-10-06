@@ -322,7 +322,12 @@ def cmd_argument(argument: str) -> str:
 
 
 def run_as_script(
-    argv: list, *, input_path: str, output_path: str, done_path: str
+    argv: list,
+    *,
+    input_path: str,
+    output_path: str,
+    done_path: str,
+    environment: "dict | None" = None,
 ) -> str:
     """The ``.cmd`` script a one-shot task runs a command with.
 
@@ -331,14 +336,21 @@ def run_as_script(
         input_path: The file its standard input is read from.
         output_path: The file its output and errors go to.
         done_path: The file its exit code is written to last.
+        environment: Variables set before the command, each as
+            ``set "NAME=value"`` with ``%`` doubled; None sets none.
 
     Returns:
         The script's text, CRLF line ends, starting in the account's profile.
     """
     command = " ".join(cmd_argument(argument) for argument in argv)
+    settings = [
+        'set "{}={}"'.format(name, str(value).replace("%", "%%"))
+        for name, value in (environment or {}).items()
+    ]
     lines = [
         "@echo off",
         'cd /d "%USERPROFILE%"',
+        *settings,
         f"{command} < {cmd_argument(input_path)} > {cmd_argument(output_path)} 2>&1",
         f">{cmd_argument(done_path)} echo %errorlevel%",
     ]
@@ -537,6 +549,7 @@ class WindowsPlatform(AgentPlatform):
         stdin: str = "",
         timeout_s: int = AGENT_STEP_DOWN_TIMEOUT_S,
         password: str = "",
+        environment: "dict | None" = None,
     ) -> "subprocess.CompletedProcess":
         """Run a command as an account, in a one-shot scheduled task under its login.
 
@@ -549,6 +562,8 @@ class WindowsPlatform(AgentPlatform):
             stdin: What the command reads on its standard input.
             timeout_s: How long the command may take.
             password: The account's login.
+            environment: Variables the task's script sets before the
+                command; None sets none.
 
         Returns:
             The completed process; its return code is -1 when the command
@@ -577,6 +592,7 @@ class WindowsPlatform(AgentPlatform):
                     input_path=paths["input"],
                     output_path=paths["output"],
                     done_path=paths["done"],
+                    environment=environment,
                 ),
                 "input": paths["input"],
                 "input_text": stdin,
@@ -604,6 +620,7 @@ class WindowsPlatform(AgentPlatform):
         answer: str,
         timeout_s: int = AGENT_STEP_DOWN_TIMEOUT_S,
         password: str = "",
+        environment: "dict | None" = None,
     ) -> tuple:
         """Run a command as an account on a pseudo console, answering one question.
 
@@ -618,6 +635,8 @@ class WindowsPlatform(AgentPlatform):
                 own Enter replaces the newline.
             timeout_s: How long to wait.
             password: The account's login.
+            environment: Variables the task's script sets before the
+                command; None sets none.
 
         Returns:
             ``(returncode, output)``, the output as the console drew it.
@@ -638,7 +657,11 @@ class WindowsPlatform(AgentPlatform):
             *argv,
         ]
         done = self.run_as_account(
-            account, command, timeout_s=timeout_s, password=password
+            account,
+            command,
+            timeout_s=timeout_s,
+            password=password,
+            environment=environment,
         )
         return done.returncode, done.stdout
 

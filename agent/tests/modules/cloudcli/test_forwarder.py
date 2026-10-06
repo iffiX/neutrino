@@ -491,3 +491,27 @@ def test_a_record_matches_only_the_forwarder_it_describes():
     assert forwarder.matches(record) is True
     assert forwarder.matches(dict(record, token_secret="new")) is False
     assert forwarder.matches(dict(record, port=9000)) is False
+
+
+def test_an_administrator_with_another_password_asks_once_to_start_afresh():
+    cloudcli = FakeCloudcli(is_set_up=True)
+    cloudcli.users["ann"] = "somebody-else"
+    asked = []
+    forwarder = CloudcliForwarder(
+        account="ann",
+        port=0,
+        upstream_port=cloudcli.port,
+        web_password=PASSWORD,
+        token_secret=SECRET,
+        log=lambda line: None,
+        on_refused=asked.append,
+    )
+    try:
+        assert forwarder.settle_account() is False
+        assert forwarder.settle_account() is False
+        assert asked == ["ann"]
+        cloudcli.users.clear()
+        assert forwarder.settle_account() is True
+        assert cloudcli.users == {"ann": PASSWORD}
+    finally:
+        cloudcli.stop()

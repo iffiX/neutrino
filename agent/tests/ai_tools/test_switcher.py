@@ -427,3 +427,38 @@ def test_the_switch_back_puts_each_file_s_own_mode_back(tmp_path):
 
     assert session.files[SETTINGS] == own
     assert session.modes[SETTINGS] == 0o640
+
+
+def test_every_cc_switch_run_uses_the_agent_s_own_store_and_the_switch_back_removes_it(
+    tmp_path,
+):
+    cc_switch = FakeCcSwitch()
+    switcher, session = switcher_for(tmp_path, cc_switch, {SETTINGS: "{}"})
+
+    activate(switcher)
+    switcher.deactivate()
+
+    assert cc_switch.stores and all(cc_switch.stores)
+    assert session.store_calls[0] == "prepare"
+    assert session.store_calls[-1] == "remove"
+    assert switcher.read_record("claude") is None
+
+
+def test_a_tool_switched_before_the_store_existed_goes_back_in_the_person_s_own(
+    tmp_path,
+):
+    import json as json_module
+
+    cc_switch = FakeCcSwitch()
+    switcher, session = switcher_for(tmp_path, cc_switch, {SETTINGS: "{}"})
+    activate(switcher)
+    for app in ("claude", "codex", "gemini"):
+        record = switcher.read_record(app)
+        del record["is_own_store"]
+        with open(switcher._record_path(app), "w", encoding="utf-8") as stream:
+            json_module.dump(record, stream)
+    cc_switch.stores.clear()
+
+    switcher.deactivate()
+
+    assert cc_switch.stores and not any(cc_switch.stores)

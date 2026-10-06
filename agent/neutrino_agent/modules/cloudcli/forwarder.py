@@ -31,7 +31,9 @@ until either side closes.
 
 Before CloudCLI's first account exists the forwarder registers it, the
 account the instance runs as with the hub's password, and it listens only
-once that account signs in.
+once that account signs in. A CloudCLI that has its administrator and
+refuses the hub's password was set up for another hub; the forwarder says
+so once, to whoever gave it ``on_refused``, which starts the instance afresh.
 
 Not pure: opens sockets.
 """
@@ -152,6 +154,7 @@ class CloudcliForwarder:
         log=print,
         ready_poll_s: float = CLOUDCLI_READY_POLL_S,
         retry_s: float = CLOUDCLI_REGISTER_RETRY_S,
+        on_refused=None,
     ):
         """
         Args:
@@ -169,6 +172,9 @@ class CloudcliForwarder:
             ready_poll_s: How often CloudCLI is asked whether it answers.
             retry_s: How long a failed registration or bind waits before
                 it is tried again.
+            on_refused: Called once with the account when CloudCLI has its
+                administrator and refuses the hub's password; None calls
+                nobody.
         """
         self.account = account
         self.port = int(port)
@@ -182,6 +188,8 @@ class CloudcliForwarder:
         self._log = log
         self._ready_poll_s = ready_poll_s
         self._retry_s = retry_s
+        self._on_refused = on_refused
+        self._is_refusal_told = False
         self._lock = threading.Lock()
         self._closed = threading.Event()
         self._server: "ForwarderServer | None" = None
@@ -306,11 +314,21 @@ class CloudcliForwarder:
             "username": username_of(self.account),
             "password": self._web_password,
         }
-        if answer.get("needsSetup") is True:
+        is_new = answer.get("needsSetup") is True
+        if is_new:
             status, _ = self._call("POST", CLOUDCLI_REGISTER_PATH, credentials)
             if status == 200:
                 self._log(f"cloudcli: registered the administrator of {self.account}")
-        return bool(self._login())
+        if self._login():
+            return True
+        if not is_new and self._on_refused is not None and not self._is_refusal_told:
+            self._is_refusal_told = True
+            self._log(
+                f"cloudcli: {self.account}'s CloudCLI refuses this hub's password; "
+                "it starts afresh"
+            )
+            self._on_refused(self.account)
+        return False
 
     def _run(self) -> None:
         """Wait for CloudCLI and its account, then listen until closed."""

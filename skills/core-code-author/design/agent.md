@@ -509,9 +509,22 @@ state to be tried again at the next state or the next retry.
 
 The records are the client's, one per tool, `{is_present, previous, added}`,
 kept under the state root in `ai_tools/<account>/<tool>.json`, root's own,
-never in the account's home. cc-switch keeps its own store in the account's
-home, as on a person's computer. An account whose records are all gone after
+never in the account's home. An account whose records are all gone after
 a switch back has its directory removed.
+
+**cc-switch runs on a store of the agent's own.** Every cc-switch the agent
+starts for an account has `CC_SWITCH_CONFIG_DIR` set to `cc_switch` beside
+the payload in the account's Neutrino tree
+(`~/.local/share/neutrino/agent/ai_tools/cc_switch` on Linux,
+`~/Library/Application Support/Neutrino/agent/ai_tools/cc_switch` on macOS,
+`%LOCALAPPDATA%\Neutrino\agent\ai_tools\cc_switch` on Windows), made as
+the account, mode 700, which cc-switch requires of a store it is pointed at.
+The account's own `~/.cc-switch`, and the CC Switch app that keeps its store
+there, are never read or written. A tool's record says `is_own_store`; a
+tool switched before this store existed is switched back in
+`~/.cc-switch`, where it was switched. The switch back of every tool
+removes the store as the account, and with it each directory of the tree
+left empty.
 
 **The account's own files come back byte for byte.** Before a tool's first
 switch, its record also keeps `is_dir_present`, whether the tool's
@@ -884,7 +897,14 @@ stream reaches it. The hub generates each
 instance's password and keeps it in its vault; on CloudCLI's first start the
 agent registers the account with it through CloudCLI's register endpoint,
 the first account registered being its administrator, and the forwarder
-answers nobody before that.
+answers nobody before that. A CloudCLI that already has its administrator
+and refuses the hub's password was set up for another hub: a reset or
+reinstalled hub generates new secrets. The agent then starts that instance
+afresh once: the instance's record names a new database file,
+`auth-<UTC time>.db` beside the old one, which stays where it is untouched,
+the instance is started again on it, and the forwarder registers the
+account in it. The record's `database` names the file an instance runs on,
+`auth.db` until it starts afresh.
 
 | A request | The forwarder |
 | --- | --- |

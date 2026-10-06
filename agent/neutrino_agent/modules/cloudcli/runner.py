@@ -19,6 +19,7 @@ Not pure: drives the platform's applier and the forwarders.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
+import json
 import ntpath
 import os
 import socket
@@ -26,6 +27,7 @@ import subprocess
 import threading
 import time
 
+from neutrino_agent.constants import AGENT_DESIRED_STATE_NAME
 from neutrino_agent.exceptions import (
     ModuleApplyError,
     ModuleInstallPending,
@@ -34,6 +36,9 @@ from neutrino_agent.exceptions import (
 from neutrino_agent.modules.base import ModuleRunner
 from neutrino_agent.modules.cloudcli.config import CloudcliConfig
 from neutrino_agent.modules.cloudcli.constants import (
+    CLOUDCLI_DATABASE_NAME,
+    CLOUDCLI_FRESH_DATABASE_PATTERN,
+    CLOUDCLI_FRESH_STAMP_FORMAT,
     CLOUDCLI_DIR_NAME,
     CLOUDCLI_KIND,
     CLOUDCLI_NAME,
@@ -107,6 +112,27 @@ def _refusal_line(code: str, params: dict) -> str:
     return f"{CLOUDCLI_NAME}: {code}{named}"
 
 
+def kept_config(path: str) -> dict:
+    """CloudCLI's configuration in a kept desired state.
+
+    Args:
+        path: The kept state's file.
+
+    Returns:
+        The module's ``config`` as the state carries it; empty when the
+        file or the entry is not there.
+    """
+    try:
+        with open(path, "r", encoding="utf-8") as stream:
+            document = json.load(stream)
+    except (OSError, ValueError):
+        return {}
+    modules = document.get("modules") if isinstance(document, dict) else None
+    entry = modules.get(CLOUDCLI_NAME) if isinstance(modules, dict) else None
+    config = entry.get("config") if isinstance(entry, dict) else None
+    return dict(config) if isinstance(config, dict) else {}
+
+
 class CloudcliModuleRunner(ModuleRunner):
     """Installs Node.js from the hub's bytes and runs CloudCLI per account."""
 
@@ -158,6 +184,9 @@ class CloudcliModuleRunner(ModuleRunner):
         self._applied: "dict | None" = None
         self._applied_at = 0.0
         self._refusal: "tuple | None" = None
+        # One apply at a time: the state's, or an instance's start afresh.
+        self._apply_lock = threading.Lock()
+        self._last_config: "dict | None" = None
 
     def verify(self, resolved: dict) -> bool:
         """Whether Node.js is on the machine.
@@ -227,13 +256,49 @@ class CloudcliModuleRunner(ModuleRunner):
             ModuleInstallPending: While an account's install still runs.
         """
         try:
-            self._apply(config)
+            with self._apply_lock:
+                self._last_config = dict(config)
+                self._apply(config)
         except ModuleApplyError as error:
             with self._lock:
                 self._refusal = (error.code, dict(error.params))
             raise
         with self._lock:
             self._refusal = None
+
+    def start_afresh(self, account: str) -> None:
+        """Start one instance on a new database, the old one left beside it.
+
+        Its record names ``auth-<UTC time>.db``, and the configuration last
+        applied, or the kept state's after a restart, is applied again, so
+        the instance runs on that file and its forwarder registers the
+        account in it.
+
+        Args:
+            account: The instance's account.
+        """
+        stamp = time.strftime(CLOUDCLI_FRESH_STAMP_FORMAT, time.gmtime())
+        name = CLOUDCLI_FRESH_DATABASE_PATTERN.format(stamp=stamp)
+        with self._apply_lock:
+            record = self._records.read(account)
+            if not record:
+                return
+            record["database"] = name
+            try:
+                self._records.write(record)
+            except OSError as error:
+                self._log(f"cloudcli: could not start {account} afresh: {error}")
+                return
+            config = self._last_config or kept_config(self._state_path())
+            if not config:
+                self._log(f"cloudcli: {account} waits for a state to start afresh on")
+                return
+            try:
+                self._apply(config)
+            except (ModuleApplyError, ModuleInstallPending) as error:
+                self._log(f"cloudcli: {account} did not start afresh: {error}")
+                return
+        self._log(f"cloudcli: {account} starts afresh on {name}")
 
     def stop(self) -> None:
         """Stop every instance and its forwarder; Node.js and the records stay.
@@ -337,9 +402,16 @@ class CloudcliModuleRunner(ModuleRunner):
             instance.account: self._upstream_port(instance.account)
             for instance in parsed.instances
         }
+        databases = {
+            instance.account: str(
+                self._records.read(instance.account).get("database", "")
+                or CLOUDCLI_DATABASE_NAME
+            )
+            for instance in parsed.instances
+        }
         before = set(self._applier.installing)
         try:
-            notes = self._applier.apply(parsed, upstream_ports)
+            notes = self._applier.apply(parsed, upstream_ports, databases)
         except ModuleInstallPending:
             started = sorted(set(self._applier.installing) - before)
             if started:
@@ -364,6 +436,7 @@ class CloudcliModuleRunner(ModuleRunner):
                         "upstream_port": upstream_ports[instance.account],
                         "web_password": instance.web_password,
                         "token_secret": instance.token_secret,
+                        "database": databases[instance.account],
                     }
                 )
             except OSError as error:
@@ -373,6 +446,10 @@ class CloudcliModuleRunner(ModuleRunner):
             self._is_stopped = False
         self._sync_forwarders()
         self._log("cloudcli: " + "; ".join(notes or ["unchanged"]))
+
+    def _state_path(self) -> str:
+        """The kept desired state beside the agent's configuration."""
+        return os.path.join(self._platform.agent_data_dir(), AGENT_DESIRED_STATE_NAME)
 
     def _upstream_port(self, account: str) -> int:
         """The loopback port an account's CloudCLI keeps, or a new one."""
@@ -452,6 +529,7 @@ class CloudcliModuleRunner(ModuleRunner):
                 web_password=str(record.get("web_password", "") or ""),
                 token_secret=str(record.get("token_secret", "") or ""),
                 log=self._log,
+                on_refused=self.start_afresh,
             )
             with self._lock:
                 self._forwarders[account] = forwarder

@@ -146,8 +146,13 @@ empty; cc-switch's own switch back re-writes a file in its own layout, so
 its result is never what is left. A switch back that cannot run cc-switch,
 or cannot read its list of providers, fails and keeps the records, so the
 person's own files are still there to put back at the next try. What the
-adoption imported into cc-switch's MCP store and common snippet stays there
-afterwards: it is the person's own, in the place cc-switch keeps it.
+adoption imported into cc-switch's MCP store and common snippet is in a
+store of the client's own: every cc-switch the client starts has
+`CC_SWITCH_CONFIG_DIR` set to `cc_switch` under the client's own directory,
+mode 700, so the person's `~/.cc-switch` and the CC Switch app that keeps
+its store there are never read or written, and deactivating removes that
+store. A tool's record says `is_own_store`; a tool switched before the
+store existed is switched back in `~/.cc-switch`, where it was switched.
 
 ## How a managed machine's tools are pointed at the gateway
 
@@ -178,8 +183,10 @@ sections").
 | The record per tool | `original/<tool>.json` under the client's configuration | `ai_tools/<account>/<tool>.json` under the agent's state root, never in the account's home ([../agent.md](../agent.md), "The machine's AI tools") |
 | Switched back | when the chip goes off | when the setting goes off, when the account's last instance is removed, before `nagent service uninstall`, and when the machine leaves the hub |
 
-cc-switch keeps its own store in the account's home on a managed machine,
-as on a person's computer. An account gained while the setting is on is
+cc-switch runs on a store of the agent's own in the account's Neutrino
+tree, as the client's runs on a store of the client's own, so the
+account's `~/.cc-switch` is never read or written ([../agent.md](../agent.md),
+"The machine's AI tools"). An account gained while the setting is on is
 switched at the next state. While the gateway serves no model, the hub sends
 the setting as off, so every account is switched back; the stored setting
 and the device's key stay, and the next state after the gateway serves again
@@ -187,8 +194,7 @@ switches the accounts back to the hub.
 
 A desktop client on a managed machine leaves its AI page to the agent
 ([../client.md](../client.md), "The AI page"), because both would write the
-provider `neutrino` into the same account's cc-switch store with different
-endpoints.
+same tools' files with different endpoints.
 
 ## Metering
 

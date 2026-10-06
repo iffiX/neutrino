@@ -12,7 +12,9 @@ import re
 import subprocess
 
 from neutrino_agent.ai_tools.account_session import (
+    POSIX_PRIVATE_DIR_SHELL,
     POSIX_REMOVE_SHELL,
+    POSIX_REMOVE_TREE_SHELL,
     POWERSHELL_QUIET_PROGRESS,
 )
 from tests.ai_tools.fake_cc_switch import FakeCcSwitch, has_dir
@@ -30,6 +32,7 @@ class FakeAccountPlatform:
         self.stores: dict = {}
         self.files: dict = {}
         self.dirs: set = set()
+        self.environments: list = []
         self.modes: dict = {}
         self.runs: list = []
         self.answered: list = []
@@ -54,8 +57,11 @@ class FakeAccountPlatform:
             raise KeyError(account)
         return self.homes[account]
 
-    def run_as_account(self, account, argv, *, stdin="", timeout_s=0, password=""):
+    def run_as_account(
+        self, account, argv, *, stdin="", timeout_s=0, password="", environment=None
+    ):
         self.runs.append((account, password, list(argv)))
+        self.environments.append(dict(environment or {}))
         if self.refusal is not None:
             raise self.refusal
         home = _Account(self, account)
@@ -80,6 +86,12 @@ class FakeAccountPlatform:
                     code = 2
             elif verb == "set_mode":
                 self.modes[path] = int(argv[1], 8)
+            elif verb == "remove_tree":
+                for name in [n for n in self.files if n.startswith(path + "/")]:
+                    del self.files[name]
+                self.dirs = {
+                    d for d in self.dirs if not (d == path or d.startswith(path + "/"))
+                }
             elif verb == "is_dir":
                 code = 0 if has_dir(self.files, self.dirs, path) else 1
             elif verb == "make_dir":
@@ -92,8 +104,17 @@ class FakeAccountPlatform:
         return subprocess.CompletedProcess(argv, code, out, err)
 
     def run_as_account_answering(
-        self, account, argv, *, prompt, answer, timeout_s=0, password=""
+        self,
+        account,
+        argv,
+        *,
+        prompt,
+        answer,
+        timeout_s=0,
+        password="",
+        environment=None,
     ):
+        self.environments.append(dict(environment or {}))
         self.answered.append((account, password, list(argv), prompt, answer))
         home = _Account(self, account)
         return 0, self.store(account).answer(home, argv[3:], argv[2])[1]
@@ -117,6 +138,12 @@ class FakeAccountPlatform:
             if "ReadAllText" in script:
                 return "read", path
             return "is_file", path
+        if argv[:2] == ["sh", "-c"] and argv[2] == POSIX_PRIVATE_DIR_SHELL.format(
+            mode="700"
+        ):
+            return "make_dir", argv[4]
+        if argv[:3] == ["sh", "-c", POSIX_REMOVE_TREE_SHELL]:
+            return "remove_tree", argv[4]
         if argv[:3] == ["sh", "-c", POSIX_REMOVE_SHELL]:
             return "remove", argv[4]
         if argv[:2] == ["test", "-d"]:

@@ -48,8 +48,9 @@ class FakeApplier:
         self.error = None
         self.installing = frozenset()
 
-    def apply(self, config, upstream_ports):
+    def apply(self, config, upstream_ports, databases=None):
         self.calls.append(("apply", dict(upstream_ports)))
+        self.databases = dict(databases or {})
         if self.error is not None:
             raise self.error
         return []
@@ -354,7 +355,7 @@ def test_an_install_that_runs_reads_installing_and_its_log_is_the_install_s(
         (account, str(install_log)) for account in accounts
     ]
 
-    def pending(config, upstream_ports):
+    def pending(config, upstream_ports, databases=None):
         applier.installing = frozenset({"ann"})
         raise ModuleInstallPending("ann")
 
@@ -411,3 +412,59 @@ def test_a_refused_apply_follows_the_units_journal(runner, applier, monkeypatch)
         "ann: up",
         "cloudcli: cloudcli_claude_missing account=ann",
     ]
+
+
+def test_an_instance_runs_on_auth_db_until_it_starts_afresh(runner, applier):
+    runner.apply(CONFIG)
+
+    assert applier.databases == {"ann": "auth.db"}
+    assert runner._records.read("ann")["database"] == "auth.db"
+
+
+def test_an_instance_refused_by_its_cloudcli_starts_afresh_on_a_new_database(
+    runner, applier
+):
+    runner.apply(CONFIG)
+    (forwarder,) = FakeForwarder.made
+    applier.calls.clear()
+
+    forwarder.fields["on_refused"]("ann")
+
+    name = runner._records.read("ann")["database"]
+    assert name.startswith("auth-") and name.endswith("Z.db")
+    assert applier.databases == {"ann": name}
+    assert [call[0] for call in applier.calls] == ["apply"]
+    assert FakeForwarder.made == [forwarder]
+
+
+def test_after_a_restart_the_kept_state_is_applied_to_start_afresh(applier, tmp_path):
+    import json
+    import os
+
+    platform = Platform("linux", root=str(tmp_path))
+    os.makedirs(platform.agent_data_dir())
+    with open(os.path.join(platform.agent_data_dir(), "desired.json"), "w") as stream:
+        json.dump(
+            {"modules": {"cloudcli": {"want": "running", "config": CONFIG}}}, stream
+        )
+    first = CloudcliModuleRunner(
+        platform=platform,
+        log=lambda line: None,
+        applier=applier,
+        forwarder_factory=FakeForwarder,
+        pick_port=lambda: 41000,
+    )
+    first.apply(CONFIG)
+    restarted = CloudcliModuleRunner(
+        platform=platform,
+        log=lambda line: None,
+        applier=applier,
+        forwarder_factory=FakeForwarder,
+        pick_port=lambda: 41001,
+    )
+    applier.calls.clear()
+
+    restarted.start_afresh("ann")
+
+    assert [call[0] for call in applier.calls] == ["apply"]
+    assert applier.databases["ann"].startswith("auth-")

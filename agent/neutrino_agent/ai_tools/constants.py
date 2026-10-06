@@ -84,6 +84,12 @@ AI_TOOLS_PAYLOAD_TREE = {
     "windows": ("Neutrino", "agent", "ai_tools"),
 }
 AI_TOOLS_PAYLOAD_NAME = "payload"
+# cc-switch's own store for the agent's runs, beside the payload in the
+# account's Neutrino tree, named to cc-switch by the variable it reads; the
+# store must be the account's alone, mode 700.
+AI_TOOLS_STORE_NAME = "cc_switch"
+AI_TOOLS_STORE_VARIABLE = "CC_SWITCH_CONFIG_DIR"
+AI_TOOLS_STORE_MODE = "700"
 
 # The records: one directory per account under the state root, one file per
 # tool, and on Windows the login the account was switched with, kept until

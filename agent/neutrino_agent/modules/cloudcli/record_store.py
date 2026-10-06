@@ -21,7 +21,14 @@ import tempfile
 from neutrino_agent.modules.cloudcli.constants import CLOUDCLI_RECORD_SUFFIX
 
 # The fields one record holds.
-RECORD_FIELDS = ("account", "port", "upstream_port", "web_password", "token_secret")
+RECORD_FIELDS = (
+    "account",
+    "port",
+    "upstream_port",
+    "web_password",
+    "token_secret",
+    "database",
+)
 
 
 class CloudcliRecordStore:

@@ -309,3 +309,26 @@ def test_the_install_line_names_the_registry_host():
         "registry.npmmirror.com"
     )
     assert installer.registry_host("") == "registry.npmjs.org"
+
+
+def test_the_environment_names_the_database_file_an_instance_runs_on():
+    from neutrino_agent.modules.cloudcli import installer as installer_module
+    from neutrino_agent.modules.cloudcli.config import CloudcliInstance
+
+    instance = CloudcliInstance(
+        account="ann", port=3001, web_password="p", token_secret="s"
+    )
+
+    plain = installer_module.service_environment(
+        instance, upstream_port=41000, home="/home/ann", os_name="linux"
+    )
+    fresh = installer_module.service_environment(
+        instance,
+        upstream_port=41000,
+        home="/home/ann",
+        os_name="linux",
+        database_name="auth-20261006T120000Z.db",
+    )
+
+    assert plain["DATABASE_PATH"].endswith("/cloudcli/auth.db")
+    assert fresh["DATABASE_PATH"].endswith("/cloudcli/auth-20261006T120000Z.db")

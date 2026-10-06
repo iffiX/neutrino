@@ -27,6 +27,9 @@ from neutrino_agent.ai_tools.constants import (
     AI_TOOLS_PAYLOAD_BASE,
     AI_TOOLS_PAYLOAD_NAME,
     AI_TOOLS_PAYLOAD_TREE,
+    AI_TOOLS_STORE_MODE,
+    AI_TOOLS_STORE_NAME,
+    AI_TOOLS_STORE_VARIABLE,
 )
 from neutrino_agent.exceptions import (
     ModuleApplyError,
@@ -41,6 +44,13 @@ POSIX_WRITE_SHELL = 'mkdir -p -- "$(dirname -- "$1")" && cat > "$1"'
 # that is empty, stopping at the first that is not.
 POSIX_REMOVE_SHELL = (
     'rm -f -- "$1"; shift; for d do rmdir -- "$d" 2>/dev/null || exit 0; done'
+)
+# Makes the directory the first argument names, the account's alone.
+POSIX_PRIVATE_DIR_SHELL = 'mkdir -p -- "$1" && chmod {mode} -- "$1"'
+# Removes the tree the first argument names, then each directory after it
+# that is empty, stopping at the first that is not.
+POSIX_REMOVE_TREE_SHELL = (
+    'rm -rf -- "$1"; shift; for d do rmdir -- "$d" 2>/dev/null || exit 0; done'
 )
 # The line every PowerShell file step starts with: no progress records.
 POWERSHELL_QUIET_PROGRESS = "$ProgressPreference = 'SilentlyContinue'\n"
@@ -82,6 +92,15 @@ exit 0
 WINDOWS_REMOVE_EMPTY_DIR_SCRIPT = """
 $d = {path}
 if ((Test-Path -LiteralPath $d -PathType Container) -and -not (Get-ChildItem -LiteralPath $d -Force)) {{
+    Remove-Item -LiteralPath $d -Force -ErrorAction SilentlyContinue
+}}
+exit 0
+"""
+WINDOWS_REMOVE_TREE_WITH_DIRS_SCRIPT = """
+Remove-Item -LiteralPath {path} -Recurse -Force -ErrorAction SilentlyContinue
+foreach ($d in @({dirs})) {{
+    if (-not (Test-Path -LiteralPath $d -PathType Container)) {{ continue }}
+    if (Get-ChildItem -LiteralPath $d -Force) {{ break }}
     Remove-Item -LiteralPath $d -Force -ErrorAction SilentlyContinue
 }}
 exit 0
@@ -177,6 +196,10 @@ class AiToolsAccountSession:
         self._password = password
         self._os_name = platform.os_name
         self._is_windows = platform.os_name == "windows"
+        # Whether cc-switch runs on the store in the account's Neutrino tree;
+        # a tool switched before that store existed is switched back in the
+        # account's own ``~/.cc-switch``.
+        self.is_own_store = True
         self._join = ntpath.join if self._is_windows else posixpath.join
 
     def path(self, *parts: str) -> str:
@@ -206,7 +229,7 @@ class AiToolsAccountSession:
             subprocess.CalledProcessError: On a non-zero exit while checked.
         """
         command = [self._binary, "--app", app] + list(arguments)
-        result = self._run(command)
+        result = self._run(command, environment=self._store_environment())
         if is_checked and result.returncode != 0:
             raise subprocess.CalledProcessError(
                 result.returncode, command, output=result.stdout, stderr=result.stderr
@@ -240,6 +263,7 @@ class AiToolsAccountSession:
                 answer=answer,
                 timeout_s=AI_TOOLS_COMMAND_TIMEOUT_S,
                 password=self._password,
+                environment=self._store_environment(),
             )
         except ModuleApplyError as error:
             raise self._refused(error) from error
@@ -382,6 +406,55 @@ class AiToolsAccountSession:
             command += dirs
         self._run(command)
 
+    def store_path(self) -> str:
+        """cc-switch's store for the agent's runs, in the account's Neutrino tree."""
+        return self._join(self._payload_dirs()[0], AI_TOOLS_STORE_NAME)
+
+    def prepare_store(self) -> None:
+        """Make cc-switch's store as the account, the account's alone.
+
+        Raises:
+            ToolSwitchError: When it cannot be made.
+        """
+        path = self.store_path()
+        if self._is_windows:
+            command = powershell_argv(
+                WINDOWS_MAKE_DIR_SCRIPT.format(path=powershell_literal(path))
+            )
+        else:
+            command = [
+                "sh",
+                "-c",
+                POSIX_PRIVATE_DIR_SHELL.format(mode=AI_TOOLS_STORE_MODE),
+                "sh",
+                path,
+            ]
+        result = self._run(command)
+        if result.returncode != 0:
+            words = (result.stderr or result.stdout or "").strip()
+            raise self.failure(f"could not make {path}: {words}")
+
+    def remove_store(self) -> None:
+        """Delete cc-switch's store as the account, then each directory of its tree left empty."""
+        dirs = self._payload_dirs()
+        if self._is_windows:
+            command = powershell_argv(
+                WINDOWS_REMOVE_TREE_WITH_DIRS_SCRIPT.format(
+                    path=powershell_literal(self.store_path()),
+                    dirs=", ".join(powershell_literal(d) for d in dirs),
+                )
+            )
+        else:
+            command = ["sh", "-c", POSIX_REMOVE_TREE_SHELL, "sh", self.store_path()]
+            command += dirs
+        self._run(command)
+
+    def _store_environment(self) -> "dict | None":
+        """What cc-switch is started with to use the store in the account's tree."""
+        if not self.is_own_store:
+            return None
+        return {AI_TOOLS_STORE_VARIABLE: self.store_path()}
+
     def _payload_dirs(self) -> list:
         """The payload's tree in the account's home, deepest directory first."""
         key = self._os_name if self._os_name in AI_TOOLS_PAYLOAD_TREE else "linux"
@@ -389,8 +462,10 @@ class AiToolsAccountSession:
         tree = AI_TOOLS_PAYLOAD_TREE[key]
         return [self.path(*base, *tree[:depth]) for depth in range(len(tree), 0, -1)]
 
-    def _run(self, command: list, *, stdin: str = ""):
-        """Run one command as the account.
+    def _run(
+        self, command: list, *, stdin: str = "", environment: "dict | None" = None
+    ):
+        """Run one command as the account, with the variables given set.
 
         Raises:
             ToolSwitchError: ``credential_invalid`` when Windows refuses the
@@ -403,6 +478,7 @@ class AiToolsAccountSession:
                 stdin=stdin,
                 timeout_s=AI_TOOLS_COMMAND_TIMEOUT_S,
                 password=self._password,
+                environment=environment,
             )
         except ModuleApplyError as error:
             raise self._refused(error) from error

@@ -1244,3 +1244,21 @@ def test_the_uninstall_disables_the_agents_service(monkeypatch):
     WindowsPlatform().disable_agent_service()
 
     assert commands == [["sc", "config", "neutrino_agent", "start=", "disabled"]]
+
+
+def test_the_one_shot_task_sets_the_variables_it_is_given_first(monkeypatch):
+    monkeypatch.setenv("ProgramData", "C:\\ProgramData")
+    powershell = RunAsPowershell({"exit_code": 0, "output": ""})
+    platform = WindowsPlatform(kernel32=FakeKernel32(), powershell=powershell)
+
+    platform.run_as_account(
+        "ann",
+        ["cc.exe"],
+        password="pw",  # scan: allow
+        environment={"CC_SWITCH_CONFIG_DIR": "C:\\Users\\ann\\x%y"},
+    )
+
+    ((_script, document),) = powershell.documents
+    lines = document["script_text"].split("\r\n")
+    assert lines[2] == 'set "CC_SWITCH_CONFIG_DIR=C:\\Users\\ann\\x%%y"'
+    assert lines[3].startswith('"cc.exe"')

@@ -44,6 +44,7 @@ What a user's own account holds, one tree per user with the same three names:
 | the client's control socket | `$XDG_RUNTIME_DIR/neutrino/client.sock` | `~/Library/Application Support/Neutrino/client/client.sock` | the pipe `neutrino_client_<user>` |
 | what the agent installs for the account (CloudCLI's app, its npm cache and database) | `~/.local/share/neutrino/agent/cloudcli` | `~/Library/Application Support/Neutrino/agent/cloudcli` | `%LOCALAPPDATA%\Neutrino\agent\cloudcli` |
 | the input of one cc-switch call, there only during that call | `~/.local/share/neutrino/agent/ai_tools/payload` | `~/Library/Application Support/Neutrino/agent/ai_tools/payload` | `%LOCALAPPDATA%\Neutrino\agent\ai_tools\payload` |
+| cc-switch's store for the agent's runs, mode 700, there while a tool of the account stands on the hub | `~/.local/share/neutrino/agent/ai_tools/cc_switch` | `~/Library/Application Support/Neutrino/agent/ai_tools/cc_switch` | `%LOCALAPPDATA%\Neutrino\agent\ai_tools\cc_switch` |
 | build caches of the packaging scripts | `~/.cache/neutrino` | the same | the same |
 
 A few locations are the operating system's rather than this project's, and

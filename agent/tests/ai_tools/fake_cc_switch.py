@@ -46,6 +46,7 @@ class FakeCcSwitch:
 
     def __init__(self, *, current="default", extracted=""):
         self.calls: list = []
+        self.stores: list = []
         self.current = {app: current for app in AI_TOOLS_APPS}
         self.snippet = {app: "" for app in AI_TOOLS_APPS}
         self.providers = {app: {current} if current else set() for app in AI_TOOLS_APPS}
@@ -144,11 +145,26 @@ class FakeSession:
         self.files: dict = dict(files or {})
         self.dirs: set = {self.path(name) for name in dirs}
         self.modes: dict = {}
+        self.is_own_store = True
+        self.store_calls: list = []
         self.file_calls: list = []
         self.answered: list = []
 
     def path(self, *parts):
         return "/".join([self.home, *parts])
+
+    def store_path(self):
+        return self.path(
+            ".local", "share", "neutrino", "agent", "ai_tools", "cc_switch"
+        )
+
+    def prepare_store(self):
+        self.store_calls.append("prepare")
+        self.dirs.add(self.store_path())
+
+    def remove_store(self):
+        self.store_calls.append("remove")
+        self.dirs.discard(self.store_path())
 
     def payload_path(self):
         return self.path(".local", "share", "neutrino", "agent", "ai_tools", "payload")
@@ -164,6 +180,7 @@ class FakeSession:
     def cc(self, arguments, app, *, is_checked=True):
         import subprocess
 
+        self.cc_switch.stores.append(self.is_own_store)
         code, out, err = self.cc_switch.answer(self, arguments, app)
         if is_checked and code != 0:
             raise subprocess.CalledProcessError(
@@ -173,6 +190,7 @@ class FakeSession:
 
     def cc_answering(self, arguments, app, *, prompt, answer):
         self.answered.append((tuple(arguments), prompt, answer))
+        self.cc_switch.stores.append(self.is_own_store)
         return self.cc_switch.answer(self, arguments, app)[1]
 
     def read_text(self, path):
