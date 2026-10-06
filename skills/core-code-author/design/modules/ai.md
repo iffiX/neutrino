@@ -120,15 +120,29 @@ cc-switch's `provider add`, so a chosen effort is set as a top-level key of
 runs it on a terminal of its own (a pty on Linux, a pseudo console on
 Windows) and answers `y`.
 
-The client records, per tool, which provider was current before the hub
-and whether the tool had a configuration file at all, as
-`{is_present, previous, added}`, `added` being the provider settings last
-written. A tool whose record says it already carries the wanted settings is
-not run again, so nothing runs when nothing changed. Deactivating switches
-back to that provider and deletes the hub's entry; a tool that had no file
-has the one cc-switch made taken away again. What the adoption imported
-into cc-switch's MCP store and common snippet stays there afterwards: it is
-the person's own, in the place cc-switch keeps it.
+The client records, per tool, which provider was current before the hub,
+whether the tool had a configuration file and a directory at all, and the
+bytes of every file a switch may write as they were before the first
+switch, or that the file was absent: Claude Code's `~/.claude/settings.json`,
+Codex's `~/.codex/config.toml` and `auth.json`, Gemini's `~/.gemini/.env` and
+`settings.json`. The record is `{is_present, is_dir_present, kept, previous,
+added}`, `added` being the provider settings last written. A tool whose
+record says it already carries the wanted settings is not run again, so
+nothing runs when nothing changed.
+
+cc-switch writes a tool's files only into a directory that is there, and
+says nothing else when it skips one, so a switch makes the directory of a
+tool that has none, and every tool named as switched has its file read back
+naming the hub: Claude Code's endpoint, key and model, Codex's and Gemini's
+endpoint. Deactivating switches back to the recorded provider, deletes the
+hub's entry, then writes each kept file back byte for byte, takes away each
+that was absent, and takes away a directory the switch made once it is
+empty; cc-switch's own switch back re-writes a file in its own layout, so
+its result is never what is left. A switch back that cannot run cc-switch,
+or cannot read its list of providers, fails and keeps the records, so the
+person's own files are still there to put back at the next try. What the
+adoption imported into cc-switch's MCP store and common snippet stays there
+afterwards: it is the person's own, in the place cc-switch keeps it.
 
 ## How a managed machine's tools are pointed at the gateway
 
@@ -156,7 +170,7 @@ sections").
 | The key | the client's own, from the `service` stream | the device's own, from the `ai_tools` section |
 | The unchosen models | the gateway's first model, from the `service` stream | the gateway's first served model, filled in by the hub before the state is sent |
 | The cc-switch | the copy the client's package carries | the copy the agent fetches from the hub into `ai_tools/bin/` under its state root, the same pinned version |
-| The record per tool | `original/<tool>.json` under the client's configuration | `ai_tools/<account>/<tool>.json` under the agent's state root, never in the account's home, with the text of every file a switch may write as it was before the first switch, put back byte for byte by the switch back ([../agent.md](../agent.md), "The machine's AI tools") |
+| The record per tool | `original/<tool>.json` under the client's configuration | `ai_tools/<account>/<tool>.json` under the agent's state root, never in the account's home ([../agent.md](../agent.md), "The machine's AI tools") |
 | Switched back | when the chip goes off | when the setting goes off, when the account's last instance is removed, before `nagent service uninstall`, and when the machine leaves the hub |
 
 cc-switch keeps its own store in the account's home on a managed machine,
