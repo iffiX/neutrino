@@ -472,7 +472,7 @@ share's own address:
 
 | System | The mount |
 | --- | --- |
-| Linux | the entry's forward, mounted by the root helper under `pkexec`: `mount_helper mount --share //127.0.0.1/<share> --port <local-port> --location <path> --credentials <file>`, which runs `mount.cifs` with `port=<local-port>` among its options |
+| Linux | the entry's forward, mounted by the root helper under `pkexec`: `mount_helper mount --share //127.0.0.1/<share> --port <local-port> --location <path> --credentials <file>`, which runs `mount.cifs` with `port=<local-port>` among its options; a machine with no `pkexec` refuses the mount `pkexec_missing`, a `failed` the timer does not retry |
 | macOS | the entry's forward, mounted by the system as below |
 | Windows | the files adapter's address for the share's machine, `net use <letter>: \\<fake-address>\<share>` ("The files adapter on Windows"); a share of the client's own machine (`is_own_machine`) is mounted from `\\127.0.0.1\<share>` directly, through no adapter |
 
