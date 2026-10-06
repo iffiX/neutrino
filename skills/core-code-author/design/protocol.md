@@ -667,7 +667,7 @@ A session is started by opening `/ws/agent/terminal` with a new
 | `POST /api/agent/module/vscode/set` | `{device_id, instances: [{account, port, login_id}]}`, `port` 1024 to 65535 | replaces the instances, generating each account's connection token the first time; 400 `account_duplicate {account}`, `port_duplicate {port}`, `unknown_credential {field}` for a login the vault does not hold, `credential_missing {account}` for an instance of a Windows machine with no login; the agent's own refusals as 400 |
 | `GET /api/agent/module/cloudcli` | `?device_id=` | the instances as `GET /api/agent/module/vscode` gives them, and the `accounts` the machine reported |
 | `POST /api/agent/module/cloudcli/set` | `{device_id, instances: [{account, port, login_id}]}`, `port` 1024 to 65535, `login_id` for a Windows machine | replaces the instances, generating each instance's password the first time; the refusals of `vscode/set` |
-| `GET /api/agent/module/ai_tool` | `?device_id=` | `AiToolDeviceView`: `is_enabled`, the stored setting; `is_in_use`, whether any account is still on the gateway, an account `switched`, one `failed` while the setting is off (a switch back that could not run), or one not yet reported while it is on, each as the machine last reported it, and with no account the setting itself; `is_gateway_serving`, whether the gateway serves a model now; `tool_configs`, the stored choices as the client's **Configure** dialog saves them; `models`, the names the gateway serves, for the dialog's pickers; `accounts`, each account the setting acts on as `{account, modules, state, code, params}` with `modules` the module names it has an instance in and the rest as last reported, `state` empty before the machine reported it |
+| `GET /api/agent/module/ai_tool` | `?device_id=` | `AiToolDeviceView`: `is_enabled`, the stored setting; `is_in_use`, whether any account is still on the gateway, an account `switched`, one `failed` while the setting is off whose records the agent keeps (a switch back that could not run; a report without `has_records`, from an older agent, counts as keeping them), or one not yet reported while it is on, each as the machine last reported it, and with no account the setting itself; `is_gateway_serving`, whether the gateway serves a model now; `tool_configs`, the stored choices as the client's **Configure** dialog saves them; `models`, the names the gateway serves, for the dialog's pickers; `accounts`, each account the setting acts on as `{account, modules, state, code, params}` with `modules` the module names it has an instance in and the rest as last reported, `state` empty before the machine reported it |
 | `POST /api/agent/module/ai_tool/enable` | `{device_id}` | turns the setting on, mints the device's gateway key, pushes the state; on a setting already on whose machine reported an account `failed`, writes a fresh `retry_mark` on the section and pushes; `AiToolDeviceView`; 409 `gateway_not_serving` while the gateway serves no model, 409 `agent_offline`, 400 `vault_locked` |
 | `POST /api/agent/module/ai_tool/disable` | `{device_id}` | turns the setting off, revokes the device's gateway key, pushes the state; on a setting already off whose machine reported an account `failed`, a switch back that could not run, writes a fresh `retry_mark` on the section and pushes; `AiToolDeviceView`; 409 `agent_offline` |
 | `POST /api/agent/module/ai_tool/set` | `{device_id, tool_configs}` | replaces the stored choices, the unknown tools and keys dropped as the client's `clean_tool_configs` drops them, and pushes the state while the setting is on; `AiToolDeviceView`; 409 `agent_offline` |
@@ -933,7 +933,7 @@ and platform, which change between releases.
 | `network` | | `{link: {interface, mac, address}, interfaces: [{name, mac, addresses[]}]}` | | |
 | `modules` | `{name: {want, config, install, uninstall, retry_mark}}` | `{name: {state, is_active, code, params, details}}` | | |
 | `desktop` | `{seat_password}` | `{is_shared, origin, account, share_id, port, attention, connected_count}`, `origin` `switch` or `command` (a share an old `nagent rdp start` record keeps running), empty while nothing is shared | | |
-| `ai_tools` | `{is_enabled, base_url, api_key, tool_configs, accounts: [{account, password}], cc_switch_version, retry_mark}` | `{accounts: [{account, state, code, params}]}` | | |
+| `ai_tools` | `{is_enabled, base_url, api_key, tool_configs, accounts: [{account, password}], cc_switch_version, retry_mark}` | `{accounts: [{account, state, code, params, has_records}]}` | | |
 | `services` | | | `[{id, type, title, payload, is_healthy, source, description, description_code, description_params, device_id, device_name, is_own_machine}]` | |
 | `is_disabled` | | | bool | |
 | `urls` | `["https://<address>:<port>", ...]` | | the same list | |
@@ -1054,7 +1054,9 @@ switch runs. The section carries the device's `retry_mark` on and off alike,
 so a press of off after a switch back that could not run tries it again. The report's
 `ai_tools` lists each account the state names and each one switched back
 under the current hash, `state` being `switched`, `switched_back` or
-`failed`, with `{code, params}` on a failure; `cc_switch_download_failed
+`failed`, with `{code, params}` on a failure, and `has_records` whether
+the agent keeps the account's records, so whether a tool of it still points
+at the hub; `cc_switch_download_failed
 {detail}` is every account's when the agent could not get its copy of
 cc-switch. An agent
 that restarted reports each account whose records stand as `switched` until

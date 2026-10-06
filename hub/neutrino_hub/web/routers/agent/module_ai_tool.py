@@ -234,8 +234,10 @@ def _is_in_use(is_enabled: bool, listed: list, reported: dict) -> bool:
 
     Returns:
         True for an account ``switched``, one ``failed`` while the setting
-        is off, since its switch back could not run, and one not reported
-        while the setting is on; with no account at all, the setting.
+        is off whose records the agent keeps, since its switch back could
+        not run, and one not reported while the setting is on; with no
+        account at all, the setting. A report without ``has_records``, from
+        an older agent, counts as keeping them.
     """
     if not listed and not reported:
         return is_enabled
@@ -243,7 +245,11 @@ def _is_in_use(is_enabled: bool, listed: list, reported: dict) -> bool:
         state = entry.get("state")
         if state == AI_TOOL_STATE_SWITCHED:
             return True
-        if state == AI_TOOL_STATE_FAILED and not is_enabled:
+        if (
+            state == AI_TOOL_STATE_FAILED
+            and not is_enabled
+            and entry.get("has_records", True) is not False
+        ):
             return True
     return is_enabled and any(account not in reported for account in listed)
 
