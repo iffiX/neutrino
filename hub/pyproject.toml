@@ -5,7 +5,7 @@ description = "Neutrino: a personal developer infrastructure hub — transparent
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",
-    "uvicorn[standard]>=0.32",
+    "uvicorn[standard]>=0.53",
     "python-multipart>=0.0.20",
     # The bcrypt extra is not optional in practice: without it asyncssh cannot
     # decrypt OpenSSH-format encrypted private keys, and reports a correct

@@ -94,9 +94,12 @@ CHANNEL_HELLO_TIMEOUT_S = 10.0
 # How long a call from a thread waits on the loop before it is given up.
 CHANNEL_CALL_TIMEOUT_S = 15.0
 # Protocol-level keepalive: uvicorn pings on this interval and drops a
-# socket whose pong is late by this much.
+# socket whose pong is late by this much. The pong waits behind what the
+# socket queued, so the timeout covers about 2 MB at 256 kbit/s.
 CHANNEL_PING_INTERVAL_S = 20.0
-CHANNEL_PING_TIMEOUT_S = 20.0
+CHANNEL_PING_TIMEOUT_S = 60.0
+# The least time between two journal lines for one peer's late pong.
+CHANNEL_LATE_PONG_LOG_INTERVAL_S = 60.0
 # How long the hub waits for the far end of a ``connect`` stream it dials.
 CHANNEL_CONNECT_DIAL_TIMEOUT_S = 10.0
 # How many ``connect`` streams one client socket may hold open at once.
