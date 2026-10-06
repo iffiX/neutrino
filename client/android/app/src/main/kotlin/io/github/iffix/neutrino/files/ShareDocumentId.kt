@@ -1,5 +1,7 @@
 package io.github.iffix.neutrino.files
 
+import java.nio.file.FileAlreadyExistsException
+
 /**
  * A document of a share, as the system's Files names it: the root's id, then the path inside the
  * share with `/` between its parts, empty for the share itself.
@@ -27,6 +29,28 @@ data class ShareDocumentId(val rootKey: String, val path: String) {
      * @return Its id.
      */
     fun child(child: String): ShareDocumentId = ShareDocumentId(rootKey, if (path.isEmpty()) child else "$path/$child")
+
+    /**
+     * Make this document under the first name not taken, as the system's own Files names a copy:
+     * the name itself, then ` (1)`, ` (2)` and on before a file's extension, at a folder's end.
+     *
+     * @param isDirectory Whether the document is a folder.
+     * @param attempts How many names are tried.
+     * @param make Makes one name only when it is free; false when the name is taken.
+     * @return The document made.
+     * @throws FileAlreadyExistsException When every name tried is taken.
+     */
+    fun makeFree(isDirectory: Boolean, attempts: Int, make: (ShareDocumentId) -> Boolean): ShareDocumentId {
+        val dot = name.lastIndexOf('.')
+        val stem = if (isDirectory || dot <= 0) name else name.substring(0, dot)
+        val extension = name.removePrefix(stem)
+        val parent = path.removeSuffix(name)
+        for (number in 0 until attempts) {
+            val document = ShareDocumentId(rootKey, parent + if (number == 0) name else "$stem ($number)$extension")
+            if (make(document)) return document
+        }
+        throw FileAlreadyExistsException(path, null, "the first $attempts names are taken")
+    }
 
     companion object {
         /**

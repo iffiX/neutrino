@@ -1,5 +1,6 @@
 package io.github.iffix.neutrino.forward
 
+import io.github.iffix.neutrino.CLIENT_UDP_RETRY_MILLIS
 import io.github.iffix.neutrino.FakeSharedPreferences
 import io.github.iffix.neutrino.binding.HubBinding
 import io.github.iffix.neutrino.channel.ChannelResult
@@ -423,7 +424,7 @@ class PortForwardsTest {
             backgroundScope,
             table,
             log = { synchronized(lines) { lines += it } },
-            udpRelayOf = { name, _, local, onRefused -> EndedAtStart(name, local, onRefused) },
+            udpRelayOf = { name, _, local, onRefused, _ -> EndedAtStart(name, local, onRefused) },
         )
         forwards.connect("b1", "u1_udp", 30085, "udp")
         runCurrent()
@@ -481,6 +482,23 @@ class PortForwardsTest {
         val row = forwards.rows.value.getValue("b1/dns_udp")
         assertEquals("port_not_published", row.error?.code)
         assertEquals(port, row.localPort)
+        forwards.stopAll()
+    }
+
+    @Test
+    fun aUdpRowLosesItsErrorWhenAReplyComesBack() = runTest {
+        val forwards = PortForwards(noMaterial, streams, backgroundScope, table)
+        forwards.connect("b1", "dns_udp", 30056, "udp")
+        runCurrent()
+        val port = forwards.rows.value.getValue("b1/dns_udp").localPort
+        assertEquals("q", datagram(port, "q"))
+        hub.end(hub.opens.last()["stream"]!!.jsonPrimitive.content.toInt(), "port_not_published")
+        awaitRow(forwards, "b1/dns_udp") { it.error != null }
+        Thread.sleep(CLIENT_UDP_RETRY_MILLIS + 100)
+        assertEquals("r", datagram(port, "r"))
+        awaitRow(forwards, "b1/dns_udp") { it.error == null }
+        assertEquals(port, forwards.rows.value.getValue("b1/dns_udp").localPort)
+        assertEquals(2, hub.opens.size)
         forwards.stopAll()
     }
 

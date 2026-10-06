@@ -28,6 +28,7 @@ class PortForwardUdpRelayTest {
     private val opened = mutableListOf<AutoCloseable>()
     private val refusals = mutableListOf<Pair<String, Boolean>>()
     private var now = 0L
+    private var answers = 0
 
     @After
     fun closeAll() = opened.forEach { it.close() }
@@ -180,6 +181,31 @@ class PortForwardUdpRelayTest {
     }
 
     @Test
+    fun theFirstFrameBackAfterALaterRefusalIsToldOnceAndCreditAloneIsNot() {
+        val hub = FakeConnectHub(isGranting = false)
+        val port = relay { hub.open(ChannelFrames.args("id" to "u1")) }.start()
+        hub.grant(streamOf(hub), 1 shl 20)
+        val program = program()
+        send(program, port, "a")
+        waitFor { framesOf(hub).size == 1 }
+        hub.send(streamOf(hub), reply(program.localPort, "a"))
+        assertEquals("a", receive(program))
+        hub.end(streamOf(hub), "port_not_published")
+        waitFor { synchronized(refusals) { refusals.isNotEmpty() } }
+        now += 1000
+        send(program, port, "b")
+        waitFor { opensOf(hub).size == 2 }
+        hub.grant(streamOf(hub), 1 shl 20)
+        waitFor { framesOf(hub).size == 2 }
+        assertEquals(0, synchronized(refusals) { answers })
+        hub.send(streamOf(hub), reply(program.localPort, "b"))
+        assertEquals("b", receive(program))
+        hub.send(streamOf(hub), reply(program.localPort, "c"))
+        assertEquals("c", receive(program))
+        assertEquals(1, synchronized(refusals) { answers })
+    }
+
+    @Test
     fun aStreamTheFarEndClosedIsOpenedAgainByTheNextDatagram() {
         val hub = FakeConnectHub()
         val port = relay { hub.open(ChannelFrames.args("id" to "u1")) }.start()
@@ -204,10 +230,13 @@ class PortForwardUdpRelayTest {
         waitFor { isFree(port) }
     }
 
-    private fun relay(open: () -> ChannelResult<ChannelStream>): PortForwardUdpRelay =
-        PortForwardUdpRelay("b1/u1", open, 0, { refusal, isEnded ->
-            synchronized(refusals) { refusals += refusal.code to isEnded }
-        }) { now }.also { opened += it }
+    private fun relay(open: () -> ChannelResult<ChannelStream>): PortForwardUdpRelay = PortForwardUdpRelay(
+        "b1/u1",
+        open,
+        0,
+        { refusal, isEnded -> synchronized(refusals) { refusals += refusal.code to isEnded } },
+        { synchronized(refusals) { answers += 1 } },
+    ) { now }.also { opened += it }
 
     private fun isFree(port: Int): Boolean = try {
         DatagramSocket(InetSocketAddress(InetAddress.getByName("127.0.0.1"), port)).close()

@@ -429,6 +429,9 @@ const val CLIENT_SHARE_PROBE_TIMEOUT_S = 5L
 /** How long a share stays listed in the system's Files after its hub's channel drops. */
 const val CLIENT_SHARE_HOLD_S = 60L
 
+/** How many names a new file or folder in a share tries, the taken name and its numbered ones. */
+const val CLIENT_SHARE_NAME_ATTEMPTS = 32
+
 /** The output a terminal tab keeps to draw again in a new view: the agent keeps as much. */
 const val CLIENT_TERMINAL_KEPT_BYTES = 256 * 1024
 

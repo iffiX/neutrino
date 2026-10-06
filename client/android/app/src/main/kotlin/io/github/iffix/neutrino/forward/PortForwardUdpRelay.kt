@@ -32,12 +32,14 @@ import kotlinx.coroutines.runBlocking
  * The stream opens at [start], and again at the first datagram that finds none or finds it
  * ended. The stream opened at [start] closed with a code before any datagram went into it ends
  * the forward, as the answer to Connect; a later refusal leaves the forward listening, and a
- * datagram tries again at most once a second. Both are told to [onRefused].
+ * datagram tries again at most once a second. Both are told to [onRefused]. The first frame that
+ * comes back after a later refusal is told to [onAnswered].
  *
  * @property name What the log calls the far end.
  * @param open Opens the forward's `connect` stream.
  * @param requestedPort The loopback number to bind; 0 for any free one.
  * @param onRefused Called with a refusal and whether it ended the forward.
+ * @param onAnswered Called when a frame comes back after a refusal that left the forward listening.
  * @param clock The time in milliseconds the retry is measured by.
  */
 class PortForwardUdpRelay(
@@ -45,6 +47,7 @@ class PortForwardUdpRelay(
     private val open: () -> ChannelResult<ChannelStream>,
     private val requestedPort: Int,
     private val onRefused: (ChannelResult.Refused, Boolean) -> Unit,
+    private val onAnswered: () -> Unit = {},
     private val clock: () -> Long = System::currentTimeMillis,
 ) : PortForwardListener {
     private val lock = Any()
@@ -61,6 +64,7 @@ class PortForwardUdpRelay(
     private var isFirstStream = false
     private var hasSent = false
     private var refusedAt = Long.MIN_VALUE / 2
+    private var isRefusalShown = false
 
     @Volatile
     private var isClosed = false
@@ -147,7 +151,7 @@ class PortForwardUdpRelay(
             if (retired?.isEnding == true) return@synchronized null
             val open = when (val current = stream?.let { ChannelResult.Ok(it) } ?: reopen()) {
                 null -> return@synchronized null
-                is ChannelResult.Refused -> return@synchronized current
+                is ChannelResult.Refused -> return@synchronized current.also { isRefusalShown = true }
                 is ChannelResult.Ok -> current.value
             }
             hasSent = true
@@ -195,6 +199,8 @@ class PortForwardUdpRelay(
         while (true) {
             val frame = runBlocking { opened.receive() } ?: break
             if (frame.size < CLIENT_UDP_SOURCE_BYTES) continue
+            val isAnswerAgain = synchronized(lock) { isRefusalShown.also { isRefusalShown = false } }
+            if (isAnswerAgain) onAnswered()
             val source = ByteBuffer.wrap(frame, 0, CLIENT_UDP_SOURCE_BYTES).short.toInt() and 0xffff
             val target = synchronized(lock) { sources[source] } ?: continue
             try {
@@ -221,6 +227,7 @@ class PortForwardUdpRelay(
         held.clear()
         val refusal = opened.refusal?.takeIf { it.code != "hub_unreachable" } ?: return null
         refusedAt = clock()
+        isRefusalShown = true
         return Retired(refusal, isFirstStream && !hasSent)
     }
 

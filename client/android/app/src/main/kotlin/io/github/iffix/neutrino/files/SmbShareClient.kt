@@ -15,6 +15,7 @@ import com.hierynomus.smbj.common.SMBRuntimeException
 import com.hierynomus.smbj.connection.Connection
 import com.hierynomus.smbj.share.DiskShare
 import com.hierynomus.smbj.share.File
+import io.github.iffix.neutrino.CLIENT_SHARE_NAME_ATTEMPTS
 import io.github.iffix.neutrino.ConnectRefusedException
 import io.github.iffix.neutrino.ShareRefusedException
 import io.github.iffix.neutrino.ShareUnreachableException
@@ -103,27 +104,51 @@ class SmbShareClient(
      * @param root The share.
      * @param login Its login.
      * @param document The file.
-     * @param isWrite Whether it is opened to write, made when missing and emptied first.
+     * @param mode How it is opened, which may write it and empty it first.
      * @return The open file, closed by the caller.
      * @throws ShareUnreachableException When the server cannot be reached.
      * @throws ConnectRefusedException When the hub refuses the connection to the share.
      * @throws ShareRefusedException When the server refuses.
      */
-    fun open(root: ShareRoot, login: ShareLogin, document: ShareDocumentId, isWrite: Boolean): ShareFile =
-        translated(root) { ShareFile { isAgain -> openLink(root, login, document, isWrite, isAgain) } }
+    fun open(root: ShareRoot, login: ShareLogin, document: ShareDocumentId, mode: ShareOpenMode): ShareFile =
+        translated(root) { ShareFile { isAgain -> openLink(root, login, document, mode, isAgain) } }
 
     /**
-     * Make a folder.
+     * Make an empty file or a folder under the first free name, never touching one that exists.
      *
      * @param root The share.
      * @param login Its login.
-     * @param document The new folder.
+     * @param document The name asked for.
+     * @param isDirectory Whether a folder is made.
+     * @return The document made, numbered when the name asked for was taken.
      * @throws ShareUnreachableException When the server cannot be reached.
      * @throws ConnectRefusedException When the hub refuses the connection to the share.
      * @throws ShareRefusedException When the server refuses.
+     * @throws java.nio.file.FileAlreadyExistsException When every name tried is taken.
      */
-    fun mkdir(root: ShareRoot, login: ShareLogin, document: ShareDocumentId) =
-        call(root, login) { it.mkdir(document.smbPath) }
+    fun create(root: ShareRoot, login: ShareLogin, document: ShareDocumentId, isDirectory: Boolean): ShareDocumentId =
+        call(root, login) { share ->
+            document.makeFree(isDirectory, CLIENT_SHARE_NAME_ATTEMPTS) { candidate ->
+                try {
+                    if (isDirectory) {
+                        share.mkdir(candidate.smbPath)
+                    } else {
+                        share.openFile(
+                            candidate.smbPath,
+                            EnumSet.of(AccessMask.GENERIC_WRITE),
+                            null,
+                            SMB2ShareAccess.ALL,
+                            SMB2CreateDisposition.FILE_CREATE,
+                            null,
+                        ).close()
+                    }
+                    true
+                } catch (error: SMBApiException) {
+                    if (error.status != NtStatus.STATUS_OBJECT_NAME_COLLISION) throw error
+                    false
+                }
+            }
+        }
 
     /**
      * Delete a file, or a folder with everything in it.
@@ -193,25 +218,22 @@ class SmbShareClient(
         root: ShareRoot,
         login: ShareLogin,
         document: ShareDocumentId,
-        isWrite: Boolean,
+        mode: ShareOpenMode,
         isAgain: Boolean,
     ): ShareFileLink {
         val link = connect(root, login)
         try {
+            val isEmptied = mode.isTruncate && !isAgain
             val disposition = when {
-                !isWrite -> SMB2CreateDisposition.FILE_OPEN
-                isAgain -> SMB2CreateDisposition.FILE_OPEN_IF
-                else -> SMB2CreateDisposition.FILE_OVERWRITE_IF
+                !mode.isWrite -> SMB2CreateDisposition.FILE_OPEN
+                isEmptied -> SMB2CreateDisposition.FILE_OVERWRITE_IF
+                else -> SMB2CreateDisposition.FILE_OPEN_IF
             }
-            val file = link.share.openFile(
-                document.smbPath,
-                EnumSet.of(if (isWrite) AccessMask.GENERIC_WRITE else AccessMask.GENERIC_READ),
-                null,
-                SMB2ShareAccess.ALL,
-                disposition,
-                null,
-            )
-            return SmbFileLink(link, file, if (isWrite) 0L else file.fileInformation.standardInformation.endOfFile)
+            val access = EnumSet.of(AccessMask.FILE_READ_ATTRIBUTES)
+            if (mode.isRead) access += AccessMask.GENERIC_READ
+            if (mode.isWrite) access += AccessMask.GENERIC_WRITE
+            val file = link.share.openFile(document.smbPath, access, null, SMB2ShareAccess.ALL, disposition, null)
+            return SmbFileLink(link, file, if (isEmptied) 0L else file.fileInformation.standardInformation.endOfFile)
         } catch (error: Exception) {
             link.close()
             throw error
