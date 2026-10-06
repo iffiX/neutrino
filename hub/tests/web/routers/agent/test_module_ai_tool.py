@@ -10,7 +10,6 @@ cleans them and pushed only while the setting is on.
 """
 
 import json
-from types import SimpleNamespace
 
 import pytest
 
@@ -283,18 +282,5 @@ def test_on_with_an_account_not_yet_reported_is_in_use(api, monkeypatch):
     client, runtime, _gateway, _ = api
     client.post(f"{BASE}/enable", json={"device_id": DEVICE})
     report_states(runtime, monkeypatch, {"alice": "failed"})
-
-    assert in_use(client) is True
-
-
-def test_a_report_on_an_older_state_is_not_read(api, monkeypatch):
-    """Right after a press the machine's last results answer the state before."""
-    client, runtime, _gateway, _ = api
-    client.post(f"{BASE}/enable", json={"device_id": DEVICE})
-    report_states(
-        runtime, monkeypatch, {"alice": "switched_back", "bob": "switched_back"}
-    )
-    session = SimpleNamespace(offered_hash="new", state_hash="old")
-    monkeypatch.setattr(runtime.agent_sessions, "get", lambda key: session)
 
     assert in_use(client) is True

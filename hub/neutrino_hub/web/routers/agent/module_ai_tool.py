@@ -88,7 +88,7 @@ def device_view(
         is_in_use=_is_in_use(
             stored["is_enabled"],
             [entry.account for entry in accounts],
-            reported if _is_settled(runtime, context.key) else {},
+            reported,
         ),
         is_gateway_serving=bool(models),
         tool_configs=stored["tool_configs"],
@@ -230,8 +230,7 @@ def _is_in_use(is_enabled: bool, listed: list, reported: dict) -> bool:
     Args:
         is_enabled: The stored setting.
         listed: The accounts the setting acts on.
-        reported: Each account's result under the state the machine holds,
-            empty while the machine has not reported on the latest one.
+        reported: Each account's result as the machine last reported it.
 
     Returns:
         True for an account ``switched``, one ``failed`` while the setting
@@ -247,13 +246,6 @@ def _is_in_use(is_enabled: bool, listed: list, reported: dict) -> bool:
         if state == AI_TOOL_STATE_FAILED and not is_enabled:
             return True
     return is_enabled and any(account not in reported for account in listed)
-
-
-def _is_settled(runtime: PanelRuntime, key: str) -> bool:
-    """Whether the machine's last report answers the state it was last handed."""
-    session = runtime.agent_sessions.get(key)
-    offered = getattr(session, "offered_hash", None)
-    return not offered or getattr(session, "state_hash", "") == offered
 
 
 def _has_failed_account(runtime: PanelRuntime, key: str) -> bool:
