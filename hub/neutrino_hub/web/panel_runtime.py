@@ -742,6 +742,29 @@ class PanelRuntime:
         )
         return state_hash, desired
 
+    def module_agent_config(self, key: str, name: str, stored: dict) -> dict:
+        """One module's configuration as the device's state would carry it.
+
+        Args:
+            key: The device.
+            name: The module.
+            stored: What its file holds, or is about to hold.
+
+        Returns:
+            What :meth:`desired_state_for` would put in the module's entry.
+
+        Raises:
+            VaultLockedError: When a sealed token or login cannot be opened.
+        """
+        return self.desired_states.agent_config(
+            key,
+            name,
+            stored,
+            self.device_platform.get(key, {}),
+            address=self.device_address.get(key, ""),
+            allowed_subnets=self.share_subnets(),
+        )
+
     def _device_urls(self, key: str) -> list:
         """The addresses a device's state names: loopback first for the hub's own.
 

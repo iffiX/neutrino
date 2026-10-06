@@ -379,6 +379,29 @@ def test_the_setting_is_sent_off_while_it_is_off_or_the_gateway_serves_nothing(
 # --- the retry marks ---
 
 
+@pytest.mark.parametrize("name", ["samba", "gitea", "terminal"])
+def test_the_section_checked_on_an_apply_is_the_one_the_state_carries(config, name):
+    """One step composes a module's section for the push and for the check."""
+    store = DesiredStateStore()
+    store.set_want(DEVICE, name, "running")
+    store.write(DEVICE, name, {"listen_port": 3000} if name == "gitea" else {})
+    subnets = ["192.168.10.0/24"]
+
+    desired, _ = store.compose(
+        DEVICE, PLATFORM, address="192.168.10.7", allowed_subnets=subnets
+    )
+    checked = store.agent_config(
+        DEVICE,
+        name,
+        store.read(DEVICE, name),
+        PLATFORM,
+        address="192.168.10.7",
+        allowed_subnets=subnets,
+    )
+
+    assert checked == desired["modules"][name]["config"]
+
+
 def test_a_retry_mark_rides_its_module_entry_and_moves_the_hash(config):
     store = DesiredStateStore()
     store.set_want(DEVICE, "samba", "running")

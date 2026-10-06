@@ -23,7 +23,6 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_VSCODE_TERMS_URL,
     DEVICE_VSCODE_TOKEN_KEY,
 )
-from neutrino_hub.modules.devices.desired_state import vscode_agent_config
 from neutrino_hub.web.dependencies import get_runtime
 from neutrino_hub.web.models import (
     VscodeConfigUpdate,
@@ -197,8 +196,7 @@ def update_settings(
             for instance in update.instances
         ],
     }
-    sent = vscode_agent_config(stored, runtime.device_platform.get(context.key, {}))
-    store_config(runtime, context, sent, stored=stored)
+    store_config(runtime, context, stored)
     return device_view(runtime, context)
 
 

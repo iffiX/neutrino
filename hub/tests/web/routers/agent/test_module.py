@@ -707,7 +707,11 @@ def test_a_configuration_is_checked_on_the_agent_then_stored_then_pushed(box):
 
     device_modules.store_config(runtime, context, {"users": ["ann"]})
 
-    assert runtime.agent_sessions.validations == [(LAPTOP, MODULE, {"users": ["ann"]})]
+    # The agent checks the section the state will carry: Samba's with the
+    # networks its shares answer, which the file does not hold.
+    assert runtime.agent_sessions.validations == [
+        (LAPTOP, MODULE, {"users": ["ann"], "allowed_subnets": []})
+    ]
     assert runtime.desired_states.read(LAPTOP, MODULE) == {"users": ["ann"]}
     assert [push[0] for push in runtime.agent_sessions.pushes] == [LAPTOP]
     assert context.config == {"users": ["ann"]}

@@ -635,6 +635,15 @@ class FakeModuleRuntime:
     def network(self):
         return _Network(self.lan_addresses)
 
+    def module_agent_config(self, key: str, name: str, stored: dict) -> dict:
+        return self.desired_states.agent_config(
+            key,
+            name,
+            stored,
+            self.device_platform.get(key, {}),
+            address=self.device_address.get(key, ""),
+        )
+
     def push_desired_state(self, key: str) -> None:
         self.agent_sessions.push_state_from_thread(
             key, {"hash": f"hash-{key}", "modules": {}}

@@ -14,7 +14,6 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_CODE_SERVER_MODULE,
     DEVICE_CODE_SERVER_SECRET_KEY,
 )
-from neutrino_hub.modules.devices.desired_state import code_server_agent_config
 from neutrino_hub.web.dependencies import get_runtime
 from neutrino_hub.web.models import (
     CodeServerConfigUpdate,
@@ -130,7 +129,7 @@ def update_settings(
             for instance in update.instances
         ]
     }
-    store_config(runtime, context, code_server_agent_config(stored), stored=stored)
+    store_config(runtime, context, stored)
     return device_view(runtime, context)
 
 

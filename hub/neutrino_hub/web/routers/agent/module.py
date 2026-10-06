@@ -518,16 +518,16 @@ def store_config(
     runtime: PanelRuntime,
     context: DeviceModuleContext,
     config: dict,
-    stored: "dict | None" = None,
 ):
     """Check a configuration on the agent, store it, and push it.
+
+    The agent checks the module's section as the pushed state will carry it,
+    composed from the file by the same step.
 
     Args:
         runtime: The shared runtime.
         context: The device.
-        config: The module's whole configuration, as the agent checks it.
-        stored: What is written to the module's file, when it holds more
-            than the agent checks; ``config`` itself when None.
+        config: What the module's file holds afterwards.
 
     Raises:
         HTTPException: 409 ``agent_offline`` when the device has no socket,
@@ -543,7 +543,9 @@ def store_config(
             {
                 "module": context.module,
                 "verb": CHANNEL_VERB_VALIDATE,
-                "config": dict(config),
+                "config": runtime.module_agent_config(
+                    context.key, context.module, config
+                ),
             },
             timeout=DEVICE_MODULE_VALIDATE_TIMEOUT_S,
         )
@@ -562,7 +564,7 @@ def store_config(
             str(verdict.get("code") or "config_invalid"),
             **params,
         )
-    written = dict(config if stored is None else stored)
+    written = dict(config)
     write_module_config(runtime, context.key, context.module, written)
     context.config = written
     _claim_reported(runtime, context)
