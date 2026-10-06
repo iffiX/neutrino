@@ -125,8 +125,9 @@ whether the tool had a configuration file and a directory at all, and the
 bytes of every file a switch may write as they were before the first
 switch, or that the file was absent: Claude Code's `~/.claude/settings.json`,
 Codex's `~/.codex/config.toml` and `auth.json`, Gemini's `~/.gemini/.env` and
-`settings.json`. The record is `{is_present, is_dir_present, kept, previous,
-added}`, `added` being the provider settings last written. A tool whose
+`settings.json`. The record is `{is_present, is_dir_present, kept,
+kept_modes, previous, added}`, `kept_modes` being each kept file's own mode
+outside Windows and `added` the provider settings last written. A tool whose
 record says it already carries the wanted settings is not run again, so
 nothing runs when nothing changed.
 
@@ -134,8 +135,12 @@ cc-switch writes a tool's files only into a directory that is there, and
 says nothing else when it skips one, so a switch makes the directory of a
 tool that has none, and every tool named as switched has its file read back
 naming the hub: Claude Code's endpoint, key and model, Codex's and Gemini's
-endpoint. Deactivating switches back to the recorded provider, deletes the
-hub's entry, then writes each kept file back byte for byte, takes away each
+endpoint. cc-switch writes those files with the person's own file mask, so
+every file that then holds the gateway key, Claude Code's `settings.json`,
+Codex's `auth.json` and Gemini's `.env`, is set to mode 600 outside
+Windows. Deactivating switches back to the recorded provider, deletes the
+hub's entry, then writes each kept file back byte for byte with its own
+mode, takes away each
 that was absent, and takes away a directory the switch made once it is
 empty; cc-switch's own switch back re-writes a file in its own layout, so
 its result is never what is left. A switch back that cannot run cc-switch,

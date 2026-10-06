@@ -143,6 +143,7 @@ class FakeSession:
         self.cc_switch = cc_switch
         self.files: dict = dict(files or {})
         self.dirs: set = {self.path(name) for name in dirs}
+        self.modes: dict = {}
         self.file_calls: list = []
         self.answered: list = []
 
@@ -192,6 +193,16 @@ class FakeSession:
 
     def has_dir(self, path):
         return has_dir(self.files, self.dirs, path)
+
+    def mode_of(self, path):
+        self.file_calls.append(("mode_of", path))
+        if path not in self.files:
+            return None
+        return self.modes.get(path, 0o644)
+
+    def set_mode(self, path, mode):
+        self.file_calls.append(("set_mode", path, mode))
+        self.modes[path] = mode
 
     def is_dir(self, path):
         self.file_calls.append(("is_dir", path))

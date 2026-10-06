@@ -263,10 +263,10 @@ def test_every_file_of_the_account_s_is_reached_through_the_session(tmp_path):
     activate(switcher)
     switcher.deactivate()
 
-    touched = {path for _verb, path in session.file_calls}
+    touched = {call[1] for call in session.file_calls}
     assert all(path.startswith("/home/ann/") for path in touched)
     assert not any(
-        str(tmp_path) in path for _verb, path in session.file_calls
+        str(tmp_path) in call[1] for call in session.file_calls
     ), "the records are the agent's own, never in the home"
 
 
@@ -398,3 +398,32 @@ def test_a_tool_that_refuses_is_put_back_itself(tmp_path):
     assert session.files[SETTINGS] == own
     assert not switcher.has_records()
     assert "neutrino" not in cc_switch.providers["claude"]
+
+
+KEY_FILES = (SETTINGS, "/home/ann/.codex/auth.json", "/home/ann/.gemini/.env")
+
+
+def test_every_file_holding_the_key_is_the_account_s_alone_while_switched(tmp_path):
+    cc_switch = FakeCcSwitch()
+    switcher, session = switcher_for(tmp_path, cc_switch)
+
+    activate(switcher)
+
+    assert {path: session.modes.get(path) for path in KEY_FILES} == {
+        path: 0o600 for path in KEY_FILES
+    }
+    assert "/home/ann/.codex/config.toml" not in session.modes
+
+
+def test_the_switch_back_puts_each_file_s_own_mode_back(tmp_path):
+    own = '{"permissions": {}}\n'
+    cc_switch = FakeCcSwitch()
+    switcher, session = switcher_for(tmp_path, cc_switch, {SETTINGS: own})
+    session.modes[SETTINGS] = 0o640
+
+    activate(switcher)
+    assert session.modes[SETTINGS] == 0o600
+    switcher.deactivate()
+
+    assert session.files[SETTINGS] == own
+    assert session.modes[SETTINGS] == 0o640
