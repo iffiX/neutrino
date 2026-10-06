@@ -284,3 +284,36 @@ def test_on_with_an_account_not_yet_reported_is_in_use(api, monkeypatch):
     report_states(runtime, monkeypatch, {"alice": "failed"})
 
     assert in_use(client) is True
+
+
+def test_off_after_a_switch_on_that_touched_nothing_is_not_in_use(api, monkeypatch):
+    """The account failed before any tool was switched: its files are its own."""
+    client, runtime, _gateway, _ = api
+    reports = {
+        DEVICE: {
+            "ai_tools": {
+                "accounts": [
+                    {"account": "alice", "state": "failed", "has_records": False}
+                ]
+            }
+        }
+    }
+    monkeypatch.setattr(runtime.agent_sessions, "reports", lambda: reports)
+
+    assert in_use(client) is False
+
+
+def test_off_after_a_failed_switch_back_with_records_is_in_use(api, monkeypatch):
+    client, runtime, _gateway, _ = api
+    reports = {
+        DEVICE: {
+            "ai_tools": {
+                "accounts": [
+                    {"account": "alice", "state": "failed", "has_records": True}
+                ]
+            }
+        }
+    }
+    monkeypatch.setattr(runtime.agent_sessions, "reports", lambda: reports)
+
+    assert in_use(client) is True
