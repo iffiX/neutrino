@@ -550,3 +550,35 @@ def test_an_adapter_held_by_another_account_is_its_own_refusal(adapter, daemon):
 
     assert raised.value.code == "files_adapter_in_use"
     assert raised.value.detail == ""
+
+
+def test_a_share_nobody_publishes_is_one_line_until_it_comes_back(plan, connector):
+    """The speed test: 496 lines in nine minutes while a hub was down. Now one
+    line when the state begins, and the count when it ends."""
+    lines = []
+    shares = []
+    served = FilesSocksEndpoint(
+        plan=plan,
+        connector=connector,
+        entries_of=lambda: list(shares),
+        log=lines.append,
+    )
+    served.start()
+    address = plan.address_for("h1", "d1")
+    try:
+        for _ in range(5):
+            client = socks_client(served)
+            assert connect(client, address, 445)[1] == 4
+            client.close()
+        shares.append(dict(SHARE_ENTRY))
+        client = socks_client(served)
+        assert connect(client, address, 445)[1] == 0
+        client.close()
+    finally:
+        served.stop()
+
+    said = [line for line in lines if "publishes no share" in line]
+    assert said == [
+        "files endpoint: h1 publishes no share on d1",
+        "files endpoint: h1 publishes no share on d1 (5 times in all)",
+    ]

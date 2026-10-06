@@ -80,3 +80,26 @@ def test_only_a_false_health_is_unhealthy(health, is_bad):
     entry = {"id": "x"} if health == "missing" else {"id": "x", "is_healthy": health}
 
     assert is_unhealthy(entry) is is_bad
+
+
+def test_a_state_line_is_written_once_and_its_count_told_when_it_ends():
+    from neutrino_client.services.base import StateLines
+
+    lines = []
+    states = StateLines(lines.append)
+
+    states.note("a", "a is down")
+    states.note("a", "a is down")
+    states.note("b", "b is down")
+    states.note("a", "a refused")
+    states.clear("b")
+    states.note("b", "b is down")
+    states.clear_all()
+
+    assert lines == [
+        "a is down",
+        "b is down",
+        "a is down (2 times in all)",
+        "a refused",
+        "b is down",
+    ]

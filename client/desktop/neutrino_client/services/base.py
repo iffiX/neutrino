@@ -15,6 +15,8 @@ its own wording.
 # client still imports on Python 3.9.
 from __future__ import annotations
 
+import threading
+
 from neutrino_client.exceptions import (
     GatewayRefusedDetail,
     GatewayUnreachable,
@@ -22,6 +24,64 @@ from neutrino_client.exceptions import (
 )
 
 SERVICE_KEY_SEPARATOR = "/"
+
+
+class StateLines:
+    """Log lines that each say a state: one line when a state begins.
+
+    A state is a line under a key. The same line again under the key is
+    counted, not written; a different line, or the key's state ending,
+    writes how many times the last one was seen when it was more than once,
+    then the new line. Safe from any thread.
+    """
+
+    def __init__(self, log=print):
+        """
+        Args:
+            log: Callable used for progress messages.
+        """
+        self._log = log
+        self._lock = threading.Lock()
+        # Each key's line and how many times it was said.
+        self._states: dict = {}
+
+    def note(self, key, line: str) -> None:
+        """Say a key's state: written when it is new, counted otherwise.
+
+        Args:
+            key: What the state is of.
+            line: The words of the state.
+        """
+        with self._lock:
+            held = self._states.get(key)
+            if held is not None and held[0] == line:
+                held[1] += 1
+                return
+            self._states[key] = [line, 1]
+        self._tell_end(held)
+        self._log(line)
+
+    def clear(self, key) -> None:
+        """End a key's state, with its count when it repeated.
+
+        Args:
+            key: What the state is of.
+        """
+        with self._lock:
+            held = self._states.pop(key, None)
+        self._tell_end(held)
+
+    def clear_all(self) -> None:
+        """End every state, each with its count when it repeated."""
+        with self._lock:
+            held = list(self._states.values())
+            self._states = {}
+        for state in held:
+            self._tell_end(state)
+
+    def _tell_end(self, held) -> None:
+        if held is not None and held[1] > 1:
+            self._log(f"{held[0]} ({held[1]} times in all)")
 
 
 def channel_refusal(error: Exception) -> dict:
