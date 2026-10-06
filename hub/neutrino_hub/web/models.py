@@ -434,6 +434,10 @@ class NetworkOptions(BaseModel):
     exposed_overlays: list[str] | None = None
     # The devices that always get one address, whole.
     static_leases: list[StaticLeaseSettings] | None = None
+    # In router mode, the role each port turned on with this write takes:
+    # ``wan``, or ``lan`` for a wired port. A port with the role ``disabled``
+    # is not exposed there.
+    interface_roles: dict[str, str] | None = None
 
 
 class InterfaceRequest(BaseModel):

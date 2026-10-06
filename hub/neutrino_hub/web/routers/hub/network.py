@@ -138,16 +138,21 @@ async def update_options(
 
     Raises:
         HTTPException: 400 for an unknown policy, an interface this machine
-            does not have or a fixed address that is refused, 502 when the
-            firewall reload fails.
+            does not have or a fixed address that is refused, and in router
+            mode ``network_invalid {field: role, name}`` for an exposed port
+            left with the role ``disabled`` or given a role a port cannot take
+            here; 502 when the firewall reload fails.
     """
     if options.uplink_policy not in ROUTER_POLICIES:
         raise _bad_request("uplink_policy_unknown", policy=options.uplink_policy)
     network = runtime.network()
     network.uplink_policy = options.uplink_policy
     network.is_inter_lan_allowed = options.is_inter_lan_allowed
+    if options.interface_roles and network.is_addressing_owned:
+        _give_roles(network, options.interface_roles, runtime=runtime)
     if options.exposed_interfaces is not None:
         _set_exposure(network, options.exposed_interfaces, runtime=runtime)
+        _refuse_exposed_disabled(network)
     if options.exposed_overlays is not None:
         wanted = set(options.exposed_overlays)
         for overlay in network.overlays:
@@ -341,6 +346,63 @@ def _set_exposure(
             interface.is_exposed = False
 
 
+def _give_roles(
+    network: RouterNetworkConfig, roles: dict, *, runtime: PanelRuntime
+) -> None:
+    """Give each port turned on the role chosen beside its chip.
+
+    A served network takes the free network the page proposes, as the
+    interface form does.
+
+    Args:
+        network: The configuration to change, in router mode.
+        roles: Port name to ``wan`` or ``lan``.
+        runtime: The shared runtime, for the ports this machine has.
+
+    Raises:
+        HTTPException: 400 ``network_invalid {field: role, name}`` for another
+            role or a served network on a port that is not wired, and what the
+            interface form refuses for the settings the role takes.
+    """
+    status_reader = runtime.link_status()
+    for name, role in roles.items():
+        link = status_reader.link(network.interface_or_new(name).device_name)
+        is_wired = link.kind == LINK_KIND_ETHERNET
+        if role not in (ROUTER_ROLE_WAN, ROUTER_ROLE_LAN) or (
+            role == ROUTER_ROLE_LAN and not is_wired
+        ):
+            raise _network_invalid(name)
+        settings = _propose_lan(
+            _to_settings(network.interface_or_new(name)), network=network
+        )
+        settings.role = role
+        _require_present(settings, network=network, status=status_reader)
+        _validate(settings, link=link, network=network)
+        network.replace(_to_interface(settings, network=network))
+
+
+def _refuse_exposed_disabled(network: RouterNetworkConfig) -> None:
+    """Refuse a router whose configuration exposes a stopped port.
+
+    Args:
+        network: The configuration about to be written.
+
+    Raises:
+        HTTPException: 400 ``network_invalid {field: role, name}`` for the
+            first exposed port whose role is ``disabled``, in router mode.
+    """
+    if not network.is_addressing_owned:
+        return
+    for interface in network.interfaces:
+        if interface.is_exposed and interface.is_disabled:
+            raise _network_invalid(interface.name)
+
+
+def _network_invalid(name: str) -> HTTPException:
+    """The refusal of an exposed port with no role a router keeps it up with."""
+    return _bad_request("network_invalid", field="role", name=name)
+
+
 def _validate_static_leases(
     leases: list[StaticLeaseSettings], *, network: RouterNetworkConfig
 ) -> list[RouterStaticLease]:
@@ -465,6 +527,8 @@ async def update_interface(
             network.remove(child.name)
             orphaned.append(child.name)
 
+    if network.is_addressing_owned and saved.is_disabled and saved.is_exposed:
+        raise _network_invalid(name)
     network.replace(saved)
     if saved.is_split and network.untagged_child(name) is None:
         # Splitting makes the untagged traffic explicit: it becomes the main
