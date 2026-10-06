@@ -2758,3 +2758,24 @@ def test_an_upgrade_quit_arranges_the_return_and_says_how_it_went(outcome, line)
     resident.arrange_relaunch()
 
     assert line in lines
+
+
+def test_a_udp_rows_refusal_line_goes_at_the_first_answer_after_it(config_path):
+    resident = ClientResident(log=discard, platform=FakeClientPlatform())
+    refusal = {"code": "port_not_published", "params": {"port": 5353}}
+
+    resident._forward_refused("h1", "dns_udp", refusal)
+    assert resident._entry_errors["h1/dns_udp"] == refusal
+    resident._forward_answered("h1", "dns_udp")
+
+    assert "h1/dns_udp" not in resident._entry_errors
+
+
+def test_an_answer_leaves_a_later_error_of_another_kind(config_path):
+    resident = ClientResident(log=discard, platform=FakeClientPlatform())
+    resident._forward_refused("h1", "dns_udp", {"code": "agent_offline", "params": {}})
+    resident._entry_errors["h1/dns_udp"] = {"code": "forward_failed", "params": {}}
+
+    resident._forward_answered("h1", "dns_udp")
+
+    assert resident._entry_errors["h1/dns_udp"]["code"] == "forward_failed"
