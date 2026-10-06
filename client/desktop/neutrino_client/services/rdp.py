@@ -3,7 +3,11 @@
 Connect opens a ``service`` stream to the hub for the share's access
 password, makes the entry's forward of the local port table, and starts the
 carried RustDesk viewer at the forward on the loopback; the forward ends
-with the viewer. A Connect on an entry whose viewer still runs is refused
+with the viewer, which is the window that shows it: a started viewer
+that ends within ``RDP_HANDOFF_S`` while another viewer the client started
+still runs handed its connection to that viewer's window, and its forward
+ends with that window's process. A Connect on an entry whose viewer still
+runs is refused
 ``rdp_viewer_open``: a second viewer would dial the same forward, and
 either one's end would take the forward from under the other. The password travels in the one close and the one argument
 vector and lands in no log and no state. The viewer processes are tracked
@@ -38,6 +42,9 @@ RDP_CLOSE_TIMEOUT_S = 5
 # How often a viewer's process is looked at for its end, which frees the entry's
 # Connect.
 RDP_WATCH_INTERVAL_S = 0.5
+# A started viewer that ends this soon while another viewer the client
+# started still runs has handed its connection to that viewer's window.
+RDP_HANDOFF_S = 5
 
 
 def connect_peer(host: str, port: int) -> str:
@@ -221,15 +228,45 @@ class RdpViewerHandler(ServiceTypeHandler):
         ).start()
         return {}
 
-    def _watch(self, key: str, process) -> None:
-        """Forget the viewer once its process ends, and say so."""
+    def _watch(self, key: str, process, *, may_hand_off: bool = True) -> None:
+        """Forget the viewer once the window showing it ends, and say so.
+
+        A started viewer that ends within ``RDP_HANDOFF_S`` while another
+        viewer the client started still runs handed its connection to that
+        viewer's window; the entry then follows that window's process.
+
+        Args:
+            key: The entry's service key.
+            process: The process the entry's viewer is in.
+            may_hand_off: Whether an early end may be a hand-off; False for
+                a window the entry was already handed to.
+        """
+        started = time.monotonic()
         while process.poll() is None:
             time.sleep(RDP_WATCH_INTERVAL_S)
+        is_early = may_hand_off and time.monotonic() - started < RDP_HANDOFF_S
         with self._lock:
             current = self._viewers.get(key)
             if current is not None and current is not process:
                 return
-            self._viewers.pop(key, None)
+            window = None
+            if is_early:
+                window = next(
+                    (
+                        other
+                        for other_key, other in self._viewers.items()
+                        if other_key != key and other.poll() is None
+                    ),
+                    None,
+                )
+            if window is not None:
+                self._viewers[key] = window
+            else:
+                self._viewers.pop(key, None)
+        if window is not None:
+            self._log(f"the desktop viewer for {key} opened in the running viewer")
+            self._watch(key, window, may_hand_off=False)
+            return
         self._end_forward(key)
         self._log(f"the desktop viewer for {key} closed")
         self._on_change()
