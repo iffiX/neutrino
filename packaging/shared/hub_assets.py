@@ -24,6 +24,8 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
+from shared.constants import PACKAGING_TUN2SOCKS_LICENSE
+
 # The hub package, whose modules state every pin read here.
 HUB_ROOT = Path(__file__).resolve().parents[2] / "hub"
 
@@ -59,6 +61,17 @@ HUB_ASSET_WINDOWS_EXTRAS = {"easytier": ("wintun.dll",)}
 HUB_ASSET_WINDOWS_SUFFIX = ".exe"
 # The module that pins the geodata.
 HUB_ASSET_GEODATA_MODULE = "neutrino_hub.modules.xray.constants"
+# The licence under licenses/ of each carried program, of what Windows adds
+# beside them, and of the geodata.
+HUB_ASSET_LICENSES = {
+    "xray": "xray_core.txt",
+    "cliproxyapi": "cliproxyapi.txt",
+    "netbird": "netbird.txt",
+    "easytier": "easytier.txt",
+    "tun2socks": PACKAGING_TUN2SOCKS_LICENSE,
+}
+HUB_ASSET_WINDOWS_EXTRA_LICENSES = {"wintun.dll": "wintun.txt"}
+HUB_ASSET_GEODATA_LICENSES = ("v2fly_geoip.txt", "v2fly_domain_list_community.txt")
 HUB_ASSET_FETCH_TIMEOUT_S = 300
 
 
@@ -106,6 +119,31 @@ def carried_names(os_name: str) -> list:
         names += [_on(os_name, name) for name in files]
         if os_name == "windows":
             names += list(HUB_ASSET_WINDOWS_EXTRAS.get(program, ()))
+    return names
+
+
+def carried_licenses(os_name: str) -> list:
+    """The licences of what :func:`stage_programs` and :func:`stage_geodata`
+    put into one system's package.
+
+    Args:
+        os_name: ``linux``, ``darwin`` or ``windows``.
+
+    Returns:
+        File names under ``licenses/``.
+    """
+    names = []
+    for program in HUB_ASSET_PROGRAMS:
+        if not _is_carried(program, os_name):
+            continue
+        names.append(HUB_ASSET_LICENSES[program])
+        if os_name == "windows":
+            names += [
+                HUB_ASSET_WINDOWS_EXTRA_LICENSES[extra]
+                for extra in HUB_ASSET_WINDOWS_EXTRAS.get(program, ())
+            ]
+    if _has_module(HUB_ASSET_GEODATA_MODULE):
+        names += list(HUB_ASSET_GEODATA_LICENSES)
     return names
 
 

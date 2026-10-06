@@ -149,6 +149,13 @@ AGENT_PACKAGE_MACHINE = _runtime(_AGENT_PACKAGE_MODULE, "package_architecture")
 # hub package's own kind. The Arch package carries none, because no agent
 # package is published for Arch.
 AGENT_FAMILY_OF_HUB_KIND = {"deb": "deb", "rpm": "rpm", "pkg": ""}
+
+# The licences under licenses/ of what the panel's built page carries: the
+# terminal, the QR code drawing and the terminal's font.
+PANEL_LICENSES = ("xterm.txt", "qrcode_generator.txt", "meslolgs_nf.txt")
+# The licences of what the agent package a hub package carries holds, the
+# agent's own CARRIED_LICENSES.
+AGENT_PACKAGE_LICENSES = ("rustdesk.txt",)
 # What builds the agent's own package of each family, when no directory of
 # packages already built is given.
 AGENT_BUILD_SCRIPTS = {"deb": "build_deb.py", "rpm": "build_rpm.py"}
@@ -407,7 +414,7 @@ def build_environment(
         tree, staged_python, machine, family=AGENT_FAMILY_OF_HUB_KIND[kind]
     )
     stage_vendored(tree, machine)
-    stage_licenses(tree)
+    stage_licenses(tree, is_agent_carried=bool(AGENT_FAMILY_OF_HUB_KIND[kind]))
     require_glibc_floor(tree)
 
 
@@ -606,19 +613,57 @@ def stage_vendored(tree: Path, machine: str) -> None:
     hub_assets.stage_geodata(tree / str(GEODATA_DIR).lstrip("/"))
 
 
-def stage_licenses(tree: Path) -> None:
-    """Copy the licences of everything the package carries into it.
+def carried_licenses(
+    os_name: str, *, is_agent_carried: bool, extras: tuple = ()
+) -> list:
+    """The licences of everything one hub package carries.
+
+    Args:
+        os_name: ``linux``, ``darwin`` or ``windows``.
+        is_agent_carried: Whether the package carries an agent package.
+        extras: The licences of what that system's build adds beside the
+            programs, such as Windows' stand-in packet.dll.
+
+    Returns:
+        File names under ``licenses/``, sorted.
+    """
+    names = [*hub_assets.carried_licenses(os_name), *PANEL_LICENSES, *extras]
+    if is_agent_carried:
+        names += list(AGENT_PACKAGE_LICENSES)
+    return sorted(set(names))
+
+
+def copy_licenses(names: list, destination: Path) -> None:
+    """Copy licences from the repository's ``licenses/`` into a package.
+
+    Args:
+        names: File names under ``licenses/``.
+        destination: The directory they belong in.
+
+    Raises:
+        FileNotFoundError: When one is not in ``licenses/``.
+    """
+    source = HUB_ROOT.parent / "licenses"
+    destination.mkdir(parents=True, exist_ok=True)
+    for name in names:
+        shutil.copyfile(source / name, destination / name)
+        (destination / name).chmod(0o644)
+
+
+def stage_licenses(tree: Path, *, is_agent_carried: bool) -> None:
+    """Copy the licences of everything the Linux package carries into it.
 
     Args:
         tree: The staging directory.
+        is_agent_carried: Whether the package carries an agent package.
+
+    Raises:
+        FileNotFoundError: When a licence is not in ``licenses/``.
     """
-    source = HUB_ROOT.parent / "licenses"
-    destination = tree / "usr/share/doc" / PACKAGE_NAME / "licenses"
-    destination.mkdir(parents=True, exist_ok=True)
-    for path in sorted(source.iterdir()):
-        if path.is_file():
-            shutil.copyfile(path, destination / path.name)
-            (destination / path.name).chmod(0o644)
+    copy_licenses(
+        carried_licenses(HUB_ASSETS_SYSTEM, is_agent_carried=is_agent_carried),
+        tree / "usr/share/doc" / PACKAGE_NAME / "licenses",
+    )
 
 
 def require_glibc_floor(tree: Path) -> None:

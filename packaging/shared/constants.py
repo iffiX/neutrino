@@ -42,6 +42,9 @@ PACKAGING_CN_LEFT_OUT_PATHS = (
     "hub/tests/modules/tun",
     "hub/tests/web/routers/hub/test_proxy.py",
     "hub/tests/web/routers/hub/test_proxy_node.py",
+    "licenses/xray_core.txt",
+    "licenses/v2fly_geoip.txt",
+    "licenses/v2fly_domain_list_community.txt",
     # The hub: NetBird.
     "hub/neutrino_hub/modules/netbird",
     "hub/neutrino_hub/web/routers/hub/overlay_netbird.py",
@@ -49,6 +52,7 @@ PACKAGING_CN_LEFT_OUT_PATHS = (
     "hub/neutrino_hub/data/services/neutrino_hub_netbird.service",
     "hub/tests/modules/netbird",
     "hub/tests/web/routers/hub/test_overlay_netbird.py",
+    "licenses/netbird.txt",
     # The panel: the Proxy page and the panels only it shows.
     "hub/frontend/src/pages/proxy_page.tsx",
     "hub/frontend/src/pages/proxy_page.css",

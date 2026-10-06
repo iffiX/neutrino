@@ -220,13 +220,20 @@ def seed_agent_cache(
     return seeded
 
 
-def stage_licenses(destination: Path) -> None:
-    """Copy the licences of everything the package carries into it.
+def stage_licenses(destination: Path, os_name: str, extras: tuple = ()) -> None:
+    """Copy the licences of everything the package carries into it: the
+    programs and geodata of its system, the panel, the agent package it
+    seeds, and what its build adds.
 
     Args:
         destination: The directory the licences belong in.
+        os_name: ``darwin`` or ``windows``.
+        extras: The licences of what the build adds beside the programs.
+
+    Raises:
+        FileNotFoundError: When a licence is not in ``licenses/``.
     """
-    destination.mkdir(parents=True, exist_ok=True)
-    for path in sorted((HUB_ROOT.parent / "licenses").iterdir()):
-        if path.is_file():
-            shutil.copyfile(path, destination / path.name)
+    venv_tree.copy_licenses(
+        venv_tree.carried_licenses(os_name, is_agent_carried=True, extras=extras),
+        destination,
+    )
