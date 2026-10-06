@@ -11,7 +11,10 @@ import base64
 import re
 import subprocess
 
-from neutrino_agent.ai_tools.account_session import POSIX_REMOVE_SHELL
+from neutrino_agent.ai_tools.account_session import (
+    POSIX_REMOVE_SHELL,
+    POWERSHELL_QUIET_PROGRESS,
+)
 from tests.ai_tools.fake_cc_switch import FakeCcSwitch, has_dir
 
 # The single-quoted literal a Windows script carries its path in.
@@ -91,6 +94,7 @@ class FakeAccountPlatform:
         """``(verb, path)`` of one file operation's command."""
         if argv[0] == "powershell.exe":
             script = base64.b64decode(argv[-1]).decode("utf-16-le")
+            script = script.replace(POWERSHELL_QUIET_PROGRESS, "", 1)
             path = LITERAL.search(script).group(1).replace("''", "'")
             if "PathType Container) -and" in script:
                 return "remove_empty_dir", path

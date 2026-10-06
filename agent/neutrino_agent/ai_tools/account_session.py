@@ -42,6 +42,8 @@ POSIX_WRITE_SHELL = 'mkdir -p -- "$(dirname -- "$1")" && cat > "$1"'
 POSIX_REMOVE_SHELL = (
     'rm -f -- "$1"; shift; for d do rmdir -- "$d" 2>/dev/null || exit 0; done'
 )
+# The line every PowerShell file step starts with: no progress records.
+POWERSHELL_QUIET_PROGRESS = "$ProgressPreference = 'SilentlyContinue'\n"
 # The PowerShell that does the same four things on Windows, each given the
 # path as a literal.
 WINDOWS_READ_SCRIPT = """
@@ -101,7 +103,14 @@ def powershell_literal(text: str) -> str:
 
 
 def powershell_argv(script: str) -> list:
-    """PowerShell running one script, carried as ``-EncodedCommand``."""
+    """PowerShell running one script, carried as ``-EncodedCommand``.
+
+    The script runs with progress records off: inside the account's task
+    its error stream shares the output file, and a progress record, such as
+    the one PowerShell writes while it prepares its modules for first use,
+    would land there as CLIXML before what the script prints.
+    """
+    script = POWERSHELL_QUIET_PROGRESS + script
     encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
     return [
         "powershell.exe",

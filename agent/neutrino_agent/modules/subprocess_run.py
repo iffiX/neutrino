@@ -49,14 +49,21 @@ def run(
     is_checked: bool = True,
     input_text: "str | None" = None,
     timeout_s: int = RUN_TIMEOUT_S,
+    encoding: "str | None" = None,
 ) -> CommandResult:
     """Run one command to completion.
+
+    Its output is read in the encoding named, the system's own when none
+    is, and a byte that encoding cannot read becomes a replacement
+    character rather than an error: on Windows a decode error is raised in
+    the thread that reads the pipe and would leave the output empty.
 
     Args:
         command: The argument vector.
         is_checked: Whether a non-zero exit raises.
         input_text: Text for the command's standard input.
         timeout_s: How long to wait.
+        encoding: The encoding the command writes; None is the system's.
 
     Returns:
         The result.
@@ -73,6 +80,8 @@ def run(
         input=input_text,
         capture_output=True,
         text=True,
+        encoding=encoding,
+        errors="replace",
         timeout=timeout_s,
     )
     result = CommandResult(

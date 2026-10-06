@@ -23,8 +23,9 @@ cc-switch writes a tool's files only into a directory that is there, so
 the switch makes it, as the account, for a tool that has none. A switch
 back that cannot run cc-switch is a failure, and the records stay.
 
-Activation is all or nothing: a tool that refuses has every tool switched
-before it put back, and the refusal is the answer. Codex's reasoning effort
+Activation is all or nothing: a tool that refuses has itself, once its
+record was started, and every tool switched before it put back, and the
+refusal is the answer. Codex's reasoning effort
 has no flag in cc-switch and is settled into ``config.toml`` after the
 switch.
 
@@ -263,6 +264,8 @@ class AiToolsAccountSwitcher:
                     switched.append(app)
             except ToolSwitchError as error:
                 undone = []
+                if self.read_record(app) is not None:
+                    done.append(app)
                 for earlier in done:
                     try:
                         self._point_away(earlier)

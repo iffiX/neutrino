@@ -375,3 +375,26 @@ def test_a_switch_back_that_cannot_run_cc_switch_keeps_the_records(tmp_path):
     switcher.deactivate()
 
     assert session.files[SETTINGS] == own
+
+
+def test_a_tool_that_refuses_is_put_back_itself(tmp_path):
+    own = '{"permissions": {}}\n'
+    cc_switch = FakeCcSwitch()
+    switcher, session = switcher_for(tmp_path, cc_switch, {SETTINGS: own})
+    original = cc_switch.answer
+
+    def wrong_key(session_, arguments, app):
+        answered = original(session_, arguments, app)
+        if tuple(arguments) == ("use", "neutrino") and app == "claude":
+            session.files[SETTINGS] = json.dumps({"env": {"ANTHROPIC_BASE_URL": HUB}})
+        return answered
+
+    cc_switch.answer = wrong_key
+
+    with pytest.raises(ToolSwitchError) as caught:
+        activate(switcher)
+
+    assert "did not take the hub's endpoint" in caught.value.params["detail"]
+    assert session.files[SETTINGS] == own
+    assert not switcher.has_records()
+    assert "neutrino" not in cc_switch.providers["claude"]
