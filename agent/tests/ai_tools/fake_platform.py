@@ -30,6 +30,7 @@ class FakeAccountPlatform:
         self.stores: dict = {}
         self.files: dict = {}
         self.dirs: set = set()
+        self.modes: dict = {}
         self.runs: list = []
         self.answered: list = []
         self.refusal = None
@@ -72,6 +73,13 @@ class FakeAccountPlatform:
                 self.files[path] = stdin
             elif verb == "remove":
                 self.files.pop(path, None)
+            elif verb == "mode_of":
+                if path in self.files:
+                    out = mode_letters(self.modes.get(path, 0o644)) + " 1 0 0 1 x\n"
+                else:
+                    code = 2
+            elif verb == "set_mode":
+                self.modes[path] = int(argv[1], 8)
             elif verb == "is_dir":
                 code = 0 if has_dir(self.files, self.dirs, path) else 1
             elif verb == "make_dir":
@@ -120,6 +128,8 @@ class FakeAccountPlatform:
             "rm": "remove",
             "mkdir": "make_dir",
             "rmdir": "remove_empty_dir",
+            "ls": "mode_of",
+            "chmod": "set_mode",
         }
         return verbs.get(argv[0], ""), argv[-1]
 
@@ -144,3 +154,12 @@ class _Account:
 def platform_is_windows(home: str) -> bool:
     """Whether a home is spelled the way Windows spells one."""
     return ":" in home[:3]
+
+
+def mode_letters(mode: int) -> str:
+    """Permission bits as ``ls -l`` spells them, for a plain file."""
+    letters = "".join(
+        letter if mode & (1 << (8 - at)) else "-"
+        for at, letter in enumerate("rwxrwxrwx")
+    )
+    return "-" + letters

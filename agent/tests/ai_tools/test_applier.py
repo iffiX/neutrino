@@ -79,7 +79,8 @@ def test_each_named_account_is_switched_as_itself(tmp_path, binary):
     assert states(applier) == {"ann": ("switched", ""), "bob": ("switched", "")}
     assert {account for account, _password, _argv in platform.runs} == {"ann", "bob"}
     assert all(
-        argv[0] == binary or argv[0] in ("cat", "test", "sh", "rm", "mkdir", "rmdir")
+        argv[0] == binary
+        or argv[0] in ("cat", "test", "sh", "rm", "mkdir", "rmdir", "ls", "chmod")
         for _a, _p, argv in platform.runs
     )
     added = platform.store("ann").added["claude"]

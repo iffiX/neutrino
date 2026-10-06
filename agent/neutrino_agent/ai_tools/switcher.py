@@ -47,6 +47,8 @@ from neutrino_agent.ai_tools.constants import (
     AI_TOOLS_APP_DIRS,
     AI_TOOLS_APP_FILES,
     AI_TOOLS_APP_KEPT_FILES,
+    AI_TOOLS_APP_KEY_FILES,
+    AI_TOOLS_KEY_FILE_MODE,
     AI_TOOLS_APPS,
     AI_TOOLS_CLAUDE_SLOT_FLAGS,
     AI_TOOLS_CODE_SWITCH_FAILED,
@@ -368,6 +370,10 @@ class AiToolsAccountSwitcher:
                         {AI_TOOLS_CODEX_EFFORT_KEY: effort},
                     ),
                 )
+        for name in AI_TOOLS_APP_KEY_FILES[app]:
+            path = self._kept_path(app, name)
+            if self._session.is_file(path):
+                self._session.set_mode(path, AI_TOOLS_KEY_FILE_MODE)
         self._verify(app, base_url, api_key, config)
         record["added"] = settings
         self._write_record(app, record)
@@ -384,11 +390,14 @@ class AiToolsAccountSwitcher:
             self._session.path(AI_TOOLS_APP_DIRS[app])
         )
         kept = {}
+        kept_modes = {}
         for name in AI_TOOLS_APP_KEPT_FILES[app]:
             path = self._kept_path(app, name)
-            kept[name] = (
-                self._session.read_text(path) if self._session.is_file(path) else None
-            )
+            is_there = self._session.is_file(path)
+            kept[name] = self._session.read_text(path) if is_there else None
+            mode = self._session.mode_of(path) if is_there else None
+            if mode is not None:
+                kept_modes[name] = mode
         self._session.cc(["provider", "list"], app, is_checked=False)
         if is_present:
             self._adopt(app)
@@ -397,6 +406,7 @@ class AiToolsAccountSwitcher:
             "is_present": is_present,
             "is_dir_present": is_dir_present,
             "kept": kept,
+            "kept_modes": kept_modes,
             "previous": "" if current == AI_TOOLS_PROVIDER_ID else current,
             "added": None,
         }
@@ -449,7 +459,7 @@ class AiToolsAccountSwitcher:
         returned_to = self._drop_provider(app, previous)
         kept = record.get("kept")
         if isinstance(kept, dict):
-            self._put_back(app, kept)
+            self._put_back(app, kept, record.get("kept_modes") or {})
             if record.get("is_dir_present") is False:
                 self._session.remove_empty_dir(
                     self._session.path(AI_TOOLS_APP_DIRS[app])
@@ -462,11 +472,11 @@ class AiToolsAccountSwitcher:
             os.remove(self._record_path(app))
         return returned_to
 
-    def _put_back(self, app: str, kept: dict) -> None:
+    def _put_back(self, app: str, kept: dict, modes: dict) -> None:
         """Put each file a switch may write back as it was before the first switch.
 
-        A file that was there gets its own text again, byte for byte; one
-        that was absent is taken away.
+        A file that was there gets its own text again, byte for byte, and
+        its own mode where one was kept; one that was absent is taken away.
 
         Raises:
             ToolSwitchError: When a file cannot be written.
@@ -480,6 +490,9 @@ class AiToolsAccountSwitcher:
                 continue
             if not is_there or self._session.read_text(path) != original:
                 self._session.write_text(path, original)
+            mode = modes.get(name)
+            if isinstance(mode, int) and self._session.mode_of(path) != mode:
+                self._session.set_mode(path, mode)
 
     def _kept_path(self, app: str, name: str) -> str:
         """One file a switch may write, below the account's home."""

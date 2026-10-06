@@ -97,6 +97,33 @@ exit 0
 """
 
 
+def permission_bits(listed: str) -> "int | None":
+    """The permission bits ``ls -l`` spells, such as ``-rw-r--r--``.
+
+    Args:
+        listed: The first field of an ``ls -l`` line; a mark after the
+            nine letters, such as macOS's ``@`` or ``+``, is ignored.
+
+    Returns:
+        The bits, set-id and sticky ones included; None for a field that is
+        not ten letters long.
+    """
+    if len(listed) < 10:
+        return None
+    letters = listed[1:10]
+    bits = 0
+    for at, letter in enumerate(letters):
+        shift = 8 - at
+        if letter in "rwxst":
+            bits |= 1 << shift
+    for at, special in ((2, 0o4000), (5, 0o2000), (8, 0o1000)):
+        if letters[at] in "sStT":
+            bits |= special
+            if letters[at] in "ST":
+                bits &= ~(1 << (8 - at))
+    return bits
+
+
 def powershell_literal(text: str) -> str:
     """A string as a single-quoted PowerShell literal."""
     return "'" + text.replace("'", "''") + "'"
@@ -277,6 +304,33 @@ class AiToolsAccountSession:
         else:
             command = ["rmdir", "--", path]
         self._run(command)
+
+    def mode_of(self, path: str) -> "int | None":
+        """A file's permission bits, read as the account.
+
+        Returns:
+            The bits; None on Windows, where a profile's files are its
+            owner's by their access list, and for a file that is not there.
+        """
+        if self._is_windows:
+            return None
+        result = self._run(["ls", "-ldn", "--", path])
+        if result.returncode != 0:
+            return None
+        return permission_bits((result.stdout or "").split(" ", 1)[0])
+
+    def set_mode(self, path: str, mode: int) -> None:
+        """Set a file's permission bits, as the account; nothing on Windows.
+
+        Raises:
+            ToolSwitchError: When they cannot be set.
+        """
+        if self._is_windows:
+            return
+        result = self._run(["chmod", format(mode, "o"), "--", path])
+        if result.returncode != 0:
+            words = (result.stderr or result.stdout or "").strip()
+            raise self.failure(f"could not set the mode of {path}: {words}")
 
     def write_text(self, path: str, text: str) -> None:
         """Write one file of the account's, as the account, its directory made.

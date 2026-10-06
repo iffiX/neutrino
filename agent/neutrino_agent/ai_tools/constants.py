@@ -22,6 +22,14 @@ AI_TOOLS_APP_KEPT_FILES = {
     "codex": ("config.toml", "auth.json"),
     "gemini": (".env", "settings.json"),
 }
+# The files of a tool that hold the gateway key once it is switched, and
+# the mode each is left with: the account alone reads and writes it.
+AI_TOOLS_APP_KEY_FILES = {
+    "claude": ("settings.json",),
+    "codex": ("auth.json",),
+    "gemini": (".env",),
+}
+AI_TOOLS_KEY_FILE_MODE = 0o600
 
 # Claude Code's role slots, each a flag of cc-switch's provider add.
 AI_TOOLS_CLAUDE_SLOT_FLAGS = {

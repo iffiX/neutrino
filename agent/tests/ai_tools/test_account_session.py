@@ -300,3 +300,37 @@ def test_the_posix_removal_leaves_no_empty_neutrino_directory(tmp_path, kept, le
         assert (share / name).is_dir()
     if not kept:
         assert not (share / "neutrino").exists()
+
+
+@pytest.mark.parametrize(
+    "listed, bits",
+    [
+        ("-rw-r--r--", 0o644),
+        ("-rw-------@", 0o600),
+        ("-rwsr-x--x", 0o4751),
+        ("-rw-r-Sr-T", 0o3644),
+        ("short", None),
+    ],
+)
+def test_ls_letters_read_as_permission_bits(listed, bits):
+    from neutrino_agent.ai_tools.account_session import permission_bits
+
+    assert permission_bits(listed) == bits
+
+
+def test_a_mode_is_read_and_set_as_the_account_and_never_on_windows():
+    platform = RecordingPlatform(out="-rw-r--r-- 1 1000 1000 30 Oct 6 auth.json\n")
+    session = session_on(platform)
+
+    assert session.mode_of("/home/ann/.codex/auth.json") == 0o644
+    session.set_mode("/home/ann/.codex/auth.json", 0o600)
+
+    assert [run["argv"][:2] for run in platform.runs] == [
+        ["ls", "-ldn"],
+        ["chmod", "600"],
+    ]
+    assert {run["account"] for run in platform.runs} == {"ann"}
+    windows = RecordingPlatform("windows")
+    assert session_on(windows, "C:\\Users\\ann").mode_of("C:\\x") is None
+    session_on(windows, "C:\\Users\\ann").set_mode("C:\\x", 0o600)
+    assert windows.runs == []
