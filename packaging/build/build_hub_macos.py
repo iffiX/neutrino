@@ -353,7 +353,7 @@ def _lay_out(
     app.parent.mkdir(parents=True)
     shutil.copytree(dist, app, symlinks=True)
     hub_assets.stage_programs(app / PROGRAMS_DIR_NAME, "darwin", machine)
-    compiled_tree.stage_licenses(app / "licenses")
+    compiled_tree.stage_licenses(app / "licenses", "darwin")
 
     state = package_root / str(INSTALL_STATE_DIR).lstrip("/")
     hub_assets.stage_geodata(state / compiled_tree.GEODATA_DIR_NAME)

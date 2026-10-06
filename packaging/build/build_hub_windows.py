@@ -65,8 +65,10 @@ HUB_SERVICE_NAME = "neutrino_hub"
 HUB_SERVICE_ARGUMENTS = "service run"
 # Where the programs the hub drives sit, under the program folder.
 PROGRAMS_DIR_NAME = "bin"
-# The stand-in for Npcap's Packet.dll, as it lands beside easytier-core.exe.
+# The stand-in for Npcap's Packet.dll, as it lands beside easytier-core.exe,
+# and its licence under licenses/.
 PACKET_DLL_NAME = "packet.dll"
+PACKET_DLL_LICENSE = "packet_stub.txt"
 
 # x64 only: the agent the hub carries is published for no Windows arm64.
 # Every name a command line or Windows itself gives the machine.
@@ -425,7 +427,9 @@ def _lay_out(
     programs = installed / PROGRAMS_DIR_NAME
     hub_assets.stage_programs(programs, "windows", machine)
     shutil.copyfile(packet_dll, programs / PACKET_DLL_NAME)
-    compiled_tree.stage_licenses(installed / "licenses")
+    compiled_tree.stage_licenses(
+        installed / "licenses", "windows", extras=(PACKET_DLL_LICENSE,)
+    )
 
     state = root / "state"
     hub_assets.stage_geodata(state / compiled_tree.GEODATA_DIR_NAME)

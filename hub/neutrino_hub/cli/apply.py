@@ -14,9 +14,10 @@ them is part of making the box true, and a unit already current is left
 alone.
 
 The apply runs the panel's converge steps in the panel's order: the enabled
-overlays start, then the routing state, dnsmasq and, where the tree carries
-the proxy, xray, and the overlays turned off stop last. The two pushes to devices and clients are the panel's;
-a peer is handed its state when it next reports to a running panel.
+overlays start, then the routing state, dnsmasq and the services of the
+modules the edition carries, and the overlays turned off stop last. The two
+pushes to devices and clients are the panel's; a peer is handed its state
+when it next reports to a running panel.
 """
 
 import argparse

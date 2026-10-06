@@ -335,3 +335,83 @@ def test_the_builds_read_the_naming_tables_the_packaging_owns():
         "macos_pkg",
     }
     assert constants.PACKAGING_ASSET_PATTERNS["pkg"].endswith(".pkg.tar.zst")
+
+
+# --- the licences a hub package carries ---
+
+
+def _expected_licenses(os_name, *, is_agent_carried):
+    """What a hub package of this tree's edition carries, written out by hand."""
+    from neutrino_hub import edition
+
+    names = {
+        "cliproxyapi.txt",
+        "easytier.txt",
+        "xterm.txt",
+        "qrcode_generator.txt",
+        "meslolgs_nf.txt",
+    }
+    if is_agent_carried:
+        names.add("rustdesk.txt")
+    if os_name == "windows":
+        names |= {"wintun.txt", "packet_stub.txt"}
+    if edition.has_feature("proxy"):
+        names |= {"xray_core.txt", "v2fly_geoip.txt", "v2fly_domain_list_community.txt"}
+        if os_name != "linux":
+            names.add("tun2socks.txt")
+    if edition.has_feature("netbird"):
+        names.add("netbird.txt")
+    return names
+
+
+@pytest.mark.parametrize(
+    "os_name, is_agent_carried, extras",
+    [
+        ("linux", True, ()),
+        ("linux", False, ()),
+        ("darwin", True, ()),
+        ("windows", True, ("packet_stub.txt",)),
+    ],
+)
+def test_a_hub_package_carries_the_licences_of_what_it_carries_and_no_others(
+    os_name, is_agent_carried, extras
+):
+    """The mainland tree leaves the proxy's and NetBird's licences out, and
+    every package leaves out what only the client carries."""
+    names = venv_tree.carried_licenses(
+        os_name, is_agent_carried=is_agent_carried, extras=extras
+    )
+
+    assert set(names) == _expected_licenses(os_name, is_agent_carried=is_agent_carried)
+    assert "gobject_introspection.txt" not in names
+    assert "noto_sans_symbols.txt" not in names
+
+
+@pytest.mark.parametrize("kind", ["deb", "pkg"])
+def test_the_linux_package_stages_exactly_its_licences_from_the_tree(tmp_path, kind):
+    """Every carried licence is a file of the tree's own licenses/; the Arch
+    package carries no agent package and so no RustDesk."""
+    is_agent_carried = bool(venv_tree.AGENT_FAMILY_OF_HUB_KIND[kind])
+
+    venv_tree.stage_licenses(tmp_path, is_agent_carried=is_agent_carried)
+
+    staged = tmp_path / "usr/share/doc" / venv_tree.PACKAGE_NAME / "licenses"
+    assert {path.name for path in staged.iterdir()} == _expected_licenses(
+        "linux", is_agent_carried=is_agent_carried
+    )
+
+
+def test_the_agent_package_licences_are_the_agents_own():
+    import ast
+
+    source = (venv_tree.AGENT_ROOT / "packaging" / "payload.py").read_text()
+    (assigned,) = [
+        node.value
+        for node in ast.parse(source).body
+        if isinstance(node, ast.Assign)
+        and any(
+            getattr(target, "id", "") == "CARRIED_LICENSES" for target in node.targets
+        )
+    ]
+
+    assert ast.literal_eval(assigned) == venv_tree.AGENT_PACKAGE_LICENSES

@@ -227,3 +227,19 @@ def test_no_core_string_names_a_left_out_feature():
             if (relative, value) not in NAMED_STRINGS_ALLOWED:
                 found.append(f"{relative}: {value!r}")
     assert found == []
+
+
+def test_no_docstring_printed_as_help_names_a_left_out_feature():
+    """A command whose ``--help`` prints its whole docstring shows it to the
+    person, so it names neither the proxy nor NetBird."""
+    shown = []
+    for path in sorted((PACKAGE_ROOT / "cli").glob("*.py")):
+        source = path.read_text(encoding="utf-8")
+        if "description=__doc__)" not in source:
+            continue
+        shown.append(path.name)
+        doc = ast.get_docstring(ast.parse(source)) or ""
+        assert not re.search(
+            r"proxy|xray|netbird|tun2socks|geodata", doc, re.I
+        ), path.name
+    assert shown
