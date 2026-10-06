@@ -16,7 +16,7 @@ import androidx.compose.ui.unit.dp
 import io.github.iffix.neutrino.AI_VERSION_PATH
 import io.github.iffix.neutrino.CLIENT_HTTPS_DEFAULT_PORT
 import io.github.iffix.neutrino.CLIENT_HTTP_DEFAULT_PORT
-import io.github.iffix.neutrino.CLIENT_KEY_SHOWN_PREFIX
+import io.github.iffix.neutrino.CLIENT_KEY_MASK_LENGTH
 import io.github.iffix.neutrino.FORWARD_BIND_HOST
 import io.github.iffix.neutrino.channel.ChannelResult
 import io.github.iffix.neutrino.channel.ChannelServiceEntry
@@ -80,6 +80,16 @@ internal fun loopbackAddressesOf(endpoint: String, localPort: Int): List<String>
     val trimmed = plain.trimEnd('/')
     return listOf(plain, if (trimmed.endsWith(AI_VERSION_PATH)) trimmed else trimmed + AI_VERSION_PATH)
 }
+
+/**
+ * What the key field shows: the key while the eye toggle shows it, else a mask that tells nothing
+ * of the key, as the panel's password field does.
+ *
+ * @param key This phone's key.
+ * @param isShown Whether the eye toggle shows the key.
+ * @return The key, or the mask.
+ */
+internal fun shownKey(key: String, isShown: Boolean): String = if (isShown) key else "•".repeat(CLIENT_KEY_MASK_LENGTH)
 
 /**
  * The gateway's own port and path, from its endpoint.
@@ -186,11 +196,7 @@ private fun GatewayRow(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 val key = (current.value["api_key"] as? JsonPrimitive)?.content.orEmpty()
-                val shown = if (isKeyShown || key.length <= CLIENT_KEY_SHOWN_PREFIX) {
-                    key
-                } else {
-                    key.take(CLIENT_KEY_SHOWN_PREFIX) + "•".repeat(16)
-                }
+                val shown = shownKey(key, isKeyShown)
                 SecretField(words.word("ui.client_key"), shown, isKeyShown, onToggle = { isKeyShown = !isKeyShown }) {
                     CopyButton(isEnabled = !hub.jobs.isRefreshing) { onCopy(key, true) }
                 }

@@ -47,6 +47,16 @@ class AiScreenTest {
     }
 
     @Test
+    fun theHiddenKeyShowsNoneOfTheKey() {
+        val key = "sk-nt-7f3a9c21e4b84d06"
+        val hidden = shownKey(key, isShown = false)
+        assertEquals("•".repeat(16), hidden)
+        assertEquals(hidden, shownKey("ab", isShown = false))
+        assertTrue(hidden.none { it in key })
+        assertEquals(key, shownKey(key, isShown = true))
+    }
+
+    @Test
     fun theLabelsAreWordedInEveryLanguage() {
         val expected = mapOf(
             "en" to listOf("For apps that add /v1 themselves", "For apps that want /v1 in the address"),
