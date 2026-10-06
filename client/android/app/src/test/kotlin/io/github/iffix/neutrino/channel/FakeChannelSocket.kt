@@ -22,11 +22,13 @@ class FakeChannelSocket(private var isOpen: Boolean = true) : ChannelSocket {
      * @param type The frame's type.
      * @return The frames.
      */
-    fun sent(type: String): List<JsonObject> = texts.filter { it["type"]?.jsonPrimitive?.content == type }
+    fun sent(type: String): List<JsonObject> = synchronized(this) {
+        texts.filter { it["type"]?.jsonPrimitive?.content == type }
+    }
 
-    override fun sendText(text: String): Boolean {
+    override fun sendText(text: String): Boolean = synchronized(this) {
         if (isOpen) texts += Json.parseToJsonElement(text).jsonObject
-        return isOpen
+        isOpen
     }
 
     override fun sendBytes(bytes: ByteArray): Boolean = synchronized(this) {
