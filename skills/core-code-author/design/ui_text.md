@@ -156,6 +156,7 @@ The sidebar's lines under the two renamed entries:
 | Key | English | Chinese |
 | --- | --- | --- |
 | `ui.nav.overlay`, `ui.overlay.title` | Access | 外部访问 |
+| `ui.overlay.apply_engine`, the engine panel's apply bar | Apply access | 应用外部访问 |
 | `ui.nav.overlay_description` | Reaching this hub from outside | 从外面连回这台中枢 |
 | `ui.nav.modules_description`, `ui.nav.modules_description_other` | Features configured on each machine | 每台机器配置的功能 |
 
