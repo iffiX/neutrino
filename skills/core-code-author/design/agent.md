@@ -318,11 +318,16 @@ see. Whose desktop a peer sees is whoever sits at the screen; the report's
 the new copy over the old one while the host registered under RustDesk's
 names keeps running the old program, which then fails to start its session
 host from a file that is gone. So the agent, when it starts with the switch
-on, compares the copy's running processes with the copy on disk (on Linux
-the file each process runs, on macOS and Windows when each started against
-when the copy was written) and, when one runs an older program, stops the
-host and starts it again under the same registration and settings. This is
-not an apply of the state, and the mark of the state last tried stays.
+on, compares the copy's running processes with the copy on disk and, when
+one runs an older program, stops the host and starts it again under the
+same registration and settings. On Linux that is the file each process
+runs; on macOS, when each started against when the copy was written; on
+Windows, the image each process really runs, read with
+`QueryFullProcessImageName`: Windows Installer moves an executable in use
+into `C:\Config.Msi` and gives the new one the build's own time, while
+`Win32_Process` still names the old path, so neither the path WMI reports
+nor a time tells a replaced host apart. This is not an apply of the state,
+and the mark of the state last tried stays.
 
 **A share made by the old command is kept.** An agent of a version that had
 `nagent rdp start` recorded a share in its store. The package that upgrades
