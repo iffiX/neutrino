@@ -43,7 +43,7 @@ the port.
 | --- | --- |
 | Direct opens the agent port alone on an interface. The panel, the AI gateway and every other listener keep the exposure the **Network** page gives them ([modules/network.md](modules/network.md), "What answers, and where"). | The agent port admits a peer by a token and a pinned certificate. The panel admits a browser by a password, and a password on a public address is open to guessing. |
 | The port treats a peer the same on every way in. No rule on it depends on the address a peer arrives from. | Through the relay every peer arrives from loopback, so an address says nothing about the peer. |
-| A peer tries `urls` in a fixed order: the hub's name on the current network, the address that last worked, then the rest, the relay last. | The nearest address is tried first, and the path through another server is the last resort. |
+| A peer tries `urls` in a fixed order, at every reconnect as at its first connect: the hub's name on the current network, then `urls` in the hub's order, the relay last. The address that last worked is not tried earlier for having worked, and a connected channel is not moved because a nearer address answers again. | The nearest address is tried first, and the path through another server is the last resort; an address taken while a nearer one refused for a moment, as during a hub restart, would otherwise stay in use after the nearer one is back. |
 
 ## Before a peer is admitted
 
