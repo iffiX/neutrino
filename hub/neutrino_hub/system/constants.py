@@ -147,6 +147,9 @@ SYSTEM_RUNTIME_PACKAGES = (
     "smbclient",
     # The relay's reverse forward runs the system's own OpenSSH client.
     "openssh-client",
+    # The application entry runs `nhub open`, which asks for administrator
+    # rights through pkexec.
+    "pkexec",
 )
 
 # Wanted only by a machine that serves Wi-Fi, which is why it is a
@@ -179,18 +182,23 @@ SYSTEM_PACKAGE_NAMES = {
         # it Ubuntu has the same daemon in `dhcpcd5`, whose unit the takeover
         # stands down with every other manager's.
         "dhcpcd": ("dhcpcd-base", "dhcpcd5"),
+        # Its own package since Debian 12 and Ubuntu 22.04, whose `polkitd`
+        # carries none; `policykit-1` carries it on older releases.
+        "pkexec": ("pkexec", "policykit-1"),
     },
     "rhel": {
         "iproute2": "iproute",
         "openssh-client": "openssh-clients",
         "smbclient": "samba-client",
         "wpasupplicant": "wpa_supplicant",
+        "pkexec": "polkit",
         # RHEL builds venv into the interpreter rather than splitting it out.
         "python3-venv": None,
     },
     "arch": {
         "openssh-client": "openssh",
         "wpasupplicant": "wpa_supplicant",
+        "pkexec": "polkit",
         "python3-venv": None,
     },
 }
