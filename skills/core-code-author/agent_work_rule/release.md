@@ -479,10 +479,13 @@ of it and the two install scripts, and opens a draft release. Each job runs one 
 `packaging/ci/check.py` on what it built, so a broken package fails the build
 rather than the person who downloads it: every Linux package is installed in
 a fresh container of its family and its command answers `--version`; the
-client's Windows job installs the `.msi`, runs the client from it and
-uninstalls again, and its macOS job installs the `.pkg` and runs `nclient`
-from it; the agent's Windows job installs its `.msi`, checks that
-`neutrino_agent` and `RustDesk` run, and uninstalls again, and its macOS job
+client's Windows job installs the released 0.4.0 `.msi` and its own over
+it, runs the client from it and uninstalls again, and its macOS job installs
+the `.pkg` and runs `nclient` from it; the agent's Windows job installs the
+released 0.4.0 `.msi` and its own over it, checks that `neutrino_agent`
+runs, that RustDesk's files lie in the agent's folder with nothing of
+RustDesk's registered, and that the RustDesk 0.4.0 installed is gone, and
+uninstalls again, and its macOS job
 installs the `.pkg`, checks the LaunchDaemon runs, and removes it; the apk is
 installed and launched once in an emulator; the hub's macOS and Windows jobs
 set a hub up from the package and from the install script

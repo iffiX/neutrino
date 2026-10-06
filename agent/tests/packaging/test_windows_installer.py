@@ -5,8 +5,8 @@ document the build writes and the payload it lays out with the compile and
 the download stood in for: the agent registered as a LocalSystem service
 started at boot with ``service run`` and recovered when it ends, RustDesk's
 files in the agent's folder with nothing of RustDesk's run or registered,
-an upgrade from a package that ran upstream's installer running that
-package's copy of it with ``--uninstall`` before the old version goes, the
+an install over a package that ran upstream's installer running
+upstream's uninstall once the old version is gone, the
 data folder closed to everyone but SYSTEM and the administrators, the agent
 on PATH, and the name the release publishes it under.
 """
@@ -102,19 +102,38 @@ def test_the_installer_runs_and_registers_nothing_of_rustdesks(document):
     assert sorted(actions) == ["RemoveOldRustDesk", "UninstallAdded"]
 
 
-def test_an_upgrade_removes_what_an_earlier_package_installed_with_its_own_copy(
+def test_an_earlier_package_is_known_by_the_installer_it_left(document):
+    """The search looks in both folders an earlier package installed into,
+    for the one installer name any of them carried, and its property reaches
+    the deferred sequence."""
+    _source, root = document
+
+    found = by_id(root, WXS + "Property", "OLDRUSTDESKINSTALLER")
+    assert found.get("Secure") == "yes"
+    searches = found.findall(WXS + "DirectorySearch")
+    assert [search.get("Path") for search in searches] == [
+        "[ProgramFiles64Folder]Neutrino Agent",
+        "[ProgramFiles64Folder]Neutrino\\agent",
+    ]
+    for search in searches:
+        assert search.get("Depth") == "0"
+        (file_search,) = search.findall(WXS + "FileSearch")
+        assert file_search.get("Name") == "rustdesk-1.4.9-x86_64.exe"
+
+
+def test_an_upgrade_runs_upstreams_uninstall_once_the_earlier_version_is_gone(
     document,
 ):
-    """The earlier package left upstream's installer in the agent's folder;
-    that copy uninstalls what it installed, before the earlier version's
-    files go. With no copy there, the loop runs nothing."""
+    """Upstream's install is uninstalled the way its own uninstall entry
+    does it, as the system, after InstallInitialize: no action of this
+    package's runs before the earlier version's removal, which stays at
+    WiX's default place before the transaction."""
     _source, root = document
 
     action = by_id(root, WXS + "CustomAction", "RemoveOldRustDesk")
-    assert action.get("Directory") == "INSTALLFOLDER"
+    assert action.get("Directory") == "ProgramFiles64Folder"
     assert action.get("ExeCommand") == (
-        '"[System64Folder]cmd.exe" /c for %f in '
-        '("[INSTALLFOLDER]rustdesk-*-x86_64.exe") do "%~f" --uninstall'
+        '"[ProgramFiles64Folder]RustDesk\\rustdesk.exe" --uninstall'
     )
     assert action.get("Execute") == "deferred"
     assert action.get("Impersonate") == "no"
@@ -125,10 +144,13 @@ def test_an_upgrade_removes_what_an_earlier_package_installed_with_its_own_copy(
         for node in root.iter(WXS + "Custom")
         if node.get("Action") == "RemoveOldRustDesk"
     ]
-    assert scheduled.get("Before") == "RemoveExistingProducts"
-    assert scheduled.get("Condition") == "WIX_UPGRADE_DETECTED AND NOT REMOVE"
+    assert scheduled.get("After") == "InstallInitialize"
+    assert scheduled.get("Before") is None
+    assert scheduled.get("Condition") == "OLDRUSTDESKINSTALLER AND NOT REMOVE"
+    for node in root.iter(WXS + "Custom"):
+        assert "RemoveExistingProducts" not in (node.get("Before"), node.get("After"))
     upgrade = root.find(f"{WXS}Package/{WXS}MajorUpgrade")
-    assert upgrade.get("Schedule") == "afterInstallInitialize"
+    assert upgrade.get("Schedule") is None
 
 
 def test_a_removal_runs_the_agent_to_take_away_what_its_modules_added(document):

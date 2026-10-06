@@ -184,10 +184,17 @@ has no fixed address for the latest release's files. It fetches `SHA256SUMS`
 and the package into a temporary directory and checks the package against
 it. A mismatch, or a system and
 architecture no package is published for, stops the script with one
-sentence. It then installs with `sudo installer -pkg`, `sudo apt install ./`,
+sentence. Run as a person, `install.sh` asks sudo for the password once
+before it downloads anything, and asks nothing when `sudo -n true` already
+succeeds. It then installs with `sudo installer -pkg`, `sudo apt install ./`,
 `sudo dnf install`, `sudo pacman -U` or `msiexec /i <file> /qn /norestart`.
 For the hub it ends by printing the wizard's address with its token, and
-runs `nhub setup` instead when its standard input is a terminal.
+runs `nhub setup` instead when its standard input is a terminal. Over a hub
+already set up, one whose panel settings hold a password hash, it runs
+neither and prints one line naming the panel's address. It runs `nhub` where
+its package put it, `/usr/bin/nhub`, `/usr/local/bin/nhub` or
+`C:\Program Files\Neutrino\hub\nhub.exe`, since a root shell's PATH may
+name none of them.
 `install.ps1` checks for an administrator first and exits with one sentence
 when it is not one.
 

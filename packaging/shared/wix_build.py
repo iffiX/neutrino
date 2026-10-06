@@ -48,7 +48,7 @@ PACKAGE_SOURCE = """<?xml version="1.0" encoding="utf-8"?>
            UpgradeCode="@UPGRADE_CODE@"
            Scope="perMachine"
            Compressed="yes">
-    <MajorUpgrade AllowSameVersionUpgrades="yes"@SCHEDULE@
+    <MajorUpgrade AllowSameVersionUpgrades="yes"
                   DowngradeErrorMessage="A newer @NAME@ is already installed." />
     <MediaTemplate EmbedCab="yes"@COMPRESSION@ />
 @BODY@
@@ -92,7 +92,6 @@ def package_source(
     upgrade_code: str,
     body: str,
     compression_level: str = "",
-    upgrade_schedule: str = "",
 ) -> str:
     """The whole ``.wxs`` document around a package's body.
 
@@ -105,9 +104,6 @@ def package_source(
         body: The XML inside ``Package``, holes already filled.
         compression_level: The cabinet's ``CompressionLevel``, such as
             ``high``; WiX's own default when empty.
-        upgrade_schedule: When the earlier version is removed, as
-            ``MajorUpgrade``'s ``Schedule`` names it; WiX's own default when
-            empty.
 
     Returns:
         The .wxs document.
@@ -127,14 +123,6 @@ def package_source(
             (
                 f' CompressionLevel="{attribute_text(compression_level)}"'
                 if compression_level
-                else ""
-            ),
-        )
-        .replace(
-            "@SCHEDULE@",
-            (
-                f' Schedule="{attribute_text(upgrade_schedule)}"'
-                if upgrade_schedule
                 else ""
             ),
         )

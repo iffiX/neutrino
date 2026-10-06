@@ -79,6 +79,13 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from shared.constants import (  # noqa: E402
+    PACKAGING_EARLIER_PACKAGES,
+    PACKAGING_EARLIER_RELEASE_URL,
+    PACKAGING_EARLIER_VERSION,
+)
+
 # Every check ends within this whole, and every command it runs within its
 # own limit: past the whole, what the machine is doing is printed and the
 # process ends, so a hung or a runaway step never outlives its job's runner.
@@ -162,6 +169,8 @@ INSTALL_SCRIPTS_DIR = REPO_ROOT / "packaging" / "install"
 PROGRAM_FILES = Path(os.environ.get("ProgramFiles", "C:/Program Files"))
 AGENT_WINDOWS_FOLDER = PROGRAM_FILES / "Neutrino" / "agent"
 AGENT_WINDOWS_SERVICES = ("neutrino_agent",)
+# Where the agent's 0.4.0 installed, which its upgrade takes away.
+AGENT_WINDOWS_EARLIER_FOLDER = PROGRAM_FILES / "Neutrino Agent"
 # The agent's copy of RustDesk, and what RustDesk's own install registers,
 # which the agent's package does not.
 AGENT_WINDOWS_RUSTDESK = AGENT_WINDOWS_FOLDER / "rustdesk" / "rustdesk.exe"
@@ -179,6 +188,8 @@ AGENT_WINDOWS_RUSTDESK_SCRIPT = (
     "Write-Output (@($signature, $entry, $running) -join ' ')"
 )
 CLIENT_WINDOWS_FOLDER = PROGRAM_FILES / "Neutrino" / "client"
+# Where the client's 0.4.0 installed, which its upgrade takes away.
+CLIENT_WINDOWS_EARLIER_FOLDER = PROGRAM_FILES / "Neutrino Client"
 PROGRAM_DATA = Path(os.environ.get("ProgramData", "C:/ProgramData"))
 CLIENT_WINDOWS_EASYTIER_STATE = (
     PROGRAM_DATA / "Neutrino" / "client" / "state" / "easytier"
@@ -441,7 +452,8 @@ def main() -> int:
 
 
 def check_agent_windows(msi: Path) -> None:
-    """Install the agent's .msi, check both services, and remove it.
+    """Install the released 0.4.0 agent, the agent's .msi over it, check
+    what the upgrade left, and remove it.
 
     Args:
         msi: The installer.
@@ -450,10 +462,28 @@ def check_agent_windows(msi: Path) -> None:
         SystemExit: When a step fails.
     """
     _require_host("win32", "Windows")
+    _install_earlier("agent_windows")
+    if not RUSTDESK_WINDOWS_FOLDER.is_dir():
+        raise SystemExit(
+            f"the earlier agent left no {RUSTDESK_WINDOWS_FOLDER} for the upgrade "
+            "to take away"
+        )
     log = Path(tempfile.gettempdir()) / "agent_install.log"
-    print(f"msiexec /i exited {_msiexec('/i', msi, log)}")
+    code = _msiexec("/i", msi, log)
+    print(f"msiexec /i exited {code}")
+    _print_log(log, ("RemoveOldRustDesk", "return value 3", "Error 2"), 40)
+    if code != 0:
+        raise SystemExit(
+            f"the agent did not install over its {PACKAGING_EARLIER_VERSION}"
+        )
     _check_no_pending_rename()
-    _print_log(log, ("RemoveOldRustDesk", "return value 3"), 40)
+    if AGENT_WINDOWS_EARLIER_FOLDER.exists():
+        raise SystemExit(f"{AGENT_WINDOWS_EARLIER_FOLDER} outlived the upgrade")
+    if not _wait_for_earlier_rustdesk_gone():
+        raise SystemExit(
+            f"the upgrade left the earlier agent's {RUSTDESK_WINDOWS_FOLDER} "
+            "or its service"
+        )
     if AGENT_WINDOWS_FOLDER.is_dir():
         print(
             f"{AGENT_WINDOWS_FOLDER}: "
@@ -492,6 +522,24 @@ def check_agent_windows(msi: Path) -> None:
             "expected False False True"
         )
     print("the module's task and rule are gone, the hub's rule stays")
+
+
+def _wait_for_earlier_rustdesk_gone() -> bool:
+    """Wait for upstream's uninstall, which ends in a script of its own, to
+    take the earlier agent's RustDesk service and folder away.
+
+    Returns:
+        Whether both were gone in time.
+    """
+    deadline = time.monotonic() + SERVICE_WAIT_S
+    while time.monotonic() < deadline:
+        if not (
+            _service_exists(RUSTDESK_WINDOWS_SERVICE)
+            or RUSTDESK_WINDOWS_FOLDER.exists()
+        ):
+            return True
+        time.sleep(SERVICE_POLL_S)
+    return False
 
 
 def _check_rustdesk_windows() -> None:
@@ -607,7 +655,9 @@ def run_client_windows_phase(msi: Path, phase: str) -> None:
 
 
 def _client_windows_install(msi: Path) -> None:
-    """Install over what an earlier build is made to have left."""
+    """Install over the released 0.4.0 and what an earlier build is made to have left."""
+    _note(f"install: the client's {PACKAGING_EARLIER_VERSION} first")
+    _install_earlier("client_windows")
     _note("install: planting what an earlier build left")
     _plant_client_windows_leftovers()
     CHECK_RESCUES.append(
@@ -628,6 +678,8 @@ def _client_windows_install(msi: Path) -> None:
 
 def _client_windows_installed(msi: Path) -> None:
     """What the install left: the command, PATH, the daemon, the data tree."""
+    if CLIENT_WINDOWS_EARLIER_FOLDER.exists():
+        raise SystemExit(f"{CLIENT_WINDOWS_EARLIER_FOLDER} outlived the upgrade")
     nclient = CLIENT_WINDOWS_FOLDER / "nclient.exe"
     print(f"nclient {_answer([str(nclient), '--version'])}")
     _note("installed: nclient status")
@@ -1461,6 +1513,53 @@ def _msiexec(action: str, msi: Path, log: Path, properties: tuple = ()) -> int:
         _print_log(log, CHECK_MSIEXEC_HELD_PATTERNS, 40)
         raise SystemExit(f"msiexec {named} wants a restart (exit {code})")
     return code
+
+
+def _install_earlier(target: str) -> None:
+    """Fetch a target's released earlier package, check its hash, and install it.
+
+    Args:
+        target: A key of ``PACKAGING_EARLIER_PACKAGES``.
+
+    Raises:
+        SystemExit: When the download's hash is not the pinned one, or the
+            earlier package does not install.
+    """
+    earlier = fetch_earlier(target, Path(tempfile.gettempdir()))
+    log = Path(tempfile.gettempdir()) / f"{target}_earlier.log"
+    code = _msiexec("/i", earlier, log)
+    if code != 0:
+        _print_log(log, ("return value 3", "Error "), 25)
+        raise SystemExit(f"the earlier {earlier.name} did not install (exit {code})")
+    print(f"{earlier.name} installed")
+
+
+def fetch_earlier(target: str, directory: Path) -> Path:
+    """Download a target's released earlier package and check its hash.
+
+    Args:
+        target: A key of ``PACKAGING_EARLIER_PACKAGES``.
+        directory: Where the file is written.
+
+    Returns:
+        The downloaded file.
+
+    Raises:
+        SystemExit: When its hash is not the pinned one.
+    """
+    asset, digest = PACKAGING_EARLIER_PACKAGES[target]
+    url = PACKAGING_EARLIER_RELEASE_URL.format(
+        version=PACKAGING_EARLIER_VERSION, asset=asset
+    )
+    path = directory / asset
+    _say(f"fetching {url}")
+    with urllib.request.urlopen(url, timeout=CHECK_COMMAND_TIMEOUT_S) as response:
+        path.write_bytes(response.read())
+    found = hashlib.sha256(path.read_bytes()).hexdigest()
+    if found != digest:
+        path.unlink()
+        raise SystemExit(f"{asset} hashes {found}, not the pinned {digest}")
+    return path
 
 
 def _check_no_pending_rename() -> None:

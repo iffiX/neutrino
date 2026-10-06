@@ -4,7 +4,8 @@
 and every package manager replaced by scripts that record what they were
 asked, so what is asserted is the package each system and machine takes,
 the command that installs it, the release it comes from, the checksum that
-stops a wrong file, and the one sentence each refusal prints.
+stops a wrong file, and the one sentence each refusal prints. The fake
+``nhub`` lies outside the path, where the script must name it whole.
 """
 
 import hashlib
@@ -58,8 +59,11 @@ echo "$FAKE_UID"
     "sudo": """#!/bin/sh
 echo "sudo $*" >> "$FAKE_LOG"
 case "$1" in
-    -v) [ -z "$FAKE_SUDO_REFUSED" ] || exit 1; exit 0 ;;
-    -n) shift ;;
+    -v) [ -z "$FAKE_SUDO_REFUSED" ] || exit 1; : > "$FAKE_TICKET"; exit 0 ;;
+    -n)
+        shift
+        [ -n "$FAKE_SUDO_FREE" ] || [ -f "$FAKE_TICKET" ] || exit 1
+        ;;
 esac
 exec "$@"
 """,
@@ -78,11 +82,18 @@ cp "$served" "$target"
     "apt-get": RECORDER,
     "dnf": RECORDER,
     "pacman": RECORDER,
-    "nhub": """#!/bin/sh
+}
+
+NHUB = """#!/bin/sh
 echo "nhub $*" >> "$FAKE_LOG"
 if [ -n "$FAKE_ADDRESS" ]; then echo "$FAKE_ADDRESS"; fi
-""",
-}
+"""
+
+# What a set-up hub's panel settings hold, and what a fresh one's do.
+SET_UP_SETTINGS = '{\n  "admin_password_hash": "$argon2id$v=19$m=65536,t=3,p=4$c2FsdA$aGFzaA"\n}\n'  # scan: allow
+FRESH_SETTINGS = (
+    '{\n  "admin_password_hash": "PLACEHOLDER_ARGON2ID_HASH"\n}\n'  # scan: allow
+)
 
 
 @pytest.fixture
@@ -93,6 +104,10 @@ def stand_ins(tmp_path):
     for name, text in FAKES.items():
         (bin_dir / name).write_text(text)
         (bin_dir / name).chmod(0o755)
+    programs = tmp_path / "programs"
+    programs.mkdir()
+    (programs / "nhub").write_text(NHUB)
+    (programs / "nhub").chmod(0o755)
     served = tmp_path / "release"
     served.mkdir()
     lines = []
@@ -131,6 +146,7 @@ def stand_ins(tmp_path):
             "FAKE_SYSTEM": system,
             "FAKE_MACHINE": machine,
             "FAKE_UID": uid,
+            "FAKE_TICKET": str(tmp_path / "ticket"),
             "HOME": str(tmp_path),
             **(environment or {}),
         }
@@ -140,7 +156,11 @@ def stand_ins(tmp_path):
                 "-c",
                 f'. "{functions}"; OS_RELEASE="{release_file}"; '
                 f'AGENT_BINDING_LINUX="{tmp_path}/agent.json"; '
-                f'AGENT_BINDING_MACOS="{tmp_path}/agent.json"; main "$@"',
+                f'AGENT_BINDING_MACOS="{tmp_path}/agent.json"; '
+                f'HUB_COMMAND_LINUX="{programs}/nhub"; '
+                f'HUB_COMMAND_MACOS="{programs}/nhub"; '
+                f'HUB_SETTINGS_LINUX="{tmp_path}/settings.json"; '
+                f'HUB_SETTINGS_MACOS="{tmp_path}/settings.json"; main "$@"',
                 "install.sh",
                 *arguments,
             ],
@@ -152,9 +172,12 @@ def stand_ins(tmp_path):
         )
         asked = log.read_text().splitlines() if log.exists() else []
         log.unlink(missing_ok=True)
+        (tmp_path / "ticket").unlink(missing_ok=True)
         return result, asked
 
     run.served = served
+    run.nhub = programs / "nhub"
+    run.settings = tmp_path / "settings.json"
     return run
 
 
@@ -260,7 +283,7 @@ def test_without_a_terminal_the_hub_prints_the_wizard_address(stand_ins):
     assert result.stdout.strip().splitlines()[-1] == (
         f"Next, set the hub up in a browser at: {address}"
     )
-    assert "sudo -n nhub open --print" in asked
+    assert f"sudo -n {stand_ins.nhub} open --print" in asked
     assert not any(line.startswith("nhub setup") for line in asked)
 
 
@@ -495,11 +518,12 @@ def test_a_run_asks_for_the_password_once_before_it_downloads(
     )
 
     assert result.returncode == 0, result.stderr
-    assert asked[0] == "sudo -v"
+    assert asked[:2] == ["sudo -n true", "sudo -v"]
     assert asked.count("sudo -v") == 1
+    assert result.stderr.count("asks for administrator rights once") == 1
     assert all(
         line.startswith(("sudo -n", "sudo installer", "sudo apt-get", "sudo dnf"))
-        for line in asked[1:]
+        for line in asked[2:]
         if line.startswith("sudo")
     )
 
@@ -517,7 +541,7 @@ def test_a_refused_password_installs_nothing_and_downloads_nothing(stand_ins):
     assert _said(result) == (
         "sudo did not grant administrator rights; nothing was installed."
     )
-    assert asked == ["sudo -v"]
+    assert asked == ["sudo -n true", "sudo -v"]
 
 
 def test_a_system_with_no_package_asks_for_no_password(stand_ins):
@@ -560,8 +584,111 @@ def test_the_last_line_names_the_one_next_thing(stand_ins, component, uid, last)
 def test_the_hub_set_up_on_a_terminal_asks_nothing_again(tmp_path, stand_ins):
     """With a terminal the script runs setup itself, under the ticket it took."""
     script = SCRIPT.read_text()
-    assert "\n        $as_root nhub setup </dev/tty\n" in script
-    assert script.index("hold_root") < script.index("nhub setup")
+    assert '\n        $as_root "$nhub" setup </dev/tty\n' in script
+    assert script.index("hold_root") < script.index('"$nhub" setup')
+
+
+@pytest.mark.parametrize("component", ["hub", "agent"])
+def test_an_account_sudo_lets_in_without_a_password_is_asked_nothing(
+    stand_ins, component
+):
+    _publish_all(stand_ins.served)
+    result, asked = stand_ins(component, environment={"FAKE_SUDO_FREE": "1"})
+
+    assert result.returncode == 0, result.stderr
+    assert asked[0] == "sudo -n true"
+    assert "sudo -v" not in asked
+    assert "administrator rights" not in result.stderr
+
+
+def test_the_keeper_refreshes_the_ticket_the_way_both_kinds_of_account_may():
+    """``sudo -v`` asks an account that is password-free through one entry
+    alone; running a command refreshes a ticket and needs none."""
+    script = SCRIPT.read_text()
+    keeper = script[script.index("hold_root() {") : script.index('echo "$!"')]
+
+    assert "sudo -n true 2>/dev/null || exit 0" in keeper
+    assert "sudo -n -v" not in keeper
+
+
+@pytest.mark.parametrize(
+    "system, machine, uid",
+    [
+        ("Linux", "x86_64", "1000"),
+        ("Darwin", "arm64", "1000"),
+        ("Linux", "x86_64", "0"),
+    ],
+)
+def test_a_hub_already_set_up_is_upgraded_and_names_its_panel(
+    stand_ins, system, machine, uid
+):
+    stand_ins.settings.write_text(SET_UP_SETTINGS)
+
+    result, asked = stand_ins(
+        system=system,
+        machine=machine,
+        uid=uid,
+        environment={"FAKE_ADDRESS": "http://192.0.2.1:8080/"},
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip().splitlines()[-1] == (
+        "The hub was upgraded; its panel is at: http://192.0.2.1:8080/"
+    )
+    assert not any(" setup" in line for line in asked if "nhub" in line)
+
+
+def test_a_hub_already_set_up_with_no_address_says_how_to_open_it(stand_ins):
+    stand_ins.settings.write_text(SET_UP_SETTINGS)
+
+    result, _asked = stand_ins()
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip().splitlines()[-1] == (
+        "The hub was upgraded; sudo nhub open opens its panel."
+    )
+
+
+def test_a_hub_with_the_example_settings_is_not_set_up(stand_ins):
+    stand_ins.settings.write_text(FRESH_SETTINGS)
+    address = "http://192.0.2.1:8080/?token=t0ken"
+
+    result, _asked = stand_ins(environment={"FAKE_ADDRESS": address})
+
+    assert result.stdout.strip().splitlines()[-1] == (
+        f"Next, set the hub up in a browser at: {address}"
+    )
+
+
+def test_root_without_the_hubs_folder_on_its_path_reaches_nhub(stand_ins):
+    """The fake nhub is on no PATH entry: only its whole name reaches it."""
+    address = "http://192.0.2.1:8080/?token=t0ken"
+
+    result, asked = stand_ins(uid="0", environment={"FAKE_ADDRESS": address})
+
+    assert result.returncode == 0, result.stderr
+    assert "nhub open --print" in asked
+    assert result.stdout.strip().splitlines()[-1].endswith(address)
+
+
+def test_the_script_names_the_hub_where_its_packages_put_it():
+    from neutrino_hub.cli.password import PASSWORD_SETTINGS_FILE
+    from neutrino_hub.platforms.constants import (
+        PLATFORM_OS_DARWIN,
+        PLATFORM_OS_LINUX,
+        PLATFORM_ROOT_CONFIG,
+        PLATFORM_ROOTS,
+    )
+
+    text = SCRIPT.read_text()
+    linux = f"{PLATFORM_ROOTS[PLATFORM_OS_LINUX][PLATFORM_ROOT_CONFIG]}/{PASSWORD_SETTINGS_FILE}"
+    darwin = f"{PLATFORM_ROOTS[PLATFORM_OS_DARWIN][PLATFORM_ROOT_CONFIG]}/{PASSWORD_SETTINGS_FILE}"
+    assert f"\nHUB_SETTINGS_LINUX={linux}\n" in text
+    assert f'\nHUB_SETTINGS_MACOS="{darwin}"\n' in text
+    assert "\nHUB_COMMAND_LINUX=/usr/bin/nhub\n" in text
+    assert "\nHUB_COMMAND_MACOS=/usr/local/bin/nhub\n" in text
+    for line in text.splitlines():
+        assert not re.search(r"\$as_root( \$\{as_root:\+-n\})? nhub ", line), line
 
 
 def _publish_all(served):

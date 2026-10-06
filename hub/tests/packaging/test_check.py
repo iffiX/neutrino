@@ -6,6 +6,7 @@ setup`` accepts, and a directory the scripts install from.
 """
 
 import hashlib
+import io
 import importlib.util
 import json
 import subprocess
@@ -1063,3 +1064,87 @@ def test_someone_elses_pending_rename_does_not_fail_the_check(check, monkeypatch
     )
 
     check._check_no_pending_rename()
+
+
+def test_each_earlier_package_is_a_released_msi_of_a_windows_target(check):
+    """The hub has no Windows package before 0.5.0, so it has no earlier one."""
+    assert set(check.PACKAGING_EARLIER_PACKAGES) == {"agent_windows", "client_windows"}
+    for asset, digest in check.PACKAGING_EARLIER_PACKAGES.values():
+        assert asset.endswith(f"-{check.PACKAGING_EARLIER_VERSION}-windows-amd64.msi")
+        assert len(digest) == 64
+
+
+def test_an_earlier_package_is_fetched_from_its_release_and_its_hash_checked(
+    check, monkeypatch, tmp_path
+):
+    body = b"the earlier msi"
+    asked = []
+
+    def urlopen(url, timeout):
+        asked.append(url)
+        return io.BytesIO(body)
+
+    monkeypatch.setattr(check.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(
+        check,
+        "PACKAGING_EARLIER_PACKAGES",
+        {"agent_windows": ("old.msi", hashlib.sha256(body).hexdigest())},
+    )
+
+    found = check.fetch_earlier("agent_windows", tmp_path)
+
+    assert found.read_bytes() == body
+    assert asked == [
+        "https://github.com/iffiX/neutrino/releases/download/"
+        f"v{check.PACKAGING_EARLIER_VERSION}/old.msi"
+    ]
+
+
+def test_an_earlier_package_whose_hash_differs_is_refused_and_deleted(
+    check, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(
+        check.urllib.request, "urlopen", lambda url, timeout: io.BytesIO(b"other")
+    )
+    monkeypatch.setattr(
+        check, "PACKAGING_EARLIER_PACKAGES", {"agent_windows": ("old.msi", "0" * 64)}
+    )
+
+    with pytest.raises(SystemExit, match="not the pinned"):
+        check.fetch_earlier("agent_windows", tmp_path)
+
+    assert not (tmp_path / "old.msi").exists()
+
+
+def test_an_agent_that_cannot_install_over_the_earlier_one_fails_the_check(
+    check, monkeypatch, tmp_path
+):
+    """A fault in the upgrade's sequence ends msiexec with 1603; a fresh
+    install is never what the check runs."""
+    done = []
+    monkeypatch.setattr(check, "_require_host", lambda *_: None)
+    monkeypatch.setattr(check, "_install_earlier", done.append)
+    monkeypatch.setattr(check, "RUSTDESK_WINDOWS_FOLDER", tmp_path)
+    monkeypatch.setattr(check, "_print_log", lambda *_: None)
+
+    def msiexec(action, msi, log):
+        done.append((action, msi.name))
+        return 1603
+
+    monkeypatch.setattr(check, "_msiexec", msiexec)
+
+    with pytest.raises(SystemExit, match="did not install over its 0.4.0"):
+        check.check_agent_windows(tmp_path / "agent.msi")
+
+    assert done == ["agent_windows", ("/i", "agent.msi")]
+
+
+def test_an_earlier_agent_that_left_no_rustdesk_fails_the_check(
+    check, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(check, "_require_host", lambda *_: None)
+    monkeypatch.setattr(check, "_install_earlier", lambda target: None)
+    monkeypatch.setattr(check, "RUSTDESK_WINDOWS_FOLDER", tmp_path / "RustDesk")
+
+    with pytest.raises(SystemExit, match="left no"):
+        check.check_agent_windows(tmp_path / "agent.msi")

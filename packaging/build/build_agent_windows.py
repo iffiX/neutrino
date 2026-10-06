@@ -17,9 +17,11 @@ under ``rustdesk``: the same files upstream's own install copies into
 ``%ProgramFiles%\\RustDesk``. The installer runs nothing of RustDesk's and
 registers nothing of it, no service, no uninstall entry, no driver and no
 firewall rule: the agent registers its copy when the hub's Remote desktop
-switch is on. An upgrade from a package that ran upstream's installer runs
-that package's own copy of it with ``--uninstall`` first, before the old
-version's files go; a RustDesk no package of the agent installed stays.
+switch is on. An earlier package that ran upstream's installer is known by
+the copy of it that package left in its folder, found before the earlier
+version is removed; the upgrade then runs upstream's install with
+``--uninstall``, as its own uninstall entry does. A RustDesk no package of
+the agent installed stays.
 
 Removing the agent also runs ``nagent service uninstall --yes`` before its
 files go, which unregisters the scheduled tasks and removes the firewall
@@ -69,11 +71,15 @@ WINDOWS_MACHINES = {"x86_64": "amd64"}
 
 # Where the agent's copy of RustDesk lies under its folder.
 RUSTDESK_DIR_NAME = "rustdesk"
-# What every earlier package that ran upstream's installer left in the
-# agent's folder: upstream's own executable, under the name upstream
-# publishes it as. Its being there is what says the RustDesk under
-# Program Files is that package's, and it removes what it installed.
-OLD_RUSTDESK_INSTALLER_PATTERN = "rustdesk-*-x86_64.exe"
+# What every earlier package that ran upstream's installer left in its
+# folder: upstream's executable under the name upstream publishes it as,
+# 1.4.9 the only version any package carried, in each folder under
+# Program Files an earlier package installed into. Its being there is what
+# says the RustDesk under Program Files is that package's.
+OLD_RUSTDESK_INSTALLER_NAME = "rustdesk-1.4.9-x86_64.exe"
+OLD_AGENT_FOLDERS = ("Neutrino Agent", "Neutrino\\agent")
+# The property the search sets to the copy's path when it finds one.
+OLD_RUSTDESK_PROPERTY = "OLDRUSTDESKINSTALLER"
 
 # The identity of the product across every version it ever ships as. Fixed:
 # changing it makes an upgrade install beside the old one instead of over it.
@@ -88,17 +94,13 @@ DATA_FOLDER_SDDL = "D:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
 # through an upgrade, whose removal of the old version carries the upgrading
 # code.
 AGENT_REMOVED_CONDITION = 'REMOVE~="ALL" AND NOT UPGRADINGPRODUCTCODE'
-# An upgrade over an earlier version, which MajorUpgrade names.
-AGENT_UPGRADING_CONDITION = "WIX_UPGRADE_DETECTED AND NOT REMOVE"
-# The earlier version is removed inside this install's own transaction, so
-# what the old package left can be read and acted on just before it goes.
-UPGRADE_SCHEDULE = "afterInstallInitialize"
-# Runs, as the system, every copy of upstream's installer an earlier package
-# left in the agent's folder with --uninstall; none there runs nothing.
-OLD_RUSTDESK_UNINSTALL = (
-    '"[System64Folder]cmd.exe" /c for %f in '
-    f'("[INSTALLFOLDER]{OLD_RUSTDESK_INSTALLER_PATTERN}") do "%~f" --uninstall'
-)
+# An install over an earlier package that ran upstream's installer.
+OLD_RUSTDESK_CONDITION = f"{OLD_RUSTDESK_PROPERTY} AND NOT REMOVE"
+# What upstream's uninstall entry runs: its install, with --uninstall. Runs
+# as the system once the earlier version is gone, which leaves upstream's
+# install where it was, from Program Files, since the agent's folder may
+# have gone with it.
+OLD_RUSTDESK_UNINSTALL = '"[ProgramFiles64Folder]RustDesk\\rustdesk.exe" --uninstall'
 # What the removal runs the agent with to take away what its modules added.
 AGENT_UNINSTALL_ARGUMENTS = "service uninstall --yes"
 
@@ -158,13 +160,14 @@ WIX_BODY = r"""
       </Component>
     </ComponentGroup>
 
+    @OLD_RUSTDESK_SEARCH@
     @REMOVE_OLD_RUSTDESK@
     @UNINSTALL_ADDED@
 
     <InstallExecuteSequence>
       <Custom Action="RemoveOldRustDesk"
-              Before="RemoveExistingProducts"
-              Condition="@AGENT_UPGRADING@" />
+              After="InstallInitialize"
+              Condition="@OLD_RUSTDESK@" />
       <Custom Action="UninstallAdded"
               Before="RemoveFiles"
               Condition="@AGENT_REMOVED@" />
@@ -284,10 +287,34 @@ def wix_source(staged: dict, version: str, publisher: str) -> str:
         start="auto",
         permissions=(SERVICE_RECOVERY,),
     )
+    old_rustdesk_search = wix_build.element(
+        "Property",
+        {"Id": OLD_RUSTDESK_PROPERTY, "Secure": "yes"},
+        tuple(
+            wix_build.element(
+                "DirectorySearch",
+                {
+                    "Id": f"OldAgentFolder{index}",
+                    "Path": f"[ProgramFiles64Folder]{folder}",
+                    "Depth": "0",
+                },
+                (
+                    wix_build.element(
+                        "FileSearch",
+                        {
+                            "Id": f"OldRustDeskCopy{index}",
+                            "Name": OLD_RUSTDESK_INSTALLER_NAME,
+                        },
+                    ),
+                ),
+            )
+            for index, folder in enumerate(OLD_AGENT_FOLDERS)
+        ),
+    )
     remove_old_rustdesk = wix_build.custom_action(
         "RemoveOldRustDesk",
         is_failure_ignored=True,
-        Directory="INSTALLFOLDER",
+        Directory="ProgramFiles64Folder",
         ExeCommand=OLD_RUSTDESK_UNINSTALL,
     )
     uninstall_added = wix_build.custom_action(
@@ -302,11 +329,12 @@ def wix_source(staged: dict, version: str, publisher: str) -> str:
             "PAYLOAD": staged["payload"],
             "DATA_SDDL": DATA_FOLDER_SDDL,
             "AGENT_REMOVED": AGENT_REMOVED_CONDITION,
-            "AGENT_UPGRADING": AGENT_UPGRADING_CONDITION,
+            "OLD_RUSTDESK": OLD_RUSTDESK_CONDITION,
         },
     )
     body = (
         body.replace("@SERVICE_COMPONENT@", service)
+        .replace("@OLD_RUSTDESK_SEARCH@", old_rustdesk_search)
         .replace("@REMOVE_OLD_RUSTDESK@", remove_old_rustdesk)
         .replace("@UNINSTALL_ADDED@", uninstall_added)
     )
@@ -316,7 +344,6 @@ def wix_source(staged: dict, version: str, publisher: str) -> str:
         version=version,
         upgrade_code=UPGRADE_CODE,
         body=body,
-        upgrade_schedule=UPGRADE_SCHEDULE,
     )
 
 
