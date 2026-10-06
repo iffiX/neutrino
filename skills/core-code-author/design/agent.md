@@ -1132,6 +1132,13 @@ and the `urls` of the last state afterwards; a file with none holds
 deletes the file; the hub keeps the device's row and its
 `config/devices/<id>/`, which only the Devices page's remove deletes.
 
+`nagent join` and `nagent leave` run in their own process and reach a
+running service through the binding file, not by restarting it: the
+service reads the file's stamp at every report while connected and every two
+seconds while it waits between attempts, a failing hub's backoff included,
+so a new binding is taken within seconds. Taking it drops the old socket and
+starts a round from the top of the new binding's addresses.
+
 ## Every later connection
 
 The socket and `leave` each open a fresh pinned connection, and the
