@@ -1228,3 +1228,19 @@ def test_every_argument_of_a_task_s_command_is_quoted_and_expands_nothing():
     assert cmd_argument("50%") == '"50%%"'
     assert cmd_argument("C:\\dir\\") == '"C:\\dir\\\\"'
     assert cmd_argument("") == '""'
+
+
+def test_the_uninstall_disables_the_agents_service(monkeypatch):
+    """Run by hand, nagent service uninstall leaves the service as the
+    package's removal does: stopped and not started at the next boot."""
+    commands = []
+
+    def record(command, **kwargs):
+        commands.append(list(command))
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(windows_module.subprocess, "run", record)
+
+    WindowsPlatform().disable_agent_service()
+
+    assert commands == [["sc", "config", "neutrino_agent", "start=", "disabled"]]

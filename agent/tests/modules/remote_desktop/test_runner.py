@@ -13,12 +13,16 @@ class FakeHost:
     def __init__(self):
         self.switches = []
         self.is_listening = False
+        self.is_service = False
 
     def set_switch(self, is_enabled):
         self.switches.append(is_enabled)
 
     def is_running(self):
         return self.is_listening
+
+    def is_service_running(self):
+        return self.is_service
 
 
 class Linux(AgentPlatform):
@@ -53,12 +57,14 @@ def test_only_a_true_switch_reads_as_on(data, expected):
     assert RemoteDesktopConfig.from_dict(data).is_enabled is expected
 
 
-def test_the_module_is_always_there_and_active_while_the_copy_listens(runner):
+def test_the_module_runs_while_its_service_runs_with_nobody_at_the_screen(runner):
+    """A headless machine with the switch on: nothing listens, the service
+    runs, and the module reads running."""
     observed = runner.observe({})
     assert observed["is_installed"] is True
     assert observed["is_active"] is False
 
-    runner.host.is_listening = True
+    runner.host.is_service = True
 
     assert runner.observe({})["is_active"] is True
 

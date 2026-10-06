@@ -484,15 +484,17 @@ def test_the_list_is_kept_clean_and_in_the_hubs_order():
     assert enrollment.clean_urls(None) == []
 
 
-def test_a_round_is_the_name_then_the_last_answer_then_the_rest():
+def test_every_round_is_the_name_then_the_list_from_the_top():
+    """The address that answered last is not preferred: a round after the
+    hub's restart starts from the top as a fresh connect does."""
     binding = {"gateway_url": OVERLAY_URL, "gateway_urls": [LAN_URL, OVERLAY_URL]}
 
     assert enrollment.candidate_urls(binding, NAME_URL) == [
         NAME_URL,
-        OVERLAY_URL,
         LAN_URL,
+        OVERLAY_URL,
     ]
-    assert enrollment.candidate_urls(binding) == [OVERLAY_URL, LAN_URL]
+    assert enrollment.candidate_urls(binding) == [LAN_URL, OVERLAY_URL]
     assert enrollment.candidate_urls(binding, LAN_URL) == [LAN_URL, OVERLAY_URL]
     assert enrollment.stored_urls(binding) == [LAN_URL, OVERLAY_URL]
 

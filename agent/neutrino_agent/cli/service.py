@@ -117,6 +117,7 @@ def main_uninstall(*, is_forced: bool) -> int:
         return 1
     try:
         platform.stop_agent_service()
+        platform.disable_agent_service()
         forget_tried(platform)
         turn_desktop_off(platform)
         ai_tools = AiToolsApplier(platform=platform, log=print)

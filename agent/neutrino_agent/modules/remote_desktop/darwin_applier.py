@@ -180,6 +180,16 @@ class RemoteDesktopDarwinApplier:
         """Whether both of the agent's plists are in place."""
         return all(self._is_own(path) for _, path, _ in self._plists)
 
+    def is_service_running(self) -> bool:
+        """Whether the agent's plists are in place and the system daemon runs."""
+        if not self.is_registered():
+            return False
+        printed = self._run(
+            [LAUNCHCTL, "print", f"system/{REMOTE_DESKTOP_DARWIN_SERVICE_LABEL}"],
+            is_checked=False,
+        )
+        return printed.exit_code == 0 and "state = running" in printed.stdout
+
     def keep_aside(self) -> dict:
         """Move aside each plist under upstream's names that is not the
         agent's.

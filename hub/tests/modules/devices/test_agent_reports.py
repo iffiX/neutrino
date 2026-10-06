@@ -429,7 +429,7 @@ def test_a_share_the_old_command_made_turns_the_switch_on_once(box):
     on the hub keeps sharing: the switch is written on and the state goes
     down with it and the seat password."""
     runtime, device = box
-    shared = {"is_shared": True, "share_id": "s1", "port": 21118}
+    shared = {"is_shared": True, "origin": "command", "share_id": "s1", "port": 21118}
 
     agent_reports.record_report(runtime, device, report(desktop=shared))
     agent_reports.record_report(runtime, device, report(desktop=shared))
@@ -438,12 +438,28 @@ def test_a_share_the_old_command_made_turns_the_switch_on_once(box):
     assert runtime.desired_states.ensured == [DEVICE]
 
 
+@pytest.mark.parametrize("origin", ["switch", "", None])
+def test_a_share_the_switch_made_is_never_adopted(box, origin):
+    """A machine joined again after it left, or as a new device, reports the
+    share its earlier switch made; only an old command's record is adopted."""
+    runtime, device = box
+    shared = {"is_shared": True, "share_id": "s1", "port": 21118}
+    if origin is not None:
+        shared["origin"] = origin
+
+    agent_reports.record_report(runtime, device, report(desktop=shared))
+
+    assert not runtime.desired_states.has_remote_desktop(DEVICE)
+
+
 def test_a_share_on_a_machine_switched_off_is_not_turned_on(box):
     runtime, device = box
     runtime.desired_states.set_remote_desktop(DEVICE, False)
 
     agent_reports.record_report(
-        runtime, device, report(desktop={"is_shared": True, "share_id": "s1"})
+        runtime,
+        device,
+        report(desktop={"is_shared": True, "origin": "command", "share_id": "s1"}),
     )
 
     assert runtime.desired_states.remote_desktop(DEVICE) == {"is_enabled": False}

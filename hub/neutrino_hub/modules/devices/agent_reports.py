@@ -174,13 +174,19 @@ def record_desktop_share(runtime, device, share: dict, host: str) -> None:
         runtime.published_services.schedule_refresh()
 
 
+# The origin a report's ``desktop`` section names for a share an old
+# ``nagent rdp start`` record keeps running: the only share the hub adopts.
+DESKTOP_ORIGIN_COMMAND = "command"
+
+
 def _adopt_desktop_share(runtime, key: str, desktop) -> bool:
     """Record the Remote desktop switch on for a share the old command made.
 
     A machine whose agent shared its desktop through ``nagent rdp start``
-    reports the share until its first state names the module. When the hub
-    holds no switch for it yet, the switch is written on, so an upgrade
-    closes no share.
+    reports the share with ``origin`` ``command`` until its first state names
+    the module. When the hub holds no switch for it yet, the switch is
+    written on, so an upgrade closes no share. A share with any other origin
+    is the switch's own and is never adopted.
 
     Args:
         runtime: The shared runtime.
@@ -191,7 +197,9 @@ def _adopt_desktop_share(runtime, key: str, desktop) -> bool:
         True when the switch was written, so the state is pushed again.
     """
     is_shared = isinstance(desktop, dict) and desktop.get("is_shared") is True
-    if not is_shared or runtime.desired_states.has_remote_desktop(key):
+    if not is_shared or desktop.get("origin") != DESKTOP_ORIGIN_COMMAND:
+        return False
+    if runtime.desired_states.has_remote_desktop(key):
         return False
     try:
         runtime.desired_states.set_remote_desktop(key, True)

@@ -337,3 +337,24 @@ def test_a_tray_left_running_on_a_moved_aside_executable_is_stale_and_ended(
         "/PID",
         "73",
     ]
+
+
+def test_the_service_runs_while_rustdesk_runs_the_copy(made):
+    answers = {
+        "qc": f"BINARY_PATH_NAME   : {image_path(COPY)}\n",
+        "query": "STATE              : 4  RUNNING\n",
+    }
+
+    def run(command, **kwargs):
+        made.windows.calls.append(list(command))
+        return CommandResult(list(command), 0, answers.get(command[1], ""), "")
+
+    made._run = run
+    assert made.is_service_running() is True
+
+    answers["query"] = "STATE              : 1  STOPPED\n"
+    assert made.is_service_running() is False
+
+    answers["qc"] = f"BINARY_PATH_NAME   : {image_path(UPSTREAM)}\n"
+    answers["query"] = "STATE              : 4  RUNNING\n"
+    assert made.is_service_running() is False

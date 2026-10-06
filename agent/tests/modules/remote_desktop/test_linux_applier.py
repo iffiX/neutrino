@@ -29,6 +29,7 @@ class FakeSystemd:
         self.calls = []
         self.shown = {}
         self.listening = ""
+        self.active = False
 
     def __call__(self, command, *, is_checked=True, timeout_s=0, input_text=None):
         self.calls.append(list(command))
@@ -36,6 +37,8 @@ class FakeSystemd:
             text = "".join(f"{key}={value}\n" for key, value in self.shown.items())
             return CommandResult(list(command), 0, text, "")
         if command[:2] == ["systemctl", "is-active"]:
+            if self.active:
+                return CommandResult(list(command), 0, "active\n", "")
             return CommandResult(list(command), 3, "inactive\n", "")
         if command[0] == "ss":
             return CommandResult(list(command), 0, self.listening, "")
@@ -329,3 +332,13 @@ def test_a_copy_process_running_a_replaced_file_is_stale(made, tmp_path):
 
 def test_without_the_copy_on_disk_nothing_is_stale(made):
     assert made.stale_pids() == []
+
+
+def test_the_service_runs_while_the_agents_unit_is_active(made):
+    assert made.is_service_running() is False
+
+    made.register()
+    assert made.is_service_running() is False
+
+    made.systemd.active = True
+    assert made.is_service_running() is True
