@@ -7,16 +7,20 @@
 Two steps. An elevated step starts the hub's service when it is stopped
 and says the address it answers at, with the setup token while the box is
 not set up; run without privilege, ``nhub open`` asks for it through UAC,
-the administrator prompt of ``osascript`` or ``pkexec``. Then the default
-browser opens that address as the person, never as root.
+the administrator prompt of ``osascript`` or ``pkexec``, and only when the
+panel does not already answer on loopback. Then the default browser opens
+that address as the person, never as root.
 """
 
 import argparse
+import json
 import os
 import socket
 import subprocess
 import sys
 import tempfile
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 
@@ -36,6 +40,10 @@ OPEN_SETTINGS_FILE = "web/settings.json"
 OPEN_NETWORK_FILE = "router/network.json"
 OPEN_START_SERVICE_FLAG = "--start-service"
 OPEN_OUTPUT_FLAG = "--output"
+# The route only the panel of a set-up box answers, without a session, and
+# how long the entry waits for it.
+OPEN_PANEL_PROBE_PATH = "/api/hub/auth/session"
+OPEN_PANEL_PROBE_TIMEOUT_S = 2.0
 
 
 def main() -> int:
@@ -43,8 +51,8 @@ def main() -> int:
 
     Returns:
         Process exit status: 0 once the address is opened or printed, 1 when
-        the service cannot be started, 2 for the elevated step without
-        privilege.
+        the service cannot be started or the person declined to start it, 2
+        for the elevated step without privilege.
     """
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     action = parser.add_mutually_exclusive_group()
@@ -94,18 +102,21 @@ def main() -> int:
         )
         return 0
 
+    port = _configured_port()
     if platform.is_elevated():
         _start_service()
         url = address(OPEN_LOOPBACK_HOST)
+    elif _is_panel_answering(port):
+        url = f"http://{OPEN_LOOPBACK_HOST}:{port}/"
     else:
         url = _address_from_elevated_step(platform)
     if not url:
-        url = f"http://{OPEN_LOOPBACK_HOST}:{WEB_DEFAULT_LISTEN_PORT}/"
         print(
-            f"the hub's service was not started; run nhub open as "
+            f"error: the hub's service was not started; run nhub open as "
             f"{platform.elevation_word} to start it",
             file=sys.stderr,
         )
+        return 1
     if not platform.open_browser(url):
         print(url)
     return 0
@@ -128,6 +139,30 @@ def address(host: str) -> str:
     if is_password_set():
         return url
     return f"{url}?token={ensure_setup_token()}"
+
+
+def _is_panel_answering(port: int) -> bool:
+    """Whether the panel of a set-up box answers on loopback.
+
+    The service serving the setup wizard does not answer the panel's session
+    route, so a box that is not set up reads False, and its address with the
+    setup token comes from the elevated step.
+
+    Args:
+        port: The panel's HTTP port.
+
+    Returns:
+        True when the session route answers 200 with the panel's session
+        document.
+    """
+    url = f"http://{OPEN_LOOPBACK_HOST}:{port}{OPEN_PANEL_PROBE_PATH}"
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        with opener.open(url, timeout=OPEN_PANEL_PROBE_TIMEOUT_S) as answer:
+            document = json.loads(answer.read().decode("utf-8"))
+    except (OSError, ValueError, urllib.error.URLError):
+        return False
+    return isinstance(document, dict) and "is_authenticated" in document
 
 
 def _start_service() -> bool:

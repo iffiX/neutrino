@@ -129,11 +129,14 @@ shortcut on Windows, `/Applications/Neutrino Hub.app` on macOS, a bundle
 holding a script and nothing else, and the desktop entry
 `neutrino-hub.desktop` on Linux. Opening it runs two steps:
 
-1. An elevated step starts the hub's service when it is not running and
-   hands back the address to open, with the setup token while the box is
-   not set up; it does nothing else. Windows asks through UAC, macOS
-   through the administrator prompt of `do shell script`, Linux through
-   `pkexec`.
+1. When the panel of a set-up box already answers on loopback (its session
+   route, `GET /api/hub/auth/session`, answers on the HTTP port), nothing is
+   asked. Otherwise an elevated step starts the hub's service when it is
+   not running and hands back the address to open, with the setup token
+   while the box is not set up; it does nothing else. Windows asks through
+   UAC, macOS through the administrator prompt of `do shell script`, Linux
+   through `pkexec`. A declined prompt opens nothing and says the service
+   was not started.
 1. The person's own session opens the default browser on
    `http://127.0.0.1:<http port>/`, with the setup token while the box is not
    set up.

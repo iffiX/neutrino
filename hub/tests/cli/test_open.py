@@ -3,11 +3,15 @@ answers, and the browser opened as the person.
 
 The platform, the service and the browser are fakes. What is pinned is that
 the service is started only when it is stopped, that the setup token rides
-the address only before setup, that an unprivileged run asks for the
-elevated step and opens what that step wrote, and that the step itself
-refuses to run without privilege.
+the address only before setup, that an unprivileged run opens a panel that
+already answers without asking, asks for the elevated step otherwise and
+opens what that step wrote, opens nothing when the step is declined, and
+that the step itself refuses to run without privilege.
 """
 
+import http.server
+import json
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -64,7 +68,9 @@ class FakeController:
 def box(monkeypatch):
     """A hub on port 8080, not set up, with its token."""
     state = SimpleNamespace(
-        is_set_up=False, controller=FakeController(is_running=False)
+        is_set_up=False,
+        is_panel_answering=False,
+        controller=FakeController(is_running=False),
     )
     monkeypatch.setattr(open_command, "is_dev_root_set", lambda: False)
     monkeypatch.setattr(open_command, "process_controller", lambda: state.controller)
@@ -72,6 +78,13 @@ def box(monkeypatch):
     monkeypatch.setattr(open_command, "ensure_setup_token", lambda: "t0ken")
     monkeypatch.setattr(open_command, "_configured_port", lambda: 8080)
     monkeypatch.setattr(open_command, "_reachable_host", lambda: "192.0.2.7")
+    probed: list = []
+    state.probed = probed
+    monkeypatch.setattr(
+        open_command,
+        "_is_panel_answering",
+        lambda port: probed.append(port) or state.is_panel_answering,
+    )
 
     def run(*arguments, platform):
         monkeypatch.setattr(open_command, "hub_platform", lambda: platform)
@@ -117,13 +130,84 @@ def test_without_privilege_the_elevated_step_runs_and_its_address_opens(box):
     assert box.controller.asked == []
 
 
-def test_a_declined_elevated_step_opens_the_default_port_and_says_so(box, capsys):
+def test_a_declined_elevated_step_opens_nothing_and_says_so(box, capsys):
     platform = FakePlatform(is_elevated=False)
+
+    assert box.run(platform=platform) == 1
+
+    assert platform.opened == []
+    assert "was not started" in capsys.readouterr().err
+
+
+def test_a_panel_already_answering_opens_without_asking(box):
+    box.is_panel_answering = True
+    platform = FakePlatform(
+        is_elevated=False, step_address="http://127.0.0.1:8080/?token=t0ken"
+    )
 
     assert box.run(platform=platform) == 0
 
+    assert box.probed == [8080]
+    assert platform.elevated == []
     assert platform.opened == ["http://127.0.0.1:8080/"]
-    assert "was not started" in capsys.readouterr().err
+
+
+def test_with_privilege_nothing_is_probed(box):
+    platform = FakePlatform(is_elevated=True)
+
+    box.run(platform=platform)
+
+    assert box.probed == []
+
+
+class Answering(http.server.BaseHTTPRequestHandler):
+    """Answers one path with one body, everything else 404."""
+
+    path_answered = ""
+    body = b""
+
+    def do_GET(self):
+        if self.path != self.path_answered:
+            self.send_error(404)
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(self.body)
+
+    def log_message(self, *arguments):
+        return None
+
+
+def served(path: str, body: bytes):
+    handler = type("Handler", (Answering,), {"path_answered": path, "body": body})
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
+def test_the_probe_reads_the_panels_session_route():
+    server = served(
+        open_command.OPEN_PANEL_PROBE_PATH,
+        json.dumps({"is_authenticated": False}).encode(),
+    )
+    try:
+        assert open_command._is_panel_answering(server.server_address[1]) is True
+    finally:
+        server.shutdown()
+
+
+def test_the_wizard_or_nothing_on_the_port_is_not_the_panel():
+    wizard = served("/", b"<html>setup</html>")
+    try:
+        assert open_command._is_panel_answering(wizard.server_address[1]) is False
+    finally:
+        wizard.shutdown()
+    closed = served("/", b"")
+    port = closed.server_address[1]
+    closed.shutdown()
+    closed.server_close()
+    assert open_command._is_panel_answering(port) is False
 
 
 def test_with_no_browser_the_address_is_printed(box, capsys):
