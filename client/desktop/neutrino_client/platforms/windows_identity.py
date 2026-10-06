@@ -1,7 +1,8 @@
 """Who is on the other end of the control pipe, read by impersonation.
 
-The server thread takes the client's token for the length of one query,
-resolves the token's user to an account name, and reverts. Every Win32 call
+The server thread takes the client's token under impersonation, reverts,
+and only then reads the token: an elevated caller's token is impersonated at
+identification level, under which no account name can be looked up. Every Win32 call
 rides one seam class, so nothing here needs Windows to import or to test.
 """
 
@@ -92,6 +93,31 @@ class WindowsIdentityApi:
         if not ok:
             raise ctypes.WinError(ctypes.get_last_error())
         return name.value
+
+    def token_is_elevated(self, token: int) -> bool:
+        """Whether a token is an elevated administrator's.
+
+        Args:
+            token: The token handle to query.
+
+        Returns:
+            True for an elevated token.
+
+        Raises:
+            OSError: When the token cannot be read.
+        """
+        elevation = ctypes.c_ulong(0)
+        needed = ctypes.c_ulong(0)
+        ok = self._advapi32.GetTokenInformation(
+            ctypes.c_void_p(token),
+            win32.TOKEN_ELEVATION_CLASS,
+            ctypes.byref(elevation),
+            ctypes.sizeof(elevation),
+            ctypes.byref(needed),
+        )
+        if not ok:
+            raise ctypes.WinError(ctypes.get_last_error())
+        return elevation.value != 0
 
     def close_handle(self, handle: int) -> None:
         """Close a handle. Best-effort."""

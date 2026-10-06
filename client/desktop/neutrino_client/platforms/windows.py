@@ -298,12 +298,16 @@ class WindowsPlatform(ClientPlatform):
     def read_peer_identity(self, connection) -> dict:
         """A pipe peer's identity, from pipe impersonation.
 
+        The token is taken under impersonation and read after reverting: an
+        elevated peer is impersonated at identification level, under which
+        its account name cannot be looked up.
+
         Args:
             connection: The accepted pipe connection.
 
         Returns:
-            ``{"account", "uid", "is_same_user"}``; ``uid`` is -1 because
-            Windows reports names.
+            ``{"account", "uid", "is_same_user", "is_elevated"}``; ``uid`` is
+            -1 because Windows reports names.
 
         Raises:
             PlatformUnsupportedError: When the peer is not a pipe or the
@@ -319,18 +323,22 @@ class WindowsPlatform(ClientPlatform):
             raise PlatformUnsupportedError(str(error))
         try:
             token = win32.open_thread_token()
-            try:
-                account = win32.token_account(token)
-            finally:
-                win32.close_handle(token)
         except OSError as error:
             raise PlatformUnsupportedError(str(error))
         finally:
             win32.revert_to_self()
+        try:
+            account = win32.token_account(token)
+            is_elevated = win32.token_is_elevated(token)
+        except OSError as error:
+            raise PlatformUnsupportedError(str(error))
+        finally:
+            win32.close_handle(token)
         return {
             "account": account,
             "uid": -1,
             "is_same_user": account.lower() == self.current_account().lower(),
+            "is_elevated": is_elevated,
         }
 
     def validate_mount_location(self, *, location: str) -> "dict | None":
@@ -1108,6 +1116,10 @@ class _WindowsApi:
     def token_account(self, token: int) -> str:
         """The account name a token belongs to."""
         return self._identity.token_account(token)
+
+    def token_is_elevated(self, token: int) -> bool:
+        """Whether a token is an elevated administrator's."""
+        return self._identity.token_is_elevated(token)
 
     def close_handle(self, handle: int) -> None:
         """Close a handle. Best-effort."""

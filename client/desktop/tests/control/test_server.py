@@ -11,7 +11,7 @@ import time
 
 import pytest
 
-from neutrino_client.control import client
+from neutrino_client.control import client, routes
 from neutrino_client.control.server import ControlServer
 from neutrino_client.exceptions import PlatformUnsupportedError
 from tests.conftest import OTHER_USER, SAME_USER, FakeClientPlatform, FakeResident
@@ -282,3 +282,34 @@ def test_a_refused_attach_is_an_ordinary_answer(control):
     )
 
     assert (status, reply["code"], connection) == (404, "unknown_terminal", None)
+
+
+def test_the_same_account_elevated_may_only_ask_the_client_to_quit(
+    control, monkeypatch
+):
+    """The installer runs elevated and asks the client to quit for an upgrade;
+    an elevated caller gets nothing else."""
+    server, resident, platform = control
+    platform.peer = dict(SAME_USER, is_elevated=True)
+    monkeypatch.setattr(routes, "QUIT_ANSWER_GRACE_S", 0)
+    monkeypatch.setattr(routes, "end_process", lambda: None)
+
+    for method, path, body in (
+        ("GET", "/api/state", None),
+        ("GET", "/api/fs?path=/srv", None),
+        ("POST", "/api/leave", {}),
+        ("POST", "/api/services/port", {"id": "svc_tcp", "is_enabled": True}),
+        ("POST", "/api/show", {}),
+        ("GET", "/api/quit", None),
+    ):
+        status, reply = over_socket(server, method, path, body)
+        assert (status, reply["code"]) == (403, "control_peer_refused"), path
+    assert resident.service_calls == []
+    assert resident.disconnected == []
+    assert resident.shows == 0
+
+    status, _reply = over_socket(server, "POST", "/api/quit", {"is_upgrade": True})
+
+    assert status == 200
+    assert resident.relaunches == 1
+    assert resident.is_shut_down.wait(timeout=5)

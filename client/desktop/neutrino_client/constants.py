@@ -122,6 +122,9 @@ CLIENT_CONTROL_SOCKET_NAME = "client.sock"
 CLIENT_CONTROL_PIPE_PREFIX = "\\\\.\\pipe\\"
 CLIENT_CONTROL_PIPE_NAME_PREFIX = "neutrino_client_"
 CLIENT_CONTROL_REQUEST_TIMEOUT_S = 5
+# The one route the resident's own account may take elevated: the
+# installer asking it to quit.
+CLIENT_CONTROL_ELEVATED_ROUTE = "/api/quit"
 
 # The name the packages install the launcher and the icon under.
 CLIENT_DESKTOP_NAME = "neutrino_client"
