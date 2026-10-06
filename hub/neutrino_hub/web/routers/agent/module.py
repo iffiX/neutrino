@@ -33,6 +33,7 @@ from neutrino_hub.modules.devices.agent_module_cache import (
 from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_MODULE_CONFIGURED_WANTS,
+    CHANNEL_MODULE_PRESENT_STATES,
     CHANNEL_MODULE_STATE_ABSENT,
     CHANNEL_MODULE_STATE_FAILED,
     CHANNEL_MODULE_STATE_INSTALLED,
@@ -45,6 +46,7 @@ from neutrino_hub.modules.channel.constants import (
 from neutrino_hub.modules.devices.constants import (
     AGENT_MODULE_INSTALLER_AGENT,
     AGENT_MODULE_INSTALLER_USER,
+    DEVICE_AGENT_MODULES,
     DEVICE_VSCODE_MODULE,
     DEVICE_VSCODE_TERMS_KEY,
     DEVICE_MODULE_COMMAND_TIMEOUT_S,
@@ -563,8 +565,36 @@ def store_config(
     written = dict(config if stored is None else stored)
     write_module_config(runtime, context.key, context.module, written)
     context.config = written
+    _claim_reported(runtime, context)
     push_state(runtime, context.key)
     _recompose_published(runtime, context.module)
+
+
+def _claim_reported(runtime: PanelRuntime, context: DeviceModuleContext) -> None:
+    """Want running a module the machine has and the hub holds no want for.
+
+    An apply of a configuration asks the module to run it; without a want
+    the state would not name the module and the apply would reach nothing.
+
+    Args:
+        runtime: The shared runtime.
+        context: The device and the module, observed.
+
+    Raises:
+        HTTPException: 500 ``config_unwritable`` when the want cannot be
+            written.
+    """
+    store = runtime.desired_states
+    if context.module in DEVICE_AGENT_MODULES or store.want_of(
+        context.key, context.module
+    ):
+        return
+    if context.state not in CHANNEL_MODULE_PRESENT_STATES:
+        return
+    try:
+        store.set_want(context.key, context.module, CHANNEL_MODULE_STATE_RUNNING)
+    except OSError as error:
+        raise _config_unwritable(error) from error
 
 
 def write_module_config(

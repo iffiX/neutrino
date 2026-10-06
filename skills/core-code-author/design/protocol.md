@@ -1206,6 +1206,13 @@ module as it reports, and Gitea is taken over only while the hub holds
 list recomposed in the same step; a later report on the same socket takes
 nothing over.
 
+A module with no `want` that the machine reports `installed`, `stopped` or
+`running`, one with no import such as VS Code, code-server and CloudCLI, or
+one whose import found nothing, is the person's from their first press: its
+**Start** is live, and an apply of its configuration (`POST
+/api/agent/module/<name>/set` and the like) writes `want: running` with it,
+since applying a configuration asks the module to run it.
+
 **Configure** keeps its import for a module whose import was empty at the
 first report: the panel calls `POST /api/agent/module/<name>/import
 {device_id}` when the hub-side configuration is empty, and then opens the

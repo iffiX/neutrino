@@ -472,6 +472,12 @@ The **Modules** page has three panels, top to bottom:
 | **Global configuration** | the settings of the picked machine that belong to no module; today one part, its AI tools |
 | **Module configuration** | the tab strip of the machine's modules and the picked module's panels, as before under the title `ui.modules.tabs_title` |
 
+A module the machine reports `installed`, `stopped` or `running` while
+the hub holds no `want` for it, as after a reset or a new join on a machine
+that kept its modules, has **Start** live, whatever its state; the press
+and an apply of its configuration give it the `want` `running`
+([protocol.md](protocol.md), "Taking over a machine").
+
 A module whose last report is `failed` keeps the button of what it was
 asked for live: **Install** while its `want` is `installed`, **Start** while
 it is `running`, **Stop** while it is `stopped`, and **Uninstall** always.

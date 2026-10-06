@@ -588,6 +588,7 @@ export function ModulesPage() {
                         canAct &&
                         (activeRow.state === "installed" ||
                           activeRow.state === "stopped" ||
+                          isUnclaimed(activeRow) ||
                           isRetried(activeRow, "running"))
                       }
                       isBusy={busyAction === "start"}
@@ -740,6 +741,17 @@ function shownModules(
   }
   return runnable.filter(
     (name) => isCarried(rows[name]) || rows[name]?.state !== "unknown",
+  );
+}
+
+/** Whether the machine has the module and the hub holds no want for it, as
+ * after a reset or a new join: Start gives it one. */
+function isUnclaimed(row: DeviceModuleView): boolean {
+  return (
+    row.want === "" &&
+    (row.state === "installed" ||
+      row.state === "stopped" ||
+      row.state === "running")
   );
 }
 
