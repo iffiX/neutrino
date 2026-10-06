@@ -149,7 +149,7 @@
   "ui.join": "Join",
   "ui.language": "Language",
   "ui.language_name.en": "English",
-  "ui.language_name.zh-CN": "中文",
+  "ui.language_name.zh-CN": "简体中文",
   "ui.leave": "Leave",
   "ui.leave_armed": "Press again to leave",
   "ui.local_port": "Local port",
