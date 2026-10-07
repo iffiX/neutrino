@@ -26,7 +26,6 @@ import subprocess
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.cloudcli import installer
 from neutrino_agent.modules.cloudcli.constants import (
-    CLOUDCLI_CLAUDE_PLACES_SHELL,
     CLOUDCLI_DATABASE_NAME,
     CLOUDCLI_DARWIN_LOG_DIR,
     CLOUDCLI_DARWIN_LOG_PREFIX,
@@ -335,32 +334,21 @@ class CloudcliDarwinApplier:
         return [(account, self.log_path(account)) for account in accounts]
 
     def _find_claude(self, account: str, entry: tuple) -> str:
-        """The ``claude`` the account's login shell finds, else the first of the
-        known places the account can run, or ``cloudcli_claude_missing``."""
+        """The ``claude`` the account's login shell finds, or ``cloudcli_claude_missing``."""
         _uid, _gid, home, shell = entry
-        environment = {
-            "HOME": home,
-            "USER": account,
-            "LOGNAME": account,
-            "SHELL": shell,
-            "PATH": ACCOUNT_PATH,
-        }
         result = self._run_as(
             entry,
             [shell or "/bin/zsh", "-l", "-c", "command -v claude"],
-            environment=environment,
+            environment={
+                "HOME": home,
+                "USER": account,
+                "LOGNAME": account,
+                "SHELL": shell,
+                "PATH": ACCOUNT_PATH,
+            },
             timeout_s=CLOUDCLI_LOOKUP_TIMEOUT_S,
         )
         found = installer.claude_of(result.stdout) if result.is_success else ""
-        if not found:
-            places = installer.claude_places(home, "darwin")
-            looked = self._run_as(
-                entry,
-                ["/bin/sh", "-c", CLOUDCLI_CLAUDE_PLACES_SHELL, home, *places],
-                environment=environment,
-                timeout_s=CLOUDCLI_LOOKUP_TIMEOUT_S,
-            )
-            found = installer.first_claude(looked.stdout, home, "darwin")
         if not found:
             raise ModuleApplyError("cloudcli_claude_missing", {"account": account})
         return found

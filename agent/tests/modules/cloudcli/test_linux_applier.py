@@ -2,9 +2,8 @@
 
 What these pin: the template unit runs the unpacked Node.js as ``User=%i``
 from the account's root-only environment file; the account's own
-``claude`` is looked for in its login shell, then as the account at the
-known places in order, and a missing one is refused before anything is
-written; npm runs as the account with an environment
+``claude`` is looked for in its login shell and a missing one is refused
+before anything is written; npm runs as the account with an environment
 of its own, into the account's app directory, and a failure names its
 step; a new or changed instance is restarted and an unchanged one only kept
 up; and an instance no longer named is disabled and its file deleted.
@@ -18,7 +17,6 @@ import pytest
 import neutrino_agent.modules.cloudcli.linux_applier as applier_module
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.cloudcli.config import CloudcliConfig
-from neutrino_agent.modules.cloudcli.constants import CLOUDCLI_CLAUDE_PLACES_SHELL
 from neutrino_agent.modules.cloudcli.installer import NATIVE_CHECK_EXIT
 from neutrino_agent.modules.cloudcli.linux_applier import (
     CloudcliLinuxApplier,
@@ -46,7 +44,6 @@ class Machine:
         self.calls: list = []
         self.active: set = set()
         self.claude = "/home/ann/.local/bin/claude\n"
-        self.places = ""
         self.npm_exit = 0
         self.npm_output = ""
         self.check_exit = 0
@@ -60,8 +57,6 @@ class Machine:
             return CommandResult(list(command), 0, self.scope_result + "\n", "")
         if command[0] == "systemd-run":
             command = command[command.index("--") + 1 :]
-        if CLOUDCLI_CLAUDE_PLACES_SHELL in command:
-            return CommandResult(list(command), 0, self.places, "")
         if command[:2] == ["runuser", "-l"]:
             return CommandResult(
                 list(command), 0 if self.claude else 1, self.claude, ""
@@ -146,7 +141,6 @@ def test_an_instance_is_installed_as_the_account_then_started(
     notes = applier.apply(CONFIG, {"ann": 41234})
 
     assert machine.calls[0] == ["runuser", "-l", "ann", "-c", "command -v claude"]
-    assert not [call for call in machine.calls if CLOUDCLI_CLAUDE_PLACES_SHELL in call]
     scoped = machine.install_call()
     assert scoped[: scoped.index("--")] == [
         "systemd-run",
@@ -211,22 +205,6 @@ def test_an_account_without_claude_is_refused_before_anything_is_written(
         "cloudcli_claude_missing",
         {"account": "ann"},
     )
-    home = machine.home
-    assert machine.calls[1] == [
-        "runuser",
-        "-u",
-        "ann",
-        "--",
-        "sh",
-        "-c",
-        CLOUDCLI_CLAUDE_PLACES_SHELL,
-        home,
-        f"{home}/.local/bin/claude",
-        f"{home}/.claude/local/claude",
-        f"{home}/.npm-global/bin/claude",
-        f"{home}/.volta/bin/claude",
-        "/usr/local/bin/claude",
-    ]
     assert not (tmp_path / "etc").exists()
     assert machine.systemctl() == []
 
@@ -411,17 +389,3 @@ def test_an_instance_running_with_the_gateway_in_its_environment_is_restarted_on
     assert first == [["systemctl", "restart", "neutrino_cloudcli@ann.service"]]
     assert "ANTHROPIC" not in (tmp_path / "etc" / "ann.env").read_text()
     assert [call for call in machine.systemctl() if call[1] == "restart"] == []
-
-
-def test_a_claude_the_login_shell_misses_is_taken_from_the_account_s_local_bin(
-    applier, machine, tmp_path
-):
-    machine.claude = ""
-    machine.places = f"/usr/local/bin/claude\n{machine.home}/.local/bin/claude\n"
-
-    applier.apply(CONFIG, {"ann": 41234})
-
-    text = (tmp_path / "etc" / "ann.env").read_text()
-    node_bin = tmp_path / "var" / "cloudcli" / NODE_DIR / "bin"
-    assert f'PATH="{node_bin}:{machine.home}/.local/bin:/usr/local/bin:' in text
-    assert f'CLAUDE_CLI_PATH="{machine.home}/.local/bin/claude"\n' in text

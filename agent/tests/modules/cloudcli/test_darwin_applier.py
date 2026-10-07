@@ -16,7 +16,6 @@ import pytest
 
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.cloudcli.config import CloudcliConfig
-from neutrino_agent.modules.cloudcli.constants import CLOUDCLI_CLAUDE_PLACES_SHELL
 from neutrino_agent.modules.cloudcli.darwin_applier import CloudcliDarwinApplier
 from neutrino_agent.modules.subprocess_run import CommandResult
 
@@ -56,12 +55,9 @@ class Account:
     def __init__(self):
         self.calls: list = []
         self.claude = "/Users/ann/.local/bin/claude\n"
-        self.places = ""
 
     def __call__(self, entry, command, *, environment, timeout_s):
         self.calls.append((entry[0], list(command), dict(environment)))
-        if CLOUDCLI_CLAUDE_PLACES_SHELL in command:
-            return CommandResult(list(command), 0, self.places, "")
         if command[1:3] == ["-l", "-c"]:
             return CommandResult(list(command), 0, self.claude, "")
         if "install" in command:
@@ -160,19 +156,6 @@ def test_an_account_without_claude_is_refused(applier, account):
         applier.apply(CONFIG, {"ann": 41234})
 
     assert caught.value.code == "cloudcli_claude_missing"
-    home = applier.home
-    assert account.calls[1][1] == [
-        "/bin/sh",
-        "-c",
-        CLOUDCLI_CLAUDE_PLACES_SHELL,
-        home,
-        f"{home}/.local/bin/claude",
-        f"{home}/.claude/local/claude",
-        f"{home}/.npm-global/bin/claude",
-        f"{home}/.volta/bin/claude",
-        "/usr/local/bin/claude",
-        "/opt/homebrew/bin/claude",
-    ]
 
 
 def test_an_instance_no_longer_named_is_unloaded_with_its_files(
@@ -210,20 +193,3 @@ def test_the_account_reads_installing_while_its_npm_runs(applier, account):
 
     assert seen == [frozenset({"ann"})]
     assert applier.installing == frozenset()
-
-
-def test_a_claude_the_login_shell_misses_is_taken_from_the_known_places(
-    applier, account, tmp_path
-):
-    account.claude = ""
-    home = applier.home
-    account.places = (
-        f"/opt/homebrew/bin/claude\n{home}/.nvm/versions/node/v9.11.2/bin/claude\n"
-        f"{home}/.nvm/versions/node/v22.3.0/bin/claude\n"
-    )
-
-    applier.apply(CONFIG, {"ann": 41234})
-
-    path = tmp_path / "LaunchDaemons" / "com.neutrino.cloudcli.ann.plist"
-    environment = plistlib.loads(path.read_bytes())["EnvironmentVariables"]
-    assert environment["PATH"].split(":")[1] == f"{home}/.nvm/versions/node/v22.3.0/bin"

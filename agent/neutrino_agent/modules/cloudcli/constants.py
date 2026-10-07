@@ -54,27 +54,6 @@ CLOUDCLI_INSTALL_TIMEOUT_S = 1800
 CLOUDCLI_WINDOWS_INSTALL_LIMIT_S = 4 * 3600
 # How long the look for an account's ``claude`` may take.
 CLOUDCLI_LOOKUP_TIMEOUT_S = 30
-# Where an account's ``claude`` is looked for, in order, when its login shell
-# finds none: under its home, then the newest under nvm's Node versions, then
-# the system's own.
-CLOUDCLI_CLAUDE_HOME_PLACES = (
-    ".local/bin/claude",
-    ".claude/local/claude",
-    ".npm-global/bin/claude",
-    ".volta/bin/claude",
-)
-CLOUDCLI_CLAUDE_NVM_DIR = ".nvm/versions/node"
-CLOUDCLI_CLAUDE_SYSTEM_PLACES = {
-    "linux": ("/usr/local/bin/claude",),
-    "darwin": ("/usr/local/bin/claude", "/opt/homebrew/bin/claude"),
-}
-# What runs as the account under ``sh`` to look: the home is ``$0``, the
-# places are the arguments, and every executable file found is printed.
-CLOUDCLI_CLAUDE_PLACES_SHELL = (
-    f'for place in "$@" "$0"/{CLOUDCLI_CLAUDE_NVM_DIR}/*/bin/claude; do '
-    'if [ -f "$place" ] && [ -x "$place" ]; then printf "%s\\n" "$place"; fi; '
-    "done"
-)
 # The directories a service's PATH holds after Node's and the one ``claude``
 # is in.
 CLOUDCLI_SYSTEM_PATH = ("/usr/local/bin", "/usr/bin", "/bin")
