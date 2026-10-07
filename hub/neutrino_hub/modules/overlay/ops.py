@@ -109,6 +109,30 @@ def engine_devices(provider: str) -> list:
     return [OVERLAY_ENGINES[provider].device_name]
 
 
+def recorded_engine_devices(provider: str, recorded: dict) -> list:
+    """The devices one engine rides on as the last converge found them.
+
+    No engine is asked: the devices found at run time are the ones the
+    converge recorded, which the address sampler keeps current, and every
+    other overlay rides on its engine's own device.
+
+    Args:
+        provider: A key of :data:`OVERLAY_ENGINES`.
+        recorded: What :func:`rendered_overlay_devices` reads.
+
+    Returns:
+        The device names, possibly none: an engine found at run time that the
+        last converge did not record, one off among them, rides on none.
+    """
+    if provider in recorded:
+        return list(recorded[provider])
+    if not is_linux():
+        return []
+    if provider == OVERLAY_EASYTIER and _is_easytier_console_mode():
+        return []
+    return [OVERLAY_ENGINES[provider].device_name]
+
+
 def overlay_subnets(providers: list) -> dict:
     """The networks each overlay's addresses come from.
 

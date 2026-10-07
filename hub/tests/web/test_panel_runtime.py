@@ -11,11 +11,14 @@ resolvers the last render did not use.
 
 import json
 import threading
+import time
 
 import pytest
 
 from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_CLIENT
+from neutrino_hub.modules.overlay.constants import OVERLAY_ENGINES
 from neutrino_hub.modules.router import controller, routes
+from neutrino_hub.web import channel_state
 from neutrino_hub.web import panel_runtime as runtime_module
 from neutrino_hub.web.constants import WEB_EVENT_DEVICES
 from neutrino_hub.web.panel_runtime import PanelRuntime
@@ -247,3 +250,93 @@ def test_the_hubs_own_device_is_handed_loopback_first(monkeypatch):
     assert panel._device_urls("own") == ["https://127.0.0.1:8443"]
     assert panel._device_urls("other") == []
     assert panel._device_urls("gone") == []
+
+
+class SlowEnginePart:
+    """NetBird's part on a hub whose own daemon is not running: its status
+    command takes ten seconds before it gives up."""
+
+    asked = 0
+
+    def address(self):
+        SlowEnginePart.asked += 1
+        time.sleep(10)
+        return ""
+
+
+def slow_engines(monkeypatch):
+    from neutrino_hub.modules.easytier import ops as easytier_ops
+    from neutrino_hub.modules.overlay import ops as overlay_ops
+
+    SlowEnginePart.asked = 0
+    monkeypatch.setattr(
+        overlay_ops, "overlay_parts", lambda: {"netbird": SlowEnginePart}
+    )
+
+    def slow_easytier():
+        SlowEnginePart.asked += 1
+        time.sleep(2)
+        return []
+
+    monkeypatch.setattr(easytier_ops, "console_device_names", slow_easytier)
+    monkeypatch.setattr(overlay_ops, "console_device_names", slow_easytier)
+
+
+@pytest.mark.skipif("netbird" not in OVERLAY_ENGINES, reason="this tree has no NetBird")
+def test_a_clients_hello_asks_no_engine_and_is_settled_within_a_second(
+    on_windows, monkeypatch
+):
+    """The reported bug: on Windows the welcome waited 24 s on NetBird's and
+    EasyTier's status commands, and the app gave up after ten."""
+    slow_engines(monkeypatch)
+    monkeypatch.setattr(
+        runtime_module,
+        "_held_addresses",
+        lambda is_ipv6: {
+            "NetBird": ["100.64.0.5/16"],
+            "Ethernet": ["192.168.10.105/24"],
+        },
+    )
+    monkeypatch.setattr(
+        runtime_module, "rendered_overlay_devices", lambda: {"netbird": ["NetBird"]}
+    )
+    panel = object.__new__(PanelRuntime)
+    panel.client_scope = {}
+    panel.client_reached = {}
+    monkeypatch.setattr(panel, "host_scopes", lambda: [], raising=False)
+
+    started = time.monotonic()
+    channel_state.note_client_scope(
+        panel, "client-one", peer_host="100.64.0.9", reached_host="100.64.0.5"
+    )
+    took = time.monotonic() - started
+
+    assert took < 1.0
+    assert SlowEnginePart.asked == 0
+    assert panel.overlay_networks() == {
+        "netbird": ["100.64.0.5/16"],
+        "easytier": [],
+    }
+    assert panel.interface_networks() == ["192.168.10.105/24"]
+    assert panel.client_reached["client-one"] == "netbird"
+
+
+@pytest.mark.skipif("netbird" not in OVERLAY_ENGINES, reason="this tree has no NetBird")
+def test_on_linux_an_engine_the_converge_did_not_record_rides_its_own_device(
+    monkeypatch,
+):
+    from neutrino_hub.modules.overlay import ops as overlay_ops
+
+    slow_engines(monkeypatch)
+    monkeypatch.setattr(overlay_ops, "_is_easytier_console_mode", lambda: False)
+    monkeypatch.setattr(
+        runtime_module,
+        "_held_addresses",
+        lambda is_ipv6: {"wt0": ["100.64.0.5/16"], "enp1s0": ["192.168.1.5/24"]},
+    )
+    monkeypatch.setattr(runtime_module, "rendered_overlay_devices", lambda: {})
+    panel = object.__new__(PanelRuntime)
+
+    assert panel.overlay_networks()["netbird"] == ["100.64.0.5/16"]
+    assert panel.interface_networks() == ["192.168.1.5/24"]
+    assert SlowEnginePart.asked == 0
