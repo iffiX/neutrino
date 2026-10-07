@@ -273,6 +273,7 @@ export interface WifiInterfaceSettings {
   ap_ssid: string;
   ap_passphrase: string;
   ap_band: string;
+  ap_country_code: string;
 }
 
 /**
