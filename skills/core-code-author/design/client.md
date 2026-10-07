@@ -27,7 +27,7 @@ The document has these parts:
 
 | Part | Holds |
 | --- | --- |
-| `hubs[]` | `hub_id`, `hub_name`, `gateway_url`, `software`, `connection`, `reached_through` (the hub's word for the way the channel reached it: `lan`, `direct`, `netbird`, `easytier`, `relay`, or empty before the first state), `is_panel_allowed` (the hub's state says whether this client's permission holds `panel`), `panel_forward` (empty, or the loopback port the panel's forward listens on), `last_error`, `is_exit`, `overlay`, `jobs` |
+| `hubs[]` | `hub_id`, `hub_name`, `gateway_url`, `software`, `connection`, `reached_through` (the hub's word for the way the channel reached it: `lan`, `direct`, `netbird`, `easytier`, `relay`, or empty before the first state), `rtt_ms` (the last round trip the client measured, from its own WebSocket ping to the hub's pong, in milliseconds; null before the first pong and while the hub is not `connected`), `is_panel_allowed` (the hub's state says whether this client's permission holds `panel`), `panel_forward` (empty, or the loopback port the panel's forward listens on), `last_error`, `is_exit`, `overlay`, `jobs` |
 | `hubs[].overlay` | `network` (the chosen engine), `networks[]` (what the hub publishes), `state`, `stage` (empty, `login` or `hub` while connecting), `address`, `error` |
 | `hubs[].jobs` | `is_refreshing`, `overlay_job` (empty, `connecting`, `disconnecting`), `is_leaving`, `is_opening_panel` |
 | `services[]` | one per published service, with the hub's wire fields (`hub_id`, `device_id`, `module`, `kind`, `payload`, `is_healthy`, `unhealthy_code`), plus `job`, `last_error` and, for every entry the client forwards ("The local port table"), `local_port` (the setting: `auto` or a number) and `forward` (empty, or the loopback port the forward listens on) |
@@ -116,6 +116,7 @@ languages, and the English column is the wording the English catalog holds.
 | `ui.through.netbird` | NetBird |
 | `ui.through.easytier` | EasyTier |
 | `ui.through.relay` | SSH Relay |
+| `ui.state.rtt` | `<ms>` ms |
 | `ui.state.connecting` | Connecting… |
 | `ui.state.down` | Not connected |
 | `ui.state.pending` | Joined; the hub has not been reached yet |
@@ -168,7 +169,7 @@ What the core does on the press, before it pushes:
 | Hub's connection | Action |
 | --- | --- |
 | `connected` | sends a report with `is_refresh: true`; the hub sends the whole state frame back whatever its hash; a report the socket cannot take closes the socket, and the hub goes to `connecting` as the Hubs table says |
-| `connecting` or `down` | puts the backoff at its floor, ends the current wait, resolves the hub's addresses again and starts a round through them in the material's order |
+| `connecting` or `down` | puts the backoff at its floor, ends the current wait, resolves the hub's addresses again and starts a round, which dials them all at once ("The Hubs page") |
 | `replaced` or `disabled` | nothing, and the hub does not enter refreshing; those states change only by a press on **Reconnect** or by the hub |
 
 The refresh and the automatic reconnection use the same loop. A refresh
@@ -200,13 +201,29 @@ state is its connection:
 | `disabled` | the frame says enabled | `connected` | no button acts on a disabled hub except **Leave** |
 | any | the code is `binding_unknown` | row removed, as after **Leave** | the hub no longer holds the client; the code's wording is a notice on the page with a close button, gone when closed, on **Refresh**, or after one minute |
 
-Every round, a reconnect after the socket closed as much as the first,
-tries the hub's addresses from the start of their order
-([connection.md](connection.md), "Where the port is reached"): the address
-that last answered is not preferred, and a connected hub is not moved
-because a nearer address answers again. While the hub's virtual network is
-on, its address on that network comes first, as the virtual network line
-says.
+A connect round, a reconnect after the socket closed as much as the
+first, dials every candidate address of the hub at once: the hub's address
+on each of its virtual networks that is up, the hub's name, and the
+binding's `urls`. Each address keeps its own connect time,
+`CLIENT_CONNECT_TIMEOUT_S`. The first socket to complete TLS with the pinned
+fingerprint is the round's socket. At that moment the client closes every
+other socket of the round, before any `hello` on it, and sends `hello` on
+the round's socket alone. The round ends `connected` when the `welcome`
+follows, and in a code otherwise ([connection.md](connection.md), "Where
+the port is reached").
+
+| Rule | Reason |
+| --- | --- |
+| No address is preferred for having worked last, and a connected hub is not moved because another address answers. | The path that completes first is the fastest one at that moment, whatever it was at the last round. |
+| No prober runs between rounds, and the client keeps no list of reachable addresses. | Every round already tries every address; a second mechanism that guesses reachability goes stale between rounds. |
+| One `hello` per round. | The hub keeps one admitted socket per binding and closes the earlier of two with 4010 `replaced`, so a second `hello` in one round closes the round's own winner. |
+
+A `connected` row shows two tags beside its dot, each one short token: the
+state word `ui.state.connected_through` with the word for `reached_through`,
+and `ui.state.rtt` with `rtt_ms` rounded to a whole number. The client sends
+a WebSocket ping of its own every `CLIENT_PING_INTERVAL_S`, 20 seconds, and
+each pong sets `rtt_ms` to the time from that ping to its pong, so the tag
+changes at every keepalive. No sentence goes with either tag.
 
 The row's controls, from left to right:
 
@@ -216,7 +233,7 @@ The row's controls, from left to right:
 | the network button | always | as the overlay table gives it | Connect, Cancel or Disconnect |
 | **Panel** | when `is_panel_allowed` | when the hub is `connected` and not disabled | job `ui.job.opening`: asks `service {is_panel: true}` for a sign-in token, makes the panel's forward when the hub has none, then opens the system browser at `http://panel-<hub-id>.localhost:<local-port>/?tkn=<token>` (on macOS `http://127.0.0.1:<local-port>/?tkn=<token>`); a failure, `permission_denied` among them, writes the code on the row's error line |
 | **Reconnect** | in `replaced` only | always | takes the binding back and starts a round |
-| **Leave** | always | not while `is_leaving` | arms; the second press deletes the binding at once, whether or not the hub answers: the core stops that hub's forwards (the panel's among them), mounts and viewers, leaves its network when no other hub uses it, forgets the binding, and only then tells the hub once, in the background, with a short timeout, a refusal or an unreachable hub changing nothing; the row shows `ui.job.leaving` and goes when the core has forgotten the binding, which never waits on the hub |
+| **Leave** | always | not while `is_leaving` | arms; the second press deletes the binding at once, whether or not the hub answers: the core stops that hub's forwards (the panel's among them), mounts and viewers, leaves its network when no other hub uses it, forgets the binding, and only then tells the hub once, in the background, trying the hub's addresses in turn with an equal share each of `CLIENT_LEAVE_TELL_TIMEOUT_S`, 5 seconds, a refusal or an unreachable hub changing nothing; the row shows `ui.job.leaving` and goes when the core has forgotten the binding, which never waits on the hub |
 
 The panel's forward is a forward of the local port table whose far end is
 `connect {is_panel: true}`; it listens from the first press of **Panel**
@@ -280,7 +297,7 @@ the picker and the button in the row. The state is `off`, `connecting` or
 | Each stage's start and end is one log line with its duration. | A connect that fails on a phone is explained from the log or not at all. |
 | In EasyTier's console mode the `login` stage's 90 s cover the registration with the console; after it the state stays `connecting` with the reason line `ui.reason.console_waiting` (registered with the console, waiting for it to assign a network) until the owner assigns one or the person cancels. | The console's owner decides when a new machine gets a network; the client cannot hurry that, and failing after a minute would read as a fault. |
 | At start, a binding whose last state was `on` gets one connect; a failure leaves it `off` with the error and no retry. | A phone that was on the network before a reboot comes back on it; a hub that is gone does not keep the phone trying. |
-| While `on`, the hub's channel connects through the hub's address on that network first. | The network exists so the hub is reachable from outside; the channel is what proves it. |
+| While `on`, the hub's address on that network is a candidate of every round and is dialled with the others at once, with no head start. | The `hub` stage already proved the path; afterwards the path that completes first carries the channel, as for every other address. |
 | The picker is disabled in `connecting` and `on`, and shows the engine's name while disabled. | Changing the engine under a running one is the switch that hangs. |
 | The picker is absent when the hub publishes one network; the line then names that engine. | A choice of one is no choice. |
 | A hub that publishes no virtual network has no virtual network line: no state word, no picker, no button and no reason. | A client reaches a hub over its LAN, through Direct or through the relay, so a hub with no virtual network is an ordinary hub, and a line that names only what is absent tells the person nothing. |

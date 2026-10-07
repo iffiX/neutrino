@@ -104,6 +104,12 @@ The page reads it from the interface's `is_unsaved` and works out
 nothing itself ([modules/network.md](modules/network.md), "An
 interface the configuration does not name").
 
+A Wi-Fi radio that publishes a network has a **Country code** field
+(`ui.network.field_country_code`) beside **Band**: two letters, or empty.
+The band picker offers 5 GHz only while the field holds a code, and with
+it empty the access point runs on 2.4 GHz
+([modules/network.md](modules/network.md), "The access point's country").
+
 In router mode, a chip turned on for a port whose role is `disabled` carries
 the role choice in the same row: `ui.network.role_wan`, and
 `ui.network.role_lan` for a wired port, as a two-button picker beside the
@@ -425,6 +431,15 @@ its section appears with the state it has then, `not_configured` until it is
 set up. The engine panel's bar reads **Apply access**
 (`ui.overlay.apply_engine`).
 
+An engine section's peer table shows each peer's latency in the same
+column whether the path to it is direct or relayed, with the word
+`state.relayed` beside the number of a relayed peer. Where the engine gives
+no latency for a relayed peer, as NetBird does not, the number is the round
+trip the hub measured to the peer's overlay address, one ICMP echo per
+peer at the address sampler's interval, `WEB_ADDRESS_SAMPLE_INTERVAL_S`. The
+cell is empty while that echo had no answer ([protocol.md](protocol.md),
+`GET /api/hub/overlay/netbird`).
+
 EasyTier's apply bar is disabled while **Manual bootstrap peers** is chosen
 and no peer is filled in, with no sentence beside it; the hub refuses that
 configuration with `easytier_invalid {field: peers}`.
@@ -477,6 +492,18 @@ the hub holds no `want` for it, as after a reset or a new join on a machine
 that kept its modules, has **Start** live, whatever its state; the press
 and an apply of its configuration give it the `want` `running`
 ([protocol.md](protocol.md), "Taking over a machine").
+
+A module the machine reports `queued` is in transit, as `installing` and
+`uninstalling` are: every button of its tab is disabled until the machine
+reports another state ([agent.md](agent.md), "One module at a time"). After a
+press, the tab's optimistic step holds until the machine reports the module
+in a state other than the one it showed at the press, at most two minutes.
+
+A module reported `absent` with a code is an install that failed and left
+nothing behind: the output box shows the code's words, once, until the next
+press, and **Install** is live as for any absent module
+([agent.md](agent.md), "An install that leaves nothing behind"). No module
+has a **Cancel** button.
 
 A module whose last report is `failed` keeps the button of what it was
 asked for live: **Install** while its `want` is `installed`, **Start** while
@@ -531,6 +558,18 @@ will come). With no
 such account the line is `ui.ai_tools.no_accounts` and no row is drawn; the
 chip can be turned on all the same, and an account gained later is switched
 then.
+
+## Account sign-in on the AI page
+
+An account sign-in runs in a dialog on the **AI** page's **Accounts**
+surface ([modules/ai.md](modules/ai.md), "What each panel surface owns"),
+which the page polls with `GET /api/hub/ai/gateway/account_login` until the
+gateway reports the flow `complete` or `failed`.
+
+| Rule | Reason |
+| --- | --- |
+| When the hub's session for the flow ends before the gateway reports either, the route returns `login_expired`, and the dialog stays open on the screen it was showing, with the code's words under it. It never resets to its first screen. | A person who sees the first screen again cannot tell a timeout from a click that did nothing. |
+| A flow that ends `failed` shows the gateway's own reason, the view's `message`, under the code's words when the gateway sent one. | The gateway's reason names the provider's refusal, which the code alone cannot. |
 
 ## An interaction this document does not cover
 
