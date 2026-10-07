@@ -10,6 +10,7 @@ import kotlinx.serialization.Serializable
  * @property isDisabled Whether the hub switched this client off.
  * @property services The published list, resolved for the address this socket came from.
  * @property urls Every address the hub answers the channel on.
+ * @property relayUrl The member of [urls] that is the relay's address, empty while the relay is off or the hub names none.
  * @property overlays What this phone joins each of the hub's virtual networks with, preferred first.
  * @property terminals The managed machines this phone may open a shell on.
  * @property isPanelAllowed Whether this phone may open the hub's panel through `connect {is_panel: true}`.
@@ -21,6 +22,7 @@ data class ChannelClientState(
     @SerialName("is_disabled") val isDisabled: Boolean = false,
     val services: List<ChannelServiceEntry> = emptyList(),
     val urls: List<String> = emptyList(),
+    @SerialName("relay_url") val relayUrl: String = "",
     val overlays: List<ChannelOverlay> = emptyList(),
     val terminals: List<ChannelTerminal> = emptyList(),
     @SerialName("is_panel_allowed") val isPanelAllowed: Boolean = false,

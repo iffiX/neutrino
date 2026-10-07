@@ -82,7 +82,7 @@ The screens of the app need only the hub's port 8443, so a virtual network is on
 1. Select **Connect**. The first time, Android shows its VPN connection request.
 1. Select **OK** in that request, so the app can run NetBird or EasyTier inside Android's VPN service.
 
-The line reads **Connecting…** with **Logging in to** and the engine under it, then **Waiting for the hub** with the seconds counted. It reads **Connected ·** and the phone's address when the hub is reachable through the network, and the button becomes **Disconnect**. **Cancel** stops a connect that is still running. A failure returns the line to **Not connected** with the code under it.
+The line has two states, **Connected ·** with the phone's address and **Not connected**. While a connect runs, it reads **Connecting…** with **Logging in to** and the engine under it, and **Cancel** stops it. It reads **Connected ·** and the phone's address as soon as the engine has an address, and the button becomes **Disconnect**. The way the app reaches the hub shows on the hub row, not on this line. A failure returns the line to **Not connected** with the code under it.
 
 The phone is on one hub's network at a time. While one hub's network is on, **Connect** on another hub is greyed with the reason `overlay_other_network`. When the hub publishes both engines, a picker beside the button names the one to use, and it changes only while the line reads **Not connected**.
 

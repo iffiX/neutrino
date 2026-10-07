@@ -5,6 +5,8 @@ import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
+import android.net.LinkAddress
+import android.net.LinkProperties
 import android.net.Network
 import android.os.Build
 import android.os.Bundle
@@ -28,7 +30,6 @@ import io.github.iffix.neutrino.forward.LocalPortTable
 import io.github.iffix.neutrino.forward.PortForwardRow
 import io.github.iffix.neutrino.forward.PortForwards
 import io.github.iffix.neutrino.overlay.OverlayController
-import io.github.iffix.neutrino.overlay.OverlayProbe
 import io.github.iffix.neutrino.overlay.ServiceOverlayLauncher
 import io.github.iffix.neutrino.remotedesktop.MissingRemoteDesktopCore
 import io.github.iffix.neutrino.remotedesktop.RemoteDesktopChoiceStore
@@ -104,8 +105,7 @@ class NeutrinoApplication : Application() {
             store = bindingStore,
             launcher = ServiceOverlayLauncher(this),
             scope = scope,
-            probe = OverlayProbe::isReachable,
-        ) { bindingId, url, isOnly -> connections.session(bindingId)?.preferAddress(url, isOnly) }
+        ) { bindingId, route -> connections.session(bindingId)?.overlayChanged(route) }
     }
 
     /** The one state document every screen draws: each hub with its virtual network, its panel's forward and its jobs. */
@@ -216,7 +216,7 @@ class NeutrinoApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         connections.start()
-        overlays.start(connections.views)
+        overlays.start()
         terminalTabs.follow(connections.views)
         portForwards.follow(connections.views)
         scope.launch { ClientCoreHold.changes(bindingStore.bindings).collect { if (it) holdCore() } }
@@ -277,17 +277,35 @@ class NeutrinoApplication : Application() {
         override fun onActivityDestroyed(activity: Activity) = Unit
     }
 
+    /**
+     * The phone's default network: a new one coming up, the current one going down, or its
+     * addresses changing is a network change for every hub. The first network seen at start is not.
+     */
     private inner class NetworkWatch : ConnectivityManager.NetworkCallback() {
         private var current: Network? = null
+        private var addresses: List<LinkAddress> = emptyList()
+        private var hasSeen = false
 
         override fun onAvailable(network: Network) {
             val previous = current
             current = network
-            if (previous != null && previous != network) connections.networkChanged()
+            val isChange = hasSeen && previous != network
+            hasSeen = true
+            if (isChange) connections.networkChanged()
         }
 
         override fun onLost(network: Network) {
-            if (network == current) current = null
+            if (network != current) return
+            current = null
+            addresses = emptyList()
+            connections.networkChanged()
+        }
+
+        override fun onLinkPropertiesChanged(network: Network, linkProperties: LinkProperties) {
+            if (network != current) return
+            val previous = addresses
+            addresses = linkProperties.linkAddresses
+            if (previous.isNotEmpty() && previous.toSet() != addresses.toSet()) connections.networkChanged()
         }
     }
 }

@@ -1,5 +1,6 @@
 package io.github.iffix.neutrino.channel
 
+import android.util.Log
 import io.github.iffix.neutrino.CHANNEL_STREAM_ID_BYTES
 import io.github.iffix.neutrino.CLIENT_BACKOFF_MAX_S
 import io.github.iffix.neutrino.CLIENT_BACKOFF_MIN_S
@@ -8,6 +9,7 @@ import io.github.iffix.neutrino.CLIENT_HTTPS_DEFAULT_PORT
 import io.github.iffix.neutrino.CLIENT_HUB_ROLE
 import io.github.iffix.neutrino.CLIENT_IDLE_POLL_INTERVAL_S
 import io.github.iffix.neutrino.CLIENT_JOIN_PATH
+import io.github.iffix.neutrino.CLIENT_LOG_TAG
 import io.github.iffix.neutrino.CLIENT_PING_INTERVAL_S
 import io.github.iffix.neutrino.CLIENT_REFRESH_TIMEOUT_S
 import io.github.iffix.neutrino.CLIENT_REFUSAL_CODE_ADMISSION_PAUSED
@@ -26,6 +28,8 @@ import java.net.URI
 import java.net.URISyntaxException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -35,6 +39,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.selects.select
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -53,6 +59,12 @@ import kotlinx.serialization.json.longOrNull
  * replaced waits for [reconnect]. The open socket pings every 20 s, and each pong's round trip is
  * the view's `rttMs`.
  *
+ * A network change ([networkChanged]) runs a round at once. On a connected hub that round runs
+ * beside the channel: its winner takes the channel only when its path ranks higher than the
+ * channel's, or ranks the same and opened faster; a winner that is no better is closed before
+ * its hello. A better winner says hello, and the hub's `replaced` close of the socket moved off
+ * is expected and not shown.
+ *
  * A binding whose ticket is unspent is `pending`: the round's socket's address takes the ticket,
  * and the hello follows on that socket with the token it returned. A
  * short link's binding first fetches the long link's object at that address and keeps its
@@ -68,6 +80,8 @@ import kotlinx.serialization.json.longOrNull
  * @param onUnbound Called with the binding's id and the refusal when the hub no longer knows it.
  * @param onJoined Called with the binding's id and the hub's id for it once its ticket is spent.
  * @param clock The time in milliseconds, stamped on the view when the open socket closes.
+ * @param localNetworks The networks this phone holds an address in, read at each comparison of paths.
+ * @param nanoClock The time in nanoseconds, by which each socket's opening is measured.
  * @throws IllegalArgumentException When the store holds no binding with [bindingId].
  */
 class HubSession(
@@ -79,6 +93,8 @@ class HubSession(
     private val onUnbound: (String, ChannelResult.Refused) -> Unit,
     private val onJoined: (String, String) -> Unit = { _, _ -> },
     private val clock: () -> Long = System::currentTimeMillis,
+    private val localNetworks: () -> List<ChannelLocalNetwork> = ChannelPath::deviceNetworks,
+    private val nanoClock: () -> Long = System::nanoTime,
 ) {
     private val current = MutableStateFlow(requireNotNull(store.get(bindingId)).let { HubView(it, roundState(it)) })
     private val news = Channel<Unit>(Channel.CONFLATED)
@@ -91,17 +107,17 @@ class HubSession(
     private var isUnbound = false
     private var isJoinRefused = false
 
-    @Volatile
-    private var preferredUrl = ""
+    private val changes = Channel<Unit>(Channel.CONFLATED)
+    private val moves = Channel<Moved>(Channel.UNLIMITED)
 
     @Volatile
-    private var isPreferredOnly = false
+    private var overlay: ChannelOverlayRoute? = null
 
     @Volatile
-    private var dialling: Channel<Dialled>? = null
+    private var relayUrl = ""
 
     @Volatile
-    private var isRoundCut = false
+    private var movingFrom: ChannelSocket? = null
 
     @Volatile
     private var live: LiveSocket? = null
@@ -142,10 +158,21 @@ class HubSession(
         news.trySend(Unit)
     }
 
-    /** The phone's network changed: a round runs now with the backoff at its floor. */
+    /**
+     * A network changed: a virtual network of the hub's turned on, the phone's connectivity
+     * changed, or the hub's state named other addresses. A replaced or disabled hub runs nothing; a
+     * hub with no open socket runs a round now with the backoff at its floor; a connected hub runs
+     * a round beside its channel.
+     */
     fun networkChanged() {
+        val connection = current.value.connection
+        val isIdle = connection == HubConnection.REPLACED || connection == HubConnection.DISABLED
+        if (isIdle || isReplaced || isUnbound || isJoinRefused) return
+        if (live != null) {
+            changes.trySend(Unit)
+            return
+        }
         backoffS = CLIENT_BACKOFF_MIN_S
-        live?.socket?.close(CLIENT_WS_CLOSE_NORMAL, "network changed")
         news.trySend(Unit)
     }
 
@@ -157,37 +184,15 @@ class HubSession(
     }
 
     /**
-     * Dial one more address in every round, or only that address: the hub's address on a virtual
-     * network this phone is on. A socket open on another address is closed so a round runs
-     * with it now.
+     * The hub's virtual network this phone is on, or none: its address is a candidate of every
+     * round, and a network turning on is a network change.
      *
-     * @param url The address, or empty to prefer none; a hub kept to one address with no open
-     *   socket then runs a round now.
-     * @param isOnly Whether a round tries that address and no other; a round busy on other
-     *   addresses then ends at once, and the next runs now.
+     * @param route The network that is on, or null once it is off.
      */
-    fun preferAddress(url: String, isOnly: Boolean = false) {
-        val wasOnly = isPreferredOnly
-        isPreferredOnly = isOnly && url.isNotEmpty()
-        if (url == preferredUrl) return
-        preferredUrl = url
-        if (url.isEmpty()) {
-            if (wasOnly && live == null) {
-                backoffS = CLIENT_BACKOFF_MIN_S
-                news.trySend(Unit)
-            }
-            return
-        }
-        backoffS = CLIENT_BACKOFF_MIN_S
-        val socket = live
-        if (socket != null && current.value.connectedAddress != url) {
-            socket.socket.close(CLIENT_WS_CLOSE_NORMAL, "network changed")
-        }
-        if (isPreferredOnly) {
-            isRoundCut = true
-            dialling?.trySend(Dialled(null, ChannelSocketEvent.Failed(unreachable("the round gave way to $url"))))
-        }
-        news.trySend(Unit)
+    fun overlayChanged(route: ChannelOverlayRoute?) {
+        val previous = overlay
+        overlay = route
+        if (route != null && route != previous) networkChanged()
     }
 
     /**
@@ -277,16 +282,8 @@ class HubSession(
         if (isReplaced || isUnbound || isJoinRefused) return CLIENT_IDLE_POLL_INTERVAL_S
         var binding = store.get(bindingId) ?: return CLIENT_IDLE_POLL_INTERVAL_S
         current.update { it.copy(connection = roundState(binding)) }
-        isRoundCut = false
-        val only = preferredUrl.takeIf { isPreferredOnly }
-        val firstUrl = binding.storedUrls.firstOrNull().orEmpty()
-        val nameUrl = if (only != null) "" else resolveHubName()?.let { nameUrlOf(firstUrl, it) }.orEmpty()
-        val urls = if (only != null) listOf(only) else binding.candidateUrls(nameUrl, preferredUrl)
-        val round = dialAll(urls, binding.fingerprint)
-        if (isRoundCut) {
-            round.sockets.forEach { it.socket.close(CLIENT_WS_CLOSE_NORMAL, "") }
-            return cutRound()
-        }
+        val nameUrl = nameUrlOf(binding)
+        val round = dialAll(binding.candidateUrls(nameUrl, overlay?.url.orEmpty()), binding.fingerprint)
         var untrusted: ChannelResult.Refused? = null
         var failure: ChannelResult.Refused? = null
         for ((url, refusal) in round.refusals) {
@@ -317,13 +314,8 @@ class HubSession(
                 }
             }
         }
-        val outcome = handshake(binding, winner.socket, winner.events)
-        if (isRoundCut && outcome !is Handshake.Welcomed) {
-            winner.socket.close(CLIENT_WS_CLOSE_NORMAL, "")
-            return cutRound()
-        }
-        return when (outcome) {
-            is Handshake.Welcomed -> afterServing(serve(winner.url, winner.socket, winner.events, outcome.welcome))
+        return when (val outcome = handshake(binding, winner.socket, winner.events)) {
+            is Handshake.Welcomed -> afterServing(serve(winner, outcome.welcome))
 
             is Handshake.Rejected -> {
                 winner.socket.close(CLIENT_WS_CLOSE_NORMAL, "")
@@ -347,10 +339,10 @@ class HubSession(
      */
     private suspend fun dialAll(urls: List<String>, fingerprint: String): Round {
         val opens = Channel<Dialled>(Channel.UNLIMITED)
-        dialling = opens
         val sockets = urls.map { url ->
             val events = Channel<ChannelSocketEvent>(Channel.UNLIMITED)
-            DialledSocket(url, transport.connect(url, fingerprint, events), events)
+            val startedNanos = nanoClock()
+            DialledSocket(url, transport.connect(url, fingerprint, events), events, startedNanos)
         }
         val refusals = mutableListOf<Pair<String, ChannelResult.Refused>>()
         var winner: DialledSocket? = null
@@ -361,13 +353,14 @@ class HubSession(
                         ?: ChannelSocketEvent.Failed(
                             unreachable("the address did not open in ${CLIENT_CONNECT_TIMEOUT_S}s"),
                         )
+                    dialled.openNanos = nanoClock() - dialled.startedNanos
                     opens.send(Dialled(dialled, first))
                 }
             }
             var waiting = sockets.size
             while (winner == null && waiting > 0) {
                 val dial = opens.receive()
-                val dialled = dial.socket ?: break
+                val dialled = dial.socket
                 waiting -= 1
                 when (val event = dial.event) {
                     is ChannelSocketEvent.Opened -> winner = dialled
@@ -377,8 +370,57 @@ class HubSession(
             }
             watchers.forEach { it.cancel() }
         }
-        dialling = null
         return Round(sockets, winner, refusals)
+    }
+
+    /**
+     * A round beside the open channel: its winner takes the channel only on a better path, and
+     * is closed before its hello otherwise.
+     */
+    private suspend fun moveIfBetter() {
+        val from = live ?: return
+        val binding = store.get(bindingId) ?: return
+        val round = dialAll(binding.candidateUrls(nameUrlOf(binding), overlay?.url.orEmpty()), binding.fingerprint)
+        val winner = round.winner
+        round.sockets.filter { it !== winner }.forEach { it.socket.close(CLIENT_WS_CLOSE_NORMAL, "") }
+        if (winner == null) return
+        val path = pathOf(winner.url)
+        val livePath = pathOf(from.url)
+        val isBetter = path.rank < livePath.rank || (path.rank == livePath.rank && winner.openNanos < from.openNanos)
+        if (!isBetter || live !== from) {
+            winner.socket.close(CLIENT_WS_CLOSE_NORMAL, "")
+            log(
+                "the channel stays on ${from.url} (${livePath.wireName}); ${winner.url} (${path.wireName}) is no better",
+            )
+            return
+        }
+        movingFrom = from.socket
+        var isTaken = false
+        try {
+            val outcome = handshake(binding, winner.socket, winner.events)
+            if (outcome is Handshake.Welcomed) {
+                moves.send(Moved(winner, outcome.welcome))
+                isTaken = true
+            } else {
+                log("the channel stays on ${from.url}: ${winner.url} answered no welcome")
+            }
+        } finally {
+            if (!isTaken) {
+                movingFrom = null
+                winner.socket.close(CLIENT_WS_CLOSE_NORMAL, "")
+            }
+        }
+    }
+
+    private fun pathOf(url: String): ChannelPath = ChannelPath.of(url, overlay, relayUrl, localNetworks())
+
+    private suspend fun nameUrlOf(binding: HubBinding): String {
+        val firstUrl = binding.storedUrls.firstOrNull() ?: return ""
+        return resolveHubName()?.let { nameUrlOf(firstUrl, it) }.orEmpty()
+    }
+
+    private fun log(text: String) {
+        Log.i(CLIENT_LOG_TAG, "hub ${current.value.binding.title}: $text")
     }
 
     private suspend fun spend(binding: HubBinding, url: String): ChannelResult<HubBinding> {
@@ -417,11 +459,6 @@ class HubSession(
     private fun roundState(binding: HubBinding): HubConnection =
         if (binding.isPending) HubConnection.PENDING else HubConnection.CONNECTING
 
-    private fun cutRound(): Long {
-        news.tryReceive()
-        return 0
-    }
-
     private suspend fun handshake(
         binding: HubBinding,
         socket: ChannelSocket,
@@ -458,91 +495,112 @@ class HubSession(
         else -> Handshake.Failed(unreachable("the hub closed the socket (${event.code})"))
     }
 
-    private suspend fun serve(
-        url: String,
-        socket: ChannelSocket,
-        events: Channel<ChannelSocketEvent>,
-        welcome: ChannelInbound.Welcome,
-    ): ChannelResult.Refused? {
-        val streams = ChannelStreamRegistry(socket)
-        live = LiveSocket(socket, streams)
-        backoffS = CLIENT_BACKOFF_MIN_S
-        note { it.copy(gatewayUrl = url, hubId = welcome.id, hubName = welcome.name) }
-        current.update {
-            it.copy(
-                connection = HubConnection.CONNECTED,
-                software = welcome.software,
-                lastError = null,
-                connectedAddress = url,
-                hasConnected = true,
-                droppedAtMillis = 0,
-            )
-        }
+    private suspend fun serve(winner: DialledSocket, welcome: ChannelInbound.Welcome): ChannelResult.Refused? {
+        changes.tryReceive()
+        takeChannel(winner, welcome)
         var failure: ChannelResult.Refused? = null
         coroutineScope {
             val reporter = launch {
                 while (isActive) {
                     delay(CLIENT_REPORT_INTERVAL_S * 1000)
-                    report(socket)
+                    live?.let { report(it.socket) }
                 }
             }
             val pinger = launch {
                 while (isActive) {
-                    socket.ping()
+                    live?.socket?.ping()
                     delay(CLIENT_PING_INTERVAL_S * 1000)
                 }
             }
+            val mover = launch {
+                for (change in changes) moveIfBetter()
+            }
             try {
-                failure = readUntilEnd(socket, events, streams)
+                failure = readUntilEnd()
             } finally {
                 reporter.cancel()
                 pinger.cancel()
+                withContext(NonCancellable) { mover.cancelAndJoin() }
+                generateSequence { moves.tryReceive().getOrNull() }.forEach {
+                    it.socket.socket.close(CLIENT_WS_CLOSE_NORMAL, "")
+                }
             }
         }
         return failure
     }
 
-    private suspend fun readUntilEnd(
-        socket: ChannelSocket,
-        events: Channel<ChannelSocketEvent>,
-        streams: ChannelStreamRegistry,
-    ): ChannelResult.Refused? {
+    private fun takeChannel(winner: DialledSocket, welcome: ChannelInbound.Welcome) {
+        live =
+            LiveSocket(winner.socket, ChannelStreamRegistry(winner.socket), winner.url, winner.events, winner.openNanos)
+        backoffS = CLIENT_BACKOFF_MIN_S
+        note { it.copy(gatewayUrl = winner.url, hubId = welcome.id, hubName = welcome.name) }
+        current.update {
+            it.copy(
+                connection = HubConnection.CONNECTED,
+                software = welcome.software,
+                lastError = null,
+                connectedAddress = winner.url,
+                hasConnected = true,
+                droppedAtMillis = 0,
+                rttMs = null,
+            )
+        }
+    }
+
+    private fun moveTo(moved: Moved) {
+        val previous = live
+        movingFrom = null
+        takeChannel(moved.socket, moved.welcome)
+        previous?.streams?.endAll()
+        previous?.socket?.close(CLIENT_WS_CLOSE_NORMAL, "")
+        log("the channel moved from ${previous?.url.orEmpty()} to ${moved.socket.url}")
+        moved.socket.socket.ping()
+    }
+
+    private suspend fun readUntilEnd(): ChannelResult.Refused? {
         var failure: ChannelResult.Refused? = null
         try {
             while (true) {
-                when (val event = events.receive()) {
-                    is ChannelSocketEvent.Text -> failure = dispatch(event.text, socket, streams)
+                val reading = live ?: break
+                val step = select {
+                    reading.events.onReceive { Step.Event(it) }
+                    moves.onReceive { Step.Move(it) }
+                }
+                if (step is Step.Move) {
+                    moveTo(step.moved)
+                    continue
+                }
+                when (val event = (step as Step.Event).event) {
+                    is ChannelSocketEvent.Text -> failure = dispatch(event.text, reading.socket, reading.streams)
 
                     is ChannelSocketEvent.Binary -> if (event.bytes.size >= CHANNEL_STREAM_ID_BYTES) {
-                        streams.takeBinary(event.bytes)
+                        reading.streams.takeBinary(event.bytes)
                     }
-
-                    is ChannelSocketEvent.Closed -> {
-                        failure = when (event.code) {
-                            CLIENT_WS_CLOSE_REPLACED -> {
-                                isReplaced = true
-                                null
-                            }
-
-                            CLIENT_WS_CLOSE_REFUSED -> ChannelResult.refused("hub_refused")
-
-                            else -> null
-                        }
-                        break
-                    }
-
-                    is ChannelSocketEvent.Failed -> break
 
                     is ChannelSocketEvent.Pong -> current.update { it.copy(rttMs = event.rttMillis) }
 
                     is ChannelSocketEvent.Opened -> Unit
+
+                    is ChannelSocketEvent.Closed, is ChannelSocketEvent.Failed -> {
+                        if (movingFrom === reading.socket) {
+                            val moved = withTimeoutOrNull(CLIENT_CONNECT_TIMEOUT_S * 1000) { moves.receive() }
+                            if (moved != null) {
+                                moveTo(moved)
+                                continue
+                            }
+                        }
+                        if (event is ChannelSocketEvent.Closed) failure = closedWhileServing(event)
+                        break
+                    }
                 }
                 if (failure != null) break
             }
         } finally {
+            val ending = live
             live = null
-            streams.endAll()
-            socket.close(CLIENT_WS_CLOSE_NORMAL, "")
+            movingFrom = null
+            ending?.streams?.endAll()
+            ending?.socket?.close(CLIENT_WS_CLOSE_NORMAL, "")
             current.update {
                 it.copy(
                     connection = HubConnection.CONNECTING,
@@ -553,6 +611,17 @@ class HubSession(
             }
         }
         return failure
+    }
+
+    private fun closedWhileServing(event: ChannelSocketEvent.Closed): ChannelResult.Refused? = when (event.code) {
+        CLIENT_WS_CLOSE_REPLACED -> {
+            isReplaced = true
+            null
+        }
+
+        CLIENT_WS_CLOSE_REFUSED -> ChannelResult.refused("hub_refused")
+
+        else -> null
     }
 
     private fun dispatch(text: String, socket: ChannelSocket, streams: ChannelStreamRegistry): ChannelResult.Refused? {
@@ -585,6 +654,8 @@ class HubSession(
 
     private fun takeState(state: ChannelClientState) {
         stateHash = state.hash
+        relayUrl = state.relayUrl
+        val isNewUrls = state.urls.isNotEmpty() && state.urls.toSet() != current.value.binding.gatewayUrls.toSet()
         note { binding ->
             binding.copy(
                 gatewayUrls = state.urls.ifEmpty { binding.gatewayUrls },
@@ -602,6 +673,7 @@ class HubSession(
                 lastError = null,
             )
         }
+        if (isNewUrls) networkChanged()
     }
 
     private fun report(socket: ChannelSocket, isRefresh: Boolean = false): Boolean =
@@ -665,12 +737,34 @@ class HubSession(
         ""
     }
 
-    private class LiveSocket(val socket: ChannelSocket, val streams: ChannelStreamRegistry)
+    private class LiveSocket(
+        val socket: ChannelSocket,
+        val streams: ChannelStreamRegistry,
+        val url: String,
+        val events: Channel<ChannelSocketEvent>,
+        val openNanos: Long,
+    )
 
-    private class DialledSocket(val url: String, val socket: ChannelSocket, val events: Channel<ChannelSocketEvent>)
+    private class DialledSocket(
+        val url: String,
+        val socket: ChannelSocket,
+        val events: Channel<ChannelSocketEvent>,
+        val startedNanos: Long,
+    ) {
+        var openNanos = Long.MAX_VALUE
+    }
 
-    /** A dialled socket's first event; a null socket cuts the round. */
-    private class Dialled(val socket: DialledSocket?, val event: ChannelSocketEvent)
+    /** A dialled socket's first event. */
+    private class Dialled(val socket: DialledSocket, val event: ChannelSocketEvent)
+
+    /** A winner of a round beside the channel, welcomed and ready to carry it. */
+    private class Moved(val socket: DialledSocket, val welcome: ChannelInbound.Welcome)
+
+    private sealed interface Step {
+        class Event(val event: ChannelSocketEvent) : Step
+
+        class Move(val moved: Moved) : Step
+    }
 
     private class Round(
         val sockets: List<DialledSocket>,

@@ -8,7 +8,9 @@ import io.github.iffix.neutrino.channel.HubJobs
 import io.github.iffix.neutrino.channel.HubView
 import io.github.iffix.neutrino.channel.Samples
 import io.github.iffix.neutrino.design.DotTone
+import io.github.iffix.neutrino.overlay.OverlayJob
 import io.github.iffix.neutrino.overlay.OverlayLine
+import io.github.iffix.neutrino.overlay.OverlayStage
 import io.github.iffix.neutrino.overlay.OverlayState
 import io.github.iffix.neutrino.words.WordCatalog
 import org.junit.Assert.assertEquals
@@ -68,6 +70,27 @@ class HubsScreenTest {
         assertEquals(listOf("Connected · LAN", "7 ms"), hubTags(row.copy(rttMs = 7), words))
         assertEquals(emptyList<String>(), hubTags(row.copy(connection = HubConnection.CONNECTING, rttMs = 7), words))
         assertEquals(emptyList<String>(), hubTags(row.copy(jobs = HubJobs(isRefreshing = true), rttMs = 7), words))
+    }
+
+    @Test
+    fun theVirtualNetworkLineReadsOnlyTheEngineNeverTheHub() {
+        val words = WordCatalog(emptyMap())
+        val lines = listOf(
+            OverlayLine(),
+            OverlayLine(network = "easytier", job = OverlayJob.CONNECTING, stage = OverlayStage.LOGIN),
+            OverlayLine(state = OverlayState.ON, network = "easytier", address = "10.126.126.7"),
+            OverlayLine(state = OverlayState.ON, network = "easytier", job = OverlayJob.DISCONNECTING),
+        )
+        assertEquals(
+            listOf("ui.overlay.off", "ui.job.connecting", "ui.overlay.on", "ui.overlay.on"),
+            lines.map { overlayStateWord(it, words) },
+        )
+        assertEquals(listOf("OFF", "ON"), OverlayState.entries.map { it.name })
+        assertEquals(listOf("", "login"), OverlayStage.entries.map { it.wireName })
+        val screen = RepositoryFiles.text(
+            "client/android/app/src/main/kotlin/io/github/iffix/neutrino/screen/HubsScreen.kt",
+        )
+        for (key in listOf("ui.stage.hub", "ui.overlay.connecting")) assertEquals(false, key in screen)
     }
 
     @Test
