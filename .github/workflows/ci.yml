@@ -26,7 +26,7 @@ jobs:
       # The router's renderer tests check every case against the real
       # `dnsmasq --test`. dnsmasq-base is the binary without the service, so
       # nothing here contends with the runner's own resolver.
-      - run: sudo apt-get install -y --no-install-recommends dnsmasq-base
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends dnsmasq-base
 
       - run: black --check hub agent client packaging
 
@@ -208,7 +208,7 @@ jobs:
 
       - run: pip install -e "cn/hub[dev]"
 
-      - run: sudo apt-get install -y --no-install-recommends dnsmasq-base
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends dnsmasq-base
 
       - run: pytest -q
         working-directory: cn/hub
