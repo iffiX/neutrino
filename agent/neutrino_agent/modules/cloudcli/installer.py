@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import tarfile
 import tempfile
@@ -27,6 +28,9 @@ from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.cloudcli.config import jwt_secret
 from neutrino_agent.modules.cloudcli.constants import (
     CLOUDCLI_ACCOUNT_PARTS,
+    CLOUDCLI_CLAUDE_HOME_PLACES,
+    CLOUDCLI_CLAUDE_NVM_DIR,
+    CLOUDCLI_CLAUDE_SYSTEM_PLACES,
     CLOUDCLI_FAILURE_DETAIL_CHARS,
     CLOUDCLI_FAILURE_LINES,
     CLOUDCLI_APP_DIR_NAME,
@@ -372,6 +376,46 @@ def service_environment(
     return environment
 
 
+def claude_places(home: str, os_name: str) -> list:
+    """The fixed places an account's ``claude`` is looked for, in order.
+
+    Args:
+        home: The account's home, from its passwd entry.
+        os_name: ``linux`` or ``darwin``.
+
+    Returns:
+        The places under the home, then the system's own; the nvm versions
+        are looked through apart.
+    """
+    return [os.path.join(home, place) for place in CLOUDCLI_CLAUDE_HOME_PLACES] + list(
+        CLOUDCLI_CLAUDE_SYSTEM_PLACES.get(os_name, ())
+    )
+
+
+def first_claude(output: str, home: str, os_name: str) -> str:
+    """The first ``claude`` in the order of the places, of those found.
+
+    Args:
+        output: The executable files the look found, one per line.
+        home: The account's home, from its passwd entry.
+        os_name: ``linux`` or ``darwin``.
+
+    Returns:
+        The path; empty when none was found.
+    """
+    found = {line.strip() for line in output.splitlines() if line.strip()}
+    nvm_dir = os.path.join(home, CLOUDCLI_CLAUDE_NVM_DIR) + os.sep
+    nvm = sorted(
+        (place for place in found if place.startswith(nvm_dir)),
+        key=_node_version,
+        reverse=True,
+    )
+    home_count = len(CLOUDCLI_CLAUDE_HOME_PLACES)
+    places = claude_places(home, os_name)
+    ordered = places[:home_count] + nvm[:1] + places[home_count:]
+    return next((place for place in ordered if place in found), "")
+
+
 def claude_of(output: str) -> str:
     """The ``claude`` a login shell's ``command -v`` printed.
 
@@ -386,3 +430,9 @@ def claude_of(output: str) -> str:
         if line.startswith("/"):
             return line
     return ""
+
+
+def _node_version(place: str) -> tuple:
+    """The version numbers of the nvm directory one ``claude`` is under."""
+    version = place.split(os.sep)[-3]
+    return tuple(int(part) for part in re.findall(r"\d+", version))

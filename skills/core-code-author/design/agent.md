@@ -887,7 +887,12 @@ tools setting ("The machine's AI tools").
 **The `claude` CloudCLI starts is the account's own.** Before starting the
 service the agent runs `command -v claude` in the account's login shell
 (`runuser -l` on Linux, the account's shell with `-l -c` on macOS) and puts
-that directory on the service's `PATH`. An account with none reports
+that directory on the service's `PATH`. When the shell finds none, the agent
+looks as the account, under the home its passwd entry names, at
+`~/.local/bin/claude`, `~/.claude/local/claude`, `~/.npm-global/bin/claude`,
+`~/.volta/bin/claude`, the newest `~/.nvm/versions/node/*/bin/claude`,
+`/usr/local/bin/claude` and, on macOS, `/opt/homebrew/bin/claude`, and takes
+the first executable file. An account with none reports
 `cloudcli_claude_missing {account}`. On Windows the task runs as the account
 and has its `PATH` already.
 
