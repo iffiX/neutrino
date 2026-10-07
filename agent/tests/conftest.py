@@ -61,7 +61,12 @@ def _no_system_commands_from_the_appliers(monkeypatch):
     session's polkit for rights."""
 
     def refused(argv, **_):
-        return CommandResult(exit_code=1, stdout="", stderr="no commands run in tests")
+        return CommandResult(
+            command=list(argv),
+            exit_code=1,
+            stdout="",
+            stderr="no commands run in tests",
+        )
 
     for module in (linux_applier_module, darwin_applier_module, windows_applier_module):
         monkeypatch.setattr(module, "run_command", refused)
