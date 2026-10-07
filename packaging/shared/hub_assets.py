@@ -20,6 +20,7 @@ import hashlib
 import io
 import sys
 import tarfile
+import time
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -73,6 +74,8 @@ HUB_ASSET_LICENSES = {
 HUB_ASSET_WINDOWS_EXTRA_LICENSES = {"wintun.dll": "wintun.txt"}
 HUB_ASSET_GEODATA_LICENSES = ("v2fly_geoip.txt", "v2fly_domain_list_community.txt")
 HUB_ASSET_FETCH_TIMEOUT_S = 300
+HUB_ASSET_FETCH_TRIES = 3
+HUB_ASSET_FETCH_RETRY_WAIT_S = 30
 
 
 def pinned(program: str, os_name: str, machine: str) -> tuple:
@@ -259,10 +262,21 @@ def fetch(url: str, digest: str, what: str) -> bytes:
 
     Raises:
         SystemExit: When what arrived is not what was pinned.
+        OSError: When the download fails ``HUB_ASSET_FETCH_TRIES`` times.
     """
     print(f"  fetching {what} {url.rsplit('/', 1)[-1]}")
-    with urllib.request.urlopen(url, timeout=HUB_ASSET_FETCH_TIMEOUT_S) as response:
-        payload = response.read()
+    for attempt in range(1, HUB_ASSET_FETCH_TRIES + 1):
+        try:
+            with urllib.request.urlopen(
+                url, timeout=HUB_ASSET_FETCH_TIMEOUT_S
+            ) as response:
+                payload = response.read()
+            break
+        except OSError as error:
+            if attempt == HUB_ASSET_FETCH_TRIES:
+                raise
+            print(f"  {what}: {error}; trying again in {HUB_ASSET_FETCH_RETRY_WAIT_S}s")
+            time.sleep(HUB_ASSET_FETCH_RETRY_WAIT_S)
     arrived = hashlib.sha256(payload).hexdigest()
     if arrived != digest:
         raise SystemExit(

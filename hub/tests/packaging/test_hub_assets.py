@@ -311,6 +311,43 @@ def test_a_download_that_is_not_what_was_pinned_stops_the_build(monkeypatch):
     assert "not the pinned" in str(refused.value)
 
 
+def test_fetch_tries_again_after_a_network_error_and_gives_up_after_the_last(
+    monkeypatch,
+):
+    payload = b"the pinned bytes"
+    calls = []
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *details):
+            return False
+
+        def read(self):
+            return payload
+
+    def urlopen(url, timeout):
+        calls.append(url)
+        if len(calls) < 3:
+            raise TimeoutError("timed out")
+        return Response()
+
+    monkeypatch.setattr(hub_assets.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(hub_assets.time, "sleep", lambda s: None)
+    digest = hub_assets.hashlib.sha256(payload).hexdigest()
+
+    assert hub_assets.fetch("https://example.invalid/a.dat", digest, "a") == payload
+    assert len(calls) == 3
+
+    def failing(url, timeout):
+        raise TimeoutError("timed out")
+
+    monkeypatch.setattr(hub_assets.urllib.request, "urlopen", failing)
+    with pytest.raises(TimeoutError):
+        hub_assets.fetch("https://example.invalid/a.dat", digest, "a")
+
+
 @pytest.fixture
 def mainland_tree(tmp_path, monkeypatch):
     """A hub tree holding the modules the mainland edition keeps, and not
