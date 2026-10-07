@@ -81,6 +81,8 @@ ROUTER_PREFIX_LEN_MAX = 32
 # kernel refuses a multicast or broadcast address, and it does so after the
 # value is already in `config/`, where it fails every apply from then on.
 ROUTER_MAC_PATTERN = r"^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$"
+# An access point's country: two capital letters of ISO 3166-1.
+ROUTER_COUNTRY_CODE_PATTERN = r"^[A-Z]{2}$"
 
 # One hostname label, as a fixed address may name its device. Written into a
 # comma-separated `dhcp-host=` line, so a comma or a newline in it would be a

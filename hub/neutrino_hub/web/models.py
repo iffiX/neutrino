@@ -267,6 +267,7 @@ class WifiInterfaceSettings(BaseModel):
     ap_ssid: str = ""
     ap_passphrase: str = ""
     ap_band: str = "bg"
+    ap_country_code: str = ""
 
 
 class VlanInterfaceSettings(BaseModel):

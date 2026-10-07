@@ -233,12 +233,15 @@ class RouterWifiSettings:
         ap_passphrase: WPA2 passphrase for the published network. Empty means
             an open network, which the panel warns about rather than forbids.
         ap_band: ``bg`` for 2.4 GHz or ``a`` for 5 GHz.
+        ap_country_code: The published network's country, two capital
+            letters of ISO 3166-1, or empty. 5 GHz is used only with one.
     """
 
     ssid: str = ""
     ap_ssid: str = ""
     ap_passphrase: str = ""
     ap_band: str = DEFAULT_AP_BAND
+    ap_country_code: str = ""
 
     @classmethod
     def from_dict(cls, data: dict) -> "RouterWifiSettings":
@@ -255,6 +258,7 @@ class RouterWifiSettings:
             ap_ssid=str(data.get("ap_ssid", "")),
             ap_passphrase=str(data.get("ap_passphrase", "")),
             ap_band=str(data.get("ap_band", DEFAULT_AP_BAND)),
+            ap_country_code=str(data.get("ap_country_code", "")),
         )
 
     def to_dict(self) -> dict:
@@ -268,6 +272,7 @@ class RouterWifiSettings:
             "ap_ssid": self.ap_ssid,
             "ap_passphrase": self.ap_passphrase,
             "ap_band": self.ap_band,
+            "ap_country_code": self.ap_country_code,
         }
 
 

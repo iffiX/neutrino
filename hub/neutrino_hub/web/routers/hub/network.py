@@ -18,6 +18,7 @@ from neutrino_hub.modules.router.constants import (
     ROUTER_HOSTNAME_PATTERN,
     ROUTER_INTENTS,
     ROUTER_LEASE_TIME_PATTERN,
+    ROUTER_COUNTRY_CODE_PATTERN,
     ROUTER_MAC_PATTERN,
     ROUTER_PREFIX_LEN_MAX,
     ROUTER_PREFIX_LEN_MIN,
@@ -66,6 +67,7 @@ from neutrino_hub.modules.router.routes import (
 )
 from neutrino_hub.modules.router.controller import router_lock
 from neutrino_hub.modules.router.supplicant import RouterWifiClient, write_config
+from neutrino_hub.modules.router.hostapd_renderer import BAND_5GHZ
 from neutrino_hub.modules.router.wifi import (
     AP_PASSPHRASE_MAX_LENGTH,
     AP_PASSPHRASE_MIN_LENGTH,
@@ -507,8 +509,10 @@ async def update_interface(
         The Network tab payload.
 
     Raises:
-        HTTPException: 400 when the settings are inconsistent, 502 when
-            applying them fails.
+        HTTPException: 400 when the settings are inconsistent, among them
+            ``network_invalid {field: country_code, name}`` for an access
+            point on 5 GHz with no country code or a code that is not two
+            capital letters; 502 when applying them fails.
     """
     name = settings.name
     network = runtime.network()
@@ -1422,6 +1426,13 @@ def _validate_lan(
                 "access_point_passphrase_length",
                 minimum=AP_PASSPHRASE_MIN_LENGTH,
                 maximum=AP_PASSPHRASE_MAX_LENGTH,
+            )
+        country_code = settings.wifi.ap_country_code
+        if (
+            country_code and not re.match(ROUTER_COUNTRY_CODE_PATTERN, country_code)
+        ) or (settings.wifi.ap_band == BAND_5GHZ and not country_code):
+            raise _bad_request(
+                "network_invalid", field="country_code", name=settings.name
             )
 
 

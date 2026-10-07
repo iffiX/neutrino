@@ -35,7 +35,8 @@
         "ssid": "",
         "ap_ssid": "",
         "ap_passphrase": "",
-        "ap_band": "bg"
+        "ap_band": "bg",
+        "ap_country_code": ""
       },
       "vlan": null
     },
@@ -65,12 +66,13 @@
         "ssid": "",
         "ap_ssid": "",
         "ap_passphrase": "",
-        "ap_band": "bg"
+        "ap_band": "bg",
+        "ap_country_code": ""
       },
       "vlan": null
     },
     {
-      "_comment": "The radio, unused by default. Give it the 'wan' role to reach the internet over Wi-Fi \u2014 scan and join from the Network tab. The passphrase is not stored here; it lives in connections.json with every other network this box knows how to join. Give it the 'lan' role to publish an access point instead, using ap_ssid and ap_passphrase below.",
+      "_comment": "The radio, unused by default. Give it the 'wan' role to reach the internet over Wi-Fi \u2014 scan and join from the Network tab. The passphrase is not stored here; it lives in connections.json with every other network this box knows how to join. Give it the 'lan' role to publish an access point instead, using ap_ssid and ap_passphrase below. ap_country_code is the country it publishes in, two capital letters such as DE, or empty; ap_band 'a' (5 GHz) needs one, and with none the access point runs on 2.4 GHz.",
       "name": "wlp3s0",
       "is_exposed": false,
       "role": "disabled",
@@ -98,7 +100,8 @@
         "_comment_ap": "The network published in the 'lan' role. WPA2 only: the passphrase is 8 to 63 characters and is not optional, because an open access point would be an open route into the LAN. Band is 'bg' for 2.4 GHz or 'a' for 5 GHz.",
         "ap_ssid": "neutrino",
         "ap_passphrase": "",
-        "ap_band": "bg"
+        "ap_band": "bg",
+        "ap_country_code": ""
       },
       "vlan": null
     }
