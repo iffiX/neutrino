@@ -2,8 +2,9 @@
 
 What these pin: each instance is a root-only LaunchDaemon naming its
 account in ``UserName``, running the unpacked Node.js with the account's
-server script and an environment the plist holds; the ``claude`` the
-account's login shell finds leads its ``PATH``; npm runs as the account;
+server script and an environment the plist holds; its ``PATH`` lists
+Node's directory, the account's usual command directories and the
+system's; npm runs as the account;
 a changed plist is loaded again and an unchanged loaded one is left; an
 instance no longer named is unloaded with its files.
 """
@@ -54,12 +55,9 @@ class Account:
 
     def __init__(self):
         self.calls: list = []
-        self.claude = "/Users/ann/.local/bin/claude\n"
 
     def __call__(self, entry, command, *, environment, timeout_s):
         self.calls.append((entry[0], list(command), dict(environment)))
-        if command[1:3] == ["-l", "-c"]:
-            return CommandResult(list(command), 0, self.claude, "")
         if "install" in command:
             app = command[command.index("--prefix") + 1]
             package = os.path.join(app, "node_modules", "@cloudcli-ai", "cloudcli")
@@ -126,14 +124,22 @@ def test_an_instance_is_a_root_only_launchdaemon_of_its_account(
     assert environment["SERVER_PORT"] == "41234"
     search_path = environment["PATH"].split(":")
     assert search_path[0].endswith(f"{NODE_DIR}/bin")
-    assert search_path[1] == "/Users/ann/.local/bin"
+    assert search_path[1:] == [
+        f"{applier.home}/.local/bin",
+        f"{applier.home}/bin",
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+    ]
+    assert environment["HOME"] == applier.home
+    assert "CLAUDE_CLI_PATH" not in environment
     assert not {"ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "OPENAI_BASE_URL"} & set(
         environment
     )
     assert plist["StandardOutPath"].endswith("Logs/cloudcli_ann.log")
     assert ["launchctl", "bootstrap", "system", str(path)] in launchd.calls
-    assert account.calls[0][1] == ["/bin/zsh", "-l", "-c", "command -v claude"]
-    install = account.calls[1]
+    install = account.calls[0]
     assert install[0] == 501
     assert install[1][-4:-1] == ["install", "@cloudcli-ai/cloudcli@1.37.3", "--prefix"]
     assert install[2]["npm_config_userconfig"].endswith("cloudcli/app/.npmrc")
@@ -147,15 +153,6 @@ def test_an_unchanged_loaded_instance_is_left(applier, launchd):
     assert applier.apply(CONFIG, {"ann": 41234}) == []
 
     assert not [call for call in launchd.calls if call[1] == "bootstrap"]
-
-
-def test_an_account_without_claude_is_refused(applier, account):
-    account.claude = "zsh: command not found: claude\n"
-
-    with pytest.raises(ModuleApplyError) as caught:
-        applier.apply(CONFIG, {"ann": 41234})
-
-    assert caught.value.code == "cloudcli_claude_missing"
 
 
 def test_an_instance_no_longer_named_is_unloaded_with_its_files(

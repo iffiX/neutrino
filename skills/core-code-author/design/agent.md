@@ -884,12 +884,13 @@ Code its `~/.claude/settings.json`, Codex its `~/.codex/auth.json` and
 `~/.codex/config.toml`. Pointing those at the gateway is the machine's AI
 tools setting ("The machine's AI tools").
 
-**The `claude` CloudCLI starts is the account's own.** Before starting the
-service the agent runs `command -v claude` in the account's login shell
-(`runuser -l` on Linux, the account's shell with `-l -c` on macOS) and puts
-that directory on the service's `PATH`. An account with none reports
-`cloudcli_claude_missing {account}`. On Windows the task runs as the account
-and has its `PATH` already.
+**The service's `PATH` names directories, never a tool.** After Node's own
+directory it lists the account's `~/.local/bin` and `~/bin`, with `~` from
+the account's passwd entry, then `/usr/local/bin`, `/usr/bin` and `/bin` on
+Linux and `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin` and `/bin` on
+macOS. On Windows the task's script puts `%APPDATA%\npm` after Node's
+directory and then the account's own `PATH`, and nothing in any of them is
+checked for existence.
 
 **Node's own directory leads `PATH` for npm and for the service, on every
 system.** The install scripts of the native modules call `node` by name,
@@ -905,9 +906,10 @@ better-sqlite3 fetches its own, from where the state's `npm_environment`
 says ("Where each edition fetches from" in
 [install_and_dev.md](install_and_dev.md)).
 
-**npm cannot take the agent down.** On Linux an account's npm runs in a
-transient scope of its own, `neutrino_cloudcli_install_<account>.scope`,
-and the agent's unit has `OOMPolicy=continue`. When the kernel kills the
+**npm cannot take the agent down.** On Linux an account's npm runs as a
+transient service of its own, `neutrino_cloudcli_install_<account>.service`,
+started by `systemd-run --wait --pipe -p OOMPolicy=stop`, and the agent's
+unit has `OOMPolicy=continue`. When the kernel kills the
 install for want of memory, the install ends
 `cloudcli_install_out_of_memory {account}` and the agent keeps running. A
 failed install is tried again only with a state of another hash, and the

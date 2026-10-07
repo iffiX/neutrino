@@ -8,7 +8,7 @@ root-only, since that environment holds the instance's secrets. Its output
 goes to the account's file under ``/Library/Logs/Neutrino/agent``. Before an
 instance first runs, the account installs CloudCLI into its app directory
 with that Node.js, and the service's ``PATH`` holds that Node.js's
-directory and then the ``claude`` its login shell finds.
+directory, then the account's usual command directories and the system's.
 
 Not pure: writes under ``/Library``, runs commands as an account and drives
 launchd.
@@ -194,9 +194,8 @@ class CloudcliDarwinApplier:
 
         Raises:
             ModuleApplyError: ``account_unknown`` for an account the Mac does
-                not have, ``cloudcli_claude_missing`` for one whose login
-                shell finds no ``claude``, ``cloudcli_node_download_failed``
-                with no Node.js, and an install's
+                not have, ``cloudcli_node_download_failed`` with no Node.js,
+                and an install's
                 ``cloudcli_npm_install_failed`` or
                 ``cloudcli_native_module_failed``.
             OSError: When a file cannot be written.
@@ -213,12 +212,6 @@ class CloudcliDarwinApplier:
                 raise ModuleApplyError(
                     "account_unknown", {"account": instance.account}
                 ) from None
-        claudes = {
-            instance.account: self._find_claude(
-                instance.account, entries[instance.account]
-            )
-            for instance in config.instances
-        }
         notes = []
         for instance in config.instances:
             if self._install_app(
@@ -255,7 +248,6 @@ class CloudcliDarwinApplier:
                     home=home,
                     os_name="darwin",
                     node_dir=os.path.dirname(node),
-                    claude_path=claudes[instance.account],
                 ),
                 log_path=log_path,
             )
@@ -332,26 +324,6 @@ class CloudcliDarwinApplier:
             ``[(account, path)]``, in that order.
         """
         return [(account, self.log_path(account)) for account in accounts]
-
-    def _find_claude(self, account: str, entry: tuple) -> str:
-        """The ``claude`` the account's login shell finds, or ``cloudcli_claude_missing``."""
-        _uid, _gid, home, shell = entry
-        result = self._run_as(
-            entry,
-            [shell or "/bin/zsh", "-l", "-c", "command -v claude"],
-            environment={
-                "HOME": home,
-                "USER": account,
-                "LOGNAME": account,
-                "SHELL": shell,
-                "PATH": ACCOUNT_PATH,
-            },
-            timeout_s=CLOUDCLI_LOOKUP_TIMEOUT_S,
-        )
-        found = installer.claude_of(result.stdout) if result.is_success else ""
-        if not found:
-            raise ModuleApplyError("cloudcli_claude_missing", {"account": account})
-        return found
 
     def _install_app(
         self,

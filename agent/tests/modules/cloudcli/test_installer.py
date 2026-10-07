@@ -5,9 +5,10 @@ under the module's root, read-only, replacing the one before; an archive
 that is not one, or that names a path outside it, is
 ``cloudcli_node_download_failed``; npm runs with its cache inside the app
 directory and an empty file as the account's configuration; a failure
-naming a native module is that module's, any other npm's; an instance's
-environment is written from scratch around the account's own ``claude``;
-and the login shell's ``claude`` is the last absolute path it printed.
+naming a native module is that module's, any other npm's; and an
+instance's environment is written from scratch, its ``PATH`` listing Node's
+directory, the account's usual command directories and the system's on
+each system, naming no tool.
 """
 
 import io
@@ -211,7 +212,6 @@ def test_an_instance_runs_with_an_environment_written_from_scratch_naming_no_gat
         home="/home/ann",
         os_name="linux",
         node_dir="/var/lib/neutrino/agent/cloudcli/n/bin",
-        claude_path="/home/ann/.local/bin/claude",
     )
 
     assert environment == {
@@ -221,12 +221,37 @@ def test_an_instance_runs_with_an_environment_written_from_scratch_naming_no_gat
         "DATABASE_PATH": "/home/ann/.local/share/neutrino/agent/cloudcli/auth.db",
         "HOME": "/home/ann",
         "PATH": "/var/lib/neutrino/agent/cloudcli/n/bin:/home/ann/.local/bin:"
-        "/usr/local/bin:/usr/bin:/bin",
-        "CLAUDE_CLI_PATH": "/home/ann/.local/bin/claude",
+        "/home/ann/bin:/usr/local/bin:/usr/bin:/bin",
     }
 
 
-def test_a_windows_instance_puts_node_before_the_account_s_own_path():
+def test_a_mac_instance_lists_homebrew_before_the_system_s_directories():
+    config = CloudcliConfig.from_dict(
+        {"instances": [{"account": "ann", "port": 3001, "token_secret": "s"}]}
+    )
+
+    environment = installer.service_environment(
+        config.instances[0],
+        upstream_port=41234,
+        home="/Users/ann",
+        os_name="darwin",
+        node_dir="/Library/Application Support/Neutrino/agent/state/cloudcli/n/bin",
+    )
+
+    assert environment["PATH"].split(":") == [
+        "/Library/Application Support/Neutrino/agent/state/cloudcli/n/bin",
+        "/Users/ann/.local/bin",
+        "/Users/ann/bin",
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+    ]
+    assert environment["HOME"] == "/Users/ann"
+    assert not [name for name in environment if "CLAUDE" in name]
+
+
+def test_a_windows_instance_puts_node_and_npm_before_the_account_s_own_path():
     config = CloudcliConfig.from_dict(
         {"instances": [{"account": "ann", "port": 3001, "token_secret": "s"}]}
     )
@@ -241,16 +266,9 @@ def test_a_windows_instance_puts_node_before_the_account_s_own_path():
     )
 
     assert environment["PATH"] == (
-        "C:\\ProgramData\\Neutrino\\agent\\state\\cloudcli\\n;%PATH%"
+        "C:\\ProgramData\\Neutrino\\agent\\state\\cloudcli\\n;%APPDATA%\\npm;%PATH%"
     )
     assert "HOME" not in environment
-
-
-def test_the_claude_found_is_the_last_absolute_path_printed():
-    assert installer.claude_of("Welcome!\n/home/ann/.npm/bin/claude\n") == (
-        "/home/ann/.npm/bin/claude"
-    )
-    assert installer.claude_of("claude: not found\n") == ""
 
 
 def test_an_app_is_ready_with_the_pinned_package_and_every_native_module(tmp_path):

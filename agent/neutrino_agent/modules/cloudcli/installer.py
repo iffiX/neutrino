@@ -27,6 +27,7 @@ from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.cloudcli.config import jwt_secret
 from neutrino_agent.modules.cloudcli.constants import (
     CLOUDCLI_ACCOUNT_PARTS,
+    CLOUDCLI_ACCOUNT_PATH_PARTS,
     CLOUDCLI_FAILURE_DETAIL_CHARS,
     CLOUDCLI_FAILURE_LINES,
     CLOUDCLI_APP_DIR_NAME,
@@ -328,7 +329,6 @@ def service_environment(
     home: str,
     os_name: str,
     node_dir: str = "",
-    claude_path: str = "",
     join=os.path.join,
     database_name: str = CLOUDCLI_DATABASE_NAME,
 ) -> dict:
@@ -340,17 +340,13 @@ def service_environment(
         home: The account's home.
         os_name: The system.
         node_dir: The directory Node.js is in; it leads ``PATH``.
-        claude_path: The account's own ``claude``; its directory follows
-            Node's on ``PATH``. Empty on Windows, where the task keeps the
-            account's own ``PATH`` after Node's directory.
         join: How the system joins a path.
         database_name: The database file the instance runs on.
 
     Returns:
-        ``HOST``, ``SERVER_PORT``, ``JWT_SECRET``, ``DATABASE_PATH``,
-        ``PATH`` with a Node directory or a ``claude``, and with a
-        ``claude`` also ``HOME`` and ``CLAUDE_CLI_PATH``; nothing names
-        the gateway.
+        ``HOST``, ``SERVER_PORT``, ``JWT_SECRET``, ``DATABASE_PATH``, and
+        ``PATH``; on Linux and macOS also ``HOME``. On Windows ``PATH`` is
+        set only with a Node directory. Nothing names the gateway.
     """
     environment = {
         "HOST": CLOUDCLI_UPSTREAM_HOST,
@@ -362,27 +358,10 @@ def service_environment(
         if node_dir:
             environment["PATH"] = ";".join([node_dir, *CLOUDCLI_WINDOWS_SERVICE_PATH])
         return environment
-    leading = [node_dir] if node_dir else []
-    if claude_path:
-        environment["HOME"] = home
-        leading.append(os.path.dirname(claude_path))
-        environment["CLAUDE_CLI_PATH"] = claude_path
-    if leading:
-        environment["PATH"] = ":".join([*leading, *CLOUDCLI_SYSTEM_PATH])
+    environment["HOME"] = home
+    environment["PATH"] = ":".join(
+        ([node_dir] if node_dir else [])
+        + [os.path.join(home, part) for part in CLOUDCLI_ACCOUNT_PATH_PARTS]
+        + list(CLOUDCLI_SYSTEM_PATH.get(os_name, ()))
+    )
     return environment
-
-
-def claude_of(output: str) -> str:
-    """The ``claude`` a login shell's ``command -v`` printed.
-
-    Args:
-        output: What the shell printed, a profile's own lines included.
-
-    Returns:
-        The last line that is an absolute path, empty when there is none.
-    """
-    for line in reversed(output.splitlines()):
-        line = line.strip()
-        if line.startswith("/"):
-            return line
-    return ""

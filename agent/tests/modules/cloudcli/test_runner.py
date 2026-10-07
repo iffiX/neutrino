@@ -383,15 +383,17 @@ def test_an_install_that_runs_reads_installing_and_its_log_is_the_install_s(
 def test_a_refused_apply_is_the_journal_s_last_line_until_an_apply_takes(
     runner, applier
 ):
-    applier.error = ModuleApplyError("cloudcli_claude_missing", {"account": "ann"})
+    applier.error = ModuleApplyError("cloudcli_npm_install_failed", {"account": "ann"})
 
     with pytest.raises(ModuleApplyError):
         runner.apply(CONFIG)
 
-    assert runner.journal_text(200) == ["cloudcli: cloudcli_claude_missing account=ann"]
+    assert runner.journal_text(200) == [
+        "cloudcli: cloudcli_npm_install_failed account=ann"
+    ]
     outcome = runner.command("journal", {"lines": 200})
     assert outcome["output"].splitlines()[-1] == (
-        "cloudcli: cloudcli_claude_missing account=ann"
+        "cloudcli: cloudcli_npm_install_failed account=ann"
     )
     applier.error = None
     runner.apply(CONFIG)
@@ -403,14 +405,14 @@ def test_a_refused_apply_follows_the_units_journal(runner, applier, monkeypatch)
         base_module, "units_journal", lambda units, lines: ["ann: started", "ann: up"]
     )
     applier.units = lambda: ["neutrino_cloudcli@ann.service"]
-    applier.error = ModuleApplyError("cloudcli_claude_missing", {"account": "ann"})
+    applier.error = ModuleApplyError("cloudcli_npm_install_failed", {"account": "ann"})
 
     with pytest.raises(ModuleApplyError):
         runner.apply(CONFIG)
 
     assert runner.journal_text(2) == [
         "ann: up",
-        "cloudcli: cloudcli_claude_missing account=ann",
+        "cloudcli: cloudcli_npm_install_failed account=ann",
     ]
 
 
