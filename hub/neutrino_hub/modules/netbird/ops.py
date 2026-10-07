@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+from neutrino_hub import edition
 from neutrino_hub.modules.netbird.constants import (
     NETBIRD_ACTIVE_PROFILE_NAME,
     NETBIRD_ACTIVE_PROFILE_PATH,
@@ -30,8 +31,11 @@ from neutrino_hub.modules.netbird.constants import (
     NETBIRD_HUB_CONFIG_NAME,
     NETBIRD_HUB_STATE_DIR,
     NETBIRD_INBOUND_TIMEOUT_S,
+    NETBIRD_IFACE_BLACKLIST_FLAG,
+    NETBIRD_IFACE_BLACKLIST_KEY,
     NETBIRD_LEGACY_CONFIG_PATH,
     NETBIRD_DEREGISTER_TIMEOUT_S,
+    NETBIRD_OWN_DEVICE_PREFIXES,
     NETBIRD_RESTART_SETTLE_S,
     NETBIRD_ROUTE_RANGE_KEYS,
     NETBIRD_ROUTES_TIMEOUT_S,
@@ -41,7 +45,13 @@ from neutrino_hub.modules.netbird.constants import (
     NETBIRD_SUPERVISED_NAME,
     NETBIRD_UNIT,
 )
-from neutrino_hub.platforms.detect import hub_platform, is_linux, process_controller
+from neutrino_hub.modules.easytier.constants import EASYTIER_DEVICE_NAME
+from neutrino_hub.platforms.detect import (
+    hub_os,
+    hub_platform,
+    is_linux,
+    process_controller,
+)
 from neutrino_hub.utils.subprocess_run import run
 
 # Long enough for the first handshake with the management plane; `netbird up`
@@ -67,6 +77,33 @@ def netbird_command(*words: str) -> list:
     if address:
         command += [NETBIRD_DAEMON_ADDRESS_FLAG, address]
     return command
+
+
+def own_device_prefixes() -> list:
+    """The devices the box makes itself, which NetBird must never listen on.
+
+    Returns:
+        Name prefixes: the container bridges and their pairs, other
+        virtualisation bridges, EasyTier's device, and the proxy's TUN on
+        this system where the proxy is present and has one.
+
+    Raises:
+        RuntimeError: The system is none of the three.
+    """
+    tuns = [names.get(hub_os(), "") for names in edition.hooks("hidden_devices")]
+    return [*NETBIRD_OWN_DEVICE_PREFIXES, EASYTIER_DEVICE_NAME, *filter(None, tuns)]
+
+
+def iface_blacklist_flag() -> str:
+    """The ``netbird up`` flag naming the devices of :func:`own_device_prefixes`.
+
+    Returns:
+        ``--extra-iface-blacklist=`` and the prefixes, comma-separated.
+
+    Raises:
+        RuntimeError: The system is none of the three.
+    """
+    return f"{NETBIRD_IFACE_BLACKLIST_FLAG}={','.join(own_device_prefixes())}"
 
 
 def state_layout() -> tuple:
@@ -329,6 +366,27 @@ class NetbirdInboundGate:
                 return bool(stored[NETBIRD_DISABLE_DNS_KEY])
         return False
 
+    def is_blacklist_stored(self) -> bool:
+        """Whether the daemon was told every device it must not listen on.
+
+        Returns:
+            True when the stored profile's interface list holds every name of
+            :func:`own_device_prefixes`; False when one is missing or nothing
+            on this box says.
+
+        Raises:
+            RuntimeError: The system is none of the three.
+        """
+        for path in self._state_paths():
+            try:
+                stored = json.loads(path.read_text())
+            except (OSError, ValueError):
+                continue
+            if NETBIRD_IFACE_BLACKLIST_KEY in stored:
+                names = set(stored[NETBIRD_IFACE_BLACKLIST_KEY] or [])
+                return set(own_device_prefixes()) <= names
+        return False
+
     def converge(self, *, is_blocked: bool) -> str:
         """Make the daemon agree, and only then.
 
@@ -353,7 +411,8 @@ class NetbirdInboundGate:
             subprocess.CalledProcessError: If the daemon refuses to come back up.
         """
         is_inbound_settled = self.state() == is_blocked
-        if is_inbound_settled and self.is_dns_off():
+        is_dns_off = self.is_dns_off()
+        if is_inbound_settled and is_dns_off and self.is_blacklist_stored():
             return ""
         status = NetbirdStatusReader().survey()
         if not status.is_installed or not status.is_enrolled:
@@ -364,12 +423,15 @@ class NetbirdInboundGate:
                 "up",
                 f"--block-inbound={'true' if is_blocked else 'false'}",
                 NETBIRD_DISABLE_DNS_FLAG,
+                iface_blacklist_flag(),
             ),
             timeout_s=NETBIRD_INBOUND_TIMEOUT_S,
         )
         if not is_inbound_settled:
             return "overlay closed" if is_blocked else "overlay opened"
-        return "overlay DNS management turned off"
+        if not is_dns_off:
+            return "overlay DNS management turned off"
+        return "overlay listens on no device the box made"
 
     def _state_paths(self) -> list:
         return profile_paths() + [state_layout()[2]]
@@ -430,7 +492,13 @@ class NetbirdEnroller:
         if state.is_installed and state.daemon_status in NETBIRD_STATUSES_WITHOUT_LOGIN:
             self._reset_identity()
             is_reset = True
-        words = ["up", "--setup-key", setup_key, NETBIRD_DISABLE_DNS_FLAG]
+        words = [
+            "up",
+            "--setup-key",
+            setup_key,
+            NETBIRD_DISABLE_DNS_FLAG,
+            iface_blacklist_flag(),
+        ]
         if management_url:
             words += ["--management-url", management_url]
         command = netbird_command(*words)

@@ -247,6 +247,14 @@ measured rather than assumed:
   daemon already holds costs a reconnection, and a network apply runs every
   time somebody saves an interface.
 
+NetBird listens on no device the box made itself. Every `netbird up` carries
+`--extra-iface-blacklist` with the prefixes `podman`, `veth`, `docker`,
+`br-`, `virbr`, `cni` and `lxc`, EasyTier's device, and the proxy's TUN on a
+system that has one. An ICE candidate on a container bridge sends the box's
+replies from an address the upstream NAT drops. The daemon only adds to its
+stored `IFaceBlackList`, so the gate also brings the session up again when
+the stored list lacks one of these names.
+
 Blocked means established and related only. It is not `--disable-firewall`,
 which was considered and rejected: NetBird's own rules are what make this box
 usable as a routing peer, which is the thing the NetBird page sends people to
