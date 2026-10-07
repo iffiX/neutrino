@@ -163,3 +163,54 @@ def test_the_lease_file_is_read_and_dhcpcd_is_not_asked(dhcpcd, tmp_path):
         "192.0.2.53",
     ]
     assert dhcpcd.ran == []
+
+
+# --- the lease client units systemd has ---
+
+
+def test_every_lease_client_unit_is_listed_in_any_state_and_when_enabled(
+    monkeypatch, tmp_path
+):
+    listed = (
+        "neutrino_hub_dhcpcd@enp1s0.service loaded active running Neutrino\n"
+        "neutrino_hub_dhcpcd@enp3s0.1.service loaded activating auto-restart N\n"
+    )
+    wants = tmp_path / "multi-user.target.wants"
+    wants.mkdir()
+    (wants / "neutrino_hub_dhcpcd@enp9s0.service").write_text("")
+    (wants / "neutrino_hub_web.service").write_text("")
+    monkeypatch.setattr(dhcp_client, "SYSTEM_SYSTEMD_DIR", tmp_path)
+    monkeypatch.setattr(
+        dhcp_client,
+        "run",
+        lambda command, **keywords: CommandResult(
+            command=command, exit_code=0, stdout=listed, stderr=""
+        ),
+    )
+
+    assert dhcp_client.lease_client_interfaces() == ["enp1s0", "enp3s0.1", "enp9s0"]
+
+
+@pytest.mark.parametrize(
+    ("state", "is_enabled", "is_standing"),
+    [
+        ("active", False, True),
+        ("activating", False, True),
+        ("failed", False, True),
+        ("inactive", True, True),
+        ("inactive", False, False),
+    ],
+)
+def test_a_lease_client_stands_in_any_state_but_stopped_or_while_enabled(
+    monkeypatch, state, is_enabled, is_standing
+):
+    monkeypatch.setattr(dhcp_client, "unit_state", lambda unit: state)
+    monkeypatch.setattr(
+        dhcp_client,
+        "run",
+        lambda command, **keywords: CommandResult(
+            command=command, exit_code=0 if is_enabled else 1, stdout="", stderr=""
+        ),
+    )
+
+    assert RouterDhcpClient(interface="enp3s0.1").is_standing is is_standing

@@ -22,9 +22,15 @@ from neutrino_hub.modules.router.constants import (
     ROUTER_DHCP_OPTION_PAD,
     ROUTER_DHCP_OPTIONS_OFFSET,
     ROUTER_DHCP_UNIT,
+    ROUTER_DHCP_UNIT_PREFIX,
+    ROUTER_DHCP_UNIT_SUFFIX,
     ROUTER_LEASE_DNS_KEY,
     ROUTER_LEASE_READ_TIMEOUT_S,
     router_dhcp_config_path,
+)
+from neutrino_hub.system.constants import (
+    SYSTEM_SYSTEMD_DIR,
+    SYSTEM_UNIT_STATE_INACTIVE,
 )
 from neutrino_hub.system.systemd_ctl import unit_state
 from neutrino_hub.utils.subprocess_run import run
@@ -63,6 +69,17 @@ class RouterDhcpClient:
     def state(self) -> str:
         """What systemd says this client's unit is doing now."""
         return unit_state(self.unit)
+
+    @property
+    def is_standing(self) -> bool:
+        """Whether the client's unit is in any state but stopped, or would
+        start with the machine: running, waiting to restart, failed or
+        enabled."""
+        if self.state != SYSTEM_UNIT_STATE_INACTIVE:
+            return True
+        return run(
+            ["systemctl", "is-enabled", "--quiet", self.unit], is_checked=False
+        ).is_success
 
     def lease_dns(self) -> list[str]:
         """The resolvers the lease on this interface names.
@@ -122,6 +139,49 @@ class RouterDhcpClient:
         the panel is answering on.
         """
         run(["systemctl", "disable", "--now", self.unit], is_checked=False)
+
+
+def lease_client_interfaces() -> list[str]:
+    """Every interface a lease client unit exists for, in any state.
+
+    Read from systemd rather than from `config/`: a VLAN that was removed, or
+    a configuration already replaced, names no interface any more, and its
+    unit can still be enabled and restarting.
+
+    Returns:
+        The interfaces of the ``neutrino_hub_dhcpcd@`` units systemd lists,
+        loaded in any state or enabled, each once and sorted.
+    """
+    units = set()
+    result = run(
+        [
+            "systemctl",
+            "list-units",
+            "--all",
+            "--plain",
+            "--no-legend",
+            "--type=service",
+            f"{ROUTER_DHCP_UNIT_PREFIX}*",
+        ],
+        is_checked=False,
+    )
+    if result.is_success:
+        units.update(
+            line.split()[0] for line in result.stdout.splitlines() if line.split()
+        )
+    units.update(
+        path.name
+        for path in SYSTEM_SYSTEMD_DIR.glob(
+            f"*.wants/{ROUTER_DHCP_UNIT_PREFIX}*{ROUTER_DHCP_UNIT_SUFFIX}"
+        )
+    )
+    return sorted(
+        unit[len(ROUTER_DHCP_UNIT_PREFIX) : -len(ROUTER_DHCP_UNIT_SUFFIX)]
+        for unit in units
+        if unit.startswith(ROUTER_DHCP_UNIT_PREFIX)
+        and unit.endswith(ROUTER_DHCP_UNIT_SUFFIX)
+        and len(unit) > len(ROUTER_DHCP_UNIT_PREFIX) + len(ROUTER_DHCP_UNIT_SUFFIX)
+    )
 
 
 def lease_file_dns(data: bytes) -> list[str]:
