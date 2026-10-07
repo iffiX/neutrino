@@ -26,12 +26,17 @@
 
 .nodes_toolbar_field {
   max-width: 100%;
-  min-width: 170px;
+  min-width: min(170px, 100%);
 }
 
 .nodes_toolbar_field--url {
   flex: 1 1 260px;
-  min-width: 260px;
+  min-width: min(260px, 100%);
+}
+
+.nodes_toolbar_field .input {
+  width: 100%;
+  min-width: 0;
 }
 
 /* The panel's own actions, not the page's: this box sits inside a card. */
