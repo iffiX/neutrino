@@ -84,7 +84,7 @@ def test_the_view_reads_the_instances_what_the_machine_says_and_the_accounts(api
         "cloudcli",
         state="running",
         instances=[
-            {"account": "alice", "is_running": False, "code": "cloudcli_claude_missing"}
+            {"account": "alice", "is_running": False, "code": "credential_invalid"}
         ],
     )
     runtime.device_accounts[DEVICE] = ["alice", "bob"]
@@ -97,7 +97,7 @@ def test_the_view_reads_the_instances_what_the_machine_says_and_the_accounts(api
             "port": 3001,
             "login_id": "l1",
             "is_running": False,
-            "code": "cloudcli_claude_missing",
+            "code": "credential_invalid",
         }
     ]
     assert view["accounts"] == ["alice", "bob"]

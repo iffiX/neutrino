@@ -7,8 +7,8 @@ account's limited token, has no time limit, and restarts when it stops. It
 runs a script that sets the instance's environment and starts the Node.js
 the agent unpacked with the server script of the account's own app
 directory, its output appended to the account's log file; the script puts
-Node's directory before the account's own ``PATH``, so ``node`` and the
-``claude`` the account installed are the ones CloudCLI finds. The script holds the instance's secrets and is reachable by its
+Node's directory, then the account's npm directory, before the account's
+own ``PATH``. The script holds the instance's secrets and is reachable by its
 account, SYSTEM and the administrators alone. An account's install runs
 once as a task of its own with the same login, left running: each apply
 reads the task, and while it runs the module is installing and no instance

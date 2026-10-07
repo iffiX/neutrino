@@ -27,7 +27,6 @@
   "code.client_name_required": "客户端需要填名称。",
   "code.client_unknown": "这台机器上没有这个客户端。",
   "code.cloned_mac_invalid": "{value} 不是 MAC 地址。",
-  "code.cloudcli_claude_missing": "账户 {account} 没有装 Claude Code。先以这个账户装好 claude，再应用一次。",
   "code.cloudcli_install_out_of_memory": "npm 为 {account} 安装 CloudCLI 时，这台机器的内存用完了。要先腾出更多内存，CloudCLI 才能装上。",
   "code.cloudcli_native_module_failed": "{account} 的 CloudCLI 缺少 {module}：它的预编译文件没能下载下来。{detail}",
   "code.cloudcli_node_download_failed": "CloudCLI 用的 Node.js 没能下载或解包。",

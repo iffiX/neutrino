@@ -1,11 +1,11 @@
 """CloudCLI on Linux, with systemd, runuser and the account database faked.
 
 What these pin: the template unit runs the unpacked Node.js as ``User=%i``
-from the account's root-only environment file; the account's own
-``claude`` is looked for in its login shell and a missing one is refused
-before anything is written; npm runs as the account with an environment
-of its own, into the account's app directory, and a failure names its
-step; a new or changed instance is restarted and an unchanged one only kept
+from the account's root-only environment file, its ``PATH`` listing
+Node's directory, the account's usual command directories and the system's
+and naming no tool; npm runs as the account with an environment of its own,
+into the account's app directory, as a transient service that may take
+``OOMPolicy=stop`` on systemd 249, and a failure names its step; a new or changed instance is restarted and an unchanged one only kept
 up; and an instance no longer named is disabled and its file deleted.
 """
 
@@ -43,24 +43,19 @@ class Machine:
     def __init__(self, home):
         self.calls: list = []
         self.active: set = set()
-        self.claude = "/home/ann/.local/bin/claude\n"
         self.npm_exit = 0
         self.npm_output = ""
         self.check_exit = 0
         self.check_output = ""
-        self.scope_result = "success"
+        self.unit_result = "success"
         self.home = home
 
     def __call__(self, command, *, is_checked=True, input_text=None, timeout_s=0):
         self.calls.append(list(command))
         if command[:2] == ["systemctl", "show"]:
-            return CommandResult(list(command), 0, self.scope_result + "\n", "")
+            return CommandResult(list(command), 0, self.unit_result + "\n", "")
         if command[0] == "systemd-run":
             command = command[command.index("--") + 1 :]
-        if command[:2] == ["runuser", "-l"]:
-            return CommandResult(
-                list(command), 0 if self.claude else 1, self.claude, ""
-            )
         if "install" in command:
             if self.npm_exit == 0:
                 package = os.path.join(
@@ -84,7 +79,7 @@ class Machine:
         return [
             call
             for call in self.calls
-            if call[0] == "systemctl" and not call[-1].endswith(".scope")
+            if call[0] == "systemctl" and "_install_" not in call[-1]
         ]
 
     def install_call(self):
@@ -140,17 +135,18 @@ def test_an_instance_is_installed_as_the_account_then_started(
 ):
     notes = applier.apply(CONFIG, {"ann": 41234})
 
-    assert machine.calls[0] == ["runuser", "-l", "ann", "-c", "command -v claude"]
-    scoped = machine.install_call()
-    assert scoped[: scoped.index("--")] == [
+    assert not [call for call in machine.calls if "runuser" in call and "-l" in call]
+    started = machine.install_call()
+    assert started[: started.index("--")] == [
         "systemd-run",
-        "--scope",
+        "--unit=neutrino_cloudcli_install_ann.service",
         "--quiet",
-        "--unit=neutrino_cloudcli_install_ann.scope",
+        "--wait",
+        "--pipe",
         "-p",
         "OOMPolicy=stop",
     ]
-    install = scoped[scoped.index("--") + 1 :]
+    install = started[started.index("--") + 1 :]
     app = os.path.join(
         machine.home, ".local", "share", "neutrino", "agent", "cloudcli", "app"
     )
@@ -160,7 +156,7 @@ def test_an_instance_is_installed_as_the_account_then_started(
     assert f"HOME={machine.home}" in install
     assert install[-4:] == ["install", "@cloudcli-ai/cloudcli@1.37.3", "--prefix", app]
     assert install[install.index("sh") + 3] == app
-    assert any("-e" in call for call in machine.calls[machine.calls.index(scoped) :])
+    assert any("-e" in call for call in machine.calls[machine.calls.index(started) :])
     environment = tmp_path / "etc" / "ann.env"
     assert stat.S_IMODE(os.stat(environment).st_mode) == 0o600
     text = environment.read_text()
@@ -169,8 +165,11 @@ def test_an_instance_is_installed_as_the_account_then_started(
     assert "ANTHROPIC" not in text and "OPENAI" not in text
     node_bin = tmp_path / "var" / "cloudcli" / NODE_DIR / "bin"
     assert (
-        f'PATH="{node_bin}:/home/ann/.local/bin:/usr/local/bin:/usr/bin:/bin"\n' in text
+        f'PATH="{node_bin}:{machine.home}/.local/bin:{machine.home}/bin:'
+        '/usr/local/bin:/usr/bin:/bin"\n' in text
     )
+    assert f'HOME="{machine.home}"\n' in text
+    assert "CLAUDE" not in text
     assert f'CLOUDCLI_SERVER="{app}/node_modules/@cloudcli-ai/cloudcli/' in text
     assert (tmp_path / "systemd" / "neutrino_cloudcli@.service").is_file()
     assert machine.systemctl() == [
@@ -191,22 +190,6 @@ def test_an_unchanged_instance_is_only_kept_up(applier, machine):
         ["systemctl", "enable", "--now", "neutrino_cloudcli@ann.service"]
     ]
     assert not [call for call in machine.calls if "install" in call]
-
-
-def test_an_account_without_claude_is_refused_before_anything_is_written(
-    applier, machine, tmp_path
-):
-    machine.claude = ""
-
-    with pytest.raises(ModuleApplyError) as caught:
-        applier.apply(CONFIG, {"ann": 41234})
-
-    assert (caught.value.code, caught.value.params) == (
-        "cloudcli_claude_missing",
-        {"account": "ann"},
-    )
-    assert not (tmp_path / "etc").exists()
-    assert machine.systemctl() == []
 
 
 def test_an_account_the_machine_lacks_is_refused(applier, machine):
@@ -324,7 +307,7 @@ def test_a_failed_install_reads_installing_no_more(applier, machine):
 
 def test_an_install_the_kernel_killed_for_memory_is_its_own_refusal(applier, machine):
     machine.npm_exit = 137
-    machine.scope_result = "oom-kill"
+    machine.unit_result = "oom-kill"
 
     with pytest.raises(ModuleApplyError) as caught:
         applier.apply(CONFIG, {"ann": 41234})
@@ -336,7 +319,7 @@ def test_an_install_the_kernel_killed_for_memory_is_its_own_refusal(applier, mac
     assert [
         "systemctl",
         "reset-failed",
-        "neutrino_cloudcli_install_ann.scope",
+        "neutrino_cloudcli_install_ann.service",
     ] in machine.calls
     assert applier.installing == frozenset()
 

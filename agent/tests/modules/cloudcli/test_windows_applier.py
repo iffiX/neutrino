@@ -179,7 +179,7 @@ def test_an_instance_is_a_task_running_its_script(applier, powershell, ready):
     assert 'set "SERVER_PORT=41234"' in text
     assert "ANTHROPIC" not in text and "OPENAI" not in text
     node_dir = ntpath.dirname(applier.node)
-    assert f'set "PATH={node_dir};%PATH%"' in text
+    assert f'set "PATH={node_dir};%APPDATA%\\npm;%PATH%"' in text
     assert "node.exe" in text and "index.js" in text
     assert instance["arguments"].startswith("/s /c ")
     assert instance["description"].startswith("neutrino:")

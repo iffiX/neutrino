@@ -52,11 +52,15 @@ CLOUDCLI_NPM_USERCONFIG_NAME = ".npmrc"
 # and how long the task that runs it on Windows, where nothing waits, may run.
 CLOUDCLI_INSTALL_TIMEOUT_S = 1800
 CLOUDCLI_WINDOWS_INSTALL_LIMIT_S = 4 * 3600
-# How long the look for an account's ``claude`` may take.
+# How long a check run as an account may take.
 CLOUDCLI_LOOKUP_TIMEOUT_S = 30
-# The directories a service's PATH holds after Node's and the one ``claude``
-# is in.
-CLOUDCLI_SYSTEM_PATH = ("/usr/local/bin", "/usr/bin", "/bin")
+# What a service's PATH holds after Node's directory: the account's usual
+# command directories under its home, then the system's own.
+CLOUDCLI_ACCOUNT_PATH_PARTS = (".local/bin", "bin")
+CLOUDCLI_SYSTEM_PATH = {
+    "linux": ("/usr/local/bin", "/usr/bin", "/bin"),
+    "darwin": ("/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"),
+}
 
 # CloudCLI listens on loopback alone, on a port the agent picks.
 CLOUDCLI_UPSTREAM_HOST = "127.0.0.1"
@@ -92,10 +96,10 @@ CLOUDCLI_UPSTREAM_TIMEOUT_S = 10.0
 CLOUDCLI_READY_POLL_S = 3.0
 CLOUDCLI_REGISTER_RETRY_S = 30.0
 
-# Linux: an account's npm install runs in a transient scope of its own, so a
-# kill for want of memory ends that scope and not the agent's own unit.
-CLOUDCLI_INSTALL_SCOPE_PREFIX = "neutrino_cloudcli_install_"
-# What systemd records for a scope the kernel killed for want of memory.
+# Linux: an account's npm install runs as a transient service of its own, so
+# a kill for want of memory ends that service and not the agent's own unit.
+CLOUDCLI_INSTALL_UNIT_PREFIX = "neutrino_cloudcli_install_"
+# What systemd records for a service the kernel killed for want of memory.
 CLOUDCLI_OOM_RESULT = "oom-kill"
 # How many lines of an installer's own words a refusal carries, and how long.
 CLOUDCLI_FAILURE_LINES = 4
@@ -125,9 +129,9 @@ CLOUDCLI_WINDOWS_SCRIPT_DIR_NAME = "run"
 # port; an apply removes every rule under it.
 CLOUDCLI_WINDOWS_RULE_PREFIX = "neutrino_cloudcli_port_"
 # What follows Node's directory on a task's PATH, expanded by the task's
-# script in the account's context: for the service the account's own PATH,
-# for npm the system's own directories first.
-CLOUDCLI_WINDOWS_SERVICE_PATH = ("%PATH%",)
+# script in the account's context: for the service the account's npm
+# directory and its own PATH, for npm the system's own directories first.
+CLOUDCLI_WINDOWS_SERVICE_PATH = ("%APPDATA%\\npm", "%PATH%")
 CLOUDCLI_WINDOWS_NPM_PATH = ("%SystemRoot%\\System32", "%SystemRoot%", "%PATH%")
 CLOUDCLI_LOGON_FAILURES = (0x8007052E,)
 

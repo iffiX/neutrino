@@ -1290,8 +1290,7 @@ edition's `npm_registry` and `npm_environment`, the `npm_config_*` settings
 the manifest names for that edition. An install that fails reports the
 step: `cloudcli_node_download_failed`, `cloudcli_npm_install_failed
 {account, detail}`, `cloudcli_native_module_failed {account, module,
-detail}` or `cloudcli_install_out_of_memory {account}`; an instance whose
-account has no `claude` reports `cloudcli_claude_missing {account}`.
+detail}` or `cloudcli_install_out_of_memory {account}`.
 
 The `code_server` module runs code-server once per account, on Linux and
 macOS ([agent.md](agent.md), "code-server"). Its configuration is
