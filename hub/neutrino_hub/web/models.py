@@ -2760,7 +2760,7 @@ class CloudcliInstanceView(CloudcliInstance):
     """One instance as configured, with what the machine says of it."""
 
     is_running: bool = False
-    # Why it does not run, typed, such as ``cloudcli_claude_missing``.
+    # Why it does not run, typed, such as ``credential_invalid``.
     code: str = ""
 
 
