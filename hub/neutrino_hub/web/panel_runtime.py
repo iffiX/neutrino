@@ -49,8 +49,8 @@ from neutrino_hub.modules.overlay.constants import OVERLAY_ENGINES
 from neutrino_hub.modules.overlay.ops import (
     OverlayRouteGuard,
     OverlaySwitcher,
-    engine_devices,
     overlay_devices,
+    recorded_engine_devices,
 )
 from neutrino_hub.modules.overlay.relay_config import read_relay
 from neutrino_hub.modules.overlay.relay_ops import (
@@ -356,10 +356,14 @@ class PanelRuntime:
         Returns:
             Each address with its prefix length, of every device that is not
             an overlay engine's; a peer inside none of their networks reached
-            the hub from outside them.
+            the hub from outside them. No engine is asked, as a channel's
+            hello waits on this.
         """
+        recorded = rendered_overlay_devices()
         overlays = {
-            name for provider in OVERLAY_ENGINES for name in engine_devices(provider)
+            name
+            for provider in OVERLAY_ENGINES
+            for name in recorded_engine_devices(provider, recorded)
         }
         return [
             address
@@ -377,13 +381,16 @@ class PanelRuntime:
 
         Returns:
             Engine key to the CIDRs of the addresses its devices hold now,
-            the devices the Overlay page counts clients by.
+            the devices the Overlay page counts clients by, as the last
+            converge recorded them; no engine is asked, as a channel's hello
+            waits on this.
         """
         held = _held_addresses(is_ipv6)
+        recorded = rendered_overlay_devices()
         return {
             provider: [
                 address
-                for name in engine_devices(provider)
+                for name in recorded_engine_devices(provider, recorded)
                 for address in held.get(name, [])
             ]
             for provider in OVERLAY_ENGINES
