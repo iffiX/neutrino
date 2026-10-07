@@ -39,14 +39,12 @@
   top: -14%;
   left: 12%;
   background: var(--color-accent);
-  animation: drift 22s ease-in-out infinite;
 }
 
 .login_orb--violet {
   right: 8%;
   bottom: -18%;
   background: var(--color-accent-secondary);
-  animation: drift 30s ease-in-out infinite reverse;
 }
 
 .login_card {

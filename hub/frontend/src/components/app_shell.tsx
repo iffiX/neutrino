@@ -24,8 +24,8 @@ import "./app_shell.css";
  * and the dashboard read identical frames from a single connection. It opens
  * the panel's one event socket beside it: every page refetches what it draws
  * from what arrives there, and nothing polls. The two blurred glows behind
- * the content are the only decorative elements in the app; they drift slowly
- * enough to read as depth rather than motion.
+ * the content are the only decorative elements in the app, and they stand
+ * still: a moving blur is repainted every frame on a machine without a GPU.
  */
 
 export function AppShell() {

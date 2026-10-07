@@ -646,20 +646,6 @@ textarea {
   }
 }
 
-@keyframes drift {
-  0% {
-    transform: translate(0, 0) scale(1);
-  }
-
-  50% {
-    transform: translate(3%, -4%) scale(1.08);
-  }
-
-  100% {
-    transform: translate(0, 0) scale(1);
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

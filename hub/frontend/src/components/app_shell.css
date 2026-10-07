@@ -48,14 +48,12 @@
   top: -180px;
   right: 8%;
   background: var(--color-accent);
-  animation: drift 26s ease-in-out infinite;
 }
 
 .app_shell_glow--violet {
   bottom: -240px;
   left: 22%;
   background: var(--color-accent-secondary);
-  animation: drift 34s ease-in-out infinite reverse;
 }
 
 /* A flex item of the scrolling body, so it would otherwise be squeezed back to
