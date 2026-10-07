@@ -453,6 +453,36 @@ def test_leave_tries_the_next_address_only_while_none_answers(monkeypatch):
     assert tried == ["https://office.lan:8443", "https://10.0.0.1:8443"]
 
 
+def test_leave_gives_each_address_an_equal_share_of_the_short_timeout(monkeypatch):
+    made = []
+
+    def __init__(self, *, gateway_url, fingerprint="", timeout=0):
+        made.append((gateway_url, timeout))
+        self._gateway_url = gateway_url
+        self._fingerprint = fingerprint
+
+    def post(self, path, payload):
+        raise GatewayUnreachable("cannot reach hub")
+
+    monkeypatch.setattr(channel.GatewayHttpChannel, "__init__", __init__)
+    monkeypatch.setattr(channel.GatewayHttpChannel, "post", post)
+    binding = dict(
+        SECOND,
+        fingerprint="cd" * 32,
+        gateway_urls=["https://10.0.0.1:8443", "https://10.0.0.2:8443"],
+    )
+
+    with pytest.raises(GatewayUnreachable):
+        enrollment.leave(binding)
+
+    assert [url for url, _ in made] == [
+        "https://office.lan:8443",
+        "https://10.0.0.1:8443",
+        "https://10.0.0.2:8443",
+    ]
+    assert all(0 < timeout <= CLIENT_LEAVE_TELL_TIMEOUT_S / 3 for _, timeout in made)
+
+
 def test_leave_gives_up_once_its_time_is_spent(monkeypatch):
     tried = []
     clock = iter([0.0, 0.0, CLIENT_LEAVE_TELL_TIMEOUT_S + 1])

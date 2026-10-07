@@ -762,7 +762,9 @@ def leave(binding: dict) -> None:
     ``CLIENT_LEAVE_TELL_TIMEOUT_S``.
 
     The address that last answered is tried first, then the rest the
-    binding holds, until one answers. The binding itself is not touched.
+    binding holds, until one answers; each address gets an equal share of
+    the time, so one that hangs cannot spend it all. The binding itself is
+    not touched.
 
     Args:
         binding: The binding to the hub.
@@ -773,14 +775,18 @@ def leave(binding: dict) -> None:
         GatewayRefusedDetail: When the hub refused with another code.
         GatewayUnreachable: When no address answered in time.
     """
+    urls = clean_urls([binding.get("gateway_url", ""), *stored_urls(binding)])
+    share_s = CLIENT_LEAVE_TELL_TIMEOUT_S / max(len(urls), 1)
     deadline = time.monotonic() + CLIENT_LEAVE_TELL_TIMEOUT_S
     unreachable = GatewayUnreachable("the binding holds no address")
-    for url in clean_urls([binding.get("gateway_url", ""), *stored_urls(binding)]):
+    for url in urls:
         left_s = deadline - time.monotonic()
         if left_s <= 0:
             break
         channel = GatewayHttpChannel(
-            gateway_url=url, fingerprint=binding["fingerprint"], timeout=left_s
+            gateway_url=url,
+            fingerprint=binding["fingerprint"],
+            timeout=min(share_s, left_s),
         )
         try:
             channel.post(
