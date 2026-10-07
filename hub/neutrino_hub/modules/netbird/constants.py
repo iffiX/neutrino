@@ -91,6 +91,23 @@ NETBIRD_BLOCK_INBOUND_KEY = "BlockInbound"
 # value.
 NETBIRD_DISABLE_DNS_KEY = "DisableDNS"
 NETBIRD_DISABLE_DNS_FLAG = "--disable-dns"
+# NetBird listens on no device the box made itself: an ICE candidate on
+# a container bridge or another engine's tunnel sends replies from an
+# address no peer can answer. Matched by name prefix, as NetBird's own
+# list is, and stored in the profile, which only ever adds to it; so
+# every `netbird up` states it. EasyTier's device and the proxy's TUN
+# join these by their own modules' names.
+NETBIRD_IFACE_BLACKLIST_FLAG = "--extra-iface-blacklist"
+NETBIRD_IFACE_BLACKLIST_KEY = "IFaceBlackList"
+NETBIRD_OWN_DEVICE_PREFIXES = (
+    "podman",
+    "veth",
+    "docker",
+    "br-",
+    "virbr",
+    "cni",
+    "lxc",
+)
 
 # `netbird up` re-establishes the session, so it is given the same room as an
 # enrollment rather than a command's usual seconds.

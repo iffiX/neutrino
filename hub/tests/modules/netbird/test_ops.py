@@ -259,6 +259,7 @@ def test_a_connected_peer_joins_again_as_itself(monkeypatch, tmp_path):
         "--setup-key",
         "KEY-1",
         "--disable-dns",
+        ops.iface_blacklist_flag(),
     ]
     assert driven(commands)[3][-2:] == ["--management-url", "https://mgmt.example.com"]
     assert [NETBIRD, "deregister"] not in driven(commands)
@@ -283,7 +284,14 @@ def test_a_profile_without_a_login_is_reset_before_the_key_is_used(
     assert driven(commands) == [
         [NETBIRD, "down"],
         *RESET,
-        [NETBIRD, "up", "--setup-key", "KEY-1", "--disable-dns"],
+        [
+            NETBIRD,
+            "up",
+            "--setup-key",
+            "KEY-1",
+            "--disable-dns",
+            ops.iface_blacklist_flag(),
+        ],
     ]
     assert not (tmp_path / "default.json").exists()
     assert not (tmp_path / "active_profile.json").exists()
@@ -307,9 +315,23 @@ def test_an_idle_identity_the_plane_refuses_is_reset_and_the_key_used_again(
 
     assert driven(commands) == [
         [NETBIRD, "down"],
-        [NETBIRD, "up", "--setup-key", "KEY-1", "--disable-dns"],
+        [
+            NETBIRD,
+            "up",
+            "--setup-key",
+            "KEY-1",
+            "--disable-dns",
+            ops.iface_blacklist_flag(),
+        ],
         *RESET,
-        [NETBIRD, "up", "--setup-key", "KEY-1", "--disable-dns"],
+        [
+            NETBIRD,
+            "up",
+            "--setup-key",
+            "KEY-1",
+            "--disable-dns",
+            ops.iface_blacklist_flag(),
+        ],
     ]
 
 
@@ -323,7 +345,16 @@ def test_a_key_the_plane_refuses_twice_is_refused_to_the_caller(monkeypatch, tmp
         ops.NetbirdEnroller().join(setup_key="KEY-1")
 
     assert (
-        driven(commands).count([NETBIRD, "up", "--setup-key", "KEY-1", "--disable-dns"])
+        driven(commands).count(
+            [
+                NETBIRD,
+                "up",
+                "--setup-key",
+                "KEY-1",
+                "--disable-dns",
+                ops.iface_blacklist_flag(),
+            ]
+        )
         == 1
     )
 
@@ -381,7 +412,13 @@ def test_a_state_that_already_agrees_costs_no_reconnection(monkeypatch, tmp_path
     """A network apply runs on every interface save. Setting this each time
     would drop the overlay every time."""
     gate, ran = gate_over(
-        monkeypatch, tmp_path, stored={"BlockInbound": False, "DisableDNS": True}
+        monkeypatch,
+        tmp_path,
+        stored={
+            "BlockInbound": False,
+            "DisableDNS": True,
+            "IFaceBlackList": ["wt0", "lo", *ops.own_device_prefixes()],
+        },
     )
 
     assert gate.converge(is_blocked=False) == ""
@@ -399,7 +436,13 @@ def test_a_daemon_still_managing_dns_is_told_to_stop(monkeypatch, tmp_path):
 
     assert ran == [
         [NETBIRD, "down"],
-        [NETBIRD, "up", "--block-inbound=false", "--disable-dns"],
+        [
+            NETBIRD,
+            "up",
+            "--block-inbound=false",
+            "--disable-dns",
+            ops.iface_blacklist_flag(),
+        ],
     ]
     assert note == "overlay DNS management turned off"
 
@@ -415,7 +458,13 @@ def test_closing_takes_the_session_down_first_and_states_the_value(
 
     assert ran == [
         [NETBIRD, "down"],
-        [NETBIRD, "up", "--block-inbound=true", "--disable-dns"],
+        [
+            NETBIRD,
+            "up",
+            "--block-inbound=true",
+            "--disable-dns",
+            ops.iface_blacklist_flag(),
+        ],
     ]
     assert note == "overlay closed"
 
@@ -426,7 +475,13 @@ def test_opening_states_the_value_too_because_the_flag_is_sticky(monkeypatch, tm
 
     note = gate.converge(is_blocked=False)
 
-    assert ran[-1] == [NETBIRD, "up", "--block-inbound=false", "--disable-dns"]
+    assert ran[-1] == [
+        NETBIRD,
+        "up",
+        "--block-inbound=false",
+        "--disable-dns",
+        ops.iface_blacklist_flag(),
+    ]
     assert note == "overlay opened"
 
 
@@ -514,6 +569,45 @@ def test_a_destination_nothing_routes_is_not_deselected(monkeypatch):
     assert commands == [[NETBIRD, "routes", "list"]]
 
 
+# --- the devices NetBird does not listen on -----------------------------------
+
+
+def test_every_up_names_the_devices_the_box_makes_itself():
+    """A candidate on a container bridge sends replies from an address the
+    upstream NAT drops, so the peer hears the box and never its answers."""
+    assert ops.iface_blacklist_flag() == (
+        "--extra-iface-blacklist=podman,veth,docker,br-,virbr,cni,lxc,easytier"
+    )
+
+
+def test_a_profile_missing_one_of_them_is_told_again(monkeypatch, tmp_path):
+    """The daemon adds to its list and gathers candidates on the next up, so
+    a profile from before the list grew costs one reconnection."""
+    gate, ran = gate_over(
+        monkeypatch,
+        tmp_path,
+        stored={
+            "BlockInbound": False,
+            "DisableDNS": True,
+            "IFaceBlackList": ["wt0", "docker", "veth", "br-", "lo"],
+        },
+    )
+
+    assert gate.converge(is_blocked=False) == (
+        "overlay listens on no device the box made"
+    )
+    assert ran == [
+        [NETBIRD, "down"],
+        [
+            NETBIRD,
+            "up",
+            "--block-inbound=false",
+            "--disable-dns",
+            ops.iface_blacklist_flag(),
+        ],
+    ]
+
+
 # --- the hub's own daemon outside Linux -------------------------------------
 
 
@@ -570,8 +664,23 @@ def test_elsewhere_the_inbound_gate_names_the_daemon_and_reads_beside_the_hub(
     assert ops.NetbirdInboundGate().converge(is_blocked=False) == "overlay opened"
     assert ran == [
         [NETBIRD, "down", *tail],
-        [NETBIRD, "up", "--block-inbound=false", "--disable-dns", *tail],
+        [
+            NETBIRD,
+            "up",
+            "--block-inbound=false",
+            "--disable-dns",
+            ops.iface_blacklist_flag(),
+            *tail,
+        ],
     ]
+
+
+def test_elsewhere_the_proxy_s_tun_is_named_too(elsewhere):
+    tun = {"darwin": "utun225", "win32": "neutrino_tun"}[elsewhere]
+
+    assert ops.iface_blacklist_flag() == (
+        "--extra-iface-blacklist=podman,veth,docker,br-,virbr,cni,lxc,easytier," + tun
+    )
 
 
 def test_elsewhere_the_single_file_profile_is_the_one_the_daemon_started_with(
