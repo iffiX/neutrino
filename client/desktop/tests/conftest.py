@@ -22,7 +22,6 @@ import pytest
 
 import neutrino_client.cli.wording as wording_module
 import neutrino_client.core.enrollment as enrollment
-import neutrino_client.core.session as session_module
 from neutrino_client.platforms.base import ClientPlatform
 from neutrino_client.platforms.darwin import DarwinPlatform
 from neutrino_client.platforms.linux import LinuxPlatform
@@ -189,11 +188,10 @@ REAL_ASK_HOLD = wording_module.ask_hold
 def _isolated_network(monkeypatch):
     """The hub's name resolves to nothing, no route is looked at and no
     EasyTier daemon of this machine is asked who holds it, unless a test says
-    otherwise; a round waits nothing between addresses."""
+    otherwise."""
     monkeypatch.setattr(wording_module, "ask_hold", lambda verb: {})
     monkeypatch.setattr(enrollment, "resolve_hub_address", lambda: "")
     monkeypatch.setattr(enrollment, "default_source_address", lambda urls: "")
-    monkeypatch.setattr(session_module, "CLIENT_ROTATE_DELAY_S", 0)
 
 
 @pytest.fixture

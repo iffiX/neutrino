@@ -464,6 +464,17 @@ def test_a_hub_row_carries_no_target_radio_and_names_the_hub_the_tools_use():
     assert EN_WORDS["ui.hub_is_exit"] == "The AI tools point at this hub"
 
 
+def test_a_connected_hub_row_shows_its_way_in_and_its_round_trip_as_tags():
+    tags = PAGE_JS.split("function hubTags(hub)")[1].split("\n}")[0]
+    row = PAGE_JS.split("function hubRow(hub)")[1].split("\n}")[0]
+
+    assert "hub.connection !== 'connected'" in tags
+    assert "t('ui.state.rtt', { ms: Math.round(hub.rtt_ms) })" in tags
+    assert "tags: tags," in row
+    assert CATALOGS["en"]["ui.state.rtt"] == CATALOGS["zh-CN"]["ui.state.rtt"]
+    assert EN_WORDS["ui.state.rtt"] == "{ms} ms"
+
+
 def test_a_hub_is_keyed_by_its_id_and_by_its_binding_before_a_welcome():
     assert "function hubKey(hub) {\n  return hub.hub_id || hub.binding_id;" in PAGE_JS
     assert "function serviceKey(entry) {\n  return entry.hub_id + '/' + entry.id;" in (
@@ -1103,13 +1114,15 @@ def run_hub_row(hub: dict) -> dict:
             "const hubName = (hub) => hub.hub_name;",
             "const hubWord = () => 'connected';",
             "const rowElement = (options) => options;",
+            "function hubTags(hub)" + function_body("function hubTags(hub)") + "\n}",
             "function hubRow(hub)" + function_body("function hubRow(hub)") + "\n}",
             "function overlayReason(hub)"
             + function_body("function overlayReason(hub)")
             + "\n}",
             "const row = hubRow(" + json.dumps(hub) + ");",
             "console.log(JSON.stringify({extras: row.extras, reason: row.reason,",
-            "  actions: row.actions.map((action) => action.name)}));",
+            "  actions: row.actions.map((action) => action.name),",
+            "  tags: row.tags, word: row.word}));",
         ]
     )
     result = subprocess.run(
@@ -1132,7 +1145,22 @@ def test_a_hub_that_publishes_no_network_draws_no_network_line():
         dict(HUB_ROW, overlay={"networks": [], "state": "off", "error": None})
     )
 
-    assert row == {"extras": [], "reason": "", "actions": ["leave"]}
+    assert (row["extras"], row["reason"], row["actions"]) == ([], "", ["leave"])
+
+
+@pytest.mark.parametrize(
+    "changes, tags, word",
+    [
+        ({"rtt_ms": 12}, ["connected", "ui.state.rtt"], ""),
+        ({"rtt_ms": None}, ["connected"], ""),
+        ({"connection": "connecting", "rtt_ms": 12}, None, "connected"),
+        ({"jobs": {"is_refreshing": True}, "rtt_ms": 12}, None, "connected"),
+    ],
+)
+def test_only_a_connected_hub_row_carries_its_tags(changes, tags, word):
+    row = run_hub_row(dict(HUB_ROW, overlay={"networks": []}, **changes))
+
+    assert (row["tags"], row["word"]) == (tags, word)
 
 
 def test_a_hub_that_publishes_a_network_draws_its_line_and_button():

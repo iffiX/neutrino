@@ -10,10 +10,11 @@ close, the one refusal that hands the binding back and the ones the binding
 survives, at the door and on a live socket alike, a replaced socket waiting
 for a person, the backoff after a broken wire, and a stop that closes the
 socket. The connection round over every address the hub answers on is
-pinned too: the name first, the one that answered written back, a whole
-round failing being what backs off, the state's ``urls`` kept on disk, a
-network change starting a round at once and moving a live socket to the
-name's address.
+pinned too: every address dialled at once, the first to connect carrying
+the round's one hello and the others closed before one, the one that
+answered written back, a whole round failing being what backs off, the
+state's ``urls`` kept on disk, a network change starting a round at once.
+The client's own ping and the round trip its pong sets are pinned too.
 """
 
 import functools
@@ -70,7 +71,15 @@ class ScriptedSocket:
         is_closed: Whether the client closed it.
     """
 
-    def __init__(self, frames, *, connect_error=None):
+    def __init__(
+        self,
+        frames,
+        *,
+        connect_error=None,
+        on_pong=None,
+        pong_s=None,
+        connect_delay_s=0,
+    ):
         """
         Args:
             frames: What ``recv`` hands back in turn. A dict is sent as a
@@ -78,9 +87,19 @@ class ScriptedSocket:
                 an event holds the read until it is set, and the list
                 running out behaves like the hub hanging up.
             connect_error: Raised by ``connect`` instead of connecting.
+            on_pong: The session's pong callback.
+            pong_s: The round trip every ping's pong reports; None answers
+                no ping.
+            connect_delay_s: How long ``connect`` takes; an abort ends it
+                at once, unconnected.
         """
         self._frames = list(frames)
         self._connect_error = connect_error
+        self._connect_delay_s = connect_delay_s
+        self._aborted = threading.Event()
+        self._on_pong = on_pong
+        self._pong_s = pong_s
+        self.pings = 0
         self.sent = []
         self.is_closed = False
         self.is_open = False
@@ -88,6 +107,8 @@ class ScriptedSocket:
         self.is_drained = threading.Event()
 
     def connect(self) -> None:
+        if self._connect_delay_s and self._aborted.wait(timeout=self._connect_delay_s):
+            raise GatewayUnreachable("the connect was aborted")
         if self._connect_error is not None:
             raise self._connect_error
         self.is_open = True
@@ -101,6 +122,13 @@ class ScriptedSocket:
         if self.is_closed:
             raise GatewayUnreachable("the socket is closed")
         self.sent.append(protocol.decode_binary(data))
+
+    def ping(self) -> None:
+        if self.is_closed:
+            raise GatewayUnreachable("the socket is closed")
+        self.pings += 1
+        if self._pong_s is not None and self._on_pong is not None:
+            self._on_pong(self._pong_s)
 
     def recv(self):
         while self._frames and isinstance(self._frames[0], threading.Event):
@@ -120,6 +148,7 @@ class ScriptedSocket:
         self.is_open = False
 
     def abort(self) -> None:
+        self._aborted.set()
         self.is_closed = True
         self.is_open = False
 
@@ -152,19 +181,27 @@ class SocketScript:
         hosts: The host each socket was opened for.
     """
 
-    def __init__(self, frames, connect_error=None):
+    def __init__(self, frames, connect_error=None, pong_s=None):
         """
         Args:
             frames: What each socket's ``recv`` hands back in turn.
             connect_error: Raised by every ``connect``.
+            pong_s: The round trip every ping's pong reports; None answers
+                no ping.
         """
         self._frames = list(frames)
         self._connect_error = connect_error
+        self._pong_s = pong_s
         self.made = []
         self.hosts = []
 
     def __call__(self, **kwargs) -> ScriptedSocket:
-        made = ScriptedSocket(self._frames, connect_error=self._connect_error)
+        made = ScriptedSocket(
+            self._frames,
+            connect_error=self._connect_error,
+            on_pong=kwargs.get("on_pong"),
+            pong_s=self._pong_s,
+        )
         self.made.append(made)
         self.hosts.append(kwargs.get("host", ""))
         return made
@@ -227,7 +264,8 @@ def session_for(
 def connected(session, script) -> ScriptedSocket:
     """Open one socket and take its welcome, without serving frames after it."""
     made = script()
-    session._connect(made)
+    made.connect()
+    session._greet(made)
     return made
 
 
@@ -513,7 +551,8 @@ def test_a_state_of_the_wrong_shape_is_typed_and_never_fatal(bound, monkeypatch)
         [WELCOME, {"type": "state", "hash": "h2", "services": "not a list"}],
     )
     made = script()
-    session._connect(made)
+    made.connect()
+    session._greet(made)
 
     failure = session._serve(made)
 
@@ -527,7 +566,8 @@ def test_the_services_of_a_hub_whose_socket_is_down_are_nothing(bound, monkeypat
     session, listener = bound
     script = socket_of(monkeypatch, [WELCOME, STATE])
     made = script()
-    session._connect(made)
+    made.connect()
+    session._greet(made)
     session._serve(made)
     assert session.service_entries() == []
     assert session._state_hash == "h1"
@@ -593,7 +633,8 @@ def test_a_report_goes_up_on_the_interval(bound, monkeypatch):
     hold = threading.Event()
     script = socket_of(monkeypatch, [WELCOME, STATE, hold])
     made = script()
-    session._connect(made)
+    made.connect()
+    session._greet(made)
     served = threading.Thread(target=session._serve, args=(made,))
 
     served.start()
@@ -1002,7 +1043,8 @@ def test_a_binary_frame_shorter_than_an_id_is_typed_and_never_fatal(bound, monke
     session, _listener = bound
     script = socket_of(monkeypatch, [WELCOME, b"\x00\x01"])
     made = script()
-    session._connect(made)
+    made.connect()
+    session._greet(made)
 
     failure = session._serve(made)
 
@@ -1182,6 +1224,14 @@ STATE_WITH_URLS = dict(STATE, urls=[LAN_URL, OVERLAY_URL])
 DOWN = GatewayUnreachable("down")
 
 
+class Delayed:
+    """An address that answers with these frames after a delay."""
+
+    def __init__(self, frames, delay_s: float):
+        self.frames = frames
+        self.delay_s = delay_s
+
+
 class AddressScript:
     """One scripted socket per address dialled, told apart by host.
 
@@ -1193,8 +1243,8 @@ class AddressScript:
     def __init__(self, by_host: dict, default=DOWN):
         """
         Args:
-            by_host: Host to what its socket does: a list of frames, or an
-                exception ``connect`` raises.
+            by_host: Host to what its socket does: a list of frames, a
+                :class:`Delayed` answer, or an exception ``connect`` raises.
             default: What a host the script does not name does.
         """
         self._by_host = by_host
@@ -1207,8 +1257,10 @@ class AddressScript:
         script = self._by_host.get(host, self._default)
         if isinstance(script, Exception):
             made = ScriptedSocket([], connect_error=script)
+        elif isinstance(script, Delayed):
+            made = ScriptedSocket(script.frames, connect_delay_s=script.delay_s)
         else:
-            made = ScriptedSocket(script)
+            made = ScriptedSocket(script, on_pong=kwargs.get("on_pong"))
         self.hosts.append(host)
         self.made.append(made)
         return made
@@ -1288,30 +1340,124 @@ def test_a_whole_round_failing_is_what_backs_off(bound_everywhere, monkeypatch):
     assert session.gateway_url() == LAN_URL
 
 
-def test_the_round_waits_the_rotate_delay_between_addresses(
+class HangingSocket(ScriptedSocket):
+    """A socket whose connect takes its whole connect time and then fails."""
+
+    def __init__(self, timeout_s: float):
+        super().__init__([])
+        self._timeout_s = timeout_s
+
+    def connect(self) -> None:
+        self._aborted.wait(timeout=self._timeout_s)
+        raise GatewayUnreachable("timed out")
+
+
+class HangingFirstScript(AddressScript):
+    """The first address hangs for its connect time; the rest as scripted."""
+
+    def __call__(self, **kwargs) -> ScriptedSocket:
+        if kwargs.get("host") != "192.0.2.1":
+            return super().__call__(**kwargs)
+        made = HangingSocket(kwargs["timeout_s"])
+        self.hosts.append(kwargs["host"])
+        self.made.append(made)
+        return made
+
+
+def test_a_hanging_first_address_costs_the_round_nothing(bound_everywhere, monkeypatch):
+    """The first address hangs, the second is down, the third answers: the
+    round connects through the third within one address's connect time, and
+    the hanging socket is closed with no hello on it (N55)."""
+    session, _lines = bound_everywhere
+    monkeypatch.setattr(session_module, "CLIENT_CONNECT_TIMEOUT_S", 2)
+    script = HangingFirstScript({"100.64.0.1": [WELCOME]})
+    monkeypatch.setattr(session_module, "WebSocketClient", script)
+    started = time.monotonic()
+
+    client = session._connect_round()
+
+    assert time.monotonic() - started < 1
+    assert script.hosts == ["192.0.2.1", "198.51.100.1", "100.64.0.1"]
+    assert client is script.made[2]
+    assert script.made[0].is_closed and script.made[0].sent == []
+    assert session.gateway_url() == OVERLAY_URL
+
+
+def test_one_hello_per_round_and_every_other_socket_closed_before_one(
     bound_everywhere, monkeypatch
 ):
     session, _lines = bound_everywhere
-    addresses_of(monkeypatch, {})
-    monkeypatch.setattr(session_module, "CLIENT_ROTATE_DELAY_S", 0.1)
-    started = time.monotonic()
+    script = addresses_of(
+        monkeypatch,
+        {
+            "192.0.2.1": [WELCOME],
+            "198.51.100.1": Delayed([WELCOME], 0.05),
+            "100.64.0.1": Delayed([WELCOME], 0.05),
+        },
+    )
 
-    session.run_once()
+    client = session._connect_round()
+    time.sleep(0.3)
 
-    assert 0.2 <= time.monotonic() - started < 5
+    assert client is script.made[0]
+    hellos = [
+        frame for made in script.made for frame in made.sent if frame["type"] == "hello"
+    ]
+    assert len(hellos) == 1 and hellos[0] is client.sent[0]
+    assert [made.is_closed for made in script.made] == [False, True, True]
+    assert [made.sent for made in script.made[1:]] == [[], []]
 
 
 def test_a_stop_ends_the_round(bound_everywhere, monkeypatch):
     session, _lines = bound_everywhere
     script = addresses_of(monkeypatch, {})
-    monkeypatch.setattr(session_module, "CLIENT_ROTATE_DELAY_S", 5)
     session._stop.set()
     started = time.monotonic()
 
     session.run_once()
 
-    assert script.hosts == ["192.0.2.1"]
-    assert time.monotonic() - started < 5
+    assert script.hosts == []
+    assert time.monotonic() - started < 1
+
+
+def test_a_pong_sets_the_round_trip_until_the_socket_ends(bound, monkeypatch):
+    session, listener = bound
+    held = threading.Event()
+    script = SocketScript([WELCOME, held], pong_s=0.0123)
+    monkeypatch.setattr(session_module, "WebSocketClient", script)
+    assert session.rtt_ms() is None
+    turn = threading.Thread(target=session.run_once, daemon=True)
+    turn.start()
+    deadline = time.monotonic() + 5
+    while session.rtt_ms() is None and time.monotonic() < deadline:
+        time.sleep(0.01)
+    changes = listener.changes
+
+    assert session.rtt_ms() == 12
+    assert script.made[0].pings == 1
+    assert changes >= 1
+
+    held.set()
+    turn.join(timeout=5)
+
+    assert session.rtt_ms() is None
+
+
+def test_the_open_socket_is_pinged_every_interval(bound, monkeypatch):
+    session, _listener = bound
+    monkeypatch.setattr(session_module, "CLIENT_PING_INTERVAL_S", 0.02)
+    held = threading.Event()
+    script = SocketScript([WELCOME, held])
+    monkeypatch.setattr(session_module, "WebSocketClient", script)
+    turn = threading.Thread(target=session.run_once, daemon=True)
+    turn.start()
+    deadline = time.monotonic() + 5
+    while (not script.made or script.made[0].pings < 3) and time.monotonic() < deadline:
+        time.sleep(0.01)
+    held.set()
+    turn.join(timeout=5)
+
+    assert script.made[0].pings >= 3
 
 
 def test_the_states_urls_are_written_to_disk(bound, monkeypatch, config_path):
@@ -1364,7 +1510,7 @@ def test_an_old_binding_without_the_list_still_connects(bound, monkeypatch):
     assert session.gateway_url() == "https://hub.lan:8443"
 
 
-def test_the_name_is_tried_first_and_written_back(
+def test_the_name_is_dialled_with_the_others_and_written_back(
     bound_everywhere, monkeypatch, config_path
 ):
     session, _lines = bound_everywhere
@@ -1374,7 +1520,7 @@ def test_the_name_is_tried_first_and_written_back(
 
     session.run_once()
 
-    assert script.hosts == [NAME_ADDRESS]
+    assert script.hosts == [NAME_ADDRESS, "198.51.100.1", "100.64.0.1"]
     assert stored_binding(config_path)["gateway_url"] == LAN_URL
 
 
@@ -1385,13 +1531,17 @@ def test_the_names_fingerprint_mismatch_is_skipped_without_alarm(
     hub: the round goes on to the stored addresses and records no error."""
     session, lines = bound_everywhere
     script = addresses_of(
-        monkeypatch, {"10.9.9.9": GatewayUntrusted("wrong pin"), "192.0.2.1": [WELCOME]}
+        monkeypatch,
+        {
+            "10.9.9.9": GatewayUntrusted("wrong pin"),
+            "192.0.2.1": Delayed([WELCOME], 0.2),
+        },
     )
     monkeypatch.setattr(enrollment, "resolve_hub_address", lambda: "10.9.9.9")
 
     client = session._connect_round()
 
-    assert script.hosts == ["10.9.9.9", "192.0.2.1"]
+    assert script.hosts == ["10.9.9.9", "192.0.2.1", "198.51.100.1", "100.64.0.1"]
     assert client is script.made[1]
     assert session.last_error() is None
     assert session.connection() == "connected"
@@ -1406,12 +1556,15 @@ def test_a_stored_address_off_the_pin_is_logged_and_the_round_goes_on(
     session, lines = bound_everywhere
     script = addresses_of(
         monkeypatch,
-        {"192.0.2.1": GatewayUntrusted("wrong pin"), "198.51.100.1": [WELCOME]},
+        {
+            "192.0.2.1": GatewayUntrusted("wrong pin"),
+            "198.51.100.1": Delayed([WELCOME], 0.2),
+        },
     )
 
     client = session._connect_round()
 
-    assert script.hosts == ["192.0.2.1", "198.51.100.1"]
+    assert script.hosts == ["192.0.2.1", "198.51.100.1", "100.64.0.1"]
     assert client is script.made[1]
     assert session.last_error() is None
     assert f"{LAN_URL} presented a certificate that is not the hub's" in lines
@@ -1441,7 +1594,7 @@ def test_a_refusal_ends_the_round(bound_everywhere, monkeypatch):
 
     delay = session.run_once()
 
-    assert script.hosts == ["192.0.2.1"]
+    assert script.hosts == ["192.0.2.1", "198.51.100.1", "100.64.0.1"]
     assert delay == CLIENT_BACKOFF_MAX_S
     assert session.last_error()["code"] == "ticket_spent"
 
@@ -1555,7 +1708,8 @@ def test_a_live_socket_stays_when_the_name_is_elsewhere(
     assert session._watch_network() is True
     session._follow_name(client)
 
-    assert script.made[0].is_closed is False
+    assert client is script.made[2]
+    assert client.is_closed is False
     assert session.connection() == "connected"
 
 
@@ -1602,7 +1756,7 @@ def test_stop_aborts_a_connect_in_progress_and_returns_within_a_second(
 
     session.start()
     deadline = time.monotonic() + 5
-    while session._connecting is not made and time.monotonic() < deadline:
+    while session._dialing is None and time.monotonic() < deadline:
         time.sleep(0.01)
     started = time.monotonic()
     session.stop()
@@ -1612,7 +1766,7 @@ def test_stop_aborts_a_connect_in_progress_and_returns_within_a_second(
     assert elapsed < 1
     assert made.is_aborted.is_set()
     assert not session._thread.is_alive()
-    assert session._connecting is None
+    assert session._dialing is None
 
 
 def test_refresh_reports_on_a_live_socket(bound, monkeypatch):
@@ -1857,16 +2011,17 @@ def test_the_networks_state_and_engine_are_written_onto_the_binding(bound, confi
     assert (stored["is_overlay_on"], stored["overlay_pick"]) == (True, "easytier")
 
 
-def test_a_switch_reconnects_through_that_networks_address_first(
+def test_a_switch_dials_that_networks_address_with_the_others(
     bound_everywhere, monkeypatch
 ):
     session, _lines = bound_everywhere
-    script = addresses_of(monkeypatch, {"100.64.0.1": [WELCOME]})
+    script = addresses_of(monkeypatch, {"100.88.92.30": [WELCOME]})
 
-    session.reconnect_through(["100.64.0.1", ""])
+    session.reconnect_through(["100.88.92.30", ""])
     session.run_once()
 
-    assert script.hosts == ["100.64.0.1"]
+    assert script.hosts == ["100.88.92.30", "192.0.2.1", "198.51.100.1", "100.64.0.1"]
+    assert session.gateway_url() == "https://100.88.92.30:8443"
 
 
 def test_a_round_held_to_the_networks_address_tries_no_other(
@@ -1909,7 +2064,7 @@ def round_in_thread(session) -> list:
         target=functools.partial(_take_round, session, ended), daemon=True
     ).start()
     deadline = time.monotonic() + 5
-    while session._connecting is None and time.monotonic() < deadline:
+    while session._dialing is None and time.monotonic() < deadline:
         time.sleep(0.01)
     return ended
 
@@ -1919,26 +2074,26 @@ def test_a_round_through_other_addresses_ends_within_a_second_of_the_network(
     bound_everywhere, monkeypatch, how
 ):
     session, _lines = bound_everywhere
-    script = RedirectScript("100.64.0.1")
+    script = RedirectScript("100.88.92.30")
     monkeypatch.setattr(session_module, "WebSocketClient", script)
     ended = round_in_thread(session)
-    assert script.hosts == ["192.0.2.1"]
+    assert script.hosts == ["192.0.2.1", "198.51.100.1", "100.64.0.1"]
 
     started = time.monotonic()
     if how == "preference":
-        session.reconnect_through(["100.64.0.1"], is_only=True)
+        session.reconnect_through(["100.88.92.30"], is_only=True)
     else:
-        assert session.reaches_through(["100.64.0.1"]) is False
+        assert session.reaches_through(["100.88.92.30"]) is False
     while not ended and time.monotonic() - started < 5:
         time.sleep(0.01)
 
     assert ended == [None]
     assert time.monotonic() - started < 1
-    session.reconnect_through(["100.64.0.1"], is_only=True)
+    session.reconnect_through(["100.88.92.30"], is_only=True)
     script.hosts.clear()
     assert session._connect_round() is not None
-    assert script.hosts == ["100.64.0.1"]
-    assert session.reaches_through(["100.64.0.1"]) is True
+    assert script.hosts == ["100.88.92.30"]
+    assert session.reaches_through(["100.88.92.30"]) is True
 
 
 def test_a_redirected_round_starts_the_next_one_at_once(bound_everywhere, monkeypatch):
@@ -1963,16 +2118,22 @@ def test_the_channel_moves_to_the_networks_address_once_its_port_answers(
 ):
     session, _lines = bound_everywhere
     script = addresses_of(
-        monkeypatch, {"192.0.2.1": [WELCOME], "100.64.0.1": [WELCOME]}
+        monkeypatch, {"192.0.2.1": [WELCOME], "100.88.92.30": [WELCOME]}
     )
     lan = session._connect_round()
-    session.reconnect_through(["100.64.0.1"], is_only=True)
+    session.reconnect_through(["100.88.92.30"], is_only=True)
 
-    assert session.reaches_through(["100.64.0.1"]) is False
+    assert session.reaches_through(["100.88.92.30"]) is False
     assert lan.is_closed and session.connection() != "connected"
     session._connect_round()
-    assert session.reaches_through(["100.64.0.1"]) is True
-    assert script.hosts == ["192.0.2.1", "100.64.0.1", "100.64.0.1"]
+    assert session.reaches_through(["100.88.92.30"]) is True
+    assert script.hosts == [
+        "192.0.2.1",
+        "198.51.100.1",
+        "100.64.0.1",
+        "100.88.92.30",
+        "100.88.92.30",
+    ]
 
 
 def test_a_live_socket_stays_while_the_networks_address_does_not_answer(
@@ -2245,7 +2406,8 @@ def test_a_socket_that_never_answers_holds_neither_the_press_nor_the_refresh(
     bind(config_path)
     session = session_for(refresh_timeout_s=0.2)
     made = SilentSocket([WELCOME])
-    session._connect(made)
+    made.connect()
+    session._greet(made)
 
     started = time.monotonic()
     assert session.refresh() is True
@@ -2487,7 +2649,7 @@ def test_a_refused_join_is_down_with_its_code_and_runs_no_more_rounds(
 
     assert session.connection() == "down"
     assert session.last_error() == {"code": refusal.code, "params": refusal.params}
-    assert script.hosts == ["192.0.2.1"]
+    assert script.hosts == ["192.0.2.1", "100.64.0.1"]
     assert script.made[0].sent == []
     assert stored_binding(config_path)["is_pending"] is True
 
@@ -2515,15 +2677,15 @@ def test_a_paused_admission_keeps_the_join_pending_and_tries_again_after_its_wai
     desk.refusal = None
     session.run_once()
 
-    assert script.hosts == ["192.0.2.1", "192.0.2.1"]
+    assert script.hosts == ["192.0.2.1", "100.64.0.1"] * 2
 
 
-def test_an_address_that_stops_answering_mid_join_lets_the_round_go_on(
-    pending_session, monkeypatch
+def test_an_address_that_stops_answering_mid_join_ends_the_round_and_keeps_the_ticket(
+    pending_session, monkeypatch, config_path
 ):
     session, _lines = pending_session
     script = addresses_of(
-        monkeypatch, {"192.0.2.1": [WELCOME], "100.64.0.1": [WELCOME]}
+        monkeypatch, {"192.0.2.1": [WELCOME], "100.64.0.1": Delayed([WELCOME], 0.2)}
     )
     desk = JoinDesk(script)
     desk.unreachable_at = LAN_URL
@@ -2531,7 +2693,14 @@ def test_an_address_that_stops_answering_mid_join_lets_the_round_go_on(
 
     session.run_once()
 
-    assert [url for url, _sent in desk.asked] == [LAN_URL, OVERLAY_URL]
+    assert [url for url, _sent in desk.asked] == [LAN_URL]
+    assert session.connection() == "pending"
+    assert session.last_error()["code"] == "hub_unreachable"
+    assert stored_binding(config_path)["ticket"]
+
+    desk.unreachable_at = ""
+    session.run_once()
+
     assert session.binding_id == "c7"
 
 
@@ -2542,7 +2711,8 @@ def test_a_networks_ipv6_address_is_reached_in_brackets(bound_everywhere, monkey
     session.reconnect_through(["fd7a:115c::1"])
     session.run_once()
 
-    assert script.hosts == ["fd7a:115c::1"]
+    assert script.hosts == ["fd7a:115c::1", "192.0.2.1", "198.51.100.1", "100.64.0.1"]
+    assert session.gateway_url() == "https://[fd7a:115c::1]:8443"
 
 
 def test_the_report_names_the_systems_id_for_the_machine(config_path, monkeypatch):

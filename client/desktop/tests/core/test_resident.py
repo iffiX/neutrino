@@ -344,7 +344,8 @@ def two_hubs_up(two_hubs, monkeypatch):
     for binding_id, host in (("c1", "hub.lan"), ("c2", "office.lan")):
         session = two_hubs._sessions[binding_id]
         made = scripts(host=host)
-        session._connect(made)
+        made.connect()
+        session._greet(made)
         kind, payload = made.recv()
         session._dispatch(made, kind, payload)
     return two_hubs, scripts
@@ -372,6 +373,15 @@ def test_a_second_binding_gets_a_session_and_a_socket_of_its_own(two_hubs, monke
     ]
 
 
+def test_a_hub_row_carries_the_round_trip_its_last_pong_measured(two_hubs_up):
+    resident, _scripts = two_hubs_up
+
+    resident._sessions["c1"]._take_pong(0.0236)
+
+    home, office = resident.hubs()
+    assert (home["rtt_ms"], office["rtt_ms"]) == (24, None)
+
+
 def test_the_hub_rows_carry_each_sessions_standing(two_hubs_up):
     resident, _scripts = two_hubs_up
 
@@ -385,6 +395,7 @@ def test_the_hub_rows_carry_each_sessions_standing(two_hubs_up):
         "software": "neutrino_hub/0.3.0",
         "connection": "connected",
         "reached_through": "",
+        "rtt_ms": None,
         "is_panel_allowed": False,
         "panel_forward": None,
         "is_pending": False,
@@ -940,7 +951,8 @@ def test_the_hubs_name_written_by_the_welcome_restarts_nothing(
     session = resident._sessions["c1"]
     made = scripts(host="127.0.0.1")
     try:
-        session._connect(made)
+        made.connect()
+        session._greet(made)
         assert json.loads(config_path.read_text())["bindings"][0]["hub_id"] == "h1"
 
         resident._adopt_external_binding()
@@ -2463,7 +2475,8 @@ def windows_hub(config_path, monkeypatch):
     scripts = sockets_by_hub(monkeypatch, {"hub.lan": [HOME_WELCOME, HOME_STATE]})
     session = resident._sessions["c1"]
     made = scripts(host="hub.lan")
-    session._connect(made)
+    made.connect()
+    session._greet(made)
     kind, payload = made.recv()
     session._dispatch(made, kind, payload)
     yield resident, platform, daemon, made

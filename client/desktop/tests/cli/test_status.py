@@ -200,10 +200,43 @@ def test_json_carries_every_hub_and_its_way_in(resident, capsys):
         "gateway_url": GATEWAY_URL,
         "connection": "connected",
         "reached_through": "relay",
+        "rtt_ms": None,
         "is_exit": True,
         "last_error": None,
     }
     assert office["reached_through"] == ""
+
+
+def test_a_connected_hub_shows_its_way_in_and_its_round_trip(resident, capsys):
+    resident.hubs_value[0]["reached_through"] = "lan"
+    resident.hubs_value[0]["rtt_ms"] = 12
+    resident.hubs_value[1]["reached_through"] = "relay"
+
+    assert status_cli.main() == 0
+
+    lines = printed(capsys)
+    assert (
+        f"hub home {GATEWAY_URL} connected · LAN · 12 ms {status_cli.EXIT_MARK}"
+        in lines
+    )
+    assert "hub office https://office.lan:8443 connected · SSH Relay" in lines
+
+    assert status_cli.main(is_json=True) == 0
+
+    home, office = json.loads(capsys.readouterr().out)["hubs"]
+    assert (home["rtt_ms"], office["rtt_ms"]) == (12, None)
+
+
+def test_a_hub_not_connected_shows_no_tags(resident, capsys):
+    resident.hubs_value[0].update(
+        connection="connecting", reached_through="lan", rtt_ms=12
+    )
+
+    status_cli.main()
+
+    assert f"hub home {GATEWAY_URL} connecting {status_cli.EXIT_MARK}" in printed(
+        capsys
+    )
 
 
 @pytest.mark.parametrize("way", ["direct", "a_way_this_client_does_not_know"])

@@ -385,11 +385,12 @@ class ClientResident:
 
         Returns:
             ``[{hub_id, hub_name, binding_id, gateway_url, software,
-            connection, reached_through, is_panel_allowed, panel_forward,
-            is_pending, last_error, is_exit, overlay, jobs}]``:
-            ``connection`` is one of the session's six states,
+            connection, reached_through, rtt_ms, is_panel_allowed,
+            panel_forward, is_pending, last_error, is_exit, overlay,
+            jobs}]``: ``connection`` is one of the session's six states,
             ``reached_through`` the hub's word for the way the channel
-            reached it, ``is_panel_allowed`` whether this client may open
+            reached it, ``rtt_ms`` the round trip of the last ping in whole
+            milliseconds or None, ``is_panel_allowed`` whether this client may open
             the hub's panel, ``panel_forward`` the loopback port the panel's
             forward listens on or None, ``is_pending`` whether the join's
             ticket is not spent yet, ``last_error`` the failure of the last
@@ -421,6 +422,7 @@ class ClientResident:
                     "software": session.hub_software(),
                     "connection": session.connection(),
                     "reached_through": session.reached_through(),
+                    "rtt_ms": session.rtt_ms(),
                     "is_panel_allowed": session.is_panel_allowed(),
                     "panel_forward": panel_port or None,
                     "is_pending": binding.get("is_pending") is True,

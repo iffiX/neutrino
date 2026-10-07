@@ -230,6 +230,7 @@
   "ui.state.down": "未连上",
   "ui.state.pending": "已加入，尚未连上中枢",
   "ui.state.replaced": "已被另一个客户端取代",
+  "ui.state.rtt": "{ms} ms",
   "ui.terminal_close": "关闭 {name}",
   "ui.terminal_end_armed": "再按一次结束",
   "ui.terminal_ended": "已结束",
