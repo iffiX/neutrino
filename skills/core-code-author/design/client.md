@@ -28,7 +28,7 @@ The document has these parts:
 | Part | Holds |
 | --- | --- |
 | `hubs[]` | `hub_id`, `hub_name`, `gateway_url`, `software`, `connection`, `reached_through` (the hub's word for the way the channel reached it: `lan`, `direct`, `netbird`, `easytier`, `relay`, or empty before the first state), `rtt_ms` (the last round trip the client measured, from its own WebSocket ping to the hub's pong, in milliseconds; null before the first pong and while the hub is not `connected`), `is_panel_allowed` (the hub's state says whether this client's permission holds `panel`), `panel_forward` (empty, or the loopback port the panel's forward listens on), `last_error`, `is_exit`, `overlay`, `jobs` |
-| `hubs[].overlay` | `network` (the chosen engine), `networks[]` (what the hub publishes), `state`, `stage` (empty, `login` or `hub` while connecting), `address`, `error` |
+| `hubs[].overlay` | `network` (the chosen engine), `networks[]` (what the hub publishes), `state` (`off` or `on`), `stage` (empty, or `login` while a connect runs), `address`, `error` |
 | `hubs[].jobs` | `is_refreshing`, `overlay_job` (empty, `connecting`, `disconnecting`), `is_leaving`, `is_opening_panel` |
 | `services[]` | one per published service, with the hub's wire fields (`hub_id`, `device_id`, `module`, `kind`, `payload`, `is_healthy`, `unhealthy_code`), plus `job`, `last_error` and, for every entry the client forwards ("The local port table"), `local_port` (the setting: `auto` or a number) and `forward` (empty, or the loopback port the forward listens on) |
 | `mounts[]` | the desktop's mount records, one per share mounted or being mounted |
@@ -123,7 +123,6 @@ languages, and the English column is the wording the English catalog holds.
 | `ui.state.replaced` | Replaced by another client |
 | `ui.state.disabled` | Disabled by the hub |
 | `ui.overlay.off` | Not connected |
-| `ui.overlay.connecting` | Connecting… |
 | `ui.overlay.on` | Connected · `<address>` |
 | `ui.job.refreshing` | Refreshing… |
 | `ui.job.connecting` | Connecting… |
@@ -214,9 +213,39 @@ the port is reached").
 
 | Rule | Reason |
 | --- | --- |
-| No address is preferred for having worked last, and a connected hub is not moved because another address answers. | The path that completes first is the fastest one at that moment, whatever it was at the last round. |
-| No prober runs between rounds, and the client keeps no list of reachable addresses. | Every round already tries every address; a second mechanism that guesses reachability goes stale between rounds. |
+| No address is preferred for having worked last. A connected hub moves to another address only when a round a network change started wins on a better path ("A network change starts a round"). | The path that completes first is the fastest one at that moment, whatever it was at the last round. |
+| No prober runs between rounds, no round runs on a timer, and the client keeps no list of reachable addresses. | Every round already tries every address; a second mechanism that guesses reachability goes stale between rounds. |
 | One `hello` per round. | The hub keeps one admitted socket per binding and closes the earlier of two with 4010 `replaced`, so a second `hello` in one round closes the round's own winner. |
+
+### A network change starts a round
+
+A network change starts one round at once for every hub whose row is not
+`replaced` or `disabled`. Three events are network changes: a virtual network
+of the hub's turning `on`, the device's own connectivity changing (an
+interface coming up or going down, a phone moving from a mobile network to
+Wi-Fi), and a state frame whose `urls` differ from the binding's. For a hub
+that is not `connected`, the round is the ordinary one. For a `connected`
+hub, the round runs beside the live channel, and the round trip measure
+follows on whichever socket carries the channel afterwards.
+
+The client knows each candidate's path before its `hello`: the hub's address
+on a virtual network is that engine's, the state's `relay_url` is the
+relay's, an address inside a network the device holds an address in is
+`lan`, and any other is `direct`. The paths rank in one order, best first:
+
+| Rank | Path |
+| --- | --- |
+| 1 | `lan` |
+| 2 | `direct` |
+| 3 | `netbird`, `easytier` |
+| 4 | `relay` |
+
+| Rule | Reason |
+| --- | --- |
+| A round on a `connected` hub takes the channel only when its winner's path ranks higher than the live channel's, or ranks the same and its TLS handshake took less time than the live channel's socket took when it won. | A change of network is the moment a better path can appear, and moving the channel costs every stream on it. |
+| A winner that is no better is closed before its `hello`, and the live channel stays where it is. | One admitted socket per binding: a `hello` on the loser closes the channel that is working. |
+| A better winner sends `hello`. The hub closes the old socket with 4010 `replaced`, which the client expects on the socket it moved off and never shows as the row's `replaced`. | The client replaced its own channel; the row's `replaced` is for another client taking the binding. |
+| The row shows the new channel's `reached_through` and `rtt_ms` as after any round. | The row reads the channel, whichever round made it. |
 
 A `connected` row shows two tags beside its dot, each one short token: the
 state word `ui.state.connected_through` with the word for `reached_through`,
@@ -272,17 +301,18 @@ row pending.
 
 Under a hub's body sits one line for the hub's virtual network: the state
 word with the client's address when on, then the error line. Its controls are
-the picker and the button in the row. The state is `off`, `connecting` or
-`on`, and `error` holds the last failure while `off`:
+the picker and the button in the row. The line has two states a person sees:
+`on`, the engine runs and has an address, and `off`, with `error` holding
+the engine's code when it stopped. A connect in progress is the job
+`overlay_job` `connecting` with `stage` `login`, drawn as `ui.job.connecting`
+with a spinner:
 
 | State | Event | Next | The button |
 | --- | --- | --- | --- |
-| `off` | press **Connect** | `connecting`, `overlay_job` is `connecting` | a spinner and **Cancel** |
-| `connecting`, stage `login` | the engine reports an address | `connecting`, stage `hub`; `address` is set | a spinner and **Cancel** |
-| `connecting`, stage `hub` | the hub's port answers at the hub's address on that network and the hub's channel is up through that address | `on` | **Disconnect** |
-| `connecting`, stage `login` | the engine stops, or no address within 90 s | `off`, with error (`overlay_no_address`) | **Connect** |
-| `connecting`, stage `hub` | the engine stops | `off`, with the engine's code | **Connect** |
-| `connecting` | press **Cancel** | `off` | **Connect** |
+| `off` | press **Connect** | `off`, `overlay_job` is `connecting`, `stage` is `login` | a spinner and **Cancel** |
+| `off`, connecting | the engine reports an address | `on`; `address` is set and the job ends; a network change, so a round starts at once ("A network change starts a round") | **Disconnect** |
+| `off`, connecting | the engine stops, or no address within 90 s | `off`, with error (`overlay_no_address`, or the engine's code) | **Connect** |
+| `off`, connecting | press **Cancel** | `off` | **Connect** |
 | `on` | press **Disconnect** | `off` after the engine stops; `overlay_job` is `disconnecting` meanwhile | a spinner and `ui.job.disconnecting`, then **Connect** |
 | `on` | the hub's frame no longer lists the network | `off`, with `overlay_withdrawn` | **Connect** |
 | `on` | the engine stops by itself | `off`, with the engine's code | **Connect** |
@@ -291,14 +321,13 @@ the picker and the button in the row. The state is `off`, `connecting` or
 | Rule | Reason |
 | --- | --- |
 | The client never changes the chosen engine, never retries a failed connect and never moves to another network by itself. | The person chose; a client that changes the choice cannot be reasoned with. |
-| A connect is one attempt in two stages: `login` (the engine starts, logs in and gets an address) within 90 s, then `hub` (the hub answers through the network), which has no limit: the probe runs every 2 s until the hub answers, the engine stops or the person cancels, and the reason line under the state word names the stage (`ui.stage.login`; `ui.stage.hub` with the address and the seconds waited so far). | A mobile network needs most of a minute for the login alone, and how long the tunnel to the hub takes is the engine's business; a clock that gives up while the engine is still working sends the person back to the button. |
-| The `hub` stage probes the hub's own address on that network, which the hub's material carries as `address` (its NetBird or EasyTier address), never the hub's name on the network. | The desktop runs NetBird without its DNS, so the name resolves nowhere; the address is what the tunnel carries. |
-| In the `hub` stage the channel reconnects through that address and keeps trying it until the stage ends; it does not move to another address meanwhile. | A channel that wanders back to the LAN address proves nothing about the network. |
-| Each stage's start and end is one log line with its duration. | A connect that fails on a phone is explained from the log or not at all. |
-| In EasyTier's console mode the `login` stage's 90 s cover the registration with the console; after it the state stays `connecting` with the reason line `ui.reason.console_waiting` (registered with the console, waiting for it to assign a network) until the owner assigns one or the person cancels. | The console's owner decides when a new machine gets a network; the client cannot hurry that, and failing after a minute would read as a fault. |
+| A connect is one attempt with one stage, `login`: the engine starts, logs in and gets an address within 90 s, with the reason line `ui.stage.login` under the job's word. When the engine has an address the line reads `on`, whatever the hub's channel does. | A mobile network needs most of a minute for the login alone. The line says what the engine did, and the hub row says what the channel did. |
+| Nothing on the line depends on the hub's channel: the client sends no probe to the hub through the network, shows no wait for the hub, and never holds the channel to the network's address. | A line that waited on the hub read as a broken network while the network was up, and a channel held to one address missed the others of the round. |
+| The `login` stage's start and end is one log line with its duration. | A connect that fails on a phone is explained from the log or not at all. |
+| In EasyTier's console mode the `login` stage's 90 s cover the registration with the console; after it the job stays `connecting` with the reason line `ui.reason.console_waiting` (registered with the console, waiting for it to assign a network) until the owner assigns one or the person cancels. | The console's owner decides when a new machine gets a network; the client cannot hurry that, and failing after a minute would read as a fault. |
 | At start, a binding whose last state was `on` gets one connect; a failure leaves it `off` with the error and no retry. | A phone that was on the network before a reboot comes back on it; a hub that is gone does not keep the phone trying. |
-| While `on`, the hub's address on that network is a candidate of every round and is dialled with the others at once, with no head start. | The `hub` stage already proved the path; afterwards the path that completes first carries the channel, as for every other address. |
-| The picker is disabled in `connecting` and `on`, and shows the engine's name while disabled. | Changing the engine under a running one is the switch that hangs. |
+| While `on`, the hub's address on that network, the material's `address` (never the hub's name on that network), is a candidate of every round and is dialled with the others at once, with no head start. | The network is one more path to the hub, and the round picks the path as for every other address. The desktop runs NetBird without its DNS, so the name resolves nowhere. |
+| The picker is disabled while a connect runs and in `on`, and shows the engine's name while disabled. | Changing the engine under a running one is the switch that hangs. |
 | The picker is absent when the hub publishes one network; the line then names that engine. | A choice of one is no choice. |
 | A hub that publishes no virtual network has no virtual network line: no state word, no picker, no button and no reason. | A client reaches a hub over its LAN, through Direct or through the relay, so a hub with no virtual network is an ordinary hub, and a line that names only what is absent tells the person nothing. |
 
