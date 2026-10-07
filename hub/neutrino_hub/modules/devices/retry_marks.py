@@ -64,6 +64,27 @@ class DeviceRetryMarks:
             self._write(held)
         return mark
 
+    def drop(self, device_id: str, name: str) -> None:
+        """Drop one module's mark, or the AI tools'.
+
+        Args:
+            device_id: The device.
+            name: The module name, or ``ai_tools``.
+
+        Raises:
+            OSError: When the file cannot be written.
+        """
+        with CONFIG_WRITE_LOCK:
+            held = self._read()
+            device = held.get(device_id)
+            if not isinstance(device, dict) or device.pop(name, None) is None:
+                return
+            if device:
+                held[device_id] = device
+            else:
+                held.pop(device_id)
+            self._write(held)
+
     def forget(self, device_id: str) -> None:
         """Drop one device's marks.
 

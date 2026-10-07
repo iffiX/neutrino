@@ -35,6 +35,7 @@ from neutrino_hub.modules.devices.module_import import (
     import_module_config,
 )
 from neutrino_hub.modules.devices.registry import DeviceRegistry
+from neutrino_hub.modules.devices.retry_marks import DeviceRetryMarks
 from neutrino_hub.modules.services.constants import SERVICES_RDP_PORT
 from neutrino_hub.modules.services.host_scope import (
     lan_in_place_of_overlay,
@@ -89,10 +90,11 @@ def record_report(
     modules = dict(modules) if isinstance(modules, dict) else {}
     runtime.device_modules[key] = modules
     is_settled = _settle_absent(runtime, key, modules)
+    is_dropped = _drop_failed_installs(runtime, key, modules)
     is_adopted = is_first and _adopt_modules(runtime, key, modules)
     is_shared = _adopt_desktop_share(runtime, key, report.get("desktop"))
     is_seated = _ensure_seat_password(runtime, key)
-    if is_settled or is_adopted or is_shared or is_seated:
+    if is_settled or is_dropped or is_adopted or is_shared or is_seated:
         _push_state(runtime, key)
     if is_adopted:
         runtime.published_services.schedule_refresh()
@@ -250,6 +252,48 @@ def _settle_absent(runtime, key: str, modules: dict) -> bool:
             continue
         if runtime.desired_states.settle_want(key, name):
             is_changed = True
+    return is_changed
+
+
+def _drop_failed_installs(runtime, key: str, modules: dict) -> bool:
+    """Hand back every module whose install failed and left nothing.
+
+    The machine reports such a module ``absent`` with the failure's
+    ``{code, params}``. The hub drops the module's ``want`` and its retry
+    mark, keeps its saved configuration, and holds the failure until the
+    next press on the module, so the next **Install** is a fresh install.
+
+    Args:
+        runtime: The shared runtime.
+        key: The device.
+        modules: The module states the report carries.
+
+    Returns:
+        True when ``modules.json`` changed, so the state is pushed again.
+    """
+    store = runtime.desired_states
+    is_changed = False
+    for name, status in modules.items():
+        if not isinstance(status, dict) or not status.get("code"):
+            continue
+        if str(status.get("state", "")) != CHANNEL_MODULE_STATE_ABSENT:
+            continue
+        if store.want_of(key, name) in ("", CHANNEL_MODULE_STATE_ABSENT):
+            continue
+        if not store.drop_want(key, name):
+            continue
+        DeviceRetryMarks().drop(key, name)
+        runtime.install_failures.setdefault(key, {})[name] = {
+            "code": str(status.get("code")),
+            "params": dict(status.get("params") or {}),
+        }
+        LOGGER.info(
+            "device %s: %s install left nothing (%s); want dropped",
+            key,
+            name,
+            status.get("code"),
+        )
+        is_changed = True
     return is_changed
 
 

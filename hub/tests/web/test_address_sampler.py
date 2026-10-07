@@ -28,6 +28,9 @@ class StubRuntime:
         self.calls.append("resolvers")
         return self.is_resolver_moved
 
+    def sample_peer_latencies(self) -> None:
+        self.latency_samples = getattr(self, "latency_samples", 0) + 1
+
     def check_overlay_routes(self) -> list:
         self.calls.append("routes")
         return []

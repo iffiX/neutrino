@@ -23,6 +23,7 @@
   "state.never_reported": "never reported",
   "state.no_key": "no key",
   "state.not_answering": "not answering",
+  "state.queued": "queued",
   "state.quiet": "quiet",
   "state.resilvering": "resilvering",
   "state.serving": "serving",

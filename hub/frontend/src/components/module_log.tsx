@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 
 import { StatusDot } from "./status_dot";
 import { apiPath } from "../api_client";
-import { t, useLanguage } from "../i18n";
+import { hasWord, t, useLanguage } from "../i18n";
 import { stripAnsi } from "../strip_ansi";
 import { usePolledResource } from "../use_polled_resource";
 import { useTaskStream } from "../use_task_stream";
@@ -101,6 +101,8 @@ export function ModuleLog({ deviceId, row, isAgentOnline }: ModuleLogProps) {
                 )}
               </span>
             )
+          ) : isInstallFailure(row) ? (
+            <span className="field_error">{describeCode(row)}</span>
           ) : (
             <span className="faint">{t("ui.modules.output_empty")}</span>
           )}
@@ -111,6 +113,27 @@ export function ModuleLog({ deviceId, row, isAgentOnline }: ModuleLogProps) {
       )}
     </div>
   );
+}
+
+/** Whether the machine reported an install that failed and left nothing,
+ * whose code the box shows until the next press. */
+function isInstallFailure(row: DeviceModuleView): boolean {
+  return row.state === "absent" && row.code !== "";
+}
+
+/** The words of the code the machine reported, filled from its params. */
+function describeCode(row: DeviceModuleView): string {
+  const key = `code.${row.code}`;
+  if (!hasWord(key)) {
+    return t("ui.modules.failed_code", { code: row.code });
+  }
+  const params: Record<string, string> = {};
+  for (const [name, value] of Object.entries(row.params)) {
+    if (typeof value === "string" || typeof value === "number") {
+      params[name] = String(value);
+    }
+  }
+  return t(key, params);
 }
 
 /** Whether the module runs one unit per instance and nobody has added one:

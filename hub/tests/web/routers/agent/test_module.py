@@ -161,6 +161,34 @@ def test_an_uninstall_the_machine_confirmed_reads_absent_on_both_halves(api):
     assert (row["want"], row["state"]) == ("absent", "absent")
 
 
+def test_a_failed_install_that_left_nothing_reads_absent_with_its_code_until_a_press(
+    api,
+):
+    """The row shows the held failure under absent, and Install answers it."""
+    client, runtime = api
+    runtime.agent_sessions.online.add(DEVICE)
+    runtime.device_modules[DEVICE] = {"fakedesk": {"state": "absent"}}
+    runtime.install_failures[DEVICE] = {
+        "fakedesk": {"code": "module_fetch_failed", "params": {"detail": "x"}}
+    }
+
+    before = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()
+    client.post(
+        f"{MODULE_PATH}/install", json={"device_id": DEVICE, "module": "fakedesk"}
+    )
+    after = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()
+
+    row = before["modules"][0]
+    assert (row["state"], row["want"], row["code"], row["params"]) == (
+        "absent",
+        "",
+        "module_fetch_failed",
+        {"detail": "x"},
+    )
+    assert after["modules"][0]["code"] == ""
+    assert runtime.install_failures[DEVICE] == {}
+
+
 def test_a_module_nobody_touched_reads_unknown_with_no_want(api):
     client, _ = api
 

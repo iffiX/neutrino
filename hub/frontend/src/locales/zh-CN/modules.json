@@ -23,6 +23,7 @@
   "state.never_reported": "未上报",
   "state.no_key": "无令牌",
   "state.not_answering": "无应答",
+  "state.queued": "排队中",
   "state.quiet": "安静",
   "state.resilvering": "重建中",
   "state.serving": "服务中",

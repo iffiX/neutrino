@@ -79,6 +79,7 @@ class BoxRuntime:
         self.events = PanelEventBus()
         self.tasks = TaskStreamRegistry()
         self.device_modules = {}
+        self.install_failures: dict = {}
         self.device_platform = {}
         self.device_hostname = {}
         self.device_metrics = {}

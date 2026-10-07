@@ -50,8 +50,10 @@ from neutrino_hub.modules.overlay.ops import (
     OverlayRouteGuard,
     OverlaySwitcher,
     overlay_devices,
+    overlay_parts,
     recorded_engine_devices,
 )
+from neutrino_hub.modules.overlay.peer_latency import OverlayPeerLatencies
 from neutrino_hub.modules.overlay.relay_config import read_relay
 from neutrino_hub.modules.overlay.relay_ops import (
     OverlayRelayApplier,
@@ -218,6 +220,11 @@ class PanelRuntime:
         # Latest per-module reconcile state an agent reported, keyed by
         # device id. Runtime only, for the same reason as the metrics.
         self.device_modules: dict[str, dict] = {}
+        # Device key to module to the ``{code, params}`` of an install that
+        # failed and left nothing, held until the next press on the module.
+        self.install_failures: dict[str, dict] = {}
+        # The round trip the hub measured to each relayed overlay peer.
+        self.peer_latencies = OverlayPeerLatencies()
         # The platform tuple an agent last reported, keyed by device id, so
         # the panel can show only the modules that platform can install.
         self.device_platform: dict[str, dict] = {}
@@ -308,6 +315,23 @@ class PanelRuntime:
         ) as error:
             LOGGER.warning("overlay devices not applied: %s", error)
         return True
+
+    def sample_peer_latencies(self) -> None:
+        """Measure the round trip to each relayed peer an engine gives none for.
+
+        Runs on the address sampler's thread; an engine that is off is not
+        asked.
+        """
+        try:
+            network = RouterNetworkConfig.from_dict(read_config("router/network.json"))
+        except (FileNotFoundError, ValueError):
+            return
+        enabled = {overlay.provider for overlay in network.enabled_overlays}
+        addresses = []
+        for provider, part in overlay_parts().items():
+            if provider in enabled and hasattr(part, "relayed_peer_addresses"):
+                addresses += part().relayed_peer_addresses()
+        self.peer_latencies.refresh(addresses)
 
     def check_overlay_routes(self) -> list:
         """Read the running overlays' routes and withdraw the refused ones.

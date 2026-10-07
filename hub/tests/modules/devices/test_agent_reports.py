@@ -32,6 +32,7 @@ class FakeRuntime:
     def __init__(self, lans=()):
         self.device_metrics = {}
         self.device_modules = {}
+        self.install_failures: dict = {}
         self.device_platform = {}
         self.device_hostname = {}
         self.device_accounts = {}
@@ -298,6 +299,54 @@ def test_a_module_wanted_absent_and_reported_absent_is_settled_and_the_state_pus
     assert runtime.desired_states.want_of(DEVICE, "gitea") == "absent"
     assert runtime.desired_states.want_of(DEVICE, "podman") == "running"
     assert runtime.pushed == [DEVICE]
+
+
+@pytest.mark.parametrize("want", ["installed", "running", "stopped"])
+def test_an_install_that_left_nothing_drops_the_want_and_holds_the_failure(
+    box, monkeypatch, tmp_path, want
+):
+    """The machine reports the module absent with the install's code: the
+    hub hands the module back, so the next Install is a fresh one."""
+    from neutrino_hub.modules.devices.retry_marks import DeviceRetryMarks
+
+    runtime, device = box
+    marks = DeviceRetryMarks(path=tmp_path / "device_retry_marks.json")
+    monkeypatch.setattr(agent_reports, "DeviceRetryMarks", lambda: marks)
+    marks.mark(DEVICE, "code_server")
+    marks.mark(DEVICE, "gitea")
+    runtime.desired_states.wants[(DEVICE, "code_server")] = want
+    failure = {"code": "module_fetch_failed", "params": {"detail": "no route"}}
+
+    agent_reports.record_report(
+        runtime,
+        device,
+        report(modules={"code_server": {"state": "absent", **failure}}),
+    )
+
+    assert runtime.desired_states.want_of(DEVICE, "code_server") == ""
+    assert marks.marks(DEVICE) == {"gitea": marks.marks(DEVICE)["gitea"]}
+    assert runtime.install_failures == {DEVICE: {"code_server": failure}}
+    assert runtime.pushed == [DEVICE]
+
+
+def test_an_absent_module_with_no_code_or_no_want_is_left_as_it_is(box):
+    runtime, device = box
+    runtime.desired_states.wants[(DEVICE, "podman")] = "running"
+
+    agent_reports.record_report(
+        runtime,
+        device,
+        report(
+            modules={
+                "podman": {"state": "absent"},
+                "gitea": {"state": "absent", "code": "module_fetch_failed"},
+            }
+        ),
+    )
+
+    assert runtime.desired_states.want_of(DEVICE, "podman") == "running"
+    assert runtime.install_failures == {}
+    assert runtime.pushed == []
 
 
 def test_a_module_already_settled_absent_is_settled_once_and_pushed_once(box):

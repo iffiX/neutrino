@@ -35,6 +35,9 @@ GATEWAY_STATUS_TO_LOGIN = {
     "ok": LOGIN_COMPLETE,
     "error": LOGIN_FAILED,
 }
+# The gateway's own words for a flow it no longer holds, which is the
+# sign-in session timing out rather than the provider refusing.
+GATEWAY_EXPIRED_STATE = "unknown or expired state"
 
 
 @dataclass
@@ -202,13 +205,20 @@ class CliproxyApiAccountClient:
             The flow's state.
 
         Raises:
-            AiAccountRefusedError: ``gateway_unreachable`` when the gateway
-                does not answer.
+            AiAccountRefusedError: ``login_expired`` when the gateway no
+                longer holds the flow, ``gateway_unreachable`` when it does
+                not answer.
         """
         payload = self._call(
-            "GET", CLIPROXYAPI_AUTH_STATUS_PATH, params={"state": state}
+            "GET",
+            CLIPROXYAPI_AUTH_STATUS_PATH,
+            params={"state": state},
+            missing_code="login_expired",
+            missing_params={"state": state},
         )
         reported = str(payload.get("status", ""))
+        if str(payload.get("error", "")).strip().lower() == GATEWAY_EXPIRED_STATE:
+            raise AiAccountRefusedError("login_expired", state=state)
         return CliproxyApiLoginState(
             state=state,
             status=GATEWAY_STATUS_TO_LOGIN.get(reported, LOGIN_PENDING),

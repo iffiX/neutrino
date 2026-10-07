@@ -362,6 +362,7 @@ def module_router(
     ):
         context = device_context(runtime, module, request.device_id)
         require_online(context)
+        forget_install_failure(runtime, context.key, module)
         mark_retry(runtime, context.key, module)
         push_state(runtime, context.key)
         return ApplyResult(is_applied=True)
@@ -471,13 +472,29 @@ def module_status(runtime: PanelRuntime, key: str, module: str) -> dict:
     """
     reported = runtime.device_modules.get(key, {}).get(module) or {}
     details = reported.get("details")
+    state = str(reported.get("state", STATE_UNKNOWN) or STATE_UNKNOWN)
+    held = runtime.install_failures.get(key, {}).get(module)
+    failure = (
+        held if held is not None and state == CHANNEL_MODULE_STATE_ABSENT else reported
+    )
     return {
-        "state": str(reported.get("state", STATE_UNKNOWN) or STATE_UNKNOWN),
+        "state": state,
         "is_active": bool(reported.get("is_active", False)),
-        "code": str(reported.get("code") or ""),
-        "params": dict(reported.get("params") or {}),
+        "code": str(failure.get("code") or ""),
+        "params": dict(failure.get("params") or {}),
         "details": dict(details) if isinstance(details, dict) else {},
     }
+
+
+def forget_install_failure(runtime: PanelRuntime, key: str, module: str) -> None:
+    """Drop the failure a press on one module answers.
+
+    Args:
+        runtime: The shared runtime.
+        key: The device.
+        module: The module name.
+    """
+    runtime.install_failures.get(key, {}).pop(module, None)
 
 
 def module_task_id(runtime: PanelRuntime, key: str, module: str) -> str:
@@ -567,6 +584,7 @@ def store_config(
     written = dict(config)
     write_module_config(runtime, context.key, context.module, written)
     context.config = written
+    forget_install_failure(runtime, context.key, context.module)
     _claim_reported(runtime, context)
     push_state(runtime, context.key)
     _recompose_published(runtime, context.module)
@@ -762,6 +780,7 @@ def _set_want(
     if not runtime.agent_sessions.is_online(key):
         raise _refusal(status.HTTP_409_CONFLICT, CODE_AGENT_OFFLINE, device_id=key)
     is_failed = _is_failed(runtime, key, module)
+    forget_install_failure(runtime, key, module)
     try:
         runtime.desired_states.set_want(key, module, want)
         if is_failed:
