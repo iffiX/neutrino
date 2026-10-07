@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ErrorPanel } from "./error_panel";
 import { Icon } from "./icon";
 import { StatusDot } from "./status_dot";
-import { ApiError, apiPath, apiPost, describeError } from "../api_client";
+import { ApiError, apiGet, apiPost, describeError } from "../api_client";
 import { copyText } from "../copy_text";
 import { formatDuration } from "../format_duration";
 import { t, useLanguage } from "../i18n";
@@ -252,20 +252,11 @@ function AccountLoginModal({
   const [isStarting, setIsStarting] = useState(false);
   const [isFinishing, setIsFinishing] = useState(false);
   const [pasted, setPasted] = useState("");
-  const [failure, setFailure] = useState<string | null>(null);
+  // How a flow ended without signing in: the words, and the gateway's own
+  // reason under them when it sent one. The dialog keeps its screen.
+  const [failure, setFailure] = useState<LoginFailure | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
-
-  // A finished flow is not asked about again, and neither is one that failed.
-  const statePath =
-    login === null || failure !== null
-      ? null
-      : apiPath(LOGIN_PATH, { state: login.state });
-  const watched = usePolledResource<CliproxyApiLoginStateView>(
-    statePath,
-    LOGIN_POLL_INTERVAL_MS,
-  );
-  const watchedState = watched.data;
 
   const dismiss = useCallback(() => {
     if (login !== null) {
@@ -284,16 +275,46 @@ function AccountLoginModal({
     return () => window.removeEventListener("keydown", handleKey);
   }, [dismiss]);
 
+  // A finished flow is not asked about again, and neither is one that failed
+  // or expired.
+  const watchedLogin = failure === null ? login : null;
   useEffect(() => {
-    if (watchedState === null) {
+    if (watchedLogin === null) {
       return;
     }
-    if (watchedState.status === "complete") {
-      onSignedIn();
-    } else if (watchedState.status === "failed") {
-      setFailure(t("ui.ai.sign_in_failed"));
-    }
-  }, [watchedState, onSignedIn]);
+    let isCancelled = false;
+    const tick = async () => {
+      if (document.hidden) {
+        return;
+      }
+      try {
+        const next = await apiGet<CliproxyApiLoginStateView>(LOGIN_PATH, {
+          state: watchedLogin.state,
+        });
+        if (isCancelled) {
+          return;
+        }
+        if (next.status === "complete") {
+          onSignedIn();
+        } else if (next.status === "failed") {
+          setFailure(failedLogin(next));
+        }
+      } catch (cause: unknown) {
+        if (!isCancelled && isExpired(cause)) {
+          setFailure(EXPIRED_LOGIN);
+        }
+        // Any other failure is passing; the next tick asks again.
+      }
+    };
+    const handle = window.setInterval(
+      () => void tick(),
+      LOGIN_POLL_INTERVAL_MS,
+    );
+    return () => {
+      isCancelled = true;
+      window.clearInterval(handle);
+    };
+  }, [watchedLogin, onSignedIn]);
 
   useEffect(() => {
     if (login === null || login.expires_in <= 0) {
@@ -344,10 +365,14 @@ function AccountLoginModal({
       if (next.status === "complete") {
         onSignedIn();
       } else if (next.status === "failed") {
-        setFailure(t("ui.ai.sign_in_failed"));
+        setFailure(failedLogin(next));
       }
     } catch (cause: unknown) {
-      setError(wordError(cause));
+      if (isExpired(cause)) {
+        setFailure(EXPIRED_LOGIN);
+      } else {
+        setError(wordError(cause));
+      }
     } finally {
       setIsFinishing(false);
     }
@@ -396,12 +421,19 @@ function AccountLoginModal({
             </div>
           )}
 
-          {failure !== null ? (
+          {failure !== null && (
             <div className="notice notice--error">
               <Icon name="alert" size={15} />
-              <div className="notice_body">{failure}</div>
+              <div className="notice_body">
+                {t(failure.key)}
+                {failure.message !== "" && (
+                  <div className="mono faint">{failure.message}</div>
+                )}
+              </div>
             </div>
-          ) : login === null ? (
+          )}
+
+          {login === null ? (
             <div className="ai_login_kinds">
               {kinds.map((kind) => (
                 <button
@@ -461,22 +493,24 @@ function AccountLoginModal({
                 </label>
               )}
 
-              <div className="ai_login_waiting">
-                <StatusDot
-                  tone="warn"
-                  label={t("ui.ai.sign_in_waiting")}
-                  isPulsing
-                />
-                {secondsLeft !== null && (
-                  <span className="ai_login_expiry mono">
-                    {secondsLeft > 0
-                      ? t("ui.ai.expires_in", {
-                          left: formatDuration(secondsLeft),
-                        })
-                      : t("ui.ai.expired")}
-                  </span>
-                )}
-              </div>
+              {failure === null && (
+                <div className="ai_login_waiting">
+                  <StatusDot
+                    tone="warn"
+                    label={t("ui.ai.sign_in_waiting")}
+                    isPulsing
+                  />
+                  {secondsLeft !== null && (
+                    <span className="ai_login_expiry mono">
+                      {secondsLeft > 0
+                        ? t("ui.ai.expires_in", {
+                            left: formatDuration(secondsLeft),
+                          })
+                        : t("ui.ai.expired")}
+                    </span>
+                  )}
+                </div>
+              )}
             </>
           )}
         </div>
@@ -541,6 +575,25 @@ function CopyButton({ value }: CopyButtonProps) {
       {isCopied ? t("ui.ai.copied") : t("ui.ai.copy")}
     </button>
   );
+}
+
+/** How a flow ended without signing in. */
+interface LoginFailure {
+  /** The catalog key of the words. */
+  key: string;
+  /** The gateway's own reason, empty when it sent none. */
+  message: string;
+}
+
+const EXPIRED_LOGIN: LoginFailure = { key: "code.login_expired", message: "" };
+
+function failedLogin(view: CliproxyApiLoginStateView): LoginFailure {
+  return { key: "ui.ai.sign_in_failed", message: view.message.trim() };
+}
+
+/** Whether a call failed because the sign-in session ended first. */
+function isExpired(cause: unknown): boolean {
+  return cause instanceof ApiError && cause.code === "login_expired";
 }
 
 /** Drop a sign-in nobody finished; it expires anyway if this never lands. */

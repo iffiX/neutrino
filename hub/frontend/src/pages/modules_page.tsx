@@ -198,6 +198,7 @@ const STATE_KEYS: Record<string, string> = {
   running: "state.running",
   installing: "state.installing",
   uninstalling: "state.uninstalling",
+  queued: "state.queued",
   failed: "state.failed",
   unsupported: "state.unsupported",
 };
@@ -209,6 +210,7 @@ const TAG_TONES: Record<string, StripTab["tagTone"]> = {
   stopped: "error",
   installing: "warn",
   uninstalling: "warn",
+  queued: "warn",
   failed: "error",
 };
 
@@ -219,8 +221,22 @@ const PRESENT_STATES = ["installed", "stopped", "running"];
  * `failed` row under one of them is a refused configuration. */
 const CONFIGURING_WANTS = ["running", "stopped"];
 
-/** The states whose tab turns a spinner beside its word. */
-const BUSY_STATES = ["installing", "uninstalling"];
+/** The states in transit: the tab turns a spinner beside its word and
+ * every button of the tab is disabled. */
+const BUSY_STATES = ["installing", "uninstalling", "queued"];
+
+/** The transient a press shows until the machine reports otherwise. */
+const PRESSED_STATES: Record<ModuleAction | "configure", string> = {
+  install: "installing",
+  uninstall: "uninstalling",
+  start: "queued",
+  stop: "queued",
+  configure: "queued",
+};
+
+/** How long a press's transient holds before the machine's own report, or
+ * its silence, takes over. */
+const PRESSED_HOLD_MS = 2 * 60 * 1000;
 
 /** The four presses, each the route it writes with. */
 type ModuleAction = "install" | "start" | "stop" | "uninstall";
@@ -267,6 +283,9 @@ export function ModulesPage() {
     null,
   );
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  // `<device>:<module>` to the transient a press shows, the state the module
+  // was in at the press, and when the press was made.
+  const [presses, setPresses] = useState<Record<string, Press>>({});
   const [actionError, setActionError] = useState<string | null>(null);
   // The `<device>:<module>` pairs whose configuration section is open.
   const [configuredKeys, setConfiguredKeys] = usePageMemory<string[]>(
@@ -314,7 +333,8 @@ export function ModulesPage() {
     { invalidateOn: [{ type: HUB_EVENT_CONFIG }] },
   );
 
-  const rows = rowsByName(modules.data);
+  const reportedRows = rowsByName(modules.data);
+  const rows = withPresses(reportedRows, deviceId, presses);
   const shownNames = shownModules(selectedDevice, rows);
   const shownKey = shownNames.join(",");
 
@@ -359,6 +379,48 @@ export function ModulesPage() {
     });
   };
 
+  // A press is answered once the machine reports the module in another
+  // state, or after the hold.
+  useEffect(() => {
+    if (deviceId === null) {
+      return;
+    }
+    setPresses((current) =>
+      dropAnswered(current, deviceId, rowsByName(modules.data), Date.now()),
+    );
+  }, [deviceId, modules.data]);
+
+  useEffect(() => {
+    const times = Object.values(presses).map((press) => press.at);
+    if (times.length === 0) {
+      return;
+    }
+    const wait = Math.max(0, Math.min(...times) + PRESSED_HOLD_MS - Date.now());
+    const timer = window.setTimeout(() => {
+      setPresses((current) => dropExpired(current, Date.now()));
+    }, wait);
+    return () => window.clearTimeout(timer);
+  }, [presses]);
+
+  const notePress = (module: string, action: ModuleAction | "configure") => {
+    if (deviceId === null) {
+      return;
+    }
+    const from = reportedRows[module]?.state ?? "";
+    // Configure on a running module changes no state the tab could wait on.
+    if (action === "configure" && from === "running") {
+      return;
+    }
+    setPresses((current) => ({
+      ...current,
+      [configuredKey(deviceId, module)]: {
+        state: PRESSED_STATES[action],
+        from,
+        at: Date.now(),
+      },
+    }));
+  };
+
   const act = async (action: ModuleAction) => {
     if (deviceId === null || activeModule === null) {
       return;
@@ -370,9 +432,12 @@ export function ModulesPage() {
       module: activeModule,
     };
     try {
-      modules.setData(
-        await apiPost<DeviceModuleListView>(`/agent/module/${action}`, request),
+      const answer = await apiPost<DeviceModuleListView>(
+        `/agent/module/${action}`,
+        request,
       );
+      notePress(activeModule, action);
+      modules.setData(answer);
     } catch (cause: unknown) {
       setActionError(describeError(cause));
     } finally {
@@ -406,9 +471,12 @@ export function ModulesPage() {
         const imported: DeviceRequest = { device_id: deviceId };
         await apiPost(`/agent/module/${activeModule}/import`, imported);
       }
-      modules.setData(
-        await apiPost<DeviceModuleListView>("/agent/module/start", request),
+      const answer = await apiPost<DeviceModuleListView>(
+        "/agent/module/start",
+        request,
       );
+      notePress(activeModule, "configure");
+      modules.setData(answer);
       setConfiguredKeys((current) =>
         current.includes(key) ? current : [...current, key],
       );
@@ -454,7 +522,10 @@ export function ModulesPage() {
     (isCarriedRow ||
       configuredKeys.includes(configuredKey(deviceId, activeModule)));
   const isBusy = busyAction !== null;
-  const canAct = activeRow !== undefined && isAgentOnline && !isBusy;
+  const isInTransit =
+    activeRow !== undefined && BUSY_STATES.includes(activeRow.state);
+  const canAct =
+    activeRow !== undefined && isAgentOnline && !isBusy && !isInTransit;
   const isPresent =
     activeRow !== undefined && PRESENT_STATES.includes(activeRow.state);
   const isConfigRefused =
@@ -792,13 +863,80 @@ function dotTone(row: DeviceModuleView): StatusTone {
   if (row.state === "running" || (row.state === "installed" && row.is_active)) {
     return "ok";
   }
-  if (row.state === "installing" || row.state === "uninstalling") {
+  if (BUSY_STATES.includes(row.state)) {
     return "warn";
   }
   if (row.state === "failed" || row.state === "stopped") {
     return "error";
   }
   return "idle";
+}
+
+/** A press the machine has not answered yet. */
+interface Press {
+  /** The transient the tab shows meanwhile. */
+  state: string;
+  /** The module's reported state at the press. */
+  from: string;
+  /** When the press was made, in milliseconds. */
+  at: number;
+}
+
+/** The rows as the page shows them: a module pressed and not yet answered
+ * wears the press's transient. */
+function withPresses(
+  rows: Record<string, DeviceModuleView>,
+  deviceId: string | null,
+  presses: Record<string, Press>,
+): Record<string, DeviceModuleView> {
+  if (deviceId === null) {
+    return rows;
+  }
+  const shown: Record<string, DeviceModuleView> = {};
+  for (const [name, row] of Object.entries(rows)) {
+    const press = presses[configuredKey(deviceId, name)];
+    shown[name] =
+      press !== undefined && row.state === press.from
+        ? { ...row, state: press.state, code: "", params: {} }
+        : row;
+  }
+  return shown;
+}
+
+/** The presses still waiting: one whose module the machine reports in
+ * another state is answered, and one past the hold has expired. */
+function dropAnswered(
+  presses: Record<string, Press>,
+  deviceId: string,
+  rows: Record<string, DeviceModuleView>,
+  now: number,
+): Record<string, Press> {
+  const kept: Record<string, Press> = {};
+  for (const [key, press] of Object.entries(presses)) {
+    const name = key.slice(deviceId.length + 1);
+    const isThisDevice = key.startsWith(`${deviceId}:`);
+    const row = isThisDevice ? rows[name] : undefined;
+    const isAnswered = row !== undefined && row.state !== press.from;
+    if (!isAnswered && now - press.at < PRESSED_HOLD_MS) {
+      kept[key] = press;
+    }
+  }
+  return Object.keys(kept).length === Object.keys(presses).length
+    ? presses
+    : kept;
+}
+
+function dropExpired(
+  presses: Record<string, Press>,
+  now: number,
+): Record<string, Press> {
+  const kept: Record<string, Press> = {};
+  for (const [key, press] of Object.entries(presses)) {
+    if (now - press.at < PRESSED_HOLD_MS) {
+      kept[key] = press;
+    }
+  }
+  return kept;
 }
 
 /** The `<device>:<module>` pair whose configuration section is open. */
