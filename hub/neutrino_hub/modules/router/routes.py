@@ -16,7 +16,10 @@ from neutrino_hub.utils.subprocess_run import command_failure_text, run
 from neutrino_hub.modules.router import links, resolver, stack
 from neutrino_hub.modules.router.connections import RouterConnectionSet
 from neutrino_hub.utils.json_file import read_config, write_generated
-from neutrino_hub.modules.router.dhcp_client import RouterDhcpClient
+from neutrino_hub.modules.router.dhcp_client import (
+    RouterDhcpClient,
+    lease_client_interfaces,
+)
 from neutrino_hub.modules.router.dhcp_renderer import RouterDhcpRenderer
 from neutrino_hub.modules.router.supplicant import RouterWifiClient
 from neutrino_hub.modules.router.supplicant import (
@@ -92,9 +95,13 @@ def remove_vlan_device(name: str) -> list[str]:
     Args:
         name: The VLAN interface name, for example ``enp1s0.10``.
 
+    Its lease client is stopped and disabled first: with the device gone it
+    would otherwise restart for ever on an interface that is not there.
+
     Returns:
         One line when something was removed; empty when there was nothing.
     """
+    RouterDhcpClient(interface=name).stop()
     if not links.remove_vlan(name):
         return []
     return [f"{name} removed"]
@@ -185,15 +192,23 @@ def hand_back(network: RouterNetworkConfig) -> list[str]:
     changes = []
     RouterRulesetApplier().flush()
     changes.append("the firewall and the policy route are the machine's own again")
+    # Every lease client systemd has, in any state, and not only those the
+    # configuration names: a VLAN removed before the reset names none, and its
+    # unit can still be enabled and restarting.
+    devices = [interface.device_name for interface in network.interfaces]
+    for device in devices + [
+        name for name in lease_client_interfaces() if name not in devices
+    ]:
+        client = RouterDhcpClient(interface=device)
+        if client.is_standing:
+            client.stop()
+            changes.append(f"stopped {client.unit}")
     for interface in network.interfaces:
         device = interface.device_name
-        for engine in (
-            RouterDhcpClient(interface=device),
-            RouterWifiClient(interface=device),
-        ):
-            if engine.is_running:
-                engine.stop()
-                changes.append(f"stopped {engine.unit}")
+        engine = RouterWifiClient(interface=device)
+        if engine.is_running:
+            engine.stop()
+            changes.append(f"stopped {engine.unit}")
         access_point = RouterWifiAccessPoint(interface=device)
         if access_point.is_running:
             access_point.unpublish()

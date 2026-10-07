@@ -9,6 +9,8 @@ Run these after the reset, with the same `--before` snapshot the install was
 measured against.
 """
 
+from pathlib import Path
+
 import pytest
 
 import machine_state
@@ -53,3 +55,29 @@ def test_it_still_resolves(before):
     """Takes the snapshot it does not read, so a run without a box skips this
     with the rest of the file rather than passing on a workstation."""
     assert machine_state.run(["getent", "hosts", "github.com"]).strip() != ""
+
+
+def test_no_lease_client_of_the_hub_is_left(before):
+    """A VLAN removed during the walks names no interface in `config/`, and
+    its lease client must still be gone: neither standing nor enabled."""
+    listed = machine_state.run(
+        [
+            "systemctl",
+            "list-units",
+            "--all",
+            "--plain",
+            "--no-legend",
+            "neutrino_hub_dhcpcd@*",
+        ]
+    )
+    standing = [
+        line for line in listed.splitlines() if line.split()[2:3] != ["inactive"]
+    ]
+    enabled = sorted(
+        str(path)
+        for path in Path("/etc/systemd/system").glob(
+            "*.wants/neutrino_hub_dhcpcd@*.service"
+        )
+    )
+    assert standing == []
+    assert enabled == []

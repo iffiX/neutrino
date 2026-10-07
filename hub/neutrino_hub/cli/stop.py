@@ -39,7 +39,10 @@ import subprocess
 import sys
 
 from neutrino_hub import edition
-from neutrino_hub.modules.router.dhcp_client import RouterDhcpClient
+from neutrino_hub.modules.router.dhcp_client import (
+    RouterDhcpClient,
+    lease_client_interfaces,
+)
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.router.supplicant import RouterWifiClient
 from neutrino_hub.platforms.constants import PLATFORM_SERVICE_STOPPED
@@ -63,7 +66,9 @@ STOP_ORDER = (
     "router",
 )
 # The two that run one unit per interface, named as `run` names them.
-STOP_PER_INTERFACE = ("supplicant", "dhcpcd")
+STOP_SUPPLICANT = "supplicant"
+STOP_DHCPCD = "dhcpcd"
+STOP_PER_INTERFACE = (STOP_SUPPLICANT, STOP_DHCPCD)
 # What a command that asks says when there is no terminal to ask on.
 CLI_NO_TERMINAL_LINE = (
     "error: no terminal to answer on; run it again with --yes to go ahead "
@@ -130,8 +135,12 @@ def stop_everything() -> int:
     if not is_linux():
         return stop_service()
     status = stop(list(STOP_ORDER))
-    for name, interface in _configured_engines():
+    engines = _configured_engines()
+    for name, interface in engines:
         status = stop_engine(name, interface) or status
+    for interface in lease_client_interfaces():
+        if (STOP_DHCPCD, interface) not in engines:
+            status = stop_engine(STOP_DHCPCD, interface) or status
     return status
 
 
@@ -202,15 +211,19 @@ def stop_engine(name: str, interface: str) -> int:
         name: ``supplicant`` or ``dhcpcd``.
         interface: The interface it runs on.
 
+    A lease client is stopped and disabled in any state but stopped:
+    running, waiting to restart, failed or enabled.
+
     Returns:
         0 when it is stopped or was never running, 1 when it refused.
     """
-    engine = (
-        RouterWifiClient(interface=interface)
-        if name == "supplicant"
-        else RouterDhcpClient(interface=interface)
-    )
-    if not engine.is_running:
+    if name == STOP_SUPPLICANT:
+        engine = RouterWifiClient(interface=interface)
+        is_standing = engine.is_running
+    else:
+        engine = RouterDhcpClient(interface=interface)
+        is_standing = engine.is_standing
+    if not is_standing:
         return 0
     try:
         engine.stop()

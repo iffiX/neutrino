@@ -111,7 +111,7 @@ def test_a_per_interface_engine_is_stopped_by_its_own_unit(monkeypatch):
         def __init__(self, *, interface):
             self.unit = f"neutrino_hub_dhcpcd@{interface}.service"
 
-        is_running = True
+        is_standing = True
 
         def stop(self):
             stopped.append(self.unit)
@@ -138,8 +138,8 @@ def test_an_engine_that_was_never_running_is_left_alone(monkeypatch):
 
 
 def test_the_engines_come_from_the_configuration(monkeypatch):
-    """systemd is not asked which templated units exist; `config/` is the
-    record of which interfaces the hub was driving."""
+    """`config/` is the record of which interfaces the hub was driving; the
+    lease clients systemd still lists are added to it by the stop itself."""
     monkeypatch.setattr(
         stop_module,
         "read_config",
@@ -280,3 +280,57 @@ def test_with_no_terminal_it_names_yes_and_stops_nothing(monkeypatch, capsys):
     error = capsys.readouterr().err
     assert error.strip().count("\n") == 0
     assert "--yes" in error
+
+
+# --- lease clients the configuration no longer names ---
+
+
+class LeaseClient:
+    """A lease client unit in a state the test sets, recording each stop."""
+
+    standing: set = set()
+    stopped: list = []
+
+    def __init__(self, *, interface):
+        self.interface = interface
+        self.unit = f"neutrino_hub_dhcpcd@{interface}.service"
+
+    @property
+    def is_standing(self):
+        return self.interface in LeaseClient.standing
+
+    def stop(self):
+        LeaseClient.stopped.append(self.unit)
+
+
+def test_a_lease_client_waiting_to_restart_is_stopped(monkeypatch):
+    """`activating (auto-restart)` is not `active`, and the unit loops on."""
+    LeaseClient.standing = {"enp3s0.1"}
+    LeaseClient.stopped = []
+    monkeypatch.setattr(stop_module, "RouterDhcpClient", LeaseClient)
+
+    assert stop_module.stop_engine("dhcpcd", "enp3s0.1") == 0
+    assert LeaseClient.stopped == ["neutrino_hub_dhcpcd@enp3s0.1.service"]
+
+
+def test_stopping_everything_stops_the_lease_clients_systemd_lists(
+    systemd, monkeypatch
+):
+    """A VLAN removed earlier is named by no configuration; its unit is."""
+    LeaseClient.standing = {"enp1s0", "enp3s0.1"}
+    LeaseClient.stopped = []
+    monkeypatch.setattr(stop_module, "is_linux", lambda: True)
+    monkeypatch.setattr(stop_module, "RouterDhcpClient", LeaseClient)
+    monkeypatch.setattr(stop_module, "RouterWifiClient", LeaseClient)
+    monkeypatch.setattr(
+        stop_module, "_configured_engines", lambda: [("dhcpcd", "enp1s0")]
+    )
+    monkeypatch.setattr(
+        stop_module, "lease_client_interfaces", lambda: ["enp1s0", "enp3s0.1"]
+    )
+
+    assert stop_module.stop_everything() == 0
+    assert LeaseClient.stopped == [
+        "neutrino_hub_dhcpcd@enp1s0.service",
+        "neutrino_hub_dhcpcd@enp3s0.1.service",
+    ]

@@ -323,6 +323,9 @@ ROUTER_DHCP_UNIT = "neutrino_hub_dhcpcd@{interface}.service"
 ROUTER_DHCP_BINARIES = ("/usr/sbin/dhcpcd", "/usr/bin/dhcpcd")
 # How long reading one uplink's lease may take.
 ROUTER_LEASE_READ_TIMEOUT_S = 5.0
+# The lease clients' unit names around the interface, as systemd lists them.
+ROUTER_DHCP_UNIT_PREFIX = "neutrino_hub_dhcpcd@"
+ROUTER_DHCP_UNIT_SUFFIX = ".service"
 # Where dhcpcd keeps each interface's lease, `<interface>.lease`: the DHCP
 # message it was given, whose option 6 lists the resolvers.
 ROUTER_DHCP_LEASE_DIR = Path("/var/lib/dhcpcd")

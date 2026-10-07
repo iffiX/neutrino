@@ -262,11 +262,12 @@ python3 -m pytest "$HERE/test_agent_removal.py" -q
 ran $?
 
 # The walks above leave the box a router whose resolver file is the hub's.
-# A reset after them has to give the machine a resolver that answers.
+# A reset after them has to give the machine a resolver that answers, and
+# leave no lease client of the hub's, a removed VLAN's included.
 phase "reset, after the box has been a router"
 nhub reset all --yes > /tmp/reset2.log 2>&1
 ran $?
-python3 -m pytest "$HERE/test_reset_hands_back.py" -q -k still_resolves
+python3 -m pytest "$HERE/test_reset_hands_back.py" -q -k "still_resolves or lease_client"
 ran $?
 
 echo
