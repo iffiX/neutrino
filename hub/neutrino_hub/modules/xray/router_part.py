@@ -179,10 +179,14 @@ class XrayNftPart:
         ]
         if self._is_local_proxy_enabled:
             lines += [
-                "        # Gateway-originated traffic looped back by the output chain.",
-                f'        iifname "lo" meta mark {hex(ROUTER_FWMARK_TPROXY)} '
-                "meta l4proto { tcp, udp } "
-                f"tproxy ip to {target} accept",
+                "        # Gateway-originated traffic looped back by table 100: an",
+                "        # address neither reserved nor the box's own reaches lo by",
+                "        # no other route. No mark is matched, since an overlay",
+                "        # daemon may replace it at mangle.",
+                '        iifname "lo" ip daddr != @reserved_v4 '
+                "fib daddr type != local meta l4proto { tcp, udp } "
+                f"tproxy ip to {target} meta mark set {hex(ROUTER_FWMARK_TPROXY)} "
+                "accept",
                 "",
             ]
         diverted = self.diverted_interfaces
