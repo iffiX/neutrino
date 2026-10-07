@@ -727,6 +727,14 @@ says which radios and which uplinks the hub had units running on. Undo the
 network first, while `config/` still names them; afterwards there is nothing
 left to read and the units stay up on a box that has forgotten it started them.
 
+**Lease clients are found in systemd, not in `config/`.** A VLAN that is
+removed or disabled leaves no name behind, so its device's
+`neutrino_hub_dhcpcd@<device>` is stopped and disabled before the device is
+deleted. `nhub stop` and the hand-back then stop every instance of that unit
+that systemd lists in any state, or that is enabled, and not only the ones
+`config/` names or `is-active` reports: a lease client whose device is gone
+sits in `activating (auto-restart)` and restarts forever.
+
 **A reset takes no address off anything.** Nothing the hub configured is
 un-configured: every interface keeps the address it has, and only the things
 the hub *started* are stopped. An interface losing its address during a reset
