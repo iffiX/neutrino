@@ -413,6 +413,29 @@ class DesiredStateStore:
         """
         return self.modules(key).get(module, {}).get("want", "")
 
+    def drop_want(self, key: str, module: str) -> bool:
+        """Forget what one device was asked for on one module.
+
+        The state stops naming the module, and the module's saved
+        configuration stays where it is.
+
+        Args:
+            key: The device key.
+            module: The module name.
+
+        Returns:
+            True when the file named the module.
+
+        Raises:
+            OSError: When the file cannot be written.
+        """
+        with CONFIG_WRITE_LOCK:
+            modules = self.modules(key)
+            if modules.pop(module, None) is None:
+                return False
+            write_config(self._path(key, DEVICE_MODULES_FILE), {"modules": modules})
+        return True
+
     def settle_want(self, key: str, module: str) -> bool:
         """Note that one device has made one module's ``want`` true.
 

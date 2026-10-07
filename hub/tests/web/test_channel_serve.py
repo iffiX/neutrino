@@ -142,6 +142,7 @@ class FakeRuntime:
         self.channel_port = ChannelPortGuard()
         self.device_metrics = {}
         self.device_modules = {}
+        self.install_failures: dict = {}
         self.device_platform = {}
         self.device_hostname = {}
         self.device_accounts = {}

@@ -462,6 +462,32 @@ def test_a_login_the_gateway_forgot_is_expired(accounts_client):
     assert answer.json()["detail"]["code"] == "login_expired"
 
 
+def test_a_poll_on_a_flow_the_gateway_forgot_is_expired(
+    accounts_client, accounts_gateway
+):
+    """The reported bug: the sign-in session ended before the provider
+    answered, the poll read it as a failure with no words of its own, and the
+    dialog went back to its first screen."""
+    state = AUTH_URL_ANSWER["state"]
+    accounts_gateway.login_status = [
+        {"status": "error", "error": "unknown or expired state"}
+    ]
+
+    answer = accounts_client.get(LOGIN_PATH, params={"state": state})
+
+    assert answer.status_code == 404
+    assert answer.json()["detail"]["code"] == "login_expired"
+
+
+def test_a_failed_flow_carries_the_gateways_reason(accounts_client, accounts_gateway):
+    state = AUTH_URL_ANSWER["state"]
+    accounts_gateway.login_status = [{"status": "error", "error": "access_denied"}]
+
+    answer = accounts_client.get(LOGIN_PATH, params={"state": state}).json()
+
+    assert (answer["status"], answer["message"]) == ("failed", "access_denied")
+
+
 def test_cancelling_a_login_drops_it(accounts_client, accounts_gateway):
     """Closing the sign-in without finishing leaves nothing waiting."""
     answer = accounts_client.post(

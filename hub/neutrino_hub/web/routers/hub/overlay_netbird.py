@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from neutrino_hub.exceptions import VaultLockedError
 from neutrino_hub.modules.netbird.config import read_stored, write_stored
+from neutrino_hub.modules.netbird.constants import NETBIRD_CONNECTION_RELAYED
 from neutrino_hub.modules.netbird.ops import NetbirdEnroller, NetbirdStatusReader
 from neutrino_hub.modules.router.link_status import device_addresses
 from neutrino_hub.utils.subprocess_run import command_failure_text
@@ -56,10 +57,23 @@ def read_status(runtime: PanelRuntime = Depends(get_runtime)) -> NetbirdView:
         management_url=state.management_url,
         netbird_ip=state.netbird_ip,
         fqdn=state.fqdn,
-        peers=[NetbirdPeerView(**vars(peer)) for peer in state.peers],
+        peers=[_peer_view(runtime, peer) for peer in state.peers],
         lan_subnets=subnets,
         has_setup_key=read_stored().has_setup_key,
     )
+
+
+def _peer_view(runtime: PanelRuntime, peer) -> NetbirdPeerView:
+    """One peer, with the round trip the hub measured where the engine gave
+    none for a relayed peer."""
+    view = NetbirdPeerView(**vars(peer))
+    if view.latency_ms is None and view.connection_type.lower() == (
+        NETBIRD_CONNECTION_RELAYED
+    ):
+        measured = runtime.peer_latencies.latency_of(view.netbird_ip.split("/")[0])
+        if measured is not None:
+            view.latency_ms = max(1, round(measured))
+    return view
 
 
 @router.post("/netbird/join", response_model=NetbirdView)

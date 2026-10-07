@@ -34,6 +34,7 @@ class ReportingRuntime:
     def __init__(self):
         self.device_metrics: dict = {}
         self.device_modules: dict = {}
+        self.install_failures: dict = {}
         self.device_platform: dict = {}
         self.device_hostname: dict = {}
         self.device_accounts: dict = {}

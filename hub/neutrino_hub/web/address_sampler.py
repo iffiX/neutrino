@@ -9,7 +9,8 @@ live binding of both roles. Before each read it asks the runtime to converge
 when an overlay's device moved, so the firewall follows an EasyTier console
 bringing its network up, or an engine's unit started under a new cgroup, or
 when the network's resolvers moved, so dnsmasq and xray follow an uplink's
-lease; and it checks the routes the overlays installed. After each read it issues the panel's
+lease; and it checks the routes the overlays installed and measures the
+relayed overlay peers an engine gives no latency for. After each read it issues the panel's
 certificate again when the names in it are no longer the set.
 """
 
@@ -64,6 +65,7 @@ class PanelAddressSampler:
             or self._runtime.follow_network_resolvers()
         )
         self._runtime.check_overlay_routes()
+        self._runtime.sample_peer_latencies()
         urls = channel_urls(self._runtime)
         panel_tls.follow_addresses(urls)
         if self._urls is None:

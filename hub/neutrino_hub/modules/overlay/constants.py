@@ -155,6 +155,9 @@ OVERLAY_RELAY_DISPLAY = "neutrino"
 OVERLAY_RELAY_LISTEN_ADDRESS = "0.0.0.0"
 OVERLAY_RELAY_TARGET_ADDRESS = "127.0.0.1"
 
+# How long the hub waits for the one echo it sends a relayed overlay peer.
+OVERLAY_PEER_ECHO_TIMEOUT_S = 2.0
+
 # The self-check: the hub dials its own public address and compares the
 # certificate it meets with its own agent certificate.
 OVERLAY_RELAY_CHECK_FIRST_S = 5.0

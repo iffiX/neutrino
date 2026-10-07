@@ -13,7 +13,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from neutrino_hub.modules.netbird.config import read_stored
-from neutrino_hub.modules.netbird.ops import NetbirdState
+from neutrino_hub.modules.overlay.peer_latency import OverlayPeerLatencies
+from neutrino_hub.modules.netbird.ops import NetbirdPeer, NetbirdState
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.system.systemd_ctl import ServiceStatus
 from neutrino_hub.web.dependencies import get_runtime, require_session
@@ -41,6 +42,8 @@ class FakeRuntime:
     def __init__(self, pushes: list):
         self.services = FakeServices()
         self._pushes = pushes
+        self.peer_latencies = OverlayPeerLatencies(echo=lambda address: 41.6)
+        self.peer_latencies.refresh(["100.64.0.9"])
 
     def network(self) -> RouterNetworkConfig:
         return RouterNetworkConfig.from_dict({"mode": "server", "interfaces": []})
@@ -69,9 +72,14 @@ class FakeEnroller:
 
 
 class FakeReader:
+    peers: list = []
+
     def survey(self) -> NetbirdState:
         return NetbirdState(
-            is_installed=True, is_enrolled=True, fqdn="hub.netbird.cloud"
+            is_installed=True,
+            is_enrolled=True,
+            fqdn="hub.netbird.cloud",
+            peers=list(FakeReader.peers),
         )
 
 
@@ -190,3 +198,42 @@ def test_a_leave_the_daemon_refuses_is_reported(box):
     assert reply.status_code == 502
     assert reply.json()["detail"]["code"] == "overlay_leave_failed"
     assert pushes == []
+
+
+def test_a_relayed_peer_the_daemon_gives_no_latency_shows_the_hubs_echo(box):
+    """The engine reports none for a peer behind a relay; the hub's own
+    echo, measured by the address sampler, fills the same field."""
+    client, _ = box
+    FakeReader.peers = [
+        NetbirdPeer(
+            fqdn="laptop.netbird.cloud",
+            netbird_ip="100.64.0.9/16",
+            is_connected=True,
+            connection_type="Relayed",
+            latency_ms=None,
+        ),
+        NetbirdPeer(
+            fqdn="phone.netbird.cloud",
+            netbird_ip="100.64.0.10",
+            is_connected=True,
+            connection_type="Relayed",
+            latency_ms=None,
+        ),
+        NetbirdPeer(
+            fqdn="desk.netbird.cloud",
+            netbird_ip="100.64.0.11",
+            is_connected=True,
+            connection_type="P2P",
+            latency_ms=7,
+        ),
+    ]
+    try:
+        peers = client.get("/api/hub/overlay/netbird").json()["peers"]
+    finally:
+        FakeReader.peers = []
+
+    assert [(peer["fqdn"], peer["latency_ms"]) for peer in peers] == [
+        ("laptop.netbird.cloud", 42),
+        ("phone.netbird.cloud", None),
+        ("desk.netbird.cloud", 7),
+    ]

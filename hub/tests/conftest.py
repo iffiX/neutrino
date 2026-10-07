@@ -565,6 +565,9 @@ class StubDesiredStates:
     def want_of(self, key: str, module: str) -> str:
         return self.wants.get((key.lower(), module), "")
 
+    def drop_want(self, key: str, module: str) -> bool:
+        return self.wants.pop((key.lower(), module), None) is not None
+
     def settle_want(self, key: str, module: str) -> bool:
         pair = (key.lower(), module)
         if pair not in self.wants or pair in self.settled:
@@ -625,6 +628,7 @@ class FakeModuleRuntime:
         self.published_services = StubPublishedServices()
         self.desired_states = DesiredStateStore()
         self.device_modules: dict = {}
+        self.install_failures: dict = {}
         self.device_platform: dict = {}
         self.device_hostname: dict = {}
         self.device_address: dict = {}

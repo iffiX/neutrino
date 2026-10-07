@@ -6,6 +6,7 @@ without NetBird runs the same code with EasyTier alone.
 """
 
 from neutrino_hub.modules.netbird.config import read_stored
+from neutrino_hub.modules.netbird.constants import NETBIRD_CONNECTION_RELAYED
 from neutrino_hub.modules.netbird.ops import (
     NetbirdInboundGate,
     NetbirdRouteSelector,
@@ -55,6 +56,22 @@ class NetbirdOverlayPart:
             The endpoints, as written.
         """
         return list(NetbirdStatusReader().survey().peer_endpoints)
+
+    def relayed_peer_addresses(self) -> list:
+        """The connected peers the daemon reaches through a relay and gives
+        no latency for.
+
+        Returns:
+            Their overlay addresses, without a prefix length.
+        """
+        return [
+            peer.netbird_ip.split("/")[0]
+            for peer in NetbirdStatusReader().survey().peers
+            if peer.is_connected
+            and peer.connection_type.lower() == NETBIRD_CONNECTION_RELAYED
+            and peer.latency_ms is None
+            and peer.netbird_ip
+        ]
 
     def material(self) -> "dict | None":
         """What a client joins the overlay with.

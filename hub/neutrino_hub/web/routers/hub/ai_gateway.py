@@ -386,7 +386,8 @@ def read_login(state: str) -> CliproxyApiLoginStateView:
         ``pending`` while it is open, then ``complete`` or ``failed``.
 
     Raises:
-        HTTPException: 502 with ``gateway_unreachable``.
+        HTTPException: 404 with ``login_expired`` when the gateway's session
+            for the flow ended first, 502 with ``gateway_unreachable``.
     """
     return CliproxyApiLoginStateView(
         **vars(_account_call(lambda client: client.read_login(state)))

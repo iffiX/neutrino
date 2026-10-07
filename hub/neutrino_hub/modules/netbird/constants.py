@@ -150,3 +150,6 @@ NETBIRD_ABOUT = (
         None,
     ),
 )
+
+# The daemon's word, lower-cased, for a peer it reaches through a relay.
+NETBIRD_CONNECTION_RELAYED = "relayed"
