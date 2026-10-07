@@ -62,7 +62,9 @@ def test_wpa2_is_the_only_thing_offered():
 )
 def test_each_band_picks_a_matching_mode_and_channel(band, hw_mode, channel):
     config = directives(
-        RouterHostapdRenderer(interface=interface(ap_band=band)).render()
+        RouterHostapdRenderer(
+            interface=interface(ap_band=band), country_code="DE"
+        ).render()
     )
 
     assert config["hw_mode"] == hw_mode

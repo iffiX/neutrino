@@ -23,6 +23,7 @@ import { WifiScanPanel } from "../components/wifi_scan_panel";
 import { apiPost, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
 import {
+  isCountryCode,
   isInterfaceDraftValid,
   validateInterface,
 } from "../network_validation";
@@ -180,7 +181,13 @@ function newVlanSettings(parent: string, id: number): InterfaceSettings {
       dhcp_lease_time: "12h",
       upstream_gateway: null,
     },
-    wifi: { ssid: "", ap_ssid: "", ap_passphrase: "", ap_band: "bg" },
+    wifi: {
+      ssid: "",
+      ap_ssid: "",
+      ap_passphrase: "",
+      ap_band: "bg",
+      ap_country_code: "",
+    },
     vlan: { parent, id },
   };
 }
@@ -1049,10 +1056,30 @@ function LanFields({ draft, errors, isWifi, update }: FieldsProps) {
                 <span className="field_error">{errors.ap_passphrase}</span>
               )}
             </label>
+            <Field
+              label={t("ui.network.field_country_code")}
+              value={draft.wifi.ap_country_code}
+              error={errors.ap_country_code}
+              placeholder="DE"
+              onChange={(value) =>
+                update((next) => {
+                  next.wifi.ap_country_code = value
+                    .replace(/[^A-Za-z]/g, "")
+                    .slice(0, 2)
+                    .toUpperCase();
+                  if (!isCountryCode(next.wifi.ap_country_code)) {
+                    next.wifi.ap_band = "bg";
+                  }
+                })
+              }
+            />
             <Picker
               options={[
                 { id: "bg", name: t("ui.network.band_bg") },
-                { id: "a", name: t("ui.network.band_a") },
+                ...(isCountryCode(draft.wifi.ap_country_code) ||
+                draft.wifi.ap_band === "a"
+                  ? [{ id: "a", name: t("ui.network.band_a") }]
+                  : []),
               ]}
               value={draft.wifi.ap_band}
               onChange={(band) => update((next) => (next.wifi.ap_band = band))}

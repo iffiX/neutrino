@@ -407,6 +407,56 @@ def test_a_valid_access_point_is_accepted(box):
     assert runtime.network().interface("wlp3s0").is_lan
 
 
+@pytest.mark.parametrize(
+    ("band", "country_code"),
+    [("a", ""), ("bg", "de"), ("bg", "D1"), ("a", "DEU")],
+    ids=["5 GHz with no country", "lower case", "a digit", "three letters"],
+)
+def test_an_access_point_s_country_is_two_capitals_and_5_ghz_needs_one(
+    box, band, country_code
+):
+    """Which 5 GHz channels a radio may use is set by its country's law."""
+    client, _, _ = box
+    draft = settings_of(client, "wlp3s0")
+    draft["role"] = "lan"
+    draft["wifi"].update(
+        {
+            "ap_ssid": "neutrino",
+            "ap_passphrase": "hunter2hunter2",
+            "ap_band": band,
+            "ap_country_code": country_code,
+        }
+    )
+
+    response = client.post("/api/hub/network/interface/set", json=draft)
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == {
+        "code": "network_invalid",
+        "params": {"field": "country_code", "name": "wlp3s0"},
+    }
+
+
+def test_5_ghz_with_a_country_is_stored(box):
+    client, runtime, _ = box
+    draft = settings_of(client, "wlp3s0")
+    draft["role"] = "lan"
+    draft["wifi"].update(
+        {
+            "ap_ssid": "neutrino",
+            "ap_passphrase": "hunter2hunter2",
+            "ap_band": "a",
+            "ap_country_code": "DE",
+        }
+    )
+
+    response = client.post("/api/hub/network/interface/set", json=draft)
+
+    assert response.status_code == 200
+    stored = runtime.network().interface("wlp3s0").wifi
+    assert (stored.ap_band, stored.ap_country_code) == ("a", "DE")
+
+
 # --- Warnings ---------------------------------------------------------------
 
 

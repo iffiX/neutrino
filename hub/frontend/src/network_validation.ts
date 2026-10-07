@@ -39,7 +39,8 @@ export type InterfaceFieldName =
   | "wan_gateway"
   | "wan_cloned_mac"
   | "ap_ssid"
-  | "ap_passphrase";
+  | "ap_passphrase"
+  | "ap_country_code";
 
 export type InterfaceErrors = Partial<Record<InterfaceFieldName, string>>;
 
@@ -78,6 +79,11 @@ export function validateInterface(
     return validateWan(draft);
   }
   return {};
+}
+
+/** Whether a value is a country code: two capital letters of ISO 3166-1. */
+export function isCountryCode(value: string): boolean {
+  return /^[A-Z]{2}$/.test(value);
 }
 
 /** Whether a validation result allows the form to be submitted. */
@@ -184,6 +190,13 @@ function validateLan(
         min: AP_PASSPHRASE_MIN_LENGTH,
         max: AP_PASSPHRASE_MAX_LENGTH,
       });
+    }
+    const countryCode = draft.wifi.ap_country_code;
+    if (
+      (countryCode.length > 0 && !isCountryCode(countryCode)) ||
+      (draft.wifi.ap_band === "a" && countryCode.length === 0)
+    ) {
+      errors.ap_country_code = t("ui.network.error_country_code");
     }
   }
 

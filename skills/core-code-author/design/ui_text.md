@@ -261,6 +261,7 @@ A UDP port record is in neither number of the page's badge, `{healthy} of
 | --- | --- | --- |
 | `ui.network.unsaved_interface` | New, not in use until turned on and applied | 新网口，打开并应用后才使用 |
 | `ui.network.field_country_code` | Country code | 国家代码 |
+| `ui.network.error_country_code` | Two letters, such as DE. 5 GHz needs one. | 两个字母，例如 CN。5 GHz 需要国家代码。 |
 
 ## Direct's words
 

@@ -89,8 +89,9 @@ class RouterWifiAccessPoint:
 
         Raises:
             ValueError: If the passphrase is the wrong length.
-            subprocess.CalledProcessError: If hostapd will not start, most
-                often because the card has no access-point mode.
+            subprocess.CalledProcessError: If ``iw`` refuses the interface's
+                country, or hostapd will not start, most often because the
+                card has no access-point mode.
         """
         passphrase = interface.wifi.ap_passphrase
         if not AP_PASSPHRASE_MIN_LENGTH <= len(passphrase) <= AP_PASSPHRASE_MAX_LENGTH:
@@ -99,8 +100,11 @@ class RouterWifiAccessPoint:
                 f"{AP_PASSPHRASE_MIN_LENGTH} to {AP_PASSPHRASE_MAX_LENGTH} characters"
             )
 
+        country_code = interface.wifi.ap_country_code
+        if country_code:
+            set_regulatory_domain(country_code)
         renderer = RouterHostapdRenderer(
-            interface=interface, country_code=regulatory_domain()
+            interface=interface, country_code=country_code or regulatory_domain()
         )
         is_changed = _write_if_changed(
             router_hostapd_config_path(self._interface), renderer.render()
@@ -173,6 +177,18 @@ def regulatory_domain() -> str | None:
         code = line.split()[1].strip(":")
         return code if code.isalpha() and code != "00" else None
     return None
+
+
+def set_regulatory_domain(country_code: str) -> None:
+    """Set the system's regulatory domain to one country.
+
+    Args:
+        country_code: Two capital letters of ISO 3166-1.
+
+    Raises:
+        subprocess.CalledProcessError: If ``iw`` refuses the country.
+    """
+    run(["iw", "reg", "set", country_code])
 
 
 def _write_if_changed(path, text: str) -> bool:
