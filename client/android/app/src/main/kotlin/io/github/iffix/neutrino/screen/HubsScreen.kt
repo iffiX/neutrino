@@ -28,6 +28,7 @@ import io.github.iffix.neutrino.channel.HubNotice
 import io.github.iffix.neutrino.channel.HubView
 import io.github.iffix.neutrino.design.AppIcon
 import io.github.iffix.neutrino.design.ArmedButton
+import io.github.iffix.neutrino.design.Badge
 import io.github.iffix.neutrino.design.ButtonTier
 import io.github.iffix.neutrino.design.DotTone
 import io.github.iffix.neutrino.design.ErrorLine
@@ -180,6 +181,20 @@ fun hubStateWord(hub: HubView, words: WordCatalog): String =
     words.word(hubStateKey(hub), mapOf("way" to words.word("ui.through.${hub.reachedThrough}")))
 
 /**
+ * The tags of a connected hub row with no job running: the state word with the way the socket
+ * reached the hub, then the last round trip once a pong measured it.
+ *
+ * @param hub The hub.
+ * @param words The catalog.
+ * @return The tags, empty unless the row is connected and idle.
+ */
+fun hubTags(hub: HubView, words: WordCatalog): List<String> {
+    if (!hub.isConnected || hub.jobs.isLeaving || hub.jobs.isRefreshing) return emptyList()
+    val rtt = hub.rttMs?.let { words.word("ui.state.rtt", mapOf("ms" to it)) }
+    return listOfNotNull(hubStateWord(hub, words), rtt)
+}
+
+/**
  * Whether a hub row draws its virtual network line: a hub that publishes no network has none,
  * unless a network of its is still on or stopping.
  *
@@ -309,8 +324,12 @@ private fun HubRow(
             )
         },
     ) {
-        BasicText(hub.binding.title, style = NeutrinoTheme.rowTitle)
-        BasicText(hubStateWord(hub, words), style = NeutrinoTheme.note)
+        val tags = hubTags(hub, words)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            BasicText(hub.binding.title, style = NeutrinoTheme.rowTitle)
+            tags.forEach { Badge(it) }
+        }
+        if (tags.isEmpty()) BasicText(hubStateWord(hub, words), style = NeutrinoTheme.note)
         val software = if (hub.software.isEmpty()) {
             ""
         } else {

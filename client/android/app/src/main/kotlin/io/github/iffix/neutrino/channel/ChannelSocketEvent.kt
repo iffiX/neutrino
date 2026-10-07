@@ -20,6 +20,13 @@ sealed interface ChannelSocketEvent {
     class Binary(val bytes: ByteArray) : ChannelSocketEvent
 
     /**
+     * The pong of this side's last ping arrived.
+     *
+     * @property rttMillis The time from the ping to its pong, in milliseconds.
+     */
+    data class Pong(val rttMillis: Long) : ChannelSocketEvent
+
+    /**
      * The hub closed the socket.
      *
      * @property code The close code.

@@ -19,6 +19,13 @@ interface ChannelSocket {
     fun sendBytes(bytes: ByteArray): Boolean
 
     /**
+     * Send one WebSocket ping; its pong arrives as [ChannelSocketEvent.Pong] with the round trip.
+     *
+     * @return False when the socket is gone or cannot ping.
+     */
+    fun ping(): Boolean
+
+    /**
      * Close the socket from this side.
      *
      * @param code The close code.

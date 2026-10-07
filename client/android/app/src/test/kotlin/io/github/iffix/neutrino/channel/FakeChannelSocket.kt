@@ -16,6 +16,10 @@ class FakeChannelSocket(private var isOpen: Boolean = true) : ChannelSocket {
     /** The close code, once closed from this side. */
     var closedWith: Int? = null
 
+    /** How many pings were sent. */
+    var pings = 0
+        private set
+
     /**
      * The text frames of one type.
      *
@@ -33,6 +37,11 @@ class FakeChannelSocket(private var isOpen: Boolean = true) : ChannelSocket {
 
     override fun sendBytes(bytes: ByteArray): Boolean = synchronized(this) {
         if (isOpen) binaries += bytes
+        isOpen
+    }
+
+    override fun ping(): Boolean = synchronized(this) {
+        if (isOpen) pings += 1
         isOpen
     }
 

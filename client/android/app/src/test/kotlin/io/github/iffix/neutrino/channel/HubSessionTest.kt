@@ -1,5 +1,8 @@
 package io.github.iffix.neutrino.channel
 
+import io.github.iffix.neutrino.CLIENT_CONNECT_TIMEOUT_S
+import io.github.iffix.neutrino.CLIENT_PING_INTERVAL_S
+import io.github.iffix.neutrino.CLIENT_WS_CLOSE_NORMAL
 import io.github.iffix.neutrino.GoldenSchema
 import io.github.iffix.neutrino.binding.BindingStore
 import io.github.iffix.neutrino.binding.FakeSecretSealer
@@ -14,6 +17,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
@@ -69,7 +73,7 @@ class HubSessionTest {
         val transport = FakeHubTransport { FakeHubTransport.welcoming }
         val (session, store) = session(transport)
         served(session)
-        val socket = transport.dialled.single().second
+        val socket = transport.greeted().second
         assertEquals(listOf("hello", "report"), socket.texts.map { it["type"]!!.jsonPrimitive.content })
         assertEquals("secret-token", socket.texts[0]["token"]!!.jsonPrimitive.content)
         assertEquals(HubConnection.CONNECTED, session.view.value.connection)
@@ -82,7 +86,7 @@ class HubSessionTest {
         val transport = FakeHubTransport { FakeHubTransport.welcoming }
         val (session, store) = session(transport)
         served(session)
-        val (_, socket, events) = transport.dialled.single()
+        val (_, socket, events) = transport.greeted()
         events.trySend(
             ChannelSocketEvent.Text(
                 """{"type":"state","hash":"h9","urls":["https://10.0.0.1:8443"],
@@ -102,7 +106,7 @@ class HubSessionTest {
         val transport = FakeHubTransport { FakeHubTransport.welcoming }
         val (session, _) = session(transport)
         served(session)
-        val socket = transport.dialled.single().second
+        val socket = transport.greeted().second
         advanceTimeBy(30_001)
         assertEquals(2, socket.sent("report").size)
     }
@@ -116,7 +120,7 @@ class HubSessionTest {
     }
 
     @Test
-    fun aRoundTriesEveryAddressInOrder() = runTest {
+    fun aRoundDialsEveryAddressAtOnce() = runTest {
         val transport = FakeHubTransport { FakeHubTransport.silent }
         val (session, _) = session(transport, nameAddress = "10.9.9.9")
         session.runOnce()
@@ -124,6 +128,61 @@ class HubSessionTest {
             listOf("https://10.9.9.9:8443", "https://192.168.100.1:8443", "https://100.72.4.1:8443"),
             transport.dialled.map { it.first },
         )
+        assertEquals(0L, currentTime)
+    }
+
+    @Test
+    fun aRoundWhoseFirstAddressHangsConnectsThroughTheThirdWithinOneConnectTime() = runTest {
+        val transport = FakeHubTransport { url ->
+            when {
+                url.contains("10.9.9.9") -> FakeHubTransport.hanging
+                url.contains("192.168.100.1") -> FakeHubTransport.silent
+                else -> FakeHubTransport.welcoming
+            }
+        }
+        val (session, _) = session(transport, nameAddress = "10.9.9.9")
+        served(session)
+        assertEquals(HubConnection.CONNECTED, session.view.value.connection)
+        assertEquals("https://100.72.4.1:8443", session.view.value.connectedAddress)
+        assertTrue(currentTime < CLIENT_CONNECT_TIMEOUT_S * 1000)
+        assertEquals(CLIENT_WS_CLOSE_NORMAL, transport.dialled.first().second.closedWith)
+    }
+
+    @Test
+    fun aRoundSendsOneHelloAndClosesTheOtherSocketsBeforeAny() = runTest {
+        val transport = FakeHubTransport { FakeHubTransport.welcoming }
+        val (session, _) = session(transport, nameAddress = "10.9.9.9")
+        served(session)
+        assertEquals(3, transport.dialled.size)
+        assertEquals(1, transport.dialled.sumOf { it.second.sent("hello").size })
+        val (winner, losers) = transport.dialled.partition { it.second.sent("hello").isNotEmpty() }
+        assertEquals(null, winner.single().second.closedWith)
+        assertEquals(winner.single().first, session.view.value.connectedAddress)
+        for ((_, socket, _) in losers) {
+            assertEquals(CLIENT_WS_CLOSE_NORMAL, socket.closedWith)
+            assertEquals(emptyList<Any>(), socket.texts)
+        }
+    }
+
+    @Test
+    fun theOpenSocketPingsAndEachPongSetsTheRoundTrip() = runTest {
+        val transport = FakeHubTransport { FakeHubTransport.welcoming }
+        val (session, _) = session(transport)
+        val round = served(session)
+        val (_, socket, events) = transport.greeted()
+        assertEquals(1, socket.pings)
+        assertEquals(null, session.view.value.rttMs)
+        events.trySend(ChannelSocketEvent.Pong(12))
+        runCurrent()
+        assertEquals(12L, session.view.value.rttMs)
+        advanceTimeBy(CLIENT_PING_INTERVAL_S * 1000 + 1)
+        assertEquals(2, socket.pings)
+        events.trySend(ChannelSocketEvent.Pong(7))
+        runCurrent()
+        assertEquals(7L, session.view.value.rttMs)
+        events.trySend(ChannelSocketEvent.Closed(1006, ""))
+        round.await()
+        assertEquals(null, session.view.value.rttMs)
     }
 
     @Test
@@ -139,11 +198,16 @@ class HubSessionTest {
         assertEquals("https://100.72.4.1:8443", session.view.value.connectedAddress)
         assertEquals("https://100.72.4.1:8443", store.get("b1")?.gatewayUrl)
         isNearUp = true
-        transport.dialled.last().third.trySend(ChannelSocketEvent.Closed(1006, ""))
+        transport.greeted().third.trySend(ChannelSocketEvent.Closed(1006, ""))
         round.await()
         served(session)
         assertEquals(
-            listOf("https://192.168.100.1:8443", "https://100.72.4.1:8443", "https://192.168.100.1:8443"),
+            listOf(
+                "https://192.168.100.1:8443",
+                "https://100.72.4.1:8443",
+                "https://192.168.100.1:8443",
+                "https://100.72.4.1:8443",
+            ),
             transport.dialled.map { it.first },
         )
         assertEquals("https://192.168.100.1:8443", session.view.value.connectedAddress)
@@ -192,14 +256,14 @@ class HubSessionTest {
         val transport = FakeHubTransport { FakeHubTransport.welcoming }
         val (session, _) = session(transport)
         val round = served(session)
-        transport.dialled.single().third.trySend(ChannelSocketEvent.Closed(4010, "replaced"))
+        transport.greeted().third.trySend(ChannelSocketEvent.Closed(4010, "replaced"))
         assertEquals(2L, round.await())
         assertEquals(HubConnection.REPLACED, session.view.value.connection)
         assertEquals(2L, session.runOnce())
-        assertEquals(1, transport.dialled.size)
+        val dialledOnce = transport.dialled.size
         session.reconnect()
         served(session)
-        assertEquals(2, transport.dialled.size)
+        assertEquals(2 * dialledOnce, transport.dialled.size)
     }
 
     @Test
@@ -207,7 +271,7 @@ class HubSessionTest {
         val transport = FakeHubTransport { FakeHubTransport.welcoming }
         val (session, _) = session(transport)
         val round = served(session)
-        transport.dialled.single().third.trySend(
+        transport.greeted().third.trySend(
             ChannelSocketEvent.Text("""{"type":"refused","code":"role_mismatch"}"""),
         )
         assertEquals(60L, round.await())
@@ -219,7 +283,7 @@ class HubSessionTest {
         val transport = FakeHubTransport { FakeHubTransport.welcoming }
         val (session, _) = session(transport)
         served(session)
-        transport.dialled.single().third.trySend(
+        transport.greeted().third.trySend(
             ChannelSocketEvent.Text(
                 """{"type":"state","hash":"h","is_disabled":true,"services":[{"id":"s","type":"web","title":"t","payload":{},"source":"module"}]}""",
             ),
@@ -227,7 +291,7 @@ class HubSessionTest {
         runCurrent()
         assertEquals(emptyList<ChannelServiceEntry>(), session.view.value.servicesOf("web"))
         assertEquals(HubConnection.DISABLED, session.view.value.connection)
-        transport.dialled.single().third.trySend(
+        transport.greeted().third.trySend(
             ChannelSocketEvent.Text("""{"type":"state","hash":"h2","is_disabled":false}"""),
         )
         runCurrent()
@@ -239,7 +303,7 @@ class HubSessionTest {
         val transport = FakeHubTransport { FakeHubTransport.welcoming }
         val (session, _) = session(transport)
         served(session)
-        val (_, socket, events) = transport.dialled.single()
+        val (_, socket, events) = transport.greeted()
         val material = backgroundScope.async { session.openService("ai-1") }
         runCurrent()
         val open = socket.sent("open").single()
@@ -254,7 +318,7 @@ class HubSessionTest {
         val transport = FakeHubTransport { FakeHubTransport.welcoming }
         val (session, _) = session(transport)
         served(session)
-        val (_, socket, events) = transport.dialled.single()
+        val (_, socket, events) = transport.greeted()
         val material = backgroundScope.async { session.openService(ChannelFrames.args("is_panel" to true)) }
         runCurrent()
         val open = socket.sent("open").single()
@@ -281,7 +345,7 @@ class HubSessionTest {
         val (session, _) = session(transport)
         val round = served(session)
         assertEquals(true, session.view.value.hasConnected)
-        transport.dialled.single().third.trySend(ChannelSocketEvent.Closed(1006, ""))
+        transport.greeted().third.trySend(ChannelSocketEvent.Closed(1006, ""))
         assertEquals(5L, round.await())
         assertEquals(HubConnection.CONNECTING, session.view.value.connection)
         assertEquals(null, session.view.value.lastError)
@@ -293,7 +357,7 @@ class HubSessionTest {
         val (session, _) = session(transport)
         session.start(backgroundScope)
         runCurrent()
-        val (_, socket, events) = transport.dialled.single()
+        val (_, socket, events) = transport.greeted()
         assertEquals(true, session.refresh())
         assertEquals(true, session.view.value.jobs.isRefreshing)
         assertEquals(true, socket.sent("report").last()["is_refresh"]!!.jsonPrimitive.boolean)
@@ -328,8 +392,6 @@ class HubSessionTest {
         assertEquals(null, session.view.value.lastError)
         runCurrent()
         assertTrue(transport.dialled.size > before)
-        assertEquals(true, session.view.value.jobs.isRefreshing)
-        advanceTimeBy(1_100)
         assertEquals(false, session.view.value.jobs.isRefreshing)
         assertEquals("hub_unreachable", session.view.value.lastError?.code)
         val after = transport.dialled.size
@@ -342,12 +404,12 @@ class HubSessionTest {
         val transport = FakeHubTransport { FakeHubTransport.welcoming }
         val (session, _) = session(transport)
         val round = served(session)
-        transport.dialled.single().third.trySend(
+        transport.greeted().third.trySend(
             ChannelSocketEvent.Text("""{"type":"state","hash":"h","is_disabled":true}"""),
         )
         runCurrent()
         assertEquals(false, session.refresh())
-        transport.dialled.single().third.trySend(ChannelSocketEvent.Closed(4010, "replaced"))
+        transport.greeted().third.trySend(ChannelSocketEvent.Closed(4010, "replaced"))
         round.await()
         assertEquals(HubConnection.REPLACED, session.view.value.connection)
         assertEquals(false, session.refresh())
@@ -363,7 +425,7 @@ class HubSessionTest {
         val before = transport.dialled.size
         session.resume()
         runCurrent()
-        assertEquals(before + 1, transport.dialled.size)
+        assertEquals(before + Samples.binding.storedUrls.size, transport.dialled.size)
         advanceTimeBy(1_100)
         val afterRound = transport.dialled.size
         advanceTimeBy(5_000)
@@ -376,9 +438,10 @@ class HubSessionTest {
         val (session, _) = session(transport)
         session.start(backgroundScope)
         runCurrent()
+        val dialledOnce = transport.dialled.size
         session.resume()
         runCurrent()
-        assertEquals(1, transport.dialled.size)
+        assertEquals(dialledOnce, transport.dialled.size)
         assertEquals(HubConnection.CONNECTED, session.view.value.connection)
     }
 
@@ -390,7 +453,7 @@ class HubSessionTest {
         val session = HubSession("b1", store, transport, Samples.machine, { null }, { _, _ -> }, clock = { 42_000L })
         val round = served(session)
         assertEquals(0L, session.view.value.droppedAtMillis)
-        transport.dialled.single().third.trySend(ChannelSocketEvent.Closed(1006, ""))
+        transport.greeted().third.trySend(ChannelSocketEvent.Closed(1006, ""))
         round.await()
         assertEquals(42_000L, session.view.value.droppedAtMillis)
     }
@@ -415,10 +478,11 @@ class HubSessionTest {
         val (session, _) = session(transport)
         session.start(backgroundScope)
         advanceTimeBy(3_000)
-        assertEquals(listOf("https://192.168.100.1:8443"), transport.dialled.map { it.first })
+        val round = Samples.binding.storedUrls
+        assertEquals(round, transport.dialled.map { it.first })
         session.preferAddress(over, isOnly = true)
         advanceTimeBy(1_000)
-        assertEquals(listOf("https://192.168.100.1:8443", over), transport.dialled.map { it.first })
+        assertEquals(round + over, transport.dialled.map { it.first })
         assertEquals(HubConnection.CONNECTED, session.view.value.connection)
         assertEquals(over, session.view.value.connectedAddress)
     }
@@ -433,20 +497,18 @@ class HubSessionTest {
     }
 
     @Test
-    fun aPendingBindingSpendsItsTicketAtTheFirstAddressThatAnswersThenSaysHelloThere() = runTest {
-        val transport = FakeHubTransport { FakeHubTransport.welcoming }
+    fun aPendingBindingSpendsItsTicketAtTheRoundsSocketThenSaysHelloThere() = runTest {
+        val transport = FakeHubTransport { url ->
+            if (url.contains("192.168.100.1")) FakeHubTransport.hanging else FakeHubTransport.welcoming
+        }
         transport.answers["https://100.72.4.1:8443" to "/api/channel/join"] = spent()
         val (session, store) = session(transport, binding = pending)
         assertEquals(HubConnection.PENDING, session.view.value.connection)
         served(session)
-        advanceTimeBy(1_500)
-        assertEquals(
-            listOf("https://192.168.100.1:8443", "https://100.72.4.1:8443"),
-            transport.posts.map { it.first },
-        )
+        assertEquals(listOf("https://100.72.4.1:8443"), transport.posts.map { it.first })
         assertEquals(emptyList<String>(), GoldenSchema.problems(transport.posts.last().third, "ChannelJoinRequest"))
         assertEquals("ticket-1", transport.posts.last().third["ticket"]!!.jsonPrimitive.content)
-        val (address, socket, _) = transport.dialled.single()
+        val (address, socket, _) = transport.greeted()
         assertEquals("https://100.72.4.1:8443", address)
         assertEquals("c9", socket.sent("hello").single()["id"]!!.jsonPrimitive.content)
         assertEquals("t9", socket.sent("hello").single()["token"]!!.jsonPrimitive.content)
@@ -468,13 +530,13 @@ class HubSessionTest {
     }
 
     @Test
-    fun aPendingBindingStaysPendingWhileNoAddressAnswersAndDialsNothing() = runTest {
-        val transport = FakeHubTransport { FakeHubTransport.welcoming }
+    fun aPendingBindingStaysPendingWhileNoAddressAnswersAndSpendsNothing() = runTest {
+        val transport = FakeHubTransport { FakeHubTransport.silent }
         val (session, store) = session(transport, binding = pending)
         assertEquals(5L, session.runOnce())
         assertEquals(HubConnection.PENDING, session.view.value.connection)
         assertEquals("hub_unreachable", session.view.value.lastError?.code)
-        assertEquals(emptyList<Any>(), transport.dialled)
+        assertEquals(emptyList<Any>(), transport.posts)
         assertEquals(pending, store.get("b1"))
     }
 
@@ -501,7 +563,7 @@ class HubSessionTest {
         val (session, _) = session(transport)
         served(session)
         assertEquals("", session.view.value.reachedThrough)
-        val (_, _, events) = transport.dialled.single()
+        val (_, _, events) = transport.greeted()
         events.trySend(
             ChannelSocketEvent.Text(
                 """{"type":"state","hash":"h2","is_panel_allowed":true,"reached_through":"relay"}""",
@@ -517,7 +579,7 @@ class HubSessionTest {
         val transport = FakeHubTransport { FakeHubTransport.welcoming }
         val (session, _) = session(transport)
         served(session)
-        val (_, socket, _) = transport.dialled.single()
+        val (_, socket, _) = transport.greeted()
         val stream = (session.openConnect(ChannelFrames.args("is_panel" to true)) as ChannelResult.Ok).value
         val open = socket.sent("open").single()
         assertEquals("connect", open["kind"]!!.jsonPrimitive.content)
@@ -530,7 +592,7 @@ class HubSessionTest {
         val transport = FakeHubTransport { FakeHubTransport.welcoming }
         val (session, _) = session(transport)
         served(session)
-        val (_, socket, events) = transport.dialled.single()
+        val (_, socket, events) = transport.greeted()
         val refusals = LinkedBlockingQueue<String>()
         var now = 0L
         val relay = PortForwardUdpRelay(
@@ -600,7 +662,7 @@ class HubSessionTest {
         assertEquals(2L, session.runOnce())
         assertEquals(false, session.refresh())
         assertEquals(1, transport.posts.size)
-        assertEquals(emptyList<Any>(), transport.dialled)
+        assertTrue(transport.dialled.all { it.second.closedWith != null && it.second.texts.isEmpty() })
         assertEquals(pending, store.get("b1"))
     }
 }

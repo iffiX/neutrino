@@ -8,11 +8,11 @@ import io.github.iffix.neutrino.CLIENT_HTTPS_DEFAULT_PORT
 import io.github.iffix.neutrino.CLIENT_HUB_ROLE
 import io.github.iffix.neutrino.CLIENT_IDLE_POLL_INTERVAL_S
 import io.github.iffix.neutrino.CLIENT_JOIN_PATH
+import io.github.iffix.neutrino.CLIENT_PING_INTERVAL_S
 import io.github.iffix.neutrino.CLIENT_REFRESH_TIMEOUT_S
 import io.github.iffix.neutrino.CLIENT_REFUSAL_CODE_ADMISSION_PAUSED
 import io.github.iffix.neutrino.CLIENT_REFUSAL_CODE_BINDING_UNKNOWN
 import io.github.iffix.neutrino.CLIENT_REPORT_INTERVAL_S
-import io.github.iffix.neutrino.CLIENT_ROTATE_DELAY_S
 import io.github.iffix.neutrino.CLIENT_STREAM_KIND_CONNECT
 import io.github.iffix.neutrino.CLIENT_STREAM_KIND_SERVICE
 import io.github.iffix.neutrino.CLIENT_STREAM_TIMEOUT_S
@@ -45,13 +45,16 @@ import kotlinx.serialization.json.longOrNull
  * The one socket to one hub: a connection round over the hub's addresses, the handshake, the
  * state taken and the reports sent, and the rounds again with the desktop client's backoff.
  *
- * A round tries the address the virtual network prefers, the address the hub's name resolves
- * to, the one that last answered, then the rest. A broken wire waits 5 s, doubled up to 60 s; a
- * refusal the binding survives waits 60 s; `binding_unknown` ends the binding; a socket another
- * replaced waits for [reconnect].
+ * A round dials at once the hub's address on the virtual network that is up, the address the
+ * hub's name resolves to, and the binding's addresses, each with its own connect time. The first
+ * socket to open on the pinned certificate is the round's: the others are closed before any
+ * hello, and the one hello of the round goes there. A broken wire waits 5 s, doubled up to 60 s;
+ * a refusal the binding survives waits 60 s; `binding_unknown` ends the binding; a socket another
+ * replaced waits for [reconnect]. The open socket pings every 20 s, and each pong's round trip is
+ * the view's `rttMs`.
  *
- * A binding whose ticket is unspent is `pending`: the first address that answers with the pinned
- * certificate takes the ticket, and the hello follows there with the token it returned. A
+ * A binding whose ticket is unspent is `pending`: the round's socket's address takes the ticket,
+ * and the hello follows on that socket with the token it returned. A
  * short link's binding first fetches the long link's object at that address and keeps its
  * addresses and overlays. A refusal of the ticket is `down` with its code, and no round runs
  * after it, except `admission_paused`: the ticket is kept, the binding stays `pending` with the
@@ -95,7 +98,7 @@ class HubSession(
     private var isPreferredOnly = false
 
     @Volatile
-    private var dialling: Channel<ChannelSocketEvent>? = null
+    private var dialling: Channel<Dialled>? = null
 
     @Volatile
     private var isRoundCut = false
@@ -154,9 +157,9 @@ class HubSession(
     }
 
     /**
-     * Try one address first in every round, or only that address: the hub's address on a virtual
+     * Dial one more address in every round, or only that address: the hub's address on a virtual
      * network this phone is on. A socket open on another address is closed so a round runs
-     * through the preferred one now.
+     * with it now.
      *
      * @param url The address, or empty to prefer none; a hub kept to one address with no open
      *   socket then runs a round now.
@@ -182,7 +185,7 @@ class HubSession(
         }
         if (isPreferredOnly) {
             isRoundCut = true
-            dialling?.trySend(ChannelSocketEvent.Failed(unreachable("the round gave way to $url")))
+            dialling?.trySend(Dialled(null, ChannelSocketEvent.Failed(unreachable("the round gave way to $url"))))
         }
         news.trySend(Unit)
     }
@@ -279,61 +282,103 @@ class HubSession(
         val firstUrl = binding.storedUrls.firstOrNull().orEmpty()
         val nameUrl = if (only != null) "" else resolveHubName()?.let { nameUrlOf(firstUrl, it) }.orEmpty()
         val urls = if (only != null) listOf(only) else binding.candidateUrls(nameUrl, preferredUrl)
+        val round = dialAll(urls, binding.fingerprint)
+        if (isRoundCut) {
+            round.sockets.forEach { it.socket.close(CLIENT_WS_CLOSE_NORMAL, "") }
+            return cutRound()
+        }
         var untrusted: ChannelResult.Refused? = null
         var failure: ChannelResult.Refused? = null
-        for ((index, url) in urls.withIndex()) {
-            if (index > 0) delay(CLIENT_ROTATE_DELAY_S * 1000)
-            if (isRoundCut) return cutRound()
-            if (binding.isPending) {
-                when (val spent = spend(binding, url)) {
-                    is ChannelResult.Ok -> binding = spent.value
-
-                    is ChannelResult.Refused -> when (spent.code) {
-                        "hub_unreachable" -> {
-                            failure = spent
-                            continue
-                        }
-
-                        "hub_untrusted" -> {
-                            if (url != nameUrl || url in binding.storedUrls) untrusted = spent
-                            continue
-                        }
-
-                        CLIENT_REFUSAL_CODE_ADMISSION_PAUSED -> return onAdmissionPaused(spent)
-
-                        else -> return onJoinRefused(spent)
-                    }
-                }
+        for ((url, refusal) in round.refusals) {
+            if (refusal.code != "hub_untrusted") {
+                failure = refusal
+            } else if (url != nameUrl || url in binding.storedUrls) {
+                untrusted = refusal
             }
-            val events = Channel<ChannelSocketEvent>(Channel.UNLIMITED)
-            dialling = events
-            val socket = transport.connect(url, binding.fingerprint, events)
-            val outcome = handshake(binding, socket, events)
-            dialling = null
-            if (isRoundCut && outcome !is Handshake.Welcomed) {
-                socket.close(CLIENT_WS_CLOSE_NORMAL, "")
-                return cutRound()
-            }
-            when (outcome) {
-                is Handshake.Welcomed -> return afterServing(serve(url, socket, events, outcome.welcome))
+        }
+        val winner = round.winner
+        round.sockets.filter { it !== winner }.forEach { it.socket.close(CLIENT_WS_CLOSE_NORMAL, "") }
+        if (winner == null) {
+            untrusted?.let { return onRejected(it) }
+            return onUnreachable(failure ?: unreachable("no address"))
+        }
+        if (binding.isPending) {
+            when (val spent = spend(binding, winner.url)) {
+                is ChannelResult.Ok -> binding = spent.value
 
-                is Handshake.Rejected -> {
-                    socket.close(CLIENT_WS_CLOSE_NORMAL, "")
-                    return onRejected(outcome.refusal)
-                }
-
-                is Handshake.Failed -> {
-                    socket.close(CLIENT_WS_CLOSE_NORMAL, "")
-                    if (outcome.refusal.code != "hub_untrusted") {
-                        failure = outcome.refusal
-                    } else if (url != nameUrl || url in binding.storedUrls) {
-                        untrusted = outcome.refusal
+                is ChannelResult.Refused -> {
+                    winner.socket.close(CLIENT_WS_CLOSE_NORMAL, "")
+                    return when (spent.code) {
+                        "hub_unreachable" -> onUnreachable(spent)
+                        "hub_untrusted" -> onRejected(spent)
+                        CLIENT_REFUSAL_CODE_ADMISSION_PAUSED -> onAdmissionPaused(spent)
+                        else -> onJoinRefused(spent)
                     }
                 }
             }
         }
-        untrusted?.let { return onRejected(it) }
-        return onUnreachable(failure ?: ChannelResult.refused("hub_unreachable", "detail" to "no address"))
+        val outcome = handshake(binding, winner.socket, winner.events)
+        if (isRoundCut && outcome !is Handshake.Welcomed) {
+            winner.socket.close(CLIENT_WS_CLOSE_NORMAL, "")
+            return cutRound()
+        }
+        return when (outcome) {
+            is Handshake.Welcomed -> afterServing(serve(winner.url, winner.socket, winner.events, outcome.welcome))
+
+            is Handshake.Rejected -> {
+                winner.socket.close(CLIENT_WS_CLOSE_NORMAL, "")
+                onRejected(outcome.refusal)
+            }
+
+            is Handshake.Failed -> {
+                winner.socket.close(CLIENT_WS_CLOSE_NORMAL, "")
+                onUnreachable(outcome.refusal)
+            }
+        }
+    }
+
+    /**
+     * Dial every address at once, each with its own connect time. The first socket that opens on
+     * the pinned certificate is the round's, and the others are no longer waited on.
+     *
+     * @param urls The round's addresses.
+     * @param fingerprint The pinned SHA-256.
+     * @return Every socket dialled, the round's socket or null, and the refusal of each that failed.
+     */
+    private suspend fun dialAll(urls: List<String>, fingerprint: String): Round {
+        val opens = Channel<Dialled>(Channel.UNLIMITED)
+        dialling = opens
+        val sockets = urls.map { url ->
+            val events = Channel<ChannelSocketEvent>(Channel.UNLIMITED)
+            DialledSocket(url, transport.connect(url, fingerprint, events), events)
+        }
+        val refusals = mutableListOf<Pair<String, ChannelResult.Refused>>()
+        var winner: DialledSocket? = null
+        coroutineScope {
+            val watchers = sockets.map { dialled ->
+                launch {
+                    val first = withTimeoutOrNull(CLIENT_CONNECT_TIMEOUT_S * 1000) { dialled.events.receive() }
+                        ?: ChannelSocketEvent.Failed(
+                            unreachable("the address did not open in ${CLIENT_CONNECT_TIMEOUT_S}s"),
+                        )
+                    opens.send(Dialled(dialled, first))
+                }
+            }
+            var waiting = sockets.size
+            while (winner == null && waiting > 0) {
+                val dial = opens.receive()
+                val dialled = dial.socket ?: break
+                waiting -= 1
+                when (val event = dial.event) {
+                    is ChannelSocketEvent.Opened -> winner = dialled
+                    is ChannelSocketEvent.Failed -> refusals += dialled.url to event.refusal
+                    else -> refusals += dialled.url to unreachable("the socket did not open")
+                }
+            }
+            watchers.forEach { it.cancel() }
+        }
+        dialling = null
+        return Round(sockets, winner, refusals)
     }
 
     private suspend fun spend(binding: HubBinding, url: String): ChannelResult<HubBinding> {
@@ -382,11 +427,6 @@ class HubSession(
         socket: ChannelSocket,
         events: Channel<ChannelSocketEvent>,
     ): Handshake = withTimeoutOrNull(CLIENT_CONNECT_TIMEOUT_S * 1000) {
-        when (val first = events.receive()) {
-            is ChannelSocketEvent.Opened -> Unit
-            is ChannelSocketEvent.Failed -> return@withTimeoutOrNull Handshake.Failed(first.refusal)
-            else -> return@withTimeoutOrNull Handshake.Failed(unreachable("the socket did not open"))
-        }
         socket.sendText(ChannelFrames.hello(binding, machine).toString())
         val answer = when (val event = events.receive()) {
             is ChannelSocketEvent.Text -> try {
@@ -446,10 +486,17 @@ class HubSession(
                     report(socket)
                 }
             }
+            val pinger = launch {
+                while (isActive) {
+                    socket.ping()
+                    delay(CLIENT_PING_INTERVAL_S * 1000)
+                }
+            }
             try {
                 failure = readUntilEnd(socket, events, streams)
             } finally {
                 reporter.cancel()
+                pinger.cancel()
             }
         }
         return failure
@@ -486,6 +533,8 @@ class HubSession(
 
                     is ChannelSocketEvent.Failed -> break
 
+                    is ChannelSocketEvent.Pong -> current.update { it.copy(rttMs = event.rttMillis) }
+
                     is ChannelSocketEvent.Opened -> Unit
                 }
                 if (failure != null) break
@@ -495,7 +544,12 @@ class HubSession(
             streams.endAll()
             socket.close(CLIENT_WS_CLOSE_NORMAL, "")
             current.update {
-                it.copy(connection = HubConnection.CONNECTING, connectedAddress = "", droppedAtMillis = clock())
+                it.copy(
+                    connection = HubConnection.CONNECTING,
+                    connectedAddress = "",
+                    droppedAtMillis = clock(),
+                    rttMs = null,
+                )
             }
         }
         return failure
@@ -612,6 +666,17 @@ class HubSession(
     }
 
     private class LiveSocket(val socket: ChannelSocket, val streams: ChannelStreamRegistry)
+
+    private class DialledSocket(val url: String, val socket: ChannelSocket, val events: Channel<ChannelSocketEvent>)
+
+    /** A dialled socket's first event; a null socket cuts the round. */
+    private class Dialled(val socket: DialledSocket?, val event: ChannelSocketEvent)
+
+    private class Round(
+        val sockets: List<DialledSocket>,
+        val winner: DialledSocket?,
+        val refusals: List<Pair<String, ChannelResult.Refused>>,
+    )
 
     private sealed interface Handshake {
         data class Welcomed(val welcome: ChannelInbound.Welcome) : Handshake
