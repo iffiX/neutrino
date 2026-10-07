@@ -160,17 +160,14 @@ const val CLIENT_REPORT_INTERVAL_S = 30L
 /** How long the open socket may stay silent before it counts as dead. */
 const val CLIENT_WS_SILENCE_TIMEOUT_S = 45L
 
-/** How often the open socket sends a WebSocket ping, so a socket the network dropped closes. */
-const val CLIENT_WS_PING_INTERVAL_S = 20L
+/** How often the open socket sends its own WebSocket ping, whose pong measures the round trip. */
+const val CLIENT_PING_INTERVAL_S = 20L
 
 /** The first wait after a broken wire, doubled on each failure. */
 const val CLIENT_BACKOFF_MIN_S = 5L
 
 /** The longest wait between two rounds, and the wait after a refusal the binding survives. */
 const val CLIENT_BACKOFF_MAX_S = 60L
-
-/** The pause between an address that did not answer and the next of the round. */
-const val CLIENT_ROTATE_DELAY_S = 1L
 
 /** How long a refresh waits for a hub's state frame or a code before it ends. */
 const val CLIENT_REFRESH_TIMEOUT_S = 10L

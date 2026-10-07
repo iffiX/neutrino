@@ -54,6 +54,23 @@ class HubsScreenTest {
     }
 
     @Test
+    fun aConnectedRowCarriesTheWayInAndTheRoundTripAsTwoTags() {
+        val words = WordCatalog(
+            mapOf(
+                "ui.state.connected_through" to "Connected · {way}",
+                "ui.through.lan" to "LAN",
+                "ui.state.rtt" to "{ms} ms",
+            ),
+        )
+        val row = HubView(Samples.binding, HubConnection.CONNECTED, reachedThrough = "lan")
+        assertEquals(listOf("Connected · LAN"), hubTags(row, words))
+        assertEquals(listOf("Connected · LAN", "12 ms"), hubTags(row.copy(rttMs = 12), words))
+        assertEquals(listOf("Connected · LAN", "7 ms"), hubTags(row.copy(rttMs = 7), words))
+        assertEquals(emptyList<String>(), hubTags(row.copy(connection = HubConnection.CONNECTING, rttMs = 7), words))
+        assertEquals(emptyList<String>(), hubTags(row.copy(jobs = HubJobs(isRefreshing = true), rttMs = 7), words))
+    }
+
+    @Test
     fun aDirectWayInIsNamedAndAnUnknownWayReadsAsConnected() {
         val words = WordCatalog(
             mapOf(

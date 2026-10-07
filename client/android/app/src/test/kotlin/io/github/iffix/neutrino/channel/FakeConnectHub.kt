@@ -103,5 +103,7 @@ class FakeConnectHub(private val refusal: ChannelResult.Refused? = null, private
         return true
     }
 
+    override fun ping(): Boolean = true
+
     override fun close(code: Int, reason: String) = registry.endAll()
 }

@@ -28,6 +28,14 @@ class FakeHubTransport(private val onConnect: (String) -> List<ChannelSocketEven
         return answers[baseUrl to path] ?: ChannelResult.refused("hub_unreachable", "detail" to "refused")
     }
 
+    /**
+     * The round's socket: the last one dialled that a hello was sent on.
+     *
+     * @return Its address, socket and event channel.
+     */
+    fun greeted(): Triple<String, FakeChannelSocket, SendChannel<ChannelSocketEvent>> =
+        dialled.last { it.second.sent("hello").isNotEmpty() }
+
     override fun connect(baseUrl: String, fingerprint: String, events: SendChannel<ChannelSocketEvent>): ChannelSocket {
         val socket = FakeChannelSocket()
         dialled += Triple(baseUrl, socket, events)
@@ -55,6 +63,9 @@ class FakeHubTransport(private val onConnect: (String) -> List<ChannelSocketEven
             ChannelSocketEvent.Text("""{"type":"refused","code":"$code","params":{}}"""),
             ChannelSocketEvent.Closed(4000, ""),
         )
+
+        /** The events of an address whose connect never ends: none. */
+        val hanging: List<ChannelSocketEvent> = emptyList()
 
         /** The events of an address nothing answers on. */
         val silent: List<ChannelSocketEvent> =

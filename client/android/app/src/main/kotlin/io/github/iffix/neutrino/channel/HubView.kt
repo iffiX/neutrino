@@ -21,6 +21,8 @@ import io.github.iffix.neutrino.overlay.OverlayLine
  *   until the next press on the row or a refresh.
  * @property overlay The hub's virtual network.
  * @property reachedThrough The way the socket reached the hub as its last state named it, empty before the first.
+ * @property rttMs The last round trip from this phone's ping to the hub's pong, in milliseconds; null before
+ *   the first pong and while the socket is not open.
  * @property isPanelAllowed Whether the hub's last state lets this phone open its panel.
  * @property panelForward The loopback number the panel's forward listens on, 0 while it has none.
  */
@@ -38,6 +40,7 @@ data class HubView(
     val jobError: ChannelResult.Refused? = null,
     val overlay: OverlayLine = OverlayLine(),
     val reachedThrough: String = "",
+    val rttMs: Long? = null,
     val isPanelAllowed: Boolean = false,
     val panelForward: Int = 0,
 ) {
