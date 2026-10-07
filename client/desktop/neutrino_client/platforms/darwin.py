@@ -34,11 +34,13 @@ from neutrino_client.constants import (
     CLIENT_CONTROL_SOCKET_NAME,
     CLIENT_EASYTIER_SOCKET_PATH_DARWIN,
     CLIENT_EASYTIER_STATE_DIR_DARWIN,
+    CLIENT_LOCAL_NETWORKS_TIMEOUT_S,
     CLIENT_LOG_DIR_DARWIN,
 )
 from neutrino_client.exceptions import ShareAttachError
 from neutrino_client.platforms.base import (
     ClientPlatform,
+    ifconfig_networks,
     read_share_credentials,
     run_on_pty,
     run_quietly,
@@ -419,6 +421,23 @@ class DarwinPlatform(ClientPlatform):
     def raw_terminal(self) -> PosixRawTerminal:
         """Standard input in raw mode."""
         return PosixRawTerminal()
+
+    def local_networks(self) -> list:
+        """The networks this machine holds an address in, as ``ifconfig`` names them.
+
+        Returns:
+            Each network as ``a.b.c.d/n`` or an IPv6 prefix; empty when
+            ``ifconfig`` does not answer.
+        """
+        try:
+            result = run_quietly(
+                ["/sbin/ifconfig"],
+                timeout_s=CLIENT_LOCAL_NETWORKS_TIMEOUT_S,
+                encoding="utf-8",
+            )
+        except (OSError, subprocess.SubprocessError):
+            return []
+        return ifconfig_networks(result.stdout)
 
     def easytier_daemon_address(self) -> str:
         """``/var/run/neutrino/client/easytier.sock``."""

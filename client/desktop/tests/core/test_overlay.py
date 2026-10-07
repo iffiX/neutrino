@@ -493,10 +493,8 @@ class Hubs:
         rows: ``{hub_id: [objects]}`` in join order.
         choices: ``{hub_id: (is_on, pick)}``.
         kept: Every ``(hub_id, is_on, pick)`` written onto a binding.
-        routes: Every ``(hub_id, hosts, is_only)`` the channel was pointed
-            at.
-        probes: Every ``hosts`` the hub was asked to answer through.
-        is_reached: Whether the hub's channel answers through the network.
+        routes: Every ``(hub_id, host, provider)`` a network turning on or
+            off named.
         urls: ``{hub_id: [urls]}`` the bindings hold.
     """
 
@@ -505,10 +503,7 @@ class Hubs:
         self.choices = {}
         self.kept = []
         self.routes = []
-        self.probes = []
-        self.is_reached = True
         self.urls = {}
-        self.on_reach = None
 
     def __call__(self):
         answer = []
@@ -529,14 +524,8 @@ class Hubs:
         self.kept.append((hub_id, is_on, pick))
         self.choices[hub_id] = (is_on, pick)
 
-    def route(self, hub_id, hosts, is_only):
-        self.routes.append((hub_id, list(hosts), is_only))
-
-    def reaches(self, hub_id, hosts):
-        self.probes.append(list(hosts))
-        if self.on_reach is not None:
-            self.on_reach()
-        return self.is_reached
+    def route(self, hub_id, host, provider):
+        self.routes.append((hub_id, host, provider))
 
 
 def run_inline(target) -> None:
@@ -565,20 +554,18 @@ def subject_for(
         hostname="box",
         log=log,
         on_route=hubs.route,
-        reaches_hub=hubs.reaches,
         keep_choice=hubs.keep,
         drivers=engines,
         start_thread=start_thread,
         clock=clock,
         login_timeout_s=timeout_s if login_s is None else login_s,
-        hub_probe_s=poll_s,
         poll_s=poll_s,
     )
     return subject, engines, hubs, steps
 
 
-def test_the_states_are_off_connecting_and_on_and_nothing_else():
-    assert OVERLAY_STATES == ("off", "connecting", "on")
+def test_the_states_are_off_and_on_and_nothing_else():
+    assert OVERLAY_STATES == ("off", "on")
 
 
 def test_a_hub_starts_off_on_its_first_network_with_both_listed():
@@ -595,7 +582,6 @@ def test_a_hub_starts_off_on_its_first_network_with_both_listed():
         ],
         "state": "off",
         "stage": "",
-        "stage_since": 0,
         "is_waiting": False,
         "address": "",
         "error": None,
@@ -604,7 +590,7 @@ def test_a_hub_starts_off_on_its_first_network_with_both_listed():
     assert steps == []
 
 
-def test_a_connect_ends_on_with_the_address_once_the_hub_answers_through_it():
+def test_a_connect_ends_on_with_the_address_and_names_the_hubs_address_once():
     subject, _engines, hubs, steps = subject_for({"h1": [NETBIRD, EASYTIER]})
 
     subject.connect("h1")
@@ -613,10 +599,7 @@ def test_a_connect_ends_on_with_the_address_once_the_hub_answers_through_it():
     assert (row["state"], row["address"], row["error"]) == ("on", "10.0.0.5", None)
     assert subject.job("h1") == ""
     assert steps == [("join", "netbird")]
-    assert hubs.routes == [
-        ("h1", ["hub.nb.example"], True),
-        ("h1", ["hub.nb.example"], False),
-    ]
+    assert hubs.routes == [("h1", "hub.nb.example", "netbird")]
     assert hubs.kept == [("h1", True, "netbird")]
 
 
@@ -628,8 +611,12 @@ def test_a_connect_shows_connecting_and_its_job_until_it_ends():
 
     subject.connect("h1")
 
-    assert subject.hub_row("h1")["state"] == "connecting"
-    assert subject.job("h1") == "connecting"
+    row = subject.hub_row("h1")
+    assert (row["state"], row["stage"], subject.job("h1")) == (
+        "off",
+        "login",
+        "connecting",
+    )
     held[0]()
     assert subject.hub_row("h1")["state"] == "on"
 
@@ -663,27 +650,7 @@ def test_no_address_in_time_is_off_with_its_code_and_the_engine_stopped():
     }
     assert subject.hub_row("h1")["state"] == "off"
     assert steps == [("join", "easytier"), ("leave", "easytier")]
-    assert hubs.routes == [("h1", [], False)]
-
-
-def test_the_hub_stage_has_no_limit():
-    clock = Clock()
-    subject, _engines, hubs, steps = subject_for(
-        {"h1": [EASYTIER]}, clock=clock, login_s=90, poll_s=0
-    )
-    hubs.is_reached = False
-
-    def tick():
-        clock.now += 1
-        hubs.is_reached = clock.now >= 1000 + 3600
-
-    hubs.on_reach = tick
-
-    subject.connect("h1")
-
-    assert subject.hub_row("h1")["state"] == "on"
-    assert clock.now == 1000 + 3600
-    assert steps == [("join", "easytier")]
+    assert hubs.routes == [("h1", "", "")]
 
 
 def test_a_cancel_stops_the_connect_and_goes_off_without_an_error():
@@ -702,7 +669,7 @@ def test_a_cancel_stops_the_connect_and_goes_off_without_an_error():
     assert started.wait(5)
 
     subject.cancel("h1")
-    _wait_for(lambda: subject.hub_row("h1")["state"] == "off")
+    _wait_for(lambda: subject.job("h1") == "")
     release.set()
     time.sleep(0.1)
 
@@ -721,7 +688,7 @@ def test_a_disconnect_stops_the_engine_and_goes_off():
 
     assert subject.hub_row("h1")["state"] == "off"
     assert steps == [("join", "netbird"), ("leave", "netbird")]
-    assert hubs.routes[-1] == ("h1", [], False)
+    assert hubs.routes[-1] == ("h1", "", "")
     assert hubs.kept[-1] == ("h1", False, "netbird")
 
 
@@ -887,34 +854,31 @@ def test_no_secret_reaches_a_row():
     assert "etk_token1" not in rows
 
 
-def test_a_connect_logs_in_then_waits_for_the_hub_then_is_on():
+def test_a_connect_logs_in_and_is_on_once_the_engine_has_an_address():
     lines = []
     subject, engines, hubs, _steps = subject_for(
         {"h1": [EASYTIER]}, start_thread=_thread, timeout_s=5, log=lines.append
     )
     engines["easytier"].address = ""
-    hubs.is_reached = False
 
     subject.connect("h1")
     row = subject.hub_row("h1")
-    assert (row["state"], row["stage"], row["address"]) == ("connecting", "login", "")
+    assert (row["state"], row["stage"], row["address"]) == ("off", "login", "")
+    assert subject.job("h1") == "connecting"
 
-    assert subject.hub_row("h1")["stage_since"] > 0
     engines["easytier"].address = "10.144.144.5"
-    _wait_for(lambda: subject.hub_row("h1")["stage"] == "hub")
-    row = subject.hub_row("h1")
-    assert (row["state"], row["address"]) == ("connecting", "10.144.144.5")
-    assert row["stage_since"] >= time.time() - 5
-
-    hubs.is_reached = True
     _wait_for(lambda: subject.hub_row("h1")["state"] == "on")
     row = subject.hub_row("h1")
-    assert (row["stage"], row["address"]) == ("", "10.144.144.5")
+    assert (row["stage"], row["address"], subject.job("h1")) == (
+        "",
+        "10.144.144.5",
+        "",
+    )
+    assert hubs.routes == [("h1", "10.144.144.1", "easytier")]
     ends = [line for line in lines if "ended after" in line]
-    assert len(ends) == 2
+    assert len(ends) == 1
     assert "stage login ended after" in ends[0] and "10.144.144.5" in ends[0]
-    assert "stage hub ended after" in ends[1]
-    assert len([line for line in lines if "started" in line]) == 2
+    assert not any("stage hub" in line for line in lines)
 
 
 def test_the_login_stage_has_its_own_limit():
@@ -932,33 +896,6 @@ def test_the_login_stage_has_its_own_limit():
     assert steps == [("join", "netbird"), ("leave", "netbird")]
 
 
-@pytest.mark.parametrize(
-    "how, code",
-    [("stops", "overlay_engine_stopped"), ("refuses", "overlay_daemon_down")],
-)
-def test_an_engine_that_stops_during_the_hub_stage_ends_it_with_its_code(how, code):
-    subject, engines, hubs, steps = subject_for({"h1": [EASYTIER]}, poll_s=0)
-    hubs.is_reached = False
-    engine = engines["easytier"]
-
-    def stop_after_a_while():
-        if len(hubs.probes) < 5:
-            return
-        if how == "stops":
-            engine.is_on = False
-        else:
-            engine.status_refusal = code
-
-    hubs.on_reach = stop_after_a_while
-
-    subject.connect("h1")
-
-    row = subject.hub_row("h1")
-    assert (row["state"], row["stage"], row["error"]["code"]) == ("off", "", code)
-    assert steps == [("join", "easytier")]
-    assert hubs.routes[-1] == ("h1", [], False)
-
-
 def test_a_console_that_assigns_no_network_keeps_the_connect_waiting():
     lines = []
     subject, engines, hubs, _steps = subject_for(
@@ -971,71 +908,44 @@ def test_a_console_that_assigns_no_network_keeps_the_connect_waiting():
     _wait_for(lambda: subject.hub_row("h1")["is_waiting"])
     time.sleep(0.3)
     row = subject.hub_row("h1")
-    assert (row["state"], row["stage"], row["error"]) == ("connecting", "login", None)
+    assert (row["state"], row["stage"], row["error"]) == ("off", "login", None)
+    assert subject.job("h1") == "connecting"
 
     engines["easytier"].is_waiting = False
     engines["easytier"].address = "10.126.126.4"
     _wait_for(lambda: subject.hub_row("h1")["state"] == "on")
     assert subject.hub_row("h1")["is_waiting"] is False
-    assert hubs.routes[0] == ("h1", ["10.126.126.1"], True)
+    assert hubs.routes == [("h1", "10.126.126.1", "easytier")]
 
 
-def test_the_hub_stage_probes_one_address_only_until_it_ends():
-    subject, _engines, hubs, _steps = subject_for(
-        {"h1": [NETBIRD]}, start_thread=_thread, timeout_s=5
-    )
+def test_the_hubs_address_on_the_network_is_named_and_never_probed():
+    subject, _engines, hubs, _steps = subject_for({"h1": [NETBIRD]})
     hubs.urls["h1"] = ["https://192.168.10.1:8443", "https://100.88.92.30:8443"]
-    hubs.is_reached = False
-
-    subject.connect("h1")
-    _wait_for(lambda: len(hubs.probes) >= 3)
-    assert hubs.routes == [("h1", ["100.88.92.30"], True)]
-    hubs.is_reached = True
-    _wait_for(lambda: subject.hub_row("h1")["state"] == "on")
-
-    assert {tuple(hosts) for hosts in hubs.probes} == {("100.88.92.30",)}
-    assert hubs.routes == [
-        ("h1", ["100.88.92.30"], True),
-        ("h1", ["100.88.92.30"], False),
-    ]
-
-
-def test_the_hub_stage_holds_every_round_to_the_address_before_it_probes():
-    subject, _engines, hubs, _steps = subject_for({"h1": [EASYTIER]})
-    seen = []
-    hubs.on_reach = functools.partial(_note_routes, hubs, seen)
 
     subject.connect("h1")
 
-    assert seen[0] == [("h1", ["10.144.144.1"], True)]
     assert subject.hub_row("h1")["state"] == "on"
+    assert hubs.routes == [("h1", "100.88.92.30", "netbird")]
 
 
-def _note_routes(hubs, seen) -> None:
-    seen.append(list(hubs.routes))
-
-
-@pytest.mark.parametrize("stage", ["login", "hub"])
-def test_a_cancel_in_either_stage_goes_off_without_an_error(stage):
+def test_a_cancel_of_the_login_goes_off_without_an_error():
     lines = []
     subject, engines, hubs, steps = subject_for(
         {"h1": [EASYTIER]}, start_thread=_thread, timeout_s=5, log=lines.append
     )
-    hubs.is_reached = False
-    if stage == "login":
-        engines["easytier"].address = ""
+    engines["easytier"].address = ""
 
     subject.connect("h1")
-    _wait_for(lambda: subject.hub_row("h1")["stage"] == stage)
+    _wait_for(lambda: subject.hub_row("h1")["stage"] == "login")
     subject.cancel("h1")
-    _wait_for(lambda: subject.hub_row("h1")["state"] == "off")
+    _wait_for(lambda: subject.job("h1") == "")
     _wait_for(lambda: any("cancelled" in line for line in lines))
 
     row = subject.hub_row("h1")
-    assert (row["error"], row["stage"]) == (None, "")
+    assert (row["state"], row["error"], row["stage"]) == ("off", None, "")
     assert ("leave", "easytier") in steps
-    assert hubs.routes[-1] == ("h1", [], False)
-    assert any(f"stage {stage} ended after" in line for line in lines)
+    assert hubs.routes[-1] == ("h1", "", "")
+    assert any("stage login ended after" in line for line in lines)
 
 
 def _advance(clock, seconds) -> None:
@@ -1051,3 +961,22 @@ def _wait_for(predicate, timeout_s=5) -> None:
     while not predicate():
         assert time.monotonic() < deadline, "the state never came"
         time.sleep(0.01)
+
+
+def test_the_line_never_reads_a_hub_word_through_a_whole_connect():
+    held = []
+    subject, _engines, _hubs, _steps = subject_for(
+        {"h1": [EASYTIER]}, start_thread=held.append
+    )
+    seen = []
+
+    subject.connect("h1")
+    seen.append(subject.hub_row("h1"))
+    held[0]()
+    seen.append(subject.hub_row("h1"))
+
+    assert [(row["state"], row["stage"]) for row in seen] == [
+        ("off", "login"),
+        ("on", ""),
+    ]
+    assert "stage_since" not in seen[0]

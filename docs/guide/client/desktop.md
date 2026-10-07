@@ -128,12 +128,13 @@ The pages of the client need only the hub's port 8443, so a virtual network is o
 
 To join the network, select **Connect** on the row:
 
-| The line reads                                           | Meaning                                                                                              | The button     |
-| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | -------------- |
-| **Not connected**                                        | this computer is not on the network                                                                  | **Connect**    |
-| **Connecting…**, with **Logging in to NetBird** under it | the engine starts and logs in, for 90 seconds at most                                                | **Cancel**     |
-| **Connecting…**, with **Waiting for the hub** under it   | the computer has an address, and the client counts the seconds until the hub is reachable through it | **Cancel**     |
-| **Connected ·** and this computer's address              | the hub is reachable through the network                                                             | **Disconnect** |
+| The line reads                                           | Meaning                                                 | The button     |
+| -------------------------------------------------------- | ------------------------------------------------------- | -------------- |
+| **Not connected**                                        | this computer is not on the network                     | **Connect**    |
+| **Connecting…**, with **Logging in to NetBird** under it | the engine starts and logs in, for 90 seconds at most   | **Cancel**     |
+| **Connected ·** and this computer's address              | the engine runs, and this computer has an address on it | **Disconnect** |
+
+The line describes the network alone; the state on the hub row names the path the channel takes. When the line turns to **Connected**, the client dials every address of the hub again and moves the channel only onto a better path.
 
 In EasyTier's console mode, the reason line reads **This machine is registered with the console. Attach it to a network there.** until the console's owner attaches it. A failure returns the line to **Not connected** with the code under it, and the client tries nothing again by itself. A computer that was connected rejoins once when the client starts.
 

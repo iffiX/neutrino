@@ -307,7 +307,6 @@ class ClientResident:
             log=log,
             on_change=self.notify,
             on_route=self._overlay_route,
-            reaches_hub=self._overlay_reaches,
             keep_choice=self._overlay_keep,
             drivers=overlay_drivers,
         )
@@ -395,8 +394,8 @@ class ClientResident:
             forward listens on or None, ``is_pending`` whether the join's
             ticket is not spent yet, ``last_error`` the failure of the last
             press of Panel or else the socket's, ``overlay`` the virtual
-            network's ``{network, networks, state, stage, stage_since,
-            is_waiting, address, error}``, and ``jobs`` ``{is_refreshing,
+            network's ``{network, networks, state, stage, is_waiting,
+            address, error}``, and ``jobs`` ``{is_refreshing,
             overlay_job, is_leaving, is_opening_panel}``. No token, ticket
             or secret is in it.
         """
@@ -1569,6 +1568,7 @@ class ClientResident:
             on_disabled=self._hub_disabled,
             on_unbound=self._hub_unbound,
             on_joined=self._hub_joined,
+            local_networks=self.platform.local_networks,
         )
         with self._lock:
             self._sessions[session.local_key] = session
@@ -1644,16 +1644,11 @@ class ClientResident:
         press(session.local_key)
         return {}
 
-    def _overlay_route(self, hub_id: str, hosts: list, is_only: bool = False) -> None:
-        """A hub's channel connects through its hosts on the network first, or alone."""
+    def _overlay_route(self, hub_id: str, host: str, provider: str) -> None:
+        """A hub's virtual network turned on at this address, or went off."""
         session = self._find_session(hub_id)
         if session is not None:
-            session.reconnect_through(hosts, is_only)
-
-    def _overlay_reaches(self, hub_id: str, hosts: list) -> bool:
-        """Whether a hub's channel is up through its hosts on the network."""
-        session = self._find_session(hub_id)
-        return session is not None and session.reaches_through(hosts)
+            session.set_overlay_route(host, provider)
 
     def _overlay_keep(self, hub_id: str, is_on: bool, pick: str) -> None:
         """Write where a hub's network stands onto its binding.

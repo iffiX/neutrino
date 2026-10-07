@@ -406,7 +406,6 @@ def test_the_hub_rows_carry_each_sessions_standing(two_hubs_up):
             "networks": [],
             "state": "off",
             "stage": "",
-            "stage_since": 0,
             "is_waiting": False,
             "address": "",
             "error": None,
@@ -1547,22 +1546,22 @@ def test_a_pick_keeps_the_provider_on_the_binding(overlay_resident):
     assert enrollment.bindings()[0]["overlay_pick"] == "easytier"
 
 
-def test_a_network_that_is_on_has_its_hub_connect_through_it_first(
+def test_a_network_that_turns_on_or_off_names_its_hub_address_to_the_session(
     overlay_resident,
 ):
     resident, _driver = overlay_resident
     session = resident._sessions["c1"]
-    hosts = []
-    session.reconnect_through = functools.partial(_note_route, hosts)
+    routes = []
+    session.set_overlay_route = functools.partial(_note_route, routes)
 
-    resident._overlay_route("h1", ["10.144.144.1"], True)
-    resident._overlay_route("c1", [])
+    resident._overlay_route("h1", "10.144.144.1", "easytier")
+    resident._overlay_route("c1", "", "")
 
-    assert hosts == [(["10.144.144.1"], True), ([], False)]
+    assert routes == [("10.144.144.1", "easytier"), ("", "")]
 
 
-def _note_route(seen, hosts, is_only) -> None:
-    seen.append((hosts, is_only))
+def _note_route(seen, host, provider) -> None:
+    seen.append((host, provider))
 
 
 def test_a_press_on_the_network_of_a_hub_nobody_joined_is_unknown_hub(
