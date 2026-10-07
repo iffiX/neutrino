@@ -1,7 +1,9 @@
 package io.github.iffix.neutrino.channel
 
+import android.util.Log
 import io.github.iffix.neutrino.CLIENT_CHANNEL_WS_PATH
 import io.github.iffix.neutrino.CLIENT_CONNECT_TIMEOUT_S
+import io.github.iffix.neutrino.CLIENT_LOG_TAG
 import io.github.iffix.neutrino.CLIENT_PING_INTERVAL_S
 import io.github.iffix.neutrino.CLIENT_REQUEST_TIMEOUT_S
 import io.github.iffix.neutrino.CLIENT_WS_SILENCE_TIMEOUT_S
@@ -191,10 +193,17 @@ class OkHttpHubTransport : HubTransport {
 
         const val HALF_MILLI_NANOS = 500_000L
 
-        val WRITE_PING: Method? = try {
-            RealWebSocket::class.java.getMethod("writePingFrame\$okhttp")
-        } catch (_: NoSuchMethodException) {
-            null
+        const val WRITE_PING_PREFIX = "writePingFrame"
+
+        val WRITE_PING: Method? by lazy {
+            val found = RealWebSocket::class.java.methods.firstOrNull {
+                it.name.startsWith(WRITE_PING_PREFIX) && it.parameterCount == 0
+            }
+            Log.i(
+                CLIENT_LOG_TAG,
+                "the socket's ping writes through ${found?.name ?: "nothing: no $WRITE_PING_PREFIX method"}",
+            )
+            found
         }
 
         fun refusalOf(error: Throwable, baseUrl: String): ChannelResult.Refused {
