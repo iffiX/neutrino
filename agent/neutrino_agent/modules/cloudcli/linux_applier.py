@@ -24,6 +24,7 @@ from neutrino_agent.modules.cloudcli import installer
 from neutrino_agent.modules.cloudcli.constants import (
     CLOUDCLI_DATABASE_NAME,
     CLOUDCLI_INSTALL_SCOPE_PREFIX,
+    CLOUDCLI_CLAUDE_PLACES_SHELL,
     CLOUDCLI_INSTALL_TIMEOUT_S,
     CLOUDCLI_LOOKUP_TIMEOUT_S,
     CLOUDCLI_OOM_RESULT,
@@ -214,7 +215,9 @@ class CloudcliLinuxApplier:
                 ) from None
         claudes = {}
         for instance in config.instances:
-            claudes[instance.account] = self._find_claude(instance.account)
+            claudes[instance.account] = self._find_claude(
+                instance.account, homes[instance.account]
+            )
         notes = []
         for instance in config.instances:
             if self._install_app(
@@ -313,14 +316,24 @@ class CloudcliLinuxApplier:
         """
         return []
 
-    def _find_claude(self, account: str) -> str:
-        """The ``claude`` the account's login shell finds, or ``cloudcli_claude_missing``."""
+    def _find_claude(self, account: str, home: str) -> str:
+        """The ``claude`` the account's login shell finds, else the first of the
+        known places the account can run, or ``cloudcli_claude_missing``."""
         result = self._run(
             ["runuser", "-l", account, "-c", "command -v claude"],
             is_checked=False,
             timeout_s=CLOUDCLI_LOOKUP_TIMEOUT_S,
         )
         found = installer.claude_of(result.stdout) if result.is_success else ""
+        if not found:
+            places = installer.claude_places(home, "linux")
+            looked = self._run(
+                ["runuser", "-u", account, "--", "sh", "-c"]
+                + [CLOUDCLI_CLAUDE_PLACES_SHELL, home, *places],
+                is_checked=False,
+                timeout_s=CLOUDCLI_LOOKUP_TIMEOUT_S,
+            )
+            found = installer.first_claude(looked.stdout, home, "linux")
         if not found:
             raise ModuleApplyError("cloudcli_claude_missing", {"account": account})
         return found
