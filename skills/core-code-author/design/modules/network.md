@@ -266,6 +266,18 @@ having no internet while the panel on the same box answered. The diversion
 chain is therefore rendered at `mangle + 1`: it runs after the daemon's
 whatever the order of reloads, and the mark it sets is the one that stands.
 
+Running later does not save a mark the diversion chain reads. The box's own
+connections are marked 1 by the `output` chain and come back in on `lo`, and
+their source is the box's uplink address, which sits in a network the peer
+routes; the daemon's chain replaces that mark before the diversion chain
+sees the packet. So no rule of the diversion chain matches on a mark it did
+not set. The `lo` rule takes a packet by where it is going: an address
+outside `reserved_v4` that is not the box's own (`fib daddr type != local`)
+reaches `lo` only through table 100. It sets mark 1 after the tproxy, as the
+served networks' rule does. Without the `fib` test, a connection from xray
+to one of the box's own public addresses would be sent back into xray, again
+and again: measured on the lab box, one connection became 15,020.
+
 `server` and `side_gateway` start with every interface open. That is what the
 machine was already doing before the hub arrived, and a machine reached over
 SSH that answers on nothing after an install is a machine nobody can reach.
