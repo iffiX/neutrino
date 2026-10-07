@@ -11,6 +11,7 @@ import java.io.IOException
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -184,8 +185,9 @@ class HubConnections(
 
     /**
      * Leave one hub: this phone forgets the binding at once, then tells the hub once in the
-     * background, and the hub's answer changes nothing. A binding whose ticket is unspent is only
-     * forgotten.
+     * background, and the hub's answer changes nothing. The address that last answered is tried
+     * first, then the rest in order, each for an equal share of the short timeout. A binding whose
+     * ticket is unspent is only forgotten.
      *
      * @param bindingId The binding's id.
      * @return Ok once forgotten, or `client_internal {error}` when the file cannot be written.
@@ -215,18 +217,21 @@ class HubConnections(
     }
 
     private suspend fun tellLeft(binding: HubBinding) {
-        val answer = withTimeoutOrNull(CLIENT_LEAVE_TELL_TIMEOUT_S * 1000) {
-            var last: ChannelResult<JsonObject> = ChannelResult.refused("hub_unreachable")
-            for (url in binding.candidateUrls("")) {
-                last = transport.post(url, CLIENT_LEAVE_PATH, binding.fingerprint, ChannelFrames.leaveRequest(binding))
-                if (last !is ChannelResult.Refused || last.code != "hub_unreachable") break
+        val urls = (listOf(binding.gatewayUrl) + binding.storedUrls).filter { it.isNotEmpty() }.distinct()
+        val shareMillis = CLIENT_LEAVE_TELL_TIMEOUT_S * 1000 / urls.size.coerceAtLeast(1)
+        var answer: ChannelResult<JsonObject>? = null
+        for (url in urls) {
+            val attempt = scope.async {
+                transport.post(url, CLIENT_LEAVE_PATH, binding.fingerprint, ChannelFrames.leaveRequest(binding))
             }
-            last
+            answer = withTimeoutOrNull(shareMillis) { attempt.await() }
+            if (answer == null) attempt.cancel()
+            if (answer != null && (answer !is ChannelResult.Refused || answer.code != "hub_unreachable")) break
         }
-        val outcome = when (answer) {
+        val outcome = when (val last = answer) {
             null -> "no answer in time"
             is ChannelResult.Ok -> "ok"
-            is ChannelResult.Refused -> answer.code
+            is ChannelResult.Refused -> last.code
         }
         Log.i(CLIENT_LOG_TAG, "the hub of ${binding.id} answered the leave: $outcome")
     }
