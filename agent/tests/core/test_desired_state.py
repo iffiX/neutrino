@@ -7,13 +7,16 @@ configure and settle the unit, with the mark written on the first apply
 that took), a module the state does not mention untouched, an install's
 bytes asked for down a ``package {module}`` stream and its output sent up
 a ``log {module}`` stream closed with the module's state, the applied
-hash moving only when every mentioned module applied, a failed state
-reported under the old hash and tried again only under another hash
-unless the socket caused it, the hub's retry mark being such another hash
-with the configuration unchanged, the first failure naming the state error,
-the file's mode, the latest state winning when several arrive, and a state
-whose apply waits on a running install neither applied nor failed and
-applied again until the install has ended.
+hash moving only when every mentioned module applied, a failed module
+reported under the old hash and tried again only when its own entry changes
+unless the socket caused it, the hub's retry mark being such a change with
+the configuration unchanged and never running another module's failed step,
+the modules waiting behind a long step reported ``queued``, a failed install
+that left nothing keeping no hash, the first failure naming the state error,
+the file's mode and its older one-hash shape read as nothing tried, the
+latest state winning when several arrive, and a state whose apply waits on a
+running install neither applied nor failed and applied again until the
+install has ended.
 """
 
 import json
@@ -56,6 +59,7 @@ class FakeEngine:
         self.installs: list = []
         self.uninstalls: list = []
         self.install_refusal = install_refusal
+        self.queued: list = []
 
     def take_state(self, modules):
         self.states.append(modules)
@@ -77,6 +81,9 @@ class FakeEngine:
 
     def refresh_now(self):
         self.refreshes += 1
+
+    def set_queued(self, names):
+        self.queued.append(list(names))
 
     def report(self):
         return {
@@ -168,6 +175,12 @@ def state(state_hash: str = "h1", **wants) -> dict:
     }
 
 
+def marked(document: dict, name: str, mark: str = "a1b2c3d4") -> dict:
+    """The same state with the hub's retry mark on one module's entry."""
+    document["modules"][name]["retry_mark"] = mark
+    return document
+
+
 def applier(runners, engine=None, tmp_path=None, rdp=None, open_stream=None):
     engine = engine if engine is not None else FakeEngine(runners)
     held = DesiredStateApplier.__new__(DesiredStateApplier)
@@ -184,7 +197,8 @@ def applier(runners, engine=None, tmp_path=None, rdp=None, open_stream=None):
     held._is_applying = False
     held._pending = None
     held._applied_hash = ""
-    held._tried_hash = ""
+    held._tried = {}
+    held._outcomes = {}
     held._state_error = None
     held._rechecked = None
     held._wakeup = threading.Event()
@@ -196,10 +210,7 @@ def drive_once(held) -> None:
     with held._lock:
         pending = held._pending
         held._pending = None
-        tried = held._tried_hash
     if pending is None:
-        return
-    if pending.get("hash") and pending["hash"] == tried:
         return
     held.apply(pending)
 
@@ -404,7 +415,7 @@ def test_an_installs_output_goes_up_a_log_stream_closed_with_the_state(tmp_path)
     assert log.closed == {"code": "", "params": {"state": "installed"}}
 
 
-def test_a_failed_install_closes_the_log_with_its_code_and_fails_the_state(
+def test_a_failed_install_closes_the_log_absent_with_its_code_and_fails_the_state(
     tmp_path,
 ):
     runners = {"samba": FakeRunner()}
@@ -421,7 +432,7 @@ def test_a_failed_install_closes_the_log_with_its_code_and_fails_the_state(
     (log,) = socket.channels
     assert log.closed == {
         "code": "install_unconfirmed",
-        "params": {"state": "failed"},
+        "params": {"state": "absent"},
     }
     assert runners["samba"].applied == []
     assert held.applied_hash == ""
@@ -492,7 +503,7 @@ def test_without_a_socket_the_bytes_cannot_come_and_the_next_state_tries_again(
     assert engine.installs == [("gitea", {"code": "hub_unreachable", "params": {}})]
     assert held.applied_hash == ""
     assert held.state_error["code"] == "hub_unreachable"
-    assert held._tried_hash == ""
+    assert held._tried == {}
 
     held.take(state(gitea="installed"))
     drive_once(held)
@@ -510,7 +521,7 @@ def test_a_socket_that_refuses_the_stream_is_the_same_as_none(tmp_path):
     held.apply(state(gitea="installed"))
 
     assert engine.installs == [("gitea", {"code": "hub_unreachable", "params": {}})]
-    assert held._tried_hash == ""
+    assert held._tried == {}
 
 
 # --- the hash and the error ---
@@ -555,7 +566,7 @@ def test_a_success_after_a_failure_clears_the_error(tmp_path):
     assert held.state_error is not None
 
     runners["samba"].failure = None
-    held.apply(state("h2", samba="running"))
+    held.apply(marked(state("h2", samba="running"), "samba"))
 
     assert held.applied_hash == "h2"
     assert held.state_error is None
@@ -574,22 +585,24 @@ def test_an_apply_waiting_on_an_install_is_neither_applied_nor_failed(tmp_path):
     assert held.state_error is None
     assert engine.results["cloudcli"] == ("", {})
     assert engine.configured == {"samba"}
-    assert held._tried_hash == ""
+    assert sorted(held._tried) == ["samba"]
     assert held._rechecked["hash"] == "h1"
 
 
-def test_a_waiting_state_that_failed_elsewhere_is_not_applied_again(tmp_path):
-    runners = {
-        "samba": FakeRunner(failure=ModuleApplyError("samba_missing")),
-        "cloudcli": FakeRunner(failure=ModuleInstallPending("ann")),
-    }
-    held, _ = applier(runners, tmp_path=tmp_path)
+def test_a_waiting_module_is_applied_again_and_a_failed_one_beside_it_is_not(
+    tmp_path,
+):
+    samba = _CountingRunner(failure=ModuleApplyError("samba_missing"))
+    cloudcli = _CountingRunner(failure=ModuleInstallPending("ann"))
+    held, _ = applier({"samba": samba, "cloudcli": cloudcli}, tmp_path=tmp_path)
 
     held.apply(state(samba="running", cloudcli="running"))
+    held.apply(held._rechecked)
 
     assert held.state_error["code"] == "samba_missing"
-    assert held._tried_hash == "h1"
-    assert held._rechecked is None
+    assert sorted(held._tried) == ["samba"]
+    assert held._rechecked["hash"] == "h1"
+    assert (samba.tries, cloudcli.tries) == (1, 2)
 
 
 def test_a_waiting_state_is_applied_again_until_its_install_ends(tmp_path, monkeypatch):
@@ -676,10 +689,12 @@ def test_a_failed_state_keeps_the_old_hash_and_is_not_tried_again_under_it(
     assert held.applied_hash == "h0"
     assert held.state_error["code"] == "samba_missing"
     assert len(runners["samba"].applied) == 0
-    assert held._tried_hash == "h1"
+    assert "samba" in held._tried
 
 
-def test_a_failed_install_is_not_tried_again_under_the_same_hash(tmp_path):
+def test_a_failed_install_that_left_nothing_keeps_no_hash_and_installs_again(
+    tmp_path,
+):
     runners = {"samba": FakeRunner()}
     engine = FakeEngine(
         runners,
@@ -687,28 +702,60 @@ def test_a_failed_install_is_not_tried_again_under_the_same_hash(tmp_path):
         install_refusal={"code": "install_failed", "params": {"detail": "dpkg"}},
     )
     held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
-    held.apply(state("h1", samba="running"))
+    held.apply(state("h1", samba="installed"))
 
-    held.take(state("h1", samba="running"))
+    assert held._tried == {}
+    assert held._store.read_tried() == {}
+    assert held.state_error["params"] == {"module": "samba", "detail": "dpkg"}
+    assert engine.results["samba"] == ("install_failed", {"detail": "dpkg"})
+
+    engine.install_refusal = None
+    held.take(state("h1", samba="installed"))
+    drive_once(held)
+
+    assert len(engine.installs) == 2
+    assert held.applied_hash == "h1"
+    assert engine.results["samba"] == ("", {})
+
+
+def test_a_failed_install_that_left_the_software_is_not_tried_again(tmp_path):
+    class PartialEngine(FakeEngine):
+        def install(self, name, *, receive, on_line=None):
+            self.installs.append((name, {}))
+            self.installed.add(name)
+            return {"code": "install_failed", "params": {"detail": "postinst"}}
+
+    runners = {"samba": FakeRunner()}
+    engine = PartialEngine(runners, absent=("samba",))
+    socket = FakeSocket()
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path, open_stream=socket)
+    held.apply(state("h1", samba="installed"))
+
+    held.take(state("h1", samba="installed"))
     drive_once(held)
 
     assert len(engine.installs) == 1
-    assert held._tried_hash == "h1"
-    assert held.state_error["params"] == {"module": "samba", "detail": "dpkg"}
+    assert "samba" in held._tried
+    assert socket.channels[0].closed == {
+        "code": "install_failed",
+        "params": {"state": "failed", "detail": "postinst"},
+    }
 
 
-def test_a_state_with_another_hash_is_tried_after_a_failure(tmp_path):
+def test_a_changed_entry_is_tried_after_a_failure(tmp_path):
     runners = {"samba": FakeRunner(failure=ModuleApplyError("samba_missing"))}
     held, _ = applier(runners, tmp_path=tmp_path)
     held.apply(state("h1", samba="running"))
     runners["samba"].failure = None
 
-    held.take(state("h2", samba="running"))
+    changed = state("h2", samba="running")
+    changed["modules"]["samba"]["config"] = {"n": "samba", "workgroup": "lab"}
+    held.take(changed)
     drive_once(held)
 
     assert held.applied_hash == "h2"
     assert held.state_error is None
-    assert runners["samba"].applied == [{"n": "samba"}]
+    assert runners["samba"].applied == [{"n": "samba", "workgroup": "lab"}]
 
 
 def test_settle_returns_once_the_taken_state_has_applied(tmp_path):
@@ -784,7 +831,7 @@ def test_the_tried_hash_outlives_a_restart_and_the_same_state_is_not_tried_again
         log=lambda message: None,
     )
     first.apply(state(cloudcli="running"))
-    assert store.read_tried() == "h1"
+    assert sorted(store.read_tried()) == ["cloudcli"]
     assert len(tries) == 1
 
     again = DesiredStateApplier(
@@ -797,7 +844,7 @@ def test_the_tried_hash_outlives_a_restart_and_the_same_state_is_not_tried_again
     assert again.settle(5.0)
 
     assert len(tries) == 1
-    assert again._tried_hash == "h1"
+    assert again._tried == store.read_tried()
     assert oct(os.stat(str(tmp_path / "desired.json.tried")).st_mode & 0o777) == "0o600"
 
 
@@ -877,7 +924,7 @@ def test_forgetting_the_mark_applies_a_state_already_held(tmp_path):
     assert held.settle(5.0)
 
     assert runner.tries == 2
-    assert held._store.read_tried() == "h1"
+    assert sorted(held._store.read_tried()) == ["samba"]
 
 
 def test_a_mark_another_process_deleted_is_read_again(tmp_path):
@@ -998,3 +1045,126 @@ def test_the_terminal_module_installs_nothing_and_runs_with_the_settings_held(
     assert engine.report()["terminal"]["state"] == "running"
     assert engine.module_runners["terminal"].settings().to_dict() == settings
     assert held.applied_hash == "h1"
+
+
+# --- one module at a time, each tried under its own entry ---
+
+
+def test_a_retry_mark_on_one_module_never_runs_another_failed_module_again(
+    tmp_path,
+):
+    samba = _CountingRunner(failure=ModuleApplyError("samba_missing"))
+    gitea = _CountingRunner(failure=ModuleApplyError("port_reserved"))
+    held, _ = applier({"samba": samba, "gitea": gitea}, tmp_path=tmp_path)
+    held.apply(state("h1", samba="running", gitea="running"))
+    samba.failure = None
+
+    held.take(marked(state("h2", samba="running", gitea="running"), "samba"))
+    drive_once(held)
+
+    assert (samba.tries, gitea.tries) == (2, 1)
+    assert held.state_error["code"] == "port_reserved"
+    assert held.applied_hash == ""
+
+
+def test_a_change_to_one_module_s_entry_runs_that_module_alone(tmp_path):
+    samba = _CountingRunner()
+    gitea = _CountingRunner(failure=ModuleApplyError("port_reserved"))
+    held, _ = applier({"samba": samba, "gitea": gitea}, tmp_path=tmp_path)
+    held.apply(state("h1", samba="running", gitea="running"))
+    gitea.failure = None
+
+    changed = state("h2", samba="running", gitea="running")
+    changed["modules"]["gitea"]["config"] = {"n": "gitea", "http_port": 3001}
+    held.take(changed)
+    drive_once(held)
+
+    assert (samba.tries, gitea.tries) == (1, 2)
+    assert held.applied_hash == "h2"
+    assert held.state_error is None
+
+
+def test_a_new_seat_password_runs_the_remote_desktop_module_again(tmp_path):
+    desktop = _CountingRunner()
+    samba = _CountingRunner()
+    held, _ = applier({"remote_desktop": desktop, "samba": samba}, tmp_path=tmp_path)
+    held.apply(state("h1", remote_desktop="running", samba="running"))
+
+    renewed = state("h2", remote_desktop="running", samba="running")
+    renewed["desktop"] = {"seat_password": "renewed"}  # scan: allow
+    held.apply(renewed)
+
+    assert (desktop.tries, samba.tries) == (2, 1)
+
+
+def test_the_ai_tools_section_is_handed_on_only_when_it_changes(tmp_path):
+    held, _ = applier({"samba": FakeRunner()}, tmp_path=tmp_path)
+    tools = RecordedAiToolsSection()
+    held._ai_tools = tools
+    first = state("h1", samba="running")
+    first["ai_tools"] = {"is_enabled": False}
+    held.apply(first)
+
+    other = state("h2", samba="stopped")
+    other["ai_tools"] = {"is_enabled": False}
+    held.apply(other)
+    retried = state("h3", samba="stopped")
+    retried["ai_tools"] = {"is_enabled": False, "retry_mark": "a1b2c3d4"}
+    held.apply(retried)
+
+    assert [entry[1] for entry in tools.applied] == ["h1", "h3"]
+
+
+class BlockingInstallEngine(FakeEngine):
+    """An engine whose install of one module waits until it is let go."""
+
+    def __init__(self, names, *, blocked, **kwargs):
+        super().__init__(names, **kwargs)
+        self.blocked = blocked
+        self.is_blocking = threading.Event()
+        self.release = threading.Event()
+
+    def install(self, name, *, receive, on_line=None):
+        if name == self.blocked:
+            self.is_blocking.set()
+            self.release.wait(5.0)
+        return super().install(name, receive=receive, on_line=on_line)
+
+
+def test_the_modules_behind_a_long_install_are_queued_until_reached(tmp_path):
+    runners = {name: FakeRunner() for name in ("zfs", "samba", "gitea", "podman")}
+    engine = BlockingInstallEngine(runners, blocked="samba", absent=("samba",))
+    held = DesiredStateApplier(
+        engine=engine,
+        runners=runners,
+        store=DesiredStateStore(path=str(tmp_path / "desired.json")),
+        log=lambda message: None,
+    )
+
+    held.take(
+        state(zfs="running", samba="installed", gitea="running", podman="installed")
+    )
+    assert engine.is_blocking.wait(5.0)
+
+    assert engine.queued == [["samba", "gitea"], ["gitea"]]
+    engine.release.set()
+    assert held.settle(5.0)
+    assert engine.queued[-2:] == [[], []]
+    assert held.applied_hash == "h1"
+
+
+def test_a_tried_file_of_the_older_one_hash_shape_reads_as_nothing_tried(tmp_path):
+    (tmp_path / "desired.json.tried").write_text("1234")
+    runner = _CountingRunner()
+    runners = {"samba": runner}
+    held = _agent(runners, tmp_path)
+    assert held._tried == {}
+
+    held.take(state(samba="running"))
+    assert held.settle(5.0)
+
+    assert runner.tries == 1
+    kept = json.loads((tmp_path / "desired.json.tried").read_text())
+    assert sorted(kept) == ["samba"]
+    (tmp_path / "desired.json.tried").write_text("ab12cd")
+    assert DesiredStateStore(path=str(tmp_path / "desired.json")).read_tried() == {}

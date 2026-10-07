@@ -36,6 +36,7 @@ from neutrino_agent.constants import (
     AGENT_MODULE_STATE_FAILED,
     AGENT_MODULE_STATE_INSTALLED,
     AGENT_MODULE_STATE_INSTALLING,
+    AGENT_MODULE_STATE_QUEUED,
     AGENT_MODULE_STATE_RUNNING,
     AGENT_MODULE_STATE_STOPPED,
     AGENT_MODULE_STATE_UNINSTALLING,
@@ -178,6 +179,8 @@ class ModuleEngine(ReconcileWorker):
         self._operation_lock = threading.Lock()
         # The modules mid-operation, whose transient state a refresh keeps.
         self._in_transit: set = set()
+        # The modules waiting behind the one the applier is on.
+        self._queued: set = set()
         self._apply_results: dict = {}
         self._details_at = 0.0
         # A platform that installs no package has a runner only for what
@@ -324,6 +327,26 @@ class ModuleEngine(ReconcileWorker):
                 self._apply_results[name] = (code, dict(params))
             else:
                 self._apply_results.pop(name, None)
+
+    def set_queued(self, names) -> None:
+        """Report the modules waiting behind the one being applied as ``queued``.
+
+        A module that leaves the set is read again at once.
+
+        Args:
+            names: The waiting modules; empty when none waits.
+        """
+        with self._lock:
+            queued = set(names)
+            left = self._queued - queued
+            self._queued = queued
+            in_transit = set(self._in_transit)
+            observed = self._observed()
+        for name in sorted(queued - in_transit):
+            self._publish(name, _typed(AGENT_MODULE_STATE_QUEUED))
+        for name in sorted(left - in_transit):
+            if name in observed:
+                self._publish(name, self._read_one(name, observed[name]))
 
     def refresh_now(self) -> None:
         """Report every module again from what is true right now."""
@@ -526,12 +549,16 @@ class ModuleEngine(ReconcileWorker):
             )
             is_stale = self._is_stale(signature)
             in_transit = set(self._in_transit)
+            queued = set(self._queued)
         is_due = time.monotonic() - self._details_at > AGENT_MODULE_DETAILS_TTL_S
         if not (is_stale or is_forced or is_due):
             return
         self._details_at = time.monotonic()
         for name, wanted in observed.items():
             if name in in_transit:
+                continue
+            if name in queued:
+                self._publish(name, _typed(AGENT_MODULE_STATE_QUEUED))
                 continue
             self._publish(name, self._read_one(name, wanted))
         # A module no runner and no state names stops being reported.
@@ -555,10 +582,8 @@ class ModuleEngine(ReconcileWorker):
         try:
             observed = runner.observe(_row(recipe))
             if not self._verify(runner, recipe, observed):
-                # An install that failed leaves nothing installed; its row
-                # still says it failed, so the press that tries again exists.
                 status = _typed(AGENT_MODULE_STATE_ABSENT)
-                return self._with_failure(name, status)
+                return self._with_failure(name, status, is_present=False)
             is_active = bool(observed.get("is_active", False))
             status = _typed(
                 _steady_state(
@@ -579,12 +604,15 @@ class ModuleEngine(ReconcileWorker):
             )
         return self._with_failure(name, status)
 
-    def _with_failure(self, name: str, status: dict) -> dict:
-        """One row, marked failed with its code when the last apply failed."""
+    def _with_failure(
+        self, name: str, status: dict, *, is_present: bool = True
+    ) -> dict:
+        """One row with the last apply's code, failed when the software is there."""
         with self._lock:
             failure = self._apply_results.get(name)
         if failure is not None:
-            status["state"] = AGENT_MODULE_STATE_FAILED
+            if is_present:
+                status["state"] = AGENT_MODULE_STATE_FAILED
             status["code"], status["params"] = failure[0], dict(failure[1])
         return status
 

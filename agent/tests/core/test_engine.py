@@ -10,8 +10,10 @@ output line handed on as it comes and the row transient meanwhile, a
 package's bytes asked for only by the kinds that install from bytes and
 the file deleted afterwards, the uninstall recipe's own packages and
 steps, results judged by the machine's own state, one package operation
-at a time, a module whose own install runs reading installing, and that
-nothing in it ever retries anything.
+at a time, a module whose own install runs reading installing, the modules
+waiting behind the one being applied reading queued, an install that failed
+and left nothing reading absent with its code, and that nothing in it ever
+retries anything.
 """
 
 import os
@@ -88,6 +90,7 @@ def bare_engine(*, platform=None, verified=None, tmp_path=None):
     engine._on_line = None
     engine._operation_lock = threading.Lock()
     engine._in_transit = set()
+    engine._queued = set()
     engine._statuses = {}
     engine._signature = ""
     engine._checked_at = 0.0
@@ -742,11 +745,9 @@ def test_an_apply_failure_makes_the_row_failed_with_its_code(tmp_path):
     assert engine.report()["samba"]["code"] == ""
 
 
-def test_an_install_that_failed_reads_failed_with_its_code_though_nothing_is_there(
+def test_an_install_that_failed_and_left_nothing_reads_absent_with_its_code(
     tmp_path,
 ):
-    """The retry press exists only for a module reported failed: an install
-    that got no package leaves nothing installed and must still say so."""
     engine = module_engine(ConfigurableRunner(is_installed=False), tmp_path=tmp_path)
     engine.record_apply(
         "samba", "code_server_download_failed", {"detail": "download_failed"}
@@ -755,7 +756,7 @@ def test_an_install_that_failed_reads_failed_with_its_code_though_nothing_is_the
     engine._refresh(is_forced=True)
 
     row = engine.report()["samba"]
-    assert row["state"] == "failed"
+    assert row["state"] == "absent"
     assert (row["code"], row["params"]) == (
         "code_server_download_failed",
         {"detail": "download_failed"},
@@ -765,6 +766,40 @@ def test_an_install_that_failed_reads_failed_with_its_code_though_nothing_is_the
     engine._refresh(is_forced=True)
     assert engine.report()["samba"]["state"] == "absent"
     assert engine.report()["samba"]["code"] == ""
+
+
+def test_a_failed_step_on_software_that_is_there_reads_failed(tmp_path):
+    engine = module_engine(ConfigurableRunner(is_installed=True), tmp_path=tmp_path)
+    engine.record_apply("samba", "uninstall_unconfirmed", {})
+
+    engine._refresh(is_forced=True)
+
+    assert engine.report()["samba"]["state"] == "failed"
+    assert engine.report()["samba"]["code"] == "uninstall_unconfirmed"
+
+
+def test_a_queued_module_reads_queued_until_it_leaves_the_set(tmp_path):
+    engine = module_engine(ConfigurableRunner(), tmp_path=tmp_path)
+    engine._refresh(is_forced=True)
+    assert engine.report()["samba"]["state"] == "installed"
+
+    engine.set_queued(["samba"])
+    assert engine.report()["samba"]["state"] == "queued"
+    engine._refresh(is_forced=True)
+    assert engine.report()["samba"]["state"] == "queued"
+
+    engine.set_queued(())
+    assert engine.report()["samba"]["state"] == "installed"
+
+
+def test_a_module_mid_operation_keeps_its_transient_row_when_queued(tmp_path):
+    engine = module_engine(ConfigurableRunner(), tmp_path=tmp_path)
+    engine._in_transit.add("samba")
+    engine._publish("samba", engine_module._typed("installing"))
+
+    engine.set_queued(["samba"])
+
+    assert engine.report()["samba"]["state"] == "installing"
 
 
 def test_a_runner_that_cannot_read_the_machine_is_failed_typed():
