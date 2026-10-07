@@ -37,7 +37,7 @@ from neutrino_client.constants import (
     PROTOCOL,
 )
 from neutrino_client.core import enrollment, protocol
-from neutrino_client.core.session import ClientHubSession
+from neutrino_client.core.session import ClientHubSession, is_better_path
 from neutrino_client.exceptions import (
     EnrollmentError,
     GatewayProtocolRefused,
@@ -286,6 +286,24 @@ def take(session, made, frame) -> None:
 def reports(made) -> list:
     """Every report the client sent on one socket."""
     return [frame for frame in made.sent if frame["type"] == "report"]
+
+
+@pytest.fixture(autouse=True)
+def _rounds_beside_the_channel(request, monkeypatch):
+    """A round a network change starts beside a live channel runs only in a
+    test that asks for ``change_rounds``; elsewhere a state naming new
+    addresses would start one on a thread that outlives the test."""
+    if "change_rounds" not in request.fixturenames:
+        monkeypatch.setattr(ClientHubSession, "_change_rounds", _no_change_round)
+
+
+@pytest.fixture
+def change_rounds():
+    """The rounds a network change starts beside a live channel run."""
+
+
+def _no_change_round(session) -> None:
+    session._is_changing = False
 
 
 @pytest.fixture
@@ -1656,61 +1674,43 @@ def test_news_ends_the_wait_before_the_network_is_looked_at(
     assert asked == []
 
 
-def test_a_live_socket_follows_the_name_to_a_stored_address(
+def test_a_connectivity_change_on_a_live_socket_starts_a_round(
     bound_everywhere, monkeypatch
 ):
-    """Connected over the overlay, the machine comes home: the name resolves
-    to the LAN address the binding holds, and the socket is moved there."""
-    session, lines = bound_everywhere
-    session._binding["gateway_url"] = OVERLAY_URL
-    hold = threading.Event()
-    script = addresses_of(monkeypatch, {"100.64.0.1": [WELCOME, hold]})
-    monkeypatch.setattr(session_module, "CLIENT_REPORT_INTERVAL_S", 0.02)
-    current = ["10.0.0.5"]
-    monkeypatch.setattr(enrollment, "default_source_address", lambda urls: current[0])
-    session._news.clear()
-    client = session._connect_round()
-    served = threading.Thread(target=session._serve, args=(client,))
-
-    served.start()
-    deadline = time.monotonic() + 5
-    while session._source_address is None and time.monotonic() < deadline:
-        time.sleep(0.01)
-    monkeypatch.setattr(enrollment, "resolve_hub_address", lambda: NAME_ADDRESS)
-    current[0] = "192.0.2.20"
-    while f"moving to {LAN_URL}" not in lines and time.monotonic() < deadline:
-        time.sleep(0.01)
-    hold.set()
-    served.join(timeout=5)
-
-    assert not served.is_alive()
-    assert client.is_closed is True
-    assert f"moving to {LAN_URL}" in lines
-    assert session._news.is_set()
-    assert session.last_error() is None
-    assert session.connection() == "connecting"
-
-
-@pytest.mark.parametrize("resolved", ["", "10.9.9.9", "100.64.0.1"])
-def test_a_live_socket_stays_when_the_name_is_elsewhere(
-    bound_everywhere, monkeypatch, resolved
-):
-    """No name, a name off the stored list, or the address in use: nothing
-    moves."""
     session, _lines = bound_everywhere
-    session._binding["gateway_url"] = OVERLAY_URL
-    script = addresses_of(monkeypatch, {"100.64.0.1": [WELCOME]})
+    addresses_of(monkeypatch, {"192.0.2.1": [WELCOME]})
     client = session._connect_round()
-    sources(monkeypatch, "10.0.0.5", "192.0.2.20")
-    session._watch_network()
-    monkeypatch.setattr(enrollment, "resolve_hub_address", lambda: resolved)
+    monkeypatch.setattr(session_module, "CLIENT_IDLE_POLL_INTERVAL_S", 0.01)
+    sources(monkeypatch, "10.0.0.5", "10.0.0.5", "192.0.2.20")
+    changes = []
+    monkeypatch.setattr(session, "change_network", functools.partial(changes.append, 1))
+    ended = threading.Event()
+    watcher = threading.Thread(target=session._report_on_interval, args=(client, ended))
 
-    assert session._watch_network() is True
-    session._follow_name(client)
+    watcher.start()
+    deadline = time.monotonic() + 5
+    while not changes and time.monotonic() < deadline:
+        time.sleep(0.01)
+    ended.set()
+    watcher.join(timeout=5)
 
-    assert client is script.made[2]
+    assert changes
+    assert session._source_address == "192.0.2.20"
     assert client.is_closed is False
-    assert session.connection() == "connected"
+
+
+def test_a_state_naming_other_urls_starts_a_round_and_the_same_urls_do_not(
+    bound, monkeypatch
+):
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+    changes = []
+    monkeypatch.setattr(session, "change_network", functools.partial(changes.append, 1))
+
+    take(session, made, STATE_WITH_URLS)
+    take(session, made, STATE_WITH_URLS)
+
+    assert changes == [1]
 
 
 def test_a_socket_closed_from_here_is_no_failure(bound, monkeypatch):
@@ -1756,7 +1756,7 @@ def test_stop_aborts_a_connect_in_progress_and_returns_within_a_second(
 
     session.start()
     deadline = time.monotonic() + 5
-    while session._dialing is None and time.monotonic() < deadline:
+    while not session._dialings and time.monotonic() < deadline:
         time.sleep(0.01)
     started = time.monotonic()
     session.stop()
@@ -1766,7 +1766,7 @@ def test_stop_aborts_a_connect_in_progress_and_returns_within_a_second(
     assert elapsed < 1
     assert made.is_aborted.is_set()
     assert not session._thread.is_alive()
-    assert session._dialing is None
+    assert session._dialings == []
 
 
 def test_refresh_reports_on_a_live_socket(bound, monkeypatch):
@@ -2011,141 +2011,160 @@ def test_the_networks_state_and_engine_are_written_onto_the_binding(bound, confi
     assert (stored["is_overlay_on"], stored["overlay_pick"]) == (True, "easytier")
 
 
-def test_a_switch_dials_that_networks_address_with_the_others(
-    bound_everywhere, monkeypatch
-):
+def test_a_network_on_adds_its_address_to_every_round(bound_everywhere, monkeypatch):
     session, _lines = bound_everywhere
     script = addresses_of(monkeypatch, {"100.88.92.30": [WELCOME]})
 
-    session.reconnect_through(["100.88.92.30", ""])
+    session.set_overlay_route("100.88.92.30", "netbird")
     session.run_once()
 
     assert script.hosts == ["100.88.92.30", "192.0.2.1", "198.51.100.1", "100.64.0.1"]
     assert session.gateway_url() == "https://100.88.92.30:8443"
+    assert session._news.is_set()
 
-
-def test_a_round_held_to_the_networks_address_tries_no_other(
-    bound_everywhere, monkeypatch
-):
-    session, _lines = bound_everywhere
-    script = addresses_of(monkeypatch, {"192.0.2.1": [WELCOME]})
-
-    session.reconnect_through(["100.88.92.30"], is_only=True)
-    session.run_once()
-    session.run_once()
-
-    assert script.hosts == ["100.88.92.30", "100.88.92.30"]
-    assert session.connection() == "down"
-
-
-class RedirectScript:
-    """Every address but the network's blocks its connect until aborted.
-
-    Attributes:
-        hosts: The host of every socket opened, in order.
-    """
-
-    def __init__(self, answering: str):
-        self._answering = answering
-        self.hosts = []
-
-    def __call__(self, **kwargs):
-        host = kwargs.get("host", "")
-        self.hosts.append(host)
-        if host == self._answering:
-            return ScriptedSocket([WELCOME])
-        return BlockingSocket()
-
-
-def round_in_thread(session) -> list:
-    """Run one connection round on a thread; the list gets what it returned."""
-    ended = []
-    threading.Thread(
-        target=functools.partial(_take_round, session, ended), daemon=True
-    ).start()
-    deadline = time.monotonic() + 5
-    while session._dialing is None and time.monotonic() < deadline:
-        time.sleep(0.01)
-    return ended
-
-
-@pytest.mark.parametrize("how", ["preference", "probe"])
-def test_a_round_through_other_addresses_ends_within_a_second_of_the_network(
-    bound_everywhere, monkeypatch, how
-):
-    session, _lines = bound_everywhere
-    script = RedirectScript("100.88.92.30")
-    monkeypatch.setattr(session_module, "WebSocketClient", script)
-    ended = round_in_thread(session)
-    assert script.hosts == ["192.0.2.1", "198.51.100.1", "100.64.0.1"]
-
-    started = time.monotonic()
-    if how == "preference":
-        session.reconnect_through(["100.88.92.30"], is_only=True)
-    else:
-        assert session.reaches_through(["100.88.92.30"]) is False
-    while not ended and time.monotonic() - started < 5:
-        time.sleep(0.01)
-
-    assert ended == [None]
-    assert time.monotonic() - started < 1
-    session.reconnect_through(["100.88.92.30"], is_only=True)
+    session.set_overlay_route("", "")
     script.hosts.clear()
-    assert session._connect_round() is not None
-    assert script.hosts == ["100.88.92.30"]
-    assert session.reaches_through(["100.88.92.30"]) is True
+    session.run_once()
+
+    # Only as the address that answered last, which every binding keeps.
+    assert script.hosts == ["192.0.2.1", "198.51.100.1", "100.64.0.1", "100.88.92.30"]
 
 
-def test_a_redirected_round_starts_the_next_one_at_once(bound_everywhere, monkeypatch):
+@pytest.mark.parametrize(
+    "path, handshake_s, live_path, is_better",
+    [
+        ("lan", 0.5, "easytier", True),
+        ("direct", 0.5, "netbird", True),
+        ("netbird", 0.5, "relay", True),
+        ("easytier", 0.1, "lan", False),
+        ("relay", 0.1, "direct", False),
+        ("netbird", 0.1, "easytier", True),
+        ("netbird", 0.3, "easytier", False),
+        ("lan", 0.2, "lan", False),
+    ],
+)
+def test_the_paths_rank_and_a_tie_goes_to_the_faster_handshake(
+    path, handshake_s, live_path, is_better
+):
+    assert is_better_path(path, handshake_s, live_path, 0.2) is is_better
+
+
+def test_each_candidate_reads_as_its_path(bound_everywhere):
+    session, _lines = bound_everywhere
+    session._local_networks = functools.partial(list, ["192.0.2.0/24"])
+    session.set_overlay_route("100.64.0.1", "easytier")
+    session._relay_url = "https://203.0.113.7:8443"
+
+    assert session._path_of(LAN_URL) == "lan"
+    assert session._path_of(WAN_URL) == "direct"
+    assert session._path_of(OVERLAY_URL) == "easytier"
+    assert session._path_of("https://203.0.113.7:8443") == "relay"
+    assert session._path_of("https://hub.lan:8443") == "direct"
+
+
+def test_a_state_names_the_relays_address(bound, monkeypatch):
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+
+    take(session, made, dict(STATE, relay_url="https://203.0.113.7:8443"))
+
+    assert session._path_of("https://203.0.113.7:8443") == "relay"
+
+
+def _wait_for(predicate, timeout_s=5) -> None:
+    deadline = time.monotonic() + timeout_s
+    while not predicate():
+        assert time.monotonic() < deadline, "the state never came"
+        time.sleep(0.01)
+
+
+def test_a_network_turning_on_while_connected_keeps_the_channel_on_a_worse_winner(
+    bound_everywhere, monkeypatch, change_rounds
+):
+    """Connected over the LAN, an EasyTier network comes up: a round starts at
+    once beside the live channel, and its winner, worse, is closed before any
+    hello."""
     session, lines = bound_everywhere
-    monkeypatch.setattr(session, "_connect_round", _redirected_round)
+    session._local_networks = functools.partial(list, ["192.0.2.0/24"])
+    script = addresses_of(monkeypatch, {"192.0.2.1": [WELCOME]})
+    live = session._connect_round()
+    script._by_host = {"100.88.92.30": [WELCOME]}
 
-    assert session.run_once() == 0
-    assert "the round was redirected; connecting again now" in lines
-    assert session.last_error() is None
+    session.set_overlay_route("100.88.92.30", "easytier")
+    _wait_for(lambda: "100.88.92.30" in script.hosts and not session._is_changing)
+
+    winner = script.made[script.hosts.index("100.88.92.30")]
+    assert winner.sent == [] and winner.is_closed
+    assert live.is_closed is False and session._client is live
+    assert session.gateway_url() == LAN_URL
+    assert session.connection() == "connected"
+    assert any("the channel stays at" in line for line in lines)
+    session.stop()
 
 
-def _redirected_round():
-    return None
-
-
-def _take_round(session, ended) -> None:
-    ended.append(session._connect_round())
-
-
-def test_the_channel_moves_to_the_networks_address_once_its_port_answers(
-    bound_everywhere, monkeypatch
+def test_a_better_path_moves_the_channel_and_its_4010_is_not_replaced(
+    bound_everywhere, monkeypatch, change_rounds
 ):
-    session, _lines = bound_everywhere
+    """Connected over EasyTier, the LAN comes back: the LAN socket says hello,
+    the old socket is closed and its 4010 is expected, and the channel reads
+    on the new socket."""
+    session, lines = bound_everywhere
+    session._local_networks = functools.partial(list, ["192.0.2.0/24"])
+    session.set_overlay_route("100.64.0.1", "easytier")
+    old_held = threading.Event()
+    new_held = threading.Event()
     script = addresses_of(
-        monkeypatch, {"192.0.2.1": [WELCOME], "100.88.92.30": [WELCOME]}
+        monkeypatch,
+        {"100.64.0.1": [WELCOME, old_held, SocketClosed(4010, "replaced")]},
     )
-    lan = session._connect_round()
-    session.reconnect_through(["100.88.92.30"], is_only=True)
+    live = session._connect_round()
+    assert session._connected_path == "easytier"
+    served = threading.Thread(target=session._serve, args=(live,), daemon=True)
+    served.start()
+    script._by_host = {"192.0.2.1": [WELCOME, new_held]}
 
-    assert session.reaches_through(["100.88.92.30"]) is False
-    assert lan.is_closed and session.connection() != "connected"
-    session._connect_round()
-    assert session.reaches_through(["100.88.92.30"]) is True
-    assert script.hosts == [
-        "192.0.2.1",
-        "198.51.100.1",
-        "100.64.0.1",
-        "100.88.92.30",
-        "100.88.92.30",
-    ]
+    session.change_network()
+    _wait_for(lambda: session.gateway_url() == LAN_URL)
+    old_held.set()
+    moved = script.made[len(script.hosts) - 1 - script.hosts[::-1].index("192.0.2.1")]
+
+    assert [frame["type"] for frame in moved.sent][:2] == ["hello", "report"]
+    assert live.is_closed
+    _wait_for(lambda: session._client is moved)
+    assert session.connection() == "connected"
+    assert session._is_replaced is False
+    assert any("moving the channel from" in line for line in lines)
+    new_held.set()
+    served.join(timeout=5)
+    assert session._is_replaced is False
+    session.stop()
 
 
-def test_a_live_socket_stays_while_the_networks_address_does_not_answer(
-    bound_everywhere, monkeypatch
-):
-    session, _lines = bound_everywhere
-    addresses_of(monkeypatch, {"192.0.2.1": [WELCOME]})
-    lan = session._connect_round()
-    session.reconnect_through(["100.64.0.1"], is_only=True)
+def test_a_change_on_a_replaced_or_disabled_hub_starts_nothing(bound, monkeypatch):
+    session, _listener = bound
+    script = socket_of(monkeypatch, [WELCOME])
+    session._is_replaced = True
 
-    assert session.reaches_through(["100.64.0.1"]) is False
-    assert not lan.is_closed and session.connection() == "connected"
+    session.change_network()
+
+    assert not session._news.is_set() and script.made == []
+    session._is_replaced = False
+    connected(session, script)
+    session._is_disabled = True
+
+    session.change_network()
+
+    assert not session._is_changing and len(script.made) == 1
+
+
+def test_a_change_on_a_hub_that_is_down_starts_its_round_now(bound):
+    session, _listener = bound
+    session._backoff_s = CLIENT_BACKOFF_MAX_S
+
+    session.change_network()
+
+    assert session._news.is_set()
+    assert session._backoff_s == CLIENT_BACKOFF_MIN_S
 
 
 def test_the_states_terminals_are_held_while_the_socket_is_up(bound, monkeypatch):
@@ -2708,7 +2727,7 @@ def test_a_networks_ipv6_address_is_reached_in_brackets(bound_everywhere, monkey
     session, _lines = bound_everywhere
     script = addresses_of(monkeypatch, {"fd7a:115c::1": [WELCOME]})
 
-    session.reconnect_through(["fd7a:115c::1"])
+    session.set_overlay_route("fd7a:115c::1", "netbird")
     session.run_once()
 
     assert script.hosts == ["fd7a:115c::1", "192.0.2.1", "198.51.100.1", "100.64.0.1"]

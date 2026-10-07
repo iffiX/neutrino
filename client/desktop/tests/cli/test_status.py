@@ -266,3 +266,19 @@ def test_json_of_a_connecting_hub_is_not_a_clean_status(resident, capsys):
     assert json.loads(capsys.readouterr().out)["hubs"][1]["connection"] == (
         "connecting"
     )
+
+
+def test_a_network_connect_in_progress_reads_no_hub_word(resident, capsys):
+    resident.hubs_value[0]["overlay"] = dict(
+        resident.hubs_value[0]["overlay"], state="off", stage="login", address=""
+    )
+    resident.hubs_value[0]["jobs"] = dict(
+        resident.hubs_value[0]["jobs"], overlay_job="connecting"
+    )
+
+    status_cli.main()
+    status_cli.main(is_json=True)
+
+    out = capsys.readouterr().out
+    assert "Waiting for the hub" not in out and "stage" not in out
+    assert "ui.stage.hub" not in out and "ui.overlay.connecting" not in out

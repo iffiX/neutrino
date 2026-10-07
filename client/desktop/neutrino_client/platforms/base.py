@@ -20,6 +20,8 @@ Invoking a capability a platform does not have raises
 # client still imports on Python 3.9.
 from __future__ import annotations
 
+import ipaddress
+import json
 import os
 import re
 import signal
@@ -126,6 +128,72 @@ def read_share_credentials(path: str) -> "tuple[str, str]":
     except OSError:
         pass
     return values["username"], values["password"]
+
+
+def address_networks(lines: list) -> list:
+    """The networks a list of ``address/prefix`` lines names.
+
+    Args:
+        lines: One ``address/prefix`` each; an IPv6 zone after ``%`` is
+            dropped, and a line that is not one is skipped.
+
+    Returns:
+        Each line's network as ``a.b.c.d/n`` or an IPv6 prefix, each once.
+    """
+    networks = []
+    for line in lines:
+        text = str(line).strip()
+        address, _, prefix = text.partition("/")
+        address = address.split("%", 1)[0]
+        try:
+            network = str(ipaddress.ip_interface(f"{address}/{prefix}").network)
+        except ValueError:
+            continue
+        if network not in networks:
+            networks.append(network)
+    return networks
+
+
+def ip_json_networks(text: str) -> list:
+    """The networks ``ip -j address show`` names.
+
+    Args:
+        text: The command's output.
+
+    Returns:
+        Each address's network, each once; empty for output that is not
+        the command's.
+    """
+    try:
+        links = json.loads(text or "[]")
+    except ValueError:
+        return []
+    lines = []
+    for link in links if isinstance(links, list) else []:
+        for info in link.get("addr_info") or [] if isinstance(link, dict) else []:
+            if isinstance(info, dict) and info.get("local"):
+                lines.append(f"{info['local']}/{info.get('prefixlen', '')}")
+    return address_networks(lines)
+
+
+def ifconfig_networks(text: str) -> list:
+    """The networks ``ifconfig`` names, as macOS prints it.
+
+    Args:
+        text: The command's output.
+
+    Returns:
+        Each ``inet`` and ``inet6`` address's network, each once.
+    """
+    lines = []
+    for match in re.finditer(
+        r"inet (\S+)(?: --> \S+)? netmask 0x([0-9a-fA-F]{8})", text or ""
+    ):
+        prefix = bin(int(match.group(2), 16)).count("1")
+        lines.append(f"{match.group(1)}/{prefix}")
+    for match in re.finditer(r"inet6 (\S+) prefixlen (\d+)", text or ""):
+        lines.append(f"{match.group(1)}/{match.group(2)}")
+    return address_networks(lines)
 
 
 class ClientPlatform:
@@ -473,6 +541,15 @@ class ClientPlatform:
         if not path:
             raise OverlayControlError("bundle_missing", {"binary": binary})
         return run_quietly([path] + list(args), timeout_s=timeout_s, encoding="utf-8")
+
+    def local_networks(self) -> list:
+        """The networks this machine holds an address in.
+
+        Returns:
+            Each network as ``a.b.c.d/n`` or an IPv6 prefix; empty where the
+            system does not say.
+        """
+        return []
 
     def easytier_daemon_address(self) -> str:
         """Where the EasyTier daemon answers on this machine.

@@ -64,7 +64,7 @@ CONNECTION_STATES = (
     "disabled",
     "pending",
 )
-OVERLAY_STATES = ("off", "connecting", "on")
+OVERLAY_STATES = ("off", "on")
 JOB_WORDS = (
     "refreshing",
     "connecting",
@@ -84,7 +84,6 @@ CLIENT_MD_WORDS = {
     "ui.state.replaced": "Replaced by another client",
     "ui.state.disabled": "Disabled by the hub",
     "ui.overlay.off": "Not connected",
-    "ui.overlay.connecting": "Connecting…",
     "ui.overlay.on": "Connected · {address}",
     "ui.job.refreshing": "Refreshing…",
     "ui.job.connecting": "Connecting…",
@@ -683,16 +682,10 @@ def test_a_refused_state_poll_renders_its_wording():
 
 
 def test_the_page_draws_from_pushed_state_and_never_polls():
-    """The resident pushes every change; the page asks once, for the first frame.
-
-    The one interval moves the seconds of a hub stage's reason and asks the
-    resident nothing.
-    """
+    """The resident pushes every change; the page asks once, for the first frame."""
     assert "window.neutrinoState = (state) =>" in PAGE_JS
     assert "bridgeReady().then(firstFrame);" in PAGE_JS
-    assert PAGE_JS.count("setInterval") == 1
-    clock = PAGE_JS[PAGE_JS.index("setInterval(") :].split("}, 1000);")[0]
-    assert "api(" not in clock and "send(" not in clock
+    assert "setInterval" not in PAGE_JS
     assert "POLL_INTERVAL" not in PAGE_JS
 
 
@@ -920,7 +913,7 @@ def test_every_word_of_client_md_is_in_both_catalogs_as_written():
     assert CATALOGS["zh-CN"]["ui.overlay.on"] == "已连接 · {address}"
 
 
-def test_the_page_names_the_six_connections_and_the_three_network_states():
+def test_the_page_names_the_six_connections_and_the_two_network_states():
     listed = PAGE_JS.split("const CONNECTION_STATES = [")[1].split("];")[0]
     assert re.findall(r"'([a-z]+)'", listed) == list(CONNECTION_STATES)
     listed = PAGE_JS.split("const OVERLAY_STATES = [")[1].split("];")[0]
@@ -1198,17 +1191,19 @@ def test_a_notice_stands_above_the_hubs_with_a_close_button():
     assert "close.onclick = () => send('/api/notice/close', { id: notice.id });" in line
 
 
-def test_the_hub_stage_shows_the_seconds_waited_by_the_pages_own_clock():
-    words = body_of("hubStageWords")
-    assert "Math.floor(Date.now() / 1000 - (Number(since) || 0))" in words
-    assert "t('ui.stage.hub', { address: address, seconds:" in words
-    assert "line.dataset.since = String(overlay.stage_since || 0);" in body_of("hubRow")
-    assert "document.querySelectorAll('.stage_clock')" in PAGE_JS
+def test_the_network_line_reads_on_or_off_and_a_connect_is_its_job():
+    line = body_of("overlayLine")
+    assert "jobs.overlay_job === 'connecting' ? t('ui.job.connecting')" in line
+    assert "t('ui.overlay.' + state, { address: overlay.address || '' })" in line
+    stage = body_of("overlayStage")
+    assert "if (overlay.stage !== 'login') return '';" in stage
+    assert "t('ui.reason.console_waiting')" in stage
+    assert "if (jobs.overlay_job === 'connecting') {" in body_of("overlayButton")
+    for gone in ("stage_clock", "stage_since", "ui.stage.hub", "ui.overlay.connecting"):
+        assert gone not in PAGE_JS
     for language in CLIENT_LANGUAGES:
-        assert "{seconds}" in CATALOGS[language]["ui.stage.hub"]
-
-
-# --- the service pages ---
+        assert "ui.stage.hub" not in CATALOGS[language]
+        assert "ui.overlay.connecting" not in CATALOGS[language]
 
 
 def test_every_entry_is_one_row_with_its_provider_line():

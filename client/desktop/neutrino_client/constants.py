@@ -82,8 +82,13 @@ CLIENT_WS_SILENCE_TIMEOUT_S = 45
 CLIENT_CONNECT_TIMEOUT_S = 10
 # How often a report goes up while nothing changes.
 CLIENT_REPORT_INTERVAL_S = 30
+# How long asking the system for this machine's networks may take.
+CLIENT_LOCAL_NETWORKS_TIMEOUT_S = 10
 # How often the client pings the open socket; each pong sets the round trip.
 CLIENT_PING_INTERVAL_S = 20
+# The paths a candidate address reaches the hub by, best first: a round a
+# network change starts takes a live channel only on a better path.
+CLIENT_PATH_RANKS = {"lan": 1, "direct": 2, "netbird": 3, "easytier": 3, "relay": 4}
 # How long a stream this side opened waits for the hub's close.
 CLIENT_STREAM_TIMEOUT_S = 15
 # A byte stream's credit window: what this side grants the hub when it opens
@@ -263,13 +268,10 @@ CLIENT_OVERLAY_JOIN_TIMEOUT_S = 90
 CLIENT_OVERLAY_STATUS_TIMEOUT_S = 10
 # How often each network that is on is asked whether it still stands.
 CLIENT_OVERLAY_POLL_INTERVAL_S = 15
-# One connect in two stages: ``login``, the engine up and an address on the
-# network within its limit, looked at this often; ``hub``, from the address
-# until the hub's channel is up through the hub's own address there, with no
-# limit, the engine asked and the hub probed this often.
+# One connect, the ``login`` stage: the engine up and an address on the
+# network within its limit, looked at this often.
 CLIENT_OVERLAY_LOGIN_TIMEOUT_S = 90
 CLIENT_OVERLAY_CONNECT_POLL_S = 1
-CLIENT_OVERLAY_HUB_PROBE_S = 2
 
 # The EasyTier daemon: a long-running process of this package, root on Linux
 # and macOS and SYSTEM on Windows, the only thing that runs easytier-core. It

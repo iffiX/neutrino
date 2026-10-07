@@ -319,7 +319,7 @@ const CONNECTION_STATES = [
   'connected', 'connecting', 'down', 'replaced', 'disabled', 'pending',
 ];
 // The three states of a hub's virtual network.
-const OVERLAY_STATES = ['off', 'connecting', 'on'];
+const OVERLAY_STATES = ['off', 'on'];
 // The name each virtual network's engine goes by.
 const OVERLAY_TITLES = Object.assign(
   {}, ...PARTS.map((part) => part.overlayTitles || {}), { easytier: 'EasyTier' });
@@ -642,15 +642,7 @@ function hubRow(hub) {
   if (hasNetwork) {
     extras.push(overlayLine(hub));
     const stage = overlayStage(overlay);
-    if (stage) {
-      const line = reasonLine(stage);
-      if (overlay.state === 'connecting' && overlay.stage === 'hub' && !overlay.is_waiting) {
-        line.classList.add('stage_clock');
-        line.dataset.address = overlay.address || '';
-        line.dataset.since = String(overlay.stage_since || 0);
-      }
-      extras.push(line);
-    }
+    if (stage) extras.push(reasonLine(stage));
     if (overlay.state === 'off' && overlay.error) {
       extras.push(errorLine(wordError(overlay.error)));
     }
@@ -722,50 +714,33 @@ function leaveButton(hub) {
 }
 
 // The line for the hub's virtual network: the engine or the word for it,
-// the state word, the address while on.
+// then the connect job's word while one runs, else the state word with the
+// address while on.
 function overlayLine(hub) {
   const overlay = hub.overlay || {};
+  const jobs = hub.jobs || {};
   const networks = overlay.networks || [];
   const state = OVERLAY_STATES.indexOf(overlay.state) >= 0 ? overlay.state : 'off';
   const line = document.createElement('div');
   line.className = 'overlay_line';
-  const tone = overlay.state === 'on' && !(hub.jobs || {}).overlay_job ? 'ok'
-    : overlay.state === 'connecting' || (hub.jobs || {}).overlay_job ? 'pulse' : 'off';
+  const tone = jobs.overlay_job ? 'pulse' : state === 'on' ? 'ok' : 'off';
   line.innerHTML = marker(tone);
   const name = networks.length === 1
     ? (OVERLAY_TITLES[networks[0].provider] || networks[0].provider)
     : t('ui.overlay');
-  line.appendChild(document.createTextNode(
-    name + ' · ' + t('ui.overlay.' + state, { address: overlay.address || '' })));
+  const word = jobs.overlay_job === 'connecting' ? t('ui.job.connecting')
+    : t('ui.overlay.' + state, { address: overlay.address || '' });
+  line.appendChild(document.createTextNode(name + ' · ' + word));
   return line;
 }
 
 // The stage a connect is in, as the line's reason: the engine logging in,
-// the console not yet assigning a network, or the hub not yet answering.
+// or the console not yet assigning a network.
 function overlayStage(overlay) {
-  if (overlay.state !== 'connecting') return '';
+  if (overlay.stage !== 'login') return '';
   if (overlay.is_waiting) return t('ui.reason.console_waiting');
-  if (overlay.stage === 'login') {
-    return t('ui.stage.login', { engine: OVERLAY_TITLES[overlay.network] || overlay.network });
-  }
-  if (overlay.stage === 'hub') return hubStageWords(overlay.address || '', overlay.stage_since);
-  return '';
+  return t('ui.stage.login', { engine: OVERLAY_TITLES[overlay.network] || overlay.network });
 }
-
-// The hub stage's reason: the address and the seconds waited since the
-// stage began, by this machine's clock.
-function hubStageWords(address, since) {
-  const seconds = Math.max(0, Math.floor(Date.now() / 1000 - (Number(since) || 0)));
-  return t('ui.stage.hub', { address: address, seconds: since ? seconds : 0 });
-}
-
-// The seconds on every hub stage's reason move once a second, with no
-// state pushed.
-setInterval(() => {
-  for (const line of document.querySelectorAll('.stage_clock')) {
-    line.textContent = hubStageWords(line.dataset.address, line.dataset.since);
-  }
-}, 1000);
 
 // The engine picker, while the hub publishes two networks or more; it
 // picks only while the network is off, and names the engine otherwise.
@@ -797,7 +772,7 @@ function overlayButton(hub) {
   if (jobs.overlay_job === 'disconnecting') return jobButton('', 'disconnecting');
   const button = document.createElement('button');
   button.type = 'button';
-  if (overlay.state === 'connecting') {
+  if (jobs.overlay_job === 'connecting') {
     button.innerHTML = '<span class="spin"></span>';
     button.appendChild(document.createTextNode(t('ui.network_cancel')));
     button.onclick = () => send('/api/overlay/cancel', { hub_id: key });

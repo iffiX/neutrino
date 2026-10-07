@@ -511,3 +511,50 @@ def test_windows_reads_the_machine_guid_from_the_64_bit_registry(monkeypatch):
 
 def test_a_platform_without_an_id_names_none():
     assert ClientPlatform().os_machine_id() == ""
+
+
+# --- the machine's networks ---
+
+
+IP_JSON = """[
+ {"ifname": "lo", "addr_info": [{"family": "inet", "local": "127.0.0.1", "prefixlen": 8}]},
+ {"ifname": "eth0", "addr_info": [
+  {"family": "inet", "local": "192.168.10.23", "prefixlen": 24},
+  {"family": "inet6", "local": "fe80::1c2d:3eff:fe4f:5a6b", "prefixlen": 64}]},
+ {"ifname": "et0", "addr_info": [{"family": "inet", "local": "10.144.144.5", "prefixlen": 24}]}
+]"""
+
+IFCONFIG = """en0: flags=8863<UP,BROADCAST,SMART,RUNNING,SIMPLEX,MULTICAST> mtu 1500
+\tinet6 fe80::10e5:aa1f:9c3b:22d1%en0 prefixlen 64 secured scopeid 0x6
+\tinet 192.168.10.40 netmask 0xffffff00 broadcast 192.168.10.255
+utun4: flags=8051<UP,POINTOPOINT,RUNNING,MULTICAST> mtu 1280
+\tinet 100.88.92.12 --> 100.88.92.12 netmask 0xffff0000
+"""
+
+
+def test_ip_json_names_every_network_once():
+    assert base_module.ip_json_networks(IP_JSON) == [
+        "127.0.0.0/8",
+        "192.168.10.0/24",
+        "fe80::/64",
+        "10.144.144.0/24",
+    ]
+    assert base_module.ip_json_networks("not json") == []
+
+
+def test_ifconfig_names_every_network_with_its_mask():
+    assert base_module.ifconfig_networks(IFCONFIG) == [
+        "192.168.10.0/24",
+        "100.88.0.0/16",
+        "fe80::/64",
+    ]
+
+
+def test_address_lines_drop_the_zone_and_skip_what_is_not_one():
+    assert base_module.address_networks(
+        ["192.168.10.23/24", "fe80::1%12/64", "garbage", ""]
+    ) == ["192.168.10.0/24", "fe80::/64"]
+
+
+def test_a_platform_that_does_not_say_knows_no_network():
+    assert ClientPlatform().local_networks() == []

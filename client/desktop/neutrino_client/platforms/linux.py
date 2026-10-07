@@ -31,6 +31,7 @@ from neutrino_client.constants import (
     CLIENT_CONTROL_SOCKET_NAME,
     CLIENT_EASYTIER_SOCKET_PATH_LINUX,
     CLIENT_EASYTIER_STATE_DIR_LINUX,
+    CLIENT_LOCAL_NETWORKS_TIMEOUT_S,
     CLIENT_LOG_DIR_LINUX,
     CLIENT_MOUNT_HELPER_EXIT_CODES,
     CLIENT_MOUNT_HELPER_PATH,
@@ -41,7 +42,12 @@ from neutrino_client.exceptions import (
     PlatformUnsupportedError,
     ShareAttachError,
 )
-from neutrino_client.platforms.base import ClientPlatform, run_on_pty, run_quietly
+from neutrino_client.platforms.base import (
+    ClientPlatform,
+    ip_json_networks,
+    run_on_pty,
+    run_quietly,
+)
 from neutrino_client.platforms.posix_terminal import PosixRawTerminal
 
 CIFS_HELPER = "mount.cifs"
@@ -353,6 +359,23 @@ class LinuxPlatform(ClientPlatform):
                     raise OSError(f"{tool[0]}: {detail}")
                 return
         gtk_set_clipboard_text(text, CLIENT_CLIPBOARD_TIMEOUT_S)
+
+    def local_networks(self) -> list:
+        """The networks this machine holds an address in, as ``ip`` names them.
+
+        Returns:
+            Each network as ``a.b.c.d/n`` or an IPv6 prefix; empty when
+            ``ip`` does not answer.
+        """
+        try:
+            result = run_quietly(
+                ["ip", "-j", "address", "show", "up"],
+                timeout_s=CLIENT_LOCAL_NETWORKS_TIMEOUT_S,
+                encoding="utf-8",
+            )
+        except (OSError, subprocess.SubprocessError):
+            return []
+        return ip_json_networks(result.stdout)
 
     def easytier_daemon_address(self) -> str:
         """``/run/neutrino/client/easytier.sock``."""

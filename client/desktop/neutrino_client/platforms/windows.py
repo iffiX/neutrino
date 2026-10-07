@@ -42,6 +42,7 @@ from neutrino_client.constants import (
     CLIENT_FILES_ADAPTER_WAIT_S,
     CLIENT_FILES_NETWORK,
     CLIENT_FILES_PIPE_WINDOWS,
+    CLIENT_LOCAL_NETWORKS_TIMEOUT_S,
     CLIENT_RELAUNCH_ARGUMENTS,
     CLIENT_RELAUNCH_TASK_PREFIX_WINDOWS,
     CLIENT_RELAUNCH_TIMEOUT_S,
@@ -56,6 +57,7 @@ from neutrino_client.exceptions import (
 )
 from neutrino_client.platforms.base import (
     ClientPlatform,
+    address_networks,
     read_share_credentials,
     run_quietly,
     share_parts,
@@ -176,6 +178,21 @@ def files_adapter_command() -> list:
         "Bypass",
         "-EncodedCommand",
         encoded,
+    ]
+
+
+def local_networks_command() -> list:
+    """How PowerShell lists this machine's addresses, one ``address/prefix`` a line.
+
+    Returns:
+        The argument vector.
+    """
+    return [
+        _powershell_path(),
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        "Get-NetIPAddress | ForEach-Object { $_.IPAddress + '/' + $_.PrefixLength }",
     ]
 
 
@@ -546,6 +563,21 @@ class WindowsPlatform(ClientPlatform):
     def files_daemon_address(self) -> str:
         """The pipe named ``neutrino_client_files``."""
         return CLIENT_FILES_PIPE_WINDOWS
+
+    def local_networks(self) -> list:
+        """The networks this machine holds an address in, as PowerShell names them.
+
+        Returns:
+            Each network as ``a.b.c.d/n`` or an IPv6 prefix; empty when
+            PowerShell does not answer.
+        """
+        try:
+            result = run_quietly(
+                local_networks_command(), timeout_s=CLIENT_LOCAL_NETWORKS_TIMEOUT_S
+            )
+        except (OSError, subprocess.SubprocessError):
+            return []
+        return address_networks((result.stdout or "").splitlines())
 
     def configure_files_adapter(self) -> None:
         """Give the files adapter its address, metric and DNS settings.

@@ -5,9 +5,9 @@ hub, so it lives beside the sessions rather than among the handlers. Each
 hub's state names how to join each of its networks, preferred first: for
 EasyTier either a manual network's name, secret and peer or an EasyTier
 console's address, and what each engine the edition table adds takes. Per
-hub the network is ``off``,
-``connecting`` or ``on``, on the one engine the person chose, and a failure
-is kept as the error while it is off. The daemons the packages register as
+hub the network is ``off`` or ``on``, on the one engine the person chose; a
+connect in progress is the job ``connecting``, and a failure is kept as the
+error while it is off. The daemons the packages register as
 services hold the network itself; this side starts and stops them and asks
 where they stand, and leaves nothing behind on exit because nothing here is
 what keeps a network up. EasyTier is asked of the client's own EasyTier
@@ -34,7 +34,6 @@ from neutrino_client import edition
 from neutrino_client.constants import (
     CLIENT_EASYTIER_RPC_PORTAL,
     CLIENT_OVERLAY_CONNECT_POLL_S,
-    CLIENT_OVERLAY_HUB_PROBE_S,
     CLIENT_OVERLAY_LOGIN_TIMEOUT_S,
     CLIENT_OVERLAY_POLL_INTERVAL_S,
     CLIENT_OVERLAY_STATUS_TIMEOUT_S,
@@ -44,18 +43,16 @@ from neutrino_client.core.easytier_daemon import console_digest
 from neutrino_client.core.easytier_config import safe_hostname
 from neutrino_client.exceptions import OverlayControlError, PlatformUnsupportedError
 
-# The three states of a hub's virtual network.
+# The two states of a hub's virtual network.
 OVERLAY_STATE_OFF = "off"
-OVERLAY_STATE_CONNECTING = "connecting"
 OVERLAY_STATE_ON = "on"
-OVERLAY_STATES = (OVERLAY_STATE_OFF, OVERLAY_STATE_CONNECTING, OVERLAY_STATE_ON)
+OVERLAY_STATES = (OVERLAY_STATE_OFF, OVERLAY_STATE_ON)
 # The step running on a hub's network, which its button shows.
 OVERLAY_JOB_CONNECTING = "connecting"
 OVERLAY_JOB_DISCONNECTING = "disconnecting"
-# The two stages of a connect, which the line's reason names: the engine
-# logging in until it has an address, then the hub answering through it.
+# The one stage of a connect, which the line's reason names: the engine
+# logging in until it has an address.
 OVERLAY_STAGE_LOGIN = "login"
-OVERLAY_STAGE_HUB = "hub"
 # What ``easytier-cli`` prints for an instance the daemon does not run, with
 # exit status 0, and for a portal nothing listens on.
 EASYTIER_NO_INSTANCE_MARK = "No instance matches the selector"
@@ -444,15 +441,15 @@ def _raise_refusal(answer: dict) -> None:
 
 
 class OverlayMemberships:
-    """Each joined hub's virtual network: ``off``, ``connecting`` or ``on``.
+    """Each joined hub's virtual network: ``off`` or ``on``.
 
     A hub names its networks in its order of preference, and the person
     chooses one engine among them while the network is off; the chosen one
-    is the first until they do. Connect is one attempt in two stages:
-    ``login``, the engine up and an address on the network within its
-    limit, then ``hub``, with no limit, the hub's channel up through the
-    hub's own address there. Nothing here retries, moves to another network, or
-    changes the choice. While a hub's network is on, the poll asks its
+    is the first until they do. Connect is one attempt, the job
+    ``connecting`` in its one stage ``login``: the engine up and an address
+    on the network within its limit, and the network is then ``on``,
+    whatever the hub's channel does. Nothing here retries, moves to another
+    network, or changes the choice. While a hub's network is on, the poll asks its
     engine whether it still stands, and a network the hub stops naming is
     left with ``overlay_withdrawn``.
     """
@@ -466,13 +463,11 @@ class OverlayMemberships:
         log=print,
         on_change=None,
         on_route=None,
-        reaches_hub=None,
         keep_choice=None,
         drivers=None,
         start_thread=None,
         clock=None,
         login_timeout_s: float = CLIENT_OVERLAY_LOGIN_TIMEOUT_S,
-        hub_probe_s: float = CLIENT_OVERLAY_HUB_PROBE_S,
         poll_s: float = CLIENT_OVERLAY_CONNECT_POLL_S,
     ):
         """
@@ -486,13 +481,10 @@ class OverlayMemberships:
             log: Callable used for progress messages.
             on_change: Called with no arguments after every change a page
                 draws; None for nobody listening.
-            on_route: ``on_route(hub_id, hosts, is_only)`` has the hub's
-                channel connect through these hosts first, or through them
-                alone with ``is_only``, an empty list dropping the
-                preference; None for nobody listening.
-            reaches_hub: ``reaches_hub(hub_id, hosts)`` says whether the
-                hub's channel is up through one of the hosts; None reads as
-                never.
+            on_route: ``on_route(hub_id, host, provider)`` names the hub's
+                address on the network that just turned on and its engine,
+                or two empty strings once the network is off; None for
+                nobody listening.
             keep_choice: ``keep_choice(hub_id, is_on, pick)`` writes where
                 the network stands and the engine chosen onto the binding,
                 raising OSError when it cannot; None keeps nothing.
@@ -504,8 +496,6 @@ class OverlayMemberships:
             login_timeout_s: How long the ``login`` stage may take; a
                 console that registered this machine and assigned no
                 network yet waits with no limit.
-            hub_probe_s: How often the ``hub`` stage, which has no limit,
-                asks the engine and probes the hub.
             poll_s: How often a connect looks again.
         """
         self._platform = platform
@@ -514,14 +504,12 @@ class OverlayMemberships:
         self._log = log
         self._on_change = on_change if on_change is not None else _nobody
         self._on_route = on_route if on_route is not None else _nobody
-        self._reaches_hub = reaches_hub if reaches_hub is not None else _never
         self._keep_choice = keep_choice if keep_choice is not None else _nobody
         self._start_thread = (
             start_thread if start_thread is not None else _start_daemon_thread
         )
         self._clock = clock if clock is not None else time.monotonic
         self._login_timeout_s = login_timeout_s
-        self._hub_probe_s = hub_probe_s
         self._poll_s = poll_s
         self._drivers = (
             drivers
@@ -541,10 +529,10 @@ class OverlayMemberships:
         self._urls: dict = {}
         # Each joined hub's choice: {pick, is_on}.
         self._choices: dict = {}
-        # One record per hub: {state, stage, stage_since, is_waiting, address,
-        # error, job, material, count, cancel}. ``material`` is the network
-        # in use while not off, and ``count`` tells a step that was overtaken
-        # apart.
+        # One record per hub: {state, stage, is_waiting, address, error, job,
+        # material, count, cancel}. ``material`` is the network in use while
+        # a connect runs or it is on, and ``count`` tells a step that was
+        # overtaken apart.
         self._records: dict = {}
         self._news = threading.Event()
         self._stop = threading.Event()
@@ -559,22 +547,19 @@ class OverlayMemberships:
             hub_id: The hub, by its id.
 
         Returns:
-            ``{network, networks, state, stage, stage_since, is_waiting,
-            address, error}``: the provider chosen or in use, ``[{provider,
-            network}]`` for every network the hub names, the state, the
-            stage while connecting (``login`` or ``hub``, else empty) and
-            the epoch second it began (0 for none),
-            whether a console registered this machine and assigned it no
-            network yet, this machine's address from the ``hub`` stage on,
-            and ``{code, params}`` of the last failure while off, else
-            None.
+            ``{network, networks, state, stage, is_waiting, address,
+            error}``: the provider chosen or in use, ``[{provider,
+            network}]`` for every network the hub names, ``off`` or ``on``,
+            ``login`` while a connect runs and else empty, whether a console
+            registered this machine and assigned it no network yet, this
+            machine's address while on, and ``{code, params}`` of the last
+            failure while off, else None.
         """
         with self._lock:
             record = dict(self._records.get(hub_id) or _off_record())
             materials = list(self._materials.get(hub_id) or [])
             chosen = self._chosen(hub_id)
-        material = record["material"] if record["state"] != OVERLAY_STATE_OFF else None
-        material = material or chosen
+        material = record["material"] or chosen
         return {
             "network": material["provider"] if material else "",
             "networks": [
@@ -583,7 +568,6 @@ class OverlayMemberships:
             ],
             "state": record["state"],
             "stage": record["stage"],
-            "stage_since": record["stage_since"],
             "is_waiting": record["is_waiting"],
             "address": record["address"],
             "error": dict(record["error"]) if record["error"] else None,
@@ -613,9 +597,7 @@ class OverlayMemberships:
                 material = None
             else:
                 record.update(
-                    state=OVERLAY_STATE_CONNECTING,
                     stage=OVERLAY_STAGE_LOGIN,
-                    stage_since=int(time.time()),
                     is_waiting=False,
                     job=OVERLAY_JOB_CONNECTING,
                     error=None,
@@ -642,11 +624,7 @@ class OverlayMemberships:
         """
         with self._lock:
             record = self._records.get(hub_id)
-            if (
-                record is None
-                or record["state"] != OVERLAY_STATE_CONNECTING
-                or record["job"] != OVERLAY_JOB_CONNECTING
-            ):
+            if record is None or record["job"] != OVERLAY_JOB_CONNECTING:
                 record = None
             else:
                 record["cancel"].set()
@@ -825,7 +803,7 @@ class OverlayMemberships:
             self._materials.pop(hub_id, None)
             self._urls.pop(hub_id, None)
             self._choices.pop(hub_id, None)
-        if record is None or record["state"] == OVERLAY_STATE_OFF:
+        if record is None or record["material"] is None:
             return 0
         if record["cancel"] is not None:
             record["cancel"].set()
@@ -866,7 +844,7 @@ class OverlayMemberships:
     # --- the steps ---
 
     def _attempt(self, hub_id: str, material: dict, count: int, cancel) -> None:
-        """One connect: stage ``login`` to an address, then stage ``hub``."""
+        """One connect: stage ``login`` to an address, and the network is on."""
         driver = self._drivers[material["provider"]]
         status = self._login(hub_id, material, count, cancel, driver)
         if status is None:
@@ -877,36 +855,21 @@ class OverlayMemberships:
             is_current = record is not None and record["count"] == count
             if is_current:
                 record.update(
-                    stage=OVERLAY_STAGE_HUB,
-                    stage_since=int(time.time()),
-                    is_waiting=False,
-                    address=address,
-                )
-            urls = list(self._urls.get(hub_id) or [])
-        if not is_current:
-            return
-        self._on_change()
-        host = overlay_hub_host(material, urls, status.get("network", ""))
-        if not self._reach(hub_id, material, count, cancel, driver, host):
-            return
-        with self._lock:
-            record = self._records.get(hub_id)
-            is_current = record is not None and record["count"] == count
-            if is_current:
-                record.update(
                     state=OVERLAY_STATE_ON,
                     stage="",
-                    stage_since=0,
+                    is_waiting=False,
                     address=address,
                     job="",
                     cancel=None,
                 )
+            urls = list(self._urls.get(hub_id) or [])
         if not is_current:
             return
-        self._on_route(hub_id, [host] if host else [], False)
         self._log(f"overlay: on {overlay_network(material)} as {address}")
         self._keep(hub_id, True, material["provider"])
         self._on_change()
+        host = overlay_hub_host(material, urls, status.get("network", ""))
+        self._on_route(hub_id, host, material["provider"])
 
     def _login(
         self, hub_id: str, material: dict, count: int, cancel, driver
@@ -941,42 +904,6 @@ class OverlayMemberships:
             cancel.wait(self._poll_s)
         self._log_end("login", network, started, "cancelled")
         return None
-
-    def _reach(
-        self, hub_id: str, material: dict, count: int, cancel, driver, host: str
-    ) -> bool:
-        """Stage ``hub``: whether the channel came up through the hub's address."""
-        network = overlay_network(material)
-        started = self._clock()
-        self._log(f"overlay: {network}: stage hub started at {host or 'no address'}")
-        if not host:
-            self._log_end("hub", network, started, "the hub names no address")
-            return not cancel.is_set()
-        self._on_route(hub_id, [host], True)
-        is_seen = False
-        while not cancel.is_set():
-            try:
-                status = driver.status(material)
-                error = None if status["is_on"] else _engine_stopped()
-            except OverlayControlError as refusal:
-                status, error = {}, _refusal(refusal)
-            if error is not None and not cancel.is_set():
-                self._log_end("hub", network, started, error["code"])
-                self._lost(hub_id, material, count, error)
-                return False
-            if not is_seen and status.get("is_hub_seen"):
-                is_seen = True
-                elapsed = self._clock() - started
-                self._log(
-                    f"overlay: {network}: the hub's peer is connected "
-                    f"after {elapsed:.1f}s"
-                )
-            if self._reaches_hub(hub_id, [host]):
-                self._log_end("hub", network, started, f"the hub answers at {host}")
-                return not cancel.is_set()
-            cancel.wait(self._hub_probe_s)
-        self._log_end("hub", network, started, "cancelled")
-        return False
 
     def _note_waiting(self, hub_id: str, count: int) -> None:
         """Mark a connect as waiting for its console to assign a network."""
@@ -1048,7 +975,6 @@ class OverlayMemberships:
             record.update(
                 state=OVERLAY_STATE_OFF,
                 stage="",
-                stage_since=0,
                 is_waiting=False,
                 address="",
                 error=dict(error) if error else None,
@@ -1057,7 +983,7 @@ class OverlayMemberships:
                 cancel=None,
             )
             pick = (self._choices.get(hub_id) or {}).get("pick", "")
-        self._on_route(hub_id, [], False)
+        self._on_route(hub_id, "", "")
         self._keep(hub_id, False, pick)
         self._on_change()
 
@@ -1071,14 +997,13 @@ class OverlayMemberships:
         return None
 
     def _is_shared(self, hub_id: str, material: "dict | None") -> bool:
-        """Whether another hub's network that is not off runs on the same engine network."""
+        """Whether another hub's network in use runs on the same engine network."""
         if material is None:
             return False
         key = overlay_key(material)
         with self._lock:
             return any(
                 other_id != hub_id
-                and record["state"] != OVERLAY_STATE_OFF
                 and record["material"] is not None
                 and overlay_key(record["material"]) == key
                 for other_id, record in self._records.items()
@@ -1110,7 +1035,6 @@ def _off_record() -> dict:
     return {
         "state": OVERLAY_STATE_OFF,
         "stage": "",
-        "stage_since": 0,
         "is_waiting": False,
         "address": "",
         "error": None,
@@ -1129,11 +1053,6 @@ def _refusal(error) -> dict:
 def _engine_stopped() -> dict:
     """The failure of an engine that stopped by itself."""
     return {"code": "overlay_engine_stopped", "params": {}}
-
-
-def _never(*_args) -> bool:
-    """Nothing answers."""
-    return False
 
 
 def _start_daemon_thread(target) -> None:
