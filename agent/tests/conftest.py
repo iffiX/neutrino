@@ -19,6 +19,10 @@ import neutrino_agent.core.engine as engine_module
 import neutrino_agent.core.enrollment as enrollment
 import neutrino_agent.core.loop as loop_module
 import neutrino_agent.core.store as store_module
+import neutrino_agent.modules.remote_desktop.darwin_applier as darwin_applier_module
+import neutrino_agent.modules.remote_desktop.linux_applier as linux_applier_module
+import neutrino_agent.modules.remote_desktop.windows_applier as windows_applier_module
+from neutrino_agent.modules.subprocess_run import CommandResult
 import neutrino_agent.platforms.base as platforms_base_module
 import neutrino_agent.platforms.darwin as darwin_module
 import neutrino_agent.platforms.linux as linux_module
@@ -47,6 +51,20 @@ def _isolated_network(monkeypatch):
     monkeypatch.setattr(enrollment, "resolve_hub_address", lambda: "")
     monkeypatch.setattr(enrollment, "default_source_address", lambda urls: "")
     monkeypatch.setattr(loop_module, "AGENT_ROTATE_DELAY_S", 0)
+
+
+@pytest.fixture(autouse=True)
+def _no_system_commands_from_the_appliers(monkeypatch):
+    """The remote desktop appliers run nothing on the real machine: a test
+    that builds one without its own ``run`` gets a runner that refuses
+    every command, so no ``systemctl`` reaches the system or asks a
+    session's polkit for rights."""
+
+    def refused(argv, **_):
+        return CommandResult(exit_code=1, stdout="", stderr="no commands run in tests")
+
+    for module in (linux_applier_module, darwin_applier_module, windows_applier_module):
+        monkeypatch.setattr(module, "run_command", refused)
 
 
 @pytest.fixture
