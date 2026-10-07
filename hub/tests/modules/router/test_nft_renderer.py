@@ -486,6 +486,45 @@ def test_the_hub_scope_outlives_the_lan_switch():
     assert "iifname !=" not in body
 
 
+HUB_DIVERSION = (
+    'iifname "lo" ip daddr != @reserved_v4 fib daddr type != local '
+    "meta l4proto { tcp, udp } tproxy ip to 127.0.0.1:12345 meta mark set 0x1 "
+    "accept"
+)
+
+
+@pytest.mark.feature("netbird")
+@pytest.mark.feature("proxy")
+def test_the_hub_s_own_diversion_needs_no_mark_another_table_can_replace():
+    """A routing peer's daemon replaces the output chain's mark at mangle on
+    every new connection from a network it routes, so the loopback rule takes
+    the packet by where it is going and sets the mark after the tproxy."""
+    ruleset = render(
+        wan_entry("enp2s0"),
+        lan_entry("enp1s0", address="192.168.100.1"),
+        routing=ROUTING_LOCAL_PROXY,
+    )
+    lines = [line.strip() for line in without_comments(ruleset).splitlines()]
+
+    assert HUB_DIVERSION in lines
+    assert not any(line.startswith('iifname "lo" meta mark') for line in lines)
+    assert lines.index(HUB_DIVERSION) > lines.index(
+        "meta l4proto { tcp, udp } socket transparent 1 meta mark set 0x1 accept"
+    )
+
+
+@pytest.mark.needs_root
+@pytest.mark.feature("proxy")
+def test_the_hub_s_own_diversion_is_accepted_by_nft():
+    validate_nft(
+        render(
+            wan_entry("enp2s0"),
+            lan_entry("enp1s0", address="192.168.100.1"),
+            routing=ROUTING_LOCAL_PROXY,
+        )
+    )
+
+
 @pytest.mark.feature("netbird")
 @pytest.mark.feature("proxy")
 def test_fenced_lans_cannot_reach_each_other():

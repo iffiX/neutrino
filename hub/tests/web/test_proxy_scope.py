@@ -13,8 +13,9 @@ LAN_DIVERSION = (
     "meta mark set 0x1 accept\n"
 )
 HUB_DIVERSION = (
-    '        iifname "lo" meta mark 0x1 meta l4proto { tcp, udp } '
-    "tproxy ip to 127.0.0.1:12345 accept\n"
+    '        iifname "lo" ip daddr != @reserved_v4 fib daddr type != local '
+    "meta l4proto { tcp, udp } tproxy ip to 127.0.0.1:12345 meta mark set 0x1 "
+    "accept\n"
 )
 
 
