@@ -696,6 +696,11 @@
           "title": "Urls",
           "type": "array"
         },
+        "relay_url": {
+          "default": "",
+          "title": "Relay Url",
+          "type": "string"
+        },
         "overlays": {
           "items": {
             "$ref": "#/$defs/ChannelOverlay"
