@@ -6,6 +6,7 @@ import io.github.iffix.neutrino.binding.BindingStore
 import io.github.iffix.neutrino.binding.FakeSecretSealer
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -138,6 +139,42 @@ class HubConnectionsTest {
         assertNull(store.get("b1"))
         runCurrent()
         assertEquals(Samples.binding.storedUrls.size, transport.posts.count { it.second == "/api/channel/leave" })
+    }
+
+    @Test
+    fun aLeaveWhoseFirstAddressHangsTellsTheNextWithinTheShortTimeout() = runTest {
+        val first = "https://192.168.100.1:8443"
+        val next = "https://100.72.4.1:8443"
+        transport.answers[next to "/api/channel/leave"] = ChannelResult.Ok(JsonObject(emptyMap()))
+        val hanging = object : HubTransport by transport {
+            override suspend fun post(
+                baseUrl: String,
+                path: String,
+                fingerprint: String,
+                body: JsonObject,
+            ): ChannelResult<JsonObject> {
+                if (baseUrl == first) awaitCancellation()
+                return transport.post(baseUrl, path, fingerprint, body)
+            }
+        }
+        val store = BindingStore(folder.root.resolve("b.sealed"), sealer)
+        val connections = HubConnections(store, hanging, Samples.machine, { null }, backgroundScope)
+        store.put(Samples.binding.copy(gatewayUrl = first))
+        connections.leave("b1")
+        advanceTimeBy(CLIENT_LEAVE_TELL_TIMEOUT_S * 1000 - 1)
+        assertEquals(listOf(next), transport.posts.map { it.first })
+    }
+
+    @Test
+    fun theLeaveTriesTheAddressThatLastAnsweredFirst() = runTest {
+        val (connections, store) = connections()
+        store.put(Samples.binding.copy(gatewayUrl = "https://100.72.4.1:8443"))
+        connections.leave("b1")
+        runCurrent()
+        assertEquals(
+            listOf("https://100.72.4.1:8443", "https://192.168.100.1:8443"),
+            transport.posts.map { it.first },
+        )
     }
 
     @Test
