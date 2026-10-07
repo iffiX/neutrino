@@ -117,13 +117,14 @@ AGENT_WANT_INSTALLED = "installed"
 AGENT_WANT_STOPPED = "stopped"
 AGENT_WANT_RUNNING = "running"
 # What the agent reports a module to be, one closed table on every surface:
-# four steady states, two in transit, and two shared by every failure.
+# four steady states, three in transit, and two shared by every failure.
 AGENT_MODULE_STATE_ABSENT = "absent"
 AGENT_MODULE_STATE_INSTALLED = "installed"
 AGENT_MODULE_STATE_STOPPED = "stopped"
 AGENT_MODULE_STATE_RUNNING = "running"
 AGENT_MODULE_STATE_INSTALLING = "installing"
 AGENT_MODULE_STATE_UNINSTALLING = "uninstalling"
+AGENT_MODULE_STATE_QUEUED = "queued"
 AGENT_MODULE_STATE_FAILED = "failed"
 AGENT_MODULE_STATE_UNSUPPORTED = "unsupported"
 

@@ -769,7 +769,7 @@ def test_a_join_wakes_a_replaced_agent(config_path, monkeypatch):
 
 def _tried(agent, state_hash):
     """Mark a state as tried, as an apply leaves it."""
-    agent._desired._store.write_tried(state_hash)
+    agent._desired._store.write_tried({"samba": state_hash})
     agent._desired.reload_tried()
 
 
@@ -784,8 +784,8 @@ def test_a_join_forgets_the_state_last_tried(config_path, monkeypatch):
 
     agent.join("neutrino://enroll/x")
 
-    assert agent._desired._tried_hash == ""
-    assert agent._desired._store.read_tried() == ""
+    assert agent._desired._tried == {}
+    assert agent._desired._store.read_tried() == {}
 
 
 def test_a_leave_forgets_the_state_last_tried(config_path, monkeypatch):
@@ -794,7 +794,7 @@ def test_a_leave_forgets_the_state_last_tried(config_path, monkeypatch):
 
     agent.leave()
 
-    assert agent._desired._store.read_tried() == ""
+    assert agent._desired._store.read_tried() == {}
 
 
 def test_a_binding_another_process_wrote_reads_the_mark_again(config_path):
@@ -806,7 +806,7 @@ def test_a_binding_another_process_wrote_reads_the_mark_again(config_path):
     bind(config_path)
     agent._adopt_external_binding()
 
-    assert agent._desired._tried_hash == ""
+    assert agent._desired._tried == {}
 
 
 def test_a_refusal_after_the_welcome_keeps_the_binding(config_path, monkeypatch):

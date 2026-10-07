@@ -19,17 +19,18 @@ come down a ``package {module}`` stream the applier opens, and an
 install's or an uninstall's output goes up a ``log {module}`` stream.
 
 The applied hash is what the hub compares against: it moves to the state's
-hash only once every mentioned module applied. A state whose apply failed
-is reported with its code under the old hash, and is tried again only when
-a state with another hash arrives; the one exception is a failure the
-socket caused, which the next state frame tries again. The hash last tried
-is kept beside the state on disk, so an agent that starts again does not
-try a failed state again either. The mark holds for one install and one
-binding: the agent's removal, a join and a leave delete it, so the next
-agent that holds the same state applies it again. A module whose apply
-waits on an install that still runs is no failure: unless another module
-failed, the state is applied again every recheck interval until the
-install has ended.
+hash once no mentioned module's last step failed or waits. Each module's
+entry, and the ``ai_tools`` section, is tried once: the hash of the entry
+last tried is kept per section beside the state on disk, so a change to one
+entry, or a retry mark on it, runs that module's step alone, and an agent
+that starts again tries nothing again. A failure the socket caused, and a
+failed step that leaves the module not installed, keep no hash, so the next
+state with that entry tries it again. The marks hold for one install and
+one binding: the agent's removal, a join and a leave delete them. Modules
+apply one at a time; while one applies, each other module the apply will
+reach whose ``want`` differs from its reported state reads ``queued``. A
+module whose apply waits on an install that still runs is no failure: the
+state is applied again every recheck interval until the install has ended.
 
 Not pure: writes the state file, drives the module runners and opens
 streams.
@@ -39,6 +40,7 @@ streams.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import tempfile
@@ -47,6 +49,7 @@ import threading
 from neutrino_agent.constants import (
     AGENT_DESIRED_STATE_PATH,
     AGENT_MODULE_INSTALL_RECHECK_S,
+    AGENT_MODULE_STATE_ABSENT,
     AGENT_MODULE_STATE_FAILED,
     AGENT_WANT_ABSENT,
     AGENT_WANT_INSTALLED,
@@ -59,6 +62,7 @@ from neutrino_agent.exceptions import (
     ModuleInstallPending,
     PlatformUnsupportedError,
 )
+from neutrino_agent.modules.remote_desktop.constants import REMOTE_DESKTOP_NAME
 from neutrino_agent.streams import STREAM_KIND_LOG, STREAM_KIND_PACKAGE
 from neutrino_agent.streams.log import LogStream
 from neutrino_agent.streams.package import PackageStream
@@ -87,8 +91,16 @@ RETRIED_CODE = "hub_unreachable"
 # What an apply that waits on a running install answers inside this file;
 # it is never reported.
 PENDING_CODE = "install_pending"
-# The file beside the state that keeps the hash last tried.
+# The file beside the state that keeps the hash last tried, per section.
 TRIED_SUFFIX = ".tried"
+# The state's section for the machine's AI tools, tried like a module.
+AI_TOOLS_SECTION = "ai_tools"
+
+
+def _section_hash(section) -> str:
+    """The SHA-256 of one section's canonical JSON form."""
+    serialized = json.dumps(section, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
 class DesiredStateStore:
@@ -138,31 +150,43 @@ class DesiredStateStore:
                 os.unlink(temporary)
             raise
 
-    def read_tried(self) -> str:
-        """The hash of the last state an apply was tried for.
+    def read_tried(self) -> dict:
+        """The hash of the entry last tried, per section.
 
         Returns:
-            The hash, empty when none is kept or the file cannot be read.
+            Module name, or ``ai_tools``, to the hash; empty when none is
+            kept, the file cannot be read, or it holds another shape.
         """
         try:
             with open(self._path + TRIED_SUFFIX, "r", encoding="utf-8") as stream:
-                return stream.read().strip()
-        except OSError:
-            return ""
+                held = json.load(stream)
+        except (OSError, ValueError):
+            return {}
+        if not isinstance(held, dict):
+            return {}
+        return {
+            str(name): value
+            for name, value in held.items()
+            if isinstance(value, str) and value
+        }
 
     def clear_tried(self) -> None:
-        """Delete the hash last tried, so the next state is applied whatever
-        its hash."""
+        """Delete every hash last tried, so the next state is applied whatever
+        its hashes.
+
+        Raises:
+            OSError: When the file is there and cannot be deleted.
+        """
         try:
             os.unlink(self._path + TRIED_SUFFIX)
         except FileNotFoundError:
             pass
 
-    def write_tried(self, state_hash: str) -> None:
-        """Keep the hash of the state an apply was just tried for, root-only.
+    def write_tried(self, tried: dict) -> None:
+        """Keep the hash of the entry last tried, per section, root-only.
 
         Args:
-            state_hash: The hash; empty forgets it.
+            tried: Module name, or ``ai_tools``, to the hash.
 
         Raises:
             OSError: When the file cannot be written.
@@ -172,7 +196,7 @@ class DesiredStateStore:
         handle, temporary = tempfile.mkstemp(dir=directory, prefix=".tried_")
         try:
             with os.fdopen(handle, "w", encoding="utf-8") as stream:
-                stream.write(state_hash)
+                json.dump(dict(tried), stream, sort_keys=True)
             os.chmod(temporary, 0o600)
             os.replace(temporary, self._path + TRIED_SUFFIX)
         except BaseException:
@@ -230,7 +254,10 @@ class DesiredStateApplier:
         self._is_applying = False
         self._pending: "dict | None" = None
         self._applied_hash = ""
-        self._tried_hash = store.read_tried()
+        self._tried = store.read_tried()
+        # Module name to its last step's ``{"code", "params"}`` in this
+        # process; None when it took.
+        self._outcomes: dict = {}
         self._state_error: "dict | None" = None
         # The state whose apply waits on a running install, applied again.
         self._rechecked: "dict | None" = None
@@ -270,21 +297,21 @@ class DesiredStateApplier:
             )
 
     def forget_tried(self) -> None:
-        """Forget the hash last tried, here and on disk: what it was tried
+        """Forget every hash last tried, here and on disk: what each was tried
         against is gone."""
         with self._lock:
-            self._tried_hash = ""
+            self._tried = {}
         try:
             self._store.clear_tried()
         except OSError as error:
             self._log(f"could not forget the tried state: {error}")
 
     def reload_tried(self) -> None:
-        """Read the hash last tried from disk again, after another process
-        changed the binding and, with it, the mark."""
+        """Read the hashes last tried from disk again, after another process
+        changed the binding and, with it, the marks."""
         tried = self._store.read_tried()
         with self._lock:
-            self._tried_hash = tried
+            self._tried = tried
 
     def latest(self) -> dict:
         """The last state taken from the hub, as it was kept.
@@ -313,8 +340,10 @@ class DesiredStateApplier:
     def apply(self, document: dict) -> None:
         """Make one state true now, in the caller's thread.
 
-        Each mentioned module with a runner is made to match its ``want``.
-        A ``want`` outside the four is left alone, with a line in the log.
+        Each mentioned module with a runner whose entry differs from the one
+        last tried is made to match its ``want``, one at a time in
+        ``APPLY_ORDER``. A ``want`` outside the four is left alone, with a
+        line in the log.
 
         Args:
             document: The state, ``{hash, modules, desktop}``.
@@ -328,53 +357,52 @@ class DesiredStateApplier:
         }
         self._engine.take_state(modules)
         self._apply_desktop(document.get("desktop"))
-        first_failure = None
-        is_pending = False
-        for name in APPLY_ORDER:
-            runner = self._runners.get(name)
-            wanted = modules.get(name)
-            if runner is None or wanted is None:
-                continue
-            failure = self._reconcile_one(name, runner, wanted)
-            if failure and failure["code"] == PENDING_CODE:
-                is_pending = True
-                failure = None
-            self._engine.record_apply(
-                name,
-                failure["code"] if failure else "",
-                failure["params"] if failure else {},
-            )
-            if failure and first_failure is None:
-                first_failure = {"module": name, **failure}
-        if self._ai_tools is not None:
-            self._ai_tools.apply(
-                document.get("ai_tools"), state_hash, receive=self._receive
-            )
         with self._lock:
-            is_retried = first_failure is not None and (
-                first_failure["code"] == RETRIED_CODE
+            tried = dict(self._tried)
+        hashes = {
+            name: _section_hash(
+                [entry, document.get("desktop")]
+                if name == REMOTE_DESKTOP_NAME
+                else entry
             )
-            is_rechecked = is_pending and first_failure is None
-            self._tried_hash = "" if is_retried or is_rechecked else state_hash
-            tried = self._tried_hash
-            self._rechecked = dict(document) if is_rechecked else None
-            if first_failure is None and is_pending:
-                self._state_error = None
-            elif first_failure is None:
-                self._applied_hash = state_hash
-                self._state_error = None
-            else:
-                self._state_error = {
-                    "code": first_failure["code"],
-                    "params": {
-                        "module": first_failure["module"],
-                        **first_failure["params"],
-                    },
-                }
-        try:
-            self._store.write_tried(tried)
-        except OSError as error:
-            self._log(f"could not keep the tried state: {error}")
+            for name, entry in modules.items()
+        }
+        steps = [
+            name
+            for name in APPLY_ORDER
+            if name in self._runners
+            and name in modules
+            and hashes[name] != tried.get(name)
+        ]
+        reported = self._engine.report()
+        waiting = [
+            name
+            for name in steps
+            if str(modules[name].get("want", "") or "")
+            != str((reported.get(name) or {}).get("state", ""))
+        ]
+        for name in steps:
+            waiting = [other for other in waiting if other != name]
+            self._engine.set_queued(waiting)
+            failure = self._reconcile_one(name, self._runners[name], modules[name])
+            is_absent = bool(failure and failure.pop("is_absent", False))
+            code = failure["code"] if failure else ""
+            is_failed = bool(code) and code != PENDING_CODE
+            self._engine.record_apply(
+                name, code if is_failed else "", failure["params"] if is_failed else {}
+            )
+            is_kept = code not in (PENDING_CODE, RETRIED_CODE) and not is_absent
+            self._keep_tried(name, hashes[name] if is_kept else "")
+            with self._lock:
+                self._outcomes[name] = failure
+        self._engine.set_queued(())
+        if self._ai_tools is not None:
+            section = document.get(AI_TOOLS_SECTION)
+            section_hash = _section_hash(section)
+            if section_hash != tried.get(AI_TOOLS_SECTION):
+                self._ai_tools.apply(section, state_hash, receive=self._receive)
+                self._keep_tried(AI_TOOLS_SECTION, section_hash)
+        self._settle_hash(state_hash, modules, document)
         self._engine.refresh_now()
 
     def _apply_desktop(self, wanted) -> None:
@@ -391,6 +419,50 @@ class DesiredStateApplier:
             return
         self._rdp.take_seat_password(str(wanted.get("seat_password", "")))
 
+    def _keep_tried(self, name: str, entry_hash: str) -> None:
+        """Keep the hash one section was tried under, here and on disk; empty
+        keeps none."""
+        with self._lock:
+            if entry_hash:
+                self._tried[name] = entry_hash
+            else:
+                self._tried.pop(name, None)
+            tried = dict(self._tried)
+        try:
+            self._store.write_tried(tried)
+        except OSError as error:
+            self._log(f"could not keep the tried state: {error}")
+
+    def _settle_hash(self, state_hash: str, modules: dict, document: dict) -> None:
+        """Move the applied hash and the state error by every mentioned
+        module's last outcome."""
+        with self._lock:
+            first_failure = None
+            is_pending = False
+            for name in APPLY_ORDER:
+                if name not in self._runners or name not in modules:
+                    continue
+                outcome = self._outcomes.get(name)
+                if outcome is None:
+                    continue
+                if outcome["code"] == PENDING_CODE:
+                    is_pending = True
+                elif first_failure is None:
+                    first_failure = {"module": name, **outcome}
+            self._rechecked = dict(document) if is_pending else None
+            if first_failure is not None:
+                self._state_error = {
+                    "code": first_failure["code"],
+                    "params": {
+                        "module": first_failure["module"],
+                        **first_failure["params"],
+                    },
+                }
+                return
+            self._state_error = None
+            if not is_pending:
+                self._applied_hash = state_hash
+
     def _reconcile_one(self, name: str, runner, wanted: dict) -> "dict | None":
         """Make one module's actual state equal its ``want``.
 
@@ -400,7 +472,8 @@ class DesiredStateApplier:
             wanted: The state's entry for it.
 
         Returns:
-            None when it took, ``{"code", "params"}`` when it did not.
+            None when it took, ``{"code", "params", "is_absent"}`` when it
+            did not.
         """
         want = str(wanted.get("want", "") or "")
         if want == AGENT_WANT_ABSENT:
@@ -437,16 +510,19 @@ class DesiredStateApplier:
                 ``{"code", "params"}``.
 
         Returns:
-            None when it took, ``{"code", "params"}`` when it did not.
+            None when it took, ``{"code", "params", "is_absent"}`` when it
+            did not, ``is_absent`` saying the module is not installed after.
         """
         log = self._open_log(name)
         refusal = operation(name, log.send if log is not None else None)
+        is_absent = bool(refusal) and not self._engine.is_installed(name)
         if log is not None:
-            state = (
-                AGENT_MODULE_STATE_FAILED
-                if refusal
-                else str((self._engine.report().get(name) or {}).get("state", ""))
-            )
+            if not refusal:
+                state = str((self._engine.report().get(name) or {}).get("state", ""))
+            elif is_absent:
+                state = AGENT_MODULE_STATE_ABSENT
+            else:
+                state = AGENT_MODULE_STATE_FAILED
             log.close(
                 state,
                 str(refusal.get("code", "") or "") if refusal else "",
@@ -454,7 +530,11 @@ class DesiredStateApplier:
             )
         if refusal:
             self._log(f"{name}: {refusal['code']}")
-            return {"code": refusal["code"], "params": dict(refusal.get("params", {}))}
+            return {
+                "code": refusal["code"],
+                "params": dict(refusal.get("params", {})),
+                "is_absent": is_absent,
+            }
         return None
 
     def _open_log(self, name: str) -> "LogStream | None":
@@ -527,16 +607,10 @@ class DesiredStateApplier:
                 with self._lock:
                     pending = self._pending
                     self._pending = None
-                    tried = self._tried_hash
                 if pending is None:
                     with self._idle:
                         self._idle.notify_all()
                     break
-                state_hash = str(pending.get("hash", "") or "")
-                if state_hash and state_hash == tried:
-                    with self._idle:
-                        self._idle.notify_all()
-                    continue
                 with self._idle:
                     self._is_applying = True
                 try:
