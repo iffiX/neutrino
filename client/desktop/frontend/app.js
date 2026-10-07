@@ -463,6 +463,9 @@ function rowElement(parts) {
     const line = document.createElement('div');
     line.className = className;
     line.textContent = text;
+    if (className === 'title') {
+      for (const tag of parts.tags || []) line.appendChild(badge(tag));
+    }
     body.appendChild(line);
   }
   for (const extra of parts.extras || []) body.appendChild(extra);
@@ -612,10 +615,23 @@ function hubWord(hub) {
   return t('ui.state.' + connection);
 }
 
-// One hub: its name, its state word, its address, the AI marker, its
-// virtual network's line, the error line; and the picker, the network
-// button, Reconnect while replaced, and Leave. A hub that publishes no
-// virtual network has no network line, picker or button.
+// A connected hub's tags: the state word with the way in, and the round
+// trip once a pong has measured it; null while the hub is not connected or
+// a job runs on its row.
+function hubTags(hub) {
+  const jobs = hub.jobs || {};
+  if (hub.connection !== 'connected' || jobs.is_leaving || jobs.is_refreshing) return null;
+  const tags = [hubWord(hub)];
+  if (typeof hub.rtt_ms === 'number') {
+    tags.push(t('ui.state.rtt', { ms: Math.round(hub.rtt_ms) }));
+  }
+  return tags;
+}
+
+// One hub: its name, its state word or its tags, its address, the AI
+// marker, its virtual network's line, the error line; and the picker, the
+// network button, Reconnect while replaced, and Leave. A hub that publishes
+// no virtual network has no network line, picker or button.
 function hubRow(hub) {
   const jobs = hub.jobs || {};
   const software = hub.software ? ' · ' + t('ui.hub_software', { software: hub.software }) : '';
@@ -664,10 +680,12 @@ function hubRow(hub) {
     actions.push(reconnect);
   }
   actions.push(leaveButton(hub));
+  const tags = hubTags(hub);
   return rowElement({
     tone: hubTone(hub),
     title: hubName(hub),
-    word: hubWord(hub),
+    tags: tags,
+    word: tags ? '' : hubWord(hub),
     mono: hub.gateway_url + software,
     extras: extras,
     reason: (!network || network.disabled) && !jobs.is_leaving ? overlayReason(hub) : '',

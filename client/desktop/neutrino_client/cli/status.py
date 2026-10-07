@@ -12,8 +12,9 @@ from __future__ import annotations
 
 import json
 
-from neutrino_client import CLIENT_VERSION
+from neutrino_client import CLIENT_VERSION, words
 from neutrino_client.cli import wording
+from neutrino_client.constants import CLIENT_DEFAULT_LANGUAGE
 from neutrino_client.core import enrollment
 from neutrino_client.core.session import (
     CONNECTION_CONNECTED,
@@ -50,9 +51,9 @@ def _status_as_json() -> int:
 
     The object is ``{"version", "is_running", "hubs"}``, each hub
     ``{"hub_id", "hub_name", "gateway_url", "connection",
-    "reached_through", "is_exit", "last_error"}``; ``connection`` and
-    ``reached_through`` are empty and ``last_error`` None when no resident
-    runs to say them.
+    "reached_through", "rtt_ms", "is_exit", "last_error"}``;
+    ``connection`` and ``reached_through`` are empty and ``rtt_ms`` and
+    ``last_error`` None when no resident runs to say them.
 
     Returns:
         Process exit status, as for the lines.
@@ -67,6 +68,7 @@ def _status_as_json() -> int:
                 "gateway_url": str(binding.get("gateway_url", "")),
                 "connection": "",
                 "reached_through": "",
+                "rtt_ms": None,
                 "is_exit": bool(exit_hub_id) and binding.get("hub_id") == exit_hub_id,
                 "last_error": None,
             }
@@ -80,6 +82,7 @@ def _status_as_json() -> int:
                 "gateway_url": str(hub.get("gateway_url", "")),
                 "connection": str(hub.get("connection", "")),
                 "reached_through": str(hub.get("reached_through", "") or ""),
+                "rtt_ms": _rtt_ms(hub),
                 "is_exit": bool(hub.get("is_exit")),
                 "last_error": hub.get("last_error") or None,
             }
@@ -153,7 +156,7 @@ def _status_from_resident(state: dict) -> int:
             (
                 str(hub.get("hub_name", "")),
                 str(hub.get("gateway_url", "")),
-                f"{connection}{_why(hub)}",
+                f"{connection}{_tags(hub)}{_why(hub)}",
                 bool(hub.get("is_exit")),
             )
         )
@@ -181,6 +184,48 @@ def _hub_lines(cells: list) -> list:
         line = f"hub        {name:<{name_width}}  {url:<{url_width}}  {state}{mark}"
         lines.append(line.rstrip())
     return lines
+
+
+def _rtt_ms(hub: dict) -> "int | None":
+    """One hub's round trip in whole milliseconds, or None when it has none.
+
+    Args:
+        hub: The hub's row of the state payload.
+
+    Returns:
+        The ``rtt_ms`` the resident reported, rounded; None when absent.
+    """
+    value = hub.get("rtt_ms")
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return round(value)
+
+
+def _tags(hub: dict) -> str:
+    """A connected hub's two tags: the way the channel reached it and the round trip.
+
+    Args:
+        hub: The hub's row of the state payload.
+
+    Returns:
+        ``" · <way> · <ms> ms"``, the way left out while the hub has not
+        named one this client has a word for, and the round trip before the
+        first pong; empty unless the hub is connected.
+
+    Raises:
+        FileNotFoundError: When the word catalogs are not on this machine.
+        ValueError: When a catalog is not a JSON object.
+    """
+    if hub.get("connection") != CONNECTION_CONNECTED:
+        return ""
+    tags = []
+    way = str(hub.get("reached_through", "") or "")
+    if way and f"ui.through.{way}" in words.words(CLIENT_DEFAULT_LANGUAGE):
+        tags.append(words.word(CLIENT_DEFAULT_LANGUAGE, f"ui.through.{way}"))
+    rtt_ms = _rtt_ms(hub)
+    if rtt_ms is not None:
+        tags.append(words.word(CLIENT_DEFAULT_LANGUAGE, "ui.state.rtt", {"ms": rtt_ms}))
+    return "".join(f" · {tag}" for tag in tags)
 
 
 def _why(hub: dict) -> str:

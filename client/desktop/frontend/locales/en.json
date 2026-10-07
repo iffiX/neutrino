@@ -230,6 +230,7 @@
   "ui.state.down": "Not connected",
   "ui.state.pending": "Joined; the hub has not been reached yet",
   "ui.state.replaced": "Replaced by another client",
+  "ui.state.rtt": "{ms} ms",
   "ui.terminal_close": "Close {name}",
   "ui.terminal_end_armed": "Press again to end",
   "ui.terminal_ended": "Ended",

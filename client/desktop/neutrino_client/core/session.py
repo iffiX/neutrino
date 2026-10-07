@@ -1,8 +1,8 @@
 """One hub's session: a binding, its socket, and the reconnect that holds it.
 
 A session belongs to one binding and speaks to one hub. It holds the socket
-open and reconnects when it drops, through the first of the hub's addresses
-that answers, the hub's name on the network this machine stands on first; a
+open and reconnects when it drops: a round dials every address of the hub at
+once and keeps the first socket to connect with the pinned certificate; a
 network change under the machine starts a round at once. The hub pushes its
 ``state``, the addresses it answers on, the services it publishes and
 whether this client is switched off, and the session answers each state and
@@ -24,7 +24,8 @@ socket holds the binding, ``disabled`` while the hub has this client
 switched off, and ``pending`` while a join's ticket is not spent: the
 first address that answers with the pinned certificate spends it before
 the hello, and a hub that refuses it leaves the session down for good. A
-refresh is the same loop moved to now.
+refresh is the same loop moved to now. The client pings the open socket
+every interval, and each pong sets the round trip the hub row shows.
 
 Errors are ``{"code", "params"}``, never an English sentence; every surface
 does its own wording.
@@ -35,6 +36,7 @@ does its own wording.
 from __future__ import annotations
 
 import json
+import queue
 import threading
 import time
 import urllib.parse
@@ -47,13 +49,14 @@ from neutrino_client.constants import (
     CLIENT_CONNECT_TIMEOUT_S,
     CLIENT_HUB_ROLE,
     CLIENT_IDLE_POLL_INTERVAL_S,
+    CLIENT_JOIN_RETRY_MIN_S,
+    CLIENT_PING_INTERVAL_S,
     CLIENT_PROTOCOL_REFUSAL_CODES,
     CLIENT_REFRESH_TIMEOUT_S,
     CLIENT_REFUSAL_CODE_ADMISSION_PAUSED,
     CLIENT_REFUSAL_CODE_BINDING_UNKNOWN,
     CLIENT_REPORT_INTERVAL_S,
     CLIENT_ROLE,
-    CLIENT_ROTATE_DELAY_S,
     CLIENT_SHELL_PERSIST_VERB,
     CLIENT_SHELL_RESIZE_MODULE,
     CLIENT_SHELL_RESIZE_VERB,
@@ -108,6 +111,9 @@ CONNECTION_REFRESHABLE = (
 # How long a stop waits for the loop thread to come back, its connect in
 # progress aborted.
 STOP_JOIN_TIMEOUT_S = 1
+# How long a round waits for one dial's result before it looks again
+# whether it was redirected.
+DIAL_WAIT_TURN_S = 0.1
 
 
 def channel_error(error: Exception) -> dict:
@@ -333,8 +339,8 @@ class ClientHubSession:
         self._stop = threading.Event()
         self._thread: "threading.Thread | None" = None
         self._client: "WebSocketClient | None" = None
-        # The socket a connect in progress is opening, for a stop to abort.
-        self._connecting: "WebSocketClient | None" = None
+        # The sockets a round in progress is opening, for a stop to abort.
+        self._dialing: "_ClientDialRound | None" = None
         # Set when the hosts a round tries change under it: the round in
         # progress ends at once and the next one starts now.
         self._redirected = threading.Event()
@@ -345,6 +351,9 @@ class ClientHubSession:
         self._source_address: "str | None" = None
         self._streams: "ClientStreamRegistry | None" = None
         self._is_welcomed = False
+        # The round trip the last pong on the live socket measured, in
+        # whole milliseconds; None before the first pong.
+        self._rtt_ms: "int | None" = None
         self._backoff_s = CLIENT_BACKOFF_MIN_S
         # Set while another socket holds this binding; only a person clears it.
         self._is_replaced = False
@@ -372,8 +381,9 @@ class ClientHubSession:
         self._wall_clock = wall_clock
         # When the refresh in flight began, on both clocks.
         self._refresh_since = (0.0, 0.0)
-        # The hosts of the virtual network this machine is on, tried first,
-        # or alone while the network's ``hub`` stage holds the channel there.
+        # The hosts of the virtual network this machine is on, dialled with
+        # the others, or alone while the network's ``hub`` stage holds the
+        # channel there.
         self._preferred_hosts: list = []
         self._is_only_preferred = False
 
@@ -482,6 +492,18 @@ class ClientHubSession:
         """
         with self._lock:
             return self._reached_through
+
+    def rtt_ms(self) -> "int | None":
+        """The round trip from this client's last ping to its pong.
+
+        Returns:
+            Whole milliseconds; None before the first pong on the live
+            socket and while the hub is not ``connected``.
+        """
+        with self._lock:
+            if self._connection() != CONNECTION_CONNECTED:
+                return None
+            return self._rtt_ms
 
     def is_panel_allowed(self) -> bool:
         """Whether the hub's last state allows this client to open its panel."""
@@ -603,7 +625,7 @@ class ClientHubSession:
     # --- what the resident does ---
 
     def reconnect_through(self, hosts: list, is_only: bool = False) -> None:
-        """Connect through the addresses on these hosts first, from the next round.
+        """Dial the addresses on these hosts in every round, from the next one.
 
         A socket that is down starts that round now, its backoff at the
         floor; a live one is kept. With ``is_only``, a round in progress
@@ -902,9 +924,9 @@ class ClientHubSession:
         self._news.set()
         self._redirected.set()
         with self._lock:
-            connecting = self._connecting
-        if connecting is not None:
-            connecting.abort()
+            dialing = self._dialing
+        if dialing is not None:
+            dialing.settle()
         self._drop_socket()
         thread = self._thread
         if thread is not None and thread is not threading.current_thread():
@@ -959,14 +981,17 @@ class ClientHubSession:
         return CLIENT_BACKOFF_MIN_S
 
     def _connect_round(self):
-        """Connect through the first of the hub's addresses that answers.
+        """Connect through whichever of the hub's addresses answers first.
 
-        The name's address is first, then the addresses the binding holds
-        in the hub's order, at every round alike: the one that last answered
-        is not moved ahead. An address the name resolves to that is
-        not a stored one and fails the fingerprint check is not this hub and
-        is skipped; a stored address failing it is logged and the round goes
-        on. The address that answers is written onto the binding.
+        Every address is dialled at once: the hub's address on each virtual
+        network that is up, the name's address, and the addresses the
+        binding holds; none is preferred for having answered last. The
+        first socket to connect with the pinned certificate is the round's,
+        every other one is closed before any hello, and the hello goes on
+        the round's socket alone. An address the name resolves to that is
+        not a stored one and fails the fingerprint check is not this hub
+        and is skipped; a stored address failing it is logged. The address
+        that answers is written onto the binding.
 
         Returns:
             The connected socket, its welcome taken and its first report
@@ -974,68 +999,106 @@ class ClientHubSession:
             then ends at once.
 
         Raises:
+            EnrollmentError: When the hub refused a pending join.
             GatewayUntrusted: When a stored address presented another
                 certificate and no address answered.
-            GatewayRefused: When the hub refused the hello, by a frame or by
-                its close; the protocol refusals are their own kind.
-            GatewayUnreachable: When no address answered, or a stop ended
-                the round.
+            GatewayRefused: When the hub refused the upgrade or the hello,
+                by a frame or by its close; the protocol refusals are their
+                own kind.
+            GatewayUnreachable: When no address answered, the round's
+                socket ended before the welcome, or a stop ended the round.
         """
         self._redirected.clear()
         if self._stop.is_set():
-            self._redirected.set()
+            raise GatewayUnreachable("the session is stopping")
         with self._lock:
             binding = dict(self._binding)
             preferred_hosts = list(self._preferred_hosts)
             is_only = self._is_only_preferred
         stored = enrollment.stored_urls(binding)
-        preferred = self._host_urls(preferred_hosts)
-        if is_only:
-            name_url = ""
-            candidates = preferred
-        else:
+        candidates = self._host_urls(preferred_hosts)
+        name_url = ""
+        if not is_only:
             name_url = enrollment.hub_name_url(binding["gateway_url"])
-            candidates = enrollment.candidate_urls(binding, name_url)
-            candidates = preferred + [url for url in candidates if url not in preferred]
+            candidates += [
+                url
+                for url in enrollment.candidate_urls(binding, name_url)
+                if url not in candidates
+            ]
+        url, client, errors = self._dial_all(candidates)
         untrusted: "Exception | None" = None
         failure: "Exception | None" = None
-        for index, url in enumerate(candidates):
-            if index:
-                self._redirected.wait(timeout=CLIENT_ROTATE_DELAY_S)
-            if index and self._stop.is_set():
-                break
-            client = self._open_client(url)
-            with self._lock:
-                self._connecting = client
-            try:
-                if self._is_redirected():
-                    return None
-                self._connect(client, url)
-            except GatewayRefused:
-                if self._is_redirected():
-                    return None
-                raise
-            except GatewayUntrusted as error:
-                if url == name_url and url not in stored:
-                    self._log(f"{url} answers to the hub's name and is not this hub")
-                else:
-                    self._log(f"{url} presented a certificate that is not the hub's")
-                    untrusted = error
-            except GatewayUnreachable as error:
+        for failed_url, error in errors:
+            if not isinstance(error, GatewayUntrusted):
                 failure = error
+            elif failed_url == name_url and failed_url not in stored:
+                self._log(f"{failed_url} answers to the hub's name and is not this hub")
             else:
-                with self._lock:
-                    self._connected_url = url
-                self._note_url(url)
-                return client
-            finally:
-                with self._lock:
-                    self._connecting = None
+                self._log(f"{failed_url} presented a certificate that is not the hub's")
+                untrusted = error
+        if self._redirected.is_set():
+            if client is not None:
+                client.close()
+            if self._stop.is_set():
+                raise GatewayUnreachable("the session is stopping")
+            return None
+        if client is None:
+            if isinstance(failure, GatewayRefused):
+                raise failure
+            if untrusted is not None:
+                raise untrusted
+            raise failure if failure is not None else GatewayUnreachable("no address")
+        try:
+            self._greet(client, url)
+        except GatewayRefused:
             if self._is_redirected():
                 return None
-        if untrusted is not None:
-            raise untrusted
-        raise failure if failure is not None else GatewayUnreachable("no address")
+            raise
+        with self._lock:
+            self._connected_url = url
+        self._note_url(url)
+        return client
+
+    def _dial_all(self, urls: list) -> "tuple[str, object, list]":
+        """Open a socket at every address at once and keep the first to connect.
+
+        Args:
+            urls: The addresses to dial.
+
+        Returns:
+            ``(url, client, errors)``: the address and the open socket of
+            the first to connect, or an empty address and None when none
+            did, the hub refused the upgrade, or the round was redirected or
+            stopped; ``errors`` holds ``(url, error)`` for every address
+            that failed before the round settled.
+        """
+        dialing = _ClientDialRound(
+            clients=[(url, self._open_client(url)) for url in urls]
+        )
+        with self._lock:
+            self._dialing = dialing
+        errors: list = []
+        try:
+            dialing.start()
+            while len(errors) < len(urls):
+                if self._redirected.is_set():
+                    dialing.settle()
+                    break
+                result = dialing.next_result(DIAL_WAIT_TURN_S)
+                if result is None:
+                    continue
+                url, client, error = result
+                if client is not None:
+                    dialing.settle(kept=client)
+                    return url, client, errors
+                errors.append((url, error))
+                if isinstance(error, GatewayRefused):
+                    dialing.settle()
+                    break
+        finally:
+            with self._lock:
+                self._dialing = None
+        return "", None, errors
 
     def _join_at(self, url: str) -> None:
         """Spend the pending join's ticket at the address that answered.
@@ -1075,13 +1138,13 @@ class ClientHubSession:
         """Keep a join the hub paused: pending with the code, tried again later.
 
         Returns:
-            The hub's ``retry_after_s``, at least ``CLIENT_ROTATE_DELAY_S``.
+            The hub's ``retry_after_s``, at least ``CLIENT_JOIN_RETRY_MIN_S``.
         """
         try:
             delay = float(error.params.get("retry_after_s") or 0)
         except (TypeError, ValueError):
             delay = 0
-        delay = max(delay, CLIENT_ROTATE_DELAY_S)
+        delay = max(delay, CLIENT_JOIN_RETRY_MIN_S)
         with self._lock:
             self._is_refreshing = False
             self._last_error = {"code": error.code, "params": dict(error.params)}
@@ -1090,13 +1153,13 @@ class ClientHubSession:
         return delay
 
     def _redirect_round(self) -> None:
-        """End a round in progress, its connect aborted, and start the next one now."""
+        """End a round in progress, its dials aborted, and start the next one now."""
         with self._lock:
             self._backoff_s = CLIENT_BACKOFF_MIN_S
-            connecting = self._connecting
+            dialing = self._dialing
         self._redirected.set()
-        if connecting is not None:
-            connecting.abort()
+        if dialing is not None:
+            dialing.settle()
         self._news.set()
 
     def _is_redirected(self) -> bool:
@@ -1138,25 +1201,25 @@ class ClientHubSession:
             path=CLIENT_CHANNEL_WS_PATH,
             fingerprint=fingerprint,
             timeout_s=CLIENT_CONNECT_TIMEOUT_S,
+            on_pong=self._take_pong,
         )
 
-    def _connect(self, client, url: str = "") -> None:
-        """Open the socket, spend a pending join's ticket, say hello, and report once.
+    def _greet(self, client, url: str = "") -> None:
+        """Spend a pending join's ticket, say hello on the open socket, and report once.
 
         Args:
-            client: The unconnected socket.
-            url: The address the socket is opened at; empty for the
-                binding's own.
+            client: The open socket.
+            url: The address the socket is open at; empty for the binding's
+                own.
 
         Raises:
             EnrollmentError: When the hub refused a pending join.
-            GatewayUntrusted: When the peer failed the fingerprint check.
+            GatewayUntrusted: When the join's address is not the pinned hub.
             GatewayRefused: When the hub refused the hello, by a frame or by
                 its close; the protocol refusals are their own kind.
             GatewayUnreachable: On any network error, or a first frame that
                 is neither a welcome nor a refusal.
         """
-        client.connect()
         try:
             if self.is_pending():
                 self._join_at(url or self.gateway_url())
@@ -1209,6 +1272,12 @@ class ClientHubSession:
             daemon=True,
         )
         reporter.start()
+        threading.Thread(
+            target=self._ping_on_interval,
+            args=(client, ended),
+            name="client_ping",
+            daemon=True,
+        ).start()
         while not self._stop.is_set():
             try:
                 kind, payload = client.recv()
@@ -1378,10 +1447,11 @@ class ClientHubSession:
         return True
 
     def _follow_name(self, client) -> None:
-        """Move the live socket to the address the hub's name resolves to.
+        """Start a round when the hub's name resolves to another stored address.
 
         Only when that is a stored address other than the one in use: the
-        socket is closed here and the next round opens it there at once.
+        socket is closed here and the next round, started at once, dials
+        every address.
 
         Args:
             client: The connected socket.
@@ -1476,6 +1546,22 @@ class ClientHubSession:
                 return
             if self._watch_network():
                 self._follow_name(client)
+
+    def _ping_on_interval(self, client, ended: threading.Event) -> None:
+        """Ping the socket at once and every interval until it ends."""
+        while True:
+            try:
+                client.ping()
+            except GatewayUnreachable:
+                return
+            if ended.wait(timeout=CLIENT_PING_INTERVAL_S):
+                return
+
+    def _take_pong(self, rtt_s: float) -> None:
+        """Keep the round trip a pong measured, and tell the page."""
+        with self._lock:
+            self._rtt_ms = round(rtt_s * 1000)
+        self._on_change()
 
     def _dispatch(self, client, kind: str, payload) -> None:
         """Take one frame's worth of news.
@@ -1587,6 +1673,7 @@ class ClientHubSession:
                 self._client = None
                 streams, self._streams = self._streams, None
             self._is_welcomed = False
+            self._rtt_ms = None
         client.close()
         if streams is not None:
             streams.end_all()
@@ -1675,3 +1762,67 @@ class ClientHubSession:
         self._log("unbound: the hub no longer knows this client")
         self._on_unbound(self)
         return CLIENT_IDLE_POLL_INTERVAL_S
+
+
+class _ClientDialRound:
+    """One round's sockets, dialled at once; the first to connect is kept."""
+
+    def __init__(self, *, clients: list):
+        """
+        Args:
+            clients: ``(url, client)`` per address, each socket unconnected.
+        """
+        self._clients = list(clients)
+        self._results: queue.Queue = queue.Queue()
+        self._lock = threading.Lock()
+        self._is_settled = False
+
+    def start(self) -> None:
+        """Dial every address, each on a thread of its own."""
+        for url, client in self._clients:
+            threading.Thread(
+                target=self._dial,
+                args=(url, client),
+                name="client_dial",
+                daemon=True,
+            ).start()
+
+    def next_result(self, timeout_s: float) -> "tuple[str, object, object] | None":
+        """The next dial to end, as ``(url, client, error)``.
+
+        Args:
+            timeout_s: How long to wait for one.
+
+        Returns:
+            The open socket and None, or None and what the connect raised;
+            None when no dial ended within the timeout.
+        """
+        try:
+            return self._results.get(timeout=timeout_s)
+        except queue.Empty:
+            return None
+
+    def settle(self, kept=None) -> None:
+        """End the round: every socket but the kept one is aborted or closed.
+
+        Args:
+            kept: The round's socket, left open; None ends every dial.
+        """
+        with self._lock:
+            self._is_settled = True
+        for _url, client in self._clients:
+            if client is not kept:
+                client.abort()
+
+    def _dial(self, url: str, client) -> None:
+        """Connect one socket; one that connects after the round settled is closed."""
+        try:
+            client.connect()
+        except (GatewayRefused, GatewayUnreachable, GatewayUntrusted) as error:
+            self._results.put((url, None, error))
+            return
+        with self._lock:
+            if not self._is_settled:
+                self._results.put((url, client, None))
+                return
+        client.close()

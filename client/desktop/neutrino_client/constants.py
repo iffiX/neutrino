@@ -69,11 +69,10 @@ CLIENT_BACKOFF_MAX_S = 60
 CLIENT_REFRESH_TIMEOUT_S = 10
 # How long a notice the page shows above the hubs stays.
 CLIENT_NOTICE_S = 60
-# How long a connection round waits between an address that did not answer
-# and the next one. A whole round failing is what backs off.
-CLIENT_ROTATE_DELAY_S = 1
+# The shortest wait before a join the hub paused is tried again.
+CLIENT_JOIN_RETRY_MIN_S = 1
 # The name every network a hub serves resolves to that hub's address on it.
-# It is the first address a round connects to.
+# It is one of the addresses a round dials.
 CLIENT_HUB_NAME = "hub.neutrino.internal"
 
 # How long the open socket may stay silent before it counts as dead.
@@ -83,6 +82,8 @@ CLIENT_WS_SILENCE_TIMEOUT_S = 45
 CLIENT_CONNECT_TIMEOUT_S = 10
 # How often a report goes up while nothing changes.
 CLIENT_REPORT_INTERVAL_S = 30
+# How often the client pings the open socket; each pong sets the round trip.
+CLIENT_PING_INTERVAL_S = 20
 # How long a stream this side opened waits for the hub's close.
 CLIENT_STREAM_TIMEOUT_S = 15
 # A byte stream's credit window: what this side grants the hub when it opens
