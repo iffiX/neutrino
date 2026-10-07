@@ -51,7 +51,7 @@ from neutrino_hub.modules.services.host_scope import (
 )
 from neutrino_hub.utils.peer_address import unmapped
 from neutrino_hub.web import channel_overlay
-from neutrino_hub.web.channel_addresses import channel_urls
+from neutrino_hub.web.channel_addresses import channel_urls, relay_url
 from neutrino_hub.web.identity import hub_name
 from neutrino_hub.web.shell_bridge import client_owner, device_name, sessions_for
 
@@ -84,8 +84,10 @@ def client_state(runtime, client_id: str) -> dict:
             whether it may open the hub's panel.
 
     Returns:
-        ``{hash, is_disabled, services, urls, overlays, terminals,
-        is_panel_allowed, reached_through}``.
+        ``{hash, is_disabled, services, urls, relay_url, overlays,
+        terminals, is_panel_allowed, reached_through}``, ``relay_url`` being
+        the member of ``urls`` that is the relay's address, empty while the
+        relay is off.
     """
     registry = ClientRegistry()
     client = registry.get(client_id)
@@ -135,10 +137,13 @@ def client_state(runtime, client_id: str) -> dict:
                 )
             ]
         is_panel_allowed = CLIENT_PERMISSION_PANEL in kinds
+    urls = channel_urls(runtime)
+    relay = relay_url()
     body = {
         "is_disabled": is_disabled,
         "services": services,
-        "urls": channel_urls(runtime),
+        "urls": urls,
+        "relay_url": relay if relay in urls else "",
         "overlays": overlays,
         "terminals": terminals,
         "is_panel_allowed": is_panel_allowed,

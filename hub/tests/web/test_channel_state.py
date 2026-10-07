@@ -119,6 +119,14 @@ def hub_urls(monkeypatch) -> list:
     return urls
 
 
+@pytest.fixture(autouse=True)
+def hub_relay(monkeypatch) -> list:
+    """The relay's address, empty while it is off; a test may set it."""
+    held = [""]
+    monkeypatch.setattr(channel_state, "relay_url", lambda: held[0])
+    return held
+
+
 def test_an_agents_state_is_the_composed_document_under_its_hash():
     runtime = FakeRuntime()
 
@@ -231,6 +239,38 @@ def test_a_clients_state_names_every_address_the_hub_answers_on(config_dir, hub_
     assert first["urls"] == ["https://192.168.100.1:8443"]
     assert moved["urls"] == ["https://192.168.100.1:8443", "https://100.64.0.1:8443"]
     assert moved["hash"] != first["hash"]
+
+
+def test_a_clients_state_names_the_relays_address_while_it_is_on(
+    config_dir, hub_urls, hub_relay
+):
+    """A client ranks a candidate's path by it before its hello."""
+    runtime = FakeRuntime()
+    client_id = ClientRegistry().create("alice")
+    runtime.client_scope[client_id] = LAN
+    relay = "https://vps.example.net:18443"
+    off = channel_state.client_state(runtime, client_id)
+
+    hub_urls.append(relay)
+    hub_relay[0] = relay
+    on = channel_state.client_state(runtime, client_id)
+
+    assert off["relay_url"] == ""
+    assert off["urls"] == ["https://192.168.100.1:8443"]
+    assert on["relay_url"] == relay
+    assert on["urls"] == ["https://192.168.100.1:8443", relay]
+    assert on["hash"] != off["hash"]
+
+
+def test_a_relay_address_the_urls_do_not_hold_is_not_named(config_dir, hub_relay):
+    runtime = FakeRuntime()
+    client_id = ClientRegistry().create("alice")
+    runtime.client_scope[client_id] = LAN
+    hub_relay[0] = "https://vps.example.net:18443"
+
+    state = channel_state.client_state(runtime, client_id)
+
+    assert state["relay_url"] == ""
 
 
 def test_a_clients_list_holds_only_the_kinds_it_is_allowed(config_dir):
