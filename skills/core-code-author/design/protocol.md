@@ -387,7 +387,7 @@ the page's whole view.
 | `GET /api/hub/network` | | `NetworkView`, with `hub_os` (`linux`, `darwin` or `windows`) and `modes`, which holds `server` alone outside Linux; each interface's `link.lease_dns` lists the resolvers its DHCP lease names, empty for a static uplink and for an interface holding no lease; `is_unsaved` is true for an interface the configuration does not name and the hub does not use, which is every such interface on Linux and none on macOS and Windows |
 | `POST /api/hub/network/set` | the page's own settings, `{uplink_policy, is_inter_lan_allowed, exposed_interfaces, exposed_overlays, static_leases, interface_roles}`; absent lists leave the exposure as it is; `interface_roles` maps a port turned on to the role it takes with it, `wan` or `lan` | `NetworkView`; in router mode 400 `network_invalid {field: role, name}` when an exposed port would keep the role `disabled` |
 | `POST /api/hub/network/mode/set` | `{mode, ...}` | replaces the whole shape; `NetworkView` |
-| `POST /api/hub/network/interface/set` | `{name, ...}`; a static uplink's `wan.dns` is its resolvers, `[{address, port}]`, `port` 53 when absent, in the order they are asked | one interface's role and settings; `NetworkView`; 400 `resolver_address_invalid {address}` for a row that is not an IP address, `port_out_of_range {minimum, maximum, value}`, and in router mode `network_invalid {field: role, name}` for the role `disabled` on an exposed port |
+| `POST /api/hub/network/interface/set` | `{name, ...}`; a static uplink's `wan.dns` is its resolvers, `[{address, port}]`, `port` 53 when absent, in the order they are asked | one interface's role and settings; `NetworkView`; 400 `resolver_address_invalid {address}` for a row that is not an IP address, `port_out_of_range {minimum, maximum, value}`, in router mode `network_invalid {field: role, name}` for the role `disabled` on an exposed port, and `network_invalid {field: country_code, name}` for an access point on 5 GHz with no `ap_country_code` |
 | `POST /api/hub/network/interface/remove` | `{name}` | `NetworkView` |
 | `GET /api/hub/network/wifi_network` | | the saved Wi-Fi networks |
 | `POST /api/hub/network/wifi_network/leave` | `{ssid}` | forgets one |
@@ -400,7 +400,7 @@ the page's whole view.
 | --- | --- | --- |
 | `GET /api/hub/overlay` | | `OverlayChoiceView`: `kinds`, Direct's row, the relay's, then one row per engine in the engine table's order, `{key, title, is_enabled, is_integrated, is_supported, is_installed, is_active, client_count}`, `client_count` being the online clients whose socket comes from a network one of that engine's devices holds an address in; Direct's row is `key` `direct`, always installed, active while it is on, and `client_count` the online clients whose `reached_through` is `direct`; the relay's row is `key` `relay`, `is_installed` whether the system's OpenSSH client is present, `is_active` whether its state is `connected`, and `client_count` the online clients whose socket comes from a loopback address; and `route_conflicts`, one `{code, params, is_withdrawn}` per route a running overlay installed that the hub refused, `code` being `overlay_default_route_refused` or `overlay_route_overlap` and `params` `{title, route, conflict}` |
 | `POST /api/hub/overlay/set` | `{netbird: {is_enabled}, easytier: {is_enabled}, relay: {is_enabled}, direct: {is_enabled}}`, a way in left out keeping what it has | turns engines, the relay and Direct on or off, any number at once, writing the relay's into `config/overlay/relay.json` and Direct's into `config/overlay/direct.json`, and runs the converge step; 400 `overlay_not_integrated {title}`, `overlay_not_supported {title}` or `overlay_subnet_overlap {title, subnet, conflict}` when an engine is being turned on, 400 `relay_ssh_missing` when the relay is being turned on and the system has no OpenSSH client, 502 `overlay_switch_failed {detail}` |
-| `GET /api/hub/overlay/netbird` | | the NetBird network the box joins |
+| `GET /api/hub/overlay/netbird` | | the NetBird network the box joins, and its `peers`, each with `latency_ms`: the engine's own, or for a relayed peer the engine gives none for, the round trip the hub measured to the peer's NetBird address, null when that measure had no answer |
 | `POST /api/hub/overlay/netbird/join` | the setup key and management URL | joins it, keeps the key sealed in `config/netbird/netbird.json` once the join succeeds, and runs the converge step; 502 `overlay_join_failed {detail}` |
 | `POST /api/hub/overlay/netbird/leave` | | asks the plane to delete the peer and deletes the profile; the kept key stays; runs the converge step; 502 `overlay_leave_failed {detail}` |
 | `POST /api/hub/overlay/netbird/setup_key/set` | `{setup_key}`, empty to forget | replaces or forgets the kept key without joining, and runs the converge step |
@@ -890,7 +890,7 @@ the three packages, named here so that changing one is a change to this table.
 | a connection's admission, from accept to an admitted `hello` | `CHANNEL_ADMISSION_TIMEOUT_S` 30 | | |
 | connecting and the handshake on top of it | | `AGENT_REQUEST_TIMEOUT_S` 10 | `CLIENT_CONNECT_TIMEOUT_S` 10 |
 | a report while nothing changes | | `AGENT_REPORT_INTERVAL_S` 5 | `CLIENT_REPORT_INTERVAL_S` 30 |
-| keepalive | `CHANNEL_PING_INTERVAL_S` 20, `CHANNEL_PING_TIMEOUT_S` 20 | | |
+| keepalive | `CHANNEL_PING_INTERVAL_S` 20, `CHANNEL_PING_TIMEOUT_S` 60 | | `CLIENT_PING_INTERVAL_S` 20, the client's own ping, whose pong sets `rtt_ms` |
 | silence before the socket is dead | | `AGENT_WS_SILENCE_TIMEOUT_S` 45 | `CLIENT_WS_SILENCE_TIMEOUT_S` 45 |
 | reconnect backoff | | `AGENT_BACKOFF_MIN_S` 5, doubled to `AGENT_BACKOFF_MAX_S` 60 | `CLIENT_BACKOFF_MIN_S` 5, doubled to `CLIENT_BACKOFF_MAX_S` 60 |
 | a stream's credit window | `CHANNEL_STREAM_CREDIT_BYTES` 1 MiB | `AGENT_WS_STREAM_CREDIT_BYTES` 1 MiB | `CLIENT_STREAM_CREDIT_BYTES` 1 MiB |
@@ -903,7 +903,7 @@ the three packages, named here so that changing one is a change to this table.
 | dialling the far end of a `connect` stream | `CHANNEL_CONNECT_DIAL_TIMEOUT_S` 10 | `AGENT_CONNECT_DIAL_TIMEOUT_S` 10 | |
 | open `connect` streams on one client socket | `CHANNEL_CONNECT_STREAMS_MAX` 256 | | |
 | a hub thread's call onto the loop | `CHANNEL_CALL_TIMEOUT_S` 15 | | |
-| address rotation: the pause before the next address of the set | | `AGENT_ROTATE_DELAY_S` 1 | `CLIENT_ROTATE_DELAY_S` 1 |
+| address rotation: the pause before the next address of the set | | `AGENT_ROTATE_DELAY_S` 1 | none: a client's round dials every address at once |
 
 Every number is seconds except the two rows in bytes and the counts of
 streams, sources and datagrams. The client's credit and frame size hold on every stream that
@@ -1029,8 +1029,9 @@ field and keeps `PROTOCOL`.
 `retry_mark`, in a module's entry and in the `ai_tools` section, is a
 short random token the hub writes when a person presses a failed module's
 own action again ([agent.md](agent.md), "A retry is the same press
-again"). It changes the state's hash and means nothing else; no
-configuration reads it, and an entry without one is the same entry. The hub
+again"). It changes its entry's hash, and with it the state's, and means
+nothing else; no configuration reads it, and an entry without one is the
+same entry. The hub
 keeps one mark per module and one for the AI tools per device in
 `device_retry_marks.json` under its state root, replaced by each press and
 dropped with the device ([files.md](files.md)).
@@ -1164,7 +1165,15 @@ from the same facts, whoever installed the software:
 | `stopped` | the hub has configured it and the unit is stopped |
 | `running` | the hub has configured it and the unit is active |
 | `installing`, `uninstalling` | in transit |
+| `queued` | in transit: its `want` differs from what it reports, and the agent is applying another module first ([agent.md](agent.md), "One module at a time") |
 | `failed`, `unsupported` | the last step failed with `{code, params}`; the agent has no runner for this module |
+
+`absent` with `{code, params}` is an install that failed and left nothing of
+the module on the machine ([agent.md](agent.md), "An install that leaves
+nothing behind"). The hub drops the module's `want` and its retry mark, the
+attempt's only records, keeps the configuration the person saved, and keeps
+the failure's `{code, params}` in memory beside the module until the next
+press on it, which the module's output box shows.
 
 This table is closed on every surface; a surface that meets a token outside it
 shows the word for a machine that has not reported. That is also what the
@@ -1188,7 +1197,7 @@ state does not mention is left as it is and still observed and reported, so a
 hand-installed Samba shows as `installed`. The agent's rule for
 reconciling is one sentence: make each mentioned module's actual state equal
 its `want`. A failure is reported with its code and is not retried while the
-state's hash is unchanged. The agent starts and stops only the units its
+module's entry is unchanged. The agent starts and stops only the units its
 recipe names, and disables or masks none.
 
 Package operations on one machine run one at a time, serialized on the agent,
@@ -1699,12 +1708,15 @@ is the hub's name on every served network: dnsmasq answers it with the hub's
 address on the network the query came in on, so the name resolves to the
 hub of the network the peer stands on, whatever that address is today. A
 binding holds the `urls` of the last state it took as `gateway_urls`, with
-`gateway_url` the last address that answered. A round, a reconnect as much
-as the first, tries the name where it resolves, then `gateway_urls` in order,
-then `gateway_url` when the list does not hold it, and the first that
-answers with the pinned fingerprint is written back as `gateway_url`. A fingerprint that does not match on the name is another
+`gateway_url` the last address that answered. An agent's round, a
+reconnect as much as the first, tries the name where it resolves, then
+`gateway_urls` in order, then `gateway_url` when the list does not hold it.
+A client's round dials the same addresses and the hub's address on each
+virtual network that is up, all at once ([connection.md](connection.md),
+"Where the port is reached"). On either, the first that answers with the
+pinned fingerprint is written back as `gateway_url`. A fingerprint that does not match on the name is another
 network's hub and is skipped; one that does not match on a stored address is
-recorded as `last_error`, and the round goes on to the next address.
+recorded as `last_error`, and the round goes on with the other addresses.
 
 `nhub apply` deletes every directory under `config/devices/` whose name is not
 a stored id.

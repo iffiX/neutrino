@@ -346,7 +346,7 @@ that are fixed"). Where each way reaches the port is
 | Rule | Reason |
 | --- | --- |
 | The hub stands on the LAN of the machines it manages and is not placed on a public address. No way in needs an uplink exposed, and from outside a person opens the panel through a client's **Panel** entry. | The hub dials every machine's services on its own LAN for the clients; a hub on a public address is a panel and an agent port open to every scanner on the internet. |
-| Every way in reaches the one agent port, and the link's and the state's `urls` hold one address per way in. | A peer tries the set in turn and pins one fingerprint, so a way in adds an address and nothing else. |
+| Every way in reaches the one agent port, and the link's and the state's `urls` hold one address per way in. | A peer reaches the set as [connection.md](../connection.md), "Where the port is reached", says and pins one fingerprint, so a way in adds an address and nothing else. |
 | The served networks stay offered as routes on both overlay engines: the NetBird page names them for the routing peer the person sets up in its console, and the EasyTier form lists them to export. The hub withdraws none. | A client reaches a published service as a stream through the hub and needs no route. A route reaches every port of a machine, which is the advanced use the person chooses. |
 
 ## Direct
@@ -513,7 +513,7 @@ own form, `SHA256:<base64>`, as `host_key_fingerprint`.
 
 While the relay is on and configured, `https://<host>:<public-port>` is the
 last member of `urls`, in every link and in every agent's and client's state,
-whatever its state; an IPv6 host is written in brackets. A peer tries it like
+whatever its state; an IPv6 host is written in brackets. A peer dials it like
 any other address and pins the same fingerprint. Turning the relay on or off
 and saving its settings run the converge step, which pushes every peer its
 new `urls`.
@@ -727,6 +727,19 @@ Everything else is left alone, and each for its own reason:
 
 Adding a kind means being able to drive it end to end. Half-driving one is how
 a page comes to offer a role that fails after an SSID, a passphrase and a save.
+
+### The access point's country
+
+A Wi-Fi radio that publishes a network carries `ap_country_code` beside its
+SSID and band: two capital letters, an ISO 3166-1 country, or empty. On
+apply the hub sets the system's regulatory domain to that country, and the
+hostapd configuration it renders holds `country_code=<code>` and
+`ieee80211d=1`.
+
+| Rule | Reason |
+| --- | --- |
+| The 5 GHz band (`ap_band` `a`) is chosen only with a country code set. `POST /api/hub/network/interface/set` rejects 5 GHz with an empty country with `network_invalid {field: country_code, name}`, and the hostapd renderer emits no 5 GHz configuration without a country. | Which 5 GHz channels a radio uses, and at what power, is set by the country's law; a radio left in the world domain cannot use them, or breaks that law. |
+| With no country code the access point runs on 2.4 GHz. | The world domain allows the 2.4 GHz channels the renderer uses on every card. |
 
 ## Handing a machine back
 

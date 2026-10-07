@@ -104,10 +104,16 @@ module's actual state equal its `want`:
 
 A module the state does not mention is left alone, observed and reported all
 the same. The applied hash moves only once every mentioned module applied. A
-failed apply keeps asking only when the state changes, and until then the
-report says why with a code. **An edit to a module of an offline device is
-rejected with `agent_offline`, never queued**: the person is told the machine
-is away, and asks again when it is back.
+failed module is tried again only when its own entry in the state changes,
+and until then the report says why with a code. **An edit to a module of an
+offline device is rejected with `agent_offline`, never queued**: the person
+is told the machine is away, and asks again when it is back.
+
+**One module at a time.** The agent applies the modules a state mentions one
+after another, in the fixed order `APPLY_ORDER` names: ZFS, the file share,
+Terminal, Gitea, Containers, VS Code, code-server, CloudCLI, Remote desktop.
+While it applies one, each other module whose `want` differs from its last
+reported state reports `queued`, until the agent reaches it.
 
 **The agent is handed conclusions, never a table to search.** The recipes it
 receives are already resolved for its platform; it has no manifest logic and
@@ -120,11 +126,12 @@ package, and the agent installs it over itself ([protocol.md](protocol.md),
 a button writes the value, the agent makes the machine match it, and what
 the machine reports afterwards is shown. The agent keeps no retry policy and
 no memory of past failures. A step that failed is reported failed with its
-code and is not repeated while the state's hash is unchanged; trying again is
-a person's word, never a timer's.
+code and is not repeated while its entry in the state is unchanged; trying
+again is a person's word, never a timer's.
 
-**A retry is the same press again.** The agent tries a state once and keeps
-the hash it tried on disk, so a restart does not try it again. The mark
+**A retry is the same press again.** The agent tries each module's entry
+once and keeps, for each module and for the `ai_tools` section, the hash of
+the entry it tried on disk, so a restart does not try it again. The mark
 holds for one install and one binding: `nagent service uninstall`, which
 every package's removal runs, deletes it, and so do a join and a leave, so
 the next agent that holds the same state applies it again after a removal
@@ -132,8 +139,10 @@ undid it. An upgrade replaces the package without either and applies
 nothing again. When a
 person presses a module's own action again on a module whose last report is
 `failed`, the hub writes a fresh `retry_mark` into that module's entry of
-the state. The mark means nothing to the agent; it changes the state's hash,
-so the hash the agent tried no longer matches and the state is tried again.
+the state. The mark means nothing to the agent; it changes that entry's
+hash, so the hash the agent tried for that module no longer matches and that
+module alone is tried again. A change to one module's entry, or a mark on it,
+never runs another module's failed step again.
 The machine's AI tools take the same mark on the `ai_tools` section when a
 press asks again while an account's result is `failed`. A press on a module
 that did not fail writes no mark and asks for nothing new.
@@ -180,20 +189,35 @@ table on every surface:
 
 | Steady | Transient | Shared |
 | --- | --- | --- |
-| `absent`, `installed`, `stopped`, `running` | `installing`, `uninstalling` | `failed`, `unsupported` |
+| `absent`, `installed`, `stopped`, `running` | `installing`, `uninstalling`, `queued` | `failed`, `unsupported` |
 
 `installed` is present and never configured by the hub; `stopped` and
 `running` are configured by the hub and told apart by the unit; `installing`
 also covers a module's own install that runs inside its apply or as a task
 the apply left running, and a state waiting on such a task is applied again
-every 30 seconds under the same hash until the task ends. A surface
-that meets a token outside this table shows "waiting for the agent", the word
-for a machine that has not reported. Wherever a state is drawn:
+every 30 seconds under the same hash until the task ends. `queued` is a
+module the agent reaches after the one it is applying ("One module at a
+time").
+
+**An install that leaves nothing behind ends absent.** An install that fails
+on a machine where the module's check then finds nothing installed reports
+`absent` with the failure's `{code, params}`, never `failed`, and the agent
+deletes its tried hash for that module, so the next install of the same entry
+runs. The hub drops the module's `want` and its retry mark
+([protocol.md](protocol.md), "The modules section"), and **Install** is the
+next press, a fresh install. A step that fails on a module the machine has
+(start, stop, configure, uninstall) reports `failed` and keeps it. No button
+cancels a step.
+
+A surface that meets a token outside the state table shows "waiting for the
+agent", the word for a machine that has not reported. Wherever a state is
+drawn:
 
 - Every transient token is in the surface's busy set, or a row mid-step
   offers the opposite button.
-- A surface's optimistic step holds at most two minutes before the machine's
-  own report, or its silence, takes over.
+- A surface's optimistic step after a press holds until the machine reports
+  the module in a state other than the one it showed at the press, at most
+  two minutes; then the machine's own report, or its silence, takes over.
 - A new `code` arrives with its wording in the same change, which the
   catalog completeness test enforces.
 
