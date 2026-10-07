@@ -3,83 +3,66 @@ package io.github.iffix.neutrino.overlay
 import android.util.Log
 import io.github.iffix.neutrino.CLIENT_LOG_TAG
 import io.github.iffix.neutrino.OVERLAY_LOGIN_TIMEOUT_S
-import io.github.iffix.neutrino.OVERLAY_PROBE_INTERVAL_MILLIS
 import io.github.iffix.neutrino.OVERLAY_STOP_TIMEOUT_S
 import io.github.iffix.neutrino.binding.BindingStore
 import io.github.iffix.neutrino.binding.HubBinding
+import io.github.iffix.neutrino.channel.ChannelLocalNetwork
 import io.github.iffix.neutrino.channel.ChannelOverlay
+import io.github.iffix.neutrino.channel.ChannelOverlayRoute
 import io.github.iffix.neutrino.channel.ChannelResult
-import io.github.iffix.neutrino.channel.HubConnection
-import io.github.iffix.neutrino.channel.HubView
 import java.io.IOException
+import java.net.InetAddress
+import java.net.UnknownHostException
 import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
- * Each hub's virtual network as three states, `off`, `connecting` and `on`, driven only by a
- * person's press. A connect is one attempt in two stages: `login`, the engine's start, login and
- * address, within 90 s; then `hub`, with no limit, where the hub's own address on the network is
- * probed every 2 s and, once it answers, the hub's channel runs through that address and no
- * other until the channel is up there, which is `on`; the engine stopping or Cancel ends it. A console
- * that has the phone registered and has assigned no network holds the `login` stage with no
+ * Each hub's virtual network as two states, `off` and `on`, driven only by a person's press. A
+ * connect is the job `connecting` with one stage, `login`: the engine starts, logs in and gets an
+ * address within 90 s, and the line is `on` once it has one, whatever the hub's channel does. A
+ * console that has the phone registered and has assigned no network holds the stage with no
  * deadline until it assigns one, or until Cancel. Nothing retries, nothing moves to another
- * network, and nothing changes the pick. The VPN runs one network at a time. Each stage's start
+ * network, and nothing changes the pick. The VPN runs one network at a time. The stage's start
  * and end is one log line with its duration.
  *
  * @param store The bindings, where the pick and the last state are kept.
  * @param launcher What starts and stops the VPN service.
- * @param scope Where the stages' deadlines and the probes run.
- * @param probe Whether the hub answers at an address; asked every 2 s through the `hub` stage
- *   until the hub answers at its address on the network.
- * @param clock The time in milliseconds, for the stages' durations in the log.
- * @param onChannelPrefers Called with a hub, its address on the network and whether the channel
- *   tries that address only: only, once the hub answers there in the `hub` stage; first, once
- *   the network is on; with an empty address once the network is off.
+ * @param scope Where the stage's deadline runs.
+ * @param clock The time in milliseconds, for the stage's duration in the log.
+ * @param onNetworkChanged Called with a hub and its network once the network is on, and with
+ *   null once it is off.
  */
 class OverlayController(
     private val store: BindingStore,
     private val launcher: OverlayLauncher,
     private val scope: CoroutineScope,
-    private val probe: suspend (String) -> Boolean,
     private val clock: () -> Long = System::currentTimeMillis,
-    private val onChannelPrefers: (String, String, Boolean) -> Unit,
+    private val onNetworkChanged: (String, ChannelOverlayRoute?) -> Unit,
 ) {
     private val lock = Any()
     private val current = MutableStateFlow<Map<String, OverlayLine>>(emptyMap())
     private var active: Attempt? = null
     private var timer: Job? = null
-    private var asking: Job? = null
-    private var views: List<HubView> = emptyList()
 
     /** Every hub's virtual network by binding id; a hub not in the map is off with no error. */
     val lines: StateFlow<Map<String, OverlayLine>> = current.asStateFlow()
 
-    /**
-     * Connect once a hub whose network was on when the app last ran, and follow the bindings
-     * and the channels from now on.
-     *
-     * @param views Every hub's view.
-     */
-    fun start(views: Flow<List<HubView>>) {
+    /** Connect once a hub whose network was on when the app last ran, and follow the bindings from now on. */
+    fun start() {
         store.bindings.value.firstOrNull { it.isOverlayOn }?.let { connect(it.id) }
-        scope.launch {
-            combine(store.bindings, views) { bindings, hubs -> bindings to hubs }
-                .collect { (bindings, hubs) -> follow(bindings, hubs) }
-        }
+        scope.launch { store.bindings.collect { follow(it) } }
     }
 
     /**
-     * Press Connect: one attempt on the hub's picked network, starting with the `login` stage. A
-     * press while any network is not off is dropped.
+     * Press Connect: one attempt on the hub's picked network, in its `login` stage. A press while
+     * any network runs is dropped.
      *
      * @param bindingId The hub.
      */
@@ -99,11 +82,10 @@ class OverlayController(
         put(
             bindingId,
             OverlayLine(
-                OverlayState.CONNECTING,
+                OverlayState.OFF,
                 overlay.provider,
                 job = OverlayJob.CONNECTING,
                 stage = OverlayStage.LOGIN,
-                stageStartedAtMillis = attempt.stageStartedAt,
             ),
         )
         log(attempt, "stage login started")
@@ -112,12 +94,12 @@ class OverlayController(
     }
 
     /**
-     * Press Cancel: the attempt ends in whichever stage it is, and the engine stops.
+     * Press Cancel: the connect ends, and the engine stops.
      *
      * @param bindingId The hub.
      */
     fun cancel(bindingId: String) = synchronized(lock) {
-        if (active?.bindingId != bindingId || line(bindingId).state != OverlayState.CONNECTING) return@synchronized
+        if (active?.bindingId != bindingId || line(bindingId).job != OverlayJob.CONNECTING) return@synchronized
         end(bindingId, null)
     }
 
@@ -148,6 +130,7 @@ class OverlayController(
      */
     fun pick(bindingId: String, provider: String) = synchronized(lock) {
         if (active?.bindingId == bindingId || line(bindingId).state != OverlayState.OFF) return@synchronized
+        if (line(bindingId).job != OverlayJob.NONE) return@synchronized
         put(bindingId, line(bindingId).copy(error = null))
         try {
             store.update(bindingId) { it.copy(overlayChoice = provider) }
@@ -157,7 +140,7 @@ class OverlayController(
     }
 
     /**
-     * Take what the running engine says. An address in the `login` stage starts the `hub` stage.
+     * Take what the running engine says. An address in the `login` stage puts the line `on`.
      *
      * @param status The engine's word.
      */
@@ -170,7 +153,7 @@ class OverlayController(
                 val address = status.address.substringBefore('/')
                 val prefix = status.address.substringAfter('/', "32").toIntOrNull() ?: 32
                 if (line.stage == OverlayStage.LOGIN) {
-                    beginHub(attempt, line, address, prefix)
+                    turnOn(attempt, line, address, prefix)
                 } else {
                     put(attempt.bindingId, line.copy(address = address))
                 }
@@ -214,14 +197,11 @@ class OverlayController(
     }
 
     /**
-     * Follow the bindings and the channels: a network the hub withdrew ends, and a `hub` stage
-     * whose channel came up through the hub's address on the network is on.
+     * Follow the bindings: a network the hub withdrew ends.
      *
      * @param bindings Every binding.
-     * @param hubs Every hub's view.
      */
-    internal fun follow(bindings: List<HubBinding>, hubs: List<HubView>) = synchronized(lock) {
-        views = hubs
+    internal fun follow(bindings: List<HubBinding>) = synchronized(lock) {
         val attempt = active ?: return@synchronized
         val binding = bindings.firstOrNull { it.id == attempt.bindingId }
         when {
@@ -234,71 +214,41 @@ class OverlayController(
                 attempt.bindingId,
                 ChannelResult.refused("overlay_withdrawn", "network" to ChannelOverlay(attempt.provider).title),
             )
-
-            else -> settle()
         }
     }
 
-    private fun beginHub(attempt: Attempt, line: OverlayLine, address: String, prefix: Int) {
+    private fun turnOn(attempt: Attempt, line: OverlayLine, address: String, prefix: Int) {
         log(attempt, "stage login ended after ${elapsed(attempt)}: address $address/$prefix")
-        attempt.stageStartedAt = clock()
-        val binding = store.get(attempt.bindingId)
-        val overlay = binding?.overlays?.firstOrNull { it.provider == attempt.provider }
-        attempt.hubUrl = if (binding != null && overlay != null) {
-            OverlayChoice.hubUrl(binding, overlay, address, prefix)
-        } else {
-            ""
-        }
+        timer?.cancel()
+        timer = null
         put(
             attempt.bindingId,
             line.copy(
+                state = OverlayState.ON,
                 address = address,
+                job = OverlayJob.NONE,
                 isWaiting = false,
-                stage = OverlayStage.HUB,
-                stageStartedAtMillis = attempt.stageStartedAt,
+                stage = OverlayStage.NONE,
             ),
         )
-        log(attempt, "stage hub started: probing ${attempt.hubUrl.ifEmpty { "no address of the hub" }}")
-        timer?.cancel()
-        timer = null
-        ask(attempt)
-    }
-
-    private fun settle() {
-        val attempt = active ?: return
-        val line = line(attempt.bindingId)
-        if (line.state != OverlayState.CONNECTING || line.stage != OverlayStage.HUB || !attempt.isAnswered) return
-        val hub = views.firstOrNull { it.binding.id == attempt.bindingId } ?: return
-        val isUp = hub.connection == HubConnection.CONNECTED || hub.connection == HubConnection.DISABLED
-        if (!isUp || (attempt.hubUrl.isNotEmpty() && hub.connectedAddress != attempt.hubUrl)) return
-        timer?.cancel()
-        timer = null
-        log(attempt, "stage hub ended after ${elapsed(attempt)}: the channel runs through ${hub.connectedAddress}")
-        put(attempt.bindingId, line.copy(state = OverlayState.ON, job = OverlayJob.NONE, stage = OverlayStage.NONE))
         keepOn(attempt.bindingId, true)
-        if (attempt.hubUrl.isNotEmpty()) onChannelPrefers(attempt.bindingId, attempt.hubUrl, false)
+        val binding = store.get(attempt.bindingId) ?: return
+        val overlay = binding.overlays.firstOrNull { it.provider == attempt.provider } ?: return
+        val url = OverlayChoice.hubUrl(binding, overlay, address, prefix)
+        if (url.isEmpty()) return
+        onNetworkChanged(attempt.bindingId, ChannelOverlayRoute(url, attempt.provider, networkOf(address, prefix)))
     }
 
-    private fun ask(attempt: Attempt) {
-        asking?.cancel()
-        asking = scope.launch {
-            while (attempt.hubUrl.isNotEmpty() && !probe(attempt.hubUrl)) delay(OVERLAY_PROBE_INTERVAL_MILLIS)
-            synchronized(lock) {
-                if (active !== attempt) return@synchronized
-                attempt.isAnswered = true
-                if (attempt.hubUrl.isNotEmpty()) {
-                    log(attempt, "the hub answers at ${attempt.hubUrl}; the channel tries only it")
-                    onChannelPrefers(attempt.bindingId, attempt.hubUrl, true)
-                }
-                settle()
-            }
-        }
+    private fun networkOf(address: String, prefix: Int): ChannelLocalNetwork? = try {
+        ChannelLocalNetwork(InetAddress.getByName(address), prefix)
+    } catch (_: UnknownHostException) {
+        null
     }
 
     private fun expired(bindingId: String) = synchronized(lock) {
         if (active?.bindingId != bindingId) return@synchronized
         val line = line(bindingId)
-        if (line.state != OverlayState.CONNECTING || line.stage != OverlayStage.LOGIN) return@synchronized
+        if (line.job != OverlayJob.CONNECTING || line.stage != OverlayStage.LOGIN) return@synchronized
         end(bindingId, ChannelResult.refused("overlay_no_address"))
     }
 
@@ -311,12 +261,10 @@ class OverlayController(
         active = null
         timer?.cancel()
         timer = null
-        asking?.cancel()
-        asking = null
         if (!isStopped) launcher.stop()
         put(bindingId, OverlayLine(network = attempt.provider, error = error))
         keepOn(bindingId, false)
-        onChannelPrefers(bindingId, "", false)
+        onNetworkChanged(bindingId, null)
     }
 
     private fun restartTimer(seconds: Long, onExpiry: () -> Unit) {
@@ -348,8 +296,5 @@ class OverlayController(
         Log.i(CLIENT_LOG_TAG, "virtual network ${attempt.provider} of ${attempt.bindingId}: $text")
     }
 
-    private class Attempt(val bindingId: String, val provider: String, var stageStartedAt: Long) {
-        var hubUrl = ""
-        var isAnswered = false
-    }
+    private class Attempt(val bindingId: String, val provider: String, val stageStartedAt: Long)
 }

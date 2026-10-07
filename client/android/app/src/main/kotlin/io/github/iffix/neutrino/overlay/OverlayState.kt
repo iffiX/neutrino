@@ -5,10 +5,7 @@ enum class OverlayState {
     /** Not on it; the last failure, if any, is kept beside. */
     OFF,
 
-    /** One attempt runs: the engine starts, takes an address, and the channel comes up through it. */
-    CONNECTING,
-
-    /** On it, with an address, and the hub's channel up through it. */
+    /** On it: the engine runs and has an address. */
     ON,
     ;
 

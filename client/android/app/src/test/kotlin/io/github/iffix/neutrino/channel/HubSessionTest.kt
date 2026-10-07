@@ -10,6 +10,7 @@ import io.github.iffix.neutrino.binding.HubBinding
 import io.github.iffix.neutrino.forward.PortForwardUdpRelay
 import java.net.DatagramPacket
 import java.net.DatagramSocket
+import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
@@ -41,11 +42,20 @@ class HubSessionTest {
     private val joined = mutableListOf<Pair<String, String>>()
 
     private val pending = Samples.binding.copy(token = "", ticket = "ticket-1")
+    private val lanUrl = "https://192.168.100.1:8443"
+    private val directUrl = "https://100.72.4.1:8443"
+    private val lanNetwork = ChannelLocalNetwork(InetAddress.getByName("192.168.100.7"), 24)
+    private val easytierRoute = ChannelOverlayRoute(
+        "https://10.126.126.1:8443",
+        "easytier",
+        ChannelLocalNetwork(InetAddress.getByName("10.126.126.7"), 24),
+    )
 
     private fun session(
         transport: FakeHubTransport,
         nameAddress: String? = null,
         binding: HubBinding = Samples.binding,
+        local: List<ChannelLocalNetwork> = emptyList(),
     ): Pair<HubSession, BindingStore> {
         val store = BindingStore(folder.root.resolve("b.sealed"), FakeSecretSealer())
         store.put(binding)
@@ -57,6 +67,8 @@ class HubSessionTest {
             { nameAddress },
             { id, _ -> unbound += id },
             { id, hubId -> joined += id to hubId },
+            localNetworks = { local },
+            nanoClock = { 0L },
         )
         return session to store
     }
@@ -459,41 +471,220 @@ class HubSessionTest {
     }
 
     @Test
-    fun anAddressPreferredAsTheOnlyOneIsTheOnlyOneARoundTries() = runTest {
-        val transport = FakeHubTransport { FakeHubTransport.silent }
-        val (session, _) = session(transport, nameAddress = "10.9.9.9")
-        session.preferAddress("https://100.88.0.1:8443", isOnly = true)
-        session.runOnce()
-        session.runOnce()
-        assertEquals(listOf("https://100.88.0.1:8443", "https://100.88.0.1:8443"), transport.dialled.map { it.first })
-        session.preferAddress("https://100.88.0.1:8443")
-        session.runOnce()
-        assertEquals(6, transport.dialled.size)
+    fun aNetworkOnRunsARoundBesideTheChannelAndAWorseWinnerIsClosedBeforeAnyHello() = runTest {
+        val hanging = mutableSetOf<String>()
+        val transport = FakeHubTransport { url ->
+            if (url in
+                hanging
+            ) {
+                FakeHubTransport.hanging
+            } else {
+                FakeHubTransport.welcoming
+            }
+        }
+        val (session, _) = session(transport, local = listOf(lanNetwork))
+        served(session)
+        assertEquals(lanUrl, session.view.value.connectedAddress)
+        hanging += listOf(lanUrl, directUrl)
+        session.overlayChanged(easytierRoute)
+        runCurrent()
+        val (_, over, _) = transport.dialled.single { it.first == easytierRoute.url }
+        assertEquals(CLIENT_WS_CLOSE_NORMAL, over.closedWith)
+        assertEquals(emptyList<Any>(), over.texts)
+        assertEquals(1, transport.dialled.sumOf { it.second.sent("hello").size })
+        assertEquals(HubConnection.CONNECTED, session.view.value.connection)
+        assertEquals(lanUrl, session.view.value.connectedAddress)
     }
 
     @Test
-    fun aRoundBusyOnOtherAddressesGivesWayToTheOnlyAddressWithinASecond() = runTest {
-        val over = "https://100.88.0.1:8443"
-        val transport = FakeHubTransport { url -> if (url == over) FakeHubTransport.welcoming else emptyList() }
+    fun aBetterPathTakesTheChannelAndTheOldSocketsReplacedCloseIsNotShown() = runTest {
+        val hanging = mutableSetOf(lanUrl, directUrl)
+        val transport = FakeHubTransport { url ->
+            if (url in
+                hanging
+            ) {
+                FakeHubTransport.hanging
+            } else {
+                FakeHubTransport.welcoming
+            }
+        }
+        val (session, store) = session(transport, local = listOf(lanNetwork))
+        session.overlayChanged(easytierRoute)
+        val round = served(session)
+        assertEquals(easytierRoute.url, session.view.value.connectedAddress)
+        val (_, old, oldEvents) = transport.greeted()
+        hanging.clear()
+        hanging += easytierRoute.url
+        session.networkChanged()
+        runCurrent()
+        val (address, moved, _) = transport.greeted()
+        assertEquals(lanUrl, address)
+        assertEquals(1, moved.sent("hello").size)
+        assertEquals(2, transport.dialled.sumOf { it.second.sent("hello").size })
+        assertEquals(CLIENT_WS_CLOSE_NORMAL, old.closedWith)
+        oldEvents.trySend(ChannelSocketEvent.Closed(4010, "replaced"))
+        runCurrent()
+        assertEquals(HubConnection.CONNECTED, session.view.value.connection)
+        assertEquals(lanUrl, session.view.value.connectedAddress)
+        assertEquals(lanUrl, store.get("b1")?.gatewayUrl)
+        assertEquals(false, round.isCompleted)
+    }
+
+    @Test
+    fun aReplacedCloseThatComesBeforeTheMoveIsNotShownEither() = runTest {
+        val hanging = mutableSetOf(lanUrl, directUrl)
+        val transport = FakeHubTransport { url ->
+            when (url) {
+                in hanging -> FakeHubTransport.hanging
+                lanUrl -> listOf(ChannelSocketEvent.Opened)
+                else -> FakeHubTransport.welcoming
+            }
+        }
+        val (session, _) = session(transport, local = listOf(lanNetwork))
+        session.overlayChanged(easytierRoute)
+        served(session)
+        val (_, _, oldEvents) = transport.greeted()
+        hanging.clear()
+        hanging += easytierRoute.url
+        session.networkChanged()
+        runCurrent()
+        val (_, _, lanEvents) = transport.dialled.last { it.first == lanUrl }
+        oldEvents.trySend(ChannelSocketEvent.Closed(4010, "replaced"))
+        runCurrent()
+        lanEvents.trySend(FakeHubTransport.welcoming.last())
+        runCurrent()
+        assertEquals(HubConnection.CONNECTED, session.view.value.connection)
+        assertEquals(lanUrl, session.view.value.connectedAddress)
+    }
+
+    @Test
+    fun aWinnerOnTheSamePathThatOpenedNoFasterLeavesTheChannel() = runTest {
+        val transport = FakeHubTransport { FakeHubTransport.welcoming }
+        val store = BindingStore(folder.root.resolve("b.sealed"), FakeSecretSealer())
+        store.put(Samples.binding)
+        val session = HubSession(
+            "b1",
+            store,
+            transport,
+            Samples.machine,
+            { null },
+            { _, _ -> },
+            localNetworks = { listOf(lanNetwork) },
+            nanoClock = { 0L },
+        )
+        served(session)
+        session.networkChanged()
+        runCurrent()
+        assertEquals(1, transport.dialled.sumOf { it.second.sent("hello").size })
+        assertEquals(lanUrl, session.view.value.connectedAddress)
+    }
+
+    @Test
+    fun aWinnerOnTheSamePathThatOpenedFasterTakesTheChannel() = runTest {
+        var now = 0L
+        var step = 500L
+        val transport = FakeHubTransport { FakeHubTransport.welcoming }
+        val store = BindingStore(folder.root.resolve("b.sealed"), FakeSecretSealer())
+        store.put(Samples.binding)
+        val session = HubSession(
+            "b1",
+            store,
+            transport,
+            Samples.machine,
+            { null },
+            { _, _ -> },
+            localNetworks = { listOf(lanNetwork) },
+            nanoClock = {
+                now += step
+                now
+            },
+        )
+        served(session)
+        step = 100L
+        session.networkChanged()
+        runCurrent()
+        assertEquals(2, transport.dialled.sumOf { it.second.sent("hello").size })
+        assertEquals(lanUrl, session.view.value.connectedAddress)
+        assertEquals(HubConnection.CONNECTED, session.view.value.connection)
+    }
+
+    @Test
+    fun aStateNamingOtherAddressesRunsARound() = runTest {
+        val transport = FakeHubTransport { url ->
+            if (url ==
+                "https://10.0.0.9:8443"
+            ) {
+                FakeHubTransport.hanging
+            } else {
+                FakeHubTransport.welcoming
+            }
+        }
+        val (session, _) = session(transport)
+        served(session)
+        val (_, _, events) = transport.greeted()
+        events.trySend(
+            ChannelSocketEvent.Text(
+                """{"type":"state","hash":"h","urls":["$lanUrl","$directUrl","https://10.0.0.9:8443"]}""",
+            ),
+        )
+        runCurrent()
+        assertTrue(transport.dialled.any { it.first == "https://10.0.0.9:8443" })
+        val dialled = transport.dialled.size
+        events.trySend(
+            ChannelSocketEvent.Text(
+                """{"type":"state","hash":"h2","urls":["$lanUrl","$directUrl","https://10.0.0.9:8443"]}""",
+            ),
+        )
+        runCurrent()
+        assertEquals(dialled, transport.dialled.size)
+    }
+
+    @Test
+    fun aConnectivityChangeRunsARoundWhetherConnectedOrNot() = runTest {
+        var isUp = false
+        val transport = FakeHubTransport { if (isUp) FakeHubTransport.welcoming else FakeHubTransport.silent }
         val (session, _) = session(transport)
         session.start(backgroundScope)
-        advanceTimeBy(3_000)
-        val round = Samples.binding.storedUrls
-        assertEquals(round, transport.dialled.map { it.first })
-        session.preferAddress(over, isOnly = true)
-        advanceTimeBy(1_000)
-        assertEquals(round + over, transport.dialled.map { it.first })
+        runCurrent()
+        assertEquals(HubConnection.DOWN, session.view.value.connection)
+        val before = transport.dialled.size
+        isUp = true
+        session.networkChanged()
+        runCurrent()
+        assertTrue(transport.dialled.size > before)
         assertEquals(HubConnection.CONNECTED, session.view.value.connection)
-        assertEquals(over, session.view.value.connectedAddress)
+        val connected = transport.dialled.size
+        session.networkChanged()
+        runCurrent()
+        assertTrue(transport.dialled.size > connected)
+        assertEquals(1, transport.dialled.sumOf { it.second.sent("hello").size })
     }
 
     @Test
-    fun aPreferredAddressIsTriedFirst() = runTest {
+    fun aReplacedHubRunsNoRoundOnANetworkChange() = runTest {
+        val transport = FakeHubTransport { FakeHubTransport.welcoming }
+        val (session, _) = session(transport)
+        val round = served(session)
+        transport.greeted().third.trySend(ChannelSocketEvent.Closed(4010, "replaced"))
+        round.await()
+        val before = transport.dialled.size
+        session.networkChanged()
+        runCurrent()
+        assertEquals(before, transport.dialled.size)
+        assertEquals(HubConnection.REPLACED, session.view.value.connection)
+    }
+
+    @Test
+    fun theVirtualNetworksAddressIsACandidateOfEveryRound() = runTest {
         val transport = FakeHubTransport { FakeHubTransport.silent }
         val (session, _) = session(transport)
-        session.preferAddress("https://hub.netbird.cloud:8443")
+        session.overlayChanged(easytierRoute)
         session.runOnce()
-        assertEquals("https://hub.netbird.cloud:8443", transport.dialled.first().first)
+        assertTrue(transport.dialled.any { it.first == easytierRoute.url })
+        session.overlayChanged(null)
+        val before = transport.dialled.size
+        session.runOnce()
+        assertTrue(transport.dialled.drop(before).none { it.first == easytierRoute.url })
     }
 
     @Test

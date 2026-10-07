@@ -8,11 +8,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
@@ -47,7 +42,6 @@ import io.github.iffix.neutrino.overlay.OverlayLine
 import io.github.iffix.neutrino.overlay.OverlayStage
 import io.github.iffix.neutrino.overlay.OverlayState
 import io.github.iffix.neutrino.words.WordCatalog
-import kotlinx.coroutines.delay
 
 /**
  * The hubs this phone has joined, one row each with its state, its virtual network line and its
@@ -204,16 +198,18 @@ fun hubTags(hub: HubView, words: WordCatalog): List<String> {
 fun hasNetworkLine(hub: HubView): Boolean = hub.binding.overlays.isNotEmpty() ||
     hub.overlay.state != OverlayState.OFF || hub.overlay.job != OverlayJob.NONE
 
-@Composable
-private fun waitedSeconds(line: OverlayLine): Long {
-    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(line.stage, line.stageStartedAtMillis) {
-        while (line.stage == OverlayStage.HUB) {
-            now = System.currentTimeMillis()
-            delay(1000)
-        }
-    }
-    return ((now - line.stageStartedAtMillis) / 1000).coerceAtLeast(0)
+/**
+ * The state word of a hub's virtual network line: the connect's job word while it runs, else
+ * `off` or `on` with the phone's address. The line names the engine and never the hub's channel.
+ *
+ * @param line The line.
+ * @param words The catalog.
+ * @return The sentence.
+ */
+fun overlayStateWord(line: OverlayLine, words: WordCatalog): String = if (line.job == OverlayJob.CONNECTING) {
+    words.word("ui.job.connecting")
+} else {
+    words.word("ui.overlay.${line.state.wireName}", mapOf("address" to line.address))
 }
 
 @Composable
@@ -233,19 +229,16 @@ private fun HubRow(
     val id = hub.binding.id
     val networks = hub.binding.overlays
     val line = hub.overlay
-    val chosen = line.network.takeIf { line.state != OverlayState.OFF }
+    val chosen = line.network.takeIf { line.state != OverlayState.OFF || line.job != OverlayJob.NONE }
         ?: networks.firstOrNull { it.provider == hub.binding.overlayChoice }?.provider
         ?: networks.firstOrNull()?.provider.orEmpty()
     val networkReason = when {
         line.isWaiting -> words.word("ui.reason.console_waiting")
 
-        line.state == OverlayState.CONNECTING && line.stage == OverlayStage.LOGIN ->
+        line.job == OverlayJob.CONNECTING && line.stage == OverlayStage.LOGIN ->
             words.word("ui.stage.login", mapOf("engine" to ChannelOverlay(line.network).title))
 
-        line.state == OverlayState.CONNECTING && line.stage == OverlayStage.HUB ->
-            words.word("ui.stage.hub", mapOf("address" to line.address, "seconds" to waitedSeconds(line)))
-
-        line.state != OverlayState.OFF -> null
+        line.state != OverlayState.OFF || line.job != OverlayJob.NONE -> null
 
         hub.isDisabled -> words.word("ui.reason.disabled")
 
@@ -266,14 +259,14 @@ private fun HubRow(
                     selected = chosen,
                     onSelect = { onOverlayPick(id, it) },
                     head = words.word("ui.overlay_count", mapOf("count" to networks.size)),
-                    isEnabled = line.state == OverlayState.OFF && !hub.isDisabled,
+                    isEnabled = line.state == OverlayState.OFF && line.job == OverlayJob.NONE && !hub.isDisabled,
                     isWide = false,
                 )
             }
             when {
                 hub.isJoinRefused || !hasNetworkLine(hub) -> Unit
 
-                line.state == OverlayState.CONNECTING -> NeutrinoButton(
+                line.job == OverlayJob.CONNECTING -> NeutrinoButton(
                     words.word("ui.network_cancel"),
                     { onOverlayCancel(id) },
                     isSmall = true,
@@ -356,13 +349,13 @@ private fun NetworkLine(hub: HubView, networkReason: String?) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         StatusDot(
-            when (line.state) {
-                OverlayState.ON -> if (line.job == OverlayJob.NONE) DotTone.OK else DotTone.PULSE
-                OverlayState.CONNECTING -> DotTone.PULSE
-                OverlayState.OFF -> DotTone.OFF
+            when {
+                line.job != OverlayJob.NONE -> DotTone.PULSE
+                line.state == OverlayState.ON -> DotTone.OK
+                else -> DotTone.OFF
             },
         )
-        val state = words.word("ui.overlay.${line.state.wireName}", mapOf("address" to line.address))
+        val state = overlayStateWord(line, words)
         val engine = if (networks.size == 1) " · " + networks.first().title else ""
         BasicText(words.word("ui.overlay") + " · " + state + engine, style = NeutrinoTheme.note)
     }
