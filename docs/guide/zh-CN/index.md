@@ -20,10 +20,10 @@ groups:
   - title: 第一次用
     items:
       - title: 第一步
-        details: 装中枢，加入手机和笔记本，连上外网
+        details: 装中枢，加入手机和笔记本，在外面也连得上
         link: /zh-CN/quick-start
       - title: AI 会话
-        details: 在手机上接着家里电脑上的 AI 会话
+        details: 手机上接着电脑上的 Claude Code 会话
         link: /zh-CN/quick-start/cloudcli
       - title: 编辑器
         details: 在浏览器里打开电脑上的 VS Code
@@ -73,7 +73,7 @@ groups:
         link: /zh-CN/reference/platforms
 ---
 
-微子装在家里那台常开的电脑上。手机和笔记本扫码或贴一条链接加入，在家里走局域网，在外面走一种外部访问。加入以后，电脑上的终端、AI 会话、编辑器、桌面和文件，在手机和笔记本上都能打开。
+微子的中枢装在家里那台常开的电脑上。手机和笔记本装上客户端，扫码或贴链接加入；在外面经 EasyTier 这类外部访问连回来，家里没有公网地址也行。电脑上的终端、Claude Code 会话、编辑器、桌面和文件，在手机和笔记本上都能打开。
 
 <HomeGroups
   v-for="group in $frontmatter.groups"

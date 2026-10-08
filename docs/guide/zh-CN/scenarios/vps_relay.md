@@ -37,7 +37,7 @@ title: 用自己的 VPS 中继连回家
    useradd --create-home --shell /usr/sbin/nologin relay
    ```
 
-1. 用密钥时，把公钥写进这个账户的 `authorized_keys`，前面加上只允许一个监听端口的选项。`<public-key>` 是 `neutrino-relay.pub` 里的那一行：
+1. 用密钥时，把公钥写进这个账户的 `authorized_keys`，前面加上只允许一个监听端口的选项。`<public-key>` 是 `neutrino-relay.pub` 里的那一行，在生成密钥的电脑上用 `cat neutrino-relay.pub` 打印出来复制：
 
    ```bash
    mkdir -p /home/relay/.ssh
@@ -85,7 +85,10 @@ title: 用自己的 VPS 中继连回家
 
 在手机上验证：
 
+1. 开着 EasyTier 或 NetBird 时，在手机中枢那一行下面的 **虚拟网** 一行选择 **断开**。
 1. 关掉手机的 Wi-Fi，改用移动网络。
 1. 打开客户端，看中枢那一行。
 
-这一行显示 **已连接 · SSH 中继**。同时开着别的外部访问时，客户端优先用直连、NetBird 或 EasyTier，这一行显示的是那一种。
+这一行显示 **已连接 · SSH 中继**。虚拟网连着时，客户端优先用它，这一行显示的是 NetBird 或 EasyTier。
+
+不再用中继时，在 **外部访问** 页关掉 **SSH 中继** 的 **启用**，选择 **应用外部访问**。服务器上删掉 `relay` 账户和 `/etc/ssh/sshd_config.d/` 下这一页加的文件，再重启 SSH 服务。

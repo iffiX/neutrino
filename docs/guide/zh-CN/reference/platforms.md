@@ -12,7 +12,7 @@ title: 支持的平台
 
 | 安装包            | 装在哪                                                        | 以谁的身份运行                                                         |
 | ----------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `neutrino-hub`    | 一台常开的机器：Linux 任意形态，或服务器形态的 macOS、Windows | root；macOS 上是 root 的 LaunchDaemon，Windows 上是 LocalSystem 服务   |
+| `neutrino-hub`    | 一台常开的机器：Linux 任意模式，或服务器模式的 macOS、Windows | root；macOS 上是 root 的 LaunchDaemon，Windows 上是 LocalSystem 服务   |
 | `neutrino-agent`  | 每台受管的 Linux、Windows 或 Mac                              | root，没有窗口；macOS 上是 LaunchDaemon，Windows 上是 LocalSystem 服务 |
 | `neutrino-client` | 每个人自己的 Linux、Windows 或 Mac 电脑                       | 这个人自己的账户                                                       |
 | Android 应用      | 每个人的 Android 手机                                         | 手机上的这个应用                                                       |
@@ -28,13 +28,13 @@ LocalSystem 是 Windows 自己的系统账户，面板和客户端上写作 SYST
 | Fedora 41 及以上；RHEL 9 系，例如 AlmaLinux、Rocky，先启用 EPEL              | x86-64 | `neutrino-hub-0.5.0-1.x86_64.rpm`         |
 | 同上                                                                         | ARM64  | `neutrino-hub-0.5.0-1.aarch64.rpm`        |
 | Arch、EndeavourOS、Manjaro                                                   | x86-64 | `neutrino-hub-0.5.0-1-x86_64.pkg.tar.zst` |
-| Windows 10 1809 及以上，Windows 11，只有服务器形态                           | x86-64 | `neutrino-hub-0.5.0-windows-amd64.msi`    |
-| Apple 芯片上的 macOS 12.3 及以上，只有服务器形态                             | ARM64  | `neutrino-hub-0.5.0-macos-arm64.pkg`      |
-| Intel 芯片上的 macOS 12.3 及以上，只有服务器形态                             | x86-64 | `neutrino-hub-0.5.0-macos-amd64.pkg`      |
+| Windows 10 1809 及以上，Windows 11，只有服务器模式                           | x86-64 | `neutrino-hub-0.5.0-windows-amd64.msi`    |
+| Apple 芯片上的 macOS 12.3 及以上，只有服务器模式                             | ARM64  | `neutrino-hub-0.5.0-macos-arm64.pkg`      |
+| Intel 芯片上的 macOS 12.3 及以上，只有服务器模式                             | x86-64 | `neutrino-hub-0.5.0-macos-amd64.pkg`      |
 
 Linux 上的中枢包自带 Python 环境，不动系统装的任何东西，其余依赖都写在包里：systemd、nftables、dnsmasq、iproute2、wpa_supplicant、dhcpcd、fail2ban、iw、arp-scan、vnstat、curl、smbclient、OpenSSH 客户端和 pkexec。要发 Wi-Fi 的机器还推荐装 hostapd。Debian 系上 dhcpcd 写作 `dhcpcd-base | dhcpcd5`，因为 Ubuntu 22.04 上这个程序叫后一个名字；pkexec 写作 `pkexec | policykit-1`。RHEL 9 系的 fail2ban、arp-scan 和 vnstat 在 EPEL 里。
 
-Windows 和 macOS 上的中枢只运行 **服务器** 形态：只在机器所连的网络上提供服务，不当路由器。这两种系统的中枢包里有编译好的中枢，以及中枢驱动的每个程序，不依赖系统的包。包里还有本机要装的被控端。
+Windows 和 macOS 上的中枢只运行 **服务器** 模式：只在机器所连的网络上提供服务，不当路由器。这两种系统的中枢包里有编译好的中枢，以及中枢驱动的每个程序，不依赖系统的包。包里还有本机要装的被控端。
 
 ## 被控端
 
@@ -83,7 +83,7 @@ Android 8.0 对应 API 级别 26，即应用声明的 `minSdk`；更旧的手机
 | 完整版 | GitHub，`https://github.com/iffiX/neutrino/releases`，保留每个发行版本 | 上面各表的全部文件                                                                                                |
 | 国内版 | Gitee，`https://gitee.com/iffiX/neutrino/releases`，只留最新的发行版本 | 中枢、被控端和桌面客户端各自的 x86-64 与 ARM64 `.deb`、Windows `.msi`、Apple 芯片 Mac `.pkg`，以及 Android `.apk` |
 
-国内版的中枢没有代理和 NetBird：没有 **代理** 页，**外部访问** 页上没有 NetBird 卡片，也没有 **旁路网关** 形态。国内版的桌面客户端和 Android 应用没有 NetBird。两版的被控端相同。完整版的包只升级到完整版的包，国内版的也一样。
+国内版的中枢没有代理和 NetBird：没有 **代理** 页，**外部访问** 页上没有 NetBird 卡片，也没有 **旁路网关** 模式。国内版的桌面客户端和 Android 应用没有 NetBird。两版的被控端相同。完整版的包只升级到完整版的包，国内版的也一样。
 
 从 0.4 换到 0.5.0 的做法，见[设置页的“从 0.4 过来”](../hub/settings.md#从-0-4-过来)。
 

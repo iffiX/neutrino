@@ -4,7 +4,7 @@ title: NetBird
 
 # 把中枢加入 NetBird
 
-这一页让中枢用一把可重复使用的 setup key 加入 NetBird，再把同一把 key 交给每个客户端。你需要一个 netbird.io 账号，或者一套自建的 NetBird 管理面。国内版没有 NetBird，国内版用[把中枢放到 EasyTier 网络里](./easytier.md)。
+中枢加入 NetBird 要一把可重复使用的 setup key，同一把 key 中枢再交给每个客户端。这一页在控制台里建这把 key，再在面板里用它加入。你需要一个 netbird.io 账号，或者一套自建的 NetBird 管理面。国内版没有 NetBird，国内版用[把中枢放到 EasyTier 网络里](./easytier.md)。
 
 开始之前，在 **外部访问** 页打开 **NetBird** 卡片的开关，选择 **应用外部访问**。
 
@@ -68,7 +68,7 @@ title: NetBird
 
 ## 发布局域网网段
 
-**局域网路由** 列出中枢服务的每个网段。在 NetBird 控制台里发布这些网段，客户端就能按局域网地址访问那些机器，步骤见[经 NetBird 访问没装被控端的设备](../scenarios/netbird_lan_routes.md)。服务器形态的中枢不服务任何网段，这里写着 **没有接口处于 LAN 角色。**
+**局域网路由** 列出中枢服务的每个网段。在 NetBird 控制台里发布这些网段，客户端就能按局域网地址访问那些机器，步骤见[经 NetBird 访问没装被控端的设备](../scenarios/netbird_lan_routes.md)。服务器模式的中枢不服务任何网段，这里写着 **没有接口处于 LAN 角色。**
 
 ![局域网路由列出中枢服务的网段](/guide/zh/overlay_netbird_routes.webp)
 
