@@ -541,7 +541,7 @@ class SessionShellStream:
     ``session_id``, ``is_resumed``, ``owner`` and ``is_shared`` from its open.
     """
 
-    def __init__(self, channel, args: dict, *, sessions=None):
+    def __init__(self, channel, args: dict, *, sessions=None, frame_head=b""):
         """
         Args:
             channel: The stream's channel.
@@ -551,8 +551,11 @@ class SessionShellStream:
                 for a new one.
             sessions: The agent's :class:`ShellSessionRegistry`; None keeps
                 no shell past its stream.
+            frame_head: What every frame of output carries before its
+                bytes: stdout's ``fd`` on an ``exec`` stream, else nothing.
         """
         self._channel = channel
+        self._frame_head = bytes(frame_head)
         self._columns = max(1, int(args.get("cols", DEFAULT_COLUMNS) or 0))
         self._rows = max(1, int(args.get("rows", DEFAULT_ROWS) or 0))
         self._session_id = str(args.get("session_id", "") or "")
@@ -641,7 +644,7 @@ class SessionShellStream:
             chunk = attachment.pull(SESSION_POLL_S)
             if chunk:
                 try:
-                    self._channel.send_bytes(chunk)
+                    self._channel.send_bytes(chunk, head=self._frame_head)
                 except StreamClosed:
                     return None
                 continue

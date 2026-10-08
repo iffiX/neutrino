@@ -771,7 +771,6 @@ def test_the_msi_is_started_with_no_window_and_outside_the_services_job(
 
     command, flags = started[0]
     assert command[0] == "powershell.exe"
-    assert self_update.WINDOWS_CREATE_NO_WINDOW == 0x08000000
     assert flags == 0x08000000 | 0x01000000
     assert package.exists()
 

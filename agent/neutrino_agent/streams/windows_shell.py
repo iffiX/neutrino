@@ -11,7 +11,9 @@ are written to the console's input, a resize resizes the console, and ending
 the shell terminates it. Once the shell exits the console is closed, which
 ends its output. The shell is a
 :class:`~neutrino_agent.streams.shell_session.ShellSession`, kept by id when
-the stream's open names one.
+the stream's open names one. An ``exec`` stream opened with ``is_tty`` runs
+its ``argv`` on the console in place of PowerShell, never kept, every frame
+down headed with stdout's ``fd``.
 
 Windows 10 1809 is the first with a pseudo console; an older Windows refuses
 the stream with ``unsupported_platform``.
@@ -33,6 +35,7 @@ import time
 
 from neutrino_agent.constants import (
     AGENT_ANSWER_PROMPT_TIMEOUT_S,
+    AGENT_EXEC_FD_STDOUT,
     AGENT_SHELL_COMMANDS,
     AGENT_SHELL_KILL_TIMEOUT_S,
     AGENT_SHELL_READ_BYTES,
@@ -43,6 +46,7 @@ from neutrino_agent.modules.terminal.config import check_shell_program
 from neutrino_agent.platforms import win32
 from neutrino_agent.platforms.answered_run import answer_on_prompt
 from neutrino_agent.platforms.windows import WindowsPlatform
+from neutrino_agent.streams.shell import check_exec_argv
 from neutrino_agent.streams.shell_session import SessionShellStream, ShellSession
 
 # How long the wait for the shell's exit sleeps before looking again.
@@ -167,7 +171,7 @@ def _start(kernel32, argv: list, attributes, start_dir: str):
     return process
 
 
-def _kill_on_close_job(kernel32):
+def kill_on_close_job(kernel32):
     """A job object that ends every process in it when its last handle closes.
 
     Args:
@@ -261,7 +265,7 @@ class ConsoleTerminal:
                 self._attributes,
                 self._start_dir,
             )
-            self._job = _kill_on_close_job(kernel32)
+            self._job = kill_on_close_job(kernel32)
             kernel32.AssignProcessToJobObject(self._job, self._process.hProcess)
             kernel32.ResumeThread(self._process.hThread)
         except OSError:
@@ -450,6 +454,7 @@ class WindowsShellStream(SessionShellStream):
         sessions=None,
         platform=None,
         terminal=None,
+        argv: "list | None" = None,
     ):
         """
         Args:
@@ -463,8 +468,17 @@ class WindowsShellStream(SessionShellStream):
                 the Windows platform.
             terminal: Returns the Terminal module's settings, of which only
                 the shell program is read; None is PowerShell.
+            argv: An ``exec`` stream's command, run in place of the shell
+                with no settings read, its output headed with stdout's
+                ``fd``. None is a shell.
         """
-        super().__init__(channel, args, sessions=sessions)
+        super().__init__(
+            channel,
+            args,
+            sessions=sessions,
+            frame_head=bytes([AGENT_EXEC_FD_STDOUT]) if argv is not None else b"",
+        )
+        self._argv = argv
         self._kernel32 = kernel32
         self._platform = platform
         self._terminal = terminal
@@ -485,10 +499,16 @@ class WindowsShellStream(SessionShellStream):
             StreamRefused: ``shell_program_unusable {path}`` for a program
                 that cannot be run.
         """
-        shell_path = self._terminal().shell_path if self._terminal else ""
+        shell_path = ""
+        if self._argv is None and self._terminal:
+            shell_path = self._terminal().shell_path
         argv = None
         title = AGENT_SHELL_COMMANDS["win32"][0]
-        if shell_path:
+        if self._argv is not None:
+            check_exec_argv(self._argv)
+            argv = list(self._argv)
+            title = ntpath.basename(argv[0])
+        elif shell_path:
             try:
                 check_shell_program(shell_path)
             except ModuleApplyError as error:

@@ -21,6 +21,10 @@ open with no fallback. A shell already running keeps what it runs, and a
 container's shell reads none of it. Ending a shell kills its whole terminal
 session, background jobs included, so a closed tab leaves nothing behind.
 
+An ``exec`` stream opened with ``is_tty`` runs its ``argv`` here in place
+of the shell, as the same account, never kept, every frame down headed
+with stdout's ``fd``; :mod:`neutrino_agent.streams.exec` serves the rest.
+
 Not pure: starts processes and owns file descriptors.
 """
 
@@ -31,6 +35,7 @@ from __future__ import annotations
 import contextlib
 import os
 import select
+import shutil
 import signal
 import struct
 import subprocess
@@ -38,6 +43,7 @@ import sys
 import threading
 
 from neutrino_agent.constants import (
+    AGENT_EXEC_FD_STDOUT,
     AGENT_SHELL_COMMANDS,
     AGENT_SHELL_FALLBACKS,
     AGENT_SHELL_KILL_TIMEOUT_S,
@@ -58,6 +64,7 @@ from neutrino_agent.modules.terminal.config import (
 )
 from neutrino_agent.modules.terminal.constants import (
     TERMINAL_CODE_ACCOUNT_UNKNOWN,
+    TERMINAL_CODE_SHELL_UNUSABLE,
     TERMINAL_LOGIN_ARGUMENTS,
     TERMINAL_NOLOGIN_MARK,
 )
@@ -261,6 +268,80 @@ def shell_plan(settings: TerminalConfig, platform) -> tuple:
     return command, process, settings.account, os.path.basename(shell)
 
 
+def check_exec_argv(argv, environment: "dict | None" = None) -> None:
+    """Refuse an ``exec`` stream's ``argv`` that cannot run.
+
+    Args:
+        argv: The open's ``argv``.
+        environment: The environment the process gets, whose ``PATH`` the
+            program is looked up on; None is the agent's own.
+
+    Raises:
+        StreamRefused: ``shell_program_unusable {path}``: ``path`` empty for
+            an ``argv`` that is empty or not a list of strings, else its
+            first member when that is not found on the ``PATH`` or cannot
+            be run.
+    """
+    if (
+        not isinstance(argv, list)
+        or not argv
+        or not all(isinstance(each, str) for each in argv)
+        or not argv[0]
+    ):
+        raise StreamRefused(TERMINAL_CODE_SHELL_UNUSABLE, {"path": ""})
+    path = (environment if environment is not None else os.environ).get(
+        "PATH", os.defpath
+    )
+    if shutil.which(argv[0], path=path) is None:
+        raise StreamRefused(TERMINAL_CODE_SHELL_UNUSABLE, {"path": argv[0]})
+
+
+def exec_plan(argv, settings: TerminalConfig, platform) -> tuple:
+    """What an ``exec`` stream runs here, and as whom, by the Terminal module's settings.
+
+    Args:
+        argv: The open's ``argv``, run as given with no shell between.
+        settings: The module's settings; its shell program is not read.
+        platform: The machine's platform, which steps down to an account.
+
+    Returns:
+        ``(command, process, account)``: the argument vector, what
+        :class:`subprocess.Popen` takes beside it (``cwd``, ``env``, and
+        ``owner``, the uid a terminal is handed to; empty for the agent's
+        own), and the account the command runs as.
+
+    Raises:
+        StreamRefused: ``account_unknown {account}`` for an account the
+            machine does not have; ``shell_program_unusable {path}`` for an
+            ``argv`` :func:`check_exec_argv` refuses.
+    """
+    if not settings.account:
+        check_exec_argv(argv)
+        return list(argv), {}, shell_account()
+    try:
+        entry = account_entry(settings.account)
+    except ModuleApplyError as error:
+        raise refusal(error) from None
+    try:
+        if platform is None:
+            raise PlatformUnsupportedError("no platform to step down with")
+        command, process = platform.account_process(
+            settings.account, list(argv) if isinstance(argv, list) else []
+        )
+    except KeyError:
+        raise StreamRefused(
+            TERMINAL_CODE_ACCOUNT_UNKNOWN, {"account": settings.account}
+        ) from None
+    except PlatformUnsupportedError:
+        raise StreamRefused("unsupported_platform") from None
+    process = dict(process)
+    process["env"] = dict(process.get("env") or os.environ)
+    process["env"]["SHELL"] = login_shell(entry.pw_shell)
+    process["owner"] = entry.pw_uid
+    check_exec_argv(argv, process["env"])
+    return command, process, settings.account
+
+
 def _session_members(session_id: int) -> list:
     """Every pid in one terminal session, read from ``/proc``."""
     members = []
@@ -292,6 +373,34 @@ def _sweep_session(session_id: int) -> None:
             continue
         with contextlib.suppress(OSError):
             os.kill(pid, signal.SIGKILL)
+
+
+def end_session(process: subprocess.Popen) -> int:
+    """Stop a process that leads its own session, and everything in that session.
+
+    Args:
+        process: The process, started with ``start_new_session``.
+
+    Returns:
+        Its exit status; a signal death reads as 128 plus the signal's
+        number, and one that never ended as 1.
+    """
+    if process.poll() is None:
+        for sig in (signal.SIGHUP, signal.SIGKILL):
+            with contextlib.suppress(OSError):
+                os.killpg(process.pid, sig)
+            try:
+                process.wait(timeout=AGENT_SHELL_KILL_TIMEOUT_S)
+                break
+            except subprocess.TimeoutExpired:
+                continue
+    _sweep_session(process.pid)
+    with contextlib.suppress(subprocess.TimeoutExpired):
+        process.wait(timeout=AGENT_SHELL_KILL_TIMEOUT_S)
+    code = process.returncode
+    if code is None:
+        return 1
+    return code if code >= 0 else 128 - code
 
 
 def _take_controlling_terminal() -> None:
@@ -426,23 +535,9 @@ class PtyTerminal:
         Returns:
             The process's exit status; a signal death reads as 128 plus it.
         """
-        process = self._process
         exit_code = 1
-        if process is not None:
-            if process.poll() is None:
-                for sig in (signal.SIGHUP, signal.SIGKILL):
-                    self._signal_group(sig)
-                    try:
-                        process.wait(timeout=AGENT_SHELL_KILL_TIMEOUT_S)
-                        break
-                    except subprocess.TimeoutExpired:
-                        continue
-            _sweep_session(process.pid)
-            with contextlib.suppress(subprocess.TimeoutExpired):
-                process.wait(timeout=AGENT_SHELL_KILL_TIMEOUT_S)
-            if process.returncode is not None:
-                code = process.returncode
-                exit_code = code if code >= 0 else 128 - code
+        if self._process is not None:
+            exit_code = end_session(self._process)
         if self._master_fd is not None:
             with contextlib.suppress(OSError):
                 os.close(self._master_fd)
@@ -465,6 +560,7 @@ class ShellStream(SessionShellStream):
         args: dict,
         *,
         command: "list | None" = None,
+        argv: "list | None" = None,
         sessions=None,
         terminal=None,
         platform=None,
@@ -477,6 +573,9 @@ class ShellStream(SessionShellStream):
             command: What to run on the terminal, as the agent and with no
                 Terminal module settings read. None is the shell the
                 settings say.
+            argv: An ``exec`` stream's command, run in place of the shell
+                as the settings' account, its output headed with stdout's
+                ``fd``. None is a shell.
             sessions: The agent's shell registry; None keeps no shell past
                 its stream.
             terminal: Returns the Terminal module's settings; None is the
@@ -484,8 +583,14 @@ class ShellStream(SessionShellStream):
             platform: The machine's platform, which steps down to an
                 account.
         """
-        super().__init__(channel, args, sessions=sessions)
+        super().__init__(
+            channel,
+            args,
+            sessions=sessions,
+            frame_head=bytes([AGENT_EXEC_FD_STDOUT]) if argv is not None else b"",
+        )
         self._command = list(command) if command else None
+        self._argv = argv
         self._terminal = terminal
         self._platform = platform
 
@@ -506,7 +611,13 @@ class ShellStream(SessionShellStream):
             account, title = shell_account(), os.path.basename(self._command[0])
         else:
             settings = self._terminal() if self._terminal else TerminalConfig()
-            command, process, account, title = shell_plan(settings, self._platform)
+            if self._argv is not None:
+                command, process, account = exec_plan(
+                    self._argv, settings, self._platform
+                )
+                title = os.path.basename(self._argv[0])
+            else:
+                command, process, account, title = shell_plan(settings, self._platform)
         return ShellSession(
             session_id=self._session_id,
             terminal=PtyTerminal(

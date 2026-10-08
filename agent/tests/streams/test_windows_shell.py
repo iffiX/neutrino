@@ -464,3 +464,44 @@ def test_a_program_windows_cannot_run_refuses_the_open(tmp_path):
         "shell_program_unusable",
         {"path": str(tmp_path / "gone.exe")},
     )
+
+
+def test_an_exec_with_is_tty_runs_its_argv_on_the_console_headed_with_stdout():
+    kernel32 = FakeKernel32([b"hi\r\n"])
+    channel = FakeChannel()
+    channel.feed(("eof",))
+    channel.feed(("data", b"exit 4\r"))
+    stream = WindowsShellStream(
+        channel,
+        {"cols": 100, "rows": 30},
+        kernel32=kernel32,
+        platform=FakePlatform(),
+        terminal=terminal_settings("C:\\no\\such.exe"),
+        argv=["sh", "-c", "echo hi"],
+    )
+
+    stream.open()
+    closed = stream.run()
+
+    create = next(call for call in kernel32.calls if call[0] == "CreateProcessW")
+    assert create[1] == 'sh -c "echo hi"'
+    assert ("CreatePseudoConsole", 100, 30) in kernel32.calls
+    assert kernel32.start_dir == "C:\\Users\\alice"
+    assert channel.sent == [b"\x01hi\r\n"]
+    assert closed == {"code": "", "params": {"exit_code": 4}}
+    assert stream._session.account == "SYSTEM"
+
+
+def test_an_exec_whose_program_is_not_found_refuses_the_open():
+    stream = WindowsShellStream(
+        FakeChannel(),
+        {"cols": 80, "rows": 24},
+        kernel32=FakeKernel32(),
+        platform=FakePlatform(),
+        argv=["no-such-program-xyz"],
+    )
+
+    with pytest.raises(StreamRefused) as refused:
+        stream.open()
+
+    assert refused.value.params == {"path": "no-such-program-xyz"}

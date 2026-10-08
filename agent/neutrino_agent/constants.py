@@ -176,6 +176,10 @@ AGENT_SHELL_KEPT_BYTES = 256 * 1024
 AGENT_SHELL_PENDING_BYTES = 1024 * 1024
 # The account a shell runs as on Windows, where the agent is LocalSystem.
 AGENT_SHELL_WINDOWS_ACCOUNT = "SYSTEM"
+# The byte after the stream id on a frame down an ``exec`` stream: which of
+# the process's outputs the bytes came from.
+AGENT_EXEC_FD_STDOUT = 1
+AGENT_EXEC_FD_STDERR = 2
 # How long a signalled process may take to leave before it is killed.
 AGENT_KILL_GRACE_S = 2.0
 # The pids the kill verb never ends: the idle process and init on every
