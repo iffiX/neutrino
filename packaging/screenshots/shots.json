@@ -1151,7 +1151,11 @@
       "url": "/",
       "element": "viewport",
       "wait_for": "#content .card",
-      "state": "client_state.json as committed."
+      "state": "client_state.json as committed.",
+      "pages": [
+        "install/client.md",
+        "scenarios/one_laptop_every_machine.md"
+      ]
     },
     {
       "file": "client_network_picker.png",
@@ -1342,6 +1346,17 @@
       "state": "The hub screen; the hub row reads Connected · EasyTier with the round trip in ms, and the virtual network row reads Connected · with your phone's address."
     },
     {
+      "file": "app_rdp_viewer.png",
+      "language": "zh",
+      "page": "client/android.md",
+      "pages": [
+        "quick-start.md"
+      ],
+      "source": "app",
+      "viewport": "app",
+      "state": "The phone viewer fills the screen with the quick start computer's desktop; three round buttons at the top right."
+    },
+    {
       "file": "app_hub_console_waiting.png",
       "language": "en",
       "page": "client/android.md",
@@ -1399,7 +1414,10 @@
       ],
       "source": "app",
       "viewport": "app",
-      "state": "The system Files app showing a share under Neutrino."
+      "state": "The system Files app showing a share under Neutrino.",
+      "pages": [
+        "quick-start.md"
+      ]
     },
     {
       "file": "app_terminal.png",
