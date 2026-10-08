@@ -1924,20 +1924,9 @@
       "state": "The hub screen; the hub row reads Connected · EasyTier with the round trip in ms, and the virtual network row reads Connected · with your phone's address."
     },
     {
-      "file": "app_hub_netbird.png",
-      "language": "en",
-      "page": "quick-start.md",
-      "source": "app",
-      "viewport": "app",
-      "state": "The hub screen with the phone's Wi-Fi off; the hub row reads Connected · NetBird with the round trip in ms, and the virtual network row reads Connected · with the phone's NetBird address."
-    },
-    {
       "file": "app_hub.png",
       "language": "zh",
       "page": "client/android.md",
-      "pages": [
-        "quick-start.md"
-      ],
       "source": "app",
       "viewport": "app",
       "state": "The hub screen; the hub row reads Connected · EasyTier with the round trip in ms, and the virtual network row reads Connected · with your phone's address."

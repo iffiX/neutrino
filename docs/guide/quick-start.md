@@ -165,12 +165,6 @@ The phone and the laptop receive the setup key from the hub, so every step for t
 
 Each **Virtual network** line reads **Connecting…**, then **Connected ·** and the device's address on NetBird.
 
-## Leave the Wi-Fi
+## Done
 
-- Turn off Wi-Fi on the phone.
-
-The hub's row in the app reads **Connected · NetBird**, with the round trip in milliseconds beside it. The phone now reaches the hub from mobile data.
-
-![The hub's row connected through NetBird, away from the Wi-Fi](/guide/en/app_hub_netbird.webp)
-
-When a row reads something else, [Troubleshooting](./reference/troubleshooting.md#the-state-line-of-a-hub-row) lists each state line and its fix.
+The hub, the phone and the laptop are on the same virtual network now. Away from home, on a café's Wi-Fi or on mobile data, the app reaches the hub as soon as it opens: the hub's row reads **Connected · NetBird**. From here each service has a page of its own, starting with [Your AI session on the phone](./quick-start/cloudcli.md).
