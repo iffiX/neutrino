@@ -80,7 +80,7 @@ That hub's row on **Hubs** then reads **The AI tools point at this hub**. On a p
 
 **Panel** on a row opens that hub's panel in the browser, signed in. The button appears only when that hub's **Clients** page gives this client **Hub panel without the password**.
 
-On Linux and Windows, each hub's panel opens at its own `.localhost` name, so the two sign-ins stay apart. On macOS both panels open on `127.0.0.1`, and signing in to one can sign out the other; **Panel** signs in again.
+On Linux and Windows, each hub's panel opens at its own `.localhost` name, so the two sign-ins stay apart. On macOS both panels open on `127.0.0.1`, and signing in to one can sign out the other; **Panel** signs in again.<!-- 待核 -->
 
 ## Leave one hub
 
