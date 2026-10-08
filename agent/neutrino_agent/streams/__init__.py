@@ -12,6 +12,7 @@ carries when it did what it was asked:
 | Opened by | kind | args | close ``params`` |
 | --- | --- | --- | --- |
 | hub | ``shell`` | ``{cols, rows}``, with ``{session_id, is_resumed}`` for a kept shell, or ``{module: podman, container}`` | ``{exit_code}``; empty for a kept shell that runs on |
+| hub | ``exec`` | ``{argv, is_tty, cols, rows}`` | ``{exit_code}`` |
 | hub | ``file`` | ``{op, path, ...}``; ``op`` is ``list``, ``download``, ``upload``, ``rename``, ``remove``, ``directory_create`` or ``directory_download`` | the operation's own |
 | hub | ``command`` | ``{module, verb, ...args}`` | ``{exit_code, output, result}`` |
 | hub | ``connect`` | ``{port}``, a port this machine publishes now | empty, once either end ended |
@@ -24,11 +25,13 @@ unknown ``op`` or verb inside a kind is closed ``verb_unknown``. Paths are
 absolute; the agent is root.
 """
 
+from neutrino_agent.streams.exec import open_exec_stream
 from neutrino_agent.streams.files import open_file_stream
 from neutrino_agent.streams.module_command import ModuleCommandStream
 from neutrino_agent.streams.shell import open_shell_stream
 
 STREAM_KIND_SHELL = "shell"
+STREAM_KIND_EXEC = "exec"
 STREAM_KIND_FILE = "file"
 STREAM_KIND_COMMAND = "command"
 STREAM_KIND_LOG = "log"
@@ -42,6 +45,7 @@ STREAM_KIND_CONNECT = "connect"
 # the machine publishes by the agent that opens the session.
 STREAM_KINDS = {
     STREAM_KIND_SHELL: open_shell_stream,
+    STREAM_KIND_EXEC: open_exec_stream,
     STREAM_KIND_FILE: open_file_stream,
     STREAM_KIND_COMMAND: ModuleCommandStream,
 }

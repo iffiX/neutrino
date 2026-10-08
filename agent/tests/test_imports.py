@@ -194,6 +194,7 @@ SURVIVING_MODULES = {
     "neutrino_agent.streams.channel",
     "neutrino_agent.streams.connect",
     "neutrino_agent.streams.connect_udp",
+    "neutrino_agent.streams.exec",
     "neutrino_agent.streams.files",
     "neutrino_agent.streams.log",
     "neutrino_agent.streams.module_command",

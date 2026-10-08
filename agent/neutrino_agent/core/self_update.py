@@ -37,6 +37,7 @@ from neutrino_agent.constants import (
 )
 from neutrino_agent.exceptions import GatewayUnreachable, SelfUpdateError
 from neutrino_agent.modules.log_tail import mask_secrets
+from neutrino_agent.platforms import win32
 from neutrino_agent.streams.package import (
     CODE_DIGEST_MISMATCH,
     CODE_UNREACHABLE,
@@ -55,7 +56,6 @@ OS_TO_PACKAGE_KIND = {"windows": "msi", "darwin": "pkg"}
 # and outside any job the service runs in, so stopping the service does not
 # end it. A process started detached from every console never writes the
 # result.
-WINDOWS_CREATE_NO_WINDOW = 0x08000000
 WINDOWS_CREATE_BREAKAWAY_FROM_JOB = 0x01000000
 
 # The PowerShell the Windows install runs in: msiexec, its verbose log, and
@@ -346,8 +346,8 @@ def _start_detached(command: list) -> None:
         OSError: When the process cannot be started at all.
     """
     for flags in (
-        WINDOWS_CREATE_NO_WINDOW | WINDOWS_CREATE_BREAKAWAY_FROM_JOB,
-        WINDOWS_CREATE_NO_WINDOW,
+        win32.CREATE_NO_WINDOW | WINDOWS_CREATE_BREAKAWAY_FROM_JOB,
+        win32.CREATE_NO_WINDOW,
     ):
         try:
             subprocess.Popen(

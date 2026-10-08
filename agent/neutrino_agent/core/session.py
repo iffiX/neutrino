@@ -330,6 +330,10 @@ class AgentSession:
             channel = self._channel(stream_id)
             if channel is not None:
                 channel._grant(message.get("bytes", 0))
+        elif message_type == "eof":
+            channel = self._channel(stream_id)
+            if channel is not None:
+                channel._feed(("eof",))
         elif message_type == "refused":
             # The close 4000 behind it finds the refusal already recorded.
             self._end(_refusal(message))

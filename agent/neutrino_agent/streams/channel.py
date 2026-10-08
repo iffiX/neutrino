@@ -24,8 +24,9 @@ class StreamChannel:
     queue, sends, offers credit, and closes.
 
     What the hub sends queues up in order: ``("data", bytes)`` for a binary
-    frame, ``("resize", cols, rows)`` for a resize, and ``("close", code,
-    params)`` once the hub closed the stream or the socket went away. What
+    frame, ``("resize", cols, rows)`` for a resize, ``("eof",)`` once no
+    more input follows, and ``("close", code, params)`` once the hub closed
+    the stream or the socket went away. What
     the handler sends goes out at once, except bytes, which wait for the
     hub's credit.
 
@@ -66,11 +67,13 @@ class StreamChannel:
         except queue.Empty:
             return None
 
-    def send_bytes(self, data: bytes) -> None:
+    def send_bytes(self, data: bytes, *, head: bytes = b"") -> None:
         """Send bytes to the hub, as far as its credit allows.
 
         Args:
             data: The bytes; sent in chunks, waiting on credit between them.
+            head: What every frame carries before its piece of ``data``,
+                counted against the credit with it.
 
         Raises:
             StreamClosed: When the stream ended before everything was sent.
@@ -79,14 +82,15 @@ class StreamChannel:
         view = memoryview(data)
         while view:
             with self._granted:
-                while self._credit <= 0 and not self._is_closed:
+                while self._credit <= len(head) and not self._is_closed:
                     if not self._granted.wait(timeout=AGENT_WS_CREDIT_TIMEOUT_S):
                         raise StreamClosed(self.id)
                 if self._is_closed:
                     raise StreamClosed(self.id)
-                size = min(self._credit, AGENT_WS_CHUNK_BYTES, len(view))
+                size = min(self._credit, AGENT_WS_CHUNK_BYTES, len(head) + len(view))
                 self._credit -= size
-            self._session._send_bytes(self.id, bytes(view[:size]))
+            size -= len(head)
+            self._session._send_bytes(self.id, head + bytes(view[:size]))
             view = view[size:]
 
     def try_send_frame(self, data: bytes) -> bool:

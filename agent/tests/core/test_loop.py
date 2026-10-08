@@ -253,6 +253,21 @@ def test_every_socket_opens_shells_in_the_one_registry_the_report_lists(
     } <= set(listed)
 
 
+def test_an_exec_stream_runs_with_the_terminal_settings_and_platform_a_shell_does(
+    config_path, monkeypatch
+):
+    agent, _script = scripted_agent(config_path, monkeypatch, [[WELCOME]])
+
+    kinds = agent._open_session()._stream_kinds
+
+    assert kinds["exec"].keywords == {
+        "terminal": agent._terminal_settings,
+        "platform": agent._platform,
+    }
+    assert kinds["exec"].keywords["terminal"] == kinds["shell"].keywords["terminal"]
+    assert "sessions" not in kinds["exec"].keywords
+
+
 def test_a_connect_stream_dials_only_what_the_last_state_and_report_publish(
     config_path, monkeypatch
 ):

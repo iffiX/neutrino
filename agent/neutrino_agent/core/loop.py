@@ -74,12 +74,14 @@ from neutrino_agent.modules.remote_desktop.constants import REMOTE_DESKTOP_NAME
 from neutrino_agent.rdp.host import RdpShareHost
 from neutrino_agent.streams import (
     STREAM_KIND_CONNECT,
+    STREAM_KIND_EXEC,
     STREAM_KIND_PACKAGE,
     STREAM_KIND_SHELL,
     STREAM_KINDS,
 )
 from neutrino_agent.streams.connect import published_ports
 from neutrino_agent.streams.connect_udp import open_connect_stream
+from neutrino_agent.streams.exec import open_exec_stream
 from neutrino_agent.streams.package import remove_stale
 from neutrino_agent.modules.terminal.config import TerminalConfig
 from neutrino_agent.modules.terminal.constants import TERMINAL_NAME
@@ -514,6 +516,11 @@ class Agent:
                     STREAM_KIND_SHELL: functools.partial(
                         open_shell_stream,
                         sessions=self._shells,
+                        terminal=self._terminal_settings,
+                        platform=self._platform,
+                    ),
+                    STREAM_KIND_EXEC: functools.partial(
+                        open_exec_stream,
                         terminal=self._terminal_settings,
                         platform=self._platform,
                     ),

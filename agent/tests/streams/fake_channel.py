@@ -32,10 +32,10 @@ class FakeChannel:
             assert self.taken <= sum(self.credits), "bytes past the credit offered"
         return item
 
-    def send_bytes(self, data: bytes) -> None:
+    def send_bytes(self, data: bytes, *, head: bytes = b"") -> None:
         if self.is_closed:
             raise StreamClosed(self.id)
-        self.sent.append(bytes(data))
+        self.sent.append(head + bytes(data))
 
     def send_line(self, text: str) -> None:
         self.send_bytes((text + "\n").encode("utf-8"))

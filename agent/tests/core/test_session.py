@@ -8,7 +8,9 @@ id from the hub served, odd ids counting up for the streams this side
 opens, a binary frame as a big-endian u32 id and bytes, a short or
 unaddressed frame dropped, no ``opened`` frame ever, the kind table as the
 whole vocabulary with ``order``, ``validate`` and ``resize`` no kinds of it
-and a resize arriving as a command that names the shell stream, a close
+and a resize arriving as a command that names the shell stream, ``eof``
+reaching the stream it names, a head on every frame of a headed send, an
+``exec`` stream's output headed with its ``fd`` and its exit code, a close
 whose params are the result and whose code is a refusal, credit holding
 bytes back, and how the socket's end is reported to the loop that owns it.
 """
@@ -447,11 +449,11 @@ def test_state_frames_are_taken_and_nothing_else_is_fatal():
 # --- the kind table, and the command kind ---
 
 
-def test_the_kind_table_is_shell_file_and_command_and_nothing_else():
+def test_the_kind_table_is_shell_exec_file_and_command_and_nothing_else():
     session, _, _ = make_session(ScriptedClient())
 
-    assert set(STREAM_KINDS) == {"shell", "file", "command"}
-    assert set(session._stream_kinds) == {"shell", "file", "command"}
+    assert set(STREAM_KINDS) == {"shell", "exec", "file", "command"}
+    assert set(session._stream_kinds) == {"shell", "exec", "file", "command"}
 
 
 @pytest.mark.parametrize("kind", ["order", "validate", "resize", "tunnel"])
@@ -773,6 +775,85 @@ def test_bytes_wait_for_the_hubs_credit():
     client.feed({"type": "credit", "stream": 2, "bytes": 1024})
 
     assert client.wait_for_bytes(count=2) == [frame(2, b"echo"), frame(2, b":abcdef")]
+    session.close()
+    thread.join(timeout=2)
+
+
+def test_an_eof_frame_reaches_the_stream_it_names():
+    client = ScriptedClient()
+    session, thread, _ = channel_session(client)
+    open_shell(client)
+    client.wait_for("credit")
+    client.feed({"type": "credit", "stream": 2, "bytes": 1024})
+
+    client.feed(frame(2, b"in"))
+    client.wait_for_bytes(count=1)
+    client.feed({"type": "eof", "stream": 2})
+    client.feed({"type": "eof", "stream": 98})
+    client.feed({"type": "close", "stream": 2, "code": "", "params": {}})
+
+    wait_until(lambda: len(EchoStream.instances[0].items) == 3)
+    assert EchoStream.instances[0].items == [
+        ("data", b"in"),
+        ("eof",),
+        ("close", "", {}),
+    ]
+    session.close()
+    thread.join(timeout=2)
+
+
+def test_a_headed_send_puts_the_head_on_every_frame_within_the_credit():
+    client = ScriptedClient()
+    session, thread, _ = channel_session(client)
+    open_shell(client)
+    client.wait_for("credit")
+    channel = EchoStream.instances[0].channel
+    client.feed({"type": "credit", "stream": 2, "bytes": 4})
+    sender = threading.Thread(
+        target=channel.send_bytes, args=(b"abcdef",), kwargs={"head": b"\x02"}
+    )
+
+    sender.start()
+    assert client.wait_for_bytes(count=1) == [frame(2, b"\x02abc")]
+    client.feed({"type": "credit", "stream": 2, "bytes": 1024})
+    sender.join(timeout=2)
+
+    assert client.wait_for_bytes(count=2) == [
+        frame(2, b"\x02abc"),
+        frame(2, b"\x02def"),
+    ]
+    session.close()
+    thread.join(timeout=2)
+
+
+def test_an_exec_stream_carries_fd_headed_output_eof_and_the_exit_code():
+    client = ScriptedClient()
+    session, thread, _ = connected(client)
+    client.feed(
+        {
+            "type": "open",
+            "stream": 2,
+            "kind": "exec",
+            "argv": ["/bin/sh", "-c", "cat; echo gone >&2; exit 6"],
+            "is_tty": False,
+            "cols": 80,
+            "rows": 24,
+        }
+    )
+    client.wait_for("credit")
+    client.feed({"type": "credit", "stream": 2, "bytes": 1024})
+
+    client.feed(frame(2, b"in"))
+    client.feed({"type": "eof", "stream": 2})
+
+    (closed,) = client.wait_for("close", timeout_s=5)
+    assert closed == {
+        "type": "close",
+        "stream": 2,
+        "code": "",
+        "params": {"exit_code": 6},
+    }
+    assert sorted(client.sent_bytes) == [frame(2, b"\x01in"), frame(2, b"\x02gone\n")]
     session.close()
     thread.join(timeout=2)
 
