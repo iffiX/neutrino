@@ -10,7 +10,7 @@ hero:
     alt: 微子
   actions:
     - theme: brand
-      text: 第一步
+      text: 第零步
       link: /zh-CN/quick-start
     - theme: alt
       text: 概述

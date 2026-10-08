@@ -4,7 +4,7 @@ title: Install the hub
 
 # Install the hub
 
-Besides the one command of [First step](../quick-start.md), the hub installs from a package file or in the mainland edition. Each screen of the setup wizard follows the install.
+Besides the one command of [Step zero](../quick-start.md), the hub installs from a package file or in the mainland edition. Each screen of the setup wizard follows the install.
 
 ## Before you start
 

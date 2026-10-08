@@ -6,7 +6,7 @@ title: Remote desktop
 
 One switch in the panel shares the computer's desktop, and the phone or the laptop then shows that desktop in a viewer and controls it.
 
-Before you start, finish the [first step](../quick-start.md), and keep somebody signed in at the computer's screen. The viewer shows that person's desktop.
+Before you start, finish the [Step zero](../quick-start.md), and keep somebody signed in at the computer's screen. The viewer shows that person's desktop.
 
 ## Share the computer's desktop
 

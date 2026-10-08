@@ -6,7 +6,7 @@ title: Terminal
 
 A terminal opened from the laptop runs on your home computer, and the phone picks up the same session with its output still scrolling.
 
-Before you start, finish the [first step](../quick-start.md) with both the phone and the laptop. Each keeps the **Terminals** permission that every client has by default on the panel's **Clients** page.
+Before you start, finish the [Step zero](../quick-start.md) with both the phone and the laptop. Each keeps the **Terminals** permission that every client has by default on the panel's **Clients** page.
 
 ## Open a terminal on the laptop
 

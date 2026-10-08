@@ -6,7 +6,7 @@ title: Share and mount files
 
 A folder on the computer becomes a file share. The laptop mounts it as a folder or a drive letter, and the phone opens it in Android's Files app.
 
-Before you start, finish the [first step](../quick-start.md), and pick a folder on the computer to share.
+Before you start, finish the [Step zero](../quick-start.md), and pick a folder on the computer to share.
 
 ## Share a folder
 

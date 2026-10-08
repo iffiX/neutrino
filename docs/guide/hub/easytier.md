@@ -28,7 +28,7 @@ The console is in Chinese, and the labels here are as it shows them.
 
 1. Under **Settings**, select **EasyTier console**.
 1. Paste the address into **Console address**.
-1. Leave **Secure mode** off, as the first step does; the console's own join command turns it on, and the hub registers either way.
+1. Leave **Secure mode** off, as Step zero does; the console's own join command turns it on, and the hub registers either way.
 1. Select **Apply EasyTier settings**.
 
 The section reads **Waiting for the console**.

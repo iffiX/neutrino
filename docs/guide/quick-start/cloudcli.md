@@ -6,7 +6,7 @@ title: Your AI session on the phone
 
 A CloudCLI on the computer shows your account's Claude Code sessions as a web page, and the phone opens it to read and answer them.
 
-Before you start, finish the [first step](../quick-start.md), and have Claude Code installed in your own account on the computer. You need that account's user name, and on Windows its login stored under **Logins** on the panel's **Credentials** page. Turn the phone's Wi-Fi back on.
+Before you start, finish the [Step zero](../quick-start.md), and have Claude Code installed in your own account on the computer. You need that account's user name, and on Windows its login stored under **Logins** on the panel's **Credentials** page. Turn the phone's Wi-Fi back on.
 
 ## Start a CloudCLI
 

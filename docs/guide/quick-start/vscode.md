@@ -6,7 +6,7 @@ title: A remote editor
 
 VS Code runs on the computer under your account, and the phone or the laptop opens it in a browser to edit the computer's projects.
 
-Before you start, finish the [first step](../quick-start.md), and turn the phone's Wi-Fi back on for the first open at home. You need your account's user name on the computer, and on Windows its login stored under **Logins** on the panel's **Credentials** page.
+Before you start, finish the [Step zero](../quick-start.md), and turn the phone's Wi-Fi back on for the first open at home. You need your account's user name on the computer, and on Windows its login stored under **Logins** on the panel's **Credentials** page.
 
 ## Start VS Code
 

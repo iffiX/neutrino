@@ -20,7 +20,7 @@ export const sidebarEn: DefaultTheme.SidebarItem[] = [
         collapsed: false,
         items: [
           {
-            text: "First step: install, join, reach it from outside",
+            text: "Step zero: install, join, reach it from outside",
             link: "/quick-start",
           },
           {
@@ -167,7 +167,7 @@ export const sidebarZh: DefaultTheme.SidebarItem[] = [
         collapsed: false,
         items: [
           {
-            text: "第一步：装中枢，加入客户端，连上外网",
+            text: "第零步：装中枢，加入客户端，连上外网",
             link: "/zh-CN/quick-start",
           },
           {

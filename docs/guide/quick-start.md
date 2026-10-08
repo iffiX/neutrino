@@ -1,10 +1,10 @@
 ---
-title: First step
+title: Step zero
 ---
 
-# First step: install, join, reach it from outside
+# Step zero: install, join, reach it from outside
 
-The first step installs the hub on your home computer, joins your phone and laptop to it, and connects them from outside through NetBird. It takes about ten minutes. Each service on the computer opens on a later page. Your Claude Code sessions, for one, open in [Your AI session on the phone](./quick-start/cloudcli.md).
+Step zero installs the hub on your home computer, joins your phone and laptop to it, and connects them from outside through NetBird. It takes about ten minutes. Each service on the computer opens on a later page. Your Claude Code sessions, for one, open in [Your AI session on the phone](./quick-start/cloudcli.md).
 
 ## Before you start
 

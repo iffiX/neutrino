@@ -10,7 +10,7 @@ hero:
     alt: Neutrino
   actions:
     - theme: brand
-      text: First step
+      text: Step zero
       link: /quick-start
     - theme: alt
       text: Overview

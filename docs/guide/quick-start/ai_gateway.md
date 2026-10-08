@@ -6,7 +6,7 @@ title: AI tools share the hub's gateway
 
 Your API key or subscription goes into the hub one time. Claude Code and Codex on the computer, and on a laptop with the client, then send their requests through the hub's AI gateway.
 
-Before you start, finish the [first step](../quick-start.md), and have an API key or a subscription account at hand.
+Before you start, finish the [Step zero](../quick-start.md), and have an API key or a subscription account at hand.
 
 ## Put your key or subscription into the hub
 

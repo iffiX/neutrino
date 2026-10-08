@@ -81,7 +81,7 @@ sudo rm -rf "/Library/Application Support/Neutrino/agent" /Library/Logs/Neutrino
 
 ## 留在机器上的东西
 
-卸完后，`nhub`、`nagent`、`nclient` 这几个命令不再存在，留下的只有下表里的目录。下表里的 `<package>` 是 `hub`、`agent` 或 `client`，不要了就手动删掉。要装回来，按[第一步](./quick-start.md)重新走一遍。
+卸完后，`nhub`、`nagent`、`nclient` 这几个命令不再存在，留下的只有下表里的目录。下表里的 `<package>` 是 `hub`、`agent` 或 `client`，不要了就手动删掉。要装回来，按[第零步](./quick-start.md)重新走一遍。
 
 | 是什么                          | Linux                           | macOS                                                    | Windows                                    |
 | ------------------------------- | ------------------------------- | -------------------------------------------------------- | ------------------------------------------ |
