@@ -36,6 +36,12 @@ object ChannelFrames {
     /** The sender may send more. */
     const val CREDIT = "credit"
 
+    /** This phone's own round trip probe. */
+    const val PING = "ping"
+
+    /** The hub's answer to a ping, with its nonce. */
+    const val PONG = "pong"
+
     /**
      * The first frame up: this phone's identity card with the binding's token.
      *
@@ -113,6 +119,17 @@ object ChannelFrames {
         put("type", CREDIT)
         put("stream", stream)
         put("bytes", bytes)
+    }
+
+    /**
+     * A round trip probe; the hub echoes its nonce in a `pong`.
+     *
+     * @param nonce The mark of this ping, at most 64 characters.
+     * @return The frame.
+     */
+    fun ping(nonce: String): JsonObject = buildJsonObject {
+        put("type", PING)
+        put("nonce", nonce)
     }
 
     /**

@@ -14,7 +14,6 @@ import okhttp3.tls.HandshakeCertificates
 import okhttp3.tls.HeldCertificate
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class OkHttpHubTransportTest {
@@ -83,31 +82,6 @@ class OkHttpHubTransportTest {
             assertEquals(ChannelSocketEvent.Text("""{"type":"welcome"}"""), events.receive())
         }
         assertEquals("/api/channel/socket", server.takeRequest().path)
-    }
-
-    @Test
-    fun eachPingsPongArrivesWithItsRoundTrip() = runBlocking {
-        server.enqueue(
-            MockResponse().withWebSocketUpgrade(
-                object : WebSocketListener() {
-                    override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
-                        webSocket.close(code, null)
-                    }
-                },
-            ),
-        )
-        val events = Channel<ChannelSocketEvent>(Channel.UNLIMITED)
-        val socket = transport.connect(baseUrl, pinned, events)
-        withTimeout(30_000) {
-            assertEquals(ChannelSocketEvent.Opened, events.receive())
-            repeat(2) {
-                assertEquals(true, socket.ping())
-                val pong = events.receive() as ChannelSocketEvent.Pong
-                assertTrue(pong.rttMillis in 0..29_999)
-            }
-            socket.close(1000, "")
-            assertEquals(ChannelSocketEvent.Closed(1000, ""), events.receive())
-        }
     }
 
     @Test

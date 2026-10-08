@@ -48,7 +48,6 @@ import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -62,8 +61,8 @@ import kotlinx.serialization.json.JsonElement
 
 /** The app's process: what outlives one screen, made once. */
 class NeutrinoApplication : Application() {
-    /** Where every session and every service runs. */
-    val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    /** Where every session and every service runs; a job that fails is logged and ends alone. */
+    val scope: CoroutineScope = appScope()
 
     /** The language and the theme. */
     val settingsStore: ClientSettingsStore by lazy {

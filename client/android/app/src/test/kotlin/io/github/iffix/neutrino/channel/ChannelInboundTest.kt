@@ -95,6 +95,19 @@ class ChannelInboundTest {
     }
 
     @Test
+    fun aPongIsReadWithTheNonceItEchoesAndIsTheGoldensPong() {
+        val text = """{"type":"pong","nonce":"n7"}"""
+        assertEquals(ChannelInbound.Pong("n7"), ChannelInbound.decode(text))
+        assertEquals(ChannelInbound.Pong(""), ChannelInbound.decode("""{"type":"pong"}"""))
+        assertTrue(
+            GoldenSchema.problems(
+                kotlinx.serialization.json.Json.parseToJsonElement(text.replace("\"type\":\"pong\",", "")),
+                "ChannelPong",
+            ).isEmpty(),
+        )
+    }
+
+    @Test
     fun anUnknownFrameIsReadAsUnknown() {
         assertEquals(ChannelInbound.Unknown("gossip"), ChannelInbound.decode("""{"type":"gossip"}"""))
     }

@@ -1,18 +1,12 @@
 package io.github.iffix.neutrino.channel
 
-import android.util.Log
 import io.github.iffix.neutrino.CLIENT_CHANNEL_WS_PATH
 import io.github.iffix.neutrino.CLIENT_CONNECT_TIMEOUT_S
-import io.github.iffix.neutrino.CLIENT_LOG_TAG
-import io.github.iffix.neutrino.CLIENT_PING_INTERVAL_S
 import io.github.iffix.neutrino.CLIENT_REQUEST_TIMEOUT_S
 import io.github.iffix.neutrino.CLIENT_WS_SILENCE_TIMEOUT_S
 import io.github.iffix.neutrino.HubUntrustedException
 import java.io.IOException
-import java.lang.reflect.Method
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.Executors
-import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLPeerUnverifiedException
@@ -32,22 +26,13 @@ import okhttp3.Response
 import okhttp3.TlsVersion
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
-import okhttp3.internal.ws.RealWebSocket
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
 
-/**
- * The pinned transport over OkHttp: TLS 1.2 and up, trusting the one fingerprint and nothing else.
- *
- * A socket's ping is OkHttp's own ping frame, written when [ChannelSocket.ping] asks, and its pong
- * is timed; a ping whose pong has not come by the next ping fails the socket.
- */
+/** The pinned transport over OkHttp: TLS 1.2 and up, trusting the one fingerprint and nothing else. */
 class OkHttpHubTransport : HubTransport {
     private val clients = ConcurrentHashMap<String, OkHttpClient>()
     private val json = Json { ignoreUnknownKeys = true }
-    private val pinger: ScheduledExecutorService by lazy {
-        Executors.newSingleThreadScheduledExecutor { task -> Thread(task, "hub-ping").apply { isDaemon = true } }
-    }
 
     override suspend fun post(
         baseUrl: String,
@@ -76,22 +61,6 @@ class OkHttpHubTransport : HubTransport {
 
             override fun sendBytes(bytes: ByteArray): Boolean = socket.send(bytes.toByteString())
 
-            override fun ping(): Boolean {
-                val real = socket as? RealWebSocket ?: return false
-                val write = WRITE_PING ?: return false
-                pinger.execute {
-                    val pongs = real.receivedPongCount()
-                    val startNanos = System.nanoTime()
-                    try {
-                        write.invoke(real)
-                    } catch (_: ReflectiveOperationException) {
-                        return@execute
-                    }
-                    awaitPong(real, pongs, startNanos, events)
-                }
-                return true
-            }
-
             override fun close(code: Int, reason: String) {
                 if (!socket.close(code, reason)) socket.cancel()
             }
@@ -116,26 +85,6 @@ class OkHttpHubTransport : HubTransport {
             .callTimeout(CLIENT_REQUEST_TIMEOUT_S, TimeUnit.SECONDS)
             .retryOnConnectionFailure(false)
             .build()
-    }
-
-    private fun awaitPong(
-        socket: RealWebSocket,
-        pongs: Int,
-        startNanos: Long,
-        events: SendChannel<ChannelSocketEvent>,
-    ) {
-        val elapsedNanos = System.nanoTime() - startNanos
-        when {
-            socket.receivedPongCount() > pongs -> {
-                events.trySend(ChannelSocketEvent.Pong(TimeUnit.NANOSECONDS.toMillis(elapsedNanos + HALF_MILLI_NANOS)))
-            }
-
-            elapsedNanos < TimeUnit.SECONDS.toNanos(CLIENT_PING_INTERVAL_S) -> pinger.schedule(
-                { awaitPong(socket, pongs, startNanos, events) },
-                PONG_POLL_MILLIS,
-                TimeUnit.MILLISECONDS,
-            )
-        }
     }
 
     private fun answer(response: Response): ChannelResult<JsonObject> {
@@ -188,23 +137,6 @@ class OkHttpHubTransport : HubTransport {
 
     private companion object {
         val JSON_TYPE = "application/json".toMediaType()
-
-        const val PONG_POLL_MILLIS = 1L
-
-        const val HALF_MILLI_NANOS = 500_000L
-
-        const val WRITE_PING_PREFIX = "writePingFrame"
-
-        val WRITE_PING: Method? by lazy {
-            val found = RealWebSocket::class.java.methods.firstOrNull {
-                it.name.startsWith(WRITE_PING_PREFIX) && it.parameterCount == 0
-            }
-            Log.i(
-                CLIENT_LOG_TAG,
-                "the socket's ping writes through ${found?.name ?: "nothing: no $WRITE_PING_PREFIX method"}",
-            )
-            found
-        }
 
         fun refusalOf(error: Throwable, baseUrl: String): ChannelResult.Refused {
             var cause: Throwable? = error

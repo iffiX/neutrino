@@ -160,7 +160,7 @@ const val CLIENT_REPORT_INTERVAL_S = 30L
 /** How long the open socket may stay silent before it counts as dead. */
 const val CLIENT_WS_SILENCE_TIMEOUT_S = 45L
 
-/** How often the open socket sends its own WebSocket ping, whose pong measures the round trip. */
+/** How often the open socket sends this phone's `ping` frame, whose `pong` measures the round trip. */
 const val CLIENT_PING_INTERVAL_S = 20L
 
 /** The first wait after a broken wire, doubled on each failure. */

@@ -61,6 +61,13 @@ sealed interface ChannelInbound {
     data class Open(val stream: Int, val kind: String) : ChannelInbound
 
     /**
+     * The hub's answer to a ping of this phone's.
+     *
+     * @property nonce The ping's nonce, as the hub echoed it.
+     */
+    data class Pong(val nonce: String) : ChannelInbound
+
+    /**
      * A frame this build does not read.
      *
      * @property type Its `type`.
@@ -105,6 +112,8 @@ sealed interface ChannelInbound {
                 )
 
                 ChannelFrames.OPEN -> Open(frame.stream(), frame.text("kind"))
+
+                ChannelFrames.PONG -> Pong(frame.text("nonce"))
 
                 else -> Unknown(type)
             }
