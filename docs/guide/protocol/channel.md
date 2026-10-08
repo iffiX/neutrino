@@ -111,6 +111,8 @@ A client joined to several hubs groups them by the hub's `id` and labels them by
 | `open`    | both      | `{stream, kind, ...args}`: a stream begins                                                      |
 | `close`   | both      | `{stream, code, params}`: it ends, with its result                                              |
 | `credit`  | both      | `{stream, bytes}`: the sender can send that many more                                           |
+| `ping`    | up        | `{nonce}`: a client's round-trip probe; `nonce` is its own string of at most 64 characters      |
+| `pong`    | down      | `{nonce}`: the hub's answer at once, with the `ping`'s `nonce`                                  |
 | binary    | both      | `<u32 stream id><bytes>`; on a UDP `connect` stream `<u32 stream id><u16 source><one datagram>` |
 
 The hub pings every 20 seconds and drops a socket whose pong is more than 20 seconds late. Agents and clients treat 45 seconds of silence as a dead socket and reconnect with a backoff from 5 to 60 seconds.

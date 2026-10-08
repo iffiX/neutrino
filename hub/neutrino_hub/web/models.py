@@ -1701,6 +1701,18 @@ class ChannelCredit(BaseModel):
     bytes: int
 
 
+class ChannelPing(BaseModel):
+    """A peer's round-trip probe; the hub answers a pong with its nonce."""
+
+    nonce: str = ""
+
+
+class ChannelPong(BaseModel):
+    """The hub's answer to a ping, at once, with the ping's nonce."""
+
+    nonce: str = ""
+
+
 class ChannelModuleState(BaseModel):
     """What one module on a device is to be."""
 

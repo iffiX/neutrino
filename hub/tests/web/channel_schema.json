@@ -1310,6 +1310,30 @@
       "title": "ChannelOverlay",
       "type": "object"
     },
+    "ChannelPing": {
+      "description": "A peer's round-trip probe; the hub answers a pong with its nonce.",
+      "properties": {
+        "nonce": {
+          "default": "",
+          "title": "Nonce",
+          "type": "string"
+        }
+      },
+      "title": "ChannelPing",
+      "type": "object"
+    },
+    "ChannelPong": {
+      "description": "The hub's answer to a ping, at once, with the ping's nonce.",
+      "properties": {
+        "nonce": {
+          "default": "",
+          "title": "Nonce",
+          "type": "string"
+        }
+      },
+      "title": "ChannelPong",
+      "type": "object"
+    },
     "ChannelRefused": {
       "description": "Why a hello was turned away; close 4000 follows.",
       "properties": {

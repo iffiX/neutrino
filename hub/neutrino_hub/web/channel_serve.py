@@ -4,7 +4,8 @@ An agent's socket carries its reports up and the hub's state and streams
 down; a client's carries its reports up and the published list down. Both
 loops read the same frames: a ``report`` is recorded, an ``open`` hands a
 peer-opened stream to its kind's handler, a ``close`` or a ``credit`` goes
-to the stream it names, and bytes go to theirs. The kinds a peer may open
+to the stream it names, a ``ping`` is answered with a ``pong`` carrying its
+nonce, and bytes go to theirs. The kinds a peer may open
 are ``package`` and ``log`` from an agent, and ``service``, ``shell``,
 ``command`` and ``connect`` from a client.
 """
@@ -23,7 +24,10 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_CHUNK_BYTES,
     CHANNEL_ROLE_CLIENT,
     CHANNEL_FRAME_OPEN,
+    CHANNEL_FRAME_PING,
+    CHANNEL_FRAME_PONG,
     CHANNEL_FRAME_REPORT,
+    CHANNEL_PING_NONCE_CHARS_MAX,
     CHANNEL_STREAM_COMMAND,
     CHANNEL_STREAM_CONNECT,
     CHANNEL_STREAM_LOG,
@@ -378,8 +382,18 @@ async def _serve_frames(websocket: WebSocket, session: ChannelSession, frames) -
             await frames.take_report(decoded)
         elif kind == CHANNEL_FRAME_OPEN:
             await session.accept_stream(decoded)
+        elif kind == CHANNEL_FRAME_PING:
+            await session.send_json(_pong(decoded))
         else:
             session.dispatch_text(decoded)
+
+
+def _pong(ping: dict) -> dict:
+    """The answer to a ``ping``: its nonce as received, empty when absent."""
+    nonce = ping.get("nonce")
+    if not isinstance(nonce, str):
+        nonce = ""
+    return {"type": CHANNEL_FRAME_PONG, "nonce": nonce[:CHANNEL_PING_NONCE_CHARS_MAX]}
 
 
 def _sessions_of(report: dict) -> list:

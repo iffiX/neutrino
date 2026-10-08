@@ -863,10 +863,19 @@ hash; the first `report` has it.
 | `open` | both | `{stream, kind, ...args}`: a stream begins |
 | `close` | both | `{stream, code, params}`: it ends, with its result |
 | `credit` | both | `{stream, bytes}`: the sender can send that many more |
+| `ping` | up | `{nonce}`: a peer's round-trip probe; `nonce` is its own opaque string of at most 64 characters |
+| `pong` | down | `{nonce}`: the hub's answer, at once from the handler that read the `ping` and on the same socket, `nonce` echoed as received, an empty string when the `ping` had none, cut to 64 characters |
 | binary | both | `<u32 stream id><bytes>`; on a UDP `connect` stream `<u32 stream id><u16 source><one datagram>` |
 
 Every action is a stream: its `open` is the request, its `close` is the reply,
 and `kind` is the whole method vocabulary.
+
+A client sends a `ping` every `CLIENT_PING_INTERVAL_S` on the live socket and
+once right after the channel moves to a new socket, never before `welcome`.
+The `pong` whose `nonce` is the last `ping` sent on that socket sets
+`rtt_ms`; a `pong` with another `nonce` is dropped. The hub answers any
+admitted peer, agent or client, and stores nothing. No client sends a
+WebSocket ping of its own; the hub's keepalive ping is the only one.
 
 ### The stream layer
 
@@ -890,7 +899,7 @@ the three packages, named here so that changing one is a change to this table.
 | a connection's admission, from accept to an admitted `hello` | `CHANNEL_ADMISSION_TIMEOUT_S` 30 | | |
 | connecting and the handshake on top of it | | `AGENT_REQUEST_TIMEOUT_S` 10 | `CLIENT_CONNECT_TIMEOUT_S` 10 |
 | a report while nothing changes | | `AGENT_REPORT_INTERVAL_S` 5 | `CLIENT_REPORT_INTERVAL_S` 30 |
-| keepalive | `CHANNEL_PING_INTERVAL_S` 20, `CHANNEL_PING_TIMEOUT_S` 60 | | `CLIENT_PING_INTERVAL_S` 20, the client's own ping, whose pong sets `rtt_ms` |
+| keepalive | `CHANNEL_PING_INTERVAL_S` 20, `CHANNEL_PING_TIMEOUT_S` 60 | | `CLIENT_PING_INTERVAL_S` 20, the client's `ping` frame, whose `pong` sets `rtt_ms` |
 | silence before the socket is dead | | `AGENT_WS_SILENCE_TIMEOUT_S` 45 | `CLIENT_WS_SILENCE_TIMEOUT_S` 45 |
 | reconnect backoff | | `AGENT_BACKOFF_MIN_S` 5, doubled to `AGENT_BACKOFF_MAX_S` 60 | `CLIENT_BACKOFF_MIN_S` 5, doubled to `CLIENT_BACKOFF_MAX_S` 60 |
 | a stream's credit window | `CHANNEL_STREAM_CREDIT_BYTES` 1 MiB | `AGENT_WS_STREAM_CREDIT_BYTES` 1 MiB | `CLIENT_STREAM_CREDIT_BYTES` 1 MiB |

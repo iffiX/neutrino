@@ -111,6 +111,8 @@ title: 通道
 | `open`    | 双向 | `{stream, kind, ...args}`：一个流开始                                                       |
 | `close`   | 双向 | `{stream, code, params}`：流结束，带着结果                                                  |
 | `credit`  | 双向 | `{stream, bytes}`：发送方还能再发这么多字节                                                 |
+| `ping`    | 上行 | `{nonce}`：客户端的往返探测；`nonce` 是它自己的字符串，最多 64 个字符                       |
+| `pong`    | 下行 | `{nonce}`：中枢立刻回答，带着 `ping` 的 `nonce`                                             |
 | 二进制    | 双向 | `<u32 stream id><bytes>`；UDP 的 `connect` 流上是 `<u32 stream id><u16 source><一个数据报>` |
 
 中枢每 20 秒发一次 ping，pong 迟到超过 20 秒就断开套接字。被控端和客户端 45 秒收不到任何东西就认为套接字已断，按 5～60 秒的退避间隔重连。
