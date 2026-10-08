@@ -403,6 +403,9 @@ def test_the_hub_rows_carry_each_sessions_standing(two_hubs_up):
         "gateway_url": HOME_URL,
         "software": "neutrino_hub/0.3.0",
         "connection": "connected",
+        "wait_reason": "",
+        "wait_code": None,
+        "next_round_at": None,
         "reached_through": "",
         "rtt_ms": None,
         "is_panel_allowed": False,
@@ -619,10 +622,10 @@ def test_a_binding_whose_hub_has_not_answered_is_named_by_its_binding_id(
     assert list(sessions_of(two_hubs)) == ["c1"]
 
 
-# --- the one refusal that unbinds ---
+# --- a hub that no longer knows this device ---
 
 
-def test_binding_unknown_removes_the_binding_through_the_resident(
+def test_binding_unknown_keeps_the_row_waiting_for_leave(
     two_hubs, monkeypatch, config_path
 ):
     released_handlers(two_hubs)
@@ -638,13 +641,20 @@ def test_binding_unknown_removes_the_binding_through_the_resident(
     turn(two_hubs, "c1")
 
     delay = turn(two_hubs, "c2")
+    turn(two_hubs, "c2")
 
     assert delay == CLIENT_IDLE_POLL_INTERVAL_S
-    assert list(sessions_of(two_hubs)) == ["c1"]
-    assert [binding["id"] for binding in enrollment.bindings()] == ["c1"]
+    assert list(sessions_of(two_hubs)) == ["c1", "c2"]
+    assert [binding["id"] for binding in enrollment.bindings()] == ["c1", "c2"]
     for handler in hub_releasers(two_hubs):
         assert handler.released_hubs == ["h2"]
-    assert [row["hub_id"] for row in two_hubs.hubs()] == ["h1"]
+    home, office = two_hubs.hubs()
+    assert (office["connection"], office["wait_reason"]) == (
+        "waiting",
+        "unknown_device",
+    )
+    assert office["wait_code"] == {"code": "binding_unknown", "params": {"id": "c2"}}
+    assert two_hubs.notices() == []
     assert len(scripts.sockets_of("office.lan")) == 1
 
 
@@ -834,7 +844,9 @@ def test_a_binding_gone_from_the_file_clears_the_exit(two_hubs_up, config_path):
     assert enrollment.exit_hub_id() == ""
 
 
-def test_binding_unknown_on_the_exit_clears_it(two_hubs, monkeypatch, config_path):
+def test_binding_unknown_on_the_exit_keeps_it_until_leave(
+    two_hubs, monkeypatch, config_path
+):
     released_handlers(two_hubs)
     two_hubs._pin_exit("h1")
     sockets_by_hub(
@@ -849,6 +861,10 @@ def test_binding_unknown_on_the_exit_clears_it(two_hubs, monkeypatch, config_pat
     turn(two_hubs, "c2")
 
     turn(two_hubs, "c1")
+
+    assert two_hubs.exit_hub_id() == "h1"
+    monkeypatch.setattr(channel.GatewayHttpChannel, "post", lambda *a: {})
+    two_hubs.disconnect("h1")
 
     assert two_hubs.exit_hub_id() == ""
     assert enrollment.exit_hub_id() == ""
@@ -1384,6 +1400,7 @@ class FakeOverlayDriver:
     def __init__(self):
         self.steps = []
         self.is_on = False
+        self.peers = []
 
     def status(self, material):
         return {
@@ -1391,6 +1408,7 @@ class FakeOverlayDriver:
             "is_other_network": False,
             "address": "10.144.144.5" if self.is_on else "",
             "is_hub_seen": self.is_on,
+            "peers": list(self.peers) if self.is_on else [],
         }
 
     def join(self, material, hostname):
@@ -1439,12 +1457,13 @@ def joining_resident(config_path):
     resident.shutdown()
 
 
-def test_a_join_shows_its_row_at_once_pending_with_its_network(joining_resident):
+def test_a_join_shows_its_row_at_once_connecting_with_its_network(joining_resident):
     resident, _driver = joining_resident
 
     (row,) = resident.hubs()
 
-    assert (row["connection"], row["is_pending"]) == ("pending", True)
+    assert (row["connection"], row["is_pending"]) == ("connecting", True)
+    assert (row["wait_reason"], row["next_round_at"]) == ("", None)
     assert row["gateway_url"] == HOME_URL
     assert row["binding_id"].startswith("pending_")
     assert "ticket-1" not in json.dumps(resident.hubs())
@@ -1571,6 +1590,25 @@ def test_a_network_that_turns_on_or_off_names_its_hub_address_to_the_session(
 
 def _note_route(seen, host, provider) -> None:
     seen.append((host, provider))
+
+
+def test_a_peer_list_change_on_a_network_that_is_on_starts_a_round(
+    overlay_resident,
+):
+    resident, driver = overlay_resident
+    session = resident._sessions["c1"]
+    assert resident.connect_overlay("h1") == {}
+    wait_until(lambda: resident.hubs()[0]["overlay"]["state"] == "on")
+    changes = []
+    session.change_network = functools.partial(changes.append, "change")
+
+    resident._overlay.watch()
+    assert changes == []
+
+    driver.peers = ["10.144.144.1"]
+    resident._overlay.watch()
+
+    assert changes == ["change"]
 
 
 def test_a_press_on_the_network_of_a_hub_nobody_joined_is_unknown_hub(
@@ -2000,19 +2038,16 @@ def test_leaving_a_hub_nobody_joined_is_a_key_error(two_hubs_up):
         resident.leave("h9")
 
 
-def test_a_forgotten_binding_leaves_a_notice(two_hubs_up, monkeypatch):
+def test_a_forgotten_binding_keeps_its_row_and_leaves_no_notice(two_hubs_up):
     resident, _scripts = two_hubs_up
-    monkeypatch.setattr(resident_module, "CLIENT_NOTICE_S", 0.05)
     office = resident._sessions["c2"]
+    office._drop_socket()
 
     office._unbind({"code": "binding_unknown", "params": {}})
 
-    (notice,) = resident.notices()
-    assert (notice["code"], notice["params"]) == ("binding_unknown", {"hub": "office"})
-    assert notice["id"]
-    assert [row["hub_id"] for row in resident.hubs()] == ["h1"]
-    wait_until(lambda: resident.notices() == [])
     assert resident.notices() == []
+    assert [row["hub_id"] for row in resident.hubs()] == ["h1", "h2"]
+    assert resident.hubs()[1]["wait_reason"] == "unknown_device"
 
 
 def test_a_closed_notice_is_gone_and_a_refresh_drops_every_notice(two_hubs_up):

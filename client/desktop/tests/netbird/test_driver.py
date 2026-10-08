@@ -162,3 +162,42 @@ def test_the_hub_is_seen_by_netbird_at_its_address_or_by_its_name(tmp_path):
     assert netbird.status(dict(NETBIRD, hub_address="100.88.92.30"))["is_hub_seen"]
     assert not netbird.status(NETBIRD)["is_hub_seen"]
     assert netbird.status(NETBIRD)["network"] == "100.64.0.0/10"
+
+
+def test_the_peers_are_the_connected_ones_by_address_or_name(tmp_path):
+    netbird, _easytier, platform = drivers(tmp_path)
+    platform.answer(
+        "netbird",
+        "status",
+        stdout=netbird_status(
+            peers=[
+                {
+                    "fqdn": "x.nb.example",
+                    "netbirdIp": "100.88.92.30/16",
+                    "status": "Connected",
+                },
+                {"fqdn": "hub.nb.example", "status": "Connected"},
+                {
+                    "fqdn": "idle.nb.example",
+                    "netbirdIp": "100.88.1.1",
+                    "status": "Idle",
+                },
+            ]
+        ),
+    )
+
+    assert netbird.status(NETBIRD)["peers"] == ["100.88.92.30", "hub.nb.example"]
+
+
+def test_a_daemon_off_the_network_names_no_peers(tmp_path):
+    netbird, _easytier, platform = drivers(tmp_path)
+    platform.answer(
+        "netbird",
+        "status",
+        stdout=netbird_status(
+            is_connected=False,
+            peers=[{"fqdn": "x", "netbirdIp": "100.88.92.30", "status": "Connected"}],
+        ),
+    )
+
+    assert netbird.status(NETBIRD)["peers"] == []

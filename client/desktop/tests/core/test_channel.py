@@ -191,7 +191,10 @@ def test_a_mismatched_pin_keeps_the_binding_and_asks_again_a_minute_later(
     assert delays == [CLIENT_BACKOFF_MAX_S] * 3
     assert resident.is_connected() is True
     assert len(json.loads(config_path.read_text())["bindings"]) == 1
-    assert resident.hubs()[0]["last_error"] == {"code": "hub_untrusted", "params": {}}
+    row = resident.hubs()[0]
+    assert (row["connection"], row["wait_reason"]) == ("waiting", "untrusted")
+    assert row["wait_code"] == {"code": "hub_untrusted", "params": {}}
+    assert row["last_error"] is None
     assert RecordingHandler.requests == []
 
 
@@ -366,7 +369,9 @@ def test_a_scanned_link_whose_hub_does_not_answer_stays_pending(config_path):
 
     session.run_once()
 
-    assert session.connection() == "pending"
+    assert session.connection() == "waiting"
+    assert session.waiting()["reason"] == "hub_silent"
+    assert session.is_pending() is True
     (stored,) = json.loads(config_path.read_text())["bindings"]
     assert stored["is_pending"] is True and stored["overlays"] == [OVERLAY]
 
@@ -401,8 +406,9 @@ def test_a_scanned_link_on_another_certificate_is_untrusted_and_asks_nothing(
 
     session.run_once()
 
-    assert session.last_error() == {"code": "hub_untrusted", "params": {}}
-    assert session.connection() == "pending"
+    assert session.waiting()["reason"] == "untrusted"
+    assert session.waiting()["code"] == {"code": "hub_untrusted", "params": {}}
+    assert session.is_pending() is True
     assert RecordingHandler.requests == []
 
 

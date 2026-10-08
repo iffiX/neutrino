@@ -59,10 +59,19 @@ MOUNT_BUSY_STATES = ("queued", "mounting", "pending")
 CONNECTION_STATES = (
     "connected",
     "connecting",
-    "down",
+    "waiting",
     "replaced",
     "disabled",
-    "pending",
+)
+WAIT_REASONS = (
+    "hub_silent",
+    "hub_off_overlay",
+    "no_network",
+    "untrusted",
+    "admission_paused",
+    "unknown_device",
+    "too_old",
+    "join_refused",
 )
 OVERLAY_STATES = ("off", "on")
 JOB_WORDS = (
@@ -80,7 +89,15 @@ JOB_WORDS = (
 CLIENT_MD_WORDS = {
     "ui.state.connected": "Connected",
     "ui.state.connecting": "Connecting…",
-    "ui.state.down": "Not connected",
+    "ui.state.hub_silent": "The hub did not answer",
+    "ui.state.hub_off_overlay": "The hub is not on the virtual network",
+    "ui.state.no_network": "No network",
+    "ui.state.untrusted": "Certificate mismatch",
+    "ui.state.admission_paused": "The hub pauses new devices",
+    "ui.state.unknown_device": "The hub does not know this device",
+    "ui.state.too_old": "Version too old",
+    "ui.state.join_refused": "Join refused",
+    "ui.action.retry_in": "retrying in {s} s",
     "ui.state.replaced": "Replaced by another client",
     "ui.state.disabled": "Disabled by the hub",
     "ui.overlay.off": "Not connected",
@@ -95,6 +112,21 @@ CLIENT_MD_WORDS = {
     "ui.job.forwarding": "Forwarding…",
     "ui.job.switching": "Switching tools…",
     "ui.job.opening": "Opening…",
+}
+# The Chinese column of client.md's Hubs table.
+CLIENT_MD_CHINESE = {
+    "ui.state.connecting": "连接中…",
+    "ui.state.hub_silent": "中枢未响应",
+    "ui.state.hub_off_overlay": "中枢未上虚拟网",
+    "ui.state.no_network": "无网络",
+    "ui.state.untrusted": "证书不符",
+    "ui.state.admission_paused": "中枢暂停接纳",
+    "ui.state.unknown_device": "中枢不认识本机",
+    "ui.state.too_old": "版本太旧",
+    "ui.state.join_refused": "加入被拒",
+    "ui.action.retry_in": "{s} 秒后重试",
+    "ui.state.replaced": "已被替换",
+    "ui.state.disabled": "已停用",
 }
 
 # The five kinds in the order the sidebar lists them: the catalog key stem,
@@ -227,7 +259,8 @@ def test_both_languages_carry_the_same_keys():
 def test_every_key_the_page_asks_for_is_in_the_catalog():
     # What the page builds from a token, which no whole literal carries.
     built = {f"ui.job.{job}" for job in JOB_WORDS}
-    built |= {f"ui.state.{state}" for state in CONNECTION_STATES}
+    built |= {f"ui.state.{state}" for state in CONNECTION_STATES if state != "waiting"}
+    built |= {f"ui.state.{reason}" for reason in WAIT_REASONS}
     built |= {f"ui.overlay.{state}" for state in OVERLAY_STATES}
     built |= {f"ui.language_name.{language}" for language in CLIENT_LANGUAGES}
     built |= {f"ui.theme_name.{theme}" for theme in CLIENT_THEMES}
@@ -909,20 +942,27 @@ def test_every_word_of_client_md_is_in_both_catalogs_as_written():
     for key, english in CLIENT_MD_WORDS.items():
         assert EN_WORDS[key] == english
         assert CATALOGS["zh-CN"][key]
-    assert CATALOGS["zh-CN"]["ui.state.disabled"] == "已被中枢停用"
+    for key, chinese in CLIENT_MD_CHINESE.items():
+        assert CATALOGS["zh-CN"][key] == chinese
     assert CATALOGS["zh-CN"]["ui.overlay.on"] == "已连接 · {address}"
+    for words in CATALOGS.values():
+        assert "ui.state.down" not in words and "ui.state.pending" not in words
 
 
-def test_the_page_names_the_six_connections_and_the_two_network_states():
+def test_the_page_names_the_five_connections_the_reasons_and_the_network_states():
     listed = PAGE_JS.split("const CONNECTION_STATES = [")[1].split("];")[0]
     assert re.findall(r"'([a-z]+)'", listed) == list(CONNECTION_STATES)
+    listed = PAGE_JS.split("const WAIT_REASONS = [")[1].split("];")[0]
+    assert re.findall(r"'([a-z_]+)'", listed) == list(WAIT_REASONS)
     listed = PAGE_JS.split("const OVERLAY_STATES = [")[1].split("];")[0]
     assert re.findall(r"'([a-z]+)'", listed) == list(OVERLAY_STATES)
     from neutrino_client.core.overlay import OVERLAY_STATES as CORE_OVERLAY
     from neutrino_client.core.session import CONNECTION_STATES as CORE_CONNECTION
+    from neutrino_client.core.session import WAIT_REASONS as CORE_REASONS
 
     assert tuple(CORE_OVERLAY) == OVERLAY_STATES
     assert tuple(CORE_CONNECTION) == CONNECTION_STATES
+    assert tuple(CORE_REASONS) == WAIT_REASONS
 
 
 def test_the_hub_dot_follows_the_colour_table():
@@ -932,19 +972,16 @@ def test_the_hub_dot_follows_the_colour_table():
         "    || jobs.is_opening_panel) return 'pulse';" in tone
     )
     assert "if (hub.connection === 'connecting') return 'pulse';" in tone
-    assert "if (isJoinRefused(hub)) return 'bad';" in tone
     assert "if (hub.connection === 'connected') return 'ok';" in tone
-    # A hub never reached is grey; one down without a code to act on is amber.
-    assert "if (hub.connection === 'pending') return 'off';" in tone
-    assert tone.index("isJoinRefused(hub)") < tone.index("'pending') return 'off'")
+    assert "if (PERSON_REASONS.indexOf(hub.wait_reason) >= 0) return 'bad';" in tone
     assert "hub.software" not in tone
     assert "  }\n  return 'wait';\n}" in tone
-    listed = PAGE_JS.split("const PERSON_CODES = [")[1].split("];")[0]
+    listed = PAGE_JS.split("const PERSON_REASONS = [")[1].split("];")[0]
     assert set(re.findall(r"'([a-z_]+)'", listed)) == {
-        "hub_untrusted",
-        "binding_unknown",
-        "protocol_too_old",
-        "protocol_too_new",
+        "untrusted",
+        "unknown_device",
+        "too_old",
+        "join_refused",
     }
 
 
@@ -1012,19 +1049,18 @@ def test_a_hub_row_draws_its_word_its_network_line_and_its_controls_in_order():
     word = body_of("hubWord")
     assert "if (jobs.is_leaving) return t('ui.job.leaving');" in word
     assert "if (jobs.is_refreshing) return t('ui.job.refreshing');" in word
+    assert "if (connection === 'waiting') return waitWord(hub);" in word
     assert "return t('ui.state.' + connection);" in word
 
 
-def test_a_join_the_hub_refused_offers_only_leave():
-    assert "return hub.is_pending === true && hub.connection === 'down';" in body_of(
-        "isJoinRefused"
-    )
+def test_a_join_refused_and_an_unknown_device_offer_only_leave():
+    assert "LEAVE_ONLY_REASONS.indexOf(hub.wait_reason) >= 0" in body_of("isLeaveOnly")
+    listed = PAGE_JS.split("const LEAVE_ONLY_REASONS = [")[1].split("];")[0]
+    assert re.findall(r"'([a-z_]+)'", listed) == ["unknown_device", "join_refused"]
     row = body_of("hubRow")
-    refused = row[row.index("if (isJoinRefused(hub)) {") :]
+    refused = row[row.index("if (isLeaveOnly(hub)) {") :]
     refused = refused[: refused.index("\n  }\n")]
     assert "actions: [leaveButton(hub)]," in refused
-    assert EN_WORDS["ui.state.pending"] == "Joined; the hub has not been reached yet"
-    assert CATALOGS["zh-CN"]["ui.state.pending"] == "已加入，尚未连上中枢"
 
 
 def test_leave_arms_on_the_first_press_and_shows_its_job():
@@ -1072,7 +1108,7 @@ def test_a_hub_with_one_network_names_that_engine_on_its_line():
 def test_a_disabled_network_button_says_why():
     reason = body_of("overlayReason")
     assert "t('ui.reason.disabled')" in reason
-    assert "no_network" not in PAGE_JS
+    assert "ui.reason.no_network" not in PAGE_JS
     for words in CATALOGS.values():
         assert "ui.reason.no_network" not in words
 
@@ -1102,7 +1138,8 @@ def run_hub_row(hub: dict) -> dict:
             "  disabled: hub.connection === 'disabled'});",
             "const panelButton = () => ({name: 'panel'});",
             "const leaveButton = () => ({name: 'leave'});",
-            "const isJoinRefused = () => false;",
+            "const isLeaveOnly = () => false;",
+            "const hubKey = (hub) => hub.hub_id || hub.binding_id;",
             "const hubTone = () => 'ok';",
             "const hubName = (hub) => hub.hub_name;",
             "const hubWord = () => 'connected';",
@@ -1131,6 +1168,146 @@ HUB_ROW = {
     "connection": "connected",
     "jobs": {},
 }
+
+
+def run_state_line(hub: dict, now: float) -> dict:
+    """The page's own hubWord and hubTone, run in node at one moment with the
+    English catalog, returning the line and the dot drawn."""
+    import json
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("no node to run the page's script")
+    constants = "\n".join(
+        f"const {name} = " + PAGE_JS.split(f"const {name} = ")[1].split(";\n")[0] + ";"
+        for name in (
+            "CONNECTION_STATES",
+            "WAIT_REASONS",
+            "PERSON_REASONS",
+            "THROUGH_WAYS",
+        )
+    )
+    script = "\n".join(
+        [
+            "const PARTS = [];",
+            "const CATALOG = " + json.dumps(EN_WORDS) + ";",
+            "function fill(template, params)"
+            + function_body("function fill(template, params)")
+            + "\n}",
+            "const t = (key, params) => fill(CATALOG[key] || key, params);",
+            "const wordError = (e) => t('code.' + e.code, e.params);",
+            f"Date.now = () => {now} * 1000;",
+            constants,
+            "function secondsLeft(hub)"
+            + function_body("function secondsLeft(hub)")
+            + "\n}",
+            "function hubWord(hub)" + function_body("function hubWord(hub)") + "\n}",
+            "function waitWord(hub)" + function_body("function waitWord(hub)") + "\n}",
+            "function hubTone(hub)" + function_body("function hubTone(hub)") + "\n}",
+            "const hub = " + json.dumps(hub) + ";",
+            "console.log(JSON.stringify({line: hubWord(hub), tone: hubTone(hub)}));",
+        ]
+    )
+    result = subprocess.run(
+        [node, "-e", script], capture_output=True, text=True, timeout=30
+    )
+    assert result.returncode == 0, result.stderr
+    return json.loads(result.stdout)
+
+
+@pytest.mark.parametrize(
+    "reason, next_round_at, line, tone",
+    [
+        ("hub_silent", 1005.0, "The hub did not answer · retrying in 5 s", "wait"),
+        (
+            "hub_off_overlay",
+            1004.2,
+            "The hub is not on the virtual network · retrying in 5 s",
+            "wait",
+        ),
+        ("no_network", None, "No network", "wait"),
+        ("untrusted", 1060.0, "Certificate mismatch · retrying in 60 s", "bad"),
+        (
+            "admission_paused",
+            1042.0,
+            "The hub pauses new devices · retrying in 42 s",
+            "wait",
+        ),
+        ("unknown_device", None, "The hub does not know this device", "bad"),
+        ("too_old", None, "Version too old", "bad"),
+    ],
+)
+def test_a_waiting_hub_says_its_reason_and_counts_down(
+    reason, next_round_at, line, tone
+):
+    hub = {
+        "connection": "waiting",
+        "wait_reason": reason,
+        "next_round_at": next_round_at,
+        "jobs": {},
+    }
+
+    assert run_state_line(hub, 1000.0) == {"line": line, "tone": tone}
+
+
+def test_a_countdown_at_0_reads_connecting_with_a_pulsing_dot():
+    hub = {
+        "connection": "waiting",
+        "wait_reason": "hub_silent",
+        "next_round_at": 1005.0,
+        "jobs": {},
+    }
+
+    assert run_state_line(hub, 1004.5)["line"].endswith("retrying in 1 s")
+    assert run_state_line(hub, 1005.0) == {"line": "Connecting…", "tone": "pulse"}
+
+
+def test_a_refused_join_says_the_codes_wording():
+    hub = {
+        "connection": "waiting",
+        "wait_reason": "join_refused",
+        "wait_code": {"code": "ticket_spent", "params": {}},
+        "next_round_at": None,
+        "jobs": {},
+    }
+
+    assert run_state_line(hub, 1000.0) == {
+        "line": "Join refused · " + EN_WORDS["code.ticket_spent"],
+        "tone": "bad",
+    }
+
+
+@pytest.mark.parametrize(
+    "connection, line, tone",
+    [
+        ("connecting", "Connecting…", "pulse"),
+        ("replaced", "Replaced by another client · Reconnect", "wait"),
+        ("disabled", "Disabled by the hub", "wait"),
+        ("connected", "Connected · LAN", "ok"),
+    ],
+)
+def test_the_other_state_lines(connection, line, tone):
+    hub = {"connection": connection, "reached_through": "lan", "jobs": {}}
+
+    assert run_state_line(hub, 1000.0) == {"line": line, "tone": tone}
+
+
+def test_the_countdown_redraws_the_state_lines_once_a_second_in_place():
+    tick = body_of("tickCountdowns")
+    assert "document.querySelectorAll('[data-state-line]')" in tick
+    assert "line.textContent = hubWord(hub);" in tick
+    assert "dot.className = dotClass(hubTone(hub));" in tick
+    schedule = body_of("scheduleCountdowns")
+    assert "if (!(lastState.hubs || []).some(isCountingDown)) return;" in schedule
+    assert "countdownTimer = setTimeout(tickCountdowns, 1000);" in schedule
+    assert "scheduleCountdowns();\n}" in body_of("draw")
+    assert "api(" not in tick and "send(" not in tick
+    assert "if (parts.stateKey) row.dataset.stateLine = parts.stateKey;" in (
+        body_of("rowElement")
+    )
+    assert "stateKey: hubKey(hub)," in body_of("hubRow")
 
 
 def test_a_hub_that_publishes_no_network_draws_no_network_line():

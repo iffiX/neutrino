@@ -52,6 +52,24 @@ def _address(value) -> str:
     return str(value or "").split("/", 1)[0]
 
 
+def _peer_details(status: dict) -> list:
+    """The peers ``netbird status --json`` lists, each an object."""
+    peers = status.get("peers")
+    details = peers.get("details") if isinstance(peers, dict) else None
+    return [peer for peer in details or [] if isinstance(peer, dict)]
+
+
+def _connected_peers(status: dict) -> list:
+    """The connected peers, by address or else by name, sorted."""
+    return sorted(
+        {
+            _address(peer.get("netbirdIp")) or str(peer.get("fqdn", "") or "")
+            for peer in _peer_details(status)
+            if peer.get("status") == "Connected"
+        }
+    )
+
+
 class OverlayNetbirdDriver:
     """NetBird's CLI, run as this person against the packaged daemon."""
 
@@ -122,8 +140,9 @@ class OverlayNetbirdDriver:
 
         Returns:
             ``{"is_on", "is_other_network", "address", "network",
-            "is_hub_seen"}``; the hub is seen when its peer is
-            ``Connected``.
+            "is_hub_seen", "peers"}``; the hub is seen when its peer is
+            ``Connected``, and ``peers`` are the connected peers by
+            address, sorted.
 
         Raises:
             OverlayControlError: ``bundle_missing``, or
@@ -144,6 +163,7 @@ class OverlayNetbirdDriver:
                 "address": "",
                 "network": "",
                 "is_hub_seen": False,
+                "peers": [],
             }
         management = status.get("management")
         management = management if isinstance(management, dict) else {}
@@ -161,6 +181,7 @@ class OverlayNetbirdDriver:
             "address": _address(status.get("netbirdIp")) if is_on else "",
             "network": NETBIRD_NETWORK if is_on else "",
             "is_hub_seen": is_on and self._sees(status, material),
+            "peers": _connected_peers(status) if is_on else [],
         }
 
     def join(self, material: dict, hostname: str) -> None:
@@ -231,10 +252,8 @@ class OverlayNetbirdDriver:
         """Whether the hub is among the connected peers, by its address or name."""
         fqdn = str(material.get("fqdn", "") or "").rstrip(".")
         address = _address(material.get("hub_address", ""))
-        peers = status.get("peers")
-        details = peers.get("details") if isinstance(peers, dict) else None
-        for peer in details if isinstance(details, list) else []:
-            if not isinstance(peer, dict) or peer.get("status") != "Connected":
+        for peer in _peer_details(status):
+            if peer.get("status") != "Connected":
                 continue
             if address and _address(peer.get("netbirdIp")) == address:
                 return True

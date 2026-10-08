@@ -4,9 +4,12 @@ A session belongs to one binding and speaks to one hub. It holds the socket
 open and reconnects when it drops: a round dials every address of the hub at
 once and keeps the first socket to connect with the pinned certificate. A
 network change starts a round at once: a virtual network turning on, this
-machine's address toward the hub changing, or a state naming other
-addresses. On a connected hub that round runs beside the live channel, and
-its winner takes the channel only on a better path. The hub pushes its
+machine's address toward the hub changing, a state naming other
+addresses, or the peers of a virtual network that is on changing. On a hub
+that is not connected the change ends the wait and the round in flight,
+whose dials still waiting are closed; on a connected hub the round runs
+beside the live channel, and its winner takes the channel only on a better
+path. The hub pushes its
 ``state``, the addresses it answers on, the services it publishes and
 whether this client is switched off, and the session answers each state and
 every interval with a ``report``. What a
@@ -20,13 +23,14 @@ A ``refused`` frame ends the socket whenever it arrives, and says the same
 as one that arrives instead of the welcome: its code decides what becomes
 of the binding.
 
-The connection is one of six states: ``connected``, ``connecting`` while a
-round runs or a lost socket is about to be opened again, ``down`` once a
-round ended in a code and the backoff runs, ``replaced`` while another
-socket holds the binding, ``disabled`` while the hub has this client
-switched off, and ``pending`` while a join's ticket is not spent: the
-first address that answers with the pinned certificate spends it before
-the hello, and a hub that refuses it leaves the session down for good. A
+The connection is one of five states: ``connected``, ``connecting`` while a
+round dials, ``waiting`` once a round ended and the session waits for what
+its reason names, ``replaced`` while another socket holds the binding, and
+``disabled`` while the hub has this client switched off. A waiting session
+carries its reason and, while a countdown runs, the moment of the next
+round. A join whose ticket is not spent rounds like any other: the first
+address that answers with the pinned certificate spends it before the
+hello, and a hub that refuses it leaves the session waiting for good. A
 refresh is the same loop moved to now. The client sends a ``ping`` frame
 on the open socket every interval, and the ``pong`` that echoes its nonce
 sets the round trip the hub row shows.
@@ -95,26 +99,48 @@ from neutrino_client.exceptions import (
 # How the five connection states of a session are named to every surface.
 CONNECTION_CONNECTED = "connected"
 CONNECTION_CONNECTING = "connecting"
-CONNECTION_DOWN = "down"
+CONNECTION_WAITING = "waiting"
 CONNECTION_REPLACED = "replaced"
 CONNECTION_DISABLED = "disabled"
-CONNECTION_PENDING = "pending"
 CONNECTION_STATES = (
     CONNECTION_CONNECTED,
     CONNECTION_CONNECTING,
-    CONNECTION_DOWN,
+    CONNECTION_WAITING,
     CONNECTION_REPLACED,
     CONNECTION_DISABLED,
-    CONNECTION_PENDING,
 )
 # The states a refresh acts on; the other two change only by a person's
 # Reconnect or by the hub.
 CONNECTION_REFRESHABLE = (
     CONNECTION_CONNECTED,
     CONNECTION_CONNECTING,
-    CONNECTION_DOWN,
-    CONNECTION_PENDING,
+    CONNECTION_WAITING,
 )
+# Why a waiting session waits, as every surface names it.
+WAIT_HUB_SILENT = "hub_silent"
+WAIT_HUB_OFF_OVERLAY = "hub_off_overlay"
+WAIT_NO_NETWORK = "no_network"
+WAIT_UNTRUSTED = "untrusted"
+WAIT_ADMISSION_PAUSED = "admission_paused"
+WAIT_UNKNOWN_DEVICE = "unknown_device"
+WAIT_TOO_OLD = "too_old"
+WAIT_JOIN_REFUSED = "join_refused"
+WAIT_REASONS = (
+    WAIT_HUB_SILENT,
+    WAIT_HUB_OFF_OVERLAY,
+    WAIT_NO_NETWORK,
+    WAIT_UNTRUSTED,
+    WAIT_ADMISSION_PAUSED,
+    WAIT_UNKNOWN_DEVICE,
+    WAIT_TOO_OLD,
+    WAIT_JOIN_REFUSED,
+)
+# The reasons no round ends by itself: neither a countdown nor a network
+# change starts one.
+WAIT_REASONS_HELD = (WAIT_UNKNOWN_DEVICE, WAIT_TOO_OLD, WAIT_JOIN_REFUSED)
+# The held reasons a refresh does not start a round for: a round there
+# spends a credential the hub already refused.
+WAIT_REASONS_FINAL = (WAIT_UNKNOWN_DEVICE, WAIT_JOIN_REFUSED)
 
 # How long a stop waits for the loop thread to come back, its connect in
 # progress aborted.
@@ -188,6 +214,29 @@ def is_on_local_network(host: str, networks: list) -> bool:
         except (TypeError, ValueError):
             continue
     return False
+
+
+def is_offline(networks: list) -> bool:
+    """Whether a machine's networks leave it no network at all.
+
+    Args:
+        networks: This machine's networks, as ``a.b.c.d/n`` or IPv6
+            prefixes; empty where the system does not say.
+
+    Returns:
+        True when the system named networks and every one is loopback or
+        link-local; False for an empty list, which says nothing.
+    """
+    if not networks:
+        return False
+    for network in networks:
+        try:
+            parsed = ipaddress.ip_network(network, strict=False)
+        except (TypeError, ValueError):
+            return False
+        if not (parsed.is_loopback or parsed.is_link_local):
+            return False
+    return True
 
 
 def _decode(payload) -> "dict | None":
@@ -397,16 +446,16 @@ class ClientHubSession:
         # The binding's id when the session began, the same for its life,
         # whatever id a completed join brings.
         self._local_key = str(binding.get("id", ""))
-        # Set once the hub refused a pending join; only Leave acts then.
-        self._is_join_refused = False
         # Set whenever the loop should stop waiting: a person asked for a
         # connection now, or the session is stopping.
         self._news = threading.Event()
         self._stop = threading.Event()
         self._thread: "threading.Thread | None" = None
         self._client: "WebSocketClient | None" = None
-        # The rounds in progress, for a stop to abort.
+        # The rounds in progress, for a stop or a network change to abort.
         self._dialings: list = []
+        # Set once a network change or a refresh ended the round in flight.
+        self._is_round_cut = False
         # The address the live socket was opened through, its path, and how
         # long its handshake took when it won.
         self._connected_url = ""
@@ -435,10 +484,12 @@ class ClientHubSession:
         self._backoff_s = CLIENT_BACKOFF_MIN_S
         # Set while another socket holds this binding; only a person clears it.
         self._is_replaced = False
-        self._is_unbound = False
-        # Set once a round ended in a code, until the next round begins.
-        self._is_down = False
-        self._last_error: "dict | None" = None
+        # Why the session waits, one of ``WAIT_REASONS``, empty while it
+        # does not; the code behind it; and the wall clock's moment of the
+        # next round, None while no countdown runs.
+        self._wait_reason = ""
+        self._wait_code: "dict | None" = None
+        self._next_round_at: "float | None" = None
         self._services_list: list = []
         # The state's word for the way this socket reached the hub, and
         # whether this client may open the hub's panel; empty and False
@@ -463,6 +514,8 @@ class ClientHubSession:
         # network's engine; empty while none is on.
         self._overlay_host = ""
         self._overlay_provider = ""
+        # Whether this client's virtual network of the hub's is on.
+        self._is_overlay_on = False
         # The member of the state's ``urls`` that is the relay's address.
         self._relay_url = ""
 
@@ -545,10 +598,24 @@ class ClientHubSession:
         with self._lock:
             return self._is_disabled
 
-    def last_error(self) -> "dict | None":
-        """The most recent problem worth showing, as ``{"code", "params"}``."""
+    def waiting(self) -> "dict | None":
+        """Why the session waits, while it does.
+
+        Returns:
+            ``{"reason", "code", "next_round_at"}``: one of
+            ``WAIT_REASONS``, the ``{"code", "params"}`` the last round
+            ended in, and the wall clock's moment of the next round in
+            seconds since the epoch, None while no countdown runs; None
+            while the connection is not ``waiting``.
+        """
         with self._lock:
-            return dict(self._last_error) if self._last_error else None
+            if self._connection() != CONNECTION_WAITING:
+                return None
+            return {
+                "reason": self._wait_reason,
+                "code": dict(self._wait_code) if self._wait_code else None,
+                "next_round_at": self._next_round_at,
+            }
 
     def service_entries(self) -> list:
         """The typed service list the hub last sent, while its socket is up.
@@ -676,42 +743,47 @@ class ClientHubSession:
         """Name the hub's address on its virtual network that is on, and its engine.
 
         Every round dials the address with the others from then on. A
-        network that just turned on is a network change, so a round starts
-        at once; an empty host drops the address.
+        network that just turned on, or whose peers changed, is a network
+        change, so a round starts at once; an empty host drops the address.
 
         Args:
-            host: The hub's address on the network; empty once it is off.
-            provider: The network's engine, ``netbird`` or ``easytier``.
+            host: The hub's address on the network; empty while the hub
+                names none on it, or once it is off.
+            provider: The network's engine, ``netbird`` or ``easytier``;
+                empty once it is off.
         """
         with self._lock:
             self._overlay_host = host
             self._overlay_provider = provider if host else ""
-        if host:
+            self._is_overlay_on = bool(provider)
+        if provider:
             self.change_network()
 
     def change_network(self) -> None:
         """Start one round at once, as a network change does.
 
-        A hub ``replaced`` or ``disabled`` is left as it is. A hub that is
-        not connected has its backoff put at the floor and its wait ended. A
-        connected hub gets a round beside its live channel, whose winner
-        takes the channel only on a better path; a change while that round
-        runs starts one more after it.
+        A hub ``replaced`` or ``disabled``, or waiting on a reason that
+        only a person ends, is left as it is. A hub that is not connected
+        has its backoff put at the floor, its wait and its round in flight
+        ended, and a new round started. A connected hub gets a round
+        beside its live channel, whose winner takes the channel only on a
+        better path; a change while that round runs starts one more after
+        it.
         """
         with self._lock:
             connection = self._connection()
             if connection in (CONNECTION_REPLACED, CONNECTION_DISABLED):
                 return
+            if self._wait_reason in WAIT_REASONS_HELD:
+                return
             is_live = connection == CONNECTION_CONNECTED
-            if not is_live:
-                self._backoff_s = CLIENT_BACKOFF_MIN_S
-            elif self._is_changing:
+            if is_live and self._is_changing:
                 self._is_change_due = True
                 return
-            else:
+            if is_live:
                 self._is_changing = True
         if not is_live:
-            self._news.set()
+            self._cut_round()
             return
         threading.Thread(
             target=self._change_rounds, name="client_change_round", daemon=True
@@ -727,16 +799,17 @@ class ClientHubSession:
     def refresh(self) -> bool:
         """Ask the hub again now, and wait for its answer as refreshing.
 
-        The error line goes first. A connected hub is sent a report with
-        ``is_refresh``, which the hub answers with its whole state; a hub
-        that is connecting or down has its backoff put back to the floor,
-        its wait ended, and a round started, which resolves its name again.
+        A connected hub is sent a report with ``is_refresh``, which the hub
+        answers with its whole state; a hub that is connecting or waiting
+        has its backoff put back to the floor, its wait and its round in
+        flight ended, and a round started, which resolves its name again.
         Refreshing ends with the next state, a round ending in a code, or
         ``refresh_timeout_s``.
 
         Returns:
             Whether the hub entered refreshing: False while it is replaced,
-            disabled, or already refreshing.
+            disabled, waiting on a device the hub does not know or a
+            refused join, or already refreshing.
         """
         with self._lock:
             connection = self._connection()
@@ -744,21 +817,24 @@ class ClientHubSession:
                 self._is_refreshing = False
             if connection not in CONNECTION_REFRESHABLE or self._is_refreshing:
                 return False
+            if self._wait_reason in WAIT_REASONS_FINAL:
+                return False
             self._is_refreshing = True
             self._refresh_since = (self._clock(), self._wall_clock())
             self._refresh_count += 1
             count = self._refresh_count
-            self._last_error = None
             client = self._client if connection == CONNECTION_CONNECTED else None
             if client is None:
-                self._backoff_s = CLIENT_BACKOFF_MIN_S
+                self._wait_reason = ""
+                self._wait_code = None
+                self._next_round_at = None
         timer = threading.Timer(
             self._refresh_timeout_s, self._refresh_timed_out, args=(count,)
         )
         timer.daemon = True
         timer.start()
         if client is None:
-            self._news.set()
+            self._cut_round()
         else:
             # Sent from a thread of its own: a socket that takes no bytes
             # holds that thread until its send timeout, never the press.
@@ -1010,25 +1086,26 @@ class ClientHubSession:
             delay = self.run_once()
             self._wait_out(delay)
 
-    def run_once(self) -> int:
+    def run_once(self) -> float:
         """One connection's lifetime, or one idle turn.
 
         Returns:
-            How many seconds to wait before the next one: the shortest delay
-            after a clean close, a backing-off delay after a broken wire, a
-            minute after a refusal the binding survives, and a short idle
-            wait while another socket holds the binding or the hub has
-            forgotten it.
+            How many seconds to wait before the next one: none after the
+            socket ends or a network change ended the round, a backing-off
+            delay after a round no address answered, a minute after a
+            refusal the binding survives, the hub's own delay after a paused
+            join, no end while the device has no network, and a short idle
+            wait while another socket holds the binding or the session
+            waits on a reason only a person ends.
         """
         with self._lock:
-            is_idle = self._is_replaced or self._is_unbound or self._is_join_refused
-            was_down = self._is_down
-            self._is_down = False
-            if was_down and not is_idle:
-                self._last_error = None
-        if is_idle:
-            return CLIENT_IDLE_POLL_INTERVAL_S
-        if was_down:
+            if self._is_replaced or self._wait_reason in WAIT_REASONS_HELD:
+                return CLIENT_IDLE_POLL_INTERVAL_S
+            was_waiting = bool(self._wait_reason)
+            self._wait_reason = ""
+            self._wait_code = None
+            self._next_round_at = None
+        if was_waiting:
             self._on_change()
         try:
             client = self._connect_round()
@@ -1037,14 +1114,16 @@ class ClientHubSession:
         except (GatewayRefused, GatewayUntrusted) as error:
             return self._on_rejected(error)
         except GatewayUnreachable as error:
+            if self._take_round_cut():
+                self._log("a network change ended the round; starting another")
+                return 0
             return self._on_unreachable(error)
         failure = self._serve(client)
-        if failure is None:
-            return CLIENT_BACKOFF_MIN_S
         if isinstance(failure, GatewayRefused):
             return self._on_rejected(failure)
-        self._log(f"hub socket lost: {failure}; connecting again")
-        return CLIENT_BACKOFF_MIN_S
+        if failure is not None:
+            self._log(f"hub socket lost: {failure}; connecting again")
+        return 0
 
     def _connect_round(self):
         """Connect through whichever of the hub's addresses answers first.
@@ -1071,17 +1150,22 @@ class ClientHubSession:
                 by a frame or by its close; the protocol refusals are their
                 own kind.
             GatewayUnreachable: When no address answered, the round's
-                socket ended before the welcome, or a stop ended the round.
+                socket ended before the welcome, or a stop or a network
+                change ended the round.
         """
         if self._stop.is_set():
             raise GatewayUnreachable("the session is stopping")
+        with self._lock:
+            self._is_round_cut = False
         urls, name_url, stored = self._candidates()
         url, client, errors, handshake_s = self._dial_all(urls)
         untrusted, failure = self._sort_failures(errors, name_url, stored)
-        if self._stop.is_set():
+        with self._lock:
+            is_cut = self._is_round_cut
+        if self._stop.is_set() or is_cut:
             if client is not None:
                 client.close()
-            raise GatewayUnreachable("the session is stopping")
+            raise GatewayUnreachable("the round was ended")
         if client is None:
             if isinstance(failure, GatewayRefused):
                 raise failure
@@ -1249,7 +1333,8 @@ class ClientHubSession:
             ``(url, client, errors, handshake_s)``: the address, the open
             socket and the handshake's seconds of the first to connect, or
             an empty address, None and 0 when none did, the hub refused the
-            upgrade, or the session is stopping; ``errors`` holds
+            upgrade, the session is stopping, or a network change ended the
+            round; ``errors`` holds
             ``(url, error)`` for every address that failed before the round
             settled.
         """
@@ -1262,7 +1347,7 @@ class ClientHubSession:
         try:
             dialing.start()
             while len(errors) < len(urls):
-                if self._stop.is_set():
+                if self._stop.is_set() or self._is_cut():
                     dialing.settle()
                     break
                 result = dialing.next_result(DIAL_WAIT_TURN_S)
@@ -1297,26 +1382,22 @@ class ClientHubSession:
             raise GatewayUnreachable(f"the join could not be kept: {error}")
         self._log(f"joined the hub at {url}")
 
-    def _on_join_refused(self, error: EnrollmentError) -> int:
-        """Take the hub's refusal of a pending join: down, and no more rounds.
+    def _on_join_refused(self, error: EnrollmentError) -> float:
+        """Take the hub's refusal of a pending join: waiting, and no more rounds.
 
         ``admission_paused`` is the one refusal that keeps the ticket: the
-        binding stays pending with the code, and the join runs again after
-        the ``retry_after_s`` it names.
+        session counts down the ``retry_after_s`` it names and joins again.
         """
         if error.code == CLIENT_REFUSAL_CODE_ADMISSION_PAUSED:
             return self._on_admission_paused(error)
-        with self._lock:
-            self._is_join_refused = True
-            self._is_down = True
-            self._is_refreshing = False
-            self._last_error = {"code": error.code, "params": dict(error.params)}
+        self._wait(
+            WAIT_JOIN_REFUSED, {"code": error.code, "params": dict(error.params)}, None
+        )
         self._log(f"the hub refused the join: {error.code}")
-        self._on_change()
         return CLIENT_IDLE_POLL_INTERVAL_S
 
-    def _on_admission_paused(self, error: EnrollmentError) -> int:
-        """Keep a join the hub paused: pending with the code, tried again later.
+    def _on_admission_paused(self, error: EnrollmentError) -> float:
+        """Keep a join the hub paused: counted down, and joined again at 0.
 
         Returns:
             The hub's ``retry_after_s``, at least ``CLIENT_JOIN_RETRY_MIN_S``.
@@ -1326,11 +1407,12 @@ class ClientHubSession:
         except (TypeError, ValueError):
             delay = 0
         delay = max(delay, CLIENT_JOIN_RETRY_MIN_S)
-        with self._lock:
-            self._is_refreshing = False
-            self._last_error = {"code": error.code, "params": dict(error.params)}
+        self._wait(
+            WAIT_ADMISSION_PAUSED,
+            {"code": error.code, "params": dict(error.params)},
+            delay,
+        )
         self._log(f"the hub paused admissions; joining again in {delay:g}s")
-        self._on_change()
         return delay
 
     def _host_urls(self, hosts: list) -> list:
@@ -1410,7 +1492,6 @@ class ClientHubSession:
             self._is_welcomed = True
             self._hub_software = str(welcome.get("software", "") or "")
             self._backoff_s = CLIENT_BACKOFF_MIN_S
-            self._last_error = None
             # A hub whose state hash the report matches pushes no state; what
             # it published last is published again once the socket is up.
             has_services = bool(self._services_list) and not self._is_disabled
@@ -1493,12 +1574,7 @@ class ClientHubSession:
                 if self._is_held(client):
                     failure = error
                 break
-            except Exception as error:  # noqa: BLE001 - reported, never fatal
-                with self._lock:
-                    self._last_error = {
-                        "code": "hub_reply_unreadable",
-                        "params": {"detail": str(error)[:200]},
-                    }
+            except Exception as error:  # noqa: BLE001 - logged, never fatal
                 self._log(f"could not read a frame from the hub: {error}")
         ended.set()
         self._end_socket(client)
@@ -1653,10 +1729,12 @@ class ClientHubSession:
         """Wait for the next turn: the delay, news, or a network change.
 
         The route to the hub is looked at every idle poll; a changed
-        address ends the wait and puts the backoff back to its floor.
+        address ends the wait and puts the backoff back to its floor. While
+        the device has no network, the wait ends once it has one.
 
         Args:
-            delay: How long the turn asked to wait.
+            delay: How long the turn asked to wait; infinite waits for news
+                or a network change alone.
         """
         deadline = time.monotonic() + delay
         while True:
@@ -1666,6 +1744,13 @@ class ClientHubSession:
             if self._news.wait(timeout=min(remaining, CLIENT_IDLE_POLL_INTERVAL_S)):
                 return
             if self._watch_network():
+                with self._lock:
+                    self._backoff_s = CLIENT_BACKOFF_MIN_S
+                return
+            with self._lock:
+                is_offline_wait = self._wait_reason == WAIT_NO_NETWORK
+            if is_offline_wait and not self._is_offline():
+                self._log("this machine has a network again")
                 with self._lock:
                     self._backoff_s = CLIENT_BACKOFF_MIN_S
                 return
@@ -1906,13 +1991,9 @@ class ClientHubSession:
         """Where the socket stands; the lock is held."""
         if self._is_replaced:
             return CONNECTION_REPLACED
-        if self._is_join_refused:
-            return CONNECTION_DOWN
-        if self._binding.get("is_pending") is True:
-            return CONNECTION_PENDING
         if self._is_welcomed:
             return CONNECTION_DISABLED if self._is_disabled else CONNECTION_CONNECTED
-        return CONNECTION_DOWN if self._is_down else CONNECTION_CONNECTING
+        return CONNECTION_WAITING if self._wait_reason else CONNECTION_CONNECTING
 
     def _is_refresh_over(self) -> bool:
         """Whether the refresh in flight is past its limit; the lock is held."""
@@ -1930,20 +2011,31 @@ class ClientHubSession:
             self._is_refreshing = False
         self._on_change()
 
-    def _on_unreachable(self, error: Exception) -> int:
-        """Back off after a round that reached no address."""
+    def _on_unreachable(self, error: Exception) -> float:
+        """Wait after a round that reached no address.
+
+        A device with no network at all waits for one with no countdown.
+        Otherwise the wait is the backoff, which doubles, and its reason
+        says whether this client's virtual network of the hub's is on.
+        """
+        if self._is_offline():
+            self._wait(WAIT_NO_NETWORK, channel_error(error), None)
+            self._log(f"hub socket failed: {error}; this machine has no network")
+            return float("inf")
         with self._lock:
-            self._last_error = channel_error(error)
-            self._is_down = True
-            self._is_refreshing = False
             delay = self._backoff_s
             self._backoff_s = min(self._backoff_s * 2, CLIENT_BACKOFF_MAX_S)
+            is_overlay_on = self._is_overlay_on
+        reason = WAIT_HUB_OFF_OVERLAY if is_overlay_on else WAIT_HUB_SILENT
+        self._wait(reason, channel_error(error), delay)
         self._log(f"hub socket failed: {error}; retrying in {delay}s")
-        self._on_change()
         return delay
 
-    def _on_rejected(self, error: Exception) -> int:
+    def _on_rejected(self, error: Exception) -> float:
         """Take a refusal: the one that unbinds, or one the binding survives.
+
+        A protocol refusal waits for a person; a certificate off the pin,
+        and any other refusal, is asked again after ``CLIENT_BACKOFF_MAX_S``.
 
         Args:
             error: What the channel raised.
@@ -1952,26 +2044,76 @@ class ClientHubSession:
             Seconds until the next loop turn.
         """
         rejection = channel_error(error)
-        if rejection["code"] == CLIENT_REFUSAL_CODE_BINDING_UNKNOWN:
+        code = rejection["code"]
+        if code == CLIENT_REFUSAL_CODE_BINDING_UNKNOWN:
             return self._unbind(rejection)
-        with self._lock:
-            self._last_error = rejection
-            self._is_down = True
-            self._is_refreshing = False
+        if code in CLIENT_PROTOCOL_REFUSAL_CODES:
+            self._wait(WAIT_TOO_OLD, rejection, None)
+            self._log(f"{error}; waiting for a refresh")
+            return CLIENT_IDLE_POLL_INTERVAL_S
+        if isinstance(error, GatewayUntrusted):
+            reason = WAIT_UNTRUSTED
+        else:
+            with self._lock:
+                is_overlay_on = self._is_overlay_on
+            reason = WAIT_HUB_OFF_OVERLAY if is_overlay_on else WAIT_HUB_SILENT
+        self._wait(reason, rejection, CLIENT_BACKOFF_MAX_S)
         self._log(f"{error}; asking again in {CLIENT_BACKOFF_MAX_S}s")
-        self._on_change()
         return CLIENT_BACKOFF_MAX_S
 
-    def _unbind(self, rejection: dict) -> int:
-        """Hand the binding back: the hub holds no such binding any more."""
-        with self._lock:
-            self._is_unbound = True
-            self._is_down = True
-            self._is_refreshing = False
-            self._last_error = rejection
+    def _unbind(self, rejection: dict) -> float:
+        """The hub holds no such binding any more: wait for a person's Leave."""
+        self._wait(WAIT_UNKNOWN_DEVICE, rejection, None)
         self._log("unbound: the hub no longer knows this client")
         self._on_unbound(self)
         return CLIENT_IDLE_POLL_INTERVAL_S
+
+    def _wait(self, reason: str, code: "dict | None", delay: "float | None") -> None:
+        """Enter waiting on one reason, the refresh ended, and announce it.
+
+        Args:
+            reason: One of ``WAIT_REASONS``.
+            code: The ``{"code", "params"}`` the round ended in.
+            delay: Seconds until the next round; None while no countdown
+                runs.
+        """
+        with self._lock:
+            self._wait_reason = reason
+            self._wait_code = dict(code) if code else None
+            self._next_round_at = None if delay is None else self._wall_clock() + delay
+            self._is_refreshing = False
+        self._on_change()
+
+    def _cut_round(self) -> None:
+        """End the wait and the round in flight; the next round starts at once.
+
+        The backoff goes back to its floor, and every dial of the round
+        still waiting out its connect time is aborted, not waited for.
+        """
+        with self._lock:
+            self._backoff_s = CLIENT_BACKOFF_MIN_S
+            dialings = list(self._dialings)
+            if dialings:
+                self._is_round_cut = True
+        for dialing in dialings:
+            dialing.settle()
+        self._news.set()
+
+    def _is_cut(self) -> bool:
+        """Whether a network change ended the round in flight."""
+        with self._lock:
+            return self._is_round_cut
+
+    def _take_round_cut(self) -> bool:
+        """Whether a network change ended the last round; the mark is cleared."""
+        with self._lock:
+            is_cut = self._is_round_cut
+            self._is_round_cut = False
+        return is_cut
+
+    def _is_offline(self) -> bool:
+        """Whether this machine has no network at all, as its networks say."""
+        return is_offline(self._local_networks())
 
 
 class _ClientDialRound:

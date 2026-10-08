@@ -7,6 +7,7 @@ binding file answers only when nothing does.
 """
 
 import json
+import time
 
 import pytest
 
@@ -60,24 +61,20 @@ def test_every_hub_joined_is_a_line_and_the_exit_is_marked(resident, capsys):
 
     assert printed(capsys) == [
         f"neutrino-client {CLIENT_VERSION}",
-        f"hub home {GATEWAY_URL} connected {status_cli.EXIT_MARK}",
-        "hub office https://office.lan:8443 connected",
+        f"hub home {GATEWAY_URL} Connected {status_cli.EXIT_MARK}",
+        "hub office https://office.lan:8443 Connected",
         f"resident {status_cli.RESIDENT_RUNNING}",
     ]
 
 
 def test_a_connecting_socket_is_not_a_clean_status(resident, capsys):
     resident.hubs_value[0]["connection"] = "connecting"
-    resident.hubs_value[0]["last_error"] = {
-        "code": "hub_unreachable",
-        "params": {"detail": "down"},
-    }
 
     assert status_cli.main() == 1
 
     lines = printed(capsys)
-    assert f"hub home {GATEWAY_URL} connecting: down {status_cli.EXIT_MARK}" in lines
-    assert "hub office https://office.lan:8443 connected" in lines
+    assert f"hub home {GATEWAY_URL} Connecting… {status_cli.EXIT_MARK}" in lines
+    assert "hub office https://office.lan:8443 Connected" in lines
     assert f"resident {status_cli.RESIDENT_RUNNING}" in lines
 
 
@@ -88,7 +85,7 @@ def test_a_replaced_socket_is_not_a_clean_status(resident, capsys):
 
     mark = status_cli.EXIT_MARK
     assert (
-        f"hub home {GATEWAY_URL} replaced: another client took this connection {mark}"
+        f"hub home {GATEWAY_URL} Replaced by another client · Reconnect {mark}"
         in printed(capsys)
     )
 
@@ -129,39 +126,59 @@ def test_unbound_and_dead_says_both(platform, capsys):
 
 
 @pytest.mark.parametrize(
-    "error, fragment",
+    "reason, seconds, line",
     [
-        ({"code": "hub_refused", "params": {}}, "refused this client's token"),
-        ({"code": "hub_untrusted", "params": {}}, "the hub's identity changed"),
-        ({"code": "binding_unknown", "params": {}}, "no longer knows this client"),
-        ({"code": "hub_unreachable", "params": {"detail": "no route"}}, "no route"),
+        ("hub_silent", 30, "The hub did not answer · retrying in 30 s"),
         (
-            {
-                "code": "protocol_too_new",
-                "params": {"peer": 2, "hub": 1, "min": 1},
-            },
-            "this client speaks protocol 2; the hub speaks 1",
+            "hub_off_overlay",
+            5,
+            "The hub is not on the virtual network · retrying in 5 s",
         ),
-        (
-            {
-                "code": "protocol_too_old",
-                "params": {"peer": 1, "hub": 3, "min": 2},
-            },
-            "this client speaks protocol 1; the hub accepts 2 and up",
-        ),
-        ({"code": "client_disabled", "params": {}}, "switched this client off"),
+        ("no_network", None, "No network"),
+        ("untrusted", 60, "Certificate mismatch · retrying in 60 s"),
+        ("admission_paused", 42, "The hub pauses new devices · retrying in 42 s"),
+        ("unknown_device", None, "The hub does not know this device"),
+        ("too_old", None, "Version too old"),
     ],
 )
-def test_every_socket_refusal_is_worded(resident, capsys, error, fragment):
-    resident.hubs_value[0]["connection"] = "connecting"
-    resident.hubs_value[0]["last_error"] = error
+def test_every_waiting_reason_prints_its_state_line(
+    resident, capsys, reason, seconds, line
+):
+    resident.hubs_value[0].update(
+        connection="waiting",
+        wait_reason=reason,
+        next_round_at=None if seconds is None else time.time() + seconds - 0.5,
+    )
 
     assert status_cli.main() == 1
 
+    assert f"hub home {GATEWAY_URL} {line} {status_cli.EXIT_MARK}" in printed(capsys)
+
+
+def test_a_countdown_past_its_moment_prints_connecting(resident, capsys):
+    resident.hubs_value[0].update(
+        connection="waiting", wait_reason="hub_silent", next_round_at=time.time() - 1
+    )
+
+    status_cli.main()
+
+    assert f"hub home {GATEWAY_URL} Connecting… {status_cli.EXIT_MARK}" in printed(
+        capsys
+    )
+
+
+def test_a_refused_join_prints_the_codes_wording(resident, capsys):
+    resident.hubs_value[0].update(
+        connection="waiting",
+        wait_reason="join_refused",
+        wait_code={"code": "ticket_spent", "params": {}},
+    )
+
+    status_cli.main()
+
     out = capsys.readouterr().out
-    assert "hub        " in out
-    assert fragment in out
-    assert error["code"] not in out
+    assert "Join refused · The hub refused this link" in out
+    assert "ticket_spent" not in out
 
 
 def test_a_resident_of_another_account_reads_as_none(platform, config_path, capsys):
@@ -199,6 +216,9 @@ def test_json_carries_every_hub_and_its_way_in(resident, capsys):
         "hub_name": "home",
         "gateway_url": GATEWAY_URL,
         "connection": "connected",
+        "wait_reason": "",
+        "wait_code": None,
+        "next_round_at": None,
         "reached_through": "relay",
         "rtt_ms": None,
         "is_exit": True,
@@ -216,10 +236,10 @@ def test_a_connected_hub_shows_its_way_in_and_its_round_trip(resident, capsys):
 
     lines = printed(capsys)
     assert (
-        f"hub home {GATEWAY_URL} connected · LAN · 12 ms {status_cli.EXIT_MARK}"
+        f"hub home {GATEWAY_URL} Connected · LAN · 12 ms {status_cli.EXIT_MARK}"
         in lines
     )
-    assert "hub office https://office.lan:8443 connected · SSH Relay" in lines
+    assert "hub office https://office.lan:8443 Connected · SSH Relay" in lines
 
     assert status_cli.main(is_json=True) == 0
 
@@ -234,7 +254,7 @@ def test_a_hub_not_connected_shows_no_tags(resident, capsys):
 
     status_cli.main()
 
-    assert f"hub home {GATEWAY_URL} connecting {status_cli.EXIT_MARK}" in printed(
+    assert f"hub home {GATEWAY_URL} Connecting… {status_cli.EXIT_MARK}" in printed(
         capsys
     )
 

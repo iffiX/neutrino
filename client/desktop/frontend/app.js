@@ -309,15 +309,20 @@ const KINDS = [
   ['rdp', 'ui.panel_desktops', drawDesktopEntry, 'ui.empty_desktops'],
 ];
 
-// The codes on a hub that is down which a person has to act on: its dot is
-// red. Any other code leaves it amber.
-const PERSON_CODES = [
-  'hub_untrusted', 'binding_unknown', 'protocol_too_old', 'protocol_too_new',
-];
 // The five states of a hub's connection, as the resident names them.
 const CONNECTION_STATES = [
-  'connected', 'connecting', 'down', 'replaced', 'disabled', 'pending',
+  'connected', 'connecting', 'waiting', 'replaced', 'disabled',
 ];
+// Why a waiting hub waits, as the resident names it.
+const WAIT_REASONS = [
+  'hub_silent', 'hub_off_overlay', 'no_network', 'untrusted',
+  'admission_paused', 'unknown_device', 'too_old', 'join_refused',
+];
+// The reasons a person has to act on: the dot is red. Any other leaves it
+// amber.
+const PERSON_REASONS = ['untrusted', 'unknown_device', 'too_old', 'join_refused'];
+// The reasons whose row offers Leave alone.
+const LEAVE_ONLY_REASONS = ['unknown_device', 'join_refused'];
 // The three states of a hub's virtual network.
 const OVERLAY_STATES = ['off', 'on'];
 // The name each virtual network's engine goes by.
@@ -326,7 +331,11 @@ const OVERLAY_TITLES = Object.assign(
 
 // A status mark: a dot in its tone; 'pulse' is the amber dot of work running.
 function marker(tone) {
-  return '<span class="dot ' + (tone === 'pulse' ? 'wait pulse' : tone) + '"></span>';
+  return '<span class="' + dotClass(tone) + '"></span>';
+}
+
+function dotClass(tone) {
+  return 'dot ' + (tone === 'pulse' ? 'wait pulse' : tone);
 }
 
 function draw(state) {
@@ -353,6 +362,42 @@ function draw(state) {
   } else {
     content.appendChild(kindTab(state, KINDS.filter((kind) => kind[0] === openTab)[0]));
   }
+  scheduleCountdowns();
+}
+
+// The countdowns on the hubs' state lines: once a second, while any hub's
+// next round is ahead, each state line and its dot are drawn again in place.
+let countdownTimer = null;
+
+function scheduleCountdowns() {
+  if (countdownTimer !== null || lastState === null) return;
+  if (!(lastState.hubs || []).some(isCountingDown)) return;
+  countdownTimer = setTimeout(tickCountdowns, 1000);
+}
+
+function tickCountdowns() {
+  countdownTimer = null;
+  const hubs = lastState === null ? [] : lastState.hubs || [];
+  for (const row of document.querySelectorAll('[data-state-line]')) {
+    const hub = hubs.find((each) => hubKey(each) === row.dataset.stateLine);
+    if (!hub) continue;
+    const line = row.querySelector('.state_line');
+    if (line) line.textContent = hubWord(hub);
+    const dot = row.querySelector('.dot');
+    if (dot) dot.className = dotClass(hubTone(hub));
+  }
+  scheduleCountdowns();
+}
+
+// Whether a hub waits with its next round still ahead.
+function isCountingDown(hub) {
+  return hub.connection === 'waiting' && typeof hub.next_round_at === 'number'
+    && secondsLeft(hub) > 0;
+}
+
+// The whole seconds until a waiting hub's next round.
+function secondsLeft(hub) {
+  return Math.ceil(hub.next_round_at - Date.now() / 1000);
 }
 
 // One entry per tab down the sidebar, then a rule and the settings entry;
@@ -452,11 +497,12 @@ function rowElement(parts) {
   const row = document.createElement('div');
   row.className = 'feat';
   row.innerHTML = marker(parts.tone);
+  if (parts.stateKey) row.dataset.stateLine = parts.stateKey;
   const body = document.createElement('div');
   body.className = 'body';
   const lines = [
-    ['title', parts.title], ['note', parts.word], ['sub', parts.mono],
-    ['note muted', parts.provider],
+    ['title', parts.title], [parts.stateKey ? 'note state_line' : 'note', parts.word],
+    ['sub', parts.mono], ['note muted', parts.provider],
   ];
   for (const [className, text] of lines) {
     if (!text) continue;
@@ -532,7 +578,9 @@ function isReachable(hub) {
 
 // A hub whose socket is down publishes nothing; its row in a panel says why.
 function downRow(hub) {
-  return rowElement({ tone: hubTone(hub), title: hubName(hub), word: hubWord(hub) });
+  return rowElement({
+    tone: hubTone(hub), title: hubName(hub), word: hubWord(hub), stateKey: hubKey(hub),
+  });
 }
 
 function hubName(hub) {
@@ -578,19 +626,18 @@ function noticeLine(notice) {
 }
 
 // Where one hub stands, as a colour: amber pulsing while anything runs on
-// the row or the socket is connecting, green connected, red for a code a
-// person has to act on, grey for a hub never reached, amber otherwise.
+// the row, the socket is connecting or a countdown reached 0, green
+// connected, red waiting on a reason a person has to act on, amber
+// otherwise.
 function hubTone(hub) {
   const jobs = hub.jobs || {};
   if (jobs.is_refreshing || jobs.is_leaving || jobs.overlay_job
     || jobs.is_opening_panel) return 'pulse';
-  if (isJoinRefused(hub)) return 'bad';
-  if (hub.connection === 'pending') return 'off';
   if (hub.connection === 'connecting') return 'pulse';
   if (hub.connection === 'connected') return 'ok';
-  if (hub.connection === 'down') {
-    const code = hub.last_error ? hub.last_error.code : '';
-    if (PERSON_CODES.indexOf(code) >= 0) return 'bad';
+  if (hub.connection === 'waiting') {
+    if (PERSON_REASONS.indexOf(hub.wait_reason) >= 0) return 'bad';
+    if (typeof hub.next_round_at === 'number' && secondsLeft(hub) <= 0) return 'pulse';
   }
   return 'wait';
 }
@@ -600,8 +647,9 @@ function hubTone(hub) {
 const THROUGH_WAYS = ['lan', 'direct'].concat(
   ...PARTS.map((part) => part.throughWays || []), ['easytier', 'relay']);
 
-// The hub's state word: the job running on it, else its connection's, with
-// the way in once the hub has named it.
+// The hub's state line: the job running on it, else its connection's word
+// with the way in once the hub has named it, a waiting hub's reason with
+// what ends the wait, or Reconnect after the word of a replaced hub.
 function hubWord(hub) {
   const jobs = hub.jobs || {};
   if (jobs.is_leaving) return t('ui.job.leaving');
@@ -612,7 +660,24 @@ function hubWord(hub) {
     return t('ui.state.connected_through',
       { way: t('ui.through.' + hub.reached_through) });
   }
+  if (connection === 'waiting') return waitWord(hub);
+  if (connection === 'replaced') return t('ui.state.replaced') + ' · ' + t('ui.reconnect');
   return t('ui.state.' + connection);
+}
+
+// A waiting hub's state line: its reason, then the seconds until its next
+// round, or the reason a refused join gives; at 0 the line is connecting.
+function waitWord(hub) {
+  const reason = WAIT_REASONS.indexOf(hub.wait_reason) >= 0
+    ? hub.wait_reason : 'hub_silent';
+  const word = t('ui.state.' + reason);
+  if (reason === 'join_refused' && hub.wait_code) {
+    return word + ' · ' + wordError(hub.wait_code);
+  }
+  if (typeof hub.next_round_at !== 'number') return word;
+  const left = secondsLeft(hub);
+  if (left <= 0) return t('ui.state.connecting');
+  return word + ' · ' + t('ui.action.retry_in', { s: left });
 }
 
 // A connected hub's tags: the state word with the way in, and the round
@@ -648,11 +713,12 @@ function hubRow(hub) {
     }
   }
   if (hub.last_error) extras.push(errorLine(wordError(hub.last_error)));
-  if (isJoinRefused(hub)) {
+  if (isLeaveOnly(hub)) {
     return rowElement({
       tone: hubTone(hub),
       title: hubName(hub),
       word: hubWord(hub),
+      stateKey: hubKey(hub),
       mono: hub.gateway_url,
       extras: extras,
       actions: [leaveButton(hub)],
@@ -678,6 +744,7 @@ function hubRow(hub) {
     title: hubName(hub),
     tags: tags,
     word: tags ? '' : hubWord(hub),
+    stateKey: hubKey(hub),
     mono: hub.gateway_url + software,
     extras: extras,
     reason: (!network || network.disabled) && !jobs.is_leaving ? overlayReason(hub) : '',
@@ -698,10 +765,10 @@ function panelButton(hub) {
   return button;
 }
 
-// A join whose ticket the hub refused: the row is down with the code, and
-// Leave is all it offers.
-function isJoinRefused(hub) {
-  return hub.is_pending === true && hub.connection === 'down';
+// A hub that waits on a refused join, or on a hub that no longer knows this
+// device: Leave is all it offers.
+function isLeaveOnly(hub) {
+  return hub.connection === 'waiting' && LEAVE_ONLY_REASONS.indexOf(hub.wait_reason) >= 0;
 }
 
 // Leave: arms on the first press, leaves on the second, and is the row's

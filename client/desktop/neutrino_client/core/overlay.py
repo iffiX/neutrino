@@ -219,9 +219,10 @@ class OverlayEasytierDriver:
 
         Returns:
             ``{"is_on", "is_waiting", "is_other_network", "address",
-            "network", "is_hub_seen"}``; a core that is not running runs no
-            network, which reads as off, and a console's core that runs no
-            instance is waiting.
+            "network", "is_hub_seen", "peers"}``, ``peers`` being the other
+            nodes of the instance's peer table, by address, sorted; a core
+            that is not running runs no network, which reads as off, and a
+            console's core that runs no instance is waiting.
 
         Raises:
             OverlayControlError: ``bundle_missing``, or
@@ -392,6 +393,7 @@ def _easytier_off() -> dict:
         "address": "",
         "network": "",
         "is_hub_seen": False,
+        "peers": [],
     }
 
 
@@ -399,7 +401,8 @@ def _easytier_on(peers: list, hub_address: str) -> dict:
     """An instance that runs, read from its peers.
 
     The hub is seen when a peer holds the hub's address; a hub that names
-    none is seen when any other peer is.
+    none is seen when any other peer is. Each other peer is named by its
+    address, or by its hostname while it has none.
     """
     local = [row for row in peers if row.get("cost") == EASYTIER_PEER_LOCAL_COST]
     others = [row for row in peers if row.get("cost") != EASYTIER_PEER_LOCAL_COST]
@@ -416,6 +419,12 @@ def _easytier_on(peers: list, hub_address: str) -> dict:
         "address": _address(local[0].get("ipv4")) if local else "",
         "network": _network_of(local[0].get("ipv4")) if local else "",
         "is_hub_seen": is_hub_seen,
+        "peers": sorted(
+            {
+                _address(row.get("ipv4")) or str(row.get("hostname", "") or "")
+                for row in others
+            }
+        ),
     }
 
 
@@ -450,8 +459,9 @@ class OverlayMemberships:
     on the network within its limit, and the network is then ``on``,
     whatever the hub's channel does. Nothing here retries, moves to another
     network, or changes the choice. While a hub's network is on, the poll asks its
-    engine whether it still stands, and a network the hub stops naming is
-    left with ``overlay_withdrawn``.
+    engine whether it still stands, a change of the engine's peers between
+    two polls names the hub's route again as a network change, and a
+    network the hub stops naming is left with ``overlay_withdrawn``.
     """
 
     def __init__(
@@ -482,9 +492,9 @@ class OverlayMemberships:
             on_change: Called with no arguments after every change a page
                 draws; None for nobody listening.
             on_route: ``on_route(hub_id, host, provider)`` names the hub's
-                address on the network that just turned on and its engine,
-                or two empty strings once the network is off; None for
-                nobody listening.
+                address on the network that just turned on, or whose peers
+                changed, and its engine, or two empty strings once the
+                network is off; None for nobody listening.
             keep_choice: ``keep_choice(hub_id, is_on, pick)`` writes where
                 the network stands and the engine chosen onto the binding,
                 raising OSError when it cannot; None keeps nothing.
@@ -529,9 +539,10 @@ class OverlayMemberships:
         self._urls: dict = {}
         # Each joined hub's choice: {pick, is_on}.
         self._choices: dict = {}
-        # One record per hub: {state, stage, is_waiting, address, error, job,
-        # material, count, cancel}. ``material`` is the network in use while
-        # a connect runs or it is on, and ``count`` tells a step that was
+        # One record per hub: {state, stage, is_waiting, address, peers,
+        # error, job, material, count, cancel}. ``material`` is the network
+        # in use while a connect runs or it is on, ``peers`` the engine's
+        # other peers at the last look, and ``count`` tells a step that was
         # overtaken apart.
         self._records: dict = {}
         self._news = threading.Event()
@@ -760,7 +771,12 @@ class OverlayMemberships:
             self._on_change()
 
     def watch(self) -> None:
-        """Ask the engine of every network that is on whether it still stands."""
+        """Ask the engine of every network that is on whether it still stands.
+
+        A network whose engine names other peers than at the last look has
+        its route named again, which the hub's session takes as a network
+        change.
+        """
         self.refresh()
         with self._lock:
             held = [
@@ -777,17 +793,23 @@ class OverlayMemberships:
             if not status["is_on"]:
                 self._lost(hub_id, material, count, _engine_stopped())
                 continue
+            peers = list(status.get("peers") or [])
             with self._lock:
                 record = self._records.get(hub_id)
-                is_moved = (
-                    record is not None
-                    and record["count"] == count
-                    and record["address"] != status["address"]
-                )
+                is_current = record is not None and record["count"] == count
+                is_moved = is_current and record["address"] != status["address"]
+                is_peered = is_current and record["peers"] != peers
                 if is_moved:
                     record["address"] = status["address"]
+                if is_peered:
+                    record["peers"] = peers
+                urls = list(self._urls.get(hub_id) or [])
             if is_moved:
                 self._on_change()
+            if is_peered:
+                self._log(f"overlay: the peers on {overlay_network(material)} changed")
+                host = overlay_hub_host(material, urls, status.get("network", ""))
+                self._on_route(hub_id, host, material["provider"])
 
     def release_hub(self, hub_id: str) -> int:
         """Let go of one hub's network: stopped unless another hub is on it.
@@ -859,6 +881,7 @@ class OverlayMemberships:
                     stage="",
                     is_waiting=False,
                     address=address,
+                    peers=list(status.get("peers") or []),
                     job="",
                     cancel=None,
                 )
@@ -977,6 +1000,7 @@ class OverlayMemberships:
                 stage="",
                 is_waiting=False,
                 address="",
+                peers=[],
                 error=dict(error) if error else None,
                 job="",
                 material=None,
@@ -1037,6 +1061,7 @@ def _off_record() -> dict:
         "stage": "",
         "is_waiting": False,
         "address": "",
+        "peers": [],
         "error": None,
         "job": "",
         "material": None,
