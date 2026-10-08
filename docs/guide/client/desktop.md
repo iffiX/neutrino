@@ -90,7 +90,6 @@ The NetBird and EasyTier daemons are system services, so the computer stays on t
 | `bundle_missing`          | this install has no NetBird or EasyTier; reinstall the client                                 |
 | `overlay_join_failed`     | NetBird or EasyTier rejected the join, with the engine's own words after the code             |
 | `overlay_no_address`      | the engine gave this computer no address within 90 seconds                                    |
-| `overlay_hub_unseen`      | the engine has an address, but did not see the hub on the network within 90 seconds           |
 | `overlay_console_invalid` | EasyTier cannot use the console address the hub named                                         |
 
 ### One client per computer
