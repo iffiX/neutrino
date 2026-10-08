@@ -4,7 +4,7 @@ title: 远程编辑器
 
 # 远程编辑器
 
-浏览器里的 VS Code 由 **VS Code** 模块运行在电脑上，每个账户一个。这一页给你的账户开一个，再在手机或笔记本上用它打开电脑上的项目。你要先做完[第一步](../quick-start.md)。
+VS Code 能开在电脑上、从浏览器里用：**VS Code** 模块给每个账户运行一个。这一页给你的账户开一个，再在手机或笔记本上用它打开电脑上的项目。你要先做完[第一步](../quick-start.md)；那时中枢已经在这台电脑上装好被控端，面板的机器列表里有它。下面的面板操作在电脑的浏览器里做。
 
 ## 开一个 VS Code
 
@@ -15,14 +15,14 @@ title: 远程编辑器
 1. 选择 **安装**。
 1. 选择 **配置**。
 1. 在 **实例** 下选择 **添加实例**。
-1. 在 **账户** 里填你在电脑上的账户名。
+1. 在 **账户** 里填你在电脑上的账户名，就是终端里 `whoami` 打印的名字；Windows 上取反斜杠后面那一段。
 1. 选择 **应用 VS Code**。
 
-实例一行读 **运行中**。电脑是 Windows 时，应用之前还要选这个账户的登录信息，和 CloudCLI 的实例一样。
+安装要下载 VS Code，等实例一行读 **运行中**。电脑是 Windows 时，应用之前还要选这个账户的 Windows 登录信息，它先存在面板的 **凭据** 页。装不上时，见故障排查的[模块页上的错误](../reference/troubleshooting.md#模块页上的错误)。
 
 ![VS Code 标签，一个实例在运行](/guide/zh/vscode_panel.webp)
 
-Linux 和 macOS 上想用 code-server，按 [code-server](../agent/modules/code_server.md) 页做，步骤相同。
+code-server 是另一种浏览器里的编辑器，和 VS Code 装一个就够。Linux 和 macOS 上想用它，按 [code-server](../agent/modules/code_server.md) 页做，步骤相同。
 
 ## 打开它
 
@@ -31,7 +31,7 @@ Linux 和 macOS 上想用 code-server，按 [code-server](../agent/modules/code_
 
    ![客户端网页页上的 VS Code 一行](/guide/zh/client_web_vscode.webp)
 
-浏览器打开 VS Code，文件和终端都在电脑上。在它的菜单里打开电脑上的一个项目文件夹。
+浏览器打开 VS Code，文件和终端都在电脑上，以你填的账户运行，这个账户里装的 Claude Code 在终端里照样能用。在它的菜单里打开电脑上的一个项目文件夹。
 
 ![浏览器里的 VS Code 打开了一个项目文件夹](/guide/zh/client_vscode_editor.webp)
 

@@ -9,9 +9,9 @@ title: 安装中枢
 ## 开始之前
 
 - 系统是下面之一：
-  - Linux，任意网络形态：Debian 12、Ubuntu 22.04、64 位树莓派 OS、Fedora 41、RHEL 9 系，或 x86-64 上的 Arch。
-  - macOS 12.3 或更新版本，Apple 芯片或 Intel，只有服务器形态。
-  - x86-64 上的 Windows 10 1809 或更新版本，只有服务器形态。
+  - Linux，任意网络模式：Debian 12、Ubuntu 22.04、64 位树莓派 OS、Fedora 41、RHEL 9 系，或 x86-64 上的 Arch。
+  - macOS 12.3 或更新版本，Apple 芯片或 Intel，只有服务器模式。
+  - x86-64 上的 Windows 10 1809 或更新版本，只有服务器模式。
 - 你有这台机器的 root 权限，Windows 上是管理员权限。
 - 这台机器能上网。
 
@@ -22,7 +22,7 @@ title: 安装中枢
 | 版本   | 发布在哪                                            | 有什么                                           |
 | ------ | --------------------------------------------------- | ------------------------------------------------ |
 | 完整版 | `github.com/iffiX/neutrino/releases`，每一版都保留  | 全部功能                                         |
-| 国内版 | `gitee.com/iffiX/neutrino/releases`，只保留最新一版 | 没有代理、NetBird 和旁路网关形态；下载走国内镜像 |
+| 国内版 | `gitee.com/iffiX/neutrino/releases`，只保留最新一版 | 没有代理、NetBird 和旁路网关模式；下载走国内镜像 |
 
 国内版没有 `.rpm`、Arch 和 Intel Mac 的包，这些机器只能装完整版。
 
@@ -158,7 +158,7 @@ Linux 上，**这台机器做什么？** 只列出网口数量够用的形态：
 | **路由器**   | 在上行网口和它服务的网络之间路由               |
 | **单臂路由** | 单根网线上路由：不带标签出网，带 VLAN 标签入内 |
 
-服务器和旁路网关保留机器原有的地址，路由器和单臂路由接管网口。macOS 和 Windows 上只有 **服务器**。以后换形态，见[把中枢配置成路由器或旁路网关](../scenarios/router_or_gateway.md)。
+服务器和旁路网关保留机器原有的地址，路由器和单臂路由接管网口。macOS 和 Windows 上只有 **服务器**。以后换模式，见[把中枢配置成路由器或旁路网关](../scenarios/router_or_gateway.md)。
 
 ### 网口
 
