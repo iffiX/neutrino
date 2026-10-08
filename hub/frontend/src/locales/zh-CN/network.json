@@ -386,7 +386,7 @@
   "ui.overlay.session_expired": "上次的登录已失效，请用新的 setup key 重新加入。",
   "ui.overlay.settings_title": "设置",
   "ui.overlay.setup_key_forget": "忘掉",
-  "ui.overlay.setup_key_forget_body": "再次保存 key 之前，client 无法加入这张虚拟网。",
+  "ui.overlay.setup_key_forget_body": "再次保存 key 之前，客户端无法加入这张虚拟网。",
   "ui.overlay.setup_key_forget_title": "忘掉 setup key",
   "ui.overlay.setup_key_hint": "这个 key 会交给允许加入虚拟网的客户端。",
   "ui.overlay.setup_key_label": "Setup key",
