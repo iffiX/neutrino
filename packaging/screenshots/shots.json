@@ -16,6 +16,10 @@
     "tall": {
       "width": 1440,
       "height": 1200
+    },
+    "taller": {
+      "width": 1800,
+      "height": 1700
     }
   },
   "pending": [],
@@ -25,13 +29,14 @@
       "language": "en",
       "page": "install/hub.md",
       "source": "panel",
-      "viewport": "desktop",
+      "viewport": "tall",
       "url": "/",
       "element": "viewport",
       "wait_for": ".setup_body",
       "state": "A box with the hub package installed and setup not yet run.",
+      "is_setup": true,
       "press": [
-        "button:has-text(\"{ui.setup.start}\")",
+        ".setup_begin",
         "button:has-text(\"{ui.setup.next}\")",
         {
           "fill": ".setup_body .field:has(.field_label:has-text(\"{ui.setup.panel_password}\")) input",
@@ -48,22 +53,25 @@
         {
           "fill": ".setup_body .field:has(.field_label:has-text(\"{ui.setup.vault_passphrase}\")) + .field input",
           "text": "Example-vault-words-2026"
-        }
-      ],
-      "_todo": "Written from setup_page.tsx, not yet run against a box before setup."
+        },
+        ".setup_body [role=\"switch\"]:has-text(\"{ui.setup.https_label}\")"
+      ]
     },
     {
       "file": "setup_secrets.png",
       "language": "zh",
       "page": "install/hub.md",
       "source": "panel",
-      "viewport": "desktop",
+      "viewport": "tall",
       "url": "/",
       "element": "viewport",
       "wait_for": ".setup_body",
       "state": "A box with the hub package installed and setup not yet run.",
+      "is_setup": true,
       "press": [
-        "button:has-text(\"{ui.setup.start}\")",
+        ".setup_begin",
+        ".setup_body .picker_control",
+        ".picker_row:has-text(\"简体中文\")",
         "button:has-text(\"{ui.setup.next}\")",
         {
           "fill": ".setup_body .field:has(.field_label:has-text(\"{ui.setup.panel_password}\")) input",
@@ -80,9 +88,9 @@
         {
           "fill": ".setup_body .field:has(.field_label:has-text(\"{ui.setup.vault_passphrase}\")) + .field input",
           "text": "Example-vault-words-2026"
-        }
-      ],
-      "_todo": "Written from setup_page.tsx, not yet run against a box before setup."
+        },
+        ".setup_body [role=\"switch\"]:has-text(\"{ui.setup.https_label}\")"
+      ]
     },
     {
       "file": "setup_shape.png",
@@ -94,8 +102,9 @@
       "element": "viewport",
       "wait_for": ".setup_modes",
       "state": "A box with the hub package installed and setup not yet run.",
+      "is_setup": true,
       "press": [
-        "button:has-text(\"{ui.setup.start}\")",
+        ".setup_begin",
         "button:has-text(\"{ui.setup.next}\")",
         {
           "fill": ".setup_body .field:has(.field_label:has-text(\"{ui.setup.panel_password}\")) input",
@@ -113,10 +122,10 @@
           "fill": ".setup_body .field:has(.field_label:has-text(\"{ui.setup.vault_passphrase}\")) + .field input",
           "text": "Example-vault-words-2026"
         },
+        ".setup_body [role=\"switch\"]:has-text(\"{ui.setup.https_label}\")",
         "button:has-text(\"{ui.setup.next}\")",
         ".setup_mode:has(.setup_mode_name:text-is(\"{ui.setup.mode_server}\"))"
-      ],
-      "_todo": "Written from setup_page.tsx, not yet run against a box before setup."
+      ]
     },
     {
       "file": "setup_shape.png",
@@ -128,8 +137,11 @@
       "element": "viewport",
       "wait_for": ".setup_modes",
       "state": "A box with the hub package installed and setup not yet run.",
+      "is_setup": true,
       "press": [
-        "button:has-text(\"{ui.setup.start}\")",
+        ".setup_begin",
+        ".setup_body .picker_control",
+        ".picker_row:has-text(\"简体中文\")",
         "button:has-text(\"{ui.setup.next}\")",
         {
           "fill": ".setup_body .field:has(.field_label:has-text(\"{ui.setup.panel_password}\")) input",
@@ -147,23 +159,25 @@
           "fill": ".setup_body .field:has(.field_label:has-text(\"{ui.setup.vault_passphrase}\")) + .field input",
           "text": "Example-vault-words-2026"
         },
+        ".setup_body [role=\"switch\"]:has-text(\"{ui.setup.https_label}\")",
         "button:has-text(\"{ui.setup.next}\")",
         ".setup_mode:has(.setup_mode_name:text-is(\"{ui.setup.mode_server}\"))"
-      ],
-      "_todo": "Written from setup_page.tsx, not yet run against a box before setup."
+      ]
     },
     {
       "file": "setup_done.png",
       "language": "en",
       "page": "install/hub.md",
       "source": "panel",
-      "viewport": "desktop",
+      "viewport": "taller",
       "url": "/",
       "element": "viewport",
       "wait_for": ".setup_handover",
+      "wait_s": 900,
       "state": "A box finishing setup with HTTPS on.",
+      "is_setup": true,
       "press": [
-        "button:has-text(\"{ui.setup.start}\")",
+        ".setup_begin",
         "button:has-text(\"{ui.setup.next}\")",
         {
           "fill": ".setup_body .field:has(.field_label:has-text(\"{ui.setup.panel_password}\")) input",
@@ -181,27 +195,31 @@
           "fill": ".setup_body .field:has(.field_label:has-text(\"{ui.setup.vault_passphrase}\")) + .field input",
           "text": "Example-vault-words-2026"
         },
+        ".setup_body [role=\"switch\"]:has-text(\"{ui.setup.https_label}\")",
         "button:has-text(\"{ui.setup.next}\")",
         ".setup_mode:has(.setup_mode_name:text-is(\"{ui.setup.mode_server}\"))",
         "button:has-text(\"{ui.setup.next}\")",
         "button:has-text(\"{ui.setup.next}\")",
         "button:has-text(\"{ui.setup.next}\")",
         "button:has-text(\"{ui.setup.start}\")"
-      ],
-      "_todo": "Written from setup_page.tsx, not yet run against a box before setup. The third Next is the proxy screen, absent on a build without the proxy; setup itself may need longer than the wait."
+      ]
     },
     {
       "file": "setup_done.png",
       "language": "zh",
       "page": "install/hub.md",
       "source": "panel",
-      "viewport": "desktop",
+      "viewport": "taller",
       "url": "/",
       "element": "viewport",
       "wait_for": ".setup_handover",
+      "wait_s": 900,
       "state": "A box finishing setup with HTTPS on.",
+      "is_setup": true,
       "press": [
-        "button:has-text(\"{ui.setup.start}\")",
+        ".setup_begin",
+        ".setup_body .picker_control",
+        ".picker_row:has-text(\"简体中文\")",
         "button:has-text(\"{ui.setup.next}\")",
         {
           "fill": ".setup_body .field:has(.field_label:has-text(\"{ui.setup.panel_password}\")) input",
@@ -219,14 +237,14 @@
           "fill": ".setup_body .field:has(.field_label:has-text(\"{ui.setup.vault_passphrase}\")) + .field input",
           "text": "Example-vault-words-2026"
         },
+        ".setup_body [role=\"switch\"]:has-text(\"{ui.setup.https_label}\")",
         "button:has-text(\"{ui.setup.next}\")",
         ".setup_mode:has(.setup_mode_name:text-is(\"{ui.setup.mode_server}\"))",
         "button:has-text(\"{ui.setup.next}\")",
         "button:has-text(\"{ui.setup.next}\")",
         "button:has-text(\"{ui.setup.next}\")",
         "button:has-text(\"{ui.setup.start}\")"
-      ],
-      "_todo": "Written from setup_page.tsx, not yet run against a box before setup. The third Next is the proxy screen, absent on a build without the proxy; setup itself may need longer than the wait."
+      ]
     },
     {
       "file": "login.png",
