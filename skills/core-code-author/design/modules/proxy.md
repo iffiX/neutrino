@@ -19,6 +19,16 @@ the panel writes all of them off.
 | the hub itself | `is_local_proxy_enabled` | the box's own connections, every process except xray and the hub's own overlay engines | `output` marks the packet, it hairpins through `lo`, TPROXY takes it; a packet from the NetBird or EasyTier unit's cgroup is accepted before the mark | the TUN below, with the engines' endpoints kept out | every mode |
 | SOCKS ports | `socks_ports[].is_proxied` | what an application is pointed at | a SOCKS inbound per port | the same | every mode |
 
+The hub-itself scope never diverts what an overlay's WireGuard sends. A
+kernel WireGuard device sends from no socket, so no cgroup row names it, and
+diverted, its packets reach the peer from the exit node's address, which the
+peer's NAT drops. So before the mark, `output` returns every packet that
+already carries a mark, which only another subsystem sets there, NetBird's
+`0x1bd00` included, and every UDP packet from NetBird's peer port, the
+engine table's `peer_port`, for a device that sets no mark. EasyTier sends
+from its own process in userspace, so its cgroup row covers it; a kernel
+device of its own would need its port returned the same way.
+
 ### The TUN on macOS and Windows
 
 Those systems have no nftables, so the two scopes that divert the machine's
