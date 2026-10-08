@@ -15,16 +15,50 @@ export const sidebarEn: DefaultTheme.SidebarItem[] = [
     items: [
       { text: "Overview", link: "/overview" },
       { text: "Quick start", link: "/quick-start" },
+      {
+        text: "Install",
+        collapsed: false,
+        items: [
+          { text: "Install the hub", link: "/install/hub" },
+          { text: "Install an agent", link: "/install/agent" },
+          { text: "Install a client", link: "/install/client" },
+        ],
+      },
+    ],
+  },
+  {
+    text: "Scenarios",
+    items: [
+      { text: "Choose a way in", link: "/scenarios/choose_a_way_in" },
+      {
+        text: "One laptop, every machine",
+        link: "/scenarios/one_laptop_every_machine",
+      },
+      {
+        text: "LAN devices over NetBird",
+        link: "/scenarios/netbird_lan_routes",
+      },
+      {
+        text: "LAN devices over EasyTier",
+        link: "/scenarios/easytier_lan_routes",
+      },
     ],
   },
   {
     text: "Hub",
     items: [
-      { text: "Install the hub", link: "/hub/install" },
       { text: "Dashboard", link: "/hub/dashboard" },
       { text: "Network", link: "/hub/network" },
-      { text: "Access", link: "/hub/overlay" },
-      { text: "SSH Relay", link: "/hub/relay" },
+      {
+        text: "Access",
+        link: "/hub/overlay",
+        collapsed: false,
+        items: [
+          { text: "SSH Relay", link: "/hub/relay" },
+          { text: "NetBird", link: "/hub/netbird" },
+          { text: "EasyTier", link: "/hub/easytier" },
+        ],
+      },
       { text: "Proxy", link: "/hub/proxy" },
       { text: "AI", link: "/hub/ai" },
       { text: "Devices", link: "/hub/devices" },
@@ -44,14 +78,16 @@ export const sidebarEn: DefaultTheme.SidebarItem[] = [
         link: "/agent/modules",
         collapsed: false,
         items: [
+          { text: "AI tools", link: "/agent/modules/ai_tools" },
           { text: "File share", link: "/agent/modules/shares" },
           { text: "Terminal", link: "/agent/modules/terminal" },
           { text: "Remote desktop", link: "/agent/modules/remote_desktop" },
           { text: "Gitea", link: "/agent/modules/gitea" },
-          { text: "Containers", link: "/agent/modules/containers" },
-          { text: "ZFS storage", link: "/agent/modules/zfs" },
           { text: "VS Code", link: "/agent/modules/vscode" },
           { text: "code-server", link: "/agent/modules/code_server" },
+          { text: "CloudCLI", link: "/agent/modules/cloudcli" },
+          { text: "Containers", link: "/agent/modules/containers" },
+          { text: "ZFS storage", link: "/agent/modules/zfs" },
         ],
       },
     ],
@@ -87,16 +123,50 @@ export const sidebarZh: DefaultTheme.SidebarItem[] = [
     items: [
       { text: "概述", link: "/zh-CN/overview" },
       { text: "快速上手", link: "/zh-CN/quick-start" },
+      {
+        text: "安装",
+        collapsed: false,
+        items: [
+          { text: "安装中枢", link: "/zh-CN/install/hub" },
+          { text: "安装被控端", link: "/zh-CN/install/agent" },
+          { text: "安装客户端", link: "/zh-CN/install/client" },
+        ],
+      },
     ],
   },
   {
-    text: "Hub",
+    text: "场景",
     items: [
-      { text: "安装 hub", link: "/zh-CN/hub/install" },
+      { text: "选哪种外部访问", link: "/zh-CN/scenarios/choose_a_way_in" },
+      {
+        text: "一台笔记本管所有机器",
+        link: "/zh-CN/scenarios/one_laptop_every_machine",
+      },
+      {
+        text: "经 NetBird 访问局域网设备",
+        link: "/zh-CN/scenarios/netbird_lan_routes",
+      },
+      {
+        text: "经 EasyTier 访问局域网设备",
+        link: "/zh-CN/scenarios/easytier_lan_routes",
+      },
+    ],
+  },
+  {
+    text: "中枢",
+    items: [
       { text: "总览", link: "/zh-CN/hub/dashboard" },
       { text: "网络", link: "/zh-CN/hub/network" },
-      { text: "外部访问", link: "/zh-CN/hub/overlay" },
-      { text: "SSH 中继", link: "/zh-CN/hub/relay" },
+      {
+        text: "外部访问",
+        link: "/zh-CN/hub/overlay",
+        collapsed: false,
+        items: [
+          { text: "SSH 中继", link: "/zh-CN/hub/relay" },
+          { text: "NetBird", link: "/zh-CN/hub/netbird" },
+          { text: "EasyTier", link: "/zh-CN/hub/easytier" },
+        ],
+      },
       { text: "代理", link: "/zh-CN/hub/proxy" },
       { text: "AI", link: "/zh-CN/hub/ai" },
       { text: "设备", link: "/zh-CN/hub/devices" },
@@ -116,17 +186,16 @@ export const sidebarZh: DefaultTheme.SidebarItem[] = [
         link: "/zh-CN/agent/modules",
         collapsed: false,
         items: [
-          { text: "File share", link: "/zh-CN/agent/modules/shares" },
-          { text: "Terminal", link: "/zh-CN/agent/modules/terminal" },
-          {
-            text: "Remote desktop",
-            link: "/zh-CN/agent/modules/remote_desktop",
-          },
+          { text: "AI 工具", link: "/zh-CN/agent/modules/ai_tools" },
+          { text: "文件共享", link: "/zh-CN/agent/modules/shares" },
+          { text: "终端", link: "/zh-CN/agent/modules/terminal" },
+          { text: "远程桌面", link: "/zh-CN/agent/modules/remote_desktop" },
           { text: "Gitea", link: "/zh-CN/agent/modules/gitea" },
-          { text: "Containers", link: "/zh-CN/agent/modules/containers" },
-          { text: "ZFS storage", link: "/zh-CN/agent/modules/zfs" },
           { text: "VS Code", link: "/zh-CN/agent/modules/vscode" },
           { text: "code-server", link: "/zh-CN/agent/modules/code_server" },
+          { text: "CloudCLI", link: "/zh-CN/agent/modules/cloudcli" },
+          { text: "容器", link: "/zh-CN/agent/modules/containers" },
+          { text: "ZFS 存储", link: "/zh-CN/agent/modules/zfs" },
         ],
       },
     ],
@@ -158,14 +227,16 @@ export const sidebarZh: DefaultTheme.SidebarItem[] = [
 
 export const navEn: DefaultTheme.NavItem[] = [
   { text: "Quick start", link: "/quick-start" },
-  { text: "Hub", link: "/hub/install" },
+  { text: "Install", link: "/install/hub" },
+  { text: "Hub", link: "/hub/dashboard" },
   { text: "Clients", link: "/client/desktop" },
   { text: "GitHub", link: GITHUB_URL },
 ];
 
 export const navZh: DefaultTheme.NavItem[] = [
   { text: "快速上手", link: "/zh-CN/quick-start" },
-  { text: "Hub", link: "/zh-CN/hub/install" },
+  { text: "安装", link: "/zh-CN/install/hub" },
+  { text: "中枢", link: "/zh-CN/hub/dashboard" },
   { text: "客户端", link: "/zh-CN/client/desktop" },
   { text: "GitHub", link: GITHUB_URL },
 ];

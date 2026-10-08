@@ -4,133 +4,218 @@ title: Quick start
 
 # Quick start
 
-In about half an hour you build a hub in server mode on one Linux box and a second Linux machine that it manages. At the end, a folder on that machine is mounted on your laptop through the desktop client.
+At the end of this page, your phone on mobile data reaches your computer at home. It shows the computer's desktop, opens a folder shared from it in the Files app, and runs a terminal on it. The whole path takes about forty minutes and costs nothing, because the way in from outside is the free tier of the EasyTier console.
 
-## What you need
+<!-- 待核: the time of the whole path (outline item 13) and the number of devices the EasyTier console's free tier allows (outline item 2) -->
 
-- A Linux box for the hub, called `home-hub` on this page. It is x86-64, runs Debian 12 or newer or Ubuntu 22.04 or newer, and reaches the internet. You have root on it.
-- A second Linux machine of the same kind for the agent, called `studio`.
-- A Linux computer with a desktop session for the client, called `laptop`.
-- The three package files of release 0.5.0 from the [releases page](https://github.com/iffiX/neutrino/releases): `neutrino-hub_0.5.0_amd64.deb`, `neutrino-agent_0.5.0_amd64.deb` and `neutrino-client_0.5.0_amd64.deb`.
+## Before you start
 
-The three machines are on one local network. Server mode keeps every address `home-hub` has, and the rest of your network stays as it is.
+- Your computer stays on, has a desktop, and has somebody signed in at its screen. It runs one of these systems:
+  - Linux with a desktop: Debian 12 or newer, Ubuntu 22.04 or newer, Fedora 41 or newer, or the RHEL 9 family
+  - macOS 12.3 or newer
+  - Windows 10 1809 or newer on x86-64
+- You have an administrator account on your computer, and it reaches the internet.
+- Your phone runs Android 8.0 or newer on a 64-bit ARM processor.
+- You have an account on the EasyTier console.
+- Your phone and your computer are on the same Wi-Fi network.
 
-## Full or mainland edition
-
-This page uses the full edition from GitHub. The mainland edition, on [Gitee](https://gitee.com/iffiX/neutrino), has every feature except the proxy and NetBird, and fetches its downloads from mirrors in mainland China. Each edition updates from its own release page. To follow this page with the mainland edition, take the three `.deb` files from the Gitee release page, or install the hub with one command:
-
-```bash
-curl -fsSL https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.sh | sh
-```
-
-The mainland wizard has no **Going out through a proxy** screen, so skip that step.
+<!-- 待核: the EasyTier console's sign-up address (outline item 2) -->
 
 ## Install the hub
 
-1. On `home-hub`, install the package:
+On Linux, open a terminal and run:
 
-   ```bash
-   sudo apt install ./neutrino-hub_0.5.0_amd64.deb
-   ```
+```bash
+curl -fsSL https://github.com/iffiX/neutrino/releases/latest/download/install.sh | sh
+```
 
-1. Start the setup wizard:
+On macOS, open **Terminal** and run:
 
-   ```bash
-   sudo nhub setup
-   ```
+```bash
+curl -fsSL https://github.com/iffiX/neutrino/releases/latest/download/install.sh | sh
+```
 
-   The terminal prints an address for each of the box's interfaces, each ending in a one-time token.
+On Windows, open PowerShell and run:
 
-1. On `laptop`, open one of the printed addresses in a browser, token included.
+```powershell
+irm https://github.com/iffiX/neutrino/releases/latest/download/install.ps1 | iex
+```
 
-## Answer the setup wizard
+The script prompts once for administrator rights. On Windows it continues in a new PowerShell window that Windows opens as administrator, and that window prints the addresses. When the install finishes, the terminal prints one address for each network your computer is on, each ending in a one-time token.
 
-Each question screen ends with **Next**, which moves to the following screen. The wizard writes to the box only after you confirm the last screen.
+In mainland China, take the mainland edition's command from [Install the hub](./install/hub.md).
 
+## Open the wizard
+
+1. In a browser on your computer, open the first address the terminal printed, with its token.
 1. Select **Set this box up**.
-1. On **Language**, keep **English**.
-1. On **A password for the panel, a passphrase for the vault**, type a **Panel password** of at least 8 characters, and repeat it in **Again**.
-1. On the same screen, type a **Vault master passphrase** of at least 16 characters with lowercase, uppercase, digits and symbols, and repeat it in **Again**.
-1. Leave **HTTPS for the panel** off.
-1. On **What is this machine for?**, select **Server**.
-1. On **Which ports?**, keep **Panel answers on port** at `8080`.
-1. On **Going out through a proxy**, leave **Set it up here** off.
-1. On **Ready**, check that **HTTPS** reads **off**, and select **Set this box up**.
 
-The steps run on the screen, from checking packages to installing this machine's agent, and the title changes to **This box is a gateway**.
+## Answer the wizard
+
+Each screen ends in **Next**, and the wizard writes nothing until the last screen:
+
+1. On **Language**, keep **English**.
+1. Type a **Panel password** of at least 8 characters, and type it again under **Again**.
+1. Type a **Vault passphrase** of at least 16 characters, with lowercase and uppercase letters, digits and symbols, and type it again under **Again**.
+1. Leave **HTTPS for the panel** off.
+1. On **What is this machine for?**, select **Server**. On macOS and Windows it is the only shape listed.
+1. On **Which ports?**, keep the ports as they are.
+1. On **Going out through a proxy**, leave **Set it up here** off.
+1. On **Ready**, select **Set this box up**.
+
+The steps run on the screen, and the title changes to **This hub is set up**.
 
 ::: warning
-The vault passphrase seals every credential the box holds, and a restore from backup requires it again. Write it down somewhere other than the box.
+The vault passphrase seals every credential the hub holds, and restoring a backup requires it. Write it down somewhere other than your computer.
 :::
 
 ## Sign in to the panel
 
-1. On **This box is a gateway**, select **Open the panel**.
-1. Type the panel password in **Panel password** and select **Sign in**.
+1. Select **Open the panel**.
+1. Type the panel password in **Panel password**.
+1. Select **Sign in**.
+1. In the sidebar, open **Devices**.
 
-The **Dashboard** opens. The sidebar has two groups, **Hub** and **Agent**.
+**Managed devices** lists your computer, because the wizard installed your computer's agent and joined it to the hub.
 
-## Add studio as a managed machine
+## Turn on EasyTier
 
-1. On `studio`, install the agent:
+1. In the sidebar, open **Access**.
+1. On the **EasyTier** card, turn on **Enable**.
+1. Select **Apply access**.
+1. Select the **EasyTier** card.
+1. Under **Settings**, select **EasyTier console**.
+1. In the EasyTier console, copy your console address.
+1. In the panel, paste it into **Console address**.
+1. Select **Apply EasyTier settings**.
 
-   ```bash
-   sudo apt install ./neutrino-agent_0.5.0_amd64.deb
-   ```
+<!-- 待核: where the EasyTier console shows the console address, and whether it is the whole tcp:// address or the token alone (outline item 2) -->
 
-1. In the panel, under **Hub**, open **Devices**.
-1. Select **Add by link**. A notice shows a link that works for thirty minutes.
-1. Select **Copy**.
-1. On `studio`, run the following command, with `<enroll-link>` replaced by the copied link:
+The card reads **Waiting for the console**. Your computer is now registered with the console and on no network yet.
 
-   ```bash
-   sudo nagent join '<enroll-link>'
-   ```
+![The EasyTier card in console mode, waiting for the console](/guide/en/overlay_easytier_console_waiting.webp)
 
-`studio` appears under **Managed devices**, beside `home-hub`, whose agent the wizard installed.
+## Attach your computer in the console
 
-## Join the client to the hub
+1. In the EasyTier console, open the list of devices. Your computer is listed there.
+1. Create a network for your computer: a name, a password, an address range, and a public server to meet at.
+1. Run the network on your computer.
 
-1. On `laptop`, install the client:
+<!-- 待核: the console's labels for the device list, the network form and running a network (outline item 2) -->
 
-   ```bash
-   sudo apt install ./neutrino-client_0.5.0_amd64.deb
-   ```
+![The EasyTier console's device list with your computer registered](/guide/console/console_easytier_devices.webp)
 
-1. In the panel, open **Clients** and select **New client link**.
-1. Type `laptop` as the name and select **Create link**.
-1. Select **Copy**. The link works for thirty minutes.
-1. On `laptop`, run `nclient gui` as yourself, without `sudo`. The **Neutrino client** window opens on **Hubs**.
-1. Under **Join a hub**, paste the link into the field and select **Join**.
+![The EasyTier console's form that creates a network](/guide/console/console_easytier_network_create.webp)
 
-The new hub row reads **Connected**, with the hub's address and `runs neutrino_hub/0.5.0`.
+In the panel, the EasyTier badge on **Access** reads **connected** or **no peers yet**, and **Networks from the console** lists the network.
 
-## Install the file share on studio
+<!-- 待核: which of the two badges shows while your computer is the only device on the network (outline item 4) -->
 
-1. In the panel, under **Agent**, open **Modules**.
-1. Select `studio` among the machines at the top of the page.
-1. Select the **File share** tab. If the tab is missing, select **+** beside the tabs and tick **File share**.
+![The network from the console listed on the Access page](/guide/en/overlay_easytier_console_networks.webp)
+
+## Share your computer's desktop
+
+1. In the sidebar, under **Agent**, open **Modules**.
+1. Select your computer among the machines at the top of the page.
+1. Select the **Remote desktop** tab.
+1. Turn on **Share this machine's desktop**.
+1. Select **Apply remote desktop**.
+
+![The Remote desktop tab with the desktop shared](/guide/en/modules_remote_desktop_tab.webp)
+
+On macOS, your computer's screen shows a prompt for RustDesk. In **System Settings** > **Privacy & Security**, turn on RustDesk under **Screen Recording** and under **Accessibility**. On Linux with a Wayland session, allow the screen sharing once at your computer's screen.
+
+## Install the file share
+
+1. On **Modules**, select the **File share** tab. If the tab is missing, select **+** beside the tabs and tick **File share**.
 1. Select **Install**, and wait until the tab no longer reads **installing**.
-1. Select **Configure**. The **Shares** and **Users** sections open under the buttons.
+1. Select **Configure**.
+
+On Linux the install fetches Samba. On macOS and Windows the file share drives the SMB server that comes with the system.
 
 ## Add a user and a share
 
-1. Under **Users**, type `alex` as the new user name and a password in the field beside it.
+1. Under **Users**, type a user name and a password in the two fields.
 1. Select **Add user**.
-1. Select **Apply users**. The row for `alex` reads **ready**.
+1. Select **Apply users**. The user's row reads **ready**.
 1. Under **Shares**, select **Add share**.
-1. Type `media` in **Name** and `/srv/media` in **Path**.
+1. Type a name for the share in **Name**.
+1. Type the path of a folder that exists on your computer in **Path**. On Windows the path starts at a drive, as in `C:\Users\Public\Documents`.
 1. Select **Apply shares**.
 
-The agent creates `/srv/media` on `studio` and publishes it as `media` to every client.
+## Install the app and join
 
-## Mount the share on your laptop
+1. On your phone, download `https://github.com/iffiX/neutrino/releases/download/v0.5.0/neutrino-client-0.5.0-android.apk`.
+1. Open the file and select **Install**. If Android shows a prompt first, allow your browser to install apps.
+1. Open **Neutrino**.
+1. In the panel, open **Clients**, then select **New client link**.
+1. Type a name for your phone, then select **Create link**. A QR code of the link appears.
+1. In the app, on **Hubs**, select **Join a hub**.
+1. Select **Allow the camera**, then allow it in Android's prompt.
+1. Point the camera at the QR code in the panel.
 
-1. In the client window, open **Files**. The `media` entry is listed with the address of `studio`. The client reaches it through the hub.
-1. On the `media` entry, select **Configure**.
-1. Type `alex` in **Share username** and its password in **Share password**.
-1. Leave **Mount path** at its default, `nas/media` under your home folder.
-1. Select **Save**.
-1. Select **Mount**.
+![The client link with its QR code on the Clients page](/guide/en/clients_link_qr.webp)
 
-The button changes to **Unmount**, and `~/nas/media` on `laptop` shows the files of `/srv/media` on `studio`.
+![The app's QR scanner on the Join a hub screen](/guide/en/app_join_scan.webp)
+
+The hub's row in the app reads **Connected · LAN**.
+
+## Connect your phone's virtual network
+
+1. On the hub's row, on the **Virtual network** line, select **Connect**.
+1. In Android's VPN connection request, select **OK**. The line reads **Connecting…** with **This machine is registered with the console. Attach it to a network there.** under it.
+1. In the EasyTier console, attach your phone to the network your computer is on.
+
+<!-- 待核: the console's label for attaching a device, and the name the phone has in the console (outline item 2) -->
+
+![Android's VPN connection request](/guide/en/app_vpn_prompt.webp)
+
+![The virtual network line waiting for the console](/guide/en/app_hub_console_waiting.webp)
+
+![The EasyTier console attaching the phone to the network](/guide/console/console_easytier_device_attach.webp)
+
+The line reads **Connected ·** and your phone's address on the network.
+
+## Use your computer from mobile data
+
+Every step from here runs on your phone, away from your Wi-Fi.
+
+### Leave the Wi-Fi
+
+- Turn off Wi-Fi on your phone.
+
+The hub's row reads **Connected · EasyTier** with the round trip in milliseconds. The app now reaches the hub through the EasyTier network your phone and your computer are on.
+
+![The hub row connected through EasyTier](/guide/en/app_hub.webp)
+
+### See the desktop
+
+1. Open **Remote desktops**.
+1. On your computer's row, select **Connect**.
+
+The viewer fills the screen with your computer's desktop. Three round buttons at the top right open the keyboard, send special keys, and end the session.
+
+![Your computer's desktop in the app's viewer](/guide/en/app_rdp_viewer.webp)
+
+### Open the shared folder
+
+1. Open **Files**.
+1. On the share's row, select **Open in Files**.
+1. Type the user name in **Share username** and its password in **Share password**.
+1. Leave **Remember** ticked.
+1. Select **Connect**.
+
+The share appears in Android's Files app, and the folder's files open from there.
+
+![The share in Android's Files app](/guide/en/app_files_provider.webp)
+
+### Open a terminal
+
+1. Open **Terminals**.
+1. Select your computer.
+1. Select **New terminal**.
+1. Type `ls` and press Enter.
+
+The terminal lists the files of the folder it starts in. On Windows the terminal is PowerShell, and on Linux and macOS it is root's login shell.
+
+![A terminal on your computer in the app](/guide/en/app_terminal.webp)
