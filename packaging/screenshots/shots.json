@@ -1,5 +1,5 @@
 {
-  "_comment": "One entry per image. language is the directory under images/guide: en, zh, or os for a system dialog shown once on both language pages. page is the English page path under docs/guide; a zh entry belongs to zh-CN/<page>, an os entry to both. source says who captures it: panel and client by capture.py, app by adb on the emulator, os by hand. pending lists pages, by English path, that are being rewritten and are left out of check_shots.py.",
+  "_comment": "One entry per image. language is the directory under images/guide: en, zh, os for a system dialog shown once on both language pages, or console for a NetBird or EasyTier console page shown once on both. page is the English page path under docs/guide, and pages lists more pages one image serves; a zh entry belongs to zh-CN/<page>, an os or console entry to both. source says who captures it: panel, client and console by capture.py, the console ones from the profile --console-login signs in, app by adb on the emulator, os by hand. hide lists CSS selectors hidden before the shot. pending lists pages, by English path, that are being rewritten and are left out of check_shots.py.",
   "viewports": {
     "desktop": {
       "width": 1440,

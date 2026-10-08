@@ -3,9 +3,10 @@
 Fails when a page references a screenshot the table does not name for that
 page, or when the table names a screenshot its page does not reference. A
 screenshot is referenced as ``/guide/<language>/<name>.webp`` and named in
-``shots.json`` as ``<name>.png`` under its English page path; a ``zh`` entry
-belongs to the page under ``zh-CN/``, and an ``os`` entry to both. Pages the
-table lists as pending are skipped.
+``shots.json`` as ``<name>.png`` under its English page path, in ``page`` or
+in ``pages``; a ``zh`` entry belongs to the page under ``zh-CN/``, and an
+``os`` or ``console`` entry to both. Pages the table lists as pending are
+skipped.
 
 Run from anywhere: ``python3 packaging/screenshots/check_shots.py``.
 """
@@ -23,7 +24,9 @@ CHINESE_PREFIX = "zh-CN/"
 SKIPPED_DIRS = {"node_modules", ".vitepress", "public"}
 SKIPPED_PAGES = {"README.md"}
 # An image the build copies from images/guide/: /guide/<dir>/<name>.<ext>.
-IMAGE_REFERENCE = re.compile(r"/guide/(en|zh|os)/([A-Za-z0-9_]+)\.(?:webp|png)")
+IMAGE_REFERENCE = re.compile(r"/guide/(en|zh|os|console)/([A-Za-z0-9_]+)\.(?:webp|png)")
+# The directories whose one image both language pages show.
+SHARED_DIRECTORIES = ("os", "console")
 
 
 def guide_pages() -> list:
@@ -46,6 +49,20 @@ def english_path(page: str) -> str:
     return page.removeprefix(CHINESE_PREFIX)
 
 
+def shot_pages(shot: dict) -> list:
+    """The English page paths one entry belongs to: ``page``, then ``pages``.
+
+    Args:
+        shot: The shot table's entry.
+
+    Returns:
+        The paths in the entry's order, each once.
+    """
+    pages = [shot["page"]] if "page" in shot else []
+    pages.extend(page for page in shot.get("pages", []) if page not in pages)
+    return pages
+
+
 def named_images(table: dict) -> set:
     """Every (page, directory, name) the table names.
 
@@ -58,12 +75,12 @@ def named_images(table: dict) -> set:
     named = set()
     for shot in table["shots"]:
         name = shot["file"].removesuffix(".png")
-        page = shot["page"]
         language = shot["language"]
-        if language in ("en", "os"):
-            named.add((page, language, name))
-        if language in ("zh", "os"):
-            named.add((CHINESE_PREFIX + page, language, name))
+        for page in shot_pages(shot):
+            if language == "en" or language in SHARED_DIRECTORIES:
+                named.add((page, language, name))
+            if language == "zh" or language in SHARED_DIRECTORIES:
+                named.add((CHINESE_PREFIX + page, language, name))
     return named
 
 
@@ -106,7 +123,7 @@ def main() -> int:
             f"{page}: shots.json names {directory}/{name}.png, the page does not use it"
         )
     missing = sorted(
-        {shot["page"] for shot in table["shots"]}
+        {page for shot in table["shots"] for page in shot_pages(shot)}
         - {english_path(page) for page in guide_pages()}
     )
     for page in missing:

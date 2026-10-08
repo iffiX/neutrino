@@ -3,16 +3,17 @@
 This directory holds the guide's shot table and the tool that captures it. Each
 image the guide shows has one entry in `shots.json`, and every captured image
 lands in `images/guide/<language>/<name>.png`. The docs build turns each png
-into the webp the pages reference.
+into the webp the pages reference. An entry with `pages` serves every page it
+lists from one image.
 
 ## Files
 
 | File | What it holds |
 | --- | --- |
-| `shots.json` | One entry per image: file, language directory, page, source, viewport, element, what to wait for, the state the hub must be in, the manual step when one is needed, and `redraw_qr`, the stand-in text a shot's QR code is redrawn from. |
+| `shots.json` | One entry per image: file, language directory, page or `pages`, source, viewport, element, what to wait for, the state the hub must be in, the manual step when one is needed, `redraw_qr`, the stand-in text a shot's QR code is redrawn from, and `hide`, the CSS selectors hidden before the shot. |
 | `redact.json` | The patterns and literal strings replaced inside the page before each shot. |
 | `redact.local.json` | Optional, ignored by git: more `literals` in the same shape, for names you do not commit. |
-| `capture.py` | Signs in to the panel, takes the panel and client shots, and prints what it replaced in each. |
+| `capture.py` | Signs in to the panel, takes the panel, client and console shots, and prints what it replaced in each. |
 | `client_window.py` | Serves the desktop client's window page from `client_state.json`, for the client shots. |
 | `client_state.json` | The state the client window draws, with made-up hubs, addresses and names. |
 | `check_shots.py` | Fails when a page uses an image the table does not name, or the table names an image no page uses. `npm run check` in `docs/guide` runs it. |
@@ -39,8 +40,28 @@ language for each language's shots and sets it back at the end.
 1. Read the report printed after each shot, and look at each image for anything the rules missed.
 
 `--only <name> ...` takes the named shots only, `--language en` or `--language zh`
-one language, and `--source client` the client window's shots, which need no
-panel.
+one language, `--source client` the client window's shots, which need no
+panel, and `--source console` the console shots.
+
+## Capture the console shots
+
+The `console` entries are pages of the NetBird and EasyTier consoles, saved as
+`images/guide/console/<name>.png` and shown on both language pages. They are
+taken from a browser profile that stays signed in between runs. The profile is
+the directory `NEUTRINO_CONSOLE_PROFILE` names, or
+`~/.cache/neutrino/screenshots/console_profile` when the variable is not set;
+the tool creates it with mode 700, outside the repository. Delete the directory
+when the shots are done.
+
+1. Run `python3 capture.py --console-login <console-url>`, with the address of each console you need in place of `<console-url>`.
+1. Sign in to each console in the window that opens.
+1. Press Enter in the terminal, and the window closes with the sign-in kept.
+1. Run `python3 capture.py --source console`. Each shot opens in a visible window, and an entry with a `manual` step stops until you press Enter, as for the panel shots.
+1. Read the report, and look at each image for anything the rules missed.
+
+An entry's `hide` lists the CSS selectors of what the rules cannot reach, such
+as an avatar or an account menu; each match is hidden before the rules run and
+keeps its place in the layout.
 
 ## Capture the Android shots
 
@@ -63,9 +84,12 @@ The `os` entries are system dialogs, taken by hand on that system and saved as
 ## What is replaced
 
 `redact.json` replaces, in text, form values, `title` and `aria-label`:
-enrolment links, hex fingerprints, MAC addresses, `etk_` tokens, `sk-` keys,
-e-mail addresses, NetBird peer names, and IPv4 addresses outside the private,
-shared, loopback and link-local ranges. The literal strings replace host and
-account names. A shot with `redraw_qr` has its `.qr_code` redrawn by the tool
-from that stand-in text before the rules run. Other drawn content, such as a
-chart, is left as it is.
+enrolment links, NetBird setup keys, EasyTier console addresses, WireGuard
+keys, hex fingerprints, MAC addresses, NetBird keys shown masked, `etk_`
+tokens, `sk-` keys, e-mail addresses, NetBird peer names, and IPv4 addresses
+outside the private, shared, loopback and link-local ranges. The literal
+strings replace host and account names, and `redact.local.json` holds the
+ones you do not commit. A shot with `redraw_qr` has its `.qr_code` image
+replaced by the tool with a code of that stand-in text before the rules run,
+and a shot with `hide` has its listed elements hidden. Other drawn content,
+such as a chart, is left as it is.
