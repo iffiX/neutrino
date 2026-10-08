@@ -1459,8 +1459,8 @@
       "element": "viewport",
       "wait_for": "text=Setup keys are pre-authentication keys",
       "state": "The owner's NetBird account with a reusable key named Test and the one-off keys the console created on its own; the survey banner is closed first.",
-      "press": [
-        "div.fixed.z-50.w-full:has-text(\"survey\") button"
+      "hide": [
+        "div.fixed.z-50.w-full:has-text(\"survey\")"
       ]
     },
     {
@@ -1474,13 +1474,15 @@
       "wait_for": "text=Setup keys are pre-authentication keys",
       "state": "The Create New Setup Key dialog with the name test typed in and Make this key reusable switched on; nothing is created.",
       "press": [
-        "div.fixed.z-50.w-full:has-text(\"survey\") button",
         "button:has-text(\"Create Key\")",
         "[role=\"dialog\"] [role=\"switch\"] >> nth=0"
       ],
       "fill": {
         "[role=\"dialog\"] input[placeholder=\"e.g., AWS Servers\"]": "test"
-      }
+      },
+      "hide": [
+        "div.fixed.z-50.w-full:has-text(\"survey\")"
+      ]
     },
     {
       "file": "console_netbird_key_created.png",
@@ -1502,14 +1504,18 @@
       "viewport": "wide",
       "url": "https://app.netbird.io/networks",
       "element": "viewport",
-      "wait_for": "text=Networks",
-      "state": "A NetBird network whose routing peer is the hub and whose resource is the LAN subnet.",
-      "manual": "Open that network so its routing peers and resources are both in view.",
+      "wait_for": "text=/Add Network/i",
+      "state": "The lab network's own page in the owner's NetBird console: one resource, one policy and the hub as its routing peer.",
       "hide": [
-        "header img",
-        "header button:has(img)"
+        "div.fixed.z-50.w-full:has-text(\"survey\")"
       ],
-      "_todo": "Not verified against the NetBird console: the page path, the wait_for text, the dialog role and the hide selectors for the avatar and account menu."
+      "fill": {
+        "input[placeholder^=\"Search by network\"]": "lab"
+      },
+      "press": [
+        "text=\"The lab hub's LAN\""
+      ],
+      "wait_after": "text=/Routing Peers/i"
     },
     {
       "file": "console_netbird_policy.png",
@@ -1517,16 +1523,16 @@
       "page": "scenarios/netbird_lan_routes.md",
       "source": "console",
       "viewport": "wide",
-      "url": "https://app.netbird.io/acls",
-      "element": "[role=\"dialog\"]",
-      "wait_for": "[role=\"dialog\"]",
-      "state": "A policy whose source is the setup key's auto-assigned group and whose destination is the LAN resource.",
-      "manual": "Open that policy from Access Control, Policies, and leave it open.",
+      "url": "https://app.netbird.io/access-control",
+      "element": "viewport",
+      "wait_for": "text=/Add Policy/i",
+      "state": "The Access Control page with the policy lab LAN access (source All, destination the resource lab LAN); the other policies' rows are hidden.",
       "hide": [
-        "header img",
-        "header button:has(img)"
+        "div.fixed.z-50.w-full:has-text(\"survey\")"
       ],
-      "_todo": "Not verified against the NetBird console: the page path, the wait_for text, the dialog role and the hide selectors for the avatar and account menu."
+      "fill": {
+        "input[placeholder^=\"Search by name\"]": "lab LAN"
+      }
     },
     {
       "file": "console_easytier_devices.png",
@@ -1537,16 +1543,13 @@
       ],
       "source": "console",
       "viewport": "wide",
-      "url": "https://console.easytier.net/",
+      "url": "https://console.easytier.net/index.html#/devices",
       "element": "viewport",
-      "wait_for": "body",
-      "state": "The EasyTier console's device list with the hub registered.",
-      "manual": "Open the device list.",
+      "wait_for": "table tbody tr",
+      "state": "The EasyTier console's device list with the hub online and approved under the key Test; the owner's other devices' rows are hidden.",
       "hide": [
-        "input[type=\"password\"]",
-        "header img"
-      ],
-      "_todo": "Not verified against the EasyTier console: its address, the wait_for, the device list, the network form, the subnet proxy field and the hide selectors."
+        "table tbody tr:not(:has-text(\"Debian\"))"
+      ]
     },
     {
       "file": "console_easytier_network_create.png",
@@ -1557,16 +1560,20 @@
       ],
       "source": "console",
       "viewport": "wide",
-      "url": "https://console.easytier.net/",
+      "url": "https://console.easytier.net/index.html#/networks",
       "element": "viewport",
-      "wait_for": "body",
-      "state": "The EasyTier console's device list with the hub registered.",
-      "manual": "Open the network form for the hub's device and fill it: a network name, a secret, the hub's virtual address, a public server as the peer; leave it unsaved.",
+      "wait_for": "text=\"创建网络\"",
+      "state": "The create-network dialog of the EasyTier console with the name home typed; nothing is created.",
       "hide": [
         "input[type=\"password\"]",
         "header img"
       ],
-      "_todo": "Not verified against the EasyTier console: its address, the wait_for, the device list, the network form, the subnet proxy field and the hide selectors."
+      "press": [
+        "button:has-text(\"创建网络\")"
+      ],
+      "fill": {
+        ".n-modal input.n-input__input-el >> nth=0": "home"
+      }
     },
     {
       "file": "console_easytier_device_attach.png",
@@ -1577,16 +1584,20 @@
       ],
       "source": "console",
       "viewport": "wide",
-      "url": "https://console.easytier.net/",
+      "url": "https://console.easytier.net/index.html#/networks",
       "element": "viewport",
-      "wait_for": "body",
-      "state": "The EasyTier console's device list with the hub on its network and your phone registered.",
-      "manual": "Open the form that attaches your phone to the hub's network; leave it unsaved.",
+      "wait_for": "text=\"测试网络\"",
+      "state": "The test network's attach-device dialog with its device picker open, listing the devices that can be attached.",
       "hide": [
         "input[type=\"password\"]",
         "header img"
       ],
-      "_todo": "Not verified against the EasyTier console: its address, the wait_for, the device list, the network form, the subnet proxy field and the hide selectors."
+      "press": [
+        "text=\"测试网络\"",
+        "button:has-text(\"挂载设备\")",
+        ".n-modal .n-base-selection"
+      ],
+      "wait_after": ".n-base-select-option"
     },
     {
       "file": "console_easytier_subnet_proxy.png",
@@ -1594,16 +1605,19 @@
       "page": "scenarios/easytier_lan_routes.md",
       "source": "console",
       "viewport": "wide",
-      "url": "https://console.easytier.net/",
+      "url": "https://console.easytier.net/index.html#/networks",
       "element": "viewport",
-      "wait_for": "body",
-      "state": "The EasyTier console with the hub on its network.",
-      "manual": "Open the hub device's network config and fill the subnet proxy field with the LAN subnet; leave it unsaved.",
+      "wait_for": "text=\"测试网络\"",
+      "state": "The test network's subnet-route tab listing 192.168.8.0/24 through the hub.",
       "hide": [
         "input[type=\"password\"]",
         "header img"
       ],
-      "_todo": "Not verified against the EasyTier console: its address, the wait_for, the device list, the network form, the subnet proxy field and the hide selectors."
+      "press": [
+        "text=\"测试网络\"",
+        ".n-tabs-tab__label:has-text(\"子网路由\")"
+      ],
+      "wait_after": "text=192.168.8.0/24"
     },
     {
       "file": "os_mac_keychain_trust.png",

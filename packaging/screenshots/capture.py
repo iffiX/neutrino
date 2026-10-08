@@ -116,19 +116,6 @@ REDACT_SCRIPT = """
 
 # Runs inside the page: hides every element the selectors match, and returns
 # how many.
-HIDE_SCRIPT = """
-(selectors) => {
-  let count = 0;
-  for (const selector of selectors) {
-    for (const element of document.querySelectorAll(selector)) {
-      element.style.visibility = 'hidden';
-      count += 1;
-    }
-  }
-  return count;
-}
-"""
-
 # The panel's QR code image, and the border it draws around the code.
 QR_SELECTOR = "img.qr_code"
 QR_BORDER_MODULES = 4
@@ -188,15 +175,21 @@ def hide(page, selectors: list) -> int:
 
     Args:
         page: The Playwright page.
-        selectors: CSS selectors.
+        selectors: Playwright selectors, CSS or its own engines such as
+            ``:has-text()``.
 
     Returns:
         How many elements were hidden.
 
     Raises:
-        playwright.sync_api.Error: When the page is gone or a selector is not CSS.
+        playwright.sync_api.Error: When the page is gone or a selector is bad.
     """
-    return page.evaluate(HIDE_SCRIPT, selectors)
+    count = 0
+    for selector in selectors:
+        for handle in page.locator(selector).element_handles():
+            handle.evaluate("element => { element.style.visibility = 'hidden'; }")
+            count += 1
+    return count
 
 
 def read_rules() -> list:
@@ -327,6 +320,10 @@ def take(
         page.wait_for_timeout(PRESS_SETTLE_MS)
     for selector, text in shot.get("fill", {}).items():
         page.locator(resolve(selector, labels)).first.fill(text)
+    if shot.get("wait_after"):
+        page.wait_for_selector(
+            resolve(shot["wait_after"], labels), timeout=WAIT_TIMEOUT_MS
+        )
     try:
         page.wait_for_load_state("networkidle", timeout=NETWORK_IDLE_TIMEOUT_MS)
     except PlaywrightTimeoutError:

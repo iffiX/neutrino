@@ -78,7 +78,7 @@
   "literals": [
     {
       "find": "nmxhub",
-      "replace": "home-hub"
+      "replace": "hub"
     }
   ]
 }

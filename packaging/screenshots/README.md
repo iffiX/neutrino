@@ -96,4 +96,4 @@ such as a chart, is left as it is.
 
 ## Entries that open something first
 
-An entry may carry `press`, a list of selectors clicked in order before the shot (a button that opens a dialog), and `fill`, a map of selector to the text typed into it; both run before `manual` and before `wait_for`. `{ui.key}` placeholders are resolved in them as in `element`.
+An entry may carry `press`, a list of selectors clicked in order before the shot (a button that opens a dialog), and `fill`, a map of selector to the text typed into it; both run before `manual` and before `wait_for`. `{ui.key}` placeholders are resolved in them as in `element`. An entry may also carry `wait_after`, a selector waited for after the presses and fills, for a dialog or a table that takes a moment to appear.
