@@ -59,7 +59,7 @@ title: NetBird
 | **管理面不可达**（management unreachable） | 中枢连不上 NetBird 的管理面             | 检查这台机器的上行线路和 DNS，确认管理面地址填对了    |
 | **未运行**（not running）                  | NetBird 守护进程没有运行                | 在外部访问页关掉再打开 NetBird，选择 **应用外部访问** |
 
-上次登录失效时，设置里提示上次的登录已失效，要用新的 setup key 重新加入。管理面不可达时，设置里写着 **管理面不可达。**（Management plane unreachable.）
+上次登录失效时，设置里写着 **上次的登录已失效，请用新的 setup key 重新加入。**（The last login has expired. Join again with a new setup key.）管理面不可达时，设置里写着 **管理面不可达。**（Management plane unreachable.）
 
 ## 换掉交给客户端的 key
 

@@ -38,7 +38,7 @@ Windows 上打开一个普通的 PowerShell 窗口，运行：
 irm https://github.com/iffiX/neutrino/releases/latest/download/install.ps1 | iex
 ```
 
-脚本只要一次管理员权限：Linux 和 macOS 上输入你的登录密码，Windows 上在弹出的授权框里选 **是**。Windows 上，脚本随后换到一个新开的 PowerShell 窗口里运行。脚本用发布页的 `SHA256SUMS` 核对安装包，然后安装。装好后，终端打印设置向导的地址，地址末尾带一次性令牌。终端保持开着，向导在浏览器里回答。
+脚本只要一次管理员权限：Linux 和 macOS 上输入你的登录密码，Windows 上在弹出的授权框里选 **是**。Windows 上，脚本随后换到一个新开的 PowerShell 窗口里运行。脚本用发布页的 `SHA256SUMS` 核对安装包，然后安装。装好后，终端打印设置向导的地址，地址末尾带一次性令牌。终端保持开着，向导在浏览器里填写。
 
 国内版的安装命令见[安装中枢](./install/hub.md)。
 

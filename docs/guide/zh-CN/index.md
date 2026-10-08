@@ -42,4 +42,4 @@ features:
     link: /zh-CN/reference/platforms
 ---
 
-微子（Neutrino）用一台常开的机器管理一个人或一个家庭的所有机器。中枢装在这台机器上：Linux 上可以是任意网络形态，macOS 和 Windows 上是服务器形态。中枢决定网络形态，提供从外面连回中枢的办法，把选定的流量交给出口节点，还提供一个 AI 网关和一个在浏览器里打开的面板。Linux、Windows 和 Mac 上的被控端提供 AI 工具、文件共享、终端、远程桌面、Gitea、VS Code、code-server、CloudCLI、容器和 ZFS 存储；电脑和 Android 手机上的客户端，用一个按钮打开其中每一项。
+微子（Neutrino）用一台常开的机器管理一个人或一个家庭的所有机器。中枢装在这台机器上：Linux 上可以是任意网络形态，macOS 和 Windows 上是服务器形态。中枢设定网络形态，提供从外面连回中枢的办法，把选定的流量交给出口节点，还提供一个 AI 网关和一个在浏览器里打开的面板。Linux、Windows 和 Mac 上的被控端提供 AI 工具、文件共享、终端、远程桌面、Gitea、VS Code、code-server、CloudCLI、容器和 ZFS 存储；电脑和 Android 手机上的客户端，用一个按钮打开其中每一项。

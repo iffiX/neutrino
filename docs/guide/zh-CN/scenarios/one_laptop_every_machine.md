@@ -106,9 +106,7 @@ title: 一台笔记本，管家里所有机器
 
 ## 在中枢机器上打开 VS Code
 
-VS Code 实例以一个账户的身份运行，这个账户要在 `hub` 上存在。下面用你自己在 `hub` 上的账户。
-
-### 装上 VS Code
+VS Code 实例以一个账户的身份运行，这个账户要在 `hub` 上存在。下面用你自己在 `hub` 上的账户。先装上 VS Code：
 
 1. 回到 **模块** 页，改选 `hub`。
 1. 如果没有 **VS Code** 标签，选择 **+**，勾上 VS Code。
@@ -116,7 +114,7 @@ VS Code 实例以一个账户的身份运行，这个账户要在 `hub` 上存�
 1. 选择 **打开并接受条款**（Open and accept the terms）。
 1. 选择 **安装**（Install）。
 
-### 加一个实例
+再加一个实例：
 
 1. 选择 **配置**（Configure）。
 1. 选择 **添加实例**（Add instance）。
@@ -127,8 +125,6 @@ VS Code 实例以一个账户的身份运行，这个账户要在 `hub` 上存�
 
 ![VS Code 标签上，hub 的一个实例正在运行](/guide/zh/vscode_panel.webp)
 
-### 从客户端打开
-
-客户端的 **网页**（Web）页多出一行，标题是 VS Code 加你的账户名。选择这一行的 **打开**（Open）。系统浏览器打开 VS Code，地址是 `laptop` 本机回环地址上的一个端口。
+这时客户端的 **网页**（Web）页多出一行，标题是 VS Code 加你的账户名。选择这一行的 **打开**（Open）。系统浏览器打开 VS Code，地址是 `laptop` 本机回环地址上的一个端口。
 
 ![客户端的网页页，VS Code 那一行已转发到本机端口](/guide/zh/client_web_vscode.webp)
