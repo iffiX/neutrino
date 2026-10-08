@@ -4,15 +4,15 @@ title: Supported platforms
 
 # Supported platforms
 
-Neutrino 0.5.0 has four installable parts: the hub, the agent, the desktop client and the Android app. Each table here names the systems one part installs on, with its release file. Every file is on the [releases page](https://github.com/iffiX/neutrino/releases), beside `SHA256SUMS` and the source archive. Every build is 64-bit.
+This page lists the systems each part of Neutrino 0.5.0 installs on, with its release file: the hub, the agent, the desktop client and the Android app. Every file is on the [releases page](https://github.com/iffiX/neutrino/releases), beside `SHA256SUMS` and the source archive. Every build is 64-bit.
 
 ## Hub
 
 | System                                                                                   | Architecture | File                                      |
 | ---------------------------------------------------------------------------------------- | ------------ | ----------------------------------------- |
-| Debian 12 and newer, Ubuntu 22.04 and newer, Raspberry Pi OS 64-bit (bookworm and newer) | x86-64       | `neutrino-hub_0.5.0_amd64.deb`            |
+| Debian 12 and newer, Ubuntu 22.04 and newer, Raspberry Pi OS 64-bit, bookworm and newer  | x86-64       | `neutrino-hub_0.5.0_amd64.deb`            |
 | the same                                                                                 | ARM64        | `neutrino-hub_0.5.0_arm64.deb`            |
-| Fedora 41 and newer; RHEL 9 family (AlmaLinux, Rocky) with EPEL enabled first            | x86-64       | `neutrino-hub-0.5.0-1.x86_64.rpm`         |
+| Fedora 41 and newer; RHEL 9 family, such as AlmaLinux and Rocky, with EPEL enabled first | x86-64       | `neutrino-hub-0.5.0-1.x86_64.rpm`         |
 | the same                                                                                 | ARM64        | `neutrino-hub-0.5.0-1.aarch64.rpm`        |
 | Arch, EndeavourOS, Manjaro                                                               | x86-64       | `neutrino-hub-0.5.0-1-x86_64.pkg.tar.zst` |
 | Windows 10 1809 and newer, Windows 11, server mode only                                  | x86-64       | `neutrino-hub-0.5.0-windows-amd64.msi`    |
@@ -35,21 +35,21 @@ On the Debian family the dhcpcd dependency reads `dhcpcd-base | dhcpcd5`, becaus
 | macOS 12.3 and newer on Apple silicon                               | ARM64        | `neutrino-agent-0.5.0-macos-arm64.pkg`   |
 | macOS 12.3 and newer on Intel                                       | x86-64       | `neutrino-agent-0.5.0-macos-amd64.pkg`   |
 
-The agent has no window. On Linux it runs as root, and its package includes its own interpreter and the RustDesk host. On Windows it runs as a LocalSystem service and on macOS as a root LaunchDaemon.
+The agent has no window. Its Linux package includes its own interpreter and the RustDesk host.
 
 The Windows and macOS installers put RustDesk in the agent's own directory. The agent registers it with the system only while the machine's **Remote desktop** switch is on. Windows 10 1809 is the first release with the pseudo console the terminal runs on. The Windows build is x86-64 only, because RustDesk publishes no Windows ARM64 build.
 
 ## Desktop client
 
-| System                                                                           | Architecture | File                                      |
-| -------------------------------------------------------------------------------- | ------------ | ----------------------------------------- |
-| Debian 12 and newer, Ubuntu 22.04 and newer, with a desktop session              | x86-64       | `neutrino-client_0.5.0_amd64.deb`         |
-| the same                                                                         | ARM64        | `neutrino-client_0.5.0_arm64.deb`         |
-| RHEL 9 family (AlmaLinux, Rocky) and Fedora 41 and newer, with a desktop session | x86-64       | `neutrino-client-0.5.0-1.x86_64.rpm`      |
-| the same                                                                         | ARM64        | `neutrino-client-0.5.0-1.aarch64.rpm`     |
-| Windows 10 1809 and newer, Windows 11                                            | x86-64       | `neutrino-client-0.5.0-windows-amd64.msi` |
-| macOS 12.3 and newer on Apple silicon                                            | ARM64        | `neutrino-client-0.5.0-macos-arm64.pkg`   |
-| macOS 12.3 and newer on Intel                                                    | x86-64       | `neutrino-client-0.5.0-macos-amd64.pkg`   |
+| System                                                                                      | Architecture | File                                      |
+| ------------------------------------------------------------------------------------------- | ------------ | ----------------------------------------- |
+| Debian 12 and newer, Ubuntu 22.04 and newer, with a desktop session                         | x86-64       | `neutrino-client_0.5.0_amd64.deb`         |
+| the same                                                                                    | ARM64        | `neutrino-client_0.5.0_arm64.deb`         |
+| RHEL 9 family, such as AlmaLinux and Rocky, and Fedora 41 and newer, with a desktop session | x86-64       | `neutrino-client-0.5.0-1.x86_64.rpm`      |
+| the same                                                                                    | ARM64        | `neutrino-client-0.5.0-1.aarch64.rpm`     |
+| Windows 10 1809 and newer, Windows 11                                                       | x86-64       | `neutrino-client-0.5.0-windows-amd64.msi` |
+| macOS 12.3 and newer on Apple silicon                                                       | ARM64        | `neutrino-client-0.5.0-macos-arm64.pkg`   |
+| macOS 12.3 and newer on Intel                                                               | x86-64       | `neutrino-client-0.5.0-macos-amd64.pkg`   |
 
 The Linux client opens its window on either WebKitGTK ABI, 4.1 or 4.0, and needs `cifs-utils` and polkit for shares. Without the AppIndicator library, the tray is drawn as a GTK status icon. The Windows build is x86-64 only, because cc-switch publishes no Windows ARM64 build, and its installer adds WebView2 when the runtime is absent.
 
@@ -60,6 +60,23 @@ The Linux client opens its window on either WebKitGTK ABI, 4.1 or 4.0, and needs
 | Android 8.0 and newer | arm64-v8a    | `neutrino-client-0.5.0-android.apk` |
 
 Android 8.0 is API level 26, the `minSdk` the app declares, and the phone's installer rejects the app on an older system.
+
+## What each part runs as
+
+| Part              | Runs on                                                                          | Runs as                                                                                 |
+| ----------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `neutrino-hub`    | one machine: Linux in any network shape, or macOS or Windows in the server shape | a root service on Linux, a root LaunchDaemon on macOS, a LocalSystem service on Windows |
+| `neutrino-agent`  | each managed machine, the hub's own machine included                             | the same as the hub, with no window                                                     |
+| `neutrino-client` | a person's Linux, Windows or macOS computer                                      | that person's own account                                                               |
+| the Android app   | a phone or a tablet                                                              | an app of the phone's owner                                                             |
+
+`nhub setup` also installs an agent on the hub's own machine, so that machine hosts modules like any other managed machine.
+
+## Versions and protocol
+
+Every part of one release speaks the same protocol number, and every 0.5.0 build speaks protocol 3. A 0.5.0 hub admits protocol 3 alone. It rejects a 0.3 or 0.4 agent or client, which speaks protocol 1 or 2, with `protocol_too_old`, and a newer program with `protocol_too_new`; the rejected program keeps its binding. An agent the hub admits updates itself when the hub names a newer version, and a 0.3 or 0.4 agent does not.
+
+A 0.4 hub does not update to 0.5.0 in place. [Settings](../hub/settings.md#coming-from-0-4) gives the order of the move, and [The channel](../protocol/channel.md#protocol-numbers) lists the protocol numbers.
 
 ## Editions
 
