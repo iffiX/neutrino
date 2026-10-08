@@ -94,6 +94,7 @@ EasyTier 用控制台模式时，登录之后这一行仍写 **连接中…**，
 | `bundle_missing`          | 这份安装里没有 NetBird 或 EasyTier，重装客户端        |
 | `overlay_join_failed`     | 引擎没让本机加入，码后面是引擎自己的原话              |
 | `overlay_no_address`      | 90 秒内引擎没给本机分地址                             |
+| `overlay_hub_unseen`      | 引擎给了地址，但 90 秒内没在网上看到中枢              |
 | `overlay_console_invalid` | 中枢给的 EasyTier 控制台地址，本机的 EasyTier 用不了  |
 | `overlay_withdrawn`       | 中枢不再提供这个网络                                  |
 
