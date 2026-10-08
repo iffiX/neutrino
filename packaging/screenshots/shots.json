@@ -1,5 +1,5 @@
 {
-  "_comment": "One entry per image. language is the directory under images/guide: en, zh, os for a system dialog shown once on both language pages, or console for a NetBird or EasyTier console page shown once on both. page is the English page path under docs/guide, and pages lists more pages one image serves; a zh entry belongs to zh-CN/<page>, an os or console entry to both. source says who captures it: panel, client and console by capture.py, the console ones from the profile --console-login signs in, app by adb on the emulator, os by hand. hide lists CSS selectors hidden before the shot. pending lists pages, by English path, that are being rewritten and are left out of check_shots.py.",
+  "_comment": "One entry per image. language is the directory under images/guide: en, zh, os for a system dialog shown once on both language pages, or console for a NetBird or EasyTier console page shown once on both. page is the English page path under docs/guide, and pages lists more pages one image serves; a zh entry belongs to zh-CN/<page>, an os or console entry to both. source says who captures it: panel, client and console by capture.py, the console ones from the profile --console-login signs in, app by adb on the emulator, os by hand. hide lists CSS selectors hidden before the shot. pending lists pages, by English path, that are being rewritten and are left out of check_shots.py. _todo inside an entry notes a selector not yet verified against the live page; the tools ignore it.",
   "viewports": {
     "desktop": {
       "width": 1440,
@@ -10,7 +10,23 @@
       "height": 860
     }
   },
-  "pending": [],
+  "pending": [
+    "scenarios/choose_a_way_in.md",
+    "scenarios/one_computer_from_your_phone.md",
+    "scenarios/one_laptop_every_machine.md",
+    "scenarios/netbird_lan_routes.md",
+    "scenarios/easytier_lan_routes.md",
+    "hub/overlay.md",
+    "hub/netbird.md",
+    "hub/easytier.md",
+    "hub/clients.md",
+    "agent/modules.md",
+    "agent/modules/cloudcli.md",
+    "agent/modules/ai_tools.md",
+    "agent/modules/remote_desktop.md",
+    "agent/modules/terminal.md",
+    "client/android.md"
+  ],
   "shots": [
     {
       "file": "setup_secrets.png",
@@ -183,8 +199,8 @@
       "url": "/overlay",
       "element": "viewport",
       "wait_for": ".page",
-      "state": "NetBird and EasyTier both enabled and running.",
-      "manual": "Scroll so both engine cards and their switches are in view."
+      "state": "Direct, SSH Relay, NetBird and EasyTier enabled and running, so all four cards are on.",
+      "manual": "Scroll so all four cards and their switches are in view."
     },
     {
       "file": "overlay_switches.png",
@@ -195,37 +211,145 @@
       "url": "/overlay",
       "element": "viewport",
       "wait_for": ".page",
-      "state": "NetBird and EasyTier both enabled and running.",
-      "manual": "Scroll so both engine cards and their switches are in view."
+      "state": "Direct, SSH Relay, NetBird and EasyTier enabled and running, so all four cards are on.",
+      "manual": "Scroll so all four cards and their switches are in view."
     },
     {
-      "file": "overlay_easytier_settings.png",
+      "file": "overlay_direct_settings.png",
       "language": "en",
       "page": "hub/overlay.md",
       "source": "panel",
       "viewport": "desktop",
       "url": "/overlay",
-      "element": "viewport",
-      "wait_for": ".page",
-      "state": "EasyTier enabled and running.",
-      "manual": "Select the EasyTier card so its settings panel opens, and scroll it into view."
+      "element": "section.settings_group:has(h2:text-is(\"{ui.overlay.settings_title}\"))",
+      "wait_for": ".relay_fact_value",
+      "state": "Direct enabled with a public IPv4 address and port applied, so Addresses for clients lists them.",
+      "manual": "Select the Direct card so its settings open."
     },
     {
-      "file": "overlay_easytier_settings.png",
+      "file": "overlay_direct_settings.png",
       "language": "zh",
       "page": "hub/overlay.md",
       "source": "panel",
       "viewport": "desktop",
       "url": "/overlay",
+      "element": "section.settings_group:has(h2:text-is(\"{ui.overlay.settings_title}\"))",
+      "wait_for": ".relay_fact_value",
+      "state": "Direct enabled with a public IPv4 address and port applied, so Addresses for clients lists them.",
+      "manual": "Select the Direct card so its settings open."
+    },
+    {
+      "file": "overlay_easytier_settings.png",
+      "language": "en",
+      "page": "hub/easytier.md",
+      "source": "panel",
+      "viewport": "desktop",
+      "url": "/overlay",
       "element": "viewport",
       "wait_for": ".page",
-      "state": "EasyTier enabled and running.",
+      "state": "EasyTier enabled and running in manual bootstrap peers mode, with a network name, a secret and one bootstrap peer.",
       "manual": "Select the EasyTier card so its settings panel opens, and scroll it into view."
+    },
+    {
+      "file": "overlay_easytier_settings.png",
+      "language": "zh",
+      "page": "hub/easytier.md",
+      "source": "panel",
+      "viewport": "desktop",
+      "url": "/overlay",
+      "element": "viewport",
+      "wait_for": ".page",
+      "state": "EasyTier enabled and running in manual bootstrap peers mode, with a network name, a secret and one bootstrap peer.",
+      "manual": "Select the EasyTier card so its settings panel opens, and scroll it into view."
+    },
+    {
+      "file": "overlay_easytier_console_waiting.png",
+      "language": "en",
+      "page": "hub/easytier.md",
+      "pages": [
+        "scenarios/one_computer_from_your_phone.md"
+      ],
+      "source": "panel",
+      "viewport": "desktop",
+      "url": "/overlay",
+      "element": "viewport",
+      "wait_for": ".kept_secret_row",
+      "state": "EasyTier enabled and running in console mode with the console address applied, not yet attached to a network in the console.",
+      "manual": "Select the EasyTier card so its settings open, and scroll so the Waiting for the console badge, the Settings and the Networks from the console notice are in view."
+    },
+    {
+      "file": "overlay_easytier_console_waiting.png",
+      "language": "zh",
+      "page": "hub/easytier.md",
+      "pages": [
+        "scenarios/one_computer_from_your_phone.md"
+      ],
+      "source": "panel",
+      "viewport": "desktop",
+      "url": "/overlay",
+      "element": "viewport",
+      "wait_for": ".kept_secret_row",
+      "state": "EasyTier enabled and running in console mode with the console address applied, not yet attached to a network in the console.",
+      "manual": "Select the EasyTier card so its settings open, and scroll so the Waiting for the console badge, the Settings and the Networks from the console notice are in view."
+    },
+    {
+      "file": "overlay_easytier_console_networks.png",
+      "language": "en",
+      "page": "hub/easytier.md",
+      "pages": [
+        "scenarios/one_computer_from_your_phone.md"
+      ],
+      "source": "panel",
+      "viewport": "desktop",
+      "url": "/overlay",
+      "element": "section.settings_group:has(h2:text-is(\"{ui.overlay.instances_title}\"))",
+      "wait_for": ".easytier_instance",
+      "state": "EasyTier in console mode, attached by the console to one network with no subnet route.",
+      "manual": "Select the EasyTier card so its settings open."
+    },
+    {
+      "file": "overlay_easytier_console_networks.png",
+      "language": "zh",
+      "page": "hub/easytier.md",
+      "pages": [
+        "scenarios/one_computer_from_your_phone.md"
+      ],
+      "source": "panel",
+      "viewport": "desktop",
+      "url": "/overlay",
+      "element": "section.settings_group:has(h2:text-is(\"{ui.overlay.instances_title}\"))",
+      "wait_for": ".easytier_instance",
+      "state": "EasyTier in console mode, attached by the console to one network with no subnet route.",
+      "manual": "Select the EasyTier card so its settings open."
+    },
+    {
+      "file": "overlay_easytier_subnet_routes.png",
+      "language": "en",
+      "page": "scenarios/easytier_lan_routes.md",
+      "source": "panel",
+      "viewport": "desktop",
+      "url": "/overlay",
+      "element": "section.settings_group:has(h2:text-is(\"{ui.overlay.instances_title}\"))",
+      "wait_for": ".easytier_instance",
+      "state": "EasyTier in console mode, attached by the console to one network with one subnet proxy, so Subnet routes lists a LAN subnet.",
+      "manual": "Select the EasyTier card so its settings open."
+    },
+    {
+      "file": "overlay_easytier_subnet_routes.png",
+      "language": "zh",
+      "page": "scenarios/easytier_lan_routes.md",
+      "source": "panel",
+      "viewport": "desktop",
+      "url": "/overlay",
+      "element": "section.settings_group:has(h2:text-is(\"{ui.overlay.instances_title}\"))",
+      "wait_for": ".easytier_instance",
+      "state": "EasyTier in console mode, attached by the console to one network with one subnet proxy, so Subnet routes lists a LAN subnet.",
+      "manual": "Select the EasyTier card so its settings open."
     },
     {
       "file": "overlay_netbird_settings.png",
       "language": "en",
-      "page": "hub/overlay.md",
+      "page": "hub/netbird.md",
       "source": "panel",
       "viewport": "desktop",
       "url": "/overlay",
@@ -237,7 +361,7 @@
     {
       "file": "overlay_netbird_settings.png",
       "language": "zh",
-      "page": "hub/overlay.md",
+      "page": "hub/netbird.md",
       "source": "panel",
       "viewport": "desktop",
       "url": "/overlay",
@@ -245,6 +369,36 @@
       "wait_for": ".page",
       "state": "NetBird enabled and joined.",
       "manual": "Select the NetBird card so its settings panel opens, and scroll it into view."
+    },
+    {
+      "file": "overlay_netbird_routes.png",
+      "language": "en",
+      "page": "hub/netbird.md",
+      "pages": [
+        "scenarios/netbird_lan_routes.md"
+      ],
+      "source": "panel",
+      "viewport": "desktop",
+      "url": "/overlay",
+      "element": "section.settings_group:has(h2:text-is(\"{ui.overlay.routes_title}\"))",
+      "wait_for": ".netbird_subnet_chip",
+      "state": "NetBird joined on a hub in router shape, so LAN routes lists one subnet.",
+      "manual": "Select the NetBird card so its settings open."
+    },
+    {
+      "file": "overlay_netbird_routes.png",
+      "language": "zh",
+      "page": "hub/netbird.md",
+      "pages": [
+        "scenarios/netbird_lan_routes.md"
+      ],
+      "source": "panel",
+      "viewport": "desktop",
+      "url": "/overlay",
+      "element": "section.settings_group:has(h2:text-is(\"{ui.overlay.routes_title}\"))",
+      "wait_for": ".netbird_subnet_chip",
+      "state": "NetBird joined on a hub in router shape, so LAN routes lists one subnet.",
+      "manual": "Select the NetBird card so its settings open."
     },
     {
       "file": "overlay_off_warning.png",
@@ -366,6 +520,9 @@
       "file": "devices_managed.png",
       "language": "en",
       "page": "hub/devices.md",
+      "pages": [
+        "scenarios/one_laptop_every_machine.md"
+      ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/devices",
@@ -377,6 +534,9 @@
       "file": "devices_managed.png",
       "language": "zh",
       "page": "hub/devices.md",
+      "pages": [
+        "scenarios/one_laptop_every_machine.md"
+      ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/devices",
@@ -388,6 +548,9 @@
       "file": "devices_enroll_link.png",
       "language": "en",
       "page": "hub/devices.md",
+      "pages": [
+        "scenarios/one_laptop_every_machine.md"
+      ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/devices",
@@ -400,6 +563,9 @@
       "file": "devices_enroll_link.png",
       "language": "zh",
       "page": "hub/devices.md",
+      "pages": [
+        "scenarios/one_laptop_every_machine.md"
+      ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/devices",
@@ -441,7 +607,7 @@
       "url": "/devices",
       "element": ".remote_desktop",
       "wait_for": ".remote_desktop",
-      "state": "A device sharing its desktop (nagent rdp start).",
+      "state": "A device whose Remote desktop switch is on and applied, with a person signed in at its screen.",
       "manual": "Open that device's drawer and scroll its remote desktop panel into view."
     },
     {
@@ -453,13 +619,16 @@
       "url": "/devices",
       "element": ".remote_desktop",
       "wait_for": ".remote_desktop",
-      "state": "A device sharing its desktop (nagent rdp start).",
+      "state": "A device whose Remote desktop switch is on and applied, with a person signed in at its screen.",
       "manual": "Open that device's drawer and scroll its remote desktop panel into view."
     },
     {
       "file": "clients_link_qr.png",
       "language": "en",
       "page": "hub/clients.md",
+      "pages": [
+        "scenarios/one_computer_from_your_phone.md"
+      ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/clients",
@@ -473,6 +642,9 @@
       "file": "clients_link_qr.png",
       "language": "zh",
       "page": "hub/clients.md",
+      "pages": [
+        "scenarios/one_computer_from_your_phone.md"
+      ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/clients",
@@ -481,6 +653,36 @@
       "redraw_qr": "neutrino://enroll/example",
       "state": "Any hub.",
       "manual": "Select New client link, fill the dialog, select Create link, and leave the notice with the link, Copy and the QR code showing."
+    },
+    {
+      "file": "clients_permissions_panel.png",
+      "language": "en",
+      "page": "hub/clients.md",
+      "pages": [
+        "scenarios/one_computer_from_your_phone.md"
+      ],
+      "source": "panel",
+      "viewport": "desktop",
+      "url": "/clients",
+      "element": ".device_drawer",
+      "wait_for": ".client_permission_kind",
+      "state": "A client named phone enrolled.",
+      "manual": "Select Permissions on the phone's row, switch Follow the default off and Hub panel without the password on, and leave the drawer open without applying."
+    },
+    {
+      "file": "clients_permissions_panel.png",
+      "language": "zh",
+      "page": "hub/clients.md",
+      "pages": [
+        "scenarios/one_computer_from_your_phone.md"
+      ],
+      "source": "panel",
+      "viewport": "desktop",
+      "url": "/clients",
+      "element": ".device_drawer",
+      "wait_for": ".client_permission_kind",
+      "state": "A client named phone enrolled.",
+      "manual": "Select Permissions on the phone's row, switch Follow the default off and Hub panel without the password on, and leave the drawer open without applying."
     },
     {
       "file": "services_list.png",
@@ -651,8 +853,8 @@
       "url": "/modules",
       "element": ".module_picker_panel",
       "wait_for": ".module_picker_panel",
-      "state": "A Windows or Mac device online.",
-      "manual": "Select that device and open the module picker, so the modules its system cannot run show greyed."
+      "state": "A Windows device online.",
+      "manual": "Select that device and open the module picker, so Containers, ZFS storage and code-server show greyed."
     },
     {
       "file": "modules_picker_greyed.png",
@@ -663,8 +865,86 @@
       "url": "/modules",
       "element": ".module_picker_panel",
       "wait_for": ".module_picker_panel",
-      "state": "A Windows or Mac device online.",
-      "manual": "Select that device and open the module picker, so the modules its system cannot run show greyed."
+      "state": "A Windows device online.",
+      "manual": "Select that device and open the module picker, so Containers, ZFS storage and code-server show greyed."
+    },
+    {
+      "file": "modules_ai_tools.png",
+      "language": "en",
+      "page": "agent/modules/ai_tools.md",
+      "source": "panel",
+      "viewport": "desktop",
+      "url": "/modules",
+      "element": "section.settings_group:has(h2:text-is(\"{ui.modules.global_title}\"))",
+      "wait_for": ".ai_tools_account",
+      "state": "A device online with VS Code or CloudCLI instances of two accounts, the AI tools switch on, and both account rows reading Uses the hub's AI gateway.",
+      "manual": "Select that device."
+    },
+    {
+      "file": "modules_ai_tools.png",
+      "language": "zh",
+      "page": "agent/modules/ai_tools.md",
+      "source": "panel",
+      "viewport": "desktop",
+      "url": "/modules",
+      "element": "section.settings_group:has(h2:text-is(\"{ui.modules.global_title}\"))",
+      "wait_for": ".ai_tools_account",
+      "state": "A device online with VS Code or CloudCLI instances of two accounts, the AI tools switch on, and both account rows reading Uses the hub's AI gateway.",
+      "manual": "Select that device."
+    },
+    {
+      "file": "modules_terminal_tab.png",
+      "language": "en",
+      "page": "agent/modules/terminal.md",
+      "source": "panel",
+      "viewport": "desktop",
+      "url": "/modules",
+      "element": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))",
+      "wait_for": ".terminal_module_fields",
+      "state": "A Linux device online with an account chosen in its Terminal module.",
+      "manual": "Select the Linux device and its Terminal tab."
+    },
+    {
+      "file": "modules_terminal_tab.png",
+      "language": "zh",
+      "page": "agent/modules/terminal.md",
+      "source": "panel",
+      "viewport": "desktop",
+      "url": "/modules",
+      "element": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))",
+      "wait_for": ".terminal_module_fields",
+      "state": "A Linux device online with an account chosen in its Terminal module.",
+      "manual": "Select the Linux device and its Terminal tab."
+    },
+    {
+      "file": "modules_remote_desktop_tab.png",
+      "language": "en",
+      "page": "agent/modules/remote_desktop.md",
+      "pages": [
+        "scenarios/one_laptop_every_machine.md"
+      ],
+      "source": "panel",
+      "viewport": "desktop",
+      "url": "/modules",
+      "element": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))",
+      "wait_for": ".modules_config",
+      "state": "A Windows device online with its Remote desktop switch on and applied.",
+      "manual": "Select the Windows device and its Remote desktop tab."
+    },
+    {
+      "file": "modules_remote_desktop_tab.png",
+      "language": "zh",
+      "page": "agent/modules/remote_desktop.md",
+      "pages": [
+        "scenarios/one_laptop_every_machine.md"
+      ],
+      "source": "panel",
+      "viewport": "desktop",
+      "url": "/modules",
+      "element": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))",
+      "wait_for": ".modules_config",
+      "state": "A Windows device online with its Remote desktop switch on and applied.",
+      "manual": "Select the Windows device and its Remote desktop tab."
     },
     {
       "file": "shares_windows.png",
@@ -766,6 +1046,9 @@
       "file": "vscode_panel.png",
       "language": "en",
       "page": "agent/modules/vscode.md",
+      "pages": [
+        "scenarios/one_laptop_every_machine.md"
+      ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/modules",
@@ -778,6 +1061,9 @@
       "file": "vscode_panel.png",
       "language": "zh",
       "page": "agent/modules/vscode.md",
+      "pages": [
+        "scenarios/one_laptop_every_machine.md"
+      ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/modules",
@@ -787,6 +1073,30 @@
       "manual": "Select the device and its VS Code tab."
     },
     {
+      "file": "cloudcli_panel.png",
+      "language": "en",
+      "page": "agent/modules/cloudcli.md",
+      "source": "panel",
+      "viewport": "desktop",
+      "url": "/modules",
+      "element": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))",
+      "wait_for": ".cloudcli_instance",
+      "state": "A device with CloudCLI running and one instance.",
+      "manual": "Select the device and its CloudCLI tab, and select Configure so the instance shows."
+    },
+    {
+      "file": "cloudcli_panel.png",
+      "language": "zh",
+      "page": "agent/modules/cloudcli.md",
+      "source": "panel",
+      "viewport": "desktop",
+      "url": "/modules",
+      "element": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))",
+      "wait_for": ".cloudcli_instance",
+      "state": "A device with CloudCLI running and one instance.",
+      "manual": "Select the device and its CloudCLI tab, and select Configure so the instance shows."
+    },
+    {
       "file": "client_connected.png",
       "language": "en",
       "page": "client/desktop.md",
@@ -881,9 +1191,84 @@
       "manual": "Open the Terminal page of the window, so the kept session's tab shows."
     },
     {
+      "file": "client_terminals_three.png",
+      "language": "en",
+      "page": "scenarios/one_laptop_every_machine.md",
+      "source": "client",
+      "viewport": "desktop",
+      "url": "/",
+      "element": "viewport",
+      "wait_for": "#content .term_page",
+      "state": "client_state.json with three machines on the home hub, one of them Windows.",
+      "manual": "Open the Terminals page of the window and open a terminal on each of the three machines, so three tabs show."
+    },
+    {
+      "file": "client_terminals_three.png",
+      "language": "zh",
+      "page": "scenarios/one_laptop_every_machine.md",
+      "source": "client",
+      "viewport": "desktop",
+      "url": "/",
+      "element": "viewport",
+      "wait_for": "#content .term_page",
+      "state": "client_state.json with three machines on the home hub, one of them Windows.",
+      "manual": "Open the Terminals page of the window and open a terminal on each of the three machines, so three tabs show."
+    },
+    {
+      "file": "client_remote_desktops.png",
+      "language": "en",
+      "page": "scenarios/one_laptop_every_machine.md",
+      "source": "client",
+      "viewport": "desktop",
+      "url": "/",
+      "element": "viewport",
+      "wait_for": "#content .card .feat",
+      "state": "client_state.json with the Windows machine's desktop entry and viewers marking it running, so its row reads Viewer open.",
+      "manual": "Open the Remote desktops page of the window."
+    },
+    {
+      "file": "client_remote_desktops.png",
+      "language": "zh",
+      "page": "scenarios/one_laptop_every_machine.md",
+      "source": "client",
+      "viewport": "desktop",
+      "url": "/",
+      "element": "viewport",
+      "wait_for": "#content .card .feat",
+      "state": "client_state.json with the Windows machine's desktop entry and viewers marking it running, so its row reads Viewer open.",
+      "manual": "Open the Remote desktops page of the window."
+    },
+    {
+      "file": "client_web_vscode.png",
+      "language": "en",
+      "page": "scenarios/one_laptop_every_machine.md",
+      "source": "client",
+      "viewport": "desktop",
+      "url": "/",
+      "element": "viewport",
+      "wait_for": "#content .card .feat",
+      "state": "client_state.json with the VS Code web entry in forwards, so its row reads the forwarded port.",
+      "manual": "Open the Web page of the window."
+    },
+    {
+      "file": "client_web_vscode.png",
+      "language": "zh",
+      "page": "scenarios/one_laptop_every_machine.md",
+      "source": "client",
+      "viewport": "desktop",
+      "url": "/",
+      "element": "viewport",
+      "wait_for": "#content .card .feat",
+      "state": "client_state.json with the VS Code web entry in forwards, so its row reads the forwarded port.",
+      "manual": "Open the Web page of the window."
+    },
+    {
       "file": "app_join_scan.png",
       "language": "en",
       "page": "client/android.md",
+      "pages": [
+        "scenarios/one_computer_from_your_phone.md"
+      ],
       "source": "app",
       "viewport": "app",
       "state": "The join screen with the QR scanner open."
@@ -892,6 +1277,9 @@
       "file": "app_join_scan.png",
       "language": "zh",
       "page": "client/android.md",
+      "pages": [
+        "scenarios/one_computer_from_your_phone.md"
+      ],
       "source": "app",
       "viewport": "app",
       "state": "The join screen with the QR scanner open."
@@ -900,17 +1288,61 @@
       "file": "app_hub.png",
       "language": "en",
       "page": "client/android.md",
+      "pages": [
+        "scenarios/one_computer_from_your_phone.md"
+      ],
       "source": "app",
       "viewport": "app",
-      "state": "The hub screen, the hub row with its virtual network switch on."
+      "state": "The hub screen; the hub row reads Connected · EasyTier with the round trip in ms, and the virtual network row reads Connected · with the phone's address."
     },
     {
       "file": "app_hub.png",
       "language": "zh",
       "page": "client/android.md",
+      "pages": [
+        "scenarios/one_computer_from_your_phone.md"
+      ],
       "source": "app",
       "viewport": "app",
-      "state": "The hub screen, the hub row with its virtual network switch on."
+      "state": "The hub screen; the hub row reads Connected · EasyTier with the round trip in ms, and the virtual network row reads Connected · with the phone's address."
+    },
+    {
+      "file": "app_hub_console_waiting.png",
+      "language": "en",
+      "page": "client/android.md",
+      "pages": [
+        "scenarios/one_computer_from_your_phone.md"
+      ],
+      "source": "app",
+      "viewport": "app",
+      "state": "The hub screen, the virtual network row reading Connecting… with the console hint under it."
+    },
+    {
+      "file": "app_hub_console_waiting.png",
+      "language": "zh",
+      "page": "client/android.md",
+      "pages": [
+        "scenarios/one_computer_from_your_phone.md"
+      ],
+      "source": "app",
+      "viewport": "app",
+      "state": "The hub screen, the virtual network row reading Connecting… with the console hint under it."
+    },
+    {
+      "file": "app_vpn_prompt.png",
+      "language": "en",
+      "page": "scenarios/one_computer_from_your_phone.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "The Android VPN permission dialog shown on the first Connect of the virtual network."
+    },
+    {
+      "file": "app_vpn_prompt.png",
+      "language": "zh",
+      "page": "scenarios/one_computer_from_your_phone.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "The Android VPN permission dialog shown on the first Connect of the virtual network."
     },
     {
       "file": "app_files_provider.png",
@@ -932,6 +1364,9 @@
       "file": "app_terminal.png",
       "language": "en",
       "page": "client/android.md",
+      "pages": [
+        "scenarios/one_computer_from_your_phone.md"
+      ],
       "source": "app",
       "viewport": "app",
       "state": "A terminal session with the key row showing."
@@ -940,9 +1375,191 @@
       "file": "app_terminal.png",
       "language": "zh",
       "page": "client/android.md",
+      "pages": [
+        "scenarios/one_computer_from_your_phone.md"
+      ],
       "source": "app",
       "viewport": "app",
       "state": "A terminal session with the key row showing."
+    },
+    {
+      "file": "app_panel_in_browser.png",
+      "language": "en",
+      "page": "scenarios/one_computer_from_your_phone.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "The phone's browser showing the hub's panel overview after Panel was pressed.",
+      "manual": "Blank the tkn= token in the address bar before saving the image."
+    },
+    {
+      "file": "app_panel_in_browser.png",
+      "language": "zh",
+      "page": "scenarios/one_computer_from_your_phone.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "The phone's browser showing the hub's panel overview after Panel was pressed.",
+      "manual": "Blank the tkn= token in the address bar before saving the image."
+    },
+    {
+      "file": "console_netbird_keys_list.png",
+      "language": "console",
+      "page": "hub/netbird.md",
+      "source": "console",
+      "viewport": "desktop",
+      "url": "https://app.netbird.io/setup-keys",
+      "element": "viewport",
+      "wait_for": "text=Setup Keys",
+      "state": "The NetBird console's Setup Keys page listing the reusable key.",
+      "hide": [
+        "header img",
+        "header button:has(img)"
+      ],
+      "_todo": "Not verified against the NetBird console: the page path, the wait_for text, the dialog role and the hide selectors for the avatar and account menu."
+    },
+    {
+      "file": "console_netbird_key_create.png",
+      "language": "console",
+      "page": "hub/netbird.md",
+      "source": "console",
+      "viewport": "desktop",
+      "url": "https://app.netbird.io/setup-keys",
+      "element": "[role=\"dialog\"]",
+      "wait_for": "[role=\"dialog\"]",
+      "state": "The NetBird console's Setup Keys page.",
+      "manual": "Select Create Setup Key and fill the dialog: a name, Make this key reusable on, no usage limit, the longest expiry, one new auto-assigned group; leave it open.",
+      "hide": [
+        "header img",
+        "header button:has(img)"
+      ],
+      "_todo": "Not verified against the NetBird console: the page path, the wait_for text, the dialog role and the hide selectors for the avatar and account menu."
+    },
+    {
+      "file": "console_netbird_key_created.png",
+      "language": "console",
+      "page": "hub/netbird.md",
+      "source": "console",
+      "viewport": "desktop",
+      "url": "https://app.netbird.io/setup-keys",
+      "element": "[role=\"dialog\"]",
+      "wait_for": "[role=\"dialog\"]",
+      "state": "The NetBird console's Setup Keys page.",
+      "manual": "Create the reusable key and leave the dialog that shows it once open.",
+      "hide": [
+        "header img",
+        "header button:has(img)"
+      ],
+      "_todo": "Not verified against the NetBird console: the page path, the wait_for text, the dialog role and the hide selectors for the avatar and account menu."
+    },
+    {
+      "file": "console_netbird_network.png",
+      "language": "console",
+      "page": "scenarios/netbird_lan_routes.md",
+      "source": "console",
+      "viewport": "desktop",
+      "url": "https://app.netbird.io/networks",
+      "element": "viewport",
+      "wait_for": "text=Networks",
+      "state": "A NetBird network whose routing peer is the hub and whose resource is the LAN subnet.",
+      "manual": "Open that network so its routing peers and resources are both in view.",
+      "hide": [
+        "header img",
+        "header button:has(img)"
+      ],
+      "_todo": "Not verified against the NetBird console: the page path, the wait_for text, the dialog role and the hide selectors for the avatar and account menu."
+    },
+    {
+      "file": "console_netbird_policy.png",
+      "language": "console",
+      "page": "scenarios/netbird_lan_routes.md",
+      "source": "console",
+      "viewport": "desktop",
+      "url": "https://app.netbird.io/acls",
+      "element": "[role=\"dialog\"]",
+      "wait_for": "[role=\"dialog\"]",
+      "state": "A policy whose source is the setup key's auto-assigned group and whose destination is the LAN resource.",
+      "manual": "Open that policy from Access Control, Policies, and leave it open.",
+      "hide": [
+        "header img",
+        "header button:has(img)"
+      ],
+      "_todo": "Not verified against the NetBird console: the page path, the wait_for text, the dialog role and the hide selectors for the avatar and account menu."
+    },
+    {
+      "file": "console_easytier_devices.png",
+      "language": "console",
+      "page": "hub/easytier.md",
+      "pages": [
+        "scenarios/one_computer_from_your_phone.md"
+      ],
+      "source": "console",
+      "viewport": "desktop",
+      "url": "https://console.easytier.net/",
+      "element": "viewport",
+      "wait_for": "body",
+      "state": "The EasyTier console's device list with the hub registered.",
+      "manual": "Open the device list.",
+      "hide": [
+        "input[type=\"password\"]",
+        "header img"
+      ],
+      "_todo": "Not verified against the EasyTier console: its address, the wait_for, the device list, the network form, the subnet proxy field and the hide selectors."
+    },
+    {
+      "file": "console_easytier_network_create.png",
+      "language": "console",
+      "page": "hub/easytier.md",
+      "pages": [
+        "scenarios/one_computer_from_your_phone.md"
+      ],
+      "source": "console",
+      "viewport": "desktop",
+      "url": "https://console.easytier.net/",
+      "element": "viewport",
+      "wait_for": "body",
+      "state": "The EasyTier console's device list with the hub registered.",
+      "manual": "Open the network form for the hub's device and fill it: a network name, a secret, the hub's virtual address, a public server as the peer; leave it unsaved.",
+      "hide": [
+        "input[type=\"password\"]",
+        "header img"
+      ],
+      "_todo": "Not verified against the EasyTier console: its address, the wait_for, the device list, the network form, the subnet proxy field and the hide selectors."
+    },
+    {
+      "file": "console_easytier_device_attach.png",
+      "language": "console",
+      "page": "hub/easytier.md",
+      "pages": [
+        "scenarios/one_computer_from_your_phone.md"
+      ],
+      "source": "console",
+      "viewport": "desktop",
+      "url": "https://console.easytier.net/",
+      "element": "viewport",
+      "wait_for": "body",
+      "state": "The EasyTier console's device list with the hub on its network and the phone registered.",
+      "manual": "Open the form that attaches the phone to the hub's network; leave it unsaved.",
+      "hide": [
+        "input[type=\"password\"]",
+        "header img"
+      ],
+      "_todo": "Not verified against the EasyTier console: its address, the wait_for, the device list, the network form, the subnet proxy field and the hide selectors."
+    },
+    {
+      "file": "console_easytier_subnet_proxy.png",
+      "language": "console",
+      "page": "scenarios/easytier_lan_routes.md",
+      "source": "console",
+      "viewport": "desktop",
+      "url": "https://console.easytier.net/",
+      "element": "viewport",
+      "wait_for": "body",
+      "state": "The EasyTier console with the hub on its network.",
+      "manual": "Open the hub device's network config and fill the subnet proxy field with the LAN subnet; leave it unsaved.",
+      "hide": [
+        "input[type=\"password\"]",
+        "header img"
+      ],
+      "_todo": "Not verified against the EasyTier console: its address, the wait_for, the device list, the network form, the subnet proxy field and the hide selectors."
     },
     {
       "file": "os_mac_keychain_trust.png",
@@ -975,6 +1592,23 @@
       "source": "os",
       "viewport": "os",
       "state": "The client's tray menu open in the Windows taskbar corner."
+    },
+    {
+      "file": "win_rustdesk_viewer.png",
+      "language": "os",
+      "page": "scenarios/one_laptop_every_machine.md",
+      "source": "os",
+      "viewport": "os",
+      "state": "The RustDesk viewer on Windows showing the shared desktop of the Windows PC."
+    },
+    {
+      "file": "os_browser_vscode.png",
+      "language": "os",
+      "page": "scenarios/one_laptop_every_machine.md",
+      "source": "os",
+      "viewport": "os",
+      "state": "A browser showing VS Code opened from the client's Web page.",
+      "manual": "Blank the token in the address bar before saving the image."
     }
   ]
 }
