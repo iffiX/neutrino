@@ -17,17 +17,24 @@ import io.github.iffix.neutrino.OVERLAY_SERVICE_EXTRA_PROVIDER
 import io.github.iffix.neutrino.channel.ChannelResult
 import java.io.File
 import java.io.IOException
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 /**
  * The app's one VPN: hosts whichever engine the hub's material names, one network at a time.
  * The material is read from the binding store; an intent carries only the binding and the provider.
+ * Every engine's start and stop runs in order on one worker thread, and each engine gets a TUN
+ * builder of its own.
  */
 class OverlayVpnService : VpnService() {
+    @Volatile
     private var engine: OverlayEngine? = null
-    private var held: ParcelFileDescriptor? = null
+    private var tun: ServiceTunBuilder? = null
     private var running: Pair<String, String>? = null
+    private var lastStartId = 0
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        lastStartId = startId
         when (intent?.action) {
             OVERLAY_SERVICE_ACTION_START -> {
                 val bindingId = intent.getStringExtra(OVERLAY_SERVICE_EXTRA_BINDING).orEmpty()
@@ -37,7 +44,7 @@ class OverlayVpnService : VpnService() {
 
             OVERLAY_SERVICE_ACTION_STOP -> {
                 end()
-                stopSelf()
+                engineQueue.execute { stopSelf(startId) }
             }
         }
         return START_NOT_STICKY
@@ -46,7 +53,8 @@ class OverlayVpnService : VpnService() {
     override fun onRevoke() {
         end()
         (application as NeutrinoApplication).overlays.revoked()
-        stopSelf()
+        val startId = lastStartId
+        engineQueue.execute { stopSelf(startId) }
     }
 
     override fun onDestroy() {
@@ -75,25 +83,34 @@ class OverlayVpnService : VpnService() {
             )
             return
         }
+        val builder = ServiceTunBuilder()
         engine = created
+        tun = builder
         running = bindingId to provider
-        created.start(overlay, ServiceTunBuilder()) { phase, address, refusal ->
-            Log.i(
-                CLIENT_LOG_TAG,
-                "virtual network $provider: $phase $address ${refusal?.code.orEmpty()} ${refusal?.wordParams.orEmpty()}",
-            )
-            if (running == bindingId to provider) {
-                app.overlays.report(OverlayStatus(bindingId, provider, phase, address, refusal))
+        engineQueue.execute {
+            created.start(overlay, builder) { phase, address, refusal ->
+                Log.i(
+                    CLIENT_LOG_TAG,
+                    "virtual network $provider: $phase $address ${refusal?.code.orEmpty()} ${refusal?.wordParams.orEmpty()}",
+                )
+                if (engine === created) {
+                    app.overlays.report(OverlayStatus(bindingId, provider, phase, address, refusal))
+                }
             }
         }
     }
 
     private fun end() {
         val stopping = running
-        engine?.stop()
+        val stopped = engine
+        val device = tun
         engine = null
+        tun = null
         running = null
-        closeHeld()
+        engineQueue.execute {
+            stopped?.stop()
+            device?.close()
+        }
         if (stopping != null) {
             (application as NeutrinoApplication).overlays.report(
                 OverlayStatus(stopping.first, stopping.second, OverlayPhase.OFF),
@@ -101,16 +118,10 @@ class OverlayVpnService : VpnService() {
         }
     }
 
-    private fun closeHeld() {
-        try {
-            held?.close()
-        } catch (_: IOException) {
-            // The engine closed the device already.
-        }
-        held = null
-    }
-
     private inner class ServiceTunBuilder : TunBuilder {
+        private var held: ParcelFileDescriptor? = null
+        private var isClosed = false
+
         override fun establish(
             address: String,
             prefix: Int,
@@ -130,19 +141,36 @@ class OverlayVpnService : VpnService() {
             }
             dnsServers.forEach { builder.addDnsServer(it) }
             searchDomains.forEach { builder.addSearchDomain(it) }
-            val device = builder.establish() ?: return null
-            if (isHandedOver) return device.detachFd()
-            closeHeld()
-            held = device
-            return device.fd
+            synchronized(this) {
+                if (isClosed) return null
+                val device = builder.establish() ?: return null
+                if (isHandedOver) return device.detachFd()
+                closeHeld()
+                held = device
+                return device.fd
+            }
         }
 
         override fun protect(fd: Int): Boolean = this@OverlayVpnService.protect(fd)
 
-        override fun close() = closeHeld()
+        override fun close() = synchronized(this) {
+            isClosed = true
+            closeHeld()
+        }
+
+        private fun closeHeld() {
+            try {
+                held?.close()
+            } catch (_: IOException) {
+                // The engine closed the device already.
+            }
+            held = null
+        }
     }
 
     companion object {
+        private val engineQueue: ExecutorService = Executors.newSingleThreadExecutor { Thread(it, "overlay-engine") }
+
         /**
          * The intent that runs one hub's network.
          *
