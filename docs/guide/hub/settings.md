@@ -101,17 +101,6 @@ After the check passes, the hub box's own agent is updated, and agents on other 
 
 `sudo nhub update` does the same from a terminal, and `--package` installs a package file you downloaded yourself. On Linux, the update's log is in `journalctl -u neutrino_hub_update`.
 
-## Coming from 0.4
-
-A 0.4.0 hub does not update to 0.5.0 in place. To move to 0.5.0:
-
-1. Remove the 0.4.0 hub package from the box.
-1. Install 0.5.0 as a new hub, as described in [Install the hub](../install/hub.md), and run `nhub setup`.
-1. On each managed machine, install the 0.5.0 agent package and join it with a new link from the **Devices** page.
-1. On each computer and phone, install the 0.5.0 client and join it with a new link from the **Clients** page.
-
-The 0.5.0 hub rejects 0.3 and 0.4 agents and clients, and a 0.4 backup does not restore on it.
-
 ## Reset from a terminal
 
 | Command                    | What it does                                                                    |

@@ -76,7 +76,7 @@ Android 8.0 is API level 26, the `minSdk` the app declares, and the phone's inst
 
 Every part of one release speaks the same protocol number, and every 0.5.0 build speaks protocol 3. A 0.5.0 hub admits protocol 3 alone. It rejects a 0.3 or 0.4 agent or client, which speaks protocol 1 or 2, and a program with a newer protocol. The rejected program keeps its binding. An agent the hub admits updates itself when the hub names a newer version, and a 0.3 or 0.4 agent does not.
 
-A 0.4 hub does not update to 0.5.0 in place. [Settings](../hub/settings.md#coming-from-0-4) gives the order of the move, and [The channel](../protocol/channel.md#protocol-numbers) lists the protocol numbers.
+[The channel](../protocol/channel.md#protocol-numbers) lists the protocol numbers.
 
 ## Editions
 
