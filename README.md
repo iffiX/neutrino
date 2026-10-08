@@ -159,7 +159,7 @@ sudo installer -pkg neutrino-client-<version>-macos-arm64.pkg -target /  # macOS
 On an Intel Mac the file ends in `macos-amd64.pkg`. Opening the `.msi` from Explorer, or the `.pkg` from its context menu with **Open**, runs the same installer. The Windows installer offers to put `nclient` on `PATH`. The client then sits in the taskbar corner on Windows or in the menu bar on macOS.
 </details>
 
-Every file is on the [releases page](https://github.com/iffiX/neutrino/releases), and the site's install pages have the screenshots: [the hub](https://neutrino.beyond-infinity.top/hub/install.html), [the agent](https://neutrino.beyond-infinity.top/agent/install.html) and [the client](https://neutrino.beyond-infinity.top/client/install.html).
+Every file is on the [releases page](https://github.com/iffiX/neutrino/releases), and the site's install pages have the screenshots: [the hub](https://neutrino.beyond-infinity.top/install/hub.html), [the agent](https://neutrino.beyond-infinity.top/install/agent.html) and [the client](https://neutrino.beyond-infinity.top/install/client.html).
 
 ## Documentation
 

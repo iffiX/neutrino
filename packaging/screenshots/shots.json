@@ -1383,6 +1383,22 @@
       "state": "A terminal session with the key row showing."
     },
     {
+      "file": "app_rdp_viewer.png",
+      "language": "en",
+      "page": "client/android.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "The remote desktop viewer on the whole screen, showing the shared computer's desktop, with the three round buttons at the top right."
+    },
+    {
+      "file": "app_rdp_viewer.png",
+      "language": "zh",
+      "page": "client/android.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "The remote desktop viewer on the whole screen, showing the shared computer's desktop, with the three round buttons at the top right."
+    },
+    {
       "file": "app_panel_in_browser.png",
       "language": "en",
       "page": "scenarios/one_computer_from_your_phone.md",
