@@ -5,9 +5,12 @@ it; the hub's bytes reach the output, what already arrived in one piece, and
 the hub's close ends the output pump; a write that fails closes the stream
 from here; the window's keys go one send at a time and its close ends the
 shell; the outcome names the exit code, the hub's refusal, or a socket that
-ended first.
+ended first. An exec stream: pieces both ways, the empty piece up sending
+``eof`` except on a pseudo-terminal, each frame down one piece with its
+``fd`` byte, and a connection that ends early closing the stream.
 """
 
+import io
 import threading
 
 from neutrino_client.constants import (
@@ -15,7 +18,12 @@ from neutrino_client.constants import (
     CLIENT_TERMINAL_CLEAR_QUIET_S,
 )
 from neutrino_client.core.streams import ClientStreamRegistry
-from neutrino_client.core.terminal import TerminalBridge
+from neutrino_client.core.terminal import (
+    ExecBridge,
+    TerminalBridge,
+    encode_piece,
+    read_piece,
+)
 from neutrino_client.core.protocol import decode_binary
 from tests.conftest import Clock, discard
 
@@ -311,3 +319,83 @@ def test_keys_that_cannot_be_read_end_the_shell_with_the_reason():
         "code": "terminal_input_failed",
         "params": {"detail": "timed out"},
     }
+
+
+# --- an exec stream ---
+
+
+def exec_stream():
+    wire = Wire()
+    registry = ClientStreamRegistry(
+        send_text=wire.send_text, send_bytes=wire.send_bytes, log=discard
+    )
+    stream = registry.open("exec", {"device_id": "d1"}, has_bytes=True)
+    registry.take_credit({"type": "credit", "stream": 1, "bytes": 100})
+    return registry, stream, wire
+
+
+def test_a_piece_reads_back_as_written_and_a_cut_one_as_the_end():
+    pieces = io.BytesIO(encode_piece(b"abc") + encode_piece(b"") + b"\x00\x00")
+
+    assert read_piece(pieces.read) == b"abc"
+    assert read_piece(pieces.read) == b""
+    assert read_piece(pieces.read) is None
+
+
+def test_the_empty_piece_sends_eof_after_the_input_and_the_stream_stays_open():
+    registry, stream, wire = exec_stream()
+    bridge = ExecBridge(stream=stream, is_tty=False)
+    typed = io.BytesIO(encode_piece(b"select 1;") + encode_piece(b""))
+
+    def read(size):
+        data = typed.read(size)
+        if not data:
+            registry.take_close(
+                {"type": "close", "stream": 1, "params": {"exit_code": 0}}
+            )
+        return data
+
+    bridge.pump_in(read)
+
+    assert wire.binary == [(1, b"select 1;")]
+    assert wire.text[-1] == {"type": "eof", "stream": 1}
+    assert bridge.outcome() == {"exit_code": 0}
+
+
+def test_a_pseudo_terminal_never_sends_eof():
+    _registry, stream, wire = exec_stream()
+    bridge = ExecBridge(stream=stream, is_tty=True)
+
+    bridge.pump_in(io.BytesIO(encode_piece(b"q") + encode_piece(b"")).read)
+
+    assert all(frame.get("type") != "eof" for frame in wire.text)
+
+
+def test_a_connection_that_ends_before_the_command_closes_it_from_here():
+    _registry, stream, wire = exec_stream()
+    bridge = ExecBridge(stream=stream, is_tty=False)
+
+    bridge.pump_in(io.BytesIO(encode_piece(b"half")).read)
+
+    assert wire.text[-1] == {"type": "close", "stream": 1, "code": "", "params": {}}
+    assert bridge.outcome() == {"exit_code": None}
+
+
+def test_each_frame_goes_down_as_one_piece_with_its_fd_byte():
+    registry, stream, _wire = exec_stream()
+    bridge = ExecBridge(stream=stream, is_tty=False)
+    registry.take_bytes(1, b"\x01out")
+    registry.take_bytes(1, b"")
+    registry.take_bytes(1, b"\x02err")
+    registry.take_close({"type": "close", "stream": 1, "params": {"exit_code": 7}})
+    shown = io.BytesIO()
+
+    bridge.pump_out(shown.write)
+
+    shown.seek(0)
+    assert [read_piece(shown.read) for _ in range(3)] == [
+        b"\x01out",
+        b"\x02err",
+        None,
+    ]
+    assert bridge.outcome() == {"exit_code": 7}

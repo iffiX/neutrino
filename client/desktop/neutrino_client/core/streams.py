@@ -5,9 +5,10 @@ the hub's ``close {stream, code, params}``: the ``params`` are the result,
 and a ``code`` makes the close a refusal. The client opens odd ids counting
 upward; the hub's are even, so the two never collide.
 
-A byte stream, a ``shell``, carries binary frames both ways under credit:
-this side sends no more than the hub has granted, in frames of at most
-``CLIENT_WS_CHUNK_BYTES``, and grants the hub more as its reader consumes.
+A byte stream, a ``shell`` or an ``exec``, carries binary frames both ways
+under credit: this side sends no more than the hub has granted, in frames of
+at most ``CLIENT_WS_CHUNK_BYTES``, and grants the hub more as its reader
+consumes. An ``exec`` stream's input ends with ``eof``.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -27,6 +28,7 @@ from neutrino_client.constants import (
 from neutrino_client.core.protocol import (
     FRAME_CLOSE,
     FRAME_CREDIT,
+    FRAME_EOF,
     FRAME_OPEN,
     encode_binary,
 )
@@ -56,6 +58,7 @@ class ClientStream:
         send_bytes=None,
         grant=None,
         close=None,
+        eof=None,
     ):
         """
         Args:
@@ -67,12 +70,14 @@ class ClientStream:
             grant: ``grant(nbytes)`` sends the hub a credit frame for this
                 stream; None for a stream that takes no bytes.
             close: Sends this side's close for this stream; None for nobody.
+            eof: Sends ``eof`` for this stream; None for nobody.
         """
         self.stream_id = stream_id
         self.kind = kind
         self._send_bytes = send_bytes
         self._grant = grant if grant is not None else _nobody
         self._close = close if close is not None else _nobody
+        self._eof = eof if eof is not None else _nobody
         self._closed = threading.Event()
         self._code = ""
         self._params: dict = {}
@@ -167,6 +172,16 @@ class ClientStream:
             self._send_bytes(encode_binary(self.stream_id, bytes(view[:size])))
             view = view[size:]
 
+    def send_eof(self) -> None:
+        """Tell the hub no more input follows; the stream stays open the other way.
+
+        Raises:
+            GatewayUnreachable: When the stream or the socket has ended.
+        """
+        if self.is_done:
+            raise GatewayUnreachable(f"the {self.kind} stream has ended")
+        self._eof()
+
     def try_send(self, data: bytes) -> bool:
         """Send one frame now if the hub's credit covers it, never waiting.
 
@@ -258,11 +273,13 @@ class ClientStream:
             pass
 
     def take_bytes(self, data: bytes) -> None:
-        """Queue bytes the hub sent, for the reader.
+        """Queue bytes the hub sent, for the reader; an empty frame is dropped.
 
         Args:
             data: The binary frame's bytes, without the stream id.
         """
+        if not data:
+            return
         with self._condition:
             self._incoming.append(bytes(data))
             self._condition.notify_all()
@@ -369,6 +386,7 @@ class ClientStreamRegistry:
                 send_bytes=self._send_bytes if has_bytes else None,
                 grant=self._granter(stream_id) if has_bytes else None,
                 close=self._closer(stream_id),
+                eof=self._eofer(stream_id) if has_bytes else None,
             )
             self._streams[stream_id] = stream
         frame = {"type": FRAME_OPEN, "stream": stream_id, "kind": kind, **dict(args)}
@@ -470,6 +488,14 @@ class ClientStreamRegistry:
             self.grant(stream_id, nbytes)
 
         return grant
+
+    def _eofer(self, stream_id: int):
+        """The ``eof`` callback of one stream."""
+
+        def eof() -> None:
+            self._send_text(json.dumps({"type": FRAME_EOF, "stream": stream_id}))
+
+        return eof
 
     def _closer(self, stream_id: int):
         """The close callback of one stream: forget it, then tell the hub."""

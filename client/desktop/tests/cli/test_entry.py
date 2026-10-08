@@ -71,21 +71,6 @@ def test_no_command_prints_the_help(monkeypatch, capsys):
         (["gui", "--hidden"], "gui", ((), {"is_hidden": True})),
         (["quit"], "quit", ((), {"is_upgrade": False})),
         (["quit", "--upgrade"], "quit", ((), {"is_upgrade": True})),
-        (
-            ["terminal", "lepton"],
-            "terminal",
-            (("lepton",), {"hub": "", "session_id": ""}),
-        ),
-        (
-            ["terminal", "lepton", "--hub", "home"],
-            "terminal",
-            (("lepton",), {"hub": "home", "session_id": ""}),
-        ),
-        (
-            ["terminal", "lepton", "--session", "5d1c0e2a"],
-            "terminal",
-            (("lepton",), {"hub": "", "session_id": "5d1c0e2a"}),
-        ),
     ],
 )
 def test_each_verb_reaches_its_command(monkeypatch, argv, target, expected):
@@ -102,6 +87,123 @@ def test_each_verb_reaches_its_command(monkeypatch, argv, target, expected):
     assert entry.main() == 0
 
     assert calls[0] == expected
+
+
+@pytest.mark.parametrize(
+    "argv, function, expected",
+    [
+        (
+            ["terminal", "lepton"],
+            "main_open",
+            (("lepton",), {"hub": "", "is_persistent": False, "is_shared": False}),
+        ),
+        (
+            ["terminal", "--hub", "home", "lepton", "--shared"],
+            "main_open",
+            (("lepton",), {"hub": "home", "is_persistent": False, "is_shared": True}),
+        ),
+        (
+            ["terminal", "open", "list", "--persistent"],
+            "main_open",
+            (("list",), {"hub": "", "is_persistent": True, "is_shared": False}),
+        ),
+        (["terminal", "list"], "main_list", ((), {"hub": "", "is_json": False})),
+        (
+            ["terminal", "list", "--json", "--hub", "home"],
+            "main_list",
+            ((), {"hub": "home", "is_json": True}),
+        ),
+        (
+            ["terminal", "attach", "lepton", "3f2a"],
+            "main_attach",
+            (("lepton", "3f2a"), {"hub": ""}),
+        ),
+        (
+            ["terminal", "exec", "lepton", "--", "git", "log", "--", "f", "--tty"],
+            "main_exec",
+            (
+                ("lepton", ["git", "log", "--", "f", "--tty"]),
+                {"hub": "", "is_tty": False},
+            ),
+        ),
+        (
+            ["terminal", "exec", "--tty", "--hub", "home", "lepton", "--", "top"],
+            "main_exec",
+            (("lepton", ["top"]), {"hub": "home", "is_tty": True}),
+        ),
+        (
+            ["terminal", "--hub", "home", "exec", "lepton", "--", "ls", "-la"],
+            "main_exec",
+            (("lepton", ["ls", "-la"]), {"hub": "home", "is_tty": False}),
+        ),
+        (
+            ["terminal", "exec", "lepton", "uptime"],
+            "main_exec",
+            (("lepton", ["uptime"]), {"hub": "", "is_tty": False}),
+        ),
+        (
+            ["terminal", "persist", "lepton", "3f2a", "--on"],
+            "main_persist",
+            (("lepton", "3f2a"), {"is_on": True, "hub": ""}),
+        ),
+        (
+            ["terminal", "share", "lepton", "3f2a", "--off", "--hub", "home"],
+            "main_share",
+            (("lepton", "3f2a"), {"is_on": False, "hub": "home"}),
+        ),
+        (
+            ["terminal", "stop", "lepton", "3f2a"],
+            "main_stop",
+            (("lepton", "3f2a"), {"hub": ""}),
+        ),
+    ],
+)
+def test_each_terminal_verb_reaches_its_command(monkeypatch, argv, function, expected):
+    monkeypatch.setattr(entry.os, "geteuid", lambda: 1000)
+    monkeypatch.setattr(entry.sys, "argv", ["nclient"] + argv)
+    monkeypatch.setattr(wording, "other_holder", lambda: "")
+    calls = []
+
+    def record(*args, **kwargs):
+        calls.append((args, kwargs))
+        return 0
+
+    monkeypatch.setattr(entry.terminal, function, record)
+
+    assert entry.main() == 0
+
+    assert calls == [expected]
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["terminal", "lepton", "--session", "3f2a"],
+        ["terminal", "persist", "lepton", "3f2a"],
+        ["terminal", "share", "lepton", "3f2a", "--on", "--off"],
+    ],
+)
+def test_a_terminal_verb_given_what_it_does_not_take_is_a_usage_error(
+    monkeypatch, argv
+):
+    monkeypatch.setattr(entry.os, "geteuid", lambda: 1000)
+    monkeypatch.setattr(entry.sys, "argv", ["nclient"] + argv)
+
+    with pytest.raises(SystemExit) as refusal:
+        entry.main()
+
+    assert refusal.value.code == 2
+
+
+def test_terminal_without_a_verb_prints_its_help(monkeypatch, capsys):
+    monkeypatch.setattr(entry.os, "geteuid", lambda: 1000)
+    monkeypatch.setattr(entry.sys, "argv", ["nclient", "terminal"])
+    monkeypatch.setattr(wording, "other_holder", lambda: "")
+
+    assert entry.main() == 2
+
+    out = capsys.readouterr().out
+    assert all(verb in out for verb in ("list", "attach", "exec", "share"))
 
 
 @pytest.mark.parametrize(

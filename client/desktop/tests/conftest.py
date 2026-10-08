@@ -749,10 +749,26 @@ class FakeResident:
         return dict(self.overlay_reply)
 
     def open_terminal(
-        self, hub_id: str, device_id: str, cols: int, rows: int, session_id=""
+        self,
+        hub_id: str,
+        device_id: str,
+        cols: int,
+        rows: int,
+        session_id="",
+        is_shared=False,
     ):
         call = ("open", hub_id, device_id, cols, rows)
-        self.terminal_calls.append(call + ((session_id,) if session_id else ()))
+        call += (session_id,) if session_id else ()
+        call += ("shared",) if is_shared else ()
+        self.terminal_calls.append(call)
+        return dict(self.terminal_reply)
+
+    def open_exec(
+        self, hub_id: str, device_id: str, argv: list, is_tty: bool, cols, rows
+    ):
+        self.terminal_calls.append(
+            ("exec", hub_id, device_id, list(argv), is_tty, cols, rows)
+        )
         return dict(self.terminal_reply)
 
     def attach_terminal(self, terminal_id: str, read) -> None:
@@ -787,9 +803,17 @@ class FakeResident:
         return dict(self.terminal_reply)
 
     def persist_terminal(
-        self, terminal_id: str, is_persistent: bool, is_shared: bool
+        self, terminal_id: str, is_persistent=None, is_shared=None
     ) -> dict:
         self.terminal_calls.append(("persist", terminal_id, is_persistent, is_shared))
+        return dict(self.session_reply)
+
+    def persist_terminal_session(
+        self, hub_id: str, session_id: str, is_persistent=None, is_shared=None
+    ) -> dict:
+        self.terminal_calls.append(
+            ("persist_session", hub_id, session_id, is_persistent, is_shared)
+        )
         return dict(self.session_reply)
 
     def stop_terminal_session(self, hub_id: str, session_id: str) -> dict:

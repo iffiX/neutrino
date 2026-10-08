@@ -1,4 +1,5 @@
 {
+  "code.account_unknown": "那台机器上没有账户 {account}",
   "code.admission_paused": "中枢暂停了新的加入；本客户端 {retry_after_s} 秒后再试",
   "code.agent_offline": "那台机器现在没有连到中枢",
   "code.ai_tools_managed": "这是已管理的设备，请到中枢面板的“模块”页，在“全局配置”里设置它的 AI 工具。",
@@ -83,6 +84,7 @@
   "code.share_not_found": "主机上没有这个共享。",
   "code.share_session_conflict": "Windows 已经用另一个账号连着这台服务器，先断开那个连接。",
   "code.share_unreachable": "连不上主机。",
+  "code.shell_program_unusable": "那台机器无法运行 {path}",
   "code.shell_unknown": "中枢那边已经没有这个终端了",
   "code.terminal_input_failed": "客户端结束了这个终端：读不到它的按键（{detail}）",
   "code.ticket_spent": "中枢拒绝了这个链接：它已被用过或已过期；请离开这台中枢，用新链接重新加入",

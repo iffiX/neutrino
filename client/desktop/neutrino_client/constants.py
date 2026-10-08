@@ -43,11 +43,12 @@ CLIENT_LEAVE_PATH = "/api/channel/leave"
 CLIENT_CHANNEL_WS_PATH = "/api/channel/socket"
 
 # The stream kinds a client opens, and the code it closes a stream the hub
-# opened with. A ``shell`` carries terminal bytes both ways; a ``command``
-# resizes one; a ``connect`` carries one TCP connection to a published entry
-# or to the hub's panel.
+# opened with. A ``shell`` carries terminal bytes both ways; an ``exec`` runs
+# one command; a ``command`` resizes either; a ``connect`` carries one TCP
+# connection to a published entry or to the hub's panel.
 CLIENT_STREAM_KIND_SERVICE = "service"
 CLIENT_STREAM_KIND_SHELL = "shell"
+CLIENT_STREAM_KIND_EXEC = "exec"
 CLIENT_STREAM_KIND_COMMAND = "command"
 CLIENT_STREAM_KIND_CONNECT = "connect"
 CLIENT_STREAM_CODE_KIND_UNKNOWN = "kind_unknown"

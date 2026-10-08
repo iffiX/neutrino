@@ -1,4 +1,5 @@
 {
+  "code.account_unknown": "That machine has no account {account}",
   "code.admission_paused": "The hub has paused new joins; this client tries again in {retry_after_s} s",
   "code.agent_offline": "That machine is not connected to the hub right now",
   "code.ai_tools_managed": "This is a managed device: set its AI tools on the hub's panel, under Modules, Global configuration.",
@@ -83,6 +84,7 @@
   "code.share_not_found": "The host has no share by this name.",
   "code.share_session_conflict": "Windows already holds a connection to this server under another login; disconnect it first.",
   "code.share_unreachable": "The host cannot be reached.",
+  "code.shell_program_unusable": "That machine cannot run {path}",
   "code.shell_unknown": "The hub no longer has that terminal open",
   "code.terminal_input_failed": "The client ended this terminal: its keys could not be read ({detail})",
   "code.ticket_spent": "The hub refused this link; it was used already or has expired, so leave this hub and join with a fresh link",

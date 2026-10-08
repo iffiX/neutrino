@@ -223,6 +223,34 @@ def test_attach_answers_101_with_the_header_and_what_is_typed_reaches_the_bridge
     assert b"".join(resident.typed) == b"ls\n"
 
 
+def test_exec_answers_101_and_its_connection_reaches_the_bridge(control):
+    server, resident, _platform = control
+
+    status, reply, connection = client.upgrade(
+        socket_path=server.socket_path,
+        path="/api/terminal/exec",
+        body={"hub_id": "h1", "device_id": "d_lepton", "argv": ["cat"]},
+    )
+    connection.send(b"piece")
+    connection.close()
+    deadline = time.monotonic() + 5
+    while ("attach", "t1") not in resident.terminal_calls or not resident.typed:
+        assert time.monotonic() < deadline
+        time.sleep(0.01)
+
+    assert (status, reply) == (101, {"terminal_id": "t1"})
+    assert resident.terminal_calls[0] == (
+        "exec",
+        "h1",
+        "d_lepton",
+        ["cat"],
+        False,
+        0,
+        0,
+    )
+    assert b"".join(resident.typed) == b"piece"
+
+
 def test_a_terminal_nobody_types_in_stays_past_the_requests_deadline(
     control, monkeypatch
 ):

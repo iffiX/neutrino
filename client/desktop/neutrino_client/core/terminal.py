@@ -14,12 +14,17 @@ A Clear sends Ctrl+C after what was typed before it, and the output is
 dropped, what had arrived and was not yet written among it, until the stream
 has been quiet for ``CLIENT_TERMINAL_CLEAR_QUIET_S``, for
 ``CLIENT_TERMINAL_CLEAR_MAX_S`` at most.
+
+An ``exec`` stream's two connections carry pieces, each a big-endian u32
+length and its bytes: up, the command's input, an empty piece ending it;
+down, each frame of the stream, its ``fd`` byte first.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
 # client still imports on Python 3.9.
 from __future__ import annotations
 
+import struct
 import threading
 import time
 
@@ -38,6 +43,54 @@ TERMINAL_WAIT_S = 0.5
 TERMINAL_BATCH_BYTES = 65536
 # The key a Clear sends first.
 TERMINAL_CTRL_C = b"\x03"
+# The length in front of every piece on an exec stream's connections.
+TERMINAL_PIECE_HEADER = struct.Struct("!I")
+
+
+def encode_piece(data: bytes) -> bytes:
+    """One piece of an exec stream's connection: its length, then its bytes.
+
+    Args:
+        data: The bytes; empty is the piece that ends the input.
+
+    Returns:
+        The piece.
+    """
+    return TERMINAL_PIECE_HEADER.pack(len(data)) + bytes(data)
+
+
+def read_piece(read) -> "bytes | None":
+    """The next piece of an exec stream's connection.
+
+    Args:
+        read: ``read(size)`` returns at most ``size`` bytes, empty at the
+            end; an ``OSError`` passes through.
+
+    Returns:
+        The piece's bytes, empty for the piece that ends the input; None
+        once the connection ended, or ended inside a piece.
+
+    Raises:
+        OSError: When ``read`` raised it.
+    """
+    header = _read_exactly(read, TERMINAL_PIECE_HEADER.size)
+    if header is None:
+        return None
+    (length,) = TERMINAL_PIECE_HEADER.unpack(header)
+    if not length:
+        return b""
+    return _read_exactly(read, length)
+
+
+def _read_exactly(read, size: int) -> "bytes | None":
+    """``size`` bytes from ``read``, None when it ends first."""
+    data = b""
+    while len(data) < size:
+        more = read(size - len(data))
+        if not more:
+            return None
+        data += more
+    return data
 
 
 def _nobody(*_args) -> None:
@@ -246,3 +299,71 @@ class TerminalBridge:
         except GatewayUnreachable:
             return {"code": "hub_unreachable", "params": {}}
         return {"exit_code": params.get("exit_code")}
+
+
+class ExecBridge(TerminalBridge):
+    """One ``exec`` stream, carried in pieces to and from ``nclient terminal exec``."""
+
+    def __init__(self, *, stream, is_tty: bool, clock=time.monotonic):
+        """
+        Args:
+            stream: The open ``exec`` stream.
+            is_tty: Whether the command runs on a pseudo-terminal, where the
+                end of the input is never sent.
+            clock: The monotonic clock a Clear's quiet is measured on.
+        """
+        super().__init__(stream=stream, clock=clock)
+        self._is_tty = is_tty
+
+    def pump_in(self, read) -> None:
+        """Send the command's input to the hub until the connection ends.
+
+        The empty piece sends ``eof``, without ``is_tty``. A connection that
+        ends closes the stream from this side, unless it has ended already.
+
+        Args:
+            read: ``read(size)`` reads the connection, empty at its end; an
+                ``OSError`` ends it too, and the outcome then says
+                ``terminal_input_failed``.
+        """
+        while True:
+            try:
+                piece = read_piece(read)
+            except OSError as error:
+                if not self._stream.is_done:
+                    self._failure = {
+                        "code": "terminal_input_failed",
+                        "params": {"detail": str(error)[:200] or type(error).__name__},
+                    }
+                piece = None
+            if piece is None:
+                break
+            try:
+                if piece:
+                    self._stream.send(piece)
+                elif not self._is_tty:
+                    self._stream.send_eof()
+            except (GatewayUnreachable, TimeoutError):
+                break
+        self._is_closed_here = not self._stream.is_done
+        self._stream.close()
+
+    def pump_out(self, write) -> None:
+        """Write each frame of the stream as one piece until the stream ends.
+
+        Args:
+            write: ``write(data)`` puts bytes on the connection; an
+                ``OSError`` ends the stream from this side.
+        """
+        while True:
+            data = self._stream.read(TERMINAL_WAIT_S)
+            if data is None:
+                continue
+            if not data:
+                return
+            try:
+                write(encode_piece(data))
+            except OSError:
+                self._is_closed_here = not self._stream.is_done
+                self._stream.close()
+                return

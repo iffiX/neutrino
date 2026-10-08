@@ -572,6 +572,78 @@ def test_attach_answers_101_naming_the_terminal_and_the_resident_gets_the_size()
     assert resident.terminal_calls == [("open", "h1", "d_lepton", 120, 40)]
 
 
+def test_a_shared_attach_says_so_to_the_resident():
+    resident = FakeResident()
+
+    routes.dispatch(
+        "POST",
+        "/api/terminal/attach",
+        {"hub_id": "h1", "device_id": "d1", "cols": 80, "rows": 24, "is_shared": True},
+        resident,
+    )
+
+    assert resident.terminal_calls == [("open", "h1", "d1", 80, 24, "shared")]
+
+
+def test_exec_answers_101_and_the_resident_gets_the_command():
+    resident = FakeResident()
+
+    status, reply = routes.dispatch(
+        "POST",
+        "/api/terminal/exec",
+        {
+            "hub_id": "h1",
+            "device_id": "d1",
+            "argv": ["psql", "app"],
+            "is_tty": False,
+            "cols": 80,
+            "rows": 24,
+        },
+        resident,
+    )
+
+    assert (status, reply) == (101, {"terminal_id": "t1"})
+    assert resident.terminal_calls == [
+        ("exec", "h1", "d1", ["psql", "app"], False, 80, 24)
+    ]
+
+
+def test_an_exec_the_resident_refuses_is_its_code():
+    resident = FakeResident()
+    resident.terminal_reply = {"code": "unknown_terminal", "params": {}}
+
+    status, reply = routes.dispatch(
+        "POST", "/api/terminal/exec", {"hub_id": "h1", "device_id": "x"}, resident
+    )
+
+    assert status == 404
+    assert reply["code"] == "unknown_terminal"
+    assert resident.terminal_calls == [("exec", "h1", "x", [], False, 0, 0)]
+
+
+def test_a_persist_names_only_the_flags_its_body_carries():
+    resident = FakeResident()
+
+    by_terminal = routes.dispatch(
+        "POST",
+        "/api/terminal/persist",
+        {"terminal_id": "t1", "is_shared": False},
+        resident,
+    )
+    by_session = routes.dispatch(
+        "POST",
+        "/api/terminal/persist",
+        {"hub_id": "h1", "session_id": "k1", "is_persistent": True},
+        resident,
+    )
+
+    assert (by_terminal, by_session) == ((200, {}), (200, {}))
+    assert resident.terminal_calls == [
+        ("persist", "t1", None, False),
+        ("persist_session", "h1", "k1", True, None),
+    ]
+
+
 def test_attaching_to_a_machine_the_hub_does_not_offer_is_404():
     resident = FakeResident()
     resident.terminal_reply = {"code": "unknown_terminal", "params": {}}

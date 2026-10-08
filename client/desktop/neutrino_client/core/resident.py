@@ -8,8 +8,8 @@ and it owns the five service handlers, the store and the choice of exit
 hub, so a service is addressed by hub and id together and a hub that goes
 away takes only its own entries with it. Beside the sessions it holds this
 machine's place on each hub's virtual network, which a hub row connects,
-cancels, disconnects and picks the engine of, and the terminals open on the
-machines a hub offers.
+cancels, disconnects and picks the engine of, and the terminals and the
+commands open on the machines a hub offers.
 
 It holds the one state document the page draws, and the jobs in it: per hub
 whether a refresh waits for its answer, the step on its virtual network and
@@ -55,7 +55,7 @@ from neutrino_client.core.session import (
     ClientHubSession,
 )
 from neutrino_client.core.streams import ClientStream
-from neutrino_client.core.terminal import TerminalBridge
+from neutrino_client.core.terminal import ExecBridge, TerminalBridge
 from neutrino_client.exceptions import (
     GatewayRefused,
     GatewayRefusedDetail,
@@ -513,7 +513,8 @@ class ClientResident:
         """The machines every connected hub offers a terminal on, merged.
 
         Returns:
-            ``[{hub_id, device_id, name, is_online}]`` in hub order.
+            ``[{hub_id, device_id, name, is_online, is_shell_allowed,
+            is_exec_allowed}]`` in hub order.
         """
         with self._lock:
             sessions = list(self._sessions.values())
@@ -529,8 +530,9 @@ class ClientResident:
         """The shell sessions every connected hub lists for this client, merged.
 
         Returns:
-            ``[{hub_id, session_id, device_id, owner, is_owned,
-            is_persistent, is_shared, attached_count, title, started_at}]``
+            ``[{hub_id, session_id, device_id, account, owner, owner_name,
+            is_owned, is_persistent, is_shared, attached_count, title,
+            started_at}]``
             in hub order.
         """
         with self._lock:
@@ -953,6 +955,7 @@ class ClientResident:
         cols: int,
         rows: int,
         session_id: str = "",
+        is_shared: bool = False,
     ) -> dict:
         """Open a shell on one machine a hub offers, for a terminal to attach to.
 
@@ -964,22 +967,33 @@ class ClientResident:
             session_id: A shell session the machine keeps, attached to again
                 with its kept output; empty opens a new one under a fresh
                 uuid.
+            is_shared: Whether a new session is shared from its start.
 
         Returns:
             ``{"terminal_id", "session_id"}``; ``unknown_hub``,
-            ``unknown_terminal`` or ``hub_unreachable`` otherwise.
+            ``unknown_terminal`` for a machine the hub offers no shell on,
+            or ``hub_unreachable`` otherwise.
         """
         session = self._find_session(hub_id)
         if session is None:
             return {"code": "unknown_hub", "params": {"hub_id": hub_id}}
-        known = {entry["device_id"] for entry in session.terminal_entries()}
+        known = {
+            entry["device_id"]
+            for entry in session.terminal_entries()
+            if entry.get("is_shell_allowed")
+        }
         if device_id not in known:
             return {"code": "unknown_terminal", "params": {"device_id": device_id}}
         is_resumed = bool(session_id)
         session_id = session_id or str(uuid.uuid4())
         try:
             stream = session.open_shell(
-                device_id, cols, rows, session_id, is_resumed=is_resumed
+                device_id,
+                cols,
+                rows,
+                session_id,
+                is_resumed=is_resumed,
+                is_shared=is_shared and not is_resumed,
             )
         except GatewayUnreachable as error:
             return {"code": "hub_unreachable", "params": {"detail": str(error)}}
@@ -989,6 +1003,55 @@ class ClientResident:
             self._terminals[terminal_id] = (session, bridge)
         self._log(f"a terminal on {device_id} is open")
         return {"terminal_id": terminal_id, "session_id": session_id}
+
+    def open_exec(
+        self,
+        hub_id: str,
+        device_id: str,
+        argv: list,
+        is_tty: bool,
+        cols: int,
+        rows: int,
+    ) -> dict:
+        """Run one command on one machine a hub offers, for a terminal to attach to.
+
+        The terminal's two connections carry pieces, as
+        :class:`~neutrino_client.core.terminal.ExecBridge` reads and writes
+        them.
+
+        Args:
+            hub_id: The hub, by its id or by its binding's id.
+            device_id: The machine, as the hub's ``terminals`` names it.
+            argv: The command and its arguments.
+            is_tty: Whether it runs on a pseudo-terminal.
+            cols: The pseudo-terminal's width in columns.
+            rows: The pseudo-terminal's height in rows.
+
+        Returns:
+            ``{"terminal_id"}``; ``unknown_hub``, ``unknown_terminal`` for a
+            machine the hub offers no command on, or ``hub_unreachable``
+            otherwise.
+        """
+        session = self._find_session(hub_id)
+        if session is None:
+            return {"code": "unknown_hub", "params": {"hub_id": hub_id}}
+        known = {
+            entry["device_id"]
+            for entry in session.terminal_entries()
+            if entry.get("is_exec_allowed")
+        }
+        if device_id not in known:
+            return {"code": "unknown_terminal", "params": {"device_id": device_id}}
+        try:
+            stream = session.open_exec(device_id, argv, is_tty, cols, rows)
+        except GatewayUnreachable as error:
+            return {"code": "hub_unreachable", "params": {"detail": str(error)}}
+        terminal_id = uuid.uuid4().hex
+        bridge = ExecBridge(stream=stream, is_tty=is_tty)
+        with self._lock:
+            self._terminals[terminal_id] = (session, bridge)
+        self._log(f"a command on {device_id} is open")
+        return {"terminal_id": terminal_id}
 
     def attach_terminal(self, terminal_id: str, read) -> None:
         """Carry what is typed on one terminal to its shell until either ends.
@@ -1138,18 +1201,22 @@ class ClientResident:
         return {}
 
     def persist_terminal(
-        self, terminal_id: str, is_persistent: bool, is_shared: bool
+        self,
+        terminal_id: str,
+        is_persistent: "bool | None" = None,
+        is_shared: "bool | None" = None,
     ) -> dict:
         """Set whether one terminal's shell session outlives its windows, and who sees it.
 
-        The session's row in the state document takes both values at once
-        on success; the next state from the hub confirms them.
+        The session's row in the state document takes the values given at
+        once on success; the next state from the hub confirms them.
 
         Args:
             terminal_id: The terminal.
-            is_persistent: Whether the machine keeps the session.
+            is_persistent: Whether the machine keeps the session; None
+                leaves it.
             is_shared: Whether every client with terminal rights on the
-                machine lists it.
+                machine lists it; None leaves it.
 
         Returns:
             Empty on success; ``unknown_terminal``, the hub's refusal,
@@ -1159,13 +1226,35 @@ class ClientResident:
         if opened is None:
             return {"code": "unknown_terminal", "params": {}}
         session, bridge = opened
-        outcome = _hub_answer(
-            session.persist_shell, bridge.session_id, is_persistent, is_shared
-        )
-        if not outcome:
-            session.note_session_flags(bridge.session_id, is_persistent, is_shared)
-            self.notify()
-        return outcome
+        return self._persist(session, bridge.session_id, is_persistent, is_shared)
+
+    def persist_terminal_session(
+        self,
+        hub_id: str,
+        session_id: str,
+        is_persistent: "bool | None" = None,
+        is_shared: "bool | None" = None,
+    ) -> dict:
+        """Set whether one shell session a hub's machine keeps outlives its
+        windows, and who sees it, attached or not.
+
+        Args:
+            hub_id: The hub, by its id or by its binding's id.
+            session_id: The shell session's id.
+            is_persistent: Whether the machine keeps the session; None
+                leaves it.
+            is_shared: Whether every client with terminal rights on the
+                machine lists it; None leaves it.
+
+        Returns:
+            Empty on success; ``unknown_hub``, the hub's refusal,
+            ``session_not_owned`` and ``session_unknown`` among them, or
+            ``hub_unreachable``.
+        """
+        session = self._find_session(hub_id)
+        if session is None:
+            return {"code": "unknown_hub", "params": {"hub_id": hub_id}}
+        return self._persist(session, session_id, is_persistent, is_shared)
 
     def stop_terminal_session(self, hub_id: str, session_id: str) -> dict:
         """End one shell session a hub's machine keeps, attached or not.
@@ -1493,6 +1582,16 @@ class ClientResident:
             self._log("a press on a lane at work was dropped")
             return {}
         return outcome or {}
+
+    def _persist(self, session, session_id: str, is_persistent, is_shared) -> dict:
+        """Send one ``persist`` and show its flags at once on success."""
+        outcome = _hub_answer(
+            session.persist_shell, session_id, is_persistent, is_shared
+        )
+        if not outcome:
+            session.note_session_flags(session_id, is_persistent, is_shared)
+            self.notify()
+        return outcome
 
     def _terminal(self, terminal_id: str) -> "tuple | None":
         """One terminal's session and bridge, None for an id nobody opened."""
