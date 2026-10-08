@@ -246,17 +246,17 @@ The tab, the device's drawer on **Devices**, and a client's **Connect** show the
 
 The hub or the agent of the providing machine returns these codes, and the client shows them on the entry's row.
 
-| Symptom                             | Cause                                                                                                      | Fix                                                           |
-| ----------------------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| `connect_failed` with `refused`     | nothing listens on the service's port on that machine                                                      | start the service, or the module, on that machine             |
-| `connect_failed` with `timeout`     | the service did not respond within 10 seconds                                                              | check that the machine and the service are up                 |
-| `connect_failed` with `unreachable` | the hub has no route to a service declared by hand on **Services**                                         | check the declared address, and that the hub's LAN reaches it |
-| `port_not_published`                | the machine stopped publishing the port: the container, the instance or the share stopped                  | start it again on the **Modules** page                        |
-| `connect_limit`                     | the client has 256 connections open through the hub                                                        | close forwards or programs the client does not need           |
-| `permission_denied`                 | the client's permission on **Clients** leaves out that kind of entry, that machine, terminals or the panel | widen the client's permission on **Clients**                  |
-| `service_unknown`                   | the hub no longer publishes the entry                                                                      | select refresh; the entry leaves the list                     |
-| `port_taken`                        | another program on this computer listens on the entry's **Fixed** local port                               | select **Configure** on the row and pick another port         |
-| `web_token_missing`                 | the hub sent no token for a VS Code, code-server or CloudCLI entry                                         | select **Open** again                                         |
+| Symptom                             | Cause                                                                                                                       | Fix                                                           |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `connect_failed` with `refused`     | nothing listens on the service's port on that machine                                                                       | start the service, or the module, on that machine             |
+| `connect_failed` with `timeout`     | the service did not respond within 10 seconds                                                                               | check that the machine and the service are up                 |
+| `connect_failed` with `unreachable` | the hub has no route to a service declared by hand on **Services**                                                          | check the declared address, and that the hub's LAN reaches it |
+| `port_not_published`                | the machine stopped publishing the port: the container, the instance or the share stopped                                   | start it again on the **Modules** page                        |
+| `connect_limit`                     | the client has 256 connections open through the hub                                                                         | close forwards or programs the client does not need           |
+| `permission_denied`                 | the client's permission on **Clients** leaves out that kind of entry, that machine, terminals, remote commands or the panel | widen the client's permission on **Clients**                  |
+| `service_unknown`                   | the hub no longer publishes the entry                                                                                       | select refresh; the entry leaves the list                     |
+| `port_taken`                        | another program on this computer listens on the entry's **Fixed** local port                                                | select **Configure** on the row and pick another port         |
+| `web_token_missing`                 | the hub sent no token for a VS Code, code-server or CloudCLI entry                                                          | select **Open** again                                         |
 
 ## A share does not mount on a computer
 

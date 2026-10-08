@@ -153,7 +153,7 @@ A mount that fails shows a code on the row, listed under [A share does not mount
 
 ## Terminals
 
-The **Terminals** page opens a shell on a machine a hub manages, in a tab of the window. The client's permission on the hub's **Clients** page must include terminals.
+The **Terminals** page opens a shell on a machine a hub manages, in a tab of the window. The client's permission on the hub's **Clients** page must include terminals. A script runs one command on a machine with `nclient terminal exec`, which needs **Remote commands** in the same permission. Its flags are on [nclient commands](../commands/nclient.md).
 
 1. On the **Terminals** page, pick the machine in the strip on top. A green dot marks a machine that is online.
 1. Select **New terminal**.
