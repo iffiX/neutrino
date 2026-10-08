@@ -8,7 +8,7 @@ Run the greps from the repository root with the page path as `$P`.
 
 | Check | How |
 | --- | --- |
-| The opening paragraph states what the thing is or what the reader has at the end. | read the first paragraph |
+| The opening paragraph says what the page is, or starts with the first step; it does not describe the end state. | read the first paragraph |
 | No summary, recap, closing line or next-steps paragraph. | read the last section |
 | No em dash inside a sentence. `[grep]` | `grep -n '—' $P` |
 | Every ordered item is `1.`; no hand-numbered bold steps. `[grep]` | `grep -nE '^\s*([2-9]|[1-9][0-9])\.\s|^\*\*[0-9]+[.、]' $P` |

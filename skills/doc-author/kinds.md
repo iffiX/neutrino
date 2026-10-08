@@ -39,8 +39,9 @@ no step has a choice in it; each stage ends in a visible result.
 
 ## How-to guide
 
-Reader: a user who runs the product and has one goal. Opens with the state the
-reader has at the end, then the prerequisites.
+Reader: a user who runs the product and has one goal. Opens with what the page
+is or with the first step, then the prerequisites; it does not open with the
+state the reader has at the end.
 
 Shape: a title naming the goal ("Route one device through the tunnel"); one
 procedure, or a few under H3s in the order the reader performs them; options
