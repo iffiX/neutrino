@@ -57,7 +57,7 @@ def _join_here(link: str) -> int:
     except enrollment.EnrollmentError as error:
         print(wording.word_code(error.code, error.params), file=sys.stderr)
         return 1
-    print(f"joined {binding['gateway_url']}: {wording.word_state('pending')}")
+    print(wording.CLIENT_JOINED_LINE.format(url=binding["gateway_url"]))
     print(wording.word_code("resident_not_running"), file=sys.stderr)
     return 0
 
@@ -83,7 +83,7 @@ def _join_through_resident(state: dict, link: str) -> int:
             file=sys.stderr,
         )
         return 1
-    print(f"joined {_joined_url(state, reply)}")
+    print(wording.CLIENT_JOINED_LINE.format(url=_joined_url(state, reply)))
     return 0
 
 

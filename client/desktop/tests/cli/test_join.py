@@ -97,7 +97,9 @@ def test_the_running_resident_is_asked_to_join_and_names_the_hub(resident, capsy
     assert join_cli.main(LINK) == 0
 
     streams = capsys.readouterr()
-    assert streams.out.strip() == f"joined {OFFICE_ROW['gateway_url']}"
+    assert streams.out.strip() == wording.CLIENT_JOINED_LINE.format(
+        url=OFFICE_ROW["gateway_url"]
+    )
     assert streams.err == ""
     assert resident.connected_links == [LINK]
     assert enrollment.bindings() == []
@@ -198,6 +200,6 @@ def test_a_join_here_asks_no_hub(monkeypatch, capsys):
     assert join_cli.main(LINK) == 0
 
     assert posted == []
-    assert wording.word_state("pending") in capsys.readouterr().out
+    assert wording.CLIENT_JOINED_LINE.format(url=GATEWAY_URL) in capsys.readouterr().out
     (stored,) = enrollment.bindings()
     assert stored["is_pending"] is True
