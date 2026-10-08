@@ -10,7 +10,7 @@ lists from one image.
 
 | File | What it holds |
 | --- | --- |
-| `shots.json` | One entry per image: file, language directory, page or `pages`, source, viewport, element, what to wait for, the state the hub must be in, `press`, the steps run before the shot, `scroll_to`, the element put at the top before a viewport shot, the manual step when one is still needed, `redraw_qr`, the stand-in text a shot's QR code is redrawn from, and `hide`, the CSS selectors hidden before the shot. |
+| `shots.json` | One entry per image: file, language directory, page or `pages`, source, viewport, element, what to wait for, the state the hub must be in, `press`, the steps run before the shot, `scroll_to`, the element put at the top before a viewport shot, the manual step when one is still needed, `redraw_qr`, the stand-in text a shot's QR code is redrawn from, `hide`, the CSS selectors hidden before the shot, `is_setup`, whether the shot is a setup wizard screen, and `wait_s`, the seconds to wait for the element. |
 | `redact.json` | The patterns and literal strings replaced inside the page before each shot. |
 | `redact.local.json` | Optional, ignored by git: more `literals` in the same shape, for names you do not commit. |
 | `capture.py` | Signs in to the panel, takes the panel, client and console shots, and prints what it replaced in each. |
@@ -98,4 +98,13 @@ such as a chart, is left as it is.
 
 An entry may carry `press`, the steps run in order once the page has loaded and before `wait_for`. A step that is a selector is clicked (a device chip, a tab, a button that opens a dialog), and `{"fill": "<selector>", "text": "<text>"}` types the text into that field; `{"key": "Enter"}` presses that key. `scroll_to` names an element put at the top of the page once the `wait_for` element is there, for a viewport shot of a section further down. `ready` names an element waited for before the steps, for a page that renders its content a moment after it loads; a page whose URL carries a `#` route is reloaded first, so a dialog left open by the previous shot is gone. `{ui.key}` placeholders are resolved in them as in `element`. A click that finds nothing within 15 seconds is reported and skipped, so a step may name something that is only sometimes there. A shot that fails is reported and the run goes on to the next; the tool exits 1 when any failed.
 
-The setup entries are written from the wizard's source and carry `_todo` until a run against a box before setup confirms them; on a set-up hub they fail and the run goes on.
+## Capture the setup wizard shots
+
+An entry with `is_setup` is a screen of the first-run wizard. The tool opens it in a fresh browser without signing in, adds the wizard's one-time token to its `url`, and skips the panel's language switch; the shot's `press` steps answer the wizard's language question. `wait_s` sets how many seconds the tool waits for the `wait_for` element, 30 when it is left out. The last setup entry of a language completes setup, so each language needs a box that has not been set up.
+
+1. Install the hub package on a spare machine, and make its panel port reachable from this machine.
+1. Export the token from the address the package prints after install as `NEUTRINO_SETUP_TOKEN`, or type it when the tool prompts. It is also in `setup_token` under the hub's state root.
+1. Run `python3 capture.py --panel http://<hub-address>:8080 --source panel --only setup_secrets setup_shape setup_done --language en`.
+1. Purge the package and remove its directories, install it again, and repeat with the new token and `--language zh`.
+
+The entries pick the server shape only, which keeps every address on the machine.

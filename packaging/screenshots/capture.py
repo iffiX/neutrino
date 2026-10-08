@@ -63,6 +63,8 @@ CONSOLE_PROFILE_VARIABLE = "NEUTRINO_CONSOLE_PROFILE"
 CONSOLE_PROFILE_DEFAULT = (
     pathlib.Path.home() / ".cache" / "neutrino" / "screenshots" / "console_profile"
 )
+# The variable holding the setup wizard's one-time token, for setup shots.
+SETUP_TOKEN_VARIABLE = "NEUTRINO_SETUP_TOKEN"
 DEVICE_SCALE = 2
 WAIT_TIMEOUT_MS = 30_000
 NETWORK_IDLE_TIMEOUT_MS = 10_000
@@ -386,7 +388,10 @@ def take(
                 continue
         page.wait_for_timeout(PRESS_SETTLE_MS)
         settle(page)
-    page.wait_for_selector(resolve(shot["wait_for"], labels), timeout=WAIT_TIMEOUT_MS)
+    page.wait_for_selector(
+        resolve(shot["wait_for"], labels),
+        timeout=shot.get("wait_s", WAIT_TIMEOUT_MS / 1000) * 1000,
+    )
     settle(page)
     if shot.get("scroll_to"):
         page.locator(resolve(shot["scroll_to"], labels)).first.evaluate(SCROLL_SCRIPT)
@@ -469,10 +474,50 @@ def chosen(shots: list, arguments) -> list:
     return picked
 
 
+def capture_setup(
+    browser, shots: list, rules: list, arguments, viewports: dict
+) -> None:
+    """Take the setup wizard's shots, each in a fresh browser without a session.
+
+    The wizard is opened with the token from ``NEUTRINO_SETUP_TOKEN``, or the
+    one typed at the prompt. Its language is the wizard's first question, so
+    a shot's ``press`` steps choose it.
+    """
+    if not shots:
+        return
+    base_url = arguments.panel.rstrip("/")
+    token = os.environ.get(SETUP_TOKEN_VARIABLE) or getpass.getpass("Setup token: ")
+    for directory, language in SHOT_LANGUAGES.items():
+        labels = read_labels(PANEL_LOCALES, language)
+        for shot in [shot for shot in shots if shot["language"] == directory]:
+            guest = browser.new_context(
+                device_scale_factor=DEVICE_SCALE,
+                ignore_https_errors=arguments.ignore_https_errors,
+            )
+            opened = {**shot, "url": f"{shot.get('url', '/')}?token={token}"}
+            attempt(
+                guest.new_page(),
+                opened,
+                labels,
+                rules,
+                base_url=base_url,
+                viewports=viewports,
+            )
+            guest.close()
+
+
 def capture_panel(
     browser, shots: list, rules: list, arguments, viewports: dict
 ) -> None:
     """Take the panel's shots, one language at a time, and restore the language."""
+    capture_setup(
+        browser,
+        [shot for shot in shots if shot.get("is_setup")],
+        rules,
+        arguments,
+        viewports,
+    )
+    shots = [shot for shot in shots if not shot.get("is_setup")]
     if not shots:
         return
     base_url = arguments.panel.rstrip("/")
