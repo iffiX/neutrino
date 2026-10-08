@@ -197,7 +197,7 @@ Linux 上，**这台机器做什么？**（What is this machine for?）只列出
 
 ## 看着步骤跑完
 
-页面标题变成 **正在配置**（Setting up），逐条列出正在跑的步骤，最后一步是 **安装本机被控端**（Installing this machine's agent）。**生成面板证书**（Generating the panel's certificates）每次都跑，生成中枢自己的证书颁发机构和面板证书。
+页面标题变成 **正在配置**（Setting up），逐条列出正在跑的步骤，第一步是 **检查中枢需要的软件包**（Checking the packages the hub needs），最后一步是 **设置面板密码**（Setting the panel password）；本机的被控端在这之后自动装上。**生成面板证书**（Generating the panel's certificates）每次都跑，生成中枢自己的证书颁发机构和面板证书。
 
 ![配置完成的页面，提供证书下载](/guide/zh/setup_done.webp)
 

@@ -189,7 +189,7 @@ A router sets one uplink and one served network here, and the panel's **Network*
 
 ## Watch the steps
 
-The title reads **Setting up**. The list shows each step as it runs, from **Checking the packages the hub needs** to **Installing this machine's agent**. **Generating the panel's certificates** makes the hub's own certificate authority and the panel's certificate. When the last step finishes, the title reads **This hub is set up**.
+The title reads **Setting up**. The list shows each step as it runs, from **Checking the packages the hub needs** to **Setting the panel password**; this machine's agent is installed right after, in the background. **Generating the panel's certificates** makes the hub's own certificate authority and the panel's certificate. When the last step finishes, the title reads **This hub is set up**.
 
 ![The finished screen offering the certificate](/guide/en/setup_done.webp)
 
