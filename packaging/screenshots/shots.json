@@ -96,6 +96,9 @@
       "file": "setup_shape.png",
       "language": "en",
       "page": "install/hub.md",
+      "pages": [
+        "scenarios/router_or_gateway.md"
+      ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/",
@@ -296,6 +299,9 @@
       "file": "network_modes.png",
       "language": "en",
       "page": "hub/network.md",
+      "pages": [
+        "scenarios/router_or_gateway.md"
+      ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/network",
@@ -318,12 +324,27 @@
       "file": "network_exposure.png",
       "language": "en",
       "page": "hub/network.md",
+      "pages": [
+        "scenarios/router_or_gateway.md"
+      ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/network",
       "element": "section.settings_group:has(.exposure_chips)",
       "wait_for": ".exposure_chips",
       "state": "At least one overlay running, so the overlay chip shows."
+    },
+    {
+      "file": "network_roles.png",
+      "language": "en",
+      "page": "scenarios/router_or_gateway.md",
+      "source": "panel",
+      "viewport": "desktop",
+      "url": "/network",
+      "element": "section.card:has(.network_roles)",
+      "wait_for": ".network_roles",
+      "state": "A hub in router mode with two wired interfaces, one in the WAN role and one in the LAN role; the WAN interface's tab is selected.",
+      "_todo": "The element selector is read from network_page.tsx and not yet checked against the live page."
     },
     {
       "file": "network_exposure.png",
@@ -340,6 +361,9 @@
       "file": "overlay_switches.png",
       "language": "en",
       "page": "hub/overlay.md",
+      "pages": [
+        "scenarios/choose_a_way_in.md"
+      ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/overlay",
@@ -371,6 +395,21 @@
       "press": [
         ".overlay_choice:has(strong:text-is(\"{ui.overlay.direct_title}\")) .overlay_choice_select"
       ]
+    },
+    {
+      "file": "overlay_relay_settings.png",
+      "language": "en",
+      "page": "scenarios/vps_relay.md",
+      "source": "panel",
+      "viewport": "desktop",
+      "url": "/overlay",
+      "element": "section.settings_group:has(h2:text-is(\"{ui.overlay.settings_title}\"))",
+      "wait_for": ".relay_fact_value",
+      "state": "SSH Relay enabled and applied with a server, an account and a key; Status reads Connected and Address for clients shows https://<server>:<public-port>.",
+      "press": [
+        ".overlay_choice:has(strong:text-is(\"{ui.overlay.relay_title}\")) .overlay_choice_select"
+      ],
+      "_todo": "The section and wait_for selectors are copied from overlay_direct_settings and not yet checked on the SSH Relay card."
     },
     {
       "file": "overlay_direct_settings.png",

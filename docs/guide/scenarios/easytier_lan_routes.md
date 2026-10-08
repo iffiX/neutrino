@@ -4,18 +4,18 @@ title: LAN devices over EasyTier
 
 # Reach LAN devices without an agent through EasyTier
 
-Through EasyTier, a client away from home reaches a LAN device that runs no agent, such as a printer or your router's admin page. The client opens the device at the device's own LAN address. The mainland edition leaves out NetBird, so its route page is this one.
+Through EasyTier, a client away from home opens a LAN device that runs no agent at the device's own LAN address. Such a device is a printer or your router's admin page. In the mainland edition, this is the one route page.
 
 Before you start, check these:
 
 - The hub is on an EasyTier network, as [Put the hub on an EasyTier network](../hub/easytier.md) describes, and a client reaches the hub through EasyTier.
-- The hub runs in router or side gateway mode.
+- The hub runs in router or side gateway mode, as [Make the hub a router or side gateway](./router_or_gateway.md) describes.
 
-The **Settings** of the **EasyTier** card on the **Access** page shows the hub's mode: **EasyTier console** or **Manual bootstrap peers**. In console mode, follow every section in order and skip the manual mode section. In manual mode, skip the two console sections.
+The **Settings** of the **EasyTier** card on the **Access** page show the hub's mode: **EasyTier console** or **Manual bootstrap peers**. In console mode, skip the manual mode section; in manual mode, skip the two console sections.
 
 ## Find the subnet
 
-The subnet is the network of the LAN where the device sits. In router mode, open the panel's **Network** page and read the LAN interface's **Gateway address** and **Prefix length**. A gateway address of `192.168.10.1` with a prefix length of 24 gives the subnet `192.168.10.0/24`. In side gateway mode, use the hub's own address on that LAN with its prefix: `192.168.1.20/24` gives `192.168.1.0/24`.
+In router mode, the subnet comes from the LAN interface's **Gateway address** and **Prefix length** on the **Network** page: `192.168.10.1` with 24 gives `192.168.10.0/24`. In side gateway mode, it comes from the hub's own address on that LAN: `192.168.1.20/24` gives `192.168.1.0/24`.
 
 ## Add a subnet proxy in the console
 
@@ -25,8 +25,6 @@ The subnet is the network of the LAN where the device sits. In router mode, open
 1. Type the subnet in **目标网段** (destination subnet).
 1. Under **通过哪些节点访问** (through which nodes), pick the hub's device.
 1. Select **创建路由** (create route).
-
-The tab's table lists the route with the subnet and the hub.
 
 ![The subnet routes tab of the hub's network in the EasyTier console, with the LAN subnet routed through the hub](/guide/console/console_easytier_subnet_proxy.webp)
 
@@ -42,22 +40,17 @@ Under **Networks from the console**, the network's **Subnet routes** lists the s
 ## In manual mode
 
 1. On the **Access** page, select the **EasyTier** card.
-1. Under **Exported networks**, turn on the subnet. The list shows each network the hub is on, with its interface.
+1. Under **Exported networks**, turn on the subnet.
 1. Select **Apply EasyTier settings**. EasyTier restarts, and connections over it drop for a moment.
 
 ## Check from a client
 
-These steps run in the desktop client or the Android app, away from home. Each client on the network gets the route from EasyTier itself.
+Each client on the network gets the route from EasyTier. In the desktop client or the Android app, away from home:
 
-1. Open the **Hubs** page and find the hub's virtual network line, under the hub's row.
+1. On the **Hubs** page, find the virtual network line under the hub's row.
 1. If the line reads **Not connected**, select **Connect**. The line reads **Connected ·** followed by the client's EasyTier address.
 1. In a browser, open the device's LAN address, such as `http://192.168.10.20`.
 
 ## When the device stays unreachable
 
-| What you see                                                                                | Cause                                                                                                                                              | Fix                                                                                                                                    |
-| ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| A red line at the top of the **Access** page with `overlay_route_overlap`, naming the route | A route another machine on the EasyTier network offers overlaps a network the hub is on. The hub reports an EasyTier route and leaves it in place. | Change or remove that route in the console, or under **Exported networks** on the machine that offers it                               |
-| The hub runs in server mode                                                                 | A server-mode hub forwards no packets between networks                                                                                             | On the hub's **Network** page, switch the mode to router or side gateway                                                               |
-| The client shows `overlay_other_network`                                                    | This client's machine is on another virtual network, such as another hub's EasyTier console                                                        | On the other hub's row, select **Disconnect** on its virtual network line, then connect this one                                       |
-| In console mode, the client's virtual network line stays at **Connecting…**                 | The client's machine is registered with the console and is not yet attached to a network                                                           | In the console, attach the client's device to the hub's network, as [Put the hub on an EasyTier network](../hub/easytier.md) describes |
+In console mode, a client line that stays at **Connecting…** belongs to a device the console has not attached yet. Attach it to the hub's network as [Put the hub on an EasyTier network](../hub/easytier.md) describes. A red line on the **Access** page, or a code under the client's line, has its fix in [Troubleshooting](../reference/troubleshooting.md#access).
