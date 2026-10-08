@@ -14,7 +14,7 @@ pinned too: every address dialled at once, the first to connect carrying
 the round's one hello and the others closed before one, the one that
 answered written back, a whole round failing being what backs off, the
 state's ``urls`` kept on disk, a network change starting a round at once.
-The client's own ping and the round trip its pong sets are pinned too.
+The client's ``ping`` frame and the round trip its ``pong`` sets are pinned too.
 """
 
 import functools
@@ -76,8 +76,6 @@ class ScriptedSocket:
         frames,
         *,
         connect_error=None,
-        on_pong=None,
-        pong_s=None,
         connect_delay_s=0,
     ):
         """
@@ -87,9 +85,6 @@ class ScriptedSocket:
                 an event holds the read until it is set, and the list
                 running out behaves like the hub hanging up.
             connect_error: Raised by ``connect`` instead of connecting.
-            on_pong: The session's pong callback.
-            pong_s: The round trip every ping's pong reports; None answers
-                no ping.
             connect_delay_s: How long ``connect`` takes; an abort ends it
                 at once, unconnected.
         """
@@ -97,9 +92,6 @@ class ScriptedSocket:
         self._connect_error = connect_error
         self._connect_delay_s = connect_delay_s
         self._aborted = threading.Event()
-        self._on_pong = on_pong
-        self._pong_s = pong_s
-        self.pings = 0
         self.sent = []
         self.is_closed = False
         self.is_open = False
@@ -122,13 +114,6 @@ class ScriptedSocket:
         if self.is_closed:
             raise GatewayUnreachable("the socket is closed")
         self.sent.append(protocol.decode_binary(data))
-
-    def ping(self) -> None:
-        if self.is_closed:
-            raise GatewayUnreachable("the socket is closed")
-        self.pings += 1
-        if self._pong_s is not None and self._on_pong is not None:
-            self._on_pong(self._pong_s)
 
     def recv(self):
         while self._frames and isinstance(self._frames[0], threading.Event):
@@ -181,27 +166,19 @@ class SocketScript:
         hosts: The host each socket was opened for.
     """
 
-    def __init__(self, frames, connect_error=None, pong_s=None):
+    def __init__(self, frames, connect_error=None):
         """
         Args:
             frames: What each socket's ``recv`` hands back in turn.
             connect_error: Raised by every ``connect``.
-            pong_s: The round trip every ping's pong reports; None answers
-                no ping.
         """
         self._frames = list(frames)
         self._connect_error = connect_error
-        self._pong_s = pong_s
         self.made = []
         self.hosts = []
 
     def __call__(self, **kwargs) -> ScriptedSocket:
-        made = ScriptedSocket(
-            self._frames,
-            connect_error=self._connect_error,
-            on_pong=kwargs.get("on_pong"),
-            pong_s=self._pong_s,
-        )
+        made = ScriptedSocket(self._frames, connect_error=self._connect_error)
         self.made.append(made)
         self.hosts.append(kwargs.get("host", ""))
         return made
@@ -286,6 +263,11 @@ def take(session, made, frame) -> None:
 def reports(made) -> list:
     """Every report the client sent on one socket."""
     return [frame for frame in made.sent if frame["type"] == "report"]
+
+
+def pings(made) -> list:
+    """Every ping the client sent on one socket."""
+    return [frame for frame in made.sent if frame["type"] == "ping"]
 
 
 @pytest.fixture(autouse=True)
@@ -1278,7 +1260,7 @@ class AddressScript:
         elif isinstance(script, Delayed):
             made = ScriptedSocket(script.frames, connect_delay_s=script.delay_s)
         else:
-            made = ScriptedSocket(script, on_pong=kwargs.get("on_pong"))
+            made = ScriptedSocket(script)
         self.hosts.append(host)
         self.made.append(made)
         return made
@@ -1438,30 +1420,50 @@ def test_a_stop_ends_the_round(bound_everywhere, monkeypatch):
     assert time.monotonic() - started < 1
 
 
-def test_a_pong_sets_the_round_trip_until_the_socket_ends(bound, monkeypatch):
-    session, listener = bound
-    held = threading.Event()
-    script = SocketScript([WELCOME, held], pong_s=0.0123)
-    monkeypatch.setattr(session_module, "WebSocketClient", script)
+def test_a_pong_echoing_the_last_pings_nonce_sets_the_round_trip_until_the_socket_ends(
+    config_path, monkeypatch
+):
+    bind(config_path, url="https://hub.lan:8443")
+    clocks = Clocks()
+    listener = Listener()
+    session = session_for(
+        listener=listener, clock=clocks.monotonic, wall_clock=clocks.time
+    )
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
     assert session.rtt_ms() is None
-    turn = threading.Thread(target=session.run_once, daemon=True)
-    turn.start()
-    deadline = time.monotonic() + 5
-    while session.rtt_ms() is None and time.monotonic() < deadline:
-        time.sleep(0.01)
+
+    session._ping(made)
+    (ping,) = pings(made)
+    clocks.now += 0.0123
+    changes = listener.changes
+    take(session, made, {"type": "pong", "nonce": ping["nonce"]})
+
+    assert ping == {"type": "ping", "nonce": ping["nonce"]}
+    assert isinstance(ping["nonce"], str) and 0 < len(ping["nonce"]) <= 64
+    assert session.rtt_ms() == 12
+    assert listener.changes == changes + 1
+
+    session._end_socket(made)
+
+    assert session.rtt_ms() is None
+
+
+def test_a_pong_with_another_nonce_is_dropped(bound, monkeypatch):
+    session, listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+    session._ping(made)
     changes = listener.changes
 
-    assert session.rtt_ms() == 12
-    assert script.made[0].pings == 1
-    assert changes >= 1
-
-    held.set()
-    turn.join(timeout=5)
+    take(session, made, {"type": "pong", "nonce": "other"})
+    take(session, made, {"type": "pong"})
 
     assert session.rtt_ms() is None
+    assert listener.changes == changes
 
 
-def test_the_open_socket_is_pinged_every_interval(bound, monkeypatch):
+def test_the_open_socket_is_pinged_after_the_welcome_and_every_interval(
+    bound, monkeypatch
+):
     session, _listener = bound
     monkeypatch.setattr(session_module, "CLIENT_PING_INTERVAL_S", 0.02)
     held = threading.Event()
@@ -1469,13 +1471,14 @@ def test_the_open_socket_is_pinged_every_interval(bound, monkeypatch):
     monkeypatch.setattr(session_module, "WebSocketClient", script)
     turn = threading.Thread(target=session.run_once, daemon=True)
     turn.start()
-    deadline = time.monotonic() + 5
-    while (not script.made or script.made[0].pings < 3) and time.monotonic() < deadline:
-        time.sleep(0.01)
+    _wait_for(lambda: script.made and len(pings(script.made[0])) >= 3)
     held.set()
     turn.join(timeout=5)
 
-    assert script.made[0].pings >= 3
+    sent = script.made[0].sent
+    assert [frame["type"] for frame in sent[:3]] == ["hello", "report", "ping"]
+    nonces = [frame["nonce"] for frame in pings(script.made[0])]
+    assert len(nonces) >= 3 and len(set(nonces)) == len(nonces)
 
 
 def test_the_states_urls_are_written_to_disk(bound, monkeypatch, config_path):
@@ -2127,8 +2130,9 @@ def test_a_better_path_moves_the_channel_and_its_4010_is_not_replaced(
     _wait_for(lambda: session.gateway_url() == LAN_URL)
     old_held.set()
     moved = script.made[len(script.hosts) - 1 - script.hosts[::-1].index("192.0.2.1")]
+    _wait_for(lambda: len(pings(moved)) == 1)
 
-    assert [frame["type"] for frame in moved.sent][:2] == ["hello", "report"]
+    assert [frame["type"] for frame in moved.sent][:3] == ["hello", "report", "ping"]
     assert live.is_closed
     _wait_for(lambda: session._client is moved)
     assert session.connection() == "connected"

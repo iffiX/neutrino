@@ -84,7 +84,8 @@ CLIENT_CONNECT_TIMEOUT_S = 10
 CLIENT_REPORT_INTERVAL_S = 30
 # How long asking the system for this machine's networks may take.
 CLIENT_LOCAL_NETWORKS_TIMEOUT_S = 10
-# How often the client pings the open socket; each pong sets the round trip.
+# How often the client sends a ping frame on the open socket; the pong that
+# echoes its nonce sets the round trip.
 CLIENT_PING_INTERVAL_S = 20
 # The paths a candidate address reaches the hub by, best first: a round a
 # network change starts takes a live channel only on a better path.

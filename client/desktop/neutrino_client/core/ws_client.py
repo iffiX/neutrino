@@ -229,7 +229,6 @@ class WebSocketClient:
         fingerprint: str,
         timeout_s: float = CLIENT_REQUEST_TIMEOUT_S,
         silence_timeout_s: float = CLIENT_WS_SILENCE_TIMEOUT_S,
-        on_pong=None,
     ):
         """
         Args:
@@ -239,8 +238,6 @@ class WebSocketClient:
             fingerprint: SHA-256 hex the hub's certificate must digest to.
             timeout_s: How long connecting and the handshake may take.
             silence_timeout_s: How long the open socket may stay silent.
-            on_pong: Called from the reader with the seconds from this
-                side's last ping to its pong; None for nobody listening.
         """
         self._host = host
         self._port = port
@@ -259,10 +256,6 @@ class WebSocketClient:
         # ended it.
         self._pending: "socket.socket | None" = None
         self._is_aborted = False
-        self._on_pong = on_pong
-        # The payload and the send time of this side's last ping.
-        self._ping_sent: "tuple[bytes, float] | None" = None
-        self._ping_count = 0
 
     @property
     def is_open(self) -> bool:
@@ -349,22 +342,10 @@ class WebSocketClient:
         """
         self._send(OPCODE_BINARY, data)
 
-    def ping(self) -> None:
-        """Send a ping of this side's own; its pong reaches ``on_pong``.
-
-        Raises:
-            GatewayUnreachable: When the socket is gone.
-        """
-        self._ping_count += 1
-        payload = struct.pack("!Q", self._ping_count)
-        self._ping_sent = (payload, time.monotonic())
-        self._send(OPCODE_PING, payload)
-
     def recv(self) -> "tuple[str, object]":
         """The next message from the hub.
 
-        Pings are answered here and never returned. A pong to this side's
-        last ping is timed for ``on_pong``; every other pong is dropped.
+        Pings are answered here and never returned; pongs are dropped.
 
         Returns:
             ``("text", str)`` or ``("binary", bytes)``.
@@ -381,7 +362,6 @@ class WebSocketClient:
                 self._send(OPCODE_PONG, frame.payload)
                 continue
             if frame.opcode == OPCODE_PONG:
-                self._take_pong(frame.payload)
                 continue
             if frame.opcode == OPCODE_CLOSE:
                 code, reason = self._close_payload(frame.payload)
@@ -414,15 +394,6 @@ class WebSocketClient:
             except OSError:
                 pass
         self._drop()
-
-    def _take_pong(self, payload: bytes) -> None:
-        """Time a pong against this side's last ping; any other is dropped."""
-        sent = self._ping_sent
-        if sent is None or sent[0] != payload:
-            return
-        self._ping_sent = None
-        if self._on_pong is not None:
-            self._on_pong(time.monotonic() - sent[1])
 
     def _hold_pending(self, sock) -> None:
         """Keep the socket a connect is opening, where an abort reaches it."""
