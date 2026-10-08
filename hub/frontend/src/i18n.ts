@@ -94,6 +94,14 @@ export function setLanguage(language: string): void {
   }
 }
 
+/** The browser's language as the panel ships it: Chinese for any `zh`
+ * locale, English for every other. */
+export function browserLanguage(): Language {
+  return navigator.language.toLowerCase().startsWith("zh")
+    ? "zh-CN"
+    : LANGUAGE_DEFAULT;
+}
+
 /** The language this name is, or English where the panel ships no such one. */
 export function asLanguage(language: string): Language {
   return (LANGUAGES as readonly string[]).includes(language)

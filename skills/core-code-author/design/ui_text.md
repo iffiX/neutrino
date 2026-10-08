@@ -164,6 +164,26 @@ The sidebar's lines under the two renamed entries:
 A docs page follows this table where the term list in
 [doc-author](../../doc-author/SKILL.md) offers a choice.
 
+A module's title on the panel is the catalog's `ui.module_title.<name>`
+when the catalog has it, and the manifest's `title` otherwise. A module
+named after its product has no catalog entry and reads the same in both
+languages.
+
+| Manifest name | English | Chinese |
+| --- | --- | --- |
+| `samba` | File share | 文件共享 |
+| `terminal` | Terminal | 终端 |
+| `remote_desktop` | Remote desktop | 远程桌面 |
+| `podman` | Containers | 容器 |
+| `zfs` | ZFS storage | ZFS 存储 |
+| `gitea` | Gitea | Gitea |
+| `vscode` | VS Code | VS Code |
+| `code_server` | code-server | code-server |
+| `cloudcli` | CloudCLI | CloudCLI |
+| `cc_switch` | cc-switch | cc-switch |
+| `anydesk` | AnyDesk | AnyDesk |
+| `teamviewer` | TeamViewer | TeamViewer |
+
 ## Software the owner installs
 
 Gitea, VS Code, code-server and CloudCLI are programs the machine's owner
@@ -220,9 +240,9 @@ line refuses with:
 
 ## The Terminal and Remote desktop tabs' words
 
-The tabs' names are their manifests' titles, **Terminal** and **Remote
-desktop**, on every surface and in both languages, as the other modules'
-are.
+The tabs' names are the module titles of "Names that are fixed":
+**Terminal** and **Remote desktop** in English, **终端** and **远程桌面** in
+Chinese.
 
 | Key | English | Chinese |
 | --- | --- | --- |
@@ -238,7 +258,7 @@ are.
 | `ui.remote_desktop_module.switch_hint` | Whether this machine runs the agent's RustDesk for this hub's clients. Turning it on stops every other RustDesk host on the machine; turning it off puts back what was there. | 是否让这台机器运行被控端自带的 RustDesk，供这台中枢的客户端连接。打开时会停掉机器上其它的 RustDesk 主机，关闭时还原原来的。 |
 | `ui.remote_desktop_module.apply` | Apply remote desktop | 应用远程桌面 |
 | `ui.remote_desktop_module.apply_hint` | Starts or stops sharing this desktop now. | 立即开始或停止共享这个桌面。 |
-| `ui.remote_desktop_module.drawer_line` | Sharing is set on the machine's Remote desktop tab. | 共享在这台机器的 Remote desktop 标签页里设置。 |
+| `ui.remote_desktop_module.drawer_line` | Sharing is set on the machine's Remote desktop tab. | 共享在这台机器的“远程桌面”标签页里设置。 |
 | `code.shell_program_unusable` | {path} is not a program this machine can run. | {path} 不是这台机器能运行的程序。 |
 | `code.rdp_takeover_failed` | Remote desktop could not start at {step}: {detail} | 远程桌面在 {step} 这一步没能启动：{detail} |
 | `code.rdp_restore_failed` | Remote desktop could not put back the machine's RustDesk at {step}: {detail} | 远程桌面在 {step} 这一步没能还原机器原来的 RustDesk：{detail} |
@@ -351,9 +371,11 @@ English, or a backend code with no `code.<code>` entry fails the tests.
 **Where the language is chosen.** The hub's is a setting in
 `config/web/settings.json`, asked first by `nhub setup` and by the web setup
 page, changed later on the Settings page, and read before login through
-`GET /api/language`. The client's is a preference in its store, taken from the
-system locale on the first start and changed on its own page. Nothing is per
-browser.
+`GET /api/language`. The web setup page starts in the browser's language,
+Chinese for a `zh` locale and English for any other, until its language
+screen sets one. The client's is a preference in its store, taken from the
+system locale on the first start and changed on its own page. Nothing else
+is per browser.
 
 **The backend returns codes, not sentences.** An error a person reads is
 composed in the frontend from an identifier the API returned; a backend that

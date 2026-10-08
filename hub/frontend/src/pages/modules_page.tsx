@@ -22,6 +22,7 @@ import { VscodePanels } from "../components/vscode_panels";
 import { VscodeTerms } from "../components/vscode_terms";
 import { ZfsPanels } from "../components/zfs_panels";
 import { hasWord, t, useLanguage } from "../i18n";
+import { moduleTitle } from "../module_title";
 import { useApiResource } from "../use_api_resource";
 import { useConfirm } from "../use_confirm";
 import {
@@ -493,7 +494,7 @@ export function ModulesPage() {
     }
     confirm.ask({
       title: t("ui.modules.uninstall_title", {
-        module: activeRow.title,
+        module: moduleTitle(activeRow.name, activeRow.title),
         device: selectedDevice.name,
       }),
       body: activeRow.is_data_kept
@@ -837,11 +838,12 @@ function isRetried(row: DeviceModuleView, want: string): boolean {
   return row.state === "failed" && row.want === want;
 }
 
-/** Every module the picker can show, named as its manifest names it. */
+/** Every module the picker can show, named by the catalog's title for it
+ * and otherwise by its manifest's. */
 function pickable(rows: Record<string, DeviceModuleView>): PickableModule[] {
   return PAGE_MODULES.filter((name) => !isCarried(rows[name])).map((name) => ({
     name,
-    title: rows[name]?.title ?? name,
+    title: moduleTitle(name, rows[name]?.title ?? name),
     isSupported: rows[name]?.is_supported !== false,
   }));
 }
@@ -851,7 +853,7 @@ function toTab(row: DeviceModuleView): StripTab {
   const key = STATE_KEYS[row.state];
   return {
     key: row.name,
-    name: row.title,
+    name: moduleTitle(row.name, row.title),
     tag: t(key ?? STATE_NEVER_REPORTED_KEY),
     tagTone: TAG_TONES[row.state],
     dotTone: dotTone(row),

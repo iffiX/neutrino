@@ -454,6 +454,6 @@
   "ui.services.host_hint_web": "提供这个网页的机器的主机名或 IP 地址，要这台中枢能连到。",
   "ui.services.host_hint_port": "在这个端口上应答的机器的主机名或 IP 地址，要这台中枢能连到。",
   "ui.services.host_hint_file": "文件服务器的主机名或 IP 地址，要这台中枢能连到。",
-  "ui.remote_desktop_module.drawer_line": "共享在这台机器的 Remote desktop 标签页里设置。",
+  "ui.remote_desktop_module.drawer_line": "共享在这台机器的“远程桌面”标签页里设置。",
   "ui.files.pick_file_title": "选择程序"
 }
