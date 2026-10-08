@@ -27,7 +27,7 @@ The document has these parts:
 
 | Part | Holds |
 | --- | --- |
-| `hubs[]` | `hub_id`, `hub_name`, `gateway_url`, `software`, `connection`, `reached_through` (the hub's word for the way the channel reached it: `lan`, `direct`, `netbird`, `easytier`, `relay`, or empty before the first state), `rtt_ms` (the last round trip the client measured, from its own WebSocket ping to the hub's pong, in milliseconds; null before the first pong and while the hub is not `connected`), `is_panel_allowed` (the hub's state says whether this client's permission holds `panel`), `panel_forward` (empty, or the loopback port the panel's forward listens on), `last_error`, `is_exit`, `overlay`, `jobs` |
+| `hubs[]` | `hub_id`, `hub_name`, `gateway_url`, `software`, `connection`, `reached_through` (the hub's word for the way the channel reached it: `lan`, `direct`, `netbird`, `easytier`, `relay`, or empty before the first state), `rtt_ms` (the last round trip the client measured, from its own `ping` frame to the hub's `pong` with the same `nonce`, in milliseconds; null before the first pong and while the hub is not `connected`), `is_panel_allowed` (the hub's state says whether this client's permission holds `panel`), `panel_forward` (empty, or the loopback port the panel's forward listens on), `last_error`, `is_exit`, `overlay`, `jobs` |
 | `hubs[].overlay` | `network` (the chosen engine), `networks[]` (what the hub publishes), `state` (`off` or `on`), `stage` (empty, or `login` while a connect runs), `address`, `error` |
 | `hubs[].jobs` | `is_refreshing`, `overlay_job` (empty, `connecting`, `disconnecting`), `is_leaving`, `is_opening_panel` |
 | `services[]` | one per published service, with the hub's wire fields (`hub_id`, `device_id`, `module`, `kind`, `payload`, `is_healthy`, `unhealthy_code`), plus `job`, `last_error` and, for every entry the client forwards ("The local port table"), `local_port` (the setting: `auto` or a number) and `forward` (empty, or the loopback port the forward listens on) |
@@ -250,9 +250,11 @@ relay's, an address inside a network the device holds an address in is
 A `connected` row shows two tags beside its dot, each one short token: the
 state word `ui.state.connected_through` with the word for `reached_through`,
 and `ui.state.rtt` with `rtt_ms` rounded to a whole number. The client sends
-a WebSocket ping of its own every `CLIENT_PING_INTERVAL_S`, 20 seconds, and
-each pong sets `rtt_ms` to the time from that ping to its pong, so the tag
-changes at every keepalive. No sentence goes with either tag.
+a `ping` frame of its own every `CLIENT_PING_INTERVAL_S`, 20 seconds, and once
+right after the channel moves to a new socket, and each `pong` whose `nonce`
+is the last `ping` sent on that socket sets `rtt_ms` to the time from that
+ping to its pong, so the tag changes at every ping. The client sends no
+WebSocket ping. No sentence goes with either tag.
 
 The row's controls, from left to right:
 

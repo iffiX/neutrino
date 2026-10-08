@@ -10,7 +10,8 @@ becoming the task the panel follows, ending with the module's state and
 the failure's code, a ``service`` stream closed with the entry's material,
 an unknown kind closed ``kind_unknown``, a machine whose AI tools are on
 handed its state again when the gateway stops or starts serving, a client's ``is_refresh`` report
-answered with its whole state whatever the hash, and a socket ending taking the
+answered with its whole state whatever the hash, a ``ping`` from either role
+answered with a ``pong`` carrying its nonce, and a socket ending taking the
 binding offline.
 """
 
@@ -27,6 +28,7 @@ from neutrino_hub.modules.channel.port_guard import ChannelPortGuard
 from neutrino_hub.modules.channel.tickets import ChannelTicketRegistry
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_CHUNK_BYTES,
+    CHANNEL_PING_NONCE_CHARS_MAX,
     CHANNEL_ROLE_AGENT,
     CHANNEL_ROLE_CLIENT,
     CHANNEL_STREAM_CREDIT_BYTES,
@@ -1309,3 +1311,40 @@ def test_a_machine_whose_ai_tools_are_on_follows_the_gateway_without_a_press(api
         {"is_enabled": False},
     )
     assert (served["hash"], served["ai_tools"]) == ("h-on", {"is_enabled": True})
+
+
+# --- the round trip ---
+
+
+def test_a_clients_ping_is_answered_with_a_pong_carrying_its_nonce(api):
+    client, runtime = api
+    client_id, token = bound_client()
+    socket = welcomed(client, client_id, token, role="client")
+    try:
+        socket.send_json({"type": "ping", "nonce": "n-1"})
+        assert socket.receive_json() == {"type": "pong", "nonce": "n-1"}
+
+        socket.send_json({"type": "ping"})
+        assert socket.receive_json() == {"type": "pong", "nonce": ""}
+
+        socket.send_json({"type": "ping", "nonce": "x" * 100})
+        assert socket.receive_json() == {
+            "type": "pong",
+            "nonce": "x" * CHANNEL_PING_NONCE_CHARS_MAX,
+        }
+    finally:
+        socket.__exit__(None, None, None)
+
+
+def test_an_agents_ping_is_answered_the_same_way(api):
+    client, runtime = api
+    device_id, token = bound_device()
+    socket = welcomed(client, device_id, token)
+    try:
+        socket.send_json({"type": "ping", "nonce": "n-2"})
+        assert socket.receive_json() == {"type": "pong", "nonce": "n-2"}
+
+        socket.send_json({"type": "ping"})
+        assert socket.receive_json() == {"type": "pong", "nonce": ""}
+    finally:
+        socket.__exit__(None, None, None)

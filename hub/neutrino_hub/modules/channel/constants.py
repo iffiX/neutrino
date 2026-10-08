@@ -40,6 +40,10 @@ CHANNEL_FRAME_REPORT = "report"
 CHANNEL_FRAME_OPEN = "open"
 CHANNEL_FRAME_CLOSE = "close"
 CHANNEL_FRAME_CREDIT = "credit"
+CHANNEL_FRAME_PING = "ping"
+CHANNEL_FRAME_PONG = "pong"
+# A ``pong`` echoes the ``ping``'s nonce up to this many characters.
+CHANNEL_PING_NONCE_CHARS_MAX = 64
 
 # The stream kinds.
 CHANNEL_STREAM_SHELL = "shell"
