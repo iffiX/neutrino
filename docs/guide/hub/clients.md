@@ -38,7 +38,7 @@ When a join fails, the cause is on [Troubleshooting](../reference/troubleshootin
 | **Remote desktops**                | the desktops machines share                                     |
 | **Hub panel without the password** | the **Panel** button on the client's hub row, already signed in |
 
-Every kind but **Remote commands** and **Hub panel without the password** is on by default. With **Remote commands**, a script on the client runs commands on managed machines as root, or as the account each machine's [Terminal](../agent/modules/terminal.md) module names. **Hub panel without the password** gives the client everything this panel can change. Turn on either only for a device of your own.
+Every kind but **Remote commands** and **Hub panel without the password** is on by default. With **Remote commands**, a script on the client runs commands on managed machines as root, or as the account each machine's [Terminal](../agent/modules/terminal.md) module names. **Hub panel without the password** gives the client everything this panel can change. Turn on either only for a device of your own. Switching **Remote commands** off ends the commands that client is running at that moment.
 
 After changing switches, select **Apply permissions**.
 

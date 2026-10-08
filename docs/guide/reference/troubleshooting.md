@@ -229,10 +229,10 @@ The tab, the device's drawer on **Devices**, and a client's **Connect** show the
 
 ### Terminal
 
-| Symptom                  | Cause                                                   | Fix                                                             |
-| ------------------------ | ------------------------------------------------------- | --------------------------------------------------------------- |
-| `path_invalid`           | the shell program is not a full path                    | type the program's full path, or pick it with **Browse…**       |
-| `shell_program_unusable` | the program is missing on the machine, or it cannot run | pick a program that exists and runs, or clear **Shell program** |
+| Symptom                  | Cause                                                                                                       | Fix                                                                                                           |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `path_invalid`           | the shell program is not a full path                                                                        | type the program's full path, or pick it with **Browse…**                                                     |
+| `shell_program_unusable` | the program is missing on the machine, or it cannot run; for `nclient terminal exec`, the command's program | pick a program that exists and runs, or clear **Shell program**; for `exec`, check the command's name or path |
 
 ### AI tools
 
@@ -293,12 +293,12 @@ The Files app on the phone shows the Android app's shares, and reports a failure
 
 ## A terminal closes
 
-| Symptom             | Cause                                                                                          | Fix                                                                   |
-| ------------------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| `session_not_owned` | the session belongs to another viewer and is not shared                                        | ask its owner to switch on **Shared**, or open a terminal of your own |
-| `session_unknown`   | the session ended, or the agent restarted or updated, which ends every session on that machine | open a new terminal on the machine                                    |
-| `shell_unknown`     | the hub no longer holds the shell the client resized                                           | close the terminal in the client and open it again                    |
-| `unknown_terminal`  | the hub offers no terminal on that machine, or `nclient terminal` named an unknown machine     | pick a machine the client's **Terminals** page lists                  |
+| Symptom             | Cause                                                                                                                                                                        | Fix                                                                   |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `session_not_owned` | the session belongs to another viewer and is not shared, or `persist` or `share` was asked by a client that did not open it                                                  | ask its owner to switch on **Shared**, or open a terminal of your own |
+| `session_unknown`   | the session ended, or the agent restarted or updated, which ends every session on that machine, or the id given to `attach`, `persist`, `share` or `stop` matches no session | open a new terminal on the machine                                    |
+| `shell_unknown`     | the hub no longer holds the shell the client resized                                                                                                                         | close the terminal in the client and open it again                    |
+| `unknown_terminal`  | the hub offers no terminal on that machine, or `nclient terminal` named an unknown machine                                                                                   | pick a machine the client's **Terminals** page lists                  |
 
 ## A remote desktop does not open
 
