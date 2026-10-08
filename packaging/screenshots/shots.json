@@ -1397,7 +1397,8 @@
       ],
       "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))",
       "pages": [
-        "quick-start/files.md"
+        "quick-start/files.md",
+        "scenarios/nas.md"
       ]
     },
     {
@@ -1503,7 +1504,10 @@
         ".tab_strip_tab:has(.tab_strip_name:text-is(\"ZFS storage\"))",
         ".modules_actions button:has-text(\"{ui.modules.configure}\")"
       ],
-      "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.zfs.pools_title}\"))"
+      "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.zfs.pools_title}\"))",
+      "pages": [
+        "scenarios/nas.md"
+      ]
     },
     {
       "file": "vscode_panel.png",
@@ -1708,7 +1712,8 @@
         "#tabs .tab:has(span:text-is(\"{ui.panel_files}\"))"
       ],
       "pages": [
-        "quick-start/files.md"
+        "quick-start/files.md",
+        "scenarios/nas.md"
       ]
     },
     {
@@ -1999,7 +2004,8 @@
       "language": "zh",
       "page": "client/android.md",
       "pages": [
-        "quick-start/files.md"
+        "quick-start/files.md",
+        "scenarios/nas.md"
       ],
       "source": "app",
       "viewport": "app",
