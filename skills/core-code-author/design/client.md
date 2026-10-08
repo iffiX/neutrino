@@ -354,6 +354,7 @@ with a spinner:
 | While `on`, the hub's address on that network, the material's `address` (never the hub's name on that network), is a candidate of every round and is dialled with the others at once, with no head start. | The network is one more path to the hub, and the round picks the path as for every other address. The desktop runs NetBird without its DNS, so the name resolves nowhere. |
 | The picker is disabled while a connect runs and in `on`, and shows the engine's name while disabled. | Changing the engine under a running one is the switch that hangs. |
 | The picker is absent when the hub publishes one network; the line then names that engine. | A choice of one is no choice. |
+| A machine is on one hub's virtual network at a time, on the desktop as on the phone: while any hub's line is not `off`, **Connect** on every other hub's line is disabled with the reason `overlay_other_network`, and the core refuses a connect for another hub with the same code. | Two hubs' networks on one machine would carry the same addresses two ways, and the machine's one NetBird daemon and one EasyTier console serve one network. |
 | A hub that publishes no virtual network has no virtual network line: no state word, no picker, no button and no reason. | A client reaches a hub over its LAN, through Direct or through the relay, so a hub with no virtual network is an ordinary hub, and a line that names only what is absent tells the person nothing. |
 
 ## The Web page
@@ -823,7 +824,6 @@ else.
 | hub's panel | **Panel** on the hub row | the same |
 | terminal input | right-click menu, shortcuts, middle click | the key row, long press |
 | frame | sidebar, tray | bottom bar in portrait; a sidebar in landscape, and in portrait on a tablet at least 720 dp wide |
-| virtual networks | one per hub, several hubs at once | one at a time: **Connect** on a second hub is disabled with the reason `overlay_other_network` while another hub's network is not off |
 
 Everything else is the same: the pages and their order, the words, the state
 machines, the badges, the dots and the reasons on disabled buttons.
