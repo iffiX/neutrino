@@ -14,16 +14,7 @@
       "height": 1050
     }
   },
-  "pending": [
-    "client/desktop.md",
-    "client/android.md",
-    "commands/nhub.md",
-    "commands/nagent.md",
-    "commands/nclient.md",
-    "reference/platforms.md",
-    "reference/troubleshooting.md",
-    "protocol/channel.md"
-  ],
+  "pending": [],
   "shots": [
     {
       "file": "setup_secrets.png",
