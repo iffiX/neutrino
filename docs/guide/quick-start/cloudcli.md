@@ -33,7 +33,7 @@ When the tab reads **failed**, [Troubleshooting](../reference/troubleshooting.md
 
 ![The CloudCLI row on the app's Web screen](/guide/en/app_web_cloudcli.webp)
 
-The phone's browser opens CloudCLI already signed in, with the sessions of your account. Select a session to read it, and type into its box to answer.
+The phone's browser opens CloudCLI, signed in as your account. The first time, CloudCLI shows its setup screens and an empty project list, and [The first open](../agent/modules/cloudcli.md#the-first-open) goes through each screen. Later opens list your account's sessions: select one to read it, and type into its box to answer.
 
 ![A CloudCLI session in the phone's browser](/guide/en/app_cloudcli_session.webp)
 
