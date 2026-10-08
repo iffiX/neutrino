@@ -131,6 +131,9 @@
       "file": "setup_shape.png",
       "language": "zh",
       "page": "install/hub.md",
+      "pages": [
+        "scenarios/router_or_gateway.md"
+      ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/",
@@ -307,6 +310,9 @@
       "file": "network_modes.png",
       "language": "zh",
       "page": "hub/network.md",
+      "pages": [
+        "scenarios/router_or_gateway.md"
+      ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/network",
@@ -329,12 +335,27 @@
       "file": "network_exposure.png",
       "language": "zh",
       "page": "hub/network.md",
+      "pages": [
+        "scenarios/router_or_gateway.md"
+      ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/network",
       "element": "section.settings_group:has(.exposure_chips)",
       "wait_for": ".exposure_chips",
       "state": "At least one overlay running, so the overlay chip shows."
+    },
+    {
+      "file": "network_roles.png",
+      "language": "zh",
+      "page": "scenarios/router_or_gateway.md",
+      "source": "panel",
+      "viewport": "desktop",
+      "url": "/network",
+      "element": "section.card:has(.network_roles)",
+      "wait_for": ".network_roles",
+      "state": "Router mode with two wired ports: one with the role WAN on DHCP, one with the role LAN at 192.168.8.1/24; the LAN port's tab is selected, so its role section and DHCP fields show.",
+      "_todo": "The element selector and the press that selects the LAN tab are not verified against the live page."
     },
     {
       "file": "overlay_switches.png",
@@ -351,6 +372,9 @@
       "file": "overlay_switches.png",
       "language": "zh",
       "page": "hub/overlay.md",
+      "pages": [
+        "scenarios/choose_a_way_in.md"
+      ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/overlay",
@@ -384,6 +408,20 @@
       "state": "Direct enabled with a public IPv4 address and port applied, so Addresses for clients lists them.",
       "press": [
         ".overlay_choice:has(strong:text-is(\"{ui.overlay.direct_title}\")) .overlay_choice_select"
+      ]
+    },
+    {
+      "file": "overlay_relay_settings.png",
+      "language": "zh",
+      "page": "scenarios/vps_relay.md",
+      "source": "panel",
+      "viewport": "desktop",
+      "url": "/overlay",
+      "element": "viewport",
+      "wait_for": ".relay_fact_value",
+      "state": "SSH Relay enabled and configured against a reachable server, Status reads connected, and Address for clients shows https://<server>:<port>.",
+      "press": [
+        ".overlay_choice:has(strong:text-is(\"{ui.overlay.relay_title}\")) .overlay_choice_select"
       ]
     },
     {
