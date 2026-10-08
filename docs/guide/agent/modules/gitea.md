@@ -4,11 +4,21 @@ title: Gitea
 
 # Gitea
 
-With the **Gitea** module, a managed Linux machine runs a private git server, and every client opens it from its list of web entries. The module's installer fetches a pinned Gitea release for amd64 or arm64 and installs it beside git from the machine's own packages.
+The **Gitea** module runs one private git server per managed machine, on Linux, macOS or Windows, and every client opens it from its **Web** page. You install Gitea's official release binary on the machine, at the one version the hub pins. At the end of this page Gitea is running, it has an administrator, and a client opens it.
 
-Before you start, select **Install** and then **Configure** on the **Gitea** tab of the [Modules](../modules.md) page. The **Access** and **Administrator** sections open under the tab.
+## Install it
 
-![The Gitea tab with its Access section](/guide/en/gitea.webp)
+1. On the **Gitea** tab of the [Modules](../modules.md) page, select **Install**.
+1. Select **Configure**. The **Access** and **Administrator** sections open under the tab.
+
+On Linux, the install brings git from the machine's own packages. On macOS and Windows, git must be on the machine before the install:
+
+| System  | The git Gitea uses                                                       |
+| ------- | ------------------------------------------------------------------------ |
+| macOS   | the git of the command line developer tools or of Xcode, else Homebrew's |
+| Windows | Git for Windows                                                          |
+
+Without a usable git, the install is rejected with `gitea_git_missing`. Install git, then select **Install** again.
 
 ## Set the access
 
@@ -19,16 +29,25 @@ Before you start, select **Install** and then **Configure** on the **Gitea** tab
 1. Optional: turn on **Open registration** so visitors can create their own accounts.
 1. Select **Apply access**. The machine rewrites `app.ini` and restarts Gitea.
 
+![The Gitea tab with its Access section](/guide/en/gitea.webp)
+
 **Open Gitea** beside the section title opens the server in a new browser tab while the service runs.
 
 ## Create the administrator
 
-A new Gitea has no account. To create the first one:
+A new Gitea has no account. **Configure** starts the service, and the **Create administrator** button is available after the service has started.
 
 1. Under **Administrator**, fill the username, the password and, if you want one, the email.
 1. Select **Create administrator**.
 
-The button is available after the service has started. After the administrator exists, the section shows its name with **Reset password**, which sets a new password for it.
+The section then shows the administrator's name with **Reset password**, which sets a new password for that account.
+
+## On macOS and Windows
+
+- Clones and pushes go over HTTP; Gitea serves no SSH on these systems.
+- On a Mac, Gitea runs as the hidden account `neutrino_gitea`.
+- On Windows, Gitea runs as LocalSystem.
+- **Uninstall** removes the service and the binary, and keeps the data folder and the account. A later install serves the same repositories and accounts.
 
 ## A Gitea installed by hand
 
@@ -36,4 +55,4 @@ The hub configures only the Gitea it installed itself. A Gitea somebody installe
 
 ## Where it is published
 
-Gitea is a row under **Web** on the [Services](../../hub/services.md) page, described as published by the gitea module on that machine. In the [Desktop client](../../client/desktop.md), it is an entry in the **Web** panel with **Open**, and the Android app lists it on its web screen.
+Gitea is a row under **Web** on the [Services](../../hub/services.md) page, described as published by the gitea module on that machine. A client opens it from its **Web** page with **Open**, in the [Desktop client](../../client/desktop.md) and in the Android app alike.

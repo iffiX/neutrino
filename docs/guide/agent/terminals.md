@@ -4,7 +4,7 @@ title: Terminals
 
 # Terminals
 
-From the **Terminals** page you get a root shell on any managed machine whose agent is online. A shell marked persistent keeps running there after you close the browser, and a shared one opens from every client allowed a terminal on that machine.
+On the **Terminals** page you open a shell on any managed machine whose agent is online. A session you keep goes on running after you close the browser, and you can return to any session the machines hold.
 
 ![The Terminals page with two shell tabs and the Persistent switch on](/guide/en/terminals_persist.webp)
 
@@ -13,38 +13,42 @@ From the **Terminals** page you get a root shell on any managed machine whose ag
 1. Under **Which machine**, select a machine.
 1. Select **New terminal**.
 
-A tab named after the machine opens with a root shell; on a Windows machine the shell is PowerShell. Keystrokes go to the machine, Escape included. Tabs stay open while you visit other panel pages. The **Terminal** button in a device's drawer on the [Devices](../hub/devices.md) page opens this page on that machine.
+A tab named after the machine opens a shell there. The shell runs as the account the machine's [Terminal](./modules/terminal.md) module names. With no account named, the shell runs as root on Linux and macOS. On Windows the shell is always PowerShell running as SYSTEM.
+
+Keystrokes go to the machine, Escape included. Tabs stay open while you visit other panel pages. On the [Devices](../hub/devices.md) page, the **Terminal** button in a device's drawer opens this page on that machine.
 
 ## Keep or share a session
 
-Two switches under the shell belong to the tab on show, **Persistent** and **Shared**. Both are off for every new tab. They work only while the tab is connected, with the dot above the shell reading **open**, and only on a session this panel opened. On a session a client opened they are greyed, with **Opened by** and the client's name beside them.
+Two switches under the shell, **Persistent** and **Shared**, belong to the tab on show. Both are off on every new tab. They work only while the tab is connected, and only the side that opened the session can change them. On a session somebody else opened, the switches are greyed, with **Opened by** and the opener's name beside them.
 
-- With **Persistent** on, the shell keeps running on the machine when you close the browser, reload the panel or sign out.
-- With **Shared** on, every client allowed a terminal on that machine lists the session and can attach to it. A shared session also keeps running when its last tab closes.
-- With both off, the shell ends when its tab closes.
+| Switches          | What happens to the session                                                                                                     |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| **Persistent** on | the shell keeps running on the machine after you close the browser, reload the panel or sign out                                |
+| **Shared** on     | every client with terminal rights on that machine lists the session and can attach to it; the session outlasts its last tab too |
+| both off          | the shell ends when its tab closes                                                                                              |
 
-The agent holds every session itself, so restarting or upgrading the agent ends them all.
+The agent holds every session itself, so a restart or an upgrade of the agent ends them all.
 
 ## Return to a session
 
-The tabs follow the sessions the online machines hold. When the panel loads, the page adds a tab for every session, in the order the sessions were opened. The first tab attaches at once, and the session's last 256 KB of output appears first; another tab attaches when you select it. A session opened later, here or in a client, appears as a new tab.
+When the panel loads, the page adds a tab for every session the online machines hold, in the order the sessions were opened. The first tab attaches at once and shows the session's last 256 KB of output first. Any other tab attaches when you select it. A session opened later, here or in a client, appears as a new tab.
 
-A tab shows **kept** for a persistent session, **shared** for a shared one, and **2 open** when two windows are attached to it.
+A tab shows **kept** for a persistent session, **shared** for a shared one, and **2 open** while two windows are attached to it.
 
-A session a client opened and did not share is listed so that you can end it, but the panel does not attach to it. Its tab reads **Opened by** the client **and not shared**.
+The panel attaches to any session, including one a client opened and did not share. A client attaches only to its own sessions and to shared ones. When the opener turns **Shared** off, every other client attached to the session is disconnected at once with `session_not_owned`.
 
 ## Watch one session from several windows
 
-Any number of windows attach to one session at once, from browsers and clients alike, as in tmux. Each shows the same output, keystrokes from any of them reach the shell, and the shell takes the smallest window's columns and rows.
+Any number of windows attach to one session at once, from browsers and clients alike, as in tmux. Each window shows the same output, and keystrokes from any of them reach the shell. The shell takes the columns and rows of the smallest window.
 
 ## End a session
 
-- On a tab of this panel's with both switches off, select the × to close the tab and end its shell.
-- On any other tab, select the × once to arm it, then again to end the session on the machine. After the first press, the tooltip of the × says the next press ends the session.
-- In any tab, run `exit` to end the shell.
+- On a tab this panel opened, with both switches off, select the × to close the tab and end its shell.
+- On any other tab, select the × to arm it, then select it again to end the session on the machine. Between the two presses, the tooltip of the × says the next press ends the session.
+- In the shell, run `exit`.
 
 ## When a tab ends by itself
 
 When a session ends on the machine, by `exit` or from another window, its tab reads **Ended** and keeps its last output. Select the × to close it.
 
-When the line under the shell reads **This session closed. The machine may have stopped answering.**, the tab lost its connection to the machine.
+When the line under the shell reads **This session closed.**, the tab lost its connection to the machine.
