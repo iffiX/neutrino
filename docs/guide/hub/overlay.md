@@ -74,7 +74,7 @@ A client dials every address it has for the hub at the same time and keeps the f
 
 ![The apply bar warning about online clients](/guide/en/overlay_off_warning.webp)
 
-The warning counts the online clients connected through that way in, and says that the way into this box through it closes. The hub sends every client and device its new state, then stops the engine. Its settings stay stored, and turning it on again starts it with the same settings.
+The warning counts the online clients connected through that way in, and says that the way into this box through it closes. The hub sends every client and device its new state, then stops the engine. Its settings stay stored, and turning it on again starts it with the same settings. A client that came in through it dials the hub's other addresses and comes back through another way in that reaches the hub.
 
 ## Read the peers and the topology
 

@@ -14,6 +14,8 @@ The **Proxy** page sends the devices and destinations you choose to the internet
 1. Paste the **Share link** as the provider gives it, `ss://` or `vless://`, and select **Add**.
 1. Select **Apply nodes**.
 
+A new node is enabled from the moment you add it. Traffic reaches it only while at least one switch under **Route** is on, as described in the following section.
+
 ![The exit nodes with their measurements](/guide/en/proxy_nodes.webp)
 
 The hub measures every node and makes the enabled node it ranks highest the exit, marked **current exit**. Each card shows two times. **connect** is a connection to the node's own port, and **request** is a whole request through the node to the probe address. Under them the card shows when the node was last measured, its score and the share of measurements it answered.

@@ -39,7 +39,7 @@ A subscription account serves models beside the providers, and the gateway picks
 1. Open the address the dialog shows. For a code sign-in, enter the code there. For a redirect sign-in, sign in, then copy the address of the page that fails to load into **Address bar or code**.
 1. Select **Finish sign-in**.
 
-The dialog shows how long the sign-in stays open, then **Expired**. When the hub's sign-in session times out, the dialog keeps its current screen and shows `login_expired`, a sign-in that took too long. Select **Try again** to start a new one. Any other failure reads **The sign-in did not finish.**, with the gateway's own reason under it.
+The dialog counts down how long the code stays valid, then reads **Expired**. Separately, when the gateway's own sign-in session runs out of time, the hub returns `login_expired`, a sign-in that took too long. The dialog keeps its current screen and shows that code. Select **Try again** to start a new one. Any other failure reads **The sign-in did not finish.**, with the gateway's own reason under it.
 
 An account row shows its successful and failed requests. **Delete** stops the account serving at once.
 
@@ -75,5 +75,5 @@ Under it, a grid shows the last 30 days by **Providers** or by **Keys**. **Usage
 1. Select **Apply gateway port**. The gateway restarts on the new port.
 
 ::: warning
-Every machine pointed at the old port loses the gateway until its endpoint changes too. Apply each client's AI page again, and type the new endpoint into every tool set up by hand.
+A client's tools reach the gateway through the client and follow the new port at once. A managed machine's AI tools take it with the next state the hub sends that machine. Type the new endpoint into every tool set up by hand with a generated key.
 :::

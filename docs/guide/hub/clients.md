@@ -14,7 +14,7 @@ A client is the program on one person's computer or phone that uses what the hub
 
 ![The new client link with its Copy button and its QR code](/guide/en/clients_link_qr.webp)
 
-The link works for 30 minutes and works one time. The hub keeps an unused link on disk, so it survives a restart of the hub within those 30 minutes. How the person installs the client and joins with the link is in [Install a client](../install/client.md).
+The link works for 30 minutes from the moment you create it, and one client joins with it one time. The hub keeps an unused link on disk, so it survives a restart of the hub within those 30 minutes. How the person installs the client and joins with the link is in [Install a client](../install/client.md).
 
 The link and its QR code hold what the client needs to join the hub's virtual networks. That is the NetBird setup key, and the EasyTier secret or console address. A one-time NetBird key therefore lets one client join and fails for the next. To give clients a reusable key, follow [Join the hub to NetBird](./netbird.md).
 

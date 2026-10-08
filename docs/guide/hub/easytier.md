@@ -79,11 +79,11 @@ In manual mode the hub holds the network's name and secret, and dials the bootst
 
 1. Under **Settings**, select **Manual bootstrap peers**.
 1. Select **Generate**. **Network name**, **Network secret** and **This box's address** fill in.
-1. Under **Bootstrap peers**, add the address of a machine on the network, such as `tcp://198.51.100.7:11010`.
+1. Under **Bootstrap peers**, add the address of a machine on the network, such as `tcp://198.51.100.7:11010`. When the hub is the first machine, list a bootstrap peer of your own, started with the second command in [Commands for another machine](#commands-for-another-machine).
 1. Optional: under **Exported networks**, add each LAN that overlay machines reach through this box.
 1. Select **Apply EasyTier settings**.
 
-With no bootstrap peer listed, **Apply EasyTier settings** stays greyed, and the hub rejects the settings with `easytier_invalid`. Each client receives the hub's uplink address with port 11010 as its bootstrap peer. A client away from home reaches the network only when that port is reachable from outside.
+With no bootstrap peer listed, **Apply EasyTier settings** stays greyed, and the hub rejects the settings with `easytier_invalid`. Each client receives the hub's uplink address with port 11010 as its bootstrap peer. For a client away from home, port 11010 on the hub's uplink must be reachable from outside, over TCP and UDP.
 
 ::: warning
 A different secret is a different network. Every other machine stays on the old network until its secret changes too.

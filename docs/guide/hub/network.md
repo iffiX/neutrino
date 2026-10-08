@@ -109,7 +109,7 @@ A radio in the LAN role publishes a network from its **Access point** fields:
 | **Country code** | two capital letters of the country the box is in, such as `DE` |
 | **Band**         | **2.4 GHz**, or **5 GHz** after a country code is filled in    |
 
-The 5 GHz band requires a country code, because the country's rules set which channels a radio uses. Without one the access point runs on 2.4 GHz. Choosing 5 GHz with no code makes the field read **Two letters, such as DE. 5 GHz needs one.** On apply the hub sets the system's wireless country and writes it into the access point's configuration. A card with no access-point mode cannot take the LAN role.
+The 5 GHz band requires a country code, because the country's rules set which channels a radio uses. Without a code, **Band** offers 2.4 GHz alone, and the field reads **Two letters, such as DE. 5 GHz needs one.** when 5 GHz is set. On apply the hub sets the system's wireless country and writes it into the access point's configuration. A card with no access-point mode cannot take the LAN role.
 
 ## Exposure
 
@@ -136,4 +136,4 @@ The panel listens on two TCP ports on every exposed interface: **HTTP port**, `8
 1. Under **Panel ports**, type the new **HTTP port**, the new **HTTPS port**, or both. The two must differ.
 1. Select **Apply panel port**.
 
-The panel restarts. The page reads **Moving to** the new address, where you sign in again. When that address is unreachable from where you are, the page reads **No answer at** it. Whether the HTTP port sends browsers to the HTTPS port is set under [HTTPS](./settings.md#https) on the **Settings** page.
+The panel restarts. The page reads **Moving to** the new address, where you sign in again. When that address is unreachable from where you are, the page reads **No answer at** it; open the new address from a network the box exposes. Whether the HTTP port sends browsers to the HTTPS port is set under [HTTPS](./settings.md#https) on the **Settings** page.
