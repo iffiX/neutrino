@@ -24,46 +24,43 @@ title: 经 NetBird 访问没装被控端的局域网设备
 
 ![NetBird 卡片上的局域网路由，列出一个网段](/guide/zh/overlay_netbird_routes.webp)
 
+## 把网段加成资源
+
+控制台的 **Add Network** 向导依次建网络、资源、策略和路由节点。本节和后面两节照这个顺序走。
+
+1. 打开 NetBird 控制台 **Network Routing** 下的 **Networks**。
+1. 选择 **Add Network**。
+1. 在 **Name** 里给网络起个名字，进入下一步 **Add Resource**。
+1. 在 **Name** 里给资源起个名字。
+1. 在 **Address** 里粘贴刚才复制的网段。
+1. 进入下一步，也就是访问控制这一步。
+
+## 给客户端的分组放行
+
+客户端用中枢那把 setup key 加入 NetBird，所以它们都在这把 key 的自动分组里。**Setup Keys** 列表里，这把 key 的 **Groups** 一栏写着这个分组。策略要让这个分组用上刚才的资源。
+
+1. 在访问控制这一步选择 **Add Policy**。
+1. 来源选 setup key 的自动分组。
+1. 目标选上一节的资源。
+1. 协议选 **All**。
+1. 选择 **Continue**。
+1. 选择 **Submit**。
+
+建好的策略列在控制台 **Access Control** 下的 **Policies** 里。
+
+![NetBird 控制台里的策略，来源是自动分组，目标是局域网资源](/guide/console/console_netbird_policy.webp)
+
 ## 把中枢设成路由节点
 
 中枢已经在 NetBird 网里，这里选它本身当路由节点。
 
-1. 打开 NetBird 控制台的 **Networks**。
-1. 选择 **Add Network**。
-1. 给网络起个名字。
-1. 保存。
-1. 在这个网络的 **Routing Peers** 下，选择 **Add**。
-1. 选中中枢那个节点，保存。
+1. 在 **Add Routing Peer** 里选中中枢那个节点。
+1. 选择 **Continue**。
+1. 选择 **Submit**。
 
-<!-- 待核: NetBird 控制台 Networks、Add Network、Routing Peers、Add 的原名，以及添加已有节点时的字段（待核清单第 3 条） -->
-
-**Install NetBird** 是给还没装 NetBird 的机器用的，这里不选它。
-
-## 把网段加成资源
-
-1. 在同一个网络里打开 **Resources**。
-1. 添加一个资源。
-1. 地址填刚才复制的网段。
-1. 保存。
-
-<!-- 待核: Resources 的按钮和地址字段原名（待核清单第 3 条） -->
+**Install NetBird** 是给还没装 NetBird 的机器用的，这里不选它。网络页面上列出这个网络的资源、路由节点和策略。
 
 ![NetBird 控制台里的网络，路由节点是中枢，资源是局域网网段](/guide/console/console_netbird_network.webp)
-
-## 给客户端的分组放行
-
-客户端用中枢那把 setup key 加入 NetBird，所以它们都在这把 key 的自动分组里。策略要让这个分组用上刚才的资源。
-
-1. 打开控制台 **Access Control** 下的 **Policies**。
-1. 添加一条策略。
-1. 来源选 setup key 的自动分组。
-1. 目标选上一节的资源。
-1. 协议选全部。
-1. 保存。
-
-<!-- 待核: Policies 的来源、目标、协议字段原名，以及建资源时是否顺带建策略（待核清单第 3 条） -->
-
-![NetBird 控制台里的策略，来源是自动分组，目标是局域网资源](/guide/console/console_netbird_policy.webp)
 
 ## 在客户端上验证
 
@@ -72,8 +69,7 @@ title: 经 NetBird 访问没装被控端的局域网设备
 
 在家里的局域网上，浏览器直接连到设备，测不出这条路由，所以验证要在家外面做。
 
-在安卓上打不开时，在 App 里断开虚拟网，再连一次。
-<!-- 待核: 安卓加了 NetBird 路由后要不要断开再连一次虚拟网（待核清单第 5 条） -->
+安卓 App 的虚拟网连着时，控制台里新加的路由会自动生效，不用断开再连。
 
 ## 设备还是打不开时
 

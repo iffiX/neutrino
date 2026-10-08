@@ -14,17 +14,15 @@ title: NetBird
 
 中枢自己用这把 key 加入，再把它交给每个客户端。所以 key 要能重复使用，次数不能先用完。下面的字段名照 NetBird 控制台的英文界面写。对话框里的 **Ephemeral Peers** 和 **Allow Extra DNS Labels** 保持关闭。
 
-1. 在 NetBird 控制台里打开 **Setup Keys**。
-1. 选择 **Create Setup Key**。
+1. 在 NetBird 控制台里打开 **Settings** 下的 **Setup Keys**。
+1. 选择 **Create Key**。
 1. 在 **Name** 里给 key 起个名字，例如 `neutrino-hub`。
 1. 打开 **Make this key reusable**。
-1. 在 **Usage limit** 里设成不限次数，或者不少于中枢加全部客户端的台数。
-1. 在 **Expires in** 里选最长的期限。
+1. **Usage limit** 留空就是不限次数，框里显示 **Unlimited**。要限次数时，填不少于中枢加全部客户端的台数。
+1. **Expires in** 留空，key 就不会过期。
 1. 在 **Auto-assigned groups** 里新建一个分组，例如 `neutrino`。
-1. 选择 **Create**。
-1. 控制台只显示一次 key，选择 **Copy** 复制下来。
-
-<!-- 待核: NetBird 控制台各字段原名，Usage limit 怎么填才是不限次数，Expires in 的最长值（大纲待核第 3 条） -->
+1. 选择 **Create Setup Key**。
+1. 在 **Setup key created successfully!** 对话框里，用 key 旁边的复制按钮复制下来。控制台只显示这一次。
 
 ![NetBird 控制台的 Setup Keys 列表](/guide/console/console_netbird_keys_list.webp)
 

@@ -4,9 +4,9 @@ title: Quick start
 
 # Quick start
 
-At the end of this page, your phone on mobile data reaches your computer at home. It shows the computer's desktop, opens a folder shared from it in the Files app, and runs a terminal on it. The whole path takes about forty minutes and costs nothing, because the way in from outside is the free tier of the EasyTier console.
+At the end of this page, your phone on mobile data reaches your computer at home. It shows the computer's desktop, opens a folder shared from it in the Files app, and runs a terminal on it. The whole path takes about forty minutes and costs nothing, because the way in from outside is the free tier of the EasyTier console. That tier allows up to 20 devices.
 
-<!-- 待核: the time of the whole path (outline item 13) and the number of devices the EasyTier console's free tier allows (outline item 2) -->
+<!-- 待核: the time of the whole path (outline item 13) -->
 
 ## Before you start
 
@@ -16,10 +16,8 @@ At the end of this page, your phone on mobile data reaches your computer at home
   - Windows 10 1809 or newer on x86-64
 - You have an administrator account on your computer, and it reaches the internet.
 - Your phone runs Android 8.0 or newer on a 64-bit ARM processor.
-- You have an account on the EasyTier console.
+- You have an account on the EasyTier console. Sign-up and sign-in are both at `https://console.easytier.net`.
 - Your phone and your computer are on the same Wi-Fi network.
-
-<!-- 待核: the EasyTier console's sign-up address (outline item 2) -->
 
 ## Install the hub
 
@@ -80,6 +78,8 @@ The vault passphrase seals every credential the hub holds, and restoring a backu
 
 ## Turn on EasyTier
 
+At the top right of the EasyTier console, select **设备接入方法** (how to connect a device), then the **开源版接入** (open-source edition) tab. Under **连接 EasyTier** (connect EasyTier), pick a key in **接入秘钥** (access key). Your console address is the whole part after `--config-server` in the command shown. It has the form `tcp://et-web.console.easytier.net:22020/<token>`, where `<token>` is your token.
+
 1. In the sidebar, open **Access**.
 1. On the **EasyTier** card, turn on **Enable**.
 1. Select **Apply access**.
@@ -89,23 +89,28 @@ The vault passphrase seals every credential the hub holds, and restoring a backu
 1. In the panel, paste it into **Console address**.
 1. Select **Apply EasyTier settings**.
 
-<!-- 待核: where the EasyTier console shows the console address, and whether it is the whole tcp:// address or the token alone (outline item 2) -->
-
 The card reads **Waiting for the console**. Your computer is now registered with the console and on no network yet.
 
 ![The EasyTier card in console mode, waiting for the console](/guide/en/overlay_easytier_console_waiting.webp)
 
 ## Attach your computer in the console
 
-1. In the EasyTier console, open the list of devices. Your computer is listed there.
-1. Create a network for your computer: a name, a password, an address range, and a public server to meet at.
-1. Run the network on your computer.
-
-<!-- 待核: the console's labels for the device list, the network form and running a network (outline item 2) -->
+The EasyTier console lists your computer on its **设备** (devices) page.
 
 ![The EasyTier console's device list with your computer registered](/guide/console/console_easytier_devices.webp)
 
+1. In the console's sidebar, open **网络** (networks).
+1. Select **创建网络** (create network).
+1. Type a name in **网络名称** (network name), and leave the other fields as they are.
+1. Select **创建网络** at the bottom of the dialog.
+1. Select the new network's name to open its page.
+1. Select **挂载设备** (attach device).
+1. Under **入网设备** (device to join), pick your computer.
+1. Select **加入网络** (join network).
+
 ![The EasyTier console's form that creates a network](/guide/console/console_easytier_network_create.webp)
+
+Your computer's row on the network's page reads **挂载中** (attaching), then **运行中** (running).
 
 In the panel, the EasyTier badge on **Access** reads **connected** or **no peers yet**, and **Networks from the console** lists the network.
 
@@ -164,9 +169,10 @@ The hub's row in the app reads **Connected · LAN**.
 
 1. On the hub's row, on the **Virtual network** line, select **Connect**.
 1. In Android's VPN connection request, select **OK**. The line reads **Connecting…** with **This machine is registered with the console. Attach it to a network there.** under it.
-1. In the EasyTier console, attach your phone to the network your computer is on.
-
-<!-- 待核: the console's label for attaching a device, and the name the phone has in the console (outline item 2) -->
+1. In the EasyTier console, open the network your computer is on.
+1. Select **挂载设备**.
+1. Under **入网设备**, pick your phone. The list names it by its Android device name.
+1. Select **加入网络**.
 
 ![Android's VPN connection request](/guide/en/app_vpn_prompt.webp)
 

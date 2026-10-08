@@ -23,9 +23,12 @@ In console mode the hub registers with the console, and you attach it to a netwo
 
 ### Copy the console address
 
-The address a device registers with has the form `tcp://et-web.console.easytier.net:22020/<token>`, where `<token>` is your account's token. The hub also takes the token alone, and then registers with `udp://config-server.easytier.cn:22020`. It rejects anything else with `easytier_config_server_invalid`.
+1. In the EasyTier console at `https://console.easytier.net`, select **设备接入方法** (how to connect a device) at the top right.
+1. Select the **开源版接入** (open-source edition) tab.
+1. Under **连接 EasyTier** (connect EasyTier), pick a key in **接入秘钥** (access key).
+1. In the command shown, copy the whole address after `--config-server`.
 
-<!-- 待核: where the EasyTier console shows the address, and whether it gives the full address or the token alone (outline item 2) -->
+The address a device registers with has the form `tcp://et-web.console.easytier.net:22020/<token>`, where `<token>` is your account's token. The hub also takes the token alone, and then registers with `udp://config-server.easytier.cn:22020`. It rejects anything else with `easytier_config_server_invalid`.
 
 ### Register the hub
 
@@ -40,15 +43,22 @@ The section reads **Waiting for the console**, with **This machine is registered
 
 ### Create the network for the hub
 
-1. In the EasyTier console, open the device list and find the hub.
-1. Create a network for the hub, with a name, a secret and an address range.
-1. Start the network on the hub's device.
-
-<!-- 待核: EasyTier console labels for the device list, the network form and starting a network (outline item 2) -->
+Once registered, the hub appears on the console's **设备** (devices) page.
 
 ![The EasyTier console's device list with the hub registered](/guide/console/console_easytier_devices.webp)
 
+1. In the console's sidebar, open **网络** (networks).
+1. Select **创建网络** (create network).
+1. In **创建租户网络** (create tenant network), type a **网络名称** (network name). An empty **网络地址范围** (address range) takes `10.144.0.0/16`.
+1. Select **创建网络** at the bottom of the dialog.
+1. Select the network's name to open its page.
+1. Select **挂载设备** (attach device).
+1. Under **入网设备** (device to join), pick the hub.
+1. Select **加入网络** (join network).
+
 ![The console's form for a new network](/guide/console/console_easytier_network_create.webp)
+
+Under **网络设备** (network devices), the hub's row reads **挂载中** (attaching), then **运行中** (running).
 
 The badge reads **connected**. **Networks from the console** shows each network's name, the hub's address and name on it, and its **Subnet routes**. A value the console does not report reads **Not provided by the console**.
 

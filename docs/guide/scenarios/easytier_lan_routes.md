@@ -20,15 +20,16 @@ The subnet is the network of the LAN where the device sits. In router mode, open
 
 ## Add a subnet proxy in the console
 
-1. In the EasyTier console, open the device list.
-1. Select the hub's device.
-1. Open the device's network configuration.
-1. Add the subnet to the subnet proxy field.
-1. Save the configuration.
+1. In the EasyTier console's sidebar, under **网络** (networks), select the hub's network.
+1. Select the **子网路由** (subnet routes) tab.
+1. Select **新增路由** (add route).
+1. Type the subnet in **目标网段** (destination subnet).
+1. Under **通过哪些节点访问** (through which nodes), pick the hub's device.
+1. Select **创建路由** (create route).
 
-<!-- 待核: the EasyTier console's names for the device list, the network configuration and the subnet proxy field (outline item 2) -->
+The tab's table lists the route with the subnet and the hub.
 
-![The hub device's network configuration in the EasyTier console with a subnet proxy filled in](/guide/console/console_easytier_subnet_proxy.webp)
+![The subnet routes tab of the hub's network in the EasyTier console, with the LAN subnet routed through the hub](/guide/console/console_easytier_subnet_proxy.webp)
 
 ## Read it in the panel
 
