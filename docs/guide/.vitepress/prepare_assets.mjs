@@ -43,7 +43,12 @@ if (await exists(guideSource)) {
 
 await fillMissingShots();
 
-for (const name of ["architecture.svg", "architecture_zh.svg"]) {
+for (const name of [
+  "overview_one_computer.svg",
+  "overview_one_computer_zh.svg",
+  "overview_many_machines.svg",
+  "overview_many_machines_zh.svg",
+]) {
   const source = new URL(name, webDirectory);
   if (await exists(source)) {
     await copyFile(source, new URL(name, guideTarget));

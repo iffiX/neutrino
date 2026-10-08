@@ -87,7 +87,7 @@ register file.
 | ---------------------------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------- |
 | `images/icons/neutrino_64.png`, `neutrino_512.png`   | `public/`       | `/neutrino_64.png`                                                                                      |
 | `images/guide/` (recursive)                          | `public/guide/` | `/guide/en/<name>.webp`, `/guide/zh/<name>.webp`, `/guide/os/<name>.webp`, `/guide/console/<name>.webp` |
-| `images/web/architecture.svg`, `architecture_zh.svg` | `public/guide/` | `/guide/architecture.svg`                                                                               |
+| `images/web/overview_*.svg`, the overview's diagrams | `public/guide/` | `/guide/overview_one_computer.svg`                                                                      |
 
 Every screenshot has an entry in
 `packaging/screenshots/shots.json`, and the tool beside it

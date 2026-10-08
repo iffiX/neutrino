@@ -19,7 +19,58 @@
 
 .VPHomeHero .image-src {
   max-width: 280px;
-  max-height: 280px;
+  max-height: 440px;
+  border-radius: 16px;
+}
+
+/*
+ * The home page's body, outside the doc styles: the lead and the card
+ * groups, padded as the default theme pads its feature cards.
+ */
+.home-lead,
+.home-group-head {
+  padding: 0 24px;
+}
+
+.home-lead > p,
+.home-group-title {
+  max-width: 1152px;
+  margin: 0 auto;
+}
+
+.home-lead > p {
+  font-size: 16px;
+  line-height: 1.8;
+  color: var(--vp-c-text-2);
+}
+
+.home-group {
+  padding: 32px 0 0;
+}
+
+.home-group:last-child {
+  padding-bottom: 48px;
+}
+
+.home-group-title {
+  padding-bottom: 16px;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--vp-c-text-1);
+}
+
+@media (min-width: 640px) {
+  .home-lead,
+  .home-group-head {
+    padding: 0 48px;
+  }
+}
+
+@media (min-width: 960px) {
+  .home-lead,
+  .home-group-head {
+    padding: 0 64px;
+  }
 }
 
 .vp-doc p,
@@ -35,9 +86,15 @@
   font-size: 14px;
 }
 
+@media (max-width: 959px) {
+  .VPHomeHero .image-src {
+    max-height: 280px;
+  }
+}
+
 @media (max-width: 639px) {
   .VPHomeHero .image-src {
     max-width: 160px;
-    max-height: 160px;
+    max-height: 200px;
   }
 }

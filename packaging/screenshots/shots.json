@@ -1780,7 +1780,8 @@
       "language": "en",
       "page": "client/android.md",
       "pages": [
-        "quick-start.md"
+        "quick-start.md",
+        "index.md"
       ],
       "source": "app",
       "viewport": "app",
