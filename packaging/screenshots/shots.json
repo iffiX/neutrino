@@ -1614,7 +1614,63 @@
       "page": "quick-start/cloudcli.md",
       "source": "app",
       "viewport": "app",
-      "state": "The phone's browser on a CloudCLI session page opened from the Web screen: the session list and the message box both visible."
+      "state": "The phone's browser on a CloudCLI session in the notes-app project: the prompt asking to list the folder's files and Claude Code's reply listing them, the message box at the bottom."
+    },
+    {
+      "file": "app_cloudcli_first_git.png",
+      "language": "zh",
+      "page": "agent/modules/cloudcli.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "The phone's browser on the first Open of the account's CloudCLI: the Git Configuration screen with Git Name lab and Git Email lab@example.com filled."
+    },
+    {
+      "file": "app_cloudcli_first_agents.png",
+      "language": "zh",
+      "page": "agent/modules/cloudcli.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "CloudCLI's Connect Your AI Agents screen during the first open, Claude Code ticked as Configured via settings.json, Complete Setup in view."
+    },
+    {
+      "file": "app_cloudcli_first_language.png",
+      "language": "zh",
+      "page": "agent/modules/cloudcli.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "CloudCLI's Settings, Appearance tab, after Display Language is set to 简体中文: every label in Chinese."
+    },
+    {
+      "file": "app_cloudcli_first_empty.png",
+      "language": "zh",
+      "page": "agent/modules/cloudcli.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "CloudCLI's sidebar right after Complete Setup: No projects found, with the refresh and new project buttons at the top."
+    },
+    {
+      "file": "app_cloudcli_first_folder.png",
+      "language": "zh",
+      "page": "agent/modules/cloudcli.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "CloudCLI's Create New Project form, step 1, with Workspace Path /home/lab/notes-app typed and Next in view."
+    },
+    {
+      "file": "app_cloudcli_new.png",
+      "language": "zh",
+      "page": "agent/modules/cloudcli.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "A New Session in the notes-app project: Choose Your AI Assistant with Claude selected and the empty message box at the bottom."
+    },
+    {
+      "file": "app_cloudcli_sessions.png",
+      "language": "zh",
+      "page": "agent/modules/cloudcli.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "CloudCLI's sidebar with the notes-app project open and one session in its list, titled with its first message."
     },
     {
       "file": "client_connected.png",
@@ -2044,7 +2100,55 @@
       "page": "quick-start/cloudcli.md",
       "source": "app",
       "viewport": "app",
-      "state": "The phone's browser after Open on the CloudCLI row: a CloudCLI page signed in, with the session list and the message box of one Claude Code session in view."
+      "state": "The phone's browser on a CloudCLI session in the notes-app project: the prompt asking to list the folder's files and Claude Code's reply listing them, the message box at the bottom."
+    },
+    {
+      "file": "app_cloudcli_first_git.png",
+      "language": "en",
+      "page": "agent/modules/cloudcli.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "The phone's browser on the first Open of the account's CloudCLI: the Git Configuration screen with Git Name lab and Git Email lab@example.com filled."
+    },
+    {
+      "file": "app_cloudcli_first_agents.png",
+      "language": "en",
+      "page": "agent/modules/cloudcli.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "CloudCLI's Connect Your AI Agents screen during the first open, Claude Code ticked as Configured via settings.json, Complete Setup in view."
+    },
+    {
+      "file": "app_cloudcli_first_empty.png",
+      "language": "en",
+      "page": "agent/modules/cloudcli.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "CloudCLI's sidebar right after Complete Setup: No projects found, with the refresh and new project buttons at the top."
+    },
+    {
+      "file": "app_cloudcli_first_folder.png",
+      "language": "en",
+      "page": "agent/modules/cloudcli.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "CloudCLI's Create New Project form, step 1, with Workspace Path /home/lab/notes-app typed and Next in view."
+    },
+    {
+      "file": "app_cloudcli_new.png",
+      "language": "en",
+      "page": "agent/modules/cloudcli.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "A New Session in the notes-app project: Choose Your AI Assistant with Claude selected and the empty message box at the bottom."
+    },
+    {
+      "file": "app_cloudcli_sessions.png",
+      "language": "en",
+      "page": "agent/modules/cloudcli.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "CloudCLI's sidebar with the notes-app project open and one session in its list, titled with its first message."
     },
     {
       "file": "app_terminal.png",

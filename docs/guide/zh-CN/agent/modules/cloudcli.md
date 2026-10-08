@@ -53,6 +53,60 @@ CloudCLI 启动的 Claude Code 或 Codex，要由账户自己装在这些目录�
 
 实例端口上监听的是被控端的转发器，CloudCLI 本身只在它后面的回环地址上监听。转发器核对令牌后，用中枢生成的密码登录 CloudCLI。不带有效令牌、也没有登录状态的浏览器，打开的是 401 页。
 
+## 第一次打开
+
+第一次选 **打开** 时，浏览器已经以这个账户登录，进的是 CloudCLI 自己的设置页。客户端先从中枢取一个一次性的令牌，见[带令牌的条目](../../hub/services.md#带令牌的条目)；转发器核对令牌后，替浏览器登录 CloudCLI。这期间模块页上这个实例一行一直读 **运行中**，设置只写配置，服务照常运行。
+
+### CloudCLI 的设置
+
+CloudCLI 的设置页是英文的，设置完再把界面换成中文。
+
+1. 在客户端的 **网页** 页上，这个实例一行选 **打开**。
+
+   ![手机浏览器里 CloudCLI 的 Git Configuration 页](/guide/zh/app_cloudcli_first_git.webp)
+
+1. 在 **Git Name** 和 **Git Email** 里填名字和邮箱。CloudCLI 把它们写进这个账户的全局 git 设置。
+1. 选择 **Next**。
+
+   ![Connect Your AI Agents 页，Claude Code 打着勾](/guide/zh/app_cloudcli_first_agents.webp)
+
+1. 选择 **Complete Setup**。
+1. 选左上角的菜单按钮。
+1. 选列表底部的 **Settings**。
+1. 选 **Appearance** 标签。
+1. 在 **Display Language** 里选 **简体中文**。
+
+   ![界面换成中文后的外观设置](/guide/zh/app_cloudcli_first_language.webp)
+
+**Connect Your AI Agents** 页上 **Claude Code** 的勾，来自账户的 `~/.claude/settings.json`。会话要用 Claude Code，还要以这个账户把它装在服务 `PATH` 里的某个目录下。
+
+### 第一个项目和会话
+
+项目是机器上的一个文件夹，会话是在这个文件夹里的一次 Claude Code 对话。设置完时项目列表是空的：
+
+1. 选左上角的菜单按钮。列表读 **未找到项目**。
+
+   ![空的项目列表](/guide/zh/app_cloudcli_first_empty.webp)
+
+1. 选列表顶上带加号的文件夹按钮。
+1. 在 **工作区路径** 里填这个账户名下一个文件夹的完整路径。
+
+   ![填好工作区路径的创建新项目表单](/guide/zh/app_cloudcli_first_folder.webp)
+
+1. 选择 **下一步**。
+1. 选择 **创建项目**。
+1. 在项目下面选 **新建会话**。
+
+   ![notes-app 项目里的新会话](/guide/zh/app_cloudcli_new.webp)
+
+1. 在底部的输入框里写一句话，再选发送按钮。
+
+回复出现在这句话下面。项目的列表里多出这个会话，标题就是第一句话。<!-- 待核: 回复出现在消息下面，以及会话以第一句话为名，装好 Claude Code 后还没看到。 -->
+
+![项目列表里有一个会话](/guide/zh/app_cloudcli_sessions.webp)
+
+在终端里以这个账户运行过 Claude Code 的文件夹，也作为项目出现在列表里，空列表上的提示说的就是这件事。账户里没有 Claude Code 时，第一句话之后出现一条错误，说找不到 Claude Code 的程序；照[服务的 PATH 里有什么](#服务的-path-里有什么)一节装好它。
+
 ## 失败时
 
 中枢重置或重装后会生成新密码，CloudCLI 里却还是旧中枢建的管理员。这时被控端让这个实例换一个新的数据库文件，重新启动一次。旧文件留在机器上，新文件里没有以前的记录。
