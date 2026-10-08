@@ -15,7 +15,6 @@ const publicDirectory = new URL("../public/", import.meta.url);
 const iconDirectory = new URL("../../../images/icons/", import.meta.url);
 const guideSource = new URL("../../../images/guide/", import.meta.url);
 const guideTarget = new URL("guide/", publicDirectory);
-const webDirectory = new URL("../../../images/web/", import.meta.url);
 const shotTable = new URL(
   "../../../packaging/screenshots/shots.json",
   import.meta.url,
@@ -42,13 +41,6 @@ if (await exists(guideSource)) {
 }
 
 await fillMissingShots();
-
-for (const name of ["architecture.svg", "architecture_zh.svg"]) {
-  const source = new URL(name, webDirectory);
-  if (await exists(source)) {
-    await copyFile(source, new URL(name, guideTarget));
-  }
-}
 
 /**
  * Write each captured png as the webp the pages reference.
