@@ -125,6 +125,7 @@ def main() -> int:
     missing = sorted(
         {page for shot in table["shots"] for page in shot_pages(shot)}
         - {english_path(page) for page in guide_pages()}
+        - pending
     )
     for page in missing:
         problems.append(f"shots.json names page {page}, which does not exist")
