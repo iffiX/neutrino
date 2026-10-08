@@ -2015,7 +2015,6 @@
       "language": "en",
       "page": "client/android.md",
       "pages": [
-        "index.md",
         "quick-start/terminal.md"
       ],
       "source": "app",
@@ -2043,7 +2042,6 @@
       "language": "zh",
       "page": "client/android.md",
       "pages": [
-        "index.md",
         "quick-start/terminal.md"
       ],
       "source": "app",
@@ -2294,10 +2292,7 @@
       ],
       "source": "os",
       "viewport": "os",
-      "state": "File Explorer on Windows showing a share the client mapped to a drive letter.",
-      "pages": [
-        "quick-start/files.md"
-      ]
+      "state": "File Explorer on Windows showing a share the client mapped to a drive letter."
     },
     {
       "file": "win_tray_flyout.png",
