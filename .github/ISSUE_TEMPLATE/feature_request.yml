@@ -1,0 +1,31 @@
+name: Feature request / 功能建议
+description: Something you want Neutrino to do. / 想让它做的事。
+labels: [enhancement]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: What you want to do / 想做什么
+      description: One or two sentences from where you sit, which machine, which device, where you are. / 一两句话，哪台机器，哪台设备，人在哪。
+    validations:
+      required: true
+  - type: textarea
+    id: today
+    attributes:
+      label: How you do it today / 现在怎么做
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component / 哪个部件
+      options:
+        - Hub / 中枢
+        - Agent / 被控端
+        - Desktop client / 桌面客户端
+        - Android app / 安卓应用
+        - Panel / 面板
+        - Docs / 文档
+        - Not sure / 不清楚
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else / 其他

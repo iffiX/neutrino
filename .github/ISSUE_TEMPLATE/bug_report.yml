@@ -1,0 +1,93 @@
+name: Bug report / 问题反馈
+description: Something does not work the way the docs say. / 和文档说的不一样。
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Remove keys, tokens, passwords and public addresses from everything you paste.
+        贴上来的内容里，先去掉密钥、令牌、密码和公网地址。
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened / 发生了什么
+      description: What you did, what you saw, and the error code on the screen if there was one. / 你做了什么，看到了什么，界面上的错误码是什么。
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected / 本来应该怎样
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component / 哪个部件
+      options:
+        - Hub / 中枢
+        - Agent / 被控端
+        - Desktop client / 桌面客户端
+        - Android app / 安卓应用
+        - Panel / 面板
+        - Install script / 安装脚本
+        - Docs / 文档
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version / 版本
+      description: "`nhub --version`, `nagent --version`, `nclient --version`, or the app's About page. / 或应用「关于」里的版本。"
+      placeholder: "0.5.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: edition
+    attributes:
+      label: Edition / 哪个版本
+      options:
+        - Full edition, from GitHub / 完整版
+        - Mainland edition, from Gitee / 国内版
+  - type: input
+    id: system
+    attributes:
+      label: System / 系统
+      placeholder: "Ubuntu 24.04 x86-64; Windows 11; macOS 15 Apple silicon; Android 14"
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Hub network mode / 中枢的网络形态
+      options:
+        - Server / 服务器
+        - Side gateway / 旁路网关
+        - Router / 路由器
+        - One-arm router / 单臂路由
+        - Not sure / 不清楚
+  - type: dropdown
+    id: way_in
+    attributes:
+      label: How the client reaches the hub / 客户端怎么连到中枢
+      options:
+        - LAN / 局域网
+        - Direct / 直连
+        - NetBird
+        - EasyTier
+        - SSH relay / SSH 中继
+        - Not sure / 不清楚
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / 日志
+      description: |
+        Hub: `journalctl -u neutrino_hub_web -n 200` on Linux, `/Library/Logs/Neutrino/hub/` on macOS, `C:\ProgramData\Neutrino\hub\log\` on Windows; setup: `/var/log/neutrino/hub/setup.log`.
+        Agent: `journalctl -u neutrino_agent -n 200`, `/Library/Logs/Neutrino/agent/agent.log`, `C:\ProgramData\Neutrino\agent\log\agent.log`.
+        Client: `~/.config/neutrino/client/client.log`, `~/Library/Logs/Neutrino/client/client.log`, `%LOCALAPPDATA%\Neutrino\client\client.log`.
+      render: text
+  - type: checkboxes
+    id: scrubbed
+    attributes:
+      label: Check / 确认
+      options:
+        - label: What I pasted has no keys, tokens, passwords or public addresses in it. / 贴上来的内容里没有密钥、令牌、密码和公网地址。
+          required: true

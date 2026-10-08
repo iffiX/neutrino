@@ -1,0 +1,20 @@
+name: Question / 提问
+description: Something the docs did not answer. / 文档里没找到答案。
+labels: [question]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: The question / 问题
+    validations:
+      required: true
+  - type: input
+    id: docs
+    attributes:
+      label: The docs page you read / 看过的文档页
+      placeholder: "https://neutrino.beyond-infinity.top/zh-CN/..."
+  - type: input
+    id: version
+    attributes:
+      label: Version and system / 版本和系统
+      placeholder: "0.5.0, Ubuntu 24.04"

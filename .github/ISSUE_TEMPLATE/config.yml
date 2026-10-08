@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation / 文档
+    url: https://neutrino.beyond-infinity.top/
+    about: Install, quick start, every panel page, troubleshooting. / 安装、快速上手、面板每一页、故障排查。
+  - name: Security issue / 安全问题
+    url: https://github.com/iffiX/neutrino/security/advisories/new
+    about: Report it privately here, not as a public issue. / 在这里私下报告，不要开公开的 issue。
