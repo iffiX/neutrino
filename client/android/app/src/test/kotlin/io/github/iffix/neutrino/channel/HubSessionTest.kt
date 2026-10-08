@@ -16,6 +16,7 @@ import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
+import kotlinx.coroutines.channels.SendChannel
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.currentTime
@@ -52,10 +53,11 @@ class HubSessionTest {
     )
 
     private fun session(
-        transport: FakeHubTransport,
+        transport: HubTransport,
         nameAddress: String? = null,
         binding: HubBinding = Samples.binding,
         local: List<ChannelLocalNetwork> = emptyList(),
+        nanoClock: () -> Long = { 0L },
     ): Pair<HubSession, BindingStore> {
         val store = BindingStore(folder.root.resolve("b.sealed"), FakeSecretSealer())
         store.put(binding)
@@ -68,10 +70,14 @@ class HubSessionTest {
             { id, _ -> unbound += id },
             { id, hubId -> joined += id to hubId },
             localNetworks = { local },
-            nanoClock = { 0L },
+            nanoClock = nanoClock,
         )
         return session to store
     }
+
+    private fun pong(nonce: String) = ChannelSocketEvent.Text("""{"type":"pong","nonce":"$nonce"}""")
+
+    private fun FakeChannelSocket.nonces(): List<String> = sent("ping").map { it["nonce"]!!.jsonPrimitive.content }
 
     private fun spent(id: String = "c9", token: String = "t9") =
         ChannelResult.Ok(JsonObject(mapOf("id" to JsonPrimitive(id), "token" to JsonPrimitive(token))))
@@ -86,7 +92,7 @@ class HubSessionTest {
         val (session, store) = session(transport)
         served(session)
         val socket = transport.greeted().second
-        assertEquals(listOf("hello", "report"), socket.texts.map { it["type"]!!.jsonPrimitive.content })
+        assertEquals(listOf("hello", "report", "ping"), socket.texts.map { it["type"]!!.jsonPrimitive.content })
         assertEquals("secret-token", socket.texts[0]["token"]!!.jsonPrimitive.content)
         assertEquals(HubConnection.CONNECTED, session.view.value.connection)
         assertEquals("Neutrino", store.get("b1")?.hubName)
@@ -177,24 +183,138 @@ class HubSessionTest {
     }
 
     @Test
-    fun theOpenSocketPingsAndEachPongSetsTheRoundTrip() = runTest {
+    fun eachPingHasANonceAndItsPongSetsTheRoundTrip() = runTest {
+        var now = 0L
         val transport = FakeHubTransport { FakeHubTransport.welcoming }
-        val (session, _) = session(transport)
+        val (session, _) = session(transport, nanoClock = { now })
         val round = served(session)
         val (_, socket, events) = transport.greeted()
-        assertEquals(1, socket.pings)
+        val first = socket.nonces().single()
+        assertTrue(first.isNotEmpty() && first.length <= 64)
         assertEquals(null, session.view.value.rttMs)
-        events.trySend(ChannelSocketEvent.Pong(12))
+        now += 12_000_000
+        events.trySend(pong(first))
         runCurrent()
         assertEquals(12L, session.view.value.rttMs)
         advanceTimeBy(CLIENT_PING_INTERVAL_S * 1000 + 1)
-        assertEquals(2, socket.pings)
-        events.trySend(ChannelSocketEvent.Pong(7))
+        val second = socket.nonces()[1]
+        assertTrue(second != first)
+        now += 7_400_000
+        events.trySend(pong(second))
         runCurrent()
         assertEquals(7L, session.view.value.rttMs)
         events.trySend(ChannelSocketEvent.Closed(1006, ""))
         round.await()
         assertEquals(null, session.view.value.rttMs)
+    }
+
+    @Test
+    fun aPongWithAnotherNonceOrOneAlreadyTakenIsDropped() = runTest {
+        var now = 0L
+        val transport = FakeHubTransport { FakeHubTransport.welcoming }
+        val (session, _) = session(transport, nanoClock = { now })
+        served(session)
+        val (_, socket, events) = transport.greeted()
+        val nonce = socket.nonces().single()
+        events.trySend(pong("not-$nonce"))
+        events.trySend(pong(""))
+        runCurrent()
+        assertEquals(null, session.view.value.rttMs)
+        now += 5_000_000
+        events.trySend(pong(nonce))
+        runCurrent()
+        assertEquals(5L, session.view.value.rttMs)
+        now += 100_000_000
+        events.trySend(pong(nonce))
+        runCurrent()
+        assertEquals(5L, session.view.value.rttMs)
+    }
+
+    @Test
+    fun theChannelMovedPingsAtOnceAndThePongOnTheNewSocketSetsTheRoundTrip() = runTest {
+        val hanging = mutableSetOf(lanUrl, directUrl)
+        var now = 0L
+        val transport = FakeHubTransport { url ->
+            if (url in hanging) FakeHubTransport.hanging else FakeHubTransport.welcoming
+        }
+        val (session, _) = session(transport, local = listOf(lanNetwork), nanoClock = { now })
+        session.overlayChanged(easytierRoute)
+        served(session)
+        val (_, old, _) = transport.greeted()
+        assertEquals(1, old.nonces().size)
+        hanging.clear()
+        hanging += easytierRoute.url
+        session.networkChanged()
+        runCurrent()
+        val (address, moved, movedEvents) = transport.greeted()
+        assertEquals(lanUrl, address)
+        val nonce = moved.nonces().single()
+        assertTrue(nonce != old.nonces().single())
+        assertEquals(null, session.view.value.rttMs)
+        now += 3_000_000
+        movedEvents.trySend(pong(nonce))
+        runCurrent()
+        assertEquals(3L, session.view.value.rttMs)
+    }
+
+    @Test
+    fun aCancelledRoundClosesEverySocketItDialled() = runTest {
+        val transport = FakeHubTransport { FakeHubTransport.hanging }
+        val (session, _) = session(transport)
+        session.start(backgroundScope)
+        runCurrent()
+        assertEquals(2, transport.dialled.size)
+        assertTrue(transport.dialled.all { it.second.closedWith == null })
+        session.stop()
+        runCurrent()
+        assertTrue(transport.dialled.all { it.second.closedWith == CLIENT_WS_CLOSE_NORMAL })
+    }
+
+    @Test
+    fun aRoundBesideTheChannelEndsWithTheChannelAndClosesItsSockets() = runTest {
+        val hanging = mutableSetOf<String>()
+        val transport = FakeHubTransport { url ->
+            if (url in hanging) FakeHubTransport.hanging else FakeHubTransport.welcoming
+        }
+        val (session, _) = session(transport, local = listOf(lanNetwork))
+        val round = served(session)
+        val (_, _, events) = transport.greeted()
+        val before = transport.dialled.size
+        hanging += listOf(lanUrl, directUrl)
+        session.networkChanged()
+        runCurrent()
+        val beside = transport.dialled.drop(before)
+        assertEquals(2, beside.size)
+        assertTrue(beside.all { it.second.closedWith == null })
+        events.trySend(ChannelSocketEvent.Closed(1006, ""))
+        round.await()
+        assertTrue(beside.all { it.second.closedWith == CLIENT_WS_CLOSE_NORMAL })
+    }
+
+    @Test
+    fun aRoundThatThrowsIsDownWithClientInternalAndRunsAgainAfterTheBackoff() = runTest {
+        var dials = 0
+        val transport = object : HubTransport by FakeHubTransport({ FakeHubTransport.silent }) {
+            override fun connect(
+                baseUrl: String,
+                fingerprint: String,
+                events: SendChannel<ChannelSocketEvent>,
+            ): ChannelSocket {
+                dials += 1
+                throw IllegalStateException("boom")
+            }
+        }
+        val (session, _) = session(transport)
+        session.start(backgroundScope)
+        runCurrent()
+        assertEquals(1, dials)
+        assertEquals(HubConnection.DOWN, session.view.value.connection)
+        assertEquals("client_internal", session.view.value.lastError?.code)
+        assertEquals("boom", session.view.value.lastError?.wordParams?.get("error"))
+        advanceTimeBy(5_001)
+        assertEquals(2, dials)
+        advanceTimeBy(10_001)
+        assertEquals(3, dials)
     }
 
     @Test

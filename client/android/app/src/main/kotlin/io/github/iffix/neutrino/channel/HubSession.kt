@@ -1,5 +1,6 @@
 package io.github.iffix.neutrino.channel
 
+import android.os.SystemClock
 import android.util.Log
 import io.github.iffix.neutrino.CHANNEL_STREAM_ID_BYTES
 import io.github.iffix.neutrino.CLIENT_BACKOFF_MAX_S
@@ -26,6 +27,11 @@ import io.github.iffix.neutrino.binding.HubBinding
 import java.io.IOException
 import java.net.URI
 import java.net.URISyntaxException
+import java.util.UUID
+import kotlin.math.roundToLong
+import kotlin.time.Duration.Companion.nanoseconds
+import kotlin.time.DurationUnit
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -56,8 +62,9 @@ import kotlinx.serialization.json.longOrNull
  * socket to open on the pinned certificate is the round's: the others are closed before any
  * hello, and the one hello of the round goes there. A broken wire waits 5 s, doubled up to 60 s;
  * a refusal the binding survives waits 60 s; `binding_unknown` ends the binding; a socket another
- * replaced waits for [reconnect]. The open socket pings every 20 s, and each pong's round trip is
- * the view's `rttMs`.
+ * replaced waits for [reconnect]. A round that fails on an exception is `down` with
+ * `client_internal` and waits the backoff like a broken wire. The open socket sends a `ping` frame
+ * every 20 s and once after a move, and the `pong` echoing its nonce sets the view's `rttMs`.
  *
  * A network change ([networkChanged]) runs a round at once. On a connected hub that round runs
  * beside the channel: its winner takes the channel only when its path ranks higher than the
@@ -81,7 +88,7 @@ import kotlinx.serialization.json.longOrNull
  * @param onJoined Called with the binding's id and the hub's id for it once its ticket is spent.
  * @param clock The time in milliseconds, stamped on the view when the open socket closes.
  * @param localNetworks The networks this phone holds an address in, read at each comparison of paths.
- * @param nanoClock The time in nanoseconds, by which each socket's opening is measured.
+ * @param nanoClock The time in nanoseconds, by which each socket's opening and each ping's round trip are measured.
  * @throws IllegalArgumentException When the store holds no binding with [bindingId].
  */
 class HubSession(
@@ -94,7 +101,7 @@ class HubSession(
     private val onJoined: (String, String) -> Unit = { _, _ -> },
     private val clock: () -> Long = System::currentTimeMillis,
     private val localNetworks: () -> List<ChannelLocalNetwork> = ChannelPath::deviceNetworks,
-    private val nanoClock: () -> Long = System::nanoTime,
+    private val nanoClock: () -> Long = SystemClock::elapsedRealtimeNanos,
 ) {
     private val current = MutableStateFlow(requireNotNull(store.get(bindingId)).let { HubView(it, roundState(it)) })
     private val news = Channel<Unit>(Channel.CONFLATED)
@@ -135,7 +142,14 @@ class HubSession(
         if (job != null) return
         job = scope.launch {
             while (isActive) {
-                val waitS = runOnce()
+                val waitS = try {
+                    runOnce()
+                } catch (error: Exception) {
+                    if (error is CancellationException) throw error
+                    Log.e(CLIENT_LOG_TAG, "hub ${current.value.binding.title}: the round failed", error)
+                    val detail = error.message ?: error.javaClass.simpleName
+                    onUnreachable(ChannelResult.refused("client_internal", "error" to detail))
+                }
                 withTimeoutOrNull(waitS * 1000) { news.receive() }
             }
         }
@@ -294,7 +308,6 @@ class HubSession(
             }
         }
         val winner = round.winner
-        round.sockets.filter { it !== winner }.forEach { it.socket.close(CLIENT_WS_CLOSE_NORMAL, "") }
         if (winner == null) {
             untrusted?.let { return onRejected(it) }
             return onUnreachable(failure ?: unreachable("no address"))
@@ -331,46 +344,55 @@ class HubSession(
 
     /**
      * Dial every address at once, each with its own connect time. The first socket that opens on
-     * the pinned certificate is the round's, and the others are no longer waited on.
+     * the pinned certificate is the round's; every other socket, and every socket of a round that
+     * is cancelled, is closed before this returns.
      *
      * @param urls The round's addresses.
      * @param fingerprint The pinned SHA-256.
-     * @return Every socket dialled, the round's socket or null, and the refusal of each that failed.
+     * @return The round's socket or null, and the refusal of each address that failed.
      */
     private suspend fun dialAll(urls: List<String>, fingerprint: String): Round {
         val opens = Channel<Dialled>(Channel.UNLIMITED)
-        val sockets = urls.map { url ->
-            val events = Channel<ChannelSocketEvent>(Channel.UNLIMITED)
-            val startedNanos = nanoClock()
-            DialledSocket(url, transport.connect(url, fingerprint, events), events, startedNanos)
-        }
+        val sockets = mutableListOf<DialledSocket>()
         val refusals = mutableListOf<Pair<String, ChannelResult.Refused>>()
         var winner: DialledSocket? = null
-        coroutineScope {
-            val watchers = sockets.map { dialled ->
-                launch {
-                    val first = withTimeoutOrNull(CLIENT_CONNECT_TIMEOUT_S * 1000) { dialled.events.receive() }
-                        ?: ChannelSocketEvent.Failed(
-                            unreachable("the address did not open in ${CLIENT_CONNECT_TIMEOUT_S}s"),
-                        )
-                    dialled.openNanos = nanoClock() - dialled.startedNanos
-                    opens.send(Dialled(dialled, first))
-                }
+        var isSettled = false
+        try {
+            for (url in urls) {
+                val events = Channel<ChannelSocketEvent>(Channel.UNLIMITED)
+                val startedNanos = nanoClock()
+                sockets += DialledSocket(url, transport.connect(url, fingerprint, events), events, startedNanos)
             }
-            var waiting = sockets.size
-            while (winner == null && waiting > 0) {
-                val dial = opens.receive()
-                val dialled = dial.socket
-                waiting -= 1
-                when (val event = dial.event) {
-                    is ChannelSocketEvent.Opened -> winner = dialled
-                    is ChannelSocketEvent.Failed -> refusals += dialled.url to event.refusal
-                    else -> refusals += dialled.url to unreachable("the socket did not open")
+            coroutineScope {
+                val watchers = sockets.map { dialled ->
+                    launch {
+                        val first = withTimeoutOrNull(CLIENT_CONNECT_TIMEOUT_S * 1000) { dialled.events.receive() }
+                            ?: ChannelSocketEvent.Failed(
+                                unreachable("the address did not open in ${CLIENT_CONNECT_TIMEOUT_S}s"),
+                            )
+                        dialled.openNanos = nanoClock() - dialled.startedNanos
+                        opens.send(Dialled(dialled, first))
+                    }
                 }
+                var waiting = sockets.size
+                while (winner == null && waiting > 0) {
+                    val dial = opens.receive()
+                    val dialled = dial.socket
+                    waiting -= 1
+                    when (val event = dial.event) {
+                        is ChannelSocketEvent.Opened -> winner = dialled
+                        is ChannelSocketEvent.Failed -> refusals += dialled.url to event.refusal
+                        else -> refusals += dialled.url to unreachable("the socket did not open")
+                    }
+                }
+                watchers.forEach { it.cancel() }
             }
-            watchers.forEach { it.cancel() }
+            isSettled = true
+        } finally {
+            val kept = if (isSettled) winner else null
+            sockets.filter { it !== kept }.forEach { it.socket.close(CLIENT_WS_CLOSE_NORMAL, "") }
         }
-        return Round(sockets, winner, refusals)
+        return Round(winner, refusals)
     }
 
     /**
@@ -381,9 +403,7 @@ class HubSession(
         val from = live ?: return
         val binding = store.get(bindingId) ?: return
         val round = dialAll(binding.candidateUrls(nameUrlOf(binding), overlay?.url.orEmpty()), binding.fingerprint)
-        val winner = round.winner
-        round.sockets.filter { it !== winner }.forEach { it.socket.close(CLIENT_WS_CLOSE_NORMAL, "") }
-        if (winner == null) return
+        val winner = round.winner ?: return
         val path = pathOf(winner.url)
         val livePath = pathOf(from.url)
         val isBetter = path.rank < livePath.rank || (path.rank == livePath.rank && winner.openNanos < from.openNanos)
@@ -508,7 +528,7 @@ class HubSession(
             }
             val pinger = launch {
                 while (isActive) {
-                    live?.socket?.ping()
+                    live?.let { ping(it) }
                     delay(CLIENT_PING_INTERVAL_S * 1000)
                 }
             }
@@ -554,7 +574,21 @@ class HubSession(
         previous?.streams?.endAll()
         previous?.socket?.close(CLIENT_WS_CLOSE_NORMAL, "")
         log("the channel moved from ${previous?.url.orEmpty()} to ${moved.socket.url}")
-        moved.socket.socket.ping()
+        live?.let { ping(it) }
+    }
+
+    private fun ping(socket: LiveSocket) {
+        val nonce = UUID.randomUUID().toString()
+        socket.pingSentNanos = nanoClock()
+        socket.pingNonce = nonce
+        socket.socket.sendText(ChannelFrames.ping(nonce).toString())
+    }
+
+    private fun takePong(nonce: String, reading: LiveSocket) {
+        if (nonce.isEmpty() || nonce != reading.pingNonce) return
+        reading.pingNonce = ""
+        val rttMs = (nanoClock() - reading.pingSentNanos).nanoseconds.toDouble(DurationUnit.MILLISECONDS).roundToLong()
+        current.update { it.copy(rttMs = rttMs) }
     }
 
     private suspend fun readUntilEnd(): ChannelResult.Refused? {
@@ -571,13 +605,11 @@ class HubSession(
                     continue
                 }
                 when (val event = (step as Step.Event).event) {
-                    is ChannelSocketEvent.Text -> failure = dispatch(event.text, reading.socket, reading.streams)
+                    is ChannelSocketEvent.Text -> failure = dispatch(event.text, reading)
 
                     is ChannelSocketEvent.Binary -> if (event.bytes.size >= CHANNEL_STREAM_ID_BYTES) {
                         reading.streams.takeBinary(event.bytes)
                     }
-
-                    is ChannelSocketEvent.Pong -> current.update { it.copy(rttMs = event.rttMillis) }
 
                     is ChannelSocketEvent.Opened -> Unit
 
@@ -624,7 +656,7 @@ class HubSession(
         else -> null
     }
 
-    private fun dispatch(text: String, socket: ChannelSocket, streams: ChannelStreamRegistry): ChannelResult.Refused? {
+    private fun dispatch(text: String, reading: LiveSocket): ChannelResult.Refused? {
         val frame = try {
             ChannelInbound.decode(text)
         } catch (error: IllegalArgumentException) {
@@ -636,14 +668,16 @@ class HubSession(
         when (frame) {
             is ChannelInbound.State -> {
                 takeState(frame.state)
-                report(socket)
+                report(reading.socket)
             }
 
-            is ChannelInbound.Close -> streams.takeClose(frame)
+            is ChannelInbound.Close -> reading.streams.takeClose(frame)
 
-            is ChannelInbound.Credit -> streams.takeCredit(frame)
+            is ChannelInbound.Credit -> reading.streams.takeCredit(frame)
 
-            is ChannelInbound.Open -> streams.refuse(frame)
+            is ChannelInbound.Open -> reading.streams.refuse(frame)
+
+            is ChannelInbound.Pong -> takePong(frame.nonce, reading)
 
             is ChannelInbound.Refused -> return frame.refusal
 
@@ -743,7 +777,15 @@ class HubSession(
         val url: String,
         val events: Channel<ChannelSocketEvent>,
         val openNanos: Long,
-    )
+    ) {
+        /** The nonce of the last ping sent on this socket, empty once its pong was taken. */
+        @Volatile
+        var pingNonce = ""
+
+        /** When the last ping was sent, in the session's clock. */
+        @Volatile
+        var pingSentNanos = 0L
+    }
 
     private class DialledSocket(
         val url: String,
@@ -766,11 +808,7 @@ class HubSession(
         class Move(val moved: Moved) : Step
     }
 
-    private class Round(
-        val sockets: List<DialledSocket>,
-        val winner: DialledSocket?,
-        val refusals: List<Pair<String, ChannelResult.Refused>>,
-    )
+    private class Round(val winner: DialledSocket?, val refusals: List<Pair<String, ChannelResult.Refused>>)
 
     private sealed interface Handshake {
         data class Welcomed(val welcome: ChannelInbound.Welcome) : Handshake

@@ -76,6 +76,15 @@ class ChannelFramesTest {
     }
 
     @Test
+    fun pingIsTheGoldensPingWithEveryField() {
+        val ping = ChannelFrames.ping("n7")
+        assertConforms(ping, "ChannelPing")
+        assertEquals(GoldenSchema.properties("ChannelPing"), ping.keys - "type")
+        assertEquals("ping", ping["type"]!!.jsonPrimitive.content)
+        assertEquals("n7", ping["nonce"]!!.jsonPrimitive.content)
+    }
+
+    @Test
     fun theJoinBodyIsTheGoldensJoinRequestWithEveryField() {
         val body = ChannelFrames.joinRequest("ticket", Samples.machine)
         assertConforms(body, "ChannelJoinRequest", hasType = false)
