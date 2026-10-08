@@ -1,5 +1,5 @@
 {
-  "_comment": "One entry per image. language is the directory under images/guide: en, zh, os for a system dialog shown once on both language pages, or console for a NetBird or EasyTier console page shown once on both. page is the English page path under docs/guide, and pages lists more pages one image serves; a zh entry belongs to zh-CN/<page>, an os or console entry to both. source says who captures it: panel, client and console by capture.py, the console ones from the profile --console-login signs in, app by adb on the emulator, os by hand. hide lists CSS selectors hidden before the shot. pending lists pages, by English path, that are being rewritten and are left out of check_shots.py. _todo inside an entry notes a selector not yet verified against the live page; the tools ignore it.",
+  "_comment": "One entry per image. language is the directory under images/guide: en, zh, os for a system dialog shown once on both language pages, or console for a NetBird or EasyTier console page shown once on both. page is the English page path under docs/guide, and pages lists more pages one image serves; a zh entry belongs to zh-CN/<page>, an os or console entry to both, and an os or console entry's language_pages maps en or zh to pages one language alone shows it on. source says who captures it: panel, client and console by capture.py, the console ones from the profile --console-login signs in, app by adb on the emulator, os by hand. hide lists CSS selectors hidden before the shot. pending lists pages, by English path, that are being rewritten and are left out of check_shots.py. _todo inside an entry notes a selector not yet verified against the live page; the tools ignore it.",
   "viewports": {
     "desktop": {
       "width": 1440,
@@ -28,6 +28,9 @@
       "file": "setup_secrets.png",
       "language": "en",
       "page": "install/hub.md",
+      "pages": [
+        "quick-start.md"
+      ],
       "source": "panel",
       "viewport": "tall",
       "url": "/",
@@ -174,6 +177,9 @@
       "file": "setup_done.png",
       "language": "en",
       "page": "install/hub.md",
+      "pages": [
+        "quick-start.md"
+      ],
       "source": "panel",
       "viewport": "taller",
       "url": "/",
@@ -497,9 +503,6 @@
       "file": "overlay_easytier_console_waiting.png",
       "language": "en",
       "page": "hub/easytier.md",
-      "pages": [
-        "quick-start.md"
-      ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/overlay",
@@ -533,9 +536,6 @@
       "file": "overlay_easytier_console_networks.png",
       "language": "en",
       "page": "hub/easytier.md",
-      "pages": [
-        "quick-start.md"
-      ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/overlay",
@@ -595,6 +595,9 @@
       "file": "overlay_netbird_settings.png",
       "language": "en",
       "page": "hub/netbird.md",
+      "pages": [
+        "quick-start.md"
+      ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/overlay",
@@ -733,6 +736,9 @@
       "file": "ai_providers.png",
       "language": "en",
       "page": "hub/ai.md",
+      "pages": [
+        "quick-start/ai_gateway.md"
+      ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/ai",
@@ -755,6 +761,9 @@
       "file": "ai_keys.png",
       "language": "en",
       "page": "hub/ai.md",
+      "pages": [
+        "quick-start/ai_gateway.md"
+      ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/ai",
@@ -1213,6 +1222,9 @@
       "file": "modules_ai_tools.png",
       "language": "en",
       "page": "agent/modules/ai_tools.md",
+      "pages": [
+        "quick-start/ai_gateway.md"
+      ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/modules",
@@ -1276,7 +1288,7 @@
       "language": "en",
       "page": "agent/modules/remote_desktop.md",
       "pages": [
-        "quick-start.md"
+        "quick-start/remote_desktop.md"
       ],
       "source": "panel",
       "viewport": "tall",
@@ -1321,6 +1333,9 @@
       "file": "shares_windows.png",
       "language": "en",
       "page": "agent/modules/shares.md",
+      "pages": [
+        "quick-start/files.md"
+      ],
       "source": "panel",
       "viewport": "tall",
       "url": "/modules",
@@ -1458,7 +1473,8 @@
       "language": "en",
       "page": "agent/modules/vscode.md",
       "pages": [
-        "scenarios/one_laptop_every_machine.md"
+        "scenarios/one_laptop_every_machine.md",
+        "quick-start/vscode.md"
       ],
       "source": "panel",
       "viewport": "tall",
@@ -1497,6 +1513,9 @@
       "file": "cloudcli_panel.png",
       "language": "en",
       "page": "agent/modules/cloudcli.md",
+      "pages": [
+        "quick-start/cloudcli.md"
+      ],
       "source": "panel",
       "viewport": "tall",
       "url": "/modules",
@@ -1589,6 +1608,9 @@
       "file": "client_files_mounted.png",
       "language": "en",
       "page": "client/desktop.md",
+      "pages": [
+        "quick-start/files.md"
+      ],
       "source": "client",
       "viewport": "desktop",
       "url": "/",
@@ -1598,6 +1620,21 @@
       "press": [
         "#tabs .tab:has(span:text-is(\"{ui.panel_files}\"))"
       ]
+    },
+    {
+      "file": "client_ai_on.png",
+      "language": "en",
+      "page": "quick-start/ai_gateway.md",
+      "source": "client",
+      "viewport": "desktop",
+      "url": "/",
+      "element": "viewport",
+      "wait_for": "#content .card",
+      "state": "The AI page with the hub's entry in use: The AI tools use this gateway selected, and the entry reads The tools point at the hub.",
+      "press": [
+        "#tabs .tab:has(span:text-is(\"{ui.panel_ai}\"))"
+      ],
+      "_todo": "client_state.json has ai.is_active false; the shot needs a state with the hub's gateway in use."
     },
     {
       "file": "client_files_mounted.png",
@@ -1617,6 +1654,9 @@
       "file": "client_terminal.png",
       "language": "en",
       "page": "client/desktop.md",
+      "pages": [
+        "quick-start/terminal.md"
+      ],
       "source": "client",
       "viewport": "desktop",
       "url": "/",
@@ -1629,6 +1669,25 @@
         ".term_tab:has(.term_tab_label[title=\"desktop\"]) .term_tab_close",
         ".term_switches .switch:has-text(\"{ui.terminal_persistent}\")"
       ]
+    },
+    {
+      "file": "client_terminal_switches.png",
+      "language": "en",
+      "page": "quick-start/terminal.md",
+      "source": "client",
+      "viewport": "desktop",
+      "url": "/",
+      "element": "viewport",
+      "wait_for": "#content .card",
+      "state": "client_state.json as committed: one session on the hub's machine, with Persistent and Shared switched on before the shot, so its tab shows the kept and shared badges.",
+      "press": [
+        "#tabs .tab:has(span:text-is(\"{ui.panel_terminals}\"))",
+        ".term_tab:has(.term_tab_label[title=\"server\"]) .term_tab_close",
+        ".term_tab:has(.term_tab_label[title=\"desktop\"]) .term_tab_close",
+        ".term_switches .switch:has-text(\"{ui.terminal_persistent}\")",
+        ".term_switches .switch:has-text(\"{ui.terminal_shared}\")"
+      ],
+      "_todo": "The Shared selector follows the Persistent one and is not yet checked against the live page."
     },
     {
       "file": "client_terminal.png",
@@ -1685,6 +1744,9 @@
       "file": "client_remote_desktops.png",
       "language": "en",
       "page": "scenarios/one_laptop_every_machine.md",
+      "pages": [
+        "quick-start/remote_desktop.md"
+      ],
       "source": "client",
       "viewport": "desktop",
       "url": "/",
@@ -1713,6 +1775,9 @@
       "file": "client_web_vscode.png",
       "language": "en",
       "page": "scenarios/one_laptop_every_machine.md",
+      "pages": [
+        "quick-start/vscode.md"
+      ],
       "source": "client",
       "viewport": "desktop",
       "url": "/",
@@ -1763,12 +1828,17 @@
       "file": "app_hub.png",
       "language": "en",
       "page": "client/android.md",
-      "pages": [
-        "quick-start.md"
-      ],
       "source": "app",
       "viewport": "app",
       "state": "The hub screen; the hub row reads Connected · EasyTier with the round trip in ms, and the virtual network row reads Connected · with your phone's address."
+    },
+    {
+      "file": "app_hub_netbird.png",
+      "language": "en",
+      "page": "quick-start.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "The hub screen with the phone's Wi-Fi off; the hub row reads Connected · NetBird with the round trip in ms, and the virtual network row reads Connected · with the phone's NetBird address."
     },
     {
       "file": "app_hub.png",
@@ -1796,9 +1866,6 @@
       "file": "app_hub_console_waiting.png",
       "language": "en",
       "page": "client/android.md",
-      "pages": [
-        "quick-start.md"
-      ],
       "source": "app",
       "viewport": "app",
       "state": "The hub screen, the virtual network row reading Connecting… with the console hint under it."
@@ -1835,7 +1902,7 @@
       "language": "en",
       "page": "client/android.md",
       "pages": [
-        "quick-start.md"
+        "quick-start/files.md"
       ],
       "source": "app",
       "viewport": "app",
@@ -1857,11 +1924,27 @@
       "language": "en",
       "page": "client/android.md",
       "pages": [
-        "quick-start.md"
+        "quick-start/terminal.md"
       ],
       "source": "app",
       "viewport": "app",
       "state": "A terminal session with the key row showing."
+    },
+    {
+      "file": "app_web_cloudcli.png",
+      "language": "en",
+      "page": "quick-start/cloudcli.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "The Web screen with one row titled CloudCLI with the account name in parentheses, the computer's CloudCLI instance running."
+    },
+    {
+      "file": "app_cloudcli_session.png",
+      "language": "en",
+      "page": "quick-start/cloudcli.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "The phone's browser after Open on the CloudCLI row: a CloudCLI page signed in, with the session list and the message box of one Claude Code session in view."
     },
     {
       "file": "app_terminal.png",
@@ -1880,7 +1963,7 @@
       "language": "en",
       "page": "client/android.md",
       "pages": [
-        "quick-start.md"
+        "quick-start/remote_desktop.md"
       ],
       "source": "app",
       "viewport": "app",
@@ -1932,7 +2015,12 @@
       ],
       "hide": [
         "div.fixed.z-50.w-full:has-text(\"survey\")"
-      ]
+      ],
+      "language_pages": {
+        "en": [
+          "quick-start.md"
+        ]
+      }
     },
     {
       "file": "console_netbird_key_created.png",
@@ -1944,7 +2032,12 @@
       "element": "[role=\"dialog\"]",
       "wait_for": "[role=\"dialog\"]",
       "state": "The NetBird console's Setup Keys page.",
-      "manual": "Taken by hand once: the dialog the console shows after Create Setup Key, with the key painted over by the redaction; kept as the owner's own capture."
+      "manual": "Taken by hand once: the dialog the console shows after Create Setup Key, with the key painted over by the redaction; kept as the owner's own capture.",
+      "language_pages": {
+        "en": [
+          "quick-start.md"
+        ]
+      }
     },
     {
       "file": "console_netbird_network.png",
@@ -1995,9 +2088,6 @@
       "file": "console_easytier_devices.png",
       "language": "console",
       "page": "hub/easytier.md",
-      "pages": [
-        "quick-start.md"
-      ],
       "source": "console",
       "viewport": "wide",
       "url": "https://console.easytier.net/index.html#/devices",
@@ -2006,15 +2096,17 @@
       "state": "The EasyTier console's device list with the hub online and approved under the key Test; the owner's other devices' rows are hidden.",
       "hide": [
         "table tbody tr:not(:has-text(\"Debian\"))"
-      ]
+      ],
+      "language_pages": {
+        "zh": [
+          "quick-start.md"
+        ]
+      }
     },
     {
       "file": "console_easytier_network_create.png",
       "language": "console",
       "page": "hub/easytier.md",
-      "pages": [
-        "quick-start.md"
-      ],
       "source": "console",
       "viewport": "wide",
       "url": "https://console.easytier.net/index.html#/networks",
@@ -2032,15 +2124,17 @@
           "fill": ".n-modal input.n-input__input-el >> nth=0",
           "text": "home"
         }
-      ]
+      ],
+      "language_pages": {
+        "zh": [
+          "quick-start.md"
+        ]
+      }
     },
     {
       "file": "console_easytier_device_attach.png",
       "language": "console",
       "page": "hub/easytier.md",
-      "pages": [
-        "quick-start.md"
-      ],
       "source": "console",
       "viewport": "wide",
       "url": "https://console.easytier.net/index.html#/networks",
@@ -2056,7 +2150,12 @@
         "text=\"测试网络\"",
         "button:has-text(\"挂载设备\")",
         ".n-modal .n-base-selection"
-      ]
+      ],
+      "language_pages": {
+        "zh": [
+          "quick-start.md"
+        ]
+      }
     },
     {
       "file": "console_easytier_subnet_proxy.png",
@@ -2098,6 +2197,9 @@
       "file": "win_explorer_mapped.png",
       "language": "os",
       "page": "client/desktop.md",
+      "pages": [
+        "quick-start/files.md"
+      ],
       "source": "os",
       "viewport": "os",
       "state": "File Explorer on Windows showing a share the client mapped to a drive letter."
