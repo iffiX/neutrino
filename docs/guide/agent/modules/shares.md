@@ -29,7 +29,7 @@ With no user picked, every user under **Users** has the share. The copy button b
 
 ## Allowed subnets
 
-The shares answer only from the networks the [Network](../../hub/network.md) page serves or exposes; in the server shape, every network the box holds an address on counts.
+The shares accept connections only from the networks the [Network](../../hub/network.md) page serves or exposes; in **Server** mode, every network the box holds an address on counts.
 
 | System  | How the machine limits SMB to those subnets                                           |
 | ------- | ------------------------------------------------------------------------------------- |

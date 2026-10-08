@@ -4,7 +4,7 @@ title: Overview
 
 # Overview
 
-Neutrino is a hub, the agents it manages and the clients that use them. This page shows where each one goes, first on one computer, then on several machines. A later section shows how a phone or a laptop reaches them from outside your home.
+Neutrino is a hub, the agents it manages and the clients that connect to the hub. This page shows where each one goes, first on one computer, then on several machines. A later section shows how a phone or a laptop reaches them from outside your home.
 
 ## One computer
 
@@ -14,7 +14,7 @@ The hub and an agent install together on one computer that stays on. The agent r
 
 ## How a client reaches the computer's services
 
-When you open a service, the client opens a port for it on the loopback address of your phone or laptop. A connection to that port goes over the client's one connection to port 8443. The hub passes it to the agent of the machine that runs the service.
+When you open a service, the client opens a port for it on the loopback address of your phone or laptop. A connection to that port goes over the client's one connection to port 8443. The hub passes it to the agent of the machine that runs the service. Port 8443 is therefore the one port the computer opens to clients.
 
 ## Several machines
 
@@ -37,11 +37,11 @@ Several ways in can be on at once, and a client uses whichever one reaches the h
 
 ## The parts and the hub's layers
 
-| Part   | Installs on                                                        | Does                                                                        |
-| ------ | ------------------------------------------------------------------ | --------------------------------------------------------------------------- |
-| Hub    | one computer that stays on, with Linux, macOS or Windows           | runs the panel, accepts agents and clients on port 8443, publishes services |
-| Agent  | each machine that runs services, the hub's own computer among them | installs the modules the panel turns on, and runs terminals and the desktop |
-| Client | your laptop with Linux, Windows or macOS, or your Android phone    | opens what the hub publishes to it, at home and from outside                |
+| Part   | Installs on                                                        | Does                                                                                                |
+| ------ | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| Hub    | one computer that stays on, with Linux, macOS or Windows           | runs the panel on ports of its own, accepts agents and clients on port 8443, and publishes services |
+| Agent  | each machine that runs services, the hub's own computer among them | installs the modules the panel turns on, and runs terminals and the desktop                         |
+| Client | your laptop with Linux, Windows or macOS, or your Android phone    | opens what the hub publishes to it, at home and from outside                                        |
 
 The hub itself has layers, and each one is set on its own panel page:
 
@@ -52,4 +52,4 @@ The hub itself has layers, and each one is set on its own panel page:
 | Proxy      | Sends chosen traffic through exit nodes: the hub's own, and in **Router** and **Side gateway** that of the devices behind it. Full edition only.    |
 | AI gateway | One address in front of your API keys and subscriptions, for the AI tools on every machine and client.                                              |
 
-[Network](./hub/network.md) describes each mode and how to change it.
+[Network](./hub/network.md) describes each mode and how to change it. [Security](./security.md) explains why the hub runs as root, where it keeps your keys, and what Direct opens.

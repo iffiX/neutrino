@@ -14,12 +14,12 @@ Before you start, finish the [first step](../quick-start.md), and pick a folder 
 1. Select the **File share** tab. If the tab is missing, select **+** at the end of the tabs and tick **File share**.
 1. Select **Install**, and wait until the tab no longer reads **installing**.
 1. Select **Configure**.
-1. Under **Users**, type a user name and a password, then select **Add user**.
+1. Under **Users**, type a new user name and a password for the share, then select **Add user**.
 1. Select **Apply users**. The user's row reads **ready**.
-1. Under **Shares**, select **Add share**, type a **Name**, and type the folder's full path in **Path**.
+1. Under **Shares**, select **Add share**, type a **Name**, and type the folder's full path in **Path**, such as `/home/lin/Documents` or `C:\Users\Public\Documents`.
 1. Select **Apply shares**.
 
-On Linux the install fetches Samba, and on macOS and Windows the module uses the SMB server that comes with the system. On Windows the path starts at a drive, as in `C:\Users\Public\Documents`.
+On Linux the install fetches Samba, and on macOS and Windows the module uses the SMB server that comes with the system.
 
 ![The File share tab with a user and a share](/guide/en/shares_windows.webp)
 
@@ -38,7 +38,7 @@ The button reads **Mounting…**, then **Unmount**. On Linux the share is a fold
 
 ![The share as a drive in File Explorer](/guide/os/win_explorer_mapped.webp)
 
-When the row shows a code, [Troubleshooting](../reference/troubleshooting.md) lists its cause and fix.
+When the row shows a code, [Troubleshooting](../reference/troubleshooting.md#a-share-does-not-mount-on-a-computer) lists its cause and fix.
 
 ## Open it on the phone
 
@@ -47,6 +47,6 @@ When the row shows a code, [Troubleshooting](../reference/troubleshooting.md) li
 1. Type the user name in **Share username** and its password in **Share password**.
 1. Select **Connect**.
 
-Android's Files app opens the share, under the share's name, and its files open from there.
+Android's Files app opens the share, under the share's name, and its files open from there. Away from home, the share opens the same way over NetBird. When **Connect** fails, [Troubleshooting](../reference/troubleshooting.md#a-share-is-unreachable-on-a-phone) has the fix.
 
 ![The share in Android's Files app](/guide/en/app_files_provider.webp)

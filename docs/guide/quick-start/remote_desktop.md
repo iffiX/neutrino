@@ -17,7 +17,7 @@ Before you start, finish the [first step](../quick-start.md), and keep somebody 
 
 ![The Remote desktop tab with the desktop shared](/guide/en/modules_remote_desktop_tab.webp)
 
-On macOS, the computer's screen shows a dialog for RustDesk. In **System Settings** > **Privacy & Security**, turn on RustDesk under **Screen Recording** and under **Accessibility**. On Linux with a Wayland session, allow the screen sharing once at the computer's screen.
+The agent on the computer includes RustDesk, so nothing downloads. On macOS, the computer's screen then shows a dialog that names RustDesk's two permissions. In **System Settings** > **Privacy & Security**, turn on RustDesk under **Screen Recording** and under **Accessibility**. If the tab shows a code after that, select **Apply remote desktop** again. On Linux with a Wayland session, allow the screen sharing once at the computer's screen.
 
 ## Connect
 
@@ -26,8 +26,8 @@ On macOS, the computer's screen shows a dialog for RustDesk. In **System Setting
 
 ![Your computer's row on the laptop's Remote desktops page](/guide/en/client_remote_desktops.webp)
 
-The viewer shows the computer's desktop. On the phone, three round buttons at its top right raise the keyboard, show a bar of special keys, and end the session.
+The viewer shows the computer's desktop, at home or, over NetBird, from outside. On the phone, three round buttons at its top right raise the keyboard, show a bar of special keys, and end the session.
 
 ![The computer's desktop in the app's viewer](/guide/en/app_rdp_viewer.webp)
 
-When **Connect** shows a code in place of the viewer, [Troubleshooting](../reference/troubleshooting.md) lists its cause.
+When **Connect** shows a code in place of the viewer, [Troubleshooting](../reference/troubleshooting.md#a-remote-desktop-does-not-open) lists its cause.

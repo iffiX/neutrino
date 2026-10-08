@@ -93,7 +93,7 @@ The **Web** page lists every web address the joined hubs publish: Gitea, VS Code
 
 - Select **Open** on the entry. The button reads **Opening…**, the client makes the entry's forward, and the page opens in your browser.
 
-**Disconnect** ends the forward. The browser opens a name under `.localhost` with the local port, so two instances keep their logins apart; on macOS it opens `127.0.0.1`, because Safari resolves no `.localhost` name. A VS Code, code-server or CloudCLI entry opens with a token, as [Token entries](../hub/services.md#token-entries) describes. An entry the hub cannot reach is greyed and reads **Not reachable now**.
+**Disconnect** ends the forward. The browser opens a name under `.localhost` with the local port, so two instances keep their logins apart. On macOS it opens `127.0.0.1`, because Safari resolves no `.localhost` name. A VS Code, code-server or CloudCLI entry opens with a token, as [Token entries](../hub/services.md#token-entries) describes. An entry the hub cannot reach is greyed and reads **Not reachable now**.
 
 ## Ports
 

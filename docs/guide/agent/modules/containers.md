@@ -4,7 +4,7 @@ title: Containers
 
 # Containers
 
-On a managed Linux machine, the **Containers** module runs the containers you declare, as systemd units through podman, and each host port a container publishes becomes an entry on the clients' **Ports** page. From podman 4.4 a declaration becomes a Quadlet `.container` file; on an older podman the agent writes the `.service` unit itself.
+On a managed Linux machine, the **Containers** module runs the containers you declare as systemd units through podman. Each host port a container publishes becomes an entry on the clients' **Ports** page. From podman 4.4 a declaration becomes a Quadlet `.container` file; on an older podman the agent writes the `.service` unit itself.
 
 To prepare the tab, select **Install** and then **Configure** on the **Containers** tab of the [Modules](../modules.md) page.
 

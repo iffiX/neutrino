@@ -11,7 +11,7 @@ Each managed machine, on Linux, macOS or Windows, can run one private git server
 1. On the **Gitea** tab of the [Modules](../modules.md) page, select **Install**.
 1. Select **Configure**. The **Access** and **Administrator** sections open under the tab.
 
-On Linux, the install brings git from the machine's own packages. On a Mac, git comes from the command line developer tools, Xcode or Homebrew, and on Windows from Git for Windows; either must be on the machine before the install.
+On Linux, the install brings git from the machine's own packages. On a Mac, git comes from the command line developer tools, Xcode or Homebrew, and on Windows from Git for Windows. Either must be on the machine before the install.
 
 ## Set the access
 

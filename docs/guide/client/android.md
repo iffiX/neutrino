@@ -4,7 +4,7 @@ title: Android app
 
 # Android app
 
-On a phone or a tablet, the Android app opens a joined hub's web pages, ports, AI gateway, shares, terminals and remote desktops, on the LAN or from outside. The app connects only to the hub's port 8443. [Install a client](../install/client.md) covers installing the app and joining a hub.
+The Android app opens a joined hub's web pages, ports, AI gateway, shares, terminals and remote desktops on a phone or a tablet, at home or from outside. The app connects only to the hub's port 8443. [Install a client](../install/client.md) covers installing the app and joining a hub.
 
 ## Hubs
 
@@ -16,15 +16,15 @@ The path is **LAN** for an address on a network the phone is on, and **Direct** 
 
 While the channel is down, the line reads **Connecting…** as the app dials every address of the hub. When no address connects, the line names the reason, then `·` and what ends it, as in **The hub did not answer · retrying in 5 s**. The seconds count down live, and at 0 the line reads **Connecting…** again. The wait starts at 5 seconds and doubles up to 60, and a connection or a network change sets it back to 5. [The state line of a hub row](../reference/troubleshooting.md#the-state-line-of-a-hub-row) lists every reason with its fix.
 
-A network change, such as moving from mobile data to Wi-Fi, makes the app dial each hub again at once, and so does the refresh button at the top right.
+A network change, such as moving from mobile data to Wi-Fi, makes the app dial each hub again at once. The refresh button at the top right does the same.
 
-The dot is green while connected, pulsing amber while dialling, amber while the next step is up to the network or the hub, and red when you must act. A hub the app has never reached shows a grey dot.
+The dot is green while connected and pulsing amber while dialling. It is amber while the next step is up to the network or the hub, and red when you must act. A hub the app has never reached shows a grey dot.
 
 ### Row buttons
 
 - **Leave** reads **Press again to leave** after one press, and a second press within five seconds removes the hub. The phone forgets the hub, and its forwards and shares end.
 - **Reconnect**, on a row reading **Replaced by another client**, takes the hub back from the other client.
-- **Panel**, when the phone's permission on the hub's **Clients** page includes **Hub panel without the password**, opens the hub's panel in the phone's browser, signed in, wherever the app reaches the hub.
+- **Panel** opens the hub's panel in the phone's browser, signed in, wherever the app reaches the hub. It appears when the phone's permission on the hub's **Clients** page includes **Hub panel without the password**.
 
 ### Virtual network
 

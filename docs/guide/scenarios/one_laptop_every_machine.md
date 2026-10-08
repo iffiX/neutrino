@@ -4,7 +4,7 @@ title: One laptop, every machine
 
 # One laptop, every machine at home
 
-You install an agent on two more machines at home, the Linux machine `server` and the Windows computer `desktop`. From one client window, a Mac laptop named `laptop` then opens a shell on each machine, shows `desktop`'s screen and opens VS Code on the hub box.
+You install an agent on two more machines at home, the Linux machine `server` and the Windows computer `desktop`. A Mac laptop named `laptop` then opens a shell on each machine, shows `desktop`'s screen and opens VS Code on the hub box, all from one client window.
 
 ## Before you start
 
@@ -15,7 +15,7 @@ You install an agent on two more machines at home, the Linux machine `server` an
 ## Enroll server
 
 1. On the panel's **Devices** page, select **Add by link**.
-1. Select **Copy**. Each enrollment link joins one machine.
+1. Select **Copy**. A link joins one machine.
 1. On `server`, run the install script for the agent:
 
    ```bash
@@ -87,23 +87,12 @@ The viewer shows `desktop`'s screen, and the row reads **Viewer open**.
 
 ## Open VS Code on the hub box
 
-The instance runs as an existing user account on the hub box, such as your own. In the panel:
-
-1. On the **Modules** page, pick `hub`.
-1. If the tab strip shows no **VS Code** tab, select **+** and turn on **VS Code** in the list.
-1. On the **VS Code** tab, select **Open and accept the terms**. Microsoft's terms open in a new tab.
-1. Select **Install**.
-1. When the install finishes, select **Configure**.
-1. Under **Instances**, select **Add instance**.
-1. Fill **Account** with the account's user name.
-1. Select **Apply VS Code**. The instance's row reads **running**.
+1. On the panel's **Modules** page, pick `hub`.
+1. Start a VS Code instance for your own account, as [A remote editor](../quick-start/vscode.md) describes. The instance's row reads **running**.
+1. In the client window on `laptop`, open the **Web** page.
+1. On the VS Code row, select **Open**.
 
 ![The VS Code tab on hub with one running instance](/guide/en/vscode_panel.webp)
-
-On `laptop`:
-
-1. In the client window, open the **Web** page.
-1. On the VS Code row, select **Open**.
 
 VS Code opens in your browser, on the hub box's files.
 

@@ -149,7 +149,7 @@ The passphrase seals every credential the hub holds, and restoring a backup requ
 
 **Which ports?** shows the fields the chosen mode needs. Every mode also has **Panel port** for HTTP and **HTTPS port**, and the two must differ.
 
-| Shape          | Fields                                                                                             |
+| Mode           | Fields                                                                                             |
 | -------------- | -------------------------------------------------------------------------------------------------- |
 | Server         | the list of the machine's ports, each keeping its address                                          |
 | Side gateway   | **Port on that network**, **This box's address**, **Prefix length**, **That network's own router** |

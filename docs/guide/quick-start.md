@@ -4,7 +4,7 @@ title: First step
 
 # First step: install, join, reach it from outside
 
-The first step installs the hub on your home computer, joins your phone and laptop to it, and connects them from outside through NetBird. It takes about ten minutes. Each service on the computer, such as a terminal or an AI session, opens on a page of its own after this one.
+The first step installs the hub on your home computer, joins your phone and laptop to it, and connects them from outside through NetBird. It takes about ten minutes. Each service on the computer opens on a later page. Your Claude Code sessions, for one, open in [Your AI session on the phone](./quick-start/cloudcli.md).
 
 ## Before you start
 
@@ -13,7 +13,7 @@ The first step installs the hub on your home computer, joins your phone and lapt
   - macOS 12.3 or newer
   - Windows 10 1809 or newer on x86-64
 - You have an administrator account on the computer, and the computer reaches the internet.
-- You have an Android phone with Android 8.0 or newer on a 64-bit ARM processor, a laptop with one of the computer's systems, or both.
+- You have an Android phone (Android 8.0 or newer, 64-bit ARM), a laptop with one of these systems, or both.
 - You have an account at netbird.io.
 - The phone and the laptop are on the same Wi-Fi network as the computer.
 
@@ -69,11 +69,9 @@ The vault passphrase seals every credential the hub holds, and restoring a backu
 
 The panel opens on the **Dashboard**. Its address is the one in the browser's address bar, and the laptop opens the panel at the same address.
 
-<!-- 待核: 终端打印的第一个地址是否总是笔记本在同一 Wi-Fi 上连得到的局域网地址（机器上有容器网桥或别的 VPN 时可能不是）。 -->
-
 ## Join your phone and laptop
 
-Each device joins with a link of its own from the panel's **Clients** page, valid for 30 minutes.
+Each device joins with a link of its own from the panel's **Clients** page, valid for 30 minutes. Follow the part for each device you have.
 
 ### From the phone
 
@@ -85,6 +83,8 @@ Each device joins with a link of its own from the panel's **Clients** page, vali
 1. In the app, on **Hubs**, select **Join a hub**.
 1. Select **Allow the camera**, then allow it in Android's prompt.
 1. Point the camera at the QR code in the panel.
+
+The app lists the hub, and its row reads **Connected · LAN**.
 
 ![The client link with its QR code on the Clients page](/guide/en/clients_link_qr.webp)
 
@@ -114,7 +114,7 @@ Then join the laptop:
 1. Paste the link into the field of the **Join a hub** row.
 1. Select **Join**.
 
-The hub's row reads **Connected · LAN** in the app and in the laptop's client window.
+The hub's row in the laptop's client window reads **Connected · LAN**.
 
 ## Join the hub to NetBird
 
@@ -151,11 +151,11 @@ The key under **Networks** > **Routing Peers** > **Add** > **Install NetBird** w
 
 ![The NetBird settings with the setup key saved](/guide/en/overlay_netbird_settings.webp)
 
-The badge beside **NetBird** reads **joining**, then **connected**, and **Settings** shows the hub's **Overlay address**.
+The badge beside **NetBird** reads **joining**, then **connected**, and **Settings** shows the hub's **Overlay address**. When the badge stays on another word, [Troubleshooting](./reference/troubleshooting.md#access) has its fix.
 
 ## Put the phone and laptop on NetBird
 
-The phone and the laptop receive the setup key from the hub, and every step for them happens in the app and the client window.
+The phone and the laptop receive the setup key from the hub, so every step for them runs on the devices themselves.
 
 1. In the app, on the hub's row, on the **Virtual network** line, select **Connect**.
 1. In Android's VPN connection request, select **OK**.
@@ -173,4 +173,4 @@ The hub's row in the app reads **Connected · NetBird**, with the round trip in 
 
 ![The hub's row connected through NetBird, away from the Wi-Fi](/guide/en/app_hub_netbird.webp)
 
-When a row reads something else, [Troubleshooting](./reference/troubleshooting.md) lists each state line and its fix.
+When a row reads something else, [Troubleshooting](./reference/troubleshooting.md#the-state-line-of-a-hub-row) lists each state line and its fix.
