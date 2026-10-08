@@ -203,7 +203,7 @@ To mount a share:
 
 The client keeps the login in a credentials file only your account reads, so the next **Mount** reuses it. **Unmount** detaches the share and keeps the login.
 
-### How each system mounts
+Each system mounts the share its own way:
 
 | System  | The mount                                                                                                                                                                                                         |
 | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

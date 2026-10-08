@@ -66,9 +66,7 @@ Every client of the hub joins NetBird with the hub's setup key, so every client 
 These steps run in the desktop client or the Android app, away from home.
 
 1. Open the **Hubs** page and find the hub's virtual network line, under the hub's row.
-1. If the line was connected before you added the route, select **Disconnect** on it.
-   <!-- 待核: whether the Android app needs Disconnect and Connect to take a new route (outline item 5) -->
-1. If the line reads **Not connected**, select **Connect**. The line reads **Connected ·** followed by the client's NetBird address.
+1. If the line reads **Not connected**, select **Connect**. The line reads **Connected ·** followed by the client's NetBird address. A line that was already connected adds the new route on its own.
 1. In a browser, open the device's LAN address, such as `http://192.168.10.20`.
 
 ## When the device stays unreachable

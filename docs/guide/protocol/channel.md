@@ -59,7 +59,7 @@ A client rejects an agent link with `link_not_for_client`, and an agent rejects 
 
 | Endpoint                  | Body                                                             | Returns                                                                                                          |
 | ------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `POST /api/channel/join`  | `{ticket, role, protocol, machine_id, name, software, platform}` | `{id, token}`: the binding id and a secret every later `hello` carries                                           |
+| `POST /api/channel/join`  | `{ticket, role, protocol, machine_id, name, software, platform}` | `{id, token}`: the binding id and a secret every later `hello` includes                                          |
 | `POST /api/channel/leave` | `{id, token}`                                                    | `{}`; a device's row stays on **Devices** and loses its token, a client's row is deleted with its AI gateway key |
 
 `machine_id` and `platform` describe the machine itself, and each role reads them from a different place:

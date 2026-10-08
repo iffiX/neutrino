@@ -4,7 +4,7 @@ title: Credentials
 
 # Credentials
 
-The **Credentials** page stores SSH keys, logins and tokens in the hub's vault, each one time. A page that signs in somewhere picks a stored entry from a list.
+The **Credentials** page stores each SSH key, login and token once, in the hub's vault. A page that signs in somewhere picks a stored entry from a list.
 
 ![The Credentials page with SSH keys, logins and tokens](/guide/en/credentials.webp)
 
@@ -35,9 +35,9 @@ Paste the whole private key, with its BEGIN and END lines. The hub rejects a pub
 | A provider on the **AI** page                       | a token, as the provider's API key            |
 | An exit node on the **Proxy** page                  | a token, where the node's link has one        |
 
-Windows starts an instance with its account's username and password, so a VS Code or CloudCLI instance there needs the account's login. The machine's AI tools on Windows run as the same account and use the same login. When Windows rejects the login, the module reports `credential_invalid`; update the stored login and apply the module again.
+Windows starts an instance with its account's username and password, so a VS Code or CloudCLI instance there needs the account's login. The machine's AI tools on Windows run as the same account and use the same login. When Windows rejects the login, the module reports `credential_invalid`. Add a login with the new password, pick it for the instance, and apply the module again.
 
-Each row counts its users, as **2 devices** or **1 provider**, and **Delete** opens a confirmation with the same count. A device or a provider that loses its entry needs a new one. An exit node that loses its token is disabled, and the SSH Relay stops.
+Each row counts its users, as **2 devices** or **1 provider**, and **Delete** opens a confirmation with the same count. A device or a provider that loses its entry needs a new one. An exit node that loses its token is disabled. The SSH Relay stops when its key or login is deleted.
 
 ## The vault
 

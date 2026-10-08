@@ -12,12 +12,12 @@ The **Devices** page lists every machine the hub has found, managed or not. From
 
 The page has two sections, **Managed devices** and **Unmanaged devices**. Each tile shows one of these states:
 
-| State       | Meaning                                                                                                         | Next action       |
-| ----------- | --------------------------------------------------------------------------------------------------------------- | ----------------- |
-| **Agent**   | Managed: the agent reports the machine's vitals and takes modules.                                              | open its drawer   |
-| **SSH**     | Unmanaged, with a stored login: one action installs the agent.                                                  | **Install agent** |
-| **Scanned** | Unmanaged, with no credentials: it joins with an enrollment link.                                               | **Get link**      |
-| **Offline** | Not answering. Its binding, the record of this hub and its token on the machine, keeps working when it returns. | wake it           |
+| State       | Meaning                                                                                                         | Next action                                     |
+| ----------- | --------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| **Agent**   | Managed: the agent reports the machine's vitals and takes modules.                                              | open its drawer                                 |
+| **SSH**     | Unmanaged, with a stored login: one action installs the agent.                                                  | **Install agent**                               |
+| **Scanned** | Unmanaged, with no credentials: it joins with an enrollment link.                                               | **Get link**                                    |
+| **Offline** | Not answering. Its binding, the record of this hub and its token on the machine, keeps working when it returns. | wake it, or install 0.5.0 on a 0.3 or 0.4 agent |
 
 The filters **All**, **Agent**, **SSH**, **Scanned only**, **Online** and **Offline** narrow the list. **Scan LAN** finds the machines on the networks the hub serves, and the page badge counts them, as **2 of 5 managed**.
 
@@ -41,7 +41,7 @@ Under the monitor come **Identity**, with **Display name** and **Icon**, then **
 | **Wake-on-LAN**     | The hub sends a wake packet to the machine on the networks it serves, or in server mode on its exposed networks. |
 | **Forget device**   | The row and its SSH settings leave the hub; keys and logins stay on the **Credentials** page.                    |
 
-**Reboot** and **Shut down** open a confirmation, and anything unsaved on the machine is lost. A wake packet never crosses NetBird or EasyTier, and the machine wakes only with Wake-on-LAN armed in its firmware and network card. An action on a machine that is not answering returns `agent_offline`. A forgotten machine keeps its agent installed, and a new link adds it again. When it is on a network the hub serves, the next **Scan LAN** lists it under **Unmanaged devices**.
+**Reboot** and **Shut down** open a confirmation, and anything unsaved on the machine is lost. The box itself sends the packet on its own networks, so the button works from a panel opened over NetBird or EasyTier too. A machine whose only path is a virtual network gets no packet, and a machine wakes only with Wake-on-LAN armed in its firmware and network card. An action on a machine that is not answering returns `agent_offline`. A forgotten machine keeps its agent installed, and a new link adds it again. When it is on a network the hub serves, the next **Scan LAN** lists it under **Unmanaged devices**.
 
 ## Share a desktop
 
@@ -53,11 +53,11 @@ The drawer's **Remote desktop** section shows the machine's **ID**, **Direct por
 
 The section shows a code when the desktop cannot be shared:
 
-| Code                     | Cause                                                                                          |
-| ------------------------ | ---------------------------------------------------------------------------------------------- |
-| `rdp_nobody_seated`      | Nobody is signed in at the machine's screen; sign in there.                                    |
-| `rdp_screen_not_allowed` | A Wayland session has not allowed screen sharing; allow it once at that screen.                |
-| `rdp_permissions_needed` | On a Mac, RustDesk lacks **Screen Recording** and **Accessibility** in **Privacy & Security**. |
+| Code                     | Cause                                                                                                                          |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| `rdp_nobody_seated`      | Nobody is signed in at the machine's screen; sign in there.                                                                    |
+| `rdp_screen_not_allowed` | A Wayland session has not allowed screen sharing; allow it once at that screen.                                                |
+| `rdp_permissions_needed` | On a Mac, RustDesk lacks **Screen Recording** and **Accessibility**; turn both on for it in **Privacy & Security** at the Mac. |
 
 Where AnyDesk or TeamViewer is installed, the same section shows its ID and **Set unattended password**.
 

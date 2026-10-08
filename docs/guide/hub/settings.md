@@ -10,7 +10,7 @@ The **Settings** page runs the panel itself: its HTTPS, its name, password, lang
 
 The panel listens on two ports: HTTP, `8080` unless setup chose another, and HTTPS, `443` unless setup chose another. Both ports serve the panel whether HTTPS is on or off, and both are set under **Panel ports** on the [Network](./network.md#panel-ports) page. The HTTPS port serves a certificate signed by a certificate authority this hub makes for itself.
 
-**Enable HTTPS** makes the HTTP port send every browser to the HTTPS address. Do it in this order on each device: install the authority, restart the browser, then enable HTTPS.
+**Enable HTTPS** makes the HTTP port send every browser to the HTTPS address. Install the authority and restart the browser on each device you use, then enable HTTPS once for the hub.
 
 ### Install the authority
 
@@ -32,6 +32,8 @@ Before you start, open the panel at its `http://` address on the device you are 
 
 On macOS, closing the certificate window asks for your password to confirm the trust setting.
 
+With HTTPS already on, another device downloads the authority from `http://<hub-address>:8080/api/hub/setting/https/authority`, where `<hub-address>` is the hub's address. The HTTP port serves this download whether HTTPS is on or off.
+
 ![The Keychain Access trust dialog set to Always Trust](/guide/os/os_mac_keychain_trust.webp)
 
 A Chrome that was told to proceed past a certificate warning shows **Not secure** for the panel until it restarts, even after the import.
@@ -45,7 +47,7 @@ Open the panel's `http://` address after the browser restarts. The **HTTPS** sec
 | **This browser trusts the certificate.**               | **Enable HTTPS** is available                                    |
 | **Install the certificate, then restart the browser.** | the browser rejected the certificate; **Enable HTTPS** is greyed |
 
-Select **Enable HTTPS**. The page moves to the `https://` address, and from then on the HTTP port sends every browser there. **Disable HTTPS** ends your session and moves the page back to the `http://` address, where you sign in again.
+Select **Enable HTTPS**. The page moves to the `https://` address, and from then on the HTTP port sends every browser there. A browser without the authority shows a certificate warning at that address. **Disable HTTPS** ends your session and moves the page back to the `http://` address, where you sign in again.
 
 ![The HTTPS section with HTTPS on and its status lines](/guide/en/settings_https_on.webp)
 
