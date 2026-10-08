@@ -18,7 +18,7 @@ With the switch on, the agent stops every other RustDesk host on the machine. It
 
 The share uses the direct port 21118 and none of RustDesk's servers. Each time its host starts, RustDesk 1.4.9 asks three public STUN servers (`stun.l.google.com`, `stun.cloudflare.com`, `stun.nextcloud.com`) for the machine's IPv6 address. The request holds no id and registers nothing, and no RustDesk option turns it off.
 
-A viewer sees the desktop of whoever is signed in at the machine's screen. The tab reads **running** while the agent's RustDesk service runs, whether anybody is signed in or not. With nobody at the screen, a client's **Connect** is rejected with `rdp_nobody_seated`.
+A viewer sees the desktop of whoever is signed in at the machine's screen. The tab reads **running** while the agent's RustDesk service runs, whether anybody is signed in or not. With nobody at the screen, a client's **Connect** is rejected with `rdp_nobody_seated`. Sign in at the machine's own screen, and **Connect** then works.
 
 On a Mac, the person at the screen grants RustDesk **Screen Recording** and **Accessibility** one time. When the switch goes on, the Mac shows a dialog that names both.
 
@@ -26,7 +26,7 @@ On a Mac, the person at the screen grants RustDesk **Screen Recording** and **Ac
 
 Turn the switch off and select **Apply remote desktop**. The agent's RustDesk stops, and a RustDesk you had installed on the machine before comes back as it was.
 
-The agent stops its RustDesk the same way, at once and whatever the switch says, in these cases:
+The agent stops its RustDesk and puts your own RustDesk back the same way, at once and whatever the switch says, in these cases:
 
 - the agent is uninstalled;
 - the machine leaves the hub;

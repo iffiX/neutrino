@@ -49,7 +49,7 @@ The agent runs cc-switch with a store of its own in each account's Neutrino fold
 
 ## Turn it off
 
-Select **This machine's AI tools use the hub's AI gateway** again. The agent switches every account back, and cc-switch removes the gateway from its settings. Each file the switch changed is written back byte for byte as it was before.
+Select **This machine's AI tools use the hub's AI gateway** again. The agent switches every account back, and cc-switch removes the gateway from its settings. Each file the switch changed, such as `~/.claude/settings.json` or `~/.codex/config.toml`, is written back byte for byte as it was before.
 
 The control reads on while any account still points at the gateway, including an account whose switch back failed. A press in that state tries the switch back again. The control reads off when every account uses its own settings.
 

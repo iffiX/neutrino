@@ -24,7 +24,7 @@ After the first step, the button reads **Terms accepted** and the rest of the ta
 
 1. Under **Instances**, select **Add instance**.
 1. Fill **Account** with the name of an account on the machine.
-1. Optional: change the **Port**. A new instance gets the port after the highest one in use, starting at 8000.
+1. Optional: change the **Port**. The first instance gets 8000, and each new one the port after the highest in use.
 1. On a Windows machine, pick the account's login under **Windows login for** the account.
 1. Select **Apply VS Code**. The machine saves the instances and restarts them.
 

@@ -13,7 +13,7 @@ On the **Terminals** page you open a shell on any managed machine whose agent is
 1. Under **Which machine**, select a machine.
 1. Select **New terminal**.
 
-A tab named after the machine opens a shell there. The shell runs as the account the machine's [Terminal](./modules/terminal.md) module names. With no account named, it runs as root, and on Windows it is PowerShell running as SYSTEM.
+A tab named after the machine opens a shell there. The shell runs as the account the machine's [Terminal](./modules/terminal.md) module names. With no account named, the shell runs as root on Linux and macOS. On Windows the shell is always PowerShell running as SYSTEM.
 
 Keystrokes go to the machine, Escape included. Tabs stay open while you visit other panel pages. On the [Devices](../hub/devices.md) page, the **Terminal** button in a device's drawer opens this page on that machine.
 

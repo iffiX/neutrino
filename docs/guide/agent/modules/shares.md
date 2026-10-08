@@ -14,7 +14,7 @@ Before you add a share, select **Install** and then **Configure** on the **File 
 1. Fill **Name**, and fill **Path** with the folder on the machine.
 1. Optional: fill **Comment**.
 1. Optional: turn on **Read only** to refuse writes from everyone.
-1. Under **Who may use it**, pick the users the share accepts.
+1. Under **Who may use it**, pick the users the share accepts. The list holds the users under **Users**, so add a user there first.
 1. Select **Apply shares**. The machine saves the shares and reloads its SMB server.
 
 With no user picked, every account under **Users** has the share. On Windows, a share on a machine with no accounts configured is open to the machine's administrators alone. The copy button beside a share's name copies its `smb://` address.

@@ -4,7 +4,7 @@ title: ZFS storage
 
 # ZFS storage
 
-On a managed Linux machine, the **ZFS storage** tab builds ZFS pools and datasets and shows the health of every disk. The tab shows what the machine reports about its own disks, and each button acts on the machine at the press. The hub keeps no list of wanted pools.
+On a managed Linux machine, the **ZFS storage** tab builds ZFS pools and datasets and shows the health of every disk. The tab shows what the machine reports about its own disks, and each button acts on the machine at the press. The hub keeps no list of wanted pools, so a hub restored from a backup shows the pools the machine reports.
 
 To prepare the tab, select **Install** and then **Configure** on the **ZFS storage** tab of the [Modules](../modules.md) page. The install also brings smartmontools for the disk health readings. The **Topology**, **Pools** and **Datasets** sections open under the tab.
 

@@ -67,3 +67,6 @@ The agent's forwarder in front of CloudCLI checks the token and signs in to Clou
 | `port_invalid`                   | the port is outside 1024 to 65535                                                   |
 | `credential_missing`             | a Windows instance has no login picked                                              |
 | `credential_invalid`             | Windows no longer accepts the instance's login; pick an updated one and apply again |
+| `token_missing`                  | the hub sent no connection token for the instance                                   |
+
+After an install failure, fix the cause, such as freeing memory on the machine, then select **Apply CloudCLI** again to retry the install.

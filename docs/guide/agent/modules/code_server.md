@@ -49,6 +49,8 @@ The editor installs extensions from Open VSX, code-server's own extension galler
 | `code_server_download_failed` | the release could not be fetched or unpacked             |
 | `code_server_port_taken`      | another program on the machine holds the instance's port |
 
+For `code_server_port_taken`, change the instance's **Port** and select **Apply code-server** again.
+
 ## Point its AI tools at the gateway
 
 [Point a machine's AI tools at the gateway](./ai_tools.md) switches the tools of every account that runs code-server here.

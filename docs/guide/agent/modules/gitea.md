@@ -35,7 +35,7 @@ Without a usable git, the install is rejected with `gitea_git_missing`. Install 
 
 ## Create the administrator
 
-A new Gitea has no account. The **Create administrator** button is available after the service has started.
+A new Gitea has no account. **Configure** starts the service, and the **Create administrator** button is available after the service has started.
 
 1. Under **Administrator**, fill the username, the password and, if you want one, the email.
 1. Select **Create administrator**.
