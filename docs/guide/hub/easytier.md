@@ -34,7 +34,7 @@ The address a device registers with has the form `tcp://et-web.console.easytier.
 
 1. Under **Settings**, select **EasyTier console**.
 1. Paste the address into **Console address**.
-1. Optional: turn on **Secure mode** when the console's network runs in EasyTier's secure mode.
+1. Turn on **Secure mode**: the console's own join command carries `--secure-mode=true`, and the switch adds the same flag.
 1. Select **Apply EasyTier settings**.
 
 The section reads **Waiting for the console**, with **This machine is registered with the console. Attach it to a network there.**
@@ -70,8 +70,8 @@ The badge reads **connected**. **Networks from the console** shows each network'
 
 In console mode a client registers with the same console when it connects to the virtual network. Its virtual network row reads **Connecting…**, with **This machine is registered with the console. Attach it to a network there.**
 
-1. In the EasyTier console, open the device list and find the client.
-1. Attach the client to the hub's network.
+1. In the EasyTier console, open the hub's network and choose **挂载设备** (Attach device).
+1. Pick the client under **入网设备** (Devices to attach) and choose **加入网络** (Join network).
 
 The client's row then reads **Connected**.
 
@@ -79,7 +79,7 @@ The client's row then reads **Connected**.
 
 ## Export the LANs
 
-In console mode, add each LAN of the hub as a subnet route of the hub's device in the console. In manual mode, list each LAN under **Exported networks**. The full steps are in [LAN devices over EasyTier](../scenarios/easytier_lan_routes.md).
+In console mode, add each LAN of the hub under the network's **子网路由** (Subnet routes) tab in the console, reached through the hub. In manual mode, list each LAN under **Exported networks**. The full steps are in [LAN devices over EasyTier](../scenarios/easytier_lan_routes.md).
 
 ## Manual bootstrap peers
 
