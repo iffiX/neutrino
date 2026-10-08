@@ -200,7 +200,7 @@ sudo installer -pkg neutrino-client-<version>-macos-arm64.pkg -target /
 Intel 芯片的 Mac 上，文件名以 `macos-amd64.pkg` 结尾。也可以右键 pkg 选“打开”；应用装在 /Applications，点图标即打开窗口。
 </details>
 
-每个包的完整安装步骤在文档站：[安装中枢](https://neutrino.beyond-infinity.top/zh-CN/hub/install.html)、[安装被控端](https://neutrino.beyond-infinity.top/zh-CN/agent/install.html)、[安装客户端](https://neutrino.beyond-infinity.top/zh-CN/client/install.html)。
+每个包的完整安装步骤在文档站：[安装中枢](https://neutrino.beyond-infinity.top/zh-CN/install/hub.html)、[安装被控端](https://neutrino.beyond-infinity.top/zh-CN/install/agent.html)、[安装客户端](https://neutrino.beyond-infinity.top/zh-CN/install/client.html)。
 
 ## 文档
 
