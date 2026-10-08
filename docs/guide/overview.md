@@ -17,7 +17,7 @@ The hub runs on Linux in any of its network shapes, and on macOS and Windows in 
 | Proxy         | One xray process with exit nodes imported from share links, in the full edition only. It diverts the box's own traffic, its SOCKS ports, and in the routing shapes the devices behind it.             | Every connection leaves through the box's own uplink.             |
 | AI gateway    | One endpoint, port 8317 by default, in front of API keys and subscription accounts, with a key and a usage count for each client.                                                                     | Each AI tool keeps its own configuration.                         |
 
-![The hub at the centre, reached from outside, driving agents, the AI gateway, storage and services](/guide/architecture.svg)
+![At home, a server and a desktop each run an agent that dials the hub's port 8443; a phone away from home reaches the same port by one of four ways in](/guide/overview_many_machines.svg)
 
 Only the router shape takes over the box's interfaces and serves networks of its own. Server and side gateway leave every address and every connection on the box as they are. [Network](./hub/network.md) describes each shape and how to change it.
 
