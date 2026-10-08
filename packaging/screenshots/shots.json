@@ -15,40 +15,6 @@
     }
   },
   "pending": [
-    "index.md",
-    "overview.md",
-    "quick-start.md",
-    "install/hub.md",
-    "install/agent.md",
-    "install/client.md",
-    "hub/install.md",
-    "scenarios/choose_a_way_in.md",
-    "scenarios/one_laptop_every_machine.md",
-    "scenarios/netbird_lan_routes.md",
-    "scenarios/easytier_lan_routes.md",
-    "hub/network.md",
-    "hub/overlay.md",
-    "hub/relay.md",
-    "hub/netbird.md",
-    "hub/easytier.md",
-    "hub/proxy.md",
-    "hub/ai.md",
-    "hub/devices.md",
-    "hub/clients.md",
-    "hub/credentials.md",
-    "hub/settings.md",
-    "agent/terminals.md",
-    "agent/modules.md",
-    "agent/modules/ai_tools.md",
-    "agent/modules/shares.md",
-    "agent/modules/terminal.md",
-    "agent/modules/remote_desktop.md",
-    "agent/modules/gitea.md",
-    "agent/modules/vscode.md",
-    "agent/modules/code_server.md",
-    "agent/modules/cloudcli.md",
-    "agent/modules/containers.md",
-    "agent/modules/zfs.md",
     "client/desktop.md",
     "client/android.md",
     "commands/nhub.md",
@@ -1151,11 +1117,7 @@
       "url": "/",
       "element": "viewport",
       "wait_for": "#content .card",
-      "state": "client_state.json as committed.",
-      "pages": [
-        "install/client.md",
-        "scenarios/one_laptop_every_machine.md"
-      ]
+      "state": "client_state.json as committed."
     },
     {
       "file": "client_network_picker.png",
@@ -1414,10 +1376,7 @@
       ],
       "source": "app",
       "viewport": "app",
-      "state": "The system Files app showing a share under Neutrino.",
-      "pages": [
-        "quick-start.md"
-      ]
+      "state": "The system Files app showing a share under Neutrino."
     },
     {
       "file": "app_terminal.png",
