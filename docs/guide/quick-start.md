@@ -6,7 +6,6 @@ title: Quick start
 
 At the end of this page, your phone on mobile data reaches your computer at home. It shows the computer's desktop, opens a folder shared from it in the Files app, and runs a terminal on it. The whole path takes about ten minutes and costs nothing, because the way in from outside is the free tier of the EasyTier console. That tier allows up to 20 devices.
 
-
 ## Before you start
 
 - Your computer stays on, has a desktop, and has somebody signed in at its screen. It runs one of these systems:
