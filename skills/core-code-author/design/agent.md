@@ -16,8 +16,9 @@ a separate package in that person's own session
 also joins the hub's virtual network as an ordinary peer, through the NetBird
 and EasyTier daemons its own package registers as services. A terminal it
 opens on a managed machine is a `shell` stream the hub bridges to that
-machine's agent, the same shell the panel's terminal reaches, and every
-other connection it makes to a service on a machine is a `connect` stream
+machine's agent, the same shell the panel's terminal reaches; a command it
+runs there is an `exec` stream bridged the same way; and every other
+connection it makes to a service on a machine is a `connect` stream
 the hub relays to that machine's agent. This page is
 the agent's own design: who commands it, how state moves, how the machine's
 root reaches it, and where the platform seam runs. The socket itself, its
@@ -51,7 +52,7 @@ makes true for the accounts it names ("The machine's AI tools").
 
 | The hub may | Root on the machine may |
 | --- | --- |
-| Push the state and open `shell`, `file`, `command` and `connect` streams | Bind the machine to a hub, or unbind it |
+| Push the state and open `shell`, `exec`, `file`, `command` and `connect` streams | Bind the machine to a hub, or unbind it |
 | Say which modules are absent, installed, stopped or running, and configure them | Send a report now (`nagent sync`) |
 | Reboot, shut down, reinstall the agent | |
 | Read and set up a person's own AnyDesk or TeamViewer | Read the binding and status |
@@ -77,7 +78,7 @@ declaration, and the most recent error worth showing. Down: the `state`, once wh
 report's hash differs and again whenever the hub's copy changes, and the
 streams the hub opens.
 
-The hub opens `shell`, `file`, `command` and `connect` streams to an agent;
+The hub opens `shell`, `exec`, `file`, `command` and `connect` streams to an agent;
 the agent opens `log` and `package` streams to the hub. A `command` names a
 module and a verb (`{agent, reboot}`, `{samba, reload}`, `{zfs,
 validate}`). Every stream sits behind a credit window, so a long transfer
@@ -237,10 +238,11 @@ keeps the seat and RustDesk's settings files. Their constants carry the
 prefixes `TERMINAL_` and `REMOTE_DESKTOP_`, and the hub names the modules
 `DEVICE_TERMINAL_MODULE` and `DEVICE_REMOTE_DESKTOP_MODULE`.
 
-**Terminal** holds two settings: the account a `shell` stream runs as, and
-the path of the shell program. Both empty is the shell the platform table's
-"Shell stream" row names, run as the agent runs. A shell opened afterwards,
-from the panel or from a client, runs as the module says; a session already
+**Terminal** holds two settings: the account a `shell` or an `exec` stream
+runs as, and the path of the shell program, which an `exec` does not read.
+Both empty is the shell the platform table's "Shell stream" row names, run
+as the agent runs. A shell opened afterwards, from the panel or from a
+client, runs as the module says; a session already
 open keeps what it runs, and a container's shell is not touched. A named
 account the machine does not have refuses the open `account_unknown
 {account}`, and a shell path that is missing or not executable
@@ -483,9 +485,10 @@ the module opens no port in any firewall, since the hub reaches it through
 the agent's `connect` stream. CloudCLI and code-server are reached the same
 way ("CloudCLI" and "code-server" below). The third is the machine's AI
 tools, pointed at the gateway by cc-switch run as each account ("The
-machine's AI tools"). The fourth is a terminal for the account the Terminal
-module names, on Linux and macOS: the shell runs through the platform's
-step-down with that account's home, environment and login shell, on a
+machine's AI tools"). The fourth is a terminal or a command for the account
+the Terminal module names, on Linux and macOS: the shell, or the command an
+`exec` stream names, runs through the platform's step-down with that
+account's home and environment, the shell as a login shell on a
 pseudo-terminal the agent makes. Everything else the agent does is root's
 own work.
 
@@ -752,6 +755,27 @@ stream closes; any other ends with it. The agent keeps the `owner` the hub
 stamped on the open as given. The report's `machine` section lists every
 kept shell, and the process holds them, so a restart ends them all ([protocol.md](protocol.md), "The
 verbs on a `command` stream").
+
+**A command runs once and is never kept.** An `exec {argv, is_tty, cols,
+rows}` stream runs `argv` as given, with no shell between, as the account a
+new shell would run as: the Terminal module's account through the same
+step-down as its shell, in that account's home with its environment, else
+root in root's home, and on Windows SYSTEM in the directory the "Shell
+stream" row names. The module's shell program is not read. An empty `argv`,
+or one whose program the agent cannot find on the `PATH` the process gets or
+cannot run, is refused `shell_program_unusable {path}` before anything
+starts, and an account the machine does not have `account_unknown
+{account}`, as for a shell ([protocol.md](protocol.md), "The exec stream").
+
+| `is_tty` | The agent |
+| --- | --- |
+| false | starts the process with stdin, stdout and stderr on three pipes; reads stdout and stderr apart and sends each on its own `fd`, `1` and `2`, under the hub's credit; writes the frames up to stdin in order and closes stdin on the `eof` frame; closes with `params: {exit_code}` once the process ended and both pipes reached end of file |
+| true | runs `argv` on the pseudo-terminal path a shell takes, a pseudo console on Windows, at `cols` by `rows`, every frame down `fd` `1`; ignores `eof`; closes with `params: {exit_code}` once the process ends |
+
+The exit code is the process's own, or 128 plus the signal's number when a
+signal ended it. A stream the hub closes first ends the process and
+everything it started, as a shell's end does. An `exec` keeps no session id,
+no output and no place in the report's `sessions`.
 
 ### Which modules each system runs
 

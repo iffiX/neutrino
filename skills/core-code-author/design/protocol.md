@@ -224,7 +224,7 @@ it has none:
 | HTTP verbs | `set`; `add`/`remove`; `create`/`destroy`; `join`/`leave`; `start`/`stop`; `enable`/`disable`; `share`/`unshare`; `install`/`uninstall`; `login`/`logout`; `backup`/`restore`; `online`/`offline`; `download`/`upload` | `import`, `update`, `reset`, `apply`, `scan`, `test`, `probe`, `wake`, `reboot`, `shutdown`, `reinstall`, `restart`, `kill`, `rename`, `expand`, `replace`, `scrub`: none has a reverse operation |
 | Path depth | the same for the same function: `channel/join`/`leave`; `module/install`/`uninstall`, `start`/`stop`; `device/agent/install`/`reinstall`; `zfs/dataset/share`/`unshare`; `zfs/pool/create`/`destroy` | |
 | Channel frames | `hello`/`welcome`; `open`/`close`; `state`/`report` | `refused`, `credit` |
-| Stream kinds | none; installing and uninstalling follow from `want` | `shell`, `file`, `command`, `package`, `log`, `service`, `connect` |
+| Stream kinds | none; installing and uninstalling follow from `want` | `shell`, `exec`, `file`, `command`, `package`, `log`, `service`, `connect` |
 | CLI | `nhub start`/`stop`, `nagent start`/`stop`, `nagent join`/`leave`, `nclient join`/`leave`, `nclient service ... mount`/`unmount`, `nclient service port forward`/`unforward` | `status`, `sync`, `run`, `gui`, `quit` |
 
 ### The page, its members and its writes
@@ -509,8 +509,11 @@ a ticket lives `ENROLLMENT_TTL_S` 30 minutes whether the hub restarted or not.
 | `POST /api/hub/client/permission/set` | `{client_id, kinds, devices}`, `kinds` null to follow the default, `devices` optional | that client's own permission; its `state` is pushed |
 
 A permission kind is a published service type (`web`, `port`, `ai`, `file`,
-`rdp`), `overlay`, `terminal` or `panel`, `CLIENT_PERMISSION_KINDS` in
-`modules/clients/constants.py`. `panel` is the hub's own panel, opened from
+`rdp`), `overlay`, `terminal`, `exec` or `panel`, `CLIENT_PERMISSION_KINDS` in
+`modules/clients/constants.py`. `terminal` opens a `shell` on a managed
+machine and `exec` runs one command there through an `exec` stream ("The
+exec stream"); `exec` is off unless a permission names it, apart from
+`terminal`, since a script runs as root with nobody watching it. `panel` is the hub's own panel, opened from
 a client through `connect {is_panel: true}` and signed in with the token of
 `service {is_panel: true}` ("The panel ports"); it is off unless a
 permission names it, since it manages the hub without the panel password. A permission may narrow each
@@ -519,16 +522,18 @@ of device ids, and a kind with no list, or an empty one, allows every device.
 `config/clients/clients.json` holds `default_permission: {kinds, devices}`
 beside `clients`, and each client a `permission` that is null or `{kinds,
 devices}`, `devices` written only when it names a list; a file with no
-default allows every kind but `panel` on every device, and the default a
-fresh hub copies from `clients.example.json` names every kind but `panel`.
+default allows every kind but `panel` and `exec` on every device, and the
+default a fresh hub copies from `clients.example.json` names every kind but
+`panel` and `exec`.
 The device providing an entry is
 the device that hosts it; the hub's own modules belong to the hub's own
 device when it has one; a declared record belongs to the device at its
 address, and one at no device's address passes only a kind with no list. A
 client's `services` section holds only the entries whose type and device it
-is allowed, its `terminals` only the machines its `terminal` list allows, and
-a `shell` on a machine outside that list is refused `permission_denied {kind:
-terminal}`. A `connect` is judged as the `service` stream is, and a panel
+is allowed, its `terminals` only the machines its `terminal` or `exec` list
+allows, a `shell` on a machine outside the `terminal` list is refused
+`permission_denied {kind: terminal}`, and an `exec` on a machine outside the
+`exec` list `permission_denied {kind: exec}`. A `connect` is judged as the `service` stream is, and a panel
 `connect` or `service` without `panel` is refused `permission_denied {kind:
 panel}`. Switching a client off, removing it, its leave, and taking `panel`
 from it, through its own permission or the default it follows, end the
@@ -863,6 +868,7 @@ hash; the first `report` has it.
 | `open` | both | `{stream, kind, ...args}`: a stream begins |
 | `close` | both | `{stream, code, params}`: it ends, with its result |
 | `credit` | both | `{stream, bytes}`: the sender can send that many more |
+| `eof` | both | `{stream}`: on an `exec` stream only, from a client to the hub and from the hub to an agent: no more input follows, and the stream stays open the other way ("The exec stream") |
 | `ping` | up | `{nonce}`: a peer's round-trip probe; `nonce` is its own opaque string of at most 64 characters |
 | `pong` | down | `{nonce}`: the hub's answer, at once from the handler that read the `ping` and on the same socket, `nonce` echoed as received, an empty string when the `ping` had none, cut to 64 characters |
 | binary | both | `<u32 stream id><bytes>`; on a UDP `connect` stream `<u32 stream id><u16 source><one datagram>` |
@@ -882,7 +888,7 @@ WebSocket ping of its own; the hub's keepalive ping is the only one.
 | Concern | Rule |
 | --- | --- |
 | Ids | The hub opens its first stream at 0 and a peer its first at 1, each side stepping by 2, so the hub's ids are even, an agent's and a client's are odd, and the two never collide. |
-| Bytes | A binary frame is a big-endian u32 stream id, then the bytes. A stream's text output (an install log, a command's output) is its binary frames, one line each. |
+| Bytes | A binary frame is a big-endian u32 stream id, then the bytes. A stream's text output (an install log, a command's output) is its binary frames, one line each. A binary frame down an `exec` stream has one byte more after the id, `fd`, which parts the process's stdout from its stderr ("The exec stream"). |
 | Credit | `credit {stream, bytes}` grants the sender that many more bytes. A receiver grants as it consumes, so a long transfer starves nothing and a large package does not stall after the first window. |
 | Result | `close {stream, code, params}` ends a stream from either side. `params` is the result and the only place a result goes; a `code` makes the close a refusal. A stream one side closed gets no close back. |
 
@@ -916,7 +922,7 @@ the three packages, named here so that changing one is a change to this table.
 
 Every number is seconds except the two rows in bytes and the counts of
 streams, sources and datagrams. The client's credit and frame size hold on every stream that
-has binary frames, `shell` and `connect` alike. The hello timeout and the
+has binary frames, `shell`, `exec` and `connect` alike. The hello timeout and the
 admission timeout both run: a socket closes when either ends first, so the
 handshake, the upgrade and the `hello` together fit in 30 seconds and the
 `hello` alone in 10. The agent port's counts, `CHANNEL_UNADMITTED_MAX`,
@@ -948,7 +954,7 @@ and platform, which change between releases.
 | `urls` | `["https://<address>:<port>", ...]` | | the same list | |
 | `relay_url` | | | the member of `urls` that is the relay's address, empty while the relay is off; a client ranks a candidate's path by it ([client.md](client.md), "A network change starts a round") | |
 | `overlays` | | | `[{provider, ...}]`: what the client joins each of the hub's overlays with, the preferred first | |
-| `terminals` | | | `[{device_id, name, is_online, sessions}]`: the managed machines it may open a `shell` on, each with the sessions this client sees there | |
+| `terminals` | | | `[{device_id, name, is_online, is_shell_allowed, is_exec_allowed, sessions}]`: the managed machines it may open a `shell` or an `exec` on, each with the sessions this client sees there | |
 | `is_panel_allowed` | | | bool: the client is allowed to open the hub's panel through `connect {is_panel: true}` | |
 | `reached_through` | | | `lan`, `direct`, `netbird`, `easytier` or `relay`: the way this client's socket reached the hub | |
 | `error` | | `{code, params}` | | |
@@ -1018,9 +1024,12 @@ the client's Hubs row shows. Both are in the state's hash, so a client that
 reconnects another way is pushed its state.
 
 `terminals` lists every managed machine, the hub's own among them, online or
-not, with `is_online` read from its socket; it is empty unless the client's
-permission allows `terminal`, and holds only the machines its `terminal`
-device list names when it has one. The hub pushes every client its state when
+not, with `is_online` read from its socket; it holds the machines the
+client's `terminal` kind allows and the ones its `exec` kind allows, each
+kind narrowed by its own device list, and is empty when the permission
+allows neither. `is_shell_allowed` is true on a machine the `terminal` kind
+allows and `is_exec_allowed` on one the `exec` kind allows. Both are added
+fields and keep `PROTOCOL`. The hub pushes every client its state when
 an agent's channel opens or ends, when a report's `machine.sessions` differs
 from the one before it, and when a device is deleted; the same report move
 publishes `device_report` to the panel, whose session list reads it.
@@ -1414,13 +1423,15 @@ is added without a change to the protocol; a kind is added by a row here.
 | Opened by | `kind` | Arguments and result |
 | --- | --- | --- |
 | hub, to an agent | `shell` | `{cols, rows}`, the shell running as the Terminal module's account with its shell program, refused `account_unknown {account}` or `shell_program_unusable {path}` when the machine cannot; with `{module: podman, container}` added for a container's shell, which the module does not touch, or `{session_id, is_resumed, owner, is_shared}` for a shell the agent keeps: `session_id` names the session and is generated by whoever opened the shell; an id the machine holds attaches to that session beside every stream already attached to it, and its kept output is sent first; `is_resumed: true` asks only for a session the machine holds, refused `session_unknown {session_id}` otherwise; `owner` is the hub's stamp, which the agent keeps as given and reports; `is_shared`, false when absent, says whether a new session starts shared; a shell opened without an id ends with its stream. Terminal bytes both ways; closed with `params: {exit_code}` once the shell ends, or empty when the stream closed on a shell that runs on |
+| hub, to an agent | `exec` | `{argv, is_tty, cols, rows}`: one run of `argv`, a list of strings run as given with no shell between, as the Terminal module's account, else as the agent runs; never kept, and no `session_id`. Without `is_tty` the process's stdin, stdout and stderr are pipes, every binary frame down carries `fd`, the frames up are its stdin, and `eof` closes its stdin; with `is_tty` it runs on a pseudo-terminal of `cols` by `rows` as a shell does. Closed with `params: {exit_code}` once the process ended and its output is sent; refused `account_unknown {account}`, or `shell_program_unusable {path}` when `argv` is empty or its program cannot be found or run. "The exec stream" has the rest |
 | hub, to an agent | `file` | one file operation `{op, path, ...}`; `op` is `list`, `download`, `upload`, `rename`, `remove`, `directory_create` or `directory_download`, and every path is absolute in the machine's own form. `list` closes with `params: {path, separator, entries}`, `separator` being `\` on Windows and `/` elsewhere and each entry `{name, path, kind, size, modified_at, mode}`; on Windows a `list` of `/` or of no path closes with `path` `/` and one `dir` entry per drive, named `C:` with `path` `C:\`. `separator` and the drive list are added and keep `PROTOCOL`; an agent before 0.5.0 sends no `separator` |
 | agent, to the hub | `log` | `{module}`: opened for an install or an uninstall, output up as binary frames line by line, closed with `params: {state}` |
 | hub, to an agent | `command` | `{module, verb, ...args}`: `{agent, reboot}`, `{samba, reload}`, `{zfs, validate, config}`; an unknown kind is closed `kind_unknown` and an unknown verb `verb_unknown`, which the panel shows as `unsupported`; closed with `params: {exit_code, output, result}` |
 | agent, to the hub | `package` | `{module}` for a module's package bytes from the hub's cache, `{module: cc_switch}` for cc-switch, `{}` for the agent's own package; the close's `params` has the `sha256` of the bytes sent and `name`, the file's own name as its release gave it, with no directory |
 | client, to the hub | `service` | `{id}`: one published entry, or `{is_panel: true}`: a sign-in to the hub's own panel. The close is the whole answer, its `params` the material that entry takes from the hub and its `code` the reason it takes none; a new service type adds no kind |
 | client, to the hub | `shell` | `{device_id, cols, rows, session_id, is_resumed, is_shared}`: a shell on a managed machine, which the hub opens as the agent's own `shell` with the same `session_id`, `is_resumed` and `is_shared`, stamped `owner: client:<id>`, and relays terminal bytes both ways, each side under the other's credit; closed with `params: {exit_code}`, or refused `binding_unknown`, `client_disabled`, `permission_denied {kind: terminal}` (no `terminal`, or a machine outside its device list), `session_not_owned {session_id}` (a session another viewer owns and has not shared) or `agent_offline {device}` before any agent stream opens; closed with the agent's refusal, `account_unknown {account}` or `shell_program_unusable {path}` among them; closed `session_not_owned {session_id}` when the owner stops sharing the session |
-| client, to the hub | `command` | `{module: agent, verb: resize, shell, cols, rows}`, `shell` being the client's own `shell` stream id, which the hub maps to the agent's; closed empty once sent on, `shell_unknown {shell}` when no such shell is open. `{module: agent, verb: persist, session_id, is_persistent, is_shared}` and `{module: agent, verb: stop_session, session_id}` go unchanged to the machine holding the session, the one this client's open `shell` names for the id or else the online machine whose report lists it, and close with the agent's close; `session_unknown {session_id}` when no machine holds it, `session_not_owned {session_id}` for a `persist` on a session the machine reports under another owner, and the `shell` stream's permission refusals for that machine. A `persist` names only the flags it carries. `verb_unknown` for any other module or verb. A hub before 0.4.0 closes both kinds `kind_unknown`, which a client reads as a refusal |
+| client, to the hub | `exec` | `{device_id, argv, is_tty, cols, rows}`: one command on a managed machine, which the hub opens as the agent's own `exec` with the same `argv`, `is_tty`, `cols` and `rows`, and relays bytes both ways, each side under the other's credit, and the client's `eof` up; no `session_id`, and no `owner` stamped; closed with the agent's `params: {exit_code}`, or refused `binding_unknown`, `client_disabled`, `permission_denied {kind: exec}` (no `exec`, or a machine outside its device list) or `agent_offline {device}` before any agent stream opens; closed with the agent's refusal |
+| client, to the hub | `command` | `{module: agent, verb: resize, shell, cols, rows}`, `shell` being the client's own `shell` stream id, or its own `exec` stream id opened with `is_tty`, which the hub maps to the agent's; closed empty once sent on, `shell_unknown {shell}` when no such shell is open. `{module: agent, verb: persist, session_id, is_persistent, is_shared}` and `{module: agent, verb: stop_session, session_id}` go unchanged to the machine holding the session, the one this client's open `shell` names for the id or else the online machine whose report lists it, and close with the agent's close; `session_unknown {session_id}` when no machine holds it, `session_not_owned {session_id}` for a `persist` on a session the machine reports under another owner, and the `shell` stream's permission refusals for that machine. A `persist` names only the flags it carries. `verb_unknown` for any other module or verb. A hub before 0.4.0 closes both kinds `kind_unknown`, which a client reads as a refusal |
 | client, to the hub | `connect` | `{id}`, one published entry by the id a `service` stream takes, or `{is_panel: true}`, the hub's own panel: one TCP connection to that service, or every datagram of one UDP `port` entry. Bytes both ways under credit; closed empty when either end's socket ends, or with a refusal's code. "The connect stream" has the checks, the far ends and the codes |
 | hub, to an agent | `connect` | `{port, protocol}`, `protocol` being `tcp` or `udp` and `tcp` when absent: one TCP connection to `127.0.0.1:<port>` on the machine, or every datagram of one UDP entry to that port, a port the machine publishes now on that protocol; bytes both ways under credit; closed empty when either socket ends, `port_not_published {port}` for any other port or protocol, `connect_failed {reason}` when the dial fails |
 
@@ -1454,7 +1465,8 @@ apply runs. On `podman`, a `journal` naming a
 container is that container's; one naming none is the module's own. A terminal's first size is in its
 `open`; a later size is `open {kind: command, module: agent, verb: resize,
 shell: <id>, cols, rows}`, closed as soon as it is applied, and so is a
-`persist`.
+`persist`. `shell` may name an `exec` stream opened with `is_tty`, and
+`resize` naming one without it is closed empty.
 
 A shell the agent keeps is named by a `session_id` the opener generates, a
 uuid, in the `shell` stream's `open`. An id the agent holds attaches the
@@ -1571,6 +1583,45 @@ TCP stream's where a datagram differs from a byte stream:
 | The far end | The agent for a machine's port, the hub itself for a declared record, keeps for the stream a table from `source` to one connected UDP socket to the target: `127.0.0.1`, the address a binding names, or the record's host. A datagram from a new `source` gets a socket; a reply goes into the stream with its socket's `source`. A source with no datagram either way for `CHANNEL_UDP_IDLE_TIMEOUT_S` has its socket closed and is forgotten. A table holds at most `CHANNEL_UDP_SOURCES_MAX` sources, and one more replaces the one idle the longest. |
 | Errors | An error on a source's socket, a port the system reports unreachable or a send that fails, loses that datagram and nothing else, and the stream stays open. A first socket that cannot be opened at all closes the stream `connect_failed {reason}` with the TCP reasons. |
 | End | The stream has no idle close. It ends when the client closes it, when the hub or the agent closes it with a code, `agent_offline`, `permission_denied` after a change on the Clients page or `port_not_published` once the port is no longer published, or with the client's socket. It holds one of the socket's `CHANNEL_CONNECT_STREAMS_MAX` streams while it is open. |
+
+### The exec stream
+
+An `exec` stream runs one command on a managed machine and carries its
+input, its two outputs and its exit code. A client opens one for each
+`nclient terminal exec` ([client.md](client.md), "The desktop terminal"),
+and the hub opens the agent's own `exec` for it. It names no session:
+it is never kept, never shared, never in a report's `sessions`, and ends
+with its stream.
+
+The hub judges the `open` before it opens anything on the agent, in this
+order, and the first check that fails closes the stream with its code:
+
+| `code` | Given when |
+| --- | --- |
+| `binding_unknown` | no client row has the id this socket is bound to |
+| `client_disabled` | that row is switched off on the Clients page |
+| `permission_denied {kind: exec}` | the client's kinds lack `exec`, or the machine is not in the `exec` kind's device list |
+| `agent_offline {device}` | the machine has no socket, and the same code when its socket ends under an open stream |
+
+The agent then judges what it runs, and the hub closes the client's stream
+with the agent's code:
+
+| `code` | Given when |
+| --- | --- |
+| `account_unknown {account}` | the Terminal module names an account the machine does not have |
+| `shell_program_unusable {path}` | `argv` is empty or not a list of strings, `path` empty; or its first member cannot be found on the `PATH` the process gets, or cannot be run, `path` that member |
+
+| Concern | Rule |
+| --- | --- |
+| Frame down | `<u32 stream id><u8 fd><bytes>`: `fd` is `1` for bytes the process wrote to stdout and `2` for bytes it wrote to stderr. With `is_tty` every frame is `fd` `1`, since a pseudo-terminal has one output. A frame shorter than the `fd` byte is dropped. |
+| Frame up | `<u32 stream id><bytes>`: the process's stdin, written in the order received. |
+| Order | Each `fd`'s bytes arrive in the order the process wrote them; frames of the two interleave in the order the agent read them, and no order between them is kept. |
+| Credit | Counted on the bytes after the stream id, `fd` included, as on every stream. The hub relays each side under the other's credit, as it does a `shell`. |
+| End of input | `eof {stream}`, once, after the last stdin frame: the client sends it when its own stdin ends, the hub passes it on after every frame it relayed before it, and the agent closes the process's stdin once it wrote them. A stdin frame after `eof` is dropped. With `is_tty` the client sends none and the agent ignores one. `eof` goes only on an `exec` stream, so a peer that does not know the kind never receives it. |
+| End | Once the process ended and both outputs reached end of file, the agent sends what it holds and closes `params: {exit_code}`: the process's code, or 128 plus the signal's number for a process a signal ended. The hub closes the client's stream with the same params. |
+| A closed stream | A client that closes its stream, or whose socket ends, makes the hub close the agent's stream, and the agent kills the process and everything it started, as a shell's end does. |
+| Size | `cols` and `rows` size the pseudo-terminal with `is_tty`, and a later size is `resize` naming the stream ("The verbs on a `command` stream"); without `is_tty` they are ignored. |
+| Account | The Terminal module's account, else the account the agent runs as, root, and SYSTEM on Windows, as a new shell runs ([agent.md](agent.md), "The two modules the agent carries"); the module's shell program is not read, since `argv` names the program. |
 
 ### The rules the details settle
 

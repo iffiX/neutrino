@@ -122,16 +122,17 @@ the entry, and reads the secret a service needs from its own store.
 | The panel | a loopback port, and the browser | a `service` for a sign-in token, then one `connect` for each connection | the `panel` kind | the hub, at the panel's loopback HTTP port |
 | Remote desktops | a loopback port, and the viewer | a `service` for the seat password, then one `connect` for each connection | the `rdp` kind, the machine, and that the machine reports the share, which it does only while its Remote desktop switch is on | the agent, at the viewer port on the machine's loopback |
 | Terminals | a terminal in the client's window | one `shell`, and a `command` for each resize, persist, share and end | the `terminal` kind and the machine | the agent, which keeps the session and runs the shell as the machine's Terminal module names, root by default |
+| Remote commands | `nclient terminal exec`, its stdin, stdout and stderr | one `exec`, and a `command` for each resize with `--tty` | the `exec` kind and the machine | the agent, which runs the command once as the machine's Terminal module names, root by default, and keeps nothing |
 | The AI gateway | a loopback port the AI tools point at | a `service` for the client's key, then one `connect` for each connection | the `ai` kind | the hub, at the gateway's loopback port |
 
 ## What an admitted client reaches
 
 | Rule | Reason |
 | --- | --- |
-| A stream names an entry id, the panel, or a machine for a shell. The host and the port come from the hub's own records. | A stolen client token reaches what the hub publishes to that client. |
+| A stream names an entry id, the panel, or a machine for a shell or a command. The host and the port come from the hub's own records. | A stolen client token reaches what the hub publishes to that client. |
 | The hub judges every `open` against the client's kinds and each kind's machines, then dials. | A permission changed on the **Clients** page holds for the next stream without a reconnect. |
 | An agent dials a port only while its machine publishes that port, and closes any other with `port_not_published {port}`. | The agent makes the check itself, so a fault in the hub's check opens no port the machine does not publish. |
-| Switching a client off, deleting it, or taking a kind or a machine from it immediately closes what the change covers: the socket, or the shells, the `connect` streams and the panel sessions of that kind. | A person switches a client off because the device is lost. A shell that stays open is the access they meant to end. |
+| Switching a client off, deleting it, or taking a kind or a machine from it immediately closes what the change covers: the socket, or the shells, the commands, the `connect` streams and the panel sessions of that kind. | A person switches a client off because the device is lost. A shell that stays open is the access they meant to end. |
 | The panel is a kind like the others: the **Clients** page sets it in the default and for each client. A new hub's default has it off. A client with it receives a sign-in token of 32 random bytes that holds 60 seconds for one use. | The panel changes the hub itself, so a person turns it on for the devices that are their own. |
 | A client joins a terminal session that is its own or is shared, on a machine its `terminal` kind includes. A `shell` or a `persist` on any other session is refused `session_not_owned {session_id}`. | A session is a shell as root, or as the account the machine's Terminal module names, with its output on screen. A session that stops being shared closes to every viewer but its owner. |
 | A socket holds at most `CHANNEL_CONNECT_STREAMS_MAX`, 256, `connect` streams, and each stream is sent under the receiver's credit. | One client cannot exhaust the hub's sockets or its memory. |
