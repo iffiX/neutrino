@@ -262,6 +262,29 @@ def test_the_hub_is_seen_only_at_its_own_address(tmp_path):
     assert easytier.status(EASYTIER)["is_hub_seen"] is True
 
 
+def test_the_easytier_status_names_its_other_peers_by_address(tmp_path):
+    easytier, platform = drivers(tmp_path)
+    joined(platform, "home")
+    platform.answer(
+        "easytier-cli",
+        "peer",
+        stdout=json.dumps(
+            [
+                {"cost": "Local", "ipv4": "10.144.144.5/24", "hostname": "box"},
+                {"cost": "p2p", "ipv4": "10.144.144.9", "hostname": "lab"},
+                {"cost": "relay(2)", "ipv4": "", "hostname": "phone"},
+                {"cost": "p2p", "ipv4": "10.144.144.1/24", "hostname": "hub"},
+            ]
+        ),
+    )
+
+    assert easytier.status(EASYTIER)["peers"] == [
+        "10.144.144.1",
+        "10.144.144.9",
+        "phone",
+    ]
+
+
 def test_an_instance_the_core_does_not_run_is_off(tmp_path):
     easytier, platform = drivers(tmp_path)
     joined(platform, "home")
@@ -448,6 +471,7 @@ class FakeDriver:
         self.on_join = None
         self.on_status = None
         self.is_waiting = False
+        self.peers = []
 
     def status(self, material):
         if self.on_status is not None:
@@ -461,6 +485,7 @@ class FakeDriver:
             "address": self.address if self.is_on else "",
             "network": "",
             "is_hub_seen": self.is_on,
+            "peers": list(self.peers) if self.is_on else [],
         }
 
     def join(self, material, hostname):
@@ -785,6 +810,36 @@ def test_an_engine_that_stops_by_itself_goes_off_with_a_code():
     subject.watch()
     assert subject.hub_row("h1")["state"] == "off"
     assert subject.hub_row("h1")["error"]["code"] == "overlay_daemon_down"
+
+
+def test_a_peer_appearing_or_going_names_the_hubs_route_again():
+    """A change of the engine's peers between two polls is a network change:
+    the route is named again, which the hub's session takes as one."""
+    subject, engines, hubs, _steps = subject_for({"h1": [NETBIRD]})
+    subject.connect("h1")
+    assert hubs.routes == [("h1", "hub.nb.example", "netbird")]
+
+    subject.watch()
+    assert len(hubs.routes) == 1
+
+    engines["netbird"].peers = ["100.88.0.2"]
+    subject.watch()
+    subject.watch()
+    assert hubs.routes[1:] == [("h1", "hub.nb.example", "netbird")]
+
+    engines["netbird"].peers = []
+    subject.watch()
+    assert hubs.routes[2:] == [("h1", "hub.nb.example", "netbird")]
+
+
+def test_the_peers_at_the_connect_are_the_first_look():
+    subject, engines, hubs, _steps = subject_for({"h1": [NETBIRD]})
+    engines["netbird"].peers = ["100.88.0.2"]
+    subject.connect("h1")
+
+    subject.watch()
+
+    assert hubs.routes == [("h1", "hub.nb.example", "netbird")]
 
 
 def test_a_moved_address_is_drawn_while_on():

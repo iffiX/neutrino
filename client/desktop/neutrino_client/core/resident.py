@@ -384,16 +384,21 @@ class ClientResident:
 
         Returns:
             ``[{hub_id, hub_name, binding_id, gateway_url, software,
-            connection, reached_through, rtt_ms, is_panel_allowed,
-            panel_forward, is_pending, last_error, is_exit, overlay,
-            jobs}]``: ``connection`` is one of the session's six states,
-            ``reached_through`` the hub's word for the way the channel
+            connection, wait_reason, wait_code, next_round_at,
+            reached_through, rtt_ms, is_panel_allowed, panel_forward,
+            is_pending, last_error, is_exit, overlay, jobs}]``:
+            ``connection`` is one of the session's five states,
+            ``wait_reason`` why a ``waiting`` hub waits and empty
+            otherwise, ``wait_code`` the ``{code, params}`` its last round
+            ended in or None, ``next_round_at`` the moment of its next
+            round in seconds since the epoch while a countdown runs and
+            None otherwise, ``reached_through`` the hub's word for the way the channel
             reached it, ``rtt_ms`` the round trip of the last ping in whole
             milliseconds or None, ``is_panel_allowed`` whether this client may open
             the hub's panel, ``panel_forward`` the loopback port the panel's
             forward listens on or None, ``is_pending`` whether the join's
             ticket is not spent yet, ``last_error`` the failure of the last
-            press of Panel or else the socket's, ``overlay`` the virtual
+            press of Panel, ``overlay`` the virtual
             network's ``{network, networks, state, stage, is_waiting,
             address, error}``, and ``jobs`` ``{is_refreshing,
             overlay_job, is_leaving, is_opening_panel}``. No token, ticket
@@ -412,6 +417,7 @@ class ClientResident:
             key = session.local_key
             panel_port = self._forwards.port_of(hub_id, FORWARD_PANEL_ID)
             panel_error = panel_errors.get(key)
+            waiting = session.waiting() or {}
             rows.append(
                 {
                     "hub_id": hub_id,
@@ -420,14 +426,15 @@ class ClientResident:
                     "gateway_url": binding.get("gateway_url", ""),
                     "software": session.hub_software(),
                     "connection": session.connection(),
+                    "wait_reason": waiting.get("reason", ""),
+                    "wait_code": waiting.get("code"),
+                    "next_round_at": waiting.get("next_round_at"),
                     "reached_through": session.reached_through(),
                     "rtt_ms": session.rtt_ms(),
                     "is_panel_allowed": session.is_panel_allowed(),
                     "panel_forward": panel_port or None,
                     "is_pending": binding.get("is_pending") is True,
-                    "last_error": (
-                        dict(panel_error) if panel_error else session.last_error()
-                    ),
+                    "last_error": dict(panel_error) if panel_error else None,
                     "is_exit": bool(hub_id) and hub_id == exit_hub_id,
                     "overlay": self._overlay.hub_row(key),
                     "jobs": {
@@ -762,10 +769,10 @@ class ClientResident:
     def refresh(self) -> None:
         """Ask every hub that can answer again now, and show the work.
 
-        Each connected, connecting or down hub loses its error line and its
-        virtual network's error, its entries lose theirs, and it waits as
-        refreshing until its answer; a replaced or disabled hub is left as
-        it is. Every notice goes. A press while any hub still refreshes
+        Each connected, connecting or waiting hub loses its error line and
+        its virtual network's error, its entries lose theirs, and it waits
+        as refreshing until its answer; a hub the session does not refresh
+        is left as it is. Every notice goes. A press while any hub still refreshes
         asks no hub again and is logged.
         """
         with self._lock:
@@ -1665,18 +1672,12 @@ class ClientResident:
         self._release_hub(session.hub_id(), session.local_key)
 
     def _hub_unbound(self, session: ClientHubSession) -> None:
-        """A hub holds no such binding: drop it, and say so above the hubs."""
-        binding = session.binding()
-        try:
-            enrollment.remove_binding(session.binding_id)
-        except OSError as error:
-            self._log(f"could not remove the binding: {error}")
-        self._forget_session(session)
-        self._follow_exit()
-        self._add_notice(
-            "binding_unknown",
-            {"hub": binding.get("hub_name") or binding.get("gateway_url", "")},
-        )
+        """A hub holds no such binding: let go of what it published.
+
+        The binding and its row stay, waiting on ``unknown_device`` until
+        the person leaves the hub.
+        """
+        self._release_hub(session.hub_id(), session.local_key)
 
     def _add_notice(self, code: str, params: dict) -> None:
         """Show one notice above the hubs for ``CLIENT_NOTICE_S``."""

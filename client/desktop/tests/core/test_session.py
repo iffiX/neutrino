@@ -238,6 +238,16 @@ def session_for(
     )
 
 
+def reason_of(session) -> str:
+    """Why a waiting session waits; empty while it does not."""
+    return (session.waiting() or {}).get("reason", "")
+
+
+def code_of(session) -> str:
+    """The code behind a waiting session's wait; empty while it does not."""
+    return ((session.waiting() or {}).get("code") or {}).get("code", "")
+
+
 def connected(session, script) -> ScriptedSocket:
     """Open one socket and take its welcome, without serving frames after it."""
     made = script()
@@ -390,27 +400,28 @@ def test_a_first_frame_that_is_not_a_welcome_is_unreachable(bound, monkeypatch):
     delay = session.run_once()
 
     assert delay == 5
-    assert session.last_error()["code"] == "hub_unreachable"
+    assert reason_of(session) == "hub_silent"
+    assert code_of(session) == "hub_unreachable"
     assert script.made[0].is_closed is True
 
 
-def test_a_new_round_removes_the_error_line_of_the_last(bound, monkeypatch):
+def test_a_new_round_reads_connecting_until_it_ends(bound, monkeypatch):
     session, _listener = bound
     socket_of(monkeypatch, [STATE])
     session.run_once()
-    assert session.last_error()["code"] == "hub_unreachable"
+    assert reason_of(session) == "hub_silent"
     seen = []
 
     def round_seen():
-        seen.append((session.connection(), session.last_error()))
+        seen.append((session.connection(), session.waiting()))
         raise GatewayUnreachable("still away")
 
     monkeypatch.setattr(session, "_connect_round", round_seen)
     session.run_once()
 
     assert seen == [("connecting", None)]
-    assert session.connection() == "down"
-    assert session.last_error()["code"] == "hub_unreachable"
+    assert session.connection() == "waiting"
+    assert reason_of(session) == "hub_silent"
 
 
 def test_a_welcome_of_another_role_is_unreachable(bound, monkeypatch):
@@ -419,9 +430,9 @@ def test_a_welcome_of_another_role_is_unreachable(bound, monkeypatch):
 
     session.run_once()
 
-    assert session.last_error()["code"] == "hub_unreachable"
+    assert code_of(session) == "hub_unreachable"
     assert script.made[0].is_closed is True
-    assert session.connection() == "down"
+    assert session.connection() == "waiting"
 
 
 @pytest.mark.parametrize("code", ["protocol_too_old", "protocol_too_new"])
@@ -436,15 +447,35 @@ def test_a_refused_first_frame_naming_the_protocol_keeps_the_binding(
 
     delays = [session.run_once() for _ in range(5)]
 
-    assert session.connection() == "down"
+    assert session.connection() == "waiting"
     assert len(json.loads(config_path.read_text())["bindings"]) == 1
-    assert session.last_error() == {
-        "code": code,
-        "params": {"peer": 1, "hub": 2, "min": 2},
+    assert session.waiting() == {
+        "reason": "too_old",
+        "code": {"code": code, "params": {"peer": 1, "hub": 2, "min": 2}},
+        "next_round_at": None,
     }
     assert listener.events == []
-    assert delays == [CLIENT_BACKOFF_MAX_S] * 5
+    # No round runs by itself after a protocol refusal.
+    assert delays == [CLIENT_IDLE_POLL_INTERVAL_S] * 5
+    assert len(script.made) == 1
     assert all(made.is_closed for made in script.made)
+
+
+def test_a_refresh_after_an_upgrade_asks_a_hub_too_new_again(bound, monkeypatch):
+    session, _listener = bound
+    script = socket_of(
+        monkeypatch,
+        [{"type": "refused", "code": "protocol_too_new", "params": {}}],
+    )
+    session.run_once()
+    session.change_network()
+    session.run_once()
+    assert len(script.made) == 1
+
+    assert session.refresh() is True
+    session.run_once()
+
+    assert len(script.made) == 2
 
 
 def test_binding_unknown_is_the_one_refusal_that_hands_the_binding_back(
@@ -458,14 +489,19 @@ def test_binding_unknown_is_the_one_refusal_that_hands_the_binding_back(
 
     delay = session.run_once()
     session.run_once()
+    session.change_network()
+    session.run_once()
 
     assert delay == CLIENT_IDLE_POLL_INTERVAL_S
     assert listener.events == [("unbound", session)]
-    assert session.last_error() == {
-        "code": "binding_unknown",
-        "params": {"id": "c1"},
+    assert session.waiting() == {
+        "reason": "unknown_device",
+        "code": {"code": "binding_unknown", "params": {"id": "c1"}},
+        "next_round_at": None,
     }
-    # The session opens no more; the resident removes the binding.
+    # The session opens no more, a refresh starts nothing, and the binding
+    # stays until the person leaves.
+    assert session.refresh() is False
     assert len(script.made) == 1
     assert len(json.loads(config_path.read_text())["bindings"]) == 1
 
@@ -482,21 +518,22 @@ def test_a_refused_first_frame_of_another_code_keeps_the_binding(
     delays = [session.run_once() for _ in range(3)]
 
     assert delays == [CLIENT_BACKOFF_MAX_S] * 3
-    assert session.connection() == "down"
+    assert session.connection() == "waiting"
     assert len(json.loads(config_path.read_text())["bindings"]) == 1
-    assert session.last_error() == {"code": "ticket_spent", "params": {"id": "c1"}}
+    assert reason_of(session) == "hub_silent"
+    assert session.waiting()["code"] == {"code": "ticket_spent", "params": {"id": "c1"}}
     assert listener.events == []
 
 
-def test_a_welcome_after_a_refusal_clears_the_error(bound, monkeypatch):
+def test_a_welcome_after_a_refusal_ends_the_wait(bound, monkeypatch):
     session, _listener = bound
     socket_of(monkeypatch, [{"type": "refused", "code": "ticket_spent", "params": {}}])
     session.run_once()
-    assert session.last_error()["code"] == "ticket_spent"
+    assert code_of(session) == "ticket_spent"
 
     connected(session, socket_of(monkeypatch, [WELCOME]))
 
-    assert session.last_error() is None
+    assert session.waiting() is None
     assert session.connection() == "connected"
 
 
@@ -553,11 +590,14 @@ def test_a_state_of_the_wrong_shape_is_typed_and_never_fatal(bound, monkeypatch)
     made = script()
     made.connect()
     session._greet(made)
+    logged = []
+    session._log = logged.append
 
     failure = session._serve(made)
 
     assert isinstance(failure, GatewayUnreachable)
-    assert session._last_error["code"] == "hub_reply_unreadable"
+    assert any("could not read a frame" in line for line in logged)
+    assert session.waiting() is None
 
 
 def test_the_services_of_a_hub_whose_socket_is_down_are_nothing(bound, monkeypatch):
@@ -598,7 +638,7 @@ def test_disabled_is_told_once_and_keeps_the_binding(bound, monkeypatch, config_
     assert session.is_disabled() is True
     assert session.connection() == "disabled"
     assert len(json.loads(config_path.read_text())["bindings"]) == 1
-    assert session.last_error() is None
+    assert session.waiting() is None
     assert listener.names() == ["disabled"]
 
 
@@ -610,7 +650,7 @@ def test_a_disabled_client_resumes_with_the_next_state(bound, monkeypatch):
     take(session, made, dict(STATE, is_disabled=False))
 
     assert session.is_disabled() is False
-    assert session.last_error() is None
+    assert session.waiting() is None
     assert listener.names() == ["disabled", "services"]
 
 
@@ -624,7 +664,7 @@ def test_an_unknown_frame_is_ignored(bound, monkeypatch):
     assert [entry["id"] for entry in session.service_entries()] == [
         entry["id"] for entry in HUB_SERVICES
     ]
-    assert session.last_error() is None
+    assert session.waiting() is None
 
 
 def test_a_report_goes_up_on_the_interval(bound, monkeypatch):
@@ -808,7 +848,7 @@ def test_a_close_for_nobody_is_dropped(bound, monkeypatch):
 
     take(session, made, {"type": "close", "stream": 9, "params": {}})
 
-    assert session.last_error() is None
+    assert session.waiting() is None
 
 
 def test_credit_and_bytes_for_no_open_stream_are_dropped(monkeypatch, config_path):
@@ -819,7 +859,7 @@ def test_credit_and_bytes_for_no_open_stream_are_dropped(monkeypatch, config_pat
     take(session, made, {"type": "credit", "stream": 1, "bytes": 4096})
     take(session, made, protocol.encode_binary(1, b"line\n"))
 
-    assert session.last_error() is None
+    assert session.waiting() is None
     assert [line for line in lines if line.startswith("dropping")] == [
         "dropping credit on stream 1",
         "dropping 5 bytes the hub sent on stream 1",
@@ -1036,7 +1076,7 @@ def test_a_stream_the_hub_opens_is_closed_kind_unknown(bound, monkeypatch):
         "code": "kind_unknown",
         "params": {"kind": "shell"},
     }
-    assert session.last_error() is None
+    assert session.waiting() is None
 
 
 def test_a_binary_frame_shorter_than_an_id_is_typed_and_never_fatal(bound, monkeypatch):
@@ -1045,11 +1085,14 @@ def test_a_binary_frame_shorter_than_an_id_is_typed_and_never_fatal(bound, monke
     made = script()
     made.connect()
     session._greet(made)
+    logged = []
+    session._log = logged.append
 
     failure = session._serve(made)
 
     assert isinstance(failure, GatewayUnreachable)
-    assert session._last_error["code"] == "hub_reply_unreadable"
+    assert any("could not read a frame" in line for line in logged)
+    assert session.waiting() is None
 
 
 # --- what ends a connection ---
@@ -1062,8 +1105,8 @@ def test_a_broken_wire_backs_off_and_keeps_the_binding(bound, monkeypatch):
     delays = [session.run_once() for _ in range(3)]
 
     assert delays == [5, 10, 20]
-    assert session.connection() == "down"
-    assert session.last_error()["code"] == "hub_unreachable"
+    assert session.connection() == "waiting"
+    assert code_of(session) == "hub_unreachable"
 
 
 def test_a_replaced_socket_waits_for_a_person(bound, monkeypatch, config_path):
@@ -1076,7 +1119,7 @@ def test_a_replaced_socket_waits_for_a_person(bound, monkeypatch, config_path):
 
     assert session.connection() == "replaced"
     assert len(json.loads(config_path.read_text())["bindings"]) == 1
-    assert session.last_error() is None
+    assert session.waiting() is None
     assert listener.events == []
     assert delay == CLIENT_IDLE_POLL_INTERVAL_S
     assert len(script.made) == 1
@@ -1098,25 +1141,32 @@ def test_a_person_takes_a_replaced_binding_back(bound, monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "error, code",
+    "error, code, reason",
     [
-        (GatewayRefused("401"), "hub_refused"),
-        (GatewayUntrusted("pin"), "hub_untrusted"),
-        (GatewayRefused("refused", code="role_mismatch"), "role_mismatch"),
+        (GatewayRefused("401"), "hub_refused", "hub_silent"),
+        (GatewayUntrusted("pin"), "hub_untrusted", "untrusted"),
+        (
+            GatewayRefused("refused", code="role_mismatch"),
+            "role_mismatch",
+            "hub_silent",
+        ),
     ],
 )
 def test_a_refusal_the_binding_survives_asks_again_a_minute_later(
-    bound, monkeypatch, config_path, error, code
+    bound, monkeypatch, config_path, error, code, reason
 ):
     session, listener = bound
     socket_of(monkeypatch, [], connect_error=error)
+    session._wall_clock = lambda: 1000.0
 
     delays = [session.run_once() for _ in range(3)]
 
     assert delays == [CLIENT_BACKOFF_MAX_S] * 3
-    assert session.connection() == "down"
+    assert session.connection() == "waiting"
     assert len(json.loads(config_path.read_text())["bindings"]) == 1
-    assert session.last_error()["code"] == code
+    assert reason_of(session) == reason
+    assert code_of(session) == code
+    assert session.waiting()["next_round_at"] == 1000.0 + CLIENT_BACKOFF_MAX_S
     assert listener.events == []
 
 
@@ -1133,14 +1183,15 @@ def test_a_hub_that_does_not_speak_this_protocol_never_unbinds(
 
     delays = [session.run_once() for _ in range(5)]
 
-    assert session.connection() == "down"
+    assert session.connection() == "waiting"
     assert len(json.loads(config_path.read_text())["bindings"]) == 1
-    assert session.last_error() == {
-        "code": code,
-        "params": {"peer": 1, "hub": 2, "min": 2},
+    assert session.waiting() == {
+        "reason": "too_old",
+        "code": {"code": code, "params": {"peer": 1, "hub": 2, "min": 2}},
+        "next_round_at": None,
     }
     assert listener.events == []
-    assert delays == [CLIENT_BACKOFF_MAX_S] * 5
+    assert delays == [CLIENT_IDLE_POLL_INTERVAL_S] * 5
 
 
 def live_refused(code: str, params=None) -> list:
@@ -1166,34 +1217,44 @@ def test_binding_unknown_on_a_live_socket_hands_the_binding_back_at_once(
 
     assert delay == CLIENT_IDLE_POLL_INTERVAL_S
     assert listener.names() == ["services", "unbound"]
-    assert session.last_error() == {"code": "binding_unknown", "params": {"id": "c1"}}
+    assert reason_of(session) == "unknown_device"
+    assert session.waiting()["code"] == {
+        "code": "binding_unknown",
+        "params": {"id": "c1"},
+    }
     assert session.service_entries() == []
-    # The session opens no more; the resident removes the binding.
+    # The session opens no more; the binding stays until the person leaves.
     assert len(script.made) == 1
     assert len(json.loads(config_path.read_text())["bindings"]) == 1
 
 
 @pytest.mark.parametrize(
-    "code, params",
+    "code, params, reason, delay",
     [
-        ("protocol_too_new", {"peer": 1, "hub": 2, "min": 2}),
-        ("ticket_spent", {"id": "c1"}),
+        (
+            "protocol_too_new",
+            {"peer": 1, "hub": 2, "min": 2},
+            "too_old",
+            CLIENT_IDLE_POLL_INTERVAL_S,
+        ),
+        ("ticket_spent", {"id": "c1"}, "hub_silent", CLIENT_BACKOFF_MAX_S),
     ],
 )
 def test_a_refusal_on_a_live_socket_keeps_the_binding_and_records_its_code(
-    bound, monkeypatch, config_path, code, params
+    bound, monkeypatch, config_path, code, params, reason, delay
 ):
     """The close 4000 behind the frame is the end of a refusal already
     recorded, so the code stays the hub's own."""
     session, listener = bound
     socket_of(monkeypatch, live_refused(code, params))
 
-    delays = [session.run_once() for _ in range(3)]
+    first = session.run_once()
 
-    assert delays == [CLIENT_BACKOFF_MAX_S] * 3
-    assert session.connection() == "down"
+    assert first == delay
+    assert session.connection() == "waiting"
     assert len(json.loads(config_path.read_text())["bindings"]) == 1
-    assert session.last_error() == {"code": code, "params": params}
+    assert reason_of(session) == reason
+    assert session.waiting()["code"] == {"code": code, "params": params}
     assert "unbound" not in listener.names()
 
 
@@ -1209,7 +1270,7 @@ def test_a_close_4000_without_a_frame_is_hub_refused_and_keeps_the_binding(
 
     assert delays == [CLIENT_BACKOFF_MAX_S] * 3
     assert len(json.loads(config_path.read_text())["bindings"]) == 1
-    assert session.last_error() == {"code": "hub_refused", "params": {}}
+    assert session.waiting()["code"] == {"code": "hub_refused", "params": {}}
     assert listener.events == []
 
 
@@ -1313,7 +1374,7 @@ def test_the_next_address_is_tried_when_one_stops_answering(
     delay = session.run_once()
 
     assert script.hosts == ["192.0.2.1", "198.51.100.1", "100.64.0.1"]
-    assert delay == CLIENT_BACKOFF_MIN_S
+    assert delay == 0
     assert session.gateway_url() == OVERLAY_URL
     assert stored_binding(config_path)["gateway_url"] == OVERLAY_URL
     assert stored_binding(config_path)["gateway_urls"] == [
@@ -1336,7 +1397,7 @@ def test_a_whole_round_failing_is_what_backs_off(bound_everywhere, monkeypatch):
 
     assert delays == [5, 10, 20]
     assert script.hosts == ["192.0.2.1", "198.51.100.1", "100.64.0.1"] * 3
-    assert session.last_error()["code"] == "hub_unreachable"
+    assert code_of(session) == "hub_unreachable"
     assert session.gateway_url() == LAN_URL
 
 
@@ -1564,7 +1625,7 @@ def test_the_names_fingerprint_mismatch_is_skipped_without_alarm(
 
     assert script.hosts == ["10.9.9.9", "192.0.2.1", "198.51.100.1", "100.64.0.1"]
     assert client is script.made[1]
-    assert session.last_error() is None
+    assert session.waiting() is None
     assert session.connection() == "connected"
     assert (
         "https://10.9.9.9:8443 answers to the hub's name and is not this hub" in lines
@@ -1587,7 +1648,7 @@ def test_a_stored_address_off_the_pin_is_logged_and_the_round_goes_on(
 
     assert script.hosts == ["192.0.2.1", "198.51.100.1", "100.64.0.1"]
     assert client is script.made[1]
-    assert session.last_error() is None
+    assert session.waiting() is None
     assert f"{LAN_URL} presented a certificate that is not the hub's" in lines
     assert session.gateway_url() == WAN_URL
 
@@ -1602,7 +1663,7 @@ def test_a_stored_address_off_the_pin_alarms_when_no_address_answers(
 
     assert script.hosts == ["192.0.2.1", "198.51.100.1", "100.64.0.1"]
     assert delay == CLIENT_BACKOFF_MAX_S
-    assert session.last_error() == {"code": "hub_untrusted", "params": {}}
+    assert session.waiting()["code"] == {"code": "hub_untrusted", "params": {}}
     assert len(json.loads(config_path.read_text())["bindings"]) == 1
 
 
@@ -1617,7 +1678,7 @@ def test_a_refusal_ends_the_round(bound_everywhere, monkeypatch):
 
     assert script.hosts == ["192.0.2.1", "198.51.100.1", "100.64.0.1"]
     assert delay == CLIENT_BACKOFF_MAX_S
-    assert session.last_error()["code"] == "ticket_spent"
+    assert code_of(session) == "ticket_spent"
 
 
 def sources(monkeypatch, *addresses) -> list:
@@ -1724,7 +1785,7 @@ def test_a_socket_closed_from_here_is_no_failure(bound, monkeypatch):
     failure = session._serve(made)
 
     assert failure is None
-    assert session.last_error() is None
+    assert session.waiting() is None
 
 
 # --- the loop and the way out ---
@@ -1781,7 +1842,7 @@ def test_refresh_reports_on_a_live_socket(bound, monkeypatch):
     assert [frame["type"] for frame in made.sent] == ["hello", "report", "report"]
 
 
-def test_refresh_wakes_a_session_that_is_down_with_its_backoff_reset(bound):
+def test_refresh_wakes_a_waiting_session_with_its_backoff_reset(bound):
     session, _listener = bound
     session._backoff_s = CLIENT_BACKOFF_MAX_S
     session._news.clear()
@@ -1836,7 +1897,7 @@ def test_a_socket_that_ends_while_stopping_is_no_failure(bound, monkeypatch):
     failure = session._serve(made)
 
     assert failure is None
-    assert session.last_error() is None
+    assert session.waiting() is None
 
 
 def test_every_change_the_page_draws_is_announced(bound, monkeypatch):
@@ -2161,7 +2222,7 @@ def test_a_change_on_a_replaced_or_disabled_hub_starts_nothing(bound, monkeypatc
     assert not session._is_changing and len(script.made) == 1
 
 
-def test_a_change_on_a_hub_that_is_down_starts_its_round_now(bound):
+def test_a_change_on_a_hub_not_connected_starts_its_round_now(bound):
     session, _listener = bound
     session._backoff_s = CLIENT_BACKOFF_MAX_S
 
@@ -2263,13 +2324,13 @@ def test_a_session_starts_connecting():
     assert session.connection() == "connecting"
 
 
-def test_a_round_that_ends_in_a_code_is_down_and_the_next_round_connecting(
+def test_a_round_that_ends_in_a_code_is_waiting_and_the_next_round_connecting(
     bound, monkeypatch
 ):
     session, _listener = bound
     socket_of(monkeypatch, [], connect_error=GatewayUnreachable("down"))
     session.run_once()
-    assert session.connection() == "down"
+    assert session.connection() == "waiting"
 
     seen = []
 
@@ -2281,18 +2342,18 @@ def test_a_round_that_ends_in_a_code_is_down_and_the_next_round_connecting(
     session.run_once()
 
     assert seen == ["connecting"]
-    assert session.connection() == "down"
+    assert session.connection() == "waiting"
 
 
-def test_a_lost_socket_is_connecting_with_no_error_line(bound, monkeypatch):
+def test_a_lost_socket_is_connecting_at_once_with_no_wait(bound, monkeypatch):
     session, _listener = bound
     socket_of(monkeypatch, [WELCOME, GatewayUnreachable("wire cut")])
 
     delay = session.run_once()
 
-    assert delay == CLIENT_BACKOFF_MIN_S
+    assert delay == 0
     assert session.connection() == "connecting"
-    assert session.last_error() is None
+    assert session.waiting() is None
 
 
 def test_a_disabled_hub_is_disabled_and_enabled_again_is_connected(bound, monkeypatch):
@@ -2309,10 +2370,19 @@ def test_every_connection_state_is_named():
     assert session_module.CONNECTION_STATES == (
         "connected",
         "connecting",
-        "down",
+        "waiting",
         "replaced",
         "disabled",
-        "pending",
+    )
+    assert session_module.WAIT_REASONS == (
+        "hub_silent",
+        "hub_off_overlay",
+        "no_network",
+        "untrusted",
+        "admission_paused",
+        "unknown_device",
+        "too_old",
+        "join_refused",
     )
 
 
@@ -2322,13 +2392,12 @@ def test_every_connection_state_is_named():
 def test_a_refresh_of_a_connected_hub_asks_for_the_whole_state(bound, monkeypatch):
     session, listener = bound
     made = connected(session, socket_of(monkeypatch, [WELCOME]))
-    session._last_error = {"code": "hub_reply_unreadable", "params": {}}
     changes = listener.changes
 
     assert session.refresh() is True
 
     assert session.is_refreshing() is True
-    assert session.last_error() is None
+    assert session.waiting() is None
     deadline = time.monotonic() + 5
     while not made.sent[-1].get("is_refresh") and time.monotonic() < deadline:
         time.sleep(0.01)
@@ -2471,7 +2540,7 @@ def test_a_second_refresh_while_one_runs_is_not_taken(bound, monkeypatch):
     assert len(made.sent) == sent
 
 
-def test_a_refresh_of_a_down_hub_starts_a_round_now_at_the_floor(bound, monkeypatch):
+def test_a_refresh_of_a_waiting_hub_starts_a_round_now_at_the_floor(bound, monkeypatch):
     session, _listener = bound
     socket_of(monkeypatch, [], connect_error=GatewayUnreachable("down"))
     session.run_once()
@@ -2483,7 +2552,7 @@ def test_a_refresh_of_a_down_hub_starts_a_round_now_at_the_floor(bound, monkeypa
 
     assert session._backoff_s == CLIENT_BACKOFF_MIN_S
     assert session._news.is_set()
-    assert session.last_error() is None
+    assert session.waiting() is None
     assert session.is_refreshing() is True
 
 
@@ -2495,8 +2564,8 @@ def test_a_round_that_ends_in_a_code_ends_the_refresh(bound, monkeypatch):
     session.run_once()
 
     assert session.is_refreshing() is False
-    assert session.connection() == "down"
-    assert session.last_error()["code"] == "hub_unreachable"
+    assert session.connection() == "waiting"
+    assert code_of(session) == "hub_unreachable"
 
 
 def test_a_refresh_that_reaches_a_hub_asks_its_first_report_for_the_whole_state(
@@ -2617,10 +2686,11 @@ class JoinDesk:
         )
 
 
-def test_a_pending_join_reads_pending_until_its_ticket_is_spent(pending_session):
+def test_a_pending_join_reads_connecting_as_its_first_round_starts(pending_session):
     session, _lines = pending_session
 
-    assert session.connection() == "pending"
+    assert session.connection() == "connecting"
+    assert session.waiting() is None
     assert session.is_pending() is True
     assert session.local_key == "pending_1"
 
@@ -2658,7 +2728,7 @@ def test_the_first_address_that_answers_spends_the_ticket_before_the_hello(
         EnrollmentError("protocol_too_old", {"peer": 1, "hub": 3, "min": 2}),
     ],
 )
-def test_a_refused_join_is_down_with_its_code_and_runs_no_more_rounds(
+def test_a_refused_join_waits_with_its_code_and_runs_no_more_rounds(
     pending_session, monkeypatch, config_path, refusal
 ):
     session, _lines = pending_session
@@ -2669,15 +2739,22 @@ def test_a_refused_join_is_down_with_its_code_and_runs_no_more_rounds(
 
     session.run_once()
     session.run_once()
+    session.change_network()
+    session.run_once()
 
-    assert session.connection() == "down"
-    assert session.last_error() == {"code": refusal.code, "params": refusal.params}
+    assert session.connection() == "waiting"
+    assert session.waiting() == {
+        "reason": "join_refused",
+        "code": {"code": refusal.code, "params": refusal.params},
+        "next_round_at": None,
+    }
+    assert session.refresh() is False
     assert script.hosts == ["192.0.2.1", "100.64.0.1"]
     assert script.made[0].sent == []
     assert stored_binding(config_path)["is_pending"] is True
 
 
-def test_a_paused_admission_keeps_the_join_pending_and_tries_again_after_its_wait(
+def test_a_paused_admission_counts_down_its_wait_and_joins_again_at_0(
     pending_session, monkeypatch, config_path
 ):
     session, _lines = pending_session
@@ -2685,14 +2762,16 @@ def test_a_paused_admission_keeps_the_join_pending_and_tries_again_after_its_wai
     desk = JoinDesk(script)
     desk.refusal = EnrollmentError("admission_paused", {"retry_after_s": 42})
     monkeypatch.setattr(enrollment, "complete_join", desk)
+    session._wall_clock = lambda: 1000.0
 
     delay = session.run_once()
 
     assert delay == 42
-    assert session.connection() == "pending"
-    assert session.last_error() == {
-        "code": "admission_paused",
-        "params": {"retry_after_s": 42},
+    assert session.connection() == "waiting"
+    assert session.waiting() == {
+        "reason": "admission_paused",
+        "code": {"code": "admission_paused", "params": {"retry_after_s": 42}},
+        "next_round_at": 1042.0,
     }
     assert stored_binding(config_path)["is_pending"] is True
     assert stored_binding(config_path)["ticket"]
@@ -2717,8 +2796,9 @@ def test_an_address_that_stops_answering_mid_join_ends_the_round_and_keeps_the_t
     session.run_once()
 
     assert [url for url, _sent in desk.asked] == [LAN_URL]
-    assert session.connection() == "pending"
-    assert session.last_error()["code"] == "hub_unreachable"
+    assert session.connection() == "waiting"
+    assert reason_of(session) == "hub_silent"
+    assert code_of(session) == "hub_unreachable"
     assert stored_binding(config_path)["ticket"]
 
     desk.unreachable_at = ""
@@ -2750,3 +2830,173 @@ def test_the_report_names_the_systems_id_for_the_machine(config_path, monkeypatc
         "platform": PLATFORM,
         "os_machine_id": "os-id-1",
     }
+
+
+# --- why a hub waits, and the round a change ends ---
+
+
+def test_a_silent_hub_counts_down_the_backoff_from_the_wall_clock(bound, monkeypatch):
+    session, _listener = bound
+    socket_of(monkeypatch, [], connect_error=GatewayUnreachable("down"))
+    session._wall_clock = lambda: 1000.0
+
+    session.run_once()
+    first = session.waiting()
+    session.run_once()
+
+    assert first == {
+        "reason": "hub_silent",
+        "code": {"code": "hub_unreachable", "params": {"detail": "down"}},
+        "next_round_at": 1000.0 + CLIENT_BACKOFF_MIN_S,
+    }
+    assert session.waiting()["next_round_at"] == 1000.0 + 2 * CLIENT_BACKOFF_MIN_S
+
+
+def test_a_hub_silent_while_its_virtual_network_is_on_is_off_the_overlay(
+    bound, monkeypatch
+):
+    """The client's own network line decides it: on, with or without the
+    hub's address on it, and back to silent once the line is off."""
+    session, _listener = bound
+    socket_of(monkeypatch, [], connect_error=GatewayUnreachable("down"))
+
+    session.set_overlay_route("", "easytier")
+    session.run_once()
+    assert reason_of(session) == "hub_off_overlay"
+
+    session.set_overlay_route("100.64.0.9", "netbird")
+    session.run_once()
+    assert reason_of(session) == "hub_off_overlay"
+
+    session.set_overlay_route("", "")
+    session.run_once()
+    assert reason_of(session) == "hub_silent"
+
+
+@pytest.mark.parametrize(
+    "networks, is_none",
+    [
+        (["127.0.0.0/8", "::1/128", "169.254.0.0/16", "fe80::/64"], True),
+        (["127.0.0.0/8", "192.168.1.0/24"], False),
+        (["127.0.0.0/8", "100.64.0.0/10"], False),
+        ([], False),
+        (["not a network"], False),
+    ],
+)
+def test_no_network_is_loopback_and_link_local_alone(networks, is_none):
+    assert session_module.is_offline(networks) is is_none
+
+
+def test_a_device_with_no_network_waits_with_no_countdown(config_path, monkeypatch):
+    bind(config_path, url="https://hub.lan:8443")
+    session = session_for(local_networks=lambda: ["127.0.0.0/8", "fe80::/64"])
+    socket_of(monkeypatch, [], connect_error=GatewayUnreachable("no route"))
+
+    delay = session.run_once()
+
+    assert delay == float("inf")
+    assert session.waiting() == {
+        "reason": "no_network",
+        "code": {"code": "hub_unreachable", "params": {"detail": "no route"}},
+        "next_round_at": None,
+    }
+    assert session._backoff_s == CLIENT_BACKOFF_MIN_S
+
+
+def test_the_wait_for_a_network_ends_when_the_device_has_one(config_path, monkeypatch):
+    bind(config_path, url="https://hub.lan:8443")
+    networks = [["127.0.0.0/8"]]
+    session = session_for(local_networks=lambda: networks[0])
+    socket_of(monkeypatch, [], connect_error=GatewayUnreachable("no route"))
+    monkeypatch.setattr(session_module, "CLIENT_IDLE_POLL_INTERVAL_S", 0.01)
+    session._news.clear()
+    delay = session.run_once()
+    assert reason_of(session) == "no_network"
+    ended = threading.Event()
+
+    def wait():
+        session._wait_out(delay)
+        ended.set()
+
+    threading.Thread(target=wait, daemon=True).start()
+    assert not ended.wait(timeout=0.1)
+    networks[0] = ["127.0.0.0/8", "192.168.1.0/24"]
+
+    assert ended.wait(timeout=2)
+
+
+def test_a_change_ends_the_round_in_flight_and_starts_another_at_once(
+    bound_everywhere, monkeypatch
+):
+    """A dial that never answers is closed, not waited for: the round ends
+    well inside one connect time, waits on nothing, and the next round
+    starts at once."""
+    session, _lines = bound_everywhere
+    script = addresses_of(monkeypatch, {})
+    blocking = []
+
+    def dial(**kwargs):
+        made = BlockingSocket()
+        blocking.append(made)
+        script.hosts.append(kwargs.get("host", ""))
+        return made
+
+    monkeypatch.setattr(session_module, "WebSocketClient", dial)
+    session._backoff_s = CLIENT_BACKOFF_MAX_S
+    result = []
+    turn = threading.Thread(target=lambda: result.append(session.run_once()))
+    turn.start()
+    deadline = time.monotonic() + 5
+    while len(blocking) < 3 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    started = time.monotonic()
+
+    session.change_network()
+    turn.join(timeout=5)
+
+    assert time.monotonic() - started < 1
+    assert result == [0]
+    assert all(made.is_aborted.is_set() for made in blocking)
+    assert session.connection() == "connecting"
+    assert session.waiting() is None
+    assert session._backoff_s == CLIENT_BACKOFF_MIN_S
+
+
+def test_a_refresh_ends_the_round_in_flight_too(bound_everywhere, monkeypatch):
+    session, _lines = bound_everywhere
+    blocking = []
+
+    def dial(**kwargs):
+        made = BlockingSocket()
+        blocking.append(made)
+        return made
+
+    monkeypatch.setattr(session_module, "WebSocketClient", dial)
+    result = []
+    turn = threading.Thread(target=lambda: result.append(session.run_once()))
+    turn.start()
+    deadline = time.monotonic() + 5
+    while len(blocking) < 3 and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+    assert session.refresh() is True
+    turn.join(timeout=5)
+
+    assert result == [0]
+    assert all(made.is_aborted.is_set() for made in blocking)
+
+
+def test_a_change_between_rounds_cuts_nothing_of_the_next(
+    bound_everywhere, monkeypatch
+):
+    """A change during the wait ends the wait; the round after it dials as
+    any round does."""
+    session, _lines = bound_everywhere
+    script = addresses_of(monkeypatch, {"198.51.100.1": [WELCOME]})
+
+    session.change_network()
+    delay = session.run_once()
+
+    assert delay == 0
+    assert script.hosts == ["192.0.2.1", "198.51.100.1", "100.64.0.1"]
+    assert session.gateway_url() == WAN_URL

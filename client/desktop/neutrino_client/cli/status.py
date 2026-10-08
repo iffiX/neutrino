@@ -2,8 +2,8 @@
 
 Three things break independently: the person joined no hub, the resident is
 not running, or a hub cannot be reached from here. This says which: the
-version, one line per hub joined with its state and which one the AI tools
-point at, then the resident's.
+version, one line per hub joined with its state line, as the window draws
+it, and which one the AI tools point at, then the resident's.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -11,6 +11,8 @@ point at, then the resident's.
 from __future__ import annotations
 
 import json
+import math
+import time
 
 from neutrino_client import CLIENT_VERSION, words
 from neutrino_client.cli import wording
@@ -18,8 +20,9 @@ from neutrino_client.constants import CLIENT_DEFAULT_LANGUAGE
 from neutrino_client.core import enrollment
 from neutrino_client.core.session import (
     CONNECTION_CONNECTED,
-    CONNECTION_PENDING,
     CONNECTION_REPLACED,
+    CONNECTION_WAITING,
+    WAIT_JOIN_REFUSED,
 )
 
 RESIDENT_RUNNING = "running"
@@ -50,10 +53,11 @@ def _status_as_json() -> int:
     """Print the status as one JSON object.
 
     The object is ``{"version", "is_running", "hubs"}``, each hub
-    ``{"hub_id", "hub_name", "gateway_url", "connection",
-    "reached_through", "rtt_ms", "is_exit", "last_error"}``;
-    ``connection`` and ``reached_through`` are empty and ``rtt_ms`` and
-    ``last_error`` None when no resident runs to say them.
+    ``{"hub_id", "hub_name", "gateway_url", "connection", "wait_reason",
+    "wait_code", "next_round_at", "reached_through", "rtt_ms", "is_exit",
+    "last_error"}``; ``connection``, ``wait_reason`` and
+    ``reached_through`` are empty and the others None when no resident runs
+    to say them.
 
     Returns:
         Process exit status, as for the lines.
@@ -67,6 +71,9 @@ def _status_as_json() -> int:
                 "hub_name": str(binding.get("hub_name", "")),
                 "gateway_url": str(binding.get("gateway_url", "")),
                 "connection": "",
+                "wait_reason": "",
+                "wait_code": None,
+                "next_round_at": None,
                 "reached_through": "",
                 "rtt_ms": None,
                 "is_exit": bool(exit_hub_id) and binding.get("hub_id") == exit_hub_id,
@@ -81,6 +88,9 @@ def _status_as_json() -> int:
                 "hub_name": str(hub.get("hub_name", "")),
                 "gateway_url": str(hub.get("gateway_url", "")),
                 "connection": str(hub.get("connection", "")),
+                "wait_reason": str(hub.get("wait_reason", "") or ""),
+                "wait_code": hub.get("wait_code") or None,
+                "next_round_at": hub.get("next_round_at"),
                 "reached_through": str(hub.get("reached_through", "") or ""),
                 "rtt_ms": _rtt_ms(hub),
                 "is_exit": bool(hub.get("is_exit")),
@@ -156,7 +166,7 @@ def _status_from_resident(state: dict) -> int:
             (
                 str(hub.get("hub_name", "")),
                 str(hub.get("gateway_url", "")),
-                f"{connection}{_tags(hub)}{_why(hub)}",
+                _state_line(hub),
                 bool(hub.get("is_exit")),
             )
         )
@@ -228,18 +238,70 @@ def _tags(hub: dict) -> str:
     return "".join(f" · {tag}" for tag in tags)
 
 
-def _why(hub: dict) -> str:
-    """What the resident last had to say about one hub's socket, if anything.
+def _state_line(hub: dict) -> str:
+    """One hub's state line, in the window's English words.
 
     Args:
         hub: The hub's row of the state payload.
 
     Returns:
-        The wording after a colon, empty when there is nothing to add.
+        The state word, then ``" · "`` and what ends a wait: the seconds
+        until the next round, a refused join's reason, or Reconnect; a
+        connected hub's word carries its tags. A connection this client has
+        no word for prints as itself.
+
+    Raises:
+        FileNotFoundError: When the word catalogs are not on this machine.
+        ValueError: When a catalog is not a JSON object.
     """
-    if hub.get("connection") in (CONNECTION_REPLACED, CONNECTION_PENDING):
-        return f": {wording.word_state(str(hub['connection']))}"
-    error = hub.get("last_error")
-    if not isinstance(error, dict) or not error.get("code"):
-        return ""
-    return f": {wording.word_code(str(error['code']), error.get('params'))}"
+    connection = str(hub.get("connection", ""))
+    if connection == CONNECTION_CONNECTED:
+        return _word("ui.state.connected", connection) + _tags(hub)
+    if connection == CONNECTION_WAITING:
+        return _waiting_line(hub)
+    if connection == CONNECTION_REPLACED:
+        return f"{_word('ui.state.replaced', connection)} · {_word('ui.reconnect', '')}"
+    return _word(f"ui.state.{connection}", connection)
+
+
+def _waiting_line(hub: dict) -> str:
+    """A waiting hub's state line: its reason, then what ends the wait.
+
+    Args:
+        hub: The hub's row of the state payload.
+
+    Returns:
+        The reason's word, with the seconds left while a countdown runs,
+        the connecting word once it reached 0, or a refused join's reason.
+
+    Raises:
+        FileNotFoundError: When the word catalogs are not on this machine.
+        ValueError: When a catalog is not a JSON object.
+    """
+    reason = str(hub.get("wait_reason", "") or "")
+    line = _word(f"ui.state.{reason}", reason)
+    code = hub.get("wait_code")
+    if reason == WAIT_JOIN_REFUSED and isinstance(code, dict) and code.get("code"):
+        refusal = str(code["code"])
+        params = code.get("params") or {}
+        why = _word(f"code.{refusal}", wording.word_code(refusal, params), params)
+        return f"{line} · {why}"
+    next_round_at = hub.get("next_round_at")
+    if isinstance(next_round_at, bool) or not isinstance(next_round_at, (int, float)):
+        return line
+    left = math.ceil(next_round_at - time.time())
+    if left <= 0:
+        return _word("ui.state.connecting", "connecting")
+    return f"{line} · {_word('ui.action.retry_in', '', {'s': left})}"
+
+
+def _word(key: str, fallback: str, params: "dict | None" = None) -> str:
+    """One key's English word, or the fallback when the catalog lacks it.
+
+    Raises:
+        FileNotFoundError: When the word catalogs are not on this machine.
+        ValueError: When a catalog is not a JSON object.
+    """
+    if key not in words.words(CLIENT_DEFAULT_LANGUAGE):
+        return fallback
+    return words.word(CLIENT_DEFAULT_LANGUAGE, key, params or {})
