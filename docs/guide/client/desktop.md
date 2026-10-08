@@ -61,6 +61,7 @@ The dot before the name shows the state:
 | amber, pulsing | the line reads **Connecting…** or **Refreshing…**, or a job runs on the row                                                                                                      |
 | amber          | **The hub did not answer**, **The hub is not on the virtual network**, **No network**, **The hub pauses new devices**, **Replaced by another client** or **Disabled by the hub** |
 | red            | a line that needs you to act: **Certificate mismatch**, **The hub does not know this device**, **Version too old** or **Join refused**                                           |
+| grey           | a hub this computer has never reached, while its line waits                                                                                                                      |
 
 ### Row buttons
 
