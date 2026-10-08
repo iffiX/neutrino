@@ -3,43 +3,80 @@ layout: home
 title: 微子
 hero:
   name: 微子
-  text: 用一台中枢管理你自己的机器
-  tagline: 中枢装在一台常开的机器上，被控端装在它管理的每台机器上，客户端装在每个人的电脑或手机上。
+  text: 一台电脑上的服务，手机和笔记本在哪都能用
+  tagline: 家里的电脑，扫一次码，从任何地方接着用
   image:
-    src: /neutrino_512.png
-    alt: 微子
+    src: /guide/zh/app_terminal.webp
+    alt: 手机上开着家里电脑的终端
   actions:
     - theme: brand
-      text: 快速上手
+      text: 第一步
       link: /zh-CN/quick-start
-    - theme: alt
-      text: 安装中枢
-      link: /zh-CN/install/hub
     - theme: alt
       text: 概述
       link: /zh-CN/overview
-features:
-  - title: 开始
-    details: 中枢、被控端和客户端各在你网络里的什么位置；用一台电脑和一部手机走一遍快速上手；安装中枢、被控端和客户端。
-    link: /zh-CN/overview
-  - title: 场景
-    details: 选哪种外部访问；一台笔记本管所有机器；经虚拟网访问没装被控端的局域网设备。
-    link: /zh-CN/scenarios/choose_a_way_in
-  - title: 中枢
-    details: 设置网络、外部访问、代理、AI 网关、设备、客户端、服务、凭据和设置。
-    link: /zh-CN/hub/dashboard
-  - title: 被控端
-    details: 在受管机器上开终端、管文件、装模块，模块包括 AI 工具、文件共享、终端、远程桌面、Gitea、VS Code、code-server、CloudCLI、容器和 ZFS 存储。
-    link: /zh-CN/agent/terminals
-  - title: 客户端
-    details: Linux、Windows 和 macOS 上的桌面客户端，以及 Android 应用。
-    link: /zh-CN/client/desktop
-  - title: 命令
-    details: nhub、nagent 和 nclient 的每个子命令。
-    link: /zh-CN/commands/nhub
-  - title: 参考
-    details: 每个包支持的系统，按现象排查的故障，以及协议 3 下的通道。
-    link: /zh-CN/reference/platforms
+groups:
+  - title: 第一次用
+    items:
+      - title: 第一步
+        details: 装中枢，加入手机和笔记本，连上外网
+        link: /zh-CN/quick-start
+      - title: AI 会话
+        details: 在手机上接着家里电脑上的 AI 会话
+        link: /zh-CN/quick-start/cloudcli
+      - title: 编辑器
+        details: 在浏览器里打开电脑上的 VS Code
+        link: /zh-CN/quick-start/vscode
+      - title: 终端
+        details: 笔记本上开的终端，换到手机上接着用
+        link: /zh-CN/quick-start/terminal
+      - title: 远程桌面
+        details: 在手机或笔记本上操作电脑的桌面
+        link: /zh-CN/quick-start/remote_desktop
+      - title: 文件
+        details: 共享电脑上的文件夹，在别处打开
+        link: /zh-CN/quick-start/files
+  - title: 进阶用法
+    items:
+      - title: 选哪种外部访问
+        details: 直连、SSH 中继、NetBird、EasyTier 对照
+        link: /zh-CN/scenarios/choose_a_way_in
+      - title: 一台笔记本管所有机器
+        details: 给家里别的机器也装上被控端
+        link: /zh-CN/scenarios/one_laptop_every_machine
+      - title: VPS 中继
+        details: 经你自己的 VPS 连回家
+        link: /zh-CN/scenarios/vps_relay
+      - title: 路由器或旁路网关
+        details: 让中枢给家里的设备转发流量
+        link: /zh-CN/scenarios/router_or_gateway
+      - title: 没装被控端的设备
+        details: 经虚拟网打开打印机、NAS 的管理页
+        link: /zh-CN/scenarios/easytier_lan_routes
+  - title: 文档参考
+    items:
+      - title: 中枢
+        details: 面板上每一页的设置
+        link: /zh-CN/hub/dashboard
+      - title: 被控端
+        details: 终端、文件和每个模块
+        link: /zh-CN/agent/terminals
+      - title: 客户端
+        details: 桌面客户端和 Android 应用
+        link: /zh-CN/client/desktop
+      - title: 命令
+        details: nhub、nagent、nclient 的子命令
+        link: /zh-CN/commands/nhub
+      - title: 参考
+        details: 支持的平台、故障排查和术语表
+        link: /zh-CN/reference/platforms
 ---
 
-微子（Neutrino）用一台常开的机器管理一个人或一个家庭的所有机器。中枢装在这台机器上：Linux 上可以是任意网络形态，macOS 和 Windows 上是服务器形态。中枢设定网络形态，提供从外面连回中枢的办法，把选定的流量交给出口节点，还提供一个 AI 网关和一个在浏览器里打开的面板。Linux、Windows 和 Mac 上的被控端提供 AI 工具、文件共享、终端、远程桌面、Gitea、VS Code、code-server、CloudCLI、容器和 ZFS 存储；电脑和 Android 手机上的客户端，用一个按钮打开其中每一项。
+微子装在家里那台常开的电脑上。手机和笔记本扫码或贴一条链接加入，在家里走局域网，在外面走一种外部访问。加入以后，电脑上的终端、AI 会话、编辑器、桌面和文件，在手机和笔记本上都能打开。
+
+<HomeGroups
+  v-for="group in $frontmatter.groups"
+  :key="group.title"
+  :title="group.title"
+  :items="group.items"
+/>

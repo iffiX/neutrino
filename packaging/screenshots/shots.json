@@ -1868,6 +1868,7 @@
       "language": "zh",
       "page": "client/android.md",
       "pages": [
+        "index.md",
         "quick-start.md"
       ],
       "source": "app",
