@@ -52,8 +52,11 @@ export default defineConfig({
       label: "简体中文",
       lang: "zh-CN",
       link: "/zh-CN/",
-      description: "Neutrino 使用文档：安装中枢、接入机器、发布服务。",
+      title: "微子",
+      description: "微子使用文档：安装中枢、接入机器、发布服务。",
       themeConfig: {
+        siteTitle: "微子",
+        logo: { src: "/neutrino_64.png", alt: "微子" },
         nav: navZh,
         sidebar: sidebarZh,
         outline: { level: [2, 3], label: "本页目录" },
@@ -77,7 +80,7 @@ export default defineConfig({
           text: "在 GitHub 上编辑此页",
         },
         footer: {
-          message: "Neutrino · 个人开发基础设施",
+          message: "微子 · 个人开发基础设施",
           copyright: "使用 MIT 许可证发布",
         },
       },
