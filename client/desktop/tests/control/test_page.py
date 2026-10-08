@@ -1294,6 +1294,24 @@ def test_the_other_state_lines(connection, line, tone):
     assert run_state_line(hub, 1000.0) == {"line": line, "tone": tone}
 
 
+def test_a_hub_never_reached_waits_with_a_grey_dot():
+    hub = {
+        "connection": "waiting",
+        "wait_reason": "hub_silent",
+        "next_round_at": 1005.0,
+        "is_pending": True,
+        "jobs": {},
+    }
+
+    assert run_state_line(hub, 1000.0) == {
+        "line": "The hub did not answer · retrying in 5 s",
+        "tone": "off",
+    }
+    hub["wait_reason"] = "join_refused"
+    hub["next_round_at"] = None
+    assert run_state_line(hub, 1000.0)["tone"] == "bad"
+
+
 def test_the_countdown_redraws_the_state_lines_once_a_second_in_place():
     tick = body_of("tickCountdowns")
     assert "document.querySelectorAll('[data-state-line]')" in tick

@@ -638,6 +638,7 @@ function hubTone(hub) {
   if (hub.connection === 'waiting') {
     if (PERSON_REASONS.indexOf(hub.wait_reason) >= 0) return 'bad';
     if (typeof hub.next_round_at === 'number' && secondsLeft(hub) <= 0) return 'pulse';
+    if (hub.is_pending) return 'off';
   }
   return 'wait';
 }
