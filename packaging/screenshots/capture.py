@@ -1,27 +1,34 @@
-"""Capture the guide's screenshots from a live panel and the client's window.
+"""Capture the guide's screenshots from a live panel, the client's window and the consoles.
 
 Reads ``shots.json``, signs in to the panel, switches the panel's language for
 each language's shots and puts the language back at the end, and for every
 shot sets the viewport, opens the page, waits for the element, redraws a
-QR code from the shot's ``redraw_qr`` stand-in, replaces what
-``redact.json`` names inside the page, and writes the element at twice the
-pixel density to ``images/guide/<language>/<file>``. Each shot's
-replacements are printed after it.
+QR code from the shot's ``redraw_qr`` stand-in, hides what the shot's ``hide``
+selectors match, replaces what ``redact.json`` names inside the page, and
+writes the element at twice the pixel density to
+``images/guide/<language>/<file>``. Each shot's replacements are printed
+after it.
 
 Client shots are taken from the client's own window page, served by
-``client_window.py`` from ``client_state.json``. App and OS shots are listed
-and skipped; the README says how they are taken.
+``client_window.py`` from ``client_state.json``. Console shots open an
+absolute URL in a browser profile kept outside the repository, signed in once
+with ``--console-login``. App and OS shots are listed and skipped; the README
+says how they are taken.
 
 Run it from a machine that reaches the panel::
 
     python3 capture.py --panel https://192.168.50.1:8443 --headed
+    python3 capture.py --console-login https://app.netbird.io/
+    python3 capture.py --source console
 
 Playwright for Python is a development dependency: ``pip install -e
 "hub[screenshots]"`` and ``python3 -m playwright install chromium``.
 """
 
 import argparse
+import base64
 import getpass
+import io
 import json
 import os
 import pathlib
@@ -45,7 +52,13 @@ CLIENT_LOCALES = REPOSITORY / "client" / "desktop" / "frontend" / "locales"
 
 # The shot table's language directories, and the language each one is drawn in.
 SHOT_LANGUAGES = {"en": "en", "zh": "zh-CN"}
-CAPTURED_SOURCES = ("panel", "client")
+CAPTURED_SOURCES = ("panel", "client", "console")
+# The browser profile the console shots are taken from: the variable that
+# names it, and where it goes when the variable is not set.
+CONSOLE_PROFILE_VARIABLE = "NEUTRINO_CONSOLE_PROFILE"
+CONSOLE_PROFILE_DEFAULT = (
+    pathlib.Path.home() / ".cache" / "neutrino" / "screenshots" / "console_profile"
+)
 DEVICE_SCALE = 2
 WAIT_TIMEOUT_MS = 30_000
 # A label key inside a selector, ``{ui.settings.https_title}``.
@@ -97,44 +110,89 @@ REDACT_SCRIPT = """
 }
 """
 
-
-# The panel's QR code element, and the border it draws around the code.
-QR_SELECTOR = ".qr_code"
-QR_BORDER_MODULES = 4
-
-# Runs inside the page: draws the given modules into every QR code element,
-# one unit square per dark module, and returns how many it redrew.
-REDRAW_QR_SCRIPT = """
-([selector, modules]) => {
-  const size = modules.length;
-  const parts = [];
-  modules.forEach((cells, row) => cells.forEach((isDark, col) => {
-    if (isDark) parts.push('M' + col + ' ' + row + 'h1v1h-1z');
-  }));
-  const codes = document.querySelectorAll(selector);
-  for (const code of codes) {
-    code.setAttribute('viewBox', '0 0 ' + size + ' ' + size);
-    for (const rect of code.querySelectorAll('rect')) {
-      rect.setAttribute('width', size);
-      rect.setAttribute('height', size);
-    }
-    for (const path of code.querySelectorAll('path')) {
-      path.setAttribute('d', parts.join(''));
+# Runs inside the page: hides every element the selectors match, and returns
+# how many.
+HIDE_SCRIPT = """
+(selectors) => {
+  let count = 0;
+  for (const selector of selectors) {
+    for (const element of document.querySelectorAll(selector)) {
+      element.style.visibility = 'hidden';
+      count += 1;
     }
   }
-  return codes.length;
+  return count;
+}
+"""
+
+# The panel's QR code image, and the border it draws around the code.
+QR_SELECTOR = "img.qr_code"
+QR_BORDER_MODULES = 4
+
+# Runs inside the page: points every QR code image at the given PNG, waits
+# for each to decode, and returns how many it replaced.
+REDRAW_QR_SCRIPT = """
+async ([selector, url]) => {
+  const images = Array.from(document.querySelectorAll(selector))
+    .filter((image) => image.src !== url);
+  for (const image of images) {
+    image.src = url;
+    await image.decode();
+  }
+  return images.length;
 }
 """
 
 
-def qr_modules(text: str) -> list:
-    """The dark modules of a QR code of ``text``, border included, by row."""
+def qr_png_url(text: str) -> str:
+    """A QR code of ``text`` as a PNG data URL, border included.
+
+    Args:
+        text: What the code holds.
+
+    Returns:
+        ``data:image/png;base64,`` and the PNG.
+    """
     code = qrcode.QRCode(
         error_correction=qrcode.constants.ERROR_CORRECT_M, border=QR_BORDER_MODULES
     )
     code.add_data(text)
     code.make(fit=True)
-    return code.get_matrix()
+    buffer = io.BytesIO()
+    code.make_image().save(buffer)
+    return "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode()
+
+
+def redraw_qr(page, text: str) -> int:
+    """Point the page's QR code images at a code of ``text``.
+
+    Args:
+        page: The Playwright page.
+        text: The stand-in the code is drawn from.
+
+    Returns:
+        How many images were replaced.
+
+    Raises:
+        playwright.sync_api.Error: When the page is gone.
+    """
+    return page.evaluate(REDRAW_QR_SCRIPT, [QR_SELECTOR, qr_png_url(text)])
+
+
+def hide(page, selectors: list) -> int:
+    """Hide every element the selectors match.
+
+    Args:
+        page: The Playwright page.
+        selectors: CSS selectors.
+
+    Returns:
+        How many elements were hidden.
+
+    Raises:
+        playwright.sync_api.Error: When the page is gone or a selector is not CSS.
+    """
+    return page.evaluate(HIDE_SCRIPT, selectors)
 
 
 def read_rules() -> list:
@@ -210,6 +268,24 @@ def masked(value: str) -> str:
     return value if len(value) <= 4 else value[:4] + "…"
 
 
+def console_profile() -> pathlib.Path:
+    """The browser profile the console shots are taken from, owner-only.
+
+    Returns:
+        ``NEUTRINO_CONSOLE_PROFILE``, or
+        ``~/.cache/neutrino/screenshots/console_profile`` when it is not set.
+
+    Raises:
+        OSError: When the directory cannot be created.
+    """
+    path = pathlib.Path(
+        os.environ.get(CONSOLE_PROFILE_VARIABLE) or CONSOLE_PROFILE_DEFAULT
+    ).expanduser()
+    path.mkdir(parents=True, exist_ok=True)
+    path.chmod(0o700)
+    return path
+
+
 def take(
     page, shot: dict, labels: dict, rules: list, *, base_url: str, viewports: dict
 ) -> None:
@@ -220,7 +296,8 @@ def take(
         shot: The shot table's entry.
         labels: The labels of the shot's language.
         rules: The redaction rules.
-        base_url: Where the panel or the client page is served.
+        base_url: Where the panel or the client page is served; empty for a
+            console shot, whose ``url`` is absolute.
         viewports: The table's viewport sizes.
 
     Raises:
@@ -234,10 +311,14 @@ def take(
     page.wait_for_selector(resolve(shot["wait_for"], labels), timeout=WAIT_TIMEOUT_MS)
     page.wait_for_load_state("networkidle")
     if shot.get("redraw_qr"):
-        redrawn = page.evaluate(
-            REDRAW_QR_SCRIPT, [QR_SELECTOR, qr_modules(shot["redraw_qr"])]
-        )
-        print(f"  {redrawn} QR code redrawn from {shot['redraw_qr']}")
+        redrawn = redraw_qr(page, shot["redraw_qr"])
+        if redrawn:
+            print(f"  {redrawn} QR code redrawn from {shot['redraw_qr']}")
+        else:
+            print(f"  no {QR_SELECTOR} in the page, nothing redrawn")
+    if shot.get("hide"):
+        hidden = hide(page, [resolve(selector, labels) for selector in shot["hide"]])
+        print(f"  {hidden} elements hidden")
     report = page.evaluate(REDACT_SCRIPT, rules)
     target = IMAGES_DIR / shot["language"] / shot["file"]
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -384,8 +465,48 @@ def capture_client(browser, shots: list, rules: list, viewports: dict) -> None:
             server.stop()
 
 
+def capture_console(playwright, shots: list, rules: list, viewports: dict) -> None:
+    """Take the console shots from the signed-in profile, in a visible window."""
+    if not shots:
+        return
+    context = playwright.chromium.launch_persistent_context(
+        str(console_profile()), headless=False, device_scale_factor=DEVICE_SCALE
+    )
+    try:
+        for shot in shots:
+            page = context.new_page()
+            take(page, shot, {}, rules, base_url="", viewports=viewports)
+            page.close()
+    finally:
+        context.close()
+
+
+def console_login(playwright, urls: list) -> None:
+    """Open the consoles in the kept profile, one tab each, to sign in by hand.
+
+    Args:
+        playwright: The Playwright driver.
+        urls: The consoles' addresses.
+
+    Raises:
+        OSError: When the profile directory cannot be created.
+        playwright.sync_api.Error: When the browser does not start.
+    """
+    context = playwright.chromium.launch_persistent_context(
+        str(console_profile()), headless=False, device_scale_factor=DEVICE_SCALE
+    )
+    try:
+        pages = list(context.pages)
+        for url in urls:
+            page = pages.pop() if pages else context.new_page()
+            page.goto(url)
+        input("Sign in, then press Enter. ")
+    finally:
+        context.close()
+
+
 def main() -> int:
-    """Take the selected shots.
+    """Take the selected shots, or sign in to the consoles.
 
     Returns:
         0 when every selected shot was taken.
@@ -401,7 +522,17 @@ def main() -> int:
         action="store_true",
         help="accept a panel certificate the browser does not trust",
     )
+    parser.add_argument(
+        "--console-login",
+        nargs="+",
+        metavar="URL",
+        help="open each console in the kept profile to sign in, then exit",
+    )
     arguments = parser.parse_args()
+    if arguments.console_login:
+        with sync_playwright() as playwright:
+            console_login(playwright, arguments.console_login)
+        return 0
     table = json.loads(SHOTS_FILE.read_text())
     shots = chosen(table["shots"], arguments)
     rules = read_rules()
@@ -412,18 +543,23 @@ def main() -> int:
             )
     panel_shots = [shot for shot in shots if shot["source"] == "panel"]
     client_shots = [shot for shot in shots if shot["source"] == "client"]
+    console_shots = [shot for shot in shots if shot["source"] == "console"]
     if panel_shots and not arguments.panel:
         parser.error("panel shots need --panel")
     is_headed = arguments.headed or any(
         shot.get("manual") for shot in panel_shots + client_shots
     )
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=not is_headed)
-        try:
-            capture_panel(browser, panel_shots, rules, arguments, table["viewports"])
-            capture_client(browser, client_shots, rules, table["viewports"])
-        finally:
-            browser.close()
+        if panel_shots or client_shots:
+            browser = playwright.chromium.launch(headless=not is_headed)
+            try:
+                capture_panel(
+                    browser, panel_shots, rules, arguments, table["viewports"]
+                )
+                capture_client(browser, client_shots, rules, table["viewports"])
+            finally:
+                browser.close()
+        capture_console(playwright, console_shots, rules, table["viewports"])
     return 0
 
 

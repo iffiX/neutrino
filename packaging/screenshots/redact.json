@@ -8,6 +8,24 @@
       "replace": "neutrino://enroll/example"
     },
     {
+      "name": "netbird_setup_key",
+      "regex": "\\b[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\\b",
+      "flags": "g",
+      "replace": "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"
+    },
+    {
+      "name": "console_address",
+      "regex": "\\b(?:tcp|udp|ws|wss)://[A-Za-z0-9.:\\[\\]-]+:22020/[A-Za-z0-9_.~-]+",
+      "flags": "g",
+      "replace": "tcp://et-web.console.easytier.net:22020/example-token"
+    },
+    {
+      "name": "wireguard_key",
+      "regex": "\\b[A-Za-z0-9+/]{43}=",
+      "flags": "g",
+      "replace": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+    },
+    {
       "name": "hex_fingerprint",
       "regex": "\\b[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){15,}\\b|\\b[0-9a-f]{40,128}\\b",
       "flags": "g",
@@ -18,6 +36,12 @@
       "regex": "\\b[0-9A-Fa-f]{2}(?:[:-][0-9A-Fa-f]{2}){5}\\b",
       "flags": "g",
       "replace": "02:00:00:00:00:01"
+    },
+    {
+      "name": "netbird_key_masked",
+      "regex": "\\b[0-9A-Fa-f]{5}\\*{4,}",
+      "flags": "g",
+      "replace": "AAAAA****"
     },
     {
       "name": "easytier_token",

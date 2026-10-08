@@ -83,11 +83,11 @@ register file.
 
 `prepare_assets.mjs` runs before `dev` and `build`. It copies:
 
-| Source                                               | Destination     | Referenced as                                                             |
-| ---------------------------------------------------- | --------------- | ------------------------------------------------------------------------- |
-| `images/icons/neutrino_64.png`, `neutrino_512.png`   | `public/`       | `/neutrino_64.png`                                                        |
-| `images/guide/` (recursive)                          | `public/guide/` | `/guide/en/<name>.webp`, `/guide/zh/<name>.webp`, `/guide/os/<name>.webp` |
-| `images/web/architecture.svg`, `architecture_zh.svg` | `public/guide/` | `/guide/architecture.svg`                                                 |
+| Source                                               | Destination     | Referenced as                                                                                           |
+| ---------------------------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------- |
+| `images/icons/neutrino_64.png`, `neutrino_512.png`   | `public/`       | `/neutrino_64.png`                                                                                      |
+| `images/guide/` (recursive)                          | `public/guide/` | `/guide/en/<name>.webp`, `/guide/zh/<name>.webp`, `/guide/os/<name>.webp`, `/guide/console/<name>.webp` |
+| `images/web/architecture.svg`, `architecture_zh.svg` | `public/guide/` | `/guide/architecture.svg`                                                                               |
 
 Every screenshot has an entry in
 `packaging/screenshots/shots.json`, and the tool beside it
@@ -99,7 +99,15 @@ build goes on.
 `npm run check` runs `check_shots.py`, which fails when a page references an
 image the table does not name for that page, or the table names one the page
 does not use. Add a screenshot to the table and to both language pages in the
-same change.
+same change. An `os` or `console` entry is one image both language pages
+reference, and an entry with `pages` is one image every listed page
+references.
+
+The `console` images are pages of the NetBird and EasyTier consoles, taken
+from a browser profile kept outside the repository and deleted after the
+capture; the
+[screenshot tool's README](../../packaging/screenshots/README.md) says how it
+is signed in.
 
 Nothing copied into `public/` is committed: `.gitignore` holds
 `public/neutrino_64.png`, `public/neutrino_512.png` and `public/guide/`.

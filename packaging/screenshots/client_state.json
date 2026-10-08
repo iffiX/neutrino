@@ -14,11 +14,11 @@
     {
       "hub_id": "h1",
       "hub_name": "home",
-      "hub_software": "neutrino_hub/0.5.0",
+      "software": "neutrino_hub/0.5.0",
       "binding_id": "c1",
       "name": "laptop",
       "gateway_url": "https://192.168.50.1:8443",
-      "connection_state": "connected",
+      "connection": "connected",
       "is_disabled": false,
       "is_exit": true,
       "last_error": null,
@@ -41,11 +41,11 @@
     {
       "hub_id": "h2",
       "hub_name": "office",
-      "hub_software": "neutrino_hub/0.5.0",
+      "software": "neutrino_hub/0.5.0",
       "binding_id": "c2",
       "name": "laptop",
       "gateway_url": "https://10.20.0.1:8443",
-      "connection_state": "connected",
+      "connection": "connected",
       "is_disabled": false,
       "is_exit": false,
       "last_error": null,
@@ -138,31 +138,54 @@
       "description": "declared by hand"
     }
   ],
-  "terminals": [
-    {
-      "hub_id": "h1",
-      "device_id": "d_lepton",
-      "name": "lepton",
-      "is_online": true,
-      "sessions": [
-        {
-          "session_id": "s_build",
-          "account": "root",
-          "started_at": 1790845920,
-          "title": "build",
-          "is_attached": false,
-          "is_persistent": true
-        }
-      ]
-    },
-    {
-      "hub_id": "h1",
-      "device_id": "d_studio",
-      "name": "studio",
-      "is_online": true,
-      "sessions": []
-    }
-  ],
+  "terminals": {
+    "machines": [
+      { "hub_id": "h1", "device_id": "d_lepton", "name": "lepton", "is_online": true },
+      { "hub_id": "h1", "device_id": "d_studio", "name": "studio", "is_online": true },
+      { "hub_id": "h2", "device_id": "d_proton", "name": "proton", "is_online": true }
+    ],
+    "sessions": [
+      {
+        "hub_id": "h1",
+        "session_id": "s_build",
+        "device_id": "d_lepton",
+        "owner": "root",
+        "owner_name": "root",
+        "is_owned": true,
+        "is_persistent": true,
+        "is_shared": false,
+        "attached_count": 0,
+        "title": "build",
+        "started_at": 1790845920
+      },
+      {
+        "hub_id": "h1",
+        "session_id": "s_render",
+        "device_id": "d_studio",
+        "owner": "alice",
+        "owner_name": "alice",
+        "is_owned": true,
+        "is_persistent": false,
+        "is_shared": false,
+        "attached_count": 1,
+        "title": "render",
+        "started_at": 1790846400
+      },
+      {
+        "hub_id": "h2",
+        "session_id": "s_notes",
+        "device_id": "d_proton",
+        "owner": "alice",
+        "owner_name": "alice",
+        "is_owned": true,
+        "is_persistent": true,
+        "is_shared": false,
+        "attached_count": 0,
+        "title": "notes",
+        "started_at": 1790847000
+      }
+    ]
+  },
   "forwards": {
     "h1/svc_postgres": { "local_port": 5432, "is_active": true }
   },
