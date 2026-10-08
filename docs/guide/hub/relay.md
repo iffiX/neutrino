@@ -6,7 +6,7 @@ title: SSH Relay
 
 With the SSH Relay running, clients and agents outside your network connect to a public port on a server you rent or own. That server forwards each connection to the hub's agent port, 8443. The hub opens the forward itself, as a reverse SSH forward, and signs in to the server with an SSH key or a password. The connection stays encrypted from the client to the hub, so the server forwards bytes it cannot read.
 
-At the end, the relay's **Status** reads **Connected**, and every new client link holds the relay's address.
+At the end, the relay's **Status** reads **Connected**, and every client holds the relay's address.
 
 Before you start, you need:
 
@@ -16,7 +16,7 @@ Before you start, you need:
 
 ## Set up the server
 
-These steps run on the server, as root. The example account is `relay` and the example public port is `8443`. If you pick another port, use it in every step.
+These steps run on the server, as root. The example account is `relay` and the example public port is `8443`. If you pick another public port, use it in every step; the hub's own agent port stays 8443.
 
 1. Create the account the hub signs in as:
 
@@ -61,7 +61,7 @@ On Fedora, RHEL and Arch the SSH service is `sshd`, so the restart is `systemctl
 1. Under **Credential**, choose **SSH key** and pick the key, or **Password** and pick the login.
 1. Select **Apply SSH Relay**.
 
-**Status** reads **Connecting**, then **Connected** within a minute. **Address for clients** shows `https://<server>:<public-port>`, built from the **Server** and **Public port** you entered. Every client link and every agent's address list holds it as the last address. **Host key** shows the server's key as SSH recorded it on the first connection.
+**Status** reads **Connecting**, then **Connected** within a minute. **Address for clients** shows `https://<server>:<public-port>`, built from the **Server** and **Public port** you entered. Every new client link, every joined client's next state from the hub, and every agent's address list hold it as the last address. **Host key** shows the server's key as SSH recorded it on the first connection.
 
 ## Read the status
 
@@ -74,7 +74,7 @@ Five seconds after the forward starts, and every minute after that, the hub dial
 | **Vault locked**          | The box has no working copy of the vault's data key, so the hub cannot open the key or login. | Restore the working copy of the data key.                                                              |
 | **Authentication failed** | The server rejected the key or the password.                                                  | Check the key's line in the account's `authorized_keys`, or the password and `PasswordAuthentication`. |
 | **Forward refused**       | The server refused the listener, or another program holds the port.                           | Check that `permitlisten` names the **Public port**, and free the port on the server.                  |
-| **Public port closed**    | The forward runs, and the public address returns no answer or another certificate.            | Check `GatewayPorts clientspecified` and the provider's firewall.                                      |
+| **Public port closed**    | The forward runs, and the public address returns no answer or another certificate.            | Check `GatewayPorts clientspecified`, the provider's firewall and the server's firewall.               |
 | **Host key changed**      | The server presents a key other than the one recorded.                                        | If you replaced or reinstalled the server, select **Forget host key**.                                 |
 | **Server unreachable**    | SSH could not reach the server, or the connection dropped.                                    | Check **Server** and **SSH port**, and that the server is up.                                          |
 

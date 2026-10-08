@@ -4,7 +4,7 @@ title: NetBird
 
 # Join the hub to NetBird
 
-After this page, the hub is a peer on your NetBird network with the badge **connected**, and it holds a reusable setup key. The hub gives that key to every client allowed on the overlay, so each client that scans its link joins the same network. The mainland edition has no NetBird; use [EasyTier](./easytier.md) there.
+With this guide done, the hub is a peer on your NetBird network with the badge **connected**, and it holds a reusable setup key. The hub gives that key to every client allowed on the overlay, so each client that scans its link joins the same network. The mainland edition has no NetBird; use [EasyTier](./easytier.md) there.
 
 Before you start, you need:
 
@@ -72,7 +72,7 @@ A one-time key works for the hub's own join and fails for every client after tha
 1. Paste the new key.
 1. Select **Save**.
 
-The hub keeps its own NetBird identity and stays connected. Each client receives the new key with its next state from the hub. After **Forget**, no client can join this overlay until you save a key again.
+The hub keeps its own NetBird identity and stays connected. Each client receives the new key with its next state from the hub. A client already on the network keeps its peer, and a client whose line reads `overlay_join_failed` joins after you select **Connect** on it again. After **Forget**, no client can join this overlay until you save a key again.
 
 ## Publish the LAN subnets
 
@@ -89,6 +89,6 @@ The panel has no button that joins again in place. To give the hub a new NetBird
 1. In the NetBird section, select **Leave**.
 1. In **Leave the NetBird network**, confirm. The hub is deleted from the network.
 1. Paste a setup key into **Setup key** and select **Join**.
-1. In the NetBird console, open **Peers** and delete the hub's old peer.
+1. If the NetBird console still lists the hub's old peer under **Peers**, delete it there.
 
 A person who reaches the hub only through NetBird loses that way in while the hub is out of the network. A phone that reinstalls the app registers as a new peer, and its old peer stays in **Peers** until you delete it.

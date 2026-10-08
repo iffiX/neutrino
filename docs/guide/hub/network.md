@@ -63,7 +63,7 @@ In router mode each interface has a tab, and its **Role** is one of these:
 
 A WAN interface takes its address by **DHCP** from the upstream network, or by **Static** with an **Address**, a **Prefix length** and a **Gateway**. A static uplink has a **DNS** list under the gateway, one address or `address:port` per row. An empty list reads **Built-in resolvers: 223.5.5.5, 119.29.29.29**.
 
-**Priority** ranks the uplinks. **Automatic** leaves the ranking to the gateway, **Prefer this one** puts this uplink first, and **Backup only** keeps it dark while another uplink is up. **Clone MAC** replaces the interface's hardware address.
+**Priority** ranks the uplinks. **Automatic** leaves the ranking to the gateway, **Prefer this one** puts this uplink first, and **Backup only** leaves it unused while another uplink is up. **Clone MAC** replaces the interface's hardware address.
 
 A LAN interface has a **Gateway address** and a **Prefix length**. The first served network is `192.168.8.0/24`, with the box at `192.168.8.1`. Select **Apply to** followed by the interface's name to apply one tab.
 
@@ -109,7 +109,7 @@ A radio in the LAN role publishes a network from its **Access point** fields:
 | **Country code** | two capital letters of the country the box is in, such as `DE` |
 | **Band**         | **2.4 GHz**, or **5 GHz** after a country code is filled in    |
 
-The 5 GHz band requires a country code, because the country's rules set which channels a radio uses. Without a code, **Band** offers 2.4 GHz alone, and the field reads **Two letters, such as DE. 5 GHz needs one.** when 5 GHz is set. On apply the hub sets the system's wireless country and writes it into the access point's configuration. A card with no access-point mode cannot take the LAN role.
+The 5 GHz band requires a country code, because the country's rules set which channels a radio uses. Without a code, **Band** offers 2.4 GHz alone. A code that is not two letters makes the field read **Two letters, such as DE. 5 GHz needs one.** On apply the hub sets the system's wireless country and writes it into the access point's configuration. A card with no access-point mode cannot take the LAN role.
 
 ## Exposure
 

@@ -110,7 +110,6 @@ In the panel:
 
 1. On the **Modules** page, pick `hub`.
 1. If the tab strip shows no **VS Code** tab, select **+** and turn on **VS Code** in the list.
-   <!-- 待核: whether a new machine's Modules page shows the VS Code tab before it is turned on under + (outline item 10) -->
 1. On the **VS Code** tab, select **Open and accept the terms**. Microsoft's terms open in a new browser tab, and the hub records that you accept them for this machine.
 1. Select **Install**.
 1. When the install finishes, select **Configure**.

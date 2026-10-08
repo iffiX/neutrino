@@ -31,7 +31,7 @@ Each module runs under the agent of a machine that has what it needs, such as dr
 
 `nhub setup` also installs an agent on the hub's own machine, so that machine hosts modules beside the hub like any other managed machine. The AI gateway is the one service the hub provides itself.
 
-A client reaches every service through the hub. Each connection to a port on the client's loopback address becomes a stream to the hub's port 8443. The hub passes the stream to the agent of the machine that provides the service, and connects to the AI gateway and to a declared service itself.
+A client reaches every service through the hub. Each connection to a port on the client's loopback address becomes a stream to the hub's port 8443. The hub passes the stream to the agent of the machine that provides the service. For the AI gateway and a declared service, the hub opens the connection itself.
 
 A client therefore needs one address of the hub and no route to the machine itself. That address is on your network, or behind a way in from [Access](./hub/overlay.md).
 
@@ -68,6 +68,6 @@ One release tag publishes all of the following together:
 | `neutrino-client` | a person's Linux, Windows or macOS computer                                                     | that person's own account                                 |
 | the Android app   | a phone with Android 8.0 or newer, as `neutrino-client-0.5.0-android.apk`                       | an app of the phone's owner                               |
 
-Between all of them, the protocol number each build speaks has to match, and every 0.5.0 build speaks protocol 3. A 0.5.0 hub accepts protocol 3 alone and rejects any other peer with `protocol_too_old` or `protocol_too_new`. The rejected peer keeps its binding and connects again a minute later. An agent the hub accepts updates itself when the hub names a newer version.
+Between all of them, the protocol number each build speaks has to match, and every 0.5.0 build speaks protocol 3. A 0.5.0 hub accepts protocol 3 alone and rejects any other peer with `protocol_too_old` or `protocol_too_new`. The rejected peer stays joined and connects again a minute later. An agent the hub accepts updates itself when the hub names a newer version.
 
 An agent or client from 0.3 or 0.4 speaks protocol 1 or 2, so a 0.5.0 hub rejects it with `protocol_too_old`. Moving a 0.4 hub to 0.5.0 means removing it and installing 0.5.0 fresh. You then install the 0.5.0 agents and clients, and join each one with a new link. [Settings](./hub/settings.md#coming-from-0-4) gives the order.

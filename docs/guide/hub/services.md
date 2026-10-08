@@ -20,7 +20,7 @@ The page shows four groups. A shared desktop is the fifth kind, and it appears i
 | File           | **Files**         | the file share module, or a declaration                 | **Mount**                    |
 | Remote desktop | none              | a machine whose **Remote desktop** switch is on         | **Connect**                  |
 
-A client sees only the kinds and devices its permissions allow, as set on [Clients](./clients.md). Every connection a client makes to an entry travels through the hub's agent port as a `connect` stream, and the client dials none of the addresses this page shows. How each button behaves is on [Desktop client](../client/desktop.md).
+A client sees only the kinds and devices its permissions allow, as set on [Clients](./clients.md). Every connection a client makes to an entry goes through the hub's agent port as a `connect` stream, and the client dials none of the addresses this page shows. How each button behaves is on [Desktop client](../client/desktop.md).
 
 ## Discovered entries
 
@@ -40,7 +40,7 @@ These rows have the **module** chip and follow the module's configuration on tha
 
 ## Token entries
 
-A VS Code, code-server or CloudCLI entry is a token entry, marked `is_token_required` in what the hub sends. The instance listens on its machine's loopback alone, so the address on its row is where it stands and opens nothing in a browser. This page lists it under **Web** like any other row.
+A VS Code, code-server or CloudCLI entry is a token entry, marked `is_token_required` in what the hub sends. The instance listens on its machine's loopback alone, so the address on its row names where it listens and opens nothing in a browser. This page lists it under **Web** like any other row.
 
 A client opens the entry at its own forward on the computer's loopback, with a token it fetches from the hub for that open. A code-server or CloudCLI token lasts 60 seconds and works once. Setting up an instance is on [VS Code](../agent/modules/vscode.md).
 
