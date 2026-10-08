@@ -634,7 +634,7 @@ revoke it.
 
 | Route | Parameters | Does |
 | --- | --- | --- |
-| `GET /api/agent/terminal/session` | | `TerminalSessionListView`: `sessions`, every session in the `machine` section of every online machine's latest report, whoever opened it, `{device_id, device_name, session_id, account, started_at, title, owner, owner_name, is_owned, is_attached, is_persistent, is_shared, attached_count}`, ordered by `started_at`; `is_owned` is true for the sessions the panel opened, `owner: hub`, and the page attaches only to those and to shared ones |
+| `GET /api/agent/terminal/session` | | `TerminalSessionListView`: `sessions`, every session in the `machine` section of every online machine's latest report, whoever opened it, `{device_id, device_name, session_id, account, started_at, title, owner, owner_name, is_owned, is_attached, is_persistent, is_shared, attached_count}`, ordered by `started_at`; `is_owned` is true for the sessions the panel opened, `owner: hub`; the page attaches to any listed session |
 | `POST /api/agent/terminal/session/stop` | `{device_id, session_id}` | the `stop_session` verb on the machine, for any session whoever owns it, then the list once the machine reported; 404 `device_unknown`, 409 `agent_offline`, 404 `session_unknown {session_id}` when the machine holds no such session, 502 with any other code the agent closed with |
 
 A session is started by opening `/ws/agent/terminal` with a new
