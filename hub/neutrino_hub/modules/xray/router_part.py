@@ -14,6 +14,7 @@ try:
 except ImportError:
     pwd = None
 
+from neutrino_hub.modules.overlay.constants import OVERLAY_ENGINES, OVERLAY_NETBIRD
 from neutrino_hub.modules.router.constants import (
     ROUTER_FWMARK_TPROXY,
     ROUTER_FWMARK_XRAY_EGRESS,
@@ -232,6 +233,7 @@ class XrayNftPart:
                 "        ip daddr @reserved_v4 return",
                 "",
                 *self._engine_accepts(),
+                *self._overlay_wireguard_returns(),
                 "        # Mark the rest; the fwmark rule reroutes it to lo for TPROXY.",
                 "        meta l4proto { tcp, udp } "
                 f"meta mark set {hex(ROUTER_FWMARK_TPROXY)}",
@@ -263,6 +265,26 @@ class XrayNftPart:
         if self._is_overlay_proxy_enabled:
             names += self._exposed_overlays
         return names
+
+    def _overlay_wireguard_returns(self) -> list:
+        """The output chain's returns for what an overlay's WireGuard sends.
+
+        A kernel WireGuard device sends from no socket, so no cgroup row
+        names it: what it sends is known by the mark it carries, and by
+        NetBird's port for a device that sets none.
+
+        Returns:
+            The lines and a blank line after them.
+        """
+        lines = [
+            "        # The overlays' WireGuard leaves directly: a mark another",
+            "        # subsystem set, and NetBird's port for a device that sets none.",
+            "        meta mark != 0x0 return",
+        ]
+        netbird = OVERLAY_ENGINES.get(OVERLAY_NETBIRD)
+        if netbird is not None:
+            lines.append(f"        udp sport {netbird.peer_port} return")
+        return lines + [""]
 
     def _engine_accepts(self) -> list:
         """The output chain's accepts for the hub's own overlay engines.
