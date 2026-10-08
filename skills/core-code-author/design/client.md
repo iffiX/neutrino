@@ -33,7 +33,6 @@ The document has these parts:
 | `services[]` | one per published service, with the hub's wire fields (`hub_id`, `device_id`, `module`, `kind`, `payload`, `is_healthy`, `unhealthy_code`), plus `job`, `last_error` and, for every entry the client forwards ("The local port table"), `local_port` (the setting: `auto` or a number) and `forward` (empty, or the loopback port the forward listens on) |
 | `mounts[]` | the desktop's mount records, one per share mounted or being mounted |
 | `terminals` | `machines[]` and `sessions[]`, as the hub sends them |
-| `notices[]` | page-wide notices with a code, such as `binding_unknown`, each with a close button; a notice goes when closed, when **Refresh** is pressed, or after one minute |
 | `language`, `theme`, `terminal_font_size` | the client's own settings, at the top level |
 
 `services[].job` and `hubs[].jobs` are the only places a running action is
@@ -307,10 +306,11 @@ the same input. The QR carries the whole link ([protocol.md](protocol.md),
 pastes, so a scan and a paste are one path: the app inflates it, stores the
 binding at once with every address and the overlays' material, and the
 channel's rounds do the rest. The button shows `ui.job.joining` while the
-link is checked and the binding written; a success adds the row in
-`pending`; a failure writes the code (`link_unreadable`, `hub_untrusted`)
-under the input. A hub none of the link's addresses reaches yet keeps the
-row pending.
+link is checked and the binding written; a success adds the row, which
+reads `ui.state.connecting` as its first round starts; a failure writes the
+code (`link_unreadable`, `hub_untrusted`) under the input. A hub none of the
+link's addresses reaches yet leaves the row on the waiting line the Hubs
+table gives, with its ticket unspent.
 
 ### Joining before the hub is reached
 
