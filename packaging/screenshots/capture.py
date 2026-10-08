@@ -36,6 +36,7 @@ import re
 import sys
 
 import qrcode
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
 from client_window import ClientWindowServer
@@ -61,6 +62,7 @@ CONSOLE_PROFILE_DEFAULT = (
 )
 DEVICE_SCALE = 2
 WAIT_TIMEOUT_MS = 30_000
+NETWORK_IDLE_TIMEOUT_MS = 10_000
 # A label key inside a selector, ``{ui.settings.https_title}``.
 LABEL_KEY = re.compile(r"\{(ui\.[A-Za-z0-9_.]+)\}")
 
@@ -304,12 +306,19 @@ def take(
         playwright.sync_api.Error: When the page or the element does not appear.
     """
     page.set_viewport_size(viewports[shot["viewport"]])
-    page.goto(base_url + shot.get("url", "/"))
+    page.goto(
+        base_url + shot.get("url", "/"),
+        wait_until="load" if base_url else "domcontentloaded",
+        timeout=WAIT_TIMEOUT_MS * 2,
+    )
     if shot.get("manual"):
         print(f"\n{shot['language']}/{shot['file']}: {shot['manual']}")
         input("Press Enter when the page shows it. ")
     page.wait_for_selector(resolve(shot["wait_for"], labels), timeout=WAIT_TIMEOUT_MS)
-    page.wait_for_load_state("networkidle")
+    try:
+        page.wait_for_load_state("networkidle", timeout=NETWORK_IDLE_TIMEOUT_MS)
+    except PlaywrightTimeoutError:
+        print("  the page kept talking; taken after the wait_for element appeared")
     if shot.get("redraw_qr"):
         redrawn = redraw_qr(page, shot["redraw_qr"])
         if redrawn:
@@ -465,9 +474,43 @@ def capture_client(browser, shots: list, rules: list, viewports: dict) -> None:
             server.stop()
 
 
-def capture_console(playwright, shots: list, rules: list, viewports: dict) -> None:
-    """Take the console shots from the signed-in profile, in a visible window."""
+def capture_console(
+    playwright, shots: list, rules: list, viewports: dict, cdp_url: str = ""
+) -> None:
+    """Take the console shots from the signed-in profile, in a visible window.
+
+    Args:
+        playwright: The Playwright driver.
+        shots: The console entries to take.
+        rules: The redaction rules.
+        viewports: The viewport table.
+        cdp_url: When set, the address of a browser already open on the
+            profile, reached over the Chrome DevTools Protocol; its first
+            context holds the sign-in, and only the pages opened here are
+            closed. Empty opens the profile directory itself.
+    """
     if not shots:
+        return
+    if cdp_url:
+        browser = playwright.chromium.connect_over_cdp(cdp_url)
+        context = browser.contexts[0]
+        for shot in shots:
+            page = context.new_page()
+            session = context.new_cdp_session(page)
+            size = viewports[shot["viewport"]]
+            session.send(
+                "Emulation.setDeviceMetricsOverride",
+                {
+                    "width": size["width"],
+                    "height": size["height"],
+                    "deviceScaleFactor": DEVICE_SCALE,
+                    "mobile": False,
+                },
+            )
+            try:
+                take(page, shot, {}, rules, base_url="", viewports=viewports)
+            finally:
+                page.close()
         return
     context = playwright.chromium.launch_persistent_context(
         str(console_profile()), headless=False, device_scale_factor=DEVICE_SCALE
@@ -523,6 +566,12 @@ def main() -> int:
         help="accept a panel certificate the browser does not trust",
     )
     parser.add_argument(
+        "--console-cdp",
+        metavar="URL",
+        help="take console shots through a browser already open on the profile, "
+        "reached over the DevTools protocol at this address",
+    )
+    parser.add_argument(
         "--console-login",
         nargs="+",
         metavar="URL",
@@ -559,7 +608,13 @@ def main() -> int:
                 capture_client(browser, client_shots, rules, table["viewports"])
             finally:
                 browser.close()
-        capture_console(playwright, console_shots, rules, table["viewports"])
+        capture_console(
+            playwright,
+            console_shots,
+            rules,
+            table["viewports"],
+            cdp_url=arguments.console_cdp or "",
+        )
     return 0
 
 
