@@ -25,7 +25,7 @@ The certificate on the agent port is self-signed and valid for ten years, so its
 
 A person creates a client link on the hub's **Clients** page and an agent link on **Devices**. [Install a client](../install/client.md) has the steps for a client link, and [Install an agent](../install/agent.md) has them for an agent link.
 
-The link is `neutrino://enroll/<payload>`. The payload is one JSON object written with no spaces, compressed with zlib (RFC 1950, level 9), and the compressed bytes in base64url without padding. A QR code holds the same link, and a reader inflates the payload before it parses it:
+The link is `neutrino://enroll/<payload>`. The payload is one JSON object written with no spaces, compressed with zlib, RFC 1950 at level 9, and the compressed bytes in base64url without padding. A QR code holds the same link, and a reader inflates the payload before it parses it:
 
 ```json
 {
@@ -91,7 +91,7 @@ The socket is `wss://<hub-address>:8443/api/channel/socket`, where `<hub-address
 
 The first frame each way is an identity card of one shape. `hello` goes up within ten seconds of the socket opening, and `welcome` or `refused` comes down.
 
-| Field      | `hello` (up)                                      | `welcome` (down)                 |
+| Field      | `hello`, up                                       | `welcome`, down                  |
 | ---------- | ------------------------------------------------- | -------------------------------- |
 | `protocol` | the number this build speaks, `3`                 | the hub's number, `3`            |
 | `role`     | `agent` or `client`                               | `hub`                            |
@@ -124,6 +124,32 @@ A client sends a `ping` frame every 20 seconds, and one more right after its cha
 
 Agents and clients treat 45 seconds without a frame as a dead socket, and reconnect with a backoff from 5 to 60 seconds.
 
+## How a client picks an address
+
+A client reaches a hub in rounds. A round dials every candidate address of the hub at the same moment. The candidates are the hub's `hub_address` on each of its virtual networks that is on, the hub's name, and the `urls` the client kept. Each dial has its own connect time.
+
+The first socket to finish its TLS handshake with the pinned fingerprint is the round's socket. The client closes every other socket of the round before any `hello` on it, and sends one `hello` on the round's socket. The round ends connected when `welcome` follows, and in a code otherwise.
+
+A network change starts a round at once for every hub not `replaced` or `disabled`. These events are network changes:
+
+- a virtual network of the hub's turning on;
+- an interface of the device coming up or going down, or a phone moving between mobile data and Wi-Fi;
+- a `state` whose `urls` differ from the ones the client kept;
+- a peer appearing or going on a virtual network that is on.
+
+For a hub that is not connected, the change ends the wait and closes any dial still open. For a connected hub, the round runs beside the live channel.
+
+Each candidate's path is set before `hello`. An address on a virtual network is that engine's, `relay_url` is the SSH Relay's, an address inside a network the device is on is `lan`, and any other is `direct`. The paths rank in this order, best first:
+
+| Rank | Path                  |
+| ---- | --------------------- |
+| 1    | `lan`                 |
+| 2    | `direct`              |
+| 3    | `netbird`, `easytier` |
+| 4    | `relay`               |
+
+A round on a connected hub takes the channel only when its winner's path ranks higher, or ranks the same and its handshake was faster. A winner that is no better is closed before `hello`. A better winner sends `hello`, and the hub closes the old socket with 4010 `replaced`, which the client expects on the socket it left. Between rounds the client keeps no list of reachable addresses and runs no prober.
+
 ## The stream layer
 
 Every action is a stream: its `open` is the request, its `close` is the reply, and `kind` names the method.
@@ -151,7 +177,7 @@ The hub sends a client its `state` after a report whose `state_hash` differs fro
 | `overlays`         | what the client joins each of the hub's overlays with, the preferred first                                                                      |
 | `terminals`        | the managed machines the client is allowed to open a shell on, each `{device_id, name, is_online, sessions}`                                    |
 | `is_panel_allowed` | `true` while the client is switched on and its permission includes `panel`: it can open the hub's panel through `connect`                       |
-| `reached_through`  | the path this client's socket took to the hub: `lan`, `direct`, `netbird`, `easytier` or `relay` (the SSH Relay), the last being the SSH Relay  |
+| `reached_through`  | the path this client's socket took to the hub: `lan`, `direct`, `netbird`, `easytier` or `relay`, the last being the SSH Relay                  |
 
 ### Overlays
 
@@ -280,17 +306,17 @@ A close with no code holds the material. A client opens a `web` entry with `is_t
 
 `open {kind: connect, id}` holds one TCP connection to one published entry, and `open {kind: connect, is_panel: true}` holds one to the hub's own panel. A client opens one stream for each connection its local listener accepts, and one stream for as long as a UDP `port` entry is connected. It dials no address an entry's payload names. The hub runs the service stream's checks with the stream limit among them, without `vault_locked`:
 
-| `code`                         | Given when                                                                                           |
-| ------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| `binding_unknown`              | no client row has this socket's binding id                                                           |
-| `client_disabled`              | the client is switched off on **Clients**                                                            |
-| `connect_limit {limit}`        | the socket already holds 256 open `connect` streams                                                  |
-| `service_unknown {service_id}` | the id names no entry in the list resolved for this client                                           |
-| `permission_denied {kind}`     | the entry's type, or `panel` for the panel, is outside this client's permission                      |
-| `rdp_not_shared {service_id}`  | the entry's machine stopped sharing its desktop                                                      |
-| `agent_offline {device}`       | the machine that provides the entry has no channel, or its channel ended under the stream            |
-| `connect_failed {reason}`      | the dial to the far end failed; `reason` is `refused`, `timeout` (after 10 seconds) or `unreachable` |
-| `port_not_published {port}`    | the machine that provides the entry no longer publishes the port                                     |
+| `code`                         | Given when                                                                                          |
+| ------------------------------ | --------------------------------------------------------------------------------------------------- |
+| `binding_unknown`              | no client row has this socket's binding id                                                          |
+| `client_disabled`              | the client is switched off on **Clients**                                                           |
+| `connect_limit {limit}`        | the socket already holds 256 open `connect` streams                                                 |
+| `service_unknown {service_id}` | the id names no entry in the list resolved for this client                                          |
+| `permission_denied {kind}`     | the entry's type, or `panel` for the panel, is outside this client's permission                     |
+| `rdp_not_shared {service_id}`  | the entry's machine stopped sharing its desktop                                                     |
+| `agent_offline {device}`       | the machine that provides the entry has no channel, or its channel ended under the stream           |
+| `connect_failed {reason}`      | the dial to the far end failed; `reason` is `refused`, `timeout` after 10 seconds, or `unreachable` |
+| `port_not_published {port}`    | the machine that provides the entry no longer publishes the port                                    |
 
 | The entry                     | Where the hub connects the stream                                   |
 | ----------------------------- | ------------------------------------------------------------------- |
