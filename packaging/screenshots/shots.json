@@ -1688,6 +1688,18 @@
       "state": "client_state.json as committed: the hub reached over the LAN, with its round trip."
     },
     {
+      "file": "client_hubs_two.png",
+      "language": "en",
+      "page": "scenarios/one_client_several_hubs.md",
+      "source": "client",
+      "viewport": "desktop",
+      "url": "/",
+      "element": "viewport",
+      "wait_for": "#content .card",
+      "state": "client_state.json with the variant two_hubs: the hub reached over the LAN, and a second hub office reached through NetBird with its virtual network on, each with its round trip.",
+      "client_variant": "two_hubs"
+    },
+    {
       "file": "client_connected.png",
       "language": "zh",
       "page": "client/desktop.md",

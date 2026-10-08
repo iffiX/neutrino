@@ -143,4 +143,4 @@ To paste the link instead, put it into the field under **or** and select **Join*
 
 ## Join another hub
 
-Make a client link in the other hub's panel, and join with it through **Join a hub** again. Each hub publishes its own services.
+Make a client link in the other hub's panel, and join with it through **Join a hub** again. Each hub publishes its own services. [One client, several hubs](../scenarios/one_client_several_hubs.md) shows what the client lists once it has joined two hubs.

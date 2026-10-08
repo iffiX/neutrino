@@ -56,6 +56,10 @@ export const sidebarEn: DefaultTheme.SidebarItem[] = [
     items: [
       { text: "Choose a way in", link: "/scenarios/choose_a_way_in" },
       {
+        text: "One client, several hubs",
+        link: "/scenarios/one_client_several_hubs",
+      },
+      {
         text: "One laptop, every machine",
         link: "/scenarios/one_laptop_every_machine",
       },
@@ -203,6 +207,10 @@ export const sidebarZh: DefaultTheme.SidebarItem[] = [
     collapsed: false,
     items: [
       { text: "选哪种外部访问", link: "/zh-CN/scenarios/choose_a_way_in" },
+      {
+        text: "一个客户端连多台中枢",
+        link: "/zh-CN/scenarios/one_client_several_hubs",
+      },
       {
         text: "一台笔记本管所有机器",
         link: "/zh-CN/scenarios/one_laptop_every_machine",
