@@ -25,8 +25,6 @@ In the mainland edition, the release comes from the USTC mirror, `mirrors.ustc.e
 
 Each instance runs as its account, with its settings and extensions in code-server's own folders under the account's home. Its row reads **running** or **not running**, with a reason when the machine reports one. A refused apply names its code, listed under [code-server](../../reference/troubleshooting.md#code-server) in troubleshooting.
 
-The port is where the agent's forwarder listens on the machine's loopback; it is apart from the hub's port 8443. code-server itself listens on a socket that only its account and root can open.
-
 ## Extensions and AI tools
 
 The editor installs extensions from Open VSX, code-server's own gallery, where Claude Code and Codex are published. [Point a machine's AI tools at the gateway](./ai_tools.md) switches the tools of every account that runs code-server here.
@@ -34,3 +32,9 @@ The editor installs extensions from Open VSX, code-server's own gallery, where C
 ## Open it from a client
 
 Each running instance is a row under **Web** on the [Services](../../hub/services.md) page, titled **code-server** with the account in parentheses. A client whose permission on the hub's **Clients** page includes **Web pages** on that machine opens it with **Open** on its **Web** page. The forwarder then sets a login cookie in that browser for seven days; after it expires, select **Open** again.
+
+## Ports
+
+For each instance, the agent runs a forwarder that listens at `127.0.0.1` on the instance's **Port**. code-server itself listens on a socket only its account and root open. The port is a number from 1024 to 65535, one per instance on the machine, apart from the hub's port 8443. The hub publishes it as the instance's **Web** entry, and **Add instance** offers the port after the highest one in use.
+
+A development server or any other program started in the editor's terminal stays unpublished, because the agent connects clients to its machine's published ports alone. To reach one from a client, select **Declare service** on the [Services](../../hub/services.md#declare-a-service-by-hand) page. Declare a **Web** or **Port** entry with the machine's address and the program's port. The hub connects to that address directly, so the program must listen on an address the hub reaches, such as `0.0.0.0`.
