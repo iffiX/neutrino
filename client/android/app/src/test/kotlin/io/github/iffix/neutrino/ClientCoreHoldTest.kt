@@ -2,6 +2,7 @@ package io.github.iffix.neutrino
 
 import io.github.iffix.neutrino.channel.HubConnection
 import io.github.iffix.neutrino.channel.HubView
+import io.github.iffix.neutrino.channel.HubWaitReason
 import io.github.iffix.neutrino.channel.Samples
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
@@ -28,9 +29,9 @@ class ClientCoreHoldTest {
     fun theNotificationCountsTheHubsWithAnOpenChannel() {
         val hubs = listOf(
             HubView(first, connection = HubConnection.CONNECTED),
-            HubView(second, connection = HubConnection.DISABLED),
+            HubView(second, connection = HubConnection.WAITING, waitReason = HubWaitReason.DISABLED),
             HubView(first.copy(id = "b3"), connection = HubConnection.CONNECTING),
-            HubView(first.copy(id = "b4"), connection = HubConnection.DOWN),
+            HubView(first.copy(id = "b4"), connection = HubConnection.WAITING),
         )
         assertEquals(2, ClientCoreHold.connectedCount(hubs))
     }

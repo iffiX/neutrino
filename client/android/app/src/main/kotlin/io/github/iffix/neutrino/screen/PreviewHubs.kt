@@ -7,6 +7,7 @@ import io.github.iffix.neutrino.channel.ChannelServiceEntry
 import io.github.iffix.neutrino.channel.ChannelTerminal
 import io.github.iffix.neutrino.channel.HubConnection
 import io.github.iffix.neutrino.channel.HubView
+import io.github.iffix.neutrino.channel.HubWaitReason
 import io.github.iffix.neutrino.design.NeutrinoPalette
 import io.github.iffix.neutrino.design.NeutrinoTheme
 import io.github.iffix.neutrino.words.WordCatalog
@@ -88,7 +89,7 @@ object PreviewHubs {
         terminals = listOf(ChannelTerminal("d1", "Argon", true), ChannelTerminal("d2", "Neutrino", true)),
     )
 
-    /** The hub that is down. */
+    /** The hub that waits for its next round. */
     val lepton = HubView(
         binding = HubBinding(
             id = "b2",
@@ -97,7 +98,9 @@ object PreviewHubs {
             fingerprint = "",
             token = "",
         ),
-        connection = HubConnection.DOWN,
+        connection = HubConnection.WAITING,
+        waitReason = HubWaitReason.HUB_SILENT,
+        nextRoundAtMillis = System.currentTimeMillis() + 5000,
         software = "neutrino_hub/0.5.0",
     )
 

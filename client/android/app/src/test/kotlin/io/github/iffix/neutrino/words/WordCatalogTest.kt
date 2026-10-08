@@ -5,6 +5,7 @@ import io.github.iffix.neutrino.CLIENT_LANGUAGES
 import io.github.iffix.neutrino.CLIENT_REACHED_THROUGH
 import io.github.iffix.neutrino.CLIENT_THEMES
 import io.github.iffix.neutrino.RepositoryFiles
+import io.github.iffix.neutrino.channel.HubWaitReason
 import io.github.iffix.neutrino.shell.AppScreen
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -129,6 +130,21 @@ class WordCatalogTest {
         assertEquals("Connected · Direct", catalog("en").word("ui.state.connected_through", way))
         val chinese = mapOf("way" to catalog("zh-CN").word("ui.through.direct"))
         assertEquals("已连接 · 直连", catalog("zh-CN").word("ui.state.connected_through", chinese))
+    }
+
+    @Test
+    fun everyWaitingReasonIsWordedInEveryLanguageAndTheOldStateWordsAreGone() {
+        for (language in CLIENT_LANGUAGES) {
+            val words = catalog(language)
+            for (reason in HubWaitReason.entries) {
+                assertTrue("ui.state.${reason.wireName} in $language", words.has("ui.state.${reason.wireName}"))
+            }
+            assertTrue(words.has("ui.action.retry_in"))
+            assertFalse(words.has("ui.state.down"))
+            assertFalse(words.has("ui.state.pending"))
+        }
+        assertEquals("retrying in 5 s", catalog("en").word("ui.action.retry_in", mapOf("s" to 5)))
+        assertEquals("5 秒后重试", catalog("zh-CN").word("ui.action.retry_in", mapOf("s" to 5)))
     }
 
     @Test

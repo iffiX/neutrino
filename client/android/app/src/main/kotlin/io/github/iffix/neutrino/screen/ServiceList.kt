@@ -53,7 +53,7 @@ fun ServiceList(
             cardRows(down, key = { "down-${it.binding.id}" }) { hub, hasDivider ->
                 FeatureRow(marker = hubTone(hub), isGreyed = true, hasDivider = hasDivider) {
                     BasicText(hub.binding.title, style = NeutrinoTheme.rowTitle)
-                    BasicText(hubStateWord(hub, words), style = NeutrinoTheme.note)
+                    BasicText(hubStateWord(hub, words, System.currentTimeMillis()), style = NeutrinoTheme.note)
                 }
             }
         }

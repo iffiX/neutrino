@@ -45,7 +45,6 @@ import androidx.navigation.compose.rememberNavController
 import io.github.iffix.neutrino.CLIENT_BOTTOM_BAR_HEIGHT_DP
 import io.github.iffix.neutrino.CLIENT_SIDEBAR_MIN_WIDTH_DP
 import io.github.iffix.neutrino.channel.HubJoin
-import io.github.iffix.neutrino.channel.HubNotice
 import io.github.iffix.neutrino.channel.HubView
 import io.github.iffix.neutrino.design.ArmState
 import io.github.iffix.neutrino.design.LocalArm
@@ -81,7 +80,6 @@ import io.github.iffix.neutrino.terminal.TerminalTabs
  * @param settings The settings in force.
  * @param onSaveSettings What saving the settings does.
  * @param hubs Every hub joined, with its virtual network and its jobs.
- * @param notices The hubs that no longer know this phone, until closed, a refresh, or a minute.
  * @param join The join the app core runs.
  * @param actions What the screens can do.
  * @param terminalTabs Every terminal tab.
@@ -97,7 +95,6 @@ fun AppShell(
     settings: ClientSettings,
     onSaveSettings: (ClientSettings) -> Unit,
     hubs: List<HubView>,
-    notices: List<HubNotice>,
     join: HubJoin,
     actions: ClientActions,
     terminalTabs: TerminalTabs,
@@ -186,9 +183,7 @@ fun AppShell(
                             composable(AppScreen.HUBS.route) {
                                 HubsScreen(
                                     hubs,
-                                    notices,
                                     onJoin = toJoin,
-                                    onCloseNotice = actions::closeNotice,
                                     onLeave = actions::leave,
                                     onReconnect = actions::reconnect,
                                     onOpenPanel = { bindingId ->

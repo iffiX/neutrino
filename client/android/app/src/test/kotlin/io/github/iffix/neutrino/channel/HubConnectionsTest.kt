@@ -57,14 +57,17 @@ class HubConnectionsTest {
     }
 
     @Test
-    fun theJoinedHubsRowIsPendingWithTheLinksFirstAddressAndItsNetworks() = runTest {
-        val (connections, _) = connections()
+    fun theJoinedHubsRowReadsConnectingAsItsFirstRoundStartsWithTheLinksFirstAddressAndItsNetworks() = runTest {
+        val store = BindingStore(folder.root.resolve("b.sealed"), sealer)
+        val hanging = FakeHubTransport { FakeHubTransport.hanging }
+        val connections = HubConnections(store, hanging, Samples.machine, { null }, backgroundScope)
         connections.start()
         connections.startJoin(Samples.link(Samples.clientPayload))
         runCurrent()
         val row = connections.views.first().single()
-        assertEquals(HubConnection.PENDING, row.connection)
-        assertEquals("ui.state.pending", "ui.state.${row.connection.wireName}")
+        assertEquals(HubConnection.CONNECTING, row.connection)
+        assertEquals(null, row.waitReason)
+        assertEquals(true, hanging.dialled.isNotEmpty())
         assertEquals("https://192.168.100.1:8443", row.binding.gatewayUrl)
         assertEquals(Samples.clientProviders, row.binding.overlays.map { it.provider })
     }
@@ -200,7 +203,7 @@ class HubConnectionsTest {
         store.put(Samples.binding)
         connections.start()
         advanceTimeBy(1000)
-        assertEquals("hub_untrusted", connections.views.first().single().lastError?.code)
+        assertEquals(HubWaitReason.UNTRUSTED, connections.views.first().single().waitReason)
         connections.startLeave("b1")
         runCurrent()
         assertEquals(emptyList<HubView>(), connections.views.first())
@@ -237,20 +240,26 @@ class HubConnectionsTest {
     }
 
     @Test
-    fun aClosedNoticeIsGoneAndARefreshDropsEveryNotice() = runTest {
+    fun aHubThatNoLongerKnowsThisPhoneKeepsItsRowWithLeaveAsItsOneAction() = runTest {
         val refusing = FakeHubTransport { FakeHubTransport.refusing("binding_unknown") }
         val store = BindingStore(folder.root.resolve("b.sealed"), sealer)
         val connections = HubConnections(store, refusing, Samples.machine, { null }, backgroundScope)
         store.put(Samples.binding)
-        store.put(Samples.binding.copy(id = "b2"))
         connections.start()
         runCurrent()
-        val (first, second) = connections.notices.value
-        assertEquals("binding_unknown", first.refusal.code)
-        connections.closeNotice(first)
-        assertEquals(listOf(second), connections.notices.value)
-        connections.refresh()
-        assertEquals(emptyList<HubNotice>(), connections.notices.value)
+        val row = connections.views.first().single()
+        assertEquals(HubWaitReason.UNKNOWN_DEVICE, row.waitReason)
+        assertEquals("binding_unknown", row.waitRefusal?.code)
+        assertEquals(true, row.isLeaveOnly)
+        assertEquals(Samples.binding, store.get("b1"))
+        val dialled = refusing.dialled.size
+        assertEquals(false, connections.refresh())
+        connections.networkChanged()
+        advanceTimeBy(120_000)
+        assertEquals(dialled, refusing.dialled.size)
+        connections.startLeave("b1")
+        runCurrent()
+        assertEquals(emptyList<HubView>(), connections.views.first())
     }
 
     @Test
@@ -295,13 +304,14 @@ class HubConnectionsTest {
     }
 
     @Test
-    fun aSilentHubKeepsTheScannedRowPending() = runTest {
+    fun aSilentHubKeepsTheScannedRowAndItsTicketWaitingOnTheHub() = runTest {
         val (connections, store) = connections()
         connections.start()
         connections.startJoin(scannedLink)
         runCurrent()
         val row = connections.views.first().single()
-        assertEquals(HubConnection.PENDING, row.connection)
+        assertEquals(HubConnection.WAITING, row.connection)
+        assertEquals(HubWaitReason.HUB_SILENT, row.waitReason)
         assertEquals("https://192.168.100.1:8443", row.binding.gatewayUrl)
         assertEquals(Samples.clientProviders, row.binding.overlays.map { it.provider })
         assertEquals("ticket-1", store.bindings.value.single().ticket)

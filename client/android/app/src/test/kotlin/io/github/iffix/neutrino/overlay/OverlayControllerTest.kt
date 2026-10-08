@@ -38,6 +38,7 @@ class OverlayControllerTest {
     private val started = mutableListOf<Pair<String, String>>()
     private var stops = 0
     private val routes = mutableListOf<Pair<String, ChannelOverlayRoute?>>()
+    private val peers = mutableListOf<String>()
     private val launcher = object : OverlayLauncher {
         override fun start(bindingId: String, provider: String) {
             started += bindingId to provider
@@ -53,13 +54,32 @@ class OverlayControllerTest {
         store = BindingStore(folder.root.resolve("b.sealed"), FakeSecretSealer())
         store.put(Samples.binding.copy(overlays = listOf(netbird, easytier)))
         store.put(Samples.binding.copy(id = "b2", overlays = listOf(netbird)))
-        return OverlayController(store, launcher, backgroundScope) { id, route -> routes += id to route }
+        return OverlayController(store, launcher, backgroundScope, onPeersChanged = { peers += it }) { id, route ->
+            routes += id to route
+        }
     }
 
     private fun OverlayController.line(id: String = "b1") = lines.value[id] ?: OverlayLine()
 
     private fun OverlayController.engineSays(phase: OverlayPhase, address: String = "", code: String? = null) =
         report(OverlayStatus("b1", "netbird", phase, address, code?.let { ChannelResult.refused(it) }))
+
+    @Test
+    fun aPeerListChangeOnANetworkThatIsOnIsANetworkChangeOfItsHub() = runTest {
+        val controller = controller()
+        controller.connect("b1")
+        controller.peersChanged("b1", "netbird")
+        assertEquals(emptyList<String>(), peers)
+        controller.engineSays(OverlayPhase.ON, "100.72.4.9/16")
+        controller.peersChanged("b1", "netbird")
+        controller.peersChanged("b2", "netbird")
+        controller.peersChanged("b1", "easytier")
+        assertEquals(listOf("b1"), peers)
+        controller.disconnect("b1")
+        controller.engineSays(OverlayPhase.OFF)
+        controller.peersChanged("b1", "netbird")
+        assertEquals(listOf("b1"), peers)
+    }
 
     @Test
     fun connectIsTheConnectingJobInItsLoginStageWhileTheLineStaysOff() = runTest {

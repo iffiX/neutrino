@@ -19,7 +19,6 @@ import io.github.iffix.neutrino.ShareRefusedException
 import io.github.iffix.neutrino.ShareUnreachableException
 import io.github.iffix.neutrino.channel.ChannelResult
 import io.github.iffix.neutrino.channel.HubConnections
-import io.github.iffix.neutrino.channel.HubNotice
 import io.github.iffix.neutrino.files.ShareDocumentId
 import io.github.iffix.neutrino.files.ShareLogin
 import io.github.iffix.neutrino.files.ShareLoginStore
@@ -74,8 +73,6 @@ class ClientController(
         forwards.clearErrors()
         connections.refresh()
     }
-
-    override fun closeNotice(notice: HubNotice) = connections.closeNotice(notice)
 
     override suspend fun serviceMaterial(bindingId: String, entryId: String): ChannelResult<JsonObject> {
         val session = connections.session(bindingId) ?: return ChannelResult.refused("unknown_hub")
