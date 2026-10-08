@@ -22,8 +22,8 @@ if (container === null) {
  *
  * Read before the first render, from the one route that answers without a
  * session. A login card drawn in the other palette is a flash a session
- * arrives too late to prevent. The wizard's own server has no such route, so
- * a first run is in English until its first screen says otherwise.
+ * arrives too late to prevent. The wizard's own server has no such route; a
+ * first run starts in the browser's language instead.
  */
 async function panelDisplay(): Promise<PanelDisplay> {
   try {

@@ -3,6 +3,7 @@ import { BrowserRouter } from "react-router-dom";
 
 import { AuthenticatedRoutes } from "./authenticated_routes";
 import { AuthProvider } from "./auth_provider";
+import { browserLanguage, setLanguage } from "./i18n";
 import { startPanelIdentityWatch } from "./panel_identity";
 import { SetupPage, SetupTokenMissing } from "./pages/setup_page";
 import type { SetupContext } from "./setup_api";
@@ -22,6 +23,8 @@ import { isSetupWaiting, readSetupContext, setupToken } from "./setup_api";
  * exactly the case where the address says nothing — and drawing the panel's
  * login card over a box that has no panel is how that ends up looking like a
  * broken API rather than a missing link.
+ *
+ * The wizard starts in the browser's language; its language screen changes it.
  */
 type Showing = "checking" | "panel" | "wizard" | "needs_token";
 
@@ -45,6 +48,7 @@ export function App() {
         }
         return;
       }
+      setLanguage(browserLanguage());
       if (token === "") {
         if (!isCancelled) {
           setShowing("needs_token");
