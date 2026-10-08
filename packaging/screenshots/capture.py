@@ -2,10 +2,12 @@
 
 Reads ``shots.json``, signs in to the panel, switches the panel's language for
 each language's shots and puts the language back at the end, and for every
-shot sets the viewport, opens the page, waits for the element, redraws a
-QR code from the shot's ``redraw_qr`` stand-in, hides what the shot's ``hide``
-selectors match, replaces what ``redact.json`` names inside the page, and
-writes the element at twice the pixel density to
+shot sets the viewport, opens the page, waits for its ``ready`` element,
+runs the shot's ``press`` steps,
+waits for the element, scrolls the shot's ``scroll_to`` element to the top,
+redraws a QR code from the shot's ``redraw_qr`` stand-in, hides what the
+shot's ``hide`` selectors match, replaces what ``redact.json`` names inside
+the page, and writes the element at twice the pixel density to
 ``images/guide/<language>/<file>``. Each shot's replacements are printed
 after it.
 
@@ -36,6 +38,7 @@ import re
 import sys
 
 import qrcode
+from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
@@ -64,7 +67,13 @@ DEVICE_SCALE = 2
 WAIT_TIMEOUT_MS = 30_000
 NETWORK_IDLE_TIMEOUT_MS = 10_000
 PRESS_SETTLE_MS = 800
-PRESS_TIMEOUT_MS = 5_000
+PRESS_TIMEOUT_MS = 15_000
+# Runs inside the page: puts the element at the top of its scroll container.
+SCROLL_SCRIPT = (
+    "(element) => element.scrollIntoView({block: 'start', behavior: 'instant'})"
+)
+# The shots that failed, as ``<language>/<file>``, for the exit code.
+FAILED: list = []
 # A label key inside a selector, ``{ui.settings.https_title}``.
 LABEL_KEY = re.compile(r"\{(ui\.[A-Za-z0-9_.]+)\}")
 
@@ -110,6 +119,25 @@ REDACT_SCRIPT = """
       if (scrubbed !== value) element.setAttribute(name, scrubbed);
     }
   }
+  const scrubTree = (root) => {
+    const nodes = root.nodeType === Node.TEXT_NODE
+      ? [root] : [];
+    if (root.nodeType === Node.ELEMENT_NODE) {
+      const inner = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      for (let node = inner.nextNode(); node; node = inner.nextNode()) nodes.push(node);
+    }
+    for (const node of nodes) {
+      const scrubbed = scrub(node.nodeValue);
+      if (scrubbed !== node.nodeValue) node.nodeValue = scrubbed;
+    }
+  };
+  // A page that re-renders after this pass gets its new text scrubbed too.
+  new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      if (mutation.type === 'characterData') scrubTree(mutation.target);
+      for (const node of mutation.addedNodes) scrubTree(node);
+    }
+  }).observe(document.body, { subtree: true, childList: true, characterData: true });
   return report;
 }
 """
@@ -283,6 +311,35 @@ def console_profile() -> pathlib.Path:
     return path
 
 
+def settle(page) -> None:
+    """Wait for the page's requests to stop, and go on when they do not.
+
+    Args:
+        page: The Playwright page.
+    """
+    try:
+        page.wait_for_load_state("networkidle", timeout=NETWORK_IDLE_TIMEOUT_MS)
+    except PlaywrightTimeoutError:
+        print("  the page kept talking; went on without waiting for it")
+
+
+def attempt(page, shot: dict, *args, **kwargs) -> None:
+    """Take one shot; a failure is printed and kept, and the run goes on.
+
+    Args:
+        page: The Playwright page.
+        shot: The shot table's entry.
+        *args: Passed to ``take``.
+        **kwargs: Passed to ``take``.
+    """
+    try:
+        take(page, shot, *args, **kwargs)
+    except PlaywrightError as error:
+        name = f"{shot['language']}/{shot['file']}"
+        FAILED.append(name)
+        print(f"failed {name}: {str(error).splitlines()[0]}")
+
+
 def take(
     page, shot: dict, labels: dict, rules: list, *, base_url: str, viewports: dict
 ) -> None:
@@ -298,7 +355,8 @@ def take(
         viewports: The table's viewport sizes.
 
     Raises:
-        playwright.sync_api.Error: When the page or the element does not appear.
+        playwright.sync_api.Error: When the page, a filled field or the element
+            does not appear.
     """
     page.set_viewport_size(viewports[shot["viewport"]])
     page.goto(
@@ -306,28 +364,33 @@ def take(
         wait_until="load" if base_url else "domcontentloaded",
         timeout=WAIT_TIMEOUT_MS * 2,
     )
+    if "#" in shot.get("url", ""):
+        page.reload(wait_until="domcontentloaded", timeout=WAIT_TIMEOUT_MS * 2)
     if shot.get("manual"):
         print(f"\n{shot['language']}/{shot['file']}: {shot['manual']}")
         input("Press Enter when the page shows it. ")
-    page.wait_for_selector(resolve(shot["wait_for"], labels), timeout=WAIT_TIMEOUT_MS)
-    for selector in shot.get("press", []):
-        target = page.locator(resolve(selector, labels)).first
-        try:
-            target.click(timeout=PRESS_TIMEOUT_MS)
-        except PlaywrightTimeoutError:
-            print(f"  nothing to press for {selector}")
-            continue
+    settle(page)
+    if shot.get("ready"):
+        page.wait_for_selector(resolve(shot["ready"], labels), timeout=WAIT_TIMEOUT_MS)
+    for step in shot.get("press", []):
+        if isinstance(step, dict) and "key" in step:
+            page.keyboard.press(step["key"])
+        elif isinstance(step, dict):
+            page.locator(resolve(step["fill"], labels)).first.fill(step["text"])
+        else:
+            target = page.locator(resolve(step, labels)).first
+            try:
+                target.click(timeout=PRESS_TIMEOUT_MS)
+            except PlaywrightTimeoutError:
+                print(f"  nothing to press for {step}")
+                continue
         page.wait_for_timeout(PRESS_SETTLE_MS)
-    for selector, text in shot.get("fill", {}).items():
-        page.locator(resolve(selector, labels)).first.fill(text)
-    if shot.get("wait_after"):
-        page.wait_for_selector(
-            resolve(shot["wait_after"], labels), timeout=WAIT_TIMEOUT_MS
-        )
-    try:
-        page.wait_for_load_state("networkidle", timeout=NETWORK_IDLE_TIMEOUT_MS)
-    except PlaywrightTimeoutError:
-        print("  the page kept talking; taken after the wait_for element appeared")
+        settle(page)
+    page.wait_for_selector(resolve(shot["wait_for"], labels), timeout=WAIT_TIMEOUT_MS)
+    settle(page)
+    if shot.get("scroll_to"):
+        page.locator(resolve(shot["scroll_to"], labels)).first.evaluate(SCROLL_SCRIPT)
+        page.wait_for_timeout(PRESS_SETTLE_MS)
     if shot.get("redraw_qr"):
         redrawn = redraw_qr(page, shot["redraw_qr"])
         if redrawn:
@@ -338,6 +401,7 @@ def take(
         hidden = hide(page, [resolve(selector, labels) for selector in shot["hide"]])
         print(f"  {hidden} elements hidden")
     report = page.evaluate(REDACT_SCRIPT, rules)
+    page.wait_for_timeout(PRESS_SETTLE_MS)
     target = IMAGES_DIR / shot["language"] / shot["file"]
     target.parent.mkdir(parents=True, exist_ok=True)
     if shot["element"] == "viewport":
@@ -435,7 +499,7 @@ def capture_panel(
                         device_scale_factor=DEVICE_SCALE,
                         ignore_https_errors=arguments.ignore_https_errors,
                     )
-                    take(
+                    attempt(
                         guest.new_page(),
                         shot,
                         labels,
@@ -446,7 +510,7 @@ def capture_panel(
                     guest.close()
                 else:
                     page = context.new_page()
-                    take(
+                    attempt(
                         page,
                         shot,
                         labels,
@@ -474,7 +538,7 @@ def capture_client(browser, shots: list, rules: list, viewports: dict) -> None:
         try:
             for shot in batch:
                 page = context.new_page()
-                take(
+                attempt(
                     page, shot, labels, rules, base_url=server.url, viewports=viewports
                 )
                 page.close()
@@ -520,7 +584,7 @@ def capture_console(
                 },
             )
             try:
-                take(page, shot, {}, rules, base_url="", viewports=viewports)
+                attempt(page, shot, {}, rules, base_url="", viewports=viewports)
             finally:
                 session.detach()
                 if kept is None:
@@ -532,7 +596,7 @@ def capture_console(
     try:
         for shot in shots:
             page = context.new_page()
-            take(page, shot, {}, rules, base_url="", viewports=viewports)
+            attempt(page, shot, {}, rules, base_url="", viewports=viewports)
             page.close()
     finally:
         context.close()
@@ -629,6 +693,9 @@ def main() -> int:
             table["viewports"],
             cdp_url=arguments.console_cdp or "",
         )
+    if FAILED:
+        print(f"{len(FAILED)} shots failed: {', '.join(FAILED)}")
+        return 1
     return 0
 
 

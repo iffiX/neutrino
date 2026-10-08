@@ -10,7 +10,7 @@ lists from one image.
 
 | File | What it holds |
 | --- | --- |
-| `shots.json` | One entry per image: file, language directory, page or `pages`, source, viewport, element, what to wait for, the state the hub must be in, the manual step when one is needed, `redraw_qr`, the stand-in text a shot's QR code is redrawn from, and `hide`, the CSS selectors hidden before the shot. |
+| `shots.json` | One entry per image: file, language directory, page or `pages`, source, viewport, element, what to wait for, the state the hub must be in, `press`, the steps run before the shot, `scroll_to`, the element put at the top before a viewport shot, the manual step when one is still needed, `redraw_qr`, the stand-in text a shot's QR code is redrawn from, and `hide`, the CSS selectors hidden before the shot. |
 | `redact.json` | The patterns and literal strings replaced inside the page before each shot. |
 | `redact.local.json` | Optional, ignored by git: more `literals` in the same shape, for names you do not commit. |
 | `capture.py` | Signs in to the panel, takes the panel, client and console shots, and prints what it replaced in each. |
@@ -36,7 +36,7 @@ language for each language's shots and sets it back at the end.
 1. Change to this directory with `cd packaging/screenshots`.
 1. Export the panel password as `NEUTRINO_PANEL_PASSWORD`, or type it when the tool prompts.
 1. Run `python3 capture.py --panel https://<hub-address>:<panel-port> --ignore-https-errors`, where the address and port are the panel's.
-1. For an entry with a `manual` step, bring the opened browser window to the state it names, then press Enter in the terminal.
+1. For an entry with a `manual` step, bring the opened browser window to the state it names, then press Enter in the terminal. The panel entries have none; their steps are in `press`.
 1. Read the report printed after each shot, and look at each image for anything the rules missed.
 
 `--only <name> ...` takes the named shots only, `--language en` or `--language zh`
@@ -96,4 +96,6 @@ such as a chart, is left as it is.
 
 ## Entries that open something first
 
-An entry may carry `press`, a list of selectors clicked in order before the shot (a button that opens a dialog), and `fill`, a map of selector to the text typed into it; both run before `manual` and before `wait_for`. `{ui.key}` placeholders are resolved in them as in `element`. An entry may also carry `wait_after`, a selector waited for after the presses and fills, for a dialog or a table that takes a moment to appear.
+An entry may carry `press`, the steps run in order once the page has loaded and before `wait_for`. A step that is a selector is clicked (a device chip, a tab, a button that opens a dialog), and `{"fill": "<selector>", "text": "<text>"}` types the text into that field; `{"key": "Enter"}` presses that key. `scroll_to` names an element put at the top of the page once the `wait_for` element is there, for a viewport shot of a section further down. `ready` names an element waited for before the steps, for a page that renders its content a moment after it loads; a page whose URL carries a `#` route is reloaded first, so a dialog left open by the previous shot is gone. `{ui.key}` placeholders are resolved in them as in `element`. A click that finds nothing within 15 seconds is reported and skipped, so a step may name something that is only sometimes there. A shot that fails is reported and the run goes on to the next; the tool exits 1 when any failed.
+
+The setup entries are written from the wizard's source and carry `_todo` until a run against a box before setup confirms them; on a set-up hub they fail and the run goes on.

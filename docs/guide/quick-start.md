@@ -112,9 +112,7 @@ The EasyTier console lists your computer on its **设备** (devices) page.
 
 Your computer's row on the network's page reads **挂载中** (attaching), then **运行中** (running).
 
-In the panel, the EasyTier badge on **Access** reads **connected** or **no peers yet**, and **Networks from the console** lists the network.
-
-<!-- 待核: which of the two badges shows while your computer is the only device on the network (outline item 4) -->
+In the panel, the EasyTier badge on **Access** reads **no peers yet** while your computer is the only device on the network, and **Networks from the console** lists the network. The badge turns **connected** once your phone is on the network too.
 
 ![The network from the console listed on the Access page](/guide/en/overlay_easytier_console_networks.webp)
 

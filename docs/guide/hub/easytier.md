@@ -60,9 +60,7 @@ Once registered, the hub appears on the console's **设备** (devices) page.
 
 Under **网络设备** (network devices), the hub's row reads **挂载中** (attaching), then **运行中** (running).
 
-The badge reads **connected**. **Networks from the console** shows each network's name, the hub's address and name on it, and its **Subnet routes**. A value the console does not report reads **Not provided by the console**.
-
-<!-- 待核: with the hub alone on the console's network, whether the badge reads connected or no peers yet (outline item 4) -->
+The badge reads **no peers yet** while the hub is the only device on the network, and **connected** once another device on it is reachable. **Networks from the console** shows each network's name, the hub's address and name on it, and its **Subnet routes**. A value the console does not report reads **Not provided by the console**.
 
 ![The networks the console gave the hub](/guide/en/overlay_easytier_console_networks.webp)
 

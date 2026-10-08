@@ -64,9 +64,7 @@ title: EasyTier
 
 在 **网络设备** 标签里，中枢那一行先显示 **挂载中**，再显示 **运行中**。
 
-控制台把网络下发给中枢之后，徽章显示 **已连接**。**控制台下发的网络**（Networks from the console）列出每张网的网络名、本机在网里的地址和本机名称，以及 **子网路由**（Subnet routes）。控制台没给出的项写着 **控制台未提供**（Not provided by the console）。
-
-<!-- 待核: 网里只有中枢一台时，徽章读已连接还是还没有对端（no peers yet）（大纲待核第 4 条） -->
+控制台把网络下发给中枢之后，网里只有中枢一台时徽章显示 **还没有对端**（no peers yet），有另一台设备连通后变成 **已连接**。**控制台下发的网络**（Networks from the console）列出每张网的网络名、本机在网里的地址和本机名称，以及 **子网路由**（Subnet routes）。控制台没给出的项写着 **控制台未提供**（Not provided by the console）。
 
 ![控制台下发的网络](/guide/zh/overlay_easytier_console_networks.webp)
 
