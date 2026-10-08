@@ -1,6 +1,7 @@
 ---
 layout: home
 title: 微子
+markdownStyles: false
 hero:
   name: 微子
   text: 一台电脑上的服务，手机和笔记本在哪都能用
