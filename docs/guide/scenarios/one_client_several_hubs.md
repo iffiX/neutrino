@@ -51,7 +51,7 @@ The client picks the way for each hub separately, so `hub` can read **Connected 
 
 ## Find each hub's services
 
-**Web**, **Ports**, **AI**, **Files**, **Terminals** and **Remote desktops** list the entries of every connected hub, in the order of the rows on **Hubs**. Each entry has a line that names its hub and machine, such as **from hub:server:Gitea**.
+**Web**, **Ports**, **AI**, **Files**, **Terminals** and **Remote desktops** list the entries of every connected hub, in the order of the rows on **Hubs**. Each entry has a line that names its hub, its machine and its module, in that order: **from hub:server:Gitea** is the Gitea module on the machine `server` of the hub `hub`.
 
 A hub that is not connected takes one row there, with its name and state line, until it connects.
 
@@ -87,7 +87,7 @@ On Linux and Windows, each hub's panel opens at its own `.localhost` name, so th
 1. On the row of the hub to leave, select **Leave**.
 1. Select **Press again to leave**.
 
-The row goes, and the client stops that hub's forwards, mounts and viewers. Its virtual network goes off unless another hub uses the same network.
+The row goes, and the client stops that hub's forwards, mounts and viewers. Its virtual network goes off unless another hub uses the same network. The other hub's row and virtual network stay as they are.
 
 In a terminal, `leave`, `terminal` and the `service` subcommands take `--hub` with the hub's name while several hubs are joined, as [nclient commands](../commands/nclient.md) lists.
 
