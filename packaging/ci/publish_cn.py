@@ -57,7 +57,7 @@ PUBLISH_ARTIFACT = "release_dist_cn"
 PUBLISH_WORKFLOW = "release.yml"
 # The name the mainland source tree's archive ends with, and the directory
 # of it that stays off Gitee.
-PUBLISH_SOURCE_SUFFIX = "-cn-source.tar.gz"
+PUBLISH_SOURCE_SUFFIX = "-cn-source.tar.xz"
 PUBLISH_THIRD_PARTY_DIR = "third_party"
 # The branch the tree is pushed to, and the author of its one commit.
 PUBLISH_BRANCH = "main"

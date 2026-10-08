@@ -143,7 +143,7 @@ def _dist(tmp_path, extra=None):
     (tree / "third_party" / "upstream.tar.gz").write_bytes(b"upstream")
     dist = tmp_path / "dist"
     dist.mkdir()
-    with tarfile.open(dist / "neutrino-9.9.9-cn-source.tar.gz", "w:gz") as archive:
+    with tarfile.open(dist / "neutrino-9.9.9-cn-source.tar.xz", "w:xz") as archive:
         archive.add(tree, arcname="neutrino-9.9.9")
     (dist / "neutrino-hub_9.9.9_amd64.deb").write_bytes(b"hub package")
     (dist / "install.sh").write_bytes(b'EDITION="cn"\n')
@@ -223,7 +223,7 @@ def test_a_tree_file_over_50_mb_fails_before_anything_changes(
     tree.mkdir()
     with open(tree / "blob.bin", "wb") as handle:
         handle.truncate(50_000_001)
-    archive = dist / "neutrino-9.9.9-cn-source.tar.gz"
+    archive = dist / "neutrino-9.9.9-cn-source.tar.xz"
     with tarfile.open(archive, "w:gz") as bundle:
         bundle.add(tree, arcname="neutrino-9.9.9")
 

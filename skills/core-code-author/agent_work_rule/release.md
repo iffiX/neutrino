@@ -78,7 +78,7 @@ scripts that build its programs. It is the one list of what `cn` leaves out;
 no other file repeats it.
 
 `packaging/build/build_sources.py --edition cn` writes
-`neutrino-<version>-cn-source.tar.gz`. It holds the tree at the tagged
+`neutrino-<version>-cn-source.tar.xz`. It holds the tree at the tagged
 commit without the listed paths, with the root `EDITION` file holding
 `cn` and `EDITION` stamped `cn` in `install.sh` and `install.ps1`, so a clone
 of the Gitee repository, a development run from it and its install scripts
@@ -338,7 +338,7 @@ Gitee has no fixed address for the latest release's files, which is why the
 
 ### Source archive
 
-`neutrino-<version>-source.tar.gz` is this tree at the tagged commit, with
+`neutrino-<version>-source.tar.xz` is this tree at the tagged commit, with
 `third_party/` beside it holding the upstream archives of everything the
 packages carry, at the exact tags the binaries were built from: RustDesk,
 EasyTier, NetBird, Xray-core, CLIProxyAPI and cc-switch. It exists because
@@ -346,7 +346,7 @@ some of those are copyleft and a binary release owes its source; it is not
 what anybody installs from. GitHub's own `Source code (zip)` and `(tar.gz)`
 carry the tree alone.
 
-`neutrino-<version>-cn-source.tar.gz` is the same for `cn`: the mainland tree
+`neutrino-<version>-cn-source.tar.xz` is the same for `cn`: the mainland tree
 of "The mainland source tree", with the upstream source of what the `cn`
 packages carry. It is attached to the Gitee release and to no GitHub release,
 and every `cn` package is built from it.
@@ -535,7 +535,7 @@ lists them.
 | `neutrino-client-<version>-windows-amd64.msi`, `neutrino-client-<version>-macos-arm64.pkg` | the client on Windows x64 and Apple silicon |
 | `neutrino-client-<version>-android.apk` | Android 8 or newer, arm64-v8a |
 | `install.sh`, `install.ps1` | the one-command installers, stamped `cn` |
-| `neutrino-<version>-cn-source.tar.gz` | the mainland source tree |
+| `neutrino-<version>-cn-source.tar.xz` | the mainland source tree |
 | `cc-switch-cli-v<cc-switch version>-<asset>`, five files | cc-switch for the agents of a mainland hub, which fetches it from here: the files `PACKAGING_CC_SWITCH_ASSETS` in `packaging/shared/constants.py` pins, under the names upstream gives them, each checked against its pin before the upload |
 | `cc-switch-cli-v<cc-switch version>-LICENSE.txt` | cc-switch's MIT licence, beside the files it covers |
 | `SHA256SUMS` | every file above |

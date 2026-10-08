@@ -634,7 +634,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: sources
-          path: dist/*-source.tar.gz
+          path: dist/*-source.tar.xz
           if-no-files-found: error
 
   draft:
@@ -716,7 +716,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: cn_sources
-          path: dist/*-cn-source.tar.gz
+          path: dist/*-cn-source.tar.xz
           if-no-files-found: error
 
   agent_cn:
@@ -734,7 +734,7 @@ jobs:
           path: cn_sources
 
       - name: Unpack the mainland source tree
-        run: mkdir cn && tar -xzf cn_sources/*-cn-source.tar.gz -C cn --strip-components=1
+        run: mkdir cn && tar -xf cn_sources/*-cn-source.tar.xz -C cn --strip-components=1
 
       - uses: docker/setup-qemu-action@v4
         if: matrix.architecture != 'amd64'
@@ -768,7 +768,7 @@ jobs:
 
       - name: Unpack the mainland source tree
         shell: bash
-        run: mkdir cn && tar -xzf cn_sources/*-cn-source.tar.gz -C cn --strip-components=1
+        run: mkdir cn && tar -xf cn_sources/*-cn-source.tar.xz -C cn --strip-components=1
 
       - uses: actions/setup-python@v7
         with:
@@ -807,7 +807,7 @@ jobs:
           path: cn_sources
 
       - name: Unpack the mainland source tree
-        run: mkdir cn && tar -xzf cn_sources/*-cn-source.tar.gz -C cn --strip-components=1
+        run: mkdir cn && tar -xf cn_sources/*-cn-source.tar.xz -C cn --strip-components=1
 
       - uses: actions/setup-python@v7
         with:
@@ -840,7 +840,7 @@ jobs:
           path: cn_sources
 
       - name: Unpack the mainland source tree
-        run: mkdir cn && tar -xzf cn_sources/*-cn-source.tar.gz -C cn --strip-components=1
+        run: mkdir cn && tar -xf cn_sources/*-cn-source.tar.xz -C cn --strip-components=1
 
       - uses: actions/download-artifact@v8
         with:
@@ -895,7 +895,7 @@ jobs:
           path: cn_sources
 
       - name: Unpack the mainland source tree
-        run: mkdir cn && tar -xzf cn_sources/*-cn-source.tar.gz -C cn --strip-components=1
+        run: mkdir cn && tar -xf cn_sources/*-cn-source.tar.xz -C cn --strip-components=1
 
       - uses: actions/download-artifact@v8
         with:
@@ -951,7 +951,7 @@ jobs:
 
       - name: Unpack the mainland source tree
         shell: bash
-        run: mkdir cn && tar -xzf cn_sources/*-cn-source.tar.gz -C cn --strip-components=1
+        run: mkdir cn && tar -xf cn_sources/*-cn-source.tar.xz -C cn --strip-components=1
 
       - uses: actions/download-artifact@v8
         with:
@@ -1032,7 +1032,7 @@ jobs:
           path: cn_sources
 
       - name: Unpack the mainland source tree
-        run: mkdir cn && tar -xzf cn_sources/*-cn-source.tar.gz -C cn --strip-components=1
+        run: mkdir cn && tar -xf cn_sources/*-cn-source.tar.xz -C cn --strip-components=1
 
       - run: >
           python3 packaging/build/build_client_desktop.py
@@ -1066,7 +1066,7 @@ jobs:
 
       - name: Unpack the mainland source tree
         shell: bash
-        run: mkdir cn && tar -xzf cn_sources/*-cn-source.tar.gz -C cn --strip-components=1
+        run: mkdir cn && tar -xf cn_sources/*-cn-source.tar.xz -C cn --strip-components=1
 
       - uses: actions/setup-python@v7
         with:
@@ -1209,7 +1209,7 @@ jobs:
           path: cn_sources
 
       - name: Unpack the mainland source tree
-        run: mkdir cn && tar -xzf cn_sources/*-cn-source.tar.gz -C cn --strip-components=1
+        run: mkdir cn && tar -xf cn_sources/*-cn-source.tar.xz -C cn --strip-components=1
 
       - uses: actions/setup-python@v7
         with:
@@ -1241,7 +1241,7 @@ jobs:
           path: cn_sources
 
       - name: Unpack the mainland source tree
-        run: mkdir cn && tar -xzf cn_sources/*-cn-source.tar.gz -C cn --strip-components=1
+        run: mkdir cn && tar -xf cn_sources/*-cn-source.tar.xz -C cn --strip-components=1
 
       - uses: actions/setup-java@v6
         with:
@@ -1350,7 +1350,7 @@ jobs:
           merge-multiple: true
 
       - name: Unpack the mainland source tree
-        run: mkdir cn && tar -xzf dist_cn/*-cn-source.tar.gz -C cn --strip-components=1
+        run: mkdir cn && tar -xf dist_cn/*-cn-source.tar.xz -C cn --strip-components=1
 
       # The install scripts the mainland tree holds, stamped cn.
       - run: cp cn/packaging/install/install.sh cn/packaging/install/install.ps1 dist_cn/

@@ -6,10 +6,10 @@
 
 Runs on: any machine with git and Python 3.11 or newer.
 
-``neutrino-<version>-source.tar.gz`` is this tree at the current commit, with
+``neutrino-<version>-source.tar.xz`` is this tree at the current commit, with
 the source of everything the packages carry beside it under
 ``third_party/``, so a release attaches a single file.
-``neutrino-<version>-cn-source.tar.gz`` is the mainland tree: the same
+``neutrino-<version>-cn-source.tar.xz`` is the mainland tree: the same
 commit without the paths ``PACKAGING_CN_LEFT_OUT_PATHS`` lists, ``EDITION``
 naming ``cn`` and both install scripts stamped ``cn``, with the source of
 what the ``cn`` packages carry. ``--tree`` writes the mainland tree
@@ -130,7 +130,7 @@ def write_source_archive(output_dir: Path, *, edition: str = "intl") -> None:
     """
     package_version = version()
     root = f"neutrino-{package_version}"
-    suffix = "-cn-source.tar.gz" if edition == "cn" else "-source.tar.gz"
+    suffix = "-cn-source.tar.xz" if edition == "cn" else "-source.tar.xz"
     target = output_dir / f"{root}{suffix}"
     with tempfile.TemporaryDirectory() as workdir:
         tree = Path(workdir) / root
@@ -151,7 +151,7 @@ def write_source_archive(output_dir: Path, *, edition: str = "intl") -> None:
                 raise SystemExit(f"{name}: expected sha256 {digest}, got {found}")
             (third_party / name).write_bytes(data)
 
-        with tarfile.open(target, "w:gz") as archive:
+        with tarfile.open(target, "w:xz", preset=9) as archive:
             archive.add(tree, arcname=root)
     print(f"wrote {target} ({target.stat().st_size // 1024 // 1024} MiB)")
 

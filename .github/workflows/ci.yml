@@ -186,7 +186,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: cn_sources
-          path: dist/*-cn-source.tar.gz
+          path: dist/*-cn-source.tar.xz
           if-no-files-found: error
 
   mainland_python:
@@ -200,7 +200,7 @@ jobs:
           path: cn_sources
 
       - name: Unpack the mainland source tree
-        run: mkdir cn && tar -xzf cn_sources/*-cn-source.tar.gz -C cn --strip-components=1
+        run: mkdir cn && tar -xf cn_sources/*-cn-source.tar.xz -C cn --strip-components=1
 
       - uses: actions/setup-python@v7
         with:
@@ -227,7 +227,7 @@ jobs:
           path: cn_sources
 
       - name: Unpack the mainland source tree
-        run: mkdir cn && tar -xzf cn_sources/*-cn-source.tar.gz -C cn --strip-components=1
+        run: mkdir cn && tar -xf cn_sources/*-cn-source.tar.xz -C cn --strip-components=1
 
       - uses: actions/setup-python@v7
         with:
@@ -249,7 +249,7 @@ jobs:
           path: cn_sources
 
       - name: Unpack the mainland source tree
-        run: mkdir cn && tar -xzf cn_sources/*-cn-source.tar.gz -C cn --strip-components=1
+        run: mkdir cn && tar -xf cn_sources/*-cn-source.tar.xz -C cn --strip-components=1
 
       - uses: actions/setup-node@v7
         with:
