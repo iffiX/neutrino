@@ -43,7 +43,7 @@
     {
       "file": "setup_secrets.png",
       "language": "zh",
-      "page": "hub/install.md",
+      "page": "install/hub.md",
       "source": "panel",
       "viewport": "desktop",
       "url": "/",
@@ -67,7 +67,7 @@
     {
       "file": "setup_shape.png",
       "language": "zh",
-      "page": "hub/install.md",
+      "page": "install/hub.md",
       "source": "panel",
       "viewport": "desktop",
       "url": "/",
@@ -91,7 +91,7 @@
     {
       "file": "setup_done.png",
       "language": "zh",
-      "page": "hub/install.md",
+      "page": "install/hub.md",
       "source": "panel",
       "viewport": "desktop",
       "url": "/",
@@ -115,7 +115,7 @@
     {
       "file": "login.png",
       "language": "zh",
-      "page": "hub/install.md",
+      "page": "install/hub.md",
       "source": "panel",
       "viewport": "desktop",
       "url": "/",
@@ -282,7 +282,7 @@
       "language": "zh",
       "page": "hub/easytier.md",
       "pages": [
-        "scenarios/one_computer_from_your_phone.md"
+        "quick-start.md"
       ],
       "source": "panel",
       "viewport": "desktop",
@@ -312,7 +312,7 @@
       "language": "zh",
       "page": "hub/easytier.md",
       "pages": [
-        "scenarios/one_computer_from_your_phone.md"
+        "quick-start.md"
       ],
       "source": "panel",
       "viewport": "desktop",
@@ -562,7 +562,7 @@
     {
       "file": "devices_enroll_link.png",
       "language": "zh",
-      "page": "hub/devices.md",
+      "page": "install/agent.md",
       "pages": [
         "scenarios/one_laptop_every_machine.md"
       ],
@@ -589,7 +589,7 @@
     {
       "file": "devices_install_ssh.png",
       "language": "zh",
-      "page": "hub/devices.md",
+      "page": "install/agent.md",
       "source": "panel",
       "viewport": "desktop",
       "url": "/devices",
@@ -643,7 +643,8 @@
       "language": "zh",
       "page": "hub/clients.md",
       "pages": [
-        "scenarios/one_computer_from_your_phone.md"
+        "install/client.md",
+        "quick-start.md"
       ],
       "source": "panel",
       "viewport": "desktop",
@@ -936,7 +937,7 @@
       "language": "zh",
       "page": "agent/modules/remote_desktop.md",
       "pages": [
-        "scenarios/one_laptop_every_machine.md"
+        "quick-start.md"
       ],
       "source": "panel",
       "viewport": "desktop",
@@ -1116,7 +1117,11 @@
       "url": "/",
       "element": "viewport",
       "wait_for": "#content .card",
-      "state": "client_state.json as committed."
+      "state": "client_state.json as committed.",
+      "pages": [
+        "install/client.md",
+        "scenarios/one_laptop_every_machine.md"
+      ]
     },
     {
       "file": "client_network_picker.png",
@@ -1276,9 +1281,9 @@
     {
       "file": "app_join_scan.png",
       "language": "zh",
-      "page": "client/android.md",
+      "page": "install/client.md",
       "pages": [
-        "scenarios/one_computer_from_your_phone.md"
+        "quick-start.md"
       ],
       "source": "app",
       "viewport": "app",
@@ -1300,13 +1305,24 @@
       "language": "zh",
       "page": "client/android.md",
       "pages": [
-        "scenarios/one_computer_from_your_phone.md"
+        "quick-start.md"
       ],
       "source": "app",
       "viewport": "app",
       "state": "The hub screen; the hub row reads Connected · EasyTier with the round trip in ms, and the virtual network row reads Connected · with the phone's address."
     },
     {
+      "file": "app_rdp_viewer.png",
+      "language": "zh",
+      "page": "client/android.md",
+      "pages": [
+        "quick-start.md"
+      ],
+      "source": "app",
+      "viewport": "app",
+      "state": "The phone viewer fills the screen with the quick start computer's desktop; three round buttons at the top right."
+    },
+    {
       "file": "app_hub_console_waiting.png",
       "language": "en",
       "page": "client/android.md",
@@ -1322,7 +1338,7 @@
       "language": "zh",
       "page": "client/android.md",
       "pages": [
-        "scenarios/one_computer_from_your_phone.md"
+        "quick-start.md"
       ],
       "source": "app",
       "viewport": "app",
@@ -1339,7 +1355,7 @@
     {
       "file": "app_vpn_prompt.png",
       "language": "zh",
-      "page": "scenarios/one_computer_from_your_phone.md",
+      "page": "quick-start.md",
       "source": "app",
       "viewport": "app",
       "state": "The Android VPN permission dialog shown on the first Connect of the virtual network."
@@ -1358,7 +1374,10 @@
       "page": "client/android.md",
       "source": "app",
       "viewport": "app",
-      "state": "The system Files app showing a share under Neutrino."
+      "state": "The system Files app showing a share under Neutrino.",
+      "pages": [
+        "quick-start.md"
+      ]
     },
     {
       "file": "app_terminal.png",
@@ -1376,7 +1395,7 @@
       "language": "zh",
       "page": "client/android.md",
       "pages": [
-        "scenarios/one_computer_from_your_phone.md"
+        "quick-start.md"
       ],
       "source": "app",
       "viewport": "app",
@@ -1489,7 +1508,7 @@
       "language": "console",
       "page": "hub/easytier.md",
       "pages": [
-        "scenarios/one_computer_from_your_phone.md"
+        "quick-start.md"
       ],
       "source": "console",
       "viewport": "desktop",
@@ -1509,7 +1528,7 @@
       "language": "console",
       "page": "hub/easytier.md",
       "pages": [
-        "scenarios/one_computer_from_your_phone.md"
+        "quick-start.md"
       ],
       "source": "console",
       "viewport": "desktop",
@@ -1529,7 +1548,7 @@
       "language": "console",
       "page": "hub/easytier.md",
       "pages": [
-        "scenarios/one_computer_from_your_phone.md"
+        "quick-start.md"
       ],
       "source": "console",
       "viewport": "desktop",
@@ -1572,7 +1591,7 @@
     {
       "file": "win_msi_installer.png",
       "language": "os",
-      "page": "client/desktop.md",
+      "page": "install/client.md",
       "source": "os",
       "viewport": "os",
       "state": "The client's Windows installer on the page with the PATH box."

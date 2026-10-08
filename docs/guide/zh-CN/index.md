@@ -14,19 +14,22 @@ hero:
       link: /zh-CN/quick-start
     - theme: alt
       text: 安装中枢
-      link: /zh-CN/hub/install
+      link: /zh-CN/install/hub
     - theme: alt
       text: 概述
       link: /zh-CN/overview
 features:
   - title: 开始
-    details: 中枢、被控端和客户端在你的网络里各在哪里；从零搭起一台中枢，管理一台机器，挂上一个共享。
+    details: 中枢、被控端和客户端各在你网络里的什么位置；用一台电脑和一部手机走一遍快速上手；安装中枢、被控端和客户端。
     link: /zh-CN/overview
+  - title: 场景
+    details: 选哪种外部访问；一台笔记本管所有机器；经虚拟网访问没装被控端的局域网设备。
+    link: /zh-CN/scenarios/choose_a_way_in
   - title: 中枢
-    details: 在一台 Linux 机器上装好中枢，再设置网络、虚拟网、代理、AI 网关、设备、客户端、服务、凭据和设置。
-    link: /zh-CN/hub/install
+    details: 设置网络、外部访问、代理、AI 网关、设备、客户端、服务、凭据和设置。
+    link: /zh-CN/hub/dashboard
   - title: 被控端
-    details: 在中枢管理的 Linux、Windows 或 Mac 机器上开终端、管文件、装模块，模块包括共享、Gitea、容器、ZFS 和 VS Code。
+    details: 在受管机器上开终端、管文件、装模块，模块包括 AI 工具、文件共享、终端、远程桌面、Gitea、VS Code、code-server、CloudCLI、容器和 ZFS 存储。
     link: /zh-CN/agent/terminals
   - title: 客户端
     details: Linux、Windows 和 macOS 上的桌面客户端，以及 Android 应用。
@@ -39,4 +42,4 @@ features:
     link: /zh-CN/reference/platforms
 ---
 
-微子（Neutrino）用一台常开的 Linux 机器管理一个人或一个家庭的所有机器。这台机器上的中枢决定网络形态，加入 NetBird 或 EasyTier，把选定的流量交给出口节点。中枢还提供一个 AI 网关和一个在浏览器里打开的面板。Linux、Windows 和 Mac 上的被控端提供共享、git、容器、存储和 VS Code；电脑和 Android 手机上的客户端用一个按钮打开其中每一项。
+微子（Neutrino）用一台常开的机器管理一个人或一个家庭的所有机器。中枢装在这台机器上：Linux 上可以是任意网络形态，macOS 和 Windows 上是服务器形态。中枢决定网络形态，提供从外面连回中枢的办法，把选定的流量交给出口节点，还提供一个 AI 网关和一个在浏览器里打开的面板。Linux、Windows 和 Mac 上的被控端提供 AI 工具、文件共享、终端、远程桌面、Gitea、VS Code、code-server、CloudCLI、容器和 ZFS 存储；电脑和 Android 手机上的客户端，用一个按钮打开其中每一项。
