@@ -601,7 +601,8 @@ function drawHubs(state) {
   card.className = 'card';
   for (const notice of state.notices || []) card.appendChild(noticeLine(notice));
   const hubs = state.hubs || [];
-  for (const hub of hubs) card.appendChild(hubRow(hub));
+  const inUse = hubs.find(isNetworkInUse);
+  for (const hub of hubs) card.appendChild(hubRow(hub, !!inUse && inUse !== hub));
   if (hubs.length === 0) {
     card.appendChild(rowElement({ tone: 'off', title: t('ui.no_hubs') }));
   }
@@ -697,8 +698,9 @@ function hubTags(hub) {
 // One hub: its name, its state word or its tags, its address, the AI
 // marker, its virtual network's line, the error line; and the picker, the
 // network button, Reconnect while replaced, and Leave. A hub that publishes
-// no virtual network has no network line, picker or button.
-function hubRow(hub) {
+// no virtual network has no network line, picker or button. Connect waits
+// while another hub's network is not off.
+function hubRow(hub, isOtherNetworkInUse) {
   const jobs = hub.jobs || {};
   const software = hub.software ? ' · ' + t('ui.hub_software', { software: hub.software }) : '';
   const extras = [];
@@ -728,7 +730,7 @@ function hubRow(hub) {
   const actions = [];
   const networkPicker = hasNetwork ? overlayPicker(hub) : null;
   if (networkPicker) actions.push(networkPicker);
-  const network = hasNetwork ? overlayButton(hub) : null;
+  const network = hasNetwork ? overlayButton(hub, isOtherNetworkInUse) : null;
   if (network) actions.push(network);
   if (hub.is_panel_allowed) actions.push(panelButton(hub));
   if (hub.connection === 'replaced') {
@@ -748,7 +750,8 @@ function hubRow(hub) {
     stateKey: hubKey(hub),
     mono: hub.gateway_url + software,
     extras: extras,
-    reason: (!network || network.disabled) && !jobs.is_leaving ? overlayReason(hub) : '',
+    reason: (!network || network.disabled) && !jobs.is_leaving
+      ? overlayReason(hub, isOtherNetworkInUse) : '',
     actions: actions,
   });
 }
@@ -831,9 +834,14 @@ function overlayPicker(hub) {
   return wrap;
 }
 
+// Whether a hub's virtual network is not off: on, or a step running on it.
+function isNetworkInUse(hub) {
+  return (hub.overlay || {}).state === 'on' || !!(hub.jobs || {}).overlay_job;
+}
+
 // The one network button: Connect while off, Cancel while connecting,
 // Disconnect while on; the step that stops the engine shows on it.
-function overlayButton(hub) {
+function overlayButton(hub, isOtherNetworkInUse) {
   const overlay = hub.overlay || {};
   const jobs = hub.jobs || {};
   const key = hubKey(hub);
@@ -853,13 +861,22 @@ function overlayButton(hub) {
     button.textContent = t('ui.network_connect');
     button.onclick = () => send('/api/overlay/connect', { hub_id: key });
   }
-  button.disabled = hub.connection === 'disabled' || !!jobs.is_leaving;
+  button.disabled = hub.connection === 'disabled' || !!jobs.is_leaving
+    || (overlay.state !== 'on' && !!isOtherNetworkInUse);
   return button;
 }
 
 // Why the network button cannot act, and why a hub with no network is idle.
-function overlayReason(hub) {
+function overlayReason(hub, isOtherNetworkInUse) {
   if (hub.connection === 'disabled') return t('ui.reason.disabled');
+  const networks = (hub.overlay || {}).networks || [];
+  if (isOtherNetworkInUse && networks.length > 0 && !isNetworkInUse(hub)) {
+    const chosen = networks.find((item) => item.provider === hub.overlay.network)
+      || networks[0];
+    return wordCode('overlay_other_network', {
+      network: chosen.network || OVERLAY_TITLES[chosen.provider] || chosen.provider,
+    });
+  }
   return '';
 }
 
