@@ -403,6 +403,54 @@ def test_the_hubs_own_engines_are_accepted_before_the_mark():
     assert rules.index("meta skuid 999 return") < netbird < easytier < mark
 
 
+LOCAL_PROXY_OUTPUT = [
+    "type route hook output priority mangle; policy accept;",
+    "meta skuid 999 return",
+    "meta mark 0xff return",
+    "ip daddr @reserved_v4 return",
+    'socket cgroupv2 level 2 "system.slice/neutrino_hub_netbird.service" accept',
+    'socket cgroupv2 level 2 "system.slice/neutrino_hub_easytier.service" accept',
+    "meta mark != 0x0 return",
+    "udp sport 51820 return",
+    "meta l4proto { tcp, udp } meta mark set 0x1",
+]
+
+
+@pytest.mark.feature("netbird")
+@pytest.mark.feature("proxy")
+def test_what_an_overlay_s_wireguard_sends_is_never_marked():
+    """A kernel WireGuard device sends from no socket, so no cgroup row
+    names it: it is known by its mark, and by NetBird's port for a device
+    that sets none. Diverted, its packets leave from the exit's address and
+    the peer's NAT drops them."""
+    ruleset = render_with_engines(ROUTING_LOCAL_PROXY)
+    chain = without_comments(ruleset).split("chain output {")[1].split("\n    }")[0]
+
+    assert [line.strip() for line in chain.splitlines() if line.strip()] == (
+        LOCAL_PROXY_OUTPUT
+    )
+
+
+@pytest.mark.feature("proxy")
+def test_the_wireguard_returns_stand_with_no_engine_running():
+    """The kernel device outlives its daemon's cgroup row."""
+    ruleset = render_with_engines(ROUTING_LOCAL_PROXY, cgroups=[])
+    rules = [line.strip() for line in without_comments(ruleset).splitlines()]
+
+    assert "cgroupv2" not in ruleset
+    assert (
+        rules.index("meta mark != 0x0 return")
+        < rules.index("udp sport 51820 return")
+        < rules.index("meta l4proto { tcp, udp } meta mark set 0x1")
+    )
+
+
+@pytest.mark.needs_root
+@pytest.mark.feature("proxy")
+def test_nft_accepts_the_wireguard_returns():
+    validate_nft(render_with_engines(ROUTING_LOCAL_PROXY, cgroups=[]))
+
+
 @pytest.mark.feature("netbird")
 @pytest.mark.feature("proxy")
 def test_an_engine_not_running_is_not_named():
