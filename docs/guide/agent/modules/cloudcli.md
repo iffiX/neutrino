@@ -84,8 +84,6 @@ A project is a folder on the machine, and a session is one Claude Code conversat
 
 1. Type a message in the box at the bottom, and select the send button.
 
-The reply appears under the message. The session appears in the project's list, titled with its first message.<!-- 待核: the reply under the message and the session title, not yet seen with Claude Code installed. -->
-
-![The project's list with one session](/guide/en/app_cloudcli_sessions.webp)
+The reply appears under the message. The session appears in the project's list, titled with its first message.
 
 A folder where the account runs Claude Code in a terminal also appears as a project, as the empty list's hint says. When the account has no Claude Code, the first message gets an **Error** naming the missing Claude Code binary; install it as described in [What the service finds on its PATH](#what-the-service-finds-on-its-path).

@@ -61,9 +61,7 @@ On Windows, a drive letter on **Files** keeps naming the same machine of the sam
 
 ## Switch virtual networks
 
-On a computer, each hub's **Virtual network** line connects separately, and the lines of several hubs can be on at once. The computer is on one NetBird network at a time, and on one EasyTier console at a time. **Connect** on a second one fails, with a line under it saying the computer is on another virtual network.
-
-A phone is on one hub's virtual network at a time. While one is on, **Connect** on every other hub's line is greyed. To move the phone to the other hub's network:
+A device is on one hub's virtual network at a time, a computer as much as a phone. While one hub's line is on, **Connect** on every other hub's line is greyed. To move to the other hub's network:
 
 1. On the first hub's row, select **Disconnect** on the **Virtual network** line.
 1. On the second hub's row, select **Connect**.

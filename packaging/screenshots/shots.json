@@ -1609,14 +1609,6 @@
       "state": "The phone's Web screen with the CloudCLI row of your account on your computer, its Open button enabled."
     },
     {
-      "file": "app_cloudcli_session.png",
-      "language": "zh",
-      "page": "quick-start/cloudcli.md",
-      "source": "app",
-      "viewport": "app",
-      "state": "The phone's browser on a CloudCLI session in the notes-app project: the prompt asking to list the folder's files and Claude Code's reply listing them, the message box at the bottom."
-    },
-    {
       "file": "app_cloudcli_first_git.png",
       "language": "zh",
       "page": "agent/modules/cloudcli.md",
@@ -1663,14 +1655,6 @@
       "source": "app",
       "viewport": "app",
       "state": "A New Session in the notes-app project: Choose Your AI Assistant with Claude selected and the empty message box at the bottom."
-    },
-    {
-      "file": "app_cloudcli_sessions.png",
-      "language": "zh",
-      "page": "agent/modules/cloudcli.md",
-      "source": "app",
-      "viewport": "app",
-      "state": "CloudCLI's sidebar with the notes-app project open and one session in its list, titled with its first message."
     },
     {
       "file": "client_connected.png",
@@ -2119,14 +2103,6 @@
       "state": "The Web screen with one row titled CloudCLI with the account name in parentheses, the computer's CloudCLI instance running."
     },
     {
-      "file": "app_cloudcli_session.png",
-      "language": "en",
-      "page": "quick-start/cloudcli.md",
-      "source": "app",
-      "viewport": "app",
-      "state": "The phone's browser on a CloudCLI session in the notes-app project: the prompt asking to list the folder's files and Claude Code's reply listing them, the message box at the bottom."
-    },
-    {
       "file": "app_cloudcli_first_git.png",
       "language": "en",
       "page": "agent/modules/cloudcli.md",
@@ -2165,14 +2141,6 @@
       "source": "app",
       "viewport": "app",
       "state": "A New Session in the notes-app project: Choose Your AI Assistant with Claude selected and the empty message box at the bottom."
-    },
-    {
-      "file": "app_cloudcli_sessions.png",
-      "language": "en",
-      "page": "agent/modules/cloudcli.md",
-      "source": "app",
-      "viewport": "app",
-      "state": "CloudCLI's sidebar with the notes-app project open and one session in its list, titled with its first message."
     },
     {
       "file": "app_terminal.png",
