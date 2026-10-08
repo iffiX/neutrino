@@ -11,27 +11,54 @@
     }
   },
   "pending": [
+    "index.md",
+    "overview.md",
+    "quick-start.md",
+    "install/hub.md",
+    "install/agent.md",
+    "install/client.md",
+    "hub/install.md",
     "scenarios/choose_a_way_in.md",
-    "scenarios/one_computer_from_your_phone.md",
     "scenarios/one_laptop_every_machine.md",
     "scenarios/netbird_lan_routes.md",
     "scenarios/easytier_lan_routes.md",
+    "hub/network.md",
     "hub/overlay.md",
+    "hub/relay.md",
     "hub/netbird.md",
     "hub/easytier.md",
+    "hub/proxy.md",
+    "hub/ai.md",
+    "hub/devices.md",
     "hub/clients.md",
+    "hub/credentials.md",
+    "hub/settings.md",
+    "agent/terminals.md",
     "agent/modules.md",
-    "agent/modules/cloudcli.md",
     "agent/modules/ai_tools.md",
-    "agent/modules/remote_desktop.md",
+    "agent/modules/shares.md",
     "agent/modules/terminal.md",
-    "client/android.md"
+    "agent/modules/remote_desktop.md",
+    "agent/modules/gitea.md",
+    "agent/modules/vscode.md",
+    "agent/modules/code_server.md",
+    "agent/modules/cloudcli.md",
+    "agent/modules/containers.md",
+    "agent/modules/zfs.md",
+    "client/desktop.md",
+    "client/android.md",
+    "commands/nhub.md",
+    "commands/nagent.md",
+    "commands/nclient.md",
+    "reference/platforms.md",
+    "reference/troubleshooting.md",
+    "protocol/channel.md"
   ],
   "shots": [
     {
       "file": "setup_secrets.png",
       "language": "en",
-      "page": "hub/install.md",
+      "page": "install/hub.md",
       "source": "panel",
       "viewport": "desktop",
       "url": "/",
@@ -43,7 +70,7 @@
     {
       "file": "setup_secrets.png",
       "language": "zh",
-      "page": "hub/install.md",
+      "page": "install/hub.md",
       "source": "panel",
       "viewport": "desktop",
       "url": "/",
@@ -55,7 +82,7 @@
     {
       "file": "setup_shape.png",
       "language": "en",
-      "page": "hub/install.md",
+      "page": "install/hub.md",
       "source": "panel",
       "viewport": "desktop",
       "url": "/",
@@ -67,7 +94,7 @@
     {
       "file": "setup_shape.png",
       "language": "zh",
-      "page": "hub/install.md",
+      "page": "install/hub.md",
       "source": "panel",
       "viewport": "desktop",
       "url": "/",
@@ -79,7 +106,7 @@
     {
       "file": "setup_done.png",
       "language": "en",
-      "page": "hub/install.md",
+      "page": "install/hub.md",
       "source": "panel",
       "viewport": "desktop",
       "url": "/",
@@ -91,7 +118,7 @@
     {
       "file": "setup_done.png",
       "language": "zh",
-      "page": "hub/install.md",
+      "page": "install/hub.md",
       "source": "panel",
       "viewport": "desktop",
       "url": "/",
@@ -103,7 +130,7 @@
     {
       "file": "login.png",
       "language": "en",
-      "page": "hub/install.md",
+      "page": "install/hub.md",
       "source": "panel",
       "viewport": "desktop",
       "url": "/",
@@ -115,7 +142,7 @@
     {
       "file": "login.png",
       "language": "zh",
-      "page": "hub/install.md",
+      "page": "install/hub.md",
       "source": "panel",
       "viewport": "desktop",
       "url": "/",
@@ -267,7 +294,7 @@
       "language": "en",
       "page": "hub/easytier.md",
       "pages": [
-        "scenarios/one_computer_from_your_phone.md"
+        "quick-start.md"
       ],
       "source": "panel",
       "viewport": "desktop",
@@ -282,7 +309,7 @@
       "language": "zh",
       "page": "hub/easytier.md",
       "pages": [
-        "scenarios/one_computer_from_your_phone.md"
+        "quick-start.md"
       ],
       "source": "panel",
       "viewport": "desktop",
@@ -297,7 +324,7 @@
       "language": "en",
       "page": "hub/easytier.md",
       "pages": [
-        "scenarios/one_computer_from_your_phone.md"
+        "quick-start.md"
       ],
       "source": "panel",
       "viewport": "desktop",
@@ -312,7 +339,7 @@
       "language": "zh",
       "page": "hub/easytier.md",
       "pages": [
-        "scenarios/one_computer_from_your_phone.md"
+        "quick-start.md"
       ],
       "source": "panel",
       "viewport": "desktop",
@@ -520,34 +547,28 @@
       "file": "devices_managed.png",
       "language": "en",
       "page": "hub/devices.md",
-      "pages": [
-        "scenarios/one_laptop_every_machine.md"
-      ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/devices",
       "element": "viewport",
       "wait_for": ".page",
-      "state": "A Linux, a Windows and a Mac device enrolled and online."
+      "state": "hub, server (Linux), desktop (Windows) and laptop (Mac) enrolled and online."
     },
     {
       "file": "devices_managed.png",
       "language": "zh",
       "page": "hub/devices.md",
-      "pages": [
-        "scenarios/one_laptop_every_machine.md"
-      ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/devices",
       "element": "viewport",
       "wait_for": ".page",
-      "state": "A Linux, a Windows and a Mac device enrolled and online."
+      "state": "hub, server (Linux), desktop (Windows) and laptop (Mac) enrolled and online."
     },
     {
       "file": "devices_enroll_link.png",
       "language": "en",
-      "page": "hub/devices.md",
+      "page": "install/agent.md",
       "pages": [
         "scenarios/one_laptop_every_machine.md"
       ],
@@ -562,7 +583,7 @@
     {
       "file": "devices_enroll_link.png",
       "language": "zh",
-      "page": "hub/devices.md",
+      "page": "install/agent.md",
       "pages": [
         "scenarios/one_laptop_every_machine.md"
       ],
@@ -577,7 +598,7 @@
     {
       "file": "devices_install_ssh.png",
       "language": "en",
-      "page": "hub/devices.md",
+      "page": "install/agent.md",
       "source": "panel",
       "viewport": "desktop",
       "url": "/devices",
@@ -589,7 +610,7 @@
     {
       "file": "devices_install_ssh.png",
       "language": "zh",
-      "page": "hub/devices.md",
+      "page": "install/agent.md",
       "source": "panel",
       "viewport": "desktop",
       "url": "/devices",
@@ -607,8 +628,8 @@
       "url": "/devices",
       "element": ".remote_desktop",
       "wait_for": ".remote_desktop",
-      "state": "A device whose Remote desktop switch is on and applied, with a person signed in at its screen.",
-      "manual": "Open that device's drawer and scroll its remote desktop panel into view."
+      "state": "desktop's Remote desktop switch on and applied, with a person signed in at its screen.",
+      "manual": "Open desktop's drawer and scroll its remote desktop panel into view."
     },
     {
       "file": "devices_drawer_rdp.png",
@@ -619,15 +640,16 @@
       "url": "/devices",
       "element": ".remote_desktop",
       "wait_for": ".remote_desktop",
-      "state": "A device whose Remote desktop switch is on and applied, with a person signed in at its screen.",
-      "manual": "Open that device's drawer and scroll its remote desktop panel into view."
+      "state": "desktop's Remote desktop switch on and applied, with a person signed in at its screen.",
+      "manual": "Open desktop's drawer and scroll its remote desktop panel into view."
     },
     {
       "file": "clients_link_qr.png",
       "language": "en",
       "page": "hub/clients.md",
       "pages": [
-        "scenarios/one_computer_from_your_phone.md"
+        "install/client.md",
+        "quick-start.md"
       ],
       "source": "panel",
       "viewport": "desktop",
@@ -643,7 +665,8 @@
       "language": "zh",
       "page": "hub/clients.md",
       "pages": [
-        "scenarios/one_computer_from_your_phone.md"
+        "install/client.md",
+        "quick-start.md"
       ],
       "source": "panel",
       "viewport": "desktop",
@@ -658,31 +681,25 @@
       "file": "clients_permissions_panel.png",
       "language": "en",
       "page": "hub/clients.md",
-      "pages": [
-        "scenarios/one_computer_from_your_phone.md"
-      ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/clients",
       "element": ".device_drawer",
       "wait_for": ".client_permission_kind",
-      "state": "A client named phone enrolled.",
-      "manual": "Select Permissions on the phone's row, switch Follow the default off and Hub panel without the password on, and leave the drawer open without applying."
+      "state": "A client enrolled.",
+      "manual": "Select Permissions on a client's row, switch Follow the default off and Hub panel without the password on, and leave the drawer open without applying."
     },
     {
       "file": "clients_permissions_panel.png",
       "language": "zh",
       "page": "hub/clients.md",
-      "pages": [
-        "scenarios/one_computer_from_your_phone.md"
-      ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/clients",
       "element": ".device_drawer",
       "wait_for": ".client_permission_kind",
-      "state": "A client named phone enrolled.",
-      "manual": "Select Permissions on the phone's row, switch Follow the default off and Hub panel without the password on, and leave the drawer open without applying."
+      "state": "A client enrolled.",
+      "manual": "Select Permissions on a client's row, switch Follow the default off and Hub panel without the password on, and leave the drawer open without applying."
     },
     {
       "file": "services_list.png",
@@ -805,7 +822,7 @@
       "url": "/terminals",
       "element": "viewport",
       "wait_for": ".page",
-      "state": "A managed Linux machine online.",
+      "state": "server online.",
       "manual": "Open two shells, switch Persistent on for one of them, and leave both tabs showing."
     },
     {
@@ -817,7 +834,7 @@
       "url": "/terminals",
       "element": "viewport",
       "wait_for": ".page",
-      "state": "A managed Linux machine online.",
+      "state": "server online.",
       "manual": "Open two shells, switch Persistent on for one of them, and leave both tabs showing."
     },
     {
@@ -829,8 +846,8 @@
       "url": "/files",
       "element": "viewport",
       "wait_for": ".file_browser",
-      "state": "A managed machine online with a folder of a few files.",
-      "manual": "Pick the machine, open the folder, and open one row's menu."
+      "state": "server online with a folder of a few files.",
+      "manual": "Pick server, open the folder, and open one row's menu."
     },
     {
       "file": "files_row_menu.png",
@@ -841,8 +858,8 @@
       "url": "/files",
       "element": "viewport",
       "wait_for": ".file_browser",
-      "state": "A managed machine online with a folder of a few files.",
-      "manual": "Pick the machine, open the folder, and open one row's menu."
+      "state": "server online with a folder of a few files.",
+      "manual": "Pick server, open the folder, and open one row's menu."
     },
     {
       "file": "modules_picker_greyed.png",
@@ -853,8 +870,8 @@
       "url": "/modules",
       "element": ".module_picker_panel",
       "wait_for": ".module_picker_panel",
-      "state": "A Windows device online.",
-      "manual": "Select that device and open the module picker, so Containers, ZFS storage and code-server show greyed."
+      "state": "desktop (Windows) online.",
+      "manual": "Select desktop and open the module picker, so Containers, ZFS storage and code-server show greyed."
     },
     {
       "file": "modules_picker_greyed.png",
@@ -865,8 +882,8 @@
       "url": "/modules",
       "element": ".module_picker_panel",
       "wait_for": ".module_picker_panel",
-      "state": "A Windows device online.",
-      "manual": "Select that device and open the module picker, so Containers, ZFS storage and code-server show greyed."
+      "state": "desktop (Windows) online.",
+      "manual": "Select desktop and open the module picker, so Containers, ZFS storage and code-server show greyed."
     },
     {
       "file": "modules_ai_tools.png",
@@ -877,8 +894,8 @@
       "url": "/modules",
       "element": "section.settings_group:has(h2:text-is(\"{ui.modules.global_title}\"))",
       "wait_for": ".ai_tools_account",
-      "state": "A device online with VS Code or CloudCLI instances of two accounts, the AI tools switch on, and both account rows reading Uses the hub's AI gateway.",
-      "manual": "Select that device."
+      "state": "server with VS Code or CloudCLI instances of two accounts, the AI tools switch on, and both account rows reading Uses the hub's AI gateway.",
+      "manual": "Select server."
     },
     {
       "file": "modules_ai_tools.png",
@@ -889,8 +906,8 @@
       "url": "/modules",
       "element": "section.settings_group:has(h2:text-is(\"{ui.modules.global_title}\"))",
       "wait_for": ".ai_tools_account",
-      "state": "A device online with VS Code or CloudCLI instances of two accounts, the AI tools switch on, and both account rows reading Uses the hub's AI gateway.",
-      "manual": "Select that device."
+      "state": "server with VS Code or CloudCLI instances of two accounts, the AI tools switch on, and both account rows reading Uses the hub's AI gateway.",
+      "manual": "Select server."
     },
     {
       "file": "modules_terminal_tab.png",
@@ -901,8 +918,8 @@
       "url": "/modules",
       "element": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))",
       "wait_for": ".terminal_module_fields",
-      "state": "A Linux device online with an account chosen in its Terminal module.",
-      "manual": "Select the Linux device and its Terminal tab."
+      "state": "server online with an account chosen in its Terminal module.",
+      "manual": "Select server and its Terminal tab."
     },
     {
       "file": "modules_terminal_tab.png",
@@ -913,38 +930,44 @@
       "url": "/modules",
       "element": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))",
       "wait_for": ".terminal_module_fields",
-      "state": "A Linux device online with an account chosen in its Terminal module.",
-      "manual": "Select the Linux device and its Terminal tab."
+      "state": "server online with an account chosen in its Terminal module.",
+      "manual": "Select server and its Terminal tab."
     },
     {
       "file": "modules_remote_desktop_tab.png",
       "language": "en",
       "page": "agent/modules/remote_desktop.md",
       "pages": [
-        "scenarios/one_laptop_every_machine.md"
+        "quick-start.md"
       ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/modules",
       "element": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))",
       "wait_for": ".modules_config",
-      "state": "A Windows device online with its Remote desktop switch on and applied.",
-      "manual": "Select the Windows device and its Remote desktop tab."
+      "state": "The quick start's one machine, your computer, with its Remote desktop switch on and applied.",
+      "manual": "Select your computer and its Remote desktop tab.",
+      "hide": [
+        ".device_chip:not(.device_chip--on)"
+      ]
     },
     {
       "file": "modules_remote_desktop_tab.png",
       "language": "zh",
       "page": "agent/modules/remote_desktop.md",
       "pages": [
-        "scenarios/one_laptop_every_machine.md"
+        "quick-start.md"
       ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/modules",
       "element": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))",
       "wait_for": ".modules_config",
-      "state": "A Windows device online with its Remote desktop switch on and applied.",
-      "manual": "Select the Windows device and its Remote desktop tab."
+      "state": "The quick start's one machine, your computer, with its Remote desktop switch on and applied.",
+      "manual": "Select your computer and its Remote desktop tab.",
+      "hide": [
+        ".device_chip:not(.device_chip--on)"
+      ]
     },
     {
       "file": "shares_windows.png",
@@ -955,8 +978,8 @@
       "url": "/modules",
       "element": "viewport",
       "wait_for": ".page",
-      "state": "A Windows device with the File share module running and one share.",
-      "manual": "Select the Windows device and its File share tab."
+      "state": "desktop with the File share module running and one share.",
+      "manual": "Select desktop and its File share tab."
     },
     {
       "file": "shares_windows.png",
@@ -967,8 +990,8 @@
       "url": "/modules",
       "element": "viewport",
       "wait_for": ".page",
-      "state": "A Windows device with the File share module running and one share.",
-      "manual": "Select the Windows device and its File share tab."
+      "state": "desktop with the File share module running and one share.",
+      "manual": "Select desktop and its File share tab."
     },
     {
       "file": "gitea.png",
@@ -979,8 +1002,8 @@
       "url": "/modules",
       "element": "viewport",
       "wait_for": ".page",
-      "state": "A device with Gitea running and an administrator.",
-      "manual": "Select the device and its Gitea tab, with the access section in view."
+      "state": "server with Gitea running and an administrator.",
+      "manual": "Select server and its Gitea tab, with the access section in view."
     },
     {
       "file": "gitea.png",
@@ -991,8 +1014,8 @@
       "url": "/modules",
       "element": "viewport",
       "wait_for": ".page",
-      "state": "A device with Gitea running and an administrator.",
-      "manual": "Select the device and its Gitea tab, with the access section in view."
+      "state": "server with Gitea running and an administrator.",
+      "manual": "Select server and its Gitea tab, with the access section in view."
     },
     {
       "file": "containers.png",
@@ -1003,8 +1026,8 @@
       "url": "/modules",
       "element": "viewport",
       "wait_for": ".page",
-      "state": "A device with two declared containers, one publishing a port.",
-      "manual": "Select the device and its containers tab."
+      "state": "server with two declared containers, one publishing a port.",
+      "manual": "Select server and its containers tab."
     },
     {
       "file": "containers.png",
@@ -1015,8 +1038,8 @@
       "url": "/modules",
       "element": "viewport",
       "wait_for": ".page",
-      "state": "A device with two declared containers, one publishing a port.",
-      "manual": "Select the device and its containers tab."
+      "state": "server with two declared containers, one publishing a port.",
+      "manual": "Select server and its containers tab."
     },
     {
       "file": "zfs.png",
@@ -1027,8 +1050,8 @@
       "url": "/modules",
       "element": "viewport",
       "wait_for": ".page",
-      "state": "A device with a ZFS pool.",
-      "manual": "Select the device and its ZFS tab, with the pools in view."
+      "state": "server with a ZFS pool.",
+      "manual": "Select server and its ZFS tab, with the pools in view."
     },
     {
       "file": "zfs.png",
@@ -1039,8 +1062,8 @@
       "url": "/modules",
       "element": "viewport",
       "wait_for": ".page",
-      "state": "A device with a ZFS pool.",
-      "manual": "Select the device and its ZFS tab, with the pools in view."
+      "state": "server with a ZFS pool.",
+      "manual": "Select server and its ZFS tab, with the pools in view."
     },
     {
       "file": "vscode_panel.png",
@@ -1054,8 +1077,8 @@
       "url": "/modules",
       "element": "viewport",
       "wait_for": ".page",
-      "state": "A device with one VS Code instance running as a chosen account.",
-      "manual": "Select the device and its VS Code tab."
+      "state": "hub with one VS Code instance running.",
+      "manual": "Select hub and its VS Code tab."
     },
     {
       "file": "vscode_panel.png",
@@ -1069,8 +1092,8 @@
       "url": "/modules",
       "element": "viewport",
       "wait_for": ".page",
-      "state": "A device with one VS Code instance running as a chosen account.",
-      "manual": "Select the device and its VS Code tab."
+      "state": "hub with one VS Code instance running.",
+      "manual": "Select hub and its VS Code tab."
     },
     {
       "file": "cloudcli_panel.png",
@@ -1081,8 +1104,8 @@
       "url": "/modules",
       "element": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))",
       "wait_for": ".cloudcli_instance",
-      "state": "A device with CloudCLI running and one instance.",
-      "manual": "Select the device and its CloudCLI tab, and select Configure so the instance shows."
+      "state": "server with CloudCLI running and one instance.",
+      "manual": "Select server and its CloudCLI tab, and select Configure so the instance shows."
     },
     {
       "file": "cloudcli_panel.png",
@@ -1093,13 +1116,17 @@
       "url": "/modules",
       "element": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))",
       "wait_for": ".cloudcli_instance",
-      "state": "A device with CloudCLI running and one instance.",
-      "manual": "Select the device and its CloudCLI tab, and select Configure so the instance shows."
+      "state": "server with CloudCLI running and one instance.",
+      "manual": "Select server and its CloudCLI tab, and select Configure so the instance shows."
     },
     {
       "file": "client_connected.png",
       "language": "en",
       "page": "client/desktop.md",
+      "pages": [
+        "install/client.md",
+        "scenarios/one_laptop_every_machine.md"
+      ],
       "source": "client",
       "viewport": "desktop",
       "url": "/",
@@ -1111,6 +1138,10 @@
       "file": "client_connected.png",
       "language": "zh",
       "page": "client/desktop.md",
+      "pages": [
+        "install/client.md",
+        "scenarios/one_laptop_every_machine.md"
+      ],
       "source": "client",
       "viewport": "desktop",
       "url": "/",
@@ -1199,8 +1230,8 @@
       "url": "/",
       "element": "viewport",
       "wait_for": "#content .term_page",
-      "state": "client_state.json with three machines on the home hub, one of them Windows.",
-      "manual": "Open the Terminals page of the window and open a terminal on each of the three machines, so three tabs show."
+      "state": "client_state.json with hub, server and desktop as the hub's machines.",
+      "manual": "Open the Terminals page of the window and open a terminal on each of hub, server and desktop, so three tabs show."
     },
     {
       "file": "client_terminals_three.png",
@@ -1211,8 +1242,8 @@
       "url": "/",
       "element": "viewport",
       "wait_for": "#content .term_page",
-      "state": "client_state.json with three machines on the home hub, one of them Windows.",
-      "manual": "Open the Terminals page of the window and open a terminal on each of the three machines, so three tabs show."
+      "state": "client_state.json with hub, server and desktop as the hub's machines.",
+      "manual": "Open the Terminals page of the window and open a terminal on each of hub, server and desktop, so three tabs show."
     },
     {
       "file": "client_remote_desktops.png",
@@ -1223,7 +1254,7 @@
       "url": "/",
       "element": "viewport",
       "wait_for": "#content .card .feat",
-      "state": "client_state.json with the Windows machine's desktop entry and viewers marking it running, so its row reads Viewer open.",
+      "state": "client_state.json with desktop's desktop entry and viewers marking it running, so its row reads Viewer open.",
       "manual": "Open the Remote desktops page of the window."
     },
     {
@@ -1235,7 +1266,7 @@
       "url": "/",
       "element": "viewport",
       "wait_for": "#content .card .feat",
-      "state": "client_state.json with the Windows machine's desktop entry and viewers marking it running, so its row reads Viewer open.",
+      "state": "client_state.json with desktop's desktop entry and viewers marking it running, so its row reads Viewer open.",
       "manual": "Open the Remote desktops page of the window."
     },
     {
@@ -1247,7 +1278,7 @@
       "url": "/",
       "element": "viewport",
       "wait_for": "#content .card .feat",
-      "state": "client_state.json with the VS Code web entry in forwards, so its row reads the forwarded port.",
+      "state": "client_state.json with hub's VS Code web entry in forwards, so its row reads the forwarded port.",
       "manual": "Open the Web page of the window."
     },
     {
@@ -1259,15 +1290,15 @@
       "url": "/",
       "element": "viewport",
       "wait_for": "#content .card .feat",
-      "state": "client_state.json with the VS Code web entry in forwards, so its row reads the forwarded port.",
+      "state": "client_state.json with hub's VS Code web entry in forwards, so its row reads the forwarded port.",
       "manual": "Open the Web page of the window."
     },
     {
       "file": "app_join_scan.png",
       "language": "en",
-      "page": "client/android.md",
+      "page": "install/client.md",
       "pages": [
-        "scenarios/one_computer_from_your_phone.md"
+        "quick-start.md"
       ],
       "source": "app",
       "viewport": "app",
@@ -1276,9 +1307,9 @@
     {
       "file": "app_join_scan.png",
       "language": "zh",
-      "page": "client/android.md",
+      "page": "install/client.md",
       "pages": [
-        "scenarios/one_computer_from_your_phone.md"
+        "quick-start.md"
       ],
       "source": "app",
       "viewport": "app",
@@ -1289,29 +1320,29 @@
       "language": "en",
       "page": "client/android.md",
       "pages": [
-        "scenarios/one_computer_from_your_phone.md"
+        "quick-start.md"
       ],
       "source": "app",
       "viewport": "app",
-      "state": "The hub screen; the hub row reads Connected · EasyTier with the round trip in ms, and the virtual network row reads Connected · with the phone's address."
+      "state": "The hub screen; the hub row reads Connected · EasyTier with the round trip in ms, and the virtual network row reads Connected · with your phone's address."
     },
     {
       "file": "app_hub.png",
       "language": "zh",
       "page": "client/android.md",
       "pages": [
-        "scenarios/one_computer_from_your_phone.md"
+        "quick-start.md"
       ],
       "source": "app",
       "viewport": "app",
-      "state": "The hub screen; the hub row reads Connected · EasyTier with the round trip in ms, and the virtual network row reads Connected · with the phone's address."
+      "state": "The hub screen; the hub row reads Connected · EasyTier with the round trip in ms, and the virtual network row reads Connected · with your phone's address."
     },
     {
       "file": "app_hub_console_waiting.png",
       "language": "en",
       "page": "client/android.md",
       "pages": [
-        "scenarios/one_computer_from_your_phone.md"
+        "quick-start.md"
       ],
       "source": "app",
       "viewport": "app",
@@ -1322,7 +1353,7 @@
       "language": "zh",
       "page": "client/android.md",
       "pages": [
-        "scenarios/one_computer_from_your_phone.md"
+        "quick-start.md"
       ],
       "source": "app",
       "viewport": "app",
@@ -1331,7 +1362,7 @@
     {
       "file": "app_vpn_prompt.png",
       "language": "en",
-      "page": "scenarios/one_computer_from_your_phone.md",
+      "page": "quick-start.md",
       "source": "app",
       "viewport": "app",
       "state": "The Android VPN permission dialog shown on the first Connect of the virtual network."
@@ -1339,7 +1370,7 @@
     {
       "file": "app_vpn_prompt.png",
       "language": "zh",
-      "page": "scenarios/one_computer_from_your_phone.md",
+      "page": "quick-start.md",
       "source": "app",
       "viewport": "app",
       "state": "The Android VPN permission dialog shown on the first Connect of the virtual network."
@@ -1348,6 +1379,9 @@
       "file": "app_files_provider.png",
       "language": "en",
       "page": "client/android.md",
+      "pages": [
+        "quick-start.md"
+      ],
       "source": "app",
       "viewport": "app",
       "state": "The system Files app showing a share under Neutrino."
@@ -1356,6 +1390,9 @@
       "file": "app_files_provider.png",
       "language": "zh",
       "page": "client/android.md",
+      "pages": [
+        "quick-start.md"
+      ],
       "source": "app",
       "viewport": "app",
       "state": "The system Files app showing a share under Neutrino."
@@ -1365,7 +1402,7 @@
       "language": "en",
       "page": "client/android.md",
       "pages": [
-        "scenarios/one_computer_from_your_phone.md"
+        "quick-start.md"
       ],
       "source": "app",
       "viewport": "app",
@@ -1376,29 +1413,33 @@
       "language": "zh",
       "page": "client/android.md",
       "pages": [
-        "scenarios/one_computer_from_your_phone.md"
+        "quick-start.md"
       ],
       "source": "app",
       "viewport": "app",
       "state": "A terminal session with the key row showing."
     },
     {
-      "file": "app_panel_in_browser.png",
+      "file": "app_rdp_viewer.png",
       "language": "en",
-      "page": "scenarios/one_computer_from_your_phone.md",
+      "page": "client/android.md",
+      "pages": [
+        "quick-start.md"
+      ],
       "source": "app",
       "viewport": "app",
-      "state": "The phone's browser showing the hub's panel overview after Panel was pressed.",
-      "manual": "Blank the tkn= token in the address bar before saving the image."
+      "state": "The phone's viewer showing your computer's desktop, with the three round buttons at the top right."
     },
     {
-      "file": "app_panel_in_browser.png",
+      "file": "app_rdp_viewer.png",
       "language": "zh",
-      "page": "scenarios/one_computer_from_your_phone.md",
+      "page": "client/android.md",
+      "pages": [
+        "quick-start.md"
+      ],
       "source": "app",
       "viewport": "app",
-      "state": "The phone's browser showing the hub's panel overview after Panel was pressed.",
-      "manual": "Blank the tkn= token in the address bar before saving the image."
+      "state": "The phone's viewer showing your computer's desktop, with the three round buttons at the top right."
     },
     {
       "file": "console_netbird_keys_list.png",
@@ -1489,7 +1530,7 @@
       "language": "console",
       "page": "hub/easytier.md",
       "pages": [
-        "scenarios/one_computer_from_your_phone.md"
+        "quick-start.md"
       ],
       "source": "console",
       "viewport": "desktop",
@@ -1509,7 +1550,7 @@
       "language": "console",
       "page": "hub/easytier.md",
       "pages": [
-        "scenarios/one_computer_from_your_phone.md"
+        "quick-start.md"
       ],
       "source": "console",
       "viewport": "desktop",
@@ -1529,15 +1570,15 @@
       "language": "console",
       "page": "hub/easytier.md",
       "pages": [
-        "scenarios/one_computer_from_your_phone.md"
+        "quick-start.md"
       ],
       "source": "console",
       "viewport": "desktop",
       "url": "https://console.easytier.net/",
       "element": "viewport",
       "wait_for": "body",
-      "state": "The EasyTier console's device list with the hub on its network and the phone registered.",
-      "manual": "Open the form that attaches the phone to the hub's network; leave it unsaved.",
+      "state": "The EasyTier console's device list with the hub on its network and your phone registered.",
+      "manual": "Open the form that attaches your phone to the hub's network; leave it unsaved.",
       "hide": [
         "input[type=\"password\"]",
         "header img"
@@ -1572,7 +1613,7 @@
     {
       "file": "win_msi_installer.png",
       "language": "os",
-      "page": "client/desktop.md",
+      "page": "install/client.md",
       "source": "os",
       "viewport": "os",
       "state": "The client's Windows installer on the page with the PATH box."
@@ -1592,23 +1633,6 @@
       "source": "os",
       "viewport": "os",
       "state": "The client's tray menu open in the Windows taskbar corner."
-    },
-    {
-      "file": "win_rustdesk_viewer.png",
-      "language": "os",
-      "page": "scenarios/one_laptop_every_machine.md",
-      "source": "os",
-      "viewport": "os",
-      "state": "The RustDesk viewer on Windows showing the shared desktop of the Windows PC."
-    },
-    {
-      "file": "os_browser_vscode.png",
-      "language": "os",
-      "page": "scenarios/one_laptop_every_machine.md",
-      "source": "os",
-      "viewport": "os",
-      "state": "A browser showing VS Code opened from the client's Web page.",
-      "manual": "Blank the token in the address bar before saving the image."
     }
   ]
 }
