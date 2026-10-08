@@ -4,7 +4,7 @@ title: Install a client
 
 # Install a client
 
-After this page, the client runs on your computer or Android phone and has joined your hub. The hub's row in the client reads **Connected ·** with the way the client reached it. A computer runs one person's client at a time.
+Install the client on your computer or Android phone from a package file or in the mainland edition, then join it to your hub.
 
 ## Before you start
 
@@ -13,12 +13,12 @@ After this page, the client runs on your computer or Android phone and has joine
   - macOS 12.3 or newer
   - Windows 10 1809 or newer on x86-64
   - Android 8.0 or newer on a 64-bit ARM phone
-- On a computer, you run the client from your own account. The client rejects root with `root_refused`.
-- The device reaches the hub's port 8443, on your network or through a way in from [Access](../hub/overlay.md).
+- On a computer, you run the client from your own account, never as root.
+- The device reaches the hub's port 8443, on your network or through a way in on [Access](../hub/overlay.md).
 
 ## Install the desktop client with one command
 
-The install script picks the client package for the computer, checks it against the release's `SHA256SUMS` and installs it. When your account has joined no hub yet, the script ends by printing the `nclient join` line to run next.
+The install script checks the client package against the release's `SHA256SUMS` and installs it.
 
 ### Linux and macOS
 
@@ -36,9 +36,7 @@ curl -fsSL https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.s
 
 ### Windows
 
-Open PowerShell and run the command for your edition. The script prompts Windows for administrator rights and installs from the PowerShell window that Windows opens as administrator. Run `nclient join` later in a PowerShell of your own.
-
-For the full edition:
+In PowerShell, run the command for your edition, then accept the administrator prompt. For the full edition:
 
 ```powershell
 & ([scriptblock]::Create((irm https://github.com/iffiX/neutrino/releases/latest/download/install.ps1))) client
@@ -52,7 +50,7 @@ For the mainland edition:
 
 ## Install the desktop client from the package file
 
-Download the client's file for your computer from the [releases page](https://github.com/iffiX/neutrino/releases), then install it:
+Download the client's file from the [releases page](https://github.com/iffiX/neutrino/releases), or for the mainland edition from the [Gitee releases page](https://gitee.com/iffiX/neutrino/releases), then install it:
 
 ::: code-group
 
@@ -74,19 +72,19 @@ sudo installer -pkg neutrino-client-0.5.0-macos-arm64.pkg -target /
 
 :::
 
-On a 64-bit ARM Linux computer, the file name says `arm64` for the `.deb` and `aarch64` for the `.rpm`. On an Intel Mac the file is `neutrino-client-0.5.0-macos-amd64.pkg`. `apt` and `dnf` install the dependencies with the package: WebKitGTK, the tray library, `cifs-utils` and polkit.
+On 64-bit ARM Linux the file name says `arm64` for the `.deb` and `aarch64` for the `.rpm`. On an Intel Mac the file is `neutrino-client-0.5.0-macos-amd64.pkg`.
 
 ::: warning
 `dpkg -i` and `rpm -i` install none of the dependencies. After either one, run `sudo apt -f install` on Debian, or `sudo dnf install` with the missing packages on Fedora and RHEL.
 :::
 
-On Windows, opening the `.msi` from File Explorer runs the same installer. Its **Add the Neutrino Client to PATH** box puts the `nclient` command in every terminal. When the WebView2 runtime is missing, the installer runs Microsoft's installer for it. The removal dialog has a **Keep my configuration** box, and a kept configuration joins the same hub again on the next install.
+On Windows, opening the `.msi` from File Explorer runs the same installer. Its **Add the Neutrino Client to PATH** box puts the `nclient` command in every terminal.
 
 ![The Windows installer of the client](/guide/os/win_msi_installer.webp)
 
-On macOS the installer puts **Neutrino Client** in `/Applications` and links `nclient` into `/usr/local/bin`. The app has an ad hoc signature, so Gatekeeper shows a confirmation the first time it opens.
+On macOS, Gatekeeper asks for a confirmation the first time **Neutrino Client** opens.
 
-Every package also registers the system services of the virtual networks: the NetBird daemon and the client's EasyTier daemon. The mainland edition's package has the EasyTier daemon alone, so it joins EasyTier networks only. On Windows the package registers one more service, `NeutrinoClientFiles`, which puts a share on a drive letter. An install over a running client closes it, then starts it again in the same person's session when the install ends.
+Every package also installs the services for the virtual networks; the mainland edition's package joins EasyTier networks only.
 
 ## Install the Android app
 
@@ -95,9 +93,7 @@ Every package also registers the system services of the virtual networks: the Ne
 1. Select **Install**.
 1. Open **Neutrino**.
 
-The mainland edition's apk is on the Gitee release page and has no NetBird.
-
-The project signs every release apk with its own key, and Android updates an installed app only from an apk with the same key. To check a downloaded apk on a computer with the Android SDK build tools, run:
+Every release apk is signed with the project's key. To check a downloaded apk on a computer with the Android SDK build tools, run:
 
 ```bash
 apksigner verify --print-certs neutrino-client-0.5.0-android.apk
@@ -108,7 +104,7 @@ Signer #1 certificate SHA-256 digest: 0e20b8b4542f329c4d3ed91632f3ea90730cb99472
 ...
 ```
 
-Build tools 37 and newer print the line as `V2 Signer: certificate SHA-256 digest:` followed by the same digest.
+Build tools 37 and newer print the line as `V2 Signer: certificate SHA-256 digest:`.
 
 ::: danger
 If the digest differs, delete the apk without installing it.
@@ -123,7 +119,7 @@ If the digest differs, delete the apk without installing it.
 
 ![The client link with its QR code on the Clients page](/guide/en/clients_link_qr.webp)
 
-The notice shows the link, **Copy**, and a QR code of the same link. The link works for thirty minutes and joins one device, and a restart of the hub keeps it. [Clients](../hub/clients.md) sets what each device can use.
+The notice shows the link, **Copy**, and a QR code of the same link. The link is valid for 30 minutes.
 
 ## Join from a computer
 
@@ -133,14 +129,7 @@ The notice shows the link, **Copy**, and a QR code of the same link. The link wo
 
 ![The client window joined to a hub](/guide/en/client_connected.webp)
 
-The hub's row reads **Joined; the hub has not been reached yet** until one address in the link answers. It then reads **Connected · LAN**, or the name of another way in, with the hub's address and the package it runs. In a terminal, `nclient join '<client-link>'` does the same, with the copied link in place of `<client-link>`.
-
-| Code                  | Cause                                           | Fix                                                          |
-| --------------------- | ----------------------------------------------- | ------------------------------------------------------------ |
-| `link_not_for_client` | the link comes from the hub's **Devices** page  | make a link on **Clients**                                   |
-| `link_unreadable`     | the pasted link is cut off                      | copy the whole link again                                    |
-| `ticket_spent`        | the link is used or older than thirty minutes   | select **Leave** on the row, then join with a new link       |
-| `admission_paused`    | the hub paused joins after too many failed ones | wait the seconds the code names; the client joins again then |
+The hub's row appears at once and reads **Connecting…**, then **Connected · LAN** or the name of another way in. In a terminal, `nclient join '<client-link>'` does the same, with the copied link in place of `<client-link>`. When the join fails, the cause is on [Troubleshooting](../reference/troubleshooting.md).
 
 ## Join from a phone
 
@@ -150,8 +139,8 @@ The hub's row reads **Joined; the hub has not been reached yet** until one addre
 
 ![The QR scanner on the Join a hub screen](/guide/en/app_join_scan.webp)
 
-To paste the link instead, put it into the field under **or** and select **Join**. On mobile data away from home, the row reads **Joined; the hub has not been reached yet** until one address in the link answers.
+To paste the link instead, put it into the field under **or** and select **Join**. The hub's row reads **Connecting…** until the phone reaches the hub.
 
 ## Join another hub
 
-Make a client link in the other hub's panel, and join with it through **Join a hub** again. Each hub keeps its own name for the device and publishes its own services.
+Make a client link in the other hub's panel, and join with it through **Join a hub** again. Each hub publishes its own services.
