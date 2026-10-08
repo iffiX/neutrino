@@ -226,10 +226,12 @@ function departureWarning(leaving: OverlayKindView[]): string | undefined {
   for (const kind of leaving) {
     if (kind.client_count > 0) {
       lines.push(
-        t("ui.overlay.warning_clients", {
-          count: kind.client_count,
-          title: kindTitle(kind),
-        }),
+        t(
+          kind.client_count === 1
+            ? "ui.overlay.warning_clients_one"
+            : "ui.overlay.warning_clients",
+          { count: kind.client_count, title: kindTitle(kind) },
+        ),
       );
     }
     if (kind.is_active) {

@@ -431,6 +431,7 @@
   "ui.overlay.topology_no_peers": "no peers yet",
   "ui.overlay.topology_title": "Topology",
   "ui.overlay.warning_clients": "{count} online clients are connected through {title}.",
+  "ui.overlay.warning_clients_one": "1 online client is connected through {title}.",
   "ui.overlay.warning_leaving": "{title} stops, and the way into this box through it closes.",
   "ui.overlay.warning_mode": "EasyTier restarts, and connections over it drop for a moment.",
   "ui.overlay.warning_new_secret": "A different secret is a different network: every other machine stays on the old one until it is changed too.",
