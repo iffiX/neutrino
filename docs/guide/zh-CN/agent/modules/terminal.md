@@ -4,7 +4,7 @@ title: 终端
 
 # 终端（Terminal）
 
-**Terminal** 模块设定受管机器上的终端以哪个账户运行、启动哪个 shell 程序。被控端的安装包里带着它，所以每台受管机器都有这个标签，不用安装，也不能卸载。
+**Terminal** 模块设定受管机器上的终端以哪个账户运行、启动哪个 shell 程序，Windows 上只能设 shell 程序。被控端的安装包里带着它，所以每台受管机器都有这个标签，不用安装，也不能卸载。
 
 | 系统    | 能设置的内容                        |
 | ------- | ----------------------------------- |
@@ -32,4 +32,4 @@ title: 终端
 | `path_invalid`           | shell 程序不是完整路径             |
 | `shell_program_unusable` | 机器上没有这个程序，或者它不能运行 |
 
-账户或程序后来从机器上消失时，再开的终端照样关闭，错误码是 `account_unknown` 或 `shell_program_unusable`。终端不改用 root 运行。
+账户或程序后来从机器上消失时，新开的终端打不开，标签下显示 `account_unknown` 或 `shell_program_unusable` 的说明。终端不改用 root 运行。

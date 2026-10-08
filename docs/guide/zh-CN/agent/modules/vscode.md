@@ -25,7 +25,7 @@ title: VS Code
 1. 在 **实例** 下选择 **添加实例**（Add instance）。
 1. 在 **账户**（Account）里填机器上一个账户的名字。
 1. 可选：改 **端口**（Port）。新实例默认用已占用的最大端口加一，从 8000 起。
-1. 如果是 Windows 机器，在“账户名加 **的 Windows 登录**”（Windows login for）那一栏里选它的登录信息。
+1. 如果是 Windows 机器，选这个账户的登录信息。那一栏的标题是账户名后接 **的 Windows 登录**（Windows login for）。
 1. 选择 **应用 VS Code**（Apply VS Code）。机器保存实例并重启它们。
 
 ![中枢所在机器上的 VS Code 标签，一个实例在运行](/guide/zh/vscode_panel.webp)
