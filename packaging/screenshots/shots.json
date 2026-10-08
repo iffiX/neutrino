@@ -1093,7 +1093,7 @@
       "url": "/",
       "element": "viewport",
       "wait_for": "#content .card",
-      "state": "client_state.json as committed."
+      "state": "client_state.json as committed: the hub reached over the LAN, with its round trip."
     },
     {
       "file": "client_connected.png",
@@ -1108,7 +1108,7 @@
       "url": "/",
       "element": "viewport",
       "wait_for": "#content .card",
-      "state": "client_state.json as committed."
+      "state": "client_state.json as committed: the hub reached over the LAN, with its round trip."
     },
     {
       "file": "client_network_picker.png",
@@ -1119,8 +1119,10 @@
       "url": "/",
       "element": "viewport",
       "wait_for": "#content .card",
-      "state": "client_state.json as committed.",
-      "manual": "Open the virtual network picker on the home hub's row."
+      "state": "client_state.json as committed: the hub's virtual network is off, so the picker opens.",
+      "press": [
+        ".overlay_pick .picker_field"
+      ]
     },
     {
       "file": "client_network_picker.png",
@@ -1131,8 +1133,10 @@
       "url": "/",
       "element": "viewport",
       "wait_for": "#content .card",
-      "state": "client_state.json as committed.",
-      "manual": "Open the virtual network picker on the home hub's row."
+      "state": "client_state.json as committed: the hub's virtual network is off, so the picker opens.",
+      "press": [
+        ".overlay_pick .picker_field"
+      ]
     },
     {
       "file": "client_files_mounted.png",
@@ -1143,8 +1147,10 @@
       "url": "/",
       "element": "viewport",
       "wait_for": "#content .card",
-      "state": "client_state.json as committed.",
-      "manual": "Open the Files page of the window."
+      "state": "client_state.json as committed: the media share is mounted.",
+      "press": [
+        "#tabs .tab:has(span:text-is(\"{ui.panel_files}\"))"
+      ]
     },
     {
       "file": "client_files_mounted.png",
@@ -1155,8 +1161,10 @@
       "url": "/",
       "element": "viewport",
       "wait_for": "#content .card",
-      "state": "client_state.json as committed.",
-      "manual": "Open the Files page of the window."
+      "state": "client_state.json as committed: the media share is mounted.",
+      "press": [
+        "#tabs .tab:has(span:text-is(\"{ui.panel_files}\"))"
+      ]
     },
     {
       "file": "client_terminal.png",
@@ -1166,9 +1174,14 @@
       "viewport": "desktop",
       "url": "/",
       "element": "viewport",
-      "wait_for": "#content",
-      "state": "client_state.json as committed.",
-      "manual": "Open the Terminal page of the window, so the kept session's tab shows."
+      "wait_for": "#content .card",
+      "state": "client_state.json as committed: one session on each machine; the server and desktop tabs are closed and the hub's shell is switched to Persistent before the shot.",
+      "press": [
+        "#tabs .tab:has(span:text-is(\"{ui.panel_terminals}\"))",
+        ".term_tab:has(.term_tab_label[title=\"server\"]) .term_tab_close",
+        ".term_tab:has(.term_tab_label[title=\"desktop\"]) .term_tab_close",
+        ".term_switches .switch:has-text(\"{ui.terminal_persistent}\")"
+      ]
     },
     {
       "file": "client_terminal.png",
@@ -1178,9 +1191,14 @@
       "viewport": "desktop",
       "url": "/",
       "element": "viewport",
-      "wait_for": "#content",
-      "state": "client_state.json as committed.",
-      "manual": "Open the Terminal page of the window, so the kept session's tab shows."
+      "wait_for": "#content .card",
+      "state": "client_state.json as committed: one session on each machine; the server and desktop tabs are closed and the hub's shell is switched to Persistent before the shot.",
+      "press": [
+        "#tabs .tab:has(span:text-is(\"{ui.panel_terminals}\"))",
+        ".term_tab:has(.term_tab_label[title=\"server\"]) .term_tab_close",
+        ".term_tab:has(.term_tab_label[title=\"desktop\"]) .term_tab_close",
+        ".term_switches .switch:has-text(\"{ui.terminal_persistent}\")"
+      ]
     },
     {
       "file": "client_terminals_three.png",
@@ -1190,9 +1208,14 @@
       "viewport": "desktop",
       "url": "/",
       "element": "viewport",
-      "wait_for": "#content .term_page",
-      "state": "client_state.json with hub, server and desktop as the hub's machines.",
-      "manual": "Open the Terminals page of the window and open a terminal on each of hub, server and desktop, so three tabs show."
+      "wait_for": "#content .card",
+      "state": "client_state.json as committed: one session on each of hub, server and desktop; each tab is selected so its shell attaches, hub last.",
+      "press": [
+        "#tabs .tab:has(span:text-is(\"{ui.panel_terminals}\"))",
+        ".term_tab_label[title=\"server\"]",
+        ".term_tab_label[title=\"desktop\"]",
+        ".term_tab_label[title=\"hub\"]"
+      ]
     },
     {
       "file": "client_terminals_three.png",
@@ -1202,9 +1225,14 @@
       "viewport": "desktop",
       "url": "/",
       "element": "viewport",
-      "wait_for": "#content .term_page",
-      "state": "client_state.json with hub, server and desktop as the hub's machines.",
-      "manual": "Open the Terminals page of the window and open a terminal on each of hub, server and desktop, so three tabs show."
+      "wait_for": "#content .card",
+      "state": "client_state.json as committed: one session on each of hub, server and desktop; each tab is selected so its shell attaches, hub last.",
+      "press": [
+        "#tabs .tab:has(span:text-is(\"{ui.panel_terminals}\"))",
+        ".term_tab_label[title=\"server\"]",
+        ".term_tab_label[title=\"desktop\"]",
+        ".term_tab_label[title=\"hub\"]"
+      ]
     },
     {
       "file": "client_remote_desktops.png",
@@ -1214,9 +1242,11 @@
       "viewport": "desktop",
       "url": "/",
       "element": "viewport",
-      "wait_for": "#content .card .feat",
-      "state": "client_state.json with desktop's desktop entry and viewers marking it running, so its row reads Viewer open.",
-      "manual": "Open the Remote desktops page of the window."
+      "wait_for": "#content .card",
+      "state": "client_state.json as committed: viewers marks desktop's entry running, so its row reads Viewer open.",
+      "press": [
+        "#tabs .tab:has(span:text-is(\"{ui.panel_desktops}\"))"
+      ]
     },
     {
       "file": "client_remote_desktops.png",
@@ -1226,9 +1256,11 @@
       "viewport": "desktop",
       "url": "/",
       "element": "viewport",
-      "wait_for": "#content .card .feat",
-      "state": "client_state.json with desktop's desktop entry and viewers marking it running, so its row reads Viewer open.",
-      "manual": "Open the Remote desktops page of the window."
+      "wait_for": "#content .card",
+      "state": "client_state.json as committed: viewers marks desktop's entry running, so its row reads Viewer open.",
+      "press": [
+        "#tabs .tab:has(span:text-is(\"{ui.panel_desktops}\"))"
+      ]
     },
     {
       "file": "client_web_vscode.png",
@@ -1238,9 +1270,11 @@
       "viewport": "desktop",
       "url": "/",
       "element": "viewport",
-      "wait_for": "#content .card .feat",
-      "state": "client_state.json with hub's VS Code web entry in forwards, so its row reads the forwarded port.",
-      "manual": "Open the Web page of the window."
+      "wait_for": "#content .card",
+      "state": "client_state.json as committed: the VS Code entry on hub carries a forward, so its row reads the forwarded port.",
+      "press": [
+        "#tabs .tab:has(span:text-is(\"{ui.panel_web}\"))"
+      ]
     },
     {
       "file": "client_web_vscode.png",
@@ -1250,9 +1284,11 @@
       "viewport": "desktop",
       "url": "/",
       "element": "viewport",
-      "wait_for": "#content .card .feat",
-      "state": "client_state.json with hub's VS Code web entry in forwards, so its row reads the forwarded port.",
-      "manual": "Open the Web page of the window."
+      "wait_for": "#content .card",
+      "state": "client_state.json as committed: the VS Code entry on hub carries a forward, so its row reads the forwarded port.",
+      "press": [
+        "#tabs .tab:has(span:text-is(\"{ui.panel_web}\"))"
+      ]
     },
     {
       "file": "app_join_scan.png",
