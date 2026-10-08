@@ -582,6 +582,7 @@ def capture_client(browser, shots: list, rules: list, viewports: dict) -> None:
         labels = read_labels(CLIENT_LOCALES, language)
         try:
             for shot in batch:
+                server.variant = shot.get("client_variant", "")
                 page = context.new_page()
                 attempt(
                     page, shot, labels, rules, base_url=server.url, viewports=viewports
