@@ -8,6 +8,10 @@
     "phone": {
       "width": 400,
       "height": 860
+    },
+    "wide": {
+      "width": 1680,
+      "height": 1050
     }
   },
   "pending": [
@@ -1446,57 +1450,52 @@
       "language": "console",
       "page": "hub/netbird.md",
       "source": "console",
-      "viewport": "desktop",
+      "viewport": "wide",
       "url": "https://app.netbird.io/setup-keys",
       "element": "viewport",
-      "wait_for": "text=Setup Keys",
-      "state": "The NetBird console's Setup Keys page listing the reusable key.",
-      "hide": [
-        "header img",
-        "header button:has(img)"
-      ],
-      "_todo": "Not verified against the NetBird console: the page path, the wait_for text, the dialog role and the hide selectors for the avatar and account menu."
+      "wait_for": "text=Setup keys are pre-authentication keys",
+      "state": "The owner's NetBird account with a reusable key named Test and the one-off keys the console created on its own; the survey banner is closed first.",
+      "press": [
+        "div.fixed.z-50.w-full:has-text(\"survey\") button"
+      ]
     },
     {
       "file": "console_netbird_key_create.png",
       "language": "console",
       "page": "hub/netbird.md",
       "source": "console",
-      "viewport": "desktop",
+      "viewport": "wide",
       "url": "https://app.netbird.io/setup-keys",
       "element": "[role=\"dialog\"]",
-      "wait_for": "[role=\"dialog\"]",
-      "state": "The NetBird console's Setup Keys page.",
-      "manual": "Select Create Setup Key and fill the dialog: a name, Make this key reusable on, no usage limit, the longest expiry, one new auto-assigned group; leave it open.",
-      "hide": [
-        "header img",
-        "header button:has(img)"
+      "wait_for": "text=Setup keys are pre-authentication keys",
+      "state": "The Create New Setup Key dialog with the name test typed in and Make this key reusable switched on; nothing is created.",
+      "press": [
+        "div.fixed.z-50.w-full:has-text(\"survey\") button",
+        "button:has-text(\"Create Key\")",
+        "[role=\"dialog\"] [role=\"switch\"] >> nth=0"
       ],
-      "_todo": "Not verified against the NetBird console: the page path, the wait_for text, the dialog role and the hide selectors for the avatar and account menu."
+      "fill": {
+        "[role=\"dialog\"] input[placeholder=\"e.g., AWS Servers\"]": "test"
+      }
     },
     {
       "file": "console_netbird_key_created.png",
       "language": "console",
       "page": "hub/netbird.md",
       "source": "console",
-      "viewport": "desktop",
+      "viewport": "wide",
       "url": "https://app.netbird.io/setup-keys",
       "element": "[role=\"dialog\"]",
       "wait_for": "[role=\"dialog\"]",
       "state": "The NetBird console's Setup Keys page.",
-      "manual": "Create the reusable key and leave the dialog that shows it once open.",
-      "hide": [
-        "header img",
-        "header button:has(img)"
-      ],
-      "_todo": "Not verified against the NetBird console: the page path, the wait_for text, the dialog role and the hide selectors for the avatar and account menu."
+      "manual": "Taken by hand once: the dialog the console shows after Create Setup Key, with the key painted over by the redaction; kept as the owner's own capture."
     },
     {
       "file": "console_netbird_network.png",
       "language": "console",
       "page": "scenarios/netbird_lan_routes.md",
       "source": "console",
-      "viewport": "desktop",
+      "viewport": "wide",
       "url": "https://app.netbird.io/networks",
       "element": "viewport",
       "wait_for": "text=Networks",
@@ -1513,7 +1512,7 @@
       "language": "console",
       "page": "scenarios/netbird_lan_routes.md",
       "source": "console",
-      "viewport": "desktop",
+      "viewport": "wide",
       "url": "https://app.netbird.io/acls",
       "element": "[role=\"dialog\"]",
       "wait_for": "[role=\"dialog\"]",
@@ -1533,7 +1532,7 @@
         "quick-start.md"
       ],
       "source": "console",
-      "viewport": "desktop",
+      "viewport": "wide",
       "url": "https://console.easytier.net/",
       "element": "viewport",
       "wait_for": "body",
@@ -1553,7 +1552,7 @@
         "quick-start.md"
       ],
       "source": "console",
-      "viewport": "desktop",
+      "viewport": "wide",
       "url": "https://console.easytier.net/",
       "element": "viewport",
       "wait_for": "body",
@@ -1573,7 +1572,7 @@
         "quick-start.md"
       ],
       "source": "console",
-      "viewport": "desktop",
+      "viewport": "wide",
       "url": "https://console.easytier.net/",
       "element": "viewport",
       "wait_for": "body",
@@ -1590,7 +1589,7 @@
       "language": "console",
       "page": "scenarios/easytier_lan_routes.md",
       "source": "console",
-      "viewport": "desktop",
+      "viewport": "wide",
       "url": "https://console.easytier.net/",
       "element": "viewport",
       "wait_for": "body",

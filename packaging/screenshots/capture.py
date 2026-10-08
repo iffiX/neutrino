@@ -64,6 +64,7 @@ DEVICE_SCALE = 2
 WAIT_TIMEOUT_MS = 30_000
 NETWORK_IDLE_TIMEOUT_MS = 10_000
 PRESS_SETTLE_MS = 800
+PRESS_TIMEOUT_MS = 5_000
 # A label key inside a selector, ``{ui.settings.https_title}``.
 LABEL_KEY = re.compile(r"\{(ui\.[A-Za-z0-9_.]+)\}")
 
@@ -312,15 +313,20 @@ def take(
         wait_until="load" if base_url else "domcontentloaded",
         timeout=WAIT_TIMEOUT_MS * 2,
     )
-    for selector in shot.get("press", []):
-        page.locator(resolve(selector, labels)).first.click()
-        page.wait_for_timeout(PRESS_SETTLE_MS)
-    for selector, text in shot.get("fill", {}).items():
-        page.locator(resolve(selector, labels)).first.fill(text)
     if shot.get("manual"):
         print(f"\n{shot['language']}/{shot['file']}: {shot['manual']}")
         input("Press Enter when the page shows it. ")
     page.wait_for_selector(resolve(shot["wait_for"], labels), timeout=WAIT_TIMEOUT_MS)
+    for selector in shot.get("press", []):
+        target = page.locator(resolve(selector, labels)).first
+        try:
+            target.click(timeout=PRESS_TIMEOUT_MS)
+        except PlaywrightTimeoutError:
+            print(f"  nothing to press for {selector}")
+            continue
+        page.wait_for_timeout(PRESS_SETTLE_MS)
+    for selector, text in shot.get("fill", {}).items():
+        page.locator(resolve(selector, labels)).first.fill(text)
     try:
         page.wait_for_load_state("networkidle", timeout=NETWORK_IDLE_TIMEOUT_MS)
     except PlaywrightTimeoutError:
@@ -492,8 +498,9 @@ def capture_console(
         viewports: The viewport table.
         cdp_url: When set, the address of a browser already open on the
             profile, reached over the Chrome DevTools Protocol; its first
-            context holds the sign-in, and only the pages opened here are
-            closed. Empty opens the profile directory itself.
+            context holds the sign-in; a console's tab already open there is
+            reused, so the console keeps its session, and only pages opened
+            here are closed. Empty opens the profile directory itself.
     """
     if not shots:
         return
@@ -501,7 +508,9 @@ def capture_console(
         browser = playwright.chromium.connect_over_cdp(cdp_url)
         context = browser.contexts[0]
         for shot in shots:
-            page = context.new_page()
+            origin = "/".join(shot["url"].split("/", 3)[:3])
+            kept = next((p for p in context.pages if p.url.startswith(origin)), None)
+            page = kept or context.new_page()
             session = context.new_cdp_session(page)
             size = viewports[shot["viewport"]]
             session.send(
@@ -516,7 +525,9 @@ def capture_console(
             try:
                 take(page, shot, {}, rules, base_url="", viewports=viewports)
             finally:
-                page.close()
+                session.detach()
+                if kept is None:
+                    page.close()
         return
     context = playwright.chromium.launch_persistent_context(
         str(console_profile()), headless=False, device_scale_factor=DEVICE_SCALE
