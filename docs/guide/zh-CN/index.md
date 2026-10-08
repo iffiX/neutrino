@@ -20,7 +20,7 @@ features:
     details: 把微子装到电脑上，手机和笔记本加入，在哪都能打开它的 AI 会话、编辑器、终端、桌面和文件。
     link: /zh-CN/quick-start
   - title: 进阶用法
-    details: 选哪种外部访问，一台笔记本管所有机器，经自己的 VPS 连回家，让中枢当路由器，访问没装被控端的设备。
+    details: 选哪种外部访问，一台笔记本管所有机器，经自己的 VPS 连回家，让中枢当路由器，把一台机器做成 NAS，访问没装被控端的设备。
     link: /zh-CN/scenarios/choose_a_way_in
   - title: 文档参考
     details: 面板、被控端、客户端的每一页，三条命令，和故障排查。

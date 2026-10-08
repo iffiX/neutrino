@@ -1364,7 +1364,8 @@
       "language": "en",
       "page": "agent/modules/shares.md",
       "pages": [
-        "quick-start/files.md"
+        "quick-start/files.md",
+        "scenarios/nas.md"
       ],
       "source": "panel",
       "viewport": "tall",
@@ -1471,6 +1472,9 @@
       "file": "zfs.png",
       "language": "en",
       "page": "agent/modules/zfs.md",
+      "pages": [
+        "scenarios/nas.md"
+      ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/modules",
@@ -1662,7 +1666,8 @@
       "language": "en",
       "page": "client/desktop.md",
       "pages": [
-        "quick-start/files.md"
+        "quick-start/files.md",
+        "scenarios/nas.md"
       ],
       "source": "client",
       "viewport": "desktop",
@@ -1982,7 +1987,8 @@
       "language": "en",
       "page": "client/android.md",
       "pages": [
-        "quick-start/files.md"
+        "quick-start/files.md",
+        "scenarios/nas.md"
       ],
       "source": "app",
       "viewport": "app",
@@ -2277,7 +2283,8 @@
       "language": "os",
       "page": "client/desktop.md",
       "pages": [
-        "quick-start/files.md"
+        "quick-start/files.md",
+        "scenarios/nas.md"
       ],
       "source": "os",
       "viewport": "os",

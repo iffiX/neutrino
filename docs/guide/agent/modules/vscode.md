@@ -37,3 +37,9 @@ On Windows, an instance starts only with its account's password. Store the usern
 ## Open it from a client
 
 Each running instance is a row under **Web** on the [Services](../../hub/services.md) page, titled **VS Code** with the account in parentheses. The instance listens on its machine's loopback alone, so a client opens it with **Open** on its **Web** page. Its account's AI tools follow the machine's setting in [Point a machine's AI tools at the gateway](./ai_tools.md).
+
+## Ports
+
+**Port** is the port the instance listens on, at `127.0.0.1` on its machine. It is a number from 1024 to 65535, and no two instances on a machine share one. **Add instance** offers the port after the highest one in use. The hub publishes that port as the instance's **Web** entry, and the client forwards the entry to a port of its own.
+
+A program you start inside the editor, such as a development server on port 3000, gets no entry. The agent connects a client only to the ports its machine publishes, and the instance's port leads to the editor alone. To open it from a client, declare a **Web** or **Port** service with the machine's address and the program's port on the [Services](../../hub/services.md#declare-a-service-by-hand) page. The hub dials that address itself, so the program must listen on an address the hub reaches, such as `0.0.0.0`.

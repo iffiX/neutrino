@@ -20,7 +20,7 @@ features:
     details: Install Neutrino on the computer, join your phone and laptop, and open its AI sessions, editor, terminal, desktop and files from anywhere.
     link: /quick-start
   - title: Going further
-    details: Choose a way in, manage every machine from one laptop, reach home through your own VPS, make the hub a router, and reach devices without an agent.
+    details: Choose a way in, manage every machine from one laptop, reach home through your own VPS, make the hub a router, turn a machine into a NAS, and reach devices without an agent.
     link: /scenarios/choose_a_way_in
   - title: Reference
     details: Every page of the panel, the managed machines and the clients, the three commands, and troubleshooting.

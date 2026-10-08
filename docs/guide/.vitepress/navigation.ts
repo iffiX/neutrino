@@ -67,6 +67,7 @@ export const sidebarEn: DefaultTheme.SidebarItem[] = [
         text: "Make the hub a router or side gateway",
         link: "/scenarios/router_or_gateway",
       },
+      { text: "Make a machine a NAS", link: "/scenarios/nas" },
       {
         text: "Devices without an agent, over NetBird",
         link: "/scenarios/netbird_lan_routes",
@@ -214,6 +215,7 @@ export const sidebarZh: DefaultTheme.SidebarItem[] = [
         text: "把中枢配置成路由器或旁路网关",
         link: "/zh-CN/scenarios/router_or_gateway",
       },
+      { text: "把一台机器做成 NAS", link: "/zh-CN/scenarios/nas" },
       {
         text: "经 NetBird 访问没装被控端的设备",
         link: "/zh-CN/scenarios/netbird_lan_routes",
