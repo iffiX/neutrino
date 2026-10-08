@@ -24,10 +24,14 @@ from neutrino_client.core.resident import end_process
 from neutrino_client.exceptions import EnrollmentError, PlatformUnsupportedError
 
 SERVICES_PREFIX = "/api/services/"
-# The two routes that answer 101 and hand their connection to a terminal:
-# the one that carries what is typed, and the one that carries the output.
+# The routes that answer 101 and hand their connection to a terminal: the
+# two that carry what is typed, to a shell or to a command, and the one that
+# carries the output.
 TERMINAL_ATTACH_ROUTE = "/api/terminal/attach"
+TERMINAL_EXEC_ROUTE = "/api/terminal/exec"
 TERMINAL_OUTPUT_ROUTE = "/api/terminal/output"
+# The two flags a persist may carry.
+TERMINAL_PERSIST_FLAGS = ("is_persistent", "is_shared")
 # The header a 101 names the terminal in.
 TERMINAL_HEADER = "X-Neutrino-Terminal"
 # How long the answer is given to reach the caller before the process ends.
@@ -133,6 +137,8 @@ def dispatch(method: str, path: str, body: "dict | None", resident):
             return _answer(resident, resident.open_panel(_hub_id(payload)))
         if route == TERMINAL_ATTACH_ROUTE:
             return _attach_terminal(resident, payload)
+        if route == TERMINAL_EXEC_ROUTE:
+            return _open_exec(resident, payload)
         if route == TERMINAL_OUTPUT_ROUTE:
             return _terminal_output(resident, payload)
         if route == "/api/terminal/resize":
@@ -156,13 +162,7 @@ def dispatch(method: str, path: str, body: "dict | None", resident):
         if route == "/api/terminal/clear":
             return _answer_empty(resident.clear_terminal(_terminal_id(payload)))
         if route == "/api/terminal/persist":
-            return _answer_empty(
-                resident.persist_terminal(
-                    _terminal_id(payload),
-                    payload.get("is_persistent") is True,
-                    payload.get("is_shared") is True,
-                )
-            )
+            return _persist_terminal(resident, payload)
         if route == "/api/terminal/stop":
             return _answer_empty(
                 resident.stop_terminal_session(
@@ -226,7 +226,7 @@ def serve_upgrade(route: str, reply: dict, resident, *, read, write) -> None:
         write: ``write(data)`` writes the connection.
     """
     terminal_id = str(reply.get("terminal_id", ""))
-    if route == TERMINAL_ATTACH_ROUTE:
+    if route in (TERMINAL_ATTACH_ROUTE, TERMINAL_EXEC_ROUTE):
         resident.attach_terminal(terminal_id, read)
     elif route == TERMINAL_OUTPUT_ROUTE:
         resident.terminal_output(terminal_id, write)
@@ -343,10 +343,41 @@ def _attach_terminal(resident, body: dict):
         _size(body, "cols"),
         _size(body, "rows"),
         str(body.get("session_id", "") or ""),
+        is_shared=body.get("is_shared") is True,
     )
     if "code" in outcome:
         return refusal_status(str(outcome["code"])), outcome
     return 101, outcome
+
+
+def _open_exec(resident, body: dict):
+    """Run the command and answer 101 naming it, or the refusal."""
+    argv = body.get("argv")
+    outcome = resident.open_exec(
+        _hub_id(body),
+        str(body.get("device_id", "") or ""),
+        [str(part) for part in argv] if isinstance(argv, list) else [],
+        body.get("is_tty") is True,
+        _size(body, "cols"),
+        _size(body, "rows"),
+    )
+    if "code" in outcome:
+        return refusal_status(str(outcome["code"])), outcome
+    return 101, outcome
+
+
+def _persist_terminal(resident, body: dict):
+    """Send the flags a persist names, for an open terminal or a session by id."""
+    flags = {
+        name: body[name] is True for name in TERMINAL_PERSIST_FLAGS if name in body
+    }
+    if _terminal_id(body):
+        outcome = resident.persist_terminal(_terminal_id(body), **flags)
+    else:
+        outcome = resident.persist_terminal_session(
+            _hub_id(body), str(body.get("session_id", "") or ""), **flags
+        )
+    return _answer_empty(outcome)
 
 
 def _terminal_output(resident, body: dict):

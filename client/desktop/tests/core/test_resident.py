@@ -20,6 +20,7 @@ written.
 """
 
 import functools
+import io
 import json
 import socket
 import threading
@@ -1643,6 +1644,7 @@ def test_the_terminals_of_every_hub_are_stamped_with_it(two_hubs_up):
         "device_id": "d1",
         "name": "lepton",
         "is_online": True,
+        "is_shell_allowed": True,
         "sessions": [
             {
                 "session_id": "s1",
@@ -1656,7 +1658,14 @@ def test_the_terminals_of_every_hub_are_stamped_with_it(two_hubs_up):
     resident._sessions["c1"]._take_state(dict(HOME_STATE, terminals=[lepton]))
 
     assert resident.terminal_entries() == [
-        {"device_id": "d1", "name": "lepton", "is_online": True, "hub_id": "h1"}
+        {
+            "device_id": "d1",
+            "name": "lepton",
+            "is_online": True,
+            "is_shell_allowed": True,
+            "is_exec_allowed": False,
+            "hub_id": "h1",
+        }
     ]
     (row,) = resident.terminal_sessions()
     assert (row["hub_id"], row["device_id"], row["owner"], row["is_shared"]) == (
@@ -1668,9 +1677,22 @@ def test_the_terminals_of_every_hub_are_stamped_with_it(two_hubs_up):
 
 
 def offered(resident) -> None:
-    """The home hub offers a terminal on lepton."""
-    lepton = {"device_id": "d1", "name": "lepton", "is_online": True}
-    resident._sessions["c1"]._take_state(dict(HOME_STATE, terminals=[lepton]))
+    """The home hub offers a shell and commands on lepton, commands alone on muon."""
+    lepton = {
+        "device_id": "d1",
+        "name": "lepton",
+        "is_online": True,
+        "is_shell_allowed": True,
+        "is_exec_allowed": True,
+    }
+    muon = {
+        "device_id": "d2",
+        "name": "muon",
+        "is_online": True,
+        "is_shell_allowed": False,
+        "is_exec_allowed": True,
+    }
+    resident._sessions["c1"]._take_state(dict(HOME_STATE, terminals=[lepton, muon]))
 
 
 def test_a_terminal_opens_a_shell_stream_with_its_size(two_hubs_up):
@@ -1750,6 +1772,135 @@ def test_persist_names_the_terminals_session_and_stop_names_the_hub(two_hubs_up)
         ("persist", outcome["session_id"], True, True),
         ("stop", "kept-9"),
     ]
+
+
+def test_a_new_shared_terminal_says_so_and_a_resumed_one_does_not(two_hubs_up):
+    resident, scripts = two_hubs_up
+    offered(resident)
+
+    resident.open_terminal("h1", "d1", 80, 24, is_shared=True)
+    resident.open_terminal("h1", "d1", 80, 24, "kept-1", is_shared=True)
+
+    (made,) = scripts.sockets_of("hub.lan")
+    shells = [frame for frame in made.sent if frame.get("kind") == "shell"]
+    assert [frame.get("is_shared") for frame in shells] == [True, None]
+
+
+def test_a_machine_offered_for_commands_alone_opens_no_shell(two_hubs_up):
+    resident, _scripts = two_hubs_up
+    offered(resident)
+
+    assert resident.open_terminal("h1", "d2", 80, 24) == {
+        "code": "unknown_terminal",
+        "params": {"device_id": "d2"},
+    }
+
+
+def test_an_exec_opens_on_a_machine_offered_for_commands(two_hubs_up):
+    resident, scripts = two_hubs_up
+    offered(resident)
+
+    outcome = resident.open_exec("h1", "d2", ["uptime"], False, 80, 24)
+
+    (made,) = scripts.sockets_of("hub.lan")
+    (opened,) = [frame for frame in made.sent if frame.get("type") == "open"]
+    assert opened == {
+        "type": "open",
+        "stream": 1,
+        "kind": "exec",
+        "device_id": "d2",
+        "argv": ["uptime"],
+        "is_tty": False,
+        "cols": 80,
+        "rows": 24,
+    }
+    assert resident.has_terminal(outcome["terminal_id"])
+
+
+def test_an_exec_on_a_machine_not_offered_for_commands_opens_nothing(two_hubs_up):
+    resident, _scripts = two_hubs_up
+    offered(resident)
+    resident._sessions["c1"]._take_state(
+        dict(
+            HOME_STATE,
+            terminals=[
+                {
+                    "device_id": "d1",
+                    "name": "lepton",
+                    "is_online": True,
+                    "is_shell_allowed": True,
+                }
+            ],
+        )
+    )
+
+    assert resident.open_exec("h1", "d1", ["ls"], False, 80, 24) == {
+        "code": "unknown_terminal",
+        "params": {"device_id": "d1"},
+    }
+    assert resident.open_exec("h9", "d1", ["ls"], False, 80, 24)["code"] == (
+        "unknown_hub"
+    )
+
+
+def test_an_execs_pieces_carry_its_input_its_eof_and_its_two_outputs(two_hubs_up):
+    from neutrino_client.core.terminal import encode_piece, read_piece
+
+    resident, scripts = two_hubs_up
+    offered(resident)
+    terminal_id = resident.open_exec("h1", "d2", ["cat"], False, 80, 24)["terminal_id"]
+    session = resident._sessions["c1"]
+    session._streams.take_credit({"type": "credit", "stream": 1, "bytes": 64})
+    typed = io.BytesIO(encode_piece(b"hi\n") + encode_piece(b""))
+    is_ended = threading.Event()
+
+    def read(size):
+        data = typed.read(size)
+        if not data:
+            is_ended.wait(timeout=5)
+        return data
+
+    typing = threading.Thread(target=resident.attach_terminal, args=(terminal_id, read))
+    typing.start()
+    (made,) = scripts.sockets_of("hub.lan")
+    wait_until(lambda: {"type": "eof", "stream": 1} in made.sent)
+    session._streams.take_bytes(1, b"\x01hi\n")
+    session._streams.take_bytes(1, b"\x02warn")
+    session._streams.take_close(
+        {"type": "close", "stream": 1, "params": {"exit_code": 4}}
+    )
+    is_ended.set()
+    typing.join(timeout=5)
+    shown = io.BytesIO()
+    resident.terminal_output(terminal_id, shown.write)
+
+    sent = made.sent
+    assert sent.index((1, b"hi\n")) < sent.index({"type": "eof", "stream": 1})
+    assert {"type": "close", "stream": 1, "code": "", "params": {}} not in sent
+    shown.seek(0)
+    assert [read_piece(shown.read), read_piece(shown.read)] == [
+        b"\x01hi\n",
+        b"\x02warn",
+    ]
+    assert resident.terminal_result(terminal_id) == {"exit_code": 4}
+
+
+def test_persist_by_session_id_names_only_the_flag_given(two_hubs_up):
+    resident, _scripts = two_hubs_up
+    offered(resident)
+    session = resident._sessions["c1"]
+    asked = []
+
+    def persist(session_id, is_persistent, is_shared):
+        asked.append((session_id, is_persistent, is_shared))
+
+    session.persist_shell = persist
+
+    assert resident.persist_terminal_session("h1", "kept-1", is_shared=True) == {}
+    assert resident.persist_terminal_session("h9", "kept-1", True)["code"] == (
+        "unknown_hub"
+    )
+    assert asked == [("kept-1", None, True)]
 
 
 def test_a_machine_the_hub_does_not_offer_opens_nothing(two_hubs_up):

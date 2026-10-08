@@ -15,7 +15,8 @@ whether this client is switched off, and the session answers each state and
 every interval with a ``report``. What a
 service handler needs from the hub comes down a ``service`` stream the
 session opens on request, a terminal on a managed machine comes down a
-``shell`` stream carrying bytes both ways, and every connection a local
+``shell`` stream carrying bytes both ways, one command runs on an ``exec``
+stream, and every connection a local
 forward accepts rides a ``connect`` stream. The resident owns the handlers and the store; the
 session tells it what changed through its callbacks and never touches them.
 
@@ -76,6 +77,7 @@ from neutrino_client.constants import (
     CLIENT_STREAM_CODE_KIND_UNKNOWN,
     CLIENT_STREAM_KIND_COMMAND,
     CLIENT_STREAM_KIND_CONNECT,
+    CLIENT_STREAM_KIND_EXEC,
     CLIENT_STREAM_KIND_SERVICE,
     CLIENT_STREAM_KIND_SHELL,
     CLIENT_STREAM_TIMEOUT_S,
@@ -300,7 +302,8 @@ def clean_terminals(value) -> dict:
         value: What the state carried.
 
     Returns:
-        ``{"machines": [{device_id, name, is_online}], "sessions": [...]}``,
+        ``{"machines": [{device_id, name, is_online, is_shell_allowed,
+        is_exec_allowed}], "sessions": [...]}``,
         each session as :func:`_clean_session` keeps it and stamped with
         its machine; a machine or a session without an id is dropped.
     """
@@ -322,6 +325,8 @@ def clean_terminals(value) -> dict:
                 "device_id": device_id,
                 "name": str(entry.get("name", "") or "") or device_id,
                 "is_online": bool(entry.get("is_online")),
+                "is_shell_allowed": entry.get("is_shell_allowed") is True,
+                "is_exec_allowed": entry.get("is_exec_allowed") is True,
             }
         )
         nested = entry.get("sessions")
@@ -345,8 +350,9 @@ def _clean_session(entry, device_id: str) -> "dict | None":
             names its own.
 
     Returns:
-        ``{session_id, device_id, owner, owner_name, is_owned, is_persistent,
-        is_shared, attached_count, title, started_at}``; None for an entry
+        ``{session_id, device_id, account, owner, owner_name, is_owned,
+        is_persistent, is_shared, attached_count, title, started_at}``; None
+        for an entry
         without a session id or a machine.
     """
     if not isinstance(entry, dict) or not entry.get("session_id"):
@@ -361,6 +367,7 @@ def _clean_session(entry, device_id: str) -> "dict | None":
     return {
         "session_id": str(entry["session_id"]),
         "device_id": device_id,
+        "account": str(entry.get("account", "") or ""),
         "owner": str(entry.get("owner", "") or ""),
         "owner_name": str(entry.get("owner_name", "") or "")
         or str(entry.get("owner", "") or ""),
@@ -701,8 +708,8 @@ class ClientHubSession:
         """The machines the hub offers a terminal on, while its socket is up.
 
         Returns:
-            ``[{device_id, name, is_online}]``; empty while the socket is
-            down.
+            ``[{device_id, name, is_online, is_shell_allowed,
+            is_exec_allowed}]``; empty while the socket is down.
         """
         with self._lock:
             if not self._is_welcomed:
@@ -710,19 +717,26 @@ class ClientHubSession:
             return [dict(entry) for entry in self._terminals["machines"]]
 
     def note_session_flags(
-        self, session_id: str, is_persistent: bool, is_shared: bool
+        self,
+        session_id: str,
+        is_persistent: "bool | None" = None,
+        is_shared: "bool | None" = None,
     ) -> None:
-        """Show a shell session's two flags as set, until the hub's next state.
+        """Show a shell session's flags as set, until the hub's next state.
 
         Args:
             session_id: The shell session's id.
-            is_persistent: Whether the machine keeps it.
-            is_shared: Whether every client with terminal rights lists it.
+            is_persistent: Whether the machine keeps it; None leaves it.
+            is_shared: Whether every client with terminal rights lists it;
+                None leaves it.
         """
         with self._lock:
             for entry in self._terminals["sessions"]:
-                if entry["session_id"] == session_id:
+                if entry["session_id"] != session_id:
+                    continue
+                if is_persistent is not None:
                     entry["is_persistent"] = bool(is_persistent)
+                if is_shared is not None:
                     entry["is_shared"] = bool(is_shared)
 
     def terminal_sessions(self) -> list:
@@ -922,6 +936,7 @@ class ClientHubSession:
         rows: int,
         session_id: str,
         is_resumed: bool = False,
+        is_shared: bool = False,
     ) -> ClientStream:
         """Open a ``shell`` stream to one managed machine, credit granted.
 
@@ -935,6 +950,7 @@ class ClientHubSession:
             session_id: The shell session's id, a fresh uuid for a new one.
             is_resumed: Whether ``session_id`` names a session the machine
                 keeps, attached to again with its kept output.
+            is_shared: Whether a new session is shared from its start.
 
         Returns:
             The open stream, to read, send on and close.
@@ -950,23 +966,58 @@ class ClientHubSession:
         }
         if is_resumed:
             args["is_resumed"] = True
+        if is_shared:
+            args["is_shared"] = True
         return self._live_streams().open(CLIENT_STREAM_KIND_SHELL, args, has_bytes=True)
+
+    def open_exec(
+        self, device_id: str, argv: list, is_tty: bool, cols: int, rows: int
+    ) -> ClientStream:
+        """Open an ``exec`` stream: one command on one managed machine.
+
+        Without ``is_tty`` each frame down starts with its ``fd`` byte, 1 for
+        stdout and 2 for stderr. The hub's refusal, or the command's
+        ``exit_code``, arrives as the stream's close.
+
+        Args:
+            device_id: The machine, as the state's ``terminals`` names it.
+            argv: The command and its arguments, run with no shell between.
+            is_tty: Whether it runs on a pseudo-terminal.
+            cols: The pseudo-terminal's width in columns.
+            rows: The pseudo-terminal's height in rows.
+
+        Returns:
+            The open stream, to read, send on, end the input of and close.
+
+        Raises:
+            GatewayUnreachable: When there is no socket, or it is gone.
+        """
+        args = {
+            "device_id": device_id,
+            "argv": [str(part) for part in argv],
+            "is_tty": bool(is_tty),
+            "cols": int(cols),
+            "rows": int(rows),
+        }
+        return self._live_streams().open(CLIENT_STREAM_KIND_EXEC, args, has_bytes=True)
 
     def persist_shell(
         self,
         session_id: str,
-        is_persistent: bool,
-        is_shared: bool,
+        is_persistent: "bool | None" = None,
+        is_shared: "bool | None" = None,
         timeout_s: float = CLIENT_STREAM_TIMEOUT_S,
     ) -> dict:
         """Tell the hub whether a shell session outlives its stream, and who sees it.
 
+        The ``persist`` names only the flags given.
+
         Args:
             session_id: The shell session's id.
             is_persistent: Whether the machine keeps it once nobody is
-                attached.
+                attached; None leaves it.
             is_shared: Whether every client with terminal rights on the
-                machine lists it.
+                machine lists it; None leaves it.
             timeout_s: How long to wait for the close.
 
         Returns:
@@ -978,15 +1029,12 @@ class ClientHubSession:
             GatewayUnreachable: When there is no socket, it ends, or the
                 close does not arrive in time.
         """
-        return self._agent_command(
-            {
-                "verb": CLIENT_SHELL_PERSIST_VERB,
-                "session_id": session_id,
-                "is_persistent": bool(is_persistent),
-                "is_shared": bool(is_shared),
-            },
-            timeout_s,
-        )
+        args = {"verb": CLIENT_SHELL_PERSIST_VERB, "session_id": session_id}
+        if is_persistent is not None:
+            args["is_persistent"] = bool(is_persistent)
+        if is_shared is not None:
+            args["is_shared"] = bool(is_shared)
+        return self._agent_command(args, timeout_s)
 
     def stop_shell_session(
         self, session_id: str, timeout_s: float = CLIENT_STREAM_TIMEOUT_S

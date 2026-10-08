@@ -17,6 +17,7 @@ FRAME_CLOSE = "close"
 FRAME_CREDIT = "credit"
 FRAME_PING = "ping"
 FRAME_PONG = "pong"
+FRAME_EOF = "eof"
 
 STREAM_ID_BYTES = 4
 STREAM_ID_MAX = (1 << 32) - 1

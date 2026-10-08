@@ -32,6 +32,28 @@ NO_TERMINAL_LINE = (
     "error: no terminal to answer on; run it again with --yes to go ahead "
     "without asking"
 )
+# What ``nclient terminal`` prints of its own.
+EXEC_COMMAND_MISSING = (
+    "name the command after --, like: nclient terminal exec <machine> -- uptime"
+)
+SESSION_AMBIGUOUS_LINE = (
+    "several sessions on {machine} start with {prefix}; give more of the id:"
+)
+TERMINAL_LIST_COLUMNS = (
+    "MACHINE",
+    "HUB",
+    "SESSION",
+    "TITLE",
+    "ACCOUNT",
+    "OWNER",
+    "MINE",
+    "PERSISTENT",
+    "SHARED",
+    "WINDOWS",
+)
+TERMINAL_LIST_NONE = "-"
+TERMINAL_LIST_YES = "yes"
+TERMINAL_LIST_NO = "no"
 
 # What each typed refusal or failure code says on this surface.
 CLIENT_CODE_WORDS = {
@@ -55,6 +77,8 @@ CLIENT_CODE_WORDS = {
     ),
     "session_not_owned": "this session belongs to someone else and is not shared",
     "session_unknown": "the machine no longer keeps this session",
+    "account_unknown": "that machine has no account {account}",
+    "shell_program_unusable": "that machine cannot run {path}",
     "kind_unknown": "the hub is too old to open this; update the hub",
     "overlay_daemon_down": "the virtual network service is not running on this machine; reinstall the client",
     "overlay_not_authorized": "joining the virtual network was not authorized on this machine",

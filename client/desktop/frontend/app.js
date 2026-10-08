@@ -1460,7 +1460,7 @@ function machineStrip(state) {
   for (const hub of state.hubs || []) {
     if (!isReachable(hub)) continue;
     const machines = (((state.terminals || {}).machines) || []).filter(
-      (machine) => machine.hub_id === hub.hub_id);
+      (machine) => machine.hub_id === hub.hub_id && machine.is_shell_allowed);
     for (const machine of machines) {
       count += 1;
       const isPicked = !!picked && picked.machine === machine;
@@ -1501,7 +1501,7 @@ function pickedMachine(state) {
   for (const hub of state.hubs || []) {
     if (!isReachable(hub) || hub.hub_id !== shellPick.hub_id) continue;
     const machine = machineOf(state, hub.hub_id, shellPick.device_id);
-    if (machine) return { hub: hub, machine: machine };
+    if (machine && machine.is_shell_allowed) return { hub: hub, machine: machine };
   }
   return null;
 }

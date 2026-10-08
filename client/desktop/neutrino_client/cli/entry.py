@@ -10,7 +10,7 @@ do the same things from a terminal.
     nclient gui [--hidden]
     nclient quit
     nclient service list | <kind> <action> [--hub <name>]
-    nclient terminal <machine> [--hub <name>] [--session <id>]
+    nclient terminal list | open | attach | exec | persist | share | stop
 
 The client runs as a person and never as root. The exceptions are
 ``nclient easytier-daemon``, which the system starts as root, or as SYSTEM
@@ -43,6 +43,10 @@ from neutrino_client.services.ai import AI_REASONING_EFFORTS
 
 AI_PROVIDER_HUB = "hub"
 AI_PROVIDER_OFF = "off"
+# The one option of ``nclient terminal``'s verbs that takes a value.
+TERMINAL_VALUE_OPTIONS = ("--hub",)
+# What separates ``exec``'s own arguments from the command.
+TERMINAL_COMMAND_SEPARATOR = "--"
 
 
 def main() -> int:
@@ -79,23 +83,15 @@ def main() -> int:
     )
     quit_parser = subparsers.add_parser("quit", help="stop the running client")
     quit_parser.add_argument("--upgrade", action="store_true", help=argparse.SUPPRESS)
-    terminal_parser = subparsers.add_parser(
-        "terminal", help="a shell on a machine a hub offers one on"
-    )
-    terminal_parser.add_argument("machine", help="the machine, by name or id")
-    _add_hub_argument(terminal_parser)
-    terminal_parser.add_argument(
-        "--session",
-        default="",
-        help="a shell session the machine keeps, attached to again by its id",
-    )
+    terminal_parser = _add_terminal_parser(subparsers)
     service_parser, service_kind_parsers = _add_service_parser(subparsers)
     daemon_parser = subparsers.add_parser(CLIENT_EASYTIER_DAEMON_VERB)
     daemon_parser.add_argument("--service", action="store_true")
     files_daemon_parser = subparsers.add_parser(CLIENT_FILES_DAEMON_VERB)
     files_daemon_parser.add_argument("--service", action="store_true")
 
-    arguments = parser.parse_args(_argv_without_launch_services())
+    argv, command = _split_terminal_argv(_argv_without_launch_services())
+    arguments = parser.parse_args(argv)
     if not arguments.command:
         if _is_opened_as_app():
             return gui.main(is_hidden=False)
@@ -125,9 +121,7 @@ def main() -> int:
     if arguments.command == "quit":
         return quit.main(is_upgrade=arguments.upgrade)
     if arguments.command == "terminal":
-        return terminal.main(
-            arguments.machine, hub=arguments.hub, session_id=arguments.session
-        )
+        return _run_terminal(arguments, terminal_parser, command)
     if arguments.command == "service":
         return _run_service(arguments, service_parser, service_kind_parsers)
     return status.main(is_json=arguments.json)
@@ -192,6 +186,210 @@ def _add_hub_argument(parser) -> None:
         metavar="<name>",
         help="the hub, by name or id; omit it with one hub joined",
     )
+
+
+def _split_terminal_argv(argv: list) -> tuple:
+    """The arguments with ``open`` for a bare machine, and exec's command cut off.
+
+    Args:
+        argv: The arguments as given.
+
+    Returns:
+        ``(argv, command)``: the verb moved to just after ``terminal``, and
+        the words after ``exec``'s ``--``; ``command`` is None without one.
+    """
+    if not argv or argv[0] != "terminal":
+        return argv, None
+    rest = list(argv[1:])
+    position = _terminal_verb_position(rest)
+    if position is None:
+        return argv, None
+    verb = rest.pop(position)
+    if verb not in terminal.TERMINAL_VERBS:
+        rest.insert(position, verb)
+        verb = terminal.TERMINAL_DEFAULT_VERB
+    if verb == "exec" and TERMINAL_COMMAND_SEPARATOR in rest:
+        cut = rest.index(TERMINAL_COMMAND_SEPARATOR)
+        return ["terminal", verb] + rest[:cut], rest[cut + 1 :]
+    return ["terminal", verb] + rest, None
+
+
+def _terminal_verb_position(rest: list) -> "int | None":
+    """Where the first word that is not an option is, None when there is none."""
+    position = 0
+    while position < len(rest):
+        word = rest[position]
+        if word == TERMINAL_COMMAND_SEPARATOR:
+            return None
+        if word in TERMINAL_VALUE_OPTIONS:
+            position += 2
+            continue
+        if word.startswith("-"):
+            position += 1
+            continue
+        return position
+    return None
+
+
+def _add_terminal_parser(subparsers):
+    """The ``nclient terminal`` verb tree.
+
+    Args:
+        subparsers: The top-level subparser group.
+
+    Returns:
+        The terminal parser, for its help on a missing verb.
+    """
+    terminal_parser = subparsers.add_parser(
+        "terminal",
+        help="shells and commands on the machines a hub offers them on",
+        description="A bare machine opens a shell: nclient terminal <machine>.",
+    )
+    verbs = terminal_parser.add_subparsers(dest="terminal_command", metavar="<verb>")
+    list_parser = verbs.add_parser(
+        "list", help="every online machine and the sessions it keeps"
+    )
+    _add_hub_argument(list_parser)
+    list_parser.add_argument(
+        "--json", action="store_true", help="print one JSON object"
+    )
+    open_parser = verbs.add_parser("open", help="open a new shell in this terminal")
+    _add_machine_argument(open_parser)
+    open_parser.add_argument(
+        "--persistent",
+        action="store_true",
+        help="keep the session after its last window closes",
+    )
+    open_parser.add_argument(
+        "--shared",
+        action="store_true",
+        help="let every client with terminal rights on the machine attach",
+    )
+    _add_hub_argument(open_parser)
+    attach_parser = verbs.add_parser(
+        "attach", help="attach this terminal to a session the machine keeps"
+    )
+    _add_machine_argument(attach_parser)
+    _add_session_argument(attach_parser)
+    _add_hub_argument(attach_parser)
+    exec_parser = verbs.add_parser(
+        "exec",
+        help="run one command and return its exit code",
+        usage="nclient terminal exec <machine> [--tty] [--hub <name>] "
+        "-- <command> ...",
+    )
+    _add_machine_argument(exec_parser)
+    exec_parser.add_argument(
+        "exec_command", nargs="*", metavar="<command>", help="the command, after --"
+    )
+    exec_parser.add_argument(
+        "--tty",
+        action="store_true",
+        help="run it on a pseudo-terminal, for programs such as top and vim",
+    )
+    _add_hub_argument(exec_parser)
+    for verb, description, on_help, off_help in (
+        (
+            "persist",
+            "keep a session after its last window closes, or stop keeping it",
+            "keep the session",
+            "stop keeping it",
+        ),
+        (
+            "share",
+            "let other clients attach to a session, or stop letting them",
+            "share the session",
+            "stop sharing it; the others are cut off at once",
+        ),
+    ):
+        verb_parser = verbs.add_parser(verb, help=description)
+        _add_machine_argument(verb_parser)
+        _add_session_argument(verb_parser)
+        switch = verb_parser.add_mutually_exclusive_group(required=True)
+        switch.add_argument("--on", dest="is_on", action="store_true", help=on_help)
+        switch.add_argument("--off", dest="is_on", action="store_false", help=off_help)
+        _add_hub_argument(verb_parser)
+    stop_parser = verbs.add_parser("stop", help="end a session the machine keeps")
+    _add_machine_argument(stop_parser)
+    _add_session_argument(stop_parser)
+    _add_hub_argument(stop_parser)
+    return terminal_parser
+
+
+def _add_machine_argument(parser) -> None:
+    """Name the machine a terminal verb acts on, on one parser.
+
+    Args:
+        parser: The parser the argument belongs to.
+    """
+    parser.add_argument("machine", help="the machine, by name or id")
+
+
+def _add_session_argument(parser) -> None:
+    """Name the session a terminal verb acts on, on one parser.
+
+    Args:
+        parser: The parser the argument belongs to.
+    """
+    parser.add_argument(
+        "session",
+        metavar="session-id",
+        help="the session's id, or its first characters as list prints them",
+    )
+
+
+def _run_terminal(arguments, terminal_parser, command) -> int:
+    """Dispatch one ``nclient terminal`` verb.
+
+    Args:
+        arguments: The parsed arguments.
+        terminal_parser: The terminal parser, for its help.
+        command: The words after exec's ``--``; None without one.
+
+    Returns:
+        The verb's exit status.
+    """
+    verb = arguments.terminal_command
+    if verb == "list":
+        return terminal.main_list(hub=arguments.hub, is_json=arguments.json)
+    if verb == "open":
+        return terminal.main_open(
+            arguments.machine,
+            hub=arguments.hub,
+            is_persistent=arguments.persistent,
+            is_shared=arguments.shared,
+        )
+    if verb == "attach":
+        return terminal.main_attach(
+            arguments.machine, arguments.session, hub=arguments.hub
+        )
+    if verb == "exec":
+        return terminal.main_exec(
+            arguments.machine,
+            list(arguments.exec_command) + list(command or []),
+            hub=arguments.hub,
+            is_tty=arguments.tty,
+        )
+    if verb == "persist":
+        return terminal.main_persist(
+            arguments.machine,
+            arguments.session,
+            is_on=arguments.is_on,
+            hub=arguments.hub,
+        )
+    if verb == "share":
+        return terminal.main_share(
+            arguments.machine,
+            arguments.session,
+            is_on=arguments.is_on,
+            hub=arguments.hub,
+        )
+    if verb == "stop":
+        return terminal.main_stop(
+            arguments.machine, arguments.session, hub=arguments.hub
+        )
+    terminal_parser.print_help()
+    return 2
 
 
 def _add_service_parser(subparsers):

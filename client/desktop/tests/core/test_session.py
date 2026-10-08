@@ -900,6 +900,79 @@ def test_a_kept_session_is_opened_again_as_resumed(bound, monkeypatch):
     assert (opened["session_id"], opened["is_resumed"]) == (SESSION_ID, True)
 
 
+def test_a_new_shared_session_says_so_in_its_open(bound, monkeypatch):
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+
+    session.open_shell("dev_lepton", 80, 24, SESSION_ID, is_shared=True)
+
+    assert made.sent[-2]["is_shared"] is True
+
+
+def test_an_exec_opens_with_its_argv_and_grants_the_window(bound, monkeypatch):
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+
+    stream = session.open_exec("dev_lepton", ["psql", "app"], False, 120, 40)
+
+    assert stream.stream_id == 1
+    assert made.sent[-2] == {
+        "type": "open",
+        "stream": 1,
+        "kind": "exec",
+        "device_id": "dev_lepton",
+        "argv": ["psql", "app"],
+        "is_tty": False,
+        "cols": 120,
+        "rows": 40,
+    }
+    assert made.sent[-1] == {
+        "type": "credit",
+        "stream": 1,
+        "bytes": CLIENT_STREAM_CREDIT_BYTES,
+    }
+
+
+def test_an_execs_input_ends_with_eof_after_its_last_bytes(bound, monkeypatch):
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+    stream = session.open_exec("dev_lepton", ["cat"], False, 80, 24)
+    take(session, made, {"type": "credit", "stream": 1, "bytes": 1024})
+
+    stream.send(b"select 1;\n")
+    stream.send_eof()
+
+    assert made.sent[-2:] == [(1, b"select 1;\n"), {"type": "eof", "stream": 1}]
+
+
+def test_an_execs_frames_reach_the_reader_with_their_fd_byte(bound, monkeypatch):
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+    stream = session.open_exec("dev_lepton", ["ls"], False, 80, 24)
+
+    take(session, made, protocol.encode_binary(1, b"\x01out"))
+    take(session, made, protocol.encode_binary(1, b"\x02err"))
+    take(session, made, {"type": "close", "stream": 1, "params": {"exit_code": 3}})
+
+    assert stream.read(timeout_s=1) == b"\x01out"
+    assert stream.read(timeout_s=1) == b"\x02err"
+    assert stream.wait_close(1) == {"exit_code": 3}
+
+
+def test_no_eof_goes_on_an_ended_stream(bound, monkeypatch):
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+    stream = session.open_exec("dev_lepton", ["ls"], False, 80, 24)
+    take(session, made, {"type": "close", "stream": 1, "params": {"exit_code": 0}})
+
+    with pytest.raises(GatewayUnreachable):
+        stream.send_eof()
+
+    assert all(
+        frame.get("type") != "eof" for frame in made.sent if isinstance(frame, dict)
+    )
+
+
 def answered(session, made, ask, stream_id: int):
     """Run one ask on a thread, answer its command's open, and hand back what it got."""
     outcome = {}
@@ -930,8 +1003,12 @@ def test_persist_and_stop_name_the_session_on_the_agent_module(bound, monkeypatc
     def stop():
         return session.stop_shell_session(SESSION_ID)
 
+    def share():
+        return session.persist_shell(SESSION_ID, is_shared=True)
+
     assert answered(session, made, persist, 1) == {"params": {}}
     assert answered(session, made, stop, 3) == {"params": {}}
+    assert answered(session, made, share, 5) == {"params": {}}
 
     commands = [frame for frame in made.sent if frame.get("kind") == "command"]
     assert commands == [
@@ -951,6 +1028,15 @@ def test_persist_and_stop_name_the_session_on_the_agent_module(bound, monkeypatc
             "kind": "command",
             "verb": "stop_session",
             "session_id": SESSION_ID,
+            "module": "agent",
+        },
+        {
+            "type": "open",
+            "stream": 5,
+            "kind": "command",
+            "verb": "persist",
+            "session_id": SESSION_ID,
+            "is_shared": True,
             "module": "agent",
         },
     ]
@@ -1989,6 +2075,7 @@ KEPT = {
 KEPT_ROW = {
     "session_id": SESSION_ID,
     "device_id": "d1",
+    "account": "alice",
     "owner": "client:c1",
     "owner_name": "box",
     "is_owned": True,
@@ -2003,9 +2090,10 @@ TERMINALS = [
         "device_id": "d1",
         "name": "lepton",
         "is_online": True,
+        "is_shell_allowed": True,
         "sessions": [KEPT, {"account": "no id"}, dict(KEPT, session_id="s2", x=1)],
     },
-    {"device_id": "d2", "name": "", "is_online": False},
+    {"device_id": "d2", "name": "", "is_online": False, "is_exec_allowed": True},
     {"name": "no id"},
     "junk",
 ]
@@ -2239,8 +2327,20 @@ def test_the_states_terminals_are_held_while_the_socket_is_up(bound, monkeypatch
     take(session, made, dict(STATE, terminals=TERMINALS))
 
     assert session.terminal_entries() == [
-        {"device_id": "d1", "name": "lepton", "is_online": True},
-        {"device_id": "d2", "name": "d2", "is_online": False},
+        {
+            "device_id": "d1",
+            "name": "lepton",
+            "is_online": True,
+            "is_shell_allowed": True,
+            "is_exec_allowed": False,
+        },
+        {
+            "device_id": "d2",
+            "name": "d2",
+            "is_online": False,
+            "is_shell_allowed": False,
+            "is_exec_allowed": True,
+        },
     ]
     assert session.terminal_sessions() == [
         KEPT_ROW,
@@ -2262,7 +2362,13 @@ def test_the_terminals_as_two_lists_read_the_same(bound, monkeypatch):
     take(session, made, dict(STATE, terminals=terminals))
 
     assert session.terminal_entries() == [
-        {"device_id": "d1", "name": "lepton", "is_online": True}
+        {
+            "device_id": "d1",
+            "name": "lepton",
+            "is_online": True,
+            "is_shell_allowed": False,
+            "is_exec_allowed": False,
+        }
     ]
     assert session.terminal_sessions() == [KEPT_ROW]
 
