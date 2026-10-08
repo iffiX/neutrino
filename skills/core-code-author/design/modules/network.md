@@ -621,7 +621,7 @@ another:
 | --- | --- | --- | --- | --- |
 | Machines on a served network | — | yes | yes | the prerouting chain, into the TPROXY inbound |
 | Overlay members whose exit this box is | yes | yes | yes | the prerouting chain on the overlay interfaces on Linux, behind `is_overlay_proxy_enabled`; the TUN on macOS and Windows |
-| This box's own traffic | yes | yes | yes | the output chain on Linux, behind `is_local_proxy_enabled`, which accepts the hub's own NetBird and EasyTier units' packets (matched by their cgroup) before anything is marked; the TUN on macOS and Windows, with the engines' endpoints routed past it ([proxy.md](proxy.md)) |
+| This box's own traffic | yes | yes | yes | the output chain on Linux, behind `is_local_proxy_enabled`, which returns xray's own packets, the hub's NetBird and EasyTier units' packets (matched by their cgroup), every packet another subsystem already marked and the UDP NetBird's WireGuard port sends, before anything is marked; the TUN on macOS and Windows, with the engines' endpoints routed past it ([proxy.md](proxy.md)) |
 | Applications pointed at a SOCKS port | yes | yes | yes | the port's own `is_proxied` answer |
 | The served networks' DNS | — | yes | yes | dnsmasq's only upstream, the xray DNS inbound |
 
@@ -641,6 +641,32 @@ is what is broken. What every scope shares is the need for an exit: switched
 on with no enabled node it renders as off, and the panel writes the switch
 back rather than showing a proxy that is not there. The forwarded machines'
 DNS follows the forwarded scope, because the queries belong to the traffic.
+
+### The engines and the proxy are independent
+
+The two overlay engines and xray share one box and never one path. NetBird
+and EasyTier reach their servers, relays and peers from the uplink directly,
+whatever the proxy's switches say, and the proxy's hub-itself scope diverts
+only the box's other processes. On Linux the `output` chain holds that line,
+row by row, in this order:
+
+| Row | What it lets through untouched | Why it exists |
+| --- | --- | --- |
+| `meta skuid <xray> return` | xray's own connections to the exit nodes | xray reaching xray would loop |
+| `meta mark 0xff return` | packets xray hands back | the same loop, closed from the other side |
+| `ip daddr @reserved_v4 return` | anything for a private address, the overlays' subnets among them | an overlay peer or a served machine is never an exit's business |
+| `socket cgroupv2 … neutrino_hub_netbird.service accept`, the same for EasyTier | what the two engine processes send: management, signal, relay, EasyTier's tunnel | the engines are the way in; routed through an exit they would arrive from the exit's address and the peer's NAT would drop them |
+| `meta mark != 0 return` | every packet some other subsystem marked before ours, NetBird's kernel WireGuard with its fwmark among them | a kernel device sends from no socket, so no cgroup row names it |
+| `udp sport <NetBird WireGuard port> return` | the kernel WireGuard's UDP on a box whose device carries no mark | the same packets, named a second way |
+| `meta l4proto { tcp, udp } meta mark set 0x1` | the rest: the hub's downloads, CLIProxyAPI, the panel, any process a person runs | this is the scope |
+
+Three things are measured when this is doubted, on the box itself: the
+engines' sockets in `ss -tunp` bind the uplink address and not loopback;
+`tcpdump -ni lo` over fifteen seconds shows no packet on the engines' ports
+and none on the WireGuard port; and a plain `curl` from the box still answers
+through the exit. NetBird's own candidate choice is kept honest the same
+way, by the interface blacklist above: a candidate on a device the box made
+would send replies the uplink's NAT drops.
 
 ## When no exit answers
 
