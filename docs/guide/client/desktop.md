@@ -8,13 +8,15 @@ The desktop client window opens the web pages, ports, AI gateway, shares, termin
 
 ## Hubs
 
-The window, titled **Neutrino client**, has a sidebar with **Hubs**, **Web**, **Ports**, **AI**, **Files**, **Terminals** and **Remote desktops**, then **Settings** under a rule. The **↻** button at the top right refreshes every hub. A connected hub gets a fresh report, and a hub that is down gets a new connection attempt.
+The window, titled **Neutrino client**, has a sidebar with **Hubs**, **Web**, **Ports**, **AI**, **Files**, **Terminals** and **Remote desktops**, then **Settings** under a rule.
+
+The **↻** button at the top right refreshes every hub, and each row reads **Refreshing…** until the hub's new state arrives. A connected hub sends back a fresh report. For a hub that is connecting or stopped, the client ends the wait and any dial still open, and dials again at once. A row reading **Replaced by another client** or **Disabled by the hub** stays as it is.
 
 The **Hubs** page holds one row per hub: its name, its state, its address and the package it runs.
 
 ### Row states
 
-While the channel to a hub is open, the row's state names the path it took:
+Under the hub's name, the state line shows the connection: connected, connecting, or stopped with a reason. While the channel is open, the line names the path it took:
 
 | State                     | The channel reached the hub through                                 |
 | ------------------------- | ------------------------------------------------------------------- |
@@ -30,17 +32,35 @@ Beside the state, a tag such as **12 ms** shows the last round trip to the hub. 
 
 To connect, the client dials every address of the hub at the same moment. These are its address on each connected virtual network, its name, and the addresses it last published. The first socket to finish its TLS handshake with the pinned certificate becomes the channel, and the client closes the others.
 
-A change of network starts a new round at once. The client counts an interface going up or down, a virtual network connecting, and a new set of hub addresses as changes. A connected hub moves to the round's winner only when that path ranks higher, in the order LAN, Direct, NetBird or EasyTier, SSH Relay. On paths of equal rank, it moves only when the new handshake was faster.
+A change of network starts a new round at once. The client counts an interface going up or down, a virtual network connecting, and a new set of hub addresses as changes. A peer joining or leaving a connected virtual network counts too. For a hub that is not connected, the round ends the wait and closes any dial still open.
+
+A connected hub moves to the round's winner only when that path ranks higher, in the order LAN, Direct, NetBird or EasyTier, SSH Relay. On paths of equal rank, it moves only when the new handshake was faster.
+
+While the channel is down, the line reads **Connecting…** during a round. Otherwise it names why the client stopped, then `·` and what ends the stop:
+
+| State line                                                  | When                                                                                       | What ends it                                                                  |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
+| **The hub did not answer · retrying in 5 s**                | no address of the round answered                                                           | the countdown, a network change or **↻**                                      |
+| **The hub is not on the virtual network · retrying in 5 s** | no address answered while this computer is on the hub's virtual network                    | the countdown, a network change or **↻**                                      |
+| **No network**                                              | this computer has no network at all                                                        | an interface coming up                                                        |
+| **Certificate mismatch · retrying in 60 s**                 | `hub_untrusted`: the certificate at the hub's address differs from the one the link pinned | after a reset or a new install of the hub, **Leave** and join with a new link |
+| **The hub pauses new devices · retrying in 60 s**           | `admission_paused` on the first join, with the wait the hub sets                           | the countdown, then the client joins again                                    |
+| **The hub does not know this device**                       | `binding_unknown`: the hub's **Clients** page no longer lists this client                  | **Leave**, the row's only button, then a new link                             |
+| **Version too old**                                         | `protocol_too_old`, or `protocol_too_new` when the hub is the older side                   | a newer client or an updated hub, then **↻**                                  |
+| **Join refused ·** and the reason                           | the hub rejected the link's ticket, as with `ticket_spent`                                 | **Leave**, the row's only button, then a new link                             |
+| **Replaced by another client · Reconnect**                  | another client connected to the hub as this one                                            | **Reconnect**                                                                 |
+| **Disabled by the hub**                                     | the hub has switched this client off                                                       | the hub switching it on                                                       |
+
+A countdown drops by one every second, and at 0 the line reads **Connecting…**. The wait between automatic rounds starts at 5 seconds and doubles after each failed round, up to 60 seconds. A round that connects, and every network change, set it back to 5 seconds.
 
 The dot before the name shows the state:
 
-| Dot            | Meaning                                                                                                           |
-| -------------- | ----------------------------------------------------------------------------------------------------------------- |
-| green          | the channel is open                                                                                               |
-| amber, pulsing | the client is connecting, or a job runs on the row                                                                |
-| amber          | the hub is out of reach and nobody has to act, as with `hub_unreachable`, or the hub has switched this client off |
-| red            | a person has to change something, as with `hub_untrusted` or `protocol_too_old`                                   |
-| grey           | the client has not reached the hub yet                                                                            |
+| Dot            | Meaning                                                                                                                                                                          |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| green          | the channel is open                                                                                                                                                              |
+| amber, pulsing | the line reads **Connecting…** or **Refreshing…**, or a job runs on the row                                                                                                      |
+| amber          | **The hub did not answer**, **The hub is not on the virtual network**, **No network**, **The hub pauses new devices**, **Replaced by another client** or **Disabled by the hub** |
+| red            | a line that needs you to act: **Certificate mismatch**, **The hub does not know this device**, **Version too old** or **Join refused**                                           |
 
 ### Row buttons
 
@@ -53,15 +73,6 @@ The dot before the name shows the state:
 **Panel** opens the panel wherever the client reaches the hub, so the panel's own ports can stay on the LAN. The browser opens `http://panel-<hub-id>.localhost:<local-port>/?tkn=<token>`, or `http://127.0.0.1:<local-port>/?tkn=<token>` on macOS. In that address, `<hub-id>` is the hub's id, `<local-port>` the forward's port, and `<token>` a sign-in that works one time within a minute. The forward stays until you leave the hub or quit the client.
 
 Leaving removes the row at once, whether the hub is reachable or not. It ends what the hub published on this computer: its forwards, mounts and viewers, and a virtual network no other hub uses. In a terminal, `nclient leave --yes` leaves without the question, and `nclient status --json` prints every hub's state as JSON.
-
-After a refusal, the row keeps the code on its error line, and the client connects again with up to a minute between tries. `binding_unknown` removes the row instead:
-
-| Code               | Meaning                                                              | What to do                                                            |
-| ------------------ | -------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| `protocol_too_old` | this client speaks an older protocol number than the hub accepts     | install a newer client                                                |
-| `protocol_too_new` | this client speaks a newer protocol number than the hub              | update the hub                                                        |
-| `hub_untrusted`    | the certificate at that address differs from the one the link pinned | after a reset or a new install of the hub, join again with a new link |
-| `binding_unknown`  | the hub's **Clients** page no longer lists this client               | join again with a new link                                            |
 
 ### Virtual network
 

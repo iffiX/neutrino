@@ -14,6 +14,29 @@ The **Hubs** screen holds one row per hub: its name, its state, its address and 
 
 LAN means the phone reached the hub on a network the phone is on. Direct means the phone reached the hub from outside every network the hub is on, at an address the hub exposes. [Turn on Direct](../hub/overlay.md#turn-on-direct) describes that address. SSH Relay means the phone reached the public port of a server the hub's owner set up, as [SSH Relay](../hub/relay.md) describes.
 
+While the channel is down, the line reads **Connecting…** as the app dials every address of the hub. When no address connects, the line names the reason, then `·` and what ends it:
+
+| State line                                                  | Meaning                                                                                                                            |
+| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| **The hub did not answer · retrying in 5 s**                | no address answered; the app dials again at 0                                                                                      |
+| **The hub is not on the virtual network · retrying in 5 s** | no address answered while the phone is on the hub's virtual network                                                                |
+| **No network**                                              | the phone has no network; the app dials when a network comes up                                                                    |
+| **Certificate mismatch · retrying in 60 s**                 | `hub_untrusted`, the hub's certificate differs from the one in the code; after a new install of the hub, leave and scan a new code |
+| **The hub pauses new devices · retrying in 60 s**           | `admission_paused`, the hub holds back new devices for the time shown; the app joins again at 0                                    |
+| **The hub does not know this device**                       | `binding_unknown`; **Leave** is the row's only button, and a new code joins again                                                  |
+| **Version too old**                                         | `protocol_too_old` or `protocol_too_new`; update the app or the hub, then refresh                                                  |
+| **Join refused ·** and the reason                           | the hub rejected the code's ticket, as with `ticket_spent`; **Leave** is the row's only button                                     |
+| **Replaced by another client · Reconnect**                  | another client connected to the hub as this phone                                                                                  |
+| **Disabled by the hub**                                     | the hub switched the phone off, and the line changes when the hub switches it on                                                   |
+
+The seconds go down one at a time, and at 0 the line reads **Connecting…**. Between automatic tries the wait starts at 5 seconds and doubles up to 60. A try that connects, or a network change, sets it back to 5 seconds.
+
+A network change ends every wait and every dial still open, and the app dials each hub again at once. Moving between mobile data and Wi-Fi counts, as do a virtual network connecting and the hub naming new addresses. A peer joining or leaving a connected virtual network counts too.
+
+The refresh button at the top right does the same for every hub, and a connected hub sends back a fresh report. Rows reading **Replaced by another client** or **Disabled by the hub** stay as they are through both.
+
+The dot is green while connected, pulsing amber while dialling, amber while a line counts down or depends on the hub, and red when you have to act. A hub the app has never reached shows a grey dot while it is stopped.
+
 ### Leave and reconnect
 
 **Leave** on a row reads **Press again to leave** after one press, and a second press within five seconds removes the hub. The phone forgets the hub's link and key, and the hub's forwards and shares on the phone end.
