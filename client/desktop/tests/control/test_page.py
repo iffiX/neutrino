@@ -488,7 +488,7 @@ def test_the_window_is_a_sidebar_beside_a_content_that_fills_the_width():
 
 
 def test_a_hub_row_carries_no_target_radio_and_names_the_hub_the_tools_use():
-    body = PAGE_JS.split("function hubRow(hub)")[1].split("\n}")[0]
+    body = PAGE_JS.split("function hubRow(hub, isOtherNetworkInUse)")[1].split("\n}")[0]
 
     assert "radio" not in PAGE_JS
     assert "ui.hub_exit" not in EN_WORDS
@@ -498,7 +498,7 @@ def test_a_hub_row_carries_no_target_radio_and_names_the_hub_the_tools_use():
 
 def test_a_connected_hub_row_shows_its_way_in_and_its_round_trip_as_tags():
     tags = PAGE_JS.split("function hubTags(hub)")[1].split("\n}")[0]
-    row = PAGE_JS.split("function hubRow(hub)")[1].split("\n}")[0]
+    row = PAGE_JS.split("function hubRow(hub, isOtherNetworkInUse)")[1].split("\n}")[0]
 
     assert "hub.connection !== 'connected'" in tags
     assert "t('ui.state.rtt', { ms: Math.round(hub.rtt_ms) })" in tags
@@ -1041,8 +1041,12 @@ def test_a_failed_job_is_worded_on_its_rows_error_line():
 
 def test_a_hub_row_draws_its_word_its_network_line_and_its_controls_in_order():
     row = body_of("hubRow")
-    assert row.index("overlayPicker(hub)") < row.index("overlayButton(hub)")
-    assert row.index("overlayButton(hub)") < row.index("t('ui.reconnect')")
+    assert row.index("overlayPicker(hub)") < row.index(
+        "overlayButton(hub, isOtherNetworkInUse)"
+    )
+    assert row.index("overlayButton(hub, isOtherNetworkInUse)") < row.index(
+        "t('ui.reconnect')"
+    )
     assert row.index("t('ui.reconnect')") < row.rindex("leaveButton(hub)")
     assert "if (hub.connection === 'replaced') {" in row
     assert "if (hub.is_exit) extras.push(noteLine(t('ui.hub_is_exit')));" in row
@@ -1145,9 +1149,11 @@ def run_hub_row(hub: dict) -> dict:
             "const hubWord = () => 'connected';",
             "const rowElement = (options) => options;",
             "function hubTags(hub)" + function_body("function hubTags(hub)") + "\n}",
-            "function hubRow(hub)" + function_body("function hubRow(hub)") + "\n}",
-            "function overlayReason(hub)"
-            + function_body("function overlayReason(hub)")
+            "function hubRow(hub, isOtherNetworkInUse)"
+            + function_body("function hubRow(hub, isOtherNetworkInUse)")
+            + "\n}",
+            "function overlayReason(hub, isOtherNetworkInUse)"
+            + function_body("function overlayReason(hub, isOtherNetworkInUse)")
             + "\n}",
             "const row = hubRow(" + json.dumps(hub) + ");",
             "console.log(JSON.stringify({extras: row.extras, reason: row.reason,",
@@ -1365,6 +1371,117 @@ def test_a_disabled_hub_with_no_network_still_says_it_is_switched_off():
 
     assert row["reason"] == "ui.reason.disabled"
     assert row["actions"] == ["leave"]
+
+
+def run_hubs_page(hubs: list) -> list:
+    """The page's own drawHubs, hubRow, overlayButton and overlayReason, run
+    in node with the English catalog, returning each row's network button
+    and reason."""
+    import json
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("no node to run the page's script")
+    script = "\n".join(
+        [
+            "const CATALOG = " + json.dumps(EN_WORDS) + ";",
+            "function fill(template, params)"
+            + function_body("function fill(template, params)")
+            + "\n}",
+            "const t = (key, params) => fill(CATALOG[key] || key, params);",
+            "const hasWord = (key) => CATALOG[key] !== undefined;",
+            "const DETAIL_CODES = [];",
+            "const OVERLAY_TITLES = {};",
+            "function wordCode(code, params)"
+            + function_body("function wordCode(code, params)")
+            + "\n}",
+            "const element = () => ({children: [], disabled: false,",
+            "  appendChild(child) { this.children.push(child); }});",
+            "const document = {createElement: element,",
+            "  createTextNode: (text) => text};",
+            "const send = () => {};",
+            "const noticeLine = () => null;",
+            "const joinRow = () => null;",
+            "const noteLine = (text) => text;",
+            "const reasonLine = (text) => text;",
+            "const errorLine = (text) => text;",
+            "const wordError = (error) => error.code;",
+            "const overlayLine = () => 'network line';",
+            "const overlayStage = () => '';",
+            "const overlayPicker = () => null;",
+            "const panelButton = () => ({name: 'panel'});",
+            "const leaveButton = () => ({name: 'leave'});",
+            "const isLeaveOnly = () => false;",
+            "const hubKey = (hub) => hub.hub_id;",
+            "const hubTone = () => 'ok';",
+            "const hubName = (hub) => hub.hub_name;",
+            "const hubWord = () => 'connected';",
+            "const hubTags = () => null;",
+            "const rowElement = (options) => options;",
+            "function drawHubs(state)"
+            + function_body("function drawHubs(state)")
+            + "\n}",
+            "function hubRow(hub, isOtherNetworkInUse)"
+            + function_body("function hubRow(hub, isOtherNetworkInUse)")
+            + "\n}",
+            "function isNetworkInUse(hub)"
+            + function_body("function isNetworkInUse(hub)")
+            + "\n}",
+            "function overlayButton(hub, isOtherNetworkInUse)"
+            + function_body("function overlayButton(hub, isOtherNetworkInUse)")
+            + "\n}",
+            "function overlayReason(hub, isOtherNetworkInUse)"
+            + function_body("function overlayReason(hub, isOtherNetworkInUse)")
+            + "\n}",
+            "const card = drawHubs({hubs: " + json.dumps(hubs) + "});",
+            "console.log(JSON.stringify(card.children.filter((row) => row)",
+            "  .map((row) => ({button: row.actions[0].textContent,",
+            "    is_disabled: row.actions[0].disabled, reason: row.reason}))));",
+        ]
+    )
+    result = subprocess.run(
+        [node, "-e", script], capture_output=True, text=True, timeout=30
+    )
+    assert result.returncode == 0, result.stderr
+    return json.loads(result.stdout)
+
+
+def network_hub(hub_id: str, state: str, job: str = "") -> dict:
+    """A connected hub row that publishes one EasyTier network."""
+    return dict(
+        HUB_ROW,
+        hub_id=hub_id,
+        jobs={"overlay_job": job} if job else {},
+        overlay={
+            "network": "easytier",
+            "networks": [{"provider": "easytier", "network": hub_id + "-net"}],
+            "state": state,
+            "error": None,
+        },
+    )
+
+
+@pytest.mark.parametrize("state, job", [("on", ""), ("off", "connecting")])
+def test_connect_on_another_hub_is_disabled_while_one_network_is_not_off(state, job):
+    rows = run_hubs_page([network_hub("h1", state, job), network_hub("h2", "off")])
+
+    assert rows[0]["is_disabled"] is False
+    assert rows[1] == {
+        "button": "Connect",
+        "is_disabled": True,
+        "reason": EN_WORDS["code.overlay_other_network"].replace("{network}", "h2-net"),
+    }
+
+
+def test_connect_is_enabled_on_every_hub_while_every_network_is_off():
+    rows = run_hubs_page([network_hub("h1", "off"), network_hub("h2", "off")])
+
+    assert [(row["is_disabled"], row["reason"]) for row in rows] == [
+        (False, ""),
+        (False, ""),
+    ]
 
 
 def test_the_join_button_shows_joining_and_a_refusal_under_the_input():

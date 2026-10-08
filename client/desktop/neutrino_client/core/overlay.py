@@ -595,7 +595,8 @@ class OverlayMemberships:
         """Start one connect to the chosen network of a hub that is off.
 
         A press while the network is not off, or on a hub that names no
-        network, is dropped and logged.
+        network, is dropped and logged. While another hub's network is not
+        off, the line stays off with ``overlay_other_network``.
 
         Args:
             hub_id: The hub, by its id.
@@ -604,8 +605,19 @@ class OverlayMemberships:
         with self._lock:
             record = self._records.setdefault(hub_id, _off_record())
             material = self._chosen(hub_id)
+            is_other_busy = any(
+                other_id != hub_id
+                and (other["state"] != OVERLAY_STATE_OFF or other["job"])
+                for other_id, other in self._records.items()
+            )
             if record["state"] != OVERLAY_STATE_OFF or record["job"] or not material:
                 material = None
+            elif is_other_busy:
+                record["error"] = {
+                    "code": "overlay_other_network",
+                    "params": {"network": overlay_network(material)},
+                }
+                pick = (self._choices.get(hub_id) or {}).get("pick", "")
             else:
                 record.update(
                     stage=OVERLAY_STAGE_LOGIN,
@@ -620,6 +632,11 @@ class OverlayMemberships:
                 count, cancel = record["count"], record["cancel"]
         if material is None:
             self._log(f"overlay: a connect of {hub_id} was dropped")
+            return
+        if is_other_busy:
+            self._log(f"overlay: {hub_id}: overlay_other_network")
+            self._keep(hub_id, False, pick)
+            self._on_change()
             return
         self._log(f"overlay: connecting to {overlay_network(material)}")
         self._on_change()

@@ -878,15 +878,60 @@ def test_a_binding_last_on_gets_one_connect_at_start_and_no_retry():
     assert subject.hub_row("h2")["state"] == "off"
 
 
-def test_a_release_stops_the_engine_only_when_no_other_hub_is_on_it():
+def test_a_release_stops_the_engine_of_the_hub_left():
     subject, _engines, _hubs, steps = subject_for({"h1": [EASYTIER], "h2": [EASYTIER]})
     subject.connect("h1")
     subject.connect("h2")
 
-    assert subject.release_hub("h1") == 0
-    assert steps == [("join", "easytier"), ("join", "easytier")]
-    assert subject.release_hub("h2") == 1
+    assert steps == [("join", "easytier")]
+    assert subject.release_hub("h2") == 0
+    assert subject.release_hub("h1") == 1
     assert steps[-1] == ("leave", "easytier")
+
+
+def test_a_second_hubs_connect_is_refused_while_the_first_is_on():
+    subject, _engines, hubs, steps = subject_for({"h1": [NETBIRD], "h2": [EASYTIER]})
+    subject.connect("h1")
+
+    subject.connect("h2")
+
+    row = subject.hub_row("h2")
+    assert (row["state"], row["error"]) == (
+        "off",
+        {"code": "overlay_other_network", "params": {"network": "home"}},
+    )
+    assert subject.job("h2") == ""
+    assert steps == [("join", "netbird")]
+    assert hubs.kept[-1] == ("h2", False, "")
+
+
+def test_a_second_hubs_connect_is_refused_while_the_first_is_connecting():
+    held = []
+    subject, _engines, _hubs, steps = subject_for(
+        {"h1": [NETBIRD], "h2": [EASYTIER]}, start_thread=held.append
+    )
+    subject.connect("h1")
+
+    subject.connect("h2")
+
+    assert subject.hub_row("h2")["error"]["code"] == "overlay_other_network"
+    assert (subject.job("h1"), subject.job("h2")) == ("connecting", "")
+    assert len(held) == 1
+    held[0]()
+    assert steps == [("join", "netbird")]
+
+
+def test_a_second_hubs_connect_runs_once_the_first_is_off():
+    subject, _engines, _hubs, steps = subject_for({"h1": [NETBIRD], "h2": [EASYTIER]})
+    subject.connect("h1")
+    subject.connect("h2")
+    subject.disconnect("h1")
+
+    subject.connect("h2")
+
+    row = subject.hub_row("h2")
+    assert (row["state"], row["error"]) == ("on", None)
+    assert steps == [("join", "netbird"), ("leave", "netbird"), ("join", "easytier")]
 
 
 def test_a_shutdown_keeps_every_network_and_counts_them():
