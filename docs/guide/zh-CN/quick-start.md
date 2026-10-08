@@ -8,19 +8,15 @@ title: 快速上手
 
 <!-- 待核: 全程所需分钟数（大纲待核第 13 条） -->
 
-外部访问用的是 EasyTier 控制台的免费档，全程不花钱。
-
-<!-- 待核: EasyTier 控制台免费档能挂几台设备（大纲待核第 2 条） -->
+外部访问用的是 EasyTier 控制台的 **免费版**，全程不花钱。免费版最多接入 20 台设备。
 
 ## 开始之前
 
 - 你的电脑：带桌面的 Linux（Debian 12、Ubuntu 22.04 或更新版本等），macOS 12.3 或更新版本，或 x86-64 上的 Windows 10 1809 或更新版本。
 - 你有这台电脑的管理员权限，它能上网，屏幕前有人登录着。
 - 一部 Android 8.0 或更新版本的手机，64 位 ARM 处理器，开通了移动数据。
-- 一个 EasyTier 控制台账号，在 `https://console.easytier.net/` 注册。
+- 一个 EasyTier 控制台账号，在 `https://console.easytier.net` 注册，登录也用这个网址。
 - 手机和电脑连在同一个 Wi-Fi 上。
-
-<!-- 待核: EasyTier 控制台的注册网址（大纲待核第 2 条） -->
 
 本页只讲 EasyTier 这一种外部访问，其他办法见[选哪种外部访问](./scenarios/choose_a_way_in.md)。要管理多台机器，见[一台笔记本管所有机器](./scenarios/one_laptop_every_machine.md)。
 
@@ -75,15 +71,15 @@ irm https://github.com/iffiX/neutrino/releases/latest/download/install.ps1 | iex
 
 ## 打开 EasyTier
 
+控制台地址从 EasyTier 控制台里取。在控制台右上角选择 **设备接入方法**，切到 **开源版接入** 标签。在 **连接 EasyTier** 一节的 **接入秘钥** 里选一把密钥，页面给出一条命令。命令里 `--config-server` 后面的整段就是控制台地址。
+
 1. 在侧栏打开 **外部访问**（Access）。
 1. 在 **EasyTier** 卡片上打开 **启用**（Enable）。
 1. 选择 **应用外部访问**（Apply access）。
 1. 选中 **EasyTier** 卡片，在它的 **设置**（Settings）里选择 **EasyTier 控制台**（EasyTier console）。
-1. 在 EasyTier 控制台的网页上，复制设备加入用的地址。
+1. 在 EasyTier 控制台里复制这个控制台地址。
 1. 把地址粘进 **控制台地址**（Console address）。
 1. 选择 **应用 EasyTier 设置**（Apply EasyTier settings）。
-
-<!-- 待核: 控制台里复制加入地址的位置，以及复制到的是完整地址还是只有令牌（大纲待核第 2 条） -->
 
 这个地址形如 `tcp://et-web.console.easytier.net:22020/`，后面接你账号的令牌。应用之后，卡片标题旁的徽章读 **等待控制台挂载**（Waiting for the console）。
 
@@ -91,17 +87,23 @@ irm https://github.com/iffiX/neutrino/releases/latest/download/install.ps1 | iex
 
 ## 在控制台里挂上你的电脑
 
-1. 在 EasyTier 控制台的设备列表里，找到你的电脑。
+1. 在 EasyTier 控制台的 **设备** 页找到你的电脑。
 
    ![EasyTier 控制台的设备列表，里面有你的电脑](/guide/console/console_easytier_devices.webp)
 
-1. 为你的电脑新建一个网络：填网络名、网络密码和虚拟地址，碰头点选公共服务器。
+1. 在控制台侧栏打开 **网络**。
+1. 选择 **创建网络**。
+1. 在 **网络名称** 里填一个名字，其他项不动。
 
    ![EasyTier 控制台里为电脑新建网络的表单](/guide/console/console_easytier_network_create.webp)
 
-1. 运行这个网络。
+1. 选择对话框底部的 **创建网络**。
+1. 选择新网络的名字，打开它的页面。
+1. 选择 **挂载设备**。
+1. 在 **入网设备** 里选你的电脑。
+1. 选择 **加入网络**。
 
-<!-- 待核: 控制台设备列表、新建网络表单的字段名和运行网络的操作（大纲待核第 2 条） -->
+网络页面上，电脑那一行先显示 **挂载中**，再显示 **运行中**。
 
 面板上的徽章换成 **已连接**（connected）或 **还没有对端**（no peers yet）。**控制台下发的网络**（Networks from the console）列出你刚建的网络。
 
@@ -167,11 +169,13 @@ Linux 上这一步装的是 Samba。macOS 和 Windows 用系统自带的 SMB 服
 
    ![虚拟网一行在连接中，下面是控制台提示](/guide/zh/app_hub_console_waiting.webp)
 
-1. 在 EasyTier 控制台的设备列表里找到你的手机，把它挂到电脑所在的那个网络上。
+1. 在 EasyTier 控制台里打开电脑所在的网络。
+1. 选择 **挂载设备**。
+1. 在 **入网设备** 里选你的手机。列表里的手机名是它的 Android 设备名。
 
    ![EasyTier 控制台里把手机挂到同一个网络](/guide/console/console_easytier_device_attach.webp)
 
-<!-- 待核: 手机在控制台设备列表里显示的名字，以及挂载设备的操作（大纲待核第 2 条） -->
+1. 选择 **加入网络**。
 
 虚拟网一行读 **已连接 ·**，后面是手机在虚拟网里的地址。
 

@@ -23,43 +23,43 @@ A printer at `192.168.10.20` sits in `192.168.10.0/24`, for example. **LAN route
 
 ![The LAN routes list on the NetBird card, with one subnet](/guide/en/overlay_netbird_routes.webp)
 
+## Add the subnet as a resource
+
+The console's **Add Network** wizard runs in this order: the network, its resource, a policy, then the routing peer. This section and the next two follow that order.
+
+1. In the NetBird console, open **Network Routing** > **Networks**.
+1. Select **Add Network**.
+1. Type a **Name** for the network, then continue to **Add Resource**.
+1. Type a **Name** for the resource.
+1. Paste the subnet into **Address**.
+1. Continue to the access control step.
+
+## Allow the clients' group
+
+Every client of the hub joins NetBird with the hub's setup key, so every client is in the group that key assigns. The **Setup Keys** list shows that group in the key's **Groups** column. A policy lets the group reach the resource.
+
+1. In the access control step, select **Add Policy**.
+1. Set the source to the group your setup key assigns.
+1. Set the destination to the resource you added.
+1. Set the protocol to **All**.
+1. Select **Continue**.
+1. Select **Submit**.
+
+The policy then appears in the console under **Access Control** > **Policies**.
+
+![A NetBird policy from the setup key's group to the LAN resource](/guide/console/console_netbird_policy.webp)
+
 ## Make the hub a routing peer
 
 The hub is already a peer on NetBird, so you pick it from the console's list.
 
-1. In the NetBird console, open **Networks**.
-1. Select **Add Network**.
-1. Name the network and save it.
-1. On the new network, under **Routing Peers**, select **Add**.
-1. Pick the hub's peer from the list. Leave **Install NetBird** in that dialog alone: it sets up a machine that is not on NetBird yet.
-1. Save the routing peer.
+1. In **Add Routing Peer**, pick the hub's peer. Leave **Install NetBird** alone: it sets up a machine that is not on NetBird yet.
+1. Select **Continue**.
+1. Select **Submit**.
 
-<!-- 待核: the console's field names for Add Network and for adding an existing peer under Routing Peers (outline item 3) -->
-
-## Add the subnet as a resource
-
-1. On the same network, under **Resources**, select **Add Resource**.
-1. Paste the subnet into the address field.
-1. Save the resource.
-
-<!-- 待核: the console's labels under Resources, and whether creating a resource offers a policy at the same time (outline item 3) -->
+The network's page lists its resource, its routing peer and its policy.
 
 ![A NetBird network with the hub as its routing peer and the LAN subnet as its resource](/guide/console/console_netbird_network.webp)
-
-## Allow the clients' group
-
-Every client of the hub joins NetBird with the hub's setup key, so every client is in the group that key assigns. The console's **Setup Keys** page names that group beside the key. A policy lets the group reach the resource.
-
-1. In the console, open **Access Control** > **Policies**.
-1. Select **Add Policy**.
-1. Set the source to the group your setup key assigns.
-1. Set the destination to the resource you added.
-1. Set the protocol to **All**.
-1. Save the policy.
-
-<!-- 待核: the console's labels for Add Policy, source, destination and protocol, and where Setup Keys shows the auto-assigned group (outline item 3) -->
-
-![A NetBird policy from the setup key's group to the LAN resource](/guide/console/console_netbird_policy.webp)
 
 ## Check from a client
 

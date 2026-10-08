@@ -15,21 +15,19 @@ Before you start, you need:
 
 The hub joins with this key and then gives the same key to its clients, so the key must accept many machines. Leave **Ephemeral Peers** and **Allow Extra DNS Labels** off while you fill the form.
 
-<!-- 待核: NetBird console field names Make this key reusable, Usage limit, Expires in, Auto-assigned groups, Ephemeral Peers, Allow Extra DNS Labels, Create Setup Key, Copy (outline item 3) -->
-
 ![The Setup Keys list in the NetBird console](/guide/console/console_netbird_keys_list.webp)
 
 To create the key:
 
 1. In the NetBird console, open **Settings** > **Setup Keys**.
-1. Select **Create Setup Key**.
+1. Select **Create Key**.
 1. Type a **Name**, such as the hub's name.
 1. Turn on **Make this key reusable**.
-1. Leave **Usage limit** empty for no limit, or set it to at least the number of clients plus one for the hub.
-1. Set **Expires in** to the longest time the console offers.
+1. Leave **Usage limit** empty, where it reads **Unlimited**, or set it to at least the number of clients plus one for the hub.
+1. Leave **Expires in** empty, so the key does not expire.
 1. Under **Auto-assigned groups**, create a group for the machines of this hub.
 1. Select **Create Setup Key**.
-1. Select **Copy** beside the key. The console shows the key only this one time.
+1. In **Setup key created successfully!**, select the copy button beside the key. The console shows the key only this one time.
 
 ![The Create Setup Key form filled in](/guide/console/console_netbird_key_create.webp)
 
