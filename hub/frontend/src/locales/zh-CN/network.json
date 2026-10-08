@@ -30,7 +30,7 @@
   "state.relay": "中继",
   "state.relay_disabled": "已关闭",
   "state.relay_not_configured": "未配置",
-  "state.relay_vault_locked": "保管库已锁定",
+  "state.relay_vault_locked": "保险库已锁定",
   "state.relay_connecting": "连接中",
   "state.relay_connected": "已连上",
   "state.relay_port_closed": "对外端口不通",

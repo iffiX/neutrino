@@ -198,11 +198,13 @@ CLIENT_STATE_WORDS = {
     "failed": "failed",
     "unknown": "waiting for the client",
     "replaced": "another client took this connection",
-    "pending": "joined; the hub has not been reached yet",
     "on": "on",
     "joining": "joining",
     "leaving": "leaving",
 }
+
+# What a join prints once the hub is stored.
+CLIENT_JOINED_LINE = "joined {url}; connecting"
 
 # The ai lane's step while it runs, shown in place of the row's standing.
 CLIENT_WORK_WORDS = {

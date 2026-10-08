@@ -9,6 +9,7 @@ import { ShellTerminal } from "../components/shell_terminal";
 import { StatusDot } from "../components/status_dot";
 import { ToggleSwitch } from "../components/toggle_switch";
 import { hasWord, t, useLanguage } from "../i18n";
+import { withModuleTitle } from "../module_title";
 import { useApiResource } from "../use_api_resource";
 import {
   HUB_EVENT_CONFIG,
@@ -723,7 +724,7 @@ function shownAccount(
 function closedText(reason: CloseReason): string {
   const key = `code.${reason.code}`;
   return reason.code !== "" && hasWord(key)
-    ? t(key, reason.params)
+    ? t(key, withModuleTitle(reason.params))
     : t("ui.terminals.lost");
 }
 

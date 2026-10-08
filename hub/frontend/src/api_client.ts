@@ -10,6 +10,7 @@
 
 import type { ApplyChange, ApplyResult } from "./api_types";
 import { hasWord, t } from "./i18n";
+import { withModuleTitle } from "./module_title";
 
 const API_PREFIX = "/api";
 
@@ -172,7 +173,7 @@ export function describeError(error: unknown): string {
 export function describeCode(entry: ApplyChange): string {
   const key = "code." + entry.code;
   if (hasWord(key)) {
-    return t(key, entry.params);
+    return t(key, withModuleTitle(entry.params));
   }
   const params = Object.entries(entry.params)
     .map(([name, value]) => `${name}=${value}`)

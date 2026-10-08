@@ -8,6 +8,7 @@ import { StatusDot } from "../components/status_dot";
 import { StringListEditor } from "../components/string_list_editor";
 import { ApiError, apiGet, apiPost, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
+import { moduleTitle } from "../module_title";
 import { useApiResource } from "../use_api_resource";
 import { HUB_EVENT_CONFIG, HUB_EVENT_SERVICES } from "../use_hub_events";
 import { useConfirm } from "../use_confirm";
@@ -88,6 +89,10 @@ const DESCRIPTION_KEYS: Record<string, string> = {
   vscode_module: "ui.services.description_vscode_module",
   cloudcli_module: "ui.services.description_cloudcli_module",
   code_server_module: "ui.services.description_code_server_module",
+};
+// The module a description names by the module's title.
+const DESCRIPTION_MODULES: Record<string, string> = {
+  samba_module: "samba",
 };
 const SOURCE_KEYS: Record<PublishedService["source"], string> = {
   module: "state.module",
@@ -637,9 +642,16 @@ function DeclareForm({ hostPlaceholder, onSaved, onCancel }: DeclareFormProps) {
 /** Where an entry comes from, in this panel's words or the declarer's own. */
 function describeService(service: PublishedService): string {
   const key = DESCRIPTION_KEYS[service.description_code];
-  return key === undefined
-    ? service.description
-    : t(key, service.description_params);
+  if (key === undefined) {
+    return service.description;
+  }
+  const name = DESCRIPTION_MODULES[service.description_code];
+  return name === undefined
+    ? t(key, service.description_params)
+    : t(key, {
+        ...service.description_params,
+        module: moduleTitle(name, name),
+      });
 }
 
 /** Whether the hub never probes this entry: a declared UDP port. */
