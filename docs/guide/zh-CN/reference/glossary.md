@@ -52,5 +52,6 @@ title: 术语表
 | 转发                 | forward                      | 客户端在本机开一个端口，接到中枢发布的条目               |
 | 持久                 | Persistent                   | 终端会话在窗口关掉后还在                                 |
 | 共享（终端）         | Shared                       | 其他有终端权限的客户端也看得到这个会话                   |
+| 远程命令             | Remote commands              | 客户端用 `nclient terminal exec` 在机器上运行命令的权限  |
 | 状态行               | state line                   | 客户端中枢一行上的状态字，例如 已连接 · 局域网           |
 | 完整版、国内版       | intl、cn                     | 同一份源码的两个版本，国内版没有代理、NetBird 和旁路网关 |
