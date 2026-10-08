@@ -35,17 +35,19 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_FIRST_HUB_STREAM_ID,
     CHANNEL_FRAME_CLOSE,
     CHANNEL_FRAME_CREDIT,
+    CHANNEL_FRAME_EOF,
     CHANNEL_FRAME_OPEN,
     CHANNEL_FRAME_REFUSED,
     CHANNEL_FRAME_STATE,
     CHANNEL_STREAM_CREDIT_BYTES,
+    CHANNEL_STREAM_EXEC,
     CHANNEL_STREAM_ID_BYTES,
 )
 
 # The fields of an open that are not the kind's own arguments.
 OPEN_ENVELOPE_FIELDS = ("type", "stream", "kind")
 # What the session routes to a stream by itself.
-STREAM_MESSAGE_TYPES = (CHANNEL_FRAME_CLOSE, CHANNEL_FRAME_CREDIT)
+STREAM_MESSAGE_TYPES = (CHANNEL_FRAME_CLOSE, CHANNEL_FRAME_CREDIT, CHANNEL_FRAME_EOF)
 
 
 def _now() -> str:
@@ -63,8 +65,9 @@ class ChannelStream:
     """One stream on one session.
 
     What arrives from the peer queues up in order: ``("data", bytes)`` for
-    a binary frame, and ``None`` once the stream has closed and the queue
-    is drained. What the hub sends goes out at once, except bytes, which
+    a binary frame, ``("eof", b"")`` for the end of input on an ``exec``
+    stream, and ``None`` once the stream has closed and the queue is
+    drained. What the hub sends goes out at once, except bytes, which
     wait for the peer's credit.
 
     Attributes:
@@ -106,21 +109,23 @@ class ChannelStream:
         """The next item from the peer, granting it room for as much again.
 
         Returns:
-            ``("data", bytes)``, or None once the stream is closed and
-            nothing is left to read.
+            ``("data", bytes)``, ``("eof", b"")``, or None once the stream
+            is closed and nothing is left to read.
         """
         if self._closed.is_set() and self._inbound.empty():
             return None
         item = await self._inbound.get()
-        if item is not None and not self._closed.is_set():
+        if item is not None and item[1] and not self._closed.is_set():
             await self._session.send_credit(self.id, len(item[1]))
         return item
 
-    async def send_bytes(self, data: bytes) -> None:
+    async def send_bytes(self, data: bytes, prefix: bytes = b"") -> None:
         """Send bytes to the peer, as far as its credit allows.
 
         Args:
             data: The bytes; sent in chunks, waiting on credit between them.
+            prefix: What every chunk's frame carries before its bytes, and
+                counts against the credit: an ``exec`` stream's ``fd``.
 
         Raises:
             AgentOfflineError: If the stream closes before everything is sent.
@@ -129,14 +134,25 @@ class ChannelStream:
         while view:
             if self._closed.is_set():
                 raise AgentOfflineError(self._session.key)
-            if self._credit <= 0:
+            room = min(self._credit, CHANNEL_CHUNK_BYTES) - len(prefix)
+            if room <= 0:
                 self._credit_granted.clear()
                 await self._credit_granted.wait()
                 continue
-            size = min(self._credit, CHANNEL_CHUNK_BYTES, len(view))
-            await self._session.send_bytes(self.id, bytes(view[:size]))
-            self._credit -= size
+            size = min(room, len(view))
+            await self._session.send_bytes(self.id, prefix + bytes(view[:size]))
+            self._credit -= len(prefix) + size
             view = view[size:]
+
+    async def send_eof(self) -> None:
+        """Tell the peer no more input follows on this stream.
+
+        Raises:
+            AgentOfflineError: If the stream is closed or the socket is gone.
+        """
+        if self._closed.is_set():
+            raise AgentOfflineError(self._session.key)
+        await self._session.send_json({"type": CHANNEL_FRAME_EOF, "stream": self.id})
 
     async def send_datagram(self, data: bytes) -> bool:
         """Send one frame to the peer now, or drop it.
@@ -244,6 +260,8 @@ class ChannelSession:
             stream the peer opens, called with ``(session, stream)``.
         shells: A client's open ``shell`` streams by id, each the
             ``(device_id, agent_stream_id, session_id)`` it is bridged to.
+        execs: A client's open ``exec`` streams by id, each the
+            ``(device_id, agent_stream_id, is_tty)`` it is bridged to.
         connects: A client's open ``connect`` streams by id, each the
             ``(kind, provider)`` its permission was judged by.
         loop: The loop the socket is served on.
@@ -272,6 +290,7 @@ class ChannelSession:
         self.offered_hash: "str | None" = None
         self.stream_handlers: dict = {}
         self.shells: dict = {}
+        self.execs: dict = {}
         self.connects: dict = {}
         self.loop = loop
         self.opened_at = time.monotonic()
@@ -515,8 +534,9 @@ class ChannelSession:
             message: The decoded frame.
 
         Returns:
-            True when the message was a close or a credit; False for a type
-            the caller handles itself.
+            True when the message was a close, a credit or an ``eof``; False
+            for a type the caller handles itself. An ``eof`` reaches only an
+            ``exec`` stream.
         """
         kind = message.get("type")
         if kind not in STREAM_MESSAGE_TYPES:
@@ -526,6 +546,9 @@ class ChannelSession:
             return True
         if kind == CHANNEL_FRAME_CREDIT:
             stream._grant(message.get("bytes", 0))
+        elif kind == CHANNEL_FRAME_EOF:
+            if stream.kind == CHANNEL_STREAM_EXEC:
+                stream._deliver(("eof", b""))
         else:
             self._streams.pop(stream.id, None)
             params = message.get("params")

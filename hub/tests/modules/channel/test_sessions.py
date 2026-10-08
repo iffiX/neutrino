@@ -5,7 +5,9 @@ open a stream, deliver bytes, grant credit, close. What these pin is the
 framing both sides must match, the even ids the hub allots, the first
 credit that opens every window, the close as the one place a result goes,
 a peer-opened stream handed to its kind's handler or closed
-``kind_unknown``, the replaced-socket close, the presence the registry
+``kind_unknown``, an ``eof`` reaching an ``exec`` stream in order with its
+bytes and no other kind, each chunk of a prefixed send carrying the prefix
+within the credit, the replaced-socket close, the presence the registry
 keeps in memory after a session ends, and that a socket going away fails
 every stream on it with ``agent_offline`` rather than leaving a caller
 waiting.
@@ -274,12 +276,67 @@ def test_a_stream_the_peer_closed_gets_no_close_back():
     run(scenario)
 
 
-def test_only_close_and_credit_are_stream_messages():
+def test_sending_prefixed_bytes_puts_the_prefix_on_every_chunk_within_credit():
+    async def scenario():
+        socket = FakeWebSocket()
+        made = session(socket=socket, role=CHANNEL_ROLE_CLIENT)
+        stream = await made.open_stream("exec", {})
+        payload = b"x" * (CHANNEL_CHUNK_BYTES + 10)
+        sending = asyncio.ensure_future(stream.send_bytes(payload, prefix=b"\x02"))
+        made.dispatch_text({"type": "credit", "stream": stream.id, "bytes": 1})
+        await asyncio.sleep(0.01)
+        assert socket.binaries == []
+
+        made.dispatch_text({"type": "credit", "stream": stream.id, "bytes": 100})
+        await asyncio.sleep(0.01)
+        assert socket.binaries == [frame(stream.id, b"\x02" + b"x" * 100)]
+
+        made.dispatch_text(
+            {"type": "credit", "stream": stream.id, "bytes": 2 * len(payload)}
+        )
+        await sending
+
+        frames = [held[4:] for held in socket.binaries]
+        assert all(held[:1] == b"\x02" for held in frames)
+        assert all(len(held) <= CHANNEL_CHUNK_BYTES for held in frames)
+        assert b"".join(held[1:] for held in frames) == payload
+
+    run(scenario)
+
+
+def test_an_eof_reaches_an_exec_stream_after_its_bytes_and_no_other_kind():
+    async def scenario():
+        socket = FakeWebSocket()
+        made = session(socket=socket, role=CHANNEL_ROLE_CLIENT)
+        command = await made.open_stream("exec", {})
+        shell = await made.open_stream("shell", {})
+        made.dispatch_bytes(frame(command.id, b"stdin"))
+        is_taken = made.dispatch_text({"type": "eof", "stream": command.id})
+        made.dispatch_text({"type": "eof", "stream": shell.id})
+        made.dispatch_bytes(frame(shell.id, b"keys"))
+
+        first = await command.recv()
+        second = await command.recv()
+        granted = [held["bytes"] for held in socket.sent("credit")[2:]]
+        await command.send_eof()
+        sent_eof = socket.texts[-1]
+
+        assert is_taken
+        assert (first, second) == (("data", b"stdin"), ("eof", b""))
+        assert granted == [len(b"stdin")]
+        assert sent_eof == {"type": "eof", "stream": command.id}
+        assert await shell.recv() == ("data", b"keys")
+
+    run(scenario)
+
+
+def test_only_close_credit_and_eof_are_stream_messages():
     async def scenario():
         made = session()
 
         assert made.dispatch_text({"type": "close", "stream": 9, "params": {}})
         assert made.dispatch_text({"type": "credit", "stream": 9, "bytes": 1})
+        assert made.dispatch_text({"type": "eof", "stream": 9})
         assert not made.dispatch_text({"type": "report", "state_hash": ""})
         assert not made.dispatch_text({"type": "opened", "stream": 0})
         assert not made.dispatch_text({"type": "event", "stream": 0})

@@ -1881,11 +1881,15 @@ class ChannelOverlay(BaseModel):
 
 
 class ChannelTerminal(BaseModel):
-    """One managed machine a client may open a shell on."""
+    """One managed machine a client may open a shell or run a command on."""
 
     device_id: str
     name: str
     is_online: bool = False
+    # Whether its ``terminal`` kind allows a shell here.
+    is_shell_allowed: bool = False
+    # Whether its ``exec`` kind allows a command here.
+    is_exec_allowed: bool = False
     # The sessions this client sees on it: its own and the shared ones,
     # oldest first; empty while it is offline.
     sessions: list[ChannelTerminalSession] = Field(default_factory=list)

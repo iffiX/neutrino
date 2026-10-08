@@ -3,7 +3,8 @@
 A change on the Clients page holds for the next stream by itself, since every
 ``open`` is judged then. What is already open is closed here: the socket of a
 client switched off or deleted; otherwise the ``shell`` streams of machines it
-lost under ``terminal``, the ``connect`` streams whose kind or machine it lost,
+lost under ``terminal``, the ``exec`` streams of machines it lost under
+``exec``, the ``connect`` streams whose kind or machine it lost,
 the panel's forward among them, and its panel sessions once ``panel`` goes. A
 stream closed this way ends with the refusal its next ``open`` would get. A
 persistent or shared shell stays on its machine; only this client's stream to
@@ -20,6 +21,7 @@ from neutrino_hub.exceptions import StreamRefusedError
 from neutrino_hub.modules.clients.constants import (
     CLIENT_CODE_DISABLED,
     CLIENT_CODE_PERMISSION_DENIED,
+    CLIENT_PERMISSION_EXEC,
     CLIENT_PERMISSION_FILTERED_KINDS,
     CLIENT_PERMISSION_TERMINAL,
 )
@@ -46,8 +48,8 @@ def close_lost_access(runtime, *, why: str, names: "dict | None" = None) -> dict
 
     Returns:
         What was closed, by client id: ``socket``, and the ids of the
-        ``shell`` and ``connect`` streams, and ``panel_sessions``, each only
-        where something was.
+        ``shell``, ``exec`` and ``connect`` streams, and ``panel_sessions``,
+        each only where something was.
     """
     registry = ClientRegistry()
     closed: dict = {}
@@ -89,17 +91,19 @@ def _lost_streams(registry, client, session) -> list:
     """The open streams of one client its permission no longer covers.
 
     Returns:
-        ``(stream_id, kind)`` pairs, ``shell`` streams first.
+        ``(stream_id, kind)`` pairs, ``shell`` streams first, then ``exec``
+        streams.
     """
     kinds = permitted_kinds(registry, client)
     devices = permitted_devices(registry, client)
     lost = []
-    for stream_id, bridged in dict(session.shells).items():
-        device_id = bridged[0]
-        if CLIENT_PERMISSION_TERMINAL not in kinds or not is_device_permitted(
-            devices, CLIENT_PERMISSION_TERMINAL, device_id
-        ):
-            lost.append((stream_id, CLIENT_PERMISSION_TERMINAL))
+    for kind, bridges in (
+        (CLIENT_PERMISSION_TERMINAL, session.shells),
+        (CLIENT_PERMISSION_EXEC, session.execs),
+    ):
+        for stream_id, bridged in dict(bridges).items():
+            if kind not in kinds or not is_device_permitted(devices, kind, bridged[0]):
+                lost.append((stream_id, kind))
     for stream_id, (kind, provider) in dict(session.connects).items():
         if not kind:
             continue
@@ -113,7 +117,11 @@ def _lost_streams(registry, client, session) -> list:
 
 def _close_all(session) -> None:
     """Close every stream a switched-off client opened with ``client_disabled``."""
-    for stream_id in list(dict(session.shells)) + list(dict(session.connects)):
+    for stream_id in (
+        list(dict(session.shells))
+        + list(dict(session.execs))
+        + list(dict(session.connects))
+    ):
         _close(session, stream_id, CLIENT_CODE_DISABLED, {})
 
 

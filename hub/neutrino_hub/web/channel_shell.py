@@ -1,4 +1,5 @@
-"""A client's shell on a managed machine, bridged to that machine's agent.
+"""A client's shell or command on a managed machine, bridged to that
+machine's agent.
 
 A client opens ``shell {device_id, cols, rows, session_id, is_resumed,
 is_shared}``; the hub opens the agent's own ``shell`` stream with the same
@@ -14,6 +15,13 @@ session unchanged, since the id is the agent's own. A ``shell`` naming a
 session another viewer owns and has not shared is refused
 ``session_not_owned`` (:func:`neutrino_hub.web.shell_bridge.is_session_refused`),
 and an unshare closes every other client's stream on the session.
+
+A client opens ``exec {device_id, argv, is_tty, cols, rows}`` under the
+``exec`` kind; the hub opens the agent's own ``exec`` with the rest of the
+fields and no session, relays the client's stdin and its ``eof`` up and the
+agent's frames down with their ``fd`` byte, and closes the client's stream
+with the agent's close. A ``resize`` may name an ``exec`` opened with
+``is_tty``; one naming an ``exec`` without it is closed empty.
 """
 
 import asyncio
@@ -27,6 +35,8 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_CODE_SHELL_UNKNOWN,
     CHANNEL_CODE_VERB_UNKNOWN,
     CHANNEL_COMMAND_MODULE_AGENT,
+    CHANNEL_EXEC_FD_BYTES,
+    CHANNEL_STREAM_EXEC,
     CHANNEL_STREAM_SHELL,
     CHANNEL_VERB_PERSIST,
     CHANNEL_VERB_RESIZE,
@@ -36,6 +46,7 @@ from neutrino_hub.modules.channel.sessions import ChannelSession, ChannelStream
 from neutrino_hub.modules.clients.constants import (
     CLIENT_CODE_DISABLED,
     CLIENT_CODE_PERMISSION_DENIED,
+    CLIENT_PERMISSION_EXEC,
     CLIENT_PERMISSION_TERMINAL,
 )
 from neutrino_hub.modules.clients.permissions import (
@@ -73,7 +84,9 @@ async def serve_shell_stream(
     """
     device_id = str(stream.args.get("device_id", "") or "")
     session_id = str(stream.args.get("session_id", "") or "")
-    code, params = await asyncio.to_thread(_judge, session.key, device_id)
+    code, params = await asyncio.to_thread(
+        _judge, session.key, device_id, CLIENT_PERMISSION_TERMINAL
+    )
     if code:
         await stream.close(code, params)
         return
@@ -117,6 +130,52 @@ async def serve_shell_stream(
     await stream.close("", {"exit_code": int(exit_code or 0)})
 
 
+async def serve_exec_stream(
+    runtime, session: ChannelSession, stream: ChannelStream
+) -> None:
+    """Serve an ``exec`` stream a client opened, to the end of the agent's
+    command.
+
+    Args:
+        runtime: The shared runtime.
+        session: The client's session; its ``execs`` holds the bridge while
+            it runs.
+        stream: The client's stream, closed here with the agent's close.
+    """
+    device_id = str(stream.args.get("device_id", "") or "")
+    code, params = await asyncio.to_thread(
+        _judge, session.key, device_id, CLIENT_PERMISSION_EXEC
+    )
+    if code:
+        await stream.close(code, params)
+        return
+    is_tty = stream.args.get("is_tty") is True
+    cols, rows = _size(stream.args)
+    args = {
+        "argv": stream.args.get("argv", []),
+        "is_tty": is_tty,
+        "cols": cols,
+        "rows": rows,
+    }
+    try:
+        command = await runtime.agent_sessions.open_stream(
+            device_id, CHANNEL_STREAM_EXEC, args
+        )
+    except AgentOfflineError as offline:
+        await stream.close(offline.code, {"device": device_id})
+        return
+    session.execs[stream.id] = (device_id, command.id, is_tty)
+    reader = asyncio.create_task(_forward_exec_input(stream, command))
+    pump = asyncio.create_task(_forward_exec_output(command, stream))
+    try:
+        info = await settle_shell(command, reader, pump)
+    finally:
+        session.execs.pop(stream.id, None)
+    if info is None:
+        return
+    await stream.close(str(info.get("code", "") or ""), dict(info.get("params") or {}))
+
+
 async def serve_command_stream(
     runtime, session: ChannelSession, stream: ChannelStream
 ) -> None:
@@ -125,7 +184,8 @@ async def serve_command_stream(
 
     Args:
         runtime: The shared runtime.
-        session: The client's session, whose ``shells`` names the bridge.
+        session: The client's session, whose ``shells`` and ``execs`` name
+            the bridges.
         stream: The client's stream, closed here.
     """
     module = str(stream.args.get("module", "") or "")
@@ -140,7 +200,13 @@ async def serve_command_stream(
         await stream.close(CHANNEL_CODE_VERB_UNKNOWN, {"module": module, "verb": verb})
         return
     shell_id = stream.args.get("shell")
-    bridged = session.shells.get(shell_id) if isinstance(shell_id, int) else None
+    bridged = None
+    if isinstance(shell_id, int):
+        command = session.execs.get(shell_id)
+        if command is not None and not command[2]:
+            await stream.close()
+            return
+        bridged = session.shells.get(shell_id) or command
     if bridged is None:
         await stream.close(CHANNEL_CODE_SHELL_UNKNOWN, {"shell": shell_id})
         return
@@ -184,7 +250,9 @@ async def _serve_session_verb(
     if not device_id:
         await stream.close(CHANNEL_CODE_SESSION_UNKNOWN, {"session_id": session_id})
         return
-    code, params = await asyncio.to_thread(_judge, session.key, device_id)
+    code, params = await asyncio.to_thread(
+        _judge, session.key, device_id, CLIENT_PERMISSION_TERMINAL
+    )
     if code:
         await stream.close(code, params)
         return
@@ -209,20 +277,19 @@ async def _serve_session_verb(
     await stream.close(info["code"], info["params"])
 
 
-def _judge(client_id: str, device_id: str) -> tuple:
-    """Whether a client may open a shell on one device now, as ``(code, params)``."""
+def _judge(client_id: str, device_id: str, kind: str) -> tuple:
+    """Whether a client may open a shell or run a command on one device now,
+    as ``(code, params)``; ``kind`` is ``terminal`` or ``exec``."""
     registry = ClientRegistry()
     client = registry.get(client_id)
     if client is None:
         return CHANNEL_CODE_BINDING_UNKNOWN, {}
     if client.is_disabled:
         return CLIENT_CODE_DISABLED, {}
-    if CLIENT_PERMISSION_TERMINAL not in permitted_kinds(
-        registry, client
-    ) or not is_device_permitted(
-        permitted_devices(registry, client), CLIENT_PERMISSION_TERMINAL, device_id
+    if kind not in permitted_kinds(registry, client) or not is_device_permitted(
+        permitted_devices(registry, client), kind, device_id
     ):
-        return CLIENT_CODE_PERMISSION_DENIED, {"kind": CLIENT_PERMISSION_TERMINAL}
+        return CLIENT_CODE_PERMISSION_DENIED, {"kind": kind}
     return "", {}
 
 
@@ -251,3 +318,33 @@ async def _forward_output(shell: ChannelStream, client_stream: ChannelStream) ->
     with contextlib.suppress(AgentOfflineError):
         async for data in shell_output(shell):
             await client_stream.send_bytes(data)
+
+
+async def _forward_exec_input(
+    client_stream: ChannelStream, command: ChannelStream
+) -> None:
+    """Relay the client's stdin and its ``eof`` to the agent until the client
+    stops."""
+    with contextlib.suppress(AgentOfflineError):
+        while True:
+            item = await client_stream.recv()
+            if item is None:
+                return
+            if item[0] == "eof":
+                await command.send_eof()
+            else:
+                await command.send_bytes(item[1])
+
+
+async def _forward_exec_output(
+    command: ChannelStream, client_stream: ChannelStream
+) -> None:
+    """Relay the command's frames to the client, each chunk under its ``fd``
+    byte, until the command ends; a frame with no byte after the ``fd`` is
+    dropped."""
+    with contextlib.suppress(AgentOfflineError):
+        async for data in shell_output(command):
+            if len(data) > CHANNEL_EXEC_FD_BYTES:
+                await client_stream.send_bytes(
+                    data[CHANNEL_EXEC_FD_BYTES:], prefix=data[:CHANNEL_EXEC_FD_BYTES]
+                )

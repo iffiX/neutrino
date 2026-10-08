@@ -375,10 +375,57 @@ def test_the_terminals_list_every_managed_machine_while_terminal_is_allowed(
     refused = channel_state.client_state(runtime, client_id)
 
     assert sorted(allowed["terminals"], key=lambda entry: entry["name"]) == [
-        {"device_id": online.id, "name": "lepton", "is_online": True, "sessions": []},
-        {"device_id": offline.id, "name": "muon", "is_online": False, "sessions": []},
+        {
+            "device_id": online.id,
+            "name": "lepton",
+            "is_online": True,
+            "is_shell_allowed": True,
+            "is_exec_allowed": False,
+            "sessions": [],
+        },
+        {
+            "device_id": offline.id,
+            "name": "muon",
+            "is_online": False,
+            "is_shell_allowed": True,
+            "is_exec_allowed": False,
+            "sessions": [],
+        },
     ]
     assert refused["terminals"] == []
+
+
+def test_the_terminals_hold_the_machines_either_kind_allows_each_by_its_own_list(
+    config_dir,
+):
+    runtime = FakeRuntime()
+    devices = DeviceRegistry()
+    lepton = devices.create("lepton")
+    devices.issue_token(lepton.id)
+    muon = devices.create("muon")
+    devices.issue_token(muon.id)
+    tau = devices.create("tau")
+    devices.issue_token(tau.id)
+    registry = ClientRegistry()
+    client_id = registry.create("alice")
+
+    registry.set_permission(
+        client_id,
+        ["terminal", "exec"],
+        {"terminal": [lepton.id, muon.id], "exec": [muon.id, tau.id]},
+    )
+    both = channel_state.client_state(runtime, client_id)
+    registry.set_permission(client_id, ["exec"])
+    exec_only = channel_state.client_state(runtime, client_id)
+
+    assert {
+        entry["name"]: (entry["is_shell_allowed"], entry["is_exec_allowed"])
+        for entry in both["terminals"]
+    } == {"lepton": (True, False), "muon": (True, True), "tau": (False, True)}
+    assert {
+        entry["name"]: (entry["is_shell_allowed"], entry["is_exec_allowed"])
+        for entry in exec_only["terminals"]
+    } == {"lepton": (False, True), "muon": (False, True), "tau": (False, True)}
 
 
 def test_each_terminal_carries_the_sessions_the_client_sees_oldest_first(

@@ -84,6 +84,7 @@
   "ui.clients.header_status": "Status",
   "ui.clients.header_version": "Version",
   "ui.clients.kind_ai": "AI gateway",
+  "ui.clients.kind_exec": "Remote commands",
   "ui.clients.kind_file": "Files",
   "ui.clients.kind_overlay": "Virtual network",
   "ui.clients.kind_panel": "Hub panel without the password",

@@ -305,7 +305,9 @@ class ScriptedChannelStream:
         id: The stream id, even as the hub allots them.
         kind: The stream kind it was opened as.
         args: What the open carried.
-        sent: Every byte the route sent, in order.
+        sent: Every frame's bytes the route sent, in order.
+        eofs: For each ``eof`` the route sent, how many frames it had sent
+            before it.
         close_info: ``{"code", "params"}`` once the stream closed.
         is_close_asked: Whether the route closed the stream from its side.
     """
@@ -317,6 +319,7 @@ class ScriptedChannelStream:
         self.kind = kind
         self.args = dict(args)
         self.sent: list = []
+        self.eofs: list = []
         self.close_info = None
         self.is_abandoned = False
         self.is_close_asked = False
@@ -340,12 +343,19 @@ class ScriptedChannelStream:
             return None
         return await self._inbound.get()
 
-    async def send_bytes(self, data: bytes) -> None:
+    async def send_bytes(self, data: bytes, prefix: bytes = b"") -> None:
         from neutrino_hub.exceptions import AgentOfflineError
 
         if self._closed.is_set():
             raise AgentOfflineError("scripted")
-        self.sent.append(bytes(data))
+        self.sent.append(bytes(prefix) + bytes(data))
+
+    async def send_eof(self) -> None:
+        from neutrino_hub.exceptions import AgentOfflineError
+
+        if self._closed.is_set():
+            raise AgentOfflineError("scripted")
+        self.eofs.append(len(self.sent))
 
     async def send_datagram(self, data: bytes) -> bool:
         await self.send_bytes(data)

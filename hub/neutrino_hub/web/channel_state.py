@@ -4,7 +4,7 @@ An agent's state is what its device is to host, composed from
 ``config/devices/<id>/``; a client's state is the published service list
 resolved for the scope its socket arrived from, whether it is switched
 off, the join material of every running overlay and the machines it may
-open a shell on,
+open a shell or run a command on,
 each as far as its permission allows, whether it may open the hub's panel
 and the way its socket reached the hub; every entry names the machine that
 provides it. Both name every address the hub answers the channel on. Each
@@ -21,6 +21,7 @@ import socket
 
 from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_AGENT
 from neutrino_hub.modules.clients.constants import (
+    CLIENT_PERMISSION_EXEC,
     CLIENT_PERMISSION_OVERLAY,
     CLIENT_PERMISSION_PANEL,
     CLIENT_PERMISSION_TERMINAL,
@@ -79,9 +80,10 @@ def client_state(runtime, client_id: str) -> dict:
             handed an empty list, and one that is on is handed the entries
             its permission allows by kind and by the device providing them,
             the overlays' join material when it is allowed ``overlay``, and
-            the managed machines its ``terminal`` permission allows, each
-            with the sessions :func:`sessions_for` gives it there, and
-            whether it may open the hub's panel.
+            the managed machines its ``terminal`` or its ``exec`` permission
+            allows, each with ``is_shell_allowed``, ``is_exec_allowed`` and
+            the sessions :func:`sessions_for` gives it there, and whether it
+            may open the hub's panel.
 
     Returns:
         ``{hash, is_disabled, services, urls, relay_url, overlays,
@@ -128,14 +130,10 @@ def client_state(runtime, client_id: str) -> dict:
         )
         if CLIENT_PERMISSION_OVERLAY in kinds:
             overlays = channel_overlay.overlay_materials(runtime)
-        if CLIENT_PERMISSION_TERMINAL in kinds:
-            terminals = [
-                terminal
-                for terminal in _terminals(runtime, client_owner(client_id))
-                if is_device_permitted(
-                    devices, CLIENT_PERMISSION_TERMINAL, terminal["device_id"]
-                )
-            ]
+        if CLIENT_PERMISSION_TERMINAL in kinds or CLIENT_PERMISSION_EXEC in kinds:
+            terminals = _allowed_terminals(
+                _terminals(runtime, client_owner(client_id)), kinds, devices
+            )
         is_panel_allowed = CLIENT_PERMISSION_PANEL in kinds
     urls = channel_urls(runtime)
     relay = relay_url()
@@ -264,6 +262,28 @@ def _terminals(runtime, viewer: str) -> list:
         for device in DeviceRegistry().all_stored()
         if device.is_managed
     ]
+
+
+def _allowed_terminals(terminals: list, kinds, devices: dict) -> list:
+    """The machines a client may open a shell or run a command on, each with
+    ``is_shell_allowed`` and ``is_exec_allowed``."""
+    allowed = []
+    for terminal in terminals:
+        is_shell_allowed = CLIENT_PERMISSION_TERMINAL in kinds and is_device_permitted(
+            devices, CLIENT_PERMISSION_TERMINAL, terminal["device_id"]
+        )
+        is_exec_allowed = CLIENT_PERMISSION_EXEC in kinds and is_device_permitted(
+            devices, CLIENT_PERMISSION_EXEC, terminal["device_id"]
+        )
+        if is_shell_allowed or is_exec_allowed:
+            allowed.append(
+                {
+                    **terminal,
+                    "is_shell_allowed": is_shell_allowed,
+                    "is_exec_allowed": is_exec_allowed,
+                }
+            )
+    return allowed
 
 
 def _named_entries(runtime, entries: list) -> list:

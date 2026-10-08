@@ -8,6 +8,8 @@ stream served under credit with the sha256 in its close and its download
 and sending written into the module's task, a ``log`` stream
 becoming the task the panel follows, ending with the module's state and
 the failure's code, a ``service`` stream closed with the entry's material,
+a client's ``exec`` relayed to the agent with its stdin and its ``eof`` up
+and both outputs and the ``exit_code`` down,
 an unknown kind closed ``kind_unknown``, a machine whose AI tools are on
 handed its state again when the gateway stops or starts serving, a client's ``is_refresh`` report
 answered with its whole state whatever the hash, a ``ping`` from either role
@@ -1243,6 +1245,75 @@ def test_a_clients_connect_reaches_the_agent_and_bytes_cross_both_ways(api):
     finally:
         person.__exit__(None, None, None)
         agent.__exit__(None, None, None)
+
+
+def test_a_clients_exec_carries_stdin_and_eof_up_and_both_outputs_down(api):
+    client, runtime = api
+    device_id, device_token = bound_device()
+    client_id, client_token = bound_client()
+    ClientRegistry().set_permission(client_id, ["exec"])
+    argv = ["sh", "-c", "cat; echo err >&2; exit 7"]
+    agent = welcomed(client, device_id, device_token)
+    person = welcomed(client, client_id, client_token, role="client")
+    try:
+        person.send_json(
+            {
+                "type": "open",
+                "stream": 1,
+                "kind": "exec",
+                "device_id": device_id,
+                "argv": argv,
+                "is_tty": False,
+                "cols": 80,
+                "rows": 24,
+            }
+        )
+        assert person.receive_json()["type"] == "credit"
+        opened = agent.receive_json()
+        assert agent.receive_json()["type"] == "credit"
+        far = opened["stream"].to_bytes(4, "big")
+        agent.send_json({"type": "credit", "stream": opened["stream"], "bytes": 64})
+        person.send_json({"type": "credit", "stream": 1, "bytes": 64})
+
+        person.send_bytes((1).to_bytes(4, "big") + b"hello")
+        person.send_json({"type": "eof", "stream": 1})
+        stdin = agent.receive_bytes()
+        eof = agent.receive_json()
+        agent.send_bytes(far + b"\x01hello")
+        agent.send_bytes(far + b"\x02err\n")
+        agent.send_json(
+            {
+                "type": "close",
+                "stream": opened["stream"],
+                "code": "",
+                "params": {"exit_code": 7},
+            }
+        )
+        frames = frames_until(person, "close")
+    finally:
+        person.__exit__(None, None, None)
+        agent.__exit__(None, None, None)
+
+    assert {key: opened[key] for key in ("kind", "argv", "is_tty", "cols", "rows")} == {
+        "kind": "exec",
+        "argv": argv,
+        "is_tty": False,
+        "cols": 80,
+        "rows": 24,
+    }
+    assert "session_id" not in opened and "owner" not in opened
+    assert stdin == far + b"hello"
+    assert eof == {"type": "eof", "stream": opened["stream"]}
+    assert [frame["bytes"] for frame in frames if frame.get("bytes")] == [
+        (1).to_bytes(4, "big") + b"\x01hello",
+        (1).to_bytes(4, "big") + b"\x02err\n",
+    ]
+    assert text_frames(frames)[-1] == {
+        "type": "close",
+        "stream": 1,
+        "code": "",
+        "params": {"exit_code": 7},
+    }
 
 
 def test_a_panel_service_stream_closes_with_a_sign_in_token_or_its_refusal(api):

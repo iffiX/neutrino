@@ -1,7 +1,8 @@
 """What one client is allowed, by kind and by device.
 
-A kind is a published service type, joining the hub's overlay, or opening a
-shell on a managed machine. A permission may also narrow a kind to the
+A kind is a published service type, joining the hub's overlay, opening a
+shell on a managed machine, running one command on a managed machine, or
+opening the hub's panel. A permission may also narrow a kind to the
 entries some devices provide: a kind with no list, or an empty one, allows
 every device. A client follows the default permission unless it has one of
 its own. Pure functions: the registry and the devices are read by the caller.
