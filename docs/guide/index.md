@@ -3,40 +3,32 @@ layout: home
 title: Neutrino
 hero:
   name: Neutrino
-  text: A hub for the machines you own
-  tagline: One box runs the hub. Each machine it manages runs an agent. Each person's computer or phone runs a client.
+  text: The services on one computer, on your phone and laptop anywhere
+  tagline: Your computer at home. Scan once, use it from anywhere.
   image:
     src: /neutrino_512.png
     alt: Neutrino
   actions:
     - theme: brand
-      text: Quick start
+      text: Step zero
       link: /quick-start
-    - theme: alt
-      text: Install the hub
-      link: /hub/install
     - theme: alt
       text: Overview
       link: /overview
 features:
-  - title: Start
-    details: How the hub, agents and clients fit your network, and a first hub with one managed machine and one mounted share.
-    link: /overview
-  - title: Hub
-    details: The hub installed on one Linux box, then its network, overlay, proxy, AI gateway, devices, clients, services, credentials and settings.
-    link: /hub/install
-  - title: Managed machines
-    details: Terminals, files and modules on a Linux, Windows or Mac machine the hub manages, with shares, Gitea, containers, ZFS and VS Code.
-    link: /agent/terminals
-  - title: Clients
-    details: The desktop client on Linux, Windows and macOS, and the Android app.
-    link: /client/desktop
-  - title: Commands
-    details: Every subcommand of nhub, nagent and nclient.
-    link: /commands/nhub
+  - title: First time
+    details: Install Neutrino on the computer, join your phone and laptop, and open its AI sessions, editor, terminal, desktop and files from anywhere.
+    link: /quick-start
+  - title: Going further
+    details: Choose a way in, join one client to several hubs, manage every machine from one laptop, reach home through your own VPS, make the hub a router, turn a machine into a NAS, and reach devices without an agent.
+    link: /scenarios/choose_a_way_in
   - title: Reference
-    details: The systems each package runs on, troubleshooting by symptom, and the channel at protocol 3.
-    link: /reference/platforms
+    details: Every page of the panel, the managed machines and the clients, the three commands, and troubleshooting.
+    link: /hub/dashboard
 ---
 
-Neutrino manages the machines one person or one household owns from one always-on Linux box. The hub on that box shapes the network, joins NetBird or EasyTier, routes chosen traffic through exit nodes and serves an AI gateway. Agents on Linux, Windows and Mac machines host file shares, git, containers, storage and VS Code. Clients on computers and Android phones open each of them with one button.
+<div class="home-lead">
+
+Neutrino installs on the computer at home. Your phone joins it from the Android app with one scanned code, and a laptop, if you have one, with a pasted link. From outside they reach it through a way in, such as a free netbird.io account. On either device you open the computer's terminal, AI sessions, editor, desktop and files.
+
+</div>

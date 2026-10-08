@@ -1,5 +1,5 @@
 {
-  "_comment": "One entry per image. language is the directory under images/guide: en, zh, os for a system dialog shown once on both language pages, or console for a NetBird or EasyTier console page shown once on both. page is the English page path under docs/guide, and pages lists more pages one image serves; a zh entry belongs to zh-CN/<page>, an os or console entry to both. source says who captures it: panel, client and console by capture.py, the console ones from the profile --console-login signs in, app by adb on the emulator, os by hand. hide lists CSS selectors hidden before the shot. pending lists pages, by English path, that are being rewritten and are left out of check_shots.py. _todo inside an entry notes a selector not yet verified against the live page; the tools ignore it.",
+  "_comment": "One entry per image. language is the directory under images/guide: en, zh, os for a system dialog shown once on both language pages, or console for a NetBird or EasyTier console page shown once on both. page is the English page path under docs/guide, and pages lists more pages one image serves; a zh entry belongs to zh-CN/<page>, an os or console entry to both, and an os or console entry's language_pages maps en or zh to pages one language alone shows it on. source says who captures it: panel, client and console by capture.py, the console ones from the profile --console-login signs in, app by adb on the emulator, os by hand. hide lists CSS selectors hidden before the shot. pending lists pages, by English path, that are being rewritten and are left out of check_shots.py. _todo inside an entry notes a selector not yet verified against the live page; the tools ignore it.",
   "viewports": {
     "desktop": {
       "width": 1440,
@@ -12,124 +12,257 @@
     "wide": {
       "width": 1680,
       "height": 1050
+    },
+    "tall": {
+      "width": 1440,
+      "height": 1200
+    },
+    "taller": {
+      "width": 1800,
+      "height": 1700
     }
   },
-  "pending": [
-    "index.md",
-    "overview.md",
-    "quick-start.md",
-    "install/hub.md",
-    "install/agent.md",
-    "install/client.md",
-    "hub/install.md",
-    "scenarios/choose_a_way_in.md",
-    "scenarios/one_laptop_every_machine.md",
-    "scenarios/netbird_lan_routes.md",
-    "scenarios/easytier_lan_routes.md",
-    "hub/network.md",
-    "hub/overlay.md",
-    "hub/relay.md",
-    "hub/netbird.md",
-    "hub/easytier.md",
-    "hub/proxy.md",
-    "hub/ai.md",
-    "hub/devices.md",
-    "hub/clients.md",
-    "hub/credentials.md",
-    "hub/settings.md",
-    "agent/terminals.md",
-    "agent/modules.md",
-    "agent/modules/ai_tools.md",
-    "agent/modules/shares.md",
-    "agent/modules/terminal.md",
-    "agent/modules/remote_desktop.md",
-    "agent/modules/gitea.md",
-    "agent/modules/vscode.md",
-    "agent/modules/code_server.md",
-    "agent/modules/cloudcli.md",
-    "agent/modules/containers.md",
-    "agent/modules/zfs.md",
-    "client/desktop.md",
-    "client/android.md",
-    "commands/nhub.md",
-    "commands/nagent.md",
-    "commands/nclient.md",
-    "reference/platforms.md",
-    "reference/troubleshooting.md",
-    "protocol/channel.md"
-  ],
+  "pending": [],
   "shots": [
     {
       "file": "setup_secrets.png",
       "language": "en",
       "page": "install/hub.md",
+      "pages": [
+        "quick-start.md"
+      ],
       "source": "panel",
-      "viewport": "desktop",
+      "viewport": "tall",
       "url": "/",
       "element": "viewport",
       "wait_for": ".setup_body",
       "state": "A box with the hub package installed and setup not yet run.",
-      "manual": "Walk the setup wizard to the passwords step, type both passwords, leave the HTTPS question showing."
+      "is_setup": true,
+      "press": [
+        ".setup_begin",
+        "button:has-text(\"{ui.setup.next}\")",
+        {
+          "fill": ".setup_body .field:has(.field_label:has-text(\"{ui.setup.panel_password}\")) input",
+          "text": "Example-panel-2026"
+        },
+        {
+          "fill": ".setup_body .field:has(.field_label:has-text(\"{ui.setup.panel_password}\")) + .field input",
+          "text": "Example-panel-2026"
+        },
+        {
+          "fill": ".setup_body .field:has(.field_label:has-text(\"{ui.setup.vault_passphrase}\")) input",
+          "text": "Example-vault-words-2026"
+        },
+        {
+          "fill": ".setup_body .field:has(.field_label:has-text(\"{ui.setup.vault_passphrase}\")) + .field input",
+          "text": "Example-vault-words-2026"
+        },
+        ".setup_body [role=\"switch\"]:has-text(\"{ui.setup.https_label}\")"
+      ]
     },
     {
       "file": "setup_secrets.png",
       "language": "zh",
       "page": "install/hub.md",
       "source": "panel",
-      "viewport": "desktop",
+      "viewport": "tall",
       "url": "/",
       "element": "viewport",
       "wait_for": ".setup_body",
       "state": "A box with the hub package installed and setup not yet run.",
-      "manual": "Walk the setup wizard to the passwords step, type both passwords, leave the HTTPS question showing."
+      "is_setup": true,
+      "press": [
+        ".setup_begin",
+        ".setup_body .picker_control",
+        ".picker_row:has-text(\"简体中文\")",
+        "button:has-text(\"{ui.setup.next}\")",
+        {
+          "fill": ".setup_body .field:has(.field_label:has-text(\"{ui.setup.panel_password}\")) input",
+          "text": "Example-panel-2026"
+        },
+        {
+          "fill": ".setup_body .field:has(.field_label:has-text(\"{ui.setup.panel_password}\")) + .field input",
+          "text": "Example-panel-2026"
+        },
+        {
+          "fill": ".setup_body .field:has(.field_label:has-text(\"{ui.setup.vault_passphrase}\")) input",
+          "text": "Example-vault-words-2026"
+        },
+        {
+          "fill": ".setup_body .field:has(.field_label:has-text(\"{ui.setup.vault_passphrase}\")) + .field input",
+          "text": "Example-vault-words-2026"
+        },
+        ".setup_body [role=\"switch\"]:has-text(\"{ui.setup.https_label}\")"
+      ],
+      "pages": [
+        "quick-start.md"
+      ]
     },
     {
       "file": "setup_shape.png",
       "language": "en",
       "page": "install/hub.md",
+      "pages": [
+        "scenarios/router_or_gateway.md"
+      ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/",
       "element": "viewport",
       "wait_for": ".setup_modes",
       "state": "A box with the hub package installed and setup not yet run.",
-      "manual": "Walk the setup wizard to the shape step and select Server."
+      "is_setup": true,
+      "press": [
+        ".setup_begin",
+        "button:has-text(\"{ui.setup.next}\")",
+        {
+          "fill": ".setup_body .field:has(.field_label:has-text(\"{ui.setup.panel_password}\")) input",
+          "text": "Example-panel-2026"
+        },
+        {
+          "fill": ".setup_body .field:has(.field_label:has-text(\"{ui.setup.panel_password}\")) + .field input",
+          "text": "Example-panel-2026"
+        },
+        {
+          "fill": ".setup_body .field:has(.field_label:has-text(\"{ui.setup.vault_passphrase}\")) input",
+          "text": "Example-vault-words-2026"
+        },
+        {
+          "fill": ".setup_body .field:has(.field_label:has-text(\"{ui.setup.vault_passphrase}\")) + .field input",
+          "text": "Example-vault-words-2026"
+        },
+        ".setup_body [role=\"switch\"]:has-text(\"{ui.setup.https_label}\")",
+        "button:has-text(\"{ui.setup.next}\")",
+        ".setup_mode:has(.setup_mode_name:text-is(\"{ui.setup.mode_server}\"))"
+      ]
     },
     {
       "file": "setup_shape.png",
       "language": "zh",
       "page": "install/hub.md",
+      "pages": [
+        "scenarios/router_or_gateway.md"
+      ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/",
       "element": "viewport",
       "wait_for": ".setup_modes",
       "state": "A box with the hub package installed and setup not yet run.",
-      "manual": "Walk the setup wizard to the shape step and select Server."
+      "is_setup": true,
+      "press": [
+        ".setup_begin",
+        ".setup_body .picker_control",
+        ".picker_row:has-text(\"简体中文\")",
+        "button:has-text(\"{ui.setup.next}\")",
+        {
+          "fill": ".setup_body .field:has(.field_label:has-text(\"{ui.setup.panel_password}\")) input",
+          "text": "Example-panel-2026"
+        },
+        {
+          "fill": ".setup_body .field:has(.field_label:has-text(\"{ui.setup.panel_password}\")) + .field input",
+          "text": "Example-panel-2026"
+        },
+        {
+          "fill": ".setup_body .field:has(.field_label:has-text(\"{ui.setup.vault_passphrase}\")) input",
+          "text": "Example-vault-words-2026"
+        },
+        {
+          "fill": ".setup_body .field:has(.field_label:has-text(\"{ui.setup.vault_passphrase}\")) + .field input",
+          "text": "Example-vault-words-2026"
+        },
+        ".setup_body [role=\"switch\"]:has-text(\"{ui.setup.https_label}\")",
+        "button:has-text(\"{ui.setup.next}\")",
+        ".setup_mode:has(.setup_mode_name:text-is(\"{ui.setup.mode_server}\"))"
+      ]
     },
     {
       "file": "setup_done.png",
       "language": "en",
       "page": "install/hub.md",
+      "pages": [
+        "quick-start.md"
+      ],
       "source": "panel",
-      "viewport": "desktop",
+      "viewport": "taller",
       "url": "/",
       "element": "viewport",
-      "wait_for": ".setup_body",
+      "wait_for": ".setup_handover",
+      "wait_s": 900,
       "state": "A box finishing setup with HTTPS on.",
-      "manual": "Let setup finish and stay on the last page, where the authority is offered for download."
+      "is_setup": true,
+      "press": [
+        ".setup_begin",
+        "button:has-text(\"{ui.setup.next}\")",
+        {
+          "fill": ".setup_body .field:has(.field_label:has-text(\"{ui.setup.panel_password}\")) input",
+          "text": "Example-panel-2026"
+        },
+        {
+          "fill": ".setup_body .field:has(.field_label:has-text(\"{ui.setup.panel_password}\")) + .field input",
+          "text": "Example-panel-2026"
+        },
+        {
+          "fill": ".setup_body .field:has(.field_label:has-text(\"{ui.setup.vault_passphrase}\")) input",
+          "text": "Example-vault-words-2026"
+        },
+        {
+          "fill": ".setup_body .field:has(.field_label:has-text(\"{ui.setup.vault_passphrase}\")) + .field input",
+          "text": "Example-vault-words-2026"
+        },
+        ".setup_body [role=\"switch\"]:has-text(\"{ui.setup.https_label}\")",
+        "button:has-text(\"{ui.setup.next}\")",
+        ".setup_mode:has(.setup_mode_name:text-is(\"{ui.setup.mode_server}\"))",
+        "button:has-text(\"{ui.setup.next}\")",
+        "button:has-text(\"{ui.setup.next}\")",
+        "button:has-text(\"{ui.setup.next}\")",
+        "button:has-text(\"{ui.setup.start}\")"
+      ]
     },
     {
       "file": "setup_done.png",
       "language": "zh",
       "page": "install/hub.md",
       "source": "panel",
-      "viewport": "desktop",
+      "viewport": "taller",
       "url": "/",
       "element": "viewport",
-      "wait_for": ".setup_body",
+      "wait_for": ".setup_handover",
+      "wait_s": 900,
       "state": "A box finishing setup with HTTPS on.",
-      "manual": "Let setup finish and stay on the last page, where the authority is offered for download."
+      "is_setup": true,
+      "press": [
+        ".setup_begin",
+        ".setup_body .picker_control",
+        ".picker_row:has-text(\"简体中文\")",
+        "button:has-text(\"{ui.setup.next}\")",
+        {
+          "fill": ".setup_body .field:has(.field_label:has-text(\"{ui.setup.panel_password}\")) input",
+          "text": "Example-panel-2026"
+        },
+        {
+          "fill": ".setup_body .field:has(.field_label:has-text(\"{ui.setup.panel_password}\")) + .field input",
+          "text": "Example-panel-2026"
+        },
+        {
+          "fill": ".setup_body .field:has(.field_label:has-text(\"{ui.setup.vault_passphrase}\")) input",
+          "text": "Example-vault-words-2026"
+        },
+        {
+          "fill": ".setup_body .field:has(.field_label:has-text(\"{ui.setup.vault_passphrase}\")) + .field input",
+          "text": "Example-vault-words-2026"
+        },
+        ".setup_body [role=\"switch\"]:has-text(\"{ui.setup.https_label}\")",
+        "button:has-text(\"{ui.setup.next}\")",
+        ".setup_mode:has(.setup_mode_name:text-is(\"{ui.setup.mode_server}\"))",
+        "button:has-text(\"{ui.setup.next}\")",
+        "button:has-text(\"{ui.setup.next}\")",
+        "button:has-text(\"{ui.setup.next}\")",
+        "button:has-text(\"{ui.setup.start}\")"
+      ],
+      "pages": [
+        "quick-start.md"
+      ]
     },
     {
       "file": "login.png",
@@ -181,6 +314,9 @@
       "file": "network_modes.png",
       "language": "en",
       "page": "hub/network.md",
+      "pages": [
+        "scenarios/router_or_gateway.md"
+      ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/network",
@@ -192,6 +328,9 @@
       "file": "network_modes.png",
       "language": "zh",
       "page": "hub/network.md",
+      "pages": [
+        "scenarios/router_or_gateway.md"
+      ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/network",
@@ -203,17 +342,39 @@
       "file": "network_exposure.png",
       "language": "en",
       "page": "hub/network.md",
+      "pages": [
+        "scenarios/router_or_gateway.md"
+      ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/network",
       "element": "section.settings_group:has(.exposure_chips)",
       "wait_for": ".exposure_chips",
       "state": "At least one overlay running, so the overlay chip shows."
+    },
+    {
+      "file": "network_roles.png",
+      "language": "en",
+      "page": "scenarios/router_or_gateway.md",
+      "source": "panel",
+      "viewport": "desktop",
+      "url": "/network",
+      "element": "viewport",
+      "wait_for": ".network_role--on",
+      "state": "Router mode with two wired interfaces, one in the WAN role and one in the LAN role; the WAN interface's tab is selected.",
+      "ready": ".tab_strip",
+      "press": [
+        ".tab_strip_tab:has(.tab_strip_tag:text-is(\"wan\"))"
+      ],
+      "scroll_to": ".tab_strip"
     },
     {
       "file": "network_exposure.png",
       "language": "zh",
       "page": "hub/network.md",
+      "pages": [
+        "scenarios/router_or_gateway.md"
+      ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/network",
@@ -222,28 +383,48 @@
       "state": "At least one overlay running, so the overlay chip shows."
     },
     {
+      "file": "network_roles.png",
+      "language": "zh",
+      "page": "scenarios/router_or_gateway.md",
+      "source": "panel",
+      "viewport": "desktop",
+      "url": "/network",
+      "element": "viewport",
+      "wait_for": ".network_role--on",
+      "state": "Router mode with two wired ports: one with the role WAN on DHCP, one with the role LAN at 192.168.8.1/24; the LAN port's tab is selected, so its role section and DHCP fields show.",
+      "ready": ".tab_strip",
+      "press": [
+        ".tab_strip_tab:has(.tab_strip_tag:text-is(\"lan\"))"
+      ],
+      "scroll_to": ".tab_strip"
+    },
+    {
       "file": "overlay_switches.png",
       "language": "en",
       "page": "hub/overlay.md",
+      "pages": [
+        "scenarios/choose_a_way_in.md"
+      ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/overlay",
       "element": "viewport",
       "wait_for": ".page",
-      "state": "Direct, SSH Relay, NetBird and EasyTier enabled and running, so all four cards are on.",
-      "manual": "Scroll so all four cards and their switches are in view."
+      "state": "Direct, SSH Relay, NetBird and EasyTier enabled and running, so all four cards are on."
     },
     {
       "file": "overlay_switches.png",
       "language": "zh",
       "page": "hub/overlay.md",
+      "pages": [
+        "scenarios/choose_a_way_in.md"
+      ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/overlay",
       "element": "viewport",
       "wait_for": ".page",
-      "state": "Direct, SSH Relay, NetBird and EasyTier enabled and running, so all four cards are on.",
-      "manual": "Scroll so all four cards and their switches are in view."
+      "state": "Direct, SSH Relay, NetBird and EasyTier enabled and running, so all four cards are on."
     },
     {
       "file": "overlay_direct_settings.png",
@@ -255,7 +436,24 @@
       "element": "section.settings_group:has(h2:text-is(\"{ui.overlay.settings_title}\"))",
       "wait_for": ".relay_fact_value",
       "state": "Direct enabled with a public IPv4 address and port applied, so Addresses for clients lists them.",
-      "manual": "Select the Direct card so its settings open."
+      "press": [
+        ".overlay_choice:has(strong:text-is(\"{ui.overlay.direct_title}\")) .overlay_choice_select"
+      ]
+    },
+    {
+      "file": "overlay_relay_settings.png",
+      "language": "en",
+      "page": "scenarios/vps_relay.md",
+      "source": "panel",
+      "viewport": "tall",
+      "url": "/overlay",
+      "element": "viewport",
+      "wait_for": ".relay_fact_value",
+      "state": "SSH Relay enabled and applied with a server, an account and a key; Status reads Connected and Address for clients shows https://<server>:<public-port>.",
+      "press": [
+        ".overlay_choice:has(strong:text-is(\"{ui.overlay.relay_title}\")) .overlay_choice_select"
+      ],
+      "scroll_to": ".overlay_product_header:has(h2:text-is(\"{ui.overlay.relay_title}\"))"
     },
     {
       "file": "overlay_direct_settings.png",
@@ -267,7 +465,24 @@
       "element": "section.settings_group:has(h2:text-is(\"{ui.overlay.settings_title}\"))",
       "wait_for": ".relay_fact_value",
       "state": "Direct enabled with a public IPv4 address and port applied, so Addresses for clients lists them.",
-      "manual": "Select the Direct card so its settings open."
+      "press": [
+        ".overlay_choice:has(strong:text-is(\"{ui.overlay.direct_title}\")) .overlay_choice_select"
+      ]
+    },
+    {
+      "file": "overlay_relay_settings.png",
+      "language": "zh",
+      "page": "scenarios/vps_relay.md",
+      "source": "panel",
+      "viewport": "tall",
+      "url": "/overlay",
+      "element": "viewport",
+      "wait_for": ".relay_fact_value",
+      "state": "SSH Relay enabled and configured against a reachable server, Status reads connected, and Address for clients shows https://<server>:<port>.",
+      "press": [
+        ".overlay_choice:has(strong:text-is(\"{ui.overlay.relay_title}\")) .overlay_choice_select"
+      ],
+      "scroll_to": ".overlay_product_header:has(h2:text-is(\"{ui.overlay.relay_title}\"))"
     },
     {
       "file": "overlay_easytier_settings.png",
@@ -279,7 +494,10 @@
       "element": "viewport",
       "wait_for": ".page",
       "state": "EasyTier enabled and running in manual bootstrap peers mode, with a network name, a secret and one bootstrap peer.",
-      "manual": "Select the EasyTier card so its settings panel opens, and scroll it into view."
+      "press": [
+        ".overlay_choice:has(strong:text-is(\"EasyTier\")) .overlay_choice_select"
+      ],
+      "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.overlay.settings_title}\"))"
     },
     {
       "file": "overlay_easytier_settings.png",
@@ -291,22 +509,25 @@
       "element": "viewport",
       "wait_for": ".page",
       "state": "EasyTier enabled and running in manual bootstrap peers mode, with a network name, a secret and one bootstrap peer.",
-      "manual": "Select the EasyTier card so its settings panel opens, and scroll it into view."
+      "press": [
+        ".overlay_choice:has(strong:text-is(\"EasyTier\")) .overlay_choice_select"
+      ],
+      "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.overlay.settings_title}\"))"
     },
     {
       "file": "overlay_easytier_console_waiting.png",
       "language": "en",
       "page": "hub/easytier.md",
-      "pages": [
-        "quick-start.md"
-      ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/overlay",
       "element": "viewport",
       "wait_for": ".kept_secret_row",
       "state": "EasyTier enabled and running in console mode with the console address applied, not yet attached to a network in the console.",
-      "manual": "Select the EasyTier card so its settings open, and scroll so the Waiting for the console badge, the Settings and the Networks from the console notice are in view."
+      "press": [
+        ".overlay_choice:has(strong:text-is(\"EasyTier\")) .overlay_choice_select"
+      ],
+      "scroll_to": ".overlay_product_header"
     },
     {
       "file": "overlay_easytier_console_waiting.png",
@@ -321,22 +542,24 @@
       "element": "viewport",
       "wait_for": ".kept_secret_row",
       "state": "EasyTier enabled and running in console mode with the console address applied, not yet attached to a network in the console.",
-      "manual": "Select the EasyTier card so its settings open, and scroll so the Waiting for the console badge, the Settings and the Networks from the console notice are in view."
+      "press": [
+        ".overlay_choice:has(strong:text-is(\"EasyTier\")) .overlay_choice_select"
+      ],
+      "scroll_to": ".overlay_product_header"
     },
     {
       "file": "overlay_easytier_console_networks.png",
       "language": "en",
       "page": "hub/easytier.md",
-      "pages": [
-        "quick-start.md"
-      ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/overlay",
       "element": "section.settings_group:has(h2:text-is(\"{ui.overlay.instances_title}\"))",
       "wait_for": ".easytier_instance",
       "state": "EasyTier in console mode, attached by the console to one network with no subnet route.",
-      "manual": "Select the EasyTier card so its settings open."
+      "press": [
+        ".overlay_choice:has(strong:text-is(\"EasyTier\")) .overlay_choice_select"
+      ]
     },
     {
       "file": "overlay_easytier_console_networks.png",
@@ -351,7 +574,9 @@
       "element": "section.settings_group:has(h2:text-is(\"{ui.overlay.instances_title}\"))",
       "wait_for": ".easytier_instance",
       "state": "EasyTier in console mode, attached by the console to one network with no subnet route.",
-      "manual": "Select the EasyTier card so its settings open."
+      "press": [
+        ".overlay_choice:has(strong:text-is(\"EasyTier\")) .overlay_choice_select"
+      ]
     },
     {
       "file": "overlay_easytier_subnet_routes.png",
@@ -363,7 +588,9 @@
       "element": "section.settings_group:has(h2:text-is(\"{ui.overlay.instances_title}\"))",
       "wait_for": ".easytier_instance",
       "state": "EasyTier in console mode, attached by the console to one network with one subnet proxy, so Subnet routes lists a LAN subnet.",
-      "manual": "Select the EasyTier card so its settings open."
+      "press": [
+        ".overlay_choice:has(strong:text-is(\"EasyTier\")) .overlay_choice_select"
+      ]
     },
     {
       "file": "overlay_easytier_subnet_routes.png",
@@ -375,19 +602,27 @@
       "element": "section.settings_group:has(h2:text-is(\"{ui.overlay.instances_title}\"))",
       "wait_for": ".easytier_instance",
       "state": "EasyTier in console mode, attached by the console to one network with one subnet proxy, so Subnet routes lists a LAN subnet.",
-      "manual": "Select the EasyTier card so its settings open."
+      "press": [
+        ".overlay_choice:has(strong:text-is(\"EasyTier\")) .overlay_choice_select"
+      ]
     },
     {
       "file": "overlay_netbird_settings.png",
       "language": "en",
       "page": "hub/netbird.md",
+      "pages": [
+        "quick-start.md"
+      ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/overlay",
       "element": "viewport",
       "wait_for": ".page",
       "state": "NetBird enabled and joined.",
-      "manual": "Select the NetBird card so its settings panel opens, and scroll it into view."
+      "press": [
+        ".overlay_choice:has(strong:text-is(\"NetBird\")) .overlay_choice_select"
+      ],
+      "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.overlay.settings_title}\"))"
     },
     {
       "file": "overlay_netbird_settings.png",
@@ -399,7 +634,10 @@
       "element": "viewport",
       "wait_for": ".page",
       "state": "NetBird enabled and joined.",
-      "manual": "Select the NetBird card so its settings panel opens, and scroll it into view."
+      "press": [
+        ".overlay_choice:has(strong:text-is(\"NetBird\")) .overlay_choice_select"
+      ],
+      "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.overlay.settings_title}\"))"
     },
     {
       "file": "overlay_netbird_routes.png",
@@ -414,7 +652,9 @@
       "element": "section.settings_group:has(h2:text-is(\"{ui.overlay.routes_title}\"))",
       "wait_for": ".netbird_subnet_chip",
       "state": "NetBird joined on a hub in router shape, so LAN routes lists one subnet.",
-      "manual": "Select the NetBird card so its settings open."
+      "press": [
+        ".overlay_choice:has(strong:text-is(\"NetBird\")) .overlay_choice_select"
+      ]
     },
     {
       "file": "overlay_netbird_routes.png",
@@ -429,7 +669,9 @@
       "element": "section.settings_group:has(h2:text-is(\"{ui.overlay.routes_title}\"))",
       "wait_for": ".netbird_subnet_chip",
       "state": "NetBird joined on a hub in router shape, so LAN routes lists one subnet.",
-      "manual": "Select the NetBird card so its settings open."
+      "press": [
+        ".overlay_choice:has(strong:text-is(\"NetBird\")) .overlay_choice_select"
+      ]
     },
     {
       "file": "overlay_off_warning.png",
@@ -439,9 +681,11 @@
       "viewport": "desktop",
       "url": "/overlay",
       "element": ".apply_bar",
-      "wait_for": ".apply_bar",
+      "wait_for": ".apply_bar .notice--warn",
       "state": "Both engines running and at least one client online on the virtual network.",
-      "manual": "Switch one engine off without applying, so the apply bar shows its warning."
+      "press": [
+        ".overlay_choice:has(strong:text-is(\"NetBird\")) .toggle_switch"
+      ]
     },
     {
       "file": "overlay_off_warning.png",
@@ -451,9 +695,11 @@
       "viewport": "desktop",
       "url": "/overlay",
       "element": ".apply_bar",
-      "wait_for": ".apply_bar",
+      "wait_for": ".apply_bar .notice--warn",
       "state": "Both engines running and at least one client online on the virtual network.",
-      "manual": "Switch one engine off without applying, so the apply bar shows its warning."
+      "press": [
+        ".overlay_choice:has(strong:text-is(\"NetBird\")) .toggle_switch"
+      ]
     },
     {
       "file": "proxy_nodes.png",
@@ -462,9 +708,9 @@
       "source": "panel",
       "viewport": "desktop",
       "url": "/proxy",
-      "element": "viewport",
-      "wait_for": ".page",
-      "state": "Two or more exit nodes, one of them active."
+      "element": ".settings_group:has(h2:text-is(\"{ui.proxy.nodes_title}\"))",
+      "wait_for": ".node_card",
+      "state": "One exit node added from a share link and applied, with the proxy's scopes off so nothing is diverted; the node is probed and unreachable."
     },
     {
       "file": "proxy_nodes.png",
@@ -473,9 +719,9 @@
       "source": "panel",
       "viewport": "desktop",
       "url": "/proxy",
-      "element": "viewport",
-      "wait_for": ".page",
-      "state": "Two or more exit nodes, one of them active."
+      "element": ".settings_group:has(h2:text-is(\"{ui.proxy.nodes_title}\"))",
+      "wait_for": ".node_card",
+      "state": "One exit node added from a share link and applied, with the proxy's scopes off so nothing is diverted; the node is probed and unreachable."
     },
     {
       "file": "proxy_routing.png",
@@ -487,7 +733,7 @@
       "element": "viewport",
       "wait_for": ".page",
       "state": "Split routing with a device rule and a destination rule.",
-      "manual": "Scroll the split routing section into view."
+      "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.proxy.route_title}\"))"
     },
     {
       "file": "proxy_routing.png",
@@ -499,12 +745,15 @@
       "element": "viewport",
       "wait_for": ".page",
       "state": "Split routing with a device rule and a destination rule.",
-      "manual": "Scroll the split routing section into view."
+      "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.proxy.route_title}\"))"
     },
     {
       "file": "ai_providers.png",
       "language": "en",
       "page": "hub/ai.md",
+      "pages": [
+        "quick-start/ai_gateway.md"
+      ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/ai",
@@ -521,19 +770,25 @@
       "url": "/ai",
       "element": "viewport",
       "wait_for": ".page",
-      "state": "Two providers, one of them a subscription account."
+      "state": "Two providers, one of them a subscription account.",
+      "pages": [
+        "quick-start/ai_gateway.md"
+      ]
     },
     {
       "file": "ai_keys.png",
       "language": "en",
       "page": "hub/ai.md",
+      "pages": [
+        "quick-start/ai_gateway.md"
+      ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/ai",
       "element": "viewport",
       "wait_for": ".page",
       "state": "The gateway running with two client keys.",
-      "manual": "Scroll the endpoint and keys section into view."
+      "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.ai.access_title}\"))"
     },
     {
       "file": "ai_keys.png",
@@ -545,7 +800,10 @@
       "element": "viewport",
       "wait_for": ".page",
       "state": "The gateway running with two client keys.",
-      "manual": "Scroll the endpoint and keys section into view."
+      "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.ai.access_title}\"))",
+      "pages": [
+        "quick-start/ai_gateway.md"
+      ]
     },
     {
       "file": "devices_managed.png",
@@ -580,9 +838,12 @@
       "viewport": "desktop",
       "url": "/devices",
       "element": "viewport",
-      "wait_for": ".page",
+      "wait_for": ".device_enrollment_notice",
+      "redraw_qr": "neutrino://enroll/example",
       "state": "Any hub.",
-      "manual": "Select Add by link and leave the notice with the link showing."
+      "press": [
+        "button:has-text(\"{ui.devices.add_by_link}\")"
+      ]
     },
     {
       "file": "devices_enroll_link.png",
@@ -595,9 +856,12 @@
       "viewport": "desktop",
       "url": "/devices",
       "element": "viewport",
-      "wait_for": ".page",
+      "wait_for": ".device_enrollment_notice",
+      "redraw_qr": "neutrino://enroll/example",
       "state": "Any hub.",
-      "manual": "Select Add by link and leave the notice with the link showing."
+      "press": [
+        "button:has-text(\"{ui.devices.add_by_link}\")"
+      ]
     },
     {
       "file": "devices_install_ssh.png",
@@ -609,7 +873,16 @@
       "element": ".install_modal",
       "wait_for": ".install_modal",
       "state": "An unmanaged machine with an SSH credential.",
-      "manual": "Open that machine's drawer and select Install agent; leave the dialog open."
+      "press": [
+        "section.devices_section:has(h2:text-is(\"{ui.devices.unmanaged_title}\")) .device_tile",
+        ".device_drawer button:has-text(\"{ui.drawer.install}\")",
+        {
+          "fill": ".install_modal .field:has(.field_label:text-is(\"{ui.install_agent.username}\")) input",
+          "text": "alice"
+        },
+        ".install_modal .field:has(.field_label:text-is(\"{ui.install_agent.key}\")) .picker_control",
+        ".picker_list [role=\"option\"]"
+      ]
     },
     {
       "file": "devices_install_ssh.png",
@@ -621,7 +894,16 @@
       "element": ".install_modal",
       "wait_for": ".install_modal",
       "state": "An unmanaged machine with an SSH credential.",
-      "manual": "Open that machine's drawer and select Install agent; leave the dialog open."
+      "press": [
+        "section.devices_section:has(h2:text-is(\"{ui.devices.unmanaged_title}\")) .device_tile",
+        ".device_drawer button:has-text(\"{ui.drawer.install}\")",
+        {
+          "fill": ".install_modal .field:has(.field_label:text-is(\"{ui.install_agent.username}\")) input",
+          "text": "alice"
+        },
+        ".install_modal .field:has(.field_label:text-is(\"{ui.install_agent.key}\")) .picker_control",
+        ".picker_list [role=\"option\"]"
+      ]
     },
     {
       "file": "devices_drawer_rdp.png",
@@ -631,9 +913,11 @@
       "viewport": "desktop",
       "url": "/devices",
       "element": ".remote_desktop",
-      "wait_for": ".remote_desktop",
+      "wait_for": ".remote_desktop_card",
       "state": "desktop's Remote desktop switch on and applied, with a person signed in at its screen.",
-      "manual": "Open desktop's drawer and scroll its remote desktop panel into view."
+      "press": [
+        ".device_tile:has(.device_tile_name_text:text-is(\"desktop\"))"
+      ]
     },
     {
       "file": "devices_drawer_rdp.png",
@@ -643,9 +927,11 @@
       "viewport": "desktop",
       "url": "/devices",
       "element": ".remote_desktop",
-      "wait_for": ".remote_desktop",
+      "wait_for": ".remote_desktop_card",
       "state": "desktop's Remote desktop switch on and applied, with a person signed in at its screen.",
-      "manual": "Open desktop's drawer and scroll its remote desktop panel into view."
+      "press": [
+        ".device_tile:has(.device_tile_name_text:text-is(\"desktop\"))"
+      ]
     },
     {
       "file": "clients_link_qr.png",
@@ -662,7 +948,14 @@
       "wait_for": ".qr_code",
       "redraw_qr": "neutrino://enroll/example",
       "state": "Any hub.",
-      "manual": "Select New client link, fill the dialog, select Create link, and leave the notice with the link, Copy and the QR code showing."
+      "press": [
+        "button:has-text(\"{ui.clients.new_link}\")",
+        {
+          "fill": ".clients_add input",
+          "text": "alice-laptop"
+        },
+        "button:has-text(\"{ui.clients.create_link}\")"
+      ]
     },
     {
       "file": "clients_link_qr.png",
@@ -679,7 +972,14 @@
       "wait_for": ".qr_code",
       "redraw_qr": "neutrino://enroll/example",
       "state": "Any hub.",
-      "manual": "Select New client link, fill the dialog, select Create link, and leave the notice with the link, Copy and the QR code showing."
+      "press": [
+        "button:has-text(\"{ui.clients.new_link}\")",
+        {
+          "fill": ".clients_add input",
+          "text": "alice-laptop"
+        },
+        "button:has-text(\"{ui.clients.create_link}\")"
+      ]
     },
     {
       "file": "clients_permissions_panel.png",
@@ -691,7 +991,11 @@
       "element": ".device_drawer",
       "wait_for": ".client_permission_kind",
       "state": "A client enrolled.",
-      "manual": "Select Permissions on a client's row, switch Follow the default off and Hub panel without the password on, and leave the drawer open without applying."
+      "press": [
+        "tr:has(.clients_name:has-text(\"phone\")) button:has-text(\"{ui.clients.permission}\")",
+        ".device_drawer .toggle_switch:has-text(\"{ui.clients.permission_follow}\")",
+        ".device_drawer .toggle_switch:has-text(\"{ui.clients.kind_panel}\")"
+      ]
     },
     {
       "file": "clients_permissions_panel.png",
@@ -703,7 +1007,11 @@
       "element": ".device_drawer",
       "wait_for": ".client_permission_kind",
       "state": "A client enrolled.",
-      "manual": "Select Permissions on a client's row, switch Follow the default off and Hub panel without the password on, and leave the drawer open without applying."
+      "press": [
+        "tr:has(.clients_name:has-text(\"phone\")) button:has-text(\"{ui.clients.permission}\")",
+        ".device_drawer .toggle_switch:has-text(\"{ui.clients.permission_follow}\")",
+        ".device_drawer .toggle_switch:has-text(\"{ui.clients.kind_panel}\")"
+      ]
     },
     {
       "file": "services_list.png",
@@ -735,9 +1043,19 @@
       "viewport": "desktop",
       "url": "/services",
       "element": "viewport",
-      "wait_for": ".page",
+      "wait_for": ".declared_form",
       "state": "Any hub.",
-      "manual": "Open the form that declares an entry by hand, with a web address typed in."
+      "press": [
+        "button:has-text(\"{ui.services.declare}\")",
+        {
+          "fill": ".declared_form .field:has(.field_label:text-is(\"{ui.services.field_name}\")) input",
+          "text": "Wiki"
+        },
+        {
+          "fill": ".declared_form .field:has(.field_label:text-is(\"{ui.services.field_host}\")) input",
+          "text": "192.168.8.20"
+        }
+      ]
     },
     {
       "file": "services_add.png",
@@ -747,9 +1065,19 @@
       "viewport": "desktop",
       "url": "/services",
       "element": "viewport",
-      "wait_for": ".page",
+      "wait_for": ".declared_form",
       "state": "Any hub.",
-      "manual": "Open the form that declares an entry by hand, with a web address typed in."
+      "press": [
+        "button:has-text(\"{ui.services.declare}\")",
+        {
+          "fill": ".declared_form .field:has(.field_label:text-is(\"{ui.services.field_name}\")) input",
+          "text": "Wiki"
+        },
+        {
+          "fill": ".declared_form .field:has(.field_label:text-is(\"{ui.services.field_host}\")) input",
+          "text": "192.168.8.20"
+        }
+      ]
     },
     {
       "file": "credentials.png",
@@ -825,9 +1153,13 @@
       "viewport": "desktop",
       "url": "/terminals",
       "element": "viewport",
-      "wait_for": ".page",
+      "wait_for": ".terminal_panel_surface .xterm-rows:has-text(\"$\")",
       "state": "server online.",
-      "manual": "Open two shells, switch Persistent on for one of them, and leave both tabs showing."
+      "press": [
+        ".device_chip:has(.device_chip_name:text-is(\"server\"))",
+        "button:has-text(\"{ui.terminals.new_terminal}\")",
+        ".terminal_panel_switches .toggle_switch:has-text(\"{ui.terminals.persistent}\")"
+      ]
     },
     {
       "file": "terminals_persist.png",
@@ -837,9 +1169,13 @@
       "viewport": "desktop",
       "url": "/terminals",
       "element": "viewport",
-      "wait_for": ".page",
+      "wait_for": ".terminal_panel_surface .xterm-rows:has-text(\"$\")",
       "state": "server online.",
-      "manual": "Open two shells, switch Persistent on for one of them, and leave both tabs showing."
+      "press": [
+        ".device_chip:has(.device_chip_name:text-is(\"server\"))",
+        "button:has-text(\"{ui.terminals.new_terminal}\")",
+        ".terminal_panel_switches .toggle_switch:has-text(\"{ui.terminals.persistent}\")"
+      ]
     },
     {
       "file": "files_row_menu.png",
@@ -849,9 +1185,13 @@
       "viewport": "phone",
       "url": "/files",
       "element": "viewport",
-      "wait_for": ".file_browser",
+      "wait_for": ".row_menu_list",
       "state": "server online with a folder of a few files.",
-      "manual": "Pick server, open the folder, and open one row's menu."
+      "press": [
+        ".device_chip:has(.device_chip_name:text-is(\"server\"))",
+        ".file_browser_name:text-is(\"boot\")",
+        ".file_browser_row:has(.file_browser_name:text-is(\"grub\")) .row_menu_toggle"
+      ]
     },
     {
       "file": "files_row_menu.png",
@@ -861,37 +1201,64 @@
       "viewport": "phone",
       "url": "/files",
       "element": "viewport",
-      "wait_for": ".file_browser",
+      "wait_for": ".row_menu_list",
       "state": "server online with a folder of a few files.",
-      "manual": "Pick server, open the folder, and open one row's menu."
+      "press": [
+        ".device_chip:has(.device_chip_name:text-is(\"server\"))",
+        ".file_browser_name:text-is(\"boot\")",
+        ".file_browser_row:has(.file_browser_name:text-is(\"grub\")) .row_menu_toggle"
+      ]
     },
     {
       "file": "modules_picker_greyed.png",
       "language": "en",
       "page": "agent/modules.md",
       "source": "panel",
-      "viewport": "desktop",
+      "viewport": "tall",
       "url": "/modules",
       "element": ".module_picker_panel",
       "wait_for": ".module_picker_panel",
       "state": "desktop (Windows) online.",
-      "manual": "Select desktop and open the module picker, so Containers, ZFS storage and code-server show greyed."
+      "press": [
+        ".device_chip:has(.device_chip_name:text-is(\"desktop\"))",
+        ".module_picker_control"
+      ]
     },
     {
       "file": "modules_picker_greyed.png",
       "language": "zh",
       "page": "agent/modules.md",
       "source": "panel",
-      "viewport": "desktop",
+      "viewport": "tall",
       "url": "/modules",
       "element": ".module_picker_panel",
       "wait_for": ".module_picker_panel",
       "state": "desktop (Windows) online.",
-      "manual": "Select desktop and open the module picker, so Containers, ZFS storage and code-server show greyed."
+      "press": [
+        ".device_chip:has(.device_chip_name:text-is(\"desktop\"))",
+        ".module_picker_control"
+      ]
     },
     {
       "file": "modules_ai_tools.png",
       "language": "en",
+      "page": "agent/modules/ai_tools.md",
+      "pages": [
+        "quick-start/ai_gateway.md"
+      ],
+      "source": "panel",
+      "viewport": "desktop",
+      "url": "/modules",
+      "element": "section.settings_group:has(h2:text-is(\"{ui.modules.global_title}\"))",
+      "wait_for": ".ai_tools_account",
+      "state": "server with VS Code or CloudCLI instances of two accounts, the AI tools switch on, and both account rows reading Uses the hub's AI gateway.",
+      "press": [
+        ".device_chip:has(.device_chip_name:text-is(\"server\"))"
+      ]
+    },
+    {
+      "file": "modules_ai_tools.png",
+      "language": "zh",
       "page": "agent/modules/ai_tools.md",
       "source": "panel",
       "viewport": "desktop",
@@ -899,103 +1266,149 @@
       "element": "section.settings_group:has(h2:text-is(\"{ui.modules.global_title}\"))",
       "wait_for": ".ai_tools_account",
       "state": "server with VS Code or CloudCLI instances of two accounts, the AI tools switch on, and both account rows reading Uses the hub's AI gateway.",
-      "manual": "Select server."
+      "press": [
+        ".device_chip:has(.device_chip_name:text-is(\"server\"))"
+      ],
+      "pages": [
+        "quick-start/ai_gateway.md"
+      ]
     },
     {
-      "file": "modules_ai_tools.png",
+      "file": "client_ai_on.png",
       "language": "zh",
-      "page": "agent/modules/ai_tools.md",
-      "source": "panel",
+      "page": "quick-start/ai_gateway.md",
+      "source": "client",
       "viewport": "desktop",
-      "url": "/modules",
-      "element": "section.settings_group:has(h2:text-is(\"{ui.modules.global_title}\"))",
-      "wait_for": ".ai_tools_account",
-      "state": "server with VS Code or CloudCLI instances of two accounts, the AI tools switch on, and both account rows reading Uses the hub's AI gateway.",
-      "manual": "Select server."
+      "url": "/",
+      "element": "viewport",
+      "wait_for": "#content .card",
+      "state": "client_state.json with the variant ai_on: the hub is the exit and its AI gateway is in use, so the entry reads 工具已指向中枢.",
+      "press": [
+        "#tabs .tab:has(span:text-is(\"{ui.panel_ai}\"))"
+      ],
+      "client_variant": "ai_on"
     },
     {
       "file": "modules_terminal_tab.png",
       "language": "en",
       "page": "agent/modules/terminal.md",
       "source": "panel",
-      "viewport": "desktop",
+      "viewport": "tall",
       "url": "/modules",
-      "element": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))",
+      "element": "viewport",
       "wait_for": ".terminal_module_fields",
       "state": "server online with an account chosen in its Terminal module.",
-      "manual": "Select server and its Terminal tab."
+      "press": [
+        ".device_chip:has(.device_chip_name:text-is(\"server\"))",
+        ".tab_strip_tab:has(.tab_strip_name:text-is(\"Terminal\"))",
+        ".modules_actions button:has-text(\"{ui.modules.configure}\")"
+      ],
+      "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))"
     },
     {
       "file": "modules_terminal_tab.png",
       "language": "zh",
       "page": "agent/modules/terminal.md",
       "source": "panel",
-      "viewport": "desktop",
+      "viewport": "tall",
       "url": "/modules",
-      "element": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))",
+      "element": "viewport",
       "wait_for": ".terminal_module_fields",
       "state": "server online with an account chosen in its Terminal module.",
-      "manual": "Select server and its Terminal tab."
+      "press": [
+        ".device_chip:has(.device_chip_name:text-is(\"server\"))",
+        ".tab_strip_tab:has(.tab_strip_name:text-is(\"终端\"))",
+        ".modules_actions button:has-text(\"{ui.modules.configure}\")"
+      ],
+      "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))"
     },
     {
       "file": "modules_remote_desktop_tab.png",
       "language": "en",
       "page": "agent/modules/remote_desktop.md",
       "pages": [
-        "quick-start.md"
+        "quick-start/remote_desktop.md"
       ],
       "source": "panel",
-      "viewport": "desktop",
+      "viewport": "tall",
       "url": "/modules",
-      "element": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))",
+      "element": "viewport",
       "wait_for": ".modules_config",
       "state": "The quick start's one machine, your computer, with its Remote desktop switch on and applied.",
-      "manual": "Select your computer and its Remote desktop tab.",
+      "press": [
+        ".device_chip:has(.device_chip_name:text-is(\"desktop\"))",
+        ".tab_strip_tab:has(.tab_strip_name:text-is(\"Remote desktop\"))",
+        ".modules_actions button:has-text(\"{ui.modules.configure}\")"
+      ],
       "hide": [
         ".device_chip:not(.device_chip--on)"
-      ]
+      ],
+      "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))"
     },
     {
       "file": "modules_remote_desktop_tab.png",
       "language": "zh",
       "page": "agent/modules/remote_desktop.md",
       "pages": [
-        "quick-start.md"
+        "quick-start/remote_desktop.md"
       ],
       "source": "panel",
-      "viewport": "desktop",
+      "viewport": "tall",
       "url": "/modules",
-      "element": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))",
+      "element": "viewport",
       "wait_for": ".modules_config",
       "state": "The quick start's one machine, your computer, with its Remote desktop switch on and applied.",
-      "manual": "Select your computer and its Remote desktop tab.",
+      "press": [
+        ".device_chip:has(.device_chip_name:text-is(\"desktop\"))",
+        ".tab_strip_tab:has(.tab_strip_name:text-is(\"远程桌面\"))",
+        ".modules_actions button:has-text(\"{ui.modules.configure}\")"
+      ],
       "hide": [
         ".device_chip:not(.device_chip--on)"
-      ]
+      ],
+      "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))"
     },
     {
       "file": "shares_windows.png",
       "language": "en",
       "page": "agent/modules/shares.md",
+      "pages": [
+        "quick-start/files.md",
+        "scenarios/nas.md"
+      ],
       "source": "panel",
-      "viewport": "desktop",
+      "viewport": "tall",
       "url": "/modules",
       "element": "viewport",
-      "wait_for": ".page",
+      "wait_for": ".samba_share",
       "state": "desktop with the File share module running and one share.",
-      "manual": "Select desktop and its File share tab."
+      "press": [
+        ".device_chip:has(.device_chip_name:text-is(\"desktop\"))",
+        ".tab_strip_tab:has(.tab_strip_name:text-is(\"File share\"))",
+        ".modules_actions button:has-text(\"{ui.modules.configure}\")"
+      ],
+      "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))"
     },
     {
       "file": "shares_windows.png",
       "language": "zh",
       "page": "agent/modules/shares.md",
       "source": "panel",
-      "viewport": "desktop",
+      "viewport": "tall",
       "url": "/modules",
       "element": "viewport",
-      "wait_for": ".page",
+      "wait_for": ".samba_share",
       "state": "desktop with the File share module running and one share.",
-      "manual": "Select desktop and its File share tab."
+      "press": [
+        ".device_chip:has(.device_chip_name:text-is(\"desktop\"))",
+        ".tab_strip_tab:has(.tab_strip_name:text-is(\"文件共享\"))",
+        ".modules_actions button:has-text(\"{ui.modules.configure}\")"
+      ],
+      "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))",
+      "pages": [
+        "quick-start/files.md",
+        "scenarios/nas.md"
+      ]
     },
     {
       "file": "gitea.png",
@@ -1005,9 +1418,14 @@
       "viewport": "desktop",
       "url": "/modules",
       "element": "viewport",
-      "wait_for": ".page",
+      "wait_for": ".gitea_fields",
       "state": "server with Gitea running and an administrator.",
-      "manual": "Select server and its Gitea tab, with the access section in view."
+      "press": [
+        ".device_chip:has(.device_chip_name:text-is(\"server\"))",
+        ".tab_strip_tab:has(.tab_strip_name:text-is(\"Gitea\"))",
+        ".modules_actions button:has-text(\"{ui.modules.configure}\")"
+      ],
+      "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.gitea.access_title}\"))"
     },
     {
       "file": "gitea.png",
@@ -1017,45 +1435,68 @@
       "viewport": "desktop",
       "url": "/modules",
       "element": "viewport",
-      "wait_for": ".page",
+      "wait_for": ".gitea_fields",
       "state": "server with Gitea running and an administrator.",
-      "manual": "Select server and its Gitea tab, with the access section in view."
+      "press": [
+        ".device_chip:has(.device_chip_name:text-is(\"server\"))",
+        ".tab_strip_tab:has(.tab_strip_name:text-is(\"Gitea\"))",
+        ".modules_actions button:has-text(\"{ui.modules.configure}\")"
+      ],
+      "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.gitea.access_title}\"))"
     },
     {
       "file": "containers.png",
       "language": "en",
       "page": "agent/modules/containers.md",
       "source": "panel",
-      "viewport": "desktop",
+      "viewport": "tall",
       "url": "/modules",
       "element": "viewport",
-      "wait_for": ".page",
+      "wait_for": ".container_row",
       "state": "server with two declared containers, one publishing a port.",
-      "manual": "Select server and its containers tab."
+      "press": [
+        ".device_chip:has(.device_chip_name:text-is(\"server\"))",
+        ".tab_strip_tab:has(.tab_strip_name:text-is(\"Containers\"))",
+        ".modules_actions button:has-text(\"{ui.modules.configure}\")"
+      ],
+      "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))"
     },
     {
       "file": "containers.png",
       "language": "zh",
       "page": "agent/modules/containers.md",
       "source": "panel",
-      "viewport": "desktop",
+      "viewport": "tall",
       "url": "/modules",
       "element": "viewport",
-      "wait_for": ".page",
+      "wait_for": ".container_row",
       "state": "server with two declared containers, one publishing a port.",
-      "manual": "Select server and its containers tab."
+      "press": [
+        ".device_chip:has(.device_chip_name:text-is(\"server\"))",
+        ".tab_strip_tab:has(.tab_strip_name:text-is(\"容器\"))",
+        ".modules_actions button:has-text(\"{ui.modules.configure}\")"
+      ],
+      "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))"
     },
     {
       "file": "zfs.png",
       "language": "en",
       "page": "agent/modules/zfs.md",
+      "pages": [
+        "scenarios/nas.md"
+      ],
       "source": "panel",
       "viewport": "desktop",
       "url": "/modules",
       "element": "viewport",
-      "wait_for": ".page",
+      "wait_for": ".zfs_pool_card",
       "state": "server with a ZFS pool.",
-      "manual": "Select server and its ZFS tab, with the pools in view."
+      "press": [
+        ".device_chip:has(.device_chip_name:text-is(\"server2\"))",
+        ".tab_strip_tab:has(.tab_strip_name:text-is(\"ZFS storage\"))",
+        ".modules_actions button:has-text(\"{ui.modules.configure}\")"
+      ],
+      "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.zfs.pools_title}\"))"
     },
     {
       "file": "zfs.png",
@@ -1065,63 +1506,155 @@
       "viewport": "desktop",
       "url": "/modules",
       "element": "viewport",
-      "wait_for": ".page",
+      "wait_for": ".zfs_pool_card",
       "state": "server with a ZFS pool.",
-      "manual": "Select server and its ZFS tab, with the pools in view."
+      "press": [
+        ".device_chip:has(.device_chip_name:text-is(\"server2\"))",
+        ".tab_strip_tab:has(.tab_strip_name:text-is(\"ZFS 存储\"))",
+        ".modules_actions button:has-text(\"{ui.modules.configure}\")"
+      ],
+      "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.zfs.pools_title}\"))",
+      "pages": [
+        "scenarios/nas.md"
+      ]
     },
     {
       "file": "vscode_panel.png",
       "language": "en",
       "page": "agent/modules/vscode.md",
       "pages": [
-        "scenarios/one_laptop_every_machine.md"
+        "scenarios/one_laptop_every_machine.md",
+        "quick-start/vscode.md"
       ],
       "source": "panel",
-      "viewport": "desktop",
+      "viewport": "tall",
       "url": "/modules",
       "element": "viewport",
-      "wait_for": ".page",
+      "wait_for": ".vscode_instance",
       "state": "hub with one VS Code instance running.",
-      "manual": "Select hub and its VS Code tab."
+      "press": [
+        ".device_chip:has(.device_chip_name:text-is(\"server\"))",
+        ".tab_strip_tab:has(.tab_strip_name:text-is(\"VS Code\"))",
+        ".modules_actions button:has-text(\"{ui.modules.configure}\")"
+      ],
+      "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))"
     },
     {
       "file": "vscode_panel.png",
       "language": "zh",
       "page": "agent/modules/vscode.md",
       "pages": [
-        "scenarios/one_laptop_every_machine.md"
+        "scenarios/one_laptop_every_machine.md",
+        "quick-start/vscode.md"
       ],
       "source": "panel",
-      "viewport": "desktop",
+      "viewport": "tall",
       "url": "/modules",
       "element": "viewport",
-      "wait_for": ".page",
+      "wait_for": ".vscode_instance",
       "state": "hub with one VS Code instance running.",
-      "manual": "Select hub and its VS Code tab."
+      "press": [
+        ".device_chip:has(.device_chip_name:text-is(\"server\"))",
+        ".tab_strip_tab:has(.tab_strip_name:text-is(\"VS Code\"))",
+        ".modules_actions button:has-text(\"{ui.modules.configure}\")"
+      ],
+      "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))"
     },
     {
       "file": "cloudcli_panel.png",
       "language": "en",
       "page": "agent/modules/cloudcli.md",
+      "pages": [
+        "quick-start/cloudcli.md"
+      ],
       "source": "panel",
-      "viewport": "desktop",
+      "viewport": "tall",
       "url": "/modules",
-      "element": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))",
+      "element": "viewport",
       "wait_for": ".cloudcli_instance",
       "state": "server with CloudCLI running and one instance.",
-      "manual": "Select server and its CloudCLI tab, and select Configure so the instance shows."
+      "press": [
+        ".device_chip:has(.device_chip_name:text-is(\"server\"))",
+        ".tab_strip_tab:has(.tab_strip_name:text-is(\"CloudCLI\"))",
+        ".modules_actions button:has-text(\"{ui.modules.configure}\")"
+      ],
+      "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))"
     },
     {
       "file": "cloudcli_panel.png",
       "language": "zh",
       "page": "agent/modules/cloudcli.md",
       "source": "panel",
-      "viewport": "desktop",
+      "viewport": "tall",
       "url": "/modules",
-      "element": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))",
+      "element": "viewport",
       "wait_for": ".cloudcli_instance",
       "state": "server with CloudCLI running and one instance.",
-      "manual": "Select server and its CloudCLI tab, and select Configure so the instance shows."
+      "press": [
+        ".device_chip:has(.device_chip_name:text-is(\"server\"))",
+        ".tab_strip_tab:has(.tab_strip_name:text-is(\"CloudCLI\"))",
+        ".modules_actions button:has-text(\"{ui.modules.configure}\")"
+      ],
+      "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))",
+      "pages": [
+        "quick-start/cloudcli.md"
+      ]
+    },
+    {
+      "file": "app_web_cloudcli.png",
+      "language": "zh",
+      "page": "quick-start/cloudcli.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "The phone's Web screen with the CloudCLI row of your account on your computer, its Open button enabled."
+    },
+    {
+      "file": "app_cloudcli_first_git.png",
+      "language": "zh",
+      "page": "agent/modules/cloudcli.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "The phone's browser on the first Open of the account's CloudCLI: the Git Configuration screen with Git Name lab and Git Email lab@example.com filled."
+    },
+    {
+      "file": "app_cloudcli_first_agents.png",
+      "language": "zh",
+      "page": "agent/modules/cloudcli.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "CloudCLI's Connect Your AI Agents screen during the first open, Claude Code ticked as Configured via settings.json, Complete Setup in view."
+    },
+    {
+      "file": "app_cloudcli_first_language.png",
+      "language": "zh",
+      "page": "agent/modules/cloudcli.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "CloudCLI's Settings, Appearance tab, after Display Language is set to 简体中文: every label in Chinese."
+    },
+    {
+      "file": "app_cloudcli_first_empty.png",
+      "language": "zh",
+      "page": "agent/modules/cloudcli.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "CloudCLI's sidebar right after Complete Setup: No projects found, with the refresh and new project buttons at the top."
+    },
+    {
+      "file": "app_cloudcli_first_folder.png",
+      "language": "zh",
+      "page": "agent/modules/cloudcli.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "CloudCLI's Create New Project form, step 1, with Workspace Path /home/lab/notes-app typed and Next in view."
+    },
+    {
+      "file": "app_cloudcli_new.png",
+      "language": "zh",
+      "page": "agent/modules/cloudcli.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "A New Session in the notes-app project: Choose Your AI Assistant with Claude selected and the empty message box at the bottom."
     },
     {
       "file": "client_connected.png",
@@ -1136,7 +1669,19 @@
       "url": "/",
       "element": "viewport",
       "wait_for": "#content .card",
-      "state": "client_state.json as committed."
+      "state": "client_state.json as committed: the hub reached over the LAN, with its round trip."
+    },
+    {
+      "file": "client_hubs_two.png",
+      "language": "en",
+      "page": "scenarios/one_client_several_hubs.md",
+      "source": "client",
+      "viewport": "desktop",
+      "url": "/",
+      "element": "viewport",
+      "wait_for": "#content .card",
+      "state": "client_state.json with the variant two_hubs: the hub reached over the LAN, and a second hub office reached through NetBird with its virtual network on, each with its round trip.",
+      "client_variant": "two_hubs"
     },
     {
       "file": "client_connected.png",
@@ -1151,7 +1696,19 @@
       "url": "/",
       "element": "viewport",
       "wait_for": "#content .card",
-      "state": "client_state.json as committed."
+      "state": "client_state.json as committed: the hub reached over the LAN, with its round trip."
+    },
+    {
+      "file": "client_hubs_two.png",
+      "language": "zh",
+      "page": "scenarios/one_client_several_hubs.md",
+      "source": "client",
+      "viewport": "desktop",
+      "url": "/",
+      "element": "viewport",
+      "wait_for": "#content .card",
+      "state": "client_state.json with the variant two_hubs: two hub rows, hub over the LAN and office over NetBird, each with its round trip.",
+      "client_variant": "two_hubs"
     },
     {
       "file": "client_network_picker.png",
@@ -1162,8 +1719,10 @@
       "url": "/",
       "element": "viewport",
       "wait_for": "#content .card",
-      "state": "client_state.json as committed.",
-      "manual": "Open the virtual network picker on the home hub's row."
+      "state": "client_state.json as committed: the hub's virtual network is off, so the picker opens.",
+      "press": [
+        ".overlay_pick .picker_field"
+      ]
     },
     {
       "file": "client_network_picker.png",
@@ -1174,20 +1733,43 @@
       "url": "/",
       "element": "viewport",
       "wait_for": "#content .card",
-      "state": "client_state.json as committed.",
-      "manual": "Open the virtual network picker on the home hub's row."
+      "state": "client_state.json as committed: the hub's virtual network is off, so the picker opens.",
+      "press": [
+        ".overlay_pick .picker_field"
+      ]
     },
     {
       "file": "client_files_mounted.png",
       "language": "en",
       "page": "client/desktop.md",
+      "pages": [
+        "quick-start/files.md",
+        "scenarios/nas.md"
+      ],
       "source": "client",
       "viewport": "desktop",
       "url": "/",
       "element": "viewport",
       "wait_for": "#content .card",
-      "state": "client_state.json as committed.",
-      "manual": "Open the Files page of the window."
+      "state": "client_state.json as committed: the media share is mounted.",
+      "press": [
+        "#tabs .tab:has(span:text-is(\"{ui.panel_files}\"))"
+      ]
+    },
+    {
+      "file": "client_ai_on.png",
+      "language": "en",
+      "page": "quick-start/ai_gateway.md",
+      "source": "client",
+      "viewport": "desktop",
+      "url": "/",
+      "element": "viewport",
+      "wait_for": "#content .card",
+      "state": "client_state.json with the variant ai_on: the hub is the exit and its AI gateway is in use, so the entry reads The tools point at the hub.",
+      "press": [
+        "#tabs .tab:has(span:text-is(\"{ui.panel_ai}\"))"
+      ],
+      "client_variant": "ai_on"
     },
     {
       "file": "client_files_mounted.png",
@@ -1198,20 +1780,52 @@
       "url": "/",
       "element": "viewport",
       "wait_for": "#content .card",
-      "state": "client_state.json as committed.",
-      "manual": "Open the Files page of the window."
+      "state": "client_state.json as committed: the media share is mounted.",
+      "press": [
+        "#tabs .tab:has(span:text-is(\"{ui.panel_files}\"))"
+      ],
+      "pages": [
+        "quick-start/files.md",
+        "scenarios/nas.md"
+      ]
     },
     {
       "file": "client_terminal.png",
       "language": "en",
       "page": "client/desktop.md",
+      "pages": [
+        "quick-start/terminal.md"
+      ],
       "source": "client",
       "viewport": "desktop",
       "url": "/",
       "element": "viewport",
-      "wait_for": "#content",
-      "state": "client_state.json as committed.",
-      "manual": "Open the Terminal page of the window, so the kept session's tab shows."
+      "wait_for": "#content .card",
+      "state": "client_state.json as committed: one session on each machine; the server and desktop tabs are closed and the hub's shell is switched to Persistent before the shot.",
+      "press": [
+        "#tabs .tab:has(span:text-is(\"{ui.panel_terminals}\"))",
+        ".term_tab:has(.term_tab_label[title=\"server\"]) .term_tab_close",
+        ".term_tab:has(.term_tab_label[title=\"desktop\"]) .term_tab_close",
+        ".term_switches .switch:has-text(\"{ui.terminal_persistent}\")"
+      ]
+    },
+    {
+      "file": "client_terminal_switches.png",
+      "language": "en",
+      "page": "quick-start/terminal.md",
+      "source": "client",
+      "viewport": "desktop",
+      "url": "/",
+      "element": "viewport",
+      "wait_for": "#content .card",
+      "state": "client_state.json as committed: one session on each machine; the server and desktop tabs are closed, and the hub's shell is switched to Persistent and Shared before the shot, so its tab shows both badges.",
+      "press": [
+        "#tabs .tab:has(span:text-is(\"{ui.panel_terminals}\"))",
+        ".term_tab:has(.term_tab_label[title=\"server\"]) .term_tab_close",
+        ".term_tab:has(.term_tab_label[title=\"desktop\"]) .term_tab_close",
+        ".term_switches .switch:has-text(\"{ui.terminal_persistent}\")",
+        ".term_switches .switch:has-text(\"{ui.terminal_shared}\")"
+      ]
     },
     {
       "file": "client_terminal.png",
@@ -1221,9 +1835,35 @@
       "viewport": "desktop",
       "url": "/",
       "element": "viewport",
-      "wait_for": "#content",
-      "state": "client_state.json as committed.",
-      "manual": "Open the Terminal page of the window, so the kept session's tab shows."
+      "wait_for": "#content .card",
+      "state": "client_state.json as committed: one session on each machine; the server and desktop tabs are closed and the hub's shell is switched to Persistent before the shot.",
+      "press": [
+        "#tabs .tab:has(span:text-is(\"{ui.panel_terminals}\"))",
+        ".term_tab:has(.term_tab_label[title=\"server\"]) .term_tab_close",
+        ".term_tab:has(.term_tab_label[title=\"desktop\"]) .term_tab_close",
+        ".term_switches .switch:has-text(\"{ui.terminal_persistent}\")"
+      ],
+      "pages": [
+        "quick-start/terminal.md"
+      ]
+    },
+    {
+      "file": "client_terminal_switches.png",
+      "language": "zh",
+      "page": "quick-start/terminal.md",
+      "source": "client",
+      "viewport": "desktop",
+      "url": "/",
+      "element": "viewport",
+      "wait_for": "#content .card",
+      "state": "client_state.json as committed: one session on each machine; the server and desktop tabs are closed, and the hub's shell is switched to Persistent and Shared before the shot, so its tab shows both badges.",
+      "press": [
+        "#tabs .tab:has(span:text-is(\"{ui.panel_terminals}\"))",
+        ".term_tab:has(.term_tab_label[title=\"server\"]) .term_tab_close",
+        ".term_tab:has(.term_tab_label[title=\"desktop\"]) .term_tab_close",
+        ".term_switches .switch:has-text(\"{ui.terminal_persistent}\")",
+        ".term_switches .switch:has-text(\"{ui.terminal_shared}\")"
+      ]
     },
     {
       "file": "client_terminals_three.png",
@@ -1233,9 +1873,14 @@
       "viewport": "desktop",
       "url": "/",
       "element": "viewport",
-      "wait_for": "#content .term_page",
-      "state": "client_state.json with hub, server and desktop as the hub's machines.",
-      "manual": "Open the Terminals page of the window and open a terminal on each of hub, server and desktop, so three tabs show."
+      "wait_for": "#content .card",
+      "state": "client_state.json as committed: one session on each of hub, server and desktop; each tab is selected so its shell attaches, hub last.",
+      "press": [
+        "#tabs .tab:has(span:text-is(\"{ui.panel_terminals}\"))",
+        ".term_tab_label[title=\"server\"]",
+        ".term_tab_label[title=\"desktop\"]",
+        ".term_tab_label[title=\"hub\"]"
+      ]
     },
     {
       "file": "client_terminals_three.png",
@@ -1245,21 +1890,31 @@
       "viewport": "desktop",
       "url": "/",
       "element": "viewport",
-      "wait_for": "#content .term_page",
-      "state": "client_state.json with hub, server and desktop as the hub's machines.",
-      "manual": "Open the Terminals page of the window and open a terminal on each of hub, server and desktop, so three tabs show."
+      "wait_for": "#content .card",
+      "state": "client_state.json as committed: one session on each of hub, server and desktop; each tab is selected so its shell attaches, hub last.",
+      "press": [
+        "#tabs .tab:has(span:text-is(\"{ui.panel_terminals}\"))",
+        ".term_tab_label[title=\"server\"]",
+        ".term_tab_label[title=\"desktop\"]",
+        ".term_tab_label[title=\"hub\"]"
+      ]
     },
     {
       "file": "client_remote_desktops.png",
       "language": "en",
       "page": "scenarios/one_laptop_every_machine.md",
+      "pages": [
+        "quick-start/remote_desktop.md"
+      ],
       "source": "client",
       "viewport": "desktop",
       "url": "/",
       "element": "viewport",
-      "wait_for": "#content .card .feat",
-      "state": "client_state.json with desktop's desktop entry and viewers marking it running, so its row reads Viewer open.",
-      "manual": "Open the Remote desktops page of the window."
+      "wait_for": "#content .card",
+      "state": "client_state.json as committed: viewers marks desktop's entry running, so its row reads Viewer open.",
+      "press": [
+        "#tabs .tab:has(span:text-is(\"{ui.panel_desktops}\"))"
+      ]
     },
     {
       "file": "client_remote_desktops.png",
@@ -1269,21 +1924,31 @@
       "viewport": "desktop",
       "url": "/",
       "element": "viewport",
-      "wait_for": "#content .card .feat",
-      "state": "client_state.json with desktop's desktop entry and viewers marking it running, so its row reads Viewer open.",
-      "manual": "Open the Remote desktops page of the window."
+      "wait_for": "#content .card",
+      "state": "client_state.json as committed: viewers marks desktop's entry running, so its row reads Viewer open.",
+      "press": [
+        "#tabs .tab:has(span:text-is(\"{ui.panel_desktops}\"))"
+      ],
+      "pages": [
+        "quick-start/remote_desktop.md"
+      ]
     },
     {
       "file": "client_web_vscode.png",
       "language": "en",
       "page": "scenarios/one_laptop_every_machine.md",
+      "pages": [
+        "quick-start/vscode.md"
+      ],
       "source": "client",
       "viewport": "desktop",
       "url": "/",
       "element": "viewport",
-      "wait_for": "#content .card .feat",
-      "state": "client_state.json with hub's VS Code web entry in forwards, so its row reads the forwarded port.",
-      "manual": "Open the Web page of the window."
+      "wait_for": "#content .card",
+      "state": "client_state.json as committed: the VS Code entry on hub carries a forward, so its row reads the forwarded port.",
+      "press": [
+        "#tabs .tab:has(span:text-is(\"{ui.panel_web}\"))"
+      ]
     },
     {
       "file": "client_web_vscode.png",
@@ -1293,9 +1958,22 @@
       "viewport": "desktop",
       "url": "/",
       "element": "viewport",
-      "wait_for": "#content .card .feat",
-      "state": "client_state.json with hub's VS Code web entry in forwards, so its row reads the forwarded port.",
-      "manual": "Open the Web page of the window."
+      "wait_for": "#content .card",
+      "state": "client_state.json as committed: the VS Code entry on hub carries a forward, so its row reads the forwarded port.",
+      "press": [
+        "#tabs .tab:has(span:text-is(\"{ui.panel_web}\"))"
+      ],
+      "pages": [
+        "quick-start/vscode.md"
+      ]
+    },
+    {
+      "file": "client_vscode_editor.png",
+      "language": "zh",
+      "page": "quick-start/vscode.md",
+      "source": "os",
+      "viewport": "desktop",
+      "state": "Edge on a Windows laptop showing VS Code opened from the client's Web page, with a project folder of server open in the explorer and one file in the editor; the screen is cropped below the tab strip and scaled to 1600x900."
     },
     {
       "file": "app_join_scan.png",
@@ -1323,9 +2001,6 @@
       "file": "app_hub.png",
       "language": "en",
       "page": "client/android.md",
-      "pages": [
-        "quick-start.md"
-      ],
       "source": "app",
       "viewport": "app",
       "state": "The hub screen; the hub row reads Connected · EasyTier with the round trip in ms, and the virtual network row reads Connected · with your phone's address."
@@ -1334,20 +2009,25 @@
       "file": "app_hub.png",
       "language": "zh",
       "page": "client/android.md",
-      "pages": [
-        "quick-start.md"
-      ],
       "source": "app",
       "viewport": "app",
       "state": "The hub screen; the hub row reads Connected · EasyTier with the round trip in ms, and the virtual network row reads Connected · with your phone's address."
+    },
+    {
+      "file": "app_rdp_viewer.png",
+      "language": "zh",
+      "page": "client/android.md",
+      "pages": [
+        "quick-start/remote_desktop.md"
+      ],
+      "source": "app",
+      "viewport": "app",
+      "state": "The phone viewer fills the screen with the quick start computer's desktop; three round buttons at the top right."
     },
     {
       "file": "app_hub_console_waiting.png",
       "language": "en",
       "page": "client/android.md",
-      "pages": [
-        "quick-start.md"
-      ],
       "source": "app",
       "viewport": "app",
       "state": "The hub screen, the virtual network row reading Connecting… with the console hint under it."
@@ -1384,7 +2064,8 @@
       "language": "en",
       "page": "client/android.md",
       "pages": [
-        "quick-start.md"
+        "quick-start/files.md",
+        "scenarios/nas.md"
       ],
       "source": "app",
       "viewport": "app",
@@ -1395,7 +2076,8 @@
       "language": "zh",
       "page": "client/android.md",
       "pages": [
-        "quick-start.md"
+        "quick-start/files.md",
+        "scenarios/nas.md"
       ],
       "source": "app",
       "viewport": "app",
@@ -1406,18 +2088,66 @@
       "language": "en",
       "page": "client/android.md",
       "pages": [
-        "quick-start.md"
+        "quick-start/terminal.md"
       ],
       "source": "app",
       "viewport": "app",
       "state": "A terminal session with the key row showing."
     },
     {
+      "file": "app_web_cloudcli.png",
+      "language": "en",
+      "page": "quick-start/cloudcli.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "The Web screen with one row titled CloudCLI with the account name in parentheses, the computer's CloudCLI instance running."
+    },
+    {
+      "file": "app_cloudcli_first_git.png",
+      "language": "en",
+      "page": "agent/modules/cloudcli.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "The phone's browser on the first Open of the account's CloudCLI: the Git Configuration screen with Git Name lab and Git Email lab@example.com filled."
+    },
+    {
+      "file": "app_cloudcli_first_agents.png",
+      "language": "en",
+      "page": "agent/modules/cloudcli.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "CloudCLI's Connect Your AI Agents screen during the first open, Claude Code ticked as Configured via settings.json, Complete Setup in view."
+    },
+    {
+      "file": "app_cloudcli_first_empty.png",
+      "language": "en",
+      "page": "agent/modules/cloudcli.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "CloudCLI's sidebar right after Complete Setup: No projects found, with the refresh and new project buttons at the top."
+    },
+    {
+      "file": "app_cloudcli_first_folder.png",
+      "language": "en",
+      "page": "agent/modules/cloudcli.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "CloudCLI's Create New Project form, step 1, with Workspace Path /home/lab/notes-app typed and Next in view."
+    },
+    {
+      "file": "app_cloudcli_new.png",
+      "language": "en",
+      "page": "agent/modules/cloudcli.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "A New Session in the notes-app project: Choose Your AI Assistant with Claude selected and the empty message box at the bottom."
+    },
+    {
       "file": "app_terminal.png",
       "language": "zh",
       "page": "client/android.md",
       "pages": [
-        "quick-start.md"
+        "quick-start/terminal.md"
       ],
       "source": "app",
       "viewport": "app",
@@ -1428,7 +2158,7 @@
       "language": "en",
       "page": "client/android.md",
       "pages": [
-        "quick-start.md"
+        "quick-start/remote_desktop.md"
       ],
       "source": "app",
       "viewport": "app",
@@ -1439,7 +2169,7 @@
       "language": "zh",
       "page": "client/android.md",
       "pages": [
-        "quick-start.md"
+        "quick-start/remote_desktop.md"
       ],
       "source": "app",
       "viewport": "app",
@@ -1455,8 +2185,8 @@
       "element": "viewport",
       "wait_for": "text=Setup keys are pre-authentication keys",
       "state": "The owner's NetBird account with a reusable key named Test and the one-off keys the console created on its own; the survey banner is closed first.",
-      "press": [
-        "div.fixed.z-50.w-full:has-text(\"survey\") button"
+      "hide": [
+        "div.fixed.z-50.w-full:has-text(\"survey\")"
       ]
     },
     {
@@ -1469,13 +2199,22 @@
       "element": "[role=\"dialog\"]",
       "wait_for": "text=Setup keys are pre-authentication keys",
       "state": "The Create New Setup Key dialog with the name test typed in and Make this key reusable switched on; nothing is created.",
+      "ready": "text=Setup keys are pre-authentication keys",
       "press": [
-        "div.fixed.z-50.w-full:has-text(\"survey\") button",
         "button:has-text(\"Create Key\")",
-        "[role=\"dialog\"] [role=\"switch\"] >> nth=0"
+        "[role=\"dialog\"] [role=\"switch\"] >> nth=0",
+        {
+          "fill": "[role=\"dialog\"] input[placeholder=\"e.g., AWS Servers\"]",
+          "text": "test"
+        }
       ],
-      "fill": {
-        "[role=\"dialog\"] input[placeholder=\"e.g., AWS Servers\"]": "test"
+      "hide": [
+        "div.fixed.z-50.w-full:has-text(\"survey\")"
+      ],
+      "language_pages": {
+        "en": [
+          "quick-start.md"
+        ]
       }
     },
     {
@@ -1488,7 +2227,12 @@
       "element": "[role=\"dialog\"]",
       "wait_for": "[role=\"dialog\"]",
       "state": "The NetBird console's Setup Keys page.",
-      "manual": "Taken by hand once: the dialog the console shows after Create Setup Key, with the key painted over by the redaction; kept as the owner's own capture."
+      "manual": "Taken by hand once: the dialog the console shows after Create Setup Key, with the key painted over by the redaction; kept as the owner's own capture.",
+      "language_pages": {
+        "en": [
+          "quick-start.md"
+        ]
+      }
     },
     {
       "file": "console_netbird_network.png",
@@ -1498,14 +2242,21 @@
       "viewport": "wide",
       "url": "https://app.netbird.io/networks",
       "element": "viewport",
-      "wait_for": "text=Networks",
-      "state": "A NetBird network whose routing peer is the hub and whose resource is the LAN subnet.",
-      "manual": "Open that network so its routing peers and resources are both in view.",
+      "wait_for": "text=/Add Resource/i",
+      "state": "The lab network's own page in the owner's NetBird console: one resource, one policy and the hub as its routing peer.",
       "hide": [
-        "header img",
-        "header button:has(img)"
+        "div.fixed.z-50.w-full:has-text(\"survey\")"
       ],
-      "_todo": "Not verified against the NetBird console: the page path, the wait_for text, the dialog role and the hide selectors for the avatar and account menu."
+      "ready": "text=/Add Network/i",
+      "press": [
+        {
+          "fill": "input[placeholder^=\"Search by network\"]",
+          "text": "lab"
+        },
+        {
+          "key": "Enter"
+        }
+      ]
     },
     {
       "file": "console_netbird_policy.png",
@@ -1513,76 +2264,93 @@
       "page": "scenarios/netbird_lan_routes.md",
       "source": "console",
       "viewport": "wide",
-      "url": "https://app.netbird.io/acls",
-      "element": "[role=\"dialog\"]",
-      "wait_for": "[role=\"dialog\"]",
-      "state": "A policy whose source is the setup key's auto-assigned group and whose destination is the LAN resource.",
-      "manual": "Open that policy from Access Control, Policies, and leave it open.",
+      "url": "https://app.netbird.io/access-control",
+      "element": "viewport",
+      "wait_for": "text=/Add Policy/i",
+      "state": "The Access Control page with the policy lab LAN access (source All, destination the resource lab LAN); the other policies' rows are hidden.",
       "hide": [
-        "header img",
-        "header button:has(img)"
+        "div.fixed.z-50.w-full:has-text(\"survey\")"
       ],
-      "_todo": "Not verified against the NetBird console: the page path, the wait_for text, the dialog role and the hide selectors for the avatar and account menu."
+      "ready": "text=/Add Policy/i",
+      "press": [
+        {
+          "fill": "input[placeholder^=\"Search by name\"]",
+          "text": "lab LAN"
+        }
+      ]
     },
     {
       "file": "console_easytier_devices.png",
       "language": "console",
       "page": "hub/easytier.md",
-      "pages": [
-        "quick-start.md"
-      ],
       "source": "console",
       "viewport": "wide",
-      "url": "https://console.easytier.net/",
+      "url": "https://console.easytier.net/index.html#/devices",
       "element": "viewport",
-      "wait_for": "body",
-      "state": "The EasyTier console's device list with the hub registered.",
-      "manual": "Open the device list.",
+      "wait_for": "table tbody tr",
+      "state": "The EasyTier console's device list with the hub online and approved under the key Test; the owner's other devices' rows are hidden.",
       "hide": [
-        "input[type=\"password\"]",
-        "header img"
+        "table tbody tr:not(:has-text(\"Debian\"))"
       ],
-      "_todo": "Not verified against the EasyTier console: its address, the wait_for, the device list, the network form, the subnet proxy field and the hide selectors."
+      "language_pages": {
+        "zh": [
+          "quick-start.md"
+        ]
+      }
     },
     {
       "file": "console_easytier_network_create.png",
       "language": "console",
       "page": "hub/easytier.md",
-      "pages": [
-        "quick-start.md"
-      ],
       "source": "console",
       "viewport": "wide",
-      "url": "https://console.easytier.net/",
+      "url": "https://console.easytier.net/index.html#/networks",
       "element": "viewport",
-      "wait_for": "body",
-      "state": "The EasyTier console's device list with the hub registered.",
-      "manual": "Open the network form for the hub's device and fill it: a network name, a secret, the hub's virtual address, a public server as the peer; leave it unsaved.",
+      "wait_for": "text=\"创建网络\"",
+      "state": "The create-network dialog of the EasyTier console with the name home typed; nothing is created.",
       "hide": [
         "input[type=\"password\"]",
         "header img"
       ],
-      "_todo": "Not verified against the EasyTier console: its address, the wait_for, the device list, the network form, the subnet proxy field and the hide selectors."
+      "ready": "text=\"创建网络\"",
+      "press": [
+        "button:has-text(\"创建网络\")",
+        {
+          "fill": ".n-modal input.n-input__input-el >> nth=0",
+          "text": "home"
+        }
+      ],
+      "language_pages": {
+        "zh": [
+          "quick-start.md"
+        ]
+      }
     },
     {
       "file": "console_easytier_device_attach.png",
       "language": "console",
       "page": "hub/easytier.md",
-      "pages": [
-        "quick-start.md"
-      ],
       "source": "console",
       "viewport": "wide",
-      "url": "https://console.easytier.net/",
+      "url": "https://console.easytier.net/index.html#/networks",
       "element": "viewport",
-      "wait_for": "body",
-      "state": "The EasyTier console's device list with the hub on its network and your phone registered.",
-      "manual": "Open the form that attaches your phone to the hub's network; leave it unsaved.",
+      "wait_for": ".n-base-select-option",
+      "state": "The test network's attach-device dialog with its device picker open, listing the devices that can be attached.",
       "hide": [
         "input[type=\"password\"]",
         "header img"
       ],
-      "_todo": "Not verified against the EasyTier console: its address, the wait_for, the device list, the network form, the subnet proxy field and the hide selectors."
+      "ready": "text=\"测试网络\"",
+      "press": [
+        "text=\"测试网络\"",
+        "button:has-text(\"挂载设备\")",
+        ".n-modal .n-base-selection"
+      ],
+      "language_pages": {
+        "zh": [
+          "quick-start.md"
+        ]
+      }
     },
     {
       "file": "console_easytier_subnet_proxy.png",
@@ -1590,16 +2358,19 @@
       "page": "scenarios/easytier_lan_routes.md",
       "source": "console",
       "viewport": "wide",
-      "url": "https://console.easytier.net/",
+      "url": "https://console.easytier.net/index.html#/networks",
       "element": "viewport",
-      "wait_for": "body",
-      "state": "The EasyTier console with the hub on its network.",
-      "manual": "Open the hub device's network config and fill the subnet proxy field with the LAN subnet; leave it unsaved.",
+      "wait_for": "text=192.168.8.0/24",
+      "state": "The test network's subnet-route tab listing 192.168.8.0/24 through the hub.",
       "hide": [
         "input[type=\"password\"]",
         "header img"
       ],
-      "_todo": "Not verified against the EasyTier console: its address, the wait_for, the device list, the network form, the subnet proxy field and the hide selectors."
+      "ready": "text=\"测试网络\"",
+      "press": [
+        "text=\"测试网络\"",
+        ".n-tabs-tab__label:has-text(\"子网路由\")"
+      ]
     },
     {
       "file": "os_mac_keychain_trust.png",
@@ -1621,6 +2392,10 @@
       "file": "win_explorer_mapped.png",
       "language": "os",
       "page": "client/desktop.md",
+      "pages": [
+        "quick-start/files.md",
+        "scenarios/nas.md"
+      ],
       "source": "os",
       "viewport": "os",
       "state": "File Explorer on Windows showing a share the client mapped to a drive letter."

@@ -3,40 +3,32 @@ layout: home
 title: 微子
 hero:
   name: 微子
-  text: 用一台中枢管理你自己的机器
-  tagline: 中枢装在一台常开的机器上，被控端装在它管理的每台机器上，客户端装在每个人的电脑或手机上。
+  text: 一台电脑上的服务，手机和笔记本在哪都能用
+  tagline: 家里的电脑，扫一次码，从任何地方接着用
   image:
     src: /neutrino_512.png
     alt: 微子
   actions:
     - theme: brand
-      text: 快速上手
+      text: 第零步
       link: /zh-CN/quick-start
-    - theme: alt
-      text: 安装中枢
-      link: /zh-CN/hub/install
     - theme: alt
       text: 概述
       link: /zh-CN/overview
 features:
-  - title: 开始
-    details: 中枢、被控端和客户端在你的网络里各在哪里；从零搭起一台中枢，管理一台机器，挂上一个共享。
-    link: /zh-CN/overview
-  - title: 中枢
-    details: 在一台 Linux 机器上装好中枢，再设置网络、虚拟网、代理、AI 网关、设备、客户端、服务、凭据和设置。
-    link: /zh-CN/hub/install
-  - title: 被控端
-    details: 在中枢管理的 Linux、Windows 或 Mac 机器上开终端、管文件、装模块，模块包括共享、Gitea、容器、ZFS 和 VS Code。
-    link: /zh-CN/agent/terminals
-  - title: 客户端
-    details: Linux、Windows 和 macOS 上的桌面客户端，以及 Android 应用。
-    link: /zh-CN/client/desktop
-  - title: 命令
-    details: nhub、nagent 和 nclient 的每个子命令。
-    link: /zh-CN/commands/nhub
-  - title: 参考
-    details: 每个包支持的系统，按现象排查的故障，以及协议 3 下的通道。
-    link: /zh-CN/reference/platforms
+  - title: 第一次用
+    details: 把微子装到电脑上，手机和笔记本加入，在哪都能打开它的 AI 会话、编辑器、终端、桌面和文件。
+    link: /zh-CN/quick-start
+  - title: 进阶用法
+    details: 选哪种外部访问，一个客户端连多台中枢，一台笔记本管所有机器，经自己的 VPS 连回家，让中枢当路由器，把一台机器做成 NAS，访问没装被控端的设备。
+    link: /zh-CN/scenarios/choose_a_way_in
+  - title: 文档参考
+    details: 面板、被控端、客户端的每一页，三条命令，和故障排查。
+    link: /zh-CN/hub/dashboard
 ---
 
-微子（Neutrino）用一台常开的 Linux 机器管理一个人或一个家庭的所有机器。这台机器上的中枢决定网络形态，加入 NetBird 或 EasyTier，把选定的流量交给出口节点。中枢还提供一个 AI 网关和一个在浏览器里打开的面板。Linux、Windows 和 Mac 上的被控端提供共享、git、容器、存储和 VS Code；电脑和 Android 手机上的客户端用一个按钮打开其中每一项。
+<div class="home-lead">
+
+微子的中枢装在家里那台常开的电脑上。手机和笔记本装上客户端，扫码或贴链接加入；在外面经 EasyTier 这类外部访问连回来，家里没有公网地址也行。电脑上的终端、Claude Code 会话、编辑器、桌面和文件，在手机和笔记本上都能打开。
+
+</div>

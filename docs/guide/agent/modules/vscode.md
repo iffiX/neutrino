@@ -4,7 +4,7 @@ title: VS Code
 
 # VS Code
 
-The **VS Code** module runs VS Code in the browser on a managed machine, one instance per account. A desktop client or the Android app opens each instance through a forward on its own `127.0.0.1`. You install VS Code Server on the machine under Microsoft's license terms: the module's installer fetches Microsoft's standalone VS Code CLI at one pinned build, and the agent runs it.
+The **VS Code** module gives each account on a managed machine its own VS Code in the browser. You install VS Code Server on the machine under Microsoft's license terms, at one pinned build of Microsoft's standalone VS Code CLI, and the agent runs it.
 
 | System  | Machines that run it                      |
 | ------- | ----------------------------------------- |
@@ -12,43 +12,34 @@ The **VS Code** module runs VS Code in the browser on a managed machine, one ins
 | Windows | amd64                                     |
 | macOS   | Apple silicon and Intel                   |
 
-## Turn it on
+## Accept the terms and install
 
-1. On the **VS Code** tab of the [Modules](../modules.md) page, select **Open and accept the terms**. Microsoft's terms open in a new browser tab, and the press records that you accept them for this machine. The button then reads **Terms accepted**, and the rest of the tab appears under it.
+1. On the **VS Code** tab of the [Modules](../modules.md) page, select **Open and accept the terms**. Microsoft's terms open in a new browser tab, and the press records your acceptance for this machine.
 1. Select **Install**.
 1. Select **Configure**. The **Instances** section opens under the tab.
 
-Each machine asks once. Until its terms are accepted, the hub refuses to install, start or configure VS Code there with `terms_not_accepted`.
-
-![The VS Code tab with one instance and its account](/guide/en/vscode_panel.webp)
+After the first step the button reads **Terms accepted**. Until then the hub rejects an install, a start or a configuration of VS Code on that machine.
 
 ## Add an instance
 
 1. Under **Instances**, select **Add instance**.
 1. Fill **Account** with the name of an account on the machine.
-1. Optional: change the **Port**. A new instance gets the port after the highest one in use, starting at 8000.
+1. Optional: change the **Port**. The first instance gets 8000.
 1. On a Windows machine, pick the account's login under **Windows login for** the account.
-1. Select **Apply VS Code**. The machine saves the instances and restarts them.
+1. Select **Apply VS Code**.
 
-Each instance runs as its account, so files it creates belong to that account. Its row reads **running** or **not running**, and a reason appears under the row when the machine reports one.
+![The VS Code tab with one instance and its account](/guide/en/vscode_panel.webp)
 
-## Windows logins
+Each instance runs as its account, so the files it creates belong to that account. Its row reads **running** or **not running**, with a reason when the machine reports one. A refused apply names its code, listed under [VS Code](../../reference/troubleshooting.md#vs-code) in troubleshooting.
 
-Windows starts an instance as its account only with that account's password. Store the account's username and password under **Logins** on the [Credentials](../../hub/credentials.md) page, then pick that login on the instance.
-
-When the account's password changes on Windows, the agent reports `credential_invalid` for the instance, and its row says Windows no longer accepts the login. Update the login on the **Credentials** page, or pick another one, and select **Apply VS Code** again.
-
-## Refusals on apply
-
-| Code                 | Cause                                                      |
-| -------------------- | ---------------------------------------------------------- |
-| `account_unknown`    | the machine has no account by that name                    |
-| `account_duplicate`  | two instances name the same account                        |
-| `port_duplicate`     | two instances use the same port                            |
-| `port_invalid`       | the port is outside 1024 to 65535                          |
-| `credential_missing` | a Windows instance has no login picked                     |
-| `token_missing`      | the vault is locked, so the instance's token is unreadable |
+On Windows, an instance starts only with its account's password. Store the username and password under **Logins** on the [Credentials](../../hub/credentials.md) page, then pick that login. After the password changes on Windows, update the login and select **Apply VS Code** again.
 
 ## Open it from a client
 
-Each running instance is a row under **Web** on the [Services](../../hub/services.md) page, titled with **VS Code** and the account. The instance listens on its machine's loopback alone, so a browser does not open the row's address. On the client's **Web** page, **Open** makes a forward through the hub and opens the instance in the browser with a fresh token. The desktop client and the Android app both open it.
+Each running instance is a row under **Web** on the [Services](../../hub/services.md) page, titled **VS Code** with the account in parentheses. The instance listens on its machine's loopback alone, so a client opens it with **Open** on its **Web** page. Its account's AI tools follow the machine's setting in [Point a machine's AI tools at the gateway](./ai_tools.md).
+
+## Ports
+
+**Port** is the port the instance listens on, at `127.0.0.1` on its machine. It is a number from 1024 to 65535, and no two instances on a machine share one. **Add instance** offers the port after the highest one in use. The hub publishes that port as the instance's **Web** entry, and the client forwards the entry to a port of its own.
+
+A program you start inside the editor, such as a development server on port 3000, gets no entry. The agent connects a client only to the ports its machine publishes, and the instance's port leads to the editor alone. To open it from a client, declare a **Web** or **Port** service with the machine's address and the program's port on the [Services](../../hub/services.md#declare-a-service-by-hand) page. The hub dials that address itself, so the program must listen on an address the hub reaches, such as `0.0.0.0`.

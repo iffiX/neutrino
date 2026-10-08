@@ -1,136 +1,170 @@
 ---
-title: Quick start
+title: Step zero
 ---
 
-# Quick start
+# Step zero: install, join, reach it from outside
 
-In about half an hour you build a hub in server mode on one Linux box and a second Linux machine that it manages. At the end, a folder on that machine is mounted on your laptop through the desktop client.
+Step zero installs the hub on your home computer, joins your phone and laptop to it, and connects them from outside through NetBird. It takes about ten minutes. Each service on the computer opens on a later page. Your Claude Code sessions, for one, open in [Your AI session on the phone](./quick-start/cloudcli.md).
 
-## What you need
+## Before you start
 
-- A Linux box for the hub, called `home-hub` on this page. It is x86-64, runs Debian 12 or newer or Ubuntu 22.04 or newer, and reaches the internet. You have root on it.
-- A second Linux machine of the same kind for the agent, called `studio`.
-- A Linux computer with a desktop session for the client, called `laptop`.
-- The three package files of release 0.5.0 from the [releases page](https://github.com/iffiX/neutrino/releases): `neutrino-hub_0.5.0_amd64.deb`, `neutrino-agent_0.5.0_amd64.deb` and `neutrino-client_0.5.0_amd64.deb`.
+- Your computer stays on and runs one of these systems:
+  - Linux with a desktop: Debian 12 or newer, Ubuntu 22.04 or newer, Fedora 41 or newer, or the RHEL 9 family
+  - macOS 12.3 or newer
+  - Windows 10 1809 or newer on x86-64
+- You have an administrator account on the computer, and the computer reaches the internet.
+- You have an Android phone (Android 8.0 or newer, 64-bit ARM), a laptop with one of these systems, or both.
+- You have an account at netbird.io.
+- The phone and the laptop are on the same Wi-Fi network as the computer.
 
-The three machines are on one local network. Server mode keeps every address `home-hub` has, and the rest of your network stays as it is.
-
-## Full or mainland edition
-
-This page uses the full edition from GitHub. The mainland edition, on [Gitee](https://gitee.com/iffiX/neutrino), has every feature except the proxy and NetBird, and fetches its downloads from mirrors in mainland China. Each edition updates from its own release page. To follow this page with the mainland edition, take the three `.deb` files from the Gitee release page, or install the hub with one command:
-
-```bash
-curl -fsSL https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.sh | sh
-```
-
-The mainland wizard has no **Going out through a proxy** screen, so skip that step.
+For EasyTier, Direct or your own server, follow [EasyTier](./hub/easytier.md), [Turn on Direct](./hub/overlay.md#turn-on-direct) or [Reach home through your own VPS](./scenarios/vps_relay.md) in place of both NetBird sections.
 
 ## Install the hub
 
-1. On `home-hub`, install the package:
+On Linux or macOS, open a terminal and run:
 
-   ```bash
-   sudo apt install ./neutrino-hub_0.5.0_amd64.deb
-   ```
+```bash
+curl -fsSL https://github.com/iffiX/neutrino/releases/latest/download/install.sh | sh
+```
 
-1. Start the setup wizard:
+On Windows, open PowerShell and run:
 
-   ```bash
-   sudo nhub setup
-   ```
+```powershell
+irm https://github.com/iffiX/neutrino/releases/latest/download/install.ps1 | iex
+```
 
-   The terminal prints an address for each of the box's interfaces, each ending in a one-time token.
+The script prompts once for administrator rights. On Windows it goes on in a new PowerShell window that Windows opens as administrator. When the install ends, the terminal prints the wizard's address on each network the computer is on.
 
-1. On `laptop`, open one of the printed addresses in a browser, token included.
+[Install the hub](./install/hub.md) has the mainland edition's command and the package files.
 
-## Answer the setup wizard
+## Answer the wizard
 
-Each question screen ends with **Next**, which moves to the following screen. The wizard writes to the box only after you confirm the last screen.
+Open the first address the terminal printed in a browser on the computer. Each screen ends in **Next**, and the wizard changes nothing until the last screen:
 
 1. Select **Set this box up**.
 1. On **Language**, keep **English**.
-1. On **A password for the panel, a passphrase for the vault**, type a **Panel password** of at least 8 characters, and repeat it in **Again**.
-1. On the same screen, type a **Vault master passphrase** of at least 16 characters with lowercase, uppercase, digits and symbols, and repeat it in **Again**.
+1. Type a **Panel password** of at least 8 characters, and type it again under **Again**.
+1. Type a **Vault passphrase** of at least 16 characters, with lowercase and uppercase letters, digits and symbols, and type it again under **Again**.
 1. Leave **HTTPS for the panel** off.
 1. On **What is this machine for?**, select **Server**.
-1. On **Which ports?**, keep **Panel answers on port** at `8080`.
+1. On **Which ports?**, keep the ports as they are.
 1. On **Going out through a proxy**, leave **Set it up here** off.
-1. On **Ready**, check that **HTTPS** reads **off**, and select **Set this box up**.
+1. On **Ready**, select **Set this box up**.
 
-The steps run on the screen, from checking packages to installing this machine's agent, and the title changes to **This box is a gateway**.
+![The secrets screen of the wizard](/guide/en/setup_secrets.webp)
+
+The steps run on the screen, and the title changes to **This hub is set up**. The wizard has also installed the computer's agent, which runs the services the later pages open.
+
+![The wizard's last screen](/guide/en/setup_done.webp)
 
 ::: warning
-The vault passphrase seals every credential the box holds, and a restore from backup requires it again. Write it down somewhere other than the box.
+The vault passphrase seals every credential the hub holds, and restoring a backup requires it. Write it down somewhere other than the computer.
 :::
 
 ## Sign in to the panel
 
-1. On **This box is a gateway**, select **Open the panel**.
-1. Type the panel password in **Panel password** and select **Sign in**.
+1. Select **Open the panel**.
+1. Type the panel password in **Panel password**.
+1. Select **Sign in**.
 
-The **Dashboard** opens. The sidebar has two groups, **Hub** and **Agent**.
+The panel opens on the **Dashboard**. Its address is the one in the browser's address bar, and the laptop opens the panel at the same address.
 
-## Add studio as a managed machine
+## Join your phone and laptop
 
-1. On `studio`, install the agent:
+Each device joins with a link of its own from the panel's **Clients** page, valid for 30 minutes. Follow the part for each device you have.
 
-   ```bash
-   sudo apt install ./neutrino-agent_0.5.0_amd64.deb
-   ```
+### From the phone
 
-1. In the panel, under **Hub**, open **Devices**.
-1. Select **Add by link**. A notice shows a link that works for thirty minutes.
+1. On the phone, download `https://github.com/iffiX/neutrino/releases/download/v0.5.0/neutrino-client-0.5.0-android.apk`.
+1. Open the file and select **Install**. If Android shows a prompt first, allow your browser to install apps.
+1. Open **Neutrino**.
+1. In the panel, open **Clients**, then select **New client link**.
+1. Type a name for the phone, such as `phone`, then select **Create link**. A QR code of the link appears.
+1. In the app, on **Hubs**, select **Join a hub**.
+1. Select **Allow the camera**, then allow it in Android's prompt.
+1. Point the camera at the QR code in the panel.
+
+The app lists the hub, and its row reads **Connected · LAN**.
+
+![The client link with its QR code on the Clients page](/guide/en/clients_link_qr.webp)
+
+![The app's QR scanner on the Join a hub screen](/guide/en/app_join_scan.webp)
+
+### From the laptop
+
+On Linux or macOS, install the client from your own account with:
+
+```bash
+curl -fsSL https://github.com/iffiX/neutrino/releases/latest/download/install.sh | sh -s -- client
+```
+
+On Windows, run this in PowerShell:
+
+```powershell
+& ([scriptblock]::Create((irm https://github.com/iffiX/neutrino/releases/latest/download/install.ps1))) client
+```
+
+Then join the laptop:
+
+1. In a browser on the laptop, open the panel's address and sign in.
+1. On **Clients**, select **New client link**.
+1. Type a name for the laptop, such as `laptop`, then select **Create link**.
 1. Select **Copy**.
-1. On `studio`, run the following command, with `<enroll-link>` replaced by the copied link:
+1. Open **Neutrino Client** from the application menu on Linux, the Start menu on Windows, or **Applications** on macOS.
+1. Paste the link into the field of the **Join a hub** row.
+1. Select **Join**.
 
-   ```bash
-   sudo nagent join '<enroll-link>'
-   ```
+The hub's row in the laptop's client window reads **Connected · LAN**.
 
-`studio` appears under **Managed devices**, beside `home-hub`, whose agent the wizard installed.
+## Join the hub to NetBird
 
-## Join the client to the hub
+The hub joins NetBird with a setup key and gives the same key to the phone and the laptop, so the key must be reusable.
 
-1. On `laptop`, install the client:
+### Create a reusable setup key
 
-   ```bash
-   sudo apt install ./neutrino-client_0.5.0_amd64.deb
-   ```
+1. In the NetBird console, open **Settings** > **Setup Keys**.
+1. Select **Create Key**.
+1. Type a **Name**, such as the hub's name.
+1. Turn on **Make this key reusable**.
+1. Leave **Usage limit** empty, where it reads **Unlimited**.
+1. Leave **Expires in** empty.
+1. Select **Create Setup Key**.
+1. In **Setup key created successfully!**, select the copy button beside the key. The console shows the key this one time.
 
-1. In the panel, open **Clients** and select **New client link**.
-1. Type `laptop` as the name and select **Create link**.
-1. Select **Copy**. The link works for thirty minutes.
-1. On `laptop`, run `nclient gui` as yourself, without `sudo`. The **Neutrino client** window opens on **Hubs**.
-1. Under **Join a hub**, paste the link into the field and select **Join**.
+![The Create Setup Key form filled in](/guide/console/console_netbird_key_create.webp)
 
-The new hub row reads **Connected**, with the hub's address and `runs neutrino_hub/0.5.0`.
+![The new setup key, shown once](/guide/console/console_netbird_key_created.webp)
 
-## Install the file share on studio
+::: warning
+The key under **Networks** > **Routing Peers** > **Add** > **Install NetBird** works one time. With it, the hub joins and the phone then fails to join.
+:::
 
-1. In the panel, under **Agent**, open **Modules**.
-1. Select `studio` among the machines at the top of the page.
-1. Select the **File share** tab. If the tab is missing, select **+** beside the tabs and tick **File share**.
-1. Select **Install**, and wait until the tab no longer reads **installing**.
-1. Select **Configure**. The **Shares** and **Users** sections open under the buttons.
+### Paste the key into the panel
 
-## Add a user and a share
+1. In the panel's sidebar, open **Access**.
+1. On the **NetBird** card, turn on **Enable**.
+1. Select **Apply access**.
+1. Select the **NetBird** card.
+1. Under **Settings**, paste the key into **Setup key**.
+1. Leave the management URL empty.
+1. Select **Join**.
 
-1. Under **Users**, type `alex` as the new user name and a password in the field beside it.
-1. Select **Add user**.
-1. Select **Apply users**. The row for `alex` reads **ready**.
-1. Under **Shares**, select **Add share**.
-1. Type `media` in **Name** and `/srv/media` in **Path**.
-1. Select **Apply shares**.
+![The NetBird settings with the setup key saved](/guide/en/overlay_netbird_settings.webp)
 
-The agent creates `/srv/media` on `studio` and publishes it as `media` to every client.
+The badge beside **NetBird** reads **joining**, then **connected**, and **Settings** shows the hub's **Overlay address**. When the badge stays on another word, [Troubleshooting](./reference/troubleshooting.md#access) has its fix.
 
-## Mount the share on your laptop
+## Put the phone and laptop on NetBird
 
-1. In the client window, open **Files**. The `media` entry is listed with the address of `studio`. The client reaches it through the hub.
-1. On the `media` entry, select **Configure**.
-1. Type `alex` in **Share username** and its password in **Share password**.
-1. Leave **Mount path** at its default, `nas/media` under your home folder.
-1. Select **Save**.
-1. Select **Mount**.
+The phone and the laptop receive the setup key from the hub, so every step for them runs on the devices themselves.
 
-The button changes to **Unmount**, and `~/nas/media` on `laptop` shows the files of `/srv/media` on `studio`.
+1. In the app, on the hub's row, on the **Virtual network** line, select **Connect**.
+1. In Android's VPN connection request, select **OK**.
+1. In the laptop's client window, on the hub's row, on the **Virtual network** line, select **Connect**.
+
+![Android's VPN connection request](/guide/en/app_vpn_prompt.webp)
+
+Each **Virtual network** line reads **Connecting…**, then **Connected ·** and the device's address on NetBird.
+
+## Done
+
+The hub, the phone and the laptop are on the same virtual network now. Away from home, on a café's Wi-Fi or on mobile data, the app reaches the hub as soon as it opens: the hub's row reads **Connected · NetBird**. From here each service has a page of its own, starting with [Your AI session on the phone](./quick-start/cloudcli.md).

@@ -4,61 +4,56 @@ title: Clients
 
 # Clients
 
-A client is the program on one person's computer or phone that uses what the hub publishes. On the **Clients** page you admit each one with a link, choose what it can use, and switch it off or remove it.
+A client is the program on a person's computer or phone that opens what the hub publishes. The **Clients** page makes the links clients join with. It also sets what each client can use, and switches a client off or removes it.
 
 ## Make a client link
 
 1. On **Clients**, select **New client link**.
-1. Type a name that says whose program it is, such as `alice-laptop`.
-1. Select **Create link**. The notice shows the link with **Copy**, and the same link as a QR code beside them.
+1. Type a name that says whose device it is, such as `alice-laptop`.
+1. Select **Create link**. The notice shows the link with **Copy**, and the same link as a QR code.
 
 ![The new client link with its Copy button and its QR code](/guide/en/clients_link_qr.webp)
 
-The link works for thirty minutes and is used once. The hub keeps an unused link on disk, so a restart of the hub within those thirty minutes leaves it working. On a phone, the person scans the QR code with the app. On a computer, the person pastes the link into the client window, or runs `nclient join` with it in a terminal. Installing and joining are on [Desktop client](../client/desktop.md) and [Android app](../client/android.md).
+The link works for 30 minutes from the moment you create it, and one client joins with it one time. A restart of the hub within those 30 minutes keeps an unused link. [Install a client](../install/client.md) shows how a person joins with it.
 
-A computer that joins again returns to the row it already had, under the name in the new link. The page badge reads how many clients are online, as **2 of 3 online**.
+The link also holds what the client needs to join the hub's virtual networks: the NetBird setup key, and the EasyTier secret or console address. With a one-time NetBird key, one client joins and the next one fails; [Join the hub to NetBird](./netbird.md) shows how to replace it.
 
-## The client list
-
-Each row shows the client's **Name**, **Hostname**, **Platform**, **Version**, **Status** and **Last seen**. A **disabled** chip marks a client that is switched off, and an **own permissions** chip marks one that does not follow the default.
+When a join fails, the cause is on [Troubleshooting](../reference/troubleshooting.md).
 
 ## Permissions
 
-**Default permissions**, at the top of the page, sets what every client without permissions of its own can use. **Permissions** on a row opens one client's drawer, where **Follow the default** is on until you turn it off.
+**Default permissions**, at the top of the page, sets what every client can use. **Permissions** on a row opens that client's own settings; turn off **Follow the default** there to give it its own.
 
-Each kind has its own switch:
+![One client's permissions with Follow the default off](/guide/en/clients_permissions_panel.webp)
 
-| Kind                               | What the client gets                                                                                   |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| **Virtual network**                | joins the hub's overlay networks as a peer                                                             |
-| **Web pages**                      | the web entries, opened in a browser                                                                   |
-| **Ports**                          | TCP ports forwarded to the computer's `127.0.0.1`                                                      |
-| **AI gateway**                     | its own key and the gateway's address                                                                  |
-| **Files**                          | SMB shares to mount                                                                                    |
-| **Terminals**                      | shells on managed machines                                                                             |
-| **Remote desktops**                | the desktops machines share                                                                            |
-| **Hub panel without the password** | the **Panel** button on the client's hub row, which opens this panel through the hub already signed in |
+| Kind                               | What the client gets                                            |
+| ---------------------------------- | --------------------------------------------------------------- |
+| **Virtual network**                | joins the hub's virtual networks                                |
+| **Web pages**                      | the web entries, opened in a browser                            |
+| **Ports**                          | ports forwarded to the computer                                 |
+| **AI gateway**                     | its own key and the gateway's address                           |
+| **Files**                          | shares to mount                                                 |
+| **Terminals**                      | shells on managed machines                                      |
+| **Remote commands**                | `nclient terminal exec` on managed machines                     |
+| **Remote desktops**                | the desktops machines share                                     |
+| **Hub panel without the password** | the **Panel** button on the client's hub row, already signed in |
 
-Every kind but **Hub panel without the password** is on by default. That one lets the client change everything this panel can without the panel password, so turn it on only for a device of your own. Its panel sessions end when you disable or remove the client, when it leaves, and when you turn the switch off again. Unlocking the vault still asks for the vault's passphrase, and changing the panel password still asks for the current one.
+Every kind but **Remote commands** and **Hub panel without the password** is on by default. With **Remote commands**, a script on the client runs commands on managed machines as root, or as the account each machine's [Terminal](../agent/modules/terminal.md) module names. **Hub panel without the password** gives the client everything this panel can change. Turn on either only for a device of your own. Switching **Remote commands** off ends the commands that client is running at that moment.
 
-After changing switches, select **Apply permissions**. The hub sends the new list to that client, or to every client that follows the default.
+After changing switches, select **Apply permissions**.
 
 ## Device filters
 
-Beside every switch but **Virtual network** and **Hub panel without the password**, a filter reads **All agents**. To narrow a kind:
+Beside every switch but **Virtual network** and **Hub panel without the password**, a filter reads **All agents**. To narrow a kind to some machines:
 
 1. Select the filter beside the kind.
 1. Tick the managed devices whose entries the client can reach.
 1. Select **Apply permissions**.
 
-With no device ticked, the kind reaches every device. The hub's own services count as the hub box's device, and a declared service counts as the device at its address. Forgetting a device on [Devices](./devices.md) takes it out of every filter, and a kind whose filter named only that device is switched off.
-
-## Each client's AI key
-
-A client that joins gets a gateway key named `client/` followed by its name. The hub sends the key with the client's state, so nobody types it, and usage is counted per key under **Access** on [AI](./ai.md). **Revoke** there cuts the client off at once, and the hub gives it a new key.
+With no device ticked, the kind reaches every device. The hub's own services count as the hub box's device.
 
 ## Disable or delete a client
 
-**Disable** switches a client off. The hub revokes its gateway key, and its hub row reads **Disabled by the hub** with every entry greyed. **Enable** switches it back on with a new key.
+**Disable** switches a client off and revokes its AI gateway key; the client's hub row reads **Disabled by the hub**. **Enable** switches it back on with a new key.
 
-**Delete** revokes the client's key and removes its row. The program on that computer loses the hub and joins again only with a new link.
+**Delete** revokes the client's key and removes its row. The device joins again only with a new link. Both actions end at once every connection the client holds.

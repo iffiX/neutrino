@@ -1,136 +1,180 @@
 ---
-title: 快速上手
+title: 第零步
 ---
 
-# 快速上手
+# 第零步：装中枢，加入客户端，连上外网
 
-大约半小时后，你手上会有一套能用的环境：一台 Linux 机器以服务器形态运行中枢，第二台 Linux 机器归中枢管理，那台机器上的一个目录经桌面客户端挂到你的笔记本上。
+这一页在你的电脑上装好中枢，让手机和笔记本加入它，再让它们在外面也连得上，约 10 分钟。服务在这里都还没打开。做完这一页，在手机上接着电脑里的 Claude Code 会话，接着做[在手机上接着家里的 AI 会话](./quick-start/cloudcli.md)。
 
-## 你需要什么
+## 开始之前
 
-- 一台装中枢的 Linux 机器，本页叫它 `home-hub`。它是 x86-64，系统是 Debian 12 及以上或 Ubuntu 22.04 及以上，能访问互联网，你有它的 root 权限。
-- 第二台同类的 Linux 机器装被控端，本页叫它 `studio`。
-- 一台带桌面环境的 Linux 电脑装客户端，本页叫它 `laptop`。
-- 0.5.0 版的三个安装包，从 [Releases](https://github.com/iffiX/neutrino/releases) 下载：`neutrino-hub_0.5.0_amd64.deb`、`neutrino-agent_0.5.0_amd64.deb` 和 `neutrino-client_0.5.0_amd64.deb`。
+- 一台电脑，系统是下面之一：
+  - 带桌面的 Debian 12、Ubuntu 22.04 或更新版本，或 64 位树莓派 OS。
+  - Apple 芯片的 Mac，macOS 12.3 或更新版本。
+  - x86-64 上的 Windows 10 1809 或更新版本。
+- 你有这台电脑的管理员权限，它能上网。
+- 一部 Android 8.0 或更新版本的手机，64 位 ARM 处理器，开通了移动数据。或者另一台笔记本，系统同样是上面之一。只有其中一样时，跳过另一样的步骤。
+- 一个 EasyTier 控制台账号，在 `https://console.easytier.net` 注册。按 EasyTier 的规定，控制台的免费档每月有 1 GB 中转流量，最多接入 20 台设备。<!-- 待核: 免费档的 1 GB 和 20 台两个数字取自 iffi 的清单，仓库里没有出处。 -->
+- 手机和笔记本先连上电脑所在的 Wi-Fi。
 
-三台机器在同一个局域网里。服务器形态保留 `home-hub` 的所有地址，你网络里的其他部分保持原样。
+想用 NetBird、直连或自己的服务器时，先按 [NetBird](./hub/netbird.md) 页、[外部访问](./hub/overlay.md)页的直连一节或[用自己的 VPS 中继连回家](./scenarios/vps_relay.md)做好，再从“把手机和笔记本挂上”接着做。NetBird 只有完整版有；直连和 VPS 中继没有虚拟网，跳过那一节。
 
-## 完整版和国内版
+## 安装中枢
 
-本页用的是 GitHub 上的完整版。国内版发布在 [Gitee](https://gitee.com/iffiX/neutrino)，除代理和 NetBird 以外功能都有，各项下载走国内镜像。每个版本只从自己的发布页更新。用国内版走本页的步骤时，三个 `.deb` 从 Gitee 的发布页下载；中枢也可以用一条命令安装：
+Linux 上打开终端，macOS 上打开“终端”应用，运行：
 
 ```bash
 curl -fsSL https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.sh | sh
 ```
 
-国内版的向导没有 **通过代理出网** 这一屏，跳过那一步即可。
+Windows 上打开 PowerShell，运行：
 
-## 安装中枢
+```powershell
+irm https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.ps1 | iex
+```
 
-1. 在 `home-hub` 上安装包：
+脚本要一次管理员权限：Linux 和 macOS 上输入登录密码，Windows 上在授权框里选 **是**。装好后，终端打印设置向导的地址，末尾带一次性令牌。
 
-   ```bash
-   sudo apt install ./neutrino-hub_0.5.0_amd64.deb
-   ```
+这是国内版的命令。完整版的命令见[安装中枢](./install/hub.md)。
 
-1. 启动初始化向导：
+## 回答向导
 
-   ```bash
-   sudo nhub setup
-   ```
+每一屏填好后，选择 **下一步**。最后一屏确认之前，向导不写入任何东西。
 
-   终端为这台机器的每个网口打印一个地址，地址末尾带一次性令牌。
+1. 在电脑的浏览器里打开终端打印的地址，连同末尾的令牌。
+1. 选择 **开始配置这台机器**。
+1. 在 **语言** 屏选择 **简体中文**。
+1. 在 **面板密码** 和下面的 **再输一次** 里填同一个密码，至少 8 个字符。
+1. 在 **保险库口令** 和它的 **再输一次** 里填同一个口令。口令至少 16 个字符，混用小写、大写、数字和符号。
 
-1. 在 `laptop` 的浏览器里打开其中一个地址，连同令牌一起。
+   ![面板密码、保险库口令和 HTTPS 开关](/guide/zh/setup_secrets.webp)
 
-## 回答初始化向导
+1. 在 **这台机器做什么？** 屏选择 **服务器**。macOS 和 Windows 上只有这一项。
+1. 在 **用哪些网口？** 屏，两个端口保持原值。
+1. 在 **就绪** 屏选择 **开始配置这台机器**。
 
-每个问题屏底部都有**下一步**（Next），选它进入下一屏。你在最后一屏确认之后，向导才写入这台机器。
+页面标题先读 **正在配置**，再读 **这个中枢已配置好**，中枢和本机的被控端就装好了。
 
-1. 选择 **Set this box up**。这一屏还是英文。
-1. 在**语言**（Language）屏，选择**简体中文**。
-1. 在**面板密码，以及保险库口令**（A password for the panel, a passphrase for the vault）屏，在**面板密码**（Panel password）里填至少 8 个字符，在**再输一次**（Again）里再填一遍。
-1. 在同一屏的**保险库主口令**（Vault master passphrase）里，填至少 16 个字符，包含小写、大写、数字和符号，在它的**再输一次**里再填一遍。
-1. **面板使用 HTTPS**（HTTPS for the panel）保持关闭。
-1. 在**这台机器做什么？**（What is this machine for?）屏，选择**服务器**（Server）。
-1. 在**用哪些网口？**（Which ports?）屏，**面板监听端口**（Panel answers on port）保持 `8080`。
-1. 在**通过代理出网**（Going out through a proxy）屏，**在这里设置**（Set it up here）保持关闭。
-1. 在**就绪**（Ready）屏，确认 **HTTPS** 一行是**关闭**（off），然后选择**开始配置这台机器**（Set this box up）。
-
-屏幕上逐项执行各个步骤，从检查软件包到安装本机被控端，完成后标题变成**这台机器已是网关**（This box is a gateway）。
+![配置完成的页面](/guide/zh/setup_done.webp)
 
 ::: warning
-保险库主口令封存这台机器保管的每一份凭据，恢复备份时还要再输一次。把它记在这台机器以外的地方。
+保险库口令封存中枢保管的每一份凭据，恢复备份时还要输入它。把它记在这台电脑以外的地方。
 :::
 
 ## 登录面板
 
-1. 在**这台机器已是网关**屏，选择**打开面板**（Open the panel）。
-1. 在**面板密码**里填你设的密码，选择**登录**（Sign in）。
+1. 选择 **打开面板**。
+1. 在 **面板密码** 里填你设的密码，选择 **登录**。
 
-面板打开**总览**（Dashboard）页。侧栏分两组：**中枢** 和**被控端**（Agent）。
+面板打开 **总览** 页。
 
-## 把 studio 加为受管机器
+## 让手机和笔记本加入
 
-1. 在 `studio` 上安装被控端：
+每台设备用一条自己的客户端链接，链接 30 分钟内有效。加入失败时，见故障排查的[加入中枢失败](./reference/troubleshooting.md#加入中枢失败)。
 
-   ```bash
-   sudo apt install ./neutrino-agent_0.5.0_amd64.deb
-   ```
+### 在手机上加入
 
-1. 在面板的 **中枢** 组里，打开**设备**（Devices）。
-1. 选择**用链接添加**（Add by link）。通知里显示一条链接，三十分钟内有效。
-1. 选择**复制**（Copy）。
-1. 在 `studio` 上运行下面的命令，把 `<enroll-link>` 换成刚复制的链接：
+1. 在手机浏览器里打开 `https://gitee.com/iffiX/neutrino/releases`，下载 `neutrino-client-0.5.0-android.apk`。
+1. 打开下载的文件。Android 提示时，允许浏览器安装应用。
+1. 选 **安装**，装好后打开 **微子**。
+1. 在电脑的面板侧栏打开 **客户端**，选择 **新建客户端链接**。
+1. 填手机的名字，选择 **创建链接**。面板显示链接和它的二维码。
 
-   ```bash
-   sudo nagent join '<enroll-link>'
-   ```
+   ![客户端链接和它的二维码](/guide/zh/clients_link_qr.webp)
 
-`studio` 出现在**已管理的设备**（Managed devices）里，旁边是 `home-hub`。`home-hub` 的被控端由向导装好。
+1. 在手机的 **中枢** 页选择 **加入中枢**。
+1. 选择 **允许使用相机**，在 Android 的权限框里允许。
+1. 把相机对准面板上的二维码。
 
-## 让客户端加入中枢
+   ![应用的加入页在扫描二维码](/guide/zh/app_join_scan.webp)
 
-1. 在 `laptop` 上安装客户端：
+中枢那一行出现，先读 **连接中…**，再读 **已连接 · 局域网**。
 
-   ```bash
-   sudo apt install ./neutrino-client_0.5.0_amd64.deb
-   ```
+### 在笔记本上加入
 
-1. 在面板里打开**客户端**（Clients），选择**新建客户端链接**（New client link）。
-1. 名称填 `laptop`，选择**创建链接**（Create link）。
-1. 选择**复制**。链接三十分钟内有效。
-1. 在 `laptop` 上以你自己的账户运行 `nclient gui`，不加 `sudo`。**微子·客户端**（Neutrino client）窗口打开，停在**中枢**（Hubs）页。
-1. 在**加入中枢**（Join a hub）下，把链接粘进输入框，选择**加入**（Join）。
+用你自己的账户运行下面的命令，前面不加 `sudo`。Linux 和 macOS 上：
 
-新出现的中枢一行显示**已连接**（Connected），下面是中枢的地址和“运行 neutrino_hub/0.5.0”。
+```bash
+curl -fsSL https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.sh | sh -s -- client
+```
 
-## 在 studio 上安装共享模块
+Windows 上，在 PowerShell 里：
 
-1. 在面板的**被控端**组里，打开**模块**（Modules）。
-1. 在页面顶部的机器里选择 `studio`。
-1. 选择 **File share** 标签页。没有这个标签页时，选择标签旁的 **+**，勾选 **File share**。
-1. 选择**安装**（Install），等标签上不再显示**安装中**（installing）。
-1. 选择**配置**（Configure）。按钮下方展开**共享**（Shares）和**用户**（Users）两节。
+```powershell
+& ([scriptblock]::Create((irm https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.ps1))) client
+```
 
-## 添加用户和共享
+1. 在面板的 **客户端** 页再建一条链接，名字填笔记本的名字。
+1. 选择链接旁的 **复制**。
+1. 打开客户端：Linux 上在应用菜单里，Windows 上在开始菜单里，macOS 上打开 **Neutrino Client**。
+1. 把链接粘进 **加入中枢** 那一行的输入框，选择 **加入**。
 
-1. 在**用户**里，新用户名填 `alex`，旁边的输入框填一个密码。
-1. 选择**添加用户**（Add user）。
-1. 选择**应用用户**（Apply users）。`alex` 这一行显示**就绪**（ready）。
-1. 在**共享**里，选择**添加共享**（Add share）。
-1. **名称**（Name）填 `media`，**路径**（Path）填 `/srv/media`。
-1. 选择**应用共享**（Apply shares）。
+中枢那一行同样读 **已连接 · 局域网**。
 
-被控端在 `studio` 上创建 `/srv/media`，并以 `media` 的名字发布给每个客户端。
+## 打开 EasyTier
 
-## 在笔记本上挂载共享
+### 在面板里启用
 
-1. 在客户端窗口里打开**文件**（Files）。`media` 条目旁边是 `studio` 的地址，客户端经中枢连到它。
-1. 在 `media` 条目上选择**配置**（Configure）。
-1. **共享用户名**（Share username）填 `alex`，**共享密码**（Share password）填它的密码。
-1. **挂载路径**（Mount path）保持默认，即家目录下的 `nas/media`。
-1. 选择**保存**（Save）。
-1. 选择**挂载**（Mount）。
+下面要从 EasyTier 控制台复制一段控制台地址。先在浏览器里登录 `https://console.easytier.net`。
 
-按钮变成**卸载**（Unmount），`laptop` 上的 `~/nas/media` 里就是 `studio` 上 `/srv/media` 的文件。
+1. 在面板侧栏打开 **外部访问**。
+1. 在 **EasyTier** 卡片上打开 **启用**。
+1. 选择 **应用外部访问**。
+1. 选中 **EasyTier** 卡片，在它的 **设置** 里选择 **EasyTier 控制台**。
+1. 在控制台右上角选择 **设备接入方法**，切到 **开源版接入** 标签。
+1. 在 **连接 EasyTier** 一节的 **接入秘钥** 里选一把密钥。
+1. 页面给出一条命令，复制 `--config-server` 后面的整段地址。
+1. 把地址粘进面板的 **控制台地址**。
+1. 选择 **应用 EasyTier 设置**。
+
+卡片标题旁的徽章读 **等待控制台挂载**。
+
+![EasyTier 卡片选了控制台模式，徽章读等待控制台挂载](/guide/zh/overlay_easytier_console_waiting.webp)
+
+### 在控制台里挂上电脑
+
+1. 在 EasyTier 控制台的 **设备** 页找到你的电脑。
+
+   ![EasyTier 控制台的设备列表，里面有你的电脑](/guide/console/console_easytier_devices.webp)
+
+1. 在控制台侧栏打开 **网络**。
+1. 选择 **创建网络**。
+1. 在 **网络名称** 里填一个名字，其他项不动。
+
+   ![EasyTier 控制台里新建网络的表单](/guide/console/console_easytier_network_create.webp)
+
+1. 选择对话框底部的 **创建网络**。
+1. 选择新网络的名字，打开它的页面。
+1. 选择 **挂载设备**。
+1. 在 **入网设备** 里选你的电脑。
+1. 选择 **加入网络**。
+
+电脑那一行先显示 **挂载中**，再显示 **运行中**。面板上的徽章换成 **还没有对端** 或 **已连接**，两种都表示电脑已经在这个网络里；**控制台下发的网络** 列出你刚建的网络。
+
+![控制台下发的网络列出电脑所在的网络](/guide/zh/overlay_easytier_console_networks.webp)
+
+## 把手机和笔记本挂上
+
+1. 在手机中枢那一行下面的 **虚拟网** 一行，选择 **连接**。
+1. 在 Android 的 VPN 连接请求里选择 **确定**。
+
+   ![Android 的 VPN 连接请求](/guide/zh/app_vpn_prompt.webp)
+
+   虚拟网一行读 **连接中…**，下面一行提示去控制台挂载这部手机。
+
+   ![虚拟网一行在连接中，下面是控制台提示](/guide/zh/app_hub_console_waiting.webp)
+
+1. 在笔记本客户端的 **虚拟网** 一行，选择 **连接**。
+1. 在 EasyTier 控制台里打开电脑所在的网络，选择 **挂载设备**。
+1. 在 **入网设备** 里选你的手机。手机在列表里的名字是它的 Android 设备名。
+
+   ![EasyTier 控制台里把手机挂到同一个网络](/guide/console/console_easytier_device_attach.webp)
+
+1. 选择 **加入网络**。
+1. 从“打开电脑所在的网络”那一步起，对笔记本再做一遍，在 **入网设备** 里选笔记本。
+
+手机和笔记本的虚拟网一行都读 **已连接 ·**，后面是它在虚拟网里的地址。一直停在 **连接中…** 时，见故障排查的[虚拟网连不上](./reference/troubleshooting.md#虚拟网连不上)。
+
+## 设置完成
+
+中枢、手机和笔记本都在同一张虚拟网上了。手机在外面，用咖啡馆的 Wi-Fi 或移动网络，打开 App 就连得上中枢：中枢那一行读 **已连接 · EasyTier**。下一页起每个服务一页，先从[在手机上接着家里的 AI 会话](./quick-start/cloudcli.md)开始。

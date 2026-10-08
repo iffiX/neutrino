@@ -4,17 +4,17 @@ title: 通道
 
 # 通道
 
-通道是中枢和它管理的每台机器之间的那一条 WebSocket，微子 0.5.0 起的协议号是 3。用通道的有两种角色：`agent` 是受管机器上的被控端服务，`client` 是一个人的桌面客户端或手机应用。仓库之外写的程序要接入，用的就是这一页的全部词汇：链接、证书指纹、两个 HTTP 端点、帧、流、两种角色各自交换的文档，以及错误码。
+中枢和每个接入程序之间有一条 WebSocket，叫通道；微子 0.5.0 起它的协议号是 3。接入程序有两种角色：`agent` 是受管机器上的被控端服务，`client` 是一个人的桌面客户端或手机应用。本页列出协议 3 的全部词汇：链接、证书指纹、两个 HTTP 端点、帧、流、两种角色各自交换的文档，以及错误码。在本仓库之外写一个接入程序，用到的就是这些。
 
 ## 端口与证书指纹
 
-通道在被控端端口上，默认 8443，这个端口只通过 TLS 提供 `/api/channel`。面板端口是另一个；面板开不开 HTTPS，通道都不变。
+通道在被控端端口上，默认 8443，这个端口只经 TLS 提供 `/api/channel`。面板端口是另一个；面板开不开 HTTPS，通道都不变。
 
-被控端端口上的证书是自签名的，有效期十年，所以它的指纹就是中枢的全部身份。
+被控端端口上的证书是自签名的，有效期十年，它的指纹就是中枢的全部身份。
 
 | 规则                     | 值                                                  |
 | ------------------------ | --------------------------------------------------- |
-| 固定的是什么             | 证书 DER 编码的 SHA-256 摘要，64 个小写十六进制字符 |
+| 钉住的是什么             | 证书 DER 编码的 SHA-256 摘要，64 个小写十六进制字符 |
 | 什么时候校验             | 每次 TLS 握手之后，任何请求字节发出之前             |
 | 证书链和主机名校验       | 关闭                                                |
 | TLS 最低版本             | 1.2                                                 |
@@ -23,7 +23,9 @@ title: 通道
 
 ## 加入链接
 
-客户端的链接在中枢的**客户端**（Clients）页生成，被控端的链接在**设备**（Devices）页生成。客户端链接的生成步骤见[客户端](../hub/clients.md)。被控端链接的生成步骤见[设备](../hub/devices.md)。链接的形式是 `neutrino://enroll/<payload>`，其中 payload 是一个 JSON 对象的 base64url 编码：
+客户端的链接在中枢的 **客户端** 页生成，被控端的链接在 **设备** 页生成。客户端的加入步骤见[安装客户端](../install/client.md)。被控端的加入步骤见[安装被控端](../install/agent.md)。
+
+链接的形式是 `neutrino://enroll/<payload>`，其中 payload 是一个 JSON 对象的 base64url 编码：
 
 ```json
 {
@@ -36,35 +38,36 @@ title: 通道
       "provider": "netbird",
       "setup_key": "...",
       "management_url": "",
-      "fqdn": "hub.netbird.cloud"
+      "fqdn": "hub.netbird.cloud",
+      "hub_address": "100.88.0.1"
     }
   ]
 }
 ```
 
-| 字段       | 内容                                                                                                                                     |
-| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `urls`     | 中枢在被控端端口上开放的每个地址；其中一个在加入方所在的网络里，程序按顺序逐个尝试                                                       |
-| `token`    | 加入凭证，三十分钟内有效，只能用一次                                                                                                     |
-| `fp`       | 要固定的指纹                                                                                                                             |
-| `role`     | `client` 或 `agent`                                                                                                                      |
-| `overlays` | 只在客户端链接里有：和客户端状态里的 `overlays` 是同一个列表，按生成链接时的默认权限取；默认权限不含 `overlay`，或没有可用的虚拟网时为空 |
+| 字段       | 内容                                                                                                                  |
+| ---------- | --------------------------------------------------------------------------------------------------------------------- |
+| `urls`     | 中枢在被控端端口上开放的每个地址；被控端按顺序逐个尝试，客户端同时拨全部地址                                          |
+| `token`    | 加入凭证，三十分钟内有效，只能用一次                                                                                  |
+| `fp`       | 要钉住的指纹                                                                                                          |
+| `role`     | `client` 或 `agent`                                                                                                   |
+| `overlays` | 只在客户端链接里有，和客户端状态里的 `overlays` 是同一个列表，按生成链接时的默认权限取；默认权限不含 `overlay` 时为空 |
 
-客户端拿到被控端链接时返回 `link_not_for_client`，被控端拿到客户端链接时返回 `link_not_for_agent`；两个错误码的 `params` 都写明链接的 `role`。base64url 的字母表里没有 shell 会拆开、URL 要转义的字符，所以链接不加引号也能直接粘贴。
+客户端拿到被控端链接时返回 `link_not_for_client`，被控端拿到客户端链接时返回 `link_not_for_agent`；两个错误码的 `params` 都写明链接的 `role`。base64url 的字母表里没有 shell 会拆开或 URL 要转义的字符，链接不加引号也能直接粘贴。
 
 ## 加入与离开
 
-| 端点                      | 请求体                                                           | 返回                                                                                   |
-| ------------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `POST /api/channel/join`  | `{ticket, role, protocol, machine_id, name, software, platform}` | `{id, token}`：绑定 id，以及之后每个 `hello` 都要带的密钥                              |
-| `POST /api/channel/leave` | `{id, token}`                                                    | `{}`；设备那一行留在**设备**页上，只去掉令牌；客户端那一行连同它的 AI 网关密钥一起删除 |
+| 端点                      | 请求体                                                           | 返回                                                                                     |
+| ------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `POST /api/channel/join`  | `{ticket, role, protocol, machine_id, name, software, platform}` | `{id, token}`：绑定 id，以及之后每个 `hello` 都带的令牌                                  |
+| `POST /api/channel/leave` | `{id, token}`                                                    | `{}`；设备那一行留在 **设备** 页上，只去掉令牌；客户端那一行连同它的 AI 网关密钥一起删除 |
 
 `machine_id` 和 `platform` 描述机器本身，两种角色从不同的地方读取：
 
-| 字段         | 被控端发送                                                                                                                                                                                                                      | 客户端发送                                     |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| `machine_id` | `/etc/machine-id`，没有就用 `/var/lib/dbus/machine-id`，再没有就为空                                                                                                                                                            | 每次安装生成一次并保存的 uuid4 十六进制串      |
-| `platform`   | `{os, family, arch, version}`：`linux`、`windows` 或 `darwin`；`debian`、`rhel` 或空；`amd64`、`arm64` 或 `armhf`；Linux 上是 glibc 版本（`2.36`），Windows 上是构建号（`26100`），macOS 上是产品版本（`15.3.1`），读不到时为空 | `{os, family, arch}`，Linux 以外 `family` 为空 |
+| 字段         | 被控端发送                                                                                                                                                                                                                      | 客户端发送                                      |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| `machine_id` | `/etc/machine-id`，没有就用 `/var/lib/dbus/machine-id`，再没有就为空                                                                                                                                                            | 第一次读状态文件时生成并保存的 uuid4 十六进制串 |
+| `platform`   | `{os, family, arch, version}`：`linux`、`windows` 或 `darwin`；`debian`、`rhel` 或空；`amd64`、`arm64` 或 `armhf`；Linux 上是 glibc 版本（`2.36`），Windows 上是构建号（`26100`），macOS 上是产品版本（`15.3.1`），读不到时为空 | `{os, family, arch}`，Linux 以外 `family` 为空  |
 
 中枢拿被控端的 `version` 和模块的最低版本比较，低于最低版本的机器上，这个模块显示为系统不支持。不带 `version` 的被控端不受这条限制。
 
@@ -78,26 +81,26 @@ title: 通道
 | 401    | `ticket_spent`                                | 凭证不存在、已过期或已用过             |
 | 401    | `binding_unknown`                             | `leave` 给出的 id 和令牌对不上任何绑定 |
 
-中枢先检查协议号，再读凭证，所以协议号不合格时凭证不会用掉。HTTP 错误的响应体是 `{"detail": {"code": "...", "params": {}}}`。
+中枢先查协议号，再读凭证，协议号不合格时凭证不会用掉。HTTP 错误的响应体是 `{"detail": {"code": "...", "params": {}}}`。
 
 ## 套接字
 
-套接字是 `wss://<hub-address>:8443/api/channel/socket`，`<hub-address>` 是加入成功时用的那个地址；每次都新建一条固定指纹的连接。文本帧是一个 JSON 对象，`type` 取帧名之一；二进制帧是大端序的 `u32` 流 id，后面跟这个流的字节。
+套接字是 `wss://<hub-address>:8443/api/channel/socket`，`<hub-address>` 是中枢的某个地址，每次都新建一条钉住指纹的连接。文本帧是一个 JSON 对象，`type` 取帧名之一；二进制帧是大端序的 `u32` 流 id，后面跟这个流的字节。
 
 ### 握手
 
 两个方向的第一帧都是身份卡，形状相同。套接字打开后十秒内发出 `hello`，中枢回 `welcome` 或 `refused`。
 
-| 字段       | `hello`（上行）                                   | `welcome`（下行）                    |
-| ---------- | ------------------------------------------------- | ------------------------------------ |
-| `protocol` | 这个构建的协议号，`3`                             | 中枢的协议号，`3`                    |
-| `role`     | `agent` 或 `client`                               | `hub`                                |
-| `id`       | 绑定 id                                           | 中枢自己的 id，一个 uuid             |
-| `name`     | 主机名，或绑定的名字                              | 中枢在**设置**（Settings）页上的名字 |
-| `software` | `neutrino_agent/0.5.0` 或 `neutrino_client/0.5.0` | `neutrino_hub/0.5.0`                 |
-| `token`    | 绑定令牌                                          | 无                                   |
+| 字段       | `hello`（上行）                                   | `welcome`（下行）          |
+| ---------- | ------------------------------------------------- | -------------------------- |
+| `protocol` | 这个构建的协议号，`3`                             | 中枢的协议号，`3`          |
+| `role`     | `agent` 或 `client`                               | `hub`                      |
+| `id`       | 绑定 id                                           | 中枢自己的 id，一个 uuid   |
+| `name`     | 主机名，或绑定的名字                              | 中枢在 **设置** 页上的名字 |
+| `software` | `neutrino_agent/0.5.0` 或 `neutrino_client/0.5.0` | `neutrino_hub/0.5.0`       |
+| `token`    | 绑定令牌                                          | 无                         |
 
-加入了多台中枢的客户端，按中枢的 `id` 分组，用它的 `name` 显示。`hello` 不合格时，中枢回 `refused {code, params}`，然后以 4000 关闭；第一帧超时、是二进制、类型不对或读不懂时，错误码是 `hello_invalid`。
+加入了多台中枢的客户端，按中枢的 `id` 区分它们，用 `name` 显示。`hello` 不合格时，中枢回 `refused {code, params}`，然后以 4000 关闭；第一帧超时、是二进制、类型不对或读不懂时，错误码是 `hello_invalid`。
 
 ### 帧
 
@@ -111,43 +114,82 @@ title: 通道
 | `open`    | 双向 | `{stream, kind, ...args}`：一个流开始                                                       |
 | `close`   | 双向 | `{stream, code, params}`：流结束，带着结果                                                  |
 | `credit`  | 双向 | `{stream, bytes}`：发送方还能再发这么多字节                                                 |
-| `ping`    | 上行 | `{nonce}`：客户端的往返探测；`nonce` 是它自己的字符串，最多 64 个字符                       |
-| `pong`    | 下行 | `{nonce}`：中枢立刻回答，带着 `ping` 的 `nonce`                                             |
+| `ping`    | 上行 | `{nonce}`：接入程序的往返探测；`nonce` 是它自己的字符串，最多 64 个字符                     |
+| `pong`    | 下行 | `{nonce}`：中枢在同一个套接字上马上回答，原样带回 `ping` 的 `nonce`                         |
 | 二进制    | 双向 | `<u32 stream id><bytes>`；UDP 的 `connect` 流上是 `<u32 stream id><u16 source><一个数据报>` |
 
-中枢每 20 秒发一次 ping，pong 迟到超过 20 秒就断开套接字。被控端和客户端 45 秒收不到任何东西就认为套接字已断，按 5～60 秒的退避间隔重连。
+中枢每 20 秒在套接字上发一次 WebSocket ping，60 秒内收不到 pong 就断开套接字。这是通道上唯一的 WebSocket ping，客户端自己不发。
+
+客户端每 20 秒发一个 `ping` 帧，通道换到新套接字之后马上再发一个，`welcome` 之前不发。客户端只认 `nonce` 等于这个套接字上最后一个 `ping` 的 `pong`，从发出那个 `ping` 到收到它的时间就是 `rtt_ms`，客户端自己记下，不发回中枢；其他 `nonce` 的 `pong` 丢掉。被控端发 `ping` 时中枢同样回答，中枢不记录任何东西。
+
+被控端和客户端 45 秒收不到任何东西，就把套接字当作已断，按 5～60 秒的退避间隔重连，每次失败间隔加倍。
+
+## 客户端怎么拨中枢
+
+客户端的一轮拨号同时拨中枢的全部地址。这些地址是：中枢在各个已连上虚拟网里的地址、中枢的名字、绑定里的 `urls`。每个地址各有自己的连接时限。哪条套接字先用钉住的指纹完成 TLS，它就是这一轮的套接字；客户端马上关掉这一轮的其他套接字，只在它上面发 `hello`。一轮只发一次 `hello`，因为中枢对一个绑定只留一条套接字，第二个 `hello` 会以 4010 关掉第一条。
+
+一轮失败后，客户端等一段时间再拨下一轮。等待从 5 秒起，每失败一轮翻一倍，最长 60 秒；一轮成功，或网络变化一次，等待回到 5 秒。两轮之间没有探测，也没有定时的轮次。
+
+下面四种事算网络变化，每一种都马上开始一轮：
+
+- 中枢的某个虚拟网在本机连上。
+- 本机的网络变了：网口接上或断开，手机在移动网络和 Wi-Fi 之间切换。
+- 中枢发来的 `urls` 和绑定里的不同。
+- 已连上的虚拟网里有对端出现或离开。
+
+中枢没连着时，网络变化结束当前的等待和正在拨的那一轮，还在等连接时限的拨号直接关掉，新的一轮马上开始。中枢连着时，新的一轮在现有通道旁边跑。
+
+客户端在发 `hello` 之前就知道每个地址走哪条路：虚拟网里的地址归那个引擎，`relay_url` 归中继，本机所在网络里的地址是 `lan`，其余是 `direct`。路从好到差排成这样：
+
+| 名次 | 路                    |
+| ---- | --------------------- |
+| 1    | `lan`                 |
+| 2    | `direct`              |
+| 3    | `netbird`、`easytier` |
+| 4    | `relay`               |
+
+| 规则                                                                                   | 原因                                                      |
+| -------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| 连着时，新一轮的胜者名次更高，或名次相同而 TLS 握手更快，通道才换过去                  | 换通道会断掉上面的每个流                                  |
+| 不比现有通道好的胜者，在 `hello` 之前关掉                                              | 一个绑定只留一条套接字，在它上面发 `hello` 会关掉现有通道 |
+| 更好的胜者发 `hello`，中枢以 4010 关掉旧套接字；客户端不把这次 4010 当作别的客户端顶替 | 换通道的是客户端自己                                      |
+
+通道换到新套接字后，客户端马上发一个 `ping`，之后每 20 秒一个，往返时间的算法见[帧](#帧)。中枢那一行的两个标签随之更新：通道走的路，和取整后的 `rtt_ms`。
 
 ## 流层
 
 每个操作都是一个流：`open` 是请求，`close` 是回复，`kind` 是方法名。
 
-| 方面       | 规则                                                                                                      |
-| ---------- | --------------------------------------------------------------------------------------------------------- |
-| id         | 中枢从 0 开始用偶数 id，对端从 1 开始用奇数 id，两边不会撞号                                              |
-| 字节       | 一个二进制帧装一个流的字节；流的文本输出一行一帧                                                          |
-| 额度       | `credit {stream, bytes}` 再给这么多字节的额度；窗口 1 MiB，单帧最大 64 KiB                                |
-| 结果       | 任何一方都可以发 `close {stream, code, params}` 结束流；`code` 为空时 `params` 是结果，有 `code` 时是拒绝 |
-| 只关一次   | 一方已关闭的流，另一方不再回 close                                                                        |
-| 未知的种类 | 程序没有处理程序的 kind 以 `kind_unknown` 关闭；`command` 流上未知的动词以 `verb_unknown` 关闭            |
+| 方面       | 规则                                                                                                    |
+| ---------- | ------------------------------------------------------------------------------------------------------- |
+| id         | 中枢从 0 开始用偶数 id，对端从 1 开始用奇数 id，两边不会撞号                                            |
+| 字节       | 一个二进制帧装一个流的字节；流的文本输出一行一帧                                                        |
+| 额度       | `credit {stream, bytes}` 再给这么多字节的额度；窗口 1 MiB，单帧最大 64 KiB                              |
+| 结果       | 任何一方都能发 `close {stream, code, params}` 结束流；`code` 为空时 `params` 是结果，有 `code` 时是拒绝 |
+| 只关一次   | 一方已关闭的流，另一方不再回 close                                                                      |
+| 未知的种类 | 没有处理程序的 kind 以 `kind_unknown` 关闭；`command` 流上未知的动词以 `verb_unknown` 关闭              |
 
 ## 客户端的状态
 
 客户端的汇报里 `state_hash` 和中枢的不同时，或汇报带 `is_refresh: true` 时，或中枢自己的状态变了时，中枢下发 `state`。
 
-| 段                 | 内容                                                                                         |
-| ------------------ | -------------------------------------------------------------------------------------------- |
-| `hash`             | 一个不透明的字符串，客户端在每次汇报里原样带回                                               |
-| `is_disabled`      | 在**客户端**页选择**停用**（Disable）后为 `true`：列表为空，所有操作都返回 `client_disabled` |
-| `services`         | 这个客户端有权使用的已发布条目，按它的套接字来源地址解析                                     |
-| `urls`             | 中枢提供通道的每个地址，客户端存下来供下次重连                                               |
-| `overlays`         | 客户端加入中枢每个虚拟网要用的材料，首选的排在前面                                           |
-| `terminals`        | 客户端有权打开 shell 的受管机器，每台是 `{device_id, name, is_online, sessions}`             |
-| `is_panel_allowed` | 客户端未停用且权限含 `panel` 时为 `true`：可以经 `connect` 打开中枢的面板                    |
-| `reached_through`  | 这个客户端的套接字以哪种方式连到中枢：`lan`、`netbird`、`easytier`、`relay` 或 `direct`      |
+| 段                 | 内容                                                                                  |
+| ------------------ | ------------------------------------------------------------------------------------- |
+| `hash`             | 一个不透明的字符串，客户端在每次汇报里原样带回                                        |
+| `is_disabled`      | 在 **客户端** 页停用这个客户端后为 `true`：列表为空，所有操作都返回 `client_disabled` |
+| `services`         | 这个客户端有权使用的已发布条目，按它的套接字来源地址解析                              |
+| `urls`             | 中枢提供通道的每个地址，客户端存下来，每一轮连接都拨                                  |
+| `relay_url`        | `urls` 里属于 SSH 中继的那一个，中继关着时为空；客户端靠它判断一个地址走的是哪条路    |
+| `overlays`         | 客户端加入中枢每个虚拟网要用的材料，首选的排在前面                                    |
+| `terminals`        | 客户端有权打开 shell 的受管机器，每台是 `{device_id, name, is_online, sessions}`      |
+| `is_panel_allowed` | 客户端未停用且权限含 `panel` 时为 `true`：能经 `connect` 打开中枢的面板               |
+| `reached_through`  | 这个客户端的套接字以哪条路连到中枢：`lan`、`direct`、`netbird`、`easytier` 或 `relay` |
+
+客户端按 `reached_through` 在中枢那一行显示路径，见[客户端怎么拨中枢](#客户端怎么拨中枢)。
 
 ### 虚拟网
 
-`overlays` 里每个有材料的运行中虚拟网占一个对象，NetBird 排在前面。下面几种情况列表为空：这台机器没运行虚拟网、客户端已停用、客户端的权限不含 `overlay`、中枢的保险库已锁。
+`overlays` 里每个有材料的运行中虚拟网占一个对象，NetBird 排在前面。这台机器没运行虚拟网、客户端已停用、客户端的权限不含 `overlay`、中枢的保险库已锁时，列表为空。
 
 ```json
 [
@@ -155,7 +197,8 @@ title: 通道
     "provider": "netbird",
     "setup_key": "...",
     "management_url": "",
-    "fqdn": "hub.netbird.cloud"
+    "fqdn": "hub.netbird.cloud",
+    "hub_address": "100.88.0.1"
   },
   {
     "provider": "easytier",
@@ -168,15 +211,17 @@ title: 通道
 ]
 ```
 
-| 提供方与模式          | 字段                                                                                                                        |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `netbird`             | `setup_key`，可重复使用的密钥；`management_url`，用 NetBird 官方管理面时为空；`fqdn`，中枢在虚拟网上的名字                  |
-| `easytier`，`manual`  | `network_name`、`network_secret`；`peer`，即 `tcp://<join-host>:11010`；`hub_address`，中枢在这个网络上的地址，不带前缀长度 |
-| `easytier`，`console` | `config_server`，带账户令牌的控制台地址；`is_secure_mode`；`hub_address`                                                    |
+| 提供方与模式          | 字段                                                                                                     |
+| --------------------- | -------------------------------------------------------------------------------------------------------- |
+| `netbird`             | `setup_key`，可重复使用的 key；`management_url`，用 NetBird 官方管理面时为空；`fqdn`，中枢在网络上的名字 |
+| `easytier`，`manual`  | `network_name`、`network_secret`；`peer`，即 `tcp://<join-host>:11010`                                   |
+| `easytier`，`console` | `config_server`，带账户令牌的控制台地址；`is_secure_mode`                                                |
+
+三种形状都带 `hub_address`：中枢自己在这个网络里的地址，不带前缀长度，不知道时为空。客户端连上这个网络后，把它和别的地址一起拨。
 
 ### 终端与会话
 
-客户端的权限包含 `terminal` 时，`terminals` 列出每台受管机器，中枢自己的也在内；权限指定了机器时，只列那几台。每一项的 `sessions` 是这个客户端在这台机器上看得见的终端会话：它自己打开的全部会话，加上它有终端权限的机器上共享的会话。按 `started_at` 排序，机器离线时为空：
+客户端的权限包含 `terminal` 时，`terminals` 列出每台受管机器，中枢自己的也在内；权限指定了机器时，只列那几台。每一项的 `sessions` 是这个客户端在这台机器上看得见的会话：它自己打开的全部会话，加上它有终端权限的机器上共享的会话。按 `started_at` 排序，机器离线时为空。
 
 | 字段             | 内容                                                                         |
 | ---------------- | ---------------------------------------------------------------------------- |
@@ -204,16 +249,19 @@ title: 通道
   "state_hash": "<state-hash>",
   "machine": {
     "hostname": "laptop",
-    "platform": { "os": "darwin", "family": "", "arch": "arm64" }
+    "platform": { "os": "darwin", "family": "", "arch": "arm64" },
+    "os_machine_id": "<machine-id>"
   }
 }
 ```
 
-收到 welcome 后发一次汇报，之后每 30 秒一次，每应用完一份状态再发一次。收到第一份状态之前，`state_hash` 为空。按刷新时发出的汇报带 `is_refresh: true`，中枢不管 hash 是否相同，都回整份状态。
+收到 `welcome` 后发一次汇报，之后每 30 秒一次，每应用完一份状态再发一次。收到第一份状态之前，`state_hash` 为空。刷新时发出的汇报带 `is_refresh: true`，中枢不管 hash 是否相同，都回整份状态。
+
+`os_machine_id` 是操作系统给这台机器的 id：Linux 上读 `/etc/machine-id`，macOS 上读 `IOPlatformUUID`，Windows 上读 `MachineGuid`，读不到时为空。中枢只用它判断哪些条目由客户端所在的这台机器提供。
 
 ## 服务条目
 
-`services` 里每个条目是 `{id, type, title, payload, is_healthy, source, description, description_code, description_params, device_id, device_name}`。
+`services` 里每个条目是 `{id, type, title, payload, is_healthy, source, description, description_code, description_params, device_id, device_name, is_own_machine}`。
 
 | `type` | `payload`                                                                                                                             |
 | ------ | ------------------------------------------------------------------------------------------------------------------------------------- |
@@ -223,7 +271,7 @@ title: 通道
 | `file` | `{protocol, host, share, users}`，`protocol` 是 `smb`                                                                                 |
 | `rdp`  | `{protocol, host, port, attention, platform_os}`，`protocol` 是 `rustdesk`，`platform_os` 是共享机器的 `linux`、`windows` 或 `darwin` |
 
-payload 里的 `host`、`port`、`url` 和 `endpoint` 是服务在中枢网络上的位置，按客户端套接字的来源地址解析。客户端只把它显示给人看，一个也不拨；到服务的每个字节都走 `connect` 流。`rdp` 条目的 `attention` 写明共享桌面的那台机器前要先做什么：`rdp_nobody_seated`、`rdp_screen_not_allowed`，或为空。`file` 条目的 `users` 列出能打开这个共享的账户，手机据此给出用户名，只让人输密码。手动声明的共享这一项为空，0.5.0 之前的中枢不发这一项。
+payload 里的 `host`、`port`、`url` 和 `endpoint` 是服务在中枢网络上的位置，按客户端套接字的来源地址解析。客户端只把它显示给人看，一个也不拨；到服务的每个字节都走 `connect` 流。`rdp` 条目的 `attention` 写明共享桌面的那台机器前要先做什么：`rdp_nobody_seated`、`rdp_screen_not_allowed`，或为空。`file` 条目的 `users` 列出能打开这个共享的账户，手动声明的共享这一项为空。
 
 | 字段                 | 内容                                                                                                                                                                                      |
 | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -233,6 +281,7 @@ payload 里的 `host`、`port`、`url` 和 `endpoint` 是服务在中枢网络�
 | `description_params` | 那句话要用的值；`vscode_module`、`code_server_module` 和 `cloudcli_module` 用 `{host, account}`                                                                                           |
 | `device_id`          | 提供这个条目的受管机器的 id；手动声明的记录和中枢自己的网关为空。程序按机器保存的东西，以这个 id 为键                                                                                     |
 | `device_name`        | 提供这个条目的机器名；中枢记录里没有这台机器时为空                                                                                                                                        |
+| `is_own_machine`     | 提供条目的机器就是客户端所在的机器时为 `true`，依据是汇报里的 `os_machine_id`                                                                                                             |
 
 ## 客户端打开的流
 
@@ -243,7 +292,7 @@ payload 里的 `host`、`port`、`url` 和 `endpoint` 是服务在中枢网络�
 | `code`              | 什么时候                                                                        |
 | ------------------- | ------------------------------------------------------------------------------- |
 | `binding_unknown`   | 没有哪个客户端行的 id 是这条套接字绑定的 id                                     |
-| `client_disabled`   | 这个客户端在**客户端**页上停用了                                                |
+| `client_disabled`   | 这个客户端在 **客户端** 页上停用了                                              |
 | `service_unknown`   | 为这个客户端解析出的列表里没有这个 id                                           |
 | `permission_denied` | 这个客户端的权限不含条目的类型，或不含提供条目的机器                            |
 | `rdp_not_shared`    | 条目所在的机器已停止共享桌面                                                    |
@@ -261,12 +310,12 @@ payload 里的 `host`、`port`、`url` 和 `endpoint` 是服务在中枢网络�
 
 ### connect 流
 
-`open {kind: connect, id}` 承载到一个已发布条目的一条 TCP 连接，`open {kind: connect, is_panel: true}` 承载到中枢自己面板的一条。客户端的本地监听每接受一条连接，就开一个流；UDP 的 `port` 条目连接期间只开一个流。条目 payload 里的地址，客户端一个也不拨。中枢做 service 流的那些检查，流的上限也在其中；这里没有 `vault_locked`：
+`open {kind: connect, id}` 是到一个已发布条目的一条 TCP 连接，`open {kind: connect, is_panel: true}` 是到中枢自己面板的一条。客户端的本地监听每接受一条连接，就开一个流；UDP 的 `port` 条目在转发期间只开一个流。中枢做 service 流的那些检查，再加上流数上限；这里没有 `vault_locked`：
 
 | `code`                         | 什么时候                                                                |
 | ------------------------------ | ----------------------------------------------------------------------- |
 | `binding_unknown`              | 没有哪个客户端行的 id 是这条套接字绑定的 id                             |
-| `client_disabled`              | 这个客户端在**客户端**页上停用了                                        |
+| `client_disabled`              | 这个客户端在 **客户端** 页上停用了                                      |
 | `connect_limit {limit}`        | 这条套接字上已经开着 256 个 `connect` 流                                |
 | `service_unknown {service_id}` | 为这个客户端解析出的列表里没有这个 id                                   |
 | `permission_denied {kind}`     | 权限不含条目的类型；连面板时不含 `panel`                                |
@@ -282,9 +331,9 @@ payload 里的 `host`、`port`、`url` 和 `endpoint` 是服务在中枢网络�
 | `ai`               | 中枢回环上的网关                           |
 | 面板               | 中枢回环上面板的 HTTP 端口，不跳转到 HTTPS |
 
-字节以二进制帧双向传送，受额度约束，窗口和单帧大小与 `shell` 流相同。任一端读到文件结束，读到的字节发完后，流以空 params 关闭；收到 close 的一方写完手上的字节，再关自己的套接字。流没有半关闭；客户端的套接字断了，上面所有 `connect` 流一并结束。
+字节以二进制帧双向传送，受额度约束，窗口和单帧大小与 `shell` 流相同。任一端读到文件结束，发完读到的字节后，流以空 params 关闭；收到 close 的一方写完手上的字节，再关自己的套接字。流没有半关闭；客户端的套接字断了，上面所有 `connect` 流一并结束。
 
-UDP 流上每个二进制帧是一个数据报，前面是它的 `source`：大端 `u16`，即数据报在客户端机器上的发出端口。回复带着它所回复的 `source`。额度不够一帧的一方直接丢掉这个数据报；某个 `source` 60 秒没有数据报来往，远端就把它忘掉。
+UDP 流上每个二进制帧是一个数据报，前面是它的 `source`：大端 `u16`，即数据报在客户端机器上的发出端口。回复带着它所回复的 `source`。额度不够一帧的一方直接丢掉这个数据报；某个 `source` 60 秒没有数据报来往，远端就忘掉它。
 
 ### shell 与 command 流
 
@@ -295,20 +344,29 @@ UDP 流上每个二进制帧是一个数据报，前面是它的 `source`：大�
 | `{kind: command, module: agent, verb: persist, session_id, is_persistent, is_shared}` | 设置最后一个流关闭后会话是否保留，以及会话是否共享；没带的那个值不变                                                                                                                                                                                   |
 | `{kind: command, module: agent, verb: stop_session, session_id}`                      | 在会话所在的机器上结束它                                                                                                                                                                                                                               |
 
-一个会话可以同时连多个流：每个流都收到全部输出，任何一个流的输入都进 shell，shell 的大小取所有连着的窗口中最小的列数和行数。中枢在机器上打开任何东西之前，`shell` 流可能以 `binding_unknown`、`client_disabled`、`permission_denied {kind: terminal}` 或 `agent_offline {device}` 关闭。没有哪台机器保留这个会话时，`persist` 和 `stop_session` 以 `session_unknown` 关闭；会话是别的查看者打开的时，`persist` 以 `session_not_owned` 关闭，`stop_session` 能结束客户端看得见的任何会话。被控端重启或升级时，那台机器上的会话全部结束。
+一个会话能同时连多个流：每个流都收到全部输出，任何一个流的输入都进 shell，shell 的列数和行数各取所有连着的窗口里最小的那个。中枢在机器上打开任何东西之前，`shell` 流可能以 `binding_unknown`、`client_disabled`、`permission_denied {kind: terminal}` 或 `agent_offline {device}` 关闭。没有哪台机器保留这个会话时，`persist` 和 `stop_session` 以 `session_unknown` 关闭；会话不归这个客户端时，`persist` 以 `session_not_owned` 关闭，`stop_session` 能结束客户端看得见的任何会话。被控端重启或升级时，那台机器上的会话全部结束。
 
 ## 被控端的段
 
 被控端的两份文档包含下面这些段；`modules` 里的条目来自中枢的模块清单，按被控端的 `platform` 解析。
 
-| 段        | 发给被控端的 `state`                           | 被控端的 `report`                                                         |
-| --------- | ---------------------------------------------- | ------------------------------------------------------------------------- |
-| `machine` |                                                | `{hostname, platform, accounts, metrics, sessions}`                       |
-| `network` |                                                | `{link: {interface, mac, address}, interfaces: [{name, mac, addresses}]}` |
-| `modules` | `{<name>: {want, config, install, uninstall}}` | `{<name>: {state, is_active, code, params, details}}`                     |
-| `desktop` | `{seat_password}`                              | `{is_shared, account, share_id, port, attention, connected_count}`        |
-| `urls`    | 中枢提供通道的每个地址                         |                                                                           |
-| `error`   |                                                | `{code, params}`：被控端最近一次值得显示的失败                            |
+| 段         | 发给被控端的 `state`                                                                                            | 被控端的 `report`                                                          |
+| ---------- | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `machine`  |                                                                                                                 | `{hostname, platform, accounts, metrics, sessions}`                        |
+| `network`  |                                                                                                                 | `{link: {interface, mac, address}, interfaces: [{name, mac, addresses}]}`  |
+| `modules`  | `{<name>: {want, config, install, uninstall, retry_mark}}`                                                      | `{<name>: {state, is_active, code, params, details}}`                      |
+| `desktop`  | `{seat_password}`                                                                                               | `{is_shared, origin, account, share_id, port, attention, connected_count}` |
+| `ai_tools` | `{is_enabled, base_url, api_key, tool_configs, accounts: [{account, password}], cc_switch_version, retry_mark}` | `{accounts: [{account, state, code, params, has_records}]}`                |
+| `urls`     | 中枢提供通道的每个地址                                                                                          |                                                                            |
+| `error`    |                                                                                                                 | `{code, params}`：被控端最近一次值得显示的失败                             |
+
+| 字段                                | 内容                                                                                                                                                    |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `retry_mark`                        | 一个短的随机串，有人对失败的模块或失败的 AI 工具设置再按一次操作时，中枢写入新的一个；它只改变哈希，别的什么都不表示                                    |
+| `modules` 汇报里的 `state`          | `absent`、`installed`、`stopped`、`running`、`installing`、`uninstalling`、`queued`、`failed` 或 `unsupported`；`queued` 表示被控端正在先处理另一个模块 |
+| `desktop` 汇报里的 `origin`         | `switch` 是模块页开关打开的共享，`command` 是旧版 `nagent rdp start` 留下的共享；没在共享时为空                                                         |
+| `ai_tools` 的 `state` 里的开关      | `is_enabled` 为真时带网关地址、这台机器的网关密钥和各工具的模型；为假时只有 `cc_switch_version` 和 `retry_mark`                                         |
+| `ai_tools` 汇报里每个账户的 `state` | `switched`、`switched_back` 或 `failed`；失败时带 `{code, params}`，例如 `cc_switch_download_failed`                                                    |
 
 被控端每 5 秒汇报一次。中枢向它打开 `shell`、`file`、`command` 和 `connect` 流，它向中枢打开 `log` 和 `package` 流。一个 `connect {port, protocol}` 流是被控端在 `127.0.0.1` 上拨出的一条 TCP 连接，容器端口只发布在某一个地址上时拨那个地址；UDP 条目则是发往那个端口的全部数据报。没有 `protocol` 就是 `tcp`。机器此刻没有在这个协议上发布的端口以 `port_not_published {port}` 关闭，拨不通以 `connect_failed {reason}` 关闭。
 
@@ -326,12 +384,12 @@ UDP 流上每个二进制帧是一个数据报，前面是它的 `source`：大�
 | `binding_unknown`              | `hello`、`leave`、流 | 解除：程序删掉自己的绑定，要用新链接重新加入 |
 | `kind_unknown`、`verb_unknown` | 流                   | 保留                                         |
 
-只有 `binding_unknown` 会解除绑定，因为它表示那一行已在面板上删除，而且只有持有固定证书的中枢才发得出它。
+只有 `binding_unknown` 解除绑定，因为它表示那一行已在面板上删除，而且只有持有钉住证书的中枢发得出它。
 
-| 关闭码 | 含义                                                         |
-| ------ | ------------------------------------------------------------ |
-| 4000   | `refused`；它前面的 `refused` 帧带着错误码                   |
-| 4010   | `replaced`：同一个绑定又开了一条套接字；程序要等人操作才重连 |
+| 关闭码 | 含义                                                                                                                                                                                       |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 4000   | `refused`；它前面的 `refused` 帧带着错误码                                                                                                                                                 |
+| 4010   | `replaced`：同一个绑定又开了一条套接字。客户端刚把通道换到新套接字时，旧套接字收到它属于正常；其他时候表示另一个程序用同一个绑定接入了，程序不自动重连，人在客户端里按 **重新连接** 后才连 |
 
 ## 协议号
 
@@ -343,6 +401,6 @@ UDP 流上每个二进制帧是一个数据报，前面是它的 `source`：大�
 | 2          | 0.4.0      |
 | 3          | 0.5.0      |
 
-0.5.0 起 `PROTOCOL_MIN` 是 3。协议 3 把链接和客户端状态里的 `overlay`（一个对象或 null）改名为 `overlays`（一个列表）。0.3 和 0.4 的被控端或客户端接入 0.5.0 的中枢时返回 `protocol_too_old`，也不会从中枢自动升级。中枢自己升级时会重装本机的被控端；其他机器要在**设备**页上或手动装 0.5.0 的包。
+0.5.0 起 `PROTOCOL_MIN` 是 3。协议 3 把链接和客户端状态里的 `overlay`（一个对象或 null）改名为 `overlays`（一个列表）。0.3 和 0.4 的被控端或客户端接入 0.5.0 的中枢时返回 `protocol_too_old`，也不会从中枢自动升级。0.4 的中枢不能升级到 0.5.0：全新安装的 0.5.0 中枢有新的证书，每台机器都装 0.5.0 的包，再用新链接加入。
 
 读取宽松，写出严格。不认识的字段忽略，不认识的 kind 以 `kind_unknown` 关闭，程序只发自己协议号定义过的内容。增加 kind、字段或错误码时协议号不变；删掉任何东西、改变含义，或改动链接、凭证、证书指纹，以及 `hello`、`state`、`report`、`open` 这四个词时，协议号加一。

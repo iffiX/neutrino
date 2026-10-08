@@ -26,6 +26,12 @@
       "replace": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
     },
     {
+      "name": "ssh_fingerprint",
+      "regex": "SHA256:[A-Za-z0-9+/]{43}=?",
+      "flags": "g",
+      "replace": "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
       "name": "hex_fingerprint",
       "regex": "\\b[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){15,}\\b|\\b[0-9a-f]{40,128}\\b",
       "flags": "g",
@@ -33,7 +39,7 @@
     },
     {
       "name": "mac_address",
-      "regex": "\\b[0-9A-Fa-f]{2}(?:[:-][0-9A-Fa-f]{2}){5}\\b",
+      "regex": "(?<![0-9A-Fa-f:-])[0-9A-Fa-f]{2}(?:[:-][0-9A-Fa-f]{2}){5}(?![0-9A-Fa-f:-])",
       "flags": "g",
       "replace": "02:00:00:00:00:01"
     },
@@ -78,7 +84,7 @@
   "literals": [
     {
       "find": "nmxhub",
-      "replace": "home-hub"
+      "replace": "hub"
     }
   ]
 }

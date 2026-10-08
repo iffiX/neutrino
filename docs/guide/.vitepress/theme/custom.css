@@ -17,27 +17,45 @@
   --vp-c-brand-soft: rgba(34, 211, 238, 0.12);
 }
 
+/* The home page's hero: the icon alone glows, the way the setup card does. */
+:root {
+  --vp-home-hero-image-background-image: none;
+  --vp-home-hero-image-filter: none;
+}
+
 .VPHomeHero .image-src {
   max-width: 280px;
   max-height: 280px;
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 56px;
+  box-shadow:
+    0 0 0 1px rgb(34 211 238 / 18%),
+    0 0 48px -8px rgb(34 211 238 / 45%),
+    0 40px 120px -50px rgb(240 21 138 / 55%);
 }
 
-.vp-doc p,
-.vp-doc li {
-  line-height: 1.9;
+/* The home page's lead, under the three cards, in the cards' column. */
+.home-lead {
+  margin: 0 auto;
+  padding: 24px 24px 0;
+  max-width: 1152px;
 }
 
-.vp-doc h2 {
-  letter-spacing: 0.01em;
+.home-lead > p {
+  margin: 0;
+  font-size: 16px;
+  line-height: 28px;
+  color: var(--vp-c-text-2);
 }
 
-.vp-doc table {
-  font-size: 14px;
+@media (min-width: 640px) {
+  .home-lead {
+    padding: 32px 48px 0;
+  }
 }
 
-@media (max-width: 639px) {
-  .VPHomeHero .image-src {
-    max-width: 160px;
-    max-height: 160px;
+@media (min-width: 960px) {
+  .home-lead {
+    padding: 48px 64px 0;
   }
 }
