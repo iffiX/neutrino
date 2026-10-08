@@ -32,7 +32,7 @@ SSH 中继设好之后，你自己的一台公网服务器上开着一个端口�
    chmod 600 /home/relay/.ssh/authorized_keys
    ```
 
-1. 用密码时，给这个账户设一个密码，并只允许这个账户用密码登录：
+1. 用密码时，给这个账户设一个密码，并为这个账户打开密码登录：
 
    ```bash
    passwd relay
@@ -71,8 +71,8 @@ Fedora、RHEL 和 Arch 上，SSH 服务名是 `sshd`，第 4 步的重启命令�
 | **保管库已锁定**（Vault locked）          | 这台机器上缺少保险库数据密钥的工作副本。               | 按凭据页 **保险库** 一节恢复工作副本。                                             |
 | **认证失败**（Authentication failed）     | 服务器不接受这把密钥或这个密码。                       | 检查 `authorized_keys` 里的公钥行，或者密码和这个账户的 `PasswordAuthentication`。 |
 | **服务器不让对外监听**（Forward refused） | 服务器拒绝监听，或者别的程序占着这个端口。             | 确认 `permitlisten` 里的端口就是对外端口，并在服务器上腾出这个端口。               |
-| **对外端口不通**（Public port closed）    | 转发在运行，公网地址却没有应答，或应答的是别的证书。   | 检查 `GatewayPorts clientspecified` 和服务商的防火墙。                             |
-| **主机密钥已变**（Host key changed）      | 服务器出示的密钥和记下的不一样。                       | 你换过或重装过服务器时，选择 **忘记主机密钥**（Forget host key）。                 |
+| **对外端口不通**（Public port closed）    | 转发在运行，公网地址却没有应答，或应答的是别的证书。   | 检查 `GatewayPorts clientspecified`、服务商的防火墙和服务器自己的防火墙。          |
+| **主机密钥已变**（Host key changed）      | 服务器出示的密钥和记下的不一样。                       | 同一地址上重装过服务器时，选择 **忘记主机密钥**（Forget host key）。               |
 | **连不上服务器**（Server unreachable）    | SSH 连不到服务器，或者连接断了。                       | 检查服务器和 SSH 端口，确认服务器在运行。                                          |
 
 ## 换一台服务器

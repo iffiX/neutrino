@@ -33,7 +33,7 @@ title: NetBird
 ![只显示一次 key 的那一屏](/guide/console/console_netbird_key_created.webp)
 
 ::: warning
-控制台 **Networks** → **Routing Peers** → **Add** → **Install NetBird** 给出的 key 只能用一次。中枢存着这种 key 时，第一个客户端用掉它，第二个客户端加入时返回 `overlay_join_failed`。
+控制台 **Networks** → **Routing Peers** → **Add** → **Install NetBird** 给出的 key 只能用一次。中枢存着这种 key 时，key 用掉之后，客户端加入返回 `overlay_join_failed`。
 :::
 
 ## 让中枢加入
@@ -63,7 +63,7 @@ title: NetBird
 
 ## 换掉交给客户端的 key
 
-中枢存的是一次性 key 时，第二个客户端开始加入不了。换成可重复使用的 key：
+中枢存的是一次性 key 时，key 用掉之后客户端都加入不了。换成可重复使用的 key：
 
 1. 照本页第一节在控制台里建一把可重复使用的 key。
 1. 在 **Setup key** 一行选择 **替换**。
@@ -87,6 +87,6 @@ title: NetBird
 1. 在 **设置** 标题旁选择 **离开**（Leave）。
 1. 在 **离开 NetBird 网络**（Leave the NetBird network）对话框里选择 **离开**。中枢从这张网里删除自己。
 1. 照“让中枢加入”一节，用一把新 key 再加入。
-1. 在控制台的 **Peers** 里删掉中枢的旧对端。
+1. 控制台的 **Peers** 里还留着中枢的旧对端时，删掉它。
 
 只经 NetBird 连到中枢的人，在中枢离开期间连不上。手机上重装客户端 App 后，它作为新对端注册，旧的那个也在控制台的 **Peers** 里删掉。

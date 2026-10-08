@@ -54,7 +54,7 @@ title: EasyTier
 
 ![控制台里给中枢建网络的表单](/guide/console/console_easytier_network_create.webp)
 
-控制台把网络下发给中枢之后，徽章显示 **已连接**。**控制台下发的网络**（Networks from the console）列出每张网的名字、本机地址和名称，以及 **子网路由**（Subnet routes）。控制台没给出的项写着 **控制台未提供**（Not provided by the console）。
+控制台把网络下发给中枢之后，徽章显示 **已连接**。**控制台下发的网络**（Networks from the console）列出每张网的网络名、本机在网里的地址和本机名称，以及 **子网路由**（Subnet routes）。控制台没给出的项写着 **控制台未提供**（Not provided by the console）。
 
 <!-- 待核: 网里只有中枢一台时，徽章读已连接还是还没有对端（no peers yet）（大纲待核第 4 条） -->
 
@@ -84,7 +84,7 @@ title: EasyTier
 
 ![手动模式下的 EasyTier 设置](/guide/zh/overlay_easytier_settings.webp)
 
-一个碰头点都没填时，应用栏不可用。直接调用接口时，中枢拒绝并返回 `easytier_invalid`。
+一个碰头点都没填时，应用栏不可用。网里还没有别的机器时，先用下面第二条命令在一台公网机器上自建碰头点，再把它填进来。直接调用接口时，中枢拒绝并返回 `easytier_invalid`。
 
 客户端拿到的碰头点是中枢上行网口的地址加 11010 端口。客户端在外面时，要能连到这个地址和端口。
 
