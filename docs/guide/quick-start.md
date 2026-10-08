@@ -1,31 +1,27 @@
 ---
-title: Quick start
+title: First step
 ---
 
-# Quick start
+# First step: install, join, reach it from outside
 
-At the end of this page, your phone on mobile data reaches your computer at home. It shows the computer's desktop, opens a folder shared from it in the Files app, and runs a terminal on it. The whole path takes about ten minutes and costs nothing, because the way in from outside is the free tier of the EasyTier console. That tier allows up to 20 devices.
+The first step installs the hub on your home computer, joins your phone and laptop to it, and connects them from outside through NetBird. It takes about ten minutes. Each service on the computer, such as a terminal or an AI session, opens on a page of its own after this one.
 
 ## Before you start
 
-- Your computer stays on, has a desktop, and has somebody signed in at its screen. It runs one of these systems:
+- Your computer stays on and runs one of these systems:
   - Linux with a desktop: Debian 12 or newer, Ubuntu 22.04 or newer, Fedora 41 or newer, or the RHEL 9 family
   - macOS 12.3 or newer
   - Windows 10 1809 or newer on x86-64
-- You have an administrator account on your computer, and it reaches the internet.
-- Your phone runs Android 8.0 or newer on a 64-bit ARM processor.
-- You have an account on the EasyTier console. Sign-up and sign-in are both at `https://console.easytier.net`.
-- Your phone and your computer are on the same Wi-Fi network.
+- You have an administrator account on the computer, and the computer reaches the internet.
+- You have an Android phone with Android 8.0 or newer on a 64-bit ARM processor, a laptop with one of the computer's systems, or both.
+- You have an account at netbird.io.
+- The phone and the laptop are on the same Wi-Fi network as the computer.
+
+For EasyTier, Direct or your own server, follow [EasyTier](./hub/easytier.md), [Turn on Direct](./hub/overlay.md#turn-on-direct) or [Reach home through your own VPS](./scenarios/vps_relay.md) in place of both NetBird sections.
 
 ## Install the hub
 
-On Linux, open a terminal and run:
-
-```bash
-curl -fsSL https://github.com/iffiX/neutrino/releases/latest/download/install.sh | sh
-```
-
-On macOS, open **Terminal** and run:
+On Linux or macOS, open a terminal and run:
 
 ```bash
 curl -fsSL https://github.com/iffiX/neutrino/releases/latest/download/install.sh | sh
@@ -37,32 +33,32 @@ On Windows, open PowerShell and run:
 irm https://github.com/iffiX/neutrino/releases/latest/download/install.ps1 | iex
 ```
 
-The script prompts once for administrator rights. On Windows it continues in a new PowerShell window that Windows opens as administrator, and that window prints the addresses. When the install finishes, the terminal prints one address for each network your computer is on, each ending in a one-time token.
+The script prompts once for administrator rights. On Windows it goes on in a new PowerShell window that Windows opens as administrator. When the install ends, the terminal prints the wizard's address on each network the computer is on.
 
-In mainland China, take the mainland edition's command from [Install the hub](./install/hub.md).
-
-## Open the wizard
-
-1. In a browser on your computer, open the first address the terminal printed, with its token.
-1. Select **Set this box up**.
+[Install the hub](./install/hub.md) has the mainland edition's command and the package files.
 
 ## Answer the wizard
 
-Each screen ends in **Next**, and the wizard writes nothing until the last screen:
+Open the first address the terminal printed in a browser on the computer. Each screen ends in **Next**, and the wizard changes nothing until the last screen:
 
+1. Select **Set this box up**.
 1. On **Language**, keep **English**.
 1. Type a **Panel password** of at least 8 characters, and type it again under **Again**.
 1. Type a **Vault passphrase** of at least 16 characters, with lowercase and uppercase letters, digits and symbols, and type it again under **Again**.
 1. Leave **HTTPS for the panel** off.
-1. On **What is this machine for?**, select **Server**. On macOS and Windows it is the only shape listed.
+1. On **What is this machine for?**, select **Server**.
 1. On **Which ports?**, keep the ports as they are.
 1. On **Going out through a proxy**, leave **Set it up here** off.
 1. On **Ready**, select **Set this box up**.
 
-The steps run on the screen, and the title changes to **This hub is set up**.
+![The secrets screen of the wizard](/guide/en/setup_secrets.webp)
+
+The steps run on the screen, and the title changes to **This hub is set up**. The wizard has also installed the computer's agent, which runs the services the later pages open.
+
+![The wizard's last screen](/guide/en/setup_done.webp)
 
 ::: warning
-The vault passphrase seals every credential the hub holds, and restoring a backup requires it. Write it down somewhere other than your computer.
+The vault passphrase seals every credential the hub holds, and restoring a backup requires it. Write it down somewhere other than the computer.
 :::
 
 ## Sign in to the panel
@@ -70,87 +66,22 @@ The vault passphrase seals every credential the hub holds, and restoring a backu
 1. Select **Open the panel**.
 1. Type the panel password in **Panel password**.
 1. Select **Sign in**.
-1. In the sidebar, open **Devices**.
 
-**Managed devices** lists your computer, because the wizard installed your computer's agent and joined it to the hub.
+The panel opens on the **Dashboard**. Its address is the one in the browser's address bar, and the laptop opens the panel at the same address.
 
-## Turn on EasyTier
+<!-- 待核: 终端打印的第一个地址是否总是笔记本在同一 Wi-Fi 上连得到的局域网地址（机器上有容器网桥或别的 VPN 时可能不是）。 -->
 
-At the top right of the EasyTier console, select **设备接入方法** (how to connect a device), then the **开源版接入** (open-source edition) tab. Under **连接 EasyTier** (connect EasyTier), pick a key in **接入秘钥** (access key). Your console address is the whole part after `--config-server` in the command shown. It has the form `tcp://et-web.console.easytier.net:22020/<token>`, where `<token>` is your token.
+## Join your phone and laptop
 
-1. In the sidebar, open **Access**.
-1. On the **EasyTier** card, turn on **Enable**.
-1. Select **Apply access**.
-1. Select the **EasyTier** card.
-1. Under **Settings**, select **EasyTier console**.
-1. In the EasyTier console, copy your console address.
-1. In the panel, paste it into **Console address**.
-1. Select **Apply EasyTier settings**.
+Each device joins with a link of its own from the panel's **Clients** page, valid for 30 minutes.
 
-The card reads **Waiting for the console**. Your computer is now registered with the console and on no network yet.
+### From the phone
 
-![The EasyTier card in console mode, waiting for the console](/guide/en/overlay_easytier_console_waiting.webp)
-
-## Attach your computer in the console
-
-The EasyTier console lists your computer on its **设备** (devices) page.
-
-![The EasyTier console's device list with your computer registered](/guide/console/console_easytier_devices.webp)
-
-1. In the console's sidebar, open **网络** (networks).
-1. Select **创建网络** (create network).
-1. Type a name in **网络名称** (network name), and leave the other fields as they are.
-1. Select **创建网络** at the bottom of the dialog.
-1. Select the new network's name to open its page.
-1. Select **挂载设备** (attach device).
-1. Under **入网设备** (device to join), pick your computer.
-1. Select **加入网络** (join network).
-
-![The EasyTier console's form that creates a network](/guide/console/console_easytier_network_create.webp)
-
-Your computer's row on the network's page reads **挂载中** (attaching), then **运行中** (running).
-
-In the panel, the EasyTier badge on **Access** reads **no peers yet** while your computer is the only device on the network, and **Networks from the console** lists the network. The badge turns **connected** once your phone is on the network too.
-
-![The network from the console listed on the Access page](/guide/en/overlay_easytier_console_networks.webp)
-
-## Share your computer's desktop
-
-1. In the sidebar, under **Agent**, open **Modules**.
-1. Select your computer among the machines at the top of the page.
-1. Select the **Remote desktop** tab.
-1. Turn on **Share this machine's desktop**.
-1. Select **Apply remote desktop**.
-
-![The Remote desktop tab with the desktop shared](/guide/en/modules_remote_desktop_tab.webp)
-
-On macOS, your computer's screen shows a prompt for RustDesk. In **System Settings** > **Privacy & Security**, turn on RustDesk under **Screen Recording** and under **Accessibility**. On Linux with a Wayland session, allow the screen sharing once at your computer's screen.
-
-## Install the file share
-
-1. On **Modules**, select the **File share** tab. If the tab is missing, select **+** beside the tabs and tick **File share**.
-1. Select **Install**, and wait until the tab no longer reads **installing**.
-1. Select **Configure**.
-
-On Linux the install fetches Samba. On macOS and Windows the file share drives the SMB server that comes with the system.
-
-## Add a user and a share
-
-1. Under **Users**, type a user name and a password in the two fields.
-1. Select **Add user**.
-1. Select **Apply users**. The user's row reads **ready**.
-1. Under **Shares**, select **Add share**.
-1. Type a name for the share in **Name**.
-1. Type the path of a folder that exists on your computer in **Path**. On Windows the path starts at a drive, as in `C:\Users\Public\Documents`.
-1. Select **Apply shares**.
-
-## Install the app and join
-
-1. On your phone, download `https://github.com/iffiX/neutrino/releases/download/v0.5.0/neutrino-client-0.5.0-android.apk`.
+1. On the phone, download `https://github.com/iffiX/neutrino/releases/download/v0.5.0/neutrino-client-0.5.0-android.apk`.
 1. Open the file and select **Install**. If Android shows a prompt first, allow your browser to install apps.
 1. Open **Neutrino**.
 1. In the panel, open **Clients**, then select **New client link**.
-1. Type a name for your phone, then select **Create link**. A QR code of the link appears.
+1. Type a name for the phone, such as `phone`, then select **Create link**. A QR code of the link appears.
 1. In the app, on **Hubs**, select **Join a hub**.
 1. Select **Allow the camera**, then allow it in Android's prompt.
 1. Point the camera at the QR code in the panel.
@@ -159,65 +90,87 @@ On Linux the install fetches Samba. On macOS and Windows the file share drives t
 
 ![The app's QR scanner on the Join a hub screen](/guide/en/app_join_scan.webp)
 
-The hub's row in the app reads **Connected · LAN**.
+### From the laptop
 
-## Connect your phone's virtual network
+On Linux or macOS, install the client from your own account with:
 
-1. On the hub's row, on the **Virtual network** line, select **Connect**.
-1. In Android's VPN connection request, select **OK**. The line reads **Connecting…** with **This machine is registered with the console. Attach it to a network there.** under it.
-1. In the EasyTier console, open the network your computer is on.
-1. Select **挂载设备**.
-1. Under **入网设备**, pick your phone. The list names it by its Android device name.
-1. Select **加入网络**.
+```bash
+curl -fsSL https://github.com/iffiX/neutrino/releases/latest/download/install.sh | sh -s -- client
+```
+
+On Windows, run this in PowerShell:
+
+```powershell
+& ([scriptblock]::Create((irm https://github.com/iffiX/neutrino/releases/latest/download/install.ps1))) client
+```
+
+Then join the laptop:
+
+1. In a browser on the laptop, open the panel's address and sign in.
+1. On **Clients**, select **New client link**.
+1. Type a name for the laptop, such as `laptop`, then select **Create link**.
+1. Select **Copy**.
+1. Open **Neutrino Client** from the application menu on Linux, the Start menu on Windows, or **Applications** on macOS.
+1. Paste the link into the field of the **Join a hub** row.
+1. Select **Join**.
+
+The hub's row reads **Connected · LAN** in the app and in the laptop's client window.
+
+## Join the hub to NetBird
+
+The hub joins NetBird with a setup key and gives the same key to the phone and the laptop, so the key must be reusable.
+
+### Create a reusable setup key
+
+1. In the NetBird console, open **Settings** > **Setup Keys**.
+1. Select **Create Key**.
+1. Type a **Name**, such as the hub's name.
+1. Turn on **Make this key reusable**.
+1. Leave **Usage limit** empty, where it reads **Unlimited**.
+1. Leave **Expires in** empty.
+1. Select **Create Setup Key**.
+1. In **Setup key created successfully!**, select the copy button beside the key. The console shows the key this one time.
+
+![The Create Setup Key form filled in](/guide/console/console_netbird_key_create.webp)
+
+![The new setup key, shown once](/guide/console/console_netbird_key_created.webp)
+
+::: warning
+The key under **Networks** > **Routing Peers** > **Add** > **Install NetBird** works one time. With it, the hub joins and the phone then fails to join.
+:::
+
+### Paste the key into the panel
+
+1. In the panel's sidebar, open **Access**.
+1. On the **NetBird** card, turn on **Enable**.
+1. Select **Apply access**.
+1. Select the **NetBird** card.
+1. Under **Settings**, paste the key into **Setup key**.
+1. Leave the management URL empty.
+1. Select **Join**.
+
+![The NetBird settings with the setup key saved](/guide/en/overlay_netbird_settings.webp)
+
+The badge beside **NetBird** reads **joining**, then **connected**, and **Settings** shows the hub's **Overlay address**.
+
+## Put the phone and laptop on NetBird
+
+The phone and the laptop receive the setup key from the hub, and every step for them happens in the app and the client window.
+
+1. In the app, on the hub's row, on the **Virtual network** line, select **Connect**.
+1. In Android's VPN connection request, select **OK**.
+1. In the laptop's client window, on the hub's row, on the **Virtual network** line, select **Connect**.
 
 ![Android's VPN connection request](/guide/en/app_vpn_prompt.webp)
 
-![The virtual network line waiting for the console](/guide/en/app_hub_console_waiting.webp)
+Each **Virtual network** line reads **Connecting…**, then **Connected ·** and the device's address on NetBird.
 
-![The EasyTier console attaching the phone to the network](/guide/console/console_easytier_device_attach.webp)
+## Leave the Wi-Fi
 
-The line reads **Connected ·** and your phone's address on the network.
+- Turn off Wi-Fi on the phone.
 
-## Use your computer from mobile data
+The hub's row in the app reads **Connected · NetBird**, with the round trip in milliseconds beside it. The phone now reaches the hub from mobile data.
 
-Every step from here runs on your phone, away from your Wi-Fi.
+![The hub's row connected through NetBird, away from the Wi-Fi](/guide/en/app_hub_netbird.webp)
 
-### Leave the Wi-Fi
-
-- Turn off Wi-Fi on your phone.
-
-The hub's row reads **Connected · EasyTier** with the round trip in milliseconds. The app now reaches the hub through the EasyTier network your phone and your computer are on.
-
-![The hub row connected through EasyTier](/guide/en/app_hub.webp)
-
-### See the desktop
-
-1. Open **Remote desktops**.
-1. On your computer's row, select **Connect**.
-
-The viewer fills the screen with your computer's desktop. Three round buttons at the top right open the keyboard, send special keys, and end the session.
-
-![Your computer's desktop in the app's viewer](/guide/en/app_rdp_viewer.webp)
-
-### Open the shared folder
-
-1. Open **Files**.
-1. On the share's row, select **Open in Files**.
-1. Type the user name in **Share username** and its password in **Share password**.
-1. Leave **Remember** ticked.
-1. Select **Connect**.
-
-The share appears in Android's Files app, and the folder's files open from there.
-
-![The share in Android's Files app](/guide/en/app_files_provider.webp)
-
-### Open a terminal
-
-1. Open **Terminals**.
-1. Select your computer.
-1. Select **New terminal**.
-1. Type `ls` and press Enter.
-
-The terminal lists the files of the folder it starts in. On Windows the terminal is PowerShell, and on Linux and macOS it is root's login shell.
-
-![A terminal on your computer in the app](/guide/en/app_terminal.webp)
+When a row reads something else, [Troubleshooting](./reference/troubleshooting.md) lists each state line and its fix.

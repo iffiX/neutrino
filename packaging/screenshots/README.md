@@ -10,7 +10,7 @@ lists from one image.
 
 | File | What it holds |
 | --- | --- |
-| `shots.json` | One entry per image: file, language directory, page or `pages`, source, viewport, element, what to wait for, the state the hub must be in, `press`, the steps run before the shot, `scroll_to`, the element put at the top before a viewport shot, the manual step when one is still needed, `redraw_qr`, the stand-in text a shot's QR code is redrawn from, `hide`, the CSS selectors hidden before the shot, `is_setup`, whether the shot is a setup wizard screen, and `wait_s`, the seconds to wait for the element. |
+| `shots.json` | One entry per image: file, language directory, page or `pages`, `language_pages`, the pages one language alone shows a shared `os` or `console` image on, source, viewport, element, what to wait for, the state the hub must be in, `press`, the steps run before the shot, `scroll_to`, the element put at the top before a viewport shot, the manual step when one is still needed, `redraw_qr`, the stand-in text a shot's QR code is redrawn from, `hide`, the CSS selectors hidden before the shot, `is_setup`, whether the shot is a setup wizard screen, and `wait_s`, the seconds to wait for the element. |
 | `redact.json` | The patterns and literal strings replaced inside the page before each shot. |
 | `redact.local.json` | Optional, ignored by git: more `literals` in the same shape, for names you do not commit. |
 | `capture.py` | Signs in to the panel, takes the panel, client and console shots, and prints what it replaced in each. |

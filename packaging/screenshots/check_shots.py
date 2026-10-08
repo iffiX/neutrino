@@ -5,8 +5,9 @@ page, or when the table names a screenshot its page does not reference. A
 screenshot is referenced as ``/guide/<language>/<name>.webp`` and named in
 ``shots.json`` as ``<name>.png`` under its English page path, in ``page`` or
 in ``pages``; a ``zh`` entry belongs to the page under ``zh-CN/``, and an
-``os`` or ``console`` entry to both. Pages the table lists as pending are
-skipped.
+``os`` or ``console`` entry to both. An ``os`` or ``console`` entry's
+``language_pages`` maps ``en`` or ``zh`` to pages that one language alone
+shows the image on. Pages the table lists as pending are skipped.
 
 Run from anywhere: ``python3 packaging/screenshots/check_shots.py``.
 """
@@ -63,6 +64,23 @@ def shot_pages(shot: dict) -> list:
     return pages
 
 
+def language_pages(shot: dict) -> list:
+    """The pages one language alone shows a shared entry's image on.
+
+    Args:
+        shot: The shot table's entry.
+
+    Returns:
+        ``(language, page)`` pairs from the entry's ``language_pages``, with
+        ``language`` ``en`` or ``zh`` and ``page`` the English page path.
+    """
+    return [
+        (language, page)
+        for language, pages in shot.get("language_pages", {}).items()
+        for page in pages
+    ]
+
+
 def named_images(table: dict) -> set:
     """Every (page, directory, name) the table names.
 
@@ -81,6 +99,9 @@ def named_images(table: dict) -> set:
                 named.add((page, language, name))
             if language == "zh" or language in SHARED_DIRECTORIES:
                 named.add((CHINESE_PREFIX + page, language, name))
+        for only, page in language_pages(shot):
+            prefix = CHINESE_PREFIX if only == "zh" else ""
+            named.add((prefix + page, language, name))
     return named
 
 
@@ -123,7 +144,11 @@ def main() -> int:
             f"{page}: shots.json names {directory}/{name}.png, the page does not use it"
         )
     missing = sorted(
-        {page for shot in table["shots"] for page in shot_pages(shot)}
+        {
+            page
+            for shot in table["shots"]
+            for page in shot_pages(shot) + [p for _, p in language_pages(shot)]
+        }
         - {english_path(page) for page in guide_pages()}
         - pending
     )
