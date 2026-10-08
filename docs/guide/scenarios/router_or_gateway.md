@@ -4,11 +4,11 @@ title: Make the hub a router or side gateway
 
 # Make the hub a router or side gateway
 
-To forward traffic for the devices at home, an installed hub changes from the server shape to a router or a side gateway. Both shapes exist on Linux only, and the side gateway in the full edition only. [Network](../hub/network.md) describes every field the steps touch.
+To forward traffic for the devices at home, an installed hub changes from **Server** mode to **Router** or **Side gateway** mode. Both modes exist on Linux only, and the side gateway in the full edition only. [Network](../hub/network.md) describes every field the steps touch.
 
 ## When to do this
 
-Switch when the [Proxy](../hub/proxy.md) is to send other home devices' traffic through an exit node, or when this machine is your router already. A side gateway is a second machine on your router's network that forwards for the devices that name it as their gateway. A router takes over the box's interfaces and runs networks of its own. For clients, agents and services alone, the server shape is enough.
+Switch when the [Proxy](../hub/proxy.md) is to send other home devices' traffic through an exit node, or when this machine is your router already. A side gateway is a second machine on your router's network that forwards for the devices that name it as their gateway. A router takes over the box's interfaces and runs networks of its own. For clients, agents and services alone, **Server** mode is enough.
 
 ## Before you switch
 
@@ -18,9 +18,9 @@ Each switch has a cost, and the apply bar names it before you apply:
 - Leaving router mode returns the interfaces to the machine's network manager. The devices on the served networks lose DHCP, DNS and their gateway.
 - Leaving side gateway mode cuts off the devices that named the box as their gateway.
 
-Work from the hub box's own screen, or from a client over a virtual network, since a mode switch keeps each virtual network's exposure. <!-- 待核: that the panel stays reachable over NetBird or EasyTier through a switch into router mode, while the uplink takes a new lease. --> A browser on the network you change can lose the panel; open it again at the box's new address. To go back, select **Server** in the same way.
+Work from the hub box's own screen, or from a client over a virtual network, since a mode switch keeps each virtual network's exposure. The virtual network can drop for a moment while the uplink takes a new lease. A browser on the network you change can lose the panel; open it again at the box's new address. To go back, select **Server** in the same way.
 
-## Choose the shape
+## Choose the mode
 
 On a new install, the setup wizard asks **What is this machine for?** and offers **Server**, **Side gateway**, **Router** and **One-arm router**.
 
@@ -28,13 +28,13 @@ On a new install, the setup wizard asks **What is this machine for?** and offers
 
 On an installed hub, open the panel's **Network** page:
 
-1. Under **Mode**, select **Router** or **Side gateway**. The current shape has the **active** badge.
+1. Under **Mode**, select **Router** or **Side gateway**. The current mode has the **active** badge.
 1. Read the warning in the apply bar.
 1. Select **Apply mode**.
 1. For a side gateway, type your router's address under **Upstream gateway**, where the box sends what it forwards.
 1. For a side gateway, select **Apply upstream gateway**.
 
-![The Mode section with the three shapes](/guide/en/network_modes.webp)
+![The Mode section with the three modes](/guide/en/network_modes.webp)
 
 ## Give each interface a role
 
@@ -61,7 +61,7 @@ A side gateway leaves the addresses to your router. Point each device at the hub
 
 **Exposure** lists the networks where the box accepts connections to the panel and its other services. In router mode, each network the box serves is exposed.
 
-1. Under **Exposure**, tick each network the box answers on.
+1. Under **Exposure**, tick each network the box accepts connections from.
 1. Read the warnings in the apply bar.
 1. Select **Apply exposure**. The section reads **Applied.**
 

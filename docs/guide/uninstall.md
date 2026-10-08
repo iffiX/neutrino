@@ -4,7 +4,7 @@ title: Uninstall
 
 # Uninstall
 
-Each Neutrino package comes off on its own. The hub comes off its computer, an agent off each managed machine, and a client off each phone and laptop. Removing the hub leaves the agent on the same computer installed, so that computer takes two removals.
+Each Neutrino package comes off on its own. The hub comes off its computer, an agent off each managed machine, and a client off each phone and laptop. Removing the hub leaves the agent on the same computer installed, so that computer takes two removals. To remove everything, take the clients off first, then the agents, and the hub last, since a client and an agent leave through the hub.
 
 ## Hub
 
@@ -36,13 +36,17 @@ After `dnf remove` or `pacman -R`, delete what stays with this command:
 sudo rm -rf /etc/neutrino/hub /var/lib/neutrino/hub /var/log/neutrino/hub
 ```
 
-On Windows, open **Settings** > **Apps** > **Installed apps** and uninstall **Neutrino Hub**. The removal also deletes the hub's firewall rules. The configuration and the state under `C:\ProgramData\Neutrino\hub` stay.
+On Windows, run `nhub reset network` in an administrator PowerShell first, which deletes the hub's firewall rules. Then open **Settings** > **Apps** > **Installed apps** and uninstall **Neutrino Hub**. The configuration and the state under `C:\ProgramData\Neutrino\hub` stay.
 
-<!-- 待核: whether the Windows hub's removal deletes C:\ProgramData\Neutrino\hub; no standard page or build script says. -->
+On macOS, the hub's package has no uninstaller. These commands reset the hub, which deletes its configuration and keys, then stop it and delete every file the package installed. Download a backup from the **Settings** page first to keep the configuration for later:
 
-On macOS, the hub's package has no uninstaller. `sudo nhub reset all` hands the network back and stops the hub. The program and its folders under `/Library/Application Support/Neutrino/hub`, the LaunchDaemon `com.neutrino.hub`, `/usr/local/bin/nhub` and `/Applications/Neutrino Hub.app` stay on the Mac.
-
-<!-- 待核: how to take the hub off a Mac; build_hub_macos.py describes no removal, and no standard page gives one. -->
+```bash
+sudo nhub reset all --yes
+sudo launchctl bootout system/com.neutrino.hub
+sudo rm -f /Library/LaunchDaemons/com.neutrino.hub.plist /usr/local/bin/nhub
+sudo rm -rf "/Library/Application Support/Neutrino/hub" /Library/Logs/Neutrino/hub "/Applications/Neutrino Hub.app"
+sudo pkgutil --forget com.neutrino.hub
+```
 
 ## Agent
 
@@ -59,15 +63,13 @@ Remove the agent from each managed machine:
 | Windows        | **Settings** > **Apps** > **Installed apps**, then uninstall **Neutrino Agent** | runs `nagent service uninstall --yes`                                                                                             |
 | macOS          | `sudo nagent service uninstall`                                                 | the package has no uninstaller, so this command also removes the agent itself, RustDesk and the package's receipt                 |
 
-`nagent service uninstall` stops the agent and takes away what its modules added to run. That covers their services, launchd jobs, scheduled tasks and firewall rules, and the file share's fence. The shares, the accounts and the modules' data stay.
+`nagent service uninstall` stops the agent and takes away what its modules added to run. That covers their services, launchd jobs, scheduled tasks and firewall rules, and the file share's fence. The shares, the accounts the modules created and the modules' data stay.
 
 On a Mac, the agent's configuration and state stay after `nagent service uninstall`. Delete them with this command:
 
 ```bash
 sudo rm -rf "/Library/Application Support/Neutrino/agent" /Library/Logs/Neutrino/agent
 ```
-
-<!-- 待核: whether the two folders above are all a Mac keeps of the agent after `nagent service uninstall`; build_agent_macos.py says only that the configuration and the state stay. -->
 
 ## Client
 
@@ -82,16 +84,22 @@ Remove the client from each phone and laptop:
 | Debian, Ubuntu | `sudo apt remove neutrino-client`                                                | each person's `~/.config/neutrino/client`; `sudo apt purge neutrino-client` deletes it for every account |
 | Fedora, RHEL   | `sudo dnf remove neutrino-client`                                                | each person's `~/.config/neutrino/client`                                                                |
 | Windows        | **Settings** > **Apps** > **Installed apps**, then uninstall **Neutrino Client** | your configuration, while **Keep my configuration** is selected in the removal dialog                    |
-| macOS          | see the note after this table                                                    | `/Applications/Neutrino Client.app` and your `~/Library/Application Support/Neutrino/client`             |
+| macOS          | the commands after this table                                                    | your `~/Library/Application Support/Neutrino/client`                                                     |
 | Android        | uninstall the app as any other app                                               | nothing of the app                                                                                       |
 
-On a Mac, the client's package has no uninstaller that a standard page or a build script names.
+On a Mac, the client's package has no uninstaller. These commands stop its NetBird and EasyTier services and delete what the package installed:
 
-<!-- 待核: how to take the client off a Mac (the bundle, the /usr/local/bin/nclient link and the overlay LaunchDaemons); build_client_macos.py describes no removal. -->
+```bash
+sudo launchctl bootout system/com.neutrino.client.netbird
+sudo launchctl bootout system/com.neutrino.client.easytier
+sudo rm -f /Library/LaunchDaemons/com.neutrino.client.netbird.plist /Library/LaunchDaemons/com.neutrino.client.easytier.plist /usr/local/bin/nclient
+sudo rm -rf "/Applications/Neutrino Client.app" "/Library/Application Support/Neutrino/client" /Library/Logs/Neutrino/client
+sudo pkgutil --forget com.neutrino.client
+```
 
 ## What stays on the machine
 
-After a removal without a purge, these folders stay. In the paths, `<package>` is `hub`, `agent` or `client`.
+These folders stay until you delete them: after a removal on Linux without a purge, on Windows, and after `nagent service uninstall` on a Mac. In the paths, `<package>` is `hub`, `agent` or `client`.
 
 | Holds             | Linux                       | macOS                                                    | Windows                                    |
 | ----------------- | --------------------------- | -------------------------------------------------------- | ------------------------------------------ |
@@ -100,4 +108,4 @@ After a removal without a purge, these folders stay. In the paths, `<package>` i
 | logs              | `/var/log/neutrino/`        | `/Library/Logs/Neutrino/`                                | `C:\ProgramData\Neutrino\<package>\log`    |
 | a person's client | `~/.config/neutrino/client` | `~/Library/Application Support/Neutrino/client`          | `%APPDATA%\Neutrino\client`                |
 
-An agent also leaves what its modules made for people: the shares, the accounts, CloudCLI's files in each home and the modules' data.
+An agent also leaves what its modules made: the shares, the accounts they created, CloudCLI's files in each home and the modules' data. Your own files and your Claude Code sessions stay as they were.

@@ -4,7 +4,7 @@ title: Supported platforms
 
 # Supported platforms
 
-This page lists the systems each part of Neutrino 0.5.0 installs on, with its release file: the hub, the agent, the desktop client and the Android app. Every file is on the [releases page](https://github.com/iffiX/neutrino/releases), beside `SHA256SUMS` and the source archive. Every build is 64-bit.
+Each part of Neutrino 0.5.0 has a section here with the systems it installs on and its release files. Every file is on the [releases page](https://github.com/iffiX/neutrino/releases), beside `SHA256SUMS` and the source archive. Every build is 64-bit.
 
 ## Hub
 
@@ -63,18 +63,18 @@ Android 8.0 is API level 26, the `minSdk` the app declares, and the phone's inst
 
 ## What each part runs as
 
-| Part              | Runs on                                                                          | Runs as                                                                                 |
-| ----------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `neutrino-hub`    | one machine: Linux in any network shape, or macOS or Windows in the server shape | a root service on Linux, a root LaunchDaemon on macOS, a LocalSystem service on Windows |
-| `neutrino-agent`  | each managed machine, the hub's own machine included                             | the same as the hub, with no window                                                     |
-| `neutrino-client` | a person's Linux, Windows or macOS computer                                      | that person's own account                                                               |
-| the Android app   | a phone or a tablet                                                              | an app of the phone's owner                                                             |
+| Part              | Runs on                                                                        | Runs as                                                                                 |
+| ----------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| `neutrino-hub`    | one machine: Linux in any network mode, or macOS or Windows in **Server** mode | a root service on Linux, a root LaunchDaemon on macOS, a LocalSystem service on Windows |
+| `neutrino-agent`  | each managed machine, the hub's own machine included                           | the same as the hub, with no window                                                     |
+| `neutrino-client` | a person's Linux, Windows or macOS computer                                    | that person's own account                                                               |
+| the Android app   | a phone or a tablet                                                            | an app of the phone's owner                                                             |
 
 `nhub setup` also installs an agent on the hub's own machine, so that machine hosts modules like any other managed machine.
 
 ## Versions and protocol
 
-Every part of one release speaks the same protocol number, and every 0.5.0 build speaks protocol 3. A 0.5.0 hub admits protocol 3 alone. It rejects a 0.3 or 0.4 agent or client, which speaks protocol 1 or 2, with `protocol_too_old`, and a newer program with `protocol_too_new`; the rejected program keeps its binding. An agent the hub admits updates itself when the hub names a newer version, and a 0.3 or 0.4 agent does not.
+Every part of one release speaks the same protocol number, and every 0.5.0 build speaks protocol 3. A 0.5.0 hub admits protocol 3 alone. It rejects a 0.3 or 0.4 agent or client, which speaks protocol 1 or 2, and a program with a newer protocol. The rejected program keeps its binding. An agent the hub admits updates itself when the hub names a newer version, and a 0.3 or 0.4 agent does not.
 
 A 0.4 hub does not update to 0.5.0 in place. [Settings](../hub/settings.md#coming-from-0-4) gives the order of the move, and [The channel](../protocol/channel.md#protocol-numbers) lists the protocol numbers.
 

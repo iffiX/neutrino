@@ -6,7 +6,7 @@ title: Point a machine's AI tools at the gateway
 
 One setting per managed machine sends the requests of Claude Code, Codex and Gemini to the hub's AI gateway. It acts on every account that runs VS Code, code-server or CloudCLI on that machine.
 
-Before you begin, the hub's [AI](../../hub/ai.md) page must serve at least one model, and each account you want switched needs an instance of VS Code, code-server or CloudCLI on the machine.
+Before you begin, the hub's [AI](../../hub/ai.md) page must serve at least one model. Each account to switch needs an instance of VS Code, code-server or CloudCLI on the machine.
 
 ![The Global configuration panel of server, with two accounts reading Uses the hub's AI gateway](/guide/en/modules_ai_tools.webp)
 

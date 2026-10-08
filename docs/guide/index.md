@@ -21,13 +21,13 @@ first_time:
     details: Install Neutrino, join your phone and laptop, and reach the computer from outside.
     link: /quick-start
   - title: AI session
-    details: Pick up a Claude Code session from the computer on your phone.
+    details: Read and answer the computer's Claude Code sessions on your phone.
     link: /quick-start/cloudcli
   - title: Editor
     details: Open the computer's projects in VS Code, in a browser on any device.
     link: /quick-start/vscode
   - title: Terminal
-    details: Start a shell on the laptop and keep using it from the phone.
+    details: Open the computer's shell on the laptop and keep using it from the phone.
     link: /quick-start/terminal
   - title: Remote desktop
     details: See and use the computer's screen from the phone or the laptop.
@@ -71,7 +71,7 @@ reference:
 
 <div class="home-lead">
 
-Neutrino installs on the computer at home, and your phone and laptop join it with a scanned code or a pasted link. They reach it over the home network, and from outside over a way in you choose. On either device you open the computer's terminal, AI sessions, editor, desktop and files.
+Neutrino installs on the computer at home. Your phone joins it from the Android app with one scanned code, and a laptop, if you have one, with a pasted link. From outside they reach it through a way in, such as a free netbird.io account. On either device you open the computer's terminal, AI sessions, editor, desktop and files.
 
 </div>
 

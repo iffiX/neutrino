@@ -4,7 +4,7 @@ title: LAN devices over NetBird
 
 # Reach LAN devices without an agent through NetBird
 
-These steps route your home LAN over NetBird for the devices that run no agent, such as a printer, your router's admin page or a NAS admin page. A client away from home then opens each one at its own LAN address. The mainland edition has no NetBird; its route page is the EasyTier one.
+These steps route your home LAN over NetBird to reach the devices that run no agent, such as a printer or a NAS admin page. A client away from home then opens each one at its own LAN address. The mainland edition has no NetBird; its route page is the EasyTier one.
 
 Before you start, check these:
 

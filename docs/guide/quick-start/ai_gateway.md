@@ -4,7 +4,7 @@ title: AI tools share the hub's gateway
 
 # AI tools share the hub's gateway
 
-Your API key or subscription goes into the hub one time. Claude Code and Codex on the computer and on the laptop then send their requests through the hub's AI gateway.
+Your API key or subscription goes into the hub one time. Claude Code and Codex on the computer, and on a laptop with the client, then send their requests through the hub's AI gateway.
 
 Before you start, finish the [first step](../quick-start.md), and have an API key or a subscription account at hand.
 
@@ -16,8 +16,8 @@ With an API key, store it and add its provider:
 1. Under **Tokens**, select **Add token**, fill **Name** and paste the key into **Value**.
 1. Select **Save token**.
 1. Open **AI**, and under **Providers**, select **Add provider**.
-1. Type a **Name**, pick the **Kind** of the key's service, and pick the token under **API token**.
-1. Under **Model aliases**, type one model name per line.
+1. Type a **Name**, pick the **Kind** of the key's service, such as **Anthropic** for an Anthropic key, and pick the token under **API token**.
+1. Under **Model aliases**, type one model name per line, spelled as the provider spells it.
 1. Select **Save provider**.
 1. Select **Apply providers**.
 
@@ -38,13 +38,15 @@ With a subscription, sign in to it instead:
 1. Under **Which machine**, select your computer.
 1. Under **Global configuration**, select **This machine's AI tools use the hub's AI gateway**.
 
-The line under the control names the accounts that run VS Code, code-server or CloudCLI on the computer. Each one's row reads **Uses the hub's AI gateway**, and the CloudCLI sessions of that account now go through the gateway. An account that gets such an instance later switches at that point.
+The line under the switch names the accounts that run VS Code, code-server or CloudCLI on the computer. Each one's row reads **Uses the hub's AI gateway**. Claude Code in that account now sends its requests through the gateway, in a terminal and in the CloudCLI sessions you open on the phone.
 
 ![Global configuration with two accounts using the hub's AI gateway](/guide/en/modules_ai_tools.webp)
 
-When a row shows a red dot, [Troubleshooting](../reference/troubleshooting.md) lists its cause.
+When a row shows a red dot, [Troubleshooting](../reference/troubleshooting.md#ai-tools) lists its cause.
 
 ## Point the laptop's tools at the gateway
+
+If you have no laptop, skip this section.
 
 1. In the laptop's client window, open **AI**.
 1. On the hub's entry, select **The AI tools use this gateway**.

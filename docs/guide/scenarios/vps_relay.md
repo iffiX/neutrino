@@ -15,7 +15,7 @@ Before you start, you need:
 
 A key is the safer choice, since the server then limits it to one listener. If you sign in with a password instead, skip this section.
 
-1. On any computer with OpenSSH, make a key pair without a passphrase:
+1. On your home computer, in a terminal with OpenSSH, make a key pair without a passphrase:
 
    ```bash
    ssh-keygen -t ed25519 -N '' -f relay_key
@@ -36,7 +36,7 @@ These steps run on the server, as root. The example account is `relay` and the e
    useradd --create-home --shell /usr/sbin/nologin relay
    ```
 
-1. With a key, add the public key to the account's `authorized_keys`, limited to one listener. Replace `<public-key>` with the line from `relay_key.pub`:
+1. With a key, add the public key to the account's `authorized_keys`, limited to one listener. Replace `<public-key>` with the line from `relay_key.pub` on your home computer:
 
    ```bash
    mkdir -p /home/relay/.ssh
@@ -86,6 +86,6 @@ To check it from a phone:
 1. Turn off the phone's Wi-Fi.
 1. Open the **Hubs** page in the app.
 
-The hub row reads **Connected · SSH Relay**. A connected virtual network comes first, so the row names NetBird or EasyTier while one is on.
+The hub row reads **Connected · SSH Relay**. A connected virtual network comes first, so while NetBird or EasyTier is on, the row names it. To test the relay alone, or to use it in place of NetBird, turn the **NetBird** card off on **Access** and select **Apply access**.
 
-If **Status** reads anything other than **Connected**, read [SSH Relay](../hub/relay.md) for what each status means. The fixes are in [Troubleshooting](../reference/troubleshooting.md#access).
+If **Status** reads anything other than **Connected**, read [SSH Relay](../hub/relay.md) for what each status means. The fixes are in [Troubleshooting](../reference/troubleshooting.md#access). To stop using the relay, turn the **SSH Relay** card off and select **Apply access**.
