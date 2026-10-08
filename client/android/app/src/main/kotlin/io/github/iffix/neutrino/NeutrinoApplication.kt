@@ -90,12 +90,20 @@ class NeutrinoApplication : Application() {
 
     /** One session per hub joined. */
     val connections: HubConnections by lazy {
-        HubConnections(bindingStore, OkHttpHubTransport(), machine, ::resolveHubName, scope) { bindingId ->
-            overlays.forget(bindingId)
-            remoteDesktops.forget(bindingId)
-            remoteDesktopChoices.forget(bindingId)
-            portForwards.forget(bindingId)
-        }
+        HubConnections(
+            store = bindingStore,
+            transport = OkHttpHubTransport(),
+            machine = machine,
+            resolveHubName = ::resolveHubName,
+            scope = scope,
+            onLeaving = { bindingId ->
+                overlays.forget(bindingId)
+                remoteDesktops.forget(bindingId)
+                remoteDesktopChoices.forget(bindingId)
+                portForwards.forget(bindingId)
+            },
+            hasNetwork = ::hasNetwork,
+        )
     }
 
     /** Each hub's virtual network, and the one network the VPN runs. */
@@ -104,6 +112,7 @@ class NeutrinoApplication : Application() {
             store = bindingStore,
             launcher = ServiceOverlayLauncher(this),
             scope = scope,
+            onPeersChanged = { bindingId -> connections.session(bindingId)?.networkChanged() },
         ) { bindingId, route -> connections.session(bindingId)?.overlayChanged(route) }
     }
 
@@ -239,6 +248,8 @@ class NeutrinoApplication : Application() {
 
     private fun openConnect(bindingId: String, args: Map<String, JsonElement>): ChannelResult<ChannelStream> =
         connections.session(bindingId)?.openConnect(args) ?: ChannelResult.refused("unknown_hub")
+
+    private fun hasNetwork(): Boolean = getSystemService(ConnectivityManager::class.java).activeNetwork != null
 
     private suspend fun resolveHubName(): String? = withContext(Dispatchers.IO) {
         withTimeoutOrNull(CLIENT_CONNECT_TIMEOUT_S * 1000) {

@@ -172,13 +172,10 @@ const val CLIENT_BACKOFF_MAX_S = 60L
 /** How long a refresh waits for a hub's state frame or a code before it ends. */
 const val CLIENT_REFRESH_TIMEOUT_S = 10L
 
-/** How long the notice of a hub that no longer knows this phone stays on the Hubs page. */
-const val CLIENT_NOTICE_SHOWN_S = 60L
-
 /** How long an armed destructive button waits for its second press. */
 const val CLIENT_ARM_MILLIS = 5000L
 
-/** How often an idle session looks again: one another socket replaced, or the hub forgot. */
+/** How often a session whose rounds stopped looks again: replaced, forgotten, refused, too old, or with no network. */
 const val CLIENT_IDLE_POLL_INTERVAL_S = 2L
 
 /** How long a stream this side opened waits for the hub's close. */
@@ -202,15 +199,11 @@ const val CLIENT_WS_CLOSE_REPLACED = 4010
 /** The code this side closes a stream the hub opened with: a client serves no kind. */
 const val CLIENT_STREAM_CODE_KIND_UNKNOWN = "kind_unknown"
 
-/** The one refusal that unbinds: the hub holds no such binding. */
+/** The refusal of a binding the hub does not hold: the row waits for Leave. */
 const val CLIENT_REFUSAL_CODE_BINDING_UNKNOWN = "binding_unknown"
 
 /** The refusals the hub answers a protocol number it does not speak with. */
 val CLIENT_PROTOCOL_REFUSAL_CODES: List<String> = listOf("protocol_too_old", "protocol_too_new")
-
-/** The codes a person has to act on, drawn with a red dot. */
-val CLIENT_PERSON_CODES: List<String> =
-    listOf("hub_untrusted", "binding_unknown", "protocol_too_old", "protocol_too_new")
 
 /** A stream for one published entry's material. */
 const val CLIENT_STREAM_KIND_SERVICE = "service"

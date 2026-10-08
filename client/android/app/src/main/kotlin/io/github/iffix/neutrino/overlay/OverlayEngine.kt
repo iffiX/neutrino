@@ -12,8 +12,14 @@ interface OverlayEngine {
      * @param tun Where the engine gets its TUN device.
      * @param report Called with each phase, the address with its prefix length once there is one, and the
      *   refusal of a failure.
+     * @param onPeersChanged Called when the engine's peer list changes: a peer appearing or going.
      */
-    fun start(overlay: ChannelOverlay, tun: TunBuilder, report: (OverlayPhase, String, ChannelResult.Refused?) -> Unit)
+    fun start(
+        overlay: ChannelOverlay,
+        tun: TunBuilder,
+        report: (OverlayPhase, String, ChannelResult.Refused?) -> Unit,
+        onPeersChanged: () -> Unit,
+    )
 
     /**
      * Leave the network and end the engine's thread. The call may block until the core has stopped;

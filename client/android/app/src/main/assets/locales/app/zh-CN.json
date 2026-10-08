@@ -21,7 +21,6 @@
     "core_notice": "已连接 {count} 台中枢",
     "forget_password": "忘掉密码",
     "forget_password_arm": "再按一次以忘掉",
-    "hub_forgot": "{hub} 已不再认识本机，它的一行已移除。",
     "join_hint": "扫描二维码，或粘贴链接。",
     "key_hide": "隐藏密钥",
     "key_show": "显示密钥",

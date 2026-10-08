@@ -4,7 +4,6 @@ import android.util.Log
 import io.github.iffix.neutrino.CLIENT_LEAVE_PATH
 import io.github.iffix.neutrino.CLIENT_LEAVE_TELL_TIMEOUT_S
 import io.github.iffix.neutrino.CLIENT_LOG_TAG
-import io.github.iffix.neutrino.CLIENT_NOTICE_SHOWN_S
 import io.github.iffix.neutrino.binding.BindingStore
 import io.github.iffix.neutrino.binding.HubBinding
 import java.io.IOException
@@ -12,7 +11,6 @@ import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -33,6 +31,7 @@ import kotlinx.serialization.json.JsonObject
  * @param machine What this phone says about itself.
  * @param resolveHubName The IPv4 address `hub.neutrino.internal` resolves to here, or null.
  * @param scope Where the sessions and the jobs run.
+ * @param hasNetwork Whether the phone has a network at all.
  * @param onLeaving Called with a binding's id as its leave starts: its network and viewers stop.
  */
 class HubConnections(
@@ -41,12 +40,12 @@ class HubConnections(
     private val machine: ClientMachine,
     private val resolveHubName: suspend () -> String?,
     private val scope: CoroutineScope,
+    private val hasNetwork: () -> Boolean = { true },
     private val onLeaving: (String) -> Unit = {},
 ) {
     private val sessions = MutableStateFlow<Map<String, HubSession>>(emptyMap())
     private val leaving = MutableStateFlow<Set<String>>(emptySet())
     private val jobErrors = MutableStateFlow<Map<String, ChannelResult.Refused>>(emptyMap())
-    private val noticeList = MutableStateFlow<List<HubNotice>>(emptyList())
     private val joining = MutableStateFlow(HubJoin())
 
     /** Every hub's view, in the order joined, each with its binding as the store keeps it now and its leave. */
@@ -66,9 +65,6 @@ class HubConnections(
         }
     }
 
-    /** The hubs that no longer know this phone, each shown for a minute after its row went. */
-    val notices: StateFlow<List<HubNotice>> = noticeList.asStateFlow()
-
     /** The join a person started from the Join page. */
     val join: StateFlow<HubJoin> = joining.asStateFlow()
 
@@ -86,24 +82,13 @@ class HubConnections(
     fun session(bindingId: String): HubSession? = sessions.value[bindingId]
 
     /**
-     * Refresh every hub that can be: each one's error line and every notice go, and each hub is
-     * asked again.
+     * Refresh every hub that can be: each one's error line goes, and each hub is asked again.
      *
      * @return Whether any hub entered refreshing.
      */
     fun refresh(): Boolean {
         jobErrors.value = emptyMap()
-        noticeList.value = emptyList()
         return sessions.value.values.map { it.refresh() }.any { it }
-    }
-
-    /**
-     * Take one notice down before its minute is over.
-     *
-     * @param notice The notice.
-     */
-    fun closeNotice(notice: HubNotice) {
-        noticeList.update { it - notice }
     }
 
     /**
@@ -243,18 +228,6 @@ class HubConnections(
         }
     }
 
-    private fun unbound(bindingId: String, refusal: ChannelResult.Refused) {
-        val title = store.get(bindingId)?.title.orEmpty()
-        onLeaving(bindingId)
-        forget(bindingId)
-        val notice = HubNotice(title, refusal)
-        noticeList.update { it + notice }
-        scope.launch {
-            delay(CLIENT_NOTICE_SHOWN_S * 1000)
-            noticeList.update { it - notice }
-        }
-    }
-
     private fun follow(bindings: List<HubBinding>) {
         val held = sessions.value
         val wanted = bindings.map { it.id }.toSet()
@@ -267,8 +240,8 @@ class HubConnections(
                 transport = transport,
                 machine = machine,
                 resolveHubName = resolveHubName,
-                onUnbound = ::unbound,
                 onJoined = ::joined,
+                hasNetwork = hasNetwork,
             ).also { it.start(scope) }
         }
         sessions.value = next

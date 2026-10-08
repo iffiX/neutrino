@@ -36,6 +36,7 @@ import kotlinx.coroutines.launch
  * @param launcher What starts and stops the VPN service.
  * @param scope Where the stage's deadline runs.
  * @param clock The time in milliseconds, for the stage's duration in the log.
+ * @param onPeersChanged Called with a hub whose network is on when the engine's peer list changed.
  * @param onNetworkChanged Called with a hub and its network once the network is on, and with
  *   null once it is off.
  */
@@ -44,6 +45,7 @@ class OverlayController(
     private val launcher: OverlayLauncher,
     private val scope: CoroutineScope,
     private val clock: () -> Long = System::currentTimeMillis,
+    private val onPeersChanged: (String) -> Unit = {},
     private val onNetworkChanged: (String, ChannelOverlayRoute?) -> Unit,
 ) {
     private val lock = Any()
@@ -174,6 +176,21 @@ class OverlayController(
 
             OverlayPhase.JOINING, OverlayPhase.LEAVING -> Unit
         }
+    }
+
+    /**
+     * The running engine's peer list changed: a peer appeared or went. A network that is on
+     * passes it to its hub as a network change.
+     *
+     * @param bindingId The hub whose network the engine runs.
+     * @param provider The network's provider.
+     */
+    fun peersChanged(bindingId: String, provider: String) = synchronized(lock) {
+        val attempt = active ?: return@synchronized
+        if (attempt.bindingId != bindingId || attempt.provider != provider) return@synchronized
+        if (line(bindingId).state != OverlayState.ON) return@synchronized
+        log(attempt, "the peer list changed")
+        onPeersChanged(bindingId)
     }
 
     /** The person took the VPN away in the phone's settings: the network is off. */

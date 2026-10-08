@@ -88,15 +88,20 @@ class OverlayVpnService : VpnService() {
         tun = builder
         running = bindingId to provider
         engineQueue.execute {
-            created.start(overlay, builder) { phase, address, refusal ->
-                Log.i(
-                    CLIENT_LOG_TAG,
-                    "virtual network $provider: $phase $address ${refusal?.code.orEmpty()} ${refusal?.wordParams.orEmpty()}",
-                )
-                if (engine === created) {
-                    app.overlays.report(OverlayStatus(bindingId, provider, phase, address, refusal))
-                }
-            }
+            created.start(
+                overlay,
+                builder,
+                report = { phase, address, refusal ->
+                    Log.i(
+                        CLIENT_LOG_TAG,
+                        "virtual network $provider: $phase $address ${refusal?.code.orEmpty()} ${refusal?.wordParams.orEmpty()}",
+                    )
+                    if (engine === created) {
+                        app.overlays.report(OverlayStatus(bindingId, provider, phase, address, refusal))
+                    }
+                },
+                onPeersChanged = { if (engine === created) app.overlays.peersChanged(bindingId, provider) },
+            )
         }
     }
 

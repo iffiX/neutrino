@@ -9,8 +9,10 @@ import io.github.iffix.neutrino.overlay.OverlayLine
  *
  * @property binding The binding as kept.
  * @property connection Where the socket stands.
+ * @property waitReason What the row waits for while [connection] is waiting, null otherwise.
+ * @property waitRefusal The code behind [waitReason], null when none came with it.
+ * @property nextRoundAtMillis When the next round starts, in the session's clock; 0 when no countdown runs.
  * @property software What the hub's welcome named, such as `neutrino_hub/0.5.0`.
- * @property lastError The code the last round or the open socket ended in, null while all is well.
  * @property services The published list.
  * @property terminals The machines this phone may open a shell on.
  * @property connectedAddress The address the open socket runs on, empty while down.
@@ -29,8 +31,10 @@ import io.github.iffix.neutrino.overlay.OverlayLine
 data class HubView(
     val binding: HubBinding,
     val connection: HubConnection = HubConnection.CONNECTING,
+    val waitReason: HubWaitReason? = null,
+    val waitRefusal: ChannelResult.Refused? = null,
+    val nextRoundAtMillis: Long = 0,
     val software: String = "",
-    val lastError: ChannelResult.Refused? = null,
     val services: List<ChannelServiceEntry> = emptyList(),
     val terminals: List<ChannelTerminal> = emptyList(),
     val connectedAddress: String = "",
@@ -48,13 +52,13 @@ data class HubView(
     val isConnected: Boolean
         get() = connection == HubConnection.CONNECTED
 
-    /** Whether the hub refused the binding's ticket: nothing runs, and Leave is the one action. */
-    val isJoinRefused: Boolean
-        get() = binding.isPending && connection == HubConnection.DOWN
+    /** Whether nothing runs any more and Leave is the row's one action: the ticket refused, or the binding unknown. */
+    val isLeaveOnly: Boolean
+        get() = waitReason == HubWaitReason.JOIN_REFUSED || waitReason == HubWaitReason.UNKNOWN_DEVICE
 
     /** Whether the hub switched this client off. */
     val isDisabled: Boolean
-        get() = connection == HubConnection.DISABLED
+        get() = waitReason == HubWaitReason.DISABLED
 
     /**
      * The published entries of one type, empty unless the hub serves this phone.

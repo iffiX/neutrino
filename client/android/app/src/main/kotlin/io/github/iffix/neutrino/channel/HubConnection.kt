@@ -1,24 +1,15 @@
 package io.github.iffix.neutrino.channel
 
-/** Where one hub's socket stands, by the names every client uses. */
+/** Where one hub's socket stands: the three kinds of a hub row's state line. */
 enum class HubConnection {
-    /** The binding is kept and its ticket unspent: no address has answered yet. */
-    PENDING,
+    /** A round over the hub's addresses is dialling. */
+    CONNECTING,
 
     /** The hub welcomed this phone and the socket is open. */
     CONNECTED,
 
-    /** A round over the hub's addresses runs, or runs again after a socket closed. */
-    CONNECTING,
-
-    /** The last round ended in a code; the next runs after the backoff. */
-    DOWN,
-
-    /** Another socket for the same binding took over; nothing runs until a person reconnects. */
-    REPLACED,
-
-    /** The hub switched this client off; the socket stays open. */
-    DISABLED,
+    /** No round is dialling; the view's wait reason names what the row waits for. */
+    WAITING,
     ;
 
     /** The name the catalog's `ui.state.<name>` keys and the other clients use. */

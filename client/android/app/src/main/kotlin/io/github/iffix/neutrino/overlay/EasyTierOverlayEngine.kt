@@ -14,7 +14,8 @@ import kotlin.concurrent.thread
  * EasyTier's core in the app: a manual network run from its TOML, or a console's web client
  * that runs the networks the console pushes, which says when the console has it registered and
  * no network yet; the first network with an address gets the TUN device, rebuilt when the
- * address or the routed subnets change.
+ * address or the routed subnets change. Once on, a change in the set of other members' addresses
+ * between two polls is a peer list change.
  *
  * @param stateDir Where the web client keeps its machine id.
  * @param hostname The name this phone shows to the other members.
@@ -29,10 +30,11 @@ class EasyTierOverlayEngine(private val stateDir: File, private val hostname: St
         overlay: ChannelOverlay,
         tun: TunBuilder,
         report: (OverlayPhase, String, ChannelResult.Refused?) -> Unit,
+        onPeersChanged: () -> Unit,
     ) {
         isRunning = true
         isConsole = overlay.easyTierMode == OVERLAY_EASYTIER_MODE_CONSOLE
-        worker = thread(name = "easytier") { run(overlay, tun, report) }
+        worker = thread(name = "easytier") { run(overlay, tun, report, onPeersChanged) }
     }
 
     override fun stop() {
@@ -52,6 +54,7 @@ class EasyTierOverlayEngine(private val stateDir: File, private val hostname: St
         overlay: ChannelOverlay,
         tun: TunBuilder,
         report: (OverlayPhase, String, ChannelResult.Refused?) -> Unit,
+        onPeersChanged: () -> Unit,
     ) {
         report(OverlayPhase.JOINING, "", null)
         try {
@@ -77,6 +80,7 @@ class EasyTierOverlayEngine(private val stateDir: File, private val hostname: St
             return
         }
         var built: Pair<String, List<String>>? = null
+        var peers: Set<String>? = null
         var isWaiting = false
         while (isRunning) {
             val instance = try {
@@ -119,6 +123,10 @@ class EasyTierOverlayEngine(private val stateDir: File, private val hostname: St
                     )
                     return
                 }
+            }
+            if (instance != null && built != null) {
+                if (peers != null && instance.peerAddresses != peers) onPeersChanged()
+                peers = instance.peerAddresses
             }
             try {
                 Thread.sleep(OVERLAY_POLL_MILLIS)

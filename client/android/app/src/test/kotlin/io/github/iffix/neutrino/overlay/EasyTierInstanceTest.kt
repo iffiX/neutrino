@@ -16,9 +16,25 @@ class EasyTierInstanceTest {
             }}}
         """.trimIndent()
         assertEquals(
-            listOf(EasyTierInstance("neutrino", "10.144.144.2", 24, listOf("192.168.100.0/24"), true, "")),
+            listOf(EasyTierInstance("neutrino", "10.144.144.2", 24, listOf("192.168.100.0/24"), emptySet(), true, "")),
             EasyTierInstance.parse(text),
         )
+    }
+
+    @Test
+    fun theOtherMembersAddressesAreThePeerList() {
+        val text = """
+            {"map": {"neutrino": {
+              "my_node_info": {"virtual_ipv4": {"address": {"addr": 177246210}, "network_length": 24}},
+              "routes": [
+                {"peer_id": 1, "ipv4_addr": {"address": {"addr": 177246209}, "network_length": 24}, "proxy_cidrs": []},
+                {"peer_id": 2, "ipv4_addr": {"address": {"addr": 177246211}, "network_length": 24}, "proxy_cidrs": []},
+                {"peer_id": 3, "ipv4_addr": null, "proxy_cidrs": []}
+              ],
+              "running": true
+            }}}
+        """.trimIndent()
+        assertEquals(setOf("10.144.144.1", "10.144.144.3"), EasyTierInstance.parse(text).single().peerAddresses)
     }
 
     @Test

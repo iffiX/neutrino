@@ -38,8 +38,6 @@ class HubSessionTest {
     @get:Rule
     val folder = TemporaryFolder()
 
-    private val unbound = mutableListOf<String>()
-
     private val joined = mutableListOf<Pair<String, String>>()
 
     private val pending = Samples.binding.copy(token = "", ticket = "ticket-1")
@@ -58,6 +56,7 @@ class HubSessionTest {
         binding: HubBinding = Samples.binding,
         local: List<ChannelLocalNetwork> = emptyList(),
         nanoClock: () -> Long = { 0L },
+        hasNetwork: () -> Boolean = { true },
     ): Pair<HubSession, BindingStore> {
         val store = BindingStore(folder.root.resolve("b.sealed"), FakeSecretSealer())
         store.put(binding)
@@ -67,10 +66,11 @@ class HubSessionTest {
             transport,
             Samples.machine,
             { nameAddress },
-            { id, _ -> unbound += id },
             { id, hubId -> joined += id to hubId },
+            clock = { CLOCK_MILLIS },
             localNetworks = { local },
             nanoClock = nanoClock,
+            hasNetwork = hasNetwork,
         )
         return session to store
     }
@@ -134,7 +134,7 @@ class HubSessionTest {
         val (session, _) = session(FakeHubTransport { FakeHubTransport.silent })
         val waits = List(6) { session.runOnce() }
         assertEquals(listOf(5L, 10L, 20L, 40L, 60L, 60L), waits)
-        assertEquals("hub_unreachable", session.view.value.lastError?.code)
+        assertEquals("hub_unreachable", session.view.value.waitRefusal?.code)
     }
 
     @Test
@@ -308,9 +308,9 @@ class HubSessionTest {
         session.start(backgroundScope)
         runCurrent()
         assertEquals(1, dials)
-        assertEquals(HubConnection.DOWN, session.view.value.connection)
-        assertEquals("client_internal", session.view.value.lastError?.code)
-        assertEquals("boom", session.view.value.lastError?.wordParams?.get("error"))
+        assertEquals(HubWaitReason.HUB_SILENT, session.view.value.waitReason)
+        assertEquals("client_internal", session.view.value.waitRefusal?.code)
+        assertEquals("boom", session.view.value.waitRefusal?.wordParams?.get("error"))
         advanceTimeBy(5_001)
         assertEquals(2, dials)
         advanceTimeBy(10_001)
@@ -358,29 +358,48 @@ class HubSessionTest {
     }
 
     @Test
-    fun aStoredAddressWithAnotherCertificateIsRecordedAndWaitsTheMinute() = runTest {
+    fun aStoredAddressWithAnotherCertificateIsUntrustedAndCountsDownTheMinuteEachTime() = runTest {
         val (session, _) = session(FakeHubTransport { FakeHubTransport.impostor })
         assertEquals(60L, session.runOnce())
-        assertEquals("hub_untrusted", session.view.value.lastError?.code)
-    }
-
-    @Test
-    fun aProtocolRefusalKeepsTheBindingAndAsksAgainInAMinute() = runTest {
-        val (session, store) = session(FakeHubTransport { FakeHubTransport.refusing("protocol_too_old") })
+        assertEquals(HubWaitReason.UNTRUSTED, session.view.value.waitReason)
+        assertEquals("hub_untrusted", session.view.value.waitRefusal?.code)
+        assertEquals(CLOCK_MILLIS + 60_000, session.view.value.nextRoundAtMillis)
         assertEquals(60L, session.runOnce())
-        assertEquals("protocol_too_old", session.view.value.lastError?.code)
-        assertTrue(store.get("b1") != null)
-        assertTrue(unbound.isEmpty())
     }
 
     @Test
-    fun bindingUnknownUnbinds() = runTest {
-        val (session, _) = session(FakeHubTransport { FakeHubTransport.refusing("binding_unknown") })
+    fun aProtocolRefusalIsTooOldKeepsTheBindingAndRunsNoRoundUntilARefresh() = runTest {
+        val transport = FakeHubTransport { FakeHubTransport.refusing("protocol_too_old") }
+        val (session, store) = session(transport)
+        session.start(backgroundScope)
+        runCurrent()
+        assertEquals(HubWaitReason.TOO_OLD, session.view.value.waitReason)
+        assertEquals(0L, session.view.value.nextRoundAtMillis)
+        assertTrue(store.get("b1") != null)
+        val dialled = transport.dialled.size
+        session.networkChanged()
+        advanceTimeBy(120_000)
+        assertEquals(dialled, transport.dialled.size)
+        assertEquals(true, session.refresh())
+        runCurrent()
+        assertTrue(transport.dialled.size > dialled)
+    }
+
+    @Test
+    fun bindingUnknownKeepsTheRowAsUnknownDeviceAndRunsNothingMore() = runTest {
+        val transport = FakeHubTransport { FakeHubTransport.refusing("binding_unknown") }
+        val (session, store) = session(transport)
         session.runOnce()
-        assertEquals(listOf("b1"), unbound)
-        assertEquals(HubConnection.DOWN, session.view.value.connection)
-        assertEquals("binding_unknown", session.view.value.lastError?.code)
+        assertEquals(HubConnection.WAITING, session.view.value.connection)
+        assertEquals(HubWaitReason.UNKNOWN_DEVICE, session.view.value.waitReason)
+        assertEquals("binding_unknown", session.view.value.waitRefusal?.code)
+        assertEquals(true, session.view.value.isLeaveOnly)
+        assertTrue(store.get("b1") != null)
+        val dialled = transport.dialled.size
         assertEquals(2L, session.runOnce())
+        assertEquals(false, session.refresh())
+        session.networkChanged()
+        assertEquals(dialled, transport.dialled.size)
     }
 
     @Test
@@ -390,7 +409,7 @@ class HubSessionTest {
         val round = served(session)
         transport.greeted().third.trySend(ChannelSocketEvent.Closed(4010, "replaced"))
         assertEquals(2L, round.await())
-        assertEquals(HubConnection.REPLACED, session.view.value.connection)
+        assertEquals(HubWaitReason.REPLACED, session.view.value.waitReason)
         assertEquals(2L, session.runOnce())
         val dialledOnce = transport.dialled.size
         session.reconnect()
@@ -407,7 +426,8 @@ class HubSessionTest {
             ChannelSocketEvent.Text("""{"type":"refused","code":"role_mismatch"}"""),
         )
         assertEquals(60L, round.await())
-        assertEquals("role_mismatch", session.view.value.lastError?.code)
+        assertEquals("role_mismatch", session.view.value.waitRefusal?.code)
+        assertEquals(CLOCK_MILLIS + 60_000, session.view.value.nextRoundAtMillis)
     }
 
     @Test
@@ -422,7 +442,8 @@ class HubSessionTest {
         )
         runCurrent()
         assertEquals(emptyList<ChannelServiceEntry>(), session.view.value.servicesOf("web"))
-        assertEquals(HubConnection.DISABLED, session.view.value.connection)
+        assertEquals(HubWaitReason.DISABLED, session.view.value.waitReason)
+        assertEquals(true, session.view.value.isDisabled)
         transport.greeted().third.trySend(
             ChannelSocketEvent.Text("""{"type":"state","hash":"h2","is_disabled":false}"""),
         )
@@ -462,25 +483,109 @@ class HubSessionTest {
     }
 
     @Test
-    fun aRoundStartsConnectingAndARoundWithNoAnswerIsDownWithItsCode() = runTest {
+    fun aRoundWithNoAnswerIsHubSilentWithItsCountdown() = runTest {
         val (session, _) = session(FakeHubTransport { FakeHubTransport.silent })
         assertEquals(HubConnection.CONNECTING, session.view.value.connection)
         session.runOnce()
-        assertEquals(HubConnection.DOWN, session.view.value.connection)
-        assertEquals("hub_unreachable", session.view.value.lastError?.code)
+        assertEquals(HubConnection.WAITING, session.view.value.connection)
+        assertEquals(HubWaitReason.HUB_SILENT, session.view.value.waitReason)
+        assertEquals("hub_unreachable", session.view.value.waitRefusal?.code)
+        assertEquals(CLOCK_MILLIS + 5_000, session.view.value.nextRoundAtMillis)
         assertEquals(false, session.view.value.hasConnected)
+        session.runOnce()
+        assertEquals(CLOCK_MILLIS + 10_000, session.view.value.nextRoundAtMillis)
     }
 
     @Test
-    fun aSocketThatClosesIsConnectingWithNoErrorLine() = runTest {
+    fun theHubOffOverlayReason() = runTest {
+        val (session, _) = session(FakeHubTransport { FakeHubTransport.silent })
+        session.overlayChanged(easytierRoute)
+        assertEquals(5L, session.runOnce())
+        assertEquals(HubWaitReason.HUB_OFF_OVERLAY, session.view.value.waitReason)
+        assertEquals(CLOCK_MILLIS + 5_000, session.view.value.nextRoundAtMillis)
+        session.overlayChanged(null)
+        session.runOnce()
+        assertEquals(HubWaitReason.HUB_SILENT, session.view.value.waitReason)
+    }
+
+    @Test
+    fun noNetworkWaitsForTheConnectivityToChange() = runTest {
+        var isOnline = false
+        val transport = FakeHubTransport { if (isOnline) FakeHubTransport.welcoming else FakeHubTransport.silent }
+        val (session, _) = session(transport, hasNetwork = { isOnline })
+        session.start(backgroundScope)
+        runCurrent()
+        assertEquals(HubWaitReason.NO_NETWORK, session.view.value.waitReason)
+        assertEquals(0L, session.view.value.nextRoundAtMillis)
+        val dialled = transport.dialled.size
+        advanceTimeBy(300_000)
+        assertEquals(dialled, transport.dialled.size)
+        isOnline = true
+        session.networkChanged()
+        runCurrent()
+        assertEquals(HubConnection.CONNECTED, session.view.value.connection)
+    }
+
+    @Test
+    fun aSocketThatClosesIsConnectingAtOnceWithNoWait() = runTest {
         val transport = FakeHubTransport { FakeHubTransport.welcoming }
         val (session, _) = session(transport)
         val round = served(session)
         assertEquals(true, session.view.value.hasConnected)
         transport.greeted().third.trySend(ChannelSocketEvent.Closed(1006, ""))
-        assertEquals(5L, round.await())
+        assertEquals(0L, round.await())
         assertEquals(HubConnection.CONNECTING, session.view.value.connection)
-        assertEquals(null, session.view.value.lastError)
+        assertEquals(null, session.view.value.waitReason)
+    }
+
+    @Test
+    fun aNetworkChangeEndsTheRoundInFlight() = runTest {
+        var isHanging = true
+        val transport = FakeHubTransport { if (isHanging) FakeHubTransport.hanging else FakeHubTransport.welcoming }
+        val (session, _) = session(transport)
+        session.start(backgroundScope)
+        runCurrent()
+        val first = transport.dialled.toList()
+        assertEquals(2, first.size)
+        assertEquals(HubConnection.CONNECTING, session.view.value.connection)
+        isHanging = false
+        session.networkChanged()
+        runCurrent()
+        assertTrue(first.all { it.second.closedWith == CLIENT_WS_CLOSE_NORMAL && it.second.texts.isEmpty() })
+        assertEquals(4, transport.dialled.size)
+        assertEquals(0L, currentTime)
+        assertEquals(HubConnection.CONNECTED, session.view.value.connection)
+    }
+
+    @Test
+    fun aRefreshEndsTheRoundInFlightAndStartsANewOneAtOnce() = runTest {
+        val transport = FakeHubTransport { FakeHubTransport.hanging }
+        val (session, _) = session(transport)
+        session.start(backgroundScope)
+        runCurrent()
+        advanceTimeBy(3_000)
+        val first = transport.dialled.toList()
+        assertEquals(true, session.refresh())
+        runCurrent()
+        assertTrue(first.all { it.second.closedWith == CLIENT_WS_CLOSE_NORMAL })
+        assertEquals(2 * first.size, transport.dialled.size)
+        assertTrue(transport.dialled.drop(first.size).all { it.second.closedWith == null })
+        assertEquals(3_000L, currentTime)
+    }
+
+    @Test
+    fun aChangeWhileTheRoundsWinnerSaysHelloIsNotLost() = runTest {
+        val transport = FakeHubTransport { listOf(ChannelSocketEvent.Opened) }
+        val (session, _) = session(transport, local = listOf(lanNetwork))
+        val round = served(session)
+        val (_, _, events) = transport.greeted()
+        session.networkChanged()
+        val before = transport.dialled.size
+        events.trySend(FakeHubTransport.welcoming.last())
+        runCurrent()
+        assertEquals(HubConnection.CONNECTED, session.view.value.connection)
+        assertTrue(transport.dialled.size > before)
+        assertEquals(false, round.isCompleted)
     }
 
     @Test
@@ -518,14 +623,15 @@ class HubSessionTest {
         val (session, _) = session(transport)
         session.start(backgroundScope)
         advanceTimeBy(5_500 + 10_500 + 20_500)
-        assertEquals(HubConnection.DOWN, session.view.value.connection)
+        assertEquals(HubWaitReason.HUB_SILENT, session.view.value.waitReason)
         val before = transport.dialled.size
         session.refresh()
-        assertEquals(null, session.view.value.lastError)
+        assertEquals(true, session.view.value.jobs.isRefreshing)
         runCurrent()
         assertTrue(transport.dialled.size > before)
         assertEquals(false, session.view.value.jobs.isRefreshing)
-        assertEquals("hub_unreachable", session.view.value.lastError?.code)
+        assertEquals(HubWaitReason.HUB_SILENT, session.view.value.waitReason)
+        assertEquals(CLOCK_MILLIS + 5_000, session.view.value.nextRoundAtMillis)
         val after = transport.dialled.size
         advanceTimeBy(5_500)
         assertTrue(transport.dialled.size > after)
@@ -543,7 +649,7 @@ class HubSessionTest {
         assertEquals(false, session.refresh())
         transport.greeted().third.trySend(ChannelSocketEvent.Closed(4010, "replaced"))
         round.await()
-        assertEquals(HubConnection.REPLACED, session.view.value.connection)
+        assertEquals(HubWaitReason.REPLACED, session.view.value.waitReason)
         assertEquals(false, session.refresh())
         assertEquals(false, session.view.value.jobs.isRefreshing)
     }
@@ -582,7 +688,7 @@ class HubSessionTest {
         val transport = FakeHubTransport { FakeHubTransport.welcoming }
         val store = BindingStore(folder.root.resolve("b.sealed"), FakeSecretSealer())
         store.put(Samples.binding)
-        val session = HubSession("b1", store, transport, Samples.machine, { null }, { _, _ -> }, clock = { 42_000L })
+        val session = HubSession("b1", store, transport, Samples.machine, { null }, clock = { 42_000L })
         val round = served(session)
         assertEquals(0L, session.view.value.droppedAtMillis)
         transport.greeted().third.trySend(ChannelSocketEvent.Closed(1006, ""))
@@ -766,7 +872,7 @@ class HubSessionTest {
         val (session, _) = session(transport)
         session.start(backgroundScope)
         runCurrent()
-        assertEquals(HubConnection.DOWN, session.view.value.connection)
+        assertEquals(HubWaitReason.HUB_SILENT, session.view.value.waitReason)
         val before = transport.dialled.size
         isUp = true
         session.networkChanged()
@@ -791,7 +897,7 @@ class HubSessionTest {
         session.networkChanged()
         runCurrent()
         assertEquals(before, transport.dialled.size)
-        assertEquals(HubConnection.REPLACED, session.view.value.connection)
+        assertEquals(HubWaitReason.REPLACED, session.view.value.waitReason)
     }
 
     @Test
@@ -814,7 +920,7 @@ class HubSessionTest {
         }
         transport.answers["https://100.72.4.1:8443" to "/api/channel/join"] = spent()
         val (session, store) = session(transport, binding = pending)
-        assertEquals(HubConnection.PENDING, session.view.value.connection)
+        assertEquals(HubConnection.CONNECTING, session.view.value.connection)
         served(session)
         assertEquals(listOf("https://100.72.4.1:8443"), transport.posts.map { it.first })
         assertEquals(emptyList<String>(), GoldenSchema.problems(transport.posts.last().third, "ChannelJoinRequest"))
@@ -841,12 +947,12 @@ class HubSessionTest {
     }
 
     @Test
-    fun aPendingBindingStaysPendingWhileNoAddressAnswersAndSpendsNothing() = runTest {
+    fun aJustJoinedBindingWaitsOnTheHubWhileNoAddressAnswersAndSpendsNothing() = runTest {
         val transport = FakeHubTransport { FakeHubTransport.silent }
         val (session, store) = session(transport, binding = pending)
         assertEquals(5L, session.runOnce())
-        assertEquals(HubConnection.PENDING, session.view.value.connection)
-        assertEquals("hub_unreachable", session.view.value.lastError?.code)
+        assertEquals(HubWaitReason.HUB_SILENT, session.view.value.waitReason)
+        assertEquals("hub_unreachable", session.view.value.waitRefusal?.code)
         assertEquals(emptyList<Any>(), transport.posts)
         assertEquals(pending, store.get("b1"))
     }
@@ -858,14 +964,30 @@ class HubSessionTest {
             ChannelResult.Refused("admission_paused", JsonObject(mapOf("retry_after_s" to JsonPrimitive(42))))
         val (session, store) = session(transport, binding = pending)
         assertEquals(42L, session.runOnce())
-        assertEquals(HubConnection.PENDING, session.view.value.connection)
-        assertEquals("admission_paused", session.view.value.lastError?.code)
-        assertEquals(false, session.view.value.isJoinRefused)
+        assertEquals(HubWaitReason.ADMISSION_PAUSED, session.view.value.waitReason)
+        assertEquals(CLOCK_MILLIS + 42_000, session.view.value.nextRoundAtMillis)
+        assertEquals(false, session.view.value.isLeaveOnly)
         assertEquals(pending, store.get("b1"))
         transport.answers["https://192.168.100.1:8443" to "/api/channel/join"] = spent()
         served(session)
         assertEquals(2, transport.posts.size)
         assertEquals("t9", store.get("b1")?.token)
+    }
+
+    @Test
+    fun aPausedAdmissionJoinsAgainWhenItsCountdownEndsAndNotOnANetworkChange() = runTest {
+        val transport = FakeHubTransport { FakeHubTransport.welcoming }
+        transport.answers["https://192.168.100.1:8443" to "/api/channel/join"] =
+            ChannelResult.Refused("admission_paused", JsonObject(mapOf("retry_after_s" to JsonPrimitive(30))))
+        val (session, _) = session(transport, binding = pending)
+        session.start(backgroundScope)
+        runCurrent()
+        assertEquals(1, transport.posts.size)
+        session.networkChanged()
+        advanceTimeBy(29_000)
+        assertEquals(1, transport.posts.size)
+        advanceTimeBy(1_001)
+        assertEquals(2, transport.posts.size)
     }
 
     @Test
@@ -967,13 +1089,18 @@ class HubSessionTest {
         transport.answers["https://192.168.100.1:8443" to "/api/channel/join"] = ChannelResult.refused("ticket_spent")
         val (session, store) = session(transport, binding = pending)
         session.runOnce()
-        assertEquals(HubConnection.DOWN, session.view.value.connection)
-        assertEquals("ticket_spent", session.view.value.lastError?.code)
-        assertEquals(true, session.view.value.isJoinRefused)
+        assertEquals(HubWaitReason.JOIN_REFUSED, session.view.value.waitReason)
+        assertEquals("ticket_spent", session.view.value.waitRefusal?.code)
+        assertEquals(0L, session.view.value.nextRoundAtMillis)
+        assertEquals(true, session.view.value.isLeaveOnly)
         assertEquals(2L, session.runOnce())
         assertEquals(false, session.refresh())
         assertEquals(1, transport.posts.size)
         assertTrue(transport.dialled.all { it.second.closedWith != null && it.second.texts.isEmpty() })
         assertEquals(pending, store.get("b1"))
+    }
+
+    private companion object {
+        const val CLOCK_MILLIS = 1_000_000L
     }
 }

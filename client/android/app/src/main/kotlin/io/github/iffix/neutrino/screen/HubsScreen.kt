@@ -1,34 +1,27 @@
 package io.github.iffix.neutrino.screen
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import io.github.iffix.neutrino.CLIENT_PERSON_CODES
 import io.github.iffix.neutrino.CLIENT_REACHED_THROUGH
 import io.github.iffix.neutrino.channel.ChannelOverlay
 import io.github.iffix.neutrino.channel.HubConnection
-import io.github.iffix.neutrino.channel.HubNotice
 import io.github.iffix.neutrino.channel.HubView
-import io.github.iffix.neutrino.design.AppIcon
+import io.github.iffix.neutrino.channel.HubWaitReason
 import io.github.iffix.neutrino.design.ArmedButton
 import io.github.iffix.neutrino.design.Badge
 import io.github.iffix.neutrino.design.ButtonTier
 import io.github.iffix.neutrino.design.DotTone
 import io.github.iffix.neutrino.design.ErrorLine
 import io.github.iffix.neutrino.design.FeatureRow
-import io.github.iffix.neutrino.design.IconGlyph
 import io.github.iffix.neutrino.design.NeutrinoButton
 import io.github.iffix.neutrino.design.NeutrinoTheme
 import io.github.iffix.neutrino.design.PickerField
@@ -42,16 +35,24 @@ import io.github.iffix.neutrino.overlay.OverlayLine
 import io.github.iffix.neutrino.overlay.OverlayStage
 import io.github.iffix.neutrino.overlay.OverlayState
 import io.github.iffix.neutrino.words.WordCatalog
+import kotlin.math.ceil
+import kotlinx.coroutines.delay
+
+/** The waiting reasons a person has to act on, drawn with a red dot. */
+private val PERSON_REASONS =
+    setOf(
+        HubWaitReason.UNTRUSTED,
+        HubWaitReason.UNKNOWN_DEVICE,
+        HubWaitReason.TOO_OLD,
+        HubWaitReason.JOIN_REFUSED,
+    )
 
 /**
  * The hubs this phone has joined, one row each with its state, its virtual network line and its
  * actions, then the row that opens the Join page.
  *
  * @param hubs Every hub joined.
- * @param notices The hubs that no longer know this phone, each until closed, a refresh, or a
- *   minute after their row went.
  * @param onJoin What pressing the join row does.
- * @param onCloseNotice What pressing a notice's close button does, with the notice.
  * @param onLeave What the second press on Leave does, with the binding's id.
  * @param onReconnect What pressing Reconnect does, with the binding's id.
  * @param onOpenPanel What pressing Panel does, with the binding's id.
@@ -63,9 +64,7 @@ import io.github.iffix.neutrino.words.WordCatalog
 @Composable
 fun HubsScreen(
     hubs: List<HubView>,
-    notices: List<HubNotice>,
     onJoin: () -> Unit,
-    onCloseNotice: (HubNotice) -> Unit,
     onLeave: (String) -> Unit,
     onReconnect: (String) -> Unit,
     onOpenPanel: (String) -> Unit,
@@ -77,23 +76,6 @@ fun HubsScreen(
     val words = NeutrinoTheme.words
     val busyNetwork = hubs.firstOrNull { it.overlay.state != OverlayState.OFF }
     ScreenList {
-        if (notices.isNotEmpty()) {
-            cardRows(notices, key = { "notice-${it.id}" }) { notice, hasDivider ->
-                FeatureRow(marker = DotTone.BAD, hasDivider = hasDivider) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Top) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            BasicText(
-                                words.word("ui.hub_forgot", mapOf("hub" to notice.hubTitle)),
-                                style = NeutrinoTheme.body,
-                            )
-                            ErrorLine(notice.refusal)
-                        }
-                        NoticeClose(words.word("ui.notice_close")) { onCloseNotice(notice) }
-                    }
-                }
-            }
-            gap()
-        }
         if (hubs.isEmpty()) {
             cardRows(listOf("none"), key = { it }) { _, _ ->
                 FeatureRow(hasDivider = false) { BasicText(words.word("ui.no_hubs"), style = NeutrinoTheme.body) }
@@ -124,18 +106,6 @@ fun HubsScreen(
     }
 }
 
-@Composable
-private fun NoticeClose(label: String, onClick: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .semantics { contentDescription = label }
-            .clickable(role = Role.Button, onClick = onClick)
-            .padding(4.dp),
-    ) {
-        IconGlyph(AppIcon.CLOSE, NeutrinoTheme.palette.textMuted, size = 14.dp)
-    }
-}
-
 /**
  * The status dot of a hub row, by the client page's dot table.
  *
@@ -145,23 +115,41 @@ private fun NoticeClose(label: String, onClick: () -> Unit) {
 fun hubTone(hub: HubView): DotTone = when {
     hub.jobs.isAnyRunning || hub.connection == HubConnection.CONNECTING -> DotTone.PULSE
     hub.connection == HubConnection.CONNECTED -> DotTone.OK
-    hub.isJoinRefused -> DotTone.BAD
-    hub.connection == HubConnection.DOWN && hub.lastError?.code in CLIENT_PERSON_CODES -> DotTone.BAD
-    !hub.hasConnected && hub.connection != HubConnection.DISABLED -> DotTone.OFF
+    hub.waitReason in PERSON_REASONS -> DotTone.BAD
+    !hub.hasConnected && !hub.isDisabled -> DotTone.OFF
     else -> DotTone.WAIT
 }
 
 /**
- * The state word of a hub row: the running job's word, else the connection's.
+ * The whole seconds left before a waiting hub's next round, rounded up.
  *
  * @param hub The hub.
+ * @param nowMillis The time now, in the session's clock.
+ * @return The seconds, 0 once the moment has come, or null while no countdown runs.
+ */
+fun secondsToNextRound(hub: HubView, nowMillis: Long): Long? {
+    if (hub.connection != HubConnection.WAITING || hub.nextRoundAtMillis <= 0) return null
+    return ceil((hub.nextRoundAtMillis - nowMillis).coerceAtLeast(0) / 1000.0).toLong()
+}
+
+/**
+ * The state word of a hub row: the running job's word, else the connection's, else the reason it
+ * waits for; a countdown that reached 0 reads as connecting.
+ *
+ * @param hub The hub.
+ * @param nowMillis The time now, in the session's clock.
  * @return The catalog key.
  */
-fun hubStateKey(hub: HubView): String = when {
-    hub.jobs.isLeaving -> "ui.job.leaving"
-    hub.jobs.isRefreshing -> "ui.job.refreshing"
-    hub.isConnected && hub.reachedThrough in CLIENT_REACHED_THROUGH -> "ui.state.connected_through"
-    else -> "ui.state.${hub.connection.wireName}"
+fun hubStateKey(hub: HubView, nowMillis: Long): String {
+    val reason = hub.waitReason
+    return when {
+        hub.jobs.isLeaving -> "ui.job.leaving"
+        hub.jobs.isRefreshing -> "ui.job.refreshing"
+        hub.isConnected && hub.reachedThrough in CLIENT_REACHED_THROUGH -> "ui.state.connected_through"
+        hub.connection != HubConnection.WAITING || reason == null -> "ui.state.${hub.connection.wireName}"
+        secondsToNextRound(hub, nowMillis) == 0L -> "ui.state.connecting"
+        else -> "ui.state.${reason.wireName}"
+    }
 }
 
 /**
@@ -169,10 +157,38 @@ fun hubStateKey(hub: HubView): String = when {
  *
  * @param hub The hub.
  * @param words The catalog.
+ * @param nowMillis The time now, in the session's clock.
  * @return The sentence.
  */
-fun hubStateWord(hub: HubView, words: WordCatalog): String =
-    words.word(hubStateKey(hub), mapOf("way" to words.word("ui.through.${hub.reachedThrough}")))
+fun hubStateWord(hub: HubView, words: WordCatalog, nowMillis: Long): String =
+    words.word(hubStateKey(hub, nowMillis), mapOf("way" to words.word("ui.through.${hub.reachedThrough}")))
+
+/**
+ * The state line of a hub row: the state word, then ` · ` and what ends the wait when the row
+ * waits for one: the seconds left, the refusal's wording, or the Reconnect button's name.
+ *
+ * @param hub The hub.
+ * @param words The catalog.
+ * @param nowMillis The time now, in the session's clock.
+ * @return The sentence.
+ */
+fun hubStateLine(hub: HubView, words: WordCatalog, nowMillis: Long): String {
+    val word = hubStateWord(hub, words, nowMillis)
+    if (hubStateKey(hub, nowMillis) != "ui.state.${hub.waitReason?.wireName}") return word
+    val refusal = hub.waitRefusal
+    val action = when {
+        hub.nextRoundAtMillis > 0 ->
+            words.word("ui.action.retry_in", mapOf("s" to secondsToNextRound(hub, nowMillis)))
+
+        hub.waitReason == HubWaitReason.JOIN_REFUSED && refusal != null ->
+            words.refusal(refusal.code, refusal.wordParams)
+
+        hub.waitReason == HubWaitReason.REPLACED -> words.word("ui.reconnect")
+
+        else -> null
+    }
+    return listOfNotNull(word, action).joinToString(" · ")
+}
 
 /**
  * The tags of a connected hub row with no job running: the state word with the way the socket
@@ -185,7 +201,7 @@ fun hubStateWord(hub: HubView, words: WordCatalog): String =
 fun hubTags(hub: HubView, words: WordCatalog): List<String> {
     if (!hub.isConnected || hub.jobs.isLeaving || hub.jobs.isRefreshing) return emptyList()
     val rtt = hub.rttMs?.let { words.word("ui.state.rtt", mapOf("ms" to it)) }
-    return listOfNotNull(hubStateWord(hub, words), rtt)
+    return listOfNotNull(hubStateWord(hub, words, 0), rtt)
 }
 
 /**
@@ -253,7 +269,7 @@ private fun HubRow(
         marker = hubTone(hub),
         hasDivider = hasDivider,
         actions = {
-            if (networks.size >= 2 && !hub.isJoinRefused) {
+            if (networks.size >= 2 && !hub.isLeaveOnly) {
                 PickerField(
                     options = networks.map { it.provider to it.title },
                     selected = chosen,
@@ -264,7 +280,7 @@ private fun HubRow(
                 )
             }
             when {
-                hub.isJoinRefused || !hasNetworkLine(hub) -> Unit
+                hub.isLeaveOnly || !hasNetworkLine(hub) -> Unit
 
                 line.job == OverlayJob.CONNECTING -> NeutrinoButton(
                     words.word("ui.network_cancel"),
@@ -296,7 +312,7 @@ private fun HubRow(
                     isEnabled = networkReason == null,
                 )
             }
-            if (hub.isPanelAllowed) {
+            if (hub.isPanelAllowed && !hub.isLeaveOnly) {
                 NeutrinoButton(
                     words.word(if (hub.jobs.isOpeningPanel) "ui.job.opening" else "ui.hub_panel"),
                     { onOpenPanel(id) },
@@ -305,7 +321,7 @@ private fun HubRow(
                     isEnabled = hub.isConnected && !hub.jobs.isOpeningPanel && !hub.jobs.isLeaving,
                 )
             }
-            if (hub.connection == HubConnection.REPLACED) {
+            if (hub.waitReason == HubWaitReason.REPLACED) {
                 NeutrinoButton(words.word("ui.reconnect"), { onReconnect(id) }, isSmall = true)
             }
             ArmedButton(
@@ -318,18 +334,26 @@ private fun HubRow(
         },
     ) {
         val tags = hubTags(hub, words)
+        val nowMillis by produceState(System.currentTimeMillis(), hub.nextRoundAtMillis) {
+            while (true) {
+                value = System.currentTimeMillis()
+                val leftMillis = hub.nextRoundAtMillis - value
+                if (leftMillis <= 0) break
+                delay((leftMillis - 1) % 1000 + 1)
+            }
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             BasicText(hub.binding.title, style = NeutrinoTheme.rowTitle)
             tags.forEach { Badge(it) }
         }
-        if (tags.isEmpty()) BasicText(hubStateWord(hub, words), style = NeutrinoTheme.note)
+        if (tags.isEmpty()) BasicText(hubStateLine(hub, words, nowMillis), style = NeutrinoTheme.note)
         val software = if (hub.software.isEmpty()) {
             ""
         } else {
             " · " + words.word("ui.hub_software", mapOf("software" to hub.software))
         }
         BasicText(hub.connectedAddress.ifEmpty { hub.binding.gatewayUrl } + software, style = NeutrinoTheme.mono)
-        ErrorLine(hub.jobError ?: hub.lastError?.takeIf { !hub.jobs.isRefreshing })
+        ErrorLine(hub.jobError)
         if (hasNetworkLine(hub)) {
             NetworkLine(hub, networkReason)
         } else {
@@ -369,7 +393,8 @@ private fun HubsScreenPreview() {
     PreviewHubs.Frame(
         mapOf(
             "ui.state.connected" to "已连接",
-            "ui.state.down" to "未连上",
+            "ui.state.hub_silent" to "中枢未响应",
+            "ui.action.retry_in" to "{s} 秒后重试",
             "ui.hub_software" to "运行 {software}",
             "ui.leave" to "离开",
             "ui.add_hub" to "加入 hub",
@@ -380,9 +405,7 @@ private fun HubsScreenPreview() {
     ) {
         HubsScreen(
             PreviewHubs.all,
-            emptyList(),
             onJoin = {},
-            onCloseNotice = {},
             onLeave = {},
             onReconnect = {},
             onOpenPanel = {},

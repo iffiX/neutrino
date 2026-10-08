@@ -49,7 +49,6 @@ class MainActivity : ComponentActivity() {
         }
         val platform = "$CLIENT_PLATFORM_OS/${application.architecture} · Android ${Build.VERSION.RELEASE}"
         val hubs by application.hubs.collectAsStateWithLifecycle()
-        val notices by application.connections.notices.collectAsStateWithLifecycle()
         val join by application.connections.join.collectAsStateWithLifecycle()
         val context = LocalContext.current
         val actions =
@@ -74,7 +73,6 @@ class MainActivity : ComponentActivity() {
                     settings = settings,
                     onSaveSettings = application.settingsStore::save,
                     hubs = hubs,
-                    notices = notices,
                     join = join,
                     actions = actions,
                     terminalTabs = application.terminalTabs,

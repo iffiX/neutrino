@@ -15,6 +15,7 @@ import kotlinx.serialization.json.longOrNull
  * @property address This phone's address on the network, empty until the network gives one.
  * @property prefix The network's prefix length.
  * @property proxyCidrs The subnets other members route into the network.
+ * @property peerAddresses The addresses of the other members the core has a route to.
  * @property isRunning Whether the instance runs.
  * @property error The core's last error, empty for none.
  */
@@ -23,6 +24,7 @@ data class EasyTierInstance(
     val address: String,
     val prefix: Int,
     val proxyCidrs: List<String>,
+    val peerAddresses: Set<String>,
     val isRunning: Boolean,
     val error: String,
 ) {
@@ -47,21 +49,27 @@ data class EasyTierInstance(
 
         private fun instanceOf(name: String, info: JsonObject): EasyTierInstance {
             val inet = (info["my_node_info"] as? JsonObject)?.get("virtual_ipv4") as? JsonObject
-            val raw = ((inet?.get("address") as? JsonObject)?.get("addr") as? JsonPrimitive)?.longOrNull ?: 0L
             val prefix = ((inet?.get("network_length") as? JsonPrimitive)?.longOrNull ?: 0L).toInt()
-            val routes = info["routes"] as? JsonArray ?: JsonArray(emptyList())
+            val routes = (info["routes"] as? JsonArray ?: JsonArray(emptyList())).mapNotNull { it as? JsonObject }
             val cidrs = routes.flatMap { route ->
-                ((route as? JsonObject)?.get("proxy_cidrs") as? JsonArray).orEmpty()
-                    .mapNotNull { (it as? JsonPrimitive)?.content }
+                (route["proxy_cidrs"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.content }
             }.distinct()
             return EasyTierInstance(
                 name = name,
-                address = if (raw == 0L) "" else dotted(raw),
+                address = addressOf(inet),
                 prefix = prefix,
                 proxyCidrs = cidrs,
+                peerAddresses = routes.map {
+                    addressOf(it["ipv4_addr"] as? JsonObject)
+                }.filter { it.isNotEmpty() }.toSet(),
                 isRunning = (info["running"] as? JsonPrimitive)?.booleanOrNull ?: false,
                 error = (info["error_msg"] as? JsonPrimitive)?.takeIf { it.isString }?.content.orEmpty(),
             )
+        }
+
+        private fun addressOf(inet: JsonObject?): String {
+            val raw = ((inet?.get("address") as? JsonObject)?.get("addr") as? JsonPrimitive)?.longOrNull ?: 0L
+            return if (raw == 0L) "" else dotted(raw)
         }
 
         private fun dotted(address: Long): String =

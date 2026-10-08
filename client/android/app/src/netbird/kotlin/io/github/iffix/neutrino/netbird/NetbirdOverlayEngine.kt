@@ -26,7 +26,8 @@ import kotlin.concurrent.thread
 /**
  * NetBird's client in the app: the peer registers once with the hub's setup key, then runs from
  * its kept configuration until stopped. When the core says its routes or search domains changed,
- * the TUN device is built again with the core's whole new set and handed back to the core.
+ * the TUN device is built again with the core's whole new set and handed back to the core. The
+ * core's peers-changed callback is the engine's peer list change.
  *
  * @param dir Where this hub's NetBird configuration and state live.
  * @param deviceName The name the peer registers under.
@@ -44,8 +45,9 @@ class NetbirdOverlayEngine(private val dir: File, private val deviceName: String
         overlay: ChannelOverlay,
         tun: TunBuilder,
         report: (OverlayPhase, String, ChannelResult.Refused?) -> Unit,
+        onPeersChanged: () -> Unit,
     ) {
-        thread(name = "netbird") { run(overlay, tun, report) }
+        thread(name = "netbird") { run(overlay, tun, report, onPeersChanged) }
     }
 
     override fun stop() {
@@ -57,6 +59,7 @@ class NetbirdOverlayEngine(private val dir: File, private val deviceName: String
         overlay: ChannelOverlay,
         tun: TunBuilder,
         report: (OverlayPhase, String, ChannelResult.Refused?) -> Unit,
+        onPeersChanged: () -> Unit,
     ) {
         report(OverlayPhase.JOINING, "", null)
         dir.mkdirs()
@@ -75,7 +78,7 @@ class NetbirdOverlayEngine(private val dir: File, private val deviceName: String
                 Interfaces(),
                 Changes { thread(name = "netbird-routes") { renew(adapter, tun) } },
             )
-            running.setConnectionListener(Listener(address, report))
+            running.setConnectionListener(Listener(address, report, onPeersChanged))
             client = running
             if (!config.exists() || !registered.exists() || registered.readText() != keyDigest) {
                 val management = overlay.managementUrl.ifEmpty { OVERLAY_NETBIRD_DEFAULT_MANAGEMENT_URL }
@@ -227,6 +230,7 @@ class NetbirdOverlayEngine(private val dir: File, private val deviceName: String
     private class Listener(
         private val address: StringBuilder,
         private val report: (OverlayPhase, String, ChannelResult.Refused?) -> Unit,
+        private val onPeersChanged: () -> Unit,
     ) : ConnectionListener {
         override fun onAddressChanged(fqdn: String?, ip: String?) {
             address.setLength(0)
@@ -241,7 +245,7 @@ class NetbirdOverlayEngine(private val dir: File, private val deviceName: String
 
         override fun onDisconnecting() = report(OverlayPhase.LEAVING, "", null)
 
-        override fun onPeersListChanged(count: Long) = Unit
+        override fun onPeersListChanged(count: Long) = onPeersChanged()
 
         override fun onStateChanged(state: Long) = Unit
     }

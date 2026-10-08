@@ -89,7 +89,7 @@ class TerminalSessionMergeTest {
     @Test
     fun aHubThatIsNotConnectedLeavesItsTabsAndListsNothing() {
         val before = merge(emptyList(), hub("b1", HubConnection.CONNECTED, owned))
-        val after = merge(before, hub("b1", HubConnection.DOWN), hub("b2", HubConnection.DOWN, shared))
+        val after = merge(before, hub("b1", HubConnection.WAITING), hub("b2", HubConnection.WAITING, shared))
         assertEquals(before, after)
     }
 
