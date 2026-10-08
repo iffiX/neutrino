@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import { StatusDot } from "./status_dot";
 import { apiPath } from "../api_client";
 import { hasWord, t, useLanguage } from "../i18n";
+import { withModuleTitle } from "../module_title";
 import { stripAnsi } from "../strip_ansi";
 import { usePolledResource } from "../use_polled_resource";
 import { useTaskStream } from "../use_task_stream";
@@ -133,7 +134,7 @@ function describeCode(row: DeviceModuleView): string {
       params[name] = String(value);
     }
   }
-  return t(key, params);
+  return t(key, withModuleTitle(params, { [row.name]: row.title }));
 }
 
 /** Whether the module runs one unit per instance and nobody has added one:

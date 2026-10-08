@@ -22,7 +22,7 @@ import { VscodePanels } from "../components/vscode_panels";
 import { VscodeTerms } from "../components/vscode_terms";
 import { ZfsPanels } from "../components/zfs_panels";
 import { hasWord, t, useLanguage } from "../i18n";
-import { moduleTitle } from "../module_title";
+import { moduleTitle, withModuleTitle } from "../module_title";
 import { useApiResource } from "../use_api_resource";
 import { useConfirm } from "../use_confirm";
 import {
@@ -950,7 +950,10 @@ function configuredKey(deviceId: string, module: string): string {
 function describeFailure(row: DeviceModuleView): string {
   const key = `code.${row.code}`;
   if (row.code !== "" && hasWord(key)) {
-    return t(key, asParams(row.params));
+    return t(
+      key,
+      withModuleTitle(asParams(row.params), { [row.name]: row.title }),
+    );
   }
   if (row.code === "") {
     return t("ui.modules.failed");

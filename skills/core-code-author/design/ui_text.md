@@ -334,7 +334,7 @@ The state words, `state.relay_<code>`:
 | --- | --- | --- |
 | `disabled` | Off | 已关闭 |
 | `not_configured` | Not configured | 未配置 |
-| `vault_locked` | Vault locked | 保管库已锁定 |
+| `vault_locked` | Vault locked | 保险库已锁定 |
 | `connecting` | Connecting | 连接中 |
 | `connected` | Connected | 已连上 |
 | `port_closed` | Public port closed | 对外端口不通 |

@@ -20,6 +20,7 @@ import {
 } from "../device_level";
 import type { DeviceUpgradePath } from "../device_level";
 import { hasWord, t, useLanguage } from "../i18n";
+import { withModuleTitle } from "../module_title";
 import { useConfirm } from "../use_confirm";
 import { formatTimeAgo } from "../format_duration";
 import { stripAnsi } from "../strip_ansi";
@@ -704,7 +705,7 @@ function describeAgentError(error: DeviceClientError): string {
       params[name] = String(value);
     }
   }
-  return t(key, params);
+  return t(key, withModuleTitle(params));
 }
 
 /** Wording for a failed action, with the coded refusals spelled out. */

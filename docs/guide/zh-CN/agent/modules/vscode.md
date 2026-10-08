@@ -47,7 +47,7 @@ Windows 要有账户的密码，才能以这个账户启动实例。先在[凭�
 | `port_duplicate`     | 两个实例用了同一个端口       |
 | `port_invalid`       | 端口不在 1024 到 65535 之间  |
 | `credential_missing` | Windows 上的实例没选登录信息 |
-| `token_missing`      | 保管库锁着，读不出实例的令牌 |
+| `token_missing`      | 保险库锁着，读不出实例的令牌 |
 
 ## 从客户端打开
 
