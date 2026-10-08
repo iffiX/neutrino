@@ -4,7 +4,7 @@ title: VS Code
 
 # VS Code
 
-The **VS Code** module runs VS Code in the browser on a managed machine, one instance per account. A desktop client or the Android app opens each instance through a forward on its own `127.0.0.1`. You install VS Code Server on the machine under Microsoft's license terms: the module's installer fetches Microsoft's standalone VS Code CLI at one pinned build, and the agent runs it.
+Each account on a managed machine can have its own VS Code in the browser through the **VS Code** module. A desktop client or the Android app opens each instance through a forward on its own `127.0.0.1`. You install VS Code Server on the machine under Microsoft's license terms, at one pinned build of Microsoft's standalone VS Code CLI. The agent runs it.
 
 | System  | Machines that run it                      |
 | ------- | ----------------------------------------- |
@@ -14,13 +14,11 @@ The **VS Code** module runs VS Code in the browser on a managed machine, one ins
 
 ## Turn it on
 
-1. On the **VS Code** tab of the [Modules](../modules.md) page, select **Open and accept the terms**. Microsoft's terms open in a new browser tab, and the press records that you accept them for this machine. The button then reads **Terms accepted**, and the rest of the tab appears under it.
+1. On the **VS Code** tab of the [Modules](../modules.md) page, select **Open and accept the terms**. Microsoft's terms open in a new browser tab, and the press records that you accept them for this machine.
 1. Select **Install**.
 1. Select **Configure**. The **Instances** section opens under the tab.
 
-Each machine asks once. Until its terms are accepted, the hub refuses to install, start or configure VS Code there with `terms_not_accepted`.
-
-![The VS Code tab with one instance and its account](/guide/en/vscode_panel.webp)
+After the first step, the button reads **Terms accepted** and the rest of the tab appears under it. Each machine records the acceptance once. Until then, the hub rejects an install, a start or a configuration of VS Code there with `terms_not_accepted`.
 
 ## Add an instance
 
@@ -30,25 +28,31 @@ Each machine asks once. Until its terms are accepted, the hub refuses to install
 1. On a Windows machine, pick the account's login under **Windows login for** the account.
 1. Select **Apply VS Code**. The machine saves the instances and restarts them.
 
-Each instance runs as its account, so files it creates belong to that account. Its row reads **running** or **not running**, and a reason appears under the row when the machine reports one.
+![The VS Code tab with one instance and its account](/guide/en/vscode_panel.webp)
+
+Each instance runs as its account, so the files it creates belong to that account. Its row reads **running** or **not running**, and a reason appears under the row when the machine reports one.
 
 ## Windows logins
 
 Windows starts an instance as its account only with that account's password. Store the account's username and password under **Logins** on the [Credentials](../../hub/credentials.md) page, then pick that login on the instance.
 
-When the account's password changes on Windows, the agent reports `credential_invalid` for the instance, and its row says Windows no longer accepts the login. Update the login on the **Credentials** page, or pick another one, and select **Apply VS Code** again.
+When the account's password changes on Windows, the instance reports `credential_invalid`, and its row says Windows no longer accepts the login. Update the login on the **Credentials** page, or pick another one, and select **Apply VS Code** again.
 
 ## Refusals on apply
 
-| Code                 | Cause                                                      |
-| -------------------- | ---------------------------------------------------------- |
-| `account_unknown`    | the machine has no account by that name                    |
-| `account_duplicate`  | two instances name the same account                        |
-| `port_duplicate`     | two instances use the same port                            |
-| `port_invalid`       | the port is outside 1024 to 65535                          |
-| `credential_missing` | a Windows instance has no login picked                     |
-| `token_missing`      | the vault is locked, so the instance's token is unreadable |
+| Code                 | Cause                                             |
+| -------------------- | ------------------------------------------------- |
+| `account_unknown`    | the machine has no account by that name           |
+| `account_duplicate`  | two instances name the same account               |
+| `port_duplicate`     | two instances use the same port                   |
+| `port_invalid`       | the port is outside 1024 to 65535                 |
+| `credential_missing` | a Windows instance has no login picked            |
+| `token_missing`      | the hub sent no connection token for the instance |
+
+## Point its AI tools at the gateway
+
+The accounts that run VS Code here follow the machine's AI tools setting, as [Point a machine's AI tools at the gateway](./ai_tools.md) describes.
 
 ## Open it from a client
 
-Each running instance is a row under **Web** on the [Services](../../hub/services.md) page, titled with **VS Code** and the account. The instance listens on its machine's loopback alone, so a browser does not open the row's address. On the client's **Web** page, **Open** makes a forward through the hub and opens the instance in the browser with a fresh token. The desktop client and the Android app both open it.
+Each running instance is a row under **Web** on the [Services](../../hub/services.md) page, titled **VS Code** with the account in parentheses. The instance listens on its machine's loopback alone, so a browser cannot open the row's address directly. On a client's **Web** page, **Open** makes a forward through the hub and opens the instance in the browser with a fresh token.

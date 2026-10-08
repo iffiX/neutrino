@@ -4,9 +4,9 @@ title: ZFS storage
 
 # ZFS storage
 
-On a managed Linux machine, the **ZFS storage** tab builds ZFS pools and datasets and shows the health of every disk. The hub keeps no list of wanted pools. The tab shows what the machine reports about its own disks, and each button acts on the machine when you press it.
+On a managed Linux machine, the **ZFS storage** tab builds ZFS pools and datasets and shows the health of every disk. The tab shows what the machine reports about its own disks, and each button acts on the machine at the press. The hub keeps no list of wanted pools.
 
-Before you start, select **Install** and then **Configure** on the **ZFS storage** tab of the [Modules](../modules.md) page. The install also brings smartmontools for the disk health readings. The **Topology**, **Pools** and **Datasets** sections open under the tab.
+To prepare the tab, select **Install** and then **Configure** on the **ZFS storage** tab of the [Modules](../modules.md) page. The install also brings smartmontools for the disk health readings. The **Topology**, **Pools** and **Datasets** sections open under the tab.
 
 ![The ZFS storage tab with a pool and its disks](/guide/en/zfs.webp)
 
@@ -41,10 +41,10 @@ When attached disks hold a pool this machine has not imported, the tab shows the
 **Topology** draws each pool's vdevs and disks, and lists unused disks as **UNASSIGNED**. Each disk reads **SMART ok** or **SMART FAILING**, with its temperature when the drive reports one. Select a disk to see its model, serial number, size, SMART result and read, write and checksum error counts.
 
 - **Scrub** on a pool checks every block of the pool against its checksums.
-- **Offline** takes a selected disk out of its pool for now, and **Online** puts it back.
+- **Offline** takes a selected disk out of its pool for the time being, and **Online** puts it back.
 - **Replace** on a selected disk opens a list of spare disks. Pick one and select **Start resilver** to rebuild onto it.
 
-With no spare disk attached, **Replace** is unavailable and its tooltip reads **No spare disk to replace with**.
+With no spare disk attached, **Replace** is greyed and its tooltip reads **No spare disk to replace with**.
 
 ## Datasets
 
@@ -58,8 +58,10 @@ Each dataset row shows its compression, record size and usage. **Destroy** remov
 
 ## Share a dataset
 
+The [File share](shares.md) module must be running on the same machine. While it is missing or stopped, the button reads **Install and start Samba first**.
+
 1. On a mounted dataset's row, select **Share**.
 1. Pick the users the share accepts, or pick none to accept every user, future ones included.
 1. Select **Share**.
 
-The [File share](shares.md) module on the same machine exports the dataset's mountpoint over SMB, read and write for the chosen users. While the File share module is missing or stopped, the button reads **Install and start Samba first**. A shared row has an `smb` badge with the share's name, and **Unshare** withdraws it.
+The File share module exports the dataset's mountpoint over SMB, read and write for the chosen users. A shared row has an `smb` badge with the share's name, and **Unshare** withdraws it.

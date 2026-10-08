@@ -4,7 +4,7 @@ title: Terminal
 
 # Terminal
 
-The **Terminal** module sets which account a terminal on a managed machine runs as, and which shell program it starts. It is a tab on every managed machine, because the agent's own package carries it: there is nothing to install or uninstall.
+The **Terminal** module sets which account a terminal on a managed machine runs as, and which shell program it starts. Every managed machine has the tab, because the agent's own package includes the module, and it has nothing to install or uninstall.
 
 | System  | What you can set                                   |
 | ------- | -------------------------------------------------- |
@@ -14,13 +14,15 @@ The **Terminal** module sets which account a terminal on a managed machine runs 
 
 ## Set the account and the shell
 
-1. On the **Terminal** tab of the [Modules](../modules.md) page, pick an **Account**. **The agent's own (root; SYSTEM on Windows)** is the default.
-1. Optional: fill **Shell program** with a program's full path, or select **Browse…** and select the program in the machine's files.
+1. On the **Terminal** tab of the [Modules](../modules.md) page, pick an **Account**. The default is **The agent's own (root; SYSTEM on Windows)**.
+1. Optional: fill **Shell program** with a program's full path, or select **Browse…** and select the program among the machine's files.
 1. Select **Apply terminal**.
 
-Left empty, **Shell program** means the account's login shell, `zsh` on macOS, and PowerShell on Windows. A terminal for an account starts in that account's home folder with its environment.
+![The Terminal tab of server, with an account picked](/guide/en/modules_terminal_tab.webp)
 
-The settings hold for every terminal opened afterwards, from the panel's [Terminals](../terminals.md) page and from a client. A terminal already open keeps what it runs, and a container's shell is not affected.
+An empty **Shell program** means the account's login shell, and PowerShell on Windows. A terminal for an account starts in that account's home folder, with its environment.
+
+The settings hold for every terminal opened afterwards, from the panel's [Terminals](../terminals.md) page and from a client. A terminal already open keeps what it runs, and a container's shell keeps its own.
 
 ## Refusals
 
@@ -30,4 +32,4 @@ The settings hold for every terminal opened afterwards, from the panel's [Termin
 | `path_invalid`           | the shell program is not a full path                    |
 | `shell_program_unusable` | the program is missing on the machine, or it cannot run |
 
-The same two codes, `account_unknown` and `shell_program_unusable`, close a terminal that opens after the account or the program has gone from the machine. The terminal does not fall back to root.
+A terminal that opens after its account or its program has gone from the machine closes with `account_unknown` or `shell_program_unusable`. It does not fall back to root.
