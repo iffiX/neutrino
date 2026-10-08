@@ -361,31 +361,56 @@ def _package_path(runtime, module: str, platform: dict, on_progress=None):
 async def _serve_frames(websocket: WebSocket, session: ChannelSession, frames) -> None:
     """Read frames until the socket ends.
 
+    Reports are handled one after another on a task of their own, so a
+    ``ping`` that arrives while a report is being recorded is answered at
+    once and the round trip it measures is the wire's.
+
     Args:
         websocket: The peer's socket.
         session: The attached session.
         frames: The role's report handler, called with each decoded report.
+
+    Raises:
+        Exception: Whatever the report handler raised, once the socket ends.
     """
+    reports: asyncio.Queue = asyncio.Queue()
+    recorder = asyncio.create_task(_take_reports(reports, frames))
+    try:
+        while not recorder.done():
+            message = await websocket.receive()
+            if message["type"] == "websocket.disconnect":
+                return
+            data = message.get("bytes")
+            if data is not None:
+                session.dispatch_bytes(data)
+                continue
+            decoded = decode_frame(message.get("text"))
+            if decoded is None:
+                continue
+            kind = decoded.get("type")
+            if kind == CHANNEL_FRAME_REPORT:
+                reports.put_nowait(decoded)
+            elif kind == CHANNEL_FRAME_OPEN:
+                await session.accept_stream(decoded)
+            elif kind == CHANNEL_FRAME_PING:
+                await session.send_json(_pong(decoded))
+            else:
+                session.dispatch_text(decoded)
+        recorder.result()
+    finally:
+        if not recorder.done():
+            recorder.cancel()
+            try:
+                await recorder
+            except asyncio.CancelledError:
+                pass
+
+
+async def _take_reports(reports: asyncio.Queue, frames) -> None:
+    """Hand every queued report to the role's handler, in order."""
     while True:
-        message = await websocket.receive()
-        if message["type"] == "websocket.disconnect":
-            return
-        data = message.get("bytes")
-        if data is not None:
-            session.dispatch_bytes(data)
-            continue
-        decoded = decode_frame(message.get("text"))
-        if decoded is None:
-            continue
-        kind = decoded.get("type")
-        if kind == CHANNEL_FRAME_REPORT:
-            await frames.take_report(decoded)
-        elif kind == CHANNEL_FRAME_OPEN:
-            await session.accept_stream(decoded)
-        elif kind == CHANNEL_FRAME_PING:
-            await session.send_json(_pong(decoded))
-        else:
-            session.dispatch_text(decoded)
+        report = await reports.get()
+        await frames.take_report(report)
 
 
 def _pong(ping: dict) -> dict:
