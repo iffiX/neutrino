@@ -63,6 +63,7 @@ CONSOLE_PROFILE_DEFAULT = (
 DEVICE_SCALE = 2
 WAIT_TIMEOUT_MS = 30_000
 NETWORK_IDLE_TIMEOUT_MS = 10_000
+PRESS_SETTLE_MS = 800
 # A label key inside a selector, ``{ui.settings.https_title}``.
 LABEL_KEY = re.compile(r"\{(ui\.[A-Za-z0-9_.]+)\}")
 
@@ -311,6 +312,11 @@ def take(
         wait_until="load" if base_url else "domcontentloaded",
         timeout=WAIT_TIMEOUT_MS * 2,
     )
+    for selector in shot.get("press", []):
+        page.locator(resolve(selector, labels)).first.click()
+        page.wait_for_timeout(PRESS_SETTLE_MS)
+    for selector, text in shot.get("fill", {}).items():
+        page.locator(resolve(selector, labels)).first.fill(text)
     if shot.get("manual"):
         print(f"\n{shot['language']}/{shot['file']}: {shot['manual']}")
         input("Press Enter when the page shows it. ")

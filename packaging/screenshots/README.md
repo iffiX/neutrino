@@ -93,3 +93,7 @@ ones you do not commit. A shot with `redraw_qr` has its `.qr_code` image
 replaced by the tool with a code of that stand-in text before the rules run,
 and a shot with `hide` has its listed elements hidden. Other drawn content,
 such as a chart, is left as it is.
+
+## Entries that open something first
+
+An entry may carry `press`, a list of selectors clicked in order before the shot (a button that opens a dialog), and `fill`, a map of selector to the text typed into it; both run before `manual` and before `wait_for`. `{ui.key}` placeholders are resolved in them as in `element`.
