@@ -659,7 +659,7 @@ switches at the right and nothing else.
 | Rule | Reason |
 | --- | --- |
 | Tabs stay mounted while hidden; switching tabs loses no output. | A terminal redrawn from scratch loses its scrollback. |
-| The chips name every machine with a terminal, each with its provider line; the picked chip is the one a new terminal opens on. | The person opens a terminal on a machine, and the machine is the first choice to make. |
+| The chips name every machine the hub offers a shell on, `is_shell_allowed` in its `terminals` entry, each with its provider line; the picked chip is the one a new terminal opens on. | The person opens a terminal on a machine, and the machine is the first choice to make. |
 | **New terminal** is disabled with no chip picked or with the picked machine offline, with the reason under the chips. | Nothing opens on a machine that cannot answer. |
 | Keys reach the machine in the order they were pressed: a tab has one sender that writes its bytes in sequence, on every client. | A letter that overtakes the one before it types another word. |
 | **Clear**, wherever a client offers it, sends Ctrl+C, clears the screen, drops what had arrived and was not yet drawn, and goes on dropping what arrives until the stream has been quiet for half a second, for twenty seconds at most. While it drops, the terminal's own box shows `ui.job.clearing` ("Clearing…", 「清屏中…」) where the output would be, and the word goes when the dropping ends. The desktop and the phone behave the same. | A clear that is followed by the rest of the flood clears nothing, and how long the flood's tail takes to cross the hub is not a number a client can know. |
@@ -721,6 +721,31 @@ attaches receives the kept output first, then the live stream.
 | Ctrl+`+` and Ctrl+`-` change the font size, kept per client. | A person's eyes do not change per machine. |
 | The font is MesloLGS NF, loaded through the resident, so powerline prompts draw. | A prompt in boxes is unreadable. |
 | A middle click on a tab closes it as **×** does; a double click on the strip's empty space opens a new terminal on the picked machine. | The two gestures every tabbed window has. |
+
+`nclient terminal` is the same terminal on the command line. It reaches the
+hub through the running client, names a machine by its name or id, and
+names a hub with `--hub` when several are joined. It takes one verb:
+
+| Verb | Arguments | Does | Exit status |
+| --- | --- | --- | --- |
+| `list` | `--hub`; `--json` | prints every online machine the state's `terminals` holds and the sessions it keeps: the machine, the session id's first eight characters, the title, the account, the owner's name, whether this client owns it, whether it is persistent, whether it is shared, and how many windows are attached; `--json` prints one JSON object | 0; 1 when the running client does not answer |
+| `open <machine>` | `--persistent`; `--shared`; `--hub` | opens a new shell in this terminal; `--shared` is the `shell` open's `is_shared`, and `--persistent` a `persist` with `is_persistent` sent once the stream is open | 0 once the shell closed, 1 for a refusal, 2 for a machine that is not offered |
+| `attach <machine> <session-id>` | `--hub` | attaches this terminal to a session the machine keeps, one this client owns or a shared one, with `is_resumed`, its kept output first | as `open`, and 2 for a session the machine does not list |
+| `exec <machine> -- <command…>` | `--tty`; `--hub` | runs the command through an `exec` stream ([protocol.md](protocol.md), "The exec stream"): this process's stdin goes up as it is and ends with `eof`, the remote stdout comes out on stdout and the remote stderr on stderr, unchanged; with no pseudo-terminal, stdin and stdout may be files or pipes. `--tty` opens it with `is_tty` on a pseudo-terminal of this terminal's size, with raw mode and resizes as `open` has them, for programs such as `top` and `vim` | the remote command's exit code; 125 for a refusal, from the hub, the agent or the client itself; 126 for a machine that is not offered |
+| `persist <machine> <session-id>` | `--on` or `--off`; `--hub` | a `persist` with `is_persistent` alone: the session stays after its last window closes, or stops staying | 0, 1 for a refusal, 2 for a session the machine does not list |
+| `share <machine> <session-id>` | `--on` or `--off`; `--hub` | a `persist` with `is_shared` alone: every other client with terminal rights on the machine can attach, or no longer can, and the hub closes their streams at once | as `persist` |
+| `stop <machine> <session-id>` | `--hub` | `stop_session`: ends the session, as ending it on the panel does | as `persist` |
+
+| Rule | Reason |
+| --- | --- |
+| `nclient terminal <machine>` with no verb is `open <machine>`; a machine whose name is a verb is named after `open`. | Commands and scripts written for the bare form keep working. |
+| `open` takes no `--session`; attaching to a kept session is `attach`. | One verb per action. |
+| A session id is matched by prefix among the sessions the state lists on that machine, as git matches a commit id: one match is the session; none exits 2 with `session_unknown`; several print every candidate and exit 2. `list` prints the first eight characters. | Eight characters are short enough to type, and a prefix that matches two sessions is never guessed at. |
+| `exec` takes no session id and never opens a persistent or shared session. | A script's input reaches no session that another window or another person sees. |
+| `persist` and `share` change a session for its owner only; any other client gets the hub's `session_not_owned` and exits 1. | The person who opened a session decides whether it stays and who sees it. |
+| `exec` exits 125 and 126 for its own outcomes, never 1 or 2. | The remote command's own 1 and 2 stay apart from the client's, as ssh and docker keep them. |
+| `exec` without `--tty` puts neither stdin nor stdout in raw mode, whether each is a terminal or not. | A pipe has no terminal mode, and a script's stdin is usually a pipe. |
+| `exec` needs the **Remote commands** permission, the kind `exec`, which the hub's Clients page offers apart from **Terminals**, the kind `terminal`; a new hub's default has it off. The panel's label is `ui.clients.kind_exec`: "Remote commands", 「远程命令」. | A script that runs as root with nobody watching it is more dangerous than a person at a shell. |
 
 ### The phone terminal
 
