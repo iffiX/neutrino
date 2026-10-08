@@ -12,22 +12,47 @@ export const GITHUB_URL = "https://github.com/iffiX/neutrino";
 export const sidebarEn: DefaultTheme.SidebarItem[] = [
   {
     text: "Start",
+    collapsed: false,
     items: [
       { text: "Overview", link: "/overview" },
-      { text: "Quick start", link: "/quick-start" },
+      {
+        text: "Quick start",
+        collapsed: false,
+        items: [
+          {
+            text: "First step: install, join, reach it from outside",
+            link: "/quick-start",
+          },
+          {
+            text: "Your AI session on the phone",
+            link: "/quick-start/cloudcli",
+          },
+          {
+            text: "AI tools share the hub's gateway",
+            link: "/quick-start/ai_gateway",
+          },
+          { text: "A remote editor", link: "/quick-start/vscode" },
+          { text: "Terminal", link: "/quick-start/terminal" },
+          { text: "Remote desktop", link: "/quick-start/remote_desktop" },
+          { text: "Share and mount files", link: "/quick-start/files" },
+        ],
+      },
       {
         text: "Install",
-        collapsed: false,
+        collapsed: true,
         items: [
           { text: "Install the hub", link: "/install/hub" },
           { text: "Install an agent", link: "/install/agent" },
           { text: "Install a client", link: "/install/client" },
         ],
       },
+      { text: "Security", link: "/security" },
+      { text: "Uninstall", link: "/uninstall" },
     ],
   },
   {
-    text: "Scenarios",
+    text: "Advanced scenarios",
+    collapsed: false,
     items: [
       { text: "Choose a way in", link: "/scenarios/choose_a_way_in" },
       {
@@ -35,17 +60,26 @@ export const sidebarEn: DefaultTheme.SidebarItem[] = [
         link: "/scenarios/one_laptop_every_machine",
       },
       {
-        text: "LAN devices over NetBird",
+        text: "Reach home through your own VPS",
+        link: "/scenarios/vps_relay",
+      },
+      {
+        text: "Make the hub a router or side gateway",
+        link: "/scenarios/router_or_gateway",
+      },
+      {
+        text: "Devices without an agent, over NetBird",
         link: "/scenarios/netbird_lan_routes",
       },
       {
-        text: "LAN devices over EasyTier",
+        text: "Devices without an agent, over EasyTier",
         link: "/scenarios/easytier_lan_routes",
       },
     ],
   },
   {
     text: "Hub",
+    collapsed: true,
     items: [
       { text: "Dashboard", link: "/hub/dashboard" },
       { text: "Network", link: "/hub/network" },
@@ -70,6 +104,7 @@ export const sidebarEn: DefaultTheme.SidebarItem[] = [
   },
   {
     text: "Managed machines",
+    collapsed: true,
     items: [
       { text: "Terminals", link: "/agent/terminals" },
       { text: "Files", link: "/agent/files" },
@@ -94,6 +129,7 @@ export const sidebarEn: DefaultTheme.SidebarItem[] = [
   },
   {
     text: "Clients",
+    collapsed: true,
     items: [
       { text: "Desktop client", link: "/client/desktop" },
       { text: "Android app", link: "/client/android" },
@@ -101,6 +137,7 @@ export const sidebarEn: DefaultTheme.SidebarItem[] = [
   },
   {
     text: "Commands",
+    collapsed: true,
     items: [
       { text: "nhub commands", link: "/commands/nhub" },
       { text: "nagent commands", link: "/commands/nagent" },
@@ -109,10 +146,12 @@ export const sidebarEn: DefaultTheme.SidebarItem[] = [
   },
   {
     text: "Reference",
+    collapsed: true,
     items: [
       { text: "Supported platforms", link: "/reference/platforms" },
       { text: "Troubleshooting", link: "/reference/troubleshooting" },
       { text: "The channel", link: "/protocol/channel" },
+      { text: "Glossary", link: "/reference/glossary" },
     ],
   },
 ];
@@ -120,22 +159,47 @@ export const sidebarEn: DefaultTheme.SidebarItem[] = [
 export const sidebarZh: DefaultTheme.SidebarItem[] = [
   {
     text: "开始",
+    collapsed: false,
     items: [
       { text: "概述", link: "/zh-CN/overview" },
-      { text: "快速上手", link: "/zh-CN/quick-start" },
+      {
+        text: "快速上手",
+        collapsed: false,
+        items: [
+          {
+            text: "第一步：装中枢，加入客户端，连上外网",
+            link: "/zh-CN/quick-start",
+          },
+          {
+            text: "在手机上接着家里的 AI 会话",
+            link: "/zh-CN/quick-start/cloudcli",
+          },
+          {
+            text: "AI 工具共用中枢的网关",
+            link: "/zh-CN/quick-start/ai_gateway",
+          },
+          { text: "远程编辑器", link: "/zh-CN/quick-start/vscode" },
+          { text: "终端", link: "/zh-CN/quick-start/terminal" },
+          { text: "远程桌面", link: "/zh-CN/quick-start/remote_desktop" },
+          { text: "文件共享和挂载", link: "/zh-CN/quick-start/files" },
+        ],
+      },
       {
         text: "安装",
-        collapsed: false,
+        collapsed: true,
         items: [
           { text: "安装中枢", link: "/zh-CN/install/hub" },
           { text: "安装被控端", link: "/zh-CN/install/agent" },
           { text: "安装客户端", link: "/zh-CN/install/client" },
         ],
       },
+      { text: "安全", link: "/zh-CN/security" },
+      { text: "卸载", link: "/zh-CN/uninstall" },
     ],
   },
   {
-    text: "场景",
+    text: "进阶场景",
+    collapsed: false,
     items: [
       { text: "选哪种外部访问", link: "/zh-CN/scenarios/choose_a_way_in" },
       {
@@ -143,17 +207,26 @@ export const sidebarZh: DefaultTheme.SidebarItem[] = [
         link: "/zh-CN/scenarios/one_laptop_every_machine",
       },
       {
-        text: "经 NetBird 访问局域网设备",
+        text: "用自己的 VPS 中继连回家",
+        link: "/zh-CN/scenarios/vps_relay",
+      },
+      {
+        text: "把中枢配置成路由器或旁路网关",
+        link: "/zh-CN/scenarios/router_or_gateway",
+      },
+      {
+        text: "经 NetBird 访问没装被控端的设备",
         link: "/zh-CN/scenarios/netbird_lan_routes",
       },
       {
-        text: "经 EasyTier 访问局域网设备",
+        text: "经 EasyTier 访问没装被控端的设备",
         link: "/zh-CN/scenarios/easytier_lan_routes",
       },
     ],
   },
   {
     text: "中枢",
+    collapsed: true,
     items: [
       { text: "总览", link: "/zh-CN/hub/dashboard" },
       { text: "网络", link: "/zh-CN/hub/network" },
@@ -178,6 +251,7 @@ export const sidebarZh: DefaultTheme.SidebarItem[] = [
   },
   {
     text: "被控端",
+    collapsed: true,
     items: [
       { text: "终端", link: "/zh-CN/agent/terminals" },
       { text: "文件", link: "/zh-CN/agent/files" },
@@ -202,6 +276,7 @@ export const sidebarZh: DefaultTheme.SidebarItem[] = [
   },
   {
     text: "客户端",
+    collapsed: true,
     items: [
       { text: "桌面客户端", link: "/zh-CN/client/desktop" },
       { text: "Android 应用", link: "/zh-CN/client/android" },
@@ -209,6 +284,7 @@ export const sidebarZh: DefaultTheme.SidebarItem[] = [
   },
   {
     text: "命令",
+    collapsed: true,
     items: [
       { text: "nhub 命令", link: "/zh-CN/commands/nhub" },
       { text: "nagent 命令", link: "/zh-CN/commands/nagent" },
@@ -217,26 +293,26 @@ export const sidebarZh: DefaultTheme.SidebarItem[] = [
   },
   {
     text: "参考",
+    collapsed: true,
     items: [
       { text: "支持的平台", link: "/zh-CN/reference/platforms" },
       { text: "故障排查", link: "/zh-CN/reference/troubleshooting" },
       { text: "通道", link: "/zh-CN/protocol/channel" },
+      { text: "术语表", link: "/zh-CN/reference/glossary" },
     ],
   },
 ];
 
 export const navEn: DefaultTheme.NavItem[] = [
   { text: "Quick start", link: "/quick-start" },
-  { text: "Install", link: "/install/hub" },
-  { text: "Hub", link: "/hub/dashboard" },
-  { text: "Clients", link: "/client/desktop" },
+  { text: "Advanced scenarios", link: "/scenarios/choose_a_way_in" },
+  { text: "Troubleshooting", link: "/reference/troubleshooting" },
   { text: "GitHub", link: GITHUB_URL },
 ];
 
 export const navZh: DefaultTheme.NavItem[] = [
   { text: "快速上手", link: "/zh-CN/quick-start" },
-  { text: "安装", link: "/zh-CN/install/hub" },
-  { text: "中枢", link: "/zh-CN/hub/dashboard" },
-  { text: "客户端", link: "/zh-CN/client/desktop" },
+  { text: "进阶场景", link: "/zh-CN/scenarios/choose_a_way_in" },
+  { text: "故障排查", link: "/zh-CN/reference/troubleshooting" },
   { text: "GitHub", link: GITHUB_URL },
 ];
