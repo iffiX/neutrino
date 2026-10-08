@@ -644,6 +644,7 @@ def compile_linux(build: Path, architecture: str, package_version: str) -> dict:
         CLIENT_BINARY_NAME,
         source_root=tree,
         options=(
+            nuitka_build.NUITKA_ARGV_PASSTHROUGH,
             "--include-package=neutrino_client",
             "--include-module=gi",
             "--include-module=cairo",

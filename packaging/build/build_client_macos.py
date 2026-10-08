@@ -492,6 +492,7 @@ def _compile(python: Path, tree: Path, build: Path, version: str) -> Path:
         icon=icons.write_icns(build.parent / "bundle.icns"),
         version=version,
         options=(
+            nuitka_build.NUITKA_ARGV_PASSTHROUGH,
             "--include-package=neutrino_client",
             *(f"--include-package={name}" for name in PYOBJC_PACKAGES),
             # macOS 15 asks the person before an app reaches the local

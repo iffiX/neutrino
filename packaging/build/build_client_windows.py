@@ -1045,6 +1045,7 @@ def _compile_one(
         name,
         source_root=tree,
         options=(
+            nuitka_build.NUITKA_ARGV_PASSTHROUGH,
             "--include-package=neutrino_client",
             "--include-package=webview",
             *(f"--nofollow-import-to={module}" for module in NUITKA_EXCLUDED_BACKENDS),
