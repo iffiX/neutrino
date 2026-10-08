@@ -90,6 +90,9 @@
           "text": "Example-vault-words-2026"
         },
         ".setup_body [role=\"switch\"]:has-text(\"{ui.setup.https_label}\")"
+      ],
+      "pages": [
+        "quick-start.md"
       ]
     },
     {
@@ -244,6 +247,9 @@
         "button:has-text(\"{ui.setup.next}\")",
         "button:has-text(\"{ui.setup.next}\")",
         "button:has-text(\"{ui.setup.start}\")"
+      ],
+      "pages": [
+        "quick-start.md"
       ]
     },
     {
@@ -672,7 +678,10 @@
       "url": "/ai",
       "element": "viewport",
       "wait_for": ".page",
-      "state": "Two providers, one of them a subscription account."
+      "state": "Two providers, one of them a subscription account.",
+      "pages": [
+        "quick-start/ai_gateway.md"
+      ]
     },
     {
       "file": "ai_keys.png",
@@ -696,7 +705,10 @@
       "element": "viewport",
       "wait_for": ".page",
       "state": "The gateway running with two client keys.",
-      "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.ai.access_title}\"))"
+      "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.ai.access_title}\"))",
+      "pages": [
+        "quick-start/ai_gateway.md"
+      ]
     },
     {
       "file": "devices_managed.png",
@@ -1158,9 +1170,27 @@
       "state": "server with VS Code or CloudCLI instances of two accounts, the AI tools switch on, and both account rows reading Uses the hub's AI gateway.",
       "press": [
         ".device_chip:has(.device_chip_name:text-is(\"server\"))"
+      ],
+      "pages": [
+        "quick-start/ai_gateway.md"
       ]
     },
     {
+      "file": "client_ai_on.png",
+      "language": "zh",
+      "page": "quick-start/ai_gateway.md",
+      "source": "client",
+      "viewport": "desktop",
+      "url": "/",
+      "element": "viewport",
+      "wait_for": "#content .card",
+      "state": "The desktop client's AI page with the hub's switch The AI tools use this gateway on; the entry reads 工具已指向中枢.",
+      "press": [
+        "#tabs .tab:has(span:text-is(\"{ui.panel_ai}\"))"
+      ],
+      "_todo": "the switch's on state is not in the committed client_state.json; the selector is not verified."
+    },
+    {
       "file": "modules_terminal_tab.png",
       "language": "en",
       "page": "agent/modules/terminal.md",
@@ -1222,7 +1252,7 @@
       "language": "zh",
       "page": "agent/modules/remote_desktop.md",
       "pages": [
-        "quick-start.md"
+        "quick-start/remote_desktop.md"
       ],
       "source": "panel",
       "viewport": "tall",
@@ -1272,7 +1302,10 @@
         ".tab_strip_tab:has(.tab_strip_name:text-is(\"File share\"))",
         ".modules_actions button:has-text(\"{ui.modules.configure}\")"
       ],
-      "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))"
+      "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))",
+      "pages": [
+        "quick-start/files.md"
+      ]
     },
     {
       "file": "gitea.png",
@@ -1401,7 +1434,8 @@
       "language": "zh",
       "page": "agent/modules/vscode.md",
       "pages": [
-        "scenarios/one_laptop_every_machine.md"
+        "scenarios/one_laptop_every_machine.md",
+        "quick-start/vscode.md"
       ],
       "source": "panel",
       "viewport": "tall",
@@ -1448,7 +1482,26 @@
         ".tab_strip_tab:has(.tab_strip_name:text-is(\"CloudCLI\"))",
         ".modules_actions button:has-text(\"{ui.modules.configure}\")"
       ],
-      "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))"
+      "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))",
+      "pages": [
+        "quick-start/cloudcli.md"
+      ]
+    },
+    {
+      "file": "app_web_cloudcli.png",
+      "language": "zh",
+      "page": "quick-start/cloudcli.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "The phone's Web screen with the CloudCLI row of your account on your computer, its Open button enabled."
+    },
+    {
+      "file": "app_cloudcli_session.png",
+      "language": "zh",
+      "page": "quick-start/cloudcli.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "The phone's browser on a CloudCLI session page opened from the Web screen: the session list and the message box both visible."
     },
     {
       "file": "client_connected.png",
@@ -1534,6 +1587,9 @@
       "state": "client_state.json as committed: the media share is mounted.",
       "press": [
         "#tabs .tab:has(span:text-is(\"{ui.panel_files}\"))"
+      ],
+      "pages": [
+        "quick-start/files.md"
       ]
     },
     {
@@ -1568,7 +1624,27 @@
         ".term_tab:has(.term_tab_label[title=\"server\"]) .term_tab_close",
         ".term_tab:has(.term_tab_label[title=\"desktop\"]) .term_tab_close",
         ".term_switches .switch:has-text(\"{ui.terminal_persistent}\")"
+      ],
+      "pages": [
+        "quick-start/terminal.md"
       ]
+    },
+    {
+      "file": "client_terminal_switches.png",
+      "language": "zh",
+      "page": "quick-start/terminal.md",
+      "source": "client",
+      "viewport": "desktop",
+      "url": "/",
+      "element": "viewport",
+      "wait_for": "#content .card",
+      "state": "The desktop client's Terminals page with one tab on your computer; Persistent and Shared both on, and the tab shows the 持久 and 共享 badges.",
+      "press": [
+        "#tabs .tab:has(span:text-is(\"{ui.panel_terminals}\"))",
+        ".term_switches .switch:has-text(\"{ui.terminal_persistent}\")",
+        ".term_switches .switch:has-text(\"{ui.terminal_shared}\")"
+      ],
+      "_todo": "the committed client_state.json has three sessions; closing the other tabs is not written yet."
     },
     {
       "file": "client_terminals_three.png",
@@ -1630,6 +1706,9 @@
       "state": "client_state.json as committed: viewers marks desktop's entry running, so its row reads Viewer open.",
       "press": [
         "#tabs .tab:has(span:text-is(\"{ui.panel_desktops}\"))"
+      ],
+      "pages": [
+        "quick-start/remote_desktop.md"
       ]
     },
     {
@@ -1658,7 +1737,19 @@
       "state": "client_state.json as committed: the VS Code entry on hub carries a forward, so its row reads the forwarded port.",
       "press": [
         "#tabs .tab:has(span:text-is(\"{ui.panel_web}\"))"
+      ],
+      "pages": [
+        "quick-start/vscode.md"
       ]
+    },
+    {
+      "file": "client_vscode_editor.png",
+      "language": "zh",
+      "page": "quick-start/vscode.md",
+      "source": "os",
+      "viewport": "desktop",
+      "state": "A browser on the laptop showing VS Code opened from the client's Web page, with a project folder of the computer open in the explorer.",
+      "_todo": "captured by hand; no capture.py recipe."
     },
     {
       "file": "app_join_scan.png",
@@ -1709,7 +1800,7 @@
       "language": "zh",
       "page": "client/android.md",
       "pages": [
-        "quick-start.md"
+        "quick-start/remote_desktop.md"
       ],
       "source": "app",
       "viewport": "app",
@@ -1769,7 +1860,7 @@
       "language": "zh",
       "page": "client/android.md",
       "pages": [
-        "quick-start.md"
+        "quick-start/files.md"
       ],
       "source": "app",
       "viewport": "app",
@@ -1791,7 +1882,7 @@
       "language": "zh",
       "page": "client/android.md",
       "pages": [
-        "quick-start.md"
+        "quick-start/terminal.md"
       ],
       "source": "app",
       "viewport": "app",
@@ -1813,7 +1904,7 @@
       "language": "zh",
       "page": "client/android.md",
       "pages": [
-        "quick-start.md"
+        "quick-start/remote_desktop.md"
       ],
       "source": "app",
       "viewport": "app",
@@ -2022,7 +2113,10 @@
       "page": "client/desktop.md",
       "source": "os",
       "viewport": "os",
-      "state": "File Explorer on Windows showing a share the client mapped to a drive letter."
+      "state": "File Explorer on Windows showing a share the client mapped to a drive letter.",
+      "pages": [
+        "quick-start/files.md"
+      ]
     },
     {
       "file": "win_tray_flyout.png",
