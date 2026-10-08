@@ -47,7 +47,7 @@ Windows 用账户的用户名和密码启动 VS Code 和 CloudCLI 实例，所�
 
 ## 保险库
 
-所有值都存在 `config/credentials/vault.json` 里。一把数据密钥加密这些值，名称和类型也一起加密。数据密钥本身用主口令封存，主口令在 `nhub setup` 时设定。`config/` 的备份里只有密文，恢复时要输入备份当时的主口令。
+所有值都存在 `config/credentials/vault.json` 里。一把数据密钥加密这些值，名称和类型也一起加密。数据密钥本身用主口令封存。主口令就是 `nhub setup` 时设定的口令，面板上叫 **保险库口令**（Vault passphrase）。`config/` 的备份里只有密文，恢复时要输入备份当时的主口令。
 
 中枢所在的机器在 `config/` 之外留着数据密钥的一份工作副本，所以中枢读保险库时不用主口令。缺了这份副本，保险库处于锁定状态，用到凭据的操作都返回 `vault_locked`。
 

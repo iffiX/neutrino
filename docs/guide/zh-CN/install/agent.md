@@ -10,7 +10,7 @@ title: 安装被控端
 
 ## 开始之前
 
-- 机器的系统在[支持的平台](../reference/platforms.md)的被控端一栏里。
+- 这台机器的系统列在[支持的平台](../reference/platforms.md)里被控端那一栏。
 - 你有这台机器的 root 权限，Windows 上是管理员权限。
 - 这台机器能访问中枢的 8443 端口。
 
@@ -137,7 +137,7 @@ joined https://192.168.1.10:8443 as <device-id>
 几秒之内，这台机器出现在 **已管理的设备** 里。在那台机器上运行 `sudo nagent status`，看被控端的服务和连接状态；Windows 上在管理员 PowerShell 里运行 `nagent status`。
 
 - `nagent join` 不带链接时，提示你粘贴一条。
-- 机器已经加入过别的中枢时，`nagent join` 先确认再替换；加 `--yes` 直接替换。
+- 机器已经加入过别的中枢时，`nagent join` 替换之前显示确认提示；加 `--yes` 直接替换。
 - 链接用过、无效或已过期时，中枢返回 `ticket_spent`。在面板里生成一条新链接再加入。
 
 ## 包在机器上装了什么

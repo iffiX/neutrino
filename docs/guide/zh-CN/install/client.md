@@ -90,7 +90,7 @@ Windows 上双击 `.msi` 也是同一个安装程序。保持勾选 **Add the Ne
 
 macOS 上，安装程序把 **Neutrino Client** 放进 `/Applications`，把 `nclient` 链接到 `/usr/local/bin`。这个应用只有临时签名，第一次打开时，在 Gatekeeper 的提示里确认一次。
 
-每个包都登记虚拟网用的系统服务：NetBird 守护进程和 EasyTier 守护进程。国内版的包只有 EasyTier 守护进程。Windows 上还多一个服务 `NeutrinoClientFiles`，**文件**（Files）页靠它把共享挂成盘符。客户端运行时升级，安装程序先让它退出，装完再在它主人的会话里打开它。
+每个包都登记虚拟网用的系统服务：NetBird 守护进程和 EasyTier 守护进程。国内版的包只有 EasyTier 守护进程。Windows 上还多一个服务 `NeutrinoClientFiles`，**文件**（Files）页靠它把共享挂成盘符。客户端运行时升级，安装程序先让它退出，装完再在原来那个账户的会话里打开它。
 
 ## 装安卓 App
 

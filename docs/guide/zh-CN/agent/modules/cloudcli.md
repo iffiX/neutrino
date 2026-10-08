@@ -9,7 +9,7 @@ CloudCLI 是一个跑 AI 编程会话的网页。**CloudCLI** 模块给受管机
 | 系统    | 能运行它的机器                    |
 | ------- | --------------------------------- |
 | Linux   | amd64 和 arm64，glibc 2.28 及以上 |
-| Windows | amd64 和 arm64                    |
+| Windows | amd64                             |
 | macOS   | Apple 芯片和 Intel                |
 
 ## 添加实例
