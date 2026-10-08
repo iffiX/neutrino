@@ -80,9 +80,9 @@ A row is the unit every page is made of:
 | --- | --- |
 | Left | the status dot, coloured by the row's state |
 | Body, line 1 | the title: the hub's name, the share's name, the machine's name |
-| Body, line 2 | the state word, as the tables on this page give it |
+| Body, line 2 | the state line: the state word as the tables on this page give it, then ` · ` and the action when the state waits for one (a countdown, or a button's name) |
 | Body, line 3 | the mono line: an address, a path, `by <hub>:<device>:<module>` |
-| Body, line 4 | the error line, when the row's last action or its state has a code, removed the moment a new action starts; the faint reason line, when a button is disabled |
+| Body, line 4 | the error line, when the row's last action has a code, removed the moment a new action starts; the faint reason line, when a button is disabled. A hub row's connection never writes this line: its codes are state words on line 2 |
 | Right | the row's actions, in one line; a red-outlined action, when the row has one, is the rightmost |
 
 On a phone the actions wrap under the body, right-aligned, in the same order.
@@ -118,8 +118,15 @@ languages, and the English column is the wording the English catalog holds.
 | `ui.through.relay` | SSH Relay |
 | `ui.state.rtt` | `<ms>` ms |
 | `ui.state.connecting` | Connecting… |
-| `ui.state.down` | Not connected |
-| `ui.state.pending` | Joined; the hub has not been reached yet |
+| `ui.state.hub_silent` | The hub did not answer |
+| `ui.state.hub_off_overlay` | The hub is not on the virtual network |
+| `ui.state.no_network` | No network |
+| `ui.state.untrusted` | Certificate mismatch |
+| `ui.state.admission_paused` | The hub pauses new devices |
+| `ui.state.unknown_device` | The hub does not know this device |
+| `ui.state.too_old` | Version too old |
+| `ui.state.join_refused` | Join refused |
+| `ui.action.retry_in` | retrying in `<s>` s |
 | `ui.state.replaced` | Replaced by another client |
 | `ui.state.disabled` | Disabled by the hub |
 | `ui.overlay.off` | Not connected |
@@ -145,8 +152,8 @@ The dot follows [visual.md](visual.md):
 | --- | --- |
 | green | `connected`, or the overlay `on`, or an entry that is not unhealthy |
 | amber, pulsing | `connecting`, or any job running on the row |
-| amber, still | `down` with a code nobody has to act on (`hub_unreachable`), `disabled`, or an unhealthy entry |
-| red | `down` with a code a person has to act on: `hub_untrusted`, `binding_unknown`, `protocol_too_old`, `protocol_too_new` |
+| amber, still | waiting on `hub_silent`, `hub_off_overlay`, `no_network` or `admission_paused`, `disabled`, or an unhealthy entry |
+| red | waiting on `untrusted`, `unknown_device`, `too_old` or `join_refused` |
 | grey | a hub never reached, or the overlay `off` |
 
 ## Refresh
@@ -157,9 +164,9 @@ new state replaces the work when it arrives. The state machine runs per hub:
 
 | State | Event | Next | What the page shows |
 | --- | --- | --- | --- |
-| idle | press, for every hub in `connected`, `connecting` or `down` | refreshing | the hub's error line is removed; its state word is `ui.job.refreshing` with a pulsing dot; every entry of that hub shows a pulsing dot and its action buttons are disabled; the overlay line's error is removed; the refresh button shows a spinner |
+| idle | press, for every hub in `connected`, `connecting` or waiting | refreshing | the hub's state line is `ui.job.refreshing` with a pulsing dot; every entry of that hub shows a pulsing dot and its action buttons are disabled; the overlay line's error is removed; the refresh button shows a spinner |
 | refreshing | a state frame arrives from the hub | idle | the new frame, drawn whole |
-| refreshing | the connection round ends in a code | idle | `ui.state.down` and the new error line |
+| refreshing | the connection round ends in a code | idle | the waiting state line the Hubs table gives for that code, with its countdown |
 | refreshing | 10 s pass | idle | whatever the document holds |
 | refreshing | press | refreshing | nothing; the button is disabled while any hub refreshes |
 
@@ -168,7 +175,7 @@ What the core does on the press, before it pushes:
 | Hub's connection | Action |
 | --- | --- |
 | `connected` | sends a report with `is_refresh: true`; the hub sends the whole state frame back whatever its hash; a report the socket cannot take closes the socket, and the hub goes to `connecting` as the Hubs table says |
-| `connecting` or `down` | puts the backoff at its floor, ends the current wait, resolves the hub's addresses again and starts a round, which dials them all at once ("The Hubs page") |
+| `connecting` or waiting | puts the backoff at its floor, ends the current wait and the round in flight, resolves the hub's addresses again and starts a round, which dials them all at once ("The Hubs page") |
 | `replaced` or `disabled` | nothing, and the hub does not enter refreshing; those states change only by a press on **Reconnect** or by the hub |
 
 The refresh and the automatic reconnection use the same loop. A refresh
@@ -185,20 +192,33 @@ starts no second loop; it moves the next round to now.
 ## The Hubs page
 
 The page is one card of hub rows and, under them, the join row. A hub row's
-state is its connection:
+state is its connection, and its state line says it in one of three kinds:
+the client is dialling, the client is connected, or the client stopped and
+waits for something. A waiting state's word is its reason, and the action
+after the ` · ` is what ends the wait:
 
-| State | Event | Next | Notes |
+| State line (English catalog) | Chinese | When | What ends it |
 | --- | --- | --- | --- |
-| `connecting` | the hub sends `welcome` | `connected` | the state word is `ui.state.connected_through` with the word for the state's `reached_through`, `ui.state.connected` until the first state names it |
-| `connecting` | the round ends in a code | `down` | the code is the error line; the next round runs after the backoff, up to one minute |
-| `connecting` | the code is `replaced` | `replaced` | |
-| `connected` | the socket closes | `connecting` | automatic, no error line |
-| `connected` | the hub rejects with a code | `down` | |
-| `connected` | the frame says the client is disabled | `disabled` | |
-| `down` | the backoff ends, or a refresh | `connecting` | |
-| `replaced` | press **Reconnect** | `connecting` | nothing automatic leaves `replaced` |
-| `disabled` | the frame says enabled | `connected` | no button acts on a disabled hub except **Leave** |
-| any | the code is `binding_unknown` | row removed, as after **Leave** | the hub no longer holds the client; the code's wording is a notice on the page with a close button, gone when closed, on **Refresh**, or after one minute |
+| `ui.state.connecting`, Connecting… | 连接中… | a round is dialling | the round ends |
+| `ui.state.connected_through` · `ui.state.rtt`, Connected · LAN · 1 ms | 已连接 · 局域网 · 1 ms | the round won; the two tags follow each `ping` | the socket closes: `connecting` at once, no wait |
+| `ui.state.hub_silent` · `ui.action.retry_in`, The hub did not answer · retrying in 5 s | 中枢未响应 · 5 秒后重试 | every address of the round failed, and the hub's virtual network is off or the hub has none | the countdown reaches 0, or a network change, or a refresh |
+| `ui.state.hub_off_overlay` · `ui.action.retry_in`, The hub is not on the virtual network · retrying in 5 s | 中枢未上虚拟网 · 5 秒后重试 | every address of the round failed while this client's virtual network of the hub's is `on` | the same |
+| `ui.state.no_network`, No network | 无网络 | the device has no network at all | the device's connectivity changing |
+| `ui.state.untrusted` · `ui.action.retry_in`, Certificate mismatch · retrying in 60 s | 证书不符 · 60 秒后重试 | `hub_untrusted` | the countdown, at `CLIENT_BACKOFF_MAX_S` each time |
+| `ui.state.admission_paused` · `ui.action.retry_in`, The hub pauses new devices · retrying in 60 s | 中枢暂停接纳 · 60 秒后重试 | `admission_paused {retry_after_s}` on the join | the countdown of `retry_after_s` |
+| `ui.state.unknown_device`, The hub does not know this device | 中枢不认识本机 | `binding_unknown` | nothing; **Leave** is the row's only action |
+| `ui.state.too_old`, Version too old | 版本太旧 | `protocol_too_old` or `protocol_too_new` | nothing automatic; a refresh after an upgrade |
+| `ui.state.join_refused` · `<the code's wording>`, Join refused · `<reason>` | 加入被拒 · 原因 | the hub refused the ticket (`ticket_spent`, any refusal of the join) | nothing; **Leave** |
+| `ui.state.replaced` · **Reconnect**, Replaced by another client · Reconnect | 已被替换 · 重新连接 | `replaced` | the press on **Reconnect** |
+| `ui.state.disabled`, Disabled by the hub | 已停用 | the frame says the client is disabled | the frame says enabled |
+
+A countdown is live: the state carries the moment of the next round, and
+the page redraws the seconds left once a second; at 0 the line reads
+`ui.state.connecting`. The wait between rounds is the backoff,
+`CLIENT_BACKOFF_MIN_S` doubling to `CLIENT_BACKOFF_MAX_S`, put back at the
+floor by a round that wins and by every network change. A row just joined
+runs its rounds like any other and reads the same lines; nothing says
+"pending".
 
 A connect round, a reconnect after the socket closed as much as the
 first, dials every candidate address of the hub at once: the hub's address
@@ -220,13 +240,16 @@ the port is reached").
 ### A network change starts a round
 
 A network change starts one round at once for every hub whose row is not
-`replaced` or `disabled`. Three events are network changes: a virtual network
+`replaced` or `disabled`. Four events are network changes: a virtual network
 of the hub's turning `on`, the device's own connectivity changing (an
 interface coming up or going down, a phone moving from a mobile network to
-Wi-Fi), and a state frame whose `urls` differ from the binding's. For a hub
-that is not `connected`, the round is the ordinary one. For a `connected`
-hub, the round runs beside the live channel, and the round trip measure
-follows on whichever socket carries the channel afterwards.
+Wi-Fi), a state frame whose `urls` differ from the binding's, and the
+engine's peer list changing on a virtual network that is `on` (a peer
+appearing or going). For a hub that is not `connected`, the change ends
+the wait and the round in flight, if any, and the new round starts at once:
+a dial still waiting out its connect time is closed, not waited for. For a
+`connected` hub, the round runs beside the live channel, and the round trip
+measure follows on whichever socket carries the channel afterwards.
 
 The client knows each candidate's path before its `hello`: the hub's address
 on a virtual network is that engine's, the state's `relay_url` is the
@@ -293,10 +316,10 @@ row pending.
 
 | Rule | Reason |
 | --- | --- |
-| A join (a scanned QR or a pasted link) stores the binding at once, with the link's ticket kept and no token yet, and the Hubs page shows the hub's row in the same frame: the state word is `ui.state.pending` ("Joined; the hub has not been reached yet"), the mono line is the link's first address, and the virtual network line is live from the link's `overlays`, with its picker and **Connect**. | Nothing a person pastes or scans is refused for the hub being out of reach at that moment: a phone on 4G adds the hub now and reaches it later. The link carries the network's material at once. |
+| A join (a scanned QR or a pasted link) stores the binding at once, with the link's ticket kept and no token yet, and the Hubs page shows the hub's row in the same frame: the state line reads `ui.state.connecting` as its first round starts, the mono line is the link's first address, and the virtual network line is live from the link's `overlays`, with its picker and **Connect**. | Nothing a person pastes or scans is refused for the hub being out of reach at that moment: a phone on 4G adds the hub now and reaches it later. The link carries the network's material at once. |
 | The channel's rounds run as for any hub. The first time an address answers with the pinned certificate, the client spends the ticket there (`POST /api/channel/join`), keeps the token, and only then sends `hello`; from then on the binding is ordinary. | The join and the first channel share one reachable address, whichever path gave it. |
-| A ticket the hub refuses (`ticket_spent`, or any refusal of the join) puts the row in `down` with that code, **Leave** as its only action, and no further rounds; the person scans again. | A dead ticket cannot be revived; a loop on it is a hang with a name. |
-| `admission_paused {retry_after_s}` is the one transient refusal of the join: the client keeps the ticket, leaves the row `pending` with the code on its error line, and joins again after `retry_after_s` seconds. | The hub paused new enrolments after too many failures; the ticket behind the pause is still valid. |
+| A ticket the hub refuses (`ticket_spent`, or any refusal of the join) puts the row on the `join_refused` line with that code's wording, **Leave** as its only action, and no further rounds; the person scans again. | A dead ticket cannot be revived; a loop on it is a hang with a name. |
+| `admission_paused {retry_after_s}` is the one transient refusal of the join: the client keeps the ticket, the row reads the `admission_paused` line counting down `retry_after_s`, and the client joins again when it reaches 0. | The hub paused new enrolments after too many failures; the ticket behind the pause is still valid. |
 | A ticket lives 30 minutes, which the Clients page says beside the QR. | A phone that has to raise a network first needs more than five minutes. |
 
 ### The virtual network line
