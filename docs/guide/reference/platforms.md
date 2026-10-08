@@ -4,7 +4,7 @@ title: Supported platforms
 
 # Supported platforms
 
-Neutrino 0.5.0 has a hub, an agent, a desktop client and an Android app, and each table on this page names the systems one of them installs on and the release file for each. Every file is on the [releases page](https://github.com/iffiX/neutrino/releases), beside `SHA256SUMS` and the source archive. Every build is 64-bit.
+Neutrino 0.5.0 has four installable parts: the hub, the agent, the desktop client and the Android app. Each table here names the systems one part installs on, with its release file. Every file is on the [releases page](https://github.com/iffiX/neutrino/releases), beside `SHA256SUMS` and the source archive. Every build is 64-bit.
 
 ## Hub
 
@@ -15,8 +15,13 @@ Neutrino 0.5.0 has a hub, an agent, a desktop client and an Android app, and eac
 | Fedora 41 and newer; RHEL 9 family (AlmaLinux, Rocky) with EPEL enabled first            | x86-64       | `neutrino-hub-0.5.0-1.x86_64.rpm`         |
 | the same                                                                                 | ARM64        | `neutrino-hub-0.5.0-1.aarch64.rpm`        |
 | Arch, EndeavourOS, Manjaro                                                               | x86-64       | `neutrino-hub-0.5.0-1-x86_64.pkg.tar.zst` |
+| Windows 10 1809 and newer, Windows 11, server mode only                                  | x86-64       | `neutrino-hub-0.5.0-windows-amd64.msi`    |
+| macOS 12.3 and newer on Apple silicon, server mode only                                  | ARM64        | `neutrino-hub-0.5.0-macos-arm64.pkg`      |
+| macOS 12.3 and newer on Intel, server mode only                                          | x86-64       | `neutrino-hub-0.5.0-macos-amd64.pkg`      |
 
-The hub package includes its own Python and depends on systemd, nftables, dnsmasq, iproute2, wpa_supplicant, dhcpcd, fail2ban, iw, arp-scan, vnstat, curl, smbclient and pkexec. It recommends hostapd for a box that serves Wi-Fi. On the Debian family the dhcpcd dependency is `dhcpcd-base | dhcpcd5`, because Ubuntu 22.04 has the daemon under the second name, and pkexec is `pkexec | policykit-1`; on the Fedora family and Arch it comes with `polkit`.
+The Linux hub package includes its own Python. It depends on systemd, nftables, dnsmasq, iproute2, wpa_supplicant, dhcpcd, fail2ban, iw, arp-scan, vnstat, curl, smbclient, the OpenSSH client and pkexec. It recommends hostapd for a machine that serves Wi-Fi.
+
+On the Debian family the dhcpcd dependency reads `dhcpcd-base | dhcpcd5`, because Ubuntu 22.04 has the daemon under the second name. The pkexec dependency reads `pkexec | policykit-1` there, and on the Fedora family and Arch it is `polkit`. The Windows and macOS packages include every program the hub drives and name no dependency. Server mode, the one mode the hub has there, is described on [Network](../hub/network.md).
 
 ## Agent
 
@@ -28,8 +33,11 @@ The hub package includes its own Python and depends on systemd, nftables, dnsmas
 | the same                                                            | ARM64        | `neutrino-agent-0.5.0-1.aarch64.rpm`     |
 | Windows 10 1809 and newer, Windows 11                               | x86-64       | `neutrino-agent-0.5.0-windows-amd64.msi` |
 | macOS 12.3 and newer on Apple silicon                               | ARM64        | `neutrino-agent-0.5.0-macos-arm64.pkg`   |
+| macOS 12.3 and newer on Intel                                       | x86-64       | `neutrino-agent-0.5.0-macos-amd64.pkg`   |
 
-The agent has no window. On Linux it runs as root, and its package includes its own interpreter and the RustDesk host. On Windows it runs as a LocalSystem service and on macOS as a root LaunchDaemon; both installers include the compiled agent and RustDesk. Windows 10 1809 is the first release with the pseudo console the terminal runs on. The Windows build is x86-64 only, because RustDesk publishes no Windows ARM64 build.
+The agent has no window. On Linux it runs as root, and its package includes its own interpreter and the RustDesk host. On Windows it runs as a LocalSystem service and on macOS as a root LaunchDaemon.
+
+The Windows and macOS installers put RustDesk in the agent's own directory. The agent registers it with the system only while the machine's **Remote desktop** switch is on. Windows 10 1809 is the first release with the pseudo console the terminal runs on. The Windows build is x86-64 only, because RustDesk publishes no Windows ARM64 build.
 
 ## Desktop client
 
@@ -41,8 +49,9 @@ The agent has no window. On Linux it runs as root, and its package includes its 
 | the same                                                                         | ARM64        | `neutrino-client-0.5.0-1.aarch64.rpm`     |
 | Windows 10 1809 and newer, Windows 11                                            | x86-64       | `neutrino-client-0.5.0-windows-amd64.msi` |
 | macOS 12.3 and newer on Apple silicon                                            | ARM64        | `neutrino-client-0.5.0-macos-arm64.pkg`   |
+| macOS 12.3 and newer on Intel                                                    | x86-64       | `neutrino-client-0.5.0-macos-amd64.pkg`   |
 
-The Linux client opens its window on either WebKitGTK ABI, 4.1 or 4.0, and needs `cifs-utils` and polkit for shares. Without the appindicator library the tray is drawn as a GTK status icon. The Windows build is x86-64 only, because cc-switch publishes no Windows ARM64 build, and it installs WebView2 when the runtime is absent.
+The Linux client opens its window on either WebKitGTK ABI, 4.1 or 4.0, and needs `cifs-utils` and polkit for shares. Without the AppIndicator library, the tray is drawn as a GTK status icon. The Windows build is x86-64 only, because cc-switch publishes no Windows ARM64 build, and its installer adds WebView2 when the runtime is absent.
 
 ## Android app
 
@@ -52,27 +61,41 @@ The Linux client opens its window on either WebKitGTK ABI, 4.1 or 4.0, and needs
 
 Android 8.0 is API level 26, the `minSdk` the app declares, and the phone's installer rejects the app on an older system.
 
+## Editions
+
+Each release has two editions built from one source at the same version. The full edition is on GitHub, and the mainland edition is on [Gitee](https://gitee.com/iffiX/neutrino/releases), with file names of the same pattern. The release page a file comes from names its edition.
+
+| Edition  | Files                                                                                                                                                | Left out                                                                                    |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| full     | every file in the tables on this page                                                                                                                | nothing                                                                                     |
+| mainland | for the hub, the agent and the desktop client: the `.deb` for x86-64 and ARM64, the Windows `.msi`, the Apple silicon `.pkg`; and the Android `.apk` | the hub has no proxy and no NetBird; the desktop client and the Android app have no NetBird |
+
+The agent program is the same in both editions; the mainland release has fewer of its files. A package upgrades only to a package of its own edition.
+
 ## Modules by system
 
-A module the machine's system cannot run is greyed out in the **Modules** page's picker with **This machine's system cannot run it**. The table reads from the module manifests the hub carries.
+A module the machine's system cannot run is greyed in the **Modules** page's picker with **This machine's system cannot run it**. The table follows the module manifests the hub includes. A **yes** under Windows means x86-64, the one Windows agent build.
 
-| Module                                                 | Linux                                               | Windows                     | macOS                       |
-| ------------------------------------------------------ | --------------------------------------------------- | --------------------------- | --------------------------- |
-| File share                                             | Samba from the distribution's packages              | the system's own SMB server | the system's own SMB server |
-| Gitea                                                  | x86-64 and ARM64                                    | no                          | no                          |
-| Containers                                             | Podman from the distribution's packages             | no                          | no                          |
-| ZFS storage                                            | OpenZFS from the repository each family keeps it in | no                          | no                          |
-| VS Code                                                | x86-64 and ARM64, glibc 2.28 and newer              | x86-64                      | Apple silicon and Intel     |
-| code-server                                            | x86-64 and ARM64, glibc 2.28 and newer              | no                          | Apple silicon and Intel     |
-| CloudCLI                                               | x86-64 and ARM64, glibc 2.28 and newer              | x86-64 and ARM64            | Apple silicon and Intel     |
-| AnyDesk, TeamViewer, as remote desktops on **Devices** | detected when a person installed it                 | the same                    | the same                    |
+| Module                                                 | Linux                                                               | Windows                                                | macOS                       |
+| ------------------------------------------------------ | ------------------------------------------------------------------- | ------------------------------------------------------ | --------------------------- |
+| File share                                             | Samba from the distribution's packages                              | the system's own SMB server                            | the system's own SMB server |
+| Terminal                                               | x86-64 and ARM64; the module sets the account and the shell program | yes; the module sets the shell program, and no account | Apple silicon and Intel     |
+| Remote desktop                                         | x86-64 and ARM64                                                    | yes                                                    | Apple silicon and Intel     |
+| Gitea                                                  | x86-64 and ARM64                                                    | yes                                                    | Apple silicon and Intel     |
+| Containers                                             | Podman from the distribution's packages                             | none                                                   | none                        |
+| ZFS storage                                            | OpenZFS from the repository each family keeps it in                 | none                                                   | none                        |
+| VS Code                                                | x86-64 and ARM64, glibc 2.28 and newer                              | yes                                                    | Apple silicon and Intel     |
+| code-server                                            | x86-64 and ARM64, glibc 2.28 and newer                              | none                                                   | Apple silicon and Intel     |
+| CloudCLI                                               | x86-64 and ARM64, glibc 2.28 and newer                              | yes                                                    | Apple silicon and Intel     |
+| AnyDesk, TeamViewer, as remote desktops on **Devices** | detected when a person installed it                                 | the same                                               | the same                    |
 
-The agent reads its modules at these versions of what the machine provides:
+The agent drives these programs at these versions or newer:
 
-| Program            | Oldest version                              |
-| ------------------ | ------------------------------------------- |
-| Podman             | 3.4; from 4.4 a container is a Quadlet file |
-| Samba              | 4.15                                        |
-| ZFS                | 2.1                                         |
-| Windows PowerShell | 5.1, for the file share on Windows          |
-| macOS              | 12, for the file share on macOS             |
+| Program            | Oldest version                                         |
+| ------------------ | ------------------------------------------------------ |
+| Podman             | 3.4; from 4.4 a container is a Quadlet file            |
+| Samba              | 4.15                                                   |
+| ZFS                | 2.1                                                    |
+| git                | 2.0, for Gitea; on Windows and macOS the machine's own |
+| Windows PowerShell | 5.1, for the file share on Windows                     |
+| macOS              | 12, for the file share on macOS                        |
