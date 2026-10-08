@@ -159,6 +159,7 @@ The sidebar's lines under the two renamed entries:
 | `ui.overlay.apply_engine`, the engine panel's apply bar | Apply access | 应用外部访问 |
 | `ui.nav.overlay_description` | Reaching this hub from outside | 从外面连回这台中枢 |
 | `ui.nav.modules_description`, `ui.nav.modules_description_other` | Features configured on each machine | 每台机器配置的功能 |
+| `ui.overlay.join_step_network`, `ui.overlay.join_step_peer`, `ui.overlay.join_step_key` | In the console, open Setup Keys and create a key. Make the key reusable with no usage limit, so every client of this hub can join with it. Copy the key it shows once and paste it below. | 在控制台里打开 Setup Keys，新建一把 key。把它设成可重复使用（reusable）、不限使用次数，这台中枢的每个客户端都用它加入。复制它只显示一次的 key，粘贴到下面。 |
 
 A docs page follows this table where the term list in
 [doc-author](../../doc-author/SKILL.md) offers a choice.

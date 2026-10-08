@@ -97,8 +97,6 @@ interface ShellTab {
   title: string;
   /** Whether the tab has a socket; a listed session attaches when picked. */
   isAttached: boolean;
-  /** Whether the panel may attach: its own session or a shared one. */
-  isAttachable: boolean;
   /** Whether the session is one the machine listed, attached with its kept
    * output rather than started. */
   isResumed: boolean;
@@ -238,7 +236,6 @@ export function TerminalsPage() {
       deviceId: selectedDevice.device_id,
       title: selectedDevice.name,
       isAttached: true,
-      isAttachable: true,
       isResumed: false,
       isListed: false,
       isEnded: false,
@@ -447,16 +444,6 @@ export function TerminalsPage() {
                   }
                 />
               ))}
-            {activeTab !== null &&
-              !activeTab.isAttached &&
-              !activeTab.isEnded && (
-                <div className="placeholder">
-                  <span>{t("ui.terminals.private", { owner: ownerName })}</span>
-                  <span className="faint">
-                    {t("ui.terminals.private_hint")}
-                  </span>
-                </div>
-              )}
           </div>
 
           <div className="terminal_panel_status">
@@ -596,11 +583,7 @@ function mergeTabs(
   const merged = current.map((tab) => {
     const row = listed.find((entry) => entry.session_id === tab.sessionId);
     if (row !== undefined) {
-      return {
-        ...tab,
-        isListed: true,
-        isAttachable: row.is_owned || row.is_shared,
-      };
+      return { ...tab, isListed: true };
     }
     return tab.isListed && !tab.isEnded ? { ...tab, isEnded: true } : tab;
   });
@@ -614,7 +597,6 @@ function mergeTabs(
       deviceId: row.device_id,
       title: row.device_name,
       isAttached: false,
-      isAttachable: row.is_owned || row.is_shared,
       isResumed: true,
       isListed: true,
       isEnded: false,
@@ -678,10 +660,10 @@ function isPlainTab(
   return isOwned(tab, row) && !flags.is_persistent && !flags.is_shared;
 }
 
-/** The tabs with one attached, when the panel may attach to its session. */
+/** The tabs with one attached, unless its session has ended. */
 function withAttached(tabs: ShellTab[], sessionId: string): ShellTab[] {
   return tabs.map((tab) =>
-    tab.sessionId === sessionId && tab.isAttachable && !tab.isEnded
+    tab.sessionId === sessionId && !tab.isEnded
       ? { ...tab, isAttached: true }
       : tab,
   );

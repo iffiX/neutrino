@@ -161,7 +161,7 @@
   "ui.cloudcli.apply": "Apply CloudCLI",
   "ui.cloudcli.apply_hint": "Saves the instances, installs CloudCLI for each account and restarts them on the machine.",
   "ui.cloudcli.empty": "No instances. Add one per account that uses CloudCLI here.",
-  "ui.cloudcli.instances_hint": "One instance per account, each on its own port. Each account needs its own Claude Code installed.",
+  "ui.cloudcli.instances_hint": "One instance per account, each on its own port.",
   "ui.cloudcli.instances_title": "Instances",
   "ui.cloudcli.login": "Windows login for {account}",
   "ui.cloudcli.login_hint": "Windows installs and starts this instance with this login.",

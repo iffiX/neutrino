@@ -354,7 +354,7 @@
   "ui.overlay.leave_body": "这台中枢会从网络里删掉。只经 NetBird 进来的人会失去通路。",
   "ui.overlay.leave_title": "离开 NetBird 网络",
   "ui.overlay.management_label": "管理面",
-  "ui.overlay.management_unreachable": "管理面不可达。如果处在网络限制之后，请在“代理”页打开“让 微子·中枢 自己的流量走代理”。",
+  "ui.overlay.management_unreachable": "管理面不可达。",
   "ui.overlay.management_url_placeholder": "管理面地址（留空则用 netbird.io）",
   "ui.overlay.mode_console": "EasyTier 控制台",
   "ui.overlay.mode_console_summary": "由 EasyTier 官方控制台下发网络。",
@@ -548,8 +548,6 @@
   "ui.terminals.no_tabs_hint": "在上面选一台机器，然后打开终端。",
   "ui.terminals.opened_by": "由 {owner} 打开",
   "ui.terminals.persistent": "持久",
-  "ui.terminals.private": "由 {owner} 打开，没有共享",
-  "ui.terminals.private_hint": "只有打开它的一方能连上。",
   "ui.terminals.shared": "共享",
   "ui.terminals.tabs_label": "终端会话",
   "ui.terminals.title": "终端"

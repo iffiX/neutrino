@@ -161,7 +161,7 @@
   "ui.cloudcli.apply": "应用 CloudCLI",
   "ui.cloudcli.apply_hint": "保存实例，为每个账户装好 CloudCLI，并在机器上重启它们。",
   "ui.cloudcli.empty": "没有实例。每个在这里用 CloudCLI 的账户加一个。",
-  "ui.cloudcli.instances_hint": "每个账户一个实例，各用各的端口。每个账户要自己装好 Claude Code。",
+  "ui.cloudcli.instances_hint": "每个账户一个实例，各用各的端口。",
   "ui.cloudcli.instances_title": "实例",
   "ui.cloudcli.login": "{account} 的 Windows 登录",
   "ui.cloudcli.login_hint": "Windows 用这个登录安装并启动这个实例。",

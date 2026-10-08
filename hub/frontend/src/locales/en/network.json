@@ -354,7 +354,7 @@
   "ui.overlay.leave_body": "This hub is deleted from the network. A person who reaches it only through NetBird loses the way in.",
   "ui.overlay.leave_title": "Leave the NetBird network",
   "ui.overlay.management_label": "Management",
-  "ui.overlay.management_unreachable": "Management plane unreachable. If behind a filter, turn on \"Send Neutrino Hub's own traffic through the proxy\" on the Proxy page.",
+  "ui.overlay.management_unreachable": "Management plane unreachable.",
   "ui.overlay.management_url_placeholder": "management URL (empty for netbird.io)",
   "ui.overlay.mode_console": "EasyTier console",
   "ui.overlay.mode_console_summary": "EasyTier's official console sets the network.",
@@ -548,8 +548,6 @@
   "ui.terminals.no_tabs_hint": "Pick a machine above and open a terminal on it.",
   "ui.terminals.opened_by": "Opened by {owner}",
   "ui.terminals.persistent": "Persistent",
-  "ui.terminals.private": "Opened by {owner} and not shared",
-  "ui.terminals.private_hint": "Only its owner can attach.",
   "ui.terminals.shared": "Shared",
   "ui.terminals.tabs_label": "Shells",
   "ui.terminals.title": "Terminals"
