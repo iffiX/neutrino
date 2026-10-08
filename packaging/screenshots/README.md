@@ -15,7 +15,7 @@ lists from one image.
 | `redact.local.json` | Optional, ignored by git: more `literals` in the same shape, for names you do not commit. |
 | `capture.py` | Signs in to the panel, takes the panel, client and console shots, and prints what it replaced in each. |
 | `client_window.py` | Serves the desktop client's window page from `client_state.json`, for the client shots. |
-| `client_state.json` | The state the client window draws, with made-up hubs, addresses and names. |
+| `client_state.json` | The state the client window draws, with made-up hubs, addresses and names. Its `_variants` hold named changes, each a map of dotted paths to values, and an entry's `client_variant` lays one over the state for that shot. |
 | `check_shots.py` | Fails when a page uses an image the table does not name, or the table names an image no page uses. `npm run check` in `docs/guide` runs it. |
 
 ## Set up the tool

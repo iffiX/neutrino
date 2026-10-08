@@ -8,7 +8,8 @@ page draws from is answered; any other request returns the state unchanged. A
 terminal open is answered with an id and the prompt of a root shell on that
 machine, which the bridge pushes to the page as the shell's output, and a
 persist sets the session's two flags as the hub would confirm them and is
-pushed as the next state. Each load of the page starts again from the file.
+pushed as the next state. Each load of the page starts again from the file,
+with the variant a shot names laid over it.
 """
 
 import base64
@@ -47,6 +48,9 @@ window.pywebview = {
 </script>"""
 # What a terminal opened on a machine shows first: the prompt of a root shell.
 TERMINAL_PROMPT = "root@{name}:~# "
+# The state file's key holding the variants, each a map of dotted paths to the
+# values a shot sets over the file's state; the key is not served.
+VARIANTS_KEY = "_variants"
 
 
 class ClientWindowServer:
@@ -61,6 +65,8 @@ class ClientWindowServer:
         """
         self._state_path = state_path
         self._language = language
+        # The variant laid over the file's state at the next load, or empty.
+        self.variant = ""
         self.state = {}
         # The session each open terminal attached, by terminal id.
         self._sessions = {}
@@ -69,13 +75,24 @@ class ClientWindowServer:
         self._thread = None
 
     def reset(self) -> None:
-        """Put the state back to the file's, for a fresh page.
+        """Put the state back to the file's and its variant, for a fresh page.
 
         Raises:
             OSError: When the state file cannot be read.
             json.JSONDecodeError: When it is not JSON.
+            KeyError: When the variant or a path in it is not in the file.
         """
         self.state = json.loads(self._state_path.read_text())
+        variants = self.state.pop(VARIANTS_KEY, {})
+        for path, value in (variants[self.variant] if self.variant else {}).items():
+            *parents, last = path.split(".")
+            target = self.state
+            for part in parents:
+                target = target[int(part)] if isinstance(target, list) else target[part]
+            if isinstance(target, list):
+                target[int(last)] = value
+            else:
+                target[last] = value
         self.state["language"] = self._language
         self._sessions = {}
 

@@ -267,5 +267,13 @@
     }
   ],
   "viewers": { "h1/rdp_desktop": { "is_running": true } },
-  "rdp_work": { "state": "idle", "step": "", "code": "", "params": {} }
+  "rdp_work": { "state": "idle", "step": "", "code": "", "params": {} },
+  "_variants": {
+    "ai_on": {
+      "exit_hub_id": "h1",
+      "hubs.0.is_exit": true,
+      "ai.is_enabled": true,
+      "ai.is_active": true
+    }
+  }
 }

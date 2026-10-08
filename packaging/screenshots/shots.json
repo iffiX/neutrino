@@ -359,10 +359,14 @@
       "source": "panel",
       "viewport": "desktop",
       "url": "/network",
-      "element": "section.card:has(.network_roles)",
-      "wait_for": ".network_roles",
-      "state": "A hub in router mode with two wired interfaces, one in the WAN role and one in the LAN role; the WAN interface's tab is selected.",
-      "_todo": "The element selector is read from network_page.tsx and not yet checked against the live page."
+      "element": "viewport",
+      "wait_for": ".network_role--on",
+      "state": "Router mode with two wired interfaces, one in the WAN role and one in the LAN role; the WAN interface's tab is selected.",
+      "ready": ".tab_strip",
+      "press": [
+        ".tab_strip_tab:has(.tab_strip_tag:text-is(\"wan\"))"
+      ],
+      "scroll_to": ".tab_strip"
     },
     {
       "file": "network_exposure.png",
@@ -385,10 +389,14 @@
       "source": "panel",
       "viewport": "desktop",
       "url": "/network",
-      "element": "section.card:has(.network_roles)",
-      "wait_for": ".network_roles",
+      "element": "viewport",
+      "wait_for": ".network_role--on",
       "state": "Router mode with two wired ports: one with the role WAN on DHCP, one with the role LAN at 192.168.8.1/24; the LAN port's tab is selected, so its role section and DHCP fields show.",
-      "_todo": "The element selector and the press that selects the LAN tab are not verified against the live page."
+      "ready": ".tab_strip",
+      "press": [
+        ".tab_strip_tab:has(.tab_strip_tag:text-is(\"lan\"))"
+      ],
+      "scroll_to": ".tab_strip"
     },
     {
       "file": "overlay_switches.png",
@@ -437,15 +445,15 @@
       "language": "en",
       "page": "scenarios/vps_relay.md",
       "source": "panel",
-      "viewport": "desktop",
+      "viewport": "tall",
       "url": "/overlay",
-      "element": "section.settings_group:has(h2:text-is(\"{ui.overlay.settings_title}\"))",
+      "element": "viewport",
       "wait_for": ".relay_fact_value",
       "state": "SSH Relay enabled and applied with a server, an account and a key; Status reads Connected and Address for clients shows https://<server>:<public-port>.",
       "press": [
         ".overlay_choice:has(strong:text-is(\"{ui.overlay.relay_title}\")) .overlay_choice_select"
       ],
-      "_todo": "The section and wait_for selectors are copied from overlay_direct_settings and not yet checked on the SSH Relay card."
+      "scroll_to": ".overlay_product_header:has(h2:text-is(\"{ui.overlay.relay_title}\"))"
     },
     {
       "file": "overlay_direct_settings.png",
@@ -466,14 +474,15 @@
       "language": "zh",
       "page": "scenarios/vps_relay.md",
       "source": "panel",
-      "viewport": "desktop",
+      "viewport": "tall",
       "url": "/overlay",
       "element": "viewport",
       "wait_for": ".relay_fact_value",
       "state": "SSH Relay enabled and configured against a reachable server, Status reads connected, and Address for clients shows https://<server>:<port>.",
       "press": [
         ".overlay_choice:has(strong:text-is(\"{ui.overlay.relay_title}\")) .overlay_choice_select"
-      ]
+      ],
+      "scroll_to": ".overlay_product_header:has(h2:text-is(\"{ui.overlay.relay_title}\"))"
     },
     {
       "file": "overlay_easytier_settings.png",
@@ -699,9 +708,9 @@
       "source": "panel",
       "viewport": "desktop",
       "url": "/proxy",
-      "element": "viewport",
-      "wait_for": ".page",
-      "state": "Two or more exit nodes, one of them active."
+      "element": ".settings_group:has(h2:text-is(\"{ui.proxy.nodes_title}\"))",
+      "wait_for": ".node_card",
+      "state": "One exit node added from a share link and applied, with the proxy's scopes off so nothing is diverted; the node is probed and unreachable."
     },
     {
       "file": "proxy_nodes.png",
@@ -710,9 +719,9 @@
       "source": "panel",
       "viewport": "desktop",
       "url": "/proxy",
-      "element": "viewport",
-      "wait_for": ".page",
-      "state": "Two or more exit nodes, one of them active."
+      "element": ".settings_group:has(h2:text-is(\"{ui.proxy.nodes_title}\"))",
+      "wait_for": ".node_card",
+      "state": "One exit node added from a share link and applied, with the proxy's scopes off so nothing is diverted; the node is probed and unreachable."
     },
     {
       "file": "proxy_routing.png",
@@ -1273,11 +1282,11 @@
       "url": "/",
       "element": "viewport",
       "wait_for": "#content .card",
-      "state": "The desktop client's AI page with the hub's switch The AI tools use this gateway on; the entry reads 工具已指向中枢.",
+      "state": "client_state.json with the variant ai_on: the hub is the exit and its AI gateway is in use, so the entry reads 工具已指向中枢.",
       "press": [
         "#tabs .tab:has(span:text-is(\"{ui.panel_ai}\"))"
       ],
-      "_todo": "the switch's on state is not in the committed client_state.json; the selector is not verified."
+      "client_variant": "ai_on"
     },
     {
       "file": "modules_terminal_tab.png",
@@ -1308,7 +1317,7 @@
       "state": "server online with an account chosen in its Terminal module.",
       "press": [
         ".device_chip:has(.device_chip_name:text-is(\"server\"))",
-        ".tab_strip_tab:has(.tab_strip_name:text-is(\"Terminal\"))",
+        ".tab_strip_tab:has(.tab_strip_name:text-is(\"终端\"))",
         ".modules_actions button:has-text(\"{ui.modules.configure}\")"
       ],
       "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))"
@@ -1351,7 +1360,7 @@
       "state": "The quick start's one machine, your computer, with its Remote desktop switch on and applied.",
       "press": [
         ".device_chip:has(.device_chip_name:text-is(\"desktop\"))",
-        ".tab_strip_tab:has(.tab_strip_name:text-is(\"Remote desktop\"))",
+        ".tab_strip_tab:has(.tab_strip_name:text-is(\"远程桌面\"))",
         ".modules_actions button:has-text(\"{ui.modules.configure}\")"
       ],
       "hide": [
@@ -1391,7 +1400,7 @@
       "state": "desktop with the File share module running and one share.",
       "press": [
         ".device_chip:has(.device_chip_name:text-is(\"desktop\"))",
-        ".tab_strip_tab:has(.tab_strip_name:text-is(\"File share\"))",
+        ".tab_strip_tab:has(.tab_strip_name:text-is(\"文件共享\"))",
         ".modules_actions button:has-text(\"{ui.modules.configure}\")"
       ],
       "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))",
@@ -1462,7 +1471,7 @@
       "state": "server with two declared containers, one publishing a port.",
       "press": [
         ".device_chip:has(.device_chip_name:text-is(\"server\"))",
-        ".tab_strip_tab:has(.tab_strip_name:text-is(\"Containers\"))",
+        ".tab_strip_tab:has(.tab_strip_name:text-is(\"容器\"))",
         ".modules_actions button:has-text(\"{ui.modules.configure}\")"
       ],
       "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))"
@@ -1496,7 +1505,7 @@
       "state": "server with a ZFS pool.",
       "press": [
         ".device_chip:has(.device_chip_name:text-is(\"server2\"))",
-        ".tab_strip_tab:has(.tab_strip_name:text-is(\"ZFS storage\"))",
+        ".tab_strip_tab:has(.tab_strip_name:text-is(\"ZFS 存储\"))",
         ".modules_actions button:has-text(\"{ui.modules.configure}\")"
       ],
       "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.zfs.pools_title}\"))"
@@ -1683,11 +1692,11 @@
       "url": "/",
       "element": "viewport",
       "wait_for": "#content .card",
-      "state": "The AI page with the hub's entry in use: The AI tools use this gateway selected, and the entry reads The tools point at the hub.",
+      "state": "client_state.json with the variant ai_on: the hub is the exit and its AI gateway is in use, so the entry reads The tools point at the hub.",
       "press": [
         "#tabs .tab:has(span:text-is(\"{ui.panel_ai}\"))"
       ],
-      "_todo": "client_state.json has ai.is_active false; the shot needs a state with the hub's gateway in use."
+      "client_variant": "ai_on"
     },
     {
       "file": "client_files_mounted.png",
@@ -1735,15 +1744,14 @@
       "url": "/",
       "element": "viewport",
       "wait_for": "#content .card",
-      "state": "client_state.json as committed: one session on the hub's machine, with Persistent and Shared switched on before the shot, so its tab shows the kept and shared badges.",
+      "state": "client_state.json as committed: one session on each machine; the server and desktop tabs are closed, and the hub's shell is switched to Persistent and Shared before the shot, so its tab shows both badges.",
       "press": [
         "#tabs .tab:has(span:text-is(\"{ui.panel_terminals}\"))",
         ".term_tab:has(.term_tab_label[title=\"server\"]) .term_tab_close",
         ".term_tab:has(.term_tab_label[title=\"desktop\"]) .term_tab_close",
         ".term_switches .switch:has-text(\"{ui.terminal_persistent}\")",
         ".term_switches .switch:has-text(\"{ui.terminal_shared}\")"
-      ],
-      "_todo": "The Shared selector follows the Persistent one and is not yet checked against the live page."
+      ]
     },
     {
       "file": "client_terminal.png",
@@ -1774,13 +1782,14 @@
       "url": "/",
       "element": "viewport",
       "wait_for": "#content .card",
-      "state": "The desktop client's Terminals page with one tab on your computer; Persistent and Shared both on, and the tab shows the 持久 and 共享 badges.",
+      "state": "client_state.json as committed: one session on each machine; the server and desktop tabs are closed, and the hub's shell is switched to Persistent and Shared before the shot, so its tab shows both badges.",
       "press": [
         "#tabs .tab:has(span:text-is(\"{ui.panel_terminals}\"))",
+        ".term_tab:has(.term_tab_label[title=\"server\"]) .term_tab_close",
+        ".term_tab:has(.term_tab_label[title=\"desktop\"]) .term_tab_close",
         ".term_switches .switch:has-text(\"{ui.terminal_persistent}\")",
         ".term_switches .switch:has-text(\"{ui.terminal_shared}\")"
-      ],
-      "_todo": "the committed client_state.json has three sessions; closing the other tabs is not written yet."
+      ]
     },
     {
       "file": "client_terminals_three.png",
@@ -1890,8 +1899,7 @@
       "page": "quick-start/vscode.md",
       "source": "os",
       "viewport": "desktop",
-      "state": "A browser on the laptop showing VS Code opened from the client's Web page, with a project folder of the computer open in the explorer.",
-      "_todo": "captured by hand; no capture.py recipe."
+      "state": "Edge on a Windows laptop showing VS Code opened from the client's Web page, with a project folder of server open in the explorer and one file in the editor; the screen is cropped below the tab strip and scaled to 1600x900."
     },
     {
       "file": "app_join_scan.png",
