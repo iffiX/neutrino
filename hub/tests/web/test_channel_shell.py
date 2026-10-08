@@ -16,6 +16,17 @@ sent; a ``shell`` on a session another client owns and has not shared is
 the owner rejoins its own; an unshare closes every other client's stream on
 the session and not the owner's, and holds for the next join before any
 report; a session opened a moment ago is not joined by its id.
+
+The ``exec`` stream: an allowed client reaches the agent's own ``exec``
+with ``argv``, ``is_tty``, ``cols`` and ``rows`` and no session; the
+client's stdin and its ``eof`` go up in order, the agent's frames come down
+with their ``fd`` byte, a frame with nothing after it dropped, and the
+agent's close, ``exit_code`` or refusal, is the client's; a client without
+``exec``, the default's case, or outside its ``exec`` device list is refused
+``permission_denied {kind: exec}`` before any agent stream opens, and the
+``terminal`` list does not narrow it; a client that closes first closes the
+agent's stream; a ``resize`` naming an ``exec`` with ``is_tty`` reaches the
+agent and one naming an ``exec`` without it is closed empty.
 """
 
 import asyncio
@@ -23,7 +34,11 @@ import asyncio
 import pytest
 
 from neutrino_hub.modules.clients.registry import ClientRegistry
-from neutrino_hub.web.channel_shell import serve_command_stream, serve_shell_stream
+from neutrino_hub.web.channel_shell import (
+    serve_command_stream,
+    serve_exec_stream,
+    serve_shell_stream,
+)
 from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_CLIENT
 from neutrino_hub.modules.channel.sessions import ChannelSessionRegistry
 from neutrino_hub.web.shell_bridge import ShellSessionLedger
@@ -36,6 +51,7 @@ class FakeSession:
     def __init__(self, key: str):
         self.key = key
         self.shells: dict = {}
+        self.execs: dict = {}
 
 
 class FakeRuntime:
@@ -645,3 +661,192 @@ def test_a_session_opened_a_moment_ago_is_not_joined_by_its_id(config_dir):
         {"code": "session_not_owned", "params": {"session_id": "s-new"}},
     )
     assert len(runtime.agent_sessions.streams) == 1
+
+
+ARGV = ["sh", "-c", "echo out; echo err >&2; exit 7"]
+
+
+def exec_allowed(kinds=("exec",), devices=None) -> str:
+    """A client whose own permission names the kinds."""
+    registry = ClientRegistry()
+    client_id = registry.create("alice")
+    registry.set_permission(client_id, list(kinds), devices)
+    return client_id
+
+
+def exec_open(**fields) -> dict:
+    return {"device_id": DEVICE, "argv": ARGV, **fields}
+
+
+async def refused_exec(runtime, client_id, args) -> dict:
+    stream = ScriptedChannelStream("exec", args, 1)
+    await serve_exec_stream(runtime, FakeSession(client_id), stream)
+    return stream.close_info
+
+
+def test_an_exec_reaches_the_agent_and_relays_stdin_eof_and_both_outputs(
+    config_dir,
+):
+    client_id = exec_allowed()
+    runtime = FakeRuntime()
+    session = FakeSession(client_id)
+
+    async def scenario():
+        stream = ScriptedChannelStream(
+            "exec", exec_open(is_tty=False, cols=100, rows=30), 1
+        )
+        serving = asyncio.create_task(serve_exec_stream(runtime, session, stream))
+        await until(lambda: session.execs)
+        (command,) = runtime.agent_sessions.streams
+        bridged = dict(session.execs)
+
+        stream._deliver(("data", b"hello"))
+        stream._deliver(("eof", b""))
+        command._deliver(("data", b"\x01out\n"))
+        command._deliver(("data", b"\x02err\n"))
+        command._deliver(("data", b"\x02"))
+        await settle()
+        command.finish({"code": "", "params": {"exit_code": 7}})
+        await serving
+        return stream, command, bridged
+
+    stream, command, bridged = asyncio.run(scenario())
+
+    assert (command.kind, command.args) == (
+        "exec",
+        {"argv": ARGV, "is_tty": False, "cols": 100, "rows": 30},
+    )
+    assert bridged == {1: (DEVICE, command.id, False)}
+    assert command.sent == [b"hello"]
+    assert command.eofs == [1]
+    assert stream.sent == [b"\x01out\n", b"\x02err\n"]
+    assert stream.close_info == {"code": "", "params": {"exit_code": 7}}
+    assert session.execs == {} and session.shells == {}
+
+
+def test_an_exec_with_a_tty_names_it_and_its_size(config_dir):
+    client_id = exec_allowed()
+    runtime = FakeRuntime()
+    runtime.agent_sessions.scripts["exec"] = lambda args: (
+        [("data", b"\x01top\r\n")],
+        {"code": "", "params": {"exit_code": 0}},
+    )
+
+    async def scenario():
+        stream = ScriptedChannelStream(
+            "exec", exec_open(argv=["top"], is_tty=True, cols=132, rows=43), 1
+        )
+        await serve_exec_stream(runtime, FakeSession(client_id), stream)
+        return stream
+
+    stream = asyncio.run(scenario())
+
+    (command,) = runtime.agent_sessions.streams
+    assert command.args == {"argv": ["top"], "is_tty": True, "cols": 132, "rows": 43}
+    assert stream.sent == [b"\x01top\r\n"]
+    assert stream.close_info == {"code": "", "params": {"exit_code": 0}}
+
+
+def test_the_agents_refusal_closes_the_clients_exec(config_dir):
+    client_id = exec_allowed()
+    runtime = FakeRuntime()
+    runtime.agent_sessions.scripts["exec"] = lambda args: (
+        [],
+        {"code": "shell_program_unusable", "params": {"path": "nope"}},
+    )
+
+    closed = asyncio.run(refused_exec(runtime, client_id, exec_open(argv=["nope"])))
+
+    assert closed == {"code": "shell_program_unusable", "params": {"path": "nope"}}
+
+
+def test_a_client_without_exec_is_refused_before_any_agent_stream(config_dir):
+    registry = ClientRegistry()
+    by_default = registry.create("alice")
+    shell_only = exec_allowed(kinds=("terminal",))
+    runtime = FakeRuntime()
+
+    refusals = [
+        asyncio.run(refused_exec(runtime, client_id, exec_open()))
+        for client_id in (by_default, shell_only)
+    ]
+
+    assert refusals == [{"code": "permission_denied", "params": {"kind": "exec"}}] * 2
+    assert runtime.agent_sessions.streams == []
+
+
+def test_the_exec_device_list_applies_and_the_terminal_list_does_not(config_dir):
+    outside = exec_allowed(devices={"exec": ["another"]})
+    inside = exec_allowed(
+        kinds=("terminal", "exec"),
+        devices={"terminal": ["another"], "exec": [DEVICE]},
+    )
+    runtime = FakeRuntime()
+    runtime.agent_sessions.scripts["exec"] = lambda args: (
+        [],
+        {"code": "", "params": {"exit_code": 0}},
+    )
+
+    refused = asyncio.run(refused_exec(runtime, outside, exec_open()))
+    allowed = asyncio.run(refused_exec(runtime, inside, exec_open()))
+
+    assert refused == {"code": "permission_denied", "params": {"kind": "exec"}}
+    assert allowed == {"code": "", "params": {"exit_code": 0}}
+    assert len(runtime.agent_sessions.streams) == 1
+
+
+def test_an_exec_on_a_device_with_no_channel_is_agent_offline(config_dir):
+    client_id = exec_allowed()
+    runtime = FakeRuntime(online=())
+
+    closed = asyncio.run(refused_exec(runtime, client_id, exec_open()))
+
+    assert closed == {"code": "agent_offline", "params": {"device": DEVICE}}
+
+
+def test_a_client_that_closes_its_exec_closes_the_agents(config_dir):
+    client_id = exec_allowed()
+    runtime = FakeRuntime()
+    session = FakeSession(client_id)
+
+    async def scenario():
+        stream = ScriptedChannelStream("exec", exec_open(), 1)
+        serving = asyncio.create_task(serve_exec_stream(runtime, session, stream))
+        await until(lambda: session.execs)
+        await stream.close()
+        await serving
+        return runtime.agent_sessions.streams[0]
+
+    command = asyncio.run(scenario())
+
+    assert command.is_close_asked
+    assert session.execs == {}
+
+
+def test_a_resize_reaches_an_exec_with_a_tty_and_not_one_without(config_dir):
+    runtime = FakeRuntime()
+    session = FakeSession("alice")
+    session.execs[3] = (DEVICE, 8, True)
+    session.execs[5] = (DEVICE, 10, False)
+
+    async def scenario(shell):
+        stream = ScriptedChannelStream(
+            "command",
+            {"module": "agent", "verb": "resize", "shell": shell, "cols": 90},
+            7,
+        )
+        await serve_command_stream(runtime, session, stream)
+        return stream.close_info
+
+    sized = asyncio.run(scenario(3))
+    ignored = asyncio.run(scenario(5))
+
+    (command,) = runtime.agent_sessions.streams
+    assert command.args == {
+        "module": "agent",
+        "verb": "resize",
+        "shell": 8,
+        "cols": 90,
+        "rows": 24,
+    }
+    assert sized == ignored == {"code": "", "params": {}}

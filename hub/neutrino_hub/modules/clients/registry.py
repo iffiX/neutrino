@@ -346,8 +346,8 @@ class ClientRegistry:
         """The kinds a client with no set of its own is allowed.
 
         Returns:
-            The kinds; every kind but ``panel`` when the file names no
-            default.
+            The kinds; every kind but ``panel`` and ``exec`` when the file
+            names no default.
         """
         if self._default is None:
             return list(CLIENT_DEFAULT_PERMISSION_KINDS)

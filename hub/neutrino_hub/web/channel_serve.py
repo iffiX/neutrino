@@ -7,7 +7,7 @@ peer-opened stream to its kind's handler, a ``close`` or a ``credit`` goes
 to the stream it names, a ``ping`` is answered with a ``pong`` carrying its
 nonce, and bytes go to theirs. The kinds a peer may open
 are ``package`` and ``log`` from an agent, and ``service``, ``shell``,
-``command`` and ``connect`` from a client.
+``exec``, ``command`` and ``connect`` from a client.
 """
 
 import asyncio
@@ -30,6 +30,7 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_PING_NONCE_CHARS_MAX,
     CHANNEL_STREAM_COMMAND,
     CHANNEL_STREAM_CONNECT,
+    CHANNEL_STREAM_EXEC,
     CHANNEL_STREAM_LOG,
     CHANNEL_STREAM_PACKAGE,
     CHANNEL_STREAM_SERVICE,
@@ -51,7 +52,11 @@ from neutrino_hub.modules.devices.manifests import (
 )
 from neutrino_hub.web import channel_state
 from neutrino_hub.web.channel_connect import serve_connect_stream
-from neutrino_hub.web.channel_shell import serve_command_stream, serve_shell_stream
+from neutrino_hub.web.channel_shell import (
+    serve_command_stream,
+    serve_exec_stream,
+    serve_shell_stream,
+)
 from neutrino_hub.web.constants import (
     WEB_EVENT_CLIENTS,
     WEB_EVENT_DEVICE_REPORT,
@@ -123,6 +128,9 @@ async def serve_client(
     )
     sessions.stream_handlers.setdefault(
         CHANNEL_STREAM_SHELL, functools.partial(serve_shell_stream, runtime)
+    )
+    sessions.stream_handlers.setdefault(
+        CHANNEL_STREAM_EXEC, functools.partial(serve_exec_stream, runtime)
     )
     sessions.stream_handlers.setdefault(
         CHANNEL_STREAM_COMMAND, functools.partial(serve_command_stream, runtime)

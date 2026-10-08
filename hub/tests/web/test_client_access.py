@@ -5,7 +5,10 @@ a real client socket registry whose sessions live on a loop of their own.
 What these pin, cause by cause: switching a client off closes every stream
 it opened with ``client_disabled`` and then its socket; deleting it refuses
 its socket; taking ``terminal`` or one of its machines closes the shells on
-that machine with ``permission_denied {kind: terminal}``; taking a kind or a
+that machine with ``permission_denied {kind: terminal}``; taking ``exec`` or
+one of its machines closes the commands there with ``permission_denied
+{kind: exec}`` and no shell; a switched-off client's commands close with
+the rest; taking a kind or a
 machine closes the ``connect`` streams it covers with ``permission_denied
 {kind}``, the panel's forward and a UDP ``port`` entry's one stream among
 them; a change to the default reaches
@@ -256,3 +259,66 @@ def test_taking_port_closes_a_udp_entrys_stream_at_once(channel):
     )
 
     assert socket.closes() == {11: ("permission_denied", {"kind": "port"})}
+
+
+def running_commands(
+    runtime, loop, client_id: str, devices: tuple = (DEVICE_A, DEVICE_B)
+) -> tuple:
+    """A client's live socket as :func:`connected` makes it, with a command
+    on each machine besides, the second on a pseudo-terminal."""
+    session, socket = connected(runtime, loop, client_id, devices)
+
+    async def run_commands():
+        for stream_id, device, is_tty in (
+            (21, devices[0], False),
+            (23, devices[1], True),
+        ):
+            session._streams[stream_id] = ChannelStream(session, stream_id, "exec", {})
+            session.execs[stream_id] = (device, stream_id + 100, is_tty)
+
+    on_loop(loop, run_commands())
+    return session, socket
+
+
+def test_taking_exec_or_one_of_its_machines_closes_those_commands_alone(channel):
+    client, runtime, loop = channel
+    first = DeviceRegistry().create("first").id
+    second = DeviceRegistry().create("second").id
+    registry = ClientRegistry()
+    client_id = registry.create("laptop")
+    registry.set_permission(client_id, ["web", "terminal", "exec", "panel"])
+    _, socket = running_commands(runtime, loop, client_id, (first, second))
+
+    client.post(
+        "/api/hub/client/permission/set",
+        json={
+            "client_id": client_id,
+            "kinds": ["web", "terminal", "exec", "panel"],
+            "devices": {"exec": [second]},
+        },
+    )
+    narrowed = socket.closes()
+    client.post(
+        "/api/hub/client/permission/set",
+        json={"client_id": client_id, "kinds": ["web", "terminal", "panel"]},
+    )
+
+    assert narrowed == {21: ("permission_denied", {"kind": "exec"})}
+    assert socket.closes() == {
+        21: ("permission_denied", {"kind": "exec"}),
+        23: ("permission_denied", {"kind": "exec"}),
+    }
+
+
+def test_switching_a_client_off_closes_its_commands_too(channel):
+    client, runtime, loop = channel
+    registry = ClientRegistry()
+    client_id = registry.create("laptop")
+    registry.set_permission(client_id, ["web", "terminal", "exec", "panel"])
+    _, socket = running_commands(runtime, loop, client_id)
+
+    client.post("/api/hub/client/disable", json={"client_id": client_id})
+
+    assert socket.closes() == {
+        stream_id: ("client_disabled", {}) for stream_id in (1, 3, 5, 7, 9, 21, 23)
+    }

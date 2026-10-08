@@ -84,6 +84,7 @@
   "ui.clients.header_status": "状态",
   "ui.clients.header_version": "版本",
   "ui.clients.kind_ai": "AI 网关",
+  "ui.clients.kind_exec": "远程命令",
   "ui.clients.kind_file": "文件",
   "ui.clients.kind_overlay": "虚拟网",
   "ui.clients.kind_panel": "免密码进入中枢面板",

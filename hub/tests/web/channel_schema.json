@@ -566,7 +566,7 @@
           "type": "object"
         },
         "ChannelTerminal": {
-          "description": "One managed machine a client may open a shell on.",
+          "description": "One managed machine a client may open a shell or run a command on.",
           "properties": {
             "device_id": {
               "title": "Device Id",
@@ -579,6 +579,16 @@
             "is_online": {
               "default": false,
               "title": "Is Online",
+              "type": "boolean"
+            },
+            "is_shell_allowed": {
+              "default": false,
+              "title": "Is Shell Allowed",
+              "type": "boolean"
+            },
+            "is_exec_allowed": {
+              "default": false,
+              "title": "Is Exec Allowed",
               "type": "boolean"
             },
             "sessions": {
@@ -1561,7 +1571,7 @@
           "type": "object"
         }
       },
-      "description": "One managed machine a client may open a shell on.",
+      "description": "One managed machine a client may open a shell or run a command on.",
       "properties": {
         "device_id": {
           "title": "Device Id",
@@ -1574,6 +1584,16 @@
         "is_online": {
           "default": false,
           "title": "Is Online",
+          "type": "boolean"
+        },
+        "is_shell_allowed": {
+          "default": false,
+          "title": "Is Shell Allowed",
+          "type": "boolean"
+        },
+        "is_exec_allowed": {
+          "default": false,
+          "title": "Is Exec Allowed",
           "type": "boolean"
         },
         "sessions": {

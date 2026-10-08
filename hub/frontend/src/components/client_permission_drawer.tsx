@@ -26,6 +26,7 @@ const KIND_DISPLAY_ORDER = [
   "ai",
   "file",
   "terminal",
+  "exec",
   "rdp",
 ];
 

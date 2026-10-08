@@ -42,11 +42,14 @@ CHANNEL_FRAME_CLOSE = "close"
 CHANNEL_FRAME_CREDIT = "credit"
 CHANNEL_FRAME_PING = "ping"
 CHANNEL_FRAME_PONG = "pong"
+# No more input follows on an ``exec`` stream.
+CHANNEL_FRAME_EOF = "eof"
 # A ``pong`` echoes the ``ping``'s nonce up to this many characters.
 CHANNEL_PING_NONCE_CHARS_MAX = 64
 
 # The stream kinds.
 CHANNEL_STREAM_SHELL = "shell"
+CHANNEL_STREAM_EXEC = "exec"
 CHANNEL_STREAM_FILE = "file"
 CHANNEL_STREAM_COMMAND = "command"
 CHANNEL_STREAM_PACKAGE = "package"
@@ -89,6 +92,9 @@ CHANNEL_FIRST_HUB_STREAM_ID = 0
 
 # A binary frame is a big-endian u32 stream id, then the bytes.
 CHANNEL_STREAM_ID_BYTES = 4
+# A frame down an ``exec`` stream has one byte after the id: 1 for the
+# process's stdout, 2 for its stderr.
+CHANNEL_EXEC_FD_BYTES = 1
 # What a stream may have in flight before the receiving side grants more.
 CHANNEL_STREAM_CREDIT_BYTES = 1024 * 1024
 # The largest binary frame either side sends on one stream.
