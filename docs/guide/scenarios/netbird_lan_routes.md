@@ -10,7 +10,6 @@ Before you start, check these:
 
 - The hub has joined NetBird, as [Join the hub to NetBird](../hub/netbird.md) describes, and a client reaches the hub through NetBird.
 - The hub runs in router or side gateway mode.
-  <!-- 待核: whether a server-mode hub works as a NetBird routing peer (outline item 1); the standard says server mode leaves ip_forward alone -->
 - You are an administrator of the NetBird account in its console.
 
 ## Read the subnets the hub serves

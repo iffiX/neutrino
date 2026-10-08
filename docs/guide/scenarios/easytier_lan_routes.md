@@ -10,7 +10,6 @@ Before you start, check these:
 
 - The hub is on an EasyTier network, as [Put the hub on an EasyTier network](../hub/easytier.md) describes, and a client reaches the hub through EasyTier.
 - The hub runs in router or side gateway mode.
-  <!-- 待核: whether a server-mode hub works as an EasyTier subnet proxy (outline item 1) -->
 
 The **Settings** of the **EasyTier** card on the **Access** page shows the hub's mode: **EasyTier console** or **Manual bootstrap peers**. In console mode, follow every section in order and skip the manual mode section. In manual mode, skip the two console sections.
 

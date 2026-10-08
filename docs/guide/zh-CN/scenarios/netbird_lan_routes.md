@@ -10,7 +10,6 @@ title: 经 NetBird 访问没装被控端的局域网设备
 
 - 中枢已经加入 NetBird，客户端能经 NetBird 连上中枢。加入的步骤见[把中枢加入 NetBird](../hub/netbird.md)。
 - 中枢是 **路由器**（Router）或 **旁路网关**（Side gateway）形态。
-  <!-- 待核: 服务器形态的中枢能不能当 NetBird 路由节点（待核清单第 1 条） -->
 - 你在这个 NetBird 账号的控制台里有管理员权限。
 
 客户端的网页、文件、终端这些功能都经中枢转发，用不到这条路由，见[选哪种外部访问](./choose_a_way_in.md)。

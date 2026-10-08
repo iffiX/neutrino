@@ -10,7 +10,6 @@ title: 经 EasyTier 访问没装被控端的局域网设备
 
 - 中枢已经在 EasyTier 上，客户端能经 EasyTier 连上中枢。设置的步骤见[把中枢放到 EasyTier 网络里](../hub/easytier.md)。
 - 中枢是 **路由器**（Router）或 **旁路网关**（Side gateway）形态。
-  <!-- 待核: 服务器形态的中枢能不能经 EasyTier 做子网代理（待核清单第 1 条） -->
 
 中枢用 **EasyTier 控制台**（EasyTier console）模式时，做前三节。用 **手动碰头点**（Manual bootstrap peers）模式时，做第一节和「手动模式下」。两种模式最后都在客户端上验证。
 
