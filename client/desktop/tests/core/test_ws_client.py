@@ -178,21 +178,14 @@ def test_a_ping_is_answered_with_its_payload_and_never_returned():
     assert (pong.opcode, pong.payload) == (OPCODE_PONG, b"keepalive")
 
 
-def test_the_pong_to_this_sides_last_ping_reports_its_round_trip():
-    measured = []
-    made = scripted_client()
-    made._on_pong = measured.append
-
-    made.ping()
-    (ping,) = sent_frames(made)
-    made._sock.inbound = encode_frame(OPCODE_PONG, b"other") + encode_frame(
-        OPCODE_PONG, ping.payload
+def test_a_pong_is_dropped_and_never_returned():
+    made = scripted_client(
+        encode_frame(OPCODE_PONG, b"keepalive"),
+        encode_frame(OPCODE_TEXT, b"{}"),
     )
-    made._sock.inbound += encode_frame(OPCODE_TEXT, b"{}")
 
     assert made.recv() == ("text", "{}")
-    assert ping.opcode == OPCODE_PING
-    assert len(measured) == 1 and 0 <= measured[0] < 1
+    assert sent_frames(made) == []
 
 
 def test_fragmented_text_is_put_back_together():

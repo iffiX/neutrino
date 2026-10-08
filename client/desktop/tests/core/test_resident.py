@@ -50,6 +50,7 @@ from tests.conftest import (
     HUB_SERVICES,
     OFFICE_BINDING,
     OFFICE_SERVICES,
+    Clock,
     FakeClientPlatform,
     bind,
     discard,
@@ -374,9 +375,17 @@ def test_a_second_binding_gets_a_session_and_a_socket_of_its_own(two_hubs, monke
 
 
 def test_a_hub_row_carries_the_round_trip_its_last_pong_measured(two_hubs_up):
-    resident, _scripts = two_hubs_up
+    resident, scripts = two_hubs_up
+    session = resident._sessions["c1"]
+    (made,) = scripts.sockets_of("hub.lan")
+    clock = Clock()
+    session._clock = clock
 
-    resident._sessions["c1"]._take_pong(0.0236)
+    session._ping(made)
+    clock.now += 0.0236
+    session._dispatch(
+        made, "text", json.dumps({"type": "pong", "nonce": made.sent[-1]["nonce"]})
+    )
 
     home, office = resident.hubs()
     assert (home["rtt_ms"], office["rtt_ms"]) == (24, None)

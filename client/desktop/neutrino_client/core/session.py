@@ -27,8 +27,9 @@ socket holds the binding, ``disabled`` while the hub has this client
 switched off, and ``pending`` while a join's ticket is not spent: the
 first address that answers with the pinned certificate spends it before
 the hello, and a hub that refuses it leaves the session down for good. A
-refresh is the same loop moved to now. The client pings the open socket
-every interval, and each pong sets the round trip the hub row shows.
+refresh is the same loop moved to now. The client sends a ``ping`` frame
+on the open socket every interval, and the ``pong`` that echoes its nonce
+sets the round trip the hub row shows.
 
 Errors are ``{"code", "params"}``, never an English sentence; every surface
 does its own wording.
@@ -41,6 +42,7 @@ from __future__ import annotations
 import ipaddress
 import json
 import queue
+import secrets
 import threading
 import time
 import urllib.parse
@@ -427,6 +429,9 @@ class ClientHubSession:
         # The round trip the last pong on the live socket measured, in
         # whole milliseconds; None before the first pong.
         self._rtt_ms: "int | None" = None
+        # The nonce and the send time of the last ping on the live socket;
+        # None before the first, and once its pong was read.
+        self._ping_sent: "tuple[str, float] | None" = None
         self._backoff_s = CLIENT_BACKOFF_MIN_S
         # Set while another socket holds this binding; only a person clears it.
         self._is_replaced = False
@@ -1228,6 +1233,7 @@ class ClientHubSession:
             self._connected_path = path
             self._connected_handshake_s = handshake_s
             self._rtt_ms = None
+            self._ping_sent = None
         self._note_url(url)
         if streams is not None:
             streams.end_all()
@@ -1362,7 +1368,6 @@ class ClientHubSession:
             path=CLIENT_CHANNEL_WS_PATH,
             fingerprint=fingerprint,
             timeout_s=CLIENT_CONNECT_TIMEOUT_S,
-            on_pong=self._take_pong,
         )
 
     def _greet(self, client, url: str = "") -> None:
@@ -1737,16 +1742,30 @@ class ClientHubSession:
         """Ping the socket at once and every interval until it ends."""
         while True:
             try:
-                client.ping()
+                self._ping(client)
             except GatewayUnreachable:
                 return
             if ended.wait(timeout=CLIENT_PING_INTERVAL_S):
                 return
 
-    def _take_pong(self, rtt_s: float) -> None:
-        """Keep the round trip a pong measured, and tell the page."""
+    def _ping(self, client) -> None:
+        """Send a ``ping`` frame, its nonce and send time remembered."""
+        nonce = secrets.token_urlsafe(8)
         with self._lock:
-            self._rtt_ms = round(rtt_s * 1000)
+            self._ping_sent = (nonce, self._clock())
+        client.send_text(json.dumps({"type": protocol.FRAME_PING, "nonce": nonce}))
+
+    def _take_pong(self, client, message: dict) -> None:
+        """Set the round trip from the pong to the last ping; any other is dropped."""
+        with self._lock:
+            sent = self._ping_sent
+            if sent is None or self._client is not client:
+                return
+            nonce, sent_at = sent
+            if message.get("nonce") != nonce:
+                return
+            self._ping_sent = None
+            self._rtt_ms = round((self._clock() - sent_at) * 1000)
         self._on_change()
 
     def _dispatch(self, client, kind: str, payload) -> None:
@@ -1793,6 +1812,8 @@ class ClientHubSession:
                 streams.take_credit(message)
         elif message_type == protocol.FRAME_OPEN:
             self._refuse_open(client, message)
+        elif message_type == protocol.FRAME_PONG:
+            self._take_pong(client, message)
         elif message_type == protocol.FRAME_REFUSED:
             # The close 4000 behind it is never read: the socket ends here.
             raise _refusal(message)
@@ -1862,6 +1883,7 @@ class ClientHubSession:
                 streams, self._streams = self._streams, None
                 self._is_welcomed = False
                 self._rtt_ms = None
+                self._ping_sent = None
         client.close()
         if streams is not None:
             streams.end_all()

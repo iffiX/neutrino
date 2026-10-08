@@ -15,6 +15,8 @@ FRAME_REPORT = "report"
 FRAME_OPEN = "open"
 FRAME_CLOSE = "close"
 FRAME_CREDIT = "credit"
+FRAME_PING = "ping"
+FRAME_PONG = "pong"
 
 STREAM_ID_BYTES = 4
 STREAM_ID_MAX = (1 << 32) - 1
