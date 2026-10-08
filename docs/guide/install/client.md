@@ -86,7 +86,7 @@ On Windows, opening the `.msi` from File Explorer runs the same installer. Its *
 
 On macOS the installer puts **Neutrino Client** in `/Applications` and links `nclient` into `/usr/local/bin`. The app has an ad hoc signature, so Gatekeeper shows a confirmation the first time it opens.
 
-Every package also registers the system services of the virtual networks: the NetBird daemon and the client's EasyTier daemon. The mainland edition's package has the EasyTier daemon alone. On Windows the package registers one more service, `NeutrinoClientFiles`, which puts a share on a drive letter. An install over a running client closes it, then starts it again in the same person's session when the install ends.
+Every package also registers the system services of the virtual networks: the NetBird daemon and the client's EasyTier daemon. The mainland edition's package has the EasyTier daemon alone, so it joins EasyTier networks only. On Windows the package registers one more service, `NeutrinoClientFiles`, which puts a share on a drive letter. An install over a running client closes it, then starts it again in the same person's session when the install ends.
 
 ## Install the Android app
 

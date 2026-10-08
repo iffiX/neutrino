@@ -137,7 +137,7 @@ For a Linux machine that the hub reaches over SSH, the hub signs in and installs
 
 ## Check the machine
 
-Within seconds of the join, the machine is listed under **Managed devices**. On the machine, `sudo nagent status` names the hub it joined. Its `heartbeat` line reads `ok` while the agent holds its connection to the hub.
+Within seconds of the join, the machine is listed under **Managed devices**. On the machine, `sudo nagent status` names the hub it joined; on Windows, run `nagent status` in an administrator PowerShell. Its `heartbeat` line reads `ok` while the agent holds its connection to the hub.
 
 `nagent join` without a link prompts for one, and `--yes` replaces a binding the machine already has. The hub rejects a link that is used or older than thirty minutes with `ticket_spent`; make a new link and join again.
 

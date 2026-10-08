@@ -9,8 +9,8 @@ This page takes one machine from a fresh system to a running hub whose panel you
 ## Before you start
 
 - The machine runs one of these systems:
-  - Linux in any network shape: Debian 12 or newer, Ubuntu 22.04 or newer, or Raspberry Pi OS 64-bit
-  - Linux in any network shape: Fedora 41 or newer, the RHEL 9 family, or Arch on x86-64
+  - Debian 12 or newer, Ubuntu 22.04 or newer, or Raspberry Pi OS 64-bit, in any network shape
+  - Fedora 41 or newer, the RHEL 9 family, or Arch on x86-64, in any network shape
   - macOS 12.3 or newer on Apple silicon or Intel, in the server shape
   - Windows 10 1809 or newer on x86-64, in the server shape
 - You have root on it, or an administrator account on macOS and Windows.

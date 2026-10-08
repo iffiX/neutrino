@@ -41,7 +41,7 @@ On Windows, open PowerShell and run:
 irm https://github.com/iffiX/neutrino/releases/latest/download/install.ps1 | iex
 ```
 
-The script prompts once for administrator rights. On Windows it continues in a new PowerShell window that Windows opens as administrator. When the install finishes, the terminal prints one address for each network your computer is on, each ending in a one-time token.
+The script prompts once for administrator rights. On Windows it continues in a new PowerShell window that Windows opens as administrator, and that window prints the addresses. When the install finishes, the terminal prints one address for each network your computer is on, each ending in a one-time token.
 
 In mainland China, take the mainland edition's command from [Install the hub](./install/hub.md).
 
@@ -184,7 +184,7 @@ Every step from here runs on your phone, away from your Wi-Fi.
 
 - Turn off Wi-Fi on your phone.
 
-The hub's row reads **Connected · EasyTier** with the round trip in milliseconds.
+The hub's row reads **Connected · EasyTier** with the round trip in milliseconds. The app now reaches the hub through the EasyTier network your phone and your computer are on.
 
 ![The hub row connected through EasyTier](/guide/en/app_hub.webp)
 

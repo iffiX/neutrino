@@ -8,7 +8,7 @@ Neutrino gives each of your machines one of three roles. The hub runs the networ
 
 ## The hub's layers
 
-The hub runs on Linux in any of its network shapes, and on macOS and Windows in the server shape alone. The box adds three layers to the shape, and each layer needs only the layers before it in the table:
+The hub runs on Linux in any of its network shapes, and on macOS and Windows in the server shape alone. The table lists the shape and the three layers above it, and each row needs only the rows before it:
 
 | Layer         | What it is                                                                                                                                                                                            | When it is off                                                    |
 | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
@@ -25,7 +25,7 @@ Any number of ways in can be on at once, and a client uses whichever one reaches
 
 ## Providers and consumers
 
-Each module runs under the agent of a machine that has what it needs, such as drives for a file share or a GPU for containers. A Linux machine runs every module. A Windows machine or a Mac runs the file share, the terminal, the remote desktop, Gitea, VS Code and CloudCLI. A Mac also runs code-server, and both systems serve the file share from their own SMB server.
+Each module runs under the agent of a machine that has what it needs, such as drives for a file share or a GPU for containers. A Linux machine runs every module. A Windows machine or a Mac runs the file share, the terminal, the remote desktop, Gitea, VS Code and CloudCLI. A Mac also runs code-server, and both systems serve the file share from their own SMB server. Containers and ZFS storage run on Linux alone.
 
 [Supported platforms](./reference/platforms.md) has the full table of modules by system.
 
