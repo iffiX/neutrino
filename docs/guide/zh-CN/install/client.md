@@ -149,3 +149,5 @@ Signer #1 certificate SHA-256 digest: 0e20b8b4542f329c4d3ed91632f3ea90730cb99472
 ## 加入另一台中枢
 
 在另一台中枢的面板里生成一条客户端链接，照同样的步骤加入。每台中枢各记各的设备名字，各发布各的服务。
+
+加入之后各页怎样区分两台中枢的条目，见[一个客户端连多台中枢](../scenarios/one_client_several_hubs.md)。
