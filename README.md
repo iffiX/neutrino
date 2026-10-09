@@ -58,7 +58,29 @@ curl -fsSL https://github.com/iffiX/neutrino/releases/latest/download/install.sh
 
 The mainland edition and the package files are on [Install the hub](https://neutrino.beyond-infinity.top/install/hub.html).
 
-To start over without uninstalling, run `sudo nhub reset all`: it hands the network back, returns the configuration to its first state and stops the services, and `sudo nhub setup` sets the hub up again. To remove the hub, run that reset first, then remove the package: `sudo apt remove neutrino-hub` on Debian and Ubuntu, `sudo dnf remove neutrino-hub` on Fedora and RHEL, `sudo pacman -R neutrino-hub` on Arch, or **Settings** > **Apps** > **Installed apps** on Windows. A managed machine removes its agent the same way (`neutrino-agent`), and a computer its client (`neutrino-client`); `sudo nagent service uninstall` alone takes away what the agent's modules added and keeps the machine's data. Shares, repositories and container volumes stay. The macOS commands and what each step keeps are on the docs site's [Uninstall](https://neutrino.beyond-infinity.top/uninstall.html) page.
+To start over without uninstalling, reset the hub. The package stays, and `sudo nhub setup` sets it up again:
+
+```bash
+sudo nhub reset all
+```
+
+To remove the hub, reset it first, then remove the package:
+
+```bash
+sudo apt remove neutrino-hub     # Debian, Ubuntu
+sudo dnf remove neutrino-hub     # Fedora, RHEL
+sudo pacman -R neutrino-hub      # Arch
+```
+
+On Windows, uninstall **Neutrino Hub** under **Settings** > **Apps** > **Installed apps**. A managed machine and a computer remove their packages the same way:
+
+```bash
+sudo apt remove neutrino-agent      # a managed machine
+sudo apt remove neutrino-client     # the computer you sit at
+sudo nagent service uninstall       # only what the agent's modules added; the machine's data stays
+```
+
+Shares, repositories and container volumes stay. The macOS commands and what each step keeps are on the docs site's [Uninstall](https://neutrino.beyond-infinity.top/uninstall.html) page.
 
 ## Join with one scan
 
