@@ -86,10 +86,7 @@ sudo pacman -R neutrino-hub      # Arch
 
 On Windows, uninstall **Neutrino Hub** under **Settings** > **Apps** > **Installed apps**.
 
-<details>
-<summary><b>Remove the client</b></summary>
-
-Leave the hub in the client first (**Leave** on the hub's row, or `nclient leave --yes`), then:
+**Remove the client.** Leave the hub in the client first (**Leave** on the hub's row, or `nclient leave --yes`), then:
 
 ```bash
 sudo apt remove neutrino-client    # Debian, Ubuntu; purge also deletes every account's configuration
@@ -97,8 +94,6 @@ sudo dnf remove neutrino-client    # Fedora, RHEL
 ```
 
 On Windows, uninstall **Neutrino Client** under **Installed apps**; on a phone, uninstall the app.
-
-</details>
 
 <details>
 <summary><b>Remove hub configuration too</b></summary>

@@ -86,10 +86,7 @@ sudo pacman -R neutrino-hub      # Arch
 
 Windows 上在 **设置** > **应用** > **安装的应用** 里卸载 **Neutrino Hub**。
 
-<details>
-<summary><b>卸载客户端</b></summary>
-
-先在客户端里离开中枢（中枢那一行的 **离开**，或 `nclient leave --yes`），再：
+**卸载客户端.** 先在客户端里离开中枢（中枢那一行的 **离开**，或 `nclient leave --yes`），再：
 
 ```bash
 sudo apt remove neutrino-client    # Debian、Ubuntu；purge 连每个账户的配置一起删
@@ -97,8 +94,6 @@ sudo dnf remove neutrino-client    # Fedora、RHEL
 ```
 
 Windows 上在 **安装的应用** 里卸载 **Neutrino Client**；手机上像别的应用一样卸载。
-
-</details>
 
 <details>
 <summary><b>连中枢配置一起删</b></summary>
