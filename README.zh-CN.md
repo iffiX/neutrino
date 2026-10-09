@@ -64,15 +64,15 @@ curl -fsSL https://github.com/iffiX/neutrino/releases/latest/download/install.sh
 sudo nhub reset all
 ```
 
-要彻底卸载中枢，先重置，再卸包：
+要彻底卸载中枢，直接卸包。Linux 上卸包时它自己交还网络；`purge` 连配置和密钥一起删，`remove` 留下：
 
 ```bash
-sudo apt remove neutrino-hub     # Debian、Ubuntu
+sudo apt purge neutrino-hub      # Debian、Ubuntu
 sudo dnf remove neutrino-hub     # Fedora、RHEL
 sudo pacman -R neutrino-hub      # Arch
 ```
 
-Windows 上在 **设置** > **应用** > **安装的应用** 里卸载 **Neutrino Hub**。被控端和客户端用同样的办法卸：
+Windows 上先在管理员 PowerShell 里运行 `nhub reset network`，再在 **设置** > **应用** > **安装的应用** 里卸载 **Neutrino Hub**。被控端和客户端用同样的办法卸：
 
 ```bash
 sudo apt remove neutrino-agent      # 被控的机器

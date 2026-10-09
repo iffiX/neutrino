@@ -64,15 +64,15 @@ To start over without uninstalling, reset the hub. The package stays, and `sudo 
 sudo nhub reset all
 ```
 
-To remove the hub, reset it first, then remove the package:
+To remove the hub, remove the package. On Linux the removal hands the network back by itself; `purge` also deletes the configuration and the keys, `remove` keeps them:
 
 ```bash
-sudo apt remove neutrino-hub     # Debian, Ubuntu
+sudo apt purge neutrino-hub      # Debian, Ubuntu
 sudo dnf remove neutrino-hub     # Fedora, RHEL
 sudo pacman -R neutrino-hub      # Arch
 ```
 
-On Windows, uninstall **Neutrino Hub** under **Settings** > **Apps** > **Installed apps**. A managed machine and a computer remove their packages the same way:
+On Windows, run `nhub reset network` in an administrator PowerShell first, then uninstall **Neutrino Hub** under **Settings** > **Apps** > **Installed apps**. A managed machine and a computer remove their packages the same way:
 
 ```bash
 sudo apt remove neutrino-agent      # a managed machine
