@@ -63,6 +63,11 @@ PACKAGE_NAME = compiled_tree.PACKAGE_NAME
 HUB_BINARY_NAME = "nhub.exe"
 HUB_SERVICE_NAME = "neutrino_hub"
 HUB_SERVICE_ARGUMENTS = "service run"
+# What the removal runs the hub with before its files go: the network handed
+# back, the firewall rules the hub added among it. Kept through an upgrade,
+# whose removal of the old version carries the upgrading code.
+HUB_REMOVED_CONDITION = 'REMOVE~="ALL" AND NOT UPGRADINGPRODUCTCODE'
+HUB_RESET_ARGUMENTS = "reset network --yes"
 # Where the programs the hub drives sit, under the program folder.
 PROGRAMS_DIR_NAME = "bin"
 # The stand-in for Npcap's Packet.dll, as it lands beside easytier-core.exe,
@@ -193,6 +198,14 @@ WIX_BODY = r"""
     <ComponentGroup Id="State" Directory="HUBSTATEFOLDER">
       <Files Include="@STATE@\**" />
     </ComponentGroup>
+
+    @RESET_NETWORK@
+
+    <InstallExecuteSequence>
+      <Custom Action="ResetNetwork"
+              Before="RemoveFiles"
+              Condition="@HUB_REMOVED@" />
+    </InstallExecuteSequence>
 
     <Feature Id="Main" Title="Neutrino Hub" Level="1" AllowAbsent="no">
       <ComponentGroupRef Id="Payload" />
@@ -339,12 +352,19 @@ def wix_source(staged: dict, version: str, publisher: str) -> str:
         start="auto",
         permissions=(SERVICE_RECOVERY,),
     )
+    reset_network = wix_build.custom_action(
+        "ResetNetwork",
+        is_failure_ignored=True,
+        FileRef="HubServiceFile",
+        ExeCommand=HUB_RESET_ARGUMENTS,
+    )
     body = wix_build.fill(
         WIX_BODY,
         {
             "PAYLOAD": staged["payload"],
             "STATE": staged["state"],
             "DATA_SDDL": DATA_FOLDER_SDDL,
+            "HUB_REMOVED": HUB_REMOVED_CONDITION,
             "ICON": staged["icon"],
             "ENTRY_NAME": ENTRY_NAME,
             "ENTRY_ARGUMENTS": ENTRY_ARGUMENTS,
@@ -352,6 +372,7 @@ def wix_source(staged: dict, version: str, publisher: str) -> str:
         },
     )
     body = body.replace("@SERVICE_COMPONENT@", service)
+    body = body.replace("@RESET_NETWORK@", reset_network)
     return wix_build.package_source(
         name="Neutrino Hub",
         manufacturer=publisher,

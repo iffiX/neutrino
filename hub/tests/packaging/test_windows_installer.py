@@ -86,10 +86,20 @@ def test_the_service_is_started_again_when_it_ends(document):
         assert recovery.get(f"{failure}FailureActionType") == "restart"
 
 
-def test_no_custom_action_starts_the_service_beside_its_control(document):
+def test_the_removal_hands_the_network_back_and_no_action_starts_the_service(
+    document,
+):
     _source, root = document
 
-    assert list(root.iter(WXS + "CustomAction")) == []
+    (action,) = root.iter(WXS + "CustomAction")
+    assert action.get("Id") == "ResetNetwork"
+    assert action.get("FileRef") == "HubServiceFile"
+    assert action.get("ExeCommand") == "reset network --yes"
+    assert action.get("Return") == "ignore"
+    (custom,) = root.iter(WXS + "Custom")
+    assert custom.get("Action") == "ResetNetwork"
+    assert custom.get("Before") == "RemoveFiles"
+    assert custom.get("Condition") == 'REMOVE~="ALL" AND NOT UPGRADINGPRODUCTCODE'
 
 
 def test_the_start_menu_entry_runs_nhub_open(document):
