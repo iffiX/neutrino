@@ -64,23 +64,43 @@ To start over without uninstalling, reset the hub. The package stays, and `sudo 
 sudo nhub reset all
 ```
 
-To remove the hub, remove the package. On Linux the removal hands the network back by itself; `purge` also deletes the configuration and the keys, `remove` keeps them:
+**Remove the hub.** Removing the package stops its services and gives the computer its network back; nothing has to be reset first. The configuration and the keys stay for a later install:
 
 ```bash
-sudo apt purge neutrino-hub      # Debian, Ubuntu
+sudo apt remove neutrino-hub     # Debian, Ubuntu
 sudo dnf remove neutrino-hub     # Fedora, RHEL
 sudo pacman -R neutrino-hub      # Arch
 ```
 
-On Windows, run `nhub reset network` in an administrator PowerShell first, then uninstall **Neutrino Hub** under **Settings** > **Apps** > **Installed apps**. A managed machine and a computer remove their packages the same way:
+On Windows, uninstall **Neutrino Hub** under **Settings** > **Apps** > **Installed apps**.
+
+**Remove the configuration too.** To leave nothing of the hub behind, the keys and the vault included:
 
 ```bash
-sudo apt remove neutrino-agent      # a managed machine
-sudo apt remove neutrino-client     # the computer you sit at
-sudo nagent service uninstall       # only what the agent's modules added; the machine's data stays
+sudo apt purge neutrino-hub                                                  # Debian, Ubuntu
+sudo rm -rf /etc/neutrino/hub /var/lib/neutrino/hub /var/log/neutrino/hub    # Fedora, RHEL, Arch, after the removal
 ```
 
-Shares, repositories and container volumes stay. The macOS commands and what each step keeps are on the docs site's [Uninstall](https://neutrino.beyond-infinity.top/uninstall.html) page.
+On Windows, delete `C:\ProgramData\Neutrino\hub` after the uninstall.
+
+**Remove the agent** from a managed machine. Removing its package takes away what its modules added, their services, scheduled tasks and firewall rules; shares, repositories and container volumes stay:
+
+```bash
+sudo apt remove neutrino-agent     # Debian, Ubuntu; purge also deletes its configuration
+sudo dnf remove neutrino-agent     # Fedora, RHEL
+sudo nagent service uninstall      # macOS, or any system: only what the modules added, the package stays
+```
+
+On Windows, uninstall **Neutrino Agent** under **Installed apps**.
+
+**Remove the client** from a computer. Leave the hub in the client first (**Leave** on the hub's row, or `nclient leave --yes`), then:
+
+```bash
+sudo apt remove neutrino-client    # Debian, Ubuntu; purge also deletes every account's configuration
+sudo dnf remove neutrino-client    # Fedora, RHEL
+```
+
+On Windows, uninstall **Neutrino Client** under **Installed apps**; on a phone, uninstall the app. The macOS commands and what each step keeps are on the docs site's [Uninstall](https://neutrino.beyond-infinity.top/uninstall.html) page.
 
 ## Join with one scan
 

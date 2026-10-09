@@ -64,23 +64,43 @@ curl -fsSL https://github.com/iffiX/neutrino/releases/latest/download/install.sh
 sudo nhub reset all
 ```
 
-要彻底卸载中枢，直接卸包。Linux 上卸包时它自己交还网络；`purge` 连配置和密钥一起删，`remove` 留下：
+**卸载中枢。** 卸包就停掉它的服务、把网络交还给这台电脑，不用先重置。配置和密钥留着，下次装回来还能用：
 
 ```bash
-sudo apt purge neutrino-hub      # Debian、Ubuntu
+sudo apt remove neutrino-hub     # Debian、Ubuntu
 sudo dnf remove neutrino-hub     # Fedora、RHEL
 sudo pacman -R neutrino-hub      # Arch
 ```
 
-Windows 上先在管理员 PowerShell 里运行 `nhub reset network`，再在 **设置** > **应用** > **安装的应用** 里卸载 **Neutrino Hub**。被控端和客户端用同样的办法卸：
+Windows 上在 **设置** > **应用** > **安装的应用** 里卸载 **Neutrino Hub**。
+
+**连配置一起删。** 要一点不留，包括密钥和保险库：
 
 ```bash
-sudo apt remove neutrino-agent      # 被控的机器
-sudo apt remove neutrino-client     # 你坐在前面的电脑
-sudo nagent service uninstall       # 只去掉模块加上的服务和规则，机器上的数据留着
+sudo apt purge neutrino-hub                                                  # Debian、Ubuntu
+sudo rm -rf /etc/neutrino/hub /var/lib/neutrino/hub /var/log/neutrino/hub    # Fedora、RHEL、Arch，卸包之后
 ```
 
-共享、仓库和容器卷留在机器上。macOS 的命令和每一步留下什么，见文档站的[卸载](https://neutrino.beyond-infinity.top/zh-CN/uninstall.html)页。
+Windows 上卸载后删掉 `C:\ProgramData\Neutrino\hub`。
+
+**卸载被控端**，在被控的机器上。卸包会撤掉模块加上的服务、计划任务和防火墙规则；共享、仓库和容器卷留下：
+
+```bash
+sudo apt remove neutrino-agent     # Debian、Ubuntu；purge 连它的配置一起删
+sudo dnf remove neutrino-agent     # Fedora、RHEL
+sudo nagent service uninstall      # macOS，或任何系统：只撤掉模块加上的东西，包留着
+```
+
+Windows 上在 **安装的应用** 里卸载 **Neutrino Agent**。
+
+**卸载客户端**，在你坐在前面的电脑上。先在客户端里离开中枢（中枢那一行的 **离开**，或 `nclient leave --yes`），再：
+
+```bash
+sudo apt remove neutrino-client    # Debian、Ubuntu；purge 连每个账户的配置一起删
+sudo dnf remove neutrino-client    # Fedora、RHEL
+```
+
+Windows 上在 **安装的应用** 里卸载 **Neutrino Client**；手机上像别的应用一样卸载。macOS 的命令和每一步留下什么，见文档站的[卸载](https://neutrino.beyond-infinity.top/zh-CN/uninstall.html)页。
 
 ## 扫码加入
 
