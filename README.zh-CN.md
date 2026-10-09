@@ -10,6 +10,7 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-0a0e14?labelColor=0a0e14&color=22d3ee)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.5.0-0a0e14?labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases)
+[![国内精简版](https://img.shields.io/badge/%E5%9B%BD%E5%86%85%E7%B2%BE%E7%AE%80%E7%89%88-Gitee%20%E9%95%9C%E5%83%8F-0a0e14?labelColor=0a0e14&color=22d3ee)](https://gitee.com/iffiX/neutrino/releases)
 [![Platforms](https://img.shields.io/badge/runs%20on-Linux%20%C2%B7%20macOS%20%C2%B7%20Windows%20%C2%B7%20Android-0a0e14?labelColor=0a0e14&color=a78bfa)](https://neutrino.beyond-infinity.top/zh-CN/reference/platforms.html)
 
 [![CI](https://img.shields.io/github/actions/workflow/status/iffiX/neutrino/ci.yml?branch=main&label=CI&labelColor=0a0e14)](https://github.com/iffiX/neutrino/actions/workflows/ci.yml)
@@ -38,7 +39,30 @@
 
 ## 安装
 
-中枢装在家里一台常开的机器上。Linux 和 macOS：
+在你要远程访问的那台电脑上装一个包，手机装一个应用，扫一次码就能用。点你的系统下载：
+
+<p align="center">
+<a href="https://github.com/iffiX/neutrino/releases/latest"><img alt="Windows" src="https://img.shields.io/badge/Windows-%E4%B8%8B%E8%BD%BD-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee" /></a>
+<a href="https://github.com/iffiX/neutrino/releases/latest"><img alt="macOS" src="https://img.shields.io/badge/macOS-%E4%B8%8B%E8%BD%BD-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee" /></a>
+<a href="https://github.com/iffiX/neutrino/releases/latest"><img alt="Linux" src="https://img.shields.io/badge/Linux-%E4%B8%8B%E8%BD%BD-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee" /></a>
+<a href="https://github.com/iffiX/neutrino/releases/latest"><img alt="Android" src="https://img.shields.io/badge/Android-%E4%B8%8B%E8%BD%BD-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee" /></a>
+</p>
+
+电脑上装完，在系统里搜 **Neutrino Hub** 点开，三个系统都一样，浏览器里跟着向导走。几分钟，设好密码，面板就开了。
+
+没有桌面的机器，比如 ARM64 的软路由、开发板，或者 SSH 进去的电脑，在终端里启动向导，在终端里答，或者用别的电脑打开它打印的网址。Linux 和 macOS：
+
+```bash
+sudo nhub setup
+```
+
+Windows，在管理员 PowerShell 里：
+
+```powershell
+nhub setup
+```
+
+嫌点来点去麻烦的，一条命令下载、校验、安装，装完直接进向导。Linux 和 macOS：
 
 ```bash
 curl -fsSL https://github.com/iffiX/neutrino/releases/latest/download/install.sh | sh
@@ -50,13 +74,7 @@ Windows：
 irm https://github.com/iffiX/neutrino/releases/latest/download/install.ps1 | iex
 ```
 
-要管的机器装被控端，你坐在前面的电脑装客户端，还是这条命令，末尾加 `agent` 或 `client`：
-
-```bash
-curl -fsSL https://github.com/iffiX/neutrino/releases/latest/download/install.sh | sh -s -- agent
-```
-
-国内版和用包文件安装，见[安装中枢](https://neutrino.beyond-infinity.top/zh-CN/install/hub.html)。
+国内精简版从 [Gitee](https://gitee.com/iffiX/neutrino/releases) 下载，装法一样。再管几台机器，或者给另一台电脑装客户端，见文档的[安装](https://neutrino.beyond-infinity.top/zh-CN/install/hub.html)。
 
 ## 扫码加入
 

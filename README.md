@@ -10,6 +10,7 @@ A small tool I made so I could travel.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-0a0e14?labelColor=0a0e14&color=22d3ee)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.5.0-0a0e14?labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases)
+[![Mainland edition](https://img.shields.io/badge/mainland%20edition-Gitee%20mirror-0a0e14?labelColor=0a0e14&color=22d3ee)](https://gitee.com/iffiX/neutrino/releases)
 [![Platforms](https://img.shields.io/badge/runs%20on-Linux%20%C2%B7%20macOS%20%C2%B7%20Windows%20%C2%B7%20Android-0a0e14?labelColor=0a0e14&color=a78bfa)](https://neutrino.beyond-infinity.top/reference/platforms.html)
 
 [![CI](https://img.shields.io/github/actions/workflow/status/iffiX/neutrino/ci.yml?branch=main&label=CI&labelColor=0a0e14)](https://github.com/iffiX/neutrino/actions/workflows/ci.yml)
@@ -38,7 +39,30 @@ Everything goes through one port on the hub, at home or away. The AI gateway tak
 
 ## Install
 
-The hub goes on one always-on machine at home. Linux and macOS:
+The computer you want to reach gets one package, the phone gets the app, one scan and you are in. Pick your system:
+
+<p align="center">
+<a href="https://github.com/iffiX/neutrino/releases/latest"><img alt="Windows" src="https://img.shields.io/badge/Windows-Download-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee" /></a>
+<a href="https://github.com/iffiX/neutrino/releases/latest"><img alt="macOS" src="https://img.shields.io/badge/macOS-Download-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee" /></a>
+<a href="https://github.com/iffiX/neutrino/releases/latest"><img alt="Linux" src="https://img.shields.io/badge/Linux-Download-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee" /></a>
+<a href="https://github.com/iffiX/neutrino/releases/latest"><img alt="Android" src="https://img.shields.io/badge/Android-Download-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee" /></a>
+</p>
+
+Once the computer has it, search for **Neutrino Hub** and open it, the same on all three systems, and follow the wizard in your browser. A few minutes, a password, and the panel is up.
+
+On a machine with no desktop, an ARM64 router box, a dev board, or a computer you reach over SSH, start the wizard in the terminal: answer it there, or open the address it prints from another computer. Linux and macOS:
+
+```bash
+sudo nhub setup
+```
+
+Windows, in an administrator PowerShell:
+
+```powershell
+nhub setup
+```
+
+If you would rather not click around, one command downloads, verifies and installs, and goes straight into the wizard. Linux and macOS:
 
 ```bash
 curl -fsSL https://github.com/iffiX/neutrino/releases/latest/download/install.sh | sh
@@ -50,13 +74,7 @@ Windows:
 irm https://github.com/iffiX/neutrino/releases/latest/download/install.ps1 | iex
 ```
 
-A machine you manage gets the agent and the computer you sit at gets the client: the same command with `agent` or `client` at the end.
-
-```bash
-curl -fsSL https://github.com/iffiX/neutrino/releases/latest/download/install.sh | sh -s -- agent
-```
-
-The mainland edition and the package files are on [Install the hub](https://neutrino.beyond-infinity.top/install/hub.html).
+The mainland edition downloads from [Gitee](https://gitee.com/iffiX/neutrino/releases) and installs the same way. More machines, or the client on another computer: see [Install](https://neutrino.beyond-infinity.top/install/hub.html) in the docs.
 
 ## Join with one scan
 
