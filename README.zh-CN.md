@@ -86,7 +86,24 @@ sudo pacman -R neutrino-hub      # Arch
 
 Windows 上在 **设置** > **应用** > **安装的应用** 里卸载 **Neutrino Hub**。
 
-**连配置一起删。** 要一点不留，包括密钥和保险库：
+<details>
+<summary><b>卸载客户端</b></summary>
+
+先在客户端里离开中枢（中枢那一行的 **离开**，或 `nclient leave --yes`），再：
+
+```bash
+sudo apt remove neutrino-client    # Debian、Ubuntu；purge 连每个账户的配置一起删
+sudo dnf remove neutrino-client    # Fedora、RHEL
+```
+
+Windows 上在 **安装的应用** 里卸载 **Neutrino Client**；手机上像别的应用一样卸载。
+
+</details>
+
+<details>
+<summary><b>连中枢配置一起删</b></summary>
+
+要一点不留，包括密钥和保险库：
 
 ```bash
 sudo apt purge neutrino-hub                                                  # Debian、Ubuntu
@@ -95,7 +112,12 @@ sudo rm -rf /etc/neutrino/hub /var/lib/neutrino/hub /var/log/neutrino/hub    # F
 
 Windows 上卸载后删掉 `C:\ProgramData\Neutrino\hub`。
 
-**卸载被控端**，在被控的机器上。卸包会撤掉模块加上的服务、计划任务和防火墙规则；共享、仓库和容器卷留下：
+</details>
+
+<details>
+<summary><b>卸载被控端</b></summary>
+
+在被控的机器上，卸包会撤掉模块加上的服务、计划任务和防火墙规则；共享、仓库和容器卷留下：
 
 ```bash
 sudo apt remove neutrino-agent     # Debian、Ubuntu；purge 连它的配置一起删
@@ -105,14 +127,9 @@ sudo nagent service uninstall      # macOS，或任何系统：只撤掉模块�
 
 Windows 上在 **安装的应用** 里卸载 **Neutrino Agent**。
 
-**卸载客户端**，在你坐在前面的电脑上。先在客户端里离开中枢（中枢那一行的 **离开**，或 `nclient leave --yes`），再：
+</details>
 
-```bash
-sudo apt remove neutrino-client    # Debian、Ubuntu；purge 连每个账户的配置一起删
-sudo dnf remove neutrino-client    # Fedora、RHEL
-```
-
-Windows 上在 **安装的应用** 里卸载 **Neutrino Client**；手机上像别的应用一样卸载。macOS 的命令和每一步留下什么，见文档站的[卸载](https://neutrino.beyond-infinity.top/zh-CN/uninstall.html)页。
+macOS 的命令和每一步留下什么，见文档站的[卸载](https://neutrino.beyond-infinity.top/zh-CN/uninstall.html)页。
 
 ## 安全性
 

@@ -86,7 +86,24 @@ sudo pacman -R neutrino-hub      # Arch
 
 On Windows, uninstall **Neutrino Hub** under **Settings** > **Apps** > **Installed apps**.
 
-**Remove the configuration too.** To leave nothing of the hub behind, the keys and the vault included:
+<details>
+<summary><b>Remove the client</b></summary>
+
+Leave the hub in the client first (**Leave** on the hub's row, or `nclient leave --yes`), then:
+
+```bash
+sudo apt remove neutrino-client    # Debian, Ubuntu; purge also deletes every account's configuration
+sudo dnf remove neutrino-client    # Fedora, RHEL
+```
+
+On Windows, uninstall **Neutrino Client** under **Installed apps**; on a phone, uninstall the app.
+
+</details>
+
+<details>
+<summary><b>Remove hub configuration too</b></summary>
+
+To leave nothing of the hub behind, the keys and the vault included:
 
 ```bash
 sudo apt purge neutrino-hub                                                  # Debian, Ubuntu
@@ -95,7 +112,12 @@ sudo rm -rf /etc/neutrino/hub /var/lib/neutrino/hub /var/log/neutrino/hub    # F
 
 On Windows, delete `C:\ProgramData\Neutrino\hub` after the uninstall.
 
-**Remove the agent** from a managed machine. Removing its package takes away what its modules added, their services, scheduled tasks and firewall rules; shares, repositories and container volumes stay:
+</details>
+
+<details>
+<summary><b>Remove the agent</b></summary>
+
+On a managed machine, removing the agent's package takes away what its modules added, their services, scheduled tasks and firewall rules; shares, repositories and container volumes stay:
 
 ```bash
 sudo apt remove neutrino-agent     # Debian, Ubuntu; purge also deletes its configuration
@@ -105,14 +127,9 @@ sudo nagent service uninstall      # macOS, or any system: only what the modules
 
 On Windows, uninstall **Neutrino Agent** under **Installed apps**.
 
-**Remove the client** from a computer. Leave the hub in the client first (**Leave** on the hub's row, or `nclient leave --yes`), then:
+</details>
 
-```bash
-sudo apt remove neutrino-client    # Debian, Ubuntu; purge also deletes every account's configuration
-sudo dnf remove neutrino-client    # Fedora, RHEL
-```
-
-On Windows, uninstall **Neutrino Client** under **Installed apps**; on a phone, uninstall the app. The macOS commands and what each step keeps are on the docs site's [Uninstall](https://neutrino.beyond-infinity.top/uninstall.html) page.
+The macOS commands and what each step keeps are on the docs site's [Uninstall](https://neutrino.beyond-infinity.top/uninstall.html) page.
 
 ## Security
 
