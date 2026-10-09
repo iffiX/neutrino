@@ -58,7 +58,7 @@ curl -fsSL https://github.com/iffiX/neutrino/releases/latest/download/install.sh
 
 The mainland edition and the package files are on [Install the hub](https://neutrino.beyond-infinity.top/install/hub.html).
 
-To uninstall: `sudo nhub reset all` hands the network back, then remove the package; a managed machine runs `nagent service uninstall`. Shares, repositories and container volumes stay.
+To start over without uninstalling, run `sudo nhub reset all`: it hands the network back, returns the configuration to its first state and stops the services, and `sudo nhub setup` sets the hub up again. To remove the hub, run that reset first, then remove the package: `sudo apt remove neutrino-hub` on Debian and Ubuntu, `sudo dnf remove neutrino-hub` on Fedora and RHEL, `sudo pacman -R neutrino-hub` on Arch, or **Settings** > **Apps** > **Installed apps** on Windows. A managed machine removes its agent the same way (`neutrino-agent`), and a computer its client (`neutrino-client`); `sudo nagent service uninstall` alone takes away what the agent's modules added and keeps the machine's data. Shares, repositories and container volumes stay. The macOS commands and what each step keeps are on the docs site's [Uninstall](https://neutrino.beyond-infinity.top/uninstall.html) page.
 
 ## Join with one scan
 
