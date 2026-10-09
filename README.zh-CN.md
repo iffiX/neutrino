@@ -143,8 +143,14 @@ macOS 的命令和每一步留下什么，见文档站的[卸载](https://neutri
 
 [MIT](LICENSE)。`client/android/` 下的安卓应用编进了 RustDesk 的内核，这个目录按它自己的 `LICENSE` 采用 AGPL-3.0。
 
-<details>
-<summary><b>致谢</b></summary>
+## 社区
+
+这个项目在下面这些地方发布和讨论：
+
+- [V2EX](https://www.v2ex.com/t/1241622)：分享创造节点
+- [LINUX DO](https://linux.do)：开发调优版块
+
+## 致谢
 
 - [Xray-core](https://github.com/XTLS/Xray-core)：代理内核
 - [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)：AI 网关
@@ -162,8 +168,6 @@ macOS 的命令和每一步留下什么，见文档站的[卸载](https://neutri
 - [dnsmasq](https://thekelleys.org.uk/dnsmasq/doc.html)：局域网的 DHCP 和 DNS
 - [hostapd](https://w1.fi/hostapd/)：无线接入点
 - [v2fly geodata](https://github.com/v2fly/domain-list-community)：分流用的域名和 IP 列表
-
-</details>
 
 <div align="center">
 

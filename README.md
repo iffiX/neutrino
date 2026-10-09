@@ -143,8 +143,14 @@ The details are in [design/connection.md](skills/core-code-author/design/connect
 
 [MIT](LICENSE). The Android app under `client/android/` compiles in the RustDesk core, so that directory is AGPL-3.0 by the `LICENSE` inside it.
 
-<details>
-<summary><b>Acknowledgements</b></summary>
+## Community
+
+Where this project is announced and discussed:
+
+- [V2EX](https://www.v2ex.com/t/1241622), in the 分享创造 node
+- [LINUX DO](https://linux.do), in the 开发调优 board
+
+## Acknowledgements
 
 - [Xray-core](https://github.com/XTLS/Xray-core), the proxy core
 - [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI), the AI gateway
@@ -162,8 +168,6 @@ The details are in [design/connection.md](skills/core-code-author/design/connect
 - [dnsmasq](https://thekelleys.org.uk/dnsmasq/doc.html), DHCP and DNS on the served networks
 - [hostapd](https://w1.fi/hostapd/), the wireless access point
 - [v2fly geodata](https://github.com/v2fly/domain-list-community), the lists for split routing
-
-</details>
 
 <div align="center">
 
