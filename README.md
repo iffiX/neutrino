@@ -58,6 +58,18 @@ curl -fsSL https://github.com/iffiX/neutrino/releases/latest/download/install.sh
 
 The mainland edition and the package files are on [Install the hub](https://neutrino.beyond-infinity.top/install/hub.html).
 
+## Join with one scan
+
+Make a link on the panel's Clients page. A phone scans it, a computer pastes it, and the services are in the list.
+
+## Reach it from outside
+
+NetBird, EasyTier, a VPS of your own, or Direct\*: turn one on in the panel's Access page. NetBird or EasyTier is the recommended way. What each needs is on [Access](https://neutrino.beyond-infinity.top/hub/overlay.html).
+
+\* Direct opens 8443 to the public internet. Its security is still being tested, so keep it off the public internet for now.
+
+## Uninstall
+
 To start over without uninstalling, reset the hub. The package stays, and `sudo nhub setup` sets it up again:
 
 ```bash
@@ -101,16 +113,6 @@ sudo dnf remove neutrino-client    # Fedora, RHEL
 ```
 
 On Windows, uninstall **Neutrino Client** under **Installed apps**; on a phone, uninstall the app. The macOS commands and what each step keeps are on the docs site's [Uninstall](https://neutrino.beyond-infinity.top/uninstall.html) page.
-
-## Join with one scan
-
-Make a link on the panel's Clients page. A phone scans it, a computer pastes it, and the services are in the list.
-
-## Reach it from outside
-
-NetBird, EasyTier, a VPS of your own, or Direct\*: turn one on in the panel's Access page. NetBird or EasyTier is the recommended way. What each needs is on [Access](https://neutrino.beyond-infinity.top/hub/overlay.html).
-
-\* Direct opens 8443 to the public internet. Its security is still being tested, so keep it off the public internet for now.
 
 ## Security
 

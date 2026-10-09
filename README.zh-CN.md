@@ -58,6 +58,18 @@ curl -fsSL https://github.com/iffiX/neutrino/releases/latest/download/install.sh
 
 国内版和用包文件安装，见[安装中枢](https://neutrino.beyond-infinity.top/zh-CN/install/hub.html)。
 
+## 扫码加入
+
+在面板的客户端页建一条链接。手机扫码，电脑贴链接，服务就在列表里了。
+
+## 从外面连回来
+
+NetBird、EasyTier、自己的 VPS，或者直连\*，在面板的外部访问页上开一种就行。推荐 NetBird 或 EasyTier。每种要准备什么，见[外部访问](https://neutrino.beyond-infinity.top/zh-CN/hub/overlay.html)。
+
+\* 直连要把 8443 开到公网上，这部分的安全性还在测试，先别在公网上用。
+
+## 卸载
+
 想重来一遍但不卸载，就重置中枢。包还在，再运行 `sudo nhub setup` 重新配置：
 
 ```bash
@@ -101,16 +113,6 @@ sudo dnf remove neutrino-client    # Fedora、RHEL
 ```
 
 Windows 上在 **安装的应用** 里卸载 **Neutrino Client**；手机上像别的应用一样卸载。macOS 的命令和每一步留下什么，见文档站的[卸载](https://neutrino.beyond-infinity.top/zh-CN/uninstall.html)页。
-
-## 扫码加入
-
-在面板的客户端页建一条链接。手机扫码，电脑贴链接，服务就在列表里了。
-
-## 从外面连回来
-
-NetBird、EasyTier、自己的 VPS，或者直连\*，在面板的外部访问页上开一种就行。推荐 NetBird 或 EasyTier。每种要准备什么，见[外部访问](https://neutrino.beyond-infinity.top/zh-CN/hub/overlay.html)。
-
-\* 直连要把 8443 开到公网上，这部分的安全性还在测试，先别在公网上用。
 
 ## 安全性
 
