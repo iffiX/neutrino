@@ -13,6 +13,8 @@ columns and its JSON; ``persist``, ``share`` and ``stop`` with one flag
 each and their refusals.
 """
 
+import subprocess
+import sys
 import io
 import json
 import time
@@ -586,3 +588,24 @@ def test_a_session_verb_with_several_matches_sends_nothing(resident):
     assert terminal.main_stop("muon", "3f") == 2
     assert terminal.main_persist("pion", "3f", is_on=True) == 2
     assert resident["requests"] == []
+
+
+def test_a_process_exits_cleanly_while_a_thread_waits_on_an_open_stdin():
+    """The input thread reads stdin through its descriptor, not the buffer."""
+    script = (
+        "import sys, threading, time\n"
+        "from neutrino_client.cli.terminal import _reader\n"
+        "read = _reader(sys.stdin.buffer)\n"
+        "threading.Thread(target=read, daemon=True).start()\n"
+        "time.sleep(0.2)\n"
+        "sys.exit(7)\n"
+    )
+    held_open = subprocess.Popen(
+        [sys.executable, "-c", script],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    _out, err = held_open.communicate(input=None, timeout=20)
+    assert held_open.returncode == 7, err.decode(errors="replace")
+    assert b"Fatal Python error" not in err

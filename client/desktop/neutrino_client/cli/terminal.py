@@ -627,13 +627,23 @@ def _carry_pieces(read_input, write_out, write_err, keys, output, is_tty: bool) 
 
 
 def _reader(stream):
-    """``read()`` over a binary stream: what is there now, empty at its end."""
+    """``read()`` over a binary stream: what is there now, empty at its end.
+
+    A stream with a file descriptor is read through it, so the thread that
+    waits on stdin holds no buffer lock while the process exits.
+    """
 
     def read() -> bytes:
         try:
+            try:
+                descriptor = stream.fileno()
+            except (OSError, ValueError, AttributeError):
+                descriptor = None
+            if descriptor is not None:
+                return os.read(descriptor, TERMINAL_READ_BYTES)
             if hasattr(stream, "read1"):
                 return stream.read1(TERMINAL_READ_BYTES)
-            return os.read(stream.fileno(), TERMINAL_READ_BYTES)
+            return stream.read(TERMINAL_READ_BYTES)
         except (OSError, ValueError):
             return b""
 
