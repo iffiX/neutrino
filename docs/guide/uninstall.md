@@ -36,7 +36,7 @@ After `dnf remove` or `pacman -R`, delete what stays with this command:
 sudo rm -rf /etc/neutrino/hub /var/lib/neutrino/hub /var/log/neutrino/hub
 ```
 
-On Windows, run `nhub reset network` in an administrator PowerShell first, which deletes the hub's firewall rules. Then open **Settings** > **Apps** > **Installed apps** and uninstall **Neutrino Hub**. The configuration and the state under `C:\ProgramData\Neutrino\hub` stay.
+On Windows, open **Settings** > **Apps** > **Installed apps** and uninstall **Neutrino Hub**. The removal runs `nhub reset network` itself, which deletes the hub's firewall rules. The configuration and the state under `C:\ProgramData\Neutrino\hub` stay.
 
 On macOS, the hub's package has no uninstaller. These commands reset the hub, which deletes its configuration and keys, then stop it and delete every file the package installed. Download a backup from the **Settings** page first to keep the configuration for later:
 

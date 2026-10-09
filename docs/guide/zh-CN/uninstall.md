@@ -21,7 +21,7 @@ title: 卸载
 
 - Debian 系：运行 `sudo apt remove neutrino-hub` 或 `sudo apt purge neutrino-hub`，两者的差别见下表。
 - RHEL 系：运行 `sudo dnf remove neutrino-hub`。Arch 上运行 `sudo pacman -R neutrino-hub`。这两种卸法删掉程序，留下 `/etc/neutrino/hub` 和 `/var/lib/neutrino/hub`，不要了就手动删掉。
-- Windows：先运行 `nhub reset all`，它删掉中枢在系统防火墙里加的规则。再在系统的 **应用** 设置里卸载 **Neutrino Hub**，卸载程序删掉程序和 `neutrino_hub` 服务，`C:\ProgramData\Neutrino\hub` 下的配置和状态留下。
+- Windows：在系统的 **应用** 设置里卸载 **Neutrino Hub**。卸载程序自己运行 `nhub reset network`，删掉中枢在系统防火墙里加的规则，卸载程序删掉程序和 `neutrino_hub` 服务，`C:\ProgramData\Neutrino\hub` 下的配置和状态留下。
 - macOS：安装包没有卸载程序。先运行 `sudo nhub reset all`，它删掉中枢在系统防火墙里加的规则。再运行下面的命令，停下服务，删掉程序；配置和状态留在原处。<!-- 待核: 命令按安装包放下的文件写成，没在 Mac 上走过。 -->
 
   ```bash
