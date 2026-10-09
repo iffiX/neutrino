@@ -65,6 +65,9 @@ PUBLISH_AUTHOR = ("Neutrino release", "release@neutrino.invalid")
 # How many entries one page of a Gitee listing holds.
 PUBLISH_PAGE_SIZE = 100
 PUBLISH_REQUEST_TIMEOUT_S = 600
+# An upload carries a whole package; it ends when the file is up, however
+# slowly the runner reaches Gitee.
+PUBLISH_UPLOAD_TIMEOUT_S = 3600
 
 
 class GiteeReleaseClient:
@@ -590,16 +593,16 @@ def download(tag: str, work: Path) -> Path:
 
 
 def _send_with_urllib(method: str, url: str, body, headers: dict) -> tuple:
-    """Carry one request with urllib.
+    """Carry one request with urllib; an upload waits ``PUBLISH_UPLOAD_TIMEOUT_S``.
 
     Returns:
         ``(status, body)``, an error status included.
     """
     request = urllib.request.Request(url, data=body, headers=headers, method=method)
+    is_upload = str(headers.get("Content-Type", "")).startswith("multipart/form-data")
+    timeout = PUBLISH_UPLOAD_TIMEOUT_S if is_upload else PUBLISH_REQUEST_TIMEOUT_S
     try:
-        with urllib.request.urlopen(
-            request, timeout=PUBLISH_REQUEST_TIMEOUT_S
-        ) as reply:
+        with urllib.request.urlopen(request, timeout=timeout) as reply:
             return reply.status, reply.read()
     except urllib.error.HTTPError as refused:
         return refused.code, refused.read()

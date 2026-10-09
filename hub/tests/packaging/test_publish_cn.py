@@ -448,3 +448,37 @@ def test_the_cc_switch_files_go_up_beside_the_packages(run, tmp_path):
     names = {item["name"] for item in release["files"]}
     assert set(CC_SWITCH_FILES) <= names
     assert CC_SWITCH_LICENSE in names
+
+
+def test_an_upload_waits_longer_than_a_plain_call(publish_cn, monkeypatch):
+    seen = []
+
+    class Reply:
+        status = 200
+
+        def read(self):
+            return b"{}"
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    def urlopen(request, timeout):
+        seen.append(timeout)
+        return Reply()
+
+    monkeypatch.setattr(publish_cn.urllib.request, "urlopen", urlopen)
+    publish_cn._send_with_urllib(
+        "POST",
+        "https://example.invalid/x",
+        b"",
+        {"Content-Type": "multipart/form-data; boundary=b"},
+    )
+    publish_cn._send_with_urllib("GET", "https://example.invalid/x", None, {})
+    assert seen == [
+        publish_cn.PUBLISH_UPLOAD_TIMEOUT_S,
+        publish_cn.PUBLISH_REQUEST_TIMEOUT_S,
+    ]
+    assert publish_cn.PUBLISH_UPLOAD_TIMEOUT_S > publish_cn.PUBLISH_REQUEST_TIMEOUT_S
