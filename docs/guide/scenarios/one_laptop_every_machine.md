@@ -8,7 +8,7 @@ You install an agent on two more machines at home, the Linux machine `server` an
 
 ## Before you start
 
-- You have done the [Step zero](../quick-start.md), so the hub runs on the hub box and the panel lists its own agent as `hub`.
+- You have done the [Step zero](../quick-start.md), so the hub runs on the hub box. The panel lists the box's own agent under its hostname, which this page writes as `hub`.
 - You have root through `sudo` on `server`, and an administrator account on `desktop` and on `laptop`.
 - All four machines are on the same LAN, where every step runs.
 

@@ -141,7 +141,7 @@ The client keeps the login in a credentials file only your account reads, so the
 
 | System  | The mount                                                                                                                                                                                           |
 | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Linux   | the client's mount helper runs under `pkexec` and mounts the share from the forward's port; polkit asks for a password the first time                                                               |
+| Linux   | the client's mount helper runs under `pkexec` and mounts the share from the forward's port; in a local desktop session, polkit authorizes it without a password                                     |
 | macOS   | the system mounts the volume from the forward, as the Finder's **Connect to Server** does; the first mount shows a dialog to confirm the server, and the row names the mount point under `/Volumes` |
 | Windows | the files adapter gives each machine that provides a share its own address, from `198.19.255.2` up, and Windows maps the drive to that address <!-- scan: allow -->                                 |
 
@@ -165,6 +165,8 @@ The shell opens in a new tab, and every key you type goes to the machine. The wi
 To paste, press the right mouse button on the shell and choose **Paste**, or press Ctrl+Shift+V, or Cmd+V on macOS. **Clear** in the same menu sends Ctrl+C and empties the screen.
 
 Two switches sit at the end of the line under the shell. **Persistent** keeps the session on the machine while no window is attached, for example after the client quits. **Shared** lists the session for every client with terminal rights on that machine.
+
+Switching **Persistent** off ends a session when its last window closes, so a session with no window attached keeps running after the switch. `nclient terminal stop`, or a second press on its **×** on the panel's **Terminals** page, ends such a session.
 
 A kept session shows as a tab with a grey dot; select it to attach, and its recent output appears first. When the channel comes back after a drop, each tab whose session still exists attaches again, and the others read **Ended**. The **×** on a persistent tab reads **Press again to end**, and a second press ends the shell on the machine. A terminal that closes with a code is covered under [A terminal closes](../reference/troubleshooting.md#a-terminal-closes).
 

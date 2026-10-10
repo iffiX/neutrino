@@ -4,7 +4,7 @@ title: Containers
 
 # Containers
 
-On a managed Linux machine, the **Containers** module runs the containers you declare as systemd units through podman. Each host port a container publishes becomes an entry on the clients' **Ports** page. From podman 4.4 a declaration becomes a Quadlet `.container` file; on an older podman the agent writes the `.service` unit itself.
+On a managed Linux machine, the **Containers** module runs the containers you declare as systemd units through podman. It is how a managed machine becomes a Docker host: podman runs Docker images from Docker Hub and other registries. Each host port a container publishes becomes an entry on the clients' **Ports** page. From podman 4.4 a declaration becomes a Quadlet `.container` file; on an older podman the agent writes the `.service` unit itself.
 
 To prepare the tab, select **Install** and then **Configure** on the **Containers** tab of the [Modules](../modules.md) page.
 
@@ -27,6 +27,10 @@ To prepare the tab, select **Install** and then **Configure** on the **Container
 **Image tag** is the image to run, such as `redis:7`, with no spaces. An image named without a registry is pulled from `docker.io`. After you type the image, **Pick a tag** lists the tags the registry holds for it, and selecting one replaces the part after the colon. When the registry lists none, type the tag yourself, such as `:latest`.
 
 ## Ports
+
+::: tip
+Every host port declared on a container appears on the hub's **Services** page by itself, under **Ports** and titled with the container's name. **Connect** on a client's **Ports** page forwards it, and a `/udp` port is a UDP entry.
+:::
 
 Each line maps a port on the machine to a port in the container, as `host_port:container_port`, such as `8080:80`. Add `/udp` for a UDP port, such as `5353:5353/udp`; a line without it is TCP. Podman publishes the host port on every address of the machine.
 

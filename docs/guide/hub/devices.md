@@ -19,7 +19,7 @@ The page has two sections, **Managed devices** and **Unmanaged devices**. Each t
 | **Scanned** | Unmanaged, with no credentials.                                  | **Get link**                                    |
 | **Offline** | Not answering. It keeps its place and token for when it returns. | wake it, or install 0.5.0 on a 0.3 or 0.4 agent |
 
-The filters above the list narrow it by state. **Scan LAN** finds the machines on the networks the hub serves. The hub box is under **Managed devices** from the first sign-in, in the row `hub`.
+The filters above the list narrow it by state. **Scan LAN** finds the machines on the networks the hub serves. The hub box is under **Managed devices** from the first sign-in, in a row named after its hostname. To rename the row, type a **Display name** in its drawer and select **Save device**.
 
 ## Add a machine
 

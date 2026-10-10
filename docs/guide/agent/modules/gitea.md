@@ -4,7 +4,7 @@ title: Gitea
 
 # Gitea
 
-Each managed machine, on Linux, macOS or Windows, can run one private git server through the **Gitea** module. You install Gitea's official release binary on the machine, at the one version the hub pins.
+The **Gitea** module configures a managed machine as a private git server, one per machine, on Linux, macOS or Windows. You install Gitea's official release binary on the machine, at the one version the hub pins.
 
 ## Install it
 

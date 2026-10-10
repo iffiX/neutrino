@@ -29,7 +29,7 @@ The mainland edition downloads from mirrors in mainland China. It publishes the 
 
 ## Install with one command
 
-The install script checks the package against the release's `SHA256SUMS`, installs it, and prints the wizard's address.
+The install script checks the package against the release's `SHA256SUMS`, installs it, and runs `nhub setup`. That command prints the wizard's address, then shows `Press Enter to begin:` and stays there. When you finish the wizard in a browser, it prints `The hub was set up in the browser; its panel is at` and the panel's address, then exits.
 
 ### Linux and macOS
 
@@ -44,6 +44,8 @@ For the mainland edition, run:
 ```bash
 curl -fsSL https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.sh | sh
 ```
+
+On Debian and Ubuntu, apt prints `N: Download is performed unsandboxed as root…` during the install. The line means apt read the package file as root, and the install goes on.
 
 ### Windows
 
