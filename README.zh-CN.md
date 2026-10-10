@@ -15,7 +15,7 @@
 
 [![CI](https://img.shields.io/github/actions/workflow/status/iffiX/neutrino/ci.yml?branch=main&label=CI&labelColor=0a0e14)](https://github.com/iffiX/neutrino/actions/workflows/ci.yml)
 [![Release build](https://img.shields.io/github/actions/workflow/status/iffiX/neutrino/release.yml?label=release%20build&labelColor=0a0e14)](https://github.com/iffiX/neutrino/actions/workflows/release.yml)
-[![Tests](https://img.shields.io/badge/tests-9886%20unit%20%C2%B7%20162%20integration-0a0e14?labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-9995%20unit%20%C2%B7%20164%20integration-0a0e14?labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/actions/workflows/ci.yml)
 [![Code size](https://img.shields.io/github/languages/code-size/iffiX/neutrino?label=code&labelColor=0a0e14&color=a78bfa)](https://github.com/iffiX/neutrino)
 
 **[安装](#安装)** · **[文档](https://neutrino.beyond-infinity.top/zh-CN/)** · [发布](https://github.com/iffiX/neutrino/releases)
