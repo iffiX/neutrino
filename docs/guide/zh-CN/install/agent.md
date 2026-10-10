@@ -124,9 +124,10 @@ sudo nagent join '<enroll-link>'
 
 ## 核对机器
 
-加入成功时，`nagent join` 打印中枢的地址和这台机器的 id：
+加入成功时，`nagent join` 打印两行，第二行是中枢的地址和这台机器的 id，`<device-id>` 代表这个 id：
 
 ```text
+joined the hub
 joined https://192.168.1.10:8443 as <device-id>
 ```
 

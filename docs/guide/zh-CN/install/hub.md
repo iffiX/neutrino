@@ -28,7 +28,7 @@ title: 安装中枢
 
 ## 一条命令安装
 
-安装脚本按系统和处理器选出安装包，用 `SHA256SUMS` 核对后安装，只要一次管理员权限。装好后脚本打印设置向导的地址；中枢已经设置过时，打印面板的地址。
+安装脚本按系统和处理器选出安装包，用 `SHA256SUMS` 核对后安装，只要一次管理员权限。中枢已经设置过时，脚本最后打印面板的地址。没设置过时，脚本接着运行 `nhub setup`：终端打印向导地址，最后一行是 `Press Enter to begin:`，命令保持运行。在浏览器里做完向导，终端打印 `The hub was set up in the browser; its panel is at` 和面板地址，命令随即结束。
 
 ### Linux 和 macOS
 
@@ -44,7 +44,7 @@ curl -fsSL https://github.com/iffiX/neutrino/releases/latest/download/install.sh
 curl -fsSL https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.sh | sh
 ```
 
-下载开始之前，在 `sudo` 的提示下输入一次密码。
+下载开始之前，在 `sudo` 的提示下输入一次密码。Debian 和 Ubuntu 上，apt 安装时打印一行 `N: Download is performed unsandboxed as root…`，这是 apt 的提示，安装照常完成。
 
 ### Windows
 
