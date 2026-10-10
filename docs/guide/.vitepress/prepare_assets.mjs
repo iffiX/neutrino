@@ -33,6 +33,11 @@ for (const name of ["neutrino_64.png", "neutrino_512.png"]) {
   await copyFile(new URL(name, iconDirectory), new URL(name, publicDirectory));
 }
 
+const webDirectory = new URL("../../../images/web/", import.meta.url);
+for (const name of ["docs_hero_dark.png", "docs_hero_light.png"]) {
+  await copyFile(new URL(name, webDirectory), new URL(name, publicDirectory));
+}
+
 await mkdir(guideTarget, { recursive: true });
 
 if (await exists(guideSource)) {

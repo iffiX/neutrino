@@ -17,21 +17,29 @@
   --vp-c-brand-soft: rgba(34, 211, 238, 0.12);
 }
 
-/* The home page's hero: the icon alone glows, the way the setup card does. */
+/* The home page's hero: the mascot on the icon; the dark image carries the
+   icon's glow itself, so the page adds none. */
 :root {
   --vp-home-hero-image-background-image: none;
   --vp-home-hero-image-filter: none;
 }
 
 .VPHomeHero .image-src {
-  max-width: 280px;
-  max-height: 280px;
-  border: 1px solid rgb(255 255 255 / 10%);
-  border-radius: 56px;
-  box-shadow:
-    0 0 0 1px rgb(34 211 238 / 18%),
-    0 0 48px -8px rgb(34 211 238 / 45%),
-    0 40px 120px -50px rgb(240 21 138 / 55%);
+  max-width: 320px;
+  max-height: 320px;
+}
+
+@media (min-width: 960px) {
+  .VPHomeHero .image-container {
+    width: 520px;
+    height: 520px;
+  }
+
+  .VPHomeHero .image-src {
+    max-width: 520px;
+    max-height: 520px;
+    transform: translate(-50%, -50%) scale(1.32);
+  }
 }
 
 /* The home page's lead, under the three cards, in the cards' column. */

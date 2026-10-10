@@ -6,7 +6,8 @@ hero:
   text: The services on one computer, on your phone and laptop anywhere
   tagline: Your computer at home. Scan once, use it from anywhere.
   image:
-    src: /neutrino_512.png
+    light: /docs_hero_light.png
+    dark: /docs_hero_dark.png
     alt: Neutrino
   actions:
     - theme: brand

@@ -6,7 +6,8 @@ hero:
   text: 一台电脑上的服务，手机和笔记本在哪都能用
   tagline: 家里的电脑，扫一次码，从任何地方接着用
   image:
-    src: /neutrino_512.png
+    light: /docs_hero_light.png
+    dark: /docs_hero_dark.png
     alt: 微子
   actions:
     - theme: brand
