@@ -60,7 +60,8 @@ jobs:
   deploy:
     if: >-
       github.event_name != 'pull_request'
-      && startsWith(github.ref, 'refs/tags/v')
+      && (startsWith(github.ref, 'refs/tags/v')
+          || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
       && vars.DOCS_PAGES_ENABLED == 'true'
     needs: build
     runs-on: ubuntu-24.04
