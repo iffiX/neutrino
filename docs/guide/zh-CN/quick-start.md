@@ -33,7 +33,7 @@ Windows 上打开 PowerShell，运行：
 irm https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.ps1 | iex
 ```
 
-脚本要一次管理员权限：Linux 和 macOS 上输入登录密码，Windows 上在授权框里选 **是**。装好后，终端打印设置向导的地址，末尾带一次性令牌。
+脚本要一次管理员权限：Linux 和 macOS 上输入登录密码，Windows 上在授权框里选 **是**。装好后，终端打印设置向导的地址，末尾带一次性令牌，最后一行是 `Press Enter to begin:`。让终端开着，不按回车；在浏览器里做完下面的向导后，终端打印 `The hub was set up in the browser; its panel is at` 和面板地址，命令随即结束。
 
 这是国内版的命令。完整版的命令见[安装中枢](./install/hub.md)。
 
@@ -89,6 +89,8 @@ irm https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.ps1 | ie
    ![应用的加入页在扫描二维码](/guide/zh/app_join_scan.webp)
 
 中枢那一行出现，先读 **连接中…**，再读 **已连接 · 局域网**。
+
+Android 13 及更新版本上，第一次在应用里选 **打开**、**连接** 或 **面板** 时，系统弹出通知权限框；允许后，通知栏里多一行 **已连接 1 台中枢**，这是应用在后台保持连接的服务。
 
 ### 在笔记本上加入
 

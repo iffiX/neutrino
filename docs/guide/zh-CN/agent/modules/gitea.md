@@ -4,7 +4,7 @@ title: Gitea
 
 # Gitea
 
-想在自己的机器上跑一个 git 服务，就装 **Gitea** 模块。一台机器一个 Gitea，Linux、macOS 和 Windows 都能跑，版本固定。
+装上 **Gitea** 模块，一个被控端就成了私人 Git 服务器，仓库存在这台机器上。一台机器一个 Gitea，Linux、macOS 和 Windows 都能跑，版本固定。
 
 ## 安装
 
