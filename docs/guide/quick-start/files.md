@@ -32,7 +32,7 @@ On Linux the install fetches Samba, and on macOS and Windows the module uses the
 1. Select **Save**.
 1. Select **Mount**.
 
-The button reads **Mounting…**, then **Unmount**. On Linux the share is a folder under your home, and polkit shows a password prompt the first time. On macOS it is a volume in the Finder, and on Windows a drive letter in File Explorer.
+The button reads **Mounting…**, then **Unmount**. On Linux the share is a folder under your home; in a local desktop session polkit authorizes the mount without a prompt. On macOS it is a volume in the Finder, and on Windows a drive letter in File Explorer.
 
 ![The Files page with a share mounted](/guide/en/client_files_mounted.webp)
 
