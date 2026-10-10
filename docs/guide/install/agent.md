@@ -133,6 +133,13 @@ The hub can sign in to a Linux machine over SSH and install the agent itself. Be
 
 ## Check the machine
 
+A successful `nagent join` prints these lines. The second one names the hub's address with its port, and the machine's id on the hub:
+
+```text
+joined the hub
+joined https://<hub-address> as <device-id>
+```
+
 Within seconds of the join, the machine is listed under **Managed devices**. On the machine, `sudo nagent status` names the hub it joined, and its `heartbeat` line reads `ok` while the agent is connected. When the join fails, the cause is on [Troubleshooting](../reference/troubleshooting.md).
 
 ## What the package leaves on the machine

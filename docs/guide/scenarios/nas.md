@@ -1,10 +1,10 @@
 ---
-title: Make a machine a NAS
+title: Configure a managed machine as a NAS
 ---
 
-# Make a machine a NAS
+# Configure a managed machine as a NAS
 
-At the end of this page, a managed Linux machine with a spare disk is the home's file server, open from your laptop and phone at home and away. On that machine, **ZFS storage** keeps the files on a pool of disks, and **File share** serves a folder of the pool over SMB. The hub lists each share on its **Services** page and relays every client's connection from its port 8443 to the machine's agent. The agent then connects to the share on its own machine.
+This page sets up a managed Linux machine with a spare disk as the home's file server, which your laptop and phone open at home and away. On that machine, **ZFS storage** keeps the files on a pool of disks, and **File share** serves a folder of the pool over SMB. The hub lists each share on its **Services** page and relays every client's connection from its port 8443 to the machine's agent. The agent then connects to the share on its own machine.
 
 ## Before you start
 

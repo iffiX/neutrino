@@ -33,7 +33,9 @@ On Windows, open PowerShell and run:
 irm https://github.com/iffiX/neutrino/releases/latest/download/install.ps1 | iex
 ```
 
-The script prompts once for administrator rights. On Windows it goes on in a new PowerShell window that Windows opens as administrator. When the install ends, the terminal prints the wizard's address on each network the computer is on.
+The script prompts once for administrator rights. On Windows it goes on in a new PowerShell window that Windows opens as administrator.
+
+After the install, the terminal prints the wizard's address on each network the computer is on. It then shows `Press Enter to begin:` and stays there until you finish the wizard in the browser. At that point it prints `The hub was set up in the browser; its panel is at` and the address, and the script exits.
 
 [Install the hub](./install/hub.md) has the mainland edition's command and the package files.
 
@@ -84,7 +86,7 @@ Each device joins with a link of its own from the panel's **Clients** page, vali
 1. Select **Allow the camera**, then allow it in Android's prompt.
 1. Point the camera at the QR code in the panel.
 
-The app lists the hub, and its row reads **Connected · LAN**.
+The app lists the hub, and its row reads **Connected · LAN**. On Android 13 and newer, the app's first **Open** or **Connect** on its **Web**, **Ports** or **AI** page later shows Android's notification prompt. Allow it, and the app keeps one line there with the number of hubs it is connected to.
 
 ![The client link with its QR code on the Clients page](/guide/en/clients_link_qr.webp)
 

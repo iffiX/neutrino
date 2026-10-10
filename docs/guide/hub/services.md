@@ -34,7 +34,17 @@ Each time a person selects **Open** on such an entry, the client fetches a token
 
 ## Declare a service by hand
 
-A declaration publishes something the hub does not manage: a web page, a TCP or UDP port, or an SMB share on another server.
+A declaration publishes a service the hub does not manage, such as a router's web page, a database port or a NAS's shares. **Host** is the machine's name or address as the hub reaches it, and every client reaches the service through the hub.
+
+The **Kind** sets what a client does with the entry:
+
+- **Web** is a web page. Its **Scheme** is **http** or **https**, and its **Path** starts with `/`. A client opens the page in its browser through a forward.
+- **Port** is a port a program connects to. With **TCP** as the **Protocol**, a client forwards it to a port on its own `127.0.0.1`. **UDP** does the same for datagrams, with the limits under [UDP ports](#udp-ports).
+- **File** is one or more SMB shares on another server, found with **Scan host** or typed by name. Each share is a row of its own, and a client mounts it from its **Files** page.
+
+You can declare one port number for TCP and for UDP at the same time, as two declarations with the same **Host** and **Port**. A DNS server on port 53, for example, takes one declaration with **TCP** and one with **UDP**.
+
+To declare a service:
 
 1. Select **Declare service**.
 1. Fill **Name** and pick the **Kind**: **Web**, **Port** or **File**.
@@ -46,7 +56,7 @@ A declaration publishes something the hub does not manage: a web page, a TCP or 
 
 ![The New declared service form](/guide/en/services_add.webp)
 
-A file service with no port uses 445. A host of `127.0.0.1`, `localhost` or `0.0.0.0` means the hub itself. A port number used on both protocols is declared twice. **Delete** removes a declaration and its rows.
+A file service with no port uses 445. A host of `127.0.0.1`, `localhost` or `0.0.0.0` means the hub itself. **Delete** removes a declaration and its rows.
 
 ## UDP ports
 

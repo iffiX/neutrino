@@ -16,6 +16,8 @@ A client is the program on a person's computer or phone that opens what the hub 
 
 The link works for 30 minutes from the moment you create it, and one client joins with it one time. A restart of the hub within those 30 minutes keeps an unused link. [Install a client](../install/client.md) shows how a person joins with it.
 
+A new client link replaces the previous link when that one is still unused. Each link also adds its client's row to this page at once. A replaced link therefore leaves a row that never connects; select **Delete** on it.
+
 The link also holds what the client needs to join the hub's virtual networks: the NetBird setup key, and the EasyTier secret or console address. With a one-time NetBird key, one client joins and the next one fails; [Join the hub to NetBird](./netbird.md) shows how to replace it.
 
 When a join fails, the cause is on [Troubleshooting](../reference/troubleshooting.md).

@@ -93,6 +93,8 @@ Every package also installs the services for the virtual networks; the mainland 
 1. Select **Install**.
 1. Open **Neutrino**.
 
+The mainland edition's apk is on the [Gitee releases page](https://gitee.com/iffiX/neutrino/releases). It has no NetBird and joins EasyTier networks only.
+
 Every release apk is signed with the project's key. To check a downloaded apk on a computer with the Android SDK build tools, run:
 
 ```bash
@@ -121,6 +123,8 @@ If the digest differs, delete the apk without installing it.
 
 The notice shows the link, **Copy**, and a QR code of the same link. The link is valid for 30 minutes.
 
+Creating another client link before this one is used makes this one stop working. Every link puts its row on **Clients** when you create it. The row of a replaced link never connects; remove it with **Delete**.
+
 ## Join from a computer
 
 1. Open the client: **Neutrino Client** in the application menu on Linux or the Start menu on Windows, or the app on macOS. **Hubs** reads **No hub joined yet**.
@@ -140,6 +144,8 @@ The hub's row appears at once and reads **Connecting…**, then **Connected · L
 ![The QR scanner on the Join a hub screen](/guide/en/app_join_scan.webp)
 
 To paste the link instead, put it into the field under **or** and select **Join**. The hub's row reads **Connecting…** until the phone reaches the hub.
+
+Android 13 and newer show a notification prompt at the first **Open** on **Web**, **Connect** on **Ports** or **AI**, or **Panel** on a hub row. With notifications allowed, the app shows one line there with the number of hubs it is connected to.
 
 ## Join another hub
 
