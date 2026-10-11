@@ -175,7 +175,7 @@ A tab of the **Modules** page shows these codes under its state word or on a row
 | a module is greyed with **This machine's system cannot run it**, or `no_platform_build` | the module has no build for this machine's system      | pick another machine; [Supported platforms](./platforms.md#modules-by-system) lists each module's systems |
 | `gitea_git_missing`                                                                     | a Mac or a Windows machine has no usable git for Gitea | install git, then select **Install** again                                                                |
 
-### Instances of VS Code, code-server and CloudCLI
+### Instances of VS Code, code-server, CloudCLI and Codeg
 
 These codes also come from the **Terminal** tab and from the accounts under **Global configuration**.
 
@@ -189,7 +189,7 @@ These codes also come from the **Terminal** tab and from the accounts under **Gl
 | `credential_missing` | a Windows instance has no login picked                                     | pick the account's login under **Windows login for** the account               |
 | `credential_invalid` | Windows no longer accepts the instance's login, as after a password change | add a login with the new password on **Credentials**, pick it, and apply again |
 | `token_missing`      | the hub sent no connection token for the instance                          | apply the module again                                                         |
-| `secret_missing`     | the hub sent no token secret for a code-server instance                    | apply the module again                                                         |
+| `secret_missing`     | the hub sent no token secret for a code-server or Codeg instance           | apply the module again                                                         |
 
 ### CloudCLI
 
@@ -201,6 +201,13 @@ These codes also come from the **Terminal** tab and from the accounts under **Gl
 | `cloudcli_install_out_of_memory` | the machine ran out of memory during the npm install                           | free memory on the machine, then select **Apply CloudCLI**                                                                  |
 | `cloudcli_port_taken`            | another program on the machine holds the instance's port                       | change the instance's **Port**, then apply again                                                                            |
 | `cloudcli_register_failed`       | the account's CloudCLI already has an administrator with another password      | wait: the agent starts that CloudCLI afresh with a new sign-in file, then signs in again every 30 seconds until it succeeds |
+
+### Codeg
+
+| Symptom                 | Cause                                                                                              | Fix                                                                                  |
+| ----------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `codeg_download_failed` | the server bundle or the Node.js archive did not reach the machine from the hub, or did not unpack | check the hub's own download first, then select **Install** or **Apply Codeg** again |
+| `codeg_port_taken`      | another program on the machine holds the instance's port                                           | change the instance's **Port**, then select **Apply Codeg**                          |
 
 ### VS Code
 
