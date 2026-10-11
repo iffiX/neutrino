@@ -42,7 +42,9 @@ neutrino_hub/cli/apply.py
   contents from the filename. No `utils.py` / `helpers.py` / `misc.py` dumping
   grounds inside a package. `neutrino_hub/utils/` is the one shared-primitive package, and
   even there each module owns one concept (`json_file.py`, `subprocess_run.py`),
-  never a `helpers.py`.
+  never a `helpers.py`. `neutrino_agent/modules/shared/` is the agent's one
+  package of what every module runner shares, each file one concept, never a
+  `helpers.py`.
 
 ## The two-tier split (no exceptions)
 

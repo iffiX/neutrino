@@ -19,3 +19,8 @@ fence go with the package, and so do its modules' Windows services, found
 by name as the rest are. An agent installed again finds the shares and
 accounts that were left and takes them back by the rule above: they are
 displayed, and the first report imports them.
+
+Its journal on Windows reads the SMB server's latest events from
+`Microsoft-Windows-SMBServer/Operational`, and on macOS what the unified
+log holds of `smbd` over the last 15 minutes ([agent.md](../../agent.md),
+"Which modules each system runs").

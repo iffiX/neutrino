@@ -6,7 +6,10 @@ It holds one switch, off on a new machine. It is the one
 place a desktop share is decided: the hub writes it, the state carries it,
 and the agent makes it true and keeps it true across a restart of the
 machine. `nagent rdp start` and `nagent rdp stop` are gone, from the command
-line and from the control socket.
+line and from the control socket. The agent's code is
+`modules/remote_desktop/`, with its config, constants and runner, one
+applier per system, and `rdp/` under it, `modules/remote_desktop/rdp/`,
+which reads who is at the screen and writes RustDesk's settings files.
 
 ## The desktop is the hub's order
 
@@ -126,11 +129,13 @@ pairs it with the device's address, chosen for the caller's network
 memory alone. It dies when the machine stops sharing, stops reporting, or the
 hub restarts, and the next report from a machine still sharing puts it back.
 
-A person's own AnyDesk or TeamViewer is not a module. The agent detects what
-is there, brings a stopped daemon up, reads the id a peer connects to and
-sets the unattended password when the drawer asks, as the seated account for
-AnyDesk and as root for TeamViewer, because that is where each keeps its
-configuration.
+The module also detects a person's own AnyDesk or TeamViewer, which is a
+detection of this module and no module of its own: the commands that find
+each program are the module's constants, under `REMOTE_DESKTOP_`. The agent
+detects what is there, brings a stopped daemon up, reads the id a peer
+connects to and sets the unattended password when the drawer asks, as the
+seated account for AnyDesk and as root for TeamViewer, because that is where
+each keeps its configuration.
 
 ## On a Mac
 

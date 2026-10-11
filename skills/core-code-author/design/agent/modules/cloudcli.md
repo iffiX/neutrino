@@ -2,19 +2,25 @@
 
 The `cloudcli` module runs CloudCLI, the npm package `@cloudcli-ai/cloudcli`
 pinned at 1.37.3 (AGPL-3.0), once per account: a web page for AI coding
-sessions. It is an ordinary module shaped like VS Code,
-`agent/neutrino_agent/modules/cloudcli/` with its config, constants, runner,
-installer and one applier per system, and its configuration is
-`{instances: [{account, port}]}`.
+sessions. It is a program run as a person's account
+([template.md](template.md)): `agent/neutrino_agent/modules/cloudcli/`
+holds `config.py`, `constants.py` and `hooks.py`, and `modules/shared/` does
+the rest. Its configuration is `{instances: [{account, port}]}`.
 
-**It runs as the account, never as root**: a unit
+**The account service layer runs it as the account, never as root**
+([template.md](template.md), "The run"): a unit
 `neutrino_cloudcli@<account>.service` with `User=<account>` on Linux, a
 LaunchDaemon with `UserName` on macOS, and on Windows a scheduled task
 registered with a login the Credentials page holds, chosen per instance as
-for VS Code.
+for VS Code. Its journal on Windows reads the end of `<account>.log` beside
+the CLI, which the task's `cmd.exe` appends to, and an install still running
+shows `run\install_<account>.log`; on macOS the LaunchDaemon's
+`StandardOutPath` and `StandardErrorPath` name
+`/Library/Logs/Neutrino/agent/cloudcli_<account>.log`.
 
-**Node.js comes from the hub and stays out of the system.**
-`data/manifests/cloudcli.json`, written like `vscode.json`, pins the
+**Node.js comes from the hub and stays out of the system.** It is CloudCLI's
+own component, the one archive its manifest pins, and no other module reads
+it. `data/manifests/cloudcli.json`, written like `vscode.json`, pins the
 nodejs.org standalone build of Node 22 LTS for Linux, macOS and Windows on
 x64 and arm64, each with its url and the sha256 of `SHASUMS256.txt`. The hub
 fetches it into its module cache and serves it on the `package` stream. The

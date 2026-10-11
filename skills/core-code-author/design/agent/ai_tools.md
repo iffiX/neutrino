@@ -7,8 +7,12 @@ stopped, and it has no `want`. The agent makes it true and reports each
 account's result in the `ai_tools` section of its report.
 
 The accounts are the hub's word: every account with an instance in the
-machine's VS Code, code-server or CloudCLI configuration. The agent looks
-nothing up and adds no account of its own.
+machine's VS Code, code-server, CloudCLI or Codeg configuration. The agent
+looks nothing up and adds no account of its own. Codeg's Claude Code and
+Codex entries are the ACP adapters `claude-agent-acp` and `codex-acp`, which
+read the account's `~/.claude/settings.json` and `~/.codex/config.toml`, the
+files cc-switch writes, so the setting covers Codeg's sessions as well
+([modules/codeg.md](modules/codeg.md)).
 
 For each account the state names while the section is on, the agent runs the
 client's steps as that account, with the copy of cc-switch the agent fetched

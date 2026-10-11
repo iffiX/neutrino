@@ -33,8 +33,12 @@ packaging/           Building every package, and driving a built one on a
 docs/                memory.md, the working copy's own notes (gitignored), and
                      guide/, the VitePress documentation site. Generated site
                      output is ignored.
-skills/              core-code-author/, this standard; doc-author/, how every
-                     .md is written.
+skills/              core-code-author/, this standard: design/ the design
+                     pages, design/hub_components/ the hub's AI gateway,
+                     network and proxy, design/agent/ the agent's AI tools
+                     setting and design/agent/modules/ one page per device
+                     module with template.md the flow they share;
+                     doc-author/, how every .md is written.
 images/              Source artwork: icons/ the one icon source the packaging
                      builds copy from, original/ the raw artwork, web/ and
                      screenshots/ the README's images, guide/ the site's.
@@ -69,8 +73,8 @@ hub/
     data/              What ships inside the wheel: services/ the unit
                        templates, examples/ the committed *.example.json,
                        manifests/ the device software catalog, one file
-                       per module, cloudcli.json and code_server.json
-                       among them, frontend/ the
+                       per module, cloudcli.json, code_server.json and
+                       codeg.json among them, frontend/ the
                        built panel, resources/ the icons the build copies in
                        from images/icons/.
   frontend/          React and TypeScript source. `npm run build` writes into
@@ -100,12 +104,14 @@ agent/
     streams/         Shell and file streams multiplexed over the channel;
                      windows_shell.py runs PowerShell on a pseudo console.
     modules/         What a machine can host: samba/, gitea/, podman/, zfs/,
-                     vscode/, cloudcli/, code_server/, terminal/ and
-                     remote_desktop/, and the installers they share.
+                     vscode/, cloudcli/, code_server/, codeg/, terminal/
+                     and remote_desktop/, with remote_desktop/rdp/ reading
+                     who is at the screen and writing RustDesk's files;
+                     shared/ what every runner shares: the package and
+                     unpack machinery, the account service layer, the
+                     forwarder, the instances runner.
     ai_tools/        The machine's AI tools: cc-switch run as each account the
                      hub names, the client's steps, the records per tool.
-    rdp/             Sharing this machine's desktop at the seat password the
-                     hub set; one seat file per OS reads who is at the screen.
     platforms/       The OS layer: linux.py, windows.py and darwin.py behind
                      one contract, with win32.py the one Win32 binding and
                      windows_service.py the service control manager's side.

@@ -386,9 +386,9 @@ the forward listens on the phone's loopback, and the browser opens there.
 
 VS Code reads its token from a cookie in the page to authenticate its own
 connection, so the token must reach the browser in the URL. The forwarders
-in front of code-server and CloudCLI trade a token for a login of their own
-([agent/modules/cloudcli.md](agent/modules/cloudcli.md) and
-[agent/modules/code_server.md](agent/modules/code_server.md)). Their token is spent
+in front of code-server, CloudCLI and Codeg trade a token for a login of
+their own ([agent/modules/template.md](agent/modules/template.md), "The
+run"). Their token is spent
 once and dies after 60 seconds, so every press of **Open** reads a new one.
 
 ## The Ports page
@@ -765,7 +765,7 @@ word. The controls:
 
 | Control | Enabled | Does |
 | --- | --- | --- |
-| **Connect** | when the entry is not unhealthy, the hub is not disabled and no viewer runs on it | job `ui.job.connecting`: reads `{password}` on the `service` stream and makes the entry's forward; on a desktop starts the viewer at `127.0.0.1:<local-port>` with the seat password on its command line, the one channel RustDesk 1.4.9 has for a connect password (its peer file takes only a hash salted by the host), and follows the viewer process, on Windows the copy the bundled viewer starts of itself from its own data directory; on a phone opens the viewer page, whose core dials the same forward. The forward ends with the viewer |
+| **Connect** | when the entry is not unhealthy, the hub is not disabled and no viewer runs on it | job `ui.job.connecting`: reads `{password}` on the `service` stream and makes the entry's forward; on a desktop starts the viewer at `127.0.0.1:<local-port>` with the seat password on its command line, the one channel RustDesk 1.4.9 has for a connect password (its peer file takes only a hash salted by the host), and follows the viewer process, on Windows the copy the bundled viewer starts of itself from its own data directory; on a phone opens the viewer page, whose core dials the same forward. The forward ends with the viewer. The command line is `nclient service rdp connect <ref>`, `<ref>` the entry's number in `nclient service list` or its id |
 | the viewer | | on a desktop a separate window, and the row then shows `ui.rdp_open`; on a phone a page of the app whose three round buttons open the keyboard, the key bar of Esc, Tab, Ctrl, Shift, Alt, Win, **Paste** and the arrows, and close the session |
 | **Configure** | on a phone, when the entry is not unhealthy | the dialog of the inline-form idiom with two pickers: **Codec** (Auto, then each codec the core offers) and **Quality** (Balanced, Low bandwidth, Best); **Save** and **Cancel**; the choice is kept per entry in the app's settings and applied at the next connect |
 

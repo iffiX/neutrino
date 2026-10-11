@@ -43,6 +43,7 @@ What a user's own account holds, one tree per user with the same three names:
 | the client's log | the same directory | `~/Library/Logs/Neutrino/client` | `%LOCALAPPDATA%\Neutrino\client` |
 | the client's control socket | `$XDG_RUNTIME_DIR/neutrino/client.sock` | `~/Library/Application Support/Neutrino/client/client.sock` | the pipe `neutrino_client_<user>` |
 | what the agent installs for the account (CloudCLI's app, its npm cache and database) | `~/.local/share/neutrino/agent/cloudcli` | `~/Library/Application Support/Neutrino/agent/cloudcli` | `%LOCALAPPDATA%\Neutrino\agent\cloudcli` |
+| what Codeg writes for the account (its database, uploads and logs, and the prefix and cache of the npm packages it installs) | `~/.local/share/neutrino/agent/codeg` | `~/Library/Application Support/Neutrino/agent/codeg` | `%LOCALAPPDATA%\Neutrino\agent\codeg` |
 | the input of one cc-switch call, there only during that call | `~/.local/share/neutrino/agent/ai_tools/payload` | `~/Library/Application Support/Neutrino/agent/ai_tools/payload` | `%LOCALAPPDATA%\Neutrino\agent\ai_tools\payload` |
 | cc-switch's store for the agent's runs, mode 700, there while a tool of the account stands on the hub | `~/.local/share/neutrino/agent/ai_tools/cc_switch` | `~/Library/Application Support/Neutrino/agent/ai_tools/cc_switch` | `%LOCALAPPDATA%\Neutrino\agent\ai_tools\cc_switch` |
 | build caches of the packaging scripts | `~/.cache/neutrino` | the same | the same |
@@ -175,7 +176,13 @@ overrides both, which is what makes a second instance testable. Details of the f
         configured/         the desired state the hub sent, root only
         packages/           the module packages the hub sent
         vscode/             the VS Code CLI, read and run by every account
-        cloudcli/           CloudCLI's Node.js, read and run by every account
+        code_server/        code-server's release, its own Node.js inside
+                            it, read and run by every account
+        cloudcli/           CloudCLI's Node.js, its one component, read
+                            and run by every account
+        codeg/              Codeg's two components, one subdirectory each:
+                            server/ the server bundle and node/ its
+                            Node.js, read and run by every account
         ai_tools/           per account, the record of each AI tool the
                             agent pointed at the hub, root only; on
                             Windows also login.json, the login the account
@@ -251,8 +258,9 @@ account writes: its ACL grants that account modify, so the account's
 one-shot task can read its script and input and write its output and exit
 code, and every file in it goes when the task ends.
 
-`agent/vscode/` and `agent/cloudcli/` hold programs the accounts of the
-machine run, so those two directories alone are readable and executable by
+`agent/vscode/`, `agent/code_server/`, `agent/cloudcli/` and `agent/codeg/`
+hold programs the accounts of the machine run, so those directories alone
+are readable and executable by
 every account (mode 755; on Windows the Users group gets read and execute),
 while the rest of the agent's state stays root's.
 
@@ -277,7 +285,7 @@ installer resets each access list under its folder on every install, upgrade
 and repair. On macOS the postinstall creates `config` and `state`
 owned by root:wheel with mode 0700, and the `chmod 0600` on each secret holds
 as on Linux. The agent's `state` alone is mode 755, so every account reaches
-`vscode/` and `cloudcli/` under it.
+`vscode/`, `code_server/`, `cloudcli/` and `codeg/` under it.
 
 ## /var/log/neutrino: what happened
 

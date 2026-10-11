@@ -412,8 +412,8 @@ module, and its tab on the Modules page is the reference:
 The record is per machine, `terms_accepted_at` in that machine's
 `config/devices/<id>/vscode.json` ([protocol.md](protocol.md),
 `/api/agent/module`), so each machine's tab asks once. A failed write
-shows in place under the button, which stays live. CloudCLI, Gitea and
-code-server tabs carry no notice ([ui_text.md](ui_text.md), "Software the
+shows in place under the button, which stays live. CloudCLI, Codeg, Gitea
+and code-server tabs carry no notice ([ui_text.md](ui_text.md), "Software the
 owner installs").
 
 ## The Direct and relay cards on the Access page
@@ -485,7 +485,7 @@ The **Modules** page has three panels, top to bottom:
 | --- | --- |
 | the machine picker | the managed machines, as before |
 | **Global configuration** | the settings of the picked machine that belong to no module; today one part, its AI tools |
-| **Module configuration** | the tab strip of the machine's modules and the picked module's panels, as before under the title `ui.modules.tabs_title` |
+| **Module configuration** | a left and right split under the title `ui.modules.tabs_title`: on the left a vertical, scrollable list of the machine's modules, each row the module's icon (`images/icons/modules/<module>.svg`, the generic glyph for a module without one) and its title; on the right the picked module's panels, its output box and its buttons, the buttons aligned to the right edge |
 
 A module the machine reports `installed`, `stopped` or `running` while
 the hub holds no `want` for it, as after a reset or a new join on a machine
@@ -513,9 +513,11 @@ same press again"); there is no other retry button. A module panel's apply
 and **Configure** on a refused configuration try again the same way. A
 press on a module that did not fail asks for nothing new.
 
-The tabs of **Module configuration** come in one order, the modules every
-system runs first: File share, Terminal, Remote desktop, Gitea, VS Code,
-code-server, CloudCLI, Containers, ZFS storage. A module the machine cannot
+The rows of the module list, each a tab, come in one order, the modules
+every system runs first: File share, Terminal, Remote desktop, Gitea, VS
+Code, code-server, CloudCLI, Codeg, Containers, ZFS storage. VS Code,
+code-server, CloudCLI and Codeg are drawn by one `instances_panel.tsx` from
+the hub's description table. A module the machine cannot
 run is left out, as before ([agent.md](agent.md), "Which modules each system
 runs").
 

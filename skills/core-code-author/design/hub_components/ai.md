@@ -175,7 +175,7 @@ sections").
 | --- | --- | --- |
 | Who runs the steps | the client | the agent |
 | As whom | the person, in their own session | each account the hub names, never root or SYSTEM: `runuser -u <account> --` on Linux, a process with the account's uid and groups on macOS, a one-shot scheduled task under the account's login on Windows ([../agent/ai_tools.md](../agent/ai_tools.md)) |
-| The accounts | the person's own | every account with an instance in the machine's VS Code, code-server or CloudCLI configuration, worked out by the hub and sent in the state |
+| The accounts | the person's own | every account with an instance in the machine's VS Code, code-server, CloudCLI or Codeg configuration, worked out by the hub and sent in the state |
 | The endpoint | `http://127.0.0.1:<local-port><path>`, the client's forward | `http://<hub-address>:<listen-port>`, the gateway as the machine reaches it on the LAN, from `device_gateway()` in `modules/clients/ai_keys.py` |
 | The key | the client's own, from the `service` stream | the device's own, from the `ai_tools` section |
 | The unchosen models | the gateway's first model, from the `service` stream | the gateway's first served model, filled in by the hub before the state is sent |
@@ -189,7 +189,10 @@ account's `~/.cc-switch` is never read or written ([../agent/ai_tools.md](../age
 switched at the next state. While the gateway serves no model, the hub sends
 the setting as off, so every account is switched back; the stored setting
 and the device's key stay, and the next state after the gateway serves again
-switches the accounts back to the hub.
+switches the accounts back to the hub. Codeg's Claude Code and Codex
+entries are the ACP adapters `claude-agent-acp` and `codex-acp`, which read
+the same files cc-switch writes, so the setting covers Codeg's sessions
+([../agent/modules/codeg.md](../agent/modules/codeg.md)).
 
 A desktop client on a managed machine leaves its AI page to the agent
 ([../client.md](../client.md), "The AI page"), because both would write the

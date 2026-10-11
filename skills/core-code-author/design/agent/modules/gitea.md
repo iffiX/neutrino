@@ -39,6 +39,8 @@ the service is.
 **Uninstall takes what the module added and keeps the data**: the unit,
 the LaunchDaemon or the service, the binary and `app.ini` go; the data
 directory and the account stay, so an install afterwards serves the same
-repositories and accounts. Removing the agent takes the LaunchDaemon and the
+repositories and accounts. On Windows and macOS its journal reads the end of
+its own log, `log/gitea.log` under its data directory. Removing the agent
+takes the LaunchDaemon and the
 service with its own ([agent.md](../../agent.md), "One socket, everything on
 it").

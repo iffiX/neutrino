@@ -259,6 +259,8 @@ and `cn` in the mainland source tree.
 | The npm registry, for CloudCLI | `https://registry.npmjs.org` | `https://registry.npmmirror.com` |
 | better-sqlite3's prebuilt binary, for CloudCLI | its GitHub releases | `https://registry.npmmirror.com/-/binary/better-sqlite3` |
 | code-server | `https://github.com/coder/code-server/releases/download/` | `https://mirrors.ustc.edu.cn/github-release/coder/code-server/` |
+| Codeg | `https://github.com/spacering-net/codeg/releases/download/` | the same address |
+| the npm registry, for the agents Codeg installs | `https://registry.npmjs.org`, named by Codeg itself on its own command line | the same |
 | cc-switch, for the machine's AI tools | `https://github.com/SaladDay/cc-switch-cli/releases/download/` | the hub's own release, `https://gitee.com/iffiX/neutrino/releases/download/<tag>/`, each file under its upstream name |
 
 - An edition updates only to its own edition: the update check and the
@@ -266,7 +268,9 @@ and `cn` in the mainland source tree.
 - A manifest entry's sha256 is the publisher's file, and a mirror serves the
   same file, so one pin covers both addresses. The entry names the mirror's
   address in `cn_url` beside `url`, and a `cn` hub's installer fetches from
-  `cn_url` when the entry has one.
+  `cn_url` when the entry has one. Codeg's archives are mirrored nowhere and
+  are not among the files the mainland release carries, so a `cn` hub
+  fetches them from `url`, GitHub, which is slower there.
 - A `cn_url` that begins with `{release}` names a file the project's own
   release carries. The hub reads `{release}` as the address its build
   stamped before each agent package's name in `data/agent_packages.json`,

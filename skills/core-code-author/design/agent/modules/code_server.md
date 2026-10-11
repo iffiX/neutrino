@@ -3,17 +3,20 @@
 The `code_server` module runs code-server, the browser build of VS Code
 that Coder publishes (MIT), once per account on Linux and macOS. Its
 extensions come from Open VSX, code-server's own default gallery. It is
-an ordinary module shaped like CloudCLI,
-`agent/neutrino_agent/modules/code_server/` with its config, constants,
-runner, installer, forwarder and one applier per system, and its
+a program run as a person's account ([template.md](template.md)):
+`agent/neutrino_agent/modules/code_server/` holds `config.py`,
+`constants.py` and `hooks.py`, and `modules/shared/` does the rest. Its
 configuration is `{instances: [{account, port, secret}]}`. Its manifest has
 no Windows branch, so the Modules page greys it out on Windows.
 
-**It runs as the account, never as root**: a unit
+**The account service layer runs it as the account, never as root**
+([template.md](template.md), "The run"): a unit
 `neutrino_code_server@<account>.service` with `User=<account>` on Linux, and
 a LaunchDaemon `com.neutrino.code_server.<account>` with `UserName` on
-macOS. Its settings and extensions are in code-server's own directories
-under the account's home.
+macOS, whose `StandardOutPath` and `StandardErrorPath` name
+`/Library/Logs/Neutrino/agent/code_server_<account>.log`, the file its
+journal reads there. Its settings and extensions are in code-server's own
+directories under the account's home.
 
 **The release comes from its publisher.** `data/manifests/code_server.json`
 pins the standalone release for Linux and macOS on amd64 and arm64, each with
@@ -27,7 +30,8 @@ sends it down `package {module: code_server}`. The agent unpacks it under its
 state root, `/var/lib/neutrino/agent/code_server/` on Linux and
 `/Library/Application Support/Neutrino/agent/state/code_server` on macOS:
 owned by root, read-only to every account, one copy per machine, never on
-`PATH`. The release includes its own Node.js.
+`PATH`. The release includes its own Node.js, which is code-server's alone
+and which no other module reads.
 
 **code-server listens on a socket only its account opens.** The service
 runs `code-server --auth none --socket <run-dir>/code_server.sock

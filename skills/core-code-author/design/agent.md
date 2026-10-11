@@ -4,10 +4,10 @@ The agent is the hub's presence on a managed Linux, Windows or macOS
 machine: one root service with one socket open to the hub. It hosts the
 modules the hub's state names, reports what is true, and shares the
 machine's desktop when told. It draws no window, and the only ports it
-listens on are the forwarders of CloudCLI and code-server, on `127.0.0.1`
-([modules/cloudcli.md](agent/modules/cloudcli.md) and
-[modules/code_server.md](agent/modules/code_server.md)). Its own code is
-pure standard library. The
+listens on are the forwarders in front of the programs run as an account,
+CloudCLI, code-server and Codeg, on `127.0.0.1`
+([modules/template.md](agent/modules/template.md), "The run"). Its own
+code is pure standard library. The
 package includes the interpreter that runs it, so it installs on a machine
 with no Python and touches none the machine already has.
 
@@ -36,8 +36,9 @@ never to the agent.
 hub's pages, in the agent, and in the client:
 
 - **Modules** are software the hub administers on a machine: Samba, Gitea,
-  Podman, ZFS, VS Code, code-server, CloudCLI, and the two the agent's own
-  package carries, Terminal and Remote desktop. The hub says what is wanted and sends
+  Podman, ZFS, VS Code, code-server, CloudCLI, Codeg, and the two the
+  agent's own package carries, Terminal and Remote desktop, of four kinds
+  ("The four kinds of module"). The hub says what is wanted and sends
   the bytes; the agent observes, installs and configures. A device's Modules
   page writes one `want` per module into `config/devices/<id>/modules.json`.
   The state the agent receives names, per module, that `want`, the
@@ -114,7 +115,8 @@ is told the machine is away, and asks again when it is back.
 
 **One module at a time.** The agent applies the modules a state mentions one
 after another, in the fixed order `APPLY_ORDER` names: ZFS, the file share,
-Terminal, Gitea, Containers, VS Code, code-server, CloudCLI, Remote desktop.
+Terminal, Gitea, Containers, VS Code, code-server, CloudCLI, Codeg, Remote
+desktop.
 While it applies one, each other module whose `want` differs from its last
 reported state reports `queued`, until the agent reaches it.
 
@@ -212,25 +214,52 @@ drawn:
 - A new `code` arrives with its wording in the same change, which the
   catalog completeness test enforces.
 
-## The two modules the agent carries
+## The four kinds of module
 
-Terminal and Remote desktop are modules with nothing to install: the
-agent's package carries what each needs, on every system. Their manifests
-name the tier `agent`, and their state entries name no recipe. They are
-never in the Modules page's picker, always a tab, and take none of the four
-presses ([protocol.md](protocol.md), "The modules section, one entry per
-module"). The hub composes both from their own files under
-`config/devices/<id>/`, not from `modules.json`. The agent's code is
-`modules/terminal/` and `modules/remote_desktop/`, each with its config,
-constants and runner, and the latter with one applier per system
-(`linux_applier.py`, `windows_applier.py`, `darwin_applier.py`); `rdp/`
-keeps the seat and RustDesk's settings files. Their constants carry the
-prefixes `TERMINAL_` and `REMOTE_DESKTOP_`, and the hub names the modules
-`DEVICE_TERMINAL_MODULE` and `DEVICE_REMOTE_DESKTOP_MODULE`.
+Every module is of one of four kinds, and the kind decides what the
+machinery does for it and what the module itself supplies. The whole flow,
+from the manifest to the published entry, is
+[modules/template.md](agent/modules/template.md); each module's own page
+is linked from the table.
 
-- Terminal: [modules/terminal.md](agent/modules/terminal.md).
-- Remote desktop, and the desktop share it decides:
-  [modules/remote_desktop.md](agent/modules/remote_desktop.md).
+| Kind | Modules | Install | Run |
+| --- | --- | --- | --- |
+| carried by the agent | [Terminal](agent/modules/terminal.md), [Remote desktop](agent/modules/remote_desktop.md), which also detects a person's own AnyDesk and TeamViewer | nothing: the agent's package holds what each needs, on every system | the module's own applier per system |
+| installed from the system's own sources | [File share](agent/modules/file_share.md), [Containers](agent/modules/containers.md), [ZFS storage](agent/modules/zfs.md) | the system's package manager, by the `system_package` recipe; on Windows and macOS the file share drives the system's SMB server and installs nothing | the module's own applier |
+| a service with a system account of its own | [Gitea](agent/modules/gitea.md) | the release binary from the hub's cache, down `package {module}` | the account and the service the module makes, in the publisher's layout on every system |
+| a program run as a person's account | [VS Code](agent/modules/vscode.md), [code-server](agent/modules/code_server.md), [CloudCLI](agent/modules/cloudcli.md), [Codeg](agent/modules/codeg.md) | each component from the hub's cache, down `package {module, component}`, unpacked and sealed under `agent/<module>/<component>/` | one account service per instance, the forwarder in front of it, one `web` entry per running instance |
+
+An install is the hub's cache and the agent's unpack. For the two kinds the
+hub fetches, the cache fetches each archive the manifest names, checks it
+against the pinned sha256 and streams it down `package`; the agent unpacks
+it under the state root into a directory of the module's own name, one
+subdirectory per component, sealed read-only to every account and on no
+`PATH`, and runs the manifest's `verify` command. A module from the
+system's own sources asks the hub for no bytes: the platform installs the
+named packages with its own tooling. Terminal and Remote desktop install
+nothing: their manifests name the tier `agent`, their state entries name no
+recipe, they are never in the Modules page's picker, always a tab, and take
+none of the four presses ([protocol.md](protocol.md), "The modules section,
+one entry per module"); the hub composes both from their own files under
+`config/devices/<id>/`, not from `modules.json`.
+
+A run is the module's own applier for the first three kinds, one per system
+where the systems differ, under `modules/<module>/`: the agent's code for
+the two it carries is `modules/terminal/` and `modules/remote_desktop/`,
+each with its config, constants and runner, the latter with one applier per
+system (`linux_applier.py`, `windows_applier.py`, `darwin_applier.py`) and
+`rdp/` under it, which keeps the seat and RustDesk's settings files; their
+constants carry the prefixes `TERMINAL_` and `REMOTE_DESKTOP_`, and the hub
+names the modules `DEVICE_TERMINAL_MODULE` and `DEVICE_REMOTE_DESKTOP_MODULE`.
+A program run as a person's account keeps `config.py`, `constants.py` and
+`hooks.py` under `modules/<module>/` and nothing else:
+`modules/shared/instances.py` runs every instance through the module's
+hooks, the account service layer
+`modules/shared/account_service/`, one file per system, writes the service
+definition and starts, stops, removes and queries it, and
+`modules/shared/http_forward.py` is in front of each instance on
+`127.0.0.1`. `modules/shared/` is the one package of what every module
+runner shares, each file one concept.
 
 ## The connect stream
 
@@ -247,7 +276,7 @@ machine publishes at that moment on the stream's protocol:
 | the file share reports a share | 445, the SMB port |
 | the desktop is shared | the RustDesk direct port the `desktop` section reports |
 | the Gitea module reports its URL | that URL's port |
-| a VS Code, code-server or CloudCLI instance is configured | the instance's port |
+| a VS Code, code-server, CloudCLI or Codeg instance is configured | the instance's port |
 | a running Podman container publishes a host port | that port on the protocol it is published on, dialled on the host address it is published on when it names one; a stopped container's ports are not published, so a stream on one ends `port_not_published` within a second of the stop |
 
 Every other port in the table is published on TCP alone. Any other port,
@@ -287,7 +316,7 @@ connection"), and each also answers the agent's dial on loopback:
 | RustDesk's direct port | every address, as RustDesk opens it; the share is declared once the port answers on `127.0.0.1` |
 | a Podman container's published port | every address, or the one address it is published on, which the agent dials |
 | VS Code | `127.0.0.1` alone |
-| the CloudCLI and code-server forwarders | `127.0.0.1` alone, in front of CloudCLI on loopback and code-server on its account's socket |
+| the CloudCLI, code-server and Codeg forwarders | `127.0.0.1` alone, in front of CloudCLI and Codeg on loopback and code-server on its account's socket |
 
 ## The local control channel
 
@@ -321,16 +350,16 @@ The agent is root, so reaching down to an account is `runuser -u <account>
 --`, never `sudo`, for the reason the hub bans it
 ([privilege.md](privilege.md)). That reach is three things. One is the seat
 whose desktop is shared, whose RustDesk configuration lives in that
-account's own session. Another is VS Code, whose servers run as the
-accounts the module names, each started by the system's own service
+account's own session. Another is the programs run as an account, VS Code,
+code-server, CloudCLI and Codeg, whose instances the account service layer,
+`modules/shared/account_service/`, starts through the system's own service
 manager: a systemd unit with `User=` on Linux, a LaunchDaemon with
 `UserName` on macOS, and on Windows a scheduled task registered with the
 account's login, because LocalSystem cannot start a process as another
-account without its password. Every server listens on `127.0.0.1` alone and
-the module opens no port in any firewall, since the hub reaches it through
-the agent's `connect` stream. CloudCLI and code-server are reached the same
-way ([modules/cloudcli.md](agent/modules/cloudcli.md) and
-[modules/code_server.md](agent/modules/code_server.md)). The third is the
+account without its password. Every instance listens on `127.0.0.1` alone
+and the module opens no port in any firewall, since the hub reaches it
+through the agent's `connect` stream
+([modules/template.md](agent/modules/template.md), "The run"). The third is the
 machine's AI tools, pointed at the gateway by cc-switch run as each account
 ([ai_tools.md](agent/ai_tools.md)). The fourth is a terminal or a command for
 the account the Terminal module names, on Linux and macOS: the shell, or the
@@ -363,12 +392,12 @@ builds the package-backed runners only on a platform with `packages`. A
 platform with `smb_server` gets the file share, driving the SMB server the
 system carries, with nothing to install or uninstall; there, any other
 module the state names reads `unsupported`, never `failed`, beside the
-Terminal and Remote desktop rows every platform has. A platform with `hub_packages` gets the Gitea and
-VS Code modules, and macOS the code-server module beside them; on Linux all
-three are among
-the runners `packages` builds. On every
-system, software the hub sends down a package stream is unpacked into a
-directory of the module's own name under the state root, cc-switch into
+Terminal and Remote desktop rows every platform has. A platform with
+`hub_packages` gets Gitea and the programs run as an account, VS Code,
+CloudCLI and Codeg, and macOS code-server beside them; on Linux all of them
+are among the runners `packages` builds. On every system, software the hub
+sends down a package stream is unpacked into a directory of the module's
+own name under the state root, one subdirectory per component, cc-switch into
 `ai_tools/bin/`, and that directory alone is opened to every account to read and run: mode 755, and on Windows
 read and execute for the Users group. Every import
 only POSIX has is guarded, so one package imports on all three systems.
@@ -377,7 +406,7 @@ only POSIX has is guarded, so one package imports on all three systems.
 | --- | --- | --- | --- |
 | Program | `/opt/neutrino/agent` | `C:\Program Files\Neutrino\agent` | `/Library/Application Support/Neutrino/agent/app` |
 | Configuration root: the binding, the credentials, the desired state | `/etc/neutrino/agent` | `%ProgramData%\Neutrino\agent\config`, under `%ProgramData%\Neutrino\agent`, whose ACL, SYSTEM and the administrators alone, the `.msi` sets | `/Library/Application Support/Neutrino/agent/config`, mode 700 |
-| State root: configured marks, packages, the last reinstall, `vscode/`, `code_server/`, `cloudcli/`, `ai_tools/`, and on Windows and macOS `gitea/` and `gitea_data/` | `/var/lib/neutrino/agent` | `%ProgramData%\Neutrino\agent\state` | `/Library/Application Support/Neutrino/agent/state`, mode 755 |
+| State root: configured marks, packages, the last reinstall, `vscode/`, `code_server/`, `cloudcli/`, `codeg/`, `ai_tools/`, and on Windows and macOS `gitea/` and `gitea_data/` | `/var/lib/neutrino/agent` | `%ProgramData%\Neutrino\agent\state` | `/Library/Application Support/Neutrino/agent/state`, mode 755 |
 | Log | the journal | `%ProgramData%\Neutrino\agent\log\agent.log` | `/Library/Logs/Neutrino/agent/agent.log` |
 | Service | systemd `neutrino_agent.service` runs `nagent run` | the `neutrino_agent` service, LocalSystem, runs `nagent service run` | the `com.neutrino.agent` LaunchDaemon runs `nagent run` |
 | Control transport | Unix socket `/run/neutrino/agent/agent.sock` | named pipe `\\.\pipe\neutrino_agent`, its descriptor SYSTEM and the administrators | Unix socket `/var/run/neutrino/agent/agent.sock` |
@@ -460,12 +489,12 @@ module a system cannot run is left out on that system.
 | [Gitea](agent/modules/gitea.md) | amd64 and arm64 | amd64 | arm64 and amd64 |
 | [Containers](agent/modules/containers.md) (Podman) | yes | no | no |
 | [ZFS storage](agent/modules/zfs.md) | yes | no | no |
-| [VS Code](agent/modules/vscode.md) | glibc 2.28 and above, amd64 and arm64 | amd64 | arm64 and amd64 |
-| [code-server](agent/modules/code_server.md) | glibc 2.28 and above, amd64 and arm64 | no | arm64 and amd64 |
-| [CloudCLI](agent/modules/cloudcli.md) | glibc 2.28 and above, amd64 and arm64 | amd64 and arm64 | arm64 and amd64 |
+| [VS Code](agent/modules/vscode.md) | amd64 and arm64 | amd64 | arm64 and amd64 |
+| [code-server](agent/modules/code_server.md) | amd64 and arm64 | no | arm64 and amd64 |
+| [CloudCLI](agent/modules/cloudcli.md) | amd64 and arm64 | amd64 and arm64 | arm64 and amd64 |
+| [Codeg](agent/modules/codeg.md) | glibc 2.34, the agent's own floor, amd64 and arm64 | amd64 | arm64 and amd64 |
 | [Terminal](agent/modules/terminal.md) | yes | the shell program alone | yes |
-| [Remote desktop](agent/modules/remote_desktop.md) (the agent's RustDesk) | yes | amd64 | yes |
-| A person's own AnyDesk or TeamViewer | yes | yes | yes |
+| [Remote desktop](agent/modules/remote_desktop.md) (the agent's RustDesk; the detection of a person's own AnyDesk or TeamViewer runs on every system) | yes | amd64 | yes |
 
 A module's log, the answer to its `journal` verb, is the journal of its
 systemd units on Linux. Windows and macOS run no module under a unit, so
@@ -474,17 +503,12 @@ lines that name the module, from `agent.log` under the log root (the rotated
 `agent.log.1` read before it) on Windows and
 `/Library/Logs/Neutrino/agent/agent.log` on macOS; the agent's lines take at
 most half the box, and a box is empty only while the agent has logged
-nothing about the module. The file share reads the SMB server's latest
-events from `Microsoft-Windows-SMBServer/Operational` on Windows, or what the
-unified log holds of `smbd` over the last 15 minutes on macOS. VS Code,
-code-server and CloudCLI read the end of each instance's log file: on
-Windows the task runs the CLI through `cmd.exe`, which appends its output
-to `<account>.log` beside the CLI, and a CloudCLI install still running
-shows `run\install_<account>.log`; on macOS the LaunchDaemon's
-`StandardOutPath` and `StandardErrorPath` name
-`/Library/Logs/Neutrino/agent/<module>_<account>.log`, `<module>` being
-`vscode`, `code_server` or `cloudcli`. Gitea on Windows and macOS reads the
-end of its own log, `log/gitea.log` under its data directory.
+nothing about the module. Which sources a module reads there is on its own
+page: [file_share.md](agent/modules/file_share.md),
+[gitea.md](agent/modules/gitea.md), [vscode.md](agent/modules/vscode.md),
+[code_server.md](agent/modules/code_server.md),
+[cloudcli.md](agent/modules/cloudcli.md) and
+[codeg.md](agent/modules/codeg.md).
 A source that cannot be read leaves one line in the agent's log naming it,
 so the next journal shows why. `journal` answers while an apply runs; it
 does not wait for the state to settle. Every log comes oldest line first,
@@ -497,17 +521,9 @@ The hub's own machine on macOS and Windows runs the local agent
 `nhub setup` installs ([install_and_dev.md](install_and_dev.md)), so its
 shares and VS Code are that agent's modules, as on any device.
 
-Each module's own page is under `agent/modules/`:
-
-- File share: [modules/file_share.md](agent/modules/file_share.md)
-- Terminal: [modules/terminal.md](agent/modules/terminal.md)
-- Remote desktop, and what differs on a Mac: [modules/remote_desktop.md](agent/modules/remote_desktop.md)
-- Gitea: [modules/gitea.md](agent/modules/gitea.md)
-- Containers: [modules/containers.md](agent/modules/containers.md)
-- ZFS storage: [modules/zfs.md](agent/modules/zfs.md)
-- VS Code: [modules/vscode.md](agent/modules/vscode.md)
-- code-server: [modules/code_server.md](agent/modules/code_server.md)
-- CloudCLI: [modules/cloudcli.md](agent/modules/cloudcli.md)
+Each module's own page is under `agent/modules/`, linked from the table of
+"The four kinds of module", and the flow they share is
+[modules/template.md](agent/modules/template.md).
 
 ## Two ports, one process
 
@@ -623,8 +639,9 @@ A refusal at the door keeps the binding. The agent records it as
 sends `hello` again a minute later. The one refusal that unbinds is
 `binding_unknown`, which only the hub holding the pinned certificate can say.
 The agent then deletes its binding file, switches the AI tools back, turns
-the desktop share off ([modules/remote_desktop.md](agent/modules/remote_desktop.md),
-"The desktop is the hub's order") and is bound again
+the desktop share off
+([modules/remote_desktop.md](agent/modules/remote_desktop.md), "The desktop
+is the hub's order") and is bound again
 by a fresh link.
 
 Admission by `PROTOCOL`, the two protocol codes, the close codes and the
@@ -663,7 +680,7 @@ who can already strip TLS, who fails the fingerprint check first.
 
 **A local account on the managed machine**: the control socket is 0600 under
 a 0700 directory, so the kernel rejects their connection before a request is
-read. The agent's only local ports are the CloudCLI and code-server
+read. The agent's only local ports are the CloudCLI, code-server and Codeg
 forwarders on `127.0.0.1`, which answer 401 to a request carrying neither a
 token the hub minted nor a login the forwarder set, so neither the account
 nor a website in their browser reaches an instance through them.
