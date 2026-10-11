@@ -23,6 +23,8 @@ ACCOUNT_SERVICE_TASK_MARKER = "neutrino:"
 ACCOUNT_SERVICE_WINDOWS_SHELL = "cmd.exe"
 ACCOUNT_SERVICE_WINDOWS_SCRIPT_DIR_NAME = "run"
 ACCOUNT_SERVICE_WINDOWS_SCRIPT_SUFFIX = ".cmd"
+# Where a task's output goes when the service discards it.
+ACCOUNT_SERVICE_WINDOWS_NULL_DEVICE = "NUL"
 # The name an older build gave the inbound firewall rule of an instance's
 # port, between the module's name and the port; every rule under it goes.
 ACCOUNT_SERVICE_WINDOWS_RULE_INFIX = "_port_"

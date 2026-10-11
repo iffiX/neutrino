@@ -95,6 +95,9 @@ class AccountService:
             each is written whole, mode 0600, the account's own.
         directories: Directories the account owns: made mode 0700 before
             the service starts, deleted with it.
+        is_output_discarded: Whether stdout and stderr are discarded: the
+            unit's output goes to systemd's null on Linux, and no log file
+            is written on macOS or Windows.
     """
 
     name: str
@@ -111,6 +114,7 @@ class AccountService:
     is_environment_secret: bool = False
     files: tuple = ()
     directories: tuple = ()
+    is_output_discarded: bool = False
 
 
 @dataclass(frozen=True)

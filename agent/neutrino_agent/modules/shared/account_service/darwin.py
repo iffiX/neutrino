@@ -36,7 +36,8 @@ def render_plist(service, *, home: str, log_path: str) -> bytes:
     Args:
         service: The service.
         home: The account's home, where a service that starts in ``~`` runs.
-        log_path: The file its output and its errors are appended to.
+        log_path: The file its output and its errors are appended to; unread
+            for a service whose output is discarded.
 
     Returns:
         The plist, as XML.
@@ -45,11 +46,12 @@ def render_plist(service, *, home: str, log_path: str) -> bytes:
         "Label": label(service.name, service.account),
         "UserName": service.account,
         "ProgramArguments": list(service.command),
-        "StandardOutPath": log_path,
-        "StandardErrorPath": log_path,
         "RunAtLoad": True,
         "KeepAlive": True,
     }
+    if not service.is_output_discarded:
+        document["StandardOutPath"] = log_path
+        document["StandardErrorPath"] = log_path
     if service.environment:
         document["EnvironmentVariables"] = dict(service.environment)
     if service.working_directory:
@@ -78,12 +80,13 @@ def write(service, machine) -> bool:
     """Write the account's files, its log and its plist; whether one changed."""
     entry = machine.lookup_account(service.account)
     is_changed = write_account_files(service, entry, machine)
-    os.makedirs(machine.log_dir, mode=0o755, exist_ok=True)
     log = log_path(service.name, service.account, machine, service.log_name)
-    with open(log, "a", encoding="utf-8"):
-        pass
-    os.chmod(log, 0o600)
-    machine.chown(log, entry.uid, entry.gid)
+    if not service.is_output_discarded:
+        os.makedirs(machine.log_dir, mode=0o755, exist_ok=True)
+        with open(log, "a", encoding="utf-8"):
+            pass
+        os.chmod(log, 0o600)
+        machine.chown(log, entry.uid, entry.gid)
     plist = render_plist(service, home=entry.home, log_path=log)
     return (
         write_if_changed(
@@ -112,8 +115,10 @@ def stop(service, machine) -> None:
 def remove(service, machine) -> None:
     """Boot the job out and delete its plist, its log and the account's files."""
     stop(service, machine)
-    log = log_path(service.name, service.account, machine, service.log_name)
-    for path in (plist_path(service, machine), log):
+    paths = [plist_path(service, machine)]
+    if not service.is_output_discarded:
+        paths.append(log_path(service.name, service.account, machine, service.log_name))
+    for path in paths:
         with contextlib.suppress(OSError):
             os.unlink(path)
     remove_account_files(service)
