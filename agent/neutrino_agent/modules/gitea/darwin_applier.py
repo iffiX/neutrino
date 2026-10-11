@@ -51,7 +51,7 @@ from neutrino_agent.modules.gitea.renderer import GiteaLayout
 from neutrino_agent.modules.samba.darwin_applier import tool_line
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
 from neutrino_agent.modules.shared.subprocess_run import run as run_command
-from neutrino_agent.modules.vscode.installer import write_if_changed
+from neutrino_agent.modules.shared.account_service import write_if_changed
 
 try:
     import pwd
