@@ -5,9 +5,10 @@ What these pin: the server, its web UI and Node are found under the
 ``codeg-server`` alone, with no ``--supervise``, from an environment written
 from scratch naming Codeg's host, loopback port, derived token, data
 directory, static directory, port bridge off, npm's prefix and cache under
-the data directory and a ``PATH`` with Node first, the account's command
-directories next and the system's last, under ``umask 077``, root-only, its
-output discarded on every system; the data directory is made as the
+the data directory, ``HOME`` on Linux and macOS, and a ``PATH`` with Node
+first, the account's command directories next and the system's last, on
+Windows Node then the account's npm directory and its own ``PATH``, under
+``umask 077``, root-only, its output discarded on every system; the data directory is made as the
 account's own, mode 700, once; the record keeps the loopback port; and the
 forwarder, driven against a fake Codeg, listens on ``127.0.0.1`` alone,
 trades a token once for the page that keeps the instance token and opens
@@ -213,6 +214,7 @@ def test_the_service_runs_the_server_alone_from_a_root_only_discarded_environmen
         "CODEG_BRIDGE_PORTS": "off",
         "NPM_CONFIG_PREFIX": "/home/ann/.local/share/neutrino/agent/codeg/npm",
         "npm_config_cache": "/home/ann/.local/share/neutrino/agent/codeg/npm_cache",
+        "HOME": "/home/ann",
         "PATH": f"{LINUX_STATE}/node/bin:/home/ann/.local/bin:/home/ann/bin:"
         "/usr/local/bin:/usr/bin:/bin",
     }
@@ -259,14 +261,12 @@ def test_the_environment_follows_each_system():
     assert windows["NPM_CONFIG_PREFIX"] == (
         "C:\\Users\\ann\\AppData\\Local\\Neutrino\\agent\\codeg\\npm"
     )
-    assert windows["PATH"] == (
-        f"{WIN_STATE}\\node;C:\\Users\\ann\\.local\\bin;C:\\Users\\ann\\bin;"
-        "%APPDATA%\\npm;%PATH%"
-    )
+    assert windows["PATH"] == f"{WIN_STATE}\\node;%APPDATA%\\npm;%PATH%"
+    assert mac["HOME"] == "/Users/ann"
+    assert "HOME" not in windows
     for environment in (mac, windows):
         assert environment["CODEG_TOKEN"] == TOKEN
         assert environment["CODEG_BRIDGE_PORTS"] == "off"
-        assert "HOME" not in environment
         assert not [name for name in environment if "ANTHROPIC" in name]
 
 

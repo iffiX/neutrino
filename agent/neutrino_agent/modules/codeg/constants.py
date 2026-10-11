@@ -54,15 +54,16 @@ CODEG_BRIDGE_PORTS_OFF = "off"
 # The umask the service runs under: every file Codeg and its agents write is
 # the account's alone.
 CODEG_UMASK = "077"
-# What a service's PATH holds after Node's directory: the account's usual
-# command directories under its home, then the system's own; on Windows the
-# task's script expands the account's npm directory and its own PATH.
+# What a service's PATH holds after Node's directory on Linux and macOS:
+# the account's usual command directories under its home, then the system's
+# own; on Windows the task's script expands the account's npm directory and
+# its own PATH.
 CODEG_ACCOUNT_PATH_PARTS = ((".local", "bin"), ("bin",))
 CODEG_SYSTEM_PATH = {
     "linux": ("/usr/local/bin", "/usr/bin", "/bin"),
     "darwin": ("/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"),
-    "windows": ("%APPDATA%\\npm", "%PATH%"),
 }
+CODEG_WINDOWS_SERVICE_PATH = ("%APPDATA%\\npm", "%PATH%")
 
 # Codeg listens on loopback alone, on a port the agent picks.
 CODEG_UPSTREAM_HOST = "127.0.0.1"

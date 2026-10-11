@@ -65,6 +65,7 @@ from neutrino_agent.modules.codeg.constants import (
     CODEG_VERSION_ARGUMENT,
     CODEG_VERSION_TIMEOUT_S,
     CODEG_WEB_DIR_NAME,
+    CODEG_WINDOWS_SERVICE_PATH,
     CODEG_WORKSPACE_PATH,
 )
 from neutrino_agent.modules.shared.account_service import (
@@ -138,11 +139,12 @@ def service_environment(
     Returns:
         Codeg's host, port, token, data directory, static directory and
         port bridge switch, npm's prefix and cache under the data
-        directory, and ``PATH``.
+        directory, and ``PATH``; on Linux and macOS also ``HOME``. On
+        Windows ``PATH`` is Node's directory, the account's npm directory
+        and its own ``PATH``.
     """
     data = data_dir(home, os_name, join)
-    separator = ";" if os_name == "windows" else ":"
-    return {
+    environment = {
         CODEG_ENV_HOST: CODEG_UPSTREAM_HOST,
         CODEG_ENV_PORT: str(int(upstream_port)),
         CODEG_ENV_TOKEN: token,
@@ -151,12 +153,17 @@ def service_environment(
         CODEG_ENV_BRIDGE_PORTS: CODEG_BRIDGE_PORTS_OFF,
         CODEG_ENV_NPM_PREFIX: join(data, CODEG_NPM_PREFIX_NAME),
         CODEG_ENV_NPM_CACHE: join(data, CODEG_NPM_CACHE_NAME),
-        "PATH": separator.join(
-            [node_dir]
-            + [join(home, *parts) for parts in CODEG_ACCOUNT_PATH_PARTS]
-            + list(CODEG_SYSTEM_PATH[os_name])
-        ),
     }
+    if os_name == "windows":
+        environment["PATH"] = ";".join([node_dir, *CODEG_WINDOWS_SERVICE_PATH])
+        return environment
+    environment["HOME"] = home
+    environment["PATH"] = ":".join(
+        [node_dir]
+        + [join(home, *parts) for parts in CODEG_ACCOUNT_PATH_PARTS]
+        + list(CODEG_SYSTEM_PATH[os_name])
+    )
+    return environment
 
 
 def newest_log(directory: str, join=os.path.join) -> str:

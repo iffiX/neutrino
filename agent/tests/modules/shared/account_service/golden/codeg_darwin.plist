@@ -16,6 +16,8 @@
 		<string>/Library/Application Support/Neutrino/agent/state/codeg/server/web</string>
 		<key>CODEG_TOKEN</key>
 		<string>{codeg_token}</string>
+		<key>HOME</key>
+		<string>/Users/ann</string>
 		<key>NPM_CONFIG_PREFIX</key>
 		<string>/Users/ann/Library/Application Support/Neutrino/agent/codeg/npm</string>
 		<key>PATH</key>
