@@ -1,17 +1,101 @@
-/* The row of module tabs, with the picker's `+` at its end. */
-.modules_tab_row {
+/* The Module configuration panel: the machine's modules down the left, the
+   picked module's panels, output and buttons on the right. */
+.modules_split {
+  display: grid;
+  gap: var(--space-5);
+  grid-template-columns: 220px minmax(0, 1fr);
+  align-items: start;
+}
+
+/* The list of the machine's modules, one row each, the picker's `+` last. */
+.modules_list {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-height: 480px;
+  padding-right: var(--space-1);
+  overflow-y: auto;
+}
+
+.modules_list_row {
+  display: flex;
   gap: var(--space-2);
+  align-items: center;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text-muted);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color var(--transition-fast),
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.modules_list_row:hover {
+  border-color: var(--color-border-strong);
+  color: var(--color-text);
+}
+
+.modules_list_row--on {
+  border-color: var(--color-accent);
+  background: var(--color-accent-wash);
+  color: var(--color-text);
+}
+
+.modules_list_row_title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.modules_list_add {
+  display: flex;
+  align-items: center;
+  padding: var(--space-1) 10px;
+}
+
+/* The picked module: its state line, its panels, the output box and the
+   presses in one row at the right edge. */
+.modules_detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.modules_detail_head {
+  display: flex;
+  gap: var(--space-3);
   align-items: center;
 }
 
-/* The presses under the current tab, one row. */
+.modules_detail_head h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+/* A module's frames sit inside the panel's own, so they take the ground
+   its contents take. */
+.modules_detail .settings_group {
+  background: var(--color-bg);
+}
+
 .modules_actions {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
   align-items: center;
+  justify-content: flex-end;
 }
 
 /* A dead press loses its border, the red one of Uninstall included. */
@@ -65,4 +149,30 @@
   margin: 0;
   padding: 0;
   border: 0;
+}
+
+/* Narrow and portrait: the list becomes one row above the panels, scrolled
+   sideways. */
+@media (max-aspect-ratio: 1 / 1), (max-width: 880px) {
+  .modules_split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .modules_list {
+    flex-direction: row;
+    max-height: none;
+    padding-right: 0;
+    padding-bottom: var(--space-1);
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .modules_list_row {
+    flex: none;
+    width: auto;
+  }
+
+  .modules_list_add {
+    padding: 0;
+  }
 }

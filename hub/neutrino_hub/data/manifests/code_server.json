@@ -16,7 +16,6 @@
       "cn_latest_url": "https://mirrors.ustc.edu.cn/github-release/coder/code-server/LatestRelease/", "_cn_latest_url_scan": "scan: allow",
       "sha256": "864c5d01c808ade57e4d12c708717be7a187219fded60428f263b9e2da9f6b48", "_sha256_scan": "scan: allow",
       "package_kind": "tar",
-      "min_version": "2.28",
       "verify": "/var/lib/neutrino/agent/code_server/release/lib/node --version",
       "uninstall": {
         "packages": [],
@@ -30,7 +29,6 @@
       "cn_latest_url": "https://mirrors.ustc.edu.cn/github-release/coder/code-server/LatestRelease/", "_cn_latest_url_scan": "scan: allow",
       "sha256": "ae4b07153f2037b06d24749bc8004221fcbf3ffe317038401be0452f541bf200", "_sha256_scan": "scan: allow",
       "package_kind": "tar",
-      "min_version": "2.28",
       "verify": "/var/lib/neutrino/agent/code_server/release/lib/node --version",
       "uninstall": {
         "packages": [],

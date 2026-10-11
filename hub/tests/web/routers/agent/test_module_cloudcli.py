@@ -31,7 +31,7 @@ from neutrino_hub.modules.devices.constants import (
 from neutrino_hub.modules.devices.desired_state import DesiredStateStore
 from neutrino_hub.modules.credentials.vault import unseal_bytes
 from neutrino_hub.modules.services.host_scope import HostScope
-from neutrino_hub.web.routers.agent import module_cloudcli
+from neutrino_hub.web.routers.agent import module_instances
 from tests.conftest import unlock_vault
 from tests.web.module_api_box import DEVICE, module_box
 
@@ -45,7 +45,9 @@ HUB = "192.168.100.1"
 def api(monkeypatch, tmp_path):
     unlock_vault(monkeypatch, tmp_path)
     monkeypatch.setattr(ai_keys, "_apply", lambda **kwargs: None)
-    client, runtime = module_box(monkeypatch, tmp_path, module_cloudcli.router)
+    client, runtime = module_box(
+        monkeypatch, tmp_path, module_instances.ROUTERS["cloudcli"]
+    )
     runtime.device_scope[DEVICE] = HostScope(
         id="192.168.100.0/24", cidr="192.168.100.0/24", hub_address=HUB
     )
@@ -250,7 +252,10 @@ def test_the_state_carries_the_opened_secrets_and_never_a_seal(
     assert "gateway_url" not in module["config"]
     assert "gateway_key" not in module["config"]
     assert module["install"]["kind"] == "cloudcli"
-    assert module["install"]["package_kind"] == ("zip" if has_password else "tar")
+    (node,) = module["install"]["components"]
+    assert (node["name"], node["directory"]) == ("node", "node")
+    assert node["package_kind"] == ("zip" if has_password else "tar")
+    assert "url" not in node
     assert "sealed" not in json.dumps(desired)
 
 
@@ -266,11 +271,11 @@ def test_a_token_is_the_instances_secret_signing_an_expiry_and_a_nonce(api):
         "instances"
     ][0]["token_secret"]
 
-    first = store.cloudcli_token(DEVICE, "alice", now=1_800_000_000)
-    second = store.cloudcli_token(DEVICE, "alice", now=1_800_000_000)
+    first = store.instance_token(DEVICE, "cloudcli", "alice", now=1_800_000_000)
+    second = store.instance_token(DEVICE, "cloudcli", "alice", now=1_800_000_000)
 
     raw = base64.urlsafe_b64decode(first + "=" * (-len(first) % 4))
     assert int.from_bytes(raw[:8], "big") == 1_800_000_060
     assert raw[24:] == hmac.new(secret.encode(), raw[:24], hashlib.sha256).digest()
     assert first != second
-    assert store.cloudcli_token(DEVICE, "nobody") == ""
+    assert store.instance_token(DEVICE, "cloudcli", "nobody") == ""

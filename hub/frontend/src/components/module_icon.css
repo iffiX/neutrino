@@ -1,0 +1,13 @@
+/* A module's glyph: the SVG fills the box it is given and takes the text
+   colour of whatever holds it. */
+.module_icon {
+  display: inline-flex;
+  flex: none;
+  color: inherit;
+}
+
+.module_icon > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}

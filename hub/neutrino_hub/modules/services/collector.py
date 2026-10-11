@@ -19,18 +19,11 @@ configs, the reports and the probe caches is the caller's.
 
 from urllib.parse import urlsplit, urlunsplit
 
+from neutrino_hub.modules.devices.module_table import account_program_rows
 from neutrino_hub.modules.services.config import DeclaredService
 from neutrino_hub.modules.services.constants import (
     SERVICES_AI_DESCRIPTION,
-    SERVICES_CLOUDCLI_DESCRIPTION,
-    SERVICES_CLOUDCLI_ID,
-    SERVICES_CLOUDCLI_TITLE,
-    SERVICES_CODE_SERVER_DESCRIPTION,
-    SERVICES_CODE_SERVER_ID,
-    SERVICES_CODE_SERVER_TITLE,
     SERVICES_DESCRIPTION_AI_GATEWAY,
-    SERVICES_DESCRIPTION_CLOUDCLI_MODULE,
-    SERVICES_DESCRIPTION_CODE_SERVER_MODULE,
     SERVICES_DESCRIPTION_CONTAINER,
     SERVICES_DESCRIPTION_DECLARED,
     SERVICES_DESCRIPTION_DEVICE_SHARE,
@@ -44,6 +37,7 @@ from neutrino_hub.modules.services.constants import (
     SERVICES_GITEA_ID,
     SERVICES_GITEA_TITLE,
     SERVICES_HUB_SELF_HOSTS,
+    SERVICES_INSTANCE_DESCRIPTION,
     SERVICES_PORT_KIND_BY_PROTOCOL,
     SERVICES_PROTOCOL_UDP,
     SERVICES_UDP_ID_SUFFIX,
@@ -61,10 +55,6 @@ from neutrino_hub.modules.services.constants import (
     SERVICES_TYPE_PORT,
     SERVICES_TYPE_RDP,
     SERVICES_TYPE_WEB,
-    SERVICES_DESCRIPTION_VSCODE_MODULE,
-    SERVICES_VSCODE_DESCRIPTION,
-    SERVICES_VSCODE_ID,
-    SERVICES_VSCODE_TITLE,
 )
 
 # The entry fields the device catalog carries; the rest is the panel's.
@@ -106,15 +96,13 @@ class ServiceListCollector:
             ai_models: The model names the gateway really serves.
             is_ai_healthy: Whether the gateway answers.
             device_modules: One entry per device hosting modules:
-                ``{"device_id", "host", "samba", "gitea", "podman",
-                "vscode"}`` where each module is None when the device does
-                not serve it, else ``samba: {"is_healthy", "share_names",
+                ``{"device_id", "host"}`` and one key per module, None when
+                the device does not serve it, else ``samba: {"is_healthy", "share_names",
                 "share_users"}``, ``share_users`` mapping a share's name to
                 the accounts that can open it,
-                ``gitea: {"is_healthy", "url"}``,
-                ``vscode: {"is_healthy", "instances": [{"account", "port"}]}``,
-                ``cloudcli`` and ``code_server``: ``{"instances":
-                [{"account", "port", "is_healthy"}]}`` and
+                ``gitea: {"is_healthy", "url"}``, each program run as an
+                account under its name as ``{"instances": [{"account",
+                "port", "is_healthy"}]}`` and
                 ``podman: {"containers": [{"name", "image", "is_running",
                 "bindings"}]}``, ``bindings`` being ``(port, protocol)``
                 pairs.
@@ -197,81 +185,32 @@ class ServiceListCollector:
                     device_id=_device_id(device),
                 )
             )
-        for device in self._device_modules:
-            vscode = device.get("vscode")
-            host = device.get("host", "")
-            if not vscode or not host:
-                continue
-            for instance in vscode.get("instances") or []:
-                account = instance["account"]
-                entries.append(
-                    _entry(
-                        id=f"{SERVICES_VSCODE_ID}_{_device_id(device)}_{account}",
-                        type=SERVICES_TYPE_WEB,
-                        title=SERVICES_VSCODE_TITLE.format(account=account),
-                        payload={
-                            "url": f"http://{host}:{instance['port']}/",
-                            "is_token_required": True,
-                        },
-                        is_healthy=bool(vscode.get("is_healthy")),
-                        description=SERVICES_VSCODE_DESCRIPTION.format(
-                            host=host, account=account
-                        ),
-                        description_code=SERVICES_DESCRIPTION_VSCODE_MODULE,
-                        description_params={"host": host, "account": account},
-                        device_id=_device_id(device),
+        for row in account_program_rows():
+            for device in self._device_modules:
+                hosted = device.get(row.name)
+                host = device.get("host", "")
+                if not hosted or not host:
+                    continue
+                for instance in hosted.get("instances") or []:
+                    account = instance["account"]
+                    entries.append(
+                        _entry(
+                            id=f"{row.name}_{_device_id(device)}_{account}",
+                            type=SERVICES_TYPE_WEB,
+                            title=row.entry_title.format(account=account),
+                            payload={
+                                "url": f"http://{host}:{instance['port']}/",
+                                "is_token_required": True,
+                            },
+                            is_healthy=bool(instance.get("is_healthy")),
+                            description=SERVICES_INSTANCE_DESCRIPTION.format(
+                                module=row.name, host=host, account=account
+                            ),
+                            description_code=row.description_code,
+                            description_params={"host": host, "account": account},
+                            device_id=_device_id(device),
+                        )
                     )
-                )
-        for device in self._device_modules:
-            cloudcli = device.get("cloudcli")
-            host = device.get("host", "")
-            if not cloudcli or not host:
-                continue
-            for instance in cloudcli.get("instances") or []:
-                account = instance["account"]
-                entries.append(
-                    _entry(
-                        id=f"{SERVICES_CLOUDCLI_ID}_{_device_id(device)}_{account}",
-                        type=SERVICES_TYPE_WEB,
-                        title=SERVICES_CLOUDCLI_TITLE.format(account=account),
-                        payload={
-                            "url": f"http://{host}:{instance['port']}/",
-                            "is_token_required": True,
-                        },
-                        is_healthy=bool(instance.get("is_healthy")),
-                        description=SERVICES_CLOUDCLI_DESCRIPTION.format(
-                            host=host, account=account
-                        ),
-                        description_code=SERVICES_DESCRIPTION_CLOUDCLI_MODULE,
-                        description_params={"host": host, "account": account},
-                        device_id=_device_id(device),
-                    )
-                )
-        for device in self._device_modules:
-            code_server = device.get("code_server")
-            host = device.get("host", "")
-            if not code_server or not host:
-                continue
-            for instance in code_server.get("instances") or []:
-                account = instance["account"]
-                entries.append(
-                    _entry(
-                        id=f"{SERVICES_CODE_SERVER_ID}_{_device_id(device)}_{account}",
-                        type=SERVICES_TYPE_WEB,
-                        title=SERVICES_CODE_SERVER_TITLE.format(account=account),
-                        payload={
-                            "url": f"http://{host}:{instance['port']}/",
-                            "is_token_required": True,
-                        },
-                        is_healthy=bool(instance.get("is_healthy")),
-                        description=SERVICES_CODE_SERVER_DESCRIPTION.format(
-                            host=host, account=account
-                        ),
-                        description_code=SERVICES_DESCRIPTION_CODE_SERVER_MODULE,
-                        description_params={"host": host, "account": account},
-                        device_id=_device_id(device),
-                    )
-                )
         for record in self._declared_of(SERVICES_KIND_HTTP):
             url = f"{record.scheme}://{record.host}:{record.port}{record.path or '/'}"
             is_healthy, detail_code = self._declared_health(record.id)

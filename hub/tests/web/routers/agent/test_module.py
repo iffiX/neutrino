@@ -4,7 +4,7 @@ The page: management is a completed handshake, so a failed install or a
 forgotten device never reads managed here; each row is what the agent last
 reported beside what the hub asks of it; the four presses write one
 ``want`` each and push it, refuse an offline device before writing, and a
-user-tier module takes none; a press on a module whose last report is
+module the agent carries takes none; a press on a module whose last report is
 ``failed`` puts a fresh retry mark, and one on any other module puts none;
 the task carrying a module's install lines is
 named on its row. The door: the per-device read carrying the module's own
@@ -293,37 +293,6 @@ def test_the_installer_tier_reaches_the_row(api):
     assert answer["modules"][0]["installer"] == "hub"
 
 
-def test_a_user_tier_press_writes_nothing(api, monkeypatch, tmp_path):
-    """user-tier rows never offer install or uninstall; a request arriving
-    anyway, from an old page or a hand-built call, must write no want."""
-    client, runtime = api
-    runtime.agent_sessions.online.add(DEVICE)
-    monkeypatch.setattr(
-        device_modules,
-        "load_module_manifests",
-        lambda: {
-            "teamviewer": {
-                "title": "TeamViewer",
-                "kind": "package",
-                "installer": "user",
-                "platforms": {"linux": {"verify": "command -v teamviewer"}},
-            }
-        },
-    )
-
-    refused = client.post(
-        f"{MODULE_PATH}/install", json={"device_id": DEVICE, "module": "teamviewer"}
-    )
-
-    assert refused.status_code == 400
-    assert refused.json()["detail"] == {
-        "code": "module_not_optional",
-        "params": {"name": "teamviewer"},
-    }
-    assert modules_file(tmp_path) == {}
-    assert runtime.agent_sessions.pushes == []
-
-
 @pytest.mark.parametrize(
     "press, want",
     [
@@ -433,13 +402,11 @@ def test_vscode_is_stopped_and_uninstalled_without_its_terms(api, monkeypatch):
 SUPPORTED_OFF_LINUX = {
     "remote_desktop": (True, True),
     "terminal": (True, True),
-    "anydesk": (True, True),
     "cloudcli": (True, True),
     "code_server": (False, True),
     "gitea": (True, True),
     "podman": (False, False),
     "samba": (True, True),
-    "teamviewer": (True, True),
     "vscode": (True, True),
     "zfs": (False, False),
 }

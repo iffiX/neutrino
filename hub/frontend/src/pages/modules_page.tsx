@@ -4,24 +4,24 @@ import type { ReactNode } from "react";
 
 import { apiPath, apiPost, describeError } from "../api_client";
 import { AiToolsPanel } from "../components/ai_tools_panel";
-import { CloudcliPanels } from "../components/cloudcli_panels";
-import { CodeServerPanels } from "../components/code_server_panels";
 import { ContainersPanels } from "../components/containers_panels";
 import { DevicePick } from "../components/device_pick";
 import { ErrorPanel } from "../components/error_panel";
 import { GiteaPanels } from "../components/gitea_panels";
 import { Icon } from "../components/icon";
+import { InstancesPanel } from "../components/instances_panel";
+import { ModuleIcon } from "../components/module_icon";
 import { ModuleLog } from "../components/module_log";
 import { ModulePicker } from "../components/module_picker";
 import { RemoteDesktopPanels } from "../components/remote_desktop_panels";
 import { SambaPanels } from "../components/samba_panels";
 import { Spinner } from "../components/spinner";
-import { TabStrip } from "../components/tab_strip";
+import { StatusDot } from "../components/status_dot";
 import { TerminalPanels } from "../components/terminal_panels";
-import { VscodePanels } from "../components/vscode_panels";
 import { VscodeTerms } from "../components/vscode_terms";
 import { ZfsPanels } from "../components/zfs_panels";
 import { hasWord, t, useLanguage } from "../i18n";
+import { MODULE_DESCRIPTORS } from "../module_descriptors";
 import { moduleTitle, withModuleTitle } from "../module_title";
 import { useApiResource } from "../use_api_resource";
 import { useConfirm } from "../use_confirm";
@@ -35,7 +35,7 @@ import { usePageMemory } from "../use_page_memory";
 import type { IconName } from "../components/icon";
 import type { PickableModule } from "../components/module_picker";
 import type { StatusTone } from "../components/status_dot";
-import type { StripTab } from "../components/tab_strip";
+import type { ModuleDescriptor } from "../module_descriptors";
 import type {
   DeviceModuleListView,
   DeviceModuleRequest,
@@ -51,21 +51,24 @@ import "./modules_page.css";
 /**
  * Every module a machine hosts, on one page.
  *
- * The page opens on a machine the way Terminals and Files do. Under the
- * chips, one small tab per module the machine's page shows, each wearing the
- * state its agent last reported, and a `+` that picks which modules the page
- * shows for this machine. A module the machine's system cannot run is greyed
- * out in the picker and never shown as a tab. Under the current tab sits the module's output: the
- * lines the agent sends up while it installs or uninstalls, and the tail of
- * the module's own journal on the machine the rest of the time, polled while
- * the page is open. Then the four presses that write what the hub wants of
- * the module, and Configure, which opens the module's own panels and closes
- * them on the next press. The first Configure on a
- * module the hub holds no configuration for imports what the machine already
- * has, so the first push changes nothing on it. VS Code's tab shows
- * Microsoft's terms on top, and nothing else until they are accepted for the
- * machine. The machine, the tab and the sections open are kept between
- * visits, until a reload.
+ * The page opens on a machine the way Terminals and Files do. The Module
+ * configuration panel is split: down the left, one row per module the
+ * machine's page shows, its glyph, its title and the dot of the state its
+ * agent last reported, with a `+` at the end that picks which modules the
+ * page shows for this machine; a module the machine's system cannot run is
+ * greyed out in the picker and never listed. On the right, the picked
+ * module: its state line, its own panels while Configure holds them open,
+ * its output, the lines the agent sends up while it installs or uninstalls
+ * and the tail of its own journal on the machine the rest of the time,
+ * polled while the page is open, and the presses at the right edge: the four
+ * that write what the hub wants of the module, and Configure, which opens
+ * the module's own panels and closes them on the next press. The first
+ * Configure on a module the hub holds no configuration for imports what the
+ * machine already has, so the first push changes nothing on it. VS Code
+ * shows Microsoft's terms on top, and nothing else until they are accepted
+ * for the machine. The programs run as an account are drawn by one panel
+ * from the descriptor table. The machine, the module and the sections open
+ * are kept between visits, until a reload.
  */
 
 /** The machine a module's own panels are pointed at. */
@@ -110,32 +113,11 @@ const MODULE_PANELS: Record<string, (target: PanelTarget) => ReactNode> = {
       isEditable={target.isEditable}
     />
   ),
-  vscode: (target) => (
-    <VscodePanels
-      deviceId={target.deviceId}
-      basePath={target.basePath}
-      isEditable={target.isEditable}
-      want={target.want}
-      isWindows={target.platformOs === WINDOWS_OS}
-    />
-  ),
-  code_server: (target) => (
-    <CodeServerPanels
-      deviceId={target.deviceId}
-      basePath={target.basePath}
-      isEditable={target.isEditable}
-      want={target.want}
-    />
-  ),
-  cloudcli: (target) => (
-    <CloudcliPanels
-      deviceId={target.deviceId}
-      basePath={target.basePath}
-      isEditable={target.isEditable}
-      want={target.want}
-      isWindows={target.platformOs === WINDOWS_OS}
-      isInstalling={target.isInstalling}
-    />
+  ...Object.fromEntries(
+    Object.values(MODULE_DESCRIPTORS).map((descriptor) => [
+      descriptor.name,
+      instancesPanel(descriptor),
+    ]),
   ),
   terminal: (target) => (
     <TerminalPanels
@@ -181,7 +163,7 @@ const CARRIED_INSTALLER = "agent";
 /** The one system whose file share is Samba; the others serve with their own. */
 const LINUX_OS = "linux";
 
-/** The system that starts VS Code and CloudCLI as an account only with its login. */
+/** The system that starts a program run as an account only with its login. */
 const WINDOWS_OS = "windows";
 
 /** The module whose tab opens only once its terms are accepted. */
@@ -204,16 +186,6 @@ const STATE_KEYS: Record<string, string> = {
   unsupported: "state.unsupported",
 };
 const STATE_NEVER_REPORTED_KEY = "state.never_reported";
-
-/** The tone of the pill beside the name; a state with no entry is drawn plain. */
-const TAG_TONES: Record<string, StripTab["tagTone"]> = {
-  running: "accent",
-  stopped: "error",
-  installing: "warn",
-  uninstalling: "warn",
-  queued: "warn",
-  failed: "error",
-};
 
 /** The states in which the software is on the machine. */
 const PRESENT_STATES = ["installed", "stopped", "running"];
@@ -264,8 +236,28 @@ const DEVICE_QUERY = "device";
 /** The query a link opens a tab with, as the device drawer's desktop line does. */
 const MODULE_QUERY = "module";
 
-/** How tall the tab row is while the first list is still on its way. */
+/** How tall the panel is while the first list is still on its way. */
 const SKELETON_HEIGHT_PX = 120;
+
+/** The size of a module's glyph in its row. */
+const ROW_ICON_PX = 16;
+
+/** The panel one program run as an account is drawn with, from its descriptor. */
+function instancesPanel(
+  descriptor: ModuleDescriptor,
+): (target: PanelTarget) => ReactNode {
+  return (target) => (
+    <InstancesPanel
+      descriptor={descriptor}
+      deviceId={target.deviceId}
+      basePath={target.basePath}
+      isEditable={target.isEditable}
+      want={target.want}
+      isWindows={target.platformOs === WINDOWS_OS}
+      isInstalling={target.isInstalling}
+    />
+  );
+}
 
 export function ModulesPage() {
   // Redrawn when the panel's language changes.
@@ -571,176 +563,203 @@ export function ModulesPage() {
         ) : modules.data === null ? (
           <div className="skeleton" style={{ height: SKELETON_HEIGHT_PX }} />
         ) : (
-          <>
-            <div className="modules_tab_row">
-              {shownNames.length === 0 ? (
+          <div className="modules_split">
+            <div
+              className="modules_list"
+              role="tablist"
+              aria-label={t("ui.modules.tabs_label")}
+            >
+              {shownNames.length === 0 && (
                 <span className="faint">{t("ui.modules.no_tabs")}</span>
-              ) : (
-                <TabStrip
-                  label={t("ui.modules.tabs_label")}
-                  tabs={shownNames
-                    .map((name) => rows[name])
-                    .filter((row) => row !== undefined)
-                    .map(toTab)}
-                  selected={activeModule}
-                  onSelect={setActiveModule}
-                />
               )}
-              <ModulePicker
-                deviceId={deviceId}
-                modules={pickable(rows)}
-                shown={shownNames}
-                onChanged={noteShown}
-              />
+              {shownNames
+                .map((name) => rows[name])
+                .filter((row) => row !== undefined)
+                .map((row) => (
+                  <ModuleListRow
+                    key={row.name}
+                    row={row}
+                    isOn={row.name === activeModule}
+                    onSelect={setActiveModule}
+                  />
+                ))}
+              <div className="modules_list_add">
+                <ModulePicker
+                  deviceId={deviceId}
+                  modules={pickable(rows)}
+                  shown={shownNames}
+                  onChanged={noteShown}
+                />
+              </div>
             </div>
 
-            {activeRow !== undefined && activeModule === TERMS_MODULE && (
-              <>
-                {termsView !== null ? (
-                  <VscodeTerms
-                    deviceId={deviceId}
-                    view={termsView}
-                    onRecorded={terms.setData}
+            {activeRow !== undefined && (
+              <div className="modules_detail">
+                <div className="modules_detail_head">
+                  <h3>{moduleTitle(activeRow.name, activeRow.title)}</h3>
+                  {BUSY_STATES.includes(activeRow.state) && (
+                    <Spinner size={11} />
+                  )}
+                  <StatusDot
+                    tone={dotTone(activeRow)}
+                    label={stateWord(activeRow)}
                   />
-                ) : terms.error !== null ? (
-                  <ErrorPanel message={terms.error} onRetry={terms.reload} />
-                ) : (
-                  <div
-                    className="skeleton"
-                    style={{ height: SKELETON_HEIGHT_PX }}
-                  />
-                )}
-              </>
-            )}
+                </div>
 
-            {activeRow !== undefined && !isTermsGated && (
-              <>
-                {!isAgentOnline && (
-                  <div className="notice notice--warn">
-                    <Icon name="alert" size={15} />
-                    <div className="notice_body">
-                      {t("ui.modules.agent_offline")}
-                    </div>
-                  </div>
-                )}
-                {activeRow.state === "failed" && (
-                  <div className="notice notice--error">
-                    <Icon name="alert" size={15} />
-                    <div className="notice_body">
-                      {describeFailure(activeRow)}
-                    </div>
-                  </div>
-                )}
-                {!isCarriedRow && (
-                  <ModuleLog
-                    key={`${deviceId}:${activeRow.name}`}
-                    deviceId={deviceId}
-                    row={activeRow}
-                    isAgentOnline={isAgentOnline}
-                  />
-                )}
-                {!isCarriedRow && (
-                  <div className="modules_actions">
-                    <ActionButton
-                      action="install"
-                      isEnabled={
-                        canAct &&
-                        (activeRow.state === "absent" ||
-                          isRetried(activeRow, "installed"))
-                      }
-                      disabledReason={
-                        isPresent ? t("ui.modules.install_present") : undefined
-                      }
-                      isBusy={busyAction === "install"}
-                      onClick={() => void act("install")}
-                    />
-                    <ActionButton
-                      action="start"
-                      isEnabled={
-                        canAct &&
-                        (activeRow.state === "installed" ||
-                          activeRow.state === "stopped" ||
-                          isUnclaimed(activeRow) ||
-                          isRetried(activeRow, "running"))
-                      }
-                      isBusy={busyAction === "start"}
-                      onClick={() => void act("start")}
-                    />
-                    <ActionButton
-                      action="stop"
-                      isEnabled={
-                        canAct &&
-                        (activeRow.state === "running" ||
-                          (activeRow.state === "installed" &&
-                            activeRow.is_active) ||
-                          isRetried(activeRow, "stopped"))
-                      }
-                      isBusy={busyAction === "stop"}
-                      onClick={() => void act("stop")}
-                    />
-                    <ActionButton
-                      action="uninstall"
-                      isEnabled={
-                        canAct && (isPresent || activeRow.state === "failed")
-                      }
-                      disabledReason={
-                        activeRow.state === "absent"
-                          ? t("ui.modules.uninstall_absent")
-                          : undefined
-                      }
-                      isBusy={busyAction === "uninstall"}
-                      onClick={askUninstall}
-                    />
-                    <button
-                      type="button"
-                      className={
-                        isConfiguring ? "button" : "button button--primary"
-                      }
-                      disabled={!canAct || !(isPresent || isConfigRefused)}
-                      aria-expanded={isConfiguring}
-                      onClick={() => void configure()}
-                    >
-                      {busyAction === "configure" ? (
-                        <Spinner size={13} />
-                      ) : (
-                        <Icon name="settings" size={14} />
-                      )}
-                      {t(
-                        isConfiguring
-                          ? "ui.modules.configure_close"
-                          : "ui.modules.configure",
-                      )}
-                    </button>
-                  </div>
+                {activeModule === TERMS_MODULE && (
+                  <>
+                    {termsView !== null ? (
+                      <VscodeTerms
+                        deviceId={deviceId}
+                        view={termsView}
+                        onRecorded={terms.setData}
+                      />
+                    ) : terms.error !== null ? (
+                      <ErrorPanel
+                        message={terms.error}
+                        onRetry={terms.reload}
+                      />
+                    ) : (
+                      <div
+                        className="skeleton"
+                        style={{ height: SKELETON_HEIGHT_PX }}
+                      />
+                    )}
+                  </>
                 )}
 
-                {actionError !== null && (
-                  <div className="notice notice--error">
-                    <Icon name="alert" size={15} />
-                    <div className="notice_body">{actionError}</div>
-                  </div>
+                {!isTermsGated && (
+                  <>
+                    {!isAgentOnline && (
+                      <div className="notice notice--warn">
+                        <Icon name="alert" size={15} />
+                        <div className="notice_body">
+                          {t("ui.modules.agent_offline")}
+                        </div>
+                      </div>
+                    )}
+                    {activeRow.state === "failed" && (
+                      <div className="notice notice--error">
+                        <Icon name="alert" size={15} />
+                        <div className="notice_body">
+                          {describeFailure(activeRow)}
+                        </div>
+                      </div>
+                    )}
+                    {panels !== undefined && isConfiguring && (
+                      <fieldset
+                        className="modules_config"
+                        disabled={!isAgentOnline}
+                      >
+                        {panels({
+                          deviceId,
+                          basePath: `/agent/module/${activeModule}`,
+                          isEditable: isAgentOnline,
+                          platformOs: selectedDevice.platform.os ?? "",
+                          isInstalling: activeRow.state === "installing",
+                          want: activeRow.want,
+                        })}
+                      </fieldset>
+                    )}
+                    {!isCarriedRow && (
+                      <ModuleLog
+                        key={`${deviceId}:${activeRow.name}`}
+                        deviceId={deviceId}
+                        row={activeRow}
+                        isAgentOnline={isAgentOnline}
+                      />
+                    )}
+                    {!isCarriedRow && (
+                      <div className="modules_actions">
+                        <ActionButton
+                          action="install"
+                          isEnabled={
+                            canAct &&
+                            (activeRow.state === "absent" ||
+                              isRetried(activeRow, "installed"))
+                          }
+                          disabledReason={
+                            isPresent
+                              ? t("ui.modules.install_present")
+                              : undefined
+                          }
+                          isBusy={busyAction === "install"}
+                          onClick={() => void act("install")}
+                        />
+                        <ActionButton
+                          action="start"
+                          isEnabled={
+                            canAct &&
+                            (activeRow.state === "installed" ||
+                              activeRow.state === "stopped" ||
+                              isUnclaimed(activeRow) ||
+                              isRetried(activeRow, "running"))
+                          }
+                          isBusy={busyAction === "start"}
+                          onClick={() => void act("start")}
+                        />
+                        <ActionButton
+                          action="stop"
+                          isEnabled={
+                            canAct &&
+                            (activeRow.state === "running" ||
+                              (activeRow.state === "installed" &&
+                                activeRow.is_active) ||
+                              isRetried(activeRow, "stopped"))
+                          }
+                          isBusy={busyAction === "stop"}
+                          onClick={() => void act("stop")}
+                        />
+                        <ActionButton
+                          action="uninstall"
+                          isEnabled={
+                            canAct &&
+                            (isPresent || activeRow.state === "failed")
+                          }
+                          disabledReason={
+                            activeRow.state === "absent"
+                              ? t("ui.modules.uninstall_absent")
+                              : undefined
+                          }
+                          isBusy={busyAction === "uninstall"}
+                          onClick={askUninstall}
+                        />
+                        <button
+                          type="button"
+                          className={
+                            isConfiguring ? "button" : "button button--primary"
+                          }
+                          disabled={!canAct || !(isPresent || isConfigRefused)}
+                          aria-expanded={isConfiguring}
+                          onClick={() => void configure()}
+                        >
+                          {busyAction === "configure" ? (
+                            <Spinner size={13} />
+                          ) : (
+                            <Icon name="settings" size={14} />
+                          )}
+                          {t(
+                            isConfiguring
+                              ? "ui.modules.configure_close"
+                              : "ui.modules.configure",
+                          )}
+                        </button>
+                      </div>
+                    )}
+
+                    {actionError !== null && (
+                      <div className="notice notice--error">
+                        <Icon name="alert" size={15} />
+                        <div className="notice_body">{actionError}</div>
+                      </div>
+                    )}
+                  </>
                 )}
-              </>
+              </div>
             )}
-          </>
+          </div>
         )}
       </section>
-
-      {deviceId !== null &&
-        panels !== undefined &&
-        isConfiguring &&
-        !isTermsGated && (
-          <fieldset className="modules_config" disabled={!isAgentOnline}>
-            {panels({
-              deviceId,
-              basePath: `/agent/module/${activeModule}`,
-              isEditable: isAgentOnline,
-              platformOs: selectedDevice?.platform.os ?? "",
-              isInstalling: activeRow?.state === "installing",
-              want: activeRow?.want ?? "",
-            })}
-          </fieldset>
-        )}
 
       {confirm.modal}
     </div>
@@ -848,17 +867,36 @@ function pickable(rows: Record<string, DeviceModuleView>): PickableModule[] {
   }));
 }
 
-/** One module as the tab strip wants it: its name, its state, and a dot. */
-function toTab(row: DeviceModuleView): StripTab {
-  const key = STATE_KEYS[row.state];
-  return {
-    key: row.name,
-    name: moduleTitle(row.name, row.title),
-    tag: t(key ?? STATE_NEVER_REPORTED_KEY),
-    tagTone: TAG_TONES[row.state],
-    dotTone: dotTone(row),
-    isBusy: BUSY_STATES.includes(row.state),
-  };
+interface ModuleListRowProps {
+  row: DeviceModuleView;
+  isOn: boolean;
+  onSelect: (name: string) => void;
+}
+
+/** One row of the module list: the module's glyph, its title and a dot. */
+function ModuleListRow({ row, isOn, onSelect }: ModuleListRowProps) {
+  const title = moduleTitle(row.name, row.title);
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={isOn}
+      className={`modules_list_row ${isOn ? "modules_list_row--on" : ""}`}
+      title={title}
+      onClick={() => onSelect(row.name)}
+    >
+      <ModuleIcon name={row.name} size={ROW_ICON_PX} />
+      <span className="modules_list_row_title">{title}</span>
+      {BUSY_STATES.includes(row.state) && <Spinner size={11} />}
+      <StatusDot tone={dotTone(row)} />
+    </button>
+  );
+}
+
+/** The word a module's state wears; a token outside the table reads as a
+ * machine that has not reported. */
+function stateWord(row: DeviceModuleView): string {
+  return t(STATE_KEYS[row.state] ?? STATE_NEVER_REPORTED_KEY);
 }
 
 function dotTone(row: DeviceModuleView): StatusTone {

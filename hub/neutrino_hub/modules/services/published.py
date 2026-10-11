@@ -24,6 +24,7 @@ from neutrino_hub.modules.cliproxyapi.ops import load_config as load_cliproxyapi
 from neutrino_hub.modules.channel.constants import CHANNEL_MODULE_CONFIGURED_WANTS
 from neutrino_hub.modules.devices.constants import DEVICE_MODULE_NAMES
 from neutrino_hub.modules.devices.desired_state import DesiredStateStore
+from neutrino_hub.modules.devices.module_table import account_program_names
 from neutrino_hub.modules.router import link_status
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.services.collector import (
@@ -271,8 +272,8 @@ class PublishedServiceCache:
 
         Returns:
             One entry per device whose report names a hosted module, each
-            ``{"device_id", "host", "samba", "gitea", "podman", "vscode",
-            "code_server", "cloudcli"}``.
+            ``{"device_id", "host"}`` and one key per module of
+            :data:`DEVICE_MODULE_NAMES`.
         """
         if self._agent_sessions is None:
             return []
@@ -291,7 +292,7 @@ class PublishedServiceCache:
     def _hosted(self, key: str, name: str, status) -> "dict | None":
         """One device's module as the list needs it, None while not served.
 
-        A VS Code, code-server or CloudCLI instance is listed only while the
+        An instance of a program run as an account is listed only while the
         device reports it running.
         """
         if not isinstance(status, dict):
@@ -337,22 +338,7 @@ class PublishedServiceCache:
             for instance in details.get("instances") or []
             if isinstance(instance, dict) and instance.get("is_running")
         }
-        if name == "vscode":
-            return {
-                "is_healthy": bool(status.get("is_active")),
-                "instances": [
-                    {"account": str(instance["account"]), "port": int(instance["port"])}
-                    for instance in self._desired_states.read(key, "vscode").get(
-                        "instances"
-                    )
-                    or []
-                    if isinstance(instance, dict)
-                    and instance.get("account")
-                    and instance.get("port")
-                    and str(instance["account"]) in running
-                ],
-            }
-        if name in ("cloudcli", "code_server"):
+        if name in account_program_names():
             return {
                 "instances": [
                     {

@@ -8,10 +8,9 @@ instead of shipping. Comment keys are stripped the same way the rest of
 ``config/`` is.
 
 **They come back in the order both surfaces draw them**: the tiers in the
-order a person trusts them — what the machine's own package manager
-provides, then what the module's installer fetches from a public
-repository, then what
-somebody installs from a vendor themselves — and by title inside each. The
+order a person trusts them — what the agent's own package carries, what the
+machine's own package manager provides, then what the module's installer
+fetches from a public repository — and by title inside each. The
 panel and the agent's page read this same order, so the two lists agree
 without either of them sorting.
 """
@@ -20,11 +19,11 @@ import json
 import re
 
 from neutrino_hub.modules.devices.constants import (
+    AGENT_MODULE_COMPONENT_FIELDS,
     AGENT_MODULE_DOWNLOAD_FIELDS,
     AGENT_MODULE_INSTALLER_AGENT,
     AGENT_MODULE_INSTALLER_BUILTIN,
     AGENT_MODULE_INSTALLER_TIERS,
-    AGENT_MODULE_INSTALLER_USER,
     AGENT_TOOL_FIELDS,
 )
 from neutrino_hub.utils.constants import UTILS_DATA_DIR
@@ -65,12 +64,7 @@ def load_module_manifests() -> dict:
             )
         _check_branches(path.name, manifest)
         loaded.append((name, manifest))
-    loaded.sort(
-        key=lambda pair: (
-            AGENT_MODULE_INSTALLER_TIERS.index(pair[1]["installer"]),
-            str(pair[1].get("title", pair[0])).lower(),
-        )
-    )
+    loaded.sort(key=_display_order)
     return dict(loaded)
 
 
@@ -127,13 +121,22 @@ def _read_manifests() -> list:
     return read
 
 
+def _display_order(pair: tuple) -> tuple:
+    """Where one ``(name, manifest)`` sorts: by installer tier, then by title."""
+    name, manifest = pair
+    return (
+        AGENT_MODULE_INSTALLER_TIERS.index(manifest["installer"]),
+        str(manifest.get("title", name)).lower(),
+    )
+
+
 def _check_branches(file_name: str, manifest: dict) -> None:
     """Refuse a platform branch the agent could not act on.
 
     Every branch that names software carries ``verify``, the command whose
-    exit says whether the software is there. A module the hub installs
-    carries an ``uninstall`` block too: the packages to take off, the
-    commands to run after, and whether the module's data stays. A branch
+    exit says whether the software is there, and an ``uninstall`` block:
+    the packages to take off, the commands to run after, and whether the
+    module's data stays. A branch
     that is ``{}`` says the platform carries the software natively. A branch
     whose ``installer`` is ``builtin`` names software the system carries,
     which the agent's runner checks for itself: it names nothing to
@@ -148,10 +151,11 @@ def _check_branches(file_name: str, manifest: dict) -> None:
         ValueError: Naming the branch and what it lacks, a
             ``min_version`` that is not a dotted number, an ``installer``
             other than ``builtin``, a builtin branch naming something
-            to download or install, or an agent-tier module naming a
-            platform.
+            to download or install, an agent-tier module naming a
+            platform, or a ``components`` list beside a ``url``, with a
+            component lacking one of its fields, or with two components
+            sharing a name or a directory.
     """
-    is_installed_by_hub = manifest.get("installer") != AGENT_MODULE_INSTALLER_USER
     platforms = manifest.get("platforms", {})
     if not isinstance(platforms, dict):
         raise ValueError(f"manifest {file_name}: platforms must be an object")
@@ -190,8 +194,8 @@ def _check_branches(file_name: str, manifest: dict) -> None:
             raise ValueError(
                 f"manifest {file_name}: platform {key} must name a verify command"
             )
-        if not is_installed_by_hub:
-            continue
+        if "components" in entry:
+            _check_components(file_name, key, entry)
         removal = entry.get("uninstall")
         is_shaped = (
             isinstance(removal, dict)
@@ -204,6 +208,58 @@ def _check_branches(file_name: str, manifest: dict) -> None:
                 f"manifest {file_name}: platform {key} must carry an uninstall "
                 "block with packages, post_uninstall and is_data_kept"
             )
+
+
+def _check_components(file_name: str, key: str, entry: dict) -> None:
+    """Refuse a ``components`` list the cache could not fetch by.
+
+    Args:
+        file_name: The manifest's file, for the message.
+        key: The platform branch's key, for the message.
+        entry: The branch, which names ``components``.
+
+    Raises:
+        ValueError: For a list beside a ``url``, a list that is not one, a
+            component without each of :data:`AGENT_MODULE_COMPONENT_FIELDS`,
+            or two components with one name or one directory.
+    """
+    if "url" in entry:
+        raise ValueError(
+            f"manifest {file_name}: platform {key} names both url and components"
+        )
+    components = entry["components"]
+    if not isinstance(components, list) or not components:
+        raise ValueError(
+            f"manifest {file_name}: platform {key} components must be a list "
+            "of at least one archive"
+        )
+    names: set = set()
+    directories: set = set()
+    for component in components:
+        missing = [
+            field
+            for field in AGENT_MODULE_COMPONENT_FIELDS
+            if not isinstance(component, dict)
+            or not isinstance(component.get(field), str)
+            or not component[field]
+        ]
+        if missing:
+            raise ValueError(
+                f"manifest {file_name}: platform {key} has a component without "
+                f"{', '.join(missing)}"
+            )
+        if component["name"] in names:
+            raise ValueError(
+                f"manifest {file_name}: platform {key} names the component "
+                f"{component['name']!r} twice"
+            )
+        if component["directory"] in directories:
+            raise ValueError(
+                f"manifest {file_name}: platform {key} unpacks two components "
+                f"into {component['directory']!r}"
+            )
+        names.add(component["name"])
+        directories.add(component["directory"])
 
 
 def manifests_stamp() -> tuple:

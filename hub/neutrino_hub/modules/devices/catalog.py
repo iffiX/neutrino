@@ -16,6 +16,9 @@ import hashlib
 import json
 
 from neutrino_hub.modules.devices.agent_module_cache import resolve_platform_entry
+from neutrino_hub.modules.devices.constants import (
+    AGENT_MODULE_COMPONENT_RECIPE_FIELDS,
+)
 from neutrino_hub.modules.devices.manifests import (
     load_module_manifests,
     manifests_stamp,
@@ -35,14 +38,16 @@ def resolve_module(manifest: dict, platform: dict) -> dict:
         The module's title, kind and installer tier, plus the entry, verify
         command and package name for this platform, and the license and
         exact-tag source pointer the surfaces render beside the row, and the
-        source the row is attributed to.
+        source the row is attributed to. An entry that lists ``components``
+        adds them as the recipe carries them, each with its name, package
+        kind, directory and digest.
         ``entry`` is None where the manifest offers this platform nothing,
         which is the machine's whole basis for reporting the module
         unsupported.
     """
     platform_key, entry = resolve_platform_entry(manifest, platform)
     resolved = entry if entry is not None else {}
-    return {
+    module = {
         "title": manifest.get("title", manifest.get("name", "")),
         "description": manifest.get("description", ""),
         "kind": manifest.get("kind", ""),
@@ -56,6 +61,16 @@ def resolve_module(manifest: dict, platform: dict) -> dict:
         "verify": str(resolved.get("verify", "") or ""),
         "package": str(resolved.get("package", "") or manifest.get("name", "")),
     }
+    if isinstance(resolved.get("components"), list):
+        module["components"] = [
+            {
+                field: str(component.get(field, "") or "")
+                for field in AGENT_MODULE_COMPONENT_RECIPE_FIELDS
+            }
+            for component in resolved["components"]
+            if isinstance(component, dict)
+        ]
+    return module
 
 
 def resolved_modules(platform: dict) -> dict:

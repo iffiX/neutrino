@@ -69,19 +69,62 @@ def write_manifest(manifests, name: str) -> None:
 
 def test_the_catalog_has_two_halves_under_one_hash(box):
     manifests, published = box
-    write_manifest(manifests, "anydesk")
+    write_manifest(manifests, "forge")
     published.entries_list = [port_entry()]
     cache = DeviceCatalogCache(services=published)
 
     catalog, digest = cache.catalog(scope=link_scope("192.168.100.7"))
 
     assert set(catalog) == {"modules", "services"}
-    assert catalog["modules"]["anydesk"]["title"] == "Anydesk"
+    assert catalog["modules"]["forge"]["title"] == "Forge"
     assert len(digest) == 16
     entry = catalog["services"][0]
     # Resolved for the asking device, and stripped to the wire fields.
     assert entry["payload"]["host"] == "192.168.100.7"
     assert "record_id" not in entry
+
+
+def test_a_module_listing_components_hands_the_catalog_their_recipe_form(box):
+    manifests, published = box
+    (manifests / "codeg.json").write_text(
+        json.dumps(
+            {
+                "name": "codeg",
+                "title": "Codeg",
+                "installer": "hub",
+                "source": "vendor/codeg",
+                "license": "MIT",
+                "corresponding_source": "https://github.com/vendor/codeg",
+                "platforms": {
+                    "linux-amd64": {
+                        "components": [
+                            {
+                                "name": "node",
+                                "url": "https://nodejs.org/dist/node.tar.gz",
+                                "sha256": "b" * 64,
+                                "package_kind": "tar",
+                                "directory": "node",
+                            }
+                        ],
+                        "verify": "true",
+                        "uninstall": {
+                            "packages": [],
+                            "post_uninstall": [],
+                            "is_data_kept": True,
+                        },
+                    }
+                },
+            }
+        )
+    )
+    cache = DeviceCatalogCache(services=published)
+    platform = {"os": "linux", "family": "debian", "arch": "amd64"}
+
+    catalog, _ = cache.catalog(scope=link_scope("192.168.100.7"), platform=platform)
+
+    assert catalog["modules"]["codeg"]["components"] == [
+        {"name": "node", "package_kind": "tar", "directory": "node", "sha256": "b" * 64}
+    ]
 
 
 def test_two_hosts_get_two_catalogs_with_two_hashes(box):

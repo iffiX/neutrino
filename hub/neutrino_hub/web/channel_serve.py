@@ -170,10 +170,11 @@ async def serve_package_stream(
     """Serve a ``package`` stream an agent opened: the bytes, then their digest.
 
     ``{module}`` names a module's package from the hub's cache, or a
-    program the agent runs itself, such as cc-switch; ``{}`` is the agent's
-    own package for its platform. The bytes go down under the
-    agent's credit and the close carries their ``sha256`` and the file's
-    own ``name``, the release's file name with no directory.
+    program the agent runs itself, such as cc-switch, and ``{module,
+    component}`` one component of a module that unpacks several archives;
+    ``{}`` is the agent's own package for its platform. The bytes go down
+    under the agent's credit and the close carries their ``sha256`` and the
+    file's own ``name``, the release's file name with no directory.
 
     Args:
         runtime: The shared runtime.
@@ -181,6 +182,7 @@ async def serve_package_stream(
         stream: The stream, closed here.
     """
     module = str(stream.args.get("module", "") or "")
+    component = str(stream.args.get("component", "") or "")
     platform = dict(runtime.device_platform.get(session.key, {}))
     is_module = bool(module) and module in load_module_manifests()
     on_progress = None
@@ -193,7 +195,7 @@ async def serve_package_stream(
         )
     try:
         path = await asyncio.to_thread(
-            _package_path, runtime, module, platform, on_progress
+            _package_path, runtime, module, platform, on_progress, component
         )
     except AgentArtifactFetchError as error:
         if is_module:
@@ -347,7 +349,9 @@ def _file_size(path) -> int:
         return 0
 
 
-def _package_path(runtime, module: str, platform: dict, on_progress=None):
+def _package_path(
+    runtime, module: str, platform: dict, on_progress=None, component: str = ""
+):
     """Where the package a ``package`` stream asks for is on this hub.
 
     Raises:
@@ -362,7 +366,11 @@ def _package_path(runtime, module: str, platform: dict, on_progress=None):
     if manifest is None:
         raise AgentArtifactFetchError("module_unknown", name=module)
     return runtime.agent_modules.artifact(
-        name=module, manifest=manifest, platform=platform, on_progress=on_progress
+        name=module,
+        manifest=manifest,
+        platform=platform,
+        component=component,
+        on_progress=on_progress,
     ).path
 
 
