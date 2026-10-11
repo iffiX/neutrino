@@ -20,6 +20,7 @@ import json
 import re
 
 from neutrino_hub.modules.devices.constants import (
+    AGENT_MODULE_COMPONENT_FIELDS,
     AGENT_MODULE_DOWNLOAD_FIELDS,
     AGENT_MODULE_INSTALLER_AGENT,
     AGENT_MODULE_INSTALLER_BUILTIN,
@@ -148,8 +149,10 @@ def _check_branches(file_name: str, manifest: dict) -> None:
         ValueError: Naming the branch and what it lacks, a
             ``min_version`` that is not a dotted number, an ``installer``
             other than ``builtin``, a builtin branch naming something
-            to download or install, or an agent-tier module naming a
-            platform.
+            to download or install, an agent-tier module naming a
+            platform, or a ``components`` list beside a ``url``, with a
+            component lacking one of its fields, or with two components
+            sharing a name or a directory.
     """
     is_installed_by_hub = manifest.get("installer") != AGENT_MODULE_INSTALLER_USER
     platforms = manifest.get("platforms", {})
@@ -190,6 +193,8 @@ def _check_branches(file_name: str, manifest: dict) -> None:
             raise ValueError(
                 f"manifest {file_name}: platform {key} must name a verify command"
             )
+        if "components" in entry:
+            _check_components(file_name, key, entry)
         if not is_installed_by_hub:
             continue
         removal = entry.get("uninstall")
@@ -204,6 +209,58 @@ def _check_branches(file_name: str, manifest: dict) -> None:
                 f"manifest {file_name}: platform {key} must carry an uninstall "
                 "block with packages, post_uninstall and is_data_kept"
             )
+
+
+def _check_components(file_name: str, key: str, entry: dict) -> None:
+    """Refuse a ``components`` list the cache could not fetch by.
+
+    Args:
+        file_name: The manifest's file, for the message.
+        key: The platform branch's key, for the message.
+        entry: The branch, which names ``components``.
+
+    Raises:
+        ValueError: For a list beside a ``url``, a list that is not one, a
+            component without each of :data:`AGENT_MODULE_COMPONENT_FIELDS`,
+            or two components with one name or one directory.
+    """
+    if "url" in entry:
+        raise ValueError(
+            f"manifest {file_name}: platform {key} names both url and components"
+        )
+    components = entry["components"]
+    if not isinstance(components, list) or not components:
+        raise ValueError(
+            f"manifest {file_name}: platform {key} components must be a list "
+            "of at least one archive"
+        )
+    names: set = set()
+    directories: set = set()
+    for component in components:
+        missing = [
+            field
+            for field in AGENT_MODULE_COMPONENT_FIELDS
+            if not isinstance(component, dict)
+            or not isinstance(component.get(field), str)
+            or not component[field]
+        ]
+        if missing:
+            raise ValueError(
+                f"manifest {file_name}: platform {key} has a component without "
+                f"{', '.join(missing)}"
+            )
+        if component["name"] in names:
+            raise ValueError(
+                f"manifest {file_name}: platform {key} names the component "
+                f"{component['name']!r} twice"
+            )
+        if component["directory"] in directories:
+            raise ValueError(
+                f"manifest {file_name}: platform {key} unpacks two components "
+                f"into {component['directory']!r}"
+            )
+        names.add(component["name"])
+        directories.add(component["directory"])
 
 
 def manifests_stamp() -> tuple:

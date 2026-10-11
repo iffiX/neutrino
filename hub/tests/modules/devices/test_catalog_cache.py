@@ -84,6 +84,49 @@ def test_the_catalog_has_two_halves_under_one_hash(box):
     assert "record_id" not in entry
 
 
+def test_a_module_listing_components_hands_the_catalog_their_recipe_form(box):
+    manifests, published = box
+    (manifests / "codeg.json").write_text(
+        json.dumps(
+            {
+                "name": "codeg",
+                "title": "Codeg",
+                "installer": "hub",
+                "source": "vendor/codeg",
+                "license": "MIT",
+                "corresponding_source": "https://github.com/vendor/codeg",
+                "platforms": {
+                    "linux-amd64": {
+                        "components": [
+                            {
+                                "name": "node",
+                                "url": "https://nodejs.org/dist/node.tar.gz",
+                                "sha256": "b" * 64,
+                                "package_kind": "tar",
+                                "directory": "node",
+                            }
+                        ],
+                        "verify": "true",
+                        "uninstall": {
+                            "packages": [],
+                            "post_uninstall": [],
+                            "is_data_kept": True,
+                        },
+                    }
+                },
+            }
+        )
+    )
+    cache = DeviceCatalogCache(services=published)
+    platform = {"os": "linux", "family": "debian", "arch": "amd64"}
+
+    catalog, _ = cache.catalog(scope=link_scope("192.168.100.7"), platform=platform)
+
+    assert catalog["modules"]["codeg"]["components"] == [
+        {"name": "node", "package_kind": "tar", "directory": "node", "sha256": "b" * 64}
+    ]
+
+
 def test_two_hosts_get_two_catalogs_with_two_hashes(box):
     _, published = box
     published.entries_list = [port_entry()]

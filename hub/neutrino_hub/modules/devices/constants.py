@@ -59,6 +59,7 @@ AGENT_MODULE_INSTALLER_BUILTIN = "builtin"
 # something, none of which a builtin branch may name.
 AGENT_MODULE_DOWNLOAD_FIELDS = (
     "url",
+    "components",
     "github_repo",
     "asset_pattern",
     "download",
@@ -66,6 +67,11 @@ AGENT_MODULE_DOWNLOAD_FIELDS = (
     "packages",
     "pre_install",
 )
+# A branch that unpacks several archives names them under ``components``,
+# one entry per archive with these fields and an optional ``cn_url``; the
+# recipe the state carries keeps the four the agent acts on.
+AGENT_MODULE_COMPONENT_FIELDS = ("name", "url", "sha256", "package_kind", "directory")
+AGENT_MODULE_COMPONENT_RECIPE_FIELDS = ("name", "package_kind", "directory", "sha256")
 
 # The agent module cache: what the hub presents when a module's installer
 # fetches an artifact for a managed machine, and what it accepts back. The ceiling is generous —

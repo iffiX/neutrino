@@ -1042,14 +1042,24 @@ def _recipes(resolved: dict) -> dict:
         resolved: The module as :func:`resolved_modules` answers it.
 
     Returns:
-        ``{"install", "uninstall"}``, the branch's own blocks; both empty
-        where the manifest offers the platform nothing.
+        ``{"install", "uninstall"}``, the branch's own blocks, the
+        components of an entry that lists them reduced to their name,
+        package kind, directory and digest; both empty where the manifest
+        offers the platform nothing.
     """
     entry = resolved.get("entry")
     if not isinstance(entry, dict):
         return {"install": {}, "uninstall": {}}
-    install = {name: value for name, value in entry.items() if name != "uninstall"}
+    install = {
+        name: value
+        for name, value in entry.items()
+        if name not in ("uninstall", "components")
+    }
     install["kind"] = str(resolved.get("kind", "") or "")
+    if "components" in resolved:
+        install["components"] = [
+            dict(component) for component in resolved["components"]
+        ]
     return {"install": install, "uninstall": dict(entry.get("uninstall") or {})}
 
 

@@ -250,7 +250,10 @@ def test_the_state_carries_the_opened_secrets_and_never_a_seal(
     assert "gateway_url" not in module["config"]
     assert "gateway_key" not in module["config"]
     assert module["install"]["kind"] == "cloudcli"
-    assert module["install"]["package_kind"] == ("zip" if has_password else "tar")
+    (node,) = module["install"]["components"]
+    assert (node["name"], node["directory"]) == ("node", "node")
+    assert node["package_kind"] == ("zip" if has_password else "tar")
+    assert "url" not in node
     assert "sealed" not in json.dumps(desired)
 
 

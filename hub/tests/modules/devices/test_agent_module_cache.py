@@ -508,6 +508,175 @@ def test_a_fetch_tells_its_progress_and_a_held_artifact_says_it_is_cached(
     assert lines[-1] == "hub: FakeDesk 2.0 is in the cache"
 
 
+# --- a module that unpacks several archives: one artifact per component ---
+
+SERVER_BYTES = b"\x1f\x8bserver-bundle-bytes"
+NODE_BYTES = b"\x1f\x8bnode-runtime-bytes"
+COMPONENTS_MANIFEST = {
+    "name": "codeg",
+    "title": "Codeg",
+    "version": "0.9.0",
+    "platforms": {
+        "linux-amd64": {
+            "components": [
+                {
+                    "name": "server",
+                    "url": "https://vendor.example/codeg-server.tar.gz",
+                    "sha256": hashlib.sha256(SERVER_BYTES).hexdigest(),
+                    "package_kind": "tar",
+                    "directory": "server",
+                },
+                {
+                    "name": "node",
+                    "url": "https://nodejs.org/dist/node.tar.gz",
+                    "cn_url": "https://mirror.example/node.tar.gz",
+                    "sha256": hashlib.sha256(NODE_BYTES).hexdigest(),
+                    "package_kind": "tar",
+                    "directory": "node",
+                },
+            ],
+            "verify": "true",
+        }
+    },
+}
+NODE_ONLY = COMPONENTS_MANIFEST["platforms"]["linux-amd64"]["components"][1]
+ONE_COMPONENT_MANIFEST = {
+    "name": "cloudcli",
+    "platforms": {"linux-amd64": {"components": [NODE_ONLY], "verify": "true"}},
+}
+
+
+class ComponentFetches:
+    """``_open`` answering each component's bytes by its url."""
+
+    def __init__(self):
+        self.urls: list = []
+
+    def open(self, request):
+        url = request.full_url
+        self.urls.append(url)
+        if "node" in url:
+            return ChunkedResponse(NODE_BYTES)
+        return ChunkedResponse(SERVER_BYTES)
+
+
+def component_of(cache, component: str, manifest=COMPONENTS_MANIFEST, **kwargs):
+    return cache.artifact(
+        name=manifest["name"],
+        manifest=manifest,
+        platform=LINUX_AMD,
+        component=component,
+        **kwargs,
+    )
+
+
+def test_each_component_is_its_own_artifact_under_its_own_key(cache, monkeypatch):
+    fetches = ComponentFetches()
+    monkeypatch.setattr(cache, "_open", fetches.open)
+
+    server = component_of(cache, "server")
+    node = component_of(cache, "node")
+
+    assert server.key.startswith("codeg-server-linux-amd64-")
+    assert node.key.startswith("codeg-node-linux-amd64-")
+    assert (server.component, node.component) == ("server", "node")
+    assert server.path.read_bytes() == SERVER_BYTES
+    assert node.path.read_bytes() == NODE_BYTES
+    assert node.digest == hashlib.sha256(NODE_BYTES).hexdigest()
+    assert fetches.urls == [
+        "https://vendor.example/codeg-server.tar.gz",
+        "https://nodejs.org/dist/node.tar.gz",
+    ]
+    assert sorted(left_on_disk(cache)) == sorted([server.key, node.key])
+
+
+def test_a_component_the_entry_does_not_name_is_refused_before_any_fetch(
+    cache, monkeypatch
+):
+    fetches = ComponentFetches()
+    monkeypatch.setattr(cache, "_open", fetches.open)
+
+    with pytest.raises(AgentArtifactFetchError) as refusal:
+        component_of(cache, "npm")
+    with pytest.raises(AgentArtifactFetchError) as unnamed:
+        component_of(cache, "")
+    with pytest.raises(AgentArtifactFetchError) as on_one_archive:
+        cache.artifact(
+            name="fakedesk", manifest=MANIFEST, platform=AMD64, component="x"
+        )
+
+    assert (refusal.value.code, refusal.value.params) == (
+        "no_download_named",
+        {"component": ""},
+    )
+    assert unnamed.value.code == "no_download_named"
+    assert on_one_archive.value.code == "no_download_named"
+    assert fetches.urls == []
+
+
+def test_a_one_component_entry_is_served_with_or_without_the_name(cache, monkeypatch):
+    """``package {module: cloudcli}`` and ``package {module: cloudcli,
+    component: node}`` are one artifact."""
+    fetches = ComponentFetches()
+    monkeypatch.setattr(cache, "_open", fetches.open)
+
+    unnamed = component_of(cache, "", ONE_COMPONENT_MANIFEST)
+    named = component_of(cache, "node", ONE_COMPONENT_MANIFEST)
+
+    assert unnamed.key == named.key
+    assert unnamed.component == "node"
+    assert unnamed.key.startswith("cloudcli-node-linux-amd64-")
+    assert len(fetches.urls) == 1
+
+
+def test_a_components_key_resolves_back_to_its_component(cache, monkeypatch):
+    import shutil
+
+    fetches = ComponentFetches()
+    monkeypatch.setattr(cache, "_open", fetches.open)
+    node = component_of(cache, "node")
+    shutil.rmtree(cache._root)
+
+    again = cache.artifact_for_key(
+        node.key,
+        sources={"fakedesk": MANIFEST, "codeg": COMPONENTS_MANIFEST},
+        platform=LINUX_AMD,
+    )
+
+    assert (again.key, again.component) == (node.key, "node")
+    assert again.path.read_bytes() == NODE_BYTES
+
+
+def test_a_cn_hub_fetches_each_component_from_its_own_mirror(monkeypatch, tmp_path):
+    """The component with a ``cn_url`` comes from the mirror; the one without
+    comes from its publisher."""
+    fetches = ComponentFetches()
+    monkeypatch.setattr(AgentModuleCache, "_open", staticmethod(fetches.open))
+    cache = AgentModuleCache(root=tmp_path / "cache", edition="cn")
+    lines: list = []
+
+    component_of(cache, "node", on_progress=lines.append)
+    component_of(cache, "server")
+
+    assert fetches.urls == [
+        "https://mirror.example/node.tar.gz",
+        "https://vendor.example/codeg-server.tar.gz",
+    ]
+    assert lines[0].startswith(
+        "hub: downloading Codeg 0.9.0 (node) from mirror.example,"
+    )
+
+
+def test_a_component_off_its_pin_is_refused_and_never_cached(cache, monkeypatch):
+    monkeypatch.setattr(cache, "_open", serving(content=b"\x1f\x8bsomething else"))
+
+    with pytest.raises(AgentArtifactFetchError) as refusal:
+        component_of(cache, "node")
+
+    assert refusal.value.code == "module_sha256_mismatch"
+    assert left_on_disk(cache) == []
+
+
 # --- the edition's own source: cn_url, and a mirror that kept only its latest ---
 
 TARBALL = b"\x1f\x8bcode-server-release-bytes"

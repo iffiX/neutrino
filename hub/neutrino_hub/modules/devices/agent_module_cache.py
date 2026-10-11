@@ -4,8 +4,9 @@ The hub is the only thing that fetches a module, so everything a fetch needs
 — the manifest's platform table and GitHub's release API — lives here rather
 than on a machine that carries no dependencies.
 
-**The cache key is the module name, the platform key it resolved, and a
-digest of the resolved entry itself.** A manifest carries no version number,
+**The cache key is the module name, the component's name where the entry
+lists components, the platform key it resolved, and a digest of the
+resolved download itself.** A manifest carries no version number,
 so the entry is the only honest identity of what will be installed: change
 its url, its package kind or its install arguments and the digest changes
 with it, which is what stops a manifest edit from being served yesterday's
@@ -61,12 +62,15 @@ class AgentModuleArtifact:
         path: Where the file is.
         digest: Its SHA-256, which the agent checks what it received against.
         package_kind: The kind the manifest names.
+        component: The component's name; empty for a module with one
+            archive.
     """
 
     key: str
     path: Path
     digest: str
     package_kind: str
+    component: str = ""
 
 
 def platform_keys(platform: dict) -> list:
@@ -114,6 +118,32 @@ def resolve_platform_entry(manifest: dict, platform: dict) -> tuple:
             if is_version_below(str(platform.get("version", "") or ""), str(floor)):
                 return "", None
             return key, entry
+    return "", None
+
+
+def resolve_component(entry: dict, component: str = "") -> tuple:
+    """The download one platform entry names for one component.
+
+    Args:
+        entry: The manifest's entry for the platform.
+        component: The component's name; empty asks for the entry's one
+            archive, which on an entry listing components is its one
+            component.
+
+    Returns:
+        ``(component_name, source)``: the name the download is kept under,
+        empty for a module with one archive, and the mapping that names its
+        ``url``, ``sha256`` and ``package_kind``; ``("", None)`` when the
+        entry names no such download.
+    """
+    components = entry.get("components")
+    if not isinstance(components, list):
+        return ("", dict(entry)) if not component else ("", None)
+    if not component and len(components) == 1:
+        component = str(components[0].get("name", "") or "")
+    for candidate in components:
+        if isinstance(candidate, dict) and candidate.get("name") == component:
+            return component, dict(candidate)
     return "", None
 
 
@@ -181,19 +211,22 @@ def format_megabytes(size: int) -> str:
     return f"{size / (1024 * 1024):.1f}"
 
 
-def artifact_title(name: str, manifest: dict) -> str:
+def artifact_title(name: str, manifest: dict, component: str = "") -> str:
     """What progress lines call a module's artifact: its title and version.
 
     Args:
         name: The module name, used when the manifest names no title.
         manifest: Its manifest.
+        component: The component's name, named after the version; empty
+            for a module with one archive.
 
     Returns:
-        Such as ``VS Code 1.140.0``.
+        Such as ``VS Code 1.140.0`` or ``CloudCLI 1.37.3 (node)``.
     """
     title = str(manifest.get("title", "") or name)
     version = str(manifest.get("version", "") or "")
-    return f"{title} {version}" if version else title
+    titled = f"{title} {version}" if version else title
+    return f"{titled} ({component})" if component else titled
 
 
 def latest_release_url(listing_url: str, pinned_url: str, listing: str) -> tuple:
@@ -336,22 +369,31 @@ class AgentModuleCache:
         self._guard = threading.Lock()
         self._fetch_locks: dict = {}
 
-    def artifact_key(self, *, name: str, manifest: dict, platform: dict) -> str:
+    def artifact_key(
+        self, *, name: str, manifest: dict, platform: dict, component: str = ""
+    ) -> str:
         """What addresses this module's artifact for this platform.
 
         Args:
             name: The module name.
             manifest: Its manifest.
             platform: The tuple the agent reported.
+            component: The component's name; empty for the entry's one
+                archive.
 
         Returns:
             The cache key, empty when the manifest offers this platform
-            nothing.
+            nothing or names no such component.
         """
         platform_key, entry = resolve_platform_entry(manifest, platform)
         if entry is None:
             return ""
-        return self._key(name=name, platform_key=platform_key, entry=entry)
+        component, source = resolve_component(entry, component)
+        if source is None:
+            return ""
+        return self._key(
+            name=name, platform_key=platform_key, component=component, source=source
+        )
 
     def artifact(
         self,
@@ -359,6 +401,7 @@ class AgentModuleCache:
         name: str,
         manifest: dict,
         platform: dict,
+        component: str = "",
         on_progress: "Callable[[str], None] | None" = None,
     ) -> AgentModuleArtifact:
         """The module's bytes for this platform, fetched if they are not held.
@@ -371,6 +414,8 @@ class AgentModuleCache:
             name: The module name.
             manifest: Its manifest.
             platform: The tuple the agent reported.
+            component: The component's name on an entry that lists
+                components; empty for the entry's one archive.
             on_progress: Called on this thread with each ``hub:`` line: the
                 download's progress, or that the artifact is in the cache.
                 None writes no line.
@@ -381,17 +426,23 @@ class AgentModuleCache:
         Raises:
             AgentArtifactFetchError: ``no_platform_build`` when the manifest
                 offers this platform nothing, ``no_download_named`` when its
-                entry names neither a url nor a release to resolve, and the
-                fetch's own typed reasons otherwise.
+                entry names neither a url nor a release to resolve or no
+                component of that name, and the fetch's own typed reasons
+                otherwise.
         """
         platform_key, entry = resolve_platform_entry(manifest, platform)
         if entry is None:
             raise AgentArtifactFetchError("no_platform_build")
-        package_kind = str(entry.get("package_kind", "") or "")
-        key = self._key(name=name, platform_key=platform_key, entry=entry)
+        component, source = resolve_component(entry, component)
+        if source is None:
+            raise AgentArtifactFetchError("no_download_named", component=component)
+        package_kind = str(source.get("package_kind", "") or "")
+        key = self._key(
+            name=name, platform_key=platform_key, component=component, source=source
+        )
         path = self._root / key
 
-        title = artifact_title(name, manifest)
+        title = artifact_title(name, manifest, component)
         with self._lock_for(key):
             held = self._read_held(path)
             if held is None:
@@ -400,7 +451,7 @@ class AgentModuleCache:
                     progress = AgentModuleFetchProgress(
                         title=title, on_line=on_progress
                     )
-                download = self._fetch(entry, progress=progress)
+                download = self._fetch(source, progress=progress)
                 self._place(download, path)
                 held = download.sha256
             elif on_progress is not None:
@@ -410,6 +461,7 @@ class AgentModuleCache:
                 path=path,
                 digest=held,
                 package_kind=package_kind,
+                component=component,
             )
 
     def artifact_for_key(
@@ -417,10 +469,11 @@ class AgentModuleCache:
     ) -> AgentModuleArtifact:
         """The artifact a key names, fetching it again if it is not held.
 
-        The key is a pure function of the name, the platform and the entry,
-        so it can be resolved back without anything having been remembered.
-        That is what makes losing the directory cost a download and nothing
-        else: an order made before a restart still finds its bytes.
+        The key is a pure function of the name, the component, the platform
+        and the entry, so it can be resolved back without anything having
+        been remembered. That is what makes losing the directory cost a
+        download and nothing else: an order made before a restart still
+        finds its bytes.
 
         Args:
             key: The cache key an order carried.
@@ -438,11 +491,17 @@ class AgentModuleCache:
         if not self._is_safe_key(key):
             raise AgentArtifactFetchError("module_artifact_unknown")
         for name, manifest in sources.items():
-            if (
-                self.artifact_key(name=name, manifest=manifest, platform=platform)
-                == key
-            ):
-                return self.artifact(name=name, manifest=manifest, platform=platform)
+            for component in _component_names(manifest, platform):
+                asked = self.artifact_key(
+                    name=name, manifest=manifest, platform=platform, component=component
+                )
+                if asked == key:
+                    return self.artifact(
+                        name=name,
+                        manifest=manifest,
+                        platform=platform,
+                        component=component,
+                    )
         raise AgentArtifactFetchError("module_artifact_unknown", artifact_key=key)
 
     def held(self, key: str) -> "Path | None":
@@ -467,13 +526,20 @@ class AgentModuleCache:
             bool(key) and "/" not in key and "\\" not in key and not key.startswith(".")
         )
 
-    def _key(self, *, name: str, platform_key: str, entry: dict) -> str:
+    def _key(
+        self, *, name: str, platform_key: str, component: str, source: dict
+    ) -> str:
         """Address one artifact by what would actually be installed."""
-        serialized = json.dumps(entry, sort_keys=True, default=str).encode("utf-8")
+        serialized = json.dumps(source, sort_keys=True, default=str).encode("utf-8")
         digest = hashlib.sha256(serialized).hexdigest()[:AGENT_MODULE_KEY_DIGEST_CHARS]
+        named = (
+            f"{name}-{component}-{platform_key}"
+            if component
+            else f"{name}-{platform_key}"
+        )
         safe = "".join(
             character if character.isalnum() or character in "-_" else "_"
-            for character in f"{name}-{platform_key}"
+            for character in named
         )
         return f"{safe}-{digest}"
 
@@ -526,7 +592,8 @@ class AgentModuleCache:
         nothing on disk.
 
         Args:
-            entry: The manifest's entry for this platform.
+            entry: The download named: the platform's entry, or one of its
+                components.
             progress: Told the byte count after each chunk; None tells nobody.
 
         Returns:
@@ -570,7 +637,8 @@ class AgentModuleCache:
 
         Args:
             download: The download.
-            entry: The manifest's entry for this platform.
+            entry: The download named: the platform's entry, or one of its
+                components.
             is_pinned: Whether the entry's ``sha256`` covers the download.
 
         Raises:
@@ -809,3 +877,16 @@ def clear_module_cache(root: "Path | None" = None) -> None:
     """
     directory = Path(root) if root is not None else AGENT_MODULE_CACHE_DIR
     shutil.rmtree(directory, ignore_errors=True)
+
+
+def _component_names(manifest: dict, platform: dict) -> list:
+    """Every component name a manifest's entry for a platform lists, or ``[""]``."""
+    _, entry = resolve_platform_entry(manifest, platform)
+    components = entry.get("components") if isinstance(entry, dict) else None
+    if not isinstance(components, list):
+        return [""]
+    return [
+        str(component.get("name", "") or "")
+        for component in components
+        if isinstance(component, dict)
+    ]

@@ -128,11 +128,13 @@ class StubModules:
     def __init__(self, path: Path):
         self.path = path
         self.asked: list = []
+        self.components: list = []
 
-    def artifact(self, *, name, manifest, platform, on_progress=None):
+    def artifact(self, *, name, manifest, platform, component="", on_progress=None):
         from types import SimpleNamespace
 
         self.asked.append((name, dict(platform)))
+        self.components.append(component)
         if on_progress is not None:
             on_progress(f"hub: downloading {name}, 1.0 / 1.0 MB")
         return SimpleNamespace(path=self.path)
@@ -799,6 +801,48 @@ def test_a_package_stream_naming_a_module_is_served_from_the_module_cache(api):
 
         assert close["params"]["sha256"] == hashlib.sha256(expected).hexdigest()
         assert runtime.agent_modules.asked == [("samba", PLATFORM)]
+    finally:
+        socket.__exit__(None, None, None)
+
+
+def test_a_package_stream_naming_a_component_asks_the_cache_for_it(api):
+    """``package {module, component}`` serves that component's archive; a
+    stream naming no component asks for the module's one archive."""
+    client, runtime = api
+    device_id, token = bound_device()
+    socket = welcomed(client, device_id, token)
+    try:
+        socket.send_json(report())
+        socket.receive_json()
+        expected = runtime.package_path.read_bytes()
+
+        socket.send_json(
+            {
+                "type": "open",
+                "stream": 3,
+                "kind": "package",
+                "module": "samba",
+                "component": "node",
+            }
+        )
+        socket.receive_json()
+        socket.send_json({"type": "credit", "stream": 3, "bytes": len(expected)})
+        received = b""
+        while len(received) < len(expected):
+            received += socket.receive_bytes()[4:]
+        close = socket.receive_json()
+        socket.send_json(
+            {"type": "open", "stream": 5, "kind": "package", "module": "samba"}
+        )
+        socket.receive_json()
+        socket.send_json({"type": "credit", "stream": 5, "bytes": len(expected)})
+        received = b""
+        while len(received) < len(expected):
+            received += socket.receive_bytes()[4:]
+        socket.receive_json()
+
+        assert close["params"]["sha256"] == hashlib.sha256(expected).hexdigest()
+        assert runtime.agent_modules.components == ["node", ""]
     finally:
         socket.__exit__(None, None, None)
 

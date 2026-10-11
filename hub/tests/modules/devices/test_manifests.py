@@ -543,7 +543,10 @@ NODE_BUILDS = {
 }
 
 
-def test_cloudcli_pins_one_node_release_per_platform():
+def test_cloudcli_pins_one_node_release_per_platform_as_its_node_component():
+    """The module's one component unpacks under ``cloudcli/node``, so the
+    verify command names the binary there, whatever the archive's top
+    directory was called."""
     manifest = load_module_manifests()["cloudcli"]
 
     assert manifest["version"] == "1.37.3"
@@ -554,15 +557,25 @@ def test_cloudcli_pins_one_node_release_per_platform():
     assert set(manifest["platforms"]) == set(NODE_BUILDS)
     for key, (build, digest) in NODE_BUILDS.items():
         entry = manifest["platforms"][key]
-        assert entry["url"] == (
+        assert "url" not in entry and "min_version" not in entry
+        (node,) = entry["components"]
+        assert node["name"] == "node"
+        assert node["directory"] == "node"
+        assert node["url"] == (
             f"https://nodejs.org/dist/v{NODE_VERSION}/node-v{NODE_VERSION}-{build}"
         )
-        assert entry["sha256"] == digest
-        assert entry["package_kind"] == ("zip" if build.endswith(".zip") else "tar")
-        assert f"node-v{NODE_VERSION}-{build.split('.')[0]}" in entry["verify"]
-        assert entry.get("min_version", "") == (
-            "2.28" if key.startswith("linux") else ""
-        )
+        assert node["sha256"] == digest
+        assert node["package_kind"] == ("zip" if build.endswith(".zip") else "tar")
+        assert "node-v" not in entry["verify"]
+    assert manifest["platforms"]["linux-amd64"]["verify"] == (
+        "/var/lib/neutrino/agent/cloudcli/node/bin/node --version"
+    )
+    windows_verify = manifest["platforms"]["windows-amd64"]["verify"]
+    assert "cloudcli\\node\\node.exe" in windows_verify
+    assert manifest["platforms"]["darwin-arm64"]["verify"] == (
+        '"/Library/Application Support/Neutrino/agent/state/cloudcli/node/bin/node"'
+        " --version"
+    )
 
 
 def test_vscode_pins_microsofts_cli_per_platform_at_one_build():
@@ -581,13 +594,16 @@ def test_vscode_pins_microsofts_cli_per_platform_at_one_build():
         assert entry["package_kind"] == ("tar" if archive == "tar.gz" else "zip")
 
 
-def test_vscode_needs_glibc_2_28_on_linux_and_nothing_elsewhere():
+def test_vscode_names_no_glibc_floor_and_resolves_by_machine():
+    """The agent's own floor is above every shipped module's, so no branch
+    names a ``min_version``."""
     manifest = load_module_manifests()["vscode"]
     old = {**DEBIAN, "version": "2.27"}
     new = {**RHEL, "arch": "arm64", "version": "2.28"}
     windows = {"os": "windows", "family": "", "arch": "amd64", "version": "17763"}
 
-    assert resolve_platform_entry(manifest, old) == ("", None)
+    assert not any("min_version" in entry for entry in manifest["platforms"].values())
+    assert resolve_platform_entry(manifest, old)[0] == "linux-amd64"
     assert resolve_platform_entry(manifest, new)[0] == "linux-arm64"
     assert resolve_platform_entry(manifest, windows)[0] == "windows-amd64"
 
@@ -651,9 +667,7 @@ def test_code_server_pins_coders_release_per_platform_with_its_mirror():
         assert entry["sha256"] == digest
         assert entry["package_kind"] == "tar"
         assert "code_server/release/lib/node" in entry["verify"]
-        assert entry.get("min_version", "") == (
-            "2.28" if key.startswith("linux") else ""
-        )
+        assert "min_version" not in entry
 
 
 NODE_MIRROR = "https://registry.npmmirror.com/-/binary/node/"
@@ -665,21 +679,172 @@ def test_cloudclis_node_names_the_same_file_on_npmmirror():
     manifest = load_module_manifests()["cloudcli"]
 
     for key, entry in manifest["platforms"].items():
-        path = entry["url"].split("/dist/", 1)[1]
-        assert entry["cn_url"] == f"{NODE_MIRROR}{path}", key
-        assert "cn_latest_url" not in entry
+        (node,) = entry["components"]
+        path = node["url"].split("/dist/", 1)[1]
+        assert node["cn_url"] == f"{NODE_MIRROR}{path}", key
+        assert "cn_latest_url" not in node
 
 
-def test_code_server_has_no_windows_branch_and_needs_glibc_2_28():
+def test_code_server_has_no_windows_branch_and_no_glibc_floor():
     manifest = load_module_manifests()["code_server"]
     windows = {"os": "windows", "family": "", "arch": "amd64", "version": "17763"}
     old = {**DEBIAN, "version": "2.27"}
 
     assert resolve_platform_entry(manifest, windows) == ("", None)
-    assert resolve_platform_entry(manifest, old) == ("", None)
+    assert resolve_platform_entry(manifest, old)[0] == "linux-amd64"
     assert resolve_platform_entry(manifest, {**DEBIAN, "version": "2.36"})[0] == (
         "linux-amd64"
     )
+
+
+# --- a branch that unpacks several archives lists them as components ---
+
+COMPONENT = {
+    "name": "server",
+    "url": "https://vendor.example/server.tar.gz",
+    "sha256": "a" * 64,
+    "package_kind": "tar",
+    "directory": "server",
+}
+NODE_COMPONENT = {
+    "name": "node",
+    "url": "https://nodejs.org/dist/node.tar.gz",
+    "cn_url": "https://mirror.example/node.tar.gz",
+    "sha256": "b" * 64,
+    "package_kind": "tar",
+    "directory": "node",
+}
+
+
+def components_manifest(components, **entry) -> dict:
+    return {
+        "name": "sample",
+        "installer": "hub",
+        "source": "vendor",
+        "license": "MIT",
+        "corresponding_source": "https://github.com/vendor/sample",
+        "platforms": {
+            "linux-amd64": {
+                "components": components,
+                "verify": "sample --version",
+                "uninstall": {
+                    "packages": [],
+                    "post_uninstall": [],
+                    "is_data_kept": True,
+                },
+                **entry,
+            }
+        },
+    }
+
+
+def test_the_loader_accepts_a_branch_listing_components(tmp_path, monkeypatch):
+    monkeypatch.setattr(manifests_module, "MANIFESTS_DIR", tmp_path)
+    write_manifest(tmp_path, "sample", components_manifest([COMPONENT, NODE_COMPONENT]))
+
+    manifest = load_module_manifests()["sample"]
+
+    components = manifest["platforms"]["linux-amd64"]["components"]
+    assert [component["name"] for component in components] == ["server", "node"]
+
+
+def test_the_loader_refuses_a_branch_naming_both_a_url_and_components(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(manifests_module, "MANIFESTS_DIR", tmp_path)
+    write_manifest(
+        tmp_path,
+        "sample",
+        components_manifest([COMPONENT], url="https://vendor.example/all.tar.gz"),
+    )
+
+    with pytest.raises(ValueError, match="both url and components"):
+        load_module_manifests()
+
+
+@pytest.mark.parametrize(
+    "field", ["name", "url", "sha256", "package_kind", "directory"]
+)
+def test_the_loader_refuses_a_component_without_one_of_its_fields(
+    field, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(manifests_module, "MANIFESTS_DIR", tmp_path)
+    broken = {key: value for key, value in COMPONENT.items() if key != field}
+    write_manifest(tmp_path, "sample", components_manifest([broken]))
+
+    with pytest.raises(ValueError, match=f"component without {field}"):
+        load_module_manifests()
+
+
+@pytest.mark.parametrize(
+    "second, message",
+    [
+        ({**NODE_COMPONENT, "name": "server"}, "names the component 'server' twice"),
+        ({**NODE_COMPONENT, "directory": "server"}, "two components into 'server'"),
+    ],
+)
+def test_the_loader_refuses_two_components_sharing_a_name_or_a_directory(
+    second, message, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(manifests_module, "MANIFESTS_DIR", tmp_path)
+    write_manifest(tmp_path, "sample", components_manifest([COMPONENT, second]))
+
+    with pytest.raises(ValueError, match=message):
+        load_module_manifests()
+
+
+@pytest.mark.parametrize("components", [[], "server", [COMPONENT, "node"]])
+def test_the_loader_refuses_components_that_are_not_a_list_of_archives(
+    components, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(manifests_module, "MANIFESTS_DIR", tmp_path)
+    write_manifest(tmp_path, "sample", components_manifest(components))
+
+    with pytest.raises(ValueError, match="component"):
+        load_module_manifests()
+
+
+def test_a_builtin_branch_names_no_components(tmp_path, monkeypatch):
+    monkeypatch.setattr(manifests_module, "MANIFESTS_DIR", tmp_path)
+    write_manifest(
+        tmp_path,
+        "sample",
+        {
+            "name": "sample",
+            "installer": "platform",
+            "source": "system",
+            "platforms": {
+                "windows": {"installer": "builtin", "components": [COMPONENT]}
+            },
+        },
+    )
+
+    with pytest.raises(ValueError, match="builtin"):
+        load_module_manifests()
+
+
+def test_the_resolved_module_carries_each_component_as_the_recipe_does():
+    """The agent is handed the name, the kind, the directory and the digest of
+    each archive; where it comes from stays the hub's."""
+    manifest = components_manifest([COMPONENT, NODE_COMPONENT])
+
+    resolved = resolve_module(manifest, DEBIAN)
+
+    assert resolved["components"] == [
+        {
+            "name": "server",
+            "package_kind": "tar",
+            "directory": "server",
+            "sha256": "a" * 64,
+        },
+        {
+            "name": "node",
+            "package_kind": "tar",
+            "directory": "node",
+            "sha256": "b" * 64,
+        },
+    ]
+    assert "components" not in resolve_module(load_module_manifests()["vscode"], DEBIAN)
 
 
 def test_an_archive_package_is_recognised_by_its_compressor():

@@ -39,6 +39,31 @@ def config(monkeypatch, tmp_path):
                 },
             },
             "gitea": {"kind": "binary", "entry": None},
+            "cloudcli": {
+                "kind": "cloudcli",
+                "entry": {
+                    "components": [
+                        {
+                            "name": "node",
+                            "url": "https://nodejs.org/dist/node.tar.gz",
+                            "cn_url": "https://mirror.example/node.tar.gz",
+                            "sha256": "b" * 64,
+                            "package_kind": "tar",
+                            "directory": "node",
+                        }
+                    ],
+                    "verify": "node --version",
+                    "uninstall": {"packages": [], "is_data_kept": True},
+                },
+                "components": [
+                    {
+                        "name": "node",
+                        "package_kind": "tar",
+                        "directory": "node",
+                        "sha256": "b" * 64,
+                    }
+                ],
+            },
         },
     )
     return tmp_path
@@ -173,6 +198,30 @@ def test_compose_is_every_named_module_with_its_want_and_recipes_and_the_desktop
     assert (gitea["install"], gitea["uninstall"]) == ({}, {})
     assert desired["desktop"] == {"seat_password": ""}
     assert digest == state_hash(desired)
+
+
+def test_a_recipe_carries_each_component_without_where_it_comes_from(config):
+    """The agent opens ``package {module, component}`` for each and is told
+    the kind, the directory and the digest; the urls stay the hub's."""
+    store = DesiredStateStore()
+    store.set_want(DEVICE, "cloudcli", "running")
+    store.write(DEVICE, "cloudcli", {"instances": []})
+
+    desired, _ = store.compose(DEVICE, PLATFORM)
+
+    assert desired["modules"]["cloudcli"]["install"] == {
+        "kind": "cloudcli",
+        "verify": "node --version",
+        "components": [
+            {
+                "name": "node",
+                "package_kind": "tar",
+                "directory": "node",
+                "sha256": "b" * 64,
+            }
+        ],
+    }
+    assert "url" not in json.dumps(desired["modules"]["cloudcli"]["install"])
 
 
 def test_compose_is_the_same_twice_and_moves_with_a_write(config):
