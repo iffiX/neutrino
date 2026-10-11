@@ -4,13 +4,13 @@ title: CloudCLI
 
 # CloudCLI
 
-CloudCLI is a web page for AI coding sessions, published on npm as `@cloudcli-ai/cloudcli`. The **CloudCLI** module runs it at version 1.37.3, one instance per account on a managed machine.
+CloudCLI is a web page for AI coding sessions, published on npm as `@cloudcli-ai/cloudcli`. The **CloudCLI** module runs it at version 1.37.3, one instance per account on a managed machine. The [Codeg](./codeg.md) module puts several coding agents in one page, Codex and Gemini CLI beside Claude Code.
 
-| System  | Machines that run it                      |
-| ------- | ----------------------------------------- |
-| Linux   | amd64 and arm64, with glibc 2.28 or newer |
-| Windows | amd64 and arm64                           |
-| macOS   | Apple silicon and Intel                   |
+| System  | Machines that run it    |
+| ------- | ----------------------- |
+| Linux   | amd64 and arm64         |
+| Windows | amd64 and arm64         |
+| macOS   | Apple silicon and Intel |
 
 ## Add an instance
 

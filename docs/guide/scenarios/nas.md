@@ -15,7 +15,7 @@ This page sets up a managed Linux machine with a spare disk as the home's file s
 ## Install the modules
 
 1. On the panel's **Modules** page, select the machine under **Which machine**.
-1. If the **ZFS storage** or the **File share** tab is missing, select **+** at the end of the tabs and tick the missing one.
+1. If the **ZFS storage** or the **File share** tab is missing, select **+** at the end of the module list and tick the missing one.
 1. On the **ZFS storage** tab, select **Install**, and wait until the tab no longer reads **installing**.
 1. Select **Configure**.
 1. On the **File share** tab, select **Install**, and wait until the tab no longer reads **installing**.

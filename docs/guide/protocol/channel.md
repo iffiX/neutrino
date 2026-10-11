@@ -257,7 +257,7 @@ Each entry of `services` is `{id, type, title, payload, is_healthy, source, desc
 
 | `type` | `payload`                                                                                                                                         |
 | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `web`  | `{url, is_token_required}`; `is_token_required` is present and true on a VS Code, code-server or CloudCLI instance only                           |
+| `web`  | `{url, is_token_required}`; `is_token_required` is present and true on a VS Code, code-server, CloudCLI or Codeg instance only                    |
 | `port` | `{host, port, protocol}`; `protocol` is `tcp` or `udp`, and a payload without it is `tcp`. A number used on both protocols is two entries         |
 | `ai`   | `{endpoint, protocol, models}`, `protocol` being `openai`                                                                                         |
 | `file` | `{protocol, host, share, users}`, `protocol` being `smb`                                                                                          |
@@ -267,15 +267,15 @@ Every `host`, `port`, `url` and `endpoint` in a payload is where the service sit
 
 `attention` on an `rdp` entry names what somebody must do at the sharing machine first: `rdp_nobody_seated`, `rdp_screen_not_allowed`, or empty. `users` on a `file` entry lists the accounts that can open the share. A phone fills in the user name from it and prompts for the password. The list is empty on a declared share.
 
-| Field                | Holds                                                                                                                                                                                            |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `is_healthy`         | the last probe's result, `null` where nothing probed it                                                                                                                                          |
-| `source`             | `module`, `declared` or `device`                                                                                                                                                                 |
-| `description_code`   | the provenance as a code a program words itself: `ai_gateway`, `container`, `declared`, `device_share`, `gitea_module`, `samba_module`, `vscode_module`, `code_server_module`, `cloudcli_module` |
-| `description_params` | the values that sentence names; `vscode_module`, `code_server_module` and `cloudcli_module` take `{host, account}`                                                                               |
-| `device_id`          | the id of the managed machine providing the entry; empty for a declared record and for the hub's own gateway. A program keys what it keeps per machine by this id                                |
-| `device_name`        | the name of the machine providing the entry, empty when no machine on the hub's records provides it                                                                                              |
-| `is_own_machine`     | `true` when the machine providing the entry is the one the client runs on; `false` when either id is empty                                                                                       |
+| Field                | Holds                                                                                                                                                                                                            |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `is_healthy`         | the last probe's result, `null` where nothing probed it                                                                                                                                                          |
+| `source`             | `module`, `declared` or `device`                                                                                                                                                                                 |
+| `description_code`   | the provenance as a code a program words itself: `ai_gateway`, `container`, `declared`, `device_share`, `gitea_module`, `samba_module`, `vscode_module`, `code_server_module`, `cloudcli_module`, `codeg_module` |
+| `description_params` | the values that sentence names; `vscode_module`, `code_server_module`, `cloudcli_module` and `codeg_module` take `{host, account}`                                                                               |
+| `device_id`          | the id of the managed machine providing the entry; empty for a declared record and for the hub's own gateway. A program keys what it keeps per machine by this id                                                |
+| `device_name`        | the name of the machine providing the entry, empty when no machine on the hub's records provides it                                                                                                              |
+| `is_own_machine`     | `true` when the machine providing the entry is the one the client runs on; `false` when either id is empty                                                                                                       |
 
 ## The streams a client opens
 
@@ -283,24 +283,24 @@ Every `host`, `port`, `url` and `endpoint` in a payload is where the service sit
 
 `open {kind: service, id}` requests what one entry needs from the hub. The checks run in this order, and the first that fails gives the close its code:
 
-| `code`              | Given when                                                                                                          |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `binding_unknown`   | no client row has this socket's binding id                                                                          |
-| `client_disabled`   | the client is switched off on **Clients**                                                                           |
-| `service_unknown`   | the id names no entry in the list resolved for this client                                                          |
-| `permission_denied` | the entry's type, or the machine providing it, is outside this client's permission                                  |
-| `rdp_not_shared`    | the entry's machine stopped sharing its desktop                                                                     |
-| `vault_locked`      | the hub's vault is locked, so the AI key, the VS Code token, or the code-server or CloudCLI secret cannot be opened |
+| `code`              | Given when                                                                                                                 |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `binding_unknown`   | no client row has this socket's binding id                                                                                 |
+| `client_disabled`   | the client is switched off on **Clients**                                                                                  |
+| `service_unknown`   | the id names no entry in the list resolved for this client                                                                 |
+| `permission_denied` | the entry's type, or the machine providing it, is outside this client's permission                                         |
+| `rdp_not_shared`    | the entry's machine stopped sharing its desktop                                                                            |
+| `vault_locked`      | the hub's vault is locked, so the AI key, the VS Code token, or the code-server, CloudCLI or Codeg secret cannot be opened |
 
 A close with no code holds the material. A client opens a `web` entry with `is_token_required` at its own forward's address with `?tkn=<token>` added, never at the entry's address:
 
-| Entry                                                                   | The close's `params`                                                                                                         |
-| ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `rdp`                                                                   | `{password}`: the seat password of the machine sharing the desktop                                                           |
-| `ai`                                                                    | `{api_key, model}`: this client's own key, which the gateway checks on every request, and the first model the gateway serves |
-| `web` with `description_code` `vscode_module`                           | `{token}`: the instance's connection token                                                                                   |
-| `web` with `description_code` `code_server_module` or `cloudcli_module` | `{token}`: a token the hub makes for this reply alone, valid for 60 seconds and for one use                                  |
-| other `web`, `port`, `file`                                             | empty; the payload is all the client needs                                                                                   |
+| Entry                                                                                   | The close's `params`                                                                                                         |
+| --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `rdp`                                                                                   | `{password}`: the seat password of the machine sharing the desktop                                                           |
+| `ai`                                                                                    | `{api_key, model}`: this client's own key, which the gateway checks on every request, and the first model the gateway serves |
+| `web` with `description_code` `vscode_module`                                           | `{token}`: the instance's connection token                                                                                   |
+| `web` with `description_code` `code_server_module`, `cloudcli_module` or `codeg_module` | `{token}`: a token the hub makes for this reply alone, valid for 60 seconds and for one use                                  |
+| other `web`, `port`, `file`                                                             | empty; the payload is all the client needs                                                                                   |
 
 ### The connect stream
 
@@ -362,14 +362,14 @@ An agent's documents hold these sections; the `modules` entries come from the hu
 | `urls`     | every address the hub serves the channel on                                                                     |                                                                            |
 | `error`    |                                                                                                                 | `{code, params}`: the agent's most recent failure worth showing            |
 
-| Field or value                  | Meaning                                                                                                                                                                                       |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `retry_mark`                    | a short random token the hub writes when a person presses a failed module's action, or the AI tools switch, again; it changes the hash and means nothing else                                 |
-| `queued`, as a module's `state` | the module's `want` differs from its report, and the agent applies another module first                                                                                                       |
-| `origin`                        | how the desktop share started: `switch` for the **Remote desktop** switch, `command` for a share an old `nagent rdp start` record keeps running; empty while nothing is shared                |
-| `ai_tools.is_enabled`           | `true` while the machine's AI tools setting is on and the gateway serves a model; then `base_url`, `api_key` and `tool_configs` name the gateway, the machine's key and the models            |
-| `ai_tools.accounts`             | in the state, every account with a VS Code, code-server or CloudCLI instance, with its login on Windows alone; in the report, each account's `state`: `switched`, `switched_back` or `failed` |
-| `cc_switch_version`             | the version of cc-switch the agent fetches from the hub and runs; a failed fetch reports `cc_switch_download_failed` on every account                                                         |
+| Field or value                  | Meaning                                                                                                                                                                                              |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `retry_mark`                    | a short random token the hub writes when a person presses a failed module's action, or the AI tools switch, again; it changes the hash and means nothing else                                        |
+| `queued`, as a module's `state` | the module's `want` differs from its report, and the agent applies another module first                                                                                                              |
+| `origin`                        | how the desktop share started: `switch` for the **Remote desktop** switch, `command` for a share an old `nagent rdp start` record keeps running; empty while nothing is shared                       |
+| `ai_tools.is_enabled`           | `true` while the machine's AI tools setting is on and the gateway serves a model; then `base_url`, `api_key` and `tool_configs` name the gateway, the machine's key and the models                   |
+| `ai_tools.accounts`             | in the state, every account with a VS Code, code-server, CloudCLI or Codeg instance, with its login on Windows alone; in the report, each account's `state`: `switched`, `switched_back` or `failed` |
+| `cc_switch_version`             | the version of cc-switch the agent fetches from the hub and runs; a failed fetch reports `cc_switch_download_failed` on every account                                                                |
 
 An agent reports every 5 seconds. The hub opens `shell`, `exec`, `file`, `command` and `connect` streams to it, and the agent opens `log` and `package` streams to the hub.
 

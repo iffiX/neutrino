@@ -108,4 +108,4 @@ These folders stay until you delete them: after a removal on Linux without a pur
 | logs              | `/var/log/neutrino/`        | `/Library/Logs/Neutrino/`                                | `C:\ProgramData\Neutrino\<package>\log`    |
 | a person's client | `~/.config/neutrino/client` | `~/Library/Application Support/Neutrino/client`          | `%APPDATA%\Neutrino\client`                |
 
-An agent also leaves what its modules made: the shares, the accounts they created, CloudCLI's files in each home and the modules' data. Your own files and your Claude Code sessions stay as they were.
+An agent also leaves what its modules made: the shares, the accounts they created, CloudCLI's and Codeg's files in each home and the modules' data. Your own files and your Claude Code sessions stay as they were.

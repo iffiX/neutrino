@@ -23,13 +23,13 @@ After saving, the page shows where the entry is used, and the value is hidden. T
 
 ## Who uses them
 
-| Where                                               | Kind it picks                                 |
-| --------------------------------------------------- | --------------------------------------------- |
-| **Install agent** on the **Devices** page           | an SSH key or a login, and a login for `sudo` |
-| **SSH Relay** on the **Access** page                | an SSH key or a login                         |
-| A VS Code or CloudCLI instance on a Windows machine | the Windows login of the account it runs as   |
-| A provider on the **AI** page                       | a token, as the provider's API key            |
-| An exit node on the **Proxy** page                  | a token, where the node's link has one        |
+| Where                                                      | Kind it picks                                 |
+| ---------------------------------------------------------- | --------------------------------------------- |
+| **Install agent** on the **Devices** page                  | an SSH key or a login, and a login for `sudo` |
+| **SSH Relay** on the **Access** page                       | an SSH key or a login                         |
+| A VS Code, CloudCLI or Codeg instance on a Windows machine | the Windows login of the account it runs as   |
+| A provider on the **AI** page                              | a token, as the provider's API key            |
+| An exit node on the **Proxy** page                         | a token, where the node's link has one        |
 
 When a Windows account's password changes, add a login with the new password, pick it for the instance, and apply the module again.
 

@@ -11,7 +11,7 @@ Before you start, finish the [Step zero](../quick-start.md), and turn the phone'
 ## Start VS Code
 
 1. On the panel's **Modules** page, select your computer under **Which machine**.
-1. Select the **VS Code** tab. If the tab is missing, select **+** at the end of the tabs and tick **VS Code**.
+1. Select the **VS Code** tab. If the tab is missing, select **+** at the end of the module list and tick **VS Code**.
 1. Select **Open and accept the terms**. Microsoft's license terms open in a new browser tab, and the button reads **Terms accepted**.
 1. Select **Install**, and wait until the tab no longer reads **installing**.
 1. Select **Configure**.

@@ -6,11 +6,11 @@ title: VS Code
 
 The **VS Code** module gives each account on a managed machine its own VS Code in the browser. You install VS Code Server on the machine under Microsoft's license terms, at one pinned build of Microsoft's standalone VS Code CLI, and the agent runs it.
 
-| System  | Machines that run it                      |
-| ------- | ----------------------------------------- |
-| Linux   | amd64 and arm64, with glibc 2.28 or newer |
-| Windows | amd64                                     |
-| macOS   | Apple silicon and Intel                   |
+| System  | Machines that run it    |
+| ------- | ----------------------- |
+| Linux   | amd64 and arm64         |
+| Windows | amd64                   |
+| macOS   | Apple silicon and Intel |
 
 ## Accept the terms and install
 

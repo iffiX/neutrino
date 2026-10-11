@@ -89,7 +89,7 @@ On the **Web** and **Ports** pages, **Configure** on a row opens the **Local por
 
 ## Web
 
-The **Web** page lists every web address the joined hubs publish: Gitea, VS Code, code-server, CloudCLI, and addresses declared on a hub's **Services** page. The line under each address names the hub, the machine and the module, such as **from hub:server:Gitea**.
+The **Web** page lists every web address the joined hubs publish: Gitea, VS Code, code-server, CloudCLI, Codeg, and addresses declared on a hub's **Services** page. The line under each address names the hub, the machine and the module, such as **from hub:server:Gitea**.
 
 - Select **Open** on the entry. The button reads **Opening…**, the client makes the entry's forward, and the page opens in your browser.
 

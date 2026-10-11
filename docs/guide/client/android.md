@@ -53,7 +53,7 @@ A row whose forward cannot reach its service shows a code, listed under [A clien
 
 ## Web
 
-The **Web** screen lists the web pages the joined hubs publish: Gitea, VS Code, code-server, CloudCLI and addresses declared on a hub's **Services** page.
+The **Web** screen lists the web pages the joined hubs publish: Gitea, VS Code, code-server, CloudCLI, Codeg and addresses declared on a hub's **Services** page.
 
 - Select **Open** on a row.
 
