@@ -22,7 +22,7 @@ import subprocess
 import time
 
 from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
-from neutrino_agent.modules.base import ModuleRunner, command_outcome
+from neutrino_agent.modules.shared.base import ModuleRunner, command_outcome
 from neutrino_agent.modules.gitea.applier import (
     GiteaAdminManager,
     GiteaConfigApplier,
@@ -41,8 +41,8 @@ from neutrino_agent.modules.gitea.constants import (
 from neutrino_agent.modules.gitea.darwin_applier import GiteaDarwinApplier
 from neutrino_agent.modules.gitea.renderer import GiteaConfigRenderer, GiteaLayout
 from neutrino_agent.modules.gitea.windows_applier import GiteaWindowsApplier
-from neutrino_agent.modules.log_tail import file_tail
-from neutrino_agent.modules.subprocess_run import command_detail, unit_state
+from neutrino_agent.modules.shared.log_tail import file_tail
+from neutrino_agent.modules.shared.subprocess_run import command_detail, unit_state
 
 
 class GiteaLinuxApplier:

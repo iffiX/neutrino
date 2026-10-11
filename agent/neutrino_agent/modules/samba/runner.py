@@ -26,7 +26,7 @@ import threading
 import time
 
 from neutrino_agent.exceptions import ModuleApplyError
-from neutrino_agent.modules.base import ModuleRunner, command_outcome
+from neutrino_agent.modules.shared.base import ModuleRunner, command_outcome
 from neutrino_agent.modules.samba.applier import (
     SambaConfigApplier,
     SambaConfigReader,
@@ -46,8 +46,8 @@ from neutrino_agent.modules.samba.constants import (
     samba_unit,
 )
 from neutrino_agent.modules.samba.renderer import SambaConfigRenderer
-from neutrino_agent.modules.subprocess_run import command_detail, unit_state
-from neutrino_agent.modules.system_package import SystemPackageModuleRunner
+from neutrino_agent.modules.shared.subprocess_run import command_detail, unit_state
+from neutrino_agent.modules.shared.system_package import SystemPackageModuleRunner
 from neutrino_agent.platforms.detect import platform_tuple
 
 

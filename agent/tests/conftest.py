@@ -22,7 +22,7 @@ import neutrino_agent.core.store as store_module
 import neutrino_agent.modules.remote_desktop.darwin_applier as darwin_applier_module
 import neutrino_agent.modules.remote_desktop.linux_applier as linux_applier_module
 import neutrino_agent.modules.remote_desktop.windows_applier as windows_applier_module
-from neutrino_agent.modules.subprocess_run import CommandResult
+from neutrino_agent.modules.shared.subprocess_run import CommandResult
 import neutrino_agent.platforms.base as platforms_base_module
 import neutrino_agent.platforms.darwin as darwin_module
 import neutrino_agent.platforms.linux as linux_module

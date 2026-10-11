@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>DATABASE_PATH</key>
+		<string>/Users/ann/Library/Application Support/Neutrino/agent/cloudcli/auth.db</string>
+		<key>HOME</key>
+		<string>/Users/ann</string>
+		<key>HOST</key>
+		<string>127.0.0.1</string>
+		<key>JWT_SECRET</key>
+		<string>{jwt_secret}</string>
+		<key>PATH</key>
+		<string>/Library/Application Support/Neutrino/agent/state/cloudcli/node/bin:/Users/ann/.local/bin:/Users/ann/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+		<key>SERVER_PORT</key>
+		<string>41234</string>
+	</dict>
+	<key>KeepAlive</key>
+	<true/>
+	<key>Label</key>
+	<string>com.neutrino.cloudcli.ann</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Library/Application Support/Neutrino/agent/state/cloudcli/node/bin/node</string>
+		<string>/Users/ann/Library/Application Support/Neutrino/agent/cloudcli/app/node_modules/@cloudcli-ai/cloudcli/dist-server/server/index.js</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>/Library/Logs/Neutrino/agent/cloudcli_ann.log</string>
+	<key>StandardOutPath</key>
+	<string>/Library/Logs/Neutrino/agent/cloudcli_ann.log</string>
+	<key>UserName</key>
+	<string>ann</string>
+	<key>WorkingDirectory</key>
+	<string>/Users/ann</string>
+</dict>
+</plist>

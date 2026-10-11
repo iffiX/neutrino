@@ -1,0 +1,16 @@
+[Unit]
+Description=CloudCLI for %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=%i
+EnvironmentFile=/etc/neutrino/agent/cloudcli/%i.env
+WorkingDirectory=~
+ExecStart=/var/lib/neutrino/agent/cloudcli/node/bin/node ${CLOUDCLI_SERVER}
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

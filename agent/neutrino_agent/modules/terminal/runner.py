@@ -20,7 +20,7 @@ import threading
 
 from neutrino_agent.constants import AGENT_DESIRED_STATE_NAME
 from neutrino_agent.exceptions import ModuleApplyError
-from neutrino_agent.modules.base import ModuleRunner
+from neutrino_agent.modules.shared.base import ModuleRunner
 from neutrino_agent.modules.terminal.config import TerminalConfig
 from neutrino_agent.modules.terminal.constants import TERMINAL_KIND, TERMINAL_NAME
 

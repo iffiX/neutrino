@@ -18,9 +18,9 @@ import os
 import subprocess
 
 from neutrino_agent.exceptions import ModuleApplyError
-from neutrino_agent.modules.base import command_outcome
-from neutrino_agent.modules.subprocess_run import command_detail
-from neutrino_agent.modules.system_package import SystemPackageModuleRunner
+from neutrino_agent.modules.shared.base import command_outcome
+from neutrino_agent.modules.shared.subprocess_run import command_detail
+from neutrino_agent.modules.shared.system_package import SystemPackageModuleRunner
 from neutrino_agent.modules.zfs.applier import (
     ZfsDatasetManager,
     ZfsDiskScanner,

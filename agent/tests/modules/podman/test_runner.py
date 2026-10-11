@@ -13,12 +13,12 @@ import subprocess
 import pytest
 
 from neutrino_agent.exceptions import ModuleApplyError
-from neutrino_agent.modules import system_package as system_package_module
+from neutrino_agent.modules.shared import system_package as system_package_module
 from neutrino_agent.modules.podman import applier as applier_module
 from neutrino_agent.modules.podman import runner as runner_module
 from neutrino_agent.modules.podman.applier import PodmanContainerState
 from neutrino_agent.modules.podman.runner import PodmanModuleRunner
-from neutrino_agent.modules.subprocess_run import CommandResult
+from neutrino_agent.modules.shared.subprocess_run import CommandResult
 from neutrino_agent.platforms.base import AgentPlatform
 
 # What ``podman ps -a --format json`` prints for a running and an exited
@@ -413,7 +413,7 @@ def test_the_journal_streams_its_lines_and_carries_them_in_the_output(runner):
 def test_a_journal_naming_no_container_is_the_modules_own(runner, monkeypatch):
     asked: list = []
     monkeypatch.setattr(
-        "neutrino_agent.modules.base.units_journal",
+        "neutrino_agent.modules.shared.base.units_journal",
         lambda units, lines: asked.append(list(units)) or ["line"],
     )
     runner.apply(CONFIG)

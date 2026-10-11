@@ -25,7 +25,7 @@ from neutrino_agent.ai_tools.constants import (
     AI_TOOLS_CC_SWITCH_NAMES,
     AI_TOOLS_VERSION_NAME,
 )
-from neutrino_agent.modules.unpacked_tree import (
+from neutrino_agent.modules.shared.unpacked_tree import (
     extract_archive,
     remove_tree,
     seal_tree,

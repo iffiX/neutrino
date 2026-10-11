@@ -29,7 +29,7 @@ from neutrino_agent.modules.gitea.constants import (
     GITEA_UNIT_SOURCE_NAME,
     GITEA_USER,
 )
-from neutrino_agent.modules.subprocess_run import run, unit_state
+from neutrino_agent.modules.shared.subprocess_run import run, unit_state
 
 try:
     import pwd

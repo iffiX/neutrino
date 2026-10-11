@@ -21,7 +21,7 @@ from neutrino_agent.modules.podman.constants import (
     PODMAN_QUADLET_DIR,
     PODMAN_UNIT_DIR,
 )
-from neutrino_agent.modules.subprocess_run import CommandResult
+from neutrino_agent.modules.shared.subprocess_run import CommandResult
 
 
 class FakeCommands:

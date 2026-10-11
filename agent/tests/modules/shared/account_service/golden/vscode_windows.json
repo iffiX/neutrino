@@ -1,0 +1,3 @@
+{
+  "arguments": "/s /c \"C:\\ProgramData\\Neutrino\\agent\\state\\vscode\\code.exe serve-web --accept-server-license-terms --host 127.0.0.1 --port 8000 --connection-token-file C:\\ProgramData\\Neutrino\\agent\\state\\vscode\\tokens\\hanha.token >> C:\\ProgramData\\Neutrino\\agent\\state\\vscode\\hanha.log 2>&1\""
+}

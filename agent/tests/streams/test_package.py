@@ -46,7 +46,8 @@ def test_the_bytes_land_in_a_file_the_close_vouches_for(tmp_path):
         ("", {"sha256": sha256(b"!<arch>deb bytes")}),
     )
 
-    assert set(outcome) == {"path"}
+    assert set(outcome) == {"path", "sha256"}
+    assert outcome["sha256"] == sha256(b"!<arch>deb bytes")
     assert outcome["path"].startswith(str(tmp_path / "packages"))
     with open(outcome["path"], "rb") as stream:
         assert stream.read() == b"!<arch>deb bytes"
@@ -119,7 +120,8 @@ def test_a_named_package_is_renamed_from_its_temporary_name(tmp_path):
         channel, directory=str(tmp_path / "packages"), name="neutrino_agent.pkg"
     ).receive()
 
-    assert outcome == {"path": str(tmp_path / "packages" / "neutrino_agent.pkg")}
+    assert outcome["path"] == str(tmp_path / "packages" / "neutrino_agent.pkg")
+    assert outcome["sha256"] == sha256(b"xar!")
     assert leftovers(tmp_path / "packages") == ["neutrino_agent.pkg"]
 
 

@@ -16,7 +16,7 @@ from neutrino_agent.modules.gitea.applier import (
     GiteaConfigApplier,
     GiteaInstaller,
 )
-from neutrino_agent.modules.subprocess_run import CommandResult
+from neutrino_agent.modules.shared.subprocess_run import CommandResult
 
 
 class FakeCommands:

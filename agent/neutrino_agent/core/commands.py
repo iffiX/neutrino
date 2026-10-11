@@ -33,10 +33,10 @@ from neutrino_agent.constants import (
     AGENT_OUTPUT_LIMIT_BYTES,
 )
 from neutrino_agent.exceptions import PlatformUnsupportedError
-from neutrino_agent.modules.remote_desktop.user_tier import (
-    SUPPORTED_PRODUCTS,
-    RemoteDesktopReader,
+from neutrino_agent.modules.remote_desktop.constants import (
+    REMOTE_DESKTOP_SUPPORTED_PRODUCTS,
 )
+from neutrino_agent.modules.remote_desktop.user_tier import RemoteDesktopReader
 
 VERB_REBOOT = "reboot"
 VERB_SHUTDOWN = "shutdown"
@@ -306,7 +306,7 @@ class DeviceOperator:
 
     def _remote_desktop_verb(self, verb: str, args: dict) -> CommandOutcome:
         product = str(args.get("product", ""))
-        if product not in SUPPORTED_PRODUCTS:
+        if product not in REMOTE_DESKTOP_SUPPORTED_PRODUCTS:
             return _refused("product_unknown", product=product)
         try:
             if verb == VERB_REMOTE_DESKTOP_READ:

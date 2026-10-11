@@ -1,5 +1,6 @@
 """Fixed values of the Remote desktop module: the agent's copy of RustDesk,
-where it is registered under RustDesk's own names, and what is kept aside."""
+where it is registered under RustDesk's own names, what is kept aside, and
+the two user-tier products it detects."""
 
 REMOTE_DESKTOP_NAME = "remote_desktop"
 REMOTE_DESKTOP_KIND = "remote_desktop"
@@ -127,3 +128,26 @@ REMOTE_DESKTOP_WINDOWS_SETTINGS_PARTS = (
 REMOTE_DESKTOP_WINDOWS_PROGRAM_NAME = "rustdesk.exe"
 # What sc.exe exits with for a service that does not exist.
 REMOTE_DESKTOP_WINDOWS_NO_SERVICE = 1060
+
+# The user-tier remote desktops the module detects.
+REMOTE_DESKTOP_SUPPORTED_PRODUCTS = ("anydesk", "teamviewer")
+
+# How each product identifies itself, and what it answers to.
+REMOTE_DESKTOP_PRODUCTS = {
+    "anydesk": {
+        "binary": "anydesk",
+        "service": "anydesk",
+        "package": "anydesk",
+        "paths": ("/usr/bin/anydesk",),
+        "id_argv": ("anydesk", "--get-id"),
+        "is_seated": True,
+    },
+    "teamviewer": {
+        "binary": "teamviewer",
+        "service": "teamviewerd",
+        "package": "teamviewer",
+        "paths": ("/usr/bin/teamviewer",),
+        "id_argv": ("teamviewer", "info"),
+        "is_seated": False,
+    },
+}

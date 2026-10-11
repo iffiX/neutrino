@@ -38,7 +38,7 @@ from neutrino_agent.modules.remote_desktop.constants import (
     REMOTE_DESKTOP_VIEWER_FLAGS,
 )
 from neutrino_agent.modules.remote_desktop.records import read_json, write_json
-from neutrino_agent.modules.subprocess_run import run as run_command
+from neutrino_agent.modules.shared.subprocess_run import run as run_command
 
 # The line that marks the unit file as the agent's own.
 UNIT_MARK = "Written by the Neutrino agent"

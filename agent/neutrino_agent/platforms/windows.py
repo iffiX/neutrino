@@ -51,12 +51,12 @@ from neutrino_agent.core.metrics import (
     gpu_vendor,
     read_nvidia_gpus,
 )
-from neutrino_agent.modules.powershell_run import listed, run_powershell
+from neutrino_agent.modules.shared.powershell_run import listed, run_powershell
 from neutrino_agent.modules.samba.constants import SAMBA_WINDOWS_MARKER
 from neutrino_agent.modules.samba.windows_applier import SambaWindowsApplier
 from neutrino_agent.platforms import win32
 from neutrino_agent.platforms.base import AgentPlatform, is_added_name
-from neutrino_agent.rdp.windows_seat import WindowsSeat
+from neutrino_agent.modules.remote_desktop.rdp.windows_seat import WindowsSeat
 
 try:
     import winreg

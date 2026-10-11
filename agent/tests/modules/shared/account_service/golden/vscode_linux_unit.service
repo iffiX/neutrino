@@ -1,0 +1,15 @@
+[Unit]
+Description=VS Code server for %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=%i
+EnvironmentFile=/var/lib/neutrino/agent/vscode/tokens/%i.env
+ExecStart=/var/lib/neutrino/agent/vscode/code serve-web --accept-server-license-terms --host ${VSCODE_HOST} --port ${VSCODE_PORT} --connection-token-file ${VSCODE_TOKEN_FILE}
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

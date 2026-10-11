@@ -11,7 +11,7 @@ from neutrino_agent.modules.remote_desktop.darwin_applier import (
     service_job,
     session_job,
 )
-from neutrino_agent.modules.subprocess_run import CommandResult
+from neutrino_agent.modules.shared.subprocess_run import CommandResult
 
 APP = "/Library/Application Support/Neutrino/agent/app/rustdesk/RustDesk.app"
 UPSTREAM = "/Applications/RustDesk.app"

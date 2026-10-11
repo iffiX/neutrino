@@ -24,6 +24,7 @@ searches a platform table either.
 from __future__ import annotations
 
 import contextlib
+import functools
 import json
 import os
 import threading
@@ -43,23 +44,24 @@ from neutrino_agent.constants import (
     AGENT_MODULE_STATE_UNSUPPORTED,
 )
 from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
-from neutrino_agent.modules import installers
-from neutrino_agent.modules.cloudcli.runner import CloudcliModuleRunner
-from neutrino_agent.modules.code_server.runner import CodeServerModuleRunner
+from neutrino_agent.modules.cloudcli.hooks import CloudcliHooks
+from neutrino_agent.modules.code_server.hooks import CodeServerHooks
 from neutrino_agent.modules.gitea.runner import GiteaModuleRunner
-from neutrino_agent.modules.package import PackageModuleRunner, verify_passes
 from neutrino_agent.modules.podman.runner import PodmanModuleRunner
 from neutrino_agent.modules.remote_desktop.runner import RemoteDesktopModuleRunner
 from neutrino_agent.modules.samba.runner import (
     SambaModuleRunner,
     SambaNativeServerRunner,
 )
-from neutrino_agent.modules.system_package import SystemPackageModuleRunner
+from neutrino_agent.modules.shared import installers
+from neutrino_agent.modules.shared.instances import InstancesModuleRunner
+from neutrino_agent.modules.shared.package import PackageModuleRunner, verify_passes
+from neutrino_agent.modules.shared.system_package import SystemPackageModuleRunner
 from neutrino_agent.modules.terminal.runner import TerminalModuleRunner
-from neutrino_agent.modules.vscode.runner import VscodeModuleRunner
+from neutrino_agent.modules.vscode.hooks import VscodeHooks
 from neutrino_agent.modules.zfs.runner import ZfsModuleRunner
 from neutrino_agent.platforms.detect import platform_tuple
-from neutrino_agent.streams.package import CODE_UNREACHABLE
+from neutrino_agent.streams.package import CODE_DIGEST_MISMATCH, CODE_UNREACHABLE
 
 # How often to re-check inputs that have not changed. Every heartbeat wakes
 # the worker, and running each module's verify command that often would keep
@@ -74,6 +76,16 @@ BY_NAME_KINDS = ("system_package",)
 # read: the kind names the runner, the verify command decides presence, and
 # the package name is the entry's own.
 RECIPE_HEADER_FIELDS = ("kind", "verify", "package")
+
+# The programs run as a person's account, each the shared runner with the
+# module's own hooks.
+VscodeModuleRunner = functools.partial(InstancesModuleRunner, hooks_class=VscodeHooks)
+CodeServerModuleRunner = functools.partial(
+    InstancesModuleRunner, hooks_class=CodeServerHooks
+)
+CloudcliModuleRunner = functools.partial(
+    InstancesModuleRunner, hooks_class=CloudcliHooks
+)
 
 # The modules the agent's own package carries: no operation moves them.
 CARRIED_MODULES = (RemoteDesktopModuleRunner.name,)
@@ -361,9 +373,10 @@ class ModuleEngine(ReconcileWorker):
         Args:
             name: The module name; its recipe is the one the state names.
             receive: Called with the module name when the recipe installs
-                from bytes; returns ``{"path"}`` naming the package on
-                disk, or ``{"code", "params"}``. The file is deleted once
-                the install ran.
+                from bytes, and with the component's name as well for each
+                component a recipe lists; returns ``{"path", "sha256"}``
+                naming the package on disk and its digest, or ``{"code",
+                "params"}``. The file is deleted once the install ran.
             on_line: Called with each output line as the install produces
                 it.
 
@@ -457,8 +470,20 @@ class ModuleEngine(ReconcileWorker):
         if runner is None:
             return {"code": "unknown_kind", "params": {"kind": kind}}
         self._collect(f"{name}: installing")
+        components = [
+            component
+            for component in resolved["entry"].get("components") or []
+            if isinstance(component, dict)
+        ]
         if kind in BY_NAME_KINDS:
             runner.install(resolved)
+        elif components:
+            for component in components:
+                refusal = self._install_component(
+                    runner, resolved, component, name, receive
+                )
+                if refusal:
+                    return refusal
         else:
             received = receive(name)
             if "path" not in received:
@@ -472,6 +497,31 @@ class ModuleEngine(ReconcileWorker):
         # exits zero and installs nothing is a thing that happens.
         if not self._verify(runner, recipe, runner.observe(resolved)):
             return {"code": "install_unconfirmed", "params": {}}
+        return {}
+
+    def _install_component(
+        self, runner, resolved: dict, component: dict, name: str, receive
+    ) -> dict:
+        """Receive one component, check its digest against the recipe, unpack it.
+
+        Returns:
+            Empty when it landed, ``{"code", "params"}`` when it did not.
+        """
+        component_name = str(component.get("name", "") or "")
+        received = receive(name, component_name)
+        if "path" not in received:
+            return _download_refusal(runner, received)
+        try:
+            expected = str(component.get("sha256", "") or "")
+            if expected and received.get("sha256") != expected:
+                return {
+                    "code": CODE_DIGEST_MISMATCH,
+                    "params": {"component": component_name},
+                }
+            runner.install_component(resolved, dict(component), received["path"])
+        finally:
+            with contextlib.suppress(OSError):
+                os.unlink(received["path"])
         return {}
 
     def _uninstall(self, name: str, wanted: dict) -> dict:

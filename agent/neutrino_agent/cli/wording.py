@@ -25,7 +25,7 @@ from neutrino_agent.constants import (
 from neutrino_agent.control import client
 from neutrino_agent.exceptions import PlatformUnsupportedError
 from neutrino_agent.platforms.detect import detect_platform
-from neutrino_agent.rdp.constants import (
+from neutrino_agent.modules.remote_desktop.rdp.constants import (
     RDP_STATE_NOT_SHARED,
     RDP_STATE_SHARING,
     RDP_STATE_STARTING,

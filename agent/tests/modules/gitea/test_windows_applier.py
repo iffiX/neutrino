@@ -17,7 +17,7 @@ import os
 import pytest
 
 from neutrino_agent.modules.gitea.windows_applier import GiteaWindowsApplier
-from neutrino_agent.modules.subprocess_run import CommandResult
+from neutrino_agent.modules.shared.subprocess_run import CommandResult
 
 STATE = "C:\\ProgramData\\Neutrino\\agent\\state"
 

@@ -37,7 +37,7 @@ from neutrino_agent.core.store import MachineStateStore
 from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
 from neutrino_agent.platforms.detect import detect_platform
 from neutrino_agent.platforms.windows_service import ServiceControlDispatcher
-from neutrino_agent.rdp.host import RdpShareHost
+from neutrino_agent.modules.remote_desktop.rdp.host import RdpShareHost
 
 # --- config ---
 SERVICE_LOG_MAX_BYTES = 1024 * 1024

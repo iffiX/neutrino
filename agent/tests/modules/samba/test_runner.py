@@ -12,7 +12,7 @@ import subprocess
 import pytest
 
 from neutrino_agent.exceptions import ModuleApplyError
-from neutrino_agent.modules import system_package as system_package_module
+from neutrino_agent.modules.shared import system_package as system_package_module
 from neutrino_agent.modules.samba import applier as applier_module
 from neutrino_agent.modules.samba import runner as runner_module
 from neutrino_agent.modules.samba.applier import SambaUserState
@@ -21,7 +21,7 @@ from neutrino_agent.modules.samba.runner import (
     SambaModuleRunner,
     SambaNativeServerRunner,
 )
-from neutrino_agent.modules.subprocess_run import CommandResult
+from neutrino_agent.modules.shared.subprocess_run import CommandResult
 from neutrino_agent.platforms.base import AgentPlatform
 
 # What ``testparm -s`` prints for a hand-written file: the global section,

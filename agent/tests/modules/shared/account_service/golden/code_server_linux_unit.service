@@ -1,0 +1,15 @@
+[Unit]
+Description=code-server for %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=~
+ExecStart=/var/lib/neutrino/agent/code_server/release/bin/code-server --socket /var/lib/neutrino/agent/code_server/run/%i/code_server.sock --auth none --socket-mode 600 --disable-telemetry --disable-update-check
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

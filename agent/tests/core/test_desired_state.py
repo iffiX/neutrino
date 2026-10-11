@@ -19,6 +19,7 @@ running install neither applied nor failed and applied again until the
 install has ended.
 """
 
+import hashlib
 import json
 import os
 import stat
@@ -1168,3 +1169,28 @@ def test_a_tried_file_of_the_older_one_hash_shape_reads_as_nothing_tried(tmp_pat
     assert sorted(kept) == ["samba"]
     (tmp_path / "desired.json.tried").write_text("ab12cd")
     assert DesiredStateStore(path=str(tmp_path / "desired.json")).read_tried() == {}
+
+
+def test_a_component_is_asked_for_by_name_and_a_whole_module_without_one(tmp_path):
+    runners = {"gitea": FakeRunner()}
+    held, _ = applier(runners, tmp_path=tmp_path, open_stream=FakeSocket())
+    opened = []
+
+    def open_stream(kind, **args):
+        opened.append((kind, args))
+        channel = FakeChannel(stream_id=3)
+        channel.feed(("data", b"bytes"))
+        channel.feed(("close", "", {"sha256": hashlib.sha256(b"bytes").hexdigest()}))
+        return channel
+
+    held._open_stream = open_stream
+
+    whole = held._receive("gitea")
+    component = held._receive("codeg", "node")
+
+    assert opened == [
+        ("package", {"module": "gitea"}),
+        ("package", {"module": "codeg", "component": "node"}),
+    ]
+    assert whole["sha256"] == hashlib.sha256(b"bytes").hexdigest()
+    assert component["path"].startswith(str(tmp_path / "packages"))

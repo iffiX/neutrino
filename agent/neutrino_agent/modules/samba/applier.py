@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.samba.config import SambaConfig
 from neutrino_agent.modules.samba.constants import SAMBA_CONF_PATH, SAMBA_GROUP
-from neutrino_agent.modules.subprocess_run import CommandResult, run, unit_state
+from neutrino_agent.modules.shared.subprocess_run import CommandResult, run, unit_state
 
 # One row of ``smbstatus -p``: pid, user, group, then the client's name with
 # its address in parentheses.

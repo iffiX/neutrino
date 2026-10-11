@@ -19,7 +19,7 @@ import os
 import subprocess
 
 from neutrino_agent.exceptions import ModuleApplyError
-from neutrino_agent.modules.base import command_outcome
+from neutrino_agent.modules.shared.base import command_outcome
 from neutrino_agent.modules.podman.applier import (
     PodmanContainerController,
     PodmanRegistriesApplier,
@@ -42,8 +42,8 @@ from neutrino_agent.modules.podman.constants import (
     PODMAN_UNIT,
 )
 from neutrino_agent.modules.podman.renderer import PodmanRegistriesRenderer
-from neutrino_agent.modules.subprocess_run import command_detail, run, unit_state
-from neutrino_agent.modules.system_package import SystemPackageModuleRunner
+from neutrino_agent.modules.shared.subprocess_run import command_detail, run, unit_state
+from neutrino_agent.modules.shared.system_package import SystemPackageModuleRunner
 
 
 class PodmanModuleRunner(SystemPackageModuleRunner):
