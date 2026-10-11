@@ -45,7 +45,7 @@ The mainland edition does not carry the proxy or NetBird:
 | agent | nothing |
 
 `cn` keeps EasyTier, the relay, the client's files adapter, VS Code,
-code-server, CloudCLI, Gitea, Samba, Podman, ZFS and the AI gateway.
+code-server, CloudCLI, Codeg, Gitea, Samba, Podman, ZFS and the AI gateway.
 
 The build writes the edition into each package as `EDITION`, `intl` or `cn`,
 beside the version in `neutrino_hub/_version.py`,
@@ -539,6 +539,11 @@ lists them.
 | `cc-switch-cli-v<cc-switch version>-<asset>`, five files | cc-switch for the agents of a mainland hub, which fetches it from here: the files `PACKAGING_CC_SWITCH_ASSETS` in `packaging/shared/constants.py` pins, under the names upstream gives them, each checked against its pin before the upload |
 | `cc-switch-cli-v<cc-switch version>-LICENSE.txt` | cc-switch's MIT licence, beside the files it covers |
 | `SHA256SUMS` | every file above |
+
+Codeg's archives are not among these files: a `cn` hub fetches them from the
+manifest's `url` on GitHub
+([../design/install_and_dev.md](../design/install_and_dev.md), "Where each
+edition fetches from").
 
 The script checks Gitee's limits over every file before it changes anything
 on Gitee:

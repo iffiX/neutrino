@@ -188,12 +188,12 @@ passes the password to PowerShell on standard input to register the task.
 Windows keeps the password with the task from then on.
 
 CloudCLI runs the same way, as the account it serves and never as root
-([agent.md](agent.md), "CloudCLI").
+([agent/modules/cloudcli.md](agent/modules/cloudcli.md)).
 
 The machine's AI tools go further: cc-switch and every read, write and
 removal in the account's home run as the account, because an account can
 point a file of its home at a file only root reads
-([agent.md](agent.md), "The machine's AI tools"). The one file the agent
+([agent/ai_tools.md](agent/ai_tools.md)). The one file the agent
 hands cc-switch, `payload` under the account's `neutrino/agent/ai_tools/`,
 is written and removed as the account too. On Windows the login an
 account was switched with stays in the agent's state, which SYSTEM and the
@@ -218,7 +218,7 @@ reads a key file that only root reads, under the state root
 On the server, the key is limited by the `authorized_keys` options the
 person sets, `restrict,port-forwarding,permitlisten=` the public port, so the
 key opens that one listener and nothing else
-([network.md](modules/network.md), "The VPS is the person's").
+([network.md](hub_components/network.md), "The VPS is the person's").
 
 ## Where privilege is allowed to live
 

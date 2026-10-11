@@ -17,7 +17,7 @@ new floor is written down.
 | hub `.deb`, `.rpm` | 2.34 | the cryptography and bcrypt extensions in the environment the package installs (`hub/packaging/venv_tree.py:80`) | Debian 12, Ubuntu 22.04, RHEL 9 |
 | hub `.msi` | none | the agent `.msi` it carries and installs on its own machine at setup | Windows 10 1809 |
 | hub `.pkg` | none | the agent `.pkg` it carries and installs on its own machine at setup | macOS 12.3, arm64 and amd64 |
-| agent `.deb`, `.rpm` | 2.27 | the RustDesk host binary (`agent/packaging/constants.py:8`) | Debian 12, Ubuntu 22.04, RHEL 9 |
+| agent `.deb`, `.rpm` | 2.34 | the same floor as the hub's (`agent/packaging/constants.py`), chosen so the two packages require one system; the RustDesk host binary needs 2.27 and Codeg's binaries 2.34 | Debian 12, Ubuntu 22.04, RHEL 9 |
 | agent `.msi` | none | the pseudo console the shell stream runs PowerShell on (`agent/neutrino_agent/streams/windows_shell.py:76`) | Windows 10 1809 |
 | agent `.pkg` | none | the RustDesk app, built for macOS 12.3 (`packaging/shared/rustdesk_assets.py:41`) | macOS 12.3, arm64 and amd64 |
 | client `.deb` | 2.34 | `nclient` and `mount_helper`, compiled in `debian:12` (`packaging/build/build_client_desktop.py:40`) | Debian 12, Ubuntu 22.04 |
@@ -73,8 +73,8 @@ distribution provides.
 | fail2ban | 0.11 | the `nftables-multiport` ban action the SSH jail sets | `hub/neutrino_hub/system/constants.py:166` |
 | wpa_supplicant, hostapd | 2.9 | SAE with `ieee80211w` for a WPA3 network; the access point renders WPA2 only | `hub/neutrino_hub/modules/router/supplicant_renderer.py:101` |
 | dhcpcd | 7.1 | `nohook`, which keeps the client off resolv.conf and the hostname | `hub/neutrino_hub/modules/router/dhcp_renderer.py:58` |
-| OpenSSH client | 7.6 | `StrictHostKeyChecking=accept-new` in the relay's `ssh` start line | the relay's start line ([modules/network.md](modules/network.md)) |
-| OpenSSH client, a relay with a password | 8.4, or `DISPLAY` set before it | `SSH_ASKPASS_REQUIRE=force`, which makes ssh ask the askpass program and never a terminal; an older client asks it when it has no terminal and `DISPLAY` is set, and the start line sets both | the relay's password start line ([modules/network.md](modules/network.md), "What the hub runs") |
+| OpenSSH client | 7.6 | `StrictHostKeyChecking=accept-new` in the relay's `ssh` start line | the relay's start line ([hub_components/network.md](hub_components/network.md)) |
+| OpenSSH client, a relay with a password | 8.4, or `DISPLAY` set before it | `SSH_ASKPASS_REQUIRE=force`, which makes ssh ask the askpass program and never a terminal; an older client asks it when it has no terminal and `DISPLAY` is set, and the start line sets both | the relay's password start line ([hub_components/network.md](hub_components/network.md), "What the hub runs") |
 
 The relay needs an OpenSSH client on every system the hub runs on, and each
 system has one from its own vendor:
@@ -116,9 +116,8 @@ releases a supported family provides.
 | `sharing`, `sysadminctl`, `pwpolicy`, `dscl`, `pfctl` | macOS 12 | the file share on macOS | `agent/neutrino_agent/modules/samba/darwin_applier.py` |
 | git | 2.0, Gitea's own floor | Gitea on every system; the machine's own on macOS and Windows, never installed by the module there | `agent/neutrino_agent/modules/gitea/` |
 | Gitea's release binaries | macOS 10.12 and Windows 10 by their builds, below the agent's own floors | the Gitea module on macOS and Windows | `hub/neutrino_hub/data/manifests/gitea.json` |
-| glibc | 2.28 | the VS Code server that Microsoft's CLI downloads for `serve-web`; below it the module reads as one the machine cannot run | `min_version` of the Linux entries in `hub/neutrino_hub/data/manifests/vscode.json` |
-| glibc | 2.28, VS Code's `min_version` | the Node.js build CloudCLI runs on | `min_version` of the Linux entries in `hub/neutrino_hub/data/manifests/cloudcli.json` |
-| glibc, libstdc++ | glibc 2.28 and `GLIBCXX_3.4.21` | code-server's standalone release builds, the only builds the module installs; on macOS they name no minimum beyond the agent's own; no Windows build is offered | `min_version` of the Linux entries in `hub/neutrino_hub/data/manifests/code_server.json` |
+| glibc | 2.28, below the agent's floor | the VS Code server Microsoft's CLI downloads for `serve-web`, the Node.js build CloudCLI runs on, and code-server's standalone release builds (with `GLIBCXX_3.4.21`); the agent's own 2.34 covers them, so their Linux entries name no `min_version` | `hub/neutrino_hub/data/manifests/vscode.json`, `cloudcli.json`, `code_server.json` |
+| glibc | 2.34, the agent's floor | Codeg's `codeg-server`, `codeg-mcp` and `codeg-computer-helper`, x64 and arm64 | `hub/neutrino_hub/data/manifests/codeg.json`, which names no `min_version` since the floor is the same |
 
 ## What the client's window loads
 

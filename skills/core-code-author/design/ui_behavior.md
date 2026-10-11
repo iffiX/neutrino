@@ -101,21 +101,21 @@ carries `ui.network.unsaved_interface` as an accent badge on the
 **Network** page, on its exposure chip and in its summary, the way a
 VLAN the next apply creates carries `ui.network.vlan_new_on_apply`.
 The page reads it from the interface's `is_unsaved` and works out
-nothing itself ([modules/network.md](modules/network.md), "An
+nothing itself ([hub_components/network.md](hub_components/network.md), "An
 interface the configuration does not name").
 
 A Wi-Fi radio that publishes a network has a **Country code** field
 (`ui.network.field_country_code`) beside **Band**: two letters, or empty.
 The band picker offers 5 GHz only while the field holds a code, and with
 it empty the access point runs on 2.4 GHz
-([modules/network.md](modules/network.md), "The access point's country").
+([hub_components/network.md](hub_components/network.md), "The access point's country").
 
 In router mode, a chip turned on for a port whose role is `disabled` carries
 the role choice in the same row: `ui.network.role_wan`, and
 `ui.network.role_lan` for a wired port, as a two-button picker beside the
 chip. **Apply exposure** stays disabled until every such chip has a role
 chosen, and the request sends it in `interface_roles`
-([modules/network.md](modules/network.md), "An interface the configuration
+([hub_components/network.md](hub_components/network.md), "An interface the configuration
 does not name").
 
 ## Filters
@@ -412,8 +412,8 @@ module, and its tab on the Modules page is the reference:
 The record is per machine, `terms_accepted_at` in that machine's
 `config/devices/<id>/vscode.json` ([protocol.md](protocol.md),
 `/api/agent/module`), so each machine's tab asks once. A failed write
-shows in place under the button, which stays live. CloudCLI, Gitea and
-code-server tabs carry no notice ([ui_text.md](ui_text.md), "Software the
+shows in place under the button, which stays live. CloudCLI, Codeg, Gitea
+and code-server tabs carry no notice ([ui_text.md](ui_text.md), "Software the
 owner installs").
 
 ## The Direct and relay cards on the Access page
@@ -485,7 +485,7 @@ The **Modules** page has three panels, top to bottom:
 | --- | --- |
 | the machine picker | the managed machines, as before |
 | **Global configuration** | the settings of the picked machine that belong to no module; today one part, its AI tools |
-| **Module configuration** | the tab strip of the machine's modules and the picked module's panels, as before under the title `ui.modules.tabs_title` |
+| **Module configuration** | a left and right split under the title `ui.modules.tabs_title`: on the left a vertical, scrollable list of the machine's modules, each row the module's icon (`images/icons/modules/<module>.svg`, the generic glyph for a module without one) and its title; on the right the picked module's panels, its output box and its buttons, the buttons aligned to the right edge |
 
 A module the machine reports `installed`, `stopped` or `running` while
 the hub holds no `want` for it, as after a reset or a new join on a machine
@@ -513,9 +513,11 @@ same press again"); there is no other retry button. A module panel's apply
 and **Configure** on a refused configuration try again the same way. A
 press on a module that did not fail asks for nothing new.
 
-The tabs of **Module configuration** come in one order, the modules every
-system runs first: File share, Terminal, Remote desktop, Gitea, VS Code,
-code-server, CloudCLI, Containers, ZFS storage. A module the machine cannot
+The rows of the module list, each a tab, come in one order, the modules
+every system runs first: File share, Terminal, Remote desktop, Gitea, VS
+Code, code-server, CloudCLI, Codeg, Containers, ZFS storage. VS Code,
+code-server, CloudCLI and Codeg are drawn by one `instances_panel.tsx` from
+the hub's description table. A module the machine cannot
 run is left out, as before ([agent.md](agent.md), "Which modules each system
 runs").
 
@@ -562,7 +564,7 @@ then.
 ## Account sign-in on the AI page
 
 An account sign-in runs in a dialog on the **AI** page's **Accounts**
-surface ([modules/ai.md](modules/ai.md), "What each panel surface owns"),
+surface ([hub_components/ai.md](hub_components/ai.md), "What each panel surface owns"),
 which the page polls with `GET /api/hub/ai/gateway/account_login` until the
 gateway reports the flow `complete` or `failed`.
 

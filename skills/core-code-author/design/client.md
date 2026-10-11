@@ -386,8 +386,9 @@ the forward listens on the phone's loopback, and the browser opens there.
 
 VS Code reads its token from a cookie in the page to authenticate its own
 connection, so the token must reach the browser in the URL. The forwarders
-in front of code-server and CloudCLI trade a token for a login of their own
-([agent.md](agent.md), "CloudCLI" and "code-server"). Their token is spent
+in front of code-server, CloudCLI and Codeg trade a token for a login of
+their own ([agent/modules/template.md](agent/modules/template.md), "The
+run"). Their token is spent
 once and dies after 60 seconds, so every press of **Open** reads a new one.
 
 ## The Ports page
@@ -465,14 +466,14 @@ the forward listens. The desktop controls:
 
 | Control | Enabled | Does |
 | --- | --- | --- |
-| **AI tools use this gateway** (a chip) | when the entry is not unhealthy, the hub is not disabled and no switch runs | job `ui.job.switching`: makes the entry's forward, reads this client's key on the `service` stream, and points Claude Code, Codex and Gemini at `http://127.0.0.1:<local-port>` with that key ([modules/ai.md](modules/ai.md)); one hub is the exit at a time, and only a chip the person turned on makes it so: with no chip turned on no hub is the exit; the chip of the other hub turns off in the same push, and its forward ends |
+| **AI tools use this gateway** (a chip) | when the entry is not unhealthy, the hub is not disabled and no switch runs | job `ui.job.switching`: makes the entry's forward, reads this client's key on the `service` stream, and points Claude Code, Codex and Gemini at `http://127.0.0.1:<local-port>` with that key ([hub_components/ai.md](hub_components/ai.md)); one hub is the exit at a time, and only a chip the person turned on makes it so: with no chip turned on no hub is the exit; the chip of the other hub turns off in the same push, and its forward ends |
 | **Configure** | the same | opens the configuration dialog: a picker per tool for its model and, for Codex, its effort; **Save** and **Cancel**; the dialog is the inline-form idiom with a dirty frame |
 
 Under the controls is the line `ui.ai_needs_client`: the tools reach the
 gateway only while this client runs.
 
 A desktop client on a machine the Neutrino agent is installed on leaves the
-machine's AI tools to the agent ([modules/ai.md](modules/ai.md), "How a
+machine's AI tools to the agent ([hub_components/ai.md](hub_components/ai.md), "How a
 managed machine's tools are pointed at the gateway"). The agent is
 installed when its program directory exists: `/opt/neutrino/agent` on
 Linux, `/Library/Application Support/Neutrino/agent/app` on macOS,
@@ -764,7 +765,7 @@ word. The controls:
 
 | Control | Enabled | Does |
 | --- | --- | --- |
-| **Connect** | when the entry is not unhealthy, the hub is not disabled and no viewer runs on it | job `ui.job.connecting`: reads `{password}` on the `service` stream and makes the entry's forward; on a desktop starts the viewer at `127.0.0.1:<local-port>` with the seat password on its command line, the one channel RustDesk 1.4.9 has for a connect password (its peer file takes only a hash salted by the host), and follows the viewer process, on Windows the copy the bundled viewer starts of itself from its own data directory; on a phone opens the viewer page, whose core dials the same forward. The forward ends with the viewer |
+| **Connect** | when the entry is not unhealthy, the hub is not disabled and no viewer runs on it | job `ui.job.connecting`: reads `{password}` on the `service` stream and makes the entry's forward; on a desktop starts the viewer at `127.0.0.1:<local-port>` with the seat password on its command line, the one channel RustDesk 1.4.9 has for a connect password (its peer file takes only a hash salted by the host), and follows the viewer process, on Windows the copy the bundled viewer starts of itself from its own data directory; on a phone opens the viewer page, whose core dials the same forward. The forward ends with the viewer. The command line is `nclient service rdp connect <ref>`, `<ref>` the entry's number in `nclient service list` or its id |
 | the viewer | | on a desktop a separate window, and the row then shows `ui.rdp_open`; on a phone a page of the app whose three round buttons open the keyboard, the key bar of Esc, Tab, Ctrl, Shift, Alt, Win, **Paste** and the arrows, and close the session |
 | **Configure** | on a phone, when the entry is not unhealthy | the dialog of the inline-form idiom with two pickers: **Codec** (Auto, then each codec the core offers) and **Quality** (Balanced, Low bandwidth, Best); **Save** and **Cancel**; the choice is kept per entry in the app's settings and applied at the next connect |
 

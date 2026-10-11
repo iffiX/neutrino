@@ -102,10 +102,10 @@ conventions explicit so nobody drifts.
      agent port: what an unadmitted peer can cost the hub and the limits on
      it, the ways in, what an admitted client reaches, what a client opens on
      its own machine.
-   - [design/modules/ai.md](design/modules/ai.md) — the AI gateway's behavior:
+   - [design/hub_components/ai.md](design/hub_components/ai.md) — the AI gateway's behavior:
      how a request routes, the gateway-owned model namespace, what each AI
      panel surface owns, and how usage is metered.
-   - [design/modules/network.md](design/modules/network.md) — the three engines the hub drives
+   - [design/hub_components/network.md](design/hub_components/network.md) — the three engines the hub drives
      instead of a network manager, which modes own a machine's network and
      which touch nothing at all, and what was measured on each distribution.
    - [design/visual.md](design/visual.md) — what the accent, the glow and the
