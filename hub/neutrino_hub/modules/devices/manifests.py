@@ -8,10 +8,9 @@ instead of shipping. Comment keys are stripped the same way the rest of
 ``config/`` is.
 
 **They come back in the order both surfaces draw them**: the tiers in the
-order a person trusts them — what the machine's own package manager
-provides, then what the module's installer fetches from a public
-repository, then what
-somebody installs from a vendor themselves — and by title inside each. The
+order a person trusts them — what the agent's own package carries, what the
+machine's own package manager provides, then what the module's installer
+fetches from a public repository — and by title inside each. The
 panel and the agent's page read this same order, so the two lists agree
 without either of them sorting.
 """
@@ -25,7 +24,6 @@ from neutrino_hub.modules.devices.constants import (
     AGENT_MODULE_INSTALLER_AGENT,
     AGENT_MODULE_INSTALLER_BUILTIN,
     AGENT_MODULE_INSTALLER_TIERS,
-    AGENT_MODULE_INSTALLER_USER,
     AGENT_TOOL_FIELDS,
 )
 from neutrino_hub.utils.constants import UTILS_DATA_DIR
@@ -132,9 +130,9 @@ def _check_branches(file_name: str, manifest: dict) -> None:
     """Refuse a platform branch the agent could not act on.
 
     Every branch that names software carries ``verify``, the command whose
-    exit says whether the software is there. A module the hub installs
-    carries an ``uninstall`` block too: the packages to take off, the
-    commands to run after, and whether the module's data stays. A branch
+    exit says whether the software is there, and an ``uninstall`` block:
+    the packages to take off, the commands to run after, and whether the
+    module's data stays. A branch
     that is ``{}`` says the platform carries the software natively. A branch
     whose ``installer`` is ``builtin`` names software the system carries,
     which the agent's runner checks for itself: it names nothing to
@@ -154,7 +152,6 @@ def _check_branches(file_name: str, manifest: dict) -> None:
             component lacking one of its fields, or with two components
             sharing a name or a directory.
     """
-    is_installed_by_hub = manifest.get("installer") != AGENT_MODULE_INSTALLER_USER
     platforms = manifest.get("platforms", {})
     if not isinstance(platforms, dict):
         raise ValueError(f"manifest {file_name}: platforms must be an object")
@@ -195,8 +192,6 @@ def _check_branches(file_name: str, manifest: dict) -> None:
             )
         if "components" in entry:
             _check_components(file_name, key, entry)
-        if not is_installed_by_hub:
-            continue
         removal = entry.get("uninstall")
         is_shaped = (
             isinstance(removal, dict)

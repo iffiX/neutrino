@@ -45,7 +45,6 @@ from neutrino_hub.modules.channel.constants import (
 )
 from neutrino_hub.modules.devices.constants import (
     AGENT_MODULE_INSTALLER_AGENT,
-    AGENT_MODULE_INSTALLER_USER,
     DEVICE_AGENT_MODULES,
     DEVICE_VSCODE_MODULE,
     DEVICE_VSCODE_TERMS_KEY,
@@ -232,8 +231,8 @@ def install_module(
     Raises:
         HTTPException: 404 ``module_unknown`` for a module with no manifest,
             404 ``device_unknown`` for an id no device has, 400
-            ``module_not_optional`` for a module the person installs
-            themselves, 409 ``no_platform_build`` when the manifest offers
+            ``module_not_optional`` for a module the agent's own package
+            carries, 409 ``no_platform_build`` when the manifest offers
             the device's platform nothing, 409 ``terms_not_accepted`` for
             VS Code on a machine whose terms the person has not accepted,
             409 ``agent_offline`` when the device has no socket.
@@ -752,7 +751,7 @@ def _set_want(
     Raises:
         HTTPException: 404 ``module_unknown`` for a module with no manifest,
             404 ``device_unknown`` for an id no device has, 400
-            ``module_not_optional`` for a user-tier or agent-tier module, 409
+            ``module_not_optional`` for a module the agent carries, 409
             ``no_platform_build`` when the manifest offers the device's
             platform nothing, 409 ``terms_not_accepted`` when installing or
             starting VS Code on a machine whose terms are not accepted, 409
@@ -763,10 +762,7 @@ def _set_want(
     module = request.module
     if manifest is None:
         raise _refusal(status.HTTP_404_NOT_FOUND, CODE_MODULE_UNKNOWN, name=module)
-    if str(manifest.get("installer", "")) in (
-        AGENT_MODULE_INSTALLER_USER,
-        AGENT_MODULE_INSTALLER_AGENT,
-    ):
+    if str(manifest.get("installer", "")) == AGENT_MODULE_INSTALLER_AGENT:
         raise _refusal(
             status.HTTP_400_BAD_REQUEST, CODE_MODULE_NOT_OPTIONAL, name=module
         )

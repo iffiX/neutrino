@@ -35,12 +35,10 @@ SSH_UNSUPPORTED_OS_STATUS = 95
 # Who puts a module on a machine. platform: the OS carries it and the hub
 # switches it. hub: the module's installer fetches an artifact and the
 # agent installs it.
-# user: the person installs it themselves and the hub only detects and
-# manages it, so no ``want`` is ever written for a user-tier module.
 # agent: the agent's own package carries it on every system; no branch
 # names a platform, the hub composes its entry from its own file, and none
 # of the four presses applies to it.
-AGENT_MODULE_INSTALLER_TIERS = ("agent", "platform", "hub", "user")
+AGENT_MODULE_INSTALLER_TIERS = ("agent", "platform", "hub")
 AGENT_MODULE_INSTALLER_AGENT = "agent"
 # A manifest that says ``is_module: false`` names a program the agent runs
 # itself rather than a module: it stays out of the catalog, and each of its
@@ -50,7 +48,6 @@ AGENT_TOOL_FIELDS = ("url", "cn_url", "sha256", "package_kind")
 # address its build stamped for the agent packages, which the project's own
 # release publishes beside them.
 AGENT_MODULE_RELEASE_PLACEHOLDER = "{release}"
-AGENT_MODULE_INSTALLER_USER = "user"
 # A platform branch whose ``installer`` is this names software the system
 # itself carries, such as Windows' and macOS's own SMB servers: nothing is
 # downloaded or installed, and the agent's runner checks for it itself.
@@ -295,7 +292,8 @@ DEVICE_MODULE_REPORT_WAIT_S = 6.0
 # agent before the route answers that the machine never reported.
 DEVICE_FILE_OP_TIMEOUT_S = 30.0
 
-# The user-tier remote desktops the agent reads and sets up.
+# The remote desktops a person installs themselves, which the Remote desktop
+# module detects and the ``status`` command reads.
 DEVICE_REMOTE_DESKTOP_PRODUCTS = ("anydesk", "teamviewer")
 
 # What the panel answers with when pasted key material cannot be used; the

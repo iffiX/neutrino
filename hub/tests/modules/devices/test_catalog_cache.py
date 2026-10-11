@@ -69,14 +69,14 @@ def write_manifest(manifests, name: str) -> None:
 
 def test_the_catalog_has_two_halves_under_one_hash(box):
     manifests, published = box
-    write_manifest(manifests, "anydesk")
+    write_manifest(manifests, "forge")
     published.entries_list = [port_entry()]
     cache = DeviceCatalogCache(services=published)
 
     catalog, digest = cache.catalog(scope=link_scope("192.168.100.7"))
 
     assert set(catalog) == {"modules", "services"}
-    assert catalog["modules"]["anydesk"]["title"] == "Anydesk"
+    assert catalog["modules"]["forge"]["title"] == "Forge"
     assert len(digest) == 16
     entry = catalog["services"][0]
     # Resolved for the asking device, and stripped to the wire fields.

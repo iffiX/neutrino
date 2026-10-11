@@ -2,10 +2,10 @@
 
 What the panel offers, what the catalog resolves and what an agent installs
 all read these files, so the modules the design names are pinned here as
-shipped: the four a device hosts from the hub's desired state, three by the
-machine's own packages and Gitea as a pinned release binary, and the two
-remote desktops as user-tier detection with nothing to download. Every
-manifest names its installer tier and where its software comes from.
+shipped: the two the agent's own package carries, three by the machine's
+own packages, Gitea as a pinned release binary and the programs run as an
+account from their pinned archives. Every manifest names its installer tier
+and where its software comes from.
 """
 
 import json
@@ -19,10 +19,6 @@ from neutrino_hub.modules.devices.agent_module_cache import (
 )
 from neutrino_hub.modules.devices.catalog import resolve_module
 from neutrino_hub.modules.devices.manifests import load_module_manifests
-
-# The fields that mean the module's installer fetches something. A
-# user-tier manifest carrying any of them is one fetched for after all.
-DOWNLOAD_FIELDS = ("url", "github_repo", "asset_pattern", "download")
 
 GITEA_VERSION = "1.27.3"
 # The checksums dl.gitea.com publishes beside each release binary, in its
@@ -103,8 +99,6 @@ def test_every_shipped_manifest_names_its_installer_tier():
         "vscode": "hub",
         "code_server": "hub",
         "cloudcli": "hub",
-        "anydesk": "user",
-        "teamviewer": "user",
     }
 
 
@@ -123,15 +117,12 @@ def test_every_shipped_manifest_says_where_its_software_comes_from():
         "vscode": "Microsoft",
         "code_server": "Coder",
         "cloudcli": "nodejs.org",
-        "anydesk": "AnyDesk Software GmbH",
-        "teamviewer": "TeamViewer Germany GmbH",
     }
 
 
 def test_the_manifests_come_back_in_the_order_both_surfaces_draw():
     """What the agent carries, then what the machine carries, then what the
-    module's installer fetches, then what a person installs themselves, and
-    by title inside each tier."""
+    module's installer fetches, and by title inside each tier."""
     assert list(load_module_manifests()) == [
         "remote_desktop",
         "terminal",
@@ -142,12 +133,13 @@ def test_the_manifests_come_back_in_the_order_both_surfaces_draw():
         "code_server",
         "gitea",
         "vscode",
-        "anydesk",
-        "teamviewer",
     ]
 
 
-@pytest.mark.parametrize("name", ["ssh_server", "samba_mount", "cc_switch", "rustdesk"])
+@pytest.mark.parametrize(
+    "name",
+    ["ssh_server", "samba_mount", "cc_switch", "rustdesk", "anydesk", "teamviewer"],
+)
 def test_the_modules_that_left_are_not_shipped_any_more(name):
     assert name not in load_module_manifests()
 
@@ -232,7 +224,7 @@ def test_a_binary_package_is_recognised_by_its_elf_mach_o_or_pe_magic():
     assert not looks_like_package(b"<!doctype html>", "binary")
 
 
-@pytest.mark.parametrize("tier", ["platform", "hub", "user"])
+@pytest.mark.parametrize("tier", ["agent", "platform", "hub"])
 def test_the_loader_accepts_each_tier(tier, tmp_path, monkeypatch):
     monkeypatch.setattr(manifests_module, "MANIFESTS_DIR", tmp_path)
     write_manifest(
@@ -271,8 +263,6 @@ def test_every_branch_the_hub_installs_from_says_how_to_verify_and_uninstall():
             if entry == {} or entry.get("installer") == "builtin":
                 continue
             assert entry["verify"], (name, key)
-            if manifest["installer"] == "user":
-                continue
             removal = entry["uninstall"]
             assert isinstance(removal["packages"], list), (name, key)
             assert isinstance(removal["post_uninstall"], list), (name, key)
@@ -336,57 +326,6 @@ def test_the_loader_refuses_a_hub_installed_branch_without_an_uninstall_block(
     assert "uninstall" in str(refusal.value)
 
 
-def test_a_user_tier_branch_needs_only_its_verify(tmp_path, monkeypatch):
-    """Nobody but the person installs or removes these; the hub only looks."""
-    monkeypatch.setattr(manifests_module, "MANIFESTS_DIR", tmp_path)
-    write_manifest(
-        tmp_path,
-        "sample",
-        {
-            "name": "sample",
-            "installer": "user",
-            "source": "vendor",
-            "platforms": {"linux": {"verify": "which sample"}, "windows": {}},
-        },
-    )
-
-    assert "sample" in load_module_manifests()
-
-
-def test_user_tier_manifests_carry_nothing_to_download():
-    for name, manifest in load_module_manifests().items():
-        if manifest["installer"] != "user":
-            continue
-        assert not any(field in manifest for field in DOWNLOAD_FIELDS), name
-        for entry in manifest["platforms"].values():
-            assert not any(field in entry for field in DOWNLOAD_FIELDS), name
-
-
-def test_windows_verify_commands_fail_when_the_software_is_absent():
-    # PowerShell Test-Path prints False but exits 0, so a bare Test-Path
-    # reads absent software as installed.
-    verified = []
-    for name, manifest in load_module_manifests().items():
-        command = manifest.get("platforms", {}).get("windows", {}).get("verify", "")
-        if "Test-Path" not in command:
-            continue
-        assert "exit 1" in command, f"{name} reads absent software as installed"
-        verified.append(name)
-    assert set(verified) == {"anydesk", "teamviewer"}
-
-
-def test_a_user_tier_module_resolves_to_its_verify_on_each_platform():
-    manifest = load_module_manifests()["teamviewer"]
-
-    for os_name in ("linux", "windows", "darwin"):
-        resolved = resolve_module(
-            manifest, {"os": os_name, "family": "", "arch": "amd64"}
-        )
-        assert resolved["installer"] == "user"
-        assert resolved["verify"]
-        assert resolved["entry"] not in (None, {})
-
-
 def test_the_resolved_module_carries_the_installer_tier():
     resolved = resolve_module(load_module_manifests()["gitea"], DEBIAN)
 
@@ -424,9 +363,21 @@ def test_the_loader_accepts_a_dotted_floor(floor, tmp_path, monkeypatch):
         "sample",
         {
             "name": "sample",
-            "installer": "user",
+            "installer": "hub",
             "source": "vendor",
-            "platforms": {"linux": {"verify": "which s", "min_version": floor}},
+            "license": "MIT",
+            "corresponding_source": "https://github.com/vendor/sample",
+            "platforms": {
+                "linux": {
+                    "verify": "which s",
+                    "min_version": floor,
+                    "uninstall": {
+                        "packages": [],
+                        "post_uninstall": [],
+                        "is_data_kept": True,
+                    },
+                }
+            },
         },
     )
 
@@ -443,9 +394,21 @@ def test_the_loader_refuses_a_floor_that_is_not_a_dotted_number(
         "sample",
         {
             "name": "sample",
-            "installer": "user",
+            "installer": "hub",
             "source": "vendor",
-            "platforms": {"linux": {"verify": "which s", "min_version": floor}},
+            "license": "MIT",
+            "corresponding_source": "https://github.com/vendor/sample",
+            "platforms": {
+                "linux": {
+                    "verify": "which s",
+                    "min_version": floor,
+                    "uninstall": {
+                        "packages": [],
+                        "post_uninstall": [],
+                        "is_data_kept": True,
+                    },
+                }
+            },
         },
     )
 
