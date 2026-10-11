@@ -21,7 +21,7 @@ import os
 import re
 import time
 
-from neutrino_agent.modules.powershell_run import listed, run_powershell
+from neutrino_agent.modules.shared.powershell_run import listed, run_powershell
 from neutrino_agent.modules.remote_desktop.constants import (
     REMOTE_DESKTOP_KEPT_SERVICE_NAME,
     REMOTE_DESKTOP_POLL_S,
@@ -35,7 +35,7 @@ from neutrino_agent.modules.remote_desktop.constants import (
     REMOTE_DESKTOP_WINDOWS_SYSTEM_ROOT_DEFAULT,
 )
 from neutrino_agent.modules.remote_desktop.records import read_json, write_json
-from neutrino_agent.modules.subprocess_run import run as run_command
+from neutrino_agent.modules.shared.subprocess_run import run as run_command
 
 SC = "sc.exe"
 TASKKILL = "taskkill.exe"

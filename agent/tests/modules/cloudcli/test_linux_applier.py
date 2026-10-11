@@ -23,7 +23,7 @@ from neutrino_agent.modules.cloudcli.linux_applier import (
     render_environment,
     render_unit,
 )
-from neutrino_agent.modules.subprocess_run import CommandResult
+from neutrino_agent.modules.shared.subprocess_run import CommandResult
 
 NODE_DIR = "node-v22.23.3-linux-x64"
 CONFIG = CloudcliConfig.from_dict(

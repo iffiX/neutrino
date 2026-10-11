@@ -32,7 +32,7 @@ from neutrino_agent.modules.podman.renderer import (
     PodmanQuadletRenderer,
     PodmanUnitRenderer,
 )
-from neutrino_agent.modules.subprocess_run import run, unit_state
+from neutrino_agent.modules.shared.subprocess_run import run, unit_state
 
 VERSION_NUMBER_PATTERN = re.compile(r"\d+")
 

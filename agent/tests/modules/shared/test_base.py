@@ -10,9 +10,9 @@ there are any; and a source that cannot be read is one line in the
 agent's log naming the module and the source, once until it reads again.
 """
 
-import neutrino_agent.modules.base as base_module
+import neutrino_agent.modules.shared.base as base_module
 from neutrino_agent.exceptions import ModuleApplyError
-from neutrino_agent.modules.base import ModuleRunner
+from neutrino_agent.modules.shared.base import ModuleRunner
 from neutrino_agent.platforms.base import AgentPlatform
 
 

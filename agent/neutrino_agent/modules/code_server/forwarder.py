@@ -12,7 +12,7 @@ code-server sees it:
 | carries the login cookie with a good signature and expiry | passed on unchanged to the socket, a WebSocket included |
 | carries neither | 401 |
 
-The token is the one :mod:`neutrino_agent.modules.http_forward` checks.
+The token is the one :mod:`neutrino_agent.modules.shared.http_forward` checks.
 The login cookie, ``neutrino_code_server_<port>``, is
 ``base64url(expiry || HMAC-SHA256(key, expiry))`` with the key derived from
 the instance's secret, and lasts seven days.
@@ -44,7 +44,7 @@ from neutrino_agent.modules.code_server.constants import (
     CODE_SERVER_LOGIN_LIFETIME_S,
     CODE_SERVER_UPSTREAM_TIMEOUT_S,
 )
-from neutrino_agent.modules.http_forward import (
+from neutrino_agent.modules.shared.http_forward import (
     ForwarderServer,
     answer,
     cookie_values,

@@ -178,7 +178,7 @@ def test_each_system_gets_its_own_applier():
 
 
 def test_the_log_is_the_units_journal_where_there_are_units(runner, monkeypatch):
-    import neutrino_agent.modules.base as base_module
+    import neutrino_agent.modules.shared.base as base_module
 
     calls = []
 

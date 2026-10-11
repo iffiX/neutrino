@@ -51,7 +51,7 @@ from neutrino_agent.core.metrics import (
     gpu_vendor,
     read_nvidia_gpus,
 )
-from neutrino_agent.modules.powershell_run import listed, run_powershell
+from neutrino_agent.modules.shared.powershell_run import listed, run_powershell
 from neutrino_agent.modules.samba.constants import SAMBA_WINDOWS_MARKER
 from neutrino_agent.modules.samba.windows_applier import SambaWindowsApplier
 from neutrino_agent.platforms import win32

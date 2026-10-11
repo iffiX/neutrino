@@ -12,7 +12,7 @@ import subprocess
 import pytest
 
 from neutrino_agent.exceptions import InstallError
-from neutrino_agent.modules.package import PackageModuleRunner, verify_passes
+from neutrino_agent.modules.shared.package import PackageModuleRunner, verify_passes
 from neutrino_agent.exceptions import PlatformUnsupportedError
 from neutrino_agent.platforms.base import AgentPlatform
 

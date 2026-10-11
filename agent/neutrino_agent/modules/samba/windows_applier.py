@@ -2,7 +2,7 @@
 
 Each operation is one PowerShell script, handed a JSON document on its
 standard input and answering one JSON document on its standard output
-(:mod:`neutrino_agent.modules.powershell_run`), so a password never appears
+(:mod:`neutrino_agent.modules.shared.powershell_run`), so a password never appears
 on a command line. The module changes only the shares
 and accounts it made: a share whose description starts with the marker and
 that the module's record lists, an account the record lists. Accounts are
@@ -23,7 +23,7 @@ import ipaddress
 import subprocess
 
 from neutrino_agent.exceptions import ModuleApplyError
-from neutrino_agent.modules.powershell_run import listed, run_powershell
+from neutrino_agent.modules.shared.powershell_run import listed, run_powershell
 from neutrino_agent.modules.samba.config import SambaConfig
 from neutrino_agent.modules.samba.constants import (
     SAMBA_LOOPBACK_NETWORKS,

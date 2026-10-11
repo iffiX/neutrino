@@ -33,7 +33,7 @@ from neutrino_agent.exceptions import (
     ModuleInstallPending,
     PlatformUnsupportedError,
 )
-from neutrino_agent.modules.base import ModuleRunner
+from neutrino_agent.modules.shared.base import ModuleRunner
 from neutrino_agent.modules.cloudcli.config import CloudcliConfig
 from neutrino_agent.modules.cloudcli.constants import (
     CLOUDCLI_DATABASE_NAME,
@@ -51,8 +51,8 @@ from neutrino_agent.modules.cloudcli.installer import remove_node, unpack_node
 from neutrino_agent.modules.cloudcli.linux_applier import CloudcliLinuxApplier
 from neutrino_agent.modules.cloudcli.record_store import CloudcliRecordStore
 from neutrino_agent.modules.cloudcli.windows_applier import CloudcliWindowsApplier
-from neutrino_agent.modules.log_tail import file_tail
-from neutrino_agent.modules.subprocess_run import command_detail
+from neutrino_agent.modules.shared.log_tail import file_tail
+from neutrino_agent.modules.shared.subprocess_run import command_detail
 
 
 def cloudcli_applier_for(platform, log=print):

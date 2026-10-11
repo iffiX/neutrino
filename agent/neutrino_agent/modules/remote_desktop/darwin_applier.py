@@ -35,7 +35,7 @@ from neutrino_agent.modules.remote_desktop.constants import (
     REMOTE_DESKTOP_STOP_TIMEOUT_S,
 )
 from neutrino_agent.modules.remote_desktop.linux_applier import is_viewer
-from neutrino_agent.modules.subprocess_run import run as run_command
+from neutrino_agent.modules.shared.subprocess_run import run as run_command
 
 LAUNCHCTL = "/bin/launchctl"
 LSOF = "/usr/sbin/lsof"

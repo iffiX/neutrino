@@ -45,7 +45,7 @@ from neutrino_agent.modules.samba.constants import (
     SAMBA_DARWIN_SMBD_PLIST,
     SAMBA_DARWIN_SMBD_TARGET,
 )
-from neutrino_agent.modules.subprocess_run import run as run_command
+from neutrino_agent.modules.shared.subprocess_run import run as run_command
 
 # One established connection to the server in ``lsof -nP`` output: the
 # peer's address after the arrow.

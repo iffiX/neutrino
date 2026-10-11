@@ -10,8 +10,8 @@ a line of its own, and leaves every other line as it was.
 
 import pytest
 
-import neutrino_agent.modules.log_tail as log_tail_module
-from neutrino_agent.modules.log_tail import file_tail, mask_secrets
+import neutrino_agent.modules.shared.log_tail as log_tail_module
+from neutrino_agent.modules.shared.log_tail import file_tail, mask_secrets
 
 
 def test_the_last_lines_come_oldest_first(tmp_path):

@@ -2,7 +2,7 @@
 
 import pytest
 
-from neutrino_agent.modules.subprocess_run import CommandResult
+from neutrino_agent.modules.shared.subprocess_run import CommandResult
 from neutrino_agent.modules.zfs import applier as applier_module
 from neutrino_agent.modules.zfs.applier import (
     ZfsDatasetManager,

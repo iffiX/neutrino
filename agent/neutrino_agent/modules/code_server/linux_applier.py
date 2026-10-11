@@ -22,8 +22,8 @@ from neutrino_agent.modules.code_server.constants import (
     CODE_SERVER_UNIT_PREFIX,
     CODE_SERVER_UNIT_TEMPLATE,
 )
-from neutrino_agent.modules.subprocess_run import run as run_command
-from neutrino_agent.modules.subprocess_run import unit_state
+from neutrino_agent.modules.shared.subprocess_run import run as run_command
+from neutrino_agent.modules.shared.subprocess_run import unit_state
 from neutrino_agent.modules.vscode.installer import write_if_changed
 
 try:

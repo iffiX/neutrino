@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import subprocess
 
-from neutrino_agent.modules.base import ModuleRunner
+from neutrino_agent.modules.shared.base import ModuleRunner
 
 VERIFY_TIMEOUT_S = 30
 

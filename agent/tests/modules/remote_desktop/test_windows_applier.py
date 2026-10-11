@@ -12,7 +12,7 @@ from neutrino_agent.modules.remote_desktop.windows_applier import (
     is_viewer_command,
     listening_pids,
 )
-from neutrino_agent.modules.subprocess_run import CommandResult
+from neutrino_agent.modules.shared.subprocess_run import CommandResult
 
 COPY = "C:\\Program Files\\Neutrino\\agent\\rustdesk\\rustdesk.exe"
 UPSTREAM = "C:\\Program Files\\RustDesk\\rustdesk.exe"

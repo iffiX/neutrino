@@ -69,7 +69,7 @@ from neutrino_agent.modules.cloudcli.constants import (
     CLOUDCLI_UPSTREAM_TIMEOUT_S,
 )
 from neutrino_agent.modules.cloudcli.config import jwt_secret, username_of
-from neutrino_agent.modules.http_forward import (
+from neutrino_agent.modules.shared.http_forward import (
     ForwarderServer,
     answer,
     mint_token,

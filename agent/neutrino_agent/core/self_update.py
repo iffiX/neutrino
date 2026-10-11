@@ -36,7 +36,7 @@ from neutrino_agent.constants import (
     AGENT_UPDATE_UNIT,
 )
 from neutrino_agent.exceptions import GatewayUnreachable, SelfUpdateError
-from neutrino_agent.modules.log_tail import mask_secrets
+from neutrino_agent.modules.shared.log_tail import mask_secrets
 from neutrino_agent.platforms import win32
 from neutrino_agent.streams.package import (
     CODE_DIGEST_MISMATCH,

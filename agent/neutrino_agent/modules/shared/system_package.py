@@ -17,9 +17,9 @@ from __future__ import annotations
 import shutil
 import subprocess
 
-from neutrino_agent.modules import installers
-from neutrino_agent.modules.base import ModuleRunner
-from neutrino_agent.modules.package import DEB_INSTALLED_STATUS, VERIFY_TIMEOUT_S
+from neutrino_agent.modules.shared import installers
+from neutrino_agent.modules.shared.base import ModuleRunner
+from neutrino_agent.modules.shared.package import DEB_INSTALLED_STATUS, VERIFY_TIMEOUT_S
 
 
 def _entry_packages(resolved: dict) -> list:

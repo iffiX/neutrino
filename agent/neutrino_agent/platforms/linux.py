@@ -37,7 +37,7 @@ from neutrino_agent.core.metrics import (
     busiest_processes,
     read_nvidia_gpus,
 )
-from neutrino_agent.modules import installers
+from neutrino_agent.modules.shared import installers
 from neutrino_agent.platforms.answered_run import run_on_pty
 from neutrino_agent.platforms.base import AgentPlatform, is_added_name
 

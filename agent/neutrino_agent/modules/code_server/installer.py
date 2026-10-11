@@ -33,7 +33,7 @@ from neutrino_agent.modules.code_server.constants import (
     CODE_SERVER_SOCKET_NAME,
     CODE_SERVER_SOCKET_PATH_MAX,
 )
-from neutrino_agent.modules.unpacked_tree import (
+from neutrino_agent.modules.shared.unpacked_tree import (
     extract_archive,
     remove_tree,
     seal_tree,

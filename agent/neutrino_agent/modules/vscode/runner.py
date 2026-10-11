@@ -20,9 +20,9 @@ import threading
 import time
 
 from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
-from neutrino_agent.modules.base import ModuleRunner
-from neutrino_agent.modules.log_tail import file_tail
-from neutrino_agent.modules.subprocess_run import command_detail
+from neutrino_agent.modules.shared.base import ModuleRunner
+from neutrino_agent.modules.shared.log_tail import file_tail
+from neutrino_agent.modules.shared.subprocess_run import command_detail
 from neutrino_agent.modules.vscode.config import VscodeConfig
 from neutrino_agent.modules.vscode.constants import (
     VSCODE_CLI_NAMES,

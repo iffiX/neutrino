@@ -15,7 +15,7 @@ import pytest
 
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.gitea.darwin_applier import GiteaDarwinApplier
-from neutrino_agent.modules.subprocess_run import CommandResult
+from neutrino_agent.modules.shared.subprocess_run import CommandResult
 
 ACCOUNT_RECORD = (
     "NFSHomeDirectory: /x/gitea_data\nPrimaryGroupID: 20\n"

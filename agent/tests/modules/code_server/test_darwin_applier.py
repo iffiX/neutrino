@@ -17,7 +17,7 @@ import pytest
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.code_server.config import CodeServerConfig
 from neutrino_agent.modules.code_server.darwin_applier import CodeServerDarwinApplier
-from neutrino_agent.modules.subprocess_run import CommandResult
+from neutrino_agent.modules.shared.subprocess_run import CommandResult
 
 CONFIG = CodeServerConfig.from_dict(
     {"instances": [{"account": "ann", "port": 8443, "secret": "s"}]}

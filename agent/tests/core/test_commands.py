@@ -19,7 +19,7 @@ import time
 
 from neutrino_agent.core import commands
 from neutrino_agent.core.commands import AGENT_VERBS, DeviceOperator
-from neutrino_agent.modules.base import ModuleRunner
+from neutrino_agent.modules.shared.base import ModuleRunner
 from neutrino_agent.platforms.base import AgentPlatform
 
 

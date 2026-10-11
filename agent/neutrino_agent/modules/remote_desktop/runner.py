@@ -14,7 +14,7 @@ Not pure: drives the desktop host.
 from __future__ import annotations
 
 from neutrino_agent.exceptions import ModuleApplyError
-from neutrino_agent.modules.base import ModuleRunner
+from neutrino_agent.modules.shared.base import ModuleRunner
 from neutrino_agent.modules.remote_desktop.config import RemoteDesktopConfig
 from neutrino_agent.modules.remote_desktop.constants import (
     REMOTE_DESKTOP_KIND,

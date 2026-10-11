@@ -32,8 +32,8 @@ from neutrino_agent.modules.cloudcli.constants import (
     CLOUDCLI_UNIT_TEMPLATE,
     CLOUDCLI_VERSION,
 )
-from neutrino_agent.modules.subprocess_run import run as run_command
-from neutrino_agent.modules.subprocess_run import unit_state
+from neutrino_agent.modules.shared.subprocess_run import run as run_command
+from neutrino_agent.modules.shared.subprocess_run import unit_state
 from neutrino_agent.modules.vscode.installer import write_if_changed
 
 try:

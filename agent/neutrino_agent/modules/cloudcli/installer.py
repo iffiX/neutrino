@@ -46,7 +46,7 @@ from neutrino_agent.modules.cloudcli.constants import (
     CLOUDCLI_VERSION,
     CLOUDCLI_WINDOWS_SERVICE_PATH,
 )
-from neutrino_agent.modules.unpacked_tree import (
+from neutrino_agent.modules.shared.unpacked_tree import (
     extract_archive,
     remove_tree,
     seal_tree,

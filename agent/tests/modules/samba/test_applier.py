@@ -14,7 +14,7 @@ from neutrino_agent.modules.samba.applier import (
     testparm as samba_testparm,
 )
 from neutrino_agent.modules.samba.config import SambaConfig
-from neutrino_agent.modules.subprocess_run import CommandResult
+from neutrino_agent.modules.shared.subprocess_run import CommandResult
 
 # What Samba 4.15.13 on Ubuntu 22.04 prints; it does not know ``--json``.
 SMBSTATUS_4_15_PROCESSES_IDLE = (

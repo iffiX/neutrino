@@ -19,7 +19,7 @@ import shutil
 import subprocess
 from dataclasses import dataclass, field
 
-from neutrino_agent.modules.subprocess_run import run
+from neutrino_agent.modules.shared.subprocess_run import run
 from neutrino_agent.modules.zfs.constants import (
     ZFS_ARC_MAX_FRACTION,
     ZFS_ARC_MAX_PARAMETER,

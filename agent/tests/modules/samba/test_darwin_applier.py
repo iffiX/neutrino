@@ -28,7 +28,7 @@ from neutrino_agent.modules.samba.darwin_applier import (
     parse_share_points,
     render_pf_rules,
 )
-from neutrino_agent.modules.subprocess_run import CommandResult
+from neutrino_agent.modules.shared.subprocess_run import CommandResult
 
 CONFIG = SambaConfig.from_dict(
     {

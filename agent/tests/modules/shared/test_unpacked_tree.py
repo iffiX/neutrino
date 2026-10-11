@@ -13,7 +13,7 @@ import zipfile
 
 import pytest
 
-from neutrino_agent.modules.unpacked_tree import (
+from neutrino_agent.modules.shared.unpacked_tree import (
     extract_archive,
     remove_tree,
     seal_tree,

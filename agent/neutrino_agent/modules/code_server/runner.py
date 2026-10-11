@@ -24,7 +24,7 @@ import threading
 import time
 
 from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
-from neutrino_agent.modules.base import ModuleRunner
+from neutrino_agent.modules.shared.base import ModuleRunner
 from neutrino_agent.modules.cloudcli.record_store import CloudcliRecordStore
 from neutrino_agent.modules.code_server import installer
 from neutrino_agent.modules.code_server.config import CodeServerConfig
@@ -38,8 +38,8 @@ from neutrino_agent.modules.code_server.constants import (
 from neutrino_agent.modules.code_server.darwin_applier import CodeServerDarwinApplier
 from neutrino_agent.modules.code_server.forwarder import CodeServerForwarder
 from neutrino_agent.modules.code_server.linux_applier import CodeServerLinuxApplier
-from neutrino_agent.modules.log_tail import file_tail
-from neutrino_agent.modules.subprocess_run import command_detail
+from neutrino_agent.modules.shared.log_tail import file_tail
+from neutrino_agent.modules.shared.subprocess_run import command_detail
 
 
 def code_server_applier_for(platform):

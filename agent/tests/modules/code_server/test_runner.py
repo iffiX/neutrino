@@ -292,7 +292,7 @@ def test_a_failed_download_is_the_module_s_own_code(runner):
 
 def test_the_journal_is_the_units_and_the_refusal_last(runner, monkeypatch):
     monkeypatch.setattr(
-        "neutrino_agent.modules.base.units_journal",
+        "neutrino_agent.modules.shared.base.units_journal",
         lambda units, lines: [f"journal of {units[0]}"],
     )
 

@@ -26,8 +26,8 @@ from neutrino_agent.constants import (
     AGENT_MODULE_VERB_VALIDATE,
 )
 from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
-from neutrino_agent.modules.log_tail import file_tail, mask_secrets
-from neutrino_agent.modules.subprocess_run import units_journal
+from neutrino_agent.modules.shared.log_tail import file_tail, mask_secrets
+from neutrino_agent.modules.shared.subprocess_run import units_journal
 
 
 def _ignore_status(name: str, status: dict) -> None:

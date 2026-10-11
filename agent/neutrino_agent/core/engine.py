@@ -43,18 +43,18 @@ from neutrino_agent.constants import (
     AGENT_MODULE_STATE_UNSUPPORTED,
 )
 from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
-from neutrino_agent.modules import installers
+from neutrino_agent.modules.shared import installers
 from neutrino_agent.modules.cloudcli.runner import CloudcliModuleRunner
 from neutrino_agent.modules.code_server.runner import CodeServerModuleRunner
 from neutrino_agent.modules.gitea.runner import GiteaModuleRunner
-from neutrino_agent.modules.package import PackageModuleRunner, verify_passes
+from neutrino_agent.modules.shared.package import PackageModuleRunner, verify_passes
 from neutrino_agent.modules.podman.runner import PodmanModuleRunner
 from neutrino_agent.modules.remote_desktop.runner import RemoteDesktopModuleRunner
 from neutrino_agent.modules.samba.runner import (
     SambaModuleRunner,
     SambaNativeServerRunner,
 )
-from neutrino_agent.modules.system_package import SystemPackageModuleRunner
+from neutrino_agent.modules.shared.system_package import SystemPackageModuleRunner
 from neutrino_agent.modules.terminal.runner import TerminalModuleRunner
 from neutrino_agent.modules.vscode.runner import VscodeModuleRunner
 from neutrino_agent.modules.zfs.runner import ZfsModuleRunner

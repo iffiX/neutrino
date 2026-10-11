@@ -15,7 +15,7 @@ import hmac
 import socket
 import threading
 
-from neutrino_agent.modules.http_forward import (
+from neutrino_agent.modules.shared.http_forward import (
     ForwarderServer,
     closing_head,
     cookie_values,

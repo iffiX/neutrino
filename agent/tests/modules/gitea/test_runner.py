@@ -285,7 +285,7 @@ def test_journal_reads_the_servers_unit(runner, monkeypatch):
         asked.append((list(units), lines))
         return ["2026-09-19T10:00:00-0500 box gitea[1]: Starting"]
 
-    monkeypatch.setattr("neutrino_agent.modules.base.units_journal", journal)
+    monkeypatch.setattr("neutrino_agent.modules.shared.base.units_journal", journal)
 
     outcome = runner.command("journal", {"lines": 50})
 

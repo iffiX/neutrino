@@ -28,7 +28,7 @@ from neutrino_agent.modules.code_server.forwarder import (
     is_login_valid,
     mint_login,
 )
-from neutrino_agent.modules.http_forward import mint_token
+from neutrino_agent.modules.shared.http_forward import mint_token
 
 SECRET = "instance-secret"  # scan: allow
 NOW = 1_800_000_000

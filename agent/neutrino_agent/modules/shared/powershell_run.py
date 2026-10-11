@@ -20,7 +20,7 @@ import base64
 import json
 
 from neutrino_agent.exceptions import ModuleApplyError
-from neutrino_agent.modules.subprocess_run import run
+from neutrino_agent.modules.shared.subprocess_run import run
 
 # Every script reads its document from standard input and writes UTF-8. A
 # native tool's complaint on standard error is not an error here: the

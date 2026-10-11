@@ -15,7 +15,7 @@ from neutrino_agent.modules.remote_desktop.user_tier import (
     RemoteDesktopReader,
     teamviewer_id,
 )
-from neutrino_agent.modules.subprocess_run import CommandResult
+from neutrino_agent.modules.shared.subprocess_run import CommandResult
 
 # What `teamviewer info` prints on 15.61.3, escapes and all.
 TEAMVIEWER_INFO = (

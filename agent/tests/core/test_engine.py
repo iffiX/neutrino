@@ -30,7 +30,7 @@ from neutrino_agent.exceptions import (
     ModuleApplyError,
     PlatformUnsupportedError,
 )
-from neutrino_agent.modules.base import ModuleRunner
+from neutrino_agent.modules.shared.base import ModuleRunner
 from neutrino_agent.platforms.base import AgentPlatform
 
 DEB_RECIPE = {
@@ -102,8 +102,8 @@ def bare_engine(*, platform=None, verified=None, tmp_path=None):
     engine._details_at = 0.0
     engine._module_runners = {}
 
-    from neutrino_agent.modules.package import PackageModuleRunner
-    from neutrino_agent.modules.system_package import SystemPackageModuleRunner
+    from neutrino_agent.modules.shared.package import PackageModuleRunner
+    from neutrino_agent.modules.shared.system_package import SystemPackageModuleRunner
 
     platform = platform if platform is not None else FakePlatform()
     engine._package = PackageModuleRunner(

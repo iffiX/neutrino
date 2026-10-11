@@ -11,10 +11,10 @@ import json
 
 import pytest
 
-import neutrino_agent.modules.powershell_run as powershell_module
+import neutrino_agent.modules.shared.powershell_run as powershell_module
 from neutrino_agent.exceptions import ModuleApplyError
-from neutrino_agent.modules.powershell_run import listed, run_powershell
-from neutrino_agent.modules.subprocess_run import CommandResult
+from neutrino_agent.modules.shared.powershell_run import listed, run_powershell
+from neutrino_agent.modules.shared.subprocess_run import CommandResult
 
 SCRIPT = "Set-LocalUser -Name $d.name\n'{}'\n"
 

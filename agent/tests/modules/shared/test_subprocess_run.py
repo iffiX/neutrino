@@ -4,8 +4,8 @@ import subprocess
 
 import pytest
 
-from neutrino_agent.modules import subprocess_run
-from neutrino_agent.modules.subprocess_run import command_detail, run, unit_state
+from neutrino_agent.modules.shared import subprocess_run
+from neutrino_agent.modules.shared.subprocess_run import command_detail, run, unit_state
 
 
 class Completed:
@@ -108,7 +108,7 @@ def test_a_command_that_said_nothing_is_named_with_its_exit_status():
 def test_output_a_byte_the_encoding_cannot_read_is_replaced_not_lost():
     import sys
 
-    from neutrino_agent.modules.subprocess_run import run
+    from neutrino_agent.modules.shared.subprocess_run import run
 
     result = run(
         [sys.executable, "-c", "import sys; sys.stdout.buffer.write(b'{\\x90}')"],

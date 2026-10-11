@@ -62,7 +62,7 @@ from neutrino_agent.modules.remote_desktop.records import (
     read_json,
     write_json,
 )
-from neutrino_agent.modules.subprocess_run import command_detail
+from neutrino_agent.modules.shared.subprocess_run import command_detail
 from neutrino_agent.rdp.constants import (
     RDP_ATTENTION_NOBODY_SEATED,
     RDP_ATTENTION_TTL_S,

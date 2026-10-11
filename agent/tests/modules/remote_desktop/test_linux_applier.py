@@ -17,7 +17,7 @@ from neutrino_agent.modules.remote_desktop.linux_applier import (
     RemoteDesktopLinuxApplier,
     is_viewer,
 )
-from neutrino_agent.modules.subprocess_run import CommandResult
+from neutrino_agent.modules.shared.subprocess_run import CommandResult
 
 COPY = "/usr/lib/neutrino/agent/rustdesk/rustdesk"
 

@@ -17,8 +17,8 @@ import contextlib
 import os
 
 from neutrino_agent.exceptions import ModuleApplyError
-from neutrino_agent.modules.subprocess_run import run as run_command
-from neutrino_agent.modules.subprocess_run import unit_state
+from neutrino_agent.modules.shared.subprocess_run import run as run_command
+from neutrino_agent.modules.shared.subprocess_run import unit_state
 from neutrino_agent.modules.vscode.config import VscodeConfig
 from neutrino_agent.modules.vscode.constants import (
     VSCODE_CLI_NAMES,

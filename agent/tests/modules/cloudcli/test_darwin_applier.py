@@ -18,7 +18,7 @@ import pytest
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.cloudcli.config import CloudcliConfig
 from neutrino_agent.modules.cloudcli.darwin_applier import CloudcliDarwinApplier
-from neutrino_agent.modules.subprocess_run import CommandResult
+from neutrino_agent.modules.shared.subprocess_run import CommandResult
 
 NODE_DIR = "node-v22.23.3-darwin-arm64"
 CONFIG = CloudcliConfig.from_dict(

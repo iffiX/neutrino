@@ -17,7 +17,7 @@ import stat
 
 import pytest
 
-import neutrino_agent.modules.base as base_module
+import neutrino_agent.modules.shared.base as base_module
 import neutrino_agent.modules.cloudcli.runner as runner_module
 from neutrino_agent.core.engine import _download_refusal
 from neutrino_agent.exceptions import (

@@ -20,7 +20,7 @@ from neutrino_agent.modules.code_server.linux_applier import (
     instance_unit,
     render_unit,
 )
-from neutrino_agent.modules.subprocess_run import CommandResult
+from neutrino_agent.modules.shared.subprocess_run import CommandResult
 
 CONFIG = CodeServerConfig.from_dict(
     {"instances": [{"account": "ann", "port": 8443, "secret": "s"}]}

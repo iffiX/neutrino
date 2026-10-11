@@ -45,7 +45,7 @@ from neutrino_agent.modules.cloudcli.constants import (
     CLOUDCLI_WINDOWS_SCRIPT_DIR_NAME,
     CLOUDCLI_WINDOWS_SHELL,
 )
-from neutrino_agent.modules.powershell_run import listed, run_powershell
+from neutrino_agent.modules.shared.powershell_run import listed, run_powershell
 from neutrino_agent.modules.vscode.windows_applier import task_arguments
 
 # What an install script exits with when npm failed; a native module's
