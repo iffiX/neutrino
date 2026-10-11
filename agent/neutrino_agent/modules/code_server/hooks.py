@@ -1,0 +1,450 @@
+"""What code-server adds to the shared runner: the release, each instance's socket, the cookie.
+
+The release comes from the hub's package stream as the tarball coder
+publishes, with one ``code-server-<version>-<system>-<arch>`` directory
+inside that carries its own Node.js, and lands whole as ``release`` under
+the module's directory. Each instance runs the launcher as its account on a
+socket in that account's run directory, with code-server's own login off,
+so root and the account alone can open it. The forwarder admits a browser
+by its own login cookie, ``neutrino_code_server_<port>``, traded once for
+the token the hub minted.
+
+Not pure: writes the release and opens the socket.
+"""
+
+# PEP 604 unions below are annotations only; this keeps them lazy so the
+# agent still imports on the Python 3.9 that older Raspbian ships.
+from __future__ import annotations
+
+import base64
+import binascii
+import hashlib
+import hmac
+import json
+import os
+import shutil
+import socket
+import tarfile
+import tempfile
+import time
+import urllib.parse
+import zipfile
+
+from neutrino_agent.constants import (
+    AGENT_FORWARD_TOKEN_PARAMETER,
+    AGENT_FORWARD_UPSTREAM_TIMEOUT_S,
+)
+from neutrino_agent.exceptions import ModuleApplyError
+from neutrino_agent.modules.code_server.config import (
+    CodeServerConfig,
+    CodeServerInstance,
+    cookie_key,
+)
+from neutrino_agent.modules.code_server.constants import (
+    CODE_SERVER_COOKIE_EXPIRY_BYTES,
+    CODE_SERVER_COOKIE_MAC_BYTES,
+    CODE_SERVER_COOKIE_PREFIX,
+    CODE_SERVER_DARWIN_PATH,
+    CODE_SERVER_DARWIN_SHELL,
+    CODE_SERVER_DOWNLOAD_FAILED,
+    CODE_SERVER_FLAGS,
+    CODE_SERVER_KIND,
+    CODE_SERVER_LAUNCHER_PARTS,
+    CODE_SERVER_LOGIN_LIFETIME_S,
+    CODE_SERVER_NAME,
+    CODE_SERVER_NODE_PARTS,
+    CODE_SERVER_PACKAGE_JSON,
+    CODE_SERVER_RECORD_FIELDS,
+    CODE_SERVER_RELEASE_DIR_NAME,
+    CODE_SERVER_RELEASE_PREFIX,
+    CODE_SERVER_RUN_DIR_NAME,
+    CODE_SERVER_SOCKET_NAME,
+    CODE_SERVER_SOCKET_PATH_MAX,
+    CODE_SERVER_TITLE,
+)
+from neutrino_agent.modules.shared.account_service import (
+    AccountEntry,
+    AccountService,
+)
+from neutrino_agent.modules.shared.http_forward import (
+    RELAY,
+    ForwardDecision,
+    answered,
+    refused,
+    unpadded_decode,
+)
+from neutrino_agent.modules.shared.instances import InstanceHooks
+from neutrino_agent.modules.shared.unpacked_tree import (
+    extract_archive,
+    remove_tree,
+    seal_tree,
+)
+
+
+def unpack_release(path: str, *, package_kind: str, root: str) -> str:
+    """Put the release's one directory under the module's root as ``release``.
+
+    A release the root already holds is replaced, and what lands is owned by
+    the agent's own account and read-only.
+
+    Args:
+        path: The archive on disk.
+        package_kind: ``tar``.
+        root: The module's directory.
+
+    Returns:
+        The release directory.
+
+    Raises:
+        ModuleApplyError: ``code_server_download_failed`` when the kind is
+            unknown, the archive cannot be read, or it holds no release.
+        OSError: When the root cannot be written.
+    """
+    os.makedirs(root, mode=0o755, exist_ok=True)
+    os.chmod(root, 0o755)
+    staging = tempfile.mkdtemp(prefix=".unpack_", dir=root)
+    try:
+        try:
+            extract_archive(path, package_kind, staging)
+        except (OSError, tarfile.TarError, zipfile.BadZipFile, ValueError) as error:
+            raise ModuleApplyError(
+                CODE_SERVER_DOWNLOAD_FAILED, {"detail": str(error)[:200]}
+            ) from error
+        names = [
+            name
+            for name in os.listdir(staging)
+            if name.startswith(CODE_SERVER_RELEASE_PREFIX)
+            and os.path.isdir(os.path.join(staging, name))
+        ]
+        unpacked = os.path.join(staging, names[0]) if len(names) == 1 else ""
+        if not unpacked or not os.path.isfile(
+            os.path.join(unpacked, *CODE_SERVER_LAUNCHER_PARTS)
+        ):
+            raise ModuleApplyError(
+                CODE_SERVER_DOWNLOAD_FAILED,
+                {"detail": "the archive holds no single code-server release"},
+            )
+        target = release_dir(root)
+        remove_tree(target)
+        os.replace(unpacked, target)
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+    seal_tree(target)
+    return target
+
+
+def release_dir(root: str) -> str:
+    """The release directory under the module's root."""
+    return os.path.join(root, CODE_SERVER_RELEASE_DIR_NAME)
+
+
+def launcher_path(root: str) -> str:
+    """The ``code-server`` launcher of the release under the module's root."""
+    return os.path.join(release_dir(root), *CODE_SERVER_LAUNCHER_PARTS)
+
+
+def node_path(root: str) -> str:
+    """The Node.js the release carries."""
+    return os.path.join(release_dir(root), *CODE_SERVER_NODE_PARTS)
+
+
+def installed_version(root: str) -> str:
+    """The code-server version the release under the module's root is.
+
+    Args:
+        root: The module's directory.
+
+    Returns:
+        The version its ``package.json`` names, empty when there is none.
+    """
+    path = os.path.join(release_dir(root), CODE_SERVER_PACKAGE_JSON)
+    try:
+        with open(path, "r", encoding="utf-8") as stream:
+            return str(json.load(stream).get("version", "") or "")
+    except (OSError, ValueError, AttributeError):
+        return ""
+
+
+def run_dir(root: str, account: str) -> str:
+    """One account's run directory, which holds its socket."""
+    return os.path.join(root, CODE_SERVER_RUN_DIR_NAME, account)
+
+
+def socket_path(root: str, account: str) -> str:
+    """The socket one account's code-server listens on."""
+    return os.path.join(run_dir(root, account), CODE_SERVER_SOCKET_NAME)
+
+
+def check_socket_path(root: str, account: str, os_name: str) -> None:
+    """Refuse an account whose socket path the system cannot bind.
+
+    Args:
+        root: The module's directory.
+        account: The account.
+        os_name: ``linux`` or ``darwin``.
+
+    Raises:
+        ModuleApplyError: ``account_invalid {account}`` when the path is
+            longer than the system's socket address holds.
+    """
+    limit = CODE_SERVER_SOCKET_PATH_MAX.get(os_name, 0)
+    if limit and len(os.fsencode(socket_path(root, account))) > limit:
+        raise ModuleApplyError("account_invalid", {"account": account})
+
+
+def server_arguments(root: str, account: str) -> list:
+    """What one account's code-server is started with.
+
+    Args:
+        root: The module's directory.
+        account: The account.
+
+    Returns:
+        The launcher, ``--socket`` with the account's socket, and the flags
+        every instance runs with.
+    """
+    return [
+        launcher_path(root),
+        "--socket",
+        socket_path(root, account),
+        *CODE_SERVER_FLAGS,
+    ]
+
+
+def cookie_name(port: int) -> str:
+    """The cookie the forwarder of one port keeps its login in."""
+    return f"{CODE_SERVER_COOKIE_PREFIX}{int(port)}"
+
+
+def mint_login(key: bytes, expiry: int) -> str:
+    """One login cookie's value.
+
+    Args:
+        key: From :func:`cookie_key`.
+        expiry: When it stops working, in seconds since the epoch.
+
+    Returns:
+        ``base64url(expiry || HMAC-SHA256(key, expiry))`` without padding.
+    """
+    body = int(expiry).to_bytes(CODE_SERVER_COOKIE_EXPIRY_BYTES, "big")
+    mac = hmac.new(key, body, hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(body + mac).rstrip(b"=").decode("ascii")
+
+
+def is_login_valid(login: str, key: bytes, now: float) -> bool:
+    """Whether a login cookie is signed with the key and still current.
+
+    Args:
+        login: The cookie's value.
+        key: From :func:`cookie_key`.
+        now: Seconds since the epoch.
+
+    Returns:
+        True when the signature matches and the expiry is ahead.
+    """
+    try:
+        raw = unpadded_decode(login)
+    except (ValueError, binascii.Error):
+        return False
+    if len(raw) != CODE_SERVER_COOKIE_EXPIRY_BYTES + CODE_SERVER_COOKIE_MAC_BYTES:
+        return False
+    body, mac = (
+        raw[:CODE_SERVER_COOKIE_EXPIRY_BYTES],
+        raw[CODE_SERVER_COOKIE_EXPIRY_BYTES:],
+    )
+    expected = hmac.new(key, body, hashlib.sha256).digest()
+    if not hmac.compare_digest(expected, mac):
+        return False
+    return int.from_bytes(body, "big") > now
+
+
+def address_without_token(path: str, query: dict) -> str:
+    """The address a token's redirect goes to: the same, its token taken out.
+
+    Args:
+        path: The request's path.
+        query: The request's query, name to values.
+
+    Returns:
+        The path, and the query's other fields in their order.
+    """
+    kept = [
+        (name, value)
+        for name, values in query.items()
+        if name != AGENT_FORWARD_TOKEN_PARAMETER
+        for value in values
+    ]
+    if not kept:
+        return path or "/"
+    return f"{path or '/'}?{urllib.parse.urlencode(kept)}"
+
+
+class CodeServerHooks(InstanceHooks):
+    """code-server's part of the shared runner."""
+
+    name = CODE_SERVER_NAME
+    title = CODE_SERVER_TITLE
+    kind = CODE_SERVER_KIND
+    download_failure_code = CODE_SERVER_DOWNLOAD_FAILED
+    instance_class = CodeServerInstance
+    record_fields = CODE_SERVER_RECORD_FIELDS
+    secret_field = "secret"
+
+    def __init__(self, *, platform, log=print, clock=time.time):
+        """
+        Args:
+            platform: The machine's platform.
+            log: Callable used for progress messages.
+            clock: Seconds since the epoch, which the login cookie is judged by.
+        """
+        super().__init__(platform=platform, log=log)
+        self._clock = clock
+
+    def parse(self, config: dict) -> CodeServerConfig:
+        """The configuration parsed and checked, every socket path bindable.
+
+        Args:
+            config: The module's desired configuration.
+
+        Returns:
+            The configuration.
+
+        Raises:
+            ModuleApplyError: ``account_invalid``, ``account_duplicate``,
+                ``port_invalid``, ``port_duplicate`` or ``secret_missing``,
+                naming the first problem found; ``account_invalid`` as well
+                for an account whose socket path is too long.
+        """
+        parsed = CodeServerConfig.from_dict(config)
+        parsed.validate()
+        for instance in parsed.instances:
+            check_socket_path(
+                self.machine.module_dir, instance.account, self._platform.os_name
+            )
+        return parsed
+
+    def verify(self) -> bool:
+        """Whether the release's launcher exists."""
+        return os.path.isfile(launcher_path(self.machine.module_dir))
+
+    def install(self, package_path: str, package_kind: str) -> None:
+        """Unpack the release the hub handed down.
+
+        Args:
+            package_path: The archive on local disk.
+            package_kind: ``tar``.
+
+        Raises:
+            ModuleApplyError: ``code_server_download_failed`` when the
+                archive is not a code-server release.
+            OSError: When the module's directory cannot be written.
+        """
+        unpack_release(
+            package_path, package_kind=package_kind, root=self.machine.module_dir
+        )
+        self._log(
+            f"{self.name}: unpacked code-server "
+            + (installed_version(self.machine.module_dir) or "?")
+        )
+
+    def service(
+        self, instance: CodeServerInstance, entry: AccountEntry, record: dict
+    ) -> AccountService:
+        """One account's code-server on its socket, in its home.
+
+        Args:
+            instance: The instance.
+            entry: Its account, whose home and shell a Mac's job carries.
+            record: Its record.
+
+        Returns:
+            The service.
+        """
+        root = self.machine.module_dir
+        environment = {}
+        if self._platform.os_name == "darwin":
+            environment = {
+                "HOME": entry.home,
+                "USER": instance.account,
+                "LOGNAME": instance.account,
+                "SHELL": entry.shell or CODE_SERVER_DARWIN_SHELL,
+                "PATH": CODE_SERVER_DARWIN_PATH,
+            }
+        return AccountService(
+            name=self.name,
+            title=self.title,
+            account=instance.account,
+            command=tuple(server_arguments(root, instance.account)),
+            environment=environment,
+            working_directory="~",
+            directories=(run_dir(root, instance.account),),
+        )
+
+    def admit(self, request, record: dict) -> ForwardDecision:
+        """The forwarder's rule: a token trades for the login cookie, the cookie passes.
+
+        Args:
+            request: The request.
+            record: The instance's record.
+
+        Returns:
+            A redirect setting the cookie for a token that verifies, the
+            relay for a good cookie, 401 otherwise.
+        """
+        key = cookie_key(str(record.get("secret", "") or ""))
+        port = int(record.get("port", 0) or 0)
+        if request.token:
+            if not request.take_token():
+                return refused()
+            expiry = int(self._clock()) + CODE_SERVER_LOGIN_LIFETIME_S
+            cookie = (
+                f"{cookie_name(port)}={mint_login(key, expiry)}; Path=/; "
+                f"HttpOnly; SameSite=Lax; Max-Age={CODE_SERVER_LOGIN_LIFETIME_S}"
+            )
+            return answered(
+                302,
+                headers=(
+                    ("Location", address_without_token(request.path, request.query)),
+                    ("Set-Cookie", cookie),
+                    ("Cache-Control", "no-store"),
+                    ("Referrer-Policy", "no-referrer"),
+                ),
+            )
+        now = self._clock()
+        if any(
+            is_login_valid(value, key, now)
+            for value in request.cookie_values(cookie_name(port))
+        ):
+            return RELAY
+        return refused()
+
+    def connect(self, record: dict) -> socket.socket:
+        """A connection to the instance's socket.
+
+        Args:
+            record: The instance's record.
+
+        Returns:
+            The connected socket.
+
+        Raises:
+            OSError: When code-server does not answer.
+        """
+        upstream = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        upstream.settimeout(AGENT_FORWARD_UPSTREAM_TIMEOUT_S)
+        try:
+            upstream.connect(
+                socket_path(self.machine.module_dir, str(record.get("account", "")))
+            )
+        except OSError:
+            upstream.close()
+            raise
+        return upstream
+
+    def module_details(self) -> dict:
+        """The release installed.
+
+        Returns:
+            ``{"version"}``.
+        """
+        return {"version": installed_version(self.machine.module_dir)}

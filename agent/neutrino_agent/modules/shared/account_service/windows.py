@@ -261,17 +261,45 @@ def define(template, machine) -> bool:
     return False
 
 
-def write(service, machine) -> bool:
-    """Write the account's files and register the task; whether it was registered."""
-    log = log_path(service.name, service.account, machine, service.log_name)
+def task_files(service, machine) -> list:
+    """The files one instance's task reads: the account's, and its script when it has one.
+
+    Args:
+        service: The service.
+        machine: The machine.
+
+    Returns:
+        ``[{"path", "text"}]``.
+    """
     files = [{"path": path, "text": text} for path, text in service.files]
     if _is_scripted(service):
         files.append(
             {"path": script_path(service, machine), "text": render_script(service)}
         )
-        arguments = task_arguments(script_path(service, machine), [], log)
-    else:
-        arguments = task_arguments(service.command[0], list(service.command[1:]), log)
+    return files
+
+
+def arguments_of(service, machine) -> str:
+    """What ``cmd.exe`` is handed for one instance: its script, or the program itself.
+
+    Args:
+        service: The service.
+        machine: The machine.
+
+    Returns:
+        The task's arguments, the output appended to the instance's log.
+    """
+    log = log_path(service.name, service.account, machine, service.log_name)
+    if _is_scripted(service):
+        return task_arguments(script_path(service, machine), [], log)
+    return task_arguments(service.command[0], list(service.command[1:]), log)
+
+
+def write(service, machine) -> bool:
+    """Write the account's files and register the task; whether it was registered."""
+    log = log_path(service.name, service.account, machine, service.log_name)
+    files = task_files(service, machine)
+    arguments = arguments_of(service, machine)
     answer = machine.powershell(
         REGISTER_SCRIPT,
         {

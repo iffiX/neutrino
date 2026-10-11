@@ -230,10 +230,11 @@ class InstanceHooks:
         """
         return []
 
-    def prepare(self, instance, entry: AccountEntry) -> list:
+    def prepare(self, parsed, instance, entry: AccountEntry) -> list:
         """What one account needs before its service starts.
 
         Args:
+            parsed: The parsed configuration.
             instance: The instance.
             entry: Its account.
 
@@ -242,9 +243,12 @@ class InstanceHooks:
 
         Raises:
             ModuleApplyError: When a step fails, under its own code.
-            ModuleInstallPending: While an install the module left running
-                has not ended.
             OSError: When a file cannot be written.
+
+        Note:
+            An install the module leaves running puts its account into
+            ``installing``; the runner then applies nothing more and the
+            state is applied again until the set is empty.
         """
         return []
 
@@ -631,7 +635,10 @@ class InstancesModuleRunner(ModuleRunner):
         """Prepare, write, start and record every instance; retire the rest."""
         notes = list(self._hooks.prepare_module())
         for instance in parsed.instances:
-            notes += self._hooks.prepare(instance, entries[instance.account])
+            notes += self._hooks.prepare(parsed, instance, entries[instance.account])
+        pending = sorted(self._hooks.installing)
+        if pending:
+            raise ModuleInstallPending(", ".join(pending))
         template = self._hooks.service(
             self._hooks.instance_class.from_dict({"account": TEMPLATE_ACCOUNT}),
             NOBODY,

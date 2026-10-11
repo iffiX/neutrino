@@ -24,6 +24,7 @@ searches a platform table either.
 from __future__ import annotations
 
 import contextlib
+import functools
 import json
 import os
 import threading
@@ -43,20 +44,21 @@ from neutrino_agent.constants import (
     AGENT_MODULE_STATE_UNSUPPORTED,
 )
 from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
-from neutrino_agent.modules.shared import installers
-from neutrino_agent.modules.cloudcli.runner import CloudcliModuleRunner
-from neutrino_agent.modules.code_server.runner import CodeServerModuleRunner
+from neutrino_agent.modules.cloudcli.hooks import CloudcliHooks
+from neutrino_agent.modules.code_server.hooks import CodeServerHooks
 from neutrino_agent.modules.gitea.runner import GiteaModuleRunner
-from neutrino_agent.modules.shared.package import PackageModuleRunner, verify_passes
 from neutrino_agent.modules.podman.runner import PodmanModuleRunner
 from neutrino_agent.modules.remote_desktop.runner import RemoteDesktopModuleRunner
 from neutrino_agent.modules.samba.runner import (
     SambaModuleRunner,
     SambaNativeServerRunner,
 )
+from neutrino_agent.modules.shared import installers
+from neutrino_agent.modules.shared.instances import InstancesModuleRunner
+from neutrino_agent.modules.shared.package import PackageModuleRunner, verify_passes
 from neutrino_agent.modules.shared.system_package import SystemPackageModuleRunner
 from neutrino_agent.modules.terminal.runner import TerminalModuleRunner
-from neutrino_agent.modules.vscode.runner import VscodeModuleRunner
+from neutrino_agent.modules.vscode.hooks import VscodeHooks
 from neutrino_agent.modules.zfs.runner import ZfsModuleRunner
 from neutrino_agent.platforms.detect import platform_tuple
 from neutrino_agent.streams.package import CODE_UNREACHABLE
@@ -74,6 +76,16 @@ BY_NAME_KINDS = ("system_package",)
 # read: the kind names the runner, the verify command decides presence, and
 # the package name is the entry's own.
 RECIPE_HEADER_FIELDS = ("kind", "verify", "package")
+
+# The programs run as a person's account, each the shared runner with the
+# module's own hooks.
+VscodeModuleRunner = functools.partial(InstancesModuleRunner, hooks_class=VscodeHooks)
+CodeServerModuleRunner = functools.partial(
+    InstancesModuleRunner, hooks_class=CodeServerHooks
+)
+CloudcliModuleRunner = functools.partial(
+    InstancesModuleRunner, hooks_class=CloudcliHooks
+)
 
 # The modules the agent's own package carries: no operation moves them.
 CARRIED_MODULES = (RemoteDesktopModuleRunner.name,)

@@ -110,7 +110,7 @@ class DemoHooks(InstanceHooks):
     def prepare_module(self):
         return list(self.module_notes)
 
-    def prepare(self, instance, entry):
+    def prepare(self, parsed, instance, entry):
         self.prepared.append((instance.account, entry.home))
         if self.prepare_error is not None:
             raise self.prepare_error
