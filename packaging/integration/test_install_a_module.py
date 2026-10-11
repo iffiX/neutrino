@@ -16,8 +16,9 @@ is the shape every other platform-tier module has.
 
 The same managed machine answers the checks that need an agent on the socket:
 a configuration saved through the panel is checked on the machine and read
-back as written, and the unit's journal comes back up the channel. Beside
-them sits the one refusal shape a write with no body gets.
+back as written, the unit's journal comes back up the channel, and Codeg's
+page answers for the machine with no instance on it, installing nothing.
+Beside them sits the one refusal shape a write with no body gets.
 
 It needs the same second machine the lifecycle walk does: a client VM on the
 served wire answering SSH with the ``id_lab`` key beside this file.
@@ -29,6 +30,9 @@ import test_device_lifecycle as lifecycle
 import test_mode_matrix as matrix
 
 MODULE = "samba"
+# A program run as a person's account, read on the same machine and never
+# installed here.
+INSTANCE_MODULE = "codeg"
 MODULE_LAN = "192.168.95.1"
 # One share, every field spelled, so the read-back is compared whole.
 SHARE = {
@@ -257,6 +261,19 @@ def test_the_page_offers_to_uninstall_what_is_installed(panel, managed, installe
     assert status == 200, answer
 
     assert wait_state(panel, managed, "absent", ("absent",))["state"] == "absent"
+
+
+def test_a_program_run_as_an_account_has_its_page_on_a_managed_machine(panel, managed):
+    """The shared instances router answers for a machine the hub manages
+    before anything of the module is installed: the fields every module view
+    carries, the socket's state, no instance, and the machine's accounts."""
+    view = panel.read(f"/agent/module/{INSTANCE_MODULE}?device_id={managed}")
+
+    assert view["device_id"] == managed
+    assert view["is_online"] is True, view
+    assert view["instances"] == []
+    assert isinstance(view["accounts"], list)
+    assert {"host", "state", "code", "params", "is_active"} <= set(view)
 
 
 def test_a_write_with_no_body_is_refused_in_the_one_shape(panel):
