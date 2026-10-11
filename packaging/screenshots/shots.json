@@ -1300,7 +1300,7 @@
       "state": "server online with an account chosen in its Terminal module.",
       "press": [
         ".device_chip:has(.device_chip_name:text-is(\"server\"))",
-        ".tab_strip_tab:has(.tab_strip_name:text-is(\"Terminal\"))",
+        ".modules_list_row:has(.modules_list_row_title:text-is(\"Terminal\"))",
         ".modules_actions button:has-text(\"{ui.modules.configure}\")"
       ],
       "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))"
@@ -1317,7 +1317,7 @@
       "state": "server online with an account chosen in its Terminal module.",
       "press": [
         ".device_chip:has(.device_chip_name:text-is(\"server\"))",
-        ".tab_strip_tab:has(.tab_strip_name:text-is(\"终端\"))",
+        ".modules_list_row:has(.modules_list_row_title:text-is(\"终端\"))",
         ".modules_actions button:has-text(\"{ui.modules.configure}\")"
       ],
       "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))"
@@ -1337,7 +1337,7 @@
       "state": "The quick start's one machine, your computer, with its Remote desktop switch on and applied.",
       "press": [
         ".device_chip:has(.device_chip_name:text-is(\"desktop\"))",
-        ".tab_strip_tab:has(.tab_strip_name:text-is(\"Remote desktop\"))",
+        ".modules_list_row:has(.modules_list_row_title:text-is(\"Remote desktop\"))",
         ".modules_actions button:has-text(\"{ui.modules.configure}\")"
       ],
       "hide": [
@@ -1360,7 +1360,7 @@
       "state": "The quick start's one machine, your computer, with its Remote desktop switch on and applied.",
       "press": [
         ".device_chip:has(.device_chip_name:text-is(\"desktop\"))",
-        ".tab_strip_tab:has(.tab_strip_name:text-is(\"远程桌面\"))",
+        ".modules_list_row:has(.modules_list_row_title:text-is(\"远程桌面\"))",
         ".modules_actions button:has-text(\"{ui.modules.configure}\")"
       ],
       "hide": [
@@ -1384,7 +1384,7 @@
       "state": "desktop with the File share module running and one share.",
       "press": [
         ".device_chip:has(.device_chip_name:text-is(\"desktop\"))",
-        ".tab_strip_tab:has(.tab_strip_name:text-is(\"File share\"))",
+        ".modules_list_row:has(.modules_list_row_title:text-is(\"File share\"))",
         ".modules_actions button:has-text(\"{ui.modules.configure}\")"
       ],
       "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))"
@@ -1401,7 +1401,7 @@
       "state": "desktop with the File share module running and one share.",
       "press": [
         ".device_chip:has(.device_chip_name:text-is(\"desktop\"))",
-        ".tab_strip_tab:has(.tab_strip_name:text-is(\"文件共享\"))",
+        ".modules_list_row:has(.modules_list_row_title:text-is(\"文件共享\"))",
         ".modules_actions button:has-text(\"{ui.modules.configure}\")"
       ],
       "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))",
@@ -1422,7 +1422,7 @@
       "state": "server with Gitea running and an administrator.",
       "press": [
         ".device_chip:has(.device_chip_name:text-is(\"server\"))",
-        ".tab_strip_tab:has(.tab_strip_name:text-is(\"Gitea\"))",
+        ".modules_list_row:has(.modules_list_row_title:text-is(\"Gitea\"))",
         ".modules_actions button:has-text(\"{ui.modules.configure}\")"
       ],
       "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.gitea.access_title}\"))"
@@ -1439,7 +1439,7 @@
       "state": "server with Gitea running and an administrator.",
       "press": [
         ".device_chip:has(.device_chip_name:text-is(\"server\"))",
-        ".tab_strip_tab:has(.tab_strip_name:text-is(\"Gitea\"))",
+        ".modules_list_row:has(.modules_list_row_title:text-is(\"Gitea\"))",
         ".modules_actions button:has-text(\"{ui.modules.configure}\")"
       ],
       "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.gitea.access_title}\"))"
@@ -1456,7 +1456,7 @@
       "state": "server with two declared containers, one publishing a port.",
       "press": [
         ".device_chip:has(.device_chip_name:text-is(\"server\"))",
-        ".tab_strip_tab:has(.tab_strip_name:text-is(\"Containers\"))",
+        ".modules_list_row:has(.modules_list_row_title:text-is(\"Containers\"))",
         ".modules_actions button:has-text(\"{ui.modules.configure}\")"
       ],
       "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))"
@@ -1473,7 +1473,7 @@
       "state": "server with two declared containers, one publishing a port.",
       "press": [
         ".device_chip:has(.device_chip_name:text-is(\"server\"))",
-        ".tab_strip_tab:has(.tab_strip_name:text-is(\"容器\"))",
+        ".modules_list_row:has(.modules_list_row_title:text-is(\"容器\"))",
         ".modules_actions button:has-text(\"{ui.modules.configure}\")"
       ],
       "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))"
@@ -1493,7 +1493,7 @@
       "state": "server with a ZFS pool.",
       "press": [
         ".device_chip:has(.device_chip_name:text-is(\"server2\"))",
-        ".tab_strip_tab:has(.tab_strip_name:text-is(\"ZFS storage\"))",
+        ".modules_list_row:has(.modules_list_row_title:text-is(\"ZFS storage\"))",
         ".modules_actions button:has-text(\"{ui.modules.configure}\")"
       ],
       "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.zfs.pools_title}\"))"
@@ -1510,7 +1510,7 @@
       "state": "server with a ZFS pool.",
       "press": [
         ".device_chip:has(.device_chip_name:text-is(\"server2\"))",
-        ".tab_strip_tab:has(.tab_strip_name:text-is(\"ZFS 存储\"))",
+        ".modules_list_row:has(.modules_list_row_title:text-is(\"ZFS 存储\"))",
         ".modules_actions button:has-text(\"{ui.modules.configure}\")"
       ],
       "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.zfs.pools_title}\"))",
@@ -1534,7 +1534,7 @@
       "state": "hub with one VS Code instance running.",
       "press": [
         ".device_chip:has(.device_chip_name:text-is(\"server\"))",
-        ".tab_strip_tab:has(.tab_strip_name:text-is(\"VS Code\"))",
+        ".modules_list_row:has(.modules_list_row_title:text-is(\"VS Code\"))",
         ".modules_actions button:has-text(\"{ui.modules.configure}\")"
       ],
       "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))"
@@ -1555,7 +1555,7 @@
       "state": "hub with one VS Code instance running.",
       "press": [
         ".device_chip:has(.device_chip_name:text-is(\"server\"))",
-        ".tab_strip_tab:has(.tab_strip_name:text-is(\"VS Code\"))",
+        ".modules_list_row:has(.modules_list_row_title:text-is(\"VS Code\"))",
         ".modules_actions button:has-text(\"{ui.modules.configure}\")"
       ],
       "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))"
@@ -1575,7 +1575,7 @@
       "state": "server with CloudCLI running and one instance.",
       "press": [
         ".device_chip:has(.device_chip_name:text-is(\"server\"))",
-        ".tab_strip_tab:has(.tab_strip_name:text-is(\"CloudCLI\"))",
+        ".modules_list_row:has(.modules_list_row_title:text-is(\"CloudCLI\"))",
         ".modules_actions button:has-text(\"{ui.modules.configure}\")"
       ],
       "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))"
@@ -1592,7 +1592,7 @@
       "state": "server with CloudCLI running and one instance.",
       "press": [
         ".device_chip:has(.device_chip_name:text-is(\"server\"))",
-        ".tab_strip_tab:has(.tab_strip_name:text-is(\"CloudCLI\"))",
+        ".modules_list_row:has(.modules_list_row_title:text-is(\"CloudCLI\"))",
         ".modules_actions button:has-text(\"{ui.modules.configure}\")"
       ],
       "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))",

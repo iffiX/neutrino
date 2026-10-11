@@ -11,7 +11,7 @@ Before you start, finish the [Step zero](../quick-start.md), and pick a folder o
 ## Share a folder
 
 1. On the panel's **Modules** page, select your computer under **Which machine**.
-1. Select the **File share** tab. If the tab is missing, select **+** at the end of the tabs and tick **File share**.
+1. Select the **File share** tab. If the tab is missing, select **+** at the end of the module list and tick **File share**.
 1. Select **Install**, and wait until the tab no longer reads **installing**.
 1. Select **Configure**.
 1. Under **Users**, type a new user name and a password for the share, then select **Add user**.
