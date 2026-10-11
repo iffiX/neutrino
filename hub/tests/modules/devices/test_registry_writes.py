@@ -66,6 +66,7 @@ def test_a_created_device_is_a_row_under_a_generated_id(stored, config_dir):
         "ssh": None,
         "client": {"token_sha256": None},
         "shown_modules": [],
+        "platform": {},
     }
 
 
@@ -121,6 +122,22 @@ def test_note_machine_writes_only_when_something_is_new(stored, config_dir):
     row = rows(config_dir)[first]
     assert row["mac_addresses"] == [MAC, "aa:bb:cc:dd:ee:03"]
     assert row["link_mac"] == "aa:bb:cc:dd:ee:03"
+
+
+def test_note_platform_writes_only_when_the_tuple_changes(stored, config_dir):
+    registry, first, _ = stored
+    path = config_dir / "devices" / "devices.json"
+    platform = {"os": "linux", "family": "debian", "arch": "amd64"}
+
+    assert registry.note_platform(first, platform) is True
+    assert rows(config_dir)[first]["platform"] == platform
+    assert DeviceRegistry().get(first).platform == platform
+    before = path.read_text()
+
+    assert registry.note_platform(first, dict(platform)) is False
+    assert registry.note_platform(first, {}) is False
+    assert registry.note_platform("nobody", platform) is False
+    assert path.read_text() == before
 
 
 def test_note_machine_moves_the_link_mac_back_to_a_known_one(stored, config_dir):

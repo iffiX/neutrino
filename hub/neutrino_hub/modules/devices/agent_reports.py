@@ -374,6 +374,7 @@ def _record_machine(runtime, key: str, machine) -> None:
     platform = machine.get("platform")
     if isinstance(platform, dict) and platform:
         runtime.device_platform[key] = dict(platform)
+        DeviceRegistry().note_platform(key, platform)
     accounts = machine.get("accounts")
     if isinstance(accounts, list):
         runtime.device_accounts[key] = [str(account) for account in accounts]

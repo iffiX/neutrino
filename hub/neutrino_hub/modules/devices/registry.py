@@ -143,6 +143,9 @@ class ManagedDevice:
         client: Agent state.
         shown_modules: The module tabs its Modules page shows; empty means
             the modules its reports name.
+        platform: The platform tuple the agent last reported, ``{os,
+            family, arch, version}``, kept so a hub that starts again knows
+            the machine before its agent reports.
     """
 
     id: str
@@ -158,6 +161,7 @@ class ManagedDevice:
     ssh: dict | None = None
     client: DeviceClientInfo = field(default_factory=DeviceClientInfo)
     shown_modules: list = field(default_factory=list)
+    platform: dict = field(default_factory=dict)
 
     @property
     def is_scan_row(self) -> bool:
@@ -198,6 +202,7 @@ class ManagedDevice:
             "ssh": self.ssh,
             "client": self.client.to_dict(),
             "shown_modules": list(self.shown_modules),
+            "platform": dict(self.platform),
         }
 
 
@@ -499,6 +504,29 @@ class DeviceRegistry:
                 self._store(device)
             return is_changed
 
+    def note_platform(self, device_id: str, platform: dict) -> bool:
+        """Keep the platform tuple an agent reported with its row.
+
+        Args:
+            device_id: The stored device.
+            platform: ``{os, family, arch, version}`` as the agent reported
+                it; an empty one leaves the stored tuple alone.
+
+        Returns:
+            True when the row was written: the tuple was new or changed.
+        """
+        if not isinstance(platform, dict) or not platform:
+            return False
+        with CONFIG_WRITE_LOCK:
+            device = self._fresh(device_id)
+            if device is None or device.is_scan_row:
+                return False
+            if device.platform == dict(platform):
+                return False
+            device.platform = dict(platform)
+            self._store(device)
+        return True
+
     def _others_on(self, device_id: str, ssh: dict) -> bool:
         """Whether another stored device is reached at this host and port."""
         for other_id, entry in self._stored.items():
@@ -528,6 +556,11 @@ class DeviceRegistry:
             ssh=entry.get("ssh"),
             client=DeviceClientInfo.from_dict(entry.get("client", {})),
             shown_modules=[str(name) for name in entry.get("shown_modules") or []],
+            platform=(
+                dict(entry.get("platform"))
+                if isinstance(entry.get("platform"), dict)
+                else {}
+            ),
         )
 
     def _fresh(self, device_id: str) -> "ManagedDevice | None":

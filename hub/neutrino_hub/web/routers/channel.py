@@ -275,6 +275,7 @@ def _join_agent(
     token = registry.issue_token(key)
     if request.platform:
         runtime.device_platform[key] = dict(request.platform)
+        registry.note_platform(key, dict(request.platform))
     if request.name:
         runtime.device_hostname[key] = request.name
     address = _peer_host(http_request)

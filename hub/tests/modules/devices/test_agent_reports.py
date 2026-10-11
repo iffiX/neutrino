@@ -227,10 +227,20 @@ def test_a_report_notes_the_link_mac_on_the_stored_row(box):
     assert row.link_mac == LINK_MAC
 
 
-def test_a_report_naming_no_link_mac_writes_nothing(box, config_dir):
+def test_a_report_notes_the_platform_on_the_stored_row(box):
+    runtime, device = box
+    stored = DeviceRegistry().create("testbox")
+
+    agent_reports.record_report(runtime, stored, report())
+
+    assert DeviceRegistry().get(stored.id).platform == PLATFORM
+
+
+def test_a_report_naming_no_link_mac_writes_nothing_after_the_platform(box, config_dir):
     runtime, device = box
     stored = DeviceRegistry().create("testbox")
     path = config_dir / "devices" / "devices.json"
+    agent_reports.record_report(runtime, stored, report(network=network(mac="")))
     before = path.read_text()
 
     agent_reports.record_report(runtime, stored, report(network=network(mac="")))

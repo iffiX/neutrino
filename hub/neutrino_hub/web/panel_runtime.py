@@ -226,8 +226,14 @@ class PanelRuntime:
         # The round trip the hub measured to each relayed overlay peer.
         self.peer_latencies = OverlayPeerLatencies()
         # The platform tuple an agent last reported, keyed by device id, so
-        # the panel can show only the modules that platform can install.
-        self.device_platform: dict[str, dict] = {}
+        # the panel can show only the modules that platform can install. It
+        # starts from what the device list kept, so a hub that starts again
+        # knows every machine before its agent reports.
+        self.device_platform: dict[str, dict] = {
+            device.id: dict(device.platform)
+            for device in DeviceRegistry().all_stored()
+            if device.platform
+        }
         # The hostname each agent last reported, keyed by device id. Runtime
         # only, like the metrics.
         self.device_hostname: dict[str, str] = {}
