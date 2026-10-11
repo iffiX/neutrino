@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>/Users/ann</string>
+		<key>LOGNAME</key>
+		<string>ann</string>
+		<key>PATH</key>
+		<string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+		<key>SHELL</key>
+		<string>/bin/zsh</string>
+		<key>USER</key>
+		<string>ann</string>
+	</dict>
+	<key>KeepAlive</key>
+	<true/>
+	<key>Label</key>
+	<string>com.neutrino.code_server.ann</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Library/Application Support/Neutrino/agent/state/code_server/release/bin/code-server</string>
+		<string>--socket</string>
+		<string>/Library/Application Support/Neutrino/agent/state/code_server/run/ann/code_server.sock</string>
+		<string>--auth</string>
+		<string>none</string>
+		<string>--socket-mode</string>
+		<string>600</string>
+		<string>--disable-telemetry</string>
+		<string>--disable-update-check</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>/Library/Logs/Neutrino/agent/code_server_ann.log</string>
+	<key>StandardOutPath</key>
+	<string>/Library/Logs/Neutrino/agent/code_server_ann.log</string>
+	<key>UserName</key>
+	<string>ann</string>
+	<key>WorkingDirectory</key>
+	<string>/Users/ann</string>
+</dict>
+</plist>
