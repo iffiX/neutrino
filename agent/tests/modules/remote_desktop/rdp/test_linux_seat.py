@@ -9,8 +9,8 @@ permission until RustDesk holds it.
 
 import os
 
-from neutrino_agent.rdp import linux_seat as seat_module
-from neutrino_agent.rdp.linux_seat import LinuxSeat
+from neutrino_agent.modules.remote_desktop.rdp import linux_seat as seat_module
+from neutrino_agent.modules.remote_desktop.rdp.linux_seat import LinuxSeat
 
 # --- what counts as a desktop to share ---
 

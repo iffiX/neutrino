@@ -16,7 +16,7 @@ import pytest
 from neutrino_agent.core.store import MachineStateStore
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.platforms.base import AgentPlatform
-from neutrino_agent.rdp.host import RdpShareHost
+from neutrino_agent.modules.remote_desktop.rdp.host import RdpShareHost
 
 COPY = "/opt/agent/rustdesk/rustdesk"
 

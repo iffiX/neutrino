@@ -13,7 +13,7 @@ import pytest
 
 from neutrino_agent.cli import status as status_cli
 from neutrino_agent.cli import wording
-from neutrino_agent.rdp.constants import (
+from neutrino_agent.modules.remote_desktop.rdp.constants import (
     RDP_ATTENTION_NOBODY_SEATED,
     RDP_ATTENTION_SCREEN_NOT_ALLOWED,
     RDP_STATE_NOT_SHARED,

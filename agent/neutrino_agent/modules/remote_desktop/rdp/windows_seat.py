@@ -18,8 +18,8 @@ import ctypes
 import subprocess
 
 from neutrino_agent.platforms import win32
-from neutrino_agent.rdp.netstat import established_count
-from neutrino_agent.rdp.constants import (
+from neutrino_agent.modules.remote_desktop.rdp.netstat import established_count
+from neutrino_agent.modules.remote_desktop.rdp.constants import (
     RDP_SESSION_TIMEOUT_S,
     RDP_WINDOWS_ESTABLISHED,
     RDP_WINDOWS_NETSTAT_COMMAND,

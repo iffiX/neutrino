@@ -111,7 +111,7 @@ def session_job(app: str) -> dict:
 
 def console_uid() -> "int | None":
     """The uid signed in at the Mac's screen, None for nobody."""
-    from neutrino_agent.rdp.darwin_seat import console_user
+    from neutrino_agent.modules.remote_desktop.rdp.darwin_seat import console_user
 
     seated = console_user()
     return seated[1] if seated else None

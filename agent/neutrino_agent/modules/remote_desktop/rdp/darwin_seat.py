@@ -31,7 +31,7 @@ try:
 except ImportError:
     pwd = None
 
-from neutrino_agent.rdp.constants import (
+from neutrino_agent.modules.remote_desktop.rdp.constants import (
     RDP_DARWIN_AGENT_PROGRAM,
     RDP_DARWIN_CONSOLE_OWNER_COMMAND,
     RDP_DARWIN_CONSOLE_USER_QUERY,
@@ -50,7 +50,7 @@ from neutrino_agent.rdp.constants import (
     RDP_DARWIN_STEP_DOWN_VERB,
     RDP_SESSION_TIMEOUT_S,
 )
-from neutrino_agent.rdp.netstat import established_count
+from neutrino_agent.modules.remote_desktop.rdp.netstat import established_count
 
 
 def _printed(command) -> "str | None":

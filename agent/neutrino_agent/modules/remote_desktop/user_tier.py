@@ -21,30 +21,15 @@ import shutil
 import subprocess
 
 from neutrino_agent.constants import AGENT_OUTPUT_LIMIT_BYTES
+from neutrino_agent.modules.remote_desktop.constants import (
+    REMOTE_DESKTOP_PRODUCTS,
+    REMOTE_DESKTOP_SUPPORTED_PRODUCTS,
+)
 from neutrino_agent.modules.shared.subprocess_run import command_detail, run
-from neutrino_agent.rdp.linux_seat import graphical_accounts, session_environment
-
-SUPPORTED_PRODUCTS = ("anydesk", "teamviewer")
-
-# How each product identifies itself, and what it answers to.
-PRODUCTS = {
-    "anydesk": {
-        "binary": "anydesk",
-        "service": "anydesk",
-        "package": "anydesk",
-        "paths": ("/usr/bin/anydesk",),
-        "id_argv": ("anydesk", "--get-id"),
-        "is_seated": True,
-    },
-    "teamviewer": {
-        "binary": "teamviewer",
-        "service": "teamviewerd",
-        "package": "teamviewer",
-        "paths": ("/usr/bin/teamviewer",),
-        "id_argv": ("teamviewer", "info"),
-        "is_seated": False,
-    },
-}
+from neutrino_agent.modules.remote_desktop.rdp.linux_seat import (
+    graphical_accounts,
+    session_environment,
+)
 
 # What TeamViewer calls its id, in a table it draws with bold escapes.
 TEAMVIEWER_ID_LABEL = "TeamViewer ID:"
@@ -95,7 +80,7 @@ class RemoteDesktopReader:
         but down cannot be connected to.
 
         Args:
-            product: One of :data:`SUPPORTED_PRODUCTS`.
+            product: One of :data:`REMOTE_DESKTOP_SUPPORTED_PRODUCTS`.
 
         Returns:
             ``{"product", "is_installed", "is_running", "session_id",
@@ -126,7 +111,7 @@ class RemoteDesktopReader:
         """Set one product's unattended-access password.
 
         Args:
-            product: One of :data:`SUPPORTED_PRODUCTS`.
+            product: One of :data:`REMOTE_DESKTOP_SUPPORTED_PRODUCTS`.
             password: The password to set.
 
         Returns:
@@ -157,9 +142,9 @@ class RemoteDesktopReader:
         return outcome
 
     def _units(self, product: str) -> dict:
-        if product not in PRODUCTS:
+        if product not in REMOTE_DESKTOP_PRODUCTS:
             raise ValueError(product)
-        return PRODUCTS[product]
+        return REMOTE_DESKTOP_PRODUCTS[product]
 
     def _is_installed(self, units: dict) -> bool:
         if shutil.which(str(units["binary"])):
@@ -177,7 +162,7 @@ class RemoteDesktopReader:
         return (result.stdout or "").strip() == "active"
 
     def _session_id(self, product: str) -> str:
-        units = PRODUCTS[product]
+        units = REMOTE_DESKTOP_PRODUCTS[product]
         argv = list(units["id_argv"])
         if not units["is_seated"]:
             return teamviewer_id(self._run(argv).stdout or "")

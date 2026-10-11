@@ -3,7 +3,7 @@
 Nothing is installed: the agent's package carries its copy of RustDesk. The
 module reads ``running`` while the agent's RustDesk service runs, whoever
 sits at the screen, and ``stopped`` otherwise. Applying the configuration hands the switch to the
-:class:`~neutrino_agent.rdp.host.RdpShareHost`, which takes RustDesk over
+:class:`~neutrino_agent.modules.remote_desktop.rdp.host.RdpShareHost`, which takes RustDesk over
 or gives it back.
 
 Not pure: drives the desktop host.
@@ -43,7 +43,7 @@ class RemoteDesktopModuleRunner(ModuleRunner):
         """Say which desktop host makes the switch true.
 
         Args:
-            host: The :class:`~neutrino_agent.rdp.host.RdpShareHost`.
+            host: The :class:`~neutrino_agent.modules.remote_desktop.rdp.host.RdpShareHost`.
         """
         self._host = host
 

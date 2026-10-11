@@ -15,8 +15,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from neutrino_agent.rdp import darwin_seat as seat_module
-from neutrino_agent.rdp.darwin_seat import DarwinSeat
+from neutrino_agent.modules.remote_desktop.rdp import darwin_seat as seat_module
+from neutrino_agent.modules.remote_desktop.rdp.darwin_seat import DarwinSeat
 
 
 def printing(monkeypatch, stdout, *, returncode=0, calls=None):

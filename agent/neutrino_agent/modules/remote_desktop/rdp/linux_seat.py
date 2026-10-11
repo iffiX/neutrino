@@ -15,8 +15,8 @@ from __future__ import annotations
 import os
 import subprocess
 
-from neutrino_agent.modules import rustdesk
-from neutrino_agent.rdp.constants import (
+from neutrino_agent.modules.remote_desktop.rdp import rustdesk
+from neutrino_agent.modules.remote_desktop.rdp.constants import (
     RDP_ATTENTION_SCREEN_NOT_ALLOWED,
     RDP_GRAPHICAL_SESSION_TYPES,
     RDP_PROC_DIR,

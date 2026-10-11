@@ -2,11 +2,11 @@
 
 import pytest
 
-from neutrino_agent.rdp.darwin_seat import DarwinSeat
-from neutrino_agent.rdp.host import RdpShareHost
-from neutrino_agent.rdp.linux_seat import LinuxSeat
-from neutrino_agent.rdp.seat import seat_for
-from neutrino_agent.rdp.windows_seat import WindowsSeat
+from neutrino_agent.modules.remote_desktop.rdp.darwin_seat import DarwinSeat
+from neutrino_agent.modules.remote_desktop.rdp.host import RdpShareHost
+from neutrino_agent.modules.remote_desktop.rdp.linux_seat import LinuxSeat
+from neutrino_agent.modules.remote_desktop.rdp.seat import seat_for
+from neutrino_agent.modules.remote_desktop.rdp.windows_seat import WindowsSeat
 from neutrino_agent.platforms.darwin import DarwinPlatform
 from neutrino_agent.platforms.linux import LinuxPlatform
 from neutrino_agent.platforms.windows import WindowsPlatform

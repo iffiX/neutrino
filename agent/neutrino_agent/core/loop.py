@@ -71,7 +71,7 @@ from neutrino_agent.exceptions import (
 )
 from neutrino_agent.platforms.detect import detect_platform
 from neutrino_agent.modules.remote_desktop.constants import REMOTE_DESKTOP_NAME
-from neutrino_agent.rdp.host import RdpShareHost
+from neutrino_agent.modules.remote_desktop.rdp.host import RdpShareHost
 from neutrino_agent.streams import (
     STREAM_KIND_CONNECT,
     STREAM_KIND_EXEC,

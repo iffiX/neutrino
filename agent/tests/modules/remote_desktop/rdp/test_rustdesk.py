@@ -11,12 +11,12 @@ import os
 import pytest
 
 from neutrino_agent.exceptions import InstallError
-from neutrino_agent.modules import rustdesk
+from neutrino_agent.modules.remote_desktop.rdp import rustdesk
 from neutrino_agent.modules.remote_desktop.constants import (
     REMOTE_DESKTOP_DIRECT_PORT,
     REMOTE_DESKTOP_OPTIONS,
 )
-from neutrino_agent.modules.rustdesk import (
+from neutrino_agent.modules.remote_desktop.rdp.rustdesk import (
     config_paths,
     read_password,
     render_config,

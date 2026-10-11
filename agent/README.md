@@ -106,9 +106,8 @@ alone, observed and reported all the same.
 | `neutrino_agent/cli/`          | The `nagent` subcommands, one file each, and the wording of every code a surface prints                   |
 | `neutrino_agent/core/`         | The binding, the socket session, the commands, the module engine and the desired state the engine applies |
 | `neutrino_agent/streams/`      | One handler per stream kind, each on a thread of its own                                                  |
-| `neutrino_agent/modules/`      | One runner per module: Samba, Gitea, Podman, ZFS, plus the package install and removal every runner uses  |
+| `neutrino_agent/modules/`      | One runner per module, `shared/` for what every runner uses, and the desktop share under `remote_desktop/rdp/`      |
 | `neutrino_agent/platforms/`    | One class per platform behind one contract; `linux.py` is the only implementation                         |
-| `neutrino_agent/rdp/`          | The desktop share and what it declares upward                                                             |
 | `neutrino_agent/control/`      | The root-only Unix socket the running agent serves, and the client side `nagent` uses                     |
 | `neutrino_agent/constants.py`  | Every fixed value of the protocol and the paths                                                           |
 | `neutrino_agent/exceptions.py` | The package's own exception kinds                                                                         |

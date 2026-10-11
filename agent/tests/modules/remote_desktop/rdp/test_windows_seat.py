@@ -9,8 +9,8 @@ Windows screen has nothing for a peer to wait on.
 import ctypes
 import subprocess
 
-from neutrino_agent.rdp import windows_seat as seat_module
-from neutrino_agent.rdp.windows_seat import WindowsSeat
+from neutrino_agent.modules.remote_desktop.rdp import windows_seat as seat_module
+from neutrino_agent.modules.remote_desktop.rdp.windows_seat import WindowsSeat
 
 
 class FakeKernel32:

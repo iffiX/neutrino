@@ -6,9 +6,9 @@ would wait on at a seated screen, and asks the seated person for what
 RustDesk needs granted there. Each platform has its own.
 """
 
-from neutrino_agent.rdp.darwin_seat import DarwinSeat
-from neutrino_agent.rdp.linux_seat import LinuxSeat
-from neutrino_agent.rdp.windows_seat import WindowsSeat
+from neutrino_agent.modules.remote_desktop.rdp.darwin_seat import DarwinSeat
+from neutrino_agent.modules.remote_desktop.rdp.linux_seat import LinuxSeat
+from neutrino_agent.modules.remote_desktop.rdp.windows_seat import WindowsSeat
 
 
 def seat_for(os_name: str):

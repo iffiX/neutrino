@@ -4,7 +4,7 @@ Windows joins an address to its port with a colon and a Mac with a dot; a
 listening socket and a closing one are not peers.
 """
 
-from neutrino_agent.rdp.netstat import established_count
+from neutrino_agent.modules.remote_desktop.rdp.netstat import established_count
 
 
 def test_windows_rows_join_the_port_with_a_colon():

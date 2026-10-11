@@ -21,7 +21,7 @@ the module.
 
 Who is at the screen, how many peers are connected, and what a peer would
 wait on are each platform's own, read through the seat
-(:func:`~neutrino_agent.rdp.seat.seat_for`).
+(:func:`~neutrino_agent.modules.remote_desktop.rdp.seat.seat_for`).
 
 Not pure: writes RustDesk's settings, drives its registration through the
 applier, and reads the socket table.
@@ -44,7 +44,7 @@ from neutrino_agent.exceptions import (
     ModuleApplyError,
     PlatformUnsupportedError,
 )
-from neutrino_agent.modules import rustdesk
+from neutrino_agent.modules.remote_desktop.rdp import rustdesk
 from neutrino_agent.modules.remote_desktop.constants import (
     REMOTE_DESKTOP_DIR_NAME,
     REMOTE_DESKTOP_DIRECT_PORT,
@@ -63,7 +63,7 @@ from neutrino_agent.modules.remote_desktop.records import (
     write_json,
 )
 from neutrino_agent.modules.shared.subprocess_run import command_detail
-from neutrino_agent.rdp.constants import (
+from neutrino_agent.modules.remote_desktop.rdp.constants import (
     RDP_ATTENTION_NOBODY_SEATED,
     RDP_ATTENTION_TTL_S,
     RDP_GREETER_ACCOUNTS,
@@ -72,7 +72,7 @@ from neutrino_agent.rdp.constants import (
     RDP_STATE_SHARING,
     RDP_STATE_STARTING,
 )
-from neutrino_agent.rdp.seat import seat_for
+from neutrino_agent.modules.remote_desktop.rdp.seat import seat_for
 
 # Where a declared share came from: the switch, or the record an old
 # ``nagent rdp start`` left, the only share a hub adopts.
