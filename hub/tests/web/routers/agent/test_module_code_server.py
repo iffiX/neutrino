@@ -169,11 +169,11 @@ def test_a_token_is_the_instances_secret_signing_an_expiry_and_a_nonce(api):
         "instances"
     ][0]["secret"]
 
-    first = store.code_server_token(DEVICE, "alice", now=1_800_000_000)
-    second = store.code_server_token(DEVICE, "alice", now=1_800_000_000)
+    first = store.instance_token(DEVICE, "code_server", "alice", now=1_800_000_000)
+    second = store.instance_token(DEVICE, "code_server", "alice", now=1_800_000_000)
 
     raw = base64.urlsafe_b64decode(first + "=" * (-len(first) % 4))
     assert int.from_bytes(raw[:8], "big") == 1_800_000_060
     assert raw[24:] == hmac.new(secret.encode(), raw[:24], hashlib.sha256).digest()
     assert first != second
-    assert store.code_server_token(DEVICE, "nobody") == ""
+    assert store.instance_token(DEVICE, "code_server", "nobody") == ""

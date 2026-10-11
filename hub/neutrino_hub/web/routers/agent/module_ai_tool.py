@@ -2,9 +2,9 @@
 
 The setting is the Modules page's Global configuration, one per machine,
 kept in the device's ``ai_tools.json``. It acts on the accounts with an
-instance in the machine's VS Code, CloudCLI or code-server configuration,
-whose tools the agent points at the gateway with cc-switch run as each
-account. Turning it on mints the device's gateway key and turning it off
+instance in the machine's configuration of a program run as an account, the
+description table's rows of that kind, whose tools the agent points at the
+gateway with cc-switch run as each account. Turning it on mints the device's gateway key and turning it off
 revokes it; every write pushes the device's state, and the machine's report
 says what each account came to.
 """

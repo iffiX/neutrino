@@ -11,8 +11,8 @@ answer, under one hash the agent compares against. The document is the
 ``{want, config, install, uninstall}`` per module ``modules.json`` names
 and has not settled, ``desktop`` with the seat password, and ``ai_tools``,
 the machine's AI tools setting from ``ai_tools.json`` with the gateway's
-address and the device's key, for the accounts the VS Code, CloudCLI and
-code-server instances name.
+address and the device's key, for the accounts the instances of the
+programs run as an account name.
 
 A module the state does not mention is left as it is, and the agent
 reports it all the same. A module the person uninstalled is mentioned
@@ -60,38 +60,28 @@ from neutrino_hub.modules.devices.manifests import (
 from neutrino_hub.modules.devices.constants import (
     DEVICE_AI_SWITCHER_NAME,
     DEVICE_AGENT_MODULES,
-    DEVICE_AI_TOOL_MODULES,
     DEVICE_AI_TOOLS_NAME,
     DEVICE_REMOTE_DESKTOP_MODULE,
     DEVICE_TERMINAL_ACCOUNT_OS,
     DEVICE_TERMINAL_MODULE,
     DEVICE_RETRY_MARK_KEY,
-    DEVICE_CLOUDCLI_LOGIN_KEY,
-    DEVICE_CLOUDCLI_MODULE,
     DEVICE_CLOUDCLI_NPM_REGISTRIES,
-    DEVICE_CLOUDCLI_PASSWORD_AAD,
-    DEVICE_CLOUDCLI_PASSWORD_KEY,
-    DEVICE_CLOUDCLI_SECRET_AAD,
-    DEVICE_CLOUDCLI_SECRET_BYTES,
-    DEVICE_CLOUDCLI_SECRET_KEY,
-    DEVICE_CODE_SERVER_MODULE,
-    DEVICE_CODE_SERVER_SECRET_AAD,
-    DEVICE_CODE_SERVER_SECRET_BYTES,
-    DEVICE_CODE_SERVER_SECRET_KEY,
     DEVICE_FORWARDER_TOKEN_EXPIRY_BYTES,
     DEVICE_FORWARDER_TOKEN_LIFETIME_S,
     DEVICE_FORWARDER_TOKEN_NONCE_BYTES,
     DEVICE_GITEA_SECRET_NAMES,
     DEVICE_GITEA_SECRETS_FILE,
+    DEVICE_INSTANCE_LOGIN_KEY,
     DEVICE_MODULES_FILE,
     DEVICE_PACKAGES_DIR_NAME,
     DEVICE_RDP_FILE,
     DEVICE_RDP_SEAT_PASSWORD_AAD,
     DEVICE_RDP_SEAT_PASSWORD_CHARS,
-    DEVICE_VSCODE_LOGIN_KEY,
-    DEVICE_VSCODE_MODULE,
-    DEVICE_VSCODE_TOKEN_AAD,
-    DEVICE_VSCODE_TOKEN_KEY,
+)
+from neutrino_hub.modules.devices.module_table import (
+    DeviceModuleRow,
+    account_program_names,
+    module_row,
 )
 from neutrino_hub.utils.constants import UTILS_CONFIG_DIR
 from neutrino_hub.utils.json_file import (
@@ -101,10 +91,11 @@ from neutrino_hub.utils.json_file import (
 )
 
 DEVICES_DIR_NAME = "devices"
-# How many random bytes a VS Code connection token is made of.
-VSCODE_TOKEN_BYTES = 24
 # The system whose instances start as their account only with its password.
 VSCODE_PASSWORD_OS = "windows"
+# A manifest naming this is an npm install: the state carries the registry
+# of the hub's edition and the environment the manifest names for it.
+NPM_ENVIRONMENT_KEY = "npm_environment"
 
 
 def state_hash(desired: dict) -> str:
@@ -120,59 +111,34 @@ def state_hash(desired: dict) -> str:
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
-def vscode_agent_config(stored: dict, platform: dict) -> dict:
-    """What the agent is sent for VS Code.
-
-    Args:
-        stored: The module's file: the instances, each with its sealed token
-            and the login it runs as.
-        platform: The tuple the agent reported; only a Windows machine is
-            sent a password.
-
-    Returns:
-        ``{address, instances: [{account, port, token, password}]}``, the
-        address empty so the instances listen on every address, the token
-        opened and the password taken from the instance's login.
-    """
-    is_windows = platform.get("os") == VSCODE_PASSWORD_OS
-    instances = []
-    for instance in stored.get("instances") or []:
-        if not isinstance(instance, dict):
-            continue
-        sent = {
-            "account": str(instance.get("account", "") or ""),
-            "port": instance.get("port", 0),
-            "token": _unsealed_text(
-                instance.get(DEVICE_VSCODE_TOKEN_KEY), DEVICE_VSCODE_TOKEN_AAD
-            ),
-        }
-        login_id = str(instance.get(DEVICE_VSCODE_LOGIN_KEY, "") or "")
-        if is_windows and login_id:
-            sent["password"] = _login_password(login_id)
-        instances.append(sent)
-    return {"address": "", "instances": instances}
-
-
-def cloudcli_agent_config(
-    stored: dict, platform: dict, *, edition: str = EDITION
+def instances_agent_config(
+    row: DeviceModuleRow, stored: dict, platform: dict, *, edition: str = EDITION
 ) -> dict:
-    """What the agent is sent for CloudCLI.
+    """What the agent is sent for a program run as a person's account.
 
     Args:
-        stored: The module's file: the instances, each with its two sealed
-            secrets and the login it runs as.
+        row: The module's row in the description table.
+        stored: The module's file: the instances, each with its sealed
+            fields and, where the row names one, the login it runs as.
         platform: The tuple the agent reported; only a Windows machine is
             sent a password.
-        edition: The hub's edition, whose npm registry the agent installs
-            CloudCLI from.
+        edition: The hub's edition, whose npm registry a module installed
+            by npm is sent.
 
     Returns:
-        ``{npm_registry, npm_environment, instances: [{account, port,
-        web_password, token_secret, password}]}``,
-        ``npm_environment`` being what the manifest names for the edition,
-        both secrets opened and the password taken from the instance's
-        login.
+        The row's ``config_head``, then for a module whose manifest names
+        ``npm_environment`` the ``npm_registry`` and ``npm_environment`` of
+        the edition, then ``instances``, each ``{account, port}`` with every
+        sealed field opened under its opened key and, on Windows, the
+        ``password`` of the instance's login.
     """
+    config = dict(row.config_head)
+    manifest = load_module_manifests().get(row.name) or {}
+    if NPM_ENVIRONMENT_KEY in manifest:
+        config["npm_registry"] = DEVICE_CLOUDCLI_NPM_REGISTRIES[edition]
+        config[NPM_ENVIRONMENT_KEY] = dict(
+            (manifest.get(NPM_ENVIRONMENT_KEY) or {}).get(edition, {})
+        )
     is_windows = platform.get("os") == VSCODE_PASSWORD_OS
     instances = []
     for instance in stored.get("instances") or []:
@@ -181,27 +147,18 @@ def cloudcli_agent_config(
         sent = {
             "account": str(instance.get("account", "") or ""),
             "port": instance.get("port", 0),
-            "web_password": _unsealed_text(
-                instance.get(DEVICE_CLOUDCLI_PASSWORD_KEY),
-                DEVICE_CLOUDCLI_PASSWORD_AAD,
-            ),
-            "token_secret": _unsealed_text(
-                instance.get(DEVICE_CLOUDCLI_SECRET_KEY), DEVICE_CLOUDCLI_SECRET_AAD
-            ),
         }
-        login_id = str(instance.get(DEVICE_CLOUDCLI_LOGIN_KEY, "") or "")
-        if is_windows and login_id:
-            sent["password"] = _login_password(login_id)
+        for sealed in row.sealed_fields:
+            sent[sealed.opened_key] = _unsealed_text(
+                instance.get(sealed.key), sealed.aad
+            )
+        if row.is_login_named:
+            login_id = str(instance.get(DEVICE_INSTANCE_LOGIN_KEY, "") or "")
+            if is_windows and login_id:
+                sent["password"] = _login_password(login_id)
         instances.append(sent)
-    return {
-        "npm_registry": DEVICE_CLOUDCLI_NPM_REGISTRIES[edition],
-        "npm_environment": dict(
-            (load_module_manifests().get(DEVICE_CLOUDCLI_MODULE) or {})
-            .get("npm_environment", {})
-            .get(edition, {})
-        ),
-        "instances": instances,
-    }
+    config["instances"] = instances
+    return config
 
 
 def ai_tools_agent_config(
@@ -278,33 +235,6 @@ def terminal_agent_config(stored: dict, platform: dict) -> dict:
         "account": (str(stored.get("account", "") or "") if is_account_sent else ""),
         "shell_path": str(stored.get("shell_path", "") or ""),
     }
-
-
-def code_server_agent_config(stored: dict) -> dict:
-    """What the agent is sent for code-server.
-
-    Args:
-        stored: The module's file: the instances, each with its sealed
-            token secret.
-
-    Returns:
-        ``{instances: [{account, port, secret}]}``, each secret opened.
-    """
-    instances = []
-    for instance in stored.get("instances") or []:
-        if not isinstance(instance, dict):
-            continue
-        instances.append(
-            {
-                "account": str(instance.get("account", "") or ""),
-                "port": instance.get("port", 0),
-                "secret": _unsealed_text(
-                    instance.get(DEVICE_CODE_SERVER_SECRET_KEY),
-                    DEVICE_CODE_SERVER_SECRET_AAD,
-                ),
-            }
-        )
-    return {"instances": instances}
 
 
 def forwarder_token(secret: str, *, expiry: int, nonce: bytes) -> str:
@@ -547,163 +477,70 @@ class DesiredStateStore:
         with CONFIG_WRITE_LOCK:
             self._write_seat_password(key)
 
-    def vscode_token(self, key: str, account: str) -> str:
-        """The connection token one VS Code instance answers to.
+    def sealed_instance_field(
+        self, key: str, module: str, account: str, field: str
+    ) -> dict:
+        """One instance's sealed field, made the first time it is asked for.
 
         Args:
             key: The device key.
+            module: The module, a program run as a person's account.
             account: The account the instance runs as.
+            field: The key the seal is stored under, one the module's row
+                names.
 
         Returns:
-            The token, empty when the device has no such instance, when the
-            vault is locked, or when the seal does not open under this box's
-            data key.
-        """
-        for instance in self.read(key, DEVICE_VSCODE_MODULE).get("instances") or []:
-            if isinstance(instance, dict) and instance.get("account") == account:
-                return _unsealed_text(
-                    instance.get(DEVICE_VSCODE_TOKEN_KEY), DEVICE_VSCODE_TOKEN_AAD
-                )
-        return ""
-
-    def sealed_vscode_token(self, key: str, account: str) -> dict:
-        """One instance's token seal, made the first time it is asked for.
-
-        Args:
-            key: The device key.
-            account: The account the instance runs as.
-
-        Returns:
-            The seal ``vscode.json`` holds for that account's instance, or a
-            fresh one to store with it.
-
-        Raises:
-            VaultLockedError: If there is no data key to seal a fresh one
-                under.
-        """
-        for instance in self.read(key, DEVICE_VSCODE_MODULE).get("instances") or []:
-            if not isinstance(instance, dict) or instance.get("account") != account:
-                continue
-            held = instance.get(DEVICE_VSCODE_TOKEN_KEY)
-            if isinstance(held, dict) and held:
-                return dict(held)
-        return seal_bytes(
-            secrets.token_urlsafe(VSCODE_TOKEN_BYTES).encode(),
-            DEVICE_VSCODE_TOKEN_AAD,
-        )
-
-    def sealed_cloudcli_secret(self, key: str, account: str, field: str) -> dict:
-        """One CloudCLI instance's password or token secret, made the first time.
-
-        Args:
-            key: The device key.
-            account: The account the instance runs as.
-            field: ``web_password_sealed`` or ``token_secret_sealed``.
-
-        Returns:
-            The seal ``cloudcli.json`` holds for that account's instance, or
+            The seal the module's file holds for that account's instance, or
             a fresh one to store with it.
 
         Raises:
-            KeyError: For a field that is neither.
+            KeyError: For a module the table does not hold, or a field its
+                row does not seal.
             VaultLockedError: If there is no data key to seal a fresh one
                 under.
         """
-        aad = {
-            DEVICE_CLOUDCLI_PASSWORD_KEY: DEVICE_CLOUDCLI_PASSWORD_AAD,
-            DEVICE_CLOUDCLI_SECRET_KEY: DEVICE_CLOUDCLI_SECRET_AAD,
-        }[field]
-        for instance in self.read(key, DEVICE_CLOUDCLI_MODULE).get("instances") or []:
+        sealed = module_row(module).sealed_field(field)
+        for instance in self.read(key, module).get("instances") or []:
             if not isinstance(instance, dict) or instance.get("account") != account:
                 continue
             held = instance.get(field)
             if isinstance(held, dict) and held:
                 return dict(held)
         return seal_bytes(
-            secrets.token_urlsafe(DEVICE_CLOUDCLI_SECRET_BYTES).encode(), aad
+            secrets.token_urlsafe(sealed.secret_bytes).encode(), sealed.aad
         )
 
-    def cloudcli_token(
-        self, key: str, account: str, *, now: "float | None" = None
+    def instance_token(
+        self, key: str, module: str, account: str, *, now: "float | None" = None
     ) -> str:
-        """A fresh token for one CloudCLI instance, good for one open.
+        """The token a client opens one instance with, as the row says.
 
         Args:
             key: The device key.
+            module: The module, a program run as a person's account.
             account: The account the instance runs as.
             now: Seconds since the epoch; None is the clock.
 
         Returns:
-            The token, its expiry 60 seconds ahead; empty when the device
-            has no such instance, when the vault is locked, or when the
-            secret does not open under this box's data key.
-        """
-        for instance in self.read(key, DEVICE_CLOUDCLI_MODULE).get("instances") or []:
-            if not isinstance(instance, dict) or instance.get("account") != account:
-                continue
-            secret = _unsealed_text(
-                instance.get(DEVICE_CLOUDCLI_SECRET_KEY), DEVICE_CLOUDCLI_SECRET_AAD
-            )
-            if not secret:
-                return ""
-            return _fresh_token(secret, now)
-        return ""
-
-    def sealed_code_server_secret(self, key: str, account: str) -> dict:
-        """One code-server instance's token secret, made the first time.
-
-        Args:
-            key: The device key.
-            account: The account the instance runs as.
-
-        Returns:
-            The seal ``code_server.json`` holds for that account's instance,
-            or a fresh one to store with it.
+            For a row whose token is minted, a fresh token from the
+            instance's secret, its expiry 60 seconds ahead; otherwise the
+            opened value of the row's token field. Empty when the device has
+            no such instance, when the vault is locked, or when the seal
+            does not open under this box's data key.
 
         Raises:
-            VaultLockedError: If there is no data key to seal a fresh one
-                under.
+            KeyError: For a module the table does not hold, or one that
+                hands no token.
         """
-        for instance in (
-            self.read(key, DEVICE_CODE_SERVER_MODULE).get("instances") or []
-        ):
+        row = module_row(module)
+        sealed = row.sealed_field(row.token_field)
+        for instance in self.read(key, module).get("instances") or []:
             if not isinstance(instance, dict) or instance.get("account") != account:
                 continue
-            held = instance.get(DEVICE_CODE_SERVER_SECRET_KEY)
-            if isinstance(held, dict) and held:
-                return dict(held)
-        return seal_bytes(
-            secrets.token_urlsafe(DEVICE_CODE_SERVER_SECRET_BYTES).encode(),
-            DEVICE_CODE_SERVER_SECRET_AAD,
-        )
-
-    def code_server_token(
-        self, key: str, account: str, *, now: "float | None" = None
-    ) -> str:
-        """A fresh token for one code-server instance, good for one open.
-
-        Args:
-            key: The device key.
-            account: The account the instance runs as.
-            now: Seconds since the epoch; None is the clock.
-
-        Returns:
-            The token, its expiry 60 seconds ahead; empty when the device
-            has no such instance, when the vault is locked, or when the
-            secret does not open under this box's data key.
-        """
-        for instance in (
-            self.read(key, DEVICE_CODE_SERVER_MODULE).get("instances") or []
-        ):
-            if not isinstance(instance, dict) or instance.get("account") != account:
-                continue
-            secret = _unsealed_text(
-                instance.get(DEVICE_CODE_SERVER_SECRET_KEY),
-                DEVICE_CODE_SERVER_SECRET_AAD,
-            )
-            if not secret:
-                return ""
-            return _fresh_token(secret, now)
+            opened = _unsealed_text(instance.get(sealed.key), sealed.aad)
+            if not opened or not row.is_token_minted:
+                return opened
+            return _fresh_token(opened, now)
         return ""
 
     def ai_tools(self, key: str) -> dict:
@@ -756,15 +593,15 @@ class DesiredStateStore:
 
         Returns:
             ``(account, login_id, modules)`` for every account with an
-            instance in a VS Code, CloudCLI or code-server configuration
+            instance in the configuration of a program run as an account
             whose module is asked for and not withdrawn, sorted by account;
-            ``login_id`` the first instance's in that module order, empty
+            ``login_id`` the first instance's in the table's order, empty
             where none names one, and ``modules`` the modules it has an
             instance in.
         """
         wanted = self.modules(key)
         found: dict = {}
-        for module in DEVICE_AI_TOOL_MODULES:
+        for module in account_program_names():
             entry = wanted.get(module)
             if entry is None or entry["want"] == CHANNEL_MODULE_STATE_ABSENT:
                 continue
@@ -777,7 +614,9 @@ class DesiredStateStore:
                 login_id, modules = found.get(account, ("", []))
                 if module not in modules:
                     modules = [*modules, module]
-                login_id = login_id or str(instance.get("login_id", "") or "")
+                login_id = login_id or str(
+                    instance.get(DEVICE_INSTANCE_LOGIN_KEY, "") or ""
+                )
                 found[account] = (login_id, modules)
         return [
             (account, found[account][0], found[account][1]) for account in sorted(found)
@@ -861,8 +700,9 @@ class DesiredStateStore:
 
         Returns:
             The configuration: Samba with the networks its shares answer,
-            Gitea with its address and the secrets it signs with, and the
-            modules whose tokens and logins are sealed with them opened.
+            Gitea with its address and the secrets it signs with, and a
+            program run as an account with its sealed fields and logins
+            opened, as its row says.
 
         Raises:
             VaultLockedError: When a sealed token or login cannot be opened.
@@ -873,12 +713,8 @@ class DesiredStateStore:
         elif name == "gitea":
             config["address"] = address
             config["secrets"] = self.gitea_secrets(key)
-        elif name == DEVICE_VSCODE_MODULE:
-            config = vscode_agent_config(config, platform)
-        elif name == DEVICE_CODE_SERVER_MODULE:
-            config = code_server_agent_config(config)
-        elif name == DEVICE_CLOUDCLI_MODULE:
-            config = cloudcli_agent_config(config, platform)
+        elif name in account_program_names():
+            config = instances_agent_config(module_row(name), config, platform)
         elif name == DEVICE_TERMINAL_MODULE:
             config = terminal_agent_config(config, platform)
         return config

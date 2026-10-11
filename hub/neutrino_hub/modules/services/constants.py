@@ -182,23 +182,10 @@ SERVICES_GITEA_TITLE = "Gitea"
 SERVICES_AI_TITLE = "AI gateway"
 SERVICES_AI_ID = "ai"
 SERVICES_GITEA_ID = "gitea"
-# One web entry per VS Code instance, opened by a client through a port
-# forwarded to its own loopback, with the token the ``service`` stream hands.
-SERVICES_VSCODE_ID = "vscode"
-SERVICES_VSCODE_TITLE = "VS Code ({account})"
-SERVICES_VSCODE_DESCRIPTION = "published by the vscode module on {host} for {account}"
-# One web entry per CloudCLI instance, opened by a client through a port
-# forwarded to its own loopback, with a token the ``service`` stream mints
-# for one open.
-SERVICES_CLOUDCLI_ID = "cloudcli"
-SERVICES_CLOUDCLI_TITLE = "CloudCLI ({account})"
-SERVICES_CLOUDCLI_DESCRIPTION = (
-    "published by the cloudcli module on {host} for {account}"
-)
-# One web entry per code-server instance, opened by a client through its
-# forward with a token the ``service`` stream mints for one open.
-SERVICES_CODE_SERVER_ID = "code_server"
-SERVICES_CODE_SERVER_TITLE = "code-server ({account})"
-SERVICES_CODE_SERVER_DESCRIPTION = (
-    "published by the code_server module on {host} for {account}"
+# One web entry per instance of a program run as a person's account, its id
+# ``<module>_<device id>_<account>`` and its title the description table's,
+# opened by a client through its own forward with the token the ``service``
+# stream hands.
+SERVICES_INSTANCE_DESCRIPTION = (
+    "published by the {module} module on {host} for {account}"
 )

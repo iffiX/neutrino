@@ -500,3 +500,265 @@ def test_the_retry_marks_keep_one_per_module_and_go_with_the_device(tmp_path):
     marks.forget(DEVICE)
     assert marks.marks(DEVICE) == {}
     assert set(marks.marks("other")) == {"samba"}
+
+
+# --- the compositions the description table drives, pinned to the code before it ---
+
+# The platform tuples the fixtures were captured under.
+PINNED_PLATFORMS = {
+    "linux": {"os": "linux", "family": "debian", "arch": "amd64", "version": "2.36"},
+    "windows": {"os": "windows", "family": "", "arch": "amd64", "version": "26100"},
+    "darwin": {"os": "darwin", "family": "", "arch": "arm64", "version": "15.3.1"},
+}
+# Each module's file as it was handed to the composition: seals stand in as
+# ``{"v": ...}`` and open to ``<v>:<aad>``, a login's password to ``pw-<id>``.
+PINNED_STORED = {
+    "vscode": {
+        "terms_accepted_at": "2026-10-05T08:00:00+00:00",
+        "instances": [
+            {
+                "account": "alice",
+                "port": 8000,
+                "login_id": "l-a",
+                "token_sealed": {"v": "tok-a"},
+            },
+            {
+                "account": "bob",
+                "port": 8001,
+                "login_id": "",
+                "token_sealed": {"v": "tok-b"},
+            },
+            {"account": "carol", "port": 8002},
+            "junk",
+        ],
+    },
+    "cloudcli": {
+        "instances": [
+            {
+                "account": "alice",
+                "port": 3001,
+                "login_id": "l-a",
+                "web_password_sealed": {"v": "pw-a"},
+                "token_secret_sealed": {"v": "sec-a"},
+            },
+            {
+                "account": "bob",
+                "port": 3002,
+                "login_id": "l-b",
+                "token_secret_sealed": {},
+            },
+            {"account": "carol", "port": 3003},
+            7,
+        ]
+    },
+    "code_server": {
+        "instances": [
+            {"account": "alice", "port": 8443, "secret_sealed": {"v": "sec-a"}},
+            {"account": "bob", "port": 8444, "login_id": "l-b"},
+            None,
+        ]
+    },
+}
+# What ``vscode_agent_config``, ``code_server_agent_config`` and
+# ``cloudcli_agent_config`` answered for those files before the table drove
+# one composition, keyed ``<module>/<platform>[/<edition>]``.
+PINNED_CONFIGS = {
+    "cloudcli/darwin/cn": {
+        "instances": [
+            {
+                "account": "alice",
+                "port": 3001,
+                "token_secret": "sec-a:device_cloudcli:token_secret",  # scan: allow
+                "web_password": "pw-a:device_cloudcli:web_password",  # scan: allow
+            },
+            {"account": "bob", "port": 3002, "token_secret": "", "web_password": ""},
+            {"account": "carol", "port": 3003, "token_secret": "", "web_password": ""},
+        ],
+        "npm_environment": {
+            "npm_config_better_sqlite3_binary_host": "https://registry.npmmirror.com/-/binary/better-sqlite3"
+        },
+        "npm_registry": "https://registry.npmmirror.com",
+    },
+    "cloudcli/darwin/intl": {
+        "instances": [
+            {
+                "account": "alice",
+                "port": 3001,
+                "token_secret": "sec-a:device_cloudcli:token_secret",
+                "web_password": "pw-a:device_cloudcli:web_password",
+            },
+            {"account": "bob", "port": 3002, "token_secret": "", "web_password": ""},
+            {"account": "carol", "port": 3003, "token_secret": "", "web_password": ""},
+        ],
+        "npm_environment": {},
+        "npm_registry": "https://registry.npmjs.org",
+    },
+    "cloudcli/linux/cn": {
+        "instances": [
+            {
+                "account": "alice",
+                "port": 3001,
+                "token_secret": "sec-a:device_cloudcli:token_secret",
+                "web_password": "pw-a:device_cloudcli:web_password",
+            },
+            {"account": "bob", "port": 3002, "token_secret": "", "web_password": ""},
+            {"account": "carol", "port": 3003, "token_secret": "", "web_password": ""},
+        ],
+        "npm_environment": {
+            "npm_config_better_sqlite3_binary_host": "https://registry.npmmirror.com/-/binary/better-sqlite3"
+        },
+        "npm_registry": "https://registry.npmmirror.com",
+    },
+    "cloudcli/linux/intl": {
+        "instances": [
+            {
+                "account": "alice",
+                "port": 3001,
+                "token_secret": "sec-a:device_cloudcli:token_secret",
+                "web_password": "pw-a:device_cloudcli:web_password",
+            },
+            {"account": "bob", "port": 3002, "token_secret": "", "web_password": ""},
+            {"account": "carol", "port": 3003, "token_secret": "", "web_password": ""},
+        ],
+        "npm_environment": {},
+        "npm_registry": "https://registry.npmjs.org",
+    },
+    "cloudcli/windows/cn": {
+        "instances": [
+            {
+                "account": "alice",
+                "password": "pw-l-a",
+                "port": 3001,
+                "token_secret": "sec-a:device_cloudcli:token_secret",
+                "web_password": "pw-a:device_cloudcli:web_password",
+            },
+            {
+                "account": "bob",
+                "password": "pw-l-b",
+                "port": 3002,
+                "token_secret": "",
+                "web_password": "",
+            },
+            {"account": "carol", "port": 3003, "token_secret": "", "web_password": ""},
+        ],
+        "npm_environment": {
+            "npm_config_better_sqlite3_binary_host": "https://registry.npmmirror.com/-/binary/better-sqlite3"
+        },
+        "npm_registry": "https://registry.npmmirror.com",
+    },
+    "cloudcli/windows/intl": {
+        "instances": [
+            {
+                "account": "alice",
+                "password": "pw-l-a",
+                "port": 3001,
+                "token_secret": "sec-a:device_cloudcli:token_secret",
+                "web_password": "pw-a:device_cloudcli:web_password",
+            },
+            {
+                "account": "bob",
+                "password": "pw-l-b",
+                "port": 3002,
+                "token_secret": "",
+                "web_password": "",
+            },
+            {"account": "carol", "port": 3003, "token_secret": "", "web_password": ""},
+        ],
+        "npm_environment": {},
+        "npm_registry": "https://registry.npmjs.org",
+    },
+    "code_server/darwin": {
+        "instances": [
+            {
+                "account": "alice",
+                "port": 8443,
+                "secret": "sec-a:device_code_server:secret",  # scan: allow
+            },
+            {"account": "bob", "port": 8444, "secret": ""},
+        ]
+    },
+    "code_server/linux": {
+        "instances": [
+            {
+                "account": "alice",
+                "port": 8443,
+                "secret": "sec-a:device_code_server:secret",
+            },
+            {"account": "bob", "port": 8444, "secret": ""},
+        ]
+    },
+    "code_server/windows": {
+        "instances": [
+            {
+                "account": "alice",
+                "port": 8443,
+                "secret": "sec-a:device_code_server:secret",
+            },
+            {"account": "bob", "port": 8444, "secret": ""},
+        ]
+    },
+    "vscode/darwin": {
+        "address": "",
+        "instances": [
+            {"account": "alice", "port": 8000, "token": "tok-a:device_vscode:token"},
+            {"account": "bob", "port": 8001, "token": "tok-b:device_vscode:token"},
+            {"account": "carol", "port": 8002, "token": ""},
+        ],
+    },
+    "vscode/linux": {
+        "address": "",
+        "instances": [
+            {"account": "alice", "port": 8000, "token": "tok-a:device_vscode:token"},
+            {"account": "bob", "port": 8001, "token": "tok-b:device_vscode:token"},
+            {"account": "carol", "port": 8002, "token": ""},
+        ],
+    },
+    "vscode/windows": {
+        "address": "",
+        "instances": [
+            {
+                "account": "alice",
+                "password": "pw-l-a",
+                "port": 8000,
+                "token": "tok-a:device_vscode:token",
+            },
+            {"account": "bob", "port": 8001, "token": "tok-b:device_vscode:token"},
+            {"account": "carol", "port": 8002, "token": ""},
+        ],
+    },
+}
+
+
+def _opened_for_pin(sealed, aad: bytes) -> str:
+    if not isinstance(sealed, dict) or not sealed:
+        return ""
+    return f"{sealed['v']}:{aad.decode()}"
+
+
+def _password_for_pin(login_id: str) -> str:
+    return f"pw-{login_id}"
+
+
+@pytest.mark.parametrize("pinned", sorted(PINNED_CONFIGS))
+def test_the_one_composition_answers_byte_for_byte_what_the_three_did(
+    pinned, monkeypatch
+):
+    from neutrino_hub.modules.devices.desired_state import instances_agent_config
+    from neutrino_hub.modules.devices.module_table import module_row
+
+    monkeypatch.setattr(desired_state_module, "_unsealed_text", _opened_for_pin)
+    monkeypatch.setattr(desired_state_module, "_login_password", _password_for_pin)
+    module, platform_name, *edition = pinned.split("/")
+    kwargs = {"edition": edition[0]} if edition else {}
+
+    composed = instances_agent_config(
+        module_row(module),
+        PINNED_STORED[module],
+        PINNED_PLATFORMS[platform_name],
+        **kwargs,
+    )
+
+    # The state hash is over the canonical JSON, which is what is compared.
+    assert json.dumps(composed, sort_keys=True) == json.dumps(
+        PINNED_CONFIGS[pinned], sort_keys=True
+    )

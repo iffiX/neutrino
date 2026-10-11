@@ -42,13 +42,11 @@ from neutrino_hub.modules.clients.permissions import (
 )
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.cliproxyapi.ops import load_config
+from neutrino_hub.modules.devices.module_table import account_program_rows
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.system.machine import machine_id
 from neutrino_hub.modules.services.collector import catalog_entries
 from neutrino_hub.modules.services.constants import (
-    SERVICES_DESCRIPTION_CLOUDCLI_MODULE,
-    SERVICES_DESCRIPTION_CODE_SERVER_MODULE,
-    SERVICES_DESCRIPTION_VSCODE_MODULE,
     SERVICES_PORT_PROTOCOLS,
     SERVICES_PROTOCOL_TCP,
     SERVICES_SAMBA_DEFAULT_PORT,
@@ -122,24 +120,11 @@ def service_material(runtime, client_id: str, entry_id: str) -> tuple:
         if credential is None:
             return VaultLockedError.code, {}
         return "", credential
-    if entry["description_code"] == SERVICES_DESCRIPTION_VSCODE_MODULE:
+    row = _instance_row(str(entry["description_code"] or ""))
+    if row is not None:
         device_id = str(raw.get("device_id") or "")
         account = str(entry["description_params"].get("account", "") or "")
-        token = runtime.desired_states.vscode_token(device_id, account)
-        if not token:
-            return VaultLockedError.code, {}
-        return "", {"token": token}
-    if entry["description_code"] == SERVICES_DESCRIPTION_CLOUDCLI_MODULE:
-        device_id = str(raw.get("device_id") or "")
-        account = str(entry["description_params"].get("account", "") or "")
-        token = runtime.desired_states.cloudcli_token(device_id, account)
-        if not token:
-            return VaultLockedError.code, {}
-        return "", {"token": token}
-    if entry["description_code"] == SERVICES_DESCRIPTION_CODE_SERVER_MODULE:
-        device_id = str(raw.get("device_id") or "")
-        account = str(entry["description_params"].get("account", "") or "")
-        token = runtime.desired_states.code_server_token(device_id, account)
+        token = runtime.desired_states.instance_token(device_id, row.name, account)
         if not token:
             return VaultLockedError.code, {}
         return "", {"token": token}
@@ -385,6 +370,14 @@ def _unresolved_entry(runtime, entry_id: str) -> dict:
         if entry["id"] == entry_id:
             return entry
     return {}
+
+
+def _instance_row(description_code: str):
+    """The row of the program run as an account whose entries carry a code."""
+    for row in account_program_rows():
+        if row.description_code == description_code:
+            return row
+    return None
 
 
 def _live_share(runtime, entry: dict):

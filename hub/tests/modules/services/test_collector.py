@@ -582,10 +582,9 @@ def test_each_vscode_instance_is_a_web_entry_opened_with_a_token():
         device_modules=[
             hosting(
                 vscode={
-                    "is_healthy": True,
                     "instances": [
-                        {"account": "alice", "port": 8000},
-                        {"account": "bob", "port": 8001},
+                        {"account": "alice", "port": 8000, "is_healthy": True},
+                        {"account": "bob", "port": 8001, "is_healthy": True},
                     ],
                 }
             )

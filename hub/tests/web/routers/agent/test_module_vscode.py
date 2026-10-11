@@ -131,15 +131,17 @@ def test_a_set_is_checked_stored_with_a_token_per_account_kept_and_pushed(
                 {
                     "account": "alice",
                     "port": 8000,
-                    "token": store.vscode_token(DEVICE, "alice"),
+                    "token": store.instance_token(DEVICE, "vscode", "alice"),
                 }
             ],
         },
     )
     assert stored(tmp_path)[0]["token_sealed"] == seal
     assert stored(tmp_path)[1]["token_sealed"] != seal
-    assert store.vscode_token(DEVICE, "alice") != store.vscode_token(DEVICE, "bob")
-    assert len(store.vscode_token(DEVICE, "alice")) >= 32
+    assert store.instance_token(DEVICE, "vscode", "alice") != store.instance_token(
+        DEVICE, "vscode", "bob"
+    )
+    assert len(store.instance_token(DEVICE, "vscode", "alice")) >= 32
     assert len(runtime.agent_sessions.pushes) == 2
 
 
@@ -212,7 +214,9 @@ def test_the_agent_checks_the_token_and_on_windows_the_password(
 
     assert answer.status_code == 200
     (checked,) = runtime.agent_sessions.validations[0][2]["instances"]
-    assert checked["token"] == DesiredStateStore().vscode_token(DEVICE, "hanha")
+    assert checked["token"] == DesiredStateStore().instance_token(
+        DEVICE, "vscode", "hanha"
+    )
     assert ("password" in checked) is has_password
     if has_password:
         assert checked["password"] == "pw-hanha"
@@ -243,7 +247,7 @@ def test_the_agent_is_sent_each_opened_token_and_on_windows_the_password(
     expected = {
         "account": "hanha",
         "port": 8000,
-        "token": store.vscode_token(DEVICE, "hanha"),
+        "token": store.instance_token(DEVICE, "vscode", "hanha"),
     }
     if has_password:
         expected["password"] = "pw-hanha"

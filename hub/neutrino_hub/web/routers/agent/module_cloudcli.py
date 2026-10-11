@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from neutrino_hub.modules.credentials.vault import SecretVault
 from neutrino_hub.modules.devices.constants import (
-    DEVICE_CLOUDCLI_LOGIN_KEY,
+    DEVICE_INSTANCE_LOGIN_KEY,
     DEVICE_CLOUDCLI_MODULE,
     DEVICE_CLOUDCLI_PASSWORD_KEY,
     DEVICE_CLOUDCLI_SECRET_KEY,
@@ -73,7 +73,7 @@ def device_view(
             CloudcliInstanceView(
                 account=account,
                 port=int(instance.get("port", 0)),
-                login_id=str(instance.get(DEVICE_CLOUDCLI_LOGIN_KEY, "") or ""),
+                login_id=str(instance.get(DEVICE_INSTANCE_LOGIN_KEY, "") or ""),
                 is_running=bool(seen.get("is_running")),
                 code=str(seen.get("code", "") or ""),
             )
@@ -134,7 +134,7 @@ def update_settings(
         if instance.login_id:
             record = vault.get(instance.login_id)
             if record is None or record.kind != LOGIN_KIND:
-                raise _refusal(CODE_UNKNOWN_CREDENTIAL, field=DEVICE_CLOUDCLI_LOGIN_KEY)
+                raise _refusal(CODE_UNKNOWN_CREDENTIAL, field=DEVICE_INSTANCE_LOGIN_KEY)
         elif is_windows:
             raise _refusal(CODE_CREDENTIAL_MISSING, account=instance.account)
     stored = {
@@ -142,10 +142,10 @@ def update_settings(
             {
                 "account": instance.account,
                 "port": instance.port,
-                DEVICE_CLOUDCLI_LOGIN_KEY: instance.login_id,
+                DEVICE_INSTANCE_LOGIN_KEY: instance.login_id,
                 **{
-                    field: runtime.desired_states.sealed_cloudcli_secret(
-                        context.key, instance.account, field
+                    field: runtime.desired_states.sealed_instance_field(
+                        context.key, MODULE, instance.account, field
                     )
                     for field in (
                         DEVICE_CLOUDCLI_PASSWORD_KEY,

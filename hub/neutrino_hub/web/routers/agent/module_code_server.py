@@ -121,8 +121,11 @@ def update_settings(
                 "account": instance.account,
                 "port": instance.port,
                 DEVICE_CODE_SERVER_SECRET_KEY: (
-                    runtime.desired_states.sealed_code_server_secret(
-                        context.key, instance.account
+                    runtime.desired_states.sealed_instance_field(
+                        context.key,
+                        MODULE,
+                        instance.account,
+                        DEVICE_CODE_SERVER_SECRET_KEY,
                     )
                 ),
             }

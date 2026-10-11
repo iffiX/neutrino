@@ -102,7 +102,7 @@ class StubDesiredStates:
     def seat_password(self, key):
         return "seat-pass" if key == "dev" else ""  # scan: allow
 
-    def vscode_token(self, key, account):
+    def instance_token(self, key, module, account):
         return self.tokens.get((key, account), "")
 
 
@@ -305,7 +305,7 @@ class MintingDesiredStates(StubDesiredStates):
         super().__init__()
         self.minted: list = []
 
-    def cloudcli_token(self, key, account):
+    def instance_token(self, key, module, account):
         self.minted.append((key, account))
         return f"fresh-{len(self.minted)}" if key == "dev" else ""
 
@@ -350,7 +350,7 @@ class CodeServerDesiredStates(StubDesiredStates):
         super().__init__()
         self.minted: list = []
 
-    def code_server_token(self, key, account):
+    def instance_token(self, key, module, account):
         self.minted.append((key, account))
         return f"fresh-{len(self.minted)}" if key == "dev" else ""
 

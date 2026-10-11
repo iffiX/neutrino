@@ -155,6 +155,27 @@ AGENT_MODULE_PACKAGE_MAGIC = {
     "binary": (b"\x7fELF", b"\xcf\xfa\xed\xfe", b"MZ"),
 }
 
+# The four kinds of device module the description table sorts every module
+# into: carried by the agent's own package, installed from the system's own
+# sources, a service with a system account of its own, and a program run as
+# a person's account.
+DEVICE_MODULE_KIND_AGENT = "agent"
+DEVICE_MODULE_KIND_SYSTEM_PACKAGE = "system_package"
+DEVICE_MODULE_KIND_SERVICE_ACCOUNT = "service_account"
+DEVICE_MODULE_KIND_ACCOUNT_PROGRAM = "account_program"
+DEVICE_MODULE_KINDS = (
+    DEVICE_MODULE_KIND_AGENT,
+    DEVICE_MODULE_KIND_SYSTEM_PACKAGE,
+    DEVICE_MODULE_KIND_SERVICE_ACCOUNT,
+    DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
+)
+# The panel the Modules page draws every program run as an account with;
+# every other module is drawn by a panel named after it.
+DEVICE_MODULE_PANEL_INSTANCES = "instances"
+# The key an instance of a program run as an account holds its vault login
+# under, the login a Windows machine runs the instance as.
+DEVICE_INSTANCE_LOGIN_KEY = "login_id"
+
 # The modules a device hosts from the hub's desired state, in the order the
 # agent applies them. One file per module under the device's directory.
 DEVICE_MODULE_NAMES = (
@@ -190,11 +211,12 @@ DEVICE_GITEA_MODULE = "gitea"
 # VS Code in the browser. Each instance in its file under the device's
 # directory holds, beside its account and port, two keys the hub keeps there:
 # its connection token sealed under the vault's data key, and the vault login
-# a Windows machine runs it as. A token's seal is bound to what it opens.
+# a Windows machine runs it as. A token's seal is bound to what it opens, and
+# a fresh token is this many random bytes.
 DEVICE_VSCODE_MODULE = "vscode"
 DEVICE_VSCODE_TOKEN_KEY = "token_sealed"  # scan: allow
-DEVICE_VSCODE_LOGIN_KEY = "login_id"
 DEVICE_VSCODE_TOKEN_AAD = b"device_vscode:token"
+DEVICE_VSCODE_TOKEN_BYTES = 24
 # When the person accepted Microsoft's VS Code Server license terms for the
 # machine, an ISO 8601 time in the same file; absent until they do. The
 # address of those terms, as the VS Code CLI names it.
@@ -206,12 +228,12 @@ DEVICE_VSCODE_TERMS_URL = "https://aka.ms/vscode-server-license"
 # administrator signs in with, and the secret the instance's tokens are
 # signed with.
 DEVICE_CLOUDCLI_MODULE = "cloudcli"
-# The npm registry each edition's agents install CloudCLI from.
+# The npm registry each edition's agents install an npm package from, sent
+# with every module whose manifest names an ``npm_environment``.
 DEVICE_CLOUDCLI_NPM_REGISTRIES = {
     "intl": "https://registry.npmjs.org",
     "cn": "https://registry.npmmirror.com",
 }
-DEVICE_CLOUDCLI_LOGIN_KEY = "login_id"
 DEVICE_CLOUDCLI_PASSWORD_KEY = "web_password_sealed"  # scan: allow
 DEVICE_CLOUDCLI_SECRET_KEY = "token_secret_sealed"  # scan: allow
 DEVICE_CLOUDCLI_PASSWORD_AAD = b"device_cloudcli:web_password"
@@ -228,9 +250,6 @@ DEVICE_AI_TOOL_CONFIG_KEYS = {
 }
 DEVICE_AI_REASONING_EFFORT_KEY = "model_reasoning_effort"
 DEVICE_AI_REASONING_EFFORTS = ("minimal", "low", "medium", "high")
-# The modules whose instances name the accounts the setting acts on, in the
-# order an account's Windows login is taken from.
-DEVICE_AI_TOOL_MODULES = ("vscode", "cloudcli", "code_server")
 # The program the agent runs as each account to switch its AI tools, which
 # the hub pins in data/manifests/cc_switch.json and serves on the package
 # stream.
