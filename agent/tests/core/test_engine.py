@@ -1035,6 +1035,7 @@ def test_a_system_that_unpacks_the_hub_s_software_runs_vs_code_from_its_bytes(
         "gitea",
         "vscode",
         "cloudcli",
+        "codeg",
         "terminal",
         "remote_desktop",
     }
@@ -1061,6 +1062,8 @@ def test_code_server_runs_on_a_mac_beside_vs_code_and_not_on_windows(tmp_path):
 
     assert "code_server" in mac.module_runners
     assert "code_server" not in windows.module_runners
+    assert "codeg" in mac.module_runners
+    assert "codeg" in windows.module_runners
 
 
 def test_a_platform_with_packages_builds_the_vs_code_runner(tmp_path):
@@ -1079,6 +1082,7 @@ def test_a_platform_with_packages_builds_the_vs_code_runner(tmp_path):
         "vscode",
         "code_server",
         "cloudcli",
+        "codeg",
         "terminal",
         "remote_desktop",
     }

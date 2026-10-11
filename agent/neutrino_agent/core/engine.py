@@ -46,6 +46,7 @@ from neutrino_agent.constants import (
 from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
 from neutrino_agent.modules.cloudcli.hooks import CloudcliHooks
 from neutrino_agent.modules.code_server.hooks import CodeServerHooks
+from neutrino_agent.modules.codeg.hooks import CodegHooks
 from neutrino_agent.modules.gitea.runner import GiteaModuleRunner
 from neutrino_agent.modules.podman.runner import PodmanModuleRunner
 from neutrino_agent.modules.remote_desktop.runner import RemoteDesktopModuleRunner
@@ -86,6 +87,7 @@ CodeServerModuleRunner = functools.partial(
 CloudcliModuleRunner = functools.partial(
     InstancesModuleRunner, hooks_class=CloudcliHooks
 )
+CodegModuleRunner = functools.partial(InstancesModuleRunner, hooks_class=CodegHooks)
 
 # The modules the agent's own package carries: no operation moves them.
 CARRIED_MODULES = (RemoteDesktopModuleRunner.name,)
@@ -218,6 +220,7 @@ class ModuleEngine(ReconcileWorker):
                 VscodeModuleRunner,
                 CodeServerModuleRunner,
                 CloudcliModuleRunner,
+                CodegModuleRunner,
             ]
         else:
             if "smb_server" in platform.capabilities:
@@ -228,6 +231,7 @@ class ModuleEngine(ReconcileWorker):
                 if platform.os_name == "darwin":
                     kinds.append(CodeServerModuleRunner)
                 kinds.append(CloudcliModuleRunner)
+                kinds.append(CodegModuleRunner)
         kinds.append(TerminalModuleRunner)
         kinds.append(RemoteDesktopModuleRunner)
         self._module_runners = {}
