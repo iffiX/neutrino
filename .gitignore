@@ -87,3 +87,4 @@ packaging/integration_aws/state/
 
 # Literal strings the screenshot tool replaces that name the person capturing.
 packaging/screenshots/redact.local.json
+docs/0.5.0_round4_and_5.md
