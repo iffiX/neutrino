@@ -51,7 +51,7 @@ When the section shows a code, the cause is on [Troubleshooting](../reference/tr
 
 ## Which modules a system runs
 
-Windows and Macs run the file share, the terminal, the remote desktop, Gitea, VS Code and CloudCLI, and Macs also run code-server. Containers and ZFS storage run on Linux only. The **Modules** page greys out what a machine cannot run, and [Supported platforms](../reference/platforms.md) has the full table.
+Windows and Macs run the file share, the terminal, the remote desktop, Gitea, VS Code, CloudCLI and Codeg, and Macs also run code-server. Containers and ZFS storage run on Linux only. The **Modules** page greys out what a machine cannot run, and [Supported platforms](../reference/platforms.md) has the full table.
 
 ## A machine on another version
 

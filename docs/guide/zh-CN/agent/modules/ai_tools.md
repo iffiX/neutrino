@@ -4,9 +4,9 @@ title: 把一台机器的 AI 工具指向网关
 
 # 把一台机器的 AI 工具指向网关
 
-模块页 **全局配置** 里的一个开关，让一台受管机器上的 Claude Code、Codex 和 Gemini 改用中枢的 AI 网关。作用于这台机器上运行 VS Code、code-server 或 CloudCLI 的账户。
+模块页 **全局配置** 里的一个开关，让一台受管机器上的 Claude Code、Codex 和 Gemini 改用中枢的 AI 网关。作用于这台机器上运行 VS Code、code-server、CloudCLI 或 Codeg 的账户。
 
-开始之前，中枢的 AI 网关要已有能用的模型，见 [AI](../../hub/ai.md)。这台机器上要有 VS Code、code-server 或 CloudCLI 的实例，被控端要在线。
+开始之前，中枢的 AI 网关要已有能用的模型，见 [AI](../../hub/ai.md)。这台机器上要有 VS Code、code-server、CloudCLI 或 Codeg 的实例，被控端要在线。
 
 ![server 的全局配置，开关打开，两个账户都读使用中枢的 AI 网关](/guide/zh/modules_ai_tools.webp)
 

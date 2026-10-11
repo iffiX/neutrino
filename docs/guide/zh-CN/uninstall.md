@@ -83,10 +83,10 @@ sudo rm -rf "/Library/Application Support/Neutrino/agent" /Library/Logs/Neutrino
 
 卸完后，`nhub`、`nagent`、`nclient` 这几个命令不再存在，留下的只有下表里的目录。下表里的 `<package>` 是 `hub`、`agent` 或 `client`，不要了就手动删掉。要装回来，按[第零步](./quick-start.md)重新走一遍。
 
-| 是什么                          | Linux                           | macOS                                                    | Windows                                    |
-| ------------------------------- | ------------------------------- | -------------------------------------------------------- | ------------------------------------------ |
-| 配置                            | `/etc/neutrino/<package>`       | `/Library/Application Support/Neutrino/<package>/config` | `C:\ProgramData\Neutrino\<package>\config` |
-| 状态                            | `/var/lib/neutrino/<package>`   | `/Library/Application Support/Neutrino/<package>/state`  | `C:\ProgramData\Neutrino\<package>\state`  |
-| 日志                            | `/var/log/neutrino/<package>`   | `/Library/Logs/Neutrino/<package>`                       | `C:\ProgramData\Neutrino\<package>\log`    |
-| 每个账户的客户端配置            | `~/.config/neutrino/client`     | `~/Library/Application Support/Neutrino/client`          | `%APPDATA%\Neutrino\client`                |
-| 被控端在每个账户里装的 CloudCLI | `~/.local/share/neutrino/agent` | `~/Library/Application Support/Neutrino/agent`           | `%LOCALAPPDATA%\Neutrino\agent`            |
+| 是什么                                          | Linux                           | macOS                                                    | Windows                                    |
+| ----------------------------------------------- | ------------------------------- | -------------------------------------------------------- | ------------------------------------------ |
+| 配置                                            | `/etc/neutrino/<package>`       | `/Library/Application Support/Neutrino/<package>/config` | `C:\ProgramData\Neutrino\<package>\config` |
+| 状态                                            | `/var/lib/neutrino/<package>`   | `/Library/Application Support/Neutrino/<package>/state`  | `C:\ProgramData\Neutrino\<package>\state`  |
+| 日志                                            | `/var/log/neutrino/<package>`   | `/Library/Logs/Neutrino/<package>`                       | `C:\ProgramData\Neutrino\<package>\log`    |
+| 每个账户的客户端配置                            | `~/.config/neutrino/client`     | `~/Library/Application Support/Neutrino/client`          | `%APPDATA%\Neutrino\client`                |
+| 被控端在每个账户里装的 CloudCLI 和 Codeg 的数据 | `~/.local/share/neutrino/agent` | `~/Library/Application Support/Neutrino/agent`           | `%LOCALAPPDATA%\Neutrino\agent`            |

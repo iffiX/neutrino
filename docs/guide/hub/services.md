@@ -12,13 +12,13 @@ A service is one entry the hub publishes to clients: a web page, a port, the AI 
 
 Each kind has a group here and a page in the client:
 
-| Kind           | Group on this page | Comes from                                              | Client page and button                     |
-| -------------- | ------------------ | ------------------------------------------------------- | ------------------------------------------ |
-| Web            | **Web**            | Gitea, VS Code, code-server, CloudCLI, or a declaration | **Web**: **Open**, in the browser          |
-| Port           | **Ports**          | a container's published port, or a declaration          | **Ports**: **Connect**                     |
-| AI             | **AI**             | the hub's AI gateway                                    | **AI**: **Configure** and the tools switch |
-| File           | **Files**          | the file share module, or a declaration                 | **Files**: **Configure**, then **Mount**   |
-| Remote desktop | none               | a machine whose **Remote desktop** switch is on         | **Remote desktops**: **Connect**           |
+| Kind           | Group on this page | Comes from                                                     | Client page and button                     |
+| -------------- | ------------------ | -------------------------------------------------------------- | ------------------------------------------ |
+| Web            | **Web**            | Gitea, VS Code, code-server, CloudCLI, Codeg, or a declaration | **Web**: **Open**, in the browser          |
+| Port           | **Ports**          | a container's published port, or a declaration                 | **Ports**: **Connect**                     |
+| AI             | **AI**             | the hub's AI gateway                                           | **AI**: **Configure** and the tools switch |
+| File           | **Files**          | the file share module, or a declaration                        | **Files**: **Configure**, then **Mount**   |
+| Remote desktop | none               | a machine whose **Remote desktop** switch is on                | **Remote desktops**: **Connect**           |
 
 The client's **Terminals** page lists the managed machines it can open a shell on. Permissions on [Clients](./clients.md) set which kinds and devices a client sees. The client reaches every entry through the hub's port 8443 and dials none of the addresses this page shows.
 
@@ -28,9 +28,9 @@ A module on a managed machine publishes its entries by itself. These rows have t
 
 ## Token entries
 
-A VS Code, code-server or CloudCLI entry is a token entry. Its instance listens only on its own machine, so its address opens nothing in a browser.
+A VS Code, code-server, CloudCLI or Codeg entry is a token entry. Its instance listens only on its own machine, so its address opens nothing in a browser.
 
-Each time a person selects **Open** on such an entry, the client fetches a token from the hub for that one opening. A code-server or CloudCLI token lasts 60 seconds and works once. Setting up an instance is on [VS Code](../agent/modules/vscode.md).
+Each time a person selects **Open** on such an entry, the client fetches a token from the hub for that one opening. A code-server, CloudCLI or Codeg token lasts 60 seconds and works once. Setting up an instance is on [VS Code](../agent/modules/vscode.md).
 
 ## Declare a service by hand
 

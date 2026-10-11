@@ -265,7 +265,7 @@ title: 通道
 
 | `type` | `payload`                                                                                                                             |
 | ------ | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `web`  | `{url, is_token_required}`；只有 VS Code、code-server 和 CloudCLI 实例带 `is_token_required` 且为真                                   |
+| `web`  | `{url, is_token_required}`；只有 VS Code、code-server、CloudCLI 和 Codeg 实例带 `is_token_required` 且为真                            |
 | `port` | `{host, port, protocol}`；`protocol` 是 `tcp` 或 `udp`，没有这一项就是 `tcp`。同一个端口号两种协议都用时，是两个条目                  |
 | `ai`   | `{endpoint, protocol, models}`，`protocol` 是 `openai`                                                                                |
 | `file` | `{protocol, host, share, users}`，`protocol` 是 `smb`                                                                                 |
@@ -273,15 +273,15 @@ title: 通道
 
 payload 里的 `host`、`port`、`url` 和 `endpoint` 是服务在中枢网络上的位置，按客户端套接字的来源地址解析。客户端只把它显示给人看，一个也不拨；到服务的每个字节都走 `connect` 流。`rdp` 条目的 `attention` 写明共享桌面的那台机器前要先做什么：`rdp_nobody_seated`、`rdp_screen_not_allowed`，或为空。`file` 条目的 `users` 列出能打开这个共享的账户，手动声明的共享这一项为空。
 
-| 字段                 | 内容                                                                                                                                                                                      |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `is_healthy`         | 最近一次探测的结果，从没探测过时为 `null`                                                                                                                                                 |
-| `source`             | `module`、`declared` 或 `device`                                                                                                                                                          |
-| `description_code`   | 来源说明的错误码形式，由程序自己翻成文字：`ai_gateway`、`container`、`declared`、`device_share`、`gitea_module`、`samba_module`、`vscode_module`、`code_server_module`、`cloudcli_module` |
-| `description_params` | 那句话要用的值；`vscode_module`、`code_server_module` 和 `cloudcli_module` 用 `{host, account}`                                                                                           |
-| `device_id`          | 提供这个条目的受管机器的 id；手动声明的记录和中枢自己的网关为空。程序按机器保存的东西，以这个 id 为键                                                                                     |
-| `device_name`        | 提供这个条目的机器名；中枢记录里没有这台机器时为空                                                                                                                                        |
-| `is_own_machine`     | 提供条目的机器就是客户端所在的机器时为 `true`，依据是汇报里的 `os_machine_id`                                                                                                             |
+| 字段                 | 内容                                                                                                                                                                                                      |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `is_healthy`         | 最近一次探测的结果，从没探测过时为 `null`                                                                                                                                                                 |
+| `source`             | `module`、`declared` 或 `device`                                                                                                                                                                          |
+| `description_code`   | 来源说明的错误码形式，由程序自己翻成文字：`ai_gateway`、`container`、`declared`、`device_share`、`gitea_module`、`samba_module`、`vscode_module`、`code_server_module`、`cloudcli_module`、`codeg_module` |
+| `description_params` | 那句话要用的值；`vscode_module`、`code_server_module`、`cloudcli_module` 和 `codeg_module` 用 `{host, account}`                                                                                           |
+| `device_id`          | 提供这个条目的受管机器的 id；手动声明的记录和中枢自己的网关为空。程序按机器保存的东西，以这个 id 为键                                                                                                     |
+| `device_name`        | 提供这个条目的机器名；中枢记录里没有这台机器时为空                                                                                                                                                        |
+| `is_own_machine`     | 提供条目的机器就是客户端所在的机器时为 `true`，依据是汇报里的 `os_machine_id`                                                                                                                             |
 
 ## 客户端打开的流
 
@@ -289,24 +289,24 @@ payload 里的 `host`、`port`、`url` 和 `endpoint` 是服务在中枢网络�
 
 `open {kind: service, id}` 请求某个条目要从中枢取的材料。中枢按下面的顺序检查，第一项不通过的检查决定 close 的错误码：
 
-| `code`              | 什么时候                                                                        |
-| ------------------- | ------------------------------------------------------------------------------- |
-| `binding_unknown`   | 没有哪个客户端行的 id 是这条套接字绑定的 id                                     |
-| `client_disabled`   | 这个客户端在 **客户端** 页上停用了                                              |
-| `service_unknown`   | 为这个客户端解析出的列表里没有这个 id                                           |
-| `permission_denied` | 这个客户端的权限不含条目的类型，或不含提供条目的机器                            |
-| `rdp_not_shared`    | 条目所在的机器已停止共享桌面                                                    |
-| `vault_locked`      | 中枢的保险库已锁，打不开 AI 密钥、VS Code 令牌，或 code-server、CloudCLI 的密钥 |
+| `code`              | 什么时候                                                                               |
+| ------------------- | -------------------------------------------------------------------------------------- |
+| `binding_unknown`   | 没有哪个客户端行的 id 是这条套接字绑定的 id                                            |
+| `client_disabled`   | 这个客户端在 **客户端** 页上停用了                                                     |
+| `service_unknown`   | 为这个客户端解析出的列表里没有这个 id                                                  |
+| `permission_denied` | 这个客户端的权限不含条目的类型，或不含提供条目的机器                                   |
+| `rdp_not_shared`    | 条目所在的机器已停止共享桌面                                                           |
+| `vault_locked`      | 中枢的保险库已锁，打不开 AI 密钥、VS Code 令牌，或 code-server、CloudCLI、Codeg 的密钥 |
 
 不带错误码的 close 带回材料。带 `is_token_required` 的 `web` 条目，客户端在自己转发的地址上加 `?tkn=<token>` 打开，从不打开条目自己的地址：
 
-| 条目                                                                     | close 的 `params`                                                                        |
-| ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
-| `rdp`                                                                    | `{password}`：共享桌面那台机器的座位密码                                                 |
-| `ai`                                                                     | `{api_key, model}`：这个客户端自己的密钥，网关每个请求都核对它；以及网关提供的第一个模型 |
-| `description_code` 为 `vscode_module` 的 `web`                           | `{token}`：实例的连接令牌                                                                |
-| `description_code` 为 `code_server_module` 或 `cloudcli_module` 的 `web` | `{token}`：中枢只为这次回答签发的令牌，60 秒内有效，只能用一次                           |
-| 其他 `web`、`port`、`file`                                               | 空；payload 已经是客户端需要的全部                                                       |
+| 条目                                                                                     | close 的 `params`                                                                        |
+| ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `rdp`                                                                                    | `{password}`：共享桌面那台机器的座位密码                                                 |
+| `ai`                                                                                     | `{api_key, model}`：这个客户端自己的密钥，网关每个请求都核对它；以及网关提供的第一个模型 |
+| `description_code` 为 `vscode_module` 的 `web`                                           | `{token}`：实例的连接令牌                                                                |
+| `description_code` 为 `code_server_module`、`cloudcli_module` 或 `codeg_module` 的 `web` | `{token}`：中枢只为这次回答签发的令牌，60 秒内有效，只能用一次                           |
+| 其他 `web`、`port`、`file`                                                               | 空；payload 已经是客户端需要的全部                                                       |
 
 ### connect 流
 
