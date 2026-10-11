@@ -21,7 +21,7 @@ import pytest
 from neutrino_hub.modules.credentials.vault import unseal_bytes
 from neutrino_hub.modules.devices.constants import DEVICE_CODE_SERVER_SECRET_AAD
 from neutrino_hub.modules.devices.desired_state import DesiredStateStore
-from neutrino_hub.web.routers.agent import module_code_server
+from neutrino_hub.web.routers.agent import module_instances
 from tests.conftest import unlock_vault
 from tests.web.module_api_box import DEVICE, module_box
 
@@ -33,7 +33,9 @@ DARWIN = {"os": "darwin", "family": "", "arch": "arm64", "version": "15.3.1"}
 @pytest.fixture
 def api(monkeypatch, tmp_path):
     unlock_vault(monkeypatch, tmp_path)
-    client, runtime = module_box(monkeypatch, tmp_path, module_code_server.router)
+    client, runtime = module_box(
+        monkeypatch, tmp_path, module_instances.ROUTERS["code_server"]
+    )
     with client:
         yield client, runtime
 

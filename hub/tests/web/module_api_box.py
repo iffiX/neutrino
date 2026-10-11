@@ -13,7 +13,14 @@ HOST = "192.168.100.7"
 
 
 def module_box(monkeypatch, tmp_path, router):
-    """One online device and one offline, under a temporary config dir."""
+    """One online device and one offline, under a temporary config dir.
+
+    Args:
+        monkeypatch: The test's.
+        tmp_path: The config dir.
+        router: The router under test, or a list of routers that share a
+            module's path.
+    """
     monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
     monkeypatch.setattr(
         "neutrino_hub.modules.devices.desired_state.UTILS_CONFIG_DIR", tmp_path
@@ -29,7 +36,8 @@ def module_box(monkeypatch, tmp_path, router):
     FakeDeviceRegistry.runtime = runtime
     monkeypatch.setattr(device_modules, "DeviceRegistry", FakeDeviceRegistry)
     app = FastAPI()
-    app.include_router(router)
+    for included in router if isinstance(router, (list, tuple)) else [router]:
+        app.include_router(included)
     app.dependency_overrides[require_session] = lambda: None
     app.dependency_overrides[get_runtime] = lambda: runtime
     return TestClient(app), runtime

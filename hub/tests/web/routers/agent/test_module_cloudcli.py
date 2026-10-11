@@ -31,7 +31,7 @@ from neutrino_hub.modules.devices.constants import (
 from neutrino_hub.modules.devices.desired_state import DesiredStateStore
 from neutrino_hub.modules.credentials.vault import unseal_bytes
 from neutrino_hub.modules.services.host_scope import HostScope
-from neutrino_hub.web.routers.agent import module_cloudcli
+from neutrino_hub.web.routers.agent import module_instances
 from tests.conftest import unlock_vault
 from tests.web.module_api_box import DEVICE, module_box
 
@@ -45,7 +45,9 @@ HUB = "192.168.100.1"
 def api(monkeypatch, tmp_path):
     unlock_vault(monkeypatch, tmp_path)
     monkeypatch.setattr(ai_keys, "_apply", lambda **kwargs: None)
-    client, runtime = module_box(monkeypatch, tmp_path, module_cloudcli.router)
+    client, runtime = module_box(
+        monkeypatch, tmp_path, module_instances.ROUTERS["cloudcli"]
+    )
     runtime.device_scope[DEVICE] = HostScope(
         id="192.168.100.0/24", cidr="192.168.100.0/24", hub_address=HUB
     )
