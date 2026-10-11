@@ -56,11 +56,14 @@ one owner:
    `package {module}` for a module with one archive, and the hub streams the
    cached file down with its digest in the close
    ([protocol.md](../../protocol.md), "The stream layer").
-1. The agent unpacks the archive under `agent/<module>/<component>/` in the
-   state root, `<component>` being the component's `directory`, or the
-   archive's own top directory for a module with one archive, and seals it: owned by the agent's own account, root or
-   SYSTEM, readable and executable by every account, writable by none, and
-   on no `PATH`.
+1. The agent unpacks each archive under `agent/<module>/<directory>/` in
+   the state root, `<directory>` being the component's `directory`; an
+   archive whose members all sit under one top directory is unpacked
+   without it, so the component's files sit directly under its directory.
+   A module with one archive unpacks it where its own page says. The
+   unpack is sealed: owned by the agent's own account, root or SYSTEM,
+   readable and executable by every account, writable by none, and on no
+   `PATH`.
 1. The agent runs the manifest's `verify` command; its success is
    `installed`.
 
@@ -123,8 +126,8 @@ the `service` stream hands.
 
 ## The hub side
 
-The hub describes every module once, in the per-module description table in
-`modules/devices/`: its kind, its configuration file name under
+The hub describes every module once, in the description table
+`modules/devices/module_table.py`: its kind, its configuration file name under
 `config/devices/<id>/`, the fields the vault seals in it, the published
 entry's `description_code`, and the panel kind the Modules page draws. The
 four programs run as an account share one router,
@@ -168,7 +171,7 @@ carries them opened. The panel draws the four with one `instances_panel.tsx`
 Each module has one monochrome line glyph, drawn after the software's own
 mark for identification alone, as `images/icons/modules/<module>.svg`. The
 panel imports it by module name, and a module with no file of its own is
-drawn with the generic module glyph in the same directory.
+drawn with `generic.svg` in the same directory.
 
 ## Disk layout
 

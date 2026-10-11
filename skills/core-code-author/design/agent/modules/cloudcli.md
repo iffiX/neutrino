@@ -19,17 +19,21 @@ shows `run\install_<account>.log`; on macOS the LaunchDaemon's
 `/Library/Logs/Neutrino/agent/cloudcli_<account>.log`.
 
 **Node.js comes from the hub and stays out of the system.** It is CloudCLI's
-own component, the one archive its manifest pins, and no other module reads
-it. `data/manifests/cloudcli.json`, written like `vscode.json`, pins the
+own `node` component, and no other module reads it.
+`data/manifests/cloudcli.json`, written like `vscode.json`, pins the
 nodejs.org standalone build of Node 22 LTS for Linux, macOS and Windows on
 x64 and arm64, each with its url and the sha256 of `SHASUMS256.txt`. The hub
-fetches it into its module cache and serves it on the `package` stream. The
-agent unpacks it under its state root, `/var/lib/neutrino/agent/cloudcli/` on
-Linux, `%ProgramData%\Neutrino\agent\state\cloudcli` on Windows and
-`/Library/Application Support/Neutrino/agent/state/cloudcli` on macOS, the one
-directory there opened to every account: owned by root, read-only, one copy
-per machine. It is never put on `PATH`, in any shell
-profile, or under `/usr/local`.
+fetches it into its module cache and serves it on the `package` stream as
+`package {module: cloudcli, component: node}`. The agent unpacks it under
+`cloudcli/node/` in its state root, `/var/lib/neutrino/agent/cloudcli/node/`
+on Linux, `%ProgramData%\Neutrino\agent\state\cloudcli\node` on Windows and
+`/Library/Application Support/Neutrino/agent/state/cloudcli/node` on macOS,
+without the archive's own top directory, so `bin/node` sits directly under
+it ([template.md](template.md), "The install"); the directory is opened to
+every account: owned by root, read-only, one copy per machine. An install
+removes a `node-v<version>-<os>-<arch>/` directory it finds directly under
+`cloudcli/`. Node is never put on `PATH`, in any shell profile, or under
+`/usr/local`.
 
 **CloudCLI is installed per account, apart from the account's own npm.** As
 the account, with that Node, the agent runs

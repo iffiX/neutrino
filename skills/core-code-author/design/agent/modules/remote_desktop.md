@@ -9,7 +9,8 @@ machine. `nagent rdp start` and `nagent rdp stop` are gone, from the command
 line and from the control socket. The agent's code is
 `modules/remote_desktop/`, with its config, constants and runner, one
 applier per system, and `rdp/` under it, `modules/remote_desktop/rdp/`,
-which reads who is at the screen and writes RustDesk's settings files.
+which reads who is at the screen and, through its `rustdesk.py`, writes
+RustDesk's settings files.
 
 ## The desktop is the hub's order
 
