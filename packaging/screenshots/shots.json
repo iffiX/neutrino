@@ -1601,6 +1601,40 @@
       ]
     },
     {
+      "file": "codeg_panel.png",
+      "language": "en",
+      "page": "agent/modules/codeg.md",
+      "source": "panel",
+      "viewport": "tall",
+      "url": "/modules",
+      "element": "viewport",
+      "wait_for": ".instance_row",
+      "state": "server with Codeg running and one instance.",
+      "press": [
+        ".device_chip:has(.device_chip_name:text-is(\"server\"))",
+        ".modules_list_row:has(.modules_list_row_title:text-is(\"Codeg\"))",
+        ".modules_actions button:has-text(\"{ui.modules.configure}\")"
+      ],
+      "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))"
+    },
+    {
+      "file": "codeg_panel.png",
+      "language": "zh",
+      "page": "agent/modules/codeg.md",
+      "source": "panel",
+      "viewport": "tall",
+      "url": "/modules",
+      "element": "viewport",
+      "wait_for": ".instance_row",
+      "state": "server with Codeg running and one instance.",
+      "press": [
+        ".device_chip:has(.device_chip_name:text-is(\"server\"))",
+        ".modules_list_row:has(.modules_list_row_title:text-is(\"Codeg\"))",
+        ".modules_actions button:has-text(\"{ui.modules.configure}\")"
+      ],
+      "scroll_to": "section.settings_group:has(h2:text-is(\"{ui.modules.tabs_title}\"))"
+    },
+    {
       "file": "app_web_cloudcli.png",
       "language": "zh",
       "page": "quick-start/cloudcli.md",
@@ -1655,6 +1689,30 @@
       "source": "app",
       "viewport": "app",
       "state": "A New Session in the notes-app project: Choose Your AI Assistant with Claude selected and the empty message box at the bottom."
+    },
+    {
+      "file": "app_codeg_workspace.png",
+      "language": "zh",
+      "page": "agent/modules/codeg.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "The phone's browser right after Open on the account's Codeg row: the workspace, signed in, with the session list and the coding agent picker."
+    },
+    {
+      "file": "app_codeg_agents.png",
+      "language": "zh",
+      "page": "agent/modules/codeg.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "Codeg's Settings, Agents tab, with the Claude Code adapter installed and the other coding agents listed."
+    },
+    {
+      "file": "app_codeg_import.png",
+      "language": "zh",
+      "page": "agent/modules/codeg.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "Codeg's Import local sessions view, listing the account's Claude Code sessions from the terminal."
     },
     {
       "file": "client_connected.png",
@@ -2141,6 +2199,30 @@
       "source": "app",
       "viewport": "app",
       "state": "A New Session in the notes-app project: Choose Your AI Assistant with Claude selected and the empty message box at the bottom."
+    },
+    {
+      "file": "app_codeg_workspace.png",
+      "language": "en",
+      "page": "agent/modules/codeg.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "The phone's browser right after Open on the account's Codeg row: the workspace, signed in, with the session list and the coding agent picker."
+    },
+    {
+      "file": "app_codeg_agents.png",
+      "language": "en",
+      "page": "agent/modules/codeg.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "Codeg's Settings, Agents tab, with the Claude Code adapter installed and the other coding agents listed."
+    },
+    {
+      "file": "app_codeg_import.png",
+      "language": "en",
+      "page": "agent/modules/codeg.md",
+      "source": "app",
+      "viewport": "app",
+      "state": "Codeg's Import local sessions view, listing the account's Claude Code sessions from the terminal."
     },
     {
       "file": "app_terminal.png",
