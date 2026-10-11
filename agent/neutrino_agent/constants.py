@@ -327,6 +327,13 @@ AGENT_FORWARD_HEAD_LIMIT_BYTES = 65536
 AGENT_FORWARD_CHUNK_BYTES = 65536
 AGENT_FORWARD_UPSTREAM_TIMEOUT_S = 10.0
 AGENT_FORWARD_IDLE_TIMEOUT_S = 3600.0
+# How often a forwarder asks whether its page answers yet, and how long a
+# refused first start or a failed bind waits before it is tried again.
+AGENT_FORWARD_READY_POLL_S = 3.0
+AGENT_FORWARD_RETRY_S = 30.0
+# The address every forwarder listens on: loopback, where the agent's end of
+# a ``connect`` stream reaches it.
+AGENT_FORWARD_LISTEN_HOST = "127.0.0.1"
 # The token a client opens such a page with: ``?tkn=`` holding
 # ``base64url(expiry || nonce || HMAC-SHA256(secret, expiry || nonce))``,
 # the expiry eight bytes big-endian in seconds since the epoch. A token

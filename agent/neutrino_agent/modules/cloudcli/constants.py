@@ -138,6 +138,15 @@ CLOUDCLI_LOGON_FAILURES = (0x8007052E,)
 # The end of every instance's log file, and of its record.
 CLOUDCLI_LOG_SUFFIX = ".log"
 CLOUDCLI_RECORD_SUFFIX = ".json"
+# The fields one instance's record holds.
+CLOUDCLI_RECORD_FIELDS = (
+    "account",
+    "port",
+    "upstream_port",
+    "web_password",
+    "token_secret",
+    "database",
+)
 
 # How long one reading of the instances is believed.
 CLOUDCLI_STATUS_TTL_S = 30.0

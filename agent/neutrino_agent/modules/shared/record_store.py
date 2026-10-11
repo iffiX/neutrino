@@ -1,10 +1,10 @@
-"""What each instance's forwarder serves, kept root-only on the machine.
+"""What each instance of a module is, kept root-only on the machine.
 
 The hub stops naming a module in its state once the machine has settled
 it, so the forwarder of a running instance starts again after the agent
-restarts from what is kept here: one file per account, ``{account, port,
-upstream_port, web_password, token_secret}``, mode 0600 in a directory only
-the agent's own account reads.
+restarts from what is kept here: one file per account holding the fields
+the module names, mode 0600 in a directory only the agent's own account
+reads.
 
 Not pure: writes files.
 """
@@ -18,23 +18,14 @@ import json
 import os
 import tempfile
 
-from neutrino_agent.modules.cloudcli.constants import CLOUDCLI_RECORD_SUFFIX
-
-# The fields one record holds.
-RECORD_FIELDS = (
-    "account",
-    "port",
-    "upstream_port",
-    "web_password",
-    "token_secret",
-    "database",
-)
+# The end of every record's file name.
+RECORD_SUFFIX = ".json"
 
 
-class CloudcliRecordStore:
+class InstanceRecordStore:
     """One root-only file per instance, by account."""
 
-    def __init__(self, *, directory: str, fields: tuple = RECORD_FIELDS):
+    def __init__(self, *, directory: str, fields: tuple):
         """
         Args:
             directory: Where the records live.
@@ -78,8 +69,7 @@ class CloudcliRecordStore:
         """Keep one record whole, mode 0600.
 
         Args:
-            record: ``{account, port, upstream_port, web_password,
-                token_secret}``.
+            record: The record; the fields the store holds are kept.
 
         Raises:
             OSError: When the file cannot be written.
@@ -112,10 +102,10 @@ class CloudcliRecordStore:
         except OSError:
             return []
         return sorted(
-            name[: -len(CLOUDCLI_RECORD_SUFFIX)]
+            name[: -len(RECORD_SUFFIX)]
             for name in names
-            if name.endswith(CLOUDCLI_RECORD_SUFFIX) and not name.startswith(".")
+            if name.endswith(RECORD_SUFFIX) and not name.startswith(".")
         )
 
     def _path(self, account: str) -> str:
-        return os.path.join(self.directory, account + CLOUDCLI_RECORD_SUFFIX)
+        return os.path.join(self.directory, account + RECORD_SUFFIX)

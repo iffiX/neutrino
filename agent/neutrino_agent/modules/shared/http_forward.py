@@ -1,11 +1,12 @@
 """What every forwarder in front of a module's page shares.
 
 A forwarder is a thread of the agent that listens on one port and judges
-each request before the page behind it sees it: CloudCLI's and
-code-server's. This module holds what does not depend on the page: the
-one-time token a client opens the page with, reading one request's head,
-answering with the forwarder's own words, and relaying a request and its
-answer, a WebSocket included.
+each request before the page behind it sees it. This module holds what
+does not depend on the page: the one-time token a client opens the page
+with, reading one request's head, answering with the forwarder's own
+words, relaying a request and its answer, a WebSocket included, and
+:class:`InstanceForwarder`, the listener itself, which asks the module's
+hooks what each request is allowed and how the page is reached.
 
 A token is ``base64url(expiry || nonce || HMAC-SHA256(secret, expiry ||
 nonce))``, checked here with no call to the hub. Each connection carries
@@ -22,22 +23,30 @@ from __future__ import annotations
 
 import base64
 import binascii
+import functools
 import hashlib
 import hmac
 import os
 import socket
 import socketserver
 import threading
+import time
 import urllib.parse
+from dataclasses import dataclass
 
 from neutrino_agent.constants import (
     AGENT_FORWARD_CHUNK_BYTES,
     AGENT_FORWARD_HEAD_LIMIT_BYTES,
     AGENT_FORWARD_IDLE_TIMEOUT_S,
+    AGENT_FORWARD_LISTEN_HOST,
+    AGENT_FORWARD_READY_POLL_S,
+    AGENT_FORWARD_RETRY_S,
     AGENT_FORWARD_TOKEN_EXPIRY_BYTES,
     AGENT_FORWARD_TOKEN_HORIZON_S,
     AGENT_FORWARD_TOKEN_MAC_BYTES,
     AGENT_FORWARD_TOKEN_NONCE_BYTES,
+    AGENT_FORWARD_TOKEN_PARAMETER,
+    AGENT_FORWARD_UPSTREAM_TIMEOUT_S,
 )
 
 HEAD_END = b"\r\n\r\n"
@@ -350,3 +359,297 @@ class ForwarderServer(socketserver.ThreadingTCPServer):
 class _ForwarderConnection(socketserver.BaseRequestHandler):
     def handle(self) -> None:
         self.server.handle_connection(self.request)
+
+
+@dataclass(frozen=True)
+class ForwardRequest:
+    """One request as the forwarder read it, before the page sees it.
+
+    Attributes:
+        method: The request's method.
+        path: Its path, without the query.
+        query: Its query, name to the values in their order.
+        headers: ``((name, value), ...)`` as the request carried them.
+        token: What ``?tkn=`` held, empty for none.
+        take_token: Spends the token: True when it verifies and was never
+            spent, so a module's rule may trade it for its own login.
+    """
+
+    method: str
+    path: str
+    query: dict
+    headers: tuple
+    token: str
+    take_token: object
+
+    def header(self, name: str) -> str:
+        """The first value of one header, empty when the request has none.
+
+        Args:
+            name: The header's name in lower case.
+
+        Returns:
+            The value.
+        """
+        return header(list(self.headers), name)
+
+    def cookie_values(self, name: str) -> list:
+        """Every value one cookie holds across the request's ``Cookie`` headers.
+
+        Args:
+            name: The cookie's name.
+
+        Returns:
+            The values, in order.
+        """
+        return cookie_values(list(self.headers), name)
+
+
+@dataclass(frozen=True)
+class ForwardDecision:
+    """What the forwarder does with one request.
+
+    Attributes:
+        status: 0 passes the request on to the page; another status is
+            answered by the forwarder itself, one of :data:`STATUS_LINES`.
+        body: What an answer carries; empty writes the status's words.
+        content_type: The body's type.
+        headers: More ``(name, value)`` headers of the answer.
+    """
+
+    status: int = 0
+    body: bytes = b""
+    content_type: str = "text/plain; charset=utf-8"
+    headers: tuple = ()
+
+
+RELAY = ForwardDecision()
+
+
+def refused() -> ForwardDecision:
+    """The decision that answers 401."""
+    return ForwardDecision(status=401)
+
+
+def answered(
+    status: int,
+    body: bytes = b"",
+    *,
+    content_type: str = "text/plain; charset=utf-8",
+    headers: tuple = (),
+) -> ForwardDecision:
+    """The decision that answers with the forwarder's own words.
+
+    Args:
+        status: One of :data:`STATUS_LINES`.
+        body: What the answer carries; empty writes the status's words.
+        content_type: The body's type.
+        headers: More ``(name, value)`` headers.
+
+    Returns:
+        The decision.
+    """
+    return ForwardDecision(
+        status=status, body=body, content_type=content_type, headers=tuple(headers)
+    )
+
+
+class InstanceForwarder:
+    """Stands in front of one instance's page on the instance's port.
+
+    The module's hooks decide what the page needs before the forwarder
+    listens, what each request is allowed, and how the page is reached;
+    the token check, the listener and the relay are the forwarder's own.
+    """
+
+    def __init__(
+        self,
+        *,
+        name: str,
+        record: dict,
+        hooks,
+        listen_host: str = AGENT_FORWARD_LISTEN_HOST,
+        clock=time.time,
+        log=print,
+        ready_poll_s: float = AGENT_FORWARD_READY_POLL_S,
+        retry_s: float = AGENT_FORWARD_RETRY_S,
+    ):
+        """
+        Args:
+            name: The module's name, which the thread, the log lines and
+                the failure codes carry.
+            record: The instance's record: ``account``, ``port``, the
+                secret its tokens are signed with, and what the hooks read.
+            hooks: The module's hooks: ``on_first_start``, ``admit``,
+                ``connect`` and ``forwarder_fields``.
+            listen_host: The address the forwarder listens on.
+            clock: Seconds since the epoch.
+            log: Callable used for progress messages.
+            ready_poll_s: How often the page is asked whether it answers.
+            retry_s: How long a refused first start or a failed bind waits
+                before it is tried again.
+        """
+        self.name = name
+        self.record = dict(record)
+        self.account = str(record.get("account", "") or "")
+        self.port = int(record.get("port", 0) or 0)
+        self._hooks = hooks
+        self._listen_host = listen_host
+        self._clock = clock
+        self._log = log
+        self._ready_poll_s = ready_poll_s
+        self._retry_s = retry_s
+        self._lock = threading.Lock()
+        self._closed = threading.Event()
+        self._server: "ForwarderServer | None" = None
+        self._spent: dict = {}
+        self._code = ""
+        self._params: dict = {}
+        self._thread = threading.Thread(
+            target=self._run, name=f"{name}_{self.account}", daemon=True
+        )
+
+    @property
+    def is_listening(self) -> bool:
+        """Whether the forwarder answers on its port."""
+        with self._lock:
+            return self._server is not None
+
+    @property
+    def failure(self) -> tuple:
+        """Why the forwarder does not listen: ``(code, params)``, empty when it does."""
+        with self._lock:
+            return self._code, dict(self._params)
+
+    @property
+    def listen_address(self) -> tuple:
+        """The address and the port the forwarder listens on, once it does."""
+        with self._lock:
+            server = self._server
+        return server.server_address[:2] if server is not None else ("", 0)
+
+    def matches(self, record: dict) -> bool:
+        """Whether this forwarder serves one instance record as it stands.
+
+        Args:
+            record: The instance's record.
+
+        Returns:
+            True when every field the hooks name as the forwarder's is the
+            same.
+        """
+        return all(
+            record.get(field) == self.record.get(field)
+            for field in self._hooks.forwarder_fields
+        )
+
+    def start(self) -> None:
+        """Begin waiting for the page, then listen."""
+        self._thread.start()
+
+    def close(self) -> None:
+        """Stop listening and stop waiting."""
+        self._closed.set()
+        with self._lock:
+            server, self._server = self._server, None
+        if server is not None:
+            server.shutdown()
+            server.server_close()
+
+    def handle(self, client: socket.socket) -> None:
+        """Judge the one request a connection carries, and answer or pass it on.
+
+        Args:
+            client: The browser's connection, closed by the caller.
+        """
+        client.settimeout(AGENT_FORWARD_UPSTREAM_TIMEOUT_S)
+        try:
+            head, rest = read_head(client)
+        except OSError:
+            return
+        if head is None:
+            return
+        request = parse_head(head)
+        if request is None:
+            return
+        method, target, headers = request
+        path, query_text = split_target(target)
+        query = urllib.parse.parse_qs(query_text, keep_blank_values=True)
+        tokens = query.get(AGENT_FORWARD_TOKEN_PARAMETER) or [""]
+        forwarded = ForwardRequest(
+            method=method,
+            path=path,
+            query=query,
+            headers=tuple(headers),
+            token=tokens[0],
+            take_token=functools.partial(self.take_token, tokens[0]),
+        )
+        try:
+            decision = self._hooks.admit(forwarded, self.record)
+            if decision.status == 0:
+                connect = functools.partial(self._hooks.connect, self.record)
+                relay(client, head, rest, headers, connect)
+            else:
+                answer(
+                    client,
+                    decision.status,
+                    decision.body,
+                    content_type=decision.content_type,
+                    extra=list(decision.headers),
+                )
+        except OSError:
+            return
+
+    def take_token(self, token: str) -> bool:
+        """Whether a token verifies and was never spent; spends it if so.
+
+        Args:
+            token: What ``?tkn=`` held.
+
+        Returns:
+            True for a token signed with this instance's secret, whose
+            expiry is ahead and no further than the horizon, and whose
+            nonce was not accepted before.
+        """
+        now = self._clock()
+        secret = str(self.record.get(self._hooks.secret_field, "") or "")
+        with self._lock:
+            return take_token(token, secret=secret, now=now, spent=self._spent)
+
+    def _run(self) -> None:
+        """Wait for the page and its first start, then listen until closed."""
+        while not self._closed.is_set():
+            try:
+                code = self._hooks.on_first_start(self.record)
+            except OSError:
+                self._closed.wait(self._ready_poll_s)
+                continue
+            if code:
+                self._fail(code, {"account": self.account})
+                self._closed.wait(self._retry_s)
+                continue
+            try:
+                server = ForwarderServer((self._listen_host, self.port), self.handle)
+            except OSError:
+                self._fail(
+                    f"{self.name}_port_taken",
+                    {"account": self.account, "port": self.port},
+                )
+                self._closed.wait(self._retry_s)
+                continue
+            with self._lock:
+                if self._closed.is_set():
+                    server.server_close()
+                    return
+                self._server = server
+                self._code, self._params = "", {}
+            self._log(f"{self.name}: {self.account} answers on port {self.port}")
+            server.serve_forever(poll_interval=0.5)
+            return
+
+    def _fail(self, code: str, params: dict) -> None:
+        with self._lock:
+            is_new = self._code != code
+            self._code, self._params = code, dict(params)
+        if is_new:
+            self._log(f"{self.name}: {self.account} {code}")

@@ -25,7 +25,7 @@ import time
 
 from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
 from neutrino_agent.modules.shared.base import ModuleRunner
-from neutrino_agent.modules.cloudcli.record_store import CloudcliRecordStore
+from neutrino_agent.modules.shared.record_store import InstanceRecordStore
 from neutrino_agent.modules.code_server import installer
 from neutrino_agent.modules.code_server.config import CodeServerConfig
 from neutrino_agent.modules.code_server.constants import (
@@ -108,7 +108,7 @@ class CodeServerModuleRunner(ModuleRunner):
         self._applier = (
             applier if applier is not None else code_server_applier_for(platform)
         )
-        self._records = CloudcliRecordStore(
+        self._records = InstanceRecordStore(
             directory=self._applier.record_dir, fields=CODE_SERVER_RECORD_FIELDS
         )
         self._forwarder_factory = (

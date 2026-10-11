@@ -42,6 +42,7 @@ from neutrino_agent.modules.cloudcli.constants import (
     CLOUDCLI_DIR_NAME,
     CLOUDCLI_KIND,
     CLOUDCLI_NAME,
+    CLOUDCLI_RECORD_FIELDS,
     CLOUDCLI_STATUS_TTL_S,
     CLOUDCLI_UPSTREAM_HOST,
 )
@@ -49,7 +50,7 @@ from neutrino_agent.modules.cloudcli.darwin_applier import CloudcliDarwinApplier
 from neutrino_agent.modules.cloudcli.forwarder import CloudcliForwarder
 from neutrino_agent.modules.cloudcli.installer import remove_node, unpack_node
 from neutrino_agent.modules.cloudcli.linux_applier import CloudcliLinuxApplier
-from neutrino_agent.modules.cloudcli.record_store import CloudcliRecordStore
+from neutrino_agent.modules.shared.record_store import InstanceRecordStore
 from neutrino_agent.modules.cloudcli.windows_applier import CloudcliWindowsApplier
 from neutrino_agent.modules.shared.log_tail import file_tail
 from neutrino_agent.modules.shared.subprocess_run import command_detail
@@ -171,7 +172,9 @@ class CloudcliModuleRunner(ModuleRunner):
         self._applier = (
             applier if applier is not None else cloudcli_applier_for(platform, log)
         )
-        self._records = CloudcliRecordStore(directory=self._applier.record_dir)
+        self._records = InstanceRecordStore(
+            directory=self._applier.record_dir, fields=CLOUDCLI_RECORD_FIELDS
+        )
         self._forwarder_factory = (
             forwarder_factory if forwarder_factory is not None else CloudcliForwarder
         )
