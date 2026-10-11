@@ -1,7 +1,9 @@
 """What CloudCLI adds to the shared runner: Node.js, each account's npm install, the login.
 
 Node.js comes from the hub's package stream as the archive nodejs.org
-publishes and lands under the module's own directory, never on a ``PATH``.
+publishes, the module's ``node`` component, and lands under ``node`` in the
+module's own directory without the archive's top directory, never on a
+``PATH``.
 Before an instance first runs, its account installs CloudCLI into its own
 app directory with that Node.js: as a transient service on Linux, so a kill
 for want of memory ends it and not the agent; as the account's own process
@@ -26,11 +28,9 @@ import http.client
 import json
 import ntpath
 import os
-import shutil
 import socket
 import subprocess
 import tarfile
-import tempfile
 import time
 import urllib.parse
 import zipfile
@@ -67,6 +67,7 @@ from neutrino_agent.modules.cloudcli.constants import (
     CLOUDCLI_LOOKUP_TIMEOUT_S,
     CLOUDCLI_NAME,
     CLOUDCLI_NATIVE_MODULES,
+    CLOUDCLI_NODE_DIR_NAME,
     CLOUDCLI_NODE_DOWNLOAD_FAILED,
     CLOUDCLI_NODE_PARTS,
     CLOUDCLI_NODE_PREFIX,
@@ -112,11 +113,7 @@ from neutrino_agent.modules.shared.http_forward import (
 from neutrino_agent.modules.shared.instances import InstanceHooks
 from neutrino_agent.modules.shared.powershell_run import listed
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
-from neutrino_agent.modules.shared.unpacked_tree import (
-    extract_archive,
-    remove_tree,
-    seal_tree,
-)
+from neutrino_agent.modules.shared.unpacked_tree import remove_tree, unpack_into
 
 # The words in npm's output that say a native module could not get its
 # binary: prebuild-install gave up, and node-gyp could not build it either.
@@ -209,59 +206,8 @@ foreach ($task in @(Get-ScheduledTask -TaskName "$($d.prefix)*" -ErrorAction Sil
 """
 
 
-def unpack_node(path: str, *, package_kind: str, root: str) -> str:
-    """Put the Node.js archive's one directory under the module's root.
-
-    Any other Node.js the root holds is removed, and what lands is owned by
-    the agent's own account and read-only.
-
-    Args:
-        path: The archive on disk.
-        package_kind: ``tar`` or ``zip``.
-        root: The module's directory.
-
-    Returns:
-        The Node.js directory.
-
-    Raises:
-        ModuleApplyError: ``cloudcli_node_download_failed`` when the kind is
-            unknown, the archive cannot be read, or it holds no Node.js.
-        OSError: When the root cannot be written.
-    """
-    os.makedirs(root, mode=0o755, exist_ok=True)
-    os.chmod(root, 0o755)
-    staging = tempfile.mkdtemp(prefix=".unpack_", dir=root)
-    try:
-        try:
-            extract_archive(path, package_kind, staging)
-        except (OSError, tarfile.TarError, zipfile.BadZipFile, ValueError) as error:
-            raise ModuleApplyError(
-                CLOUDCLI_NODE_DOWNLOAD_FAILED, {"detail": str(error)[:200]}
-            ) from error
-        names = [
-            name
-            for name in os.listdir(staging)
-            if name.startswith(CLOUDCLI_NODE_PREFIX)
-            and os.path.isdir(os.path.join(staging, name))
-        ]
-        if len(names) != 1:
-            raise ModuleApplyError(
-                CLOUDCLI_NODE_DOWNLOAD_FAILED,
-                {"detail": "the archive holds no single Node.js directory"},
-            )
-        for held in os.listdir(root):
-            if held.startswith(CLOUDCLI_NODE_PREFIX):
-                remove_tree(os.path.join(root, held))
-        target = os.path.join(root, names[0])
-        os.replace(os.path.join(staging, names[0]), target)
-    finally:
-        shutil.rmtree(staging, ignore_errors=True)
-    seal_tree(target)
-    return target
-
-
 def node_dir(root: str) -> str:
-    """The Node.js directory under the module's root.
+    """The Node.js directory under the module's root, the ``node`` component.
 
     Args:
         root: The module's directory.
@@ -269,13 +215,8 @@ def node_dir(root: str) -> str:
     Returns:
         Its path, empty when none is there.
     """
-    try:
-        names = sorted(
-            name for name in os.listdir(root) if name.startswith(CLOUDCLI_NODE_PREFIX)
-        )
-    except OSError:
-        return ""
-    return os.path.join(root, names[-1]) if names else ""
+    directory = os.path.join(root, CLOUDCLI_NODE_DIR_NAME)
+    return directory if os.path.isdir(directory) else ""
 
 
 def node_path(directory: str, os_name: str, join=os.path.join) -> str:
@@ -679,7 +620,7 @@ class CloudcliHooks(InstanceHooks):
         return bool(node) and os.path.isfile(node)
 
     def install(self, package_path: str, package_kind: str) -> None:
-        """Unpack the Node.js the hub handed down.
+        """Unpack the one Node.js archive the hub handed down as the ``node`` component.
 
         Args:
             package_path: The archive on local disk.
@@ -690,9 +631,34 @@ class CloudcliHooks(InstanceHooks):
                 archive is not one Node.js comes in.
             OSError: When the module's directory cannot be written.
         """
-        unpack_node(
-            package_path, package_kind=package_kind, root=self.machine.module_dir
-        )
+        target = os.path.join(self.machine.module_dir, CLOUDCLI_NODE_DIR_NAME)
+        try:
+            unpack_into(package_path, package_kind, target)
+        except (tarfile.TarError, zipfile.BadZipFile, ValueError) as error:
+            raise ModuleApplyError(
+                CLOUDCLI_NODE_DOWNLOAD_FAILED, {"detail": str(error)[:200]}
+            ) from error
+        if not os.path.isfile(node_path(target, self._os_name)):
+            remove_tree(target)
+            raise ModuleApplyError(
+                CLOUDCLI_NODE_DOWNLOAD_FAILED,
+                {"detail": "the archive holds no Node.js"},
+            )
+
+    def after_install(self) -> None:
+        """Remove the Node.js directory an older build kept under its own name.
+
+        Raises:
+            OSError: When a directory cannot be removed.
+        """
+        root = self.machine.module_dir
+        try:
+            names = os.listdir(root)
+        except OSError:
+            return
+        for name in names:
+            if name.startswith(CLOUDCLI_NODE_PREFIX):
+                remove_tree(os.path.join(root, name))
 
     def prepare_module(self) -> list:
         """On Windows, read every install task once for this apply.

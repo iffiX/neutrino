@@ -4,7 +4,9 @@ The archive comes down a package stream, a tarball or a zip as its
 publisher ships it. It is unpacked whole into a directory, refusing any
 member that would land outside it, then sealed: owned by the agent's own
 account with every write bit taken away, so every account may read and run
-it and none may change it.
+it and none may change it. A component's archive lands under the
+component's own directory, without the one top directory its publisher
+may have wrapped it in.
 
 Not pure: writes files.
 """
@@ -17,6 +19,7 @@ import os
 import shutil
 import stat
 import tarfile
+import tempfile
 import zipfile
 
 from neutrino_agent.constants import AGENT_PACKAGE_KIND_TAR, AGENT_PACKAGE_KIND_ZIP
@@ -56,6 +59,43 @@ def extract_archive(path: str, package_kind: str, directory: str) -> None:
             archive.extractall(directory)
     else:
         raise ValueError(f"unknown package kind {package_kind!r}")
+
+
+def unpack_into(path: str, package_kind: str, directory: str) -> None:
+    """Unpack a component's archive under its directory and seal it.
+
+    An archive whose members all sit under one top directory is unpacked
+    without it, so the component's files sit directly under the directory;
+    one with files at its top is unpacked as it is. What the directory
+    held before is replaced.
+
+    Args:
+        path: The archive on disk.
+        package_kind: ``tar`` or ``zip``.
+        directory: The component's directory.
+
+    Raises:
+        ValueError: For an unknown kind or a member outside the directory.
+        tarfile.TarError: When a tarball cannot be read.
+        zipfile.BadZipFile: When a zip cannot be read.
+        OSError: When the directory cannot be written.
+    """
+    parent = os.path.dirname(directory) or "."
+    os.makedirs(parent, mode=0o755, exist_ok=True)
+    staging = tempfile.mkdtemp(prefix=".unpack_", dir=parent)
+    try:
+        extract_archive(path, package_kind, staging)
+        names = os.listdir(staging)
+        source = staging
+        if len(names) == 1:
+            top = os.path.join(staging, names[0])
+            if os.path.isdir(top) and not os.path.islink(top):
+                source = top
+        remove_tree(directory)
+        os.replace(source, directory)
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+    seal_tree(directory)
 
 
 def seal_tree(directory: str) -> None:

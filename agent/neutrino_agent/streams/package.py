@@ -1,7 +1,8 @@
 """Package bytes, down one stream the agent opens.
 
 The agent opens ``package {module}`` for a module's package from the hub's
-cache, and ``package {}`` for its own. It grants credit as it writes each
+cache, ``package {module, component}`` for one component of it, and
+``package {}`` for its own. It grants credit as it writes each
 piece to a temporary file under its data directory, waits for the hub's
 close, and checks the ``sha256`` the close's params carry against what
 landed. Only a file that matches is handed over, renamed from its
@@ -64,9 +65,10 @@ class PackageStream:
         """Take every byte, wait for the close, and check the digest.
 
         Returns:
-            ``{"path"}`` naming the file, under its final name when one was
-            given (the release's own name when the close carried a safe
-            one), when its digest matched; otherwise ``{"code", "params"}``:
+            ``{"path", "sha256"}`` naming the file, under its final name when
+            one was given (the release's own name when the close carried a
+            safe one), and its digest, when the digest matched the close's;
+            otherwise ``{"code", "params"}``:
             the hub's own code when it closed with one,
             ``package_digest_mismatch`` when the bytes do not match the
             ``sha256`` the close named, ``hub_unreachable`` when the stream
@@ -108,7 +110,7 @@ class PackageStream:
             _unlink(path)
             return _refusal(CODE_DIGEST_MISMATCH)
         if not self._name:
-            return {"path": path}
+            return {"path": path, "sha256": expected}
         final = os.path.join(
             self._directory, release_name(params.get("name"), fallback=self._name)
         )
@@ -117,7 +119,7 @@ class PackageStream:
         except OSError as error:
             _unlink(path)
             return _refusal("write_failed", path=final, detail=str(error)[:200])
-        return {"path": final}
+        return {"path": final, "sha256": expected}
 
     def _take(self, handle, digest) -> tuple:
         """Write the hub's bytes until its close, granting as each lands.

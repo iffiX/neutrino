@@ -546,19 +546,25 @@ class DesiredStateApplier:
         except GatewayUnreachable:
             return None
 
-    def _receive(self, name: str) -> dict:
-        """One module's package, down a ``package {module}`` stream.
+    def _receive(self, name: str, component: str = "") -> dict:
+        """One module's package, down a ``package {module, component}`` stream.
 
         Args:
             name: The module name.
+            component: The component wanted; empty for a module with one
+                archive, and then the open carries no such field.
 
         Returns:
-            ``{"path"}`` naming the checked file, or ``{"code", "params"}``.
+            ``{"path", "sha256"}`` naming the checked file and its digest,
+            or ``{"code", "params"}``.
         """
         if self._open_stream is None:
             return {"code": RETRIED_CODE, "params": {}}
+        arguments = {"module": name}
+        if component:
+            arguments["component"] = component
         try:
-            channel = self._open_stream(STREAM_KIND_PACKAGE, module=name)
+            channel = self._open_stream(STREAM_KIND_PACKAGE, **arguments)
         except GatewayUnreachable:
             return {"code": RETRIED_CODE, "params": {}}
         return PackageStream(channel, directory=self._package_dir).receive()

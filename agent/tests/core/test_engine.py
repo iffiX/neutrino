@@ -1082,3 +1082,160 @@ def test_a_platform_with_packages_builds_the_vs_code_runner(tmp_path):
         "terminal",
         "remote_desktop",
     }
+
+
+# --- components ---
+
+
+class ComponentRunner(ModuleRunner):
+    """A module whose software comes as components, recorded as they land."""
+
+    kind = "demo"
+    name = "demo"
+    download_failure_code = "demo_download_failed"
+
+    def __init__(self):
+        super().__init__(platform=AgentPlatform(), log=lambda line: None)
+        self.landed: list = []
+        self.installed: list = []
+
+    def verify(self, resolved):
+        return bool(self.landed)
+
+    def install(self, resolved, package_path):
+        self.installed.append(package_path)
+        self.landed.append(("one", "", True))
+
+    def install_component(self, resolved, component, package_path):
+        self.landed.append(
+            (component["name"], component["directory"], os.path.exists(package_path))
+        )
+
+
+COMPONENT_RECIPE = {
+    "kind": "demo",
+    "verify": "",
+    "components": [
+        {
+            "name": "server",
+            "package_kind": "tar",
+            "directory": "server",
+            "sha256": "a" * 64,
+        },
+        {
+            "name": "node",
+            "package_kind": "tar",
+            "directory": "node",
+            "sha256": "b" * 64,
+        },
+    ],
+}
+COMPONENT_DIGESTS = {"server": "a" * 64, "node": "b" * 64}
+
+
+def component_engine(runner, recipe, tmp_path):
+    engine = bare_engine(tmp_path=tmp_path)
+    engine._wanted = {
+        "demo": {
+            "want": "installed",
+            "config": {},
+            "install": dict(recipe),
+            "uninstall": {},
+        }
+    }
+    engine._module_runners = {"demo": runner}
+    return engine
+
+
+def component_receive(received, tmp_path, digests):
+    """A receive that writes each component's archive and records what was asked."""
+
+    def receive(name, component=""):
+        received.append((name, component))
+        path = tmp_path / f"{component or name}.tar"
+        path.write_bytes(b"archive")
+        return {"path": str(path), "sha256": digests.get(component, "")}
+
+    return receive
+
+
+def test_a_recipe_with_components_receives_each_and_unpacks_it_under_its_directory(
+    tmp_path,
+):
+    runner = ComponentRunner()
+    engine = component_engine(runner, COMPONENT_RECIPE, tmp_path)
+    received: list = []
+
+    refusal = engine.install(
+        "demo", receive=component_receive(received, tmp_path, COMPONENT_DIGESTS)
+    )
+
+    assert refusal == {}
+    assert received == [("demo", "server"), ("demo", "node")]
+    assert runner.landed == [("server", "server", True), ("node", "node", True)]
+    assert runner.installed == []
+    assert not (tmp_path / "server.tar").exists()
+    assert not (tmp_path / "node.tar").exists()
+
+
+def test_a_component_whose_digest_is_not_the_recipes_is_refused_and_deleted(tmp_path):
+    runner = ComponentRunner()
+    engine = component_engine(runner, COMPONENT_RECIPE, tmp_path)
+    digests = dict(COMPONENT_DIGESTS, node="x" * 64)
+
+    refusal = engine.install("demo", receive=component_receive([], tmp_path, digests))
+
+    assert refusal == {
+        "code": "package_digest_mismatch",
+        "params": {"component": "node"},
+    }
+    assert runner.landed == [("server", "server", True)]
+    assert not (tmp_path / "node.tar").exists()
+
+
+def test_a_component_the_hub_could_not_hand_down_is_the_modules_own_code(tmp_path):
+    runner = ComponentRunner()
+    engine = component_engine(runner, COMPONENT_RECIPE, tmp_path)
+
+    def refuse(name, component=""):
+        return {"code": "module_fetch_failed", "params": {}}
+
+    refusal = engine.install("demo", receive=refuse)
+
+    assert refusal == {
+        "code": "demo_download_failed",
+        "params": {"detail": "module_fetch_failed"},
+    }
+    assert runner.landed == []
+
+
+def test_a_recipe_with_one_archive_asks_with_the_module_name_alone(tmp_path):
+    runner = ComponentRunner()
+    recipe = {"kind": "demo", "verify": "", "package_kind": "tar"}
+    engine = component_engine(runner, recipe, tmp_path)
+    received: list = []
+
+    def receive(name):
+        received.append(name)
+        path = tmp_path / "one.tar"
+        path.write_bytes(b"archive")
+        return {"path": str(path), "sha256": "c" * 64}
+
+    assert engine.install("demo", receive=receive) == {}
+    assert received == ["demo"]
+    assert runner.installed == [str(tmp_path / "one.tar")]
+
+
+def test_a_runner_that_unpacks_no_component_is_install_failed(tmp_path):
+    class BareRunner(ComponentRunner):
+        def install_component(self, resolved, component, package_path):
+            ModuleRunner.install_component(self, resolved, component, package_path)
+
+    engine = component_engine(BareRunner(), COMPONENT_RECIPE, tmp_path)
+
+    refusal = engine.install(
+        "demo", receive=component_receive([], tmp_path, COMPONENT_DIGESTS)
+    )
+
+    assert refusal["code"] == "install_failed"
+    assert "installs no component" in refusal["params"]["detail"]

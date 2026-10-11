@@ -2,7 +2,9 @@
 
 The fixtures under ``golden/`` were rendered by the code before the shared
 account service layer existed, and the hooks of each module through the
-layer render the same texts now. What these pin: the unit templates, the
+layer render the same texts now, with one change: CloudCLI's Node.js is its
+``node`` component, so every path that named ``node-v<version>-<os>-<arch>``
+names ``node``. What these pin: the unit templates, the
 environment files, the LaunchDaemon plists, the Windows task arguments and
 scripts, and the install commands each module produces for fixed inputs.
 """
@@ -37,9 +39,11 @@ MAC_CONFIG = "/Library/Application Support/Neutrino/agent/config"
 WIN_STATE = "C:\\ProgramData\\Neutrino\\agent\\state"
 WIN_CONFIG = "C:\\ProgramData\\Neutrino\\agent\\config"
 WIN_HOME = "C:\\Users\\ann"
-LINUX_NODE_DIR = "node-v22.23.3-linux-x64"
-MAC_NODE_DIR = "node-v22.23.3-darwin-arm64"
-WIN_NODE_DIR = "node-v22.23.3-win-x64"
+# The node component's directory, where the hub's archive lands without its
+# own top directory.
+LINUX_NODE_DIR = "node"
+MAC_NODE_DIR = "node"
+WIN_NODE_DIR = "node"
 ANN = AccountEntry(1000, 1000, "/home/ann", "/bin/bash")
 MAC_ANN = AccountEntry(501, 20, "/Users/ann", "/bin/zsh")
 WIN_ANN = AccountEntry(0, 0, WIN_HOME, "")

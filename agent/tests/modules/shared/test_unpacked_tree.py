@@ -17,6 +17,7 @@ from neutrino_agent.modules.shared.unpacked_tree import (
     extract_archive,
     remove_tree,
     seal_tree,
+    unpack_into,
 )
 
 
@@ -69,3 +70,50 @@ def test_a_sealed_tree_has_no_write_bit_and_removing_it_takes_all(tmp_path):
     assert stat.S_IMODE(tree.stat().st_mode) == 0o555
     remove_tree(str(tree))
     assert not tree.exists()
+
+
+def test_a_components_archive_lands_without_its_one_top_directory(tmp_path):
+    archive = _tarball(
+        tmp_path / "a.tar.gz",
+        {"node-v22/bin/node": b"#!node", "node-v22/LICENSE": b"x"},
+    )
+
+    unpack_into(archive, "tar", str(tmp_path / "cloudcli" / "node"))
+
+    node = tmp_path / "cloudcli" / "node"
+    assert sorted(os.listdir(node)) == ["LICENSE", "bin"]
+    assert (node / "bin" / "node").read_bytes() == b"#!node"
+    assert stat.S_IMODE(node.stat().st_mode) == 0o555
+    assert stat.S_IMODE((node / "bin" / "node").stat().st_mode) & 0o222 == 0
+    assert sorted(os.listdir(tmp_path / "cloudcli")) == ["node"]
+
+
+def test_an_archive_with_files_at_its_top_lands_as_it_is_and_replaces_what_was_there(
+    tmp_path,
+):
+    first = _tarball(
+        tmp_path / "a.tar.gz", {"codeg-server": b"1", "web/index.html": b"<html>"}
+    )
+    second = _tarball(tmp_path / "b.tar.gz", {"codeg-server": b"2"})
+    target = str(tmp_path / "codeg" / "server")
+
+    unpack_into(first, "tar", target)
+    assert sorted(os.listdir(target)) == ["codeg-server", "web"]
+    unpack_into(second, "tar", target)
+
+    assert os.listdir(target) == ["codeg-server"]
+    assert (tmp_path / "codeg" / "server" / "codeg-server").read_bytes() == b"2"
+
+
+def test_a_broken_archive_leaves_the_directory_as_it_was(tmp_path):
+    target = tmp_path / "demo" / "node"
+    target.mkdir(parents=True)
+    (target / "kept").write_text("x")
+    junk = tmp_path / "junk.tar.gz"
+    junk.write_bytes(b"not an archive")
+
+    with pytest.raises(tarfile.TarError):
+        unpack_into(str(junk), "tar", str(target))
+
+    assert (target / "kept").read_text() == "x"
+    assert sorted(os.listdir(tmp_path / "demo")) == ["node"]

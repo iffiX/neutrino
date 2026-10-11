@@ -8,7 +8,7 @@ Type=simple
 User=%i
 EnvironmentFile=/etc/neutrino/agent/cloudcli/%i.env
 WorkingDirectory=~
-ExecStart=/var/lib/neutrino/agent/cloudcli/node-v22.23.3-linux-x64/bin/node ${CLOUDCLI_SERVER}
+ExecStart=/var/lib/neutrino/agent/cloudcli/node/bin/node ${CLOUDCLI_SERVER}
 Restart=always
 RestartSec=10
 

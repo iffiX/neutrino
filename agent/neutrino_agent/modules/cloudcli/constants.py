@@ -17,7 +17,10 @@ CLOUDCLI_SERVER_PARTS = ("dist-server", "server", "index.js")
 # The native modules npm fetches a prebuilt binary for during the install.
 CLOUDCLI_NATIVE_MODULES = ("better-sqlite3", "node-pty", "bcrypt")
 
-# The prefix of the one directory each Node.js archive the hub sends holds.
+# Node.js is the module's ``node`` component, unpacked under this directory
+# without the archive's own top directory; an older build kept that top
+# directory, ``node-v<version>-<os>-<arch>``, which an install removes.
+CLOUDCLI_NODE_DIR_NAME = "node"
 CLOUDCLI_NODE_PREFIX = "node-v"
 # Inside that directory: the interpreter and npm, by system.
 CLOUDCLI_NODE_PARTS = {

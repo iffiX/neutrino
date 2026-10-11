@@ -55,7 +55,6 @@ from neutrino_agent.modules.cloudcli.hooks import (
     npm_environment,
     npm_failure,
     service_environment,
-    unpack_node,
 )
 from neutrino_agent.modules.shared.account_service import (
     AccountEntry,
@@ -127,7 +126,7 @@ def hooks_for(os_name, module_dir, **kwargs) -> CloudcliHooks:
     return hooks
 
 
-def with_node(tmp_path, os_name="linux", directory=NODE) -> str:
+def with_node(tmp_path, os_name="linux", directory="node") -> str:
     module_dir = tmp_path / "state" / "cloudcli"
     if os_name == "windows":
         (module_dir / directory).mkdir(parents=True)
@@ -141,43 +140,51 @@ def with_node(tmp_path, os_name="linux", directory=NODE) -> str:
 # --- Node.js ---
 
 
-def test_a_tarball_lands_whole_and_read_only(tmp_path):
-    root = tmp_path / "cloudcli"
-
-    directory = unpack_node(
-        tarball(tmp_path / "node.tar.gz"), package_kind="tar", root=str(root)
-    )
-
-    assert directory == str(root / NODE)
-    assert node_dir(str(root)) == directory
-    node = node_path(directory, "linux")
-    assert open(node, "rb").read() == b"#!node"
-    assert stat.S_IMODE(os.stat(node).st_mode) & 0o222 == 0
-    assert os.readlink(os.path.join(directory, "bin", "npm")).endswith("npm-cli.js")
-
-
-def test_a_new_node_replaces_the_one_before_through_the_hooks(tmp_path):
+def test_an_install_lands_node_under_node_without_the_archives_top_directory(tmp_path):
     hooks = hooks_for("linux", str(tmp_path / "cloudcli"))
     assert hooks.verify() is False
 
-    hooks.install(tarball(tmp_path / "a.tar.gz"), "tar")
-    hooks.install(tarball(tmp_path / "b.tar.gz", top="node-v22.24.0-linux-x64"), "tar")
+    hooks.install(tarball(tmp_path / "node.tar.gz"), "tar")
 
-    assert os.listdir(tmp_path / "cloudcli") == ["node-v22.24.0-linux-x64"]
+    node = tmp_path / "cloudcli" / "node"
+    assert sorted(os.listdir(tmp_path / "cloudcli")) == ["node"]
+    assert node_dir(str(tmp_path / "cloudcli")) == str(node)
+    binary = node_path(str(node), "linux")
+    assert open(binary, "rb").read() == b"#!node"
+    assert stat.S_IMODE(os.stat(binary).st_mode) & 0o222 == 0
+    assert os.readlink(os.path.join(node, "bin", "npm")).endswith("npm-cli.js")
     assert hooks.verify() is True
-    assert hooks.node.endswith("node-v22.24.0-linux-x64/bin/node")
+    assert hooks.node == binary
+
+
+def test_a_new_node_replaces_the_one_before_and_an_older_builds_directory_goes(
+    tmp_path,
+):
+    hooks = hooks_for("linux", str(tmp_path / "cloudcli"))
+    stale = tmp_path / "cloudcli" / "node-v22.22.0-linux-x64" / "bin"
+    stale.mkdir(parents=True)
+    (stale / "node").write_text("")
+    hooks.install(tarball(tmp_path / "a.tar.gz", extra=[(f"{NODE}/old", b"x")]), "tar")
+    hooks.after_install()
+
+    hooks.install(tarball(tmp_path / "b.tar.gz", top="node-v22.24.0-linux-x64"), "tar")
+    hooks.after_install()
+
+    assert os.listdir(tmp_path / "cloudcli") == ["node"]
+    assert not (tmp_path / "cloudcli" / "node" / "old").exists()
 
 
 def test_a_zip_lands_the_same(tmp_path):
     path = tmp_path / "node.zip"
     with zipfile.ZipFile(path, "w") as archive:
         archive.writestr("node-v22.23.3-win-x64/node.exe", b"MZ")
+    hooks = hooks_for("windows", str(tmp_path / "cloudcli"))
 
-    directory = unpack_node(
-        str(path), package_kind="zip", root=str(tmp_path / "cloudcli")
-    )
+    hooks.install(str(path), "zip")
 
-    assert os.path.isfile(os.path.join(directory, "node.exe"))
+    node = str(tmp_path / "cloudcli" / "node")
+    assert os.path.isfile(os.path.join(node, "node.exe"))
+    assert hooks.node == ntpath.join(node, "node.exe")
 
 
 @pytest.mark.parametrize("kind", ["tar", "zip", "msi"])
@@ -186,25 +193,26 @@ def test_an_archive_that_is_not_one_is_a_failed_node_download(tmp_path, kind):
     path.write_bytes(b"<html>")
 
     with pytest.raises(ModuleApplyError) as caught:
-        unpack_node(str(path), package_kind=kind, root=str(tmp_path / "c"))
+        hooks_for("linux", str(tmp_path / "c")).install(str(path), kind)
 
     assert caught.value.code == "cloudcli_node_download_failed"
 
 
-def test_an_archive_without_one_node_directory_or_outside_itself_is_refused(tmp_path):
+def test_an_archive_without_node_or_outside_itself_is_refused(tmp_path):
+    hooks = hooks_for("linux", str(tmp_path / "c"))
+    with tarfile.open(tmp_path / "x.tar.gz", "w:gz") as archive:
+        info = tarfile.TarInfo("README")
+        info.size = 1
+        archive.addfile(info, io.BytesIO(b"x"))
+
     with pytest.raises(ModuleApplyError) as caught:
-        unpack_node(
-            tarball(tmp_path / "x.tar.gz", top="something"),
-            package_kind="tar",
-            root=str(tmp_path / "c"),
-        )
+        hooks.install(str(tmp_path / "x.tar.gz"), "tar")
     assert caught.value.code == "cloudcli_node_download_failed"
+    assert not (tmp_path / "c" / "node").exists()
 
     with pytest.raises(ModuleApplyError):
-        unpack_node(
-            tarball(tmp_path / "y.tar.gz", extra=[("../escape", b"x")]),
-            package_kind="tar",
-            root=str(tmp_path / "d"),
+        hooks.install(
+            tarball(tmp_path / "y.tar.gz", extra=[("../escape", b"x")]), "tar"
         )
     assert not (tmp_path / "escape").exists()
 
@@ -408,9 +416,7 @@ def test_a_mac_install_runs_npm_as_the_account(tmp_path):
             land_package(command[command.index("--prefix") + 1])
         return CommandResult(list(command), 0, "", "")
 
-    hooks = hooks_for(
-        "darwin", with_node(tmp_path, directory="node-v22-darwin"), run_as=run_as
-    )
+    hooks = hooks_for("darwin", with_node(tmp_path, "darwin"), run_as=run_as)
     entry = AccountEntry(501, 20, str(tmp_path / "Users" / "ann"), "/bin/zsh")
 
     notes = hooks.prepare(CONFIG, CONFIG.instances[0], entry)
@@ -418,9 +424,7 @@ def test_a_mac_install_runs_npm_as_the_account(tmp_path):
     install, check = calls
     assert install[0] is entry
     assert install[1][-4:-1] == ["install", "@cloudcli-ai/cloudcli@1.37.3", "--prefix"]
-    assert install[2]["PATH"].endswith(
-        "node-v22-darwin/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-    )
+    assert install[2]["PATH"].endswith("node/bin:/usr/bin:/bin:/usr/sbin:/sbin")
     assert install[2]["npm_config_userconfig"].endswith("cloudcli/app/.npmrc")
     assert install[3] == 1800
     assert "createRequire" in check[1][-1]
@@ -470,7 +474,7 @@ def windows(tmp_path, ready):
     powershell = PowerShell()
     hooks = hooks_for(
         "windows",
-        with_node(tmp_path, "windows", "node-v22.23.3-win-x64"),
+        with_node(tmp_path, "windows"),
         powershell=powershell,
     )
     return hooks, powershell, AccountEntry(0, 0, "C:\\Users\\ann", "")
@@ -635,7 +639,7 @@ def test_the_service_runs_node_with_the_server_script_from_a_root_only_environme
     assert service.working_directory == "~"
     assert not [name for name in service.environment if "ANTHROPIC" in name]
     assert (
-        hooks_for("darwin", with_node(tmp_path, "darwin", "n"))
+        hooks_for("darwin", with_node(tmp_path / "mac", "darwin"))
         .service(CONFIG.instances[0], ANN, record)
         .command[1]
         .endswith("index.js")

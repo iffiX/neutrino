@@ -15,9 +15,12 @@ an uninstall go through the hooks and the module directory; and a record
 changed by the hooks is applied again.
 """
 
+import functools
+import io
 import json
 import os
 import stat
+import tarfile
 from dataclasses import dataclass
 
 import pytest
@@ -686,3 +689,50 @@ def test_the_machine_names_the_modules_directories_under_both_roots():
     assert windows.lookup_account("ann") == AccountEntry(0, 0, "C:\\Users\\ann", "")
     with pytest.raises(KeyError):
         windows.lookup_account("ghost")
+
+
+# --- components ---
+
+
+def node_archive(path):
+    with tarfile.open(path, "w:gz") as packed:
+        info = tarfile.TarInfo("node-v22/bin/node")
+        info.size = 2
+        packed.addfile(info, io.BytesIO(b"hi"))
+    return str(path)
+
+
+def test_a_component_lands_under_its_directory_and_the_hooks_tidy_after(
+    runner, platform, tmp_path
+):
+    tidied = []
+    runner.hooks.after_install = functools.partial(tidied.append, True)
+    component = {"name": "node", "package_kind": "tar", "directory": "node"}
+
+    runner.install_component({}, component, node_archive(tmp_path / "node.tar.gz"))
+
+    node = tmp_path / "state" / "demo" / "node"
+    assert (node / "bin" / "node").read_bytes() == b"hi"
+    assert tidied == [True]
+    assert platform.opened == [str(tmp_path / "state" / "demo")]
+
+
+def test_a_component_directory_that_is_not_a_plain_name_is_refused(runner, tmp_path):
+    for directory in ("..", "a/b", "a\\b"):
+        component = {"name": "x", "package_kind": "tar", "directory": directory}
+        with pytest.raises(ModuleApplyError) as caught:
+            runner.install_component({}, component, str(tmp_path / "none.tar"))
+        assert caught.value.code == "demo_download_failed"
+
+
+def test_a_component_archive_that_cannot_be_read_is_the_modules_download_failure(
+    runner, tmp_path
+):
+    junk = tmp_path / "junk.tar"
+    junk.write_bytes(b"junk")
+    component = {"name": "node", "package_kind": "tar", "directory": "node"}
+
+    with pytest.raises(ModuleApplyError) as caught:
+        runner.install_component({}, component, str(junk))
+
+    assert caught.value.code == "demo_download_failed"

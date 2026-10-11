@@ -21,8 +21,10 @@ import json
 import ntpath
 import os
 import subprocess
+import tarfile
 import threading
 import time
+import zipfile
 
 from neutrino_agent.constants import AGENT_DESIRED_STATE_NAME
 from neutrino_agent.exceptions import ModuleApplyError, ModuleInstallPending
@@ -39,7 +41,7 @@ from neutrino_agent.modules.shared.http_forward import InstanceForwarder
 from neutrino_agent.modules.shared.log_tail import file_tail
 from neutrino_agent.modules.shared.record_store import InstanceRecordStore
 from neutrino_agent.modules.shared.subprocess_run import command_detail
-from neutrino_agent.modules.shared.unpacked_tree import remove_tree
+from neutrino_agent.modules.shared.unpacked_tree import remove_tree, unpack_into
 
 try:
     import pwd
@@ -217,6 +219,13 @@ class InstanceHooks:
             NotImplementedError: For a module with no archive of its own.
         """
         raise NotImplementedError(f"{self.name}: install")
+
+    def after_install(self) -> None:
+        """Tidy the module's directory once an archive landed.
+
+        Raises:
+            OSError: When a file cannot be removed.
+        """
 
     def prepare_module(self) -> list:
         """What the machine needs before any instance runs, once per apply.
@@ -459,6 +468,45 @@ class InstancesModuleRunner(ModuleRunner):
         """
         entry = resolved.get("entry") or {}
         self._hooks.install(package_path, str(entry.get("package_kind", "")))
+        self._hooks.after_install()
+        self._platform.open_to_accounts(self._machine.module_dir)
+        self._forget_states()
+
+    def install_component(
+        self, resolved: dict, component: dict, package_path: str
+    ) -> None:
+        """Unpack one component under its directory and open it to every account.
+
+        Args:
+            resolved: The module as the hub resolved it.
+            component: ``{name, package_kind, directory, sha256}``; the
+                directory is one plain name under the module's own.
+            package_path: The archive on local disk.
+
+        Raises:
+            ModuleApplyError: The module's download code when the archive
+                cannot be unpacked or the directory is not a plain name.
+            OSError: When the module's directory cannot be written or
+                opened to every account.
+        """
+        code = self.download_failure_code or "install_failed"
+        directory = str(component.get("directory") or component.get("name") or "")
+        if (
+            not directory
+            or directory in (".", "..")
+            or "/" in directory
+            or "\\" in directory
+        ):
+            raise ModuleApplyError(
+                code, {"detail": f"component directory {directory!r}"}
+            )
+        join = ntpath.join if self._platform.os_name == "windows" else os.path.join
+        target = join(self._machine.module_dir, directory)
+        try:
+            unpack_into(package_path, str(component.get("package_kind", "")), target)
+        except (tarfile.TarError, zipfile.BadZipFile, ValueError) as error:
+            raise ModuleApplyError(code, {"detail": str(error)[:200]}) from error
+        self._hooks.after_install()
         self._platform.open_to_accounts(self._machine.module_dir)
         self._forget_states()
 

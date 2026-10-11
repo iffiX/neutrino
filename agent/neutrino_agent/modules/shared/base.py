@@ -131,6 +131,22 @@ class ModuleRunner:
         """
         return {}
 
+    def install_component(
+        self, resolved: dict, component: dict, package_path: str
+    ) -> None:
+        """Unpack one component the hub handed down.
+
+        Args:
+            resolved: The module as the hub resolved it.
+            component: ``{name, package_kind, directory, sha256}`` as the
+                recipe lists it.
+            package_path: The archive on local disk.
+
+        Raises:
+            NotImplementedError: For a runner that installs no component.
+        """
+        raise NotImplementedError(f"{self.name}: installs no component")
+
     def validate(self, config: dict) -> None:
         """Check a configuration before the hub stores it.
 
