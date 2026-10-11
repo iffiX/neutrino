@@ -4,13 +4,13 @@ title: CloudCLI
 
 # CloudCLI
 
-CloudCLI 是一个跑 AI 编程会话的网页。**CloudCLI** 模块给受管机器上选定的每个账户运行一个实例，客户端选 **打开** 后直接进到已登录的页面。你在机器上安装的是 npm 包 `@cloudcli-ai/cloudcli`，版本固定在 1.37.3。
+CloudCLI 是一个跑 AI 编程会话的网页。**CloudCLI** 模块给受管机器上选定的每个账户运行一个实例，客户端选 **打开** 后直接进到已登录的页面。你在机器上安装的是 npm 包 `@cloudcli-ai/cloudcli`，版本固定在 1.37.3。要在同一个网页里用 Claude Code、Codex、Gemini CLI 等多种工具，选 [Codeg](./codeg.md) 模块。
 
-| 系统    | 能运行它的机器                    |
-| ------- | --------------------------------- |
-| Linux   | amd64 和 arm64，glibc 2.28 及以上 |
-| Windows | amd64                             |
-| macOS   | Apple 芯片和 Intel                |
+| 系统    | 能运行它的机器     |
+| ------- | ------------------ |
+| Linux   | amd64 和 arm64     |
+| Windows | amd64              |
+| macOS   | Apple 芯片和 Intel |
 
 ## 添加实例
 

@@ -6,13 +6,17 @@ title: Your AI session on the phone
 
 A CloudCLI on the computer shows your account's Claude Code sessions as a web page, and the phone opens it to read and answer them.
 
+::: tip
+[Codeg](../agent/modules/codeg.md) is the other choice: one page for Claude Code, Codex, Gemini CLI and more, with your terminal sessions imported.
+:::
+
 Before you start, finish the [Step zero](../quick-start.md), and have Claude Code installed in your own account on the computer. You need that account's user name, and on Windows its login stored under **Logins** on the panel's **Credentials** page. Turn the phone's Wi-Fi back on.
 
 ## Start a CloudCLI
 
 1. In the panel's sidebar, open **Modules**.
 1. Under **Which machine**, select your computer.
-1. Select the **CloudCLI** tab. If the tab is missing, select **+** at the end of the tabs and tick **CloudCLI**.
+1. Select the **CloudCLI** tab. If the tab is missing, select **+** at the end of the module list and tick **CloudCLI**.
 1. Select **Install**, and wait until the tab no longer reads **installing**.
 1. Select **Configure**.
 1. Under **Instances**, select **Add instance**.

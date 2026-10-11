@@ -6,11 +6,11 @@ title: code-server
 
 Coder publishes code-server, the browser build of VS Code, under the MIT licence. The **code-server** module runs it once per account on a managed Linux machine or Mac. You install code-server on the machine from Coder, at one pinned version of its standalone release.
 
-| System  | Machines that run it                      |
-| ------- | ----------------------------------------- |
-| Linux   | amd64 and arm64, with glibc 2.28 or newer |
-| macOS   | Apple silicon and Intel                   |
-| Windows | none; the tab is greyed out               |
+| System  | Machines that run it        |
+| ------- | --------------------------- |
+| Linux   | amd64 and arm64             |
+| macOS   | Apple silicon and Intel     |
+| Windows | none; the tab is greyed out |
 
 In the mainland edition, the release comes from the USTC mirror, `mirrors.ustc.edu.cn`, which keeps only Coder's latest release. The installer checks the pinned version against its SHA-256, and takes the mirror's current release, checked by HTTPS alone, when the pinned one is gone.
 

@@ -6,11 +6,11 @@ title: VS Code
 
 浏览器里的 VS Code 由 **VS Code** 模块运行在受管机器上，每个账户一个实例。你按微软的许可条款在这台机器上安装 VS Code Server：安装程序取来微软独立版 VS Code CLI 的一个固定构建，由被控端运行。
 
-| 系统    | 能运行它的机器                    |
-| ------- | --------------------------------- |
-| Linux   | amd64 和 arm64，glibc 2.28 及以上 |
-| Windows | amd64                             |
-| macOS   | Apple 芯片和 Intel                |
+| 系统    | 能运行它的机器     |
+| ------- | ------------------ |
+| Linux   | amd64 和 arm64     |
+| Windows | amd64              |
+| macOS   | Apple 芯片和 Intel |
 
 ## 启用
 

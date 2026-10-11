@@ -6,11 +6,11 @@ title: code-server
 
 Linux 或 Mac 受管机器上，**code-server** 模块给每个账户运行一个 code-server，也就是 Coder 以 MIT 许可发布的浏览器版 VS Code。模块的安装程序取来 Coder 独立发布包的一个固定版本，由被控端解包并运行。
 
-| 系统    | 能运行它的机器                    |
-| ------- | --------------------------------- |
-| Linux   | amd64 和 arm64，glibc 2.28 及以上 |
-| macOS   | Apple 芯片和 Intel                |
-| Windows | 不支持，列表里是灰的              |
+| 系统    | 能运行它的机器       |
+| ------- | -------------------- |
+| Linux   | amd64 和 arm64       |
+| macOS   | Apple 芯片和 Intel   |
+| Windows | 不支持，列表里是灰的 |
 
 国内版的安装程序改从中科大镜像 `mirrors.ustc.edu.cn` 取同一个发布包，用 SHA-256 核对。镜像上没有这一版时，改装镜像上的最新版，只靠 HTTPS 核对。
 
