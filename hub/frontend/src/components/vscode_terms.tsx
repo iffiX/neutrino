@@ -5,7 +5,7 @@ import { apiPost, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
 import type { VscodeDeviceView, VscodeTermsUpdate } from "../api_types";
 
-import "./vscode_panels.css";
+import "./vscode_terms.css";
 
 /**
  * Microsoft's terms for VS Code on one machine, above the module's tab.
