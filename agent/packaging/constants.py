@@ -5,8 +5,8 @@ is here is what the project has decided about the machines a package installs
 on.
 """
 
-# The oldest glibc an agent package runs on. Measured rather than chosen: the
-# RustDesk host the package carries needs 2.27, and the floor the project
-# declares is Ubuntu 22.04's 2.35. The build reads every ELF in its own tree
-# against this.
+# The oldest glibc an agent package runs on: the hub's packages' own floor, so
+# one system runs both. The RustDesk host the package carries needs 2.27 and
+# Codeg's binaries 2.34, both within it. The build reads every ELF in its own
+# tree against this.
 PACKAGING_GLIBC_FLOOR = "2.34"
