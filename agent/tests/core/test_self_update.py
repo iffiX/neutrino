@@ -404,7 +404,8 @@ def test_the_msi_reinstall_runs_the_file_under_its_release_name():
 
     script = self_update.install_command("msi", path, state_dir="C:\\s")[-1]
 
-    assert f'/i "{path}" REINSTALL=ALL' in script
+    assert f'/i "{path}" /qn /norestart' in script
+    assert "REINSTALL" not in script
 
 
 @pytest.mark.parametrize(
@@ -733,7 +734,7 @@ def test_the_msi_runs_quietly_in_powershell_and_writes_the_same_result():
     script = command[6]
     assert "Start-Process -FilePath msiexec.exe -Wait" in script
     assert (
-        f'\'/i "{package}" REINSTALL=ALL REINSTALLMODE=vomus /qn /norestart '
+        f'\'/i "{package}" /qn /norestart '
         f'/l*v "{state_dir}\\reinstall.log"\'' in script
     )
     assert "-NoNewWindow" in script

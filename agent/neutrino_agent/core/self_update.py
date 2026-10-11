@@ -375,9 +375,9 @@ def _windows_install_command(path: str, *, state_dir: str) -> list:
         The argument vector.
     """
     log = ntpath.join(state_dir, AGENT_REINSTALL_LOG_NAME)
-    arguments = (
-        f'/i "{path}" REINSTALL=ALL REINSTALLMODE=vomus /qn /norestart /l*v "{log}"'
-    )
+    # A newer package has a product code of its own, so this is an upgrade
+    # that removes the installed product; REINSTALL would skip the files.
+    arguments = f'/i "{path}" /qn /norestart /l*v "{log}"'
     script = _WINDOWS_SCRIPT.format(
         log=_powershell_quote(log),
         arguments=_powershell_quote(arguments),
