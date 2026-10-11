@@ -4,14 +4,49 @@ Nothing here installs anything: an install is minutes of package manager on a
 machine these tests are meant to leave as they found it, and it needs an agent
 answering. What is checked is the list the page is drawn from and every
 refusal around it, against a device that has never joined.
+
+One fact the page does not show is read through the installed hub's own
+interpreter: the recipe a Linux machine of this box's platform is sent, which
+names the components the agent fetches one `package` stream each.
 """
 
+import json
+import subprocess
+
 import pytest
+
+import test_panel_update as update
 
 MODULE_VERBS = ["install", "start", "stop", "uninstall"]
 # A row the page can offer, and one no catalog has.
 KNOWN_MODULE = "samba"
 UNKNOWN_MODULE = "nosuchmodule"
+# The programs run as a person's account the hub fetches, and the components
+# each one's Linux recipe names, in the manifest's order.
+HUB_MODULE_COMPONENTS = {"codeg": ["server", "node"], "cloudcli": ["node"]}
+# The modules the agent's own package carries: no press is offered on them.
+AGENT_MODULES = ["terminal", "remote_desktop"]
+# A page the shared instances router serves.
+INSTANCE_MODULE = "codeg"
+# Who installs a row: the closed set, as the manifests name it.
+INSTALLER_TIERS = frozenset({"agent", "platform", "hub"})
+# A person's own remote desktop products: detected by a module, never rows.
+REMOTE_DESKTOP_PRODUCTS = ["anydesk", "teamviewer"]
+# Each module's component names in the recipe the hub resolves for a Linux
+# machine of this box's family and architecture, run in the hub's interpreter.
+RECIPE_SCRIPT = """
+import json
+from neutrino_hub.modules.devices.agent_module_cache import resolve_platform_entry
+from neutrino_hub.modules.devices.manifests import load_module_manifests
+from neutrino_hub.system.machine import distribution_family, machine_architecture
+platform = {"os": "linux", "family": distribution_family(), "arch": machine_architecture()}
+recipes = {}
+for name, manifest in load_module_manifests().items():
+    _, entry = resolve_platform_entry(manifest, platform)
+    components = (entry or {}).get("components") or []
+    recipes[name] = [component["name"] for component in components]
+print(json.dumps(recipes))
+"""
 # The states a row may report, the closed set the panel words.
 STATE_WORDS = frozenset(
     {
@@ -47,6 +82,16 @@ def modules(panel, device_id) -> list:
     return panel.read(f"/agent/module?device_id={device_id}")["modules"]
 
 
+@pytest.fixture(scope="module")
+def linux_recipes() -> dict:
+    """Each module's component names in a Linux machine's recipe, by name."""
+    result = subprocess.run(
+        [update.HUB_PYTHON, "-c", RECIPE_SCRIPT], capture_output=True, text=True
+    )
+    assert result.returncode == 0, (result.stderr or result.stdout).strip()
+    return json.loads(result.stdout)
+
+
 def test_the_catalog_is_listed_for_a_device_with_no_agent(modules):
     """A page that cannot say why draws every row as "not installed", so the
     list answers even when nothing is beating."""
@@ -56,6 +101,31 @@ def test_the_catalog_is_listed_for_a_device_with_no_agent(modules):
 
 def test_every_row_carries_a_state_of_the_closed_set(modules):
     assert {entry["state"] for entry in modules} <= STATE_WORDS
+
+
+def test_every_row_is_installed_by_one_of_the_three_tiers(modules):
+    assert {entry["installer"] for entry in modules} <= INSTALLER_TIERS
+
+
+@pytest.mark.parametrize("name", sorted(HUB_MODULE_COMPONENTS))
+def test_a_program_run_as_an_account_is_a_hub_tier_row(modules, name):
+    rows = {entry["name"]: entry for entry in modules}
+
+    assert name in rows, sorted(rows)
+    assert rows[name]["installer"] == "hub"
+
+
+@pytest.mark.parametrize("name", sorted(HUB_MODULE_COMPONENTS))
+def test_a_linux_recipe_names_each_component_the_agent_fetches(linux_recipes, name):
+    """The row shows no recipe; the state the agent is sent does, and the
+    agent opens one ``package`` stream per component it names."""
+    assert linux_recipes[name] == HUB_MODULE_COMPONENTS[name]
+
+
+def test_a_persons_own_remote_desktop_product_is_no_row(modules):
+    """AnyDesk and TeamViewer are what the remote desktop module detects on
+    a machine, not modules of their own."""
+    assert not set(REMOTE_DESKTOP_PRODUCTS) & {entry["name"] for entry in modules}
 
 
 def test_a_device_that_never_joined_asks_only_the_agents_own_modules(modules):
@@ -87,6 +157,19 @@ def test_a_module_the_catalog_lacks_is_a_404(panel, device_id, verb):
 
 
 @pytest.mark.parametrize("verb", MODULE_VERBS)
+@pytest.mark.parametrize("name", AGENT_MODULES)
+def test_a_module_the_agent_carries_refuses_every_press(panel, device_id, name, verb):
+    """The agent's own package holds these two, so the row offers none of the
+    four presses, and a press sent anyway is refused before the device is
+    looked up."""
+    body = {"device_id": device_id, "module": name}
+
+    status, answer = panel.call("POST", f"/agent/module/{verb}", body)
+    assert status == 400, answer
+    assert answer["detail"] == {"code": "module_not_optional", "params": {"name": name}}
+
+
+@pytest.mark.parametrize("verb", MODULE_VERBS)
 def test_a_device_the_hub_lacks_is_a_404(panel, verb):
     body = {"device_id": "00000000000000000000000000000000", "module": KNOWN_MODULE}
 
@@ -101,11 +184,32 @@ def test_the_list_of_a_device_the_hub_lacks_is_a_404(panel):
     assert panel.status("GET", path) == 404
 
 
-def test_a_modules_own_page_needs_a_device_the_hub_manages(panel, device_id):
+@pytest.mark.parametrize("name", [KNOWN_MODULE, INSTANCE_MODULE])
+def test_a_modules_own_page_needs_a_device_the_hub_manages(panel, device_id, name):
     """The configuration pane belongs to a machine the hub has a binding
     with: a row nobody's agent ever joined has nothing to configure."""
-    path = f"/agent/module/{KNOWN_MODULE}?device_id={device_id}"
+    path = f"/agent/module/{name}?device_id={device_id}"
 
     status, answer = panel.call("GET", path)
+    assert status == 404, answer
+    assert answer["detail"]["code"] == "device_unknown"
+
+
+def test_an_instance_pages_read_and_set_know_no_device_the_hub_lacks(panel):
+    """Both routes of the shared instances router answer at Codeg's path, and
+    each names the device it cannot find in the panel's own refusal shape."""
+    device = "00000000000000000000000000000000"
+
+    status, answer = panel.call(
+        "GET", f"/agent/module/{INSTANCE_MODULE}?device_id={device}"
+    )
+    assert status == 404, answer
+    assert answer["detail"]["code"] == "device_unknown"
+
+    status, answer = panel.call(
+        "POST",
+        f"/agent/module/{INSTANCE_MODULE}/set",
+        {"device_id": device, "instances": []},
+    )
     assert status == 404, answer
     assert answer["detail"]["code"] == "device_unknown"
