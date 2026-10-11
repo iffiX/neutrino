@@ -165,7 +165,7 @@ macOS 的命令和每一步留下什么，见文档站的[卸载](https://neutri
 
 这个项目在下面这些地方发布和讨论：
 
-- [V2EX](https://www.v2ex.com/t/1241622)：分享创造节点
+- [V2EX](https://www.v2ex.com/t/1247759)：分享创造节点
 - [LINUX DO](https://linux.do)：开发调优版块
 
 ## 致谢

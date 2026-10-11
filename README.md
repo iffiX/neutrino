@@ -165,7 +165,7 @@ The details are in [design/connection.md](skills/core-code-author/design/connect
 
 Where this project is announced and discussed:
 
-- [V2EX](https://www.v2ex.com/t/1241622), in the 分享创造 node
+- [V2EX](https://www.v2ex.com/t/1247759), in the 分享创造 node
 - [LINUX DO](https://linux.do), in the 开发调优 board
 
 ## Acknowledgements
