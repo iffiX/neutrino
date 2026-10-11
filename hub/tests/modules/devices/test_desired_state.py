@@ -337,6 +337,12 @@ def ai_tools_box(monkeypatch, *, models=("gw-model", "other")):
         },
     )
     store.write(DEVICE, "code_server", {"instances": [{"account": "carol", "port": 9}]})
+    store.set_want(DEVICE, "codeg", "running")
+    store.write(
+        DEVICE,
+        "codeg",
+        {"instances": [{"account": "bob", "port": 3101, "login_id": "login-third"}]},
+    )
     return store, list(models)
 
 
@@ -348,7 +354,7 @@ def test_the_ai_tools_accounts_are_every_instance_of_a_module_not_withdrawn(
 
     assert store.ai_tool_accounts(DEVICE) == [
         ("alice", "login-alice", ["cloudcli"]),
-        ("bob", "login-bob", ["vscode", "cloudcli"]),
+        ("bob", "login-bob", ["vscode", "cloudcli", "codeg"]),
     ]
 
 

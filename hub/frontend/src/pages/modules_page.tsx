@@ -151,6 +151,7 @@ const TAB_ORDER = [
   "vscode",
   "code_server",
   "cloudcli",
+  "codeg",
   "podman",
   "zfs",
 ];

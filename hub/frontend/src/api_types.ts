@@ -1534,6 +1534,36 @@ export interface CloudcliConfigUpdate {
   instances: CloudcliInstance[];
 }
 
+/** One Codeg instance: the account it runs as, the port its forwarder
+ * listens on, and on Windows the vault login that account signs in with. */
+export interface CodegInstance {
+  account: string;
+  port: number;
+  login_id: string;
+}
+
+/** One instance as configured, with what the machine says of it. */
+export interface CodegInstanceView extends CodegInstance {
+  is_running: boolean;
+  /** Why it does not run, typed; empty when nothing is in the way. */
+  code: string;
+}
+
+/** Codeg on one device: its instances and the machine's accounts. */
+export interface CodegDeviceView extends ModuleDeviceState {
+  device_id: string;
+  host: string;
+  instances: CodegInstanceView[];
+  /** The human accounts the machine last reported. */
+  accounts: string[];
+  is_active: boolean;
+}
+
+export interface CodegConfigUpdate {
+  device_id: string;
+  instances: CodegInstance[];
+}
+
 /** A tool's choices: Claude's slots, Codex's model and effort, Gemini's model. */
 export type AiToolConfigs = Record<string, Record<string, string>>;
 

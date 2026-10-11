@@ -51,6 +51,8 @@ def api(monkeypatch, tmp_path):
         {"instances": [{"account": "alice", "port": 9001}, {"account": "bob"}]},
     )
     store.write(DEVICE, "cloudcli", {"instances": [{"account": "carol", "port": 3}]})
+    store.set_want(DEVICE, "codeg", "running")
+    store.write(DEVICE, "codeg", {"instances": [{"account": "alice", "port": 3101}]})
     with client:
         yield client, runtime, gateway, tmp_path
 
@@ -86,7 +88,7 @@ def test_the_view_names_each_account_and_what_the_machine_reported(api, monkeypa
     assert view["accounts"] == [
         {
             "account": "alice",
-            "modules": ["vscode", "code_server"],
+            "modules": ["vscode", "code_server", "codeg"],
             "state": "switched",
             "code": "",
             "params": {},

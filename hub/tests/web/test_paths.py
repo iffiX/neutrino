@@ -206,6 +206,7 @@ MODULE_NAMES = (
     "vscode",
     "code_server",
     "cloudcli",
+    "codeg",
 )
 
 

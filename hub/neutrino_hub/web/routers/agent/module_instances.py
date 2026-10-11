@@ -28,6 +28,9 @@ from neutrino_hub.web.models import (
     CloudcliConfigUpdate,
     CloudcliDeviceView,
     CloudcliInstanceView,
+    CodegConfigUpdate,
+    CodegDeviceView,
+    CodegInstanceView,
     CodeServerConfigUpdate,
     CodeServerDeviceView,
     CodeServerInstanceView,
@@ -64,6 +67,7 @@ MODELS = {
         CodeServerConfigUpdate,
     ),
     "cloudcli": (CloudcliDeviceView, CloudcliInstanceView, CloudcliConfigUpdate),
+    "codeg": (CodegDeviceView, CodegInstanceView, CodegConfigUpdate),
 }
 # The view fields a module's model may declare beyond the shared ones.
 VIEW_FIELD_VERSION = "version"

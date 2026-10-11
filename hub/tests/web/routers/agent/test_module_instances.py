@@ -3,7 +3,7 @@
 What these pin: one router per row of that kind and none for any other
 module, each serving the module's read, apply and set at the module's own
 path; a set on each module stores the fields its row seals and no other
-module's; and the three views carry their own fields, VS Code's terms and
+module's; and the four views carry their own fields, VS Code's terms and
 code-server's release, from the one builder.
 """
 
@@ -35,14 +35,19 @@ def stored(tmp_path, module: str) -> list:
     return json.loads(path.read_text())["instances"]
 
 
-def test_the_table_resolves_the_three_programs_and_no_other_module():
-    assert list(module_instances.ROUTERS) == ["vscode", "code_server", "cloudcli"]
+def test_the_table_resolves_the_four_programs_and_no_other_module():
+    assert list(module_instances.ROUTERS) == [
+        "vscode",
+        "code_server",
+        "cloudcli",
+        "codeg",
+    ]
     assert "samba" not in module_instances.ROUTERS
     assert "terminal" not in module_instances.ROUTERS
     assert "gitea" not in module_instances.ROUTERS
 
 
-@pytest.mark.parametrize("module", ["vscode", "code_server", "cloudcli"])
+@pytest.mark.parametrize("module", ["vscode", "code_server", "cloudcli", "codeg"])
 def test_each_router_serves_the_read_the_apply_and_the_set_at_its_own_path(module):
     paths = sorted(
         (sorted(route.methods - {"HEAD", "OPTIONS"})[0], route.path)
@@ -62,6 +67,7 @@ def test_each_router_serves_the_read_the_apply_and_the_set_at_its_own_path(modul
         ("vscode", 8000, {"login_id", "token_sealed"}),
         ("code_server", 8443, {"secret_sealed"}),
         ("cloudcli", 3001, {"login_id", "web_password_sealed", "token_secret_sealed"}),
+        ("codeg", 3101, {"login_id", "secret_sealed"}),
     ],
 )
 def test_a_set_stores_the_fields_the_modules_row_seals_and_no_others(
@@ -77,7 +83,7 @@ def test_a_set_stores_the_fields_the_modules_row_seals_and_no_others(
     assert answer.status_code == 200
     (instance,) = stored(tmp_path, module)
     assert set(instance) == {"account", "port"} | sealed
-    for name in ("vscode", "code_server", "cloudcli"):
+    for name in ("vscode", "code_server", "cloudcli", "codeg"):
         if name != module:
             assert not (tmp_path / "devices" / DEVICE / f"{name}.json").exists() or (
                 name == "vscode"
@@ -93,6 +99,7 @@ def test_each_view_carries_its_own_fields_from_the_one_builder(api):
         "/api/agent/module/code_server", params={"device_id": DEVICE}
     )
     cloudcli = client.get("/api/agent/module/cloudcli", params={"device_id": DEVICE})
+    codeg = client.get("/api/agent/module/codeg", params={"device_id": DEVICE})
 
     assert vscode.json()["is_terms_accepted"] is True
     assert vscode.json()["terms_url"] == "https://aka.ms/vscode-server-license"
@@ -101,6 +108,8 @@ def test_each_view_carries_its_own_fields_from_the_one_builder(api):
     assert "is_terms_accepted" not in code_server.json()
     assert "version" not in cloudcli.json()
     assert "is_terms_accepted" not in cloudcli.json()
-    for view in (vscode, code_server, cloudcli):
+    assert "version" not in codeg.json()
+    assert "is_terms_accepted" not in codeg.json()
+    for view in (vscode, code_server, cloudcli, codeg):
         assert view.json()["instances"] == []
         assert view.json()["device_id"] == DEVICE

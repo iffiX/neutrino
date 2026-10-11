@@ -2798,6 +2798,42 @@ class CloudcliConfigUpdate(BaseModel):
     instances: list[CloudcliInstance] = Field(default_factory=list)
 
 
+# --- Codeg: one instance per account on a device ---
+
+
+class CodegInstance(BaseModel):
+    """One Codeg instance: the account it runs as, the port its forwarder
+    listens on, and on Windows the vault login that account signs in with."""
+
+    account: str = Field(min_length=1)
+    port: int = Field(ge=1024, le=65535)
+    login_id: str = ""
+
+
+class CodegInstanceView(CodegInstance):
+    """One instance as configured, with what the machine says of it."""
+
+    is_running: bool = False
+    # Why it does not run, typed, such as ``codeg_port_taken``.
+    code: str = ""
+
+
+class CodegDeviceView(ModuleDeviceFields):
+    """One device's Codeg: the instances and the machine's accounts."""
+
+    instances: list[CodegInstanceView] = Field(default_factory=list)
+    # The human accounts the machine last reported, for the account field.
+    accounts: list[str] = Field(default_factory=list)
+    is_active: bool = False
+
+
+class CodegConfigUpdate(BaseModel):
+    """The instances being saved."""
+
+    device_id: str
+    instances: list[CodegInstance] = Field(default_factory=list)
+
+
 # --- A managed machine's AI tools, the Modules page's Global configuration ---
 
 
@@ -2806,7 +2842,7 @@ class AiToolAccountView(BaseModel):
 
     account: str
     # The modules it has an instance in: ``vscode``, ``cloudcli``,
-    # ``code_server``.
+    # ``code_server``, ``codeg``.
     modules: list[str] = Field(default_factory=list)
     # ``switched``, ``switched_back`` or ``failed`` as last reported; empty
     # before the machine reported the account.

@@ -35,6 +35,8 @@
   "code.cloudcli_register_failed": "CloudCLI of {account} already has an administrator with another password.",
   "code.code_server_download_failed": "The code-server release could not be fetched or unpacked.",
   "code.code_server_port_taken": "Port {port} on the machine is taken, so code-server of {account} has nowhere to listen.",
+  "code.codeg_download_failed": "A Codeg component could not be fetched or unpacked.",
+  "code.codeg_port_taken": "Port {port} on the machine is taken, so Codeg of {account} has nowhere to listen.",
   "code.command_failed": "{detail}",
   "code.config_unwritable": "The hub could not save this to its own disk: {detail}",
   "code.connect_failed": "The host did not answer.",

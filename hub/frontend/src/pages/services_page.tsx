@@ -89,6 +89,7 @@ const DESCRIPTION_KEYS: Record<string, string> = {
   vscode_module: "ui.services.description_vscode_module",
   cloudcli_module: "ui.services.description_cloudcli_module",
   code_server_module: "ui.services.description_code_server_module",
+  codeg_module: "ui.services.description_codeg_module",
 };
 // The module a description names by the module's title.
 const DESCRIPTION_MODULES: Record<string, string> = {

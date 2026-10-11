@@ -15,6 +15,8 @@ import type { ModuleDescriptor } from "../module_descriptors";
 import type {
   CloudcliConfigUpdate,
   CloudcliDeviceView,
+  CodegConfigUpdate,
+  CodegDeviceView,
   CodeServerConfigUpdate,
   CodeServerDeviceView,
   VscodeConfigUpdate,
@@ -37,12 +39,18 @@ import "./instances_panel.css";
 
 /** The view of any program run as an account, each the hub's own model. */
 type InstancesDeviceView =
-  VscodeDeviceView | CodeServerDeviceView | CloudcliDeviceView;
+  | VscodeDeviceView
+  | CodeServerDeviceView
+  | CloudcliDeviceView
+  | CodegDeviceView;
 
 /** The body of a set, the module's own: a module whose instances name a
  * login sends it, the other sends the account and the port alone. */
 type InstancesConfigUpdate =
-  VscodeConfigUpdate | CodeServerConfigUpdate | CloudcliConfigUpdate;
+  | VscodeConfigUpdate
+  | CodeServerConfigUpdate
+  | CloudcliConfigUpdate
+  | CodegConfigUpdate;
 
 /** One instance as the form holds it; `login_id` is sent only where the
  * module's instances name one. */
