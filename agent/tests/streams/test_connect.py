@@ -51,7 +51,12 @@ PODMAN = {
 }
 EDITORS = {
     name: {"want": "running", "config": {"instances": [{"account": "a", "port": port}]}}
-    for name, port in (("vscode", 8000), ("cloudcli", 3001), ("code_server", 8443))
+    for name, port in (
+        ("vscode", 8000),
+        ("cloudcli", 3001),
+        ("code_server", 8443),
+        ("codeg", 3101),
+    )
 }
 DESKTOP = {"is_shared": True, "port": 21118}
 
@@ -68,6 +73,7 @@ def test_every_kind_of_published_port_is_in_the_table():
         8000: "127.0.0.1",
         3001: "127.0.0.1",
         8443: "127.0.0.1",
+        3101: "127.0.0.1",
         5432: "192.168.1.5",
         8080: "127.0.0.1",
         8081: "127.0.0.1",

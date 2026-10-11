@@ -361,6 +361,18 @@ class InstanceHooks:
         """
         return {}
 
+    def journal_log(self, record: dict) -> str:
+        """The module's own log of one instance, read in place of the service's output.
+
+        Args:
+            record: The instance's record.
+
+        Returns:
+            The file's path; empty for a module whose output the service
+            keeps, or while the module has written none.
+        """
+        return ""
+
     def install_log(self, account: str) -> str:
         """The log of an install that runs for one account.
 
@@ -777,22 +789,30 @@ class InstancesModuleRunner(ModuleRunner):
         return f"{self.name}: {code}{named}"
 
     def _log_paths(self) -> list:
-        """Each account's log file, the install's while one runs; none on Linux."""
+        """Each account's log file, the install's while one runs; on Linux the module's own alone."""
         records = {
             str(record["account"]): record for record in self._records.read_all()
         }
         logs = []
         for account in sorted(set(records) | set(self._hooks.installing)):
-            path = self._hooks.install_log(account)
-            if not path:
-                record = records.get(account)
-                log_name = self._service_of(record).log_name if record else ""
-                path = account_service.log_path(
-                    self.name, account, self._machine, log_name
-                )
+            path = self._hooks.install_log(account) or self._instance_log(
+                account, records.get(account)
+            )
             if path:
                 logs.append((account, path))
         return logs
+
+    def _instance_log(self, account: str, record) -> str:
+        """Where one instance's output is read: the module's own log, else the service's file."""
+        if record is None:
+            return account_service.log_path(self.name, account, self._machine, "")
+        service = self._service_of(record)
+        own = self._hooks.journal_log(record)
+        if own or service.is_output_discarded:
+            return own
+        return account_service.log_path(
+            self.name, account, self._machine, service.log_name
+        )
 
     def _read_states(self) -> list:
         """Every instance as it stands; the system's reading is kept a while."""

@@ -404,6 +404,7 @@ SUPPORTED_OFF_LINUX = {
     "terminal": (True, True),
     "cloudcli": (True, True),
     "code_server": (False, True),
+    "codeg": (True, True),
     "gitea": (True, True),
     "podman": (False, False),
     "samba": (True, True),

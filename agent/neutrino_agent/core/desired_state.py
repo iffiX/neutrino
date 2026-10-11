@@ -77,6 +77,7 @@ APPLY_ORDER = (
     "vscode",
     "code_server",
     "cloudcli",
+    "codeg",
     "remote_desktop",
 )
 

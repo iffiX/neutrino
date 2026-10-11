@@ -3,7 +3,8 @@
 What these pin: each instance is a LaunchDaemon whose plist names the
 account in ``UserName`` and carries an environment, a working directory and
 a umask only when the service names them; the log file belongs to the
-account, mode 0600; a plist holding a secret is root-only; a changed plist
+account, mode 0600, and a service that discards its output gets no log
+file and no output paths; a plist holding a secret is root-only; a changed plist
 or a job launchd does not hold is loaded again and a held unchanged one is
 left alone; a remove boots the job out and deletes its plist, its log and
 the account's files; and a state reads launchd's own word.
@@ -136,6 +137,19 @@ def test_an_instance_gets_its_log_its_files_and_its_plist(
     assert stat.S_IMODE(os.stat(token).st_mode) == 0o600
     assert owners[:2] == [("ann.token", 501, 20), ("demo_ann.log", 501, 20)]
     assert launchd.calls == []
+
+
+def test_a_discarded_output_names_no_log_file(machine, launchd, tmp_path, owners):
+    service = service_with(is_output_discarded=True)
+
+    assert account_service.write(service, machine) is True
+
+    plist = plistlib.loads((tmp_path / "LaunchDaemons" / f"{LABEL}.plist").read_bytes())
+    assert "StandardOutPath" not in plist and "StandardErrorPath" not in plist
+    assert not (tmp_path / "Logs").exists()
+    assert owners == []
+    account_service.remove(service, machine)
+    assert os.listdir(tmp_path / "LaunchDaemons") == []
 
 
 def test_a_plist_holding_a_secret_is_root_only(machine, tmp_path):

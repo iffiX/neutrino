@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>CODEG_BRIDGE_PORTS</key>
+		<string>off</string>
+		<key>CODEG_DATA_DIR</key>
+		<string>/Users/ann/Library/Application Support/Neutrino/agent/codeg</string>
+		<key>CODEG_HOST</key>
+		<string>127.0.0.1</string>
+		<key>CODEG_PORT</key>
+		<string>41234</string>
+		<key>CODEG_STATIC_DIR</key>
+		<string>/Library/Application Support/Neutrino/agent/state/codeg/server/web</string>
+		<key>CODEG_TOKEN</key>
+		<string>{codeg_token}</string>
+		<key>HOME</key>
+		<string>/Users/ann</string>
+		<key>NPM_CONFIG_PREFIX</key>
+		<string>/Users/ann/Library/Application Support/Neutrino/agent/codeg/npm</string>
+		<key>PATH</key>
+		<string>/Library/Application Support/Neutrino/agent/state/codeg/node/bin:/Users/ann/.local/bin:/Users/ann/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+		<key>npm_config_cache</key>
+		<string>/Users/ann/Library/Application Support/Neutrino/agent/codeg/npm_cache</string>
+	</dict>
+	<key>KeepAlive</key>
+	<true/>
+	<key>Label</key>
+	<string>com.neutrino.codeg.ann</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Library/Application Support/Neutrino/agent/state/codeg/server/codeg-server</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>Umask</key>
+	<integer>63</integer>
+	<key>UserName</key>
+	<string>ann</string>
+	<key>WorkingDirectory</key>
+	<string>/Users/ann</string>
+</dict>
+</plist>

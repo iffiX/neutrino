@@ -321,8 +321,8 @@ AGENT_DARWIN_PROGRAM_DIR = "/Library/Application Support/Neutrino/agent/app"
 AGENT_DARWIN_LINK_PATH = "/usr/local/bin/nagent"
 AGENT_DARWIN_PACKAGE_ID = "com.neutrino.agent"
 # The forwarders the agent keeps in front of a module's page (CloudCLI,
-# code-server): how one request's head is read, how bytes are relayed, and
-# how long a relayed connection may stay quiet.
+# code-server, Codeg): how one request's head is read, how bytes are
+# relayed, and how long a relayed connection may stay quiet.
 AGENT_FORWARD_HEAD_LIMIT_BYTES = 65536
 AGENT_FORWARD_CHUNK_BYTES = 65536
 AGENT_FORWARD_UPSTREAM_TIMEOUT_S = 10.0

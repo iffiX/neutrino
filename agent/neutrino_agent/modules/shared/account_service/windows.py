@@ -7,11 +7,13 @@ has no time limit, and restarts when it stops. The task's description
 carries a digest of what it runs and with which login, so an unchanged
 instance is left running and a changed one is registered again. The task
 runs the program through ``cmd.exe`` with its output appended to the
-account's log file beside the program; a service with an environment or a
-working directory runs a script that sets them first. The files the task
+account's log file beside the program, or sent to the null device for a
+service that discards it; a service with an environment, a working directory
+or a discarded output runs a script that sets them first. The files the task
 reads are reachable by their account, SYSTEM and the administrators alone.
-An instance's processes are the ones whose command line names its log file
-and every process they started; a stop ends all of them. Every operation is
+An instance's processes are the ones whose command line names its log file,
+or its script where the output is discarded, and every process they
+started; a stop ends all of them. Every operation is
 one PowerShell script, the password on its standard input.
 
 Not pure: runs PowerShell.
@@ -33,6 +35,7 @@ from neutrino_agent.modules.shared.account_service.constants import (
     ACCOUNT_SERVICE_LOGON_FAILURES,
     ACCOUNT_SERVICE_TASK_MARKER,
     ACCOUNT_SERVICE_TASK_PREFIX,
+    ACCOUNT_SERVICE_WINDOWS_NULL_DEVICE,
     ACCOUNT_SERVICE_WINDOWS_RULE_INFIX,
     ACCOUNT_SERVICE_WINDOWS_SCRIPT_DIR_NAME,
     ACCOUNT_SERVICE_WINDOWS_SCRIPT_SUFFIX,
@@ -98,12 +101,14 @@ foreach ($dir in @($d.directories)) {
     '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F'
   if ($code -ne 0) { throw "icacls refused $dir" }
 }
-if (-not (Test-Path -LiteralPath $d.log_file)) {
-  [IO.File]::WriteAllText($d.log_file, '')
+if ($d.log_file) {
+  if (-not (Test-Path -LiteralPath $d.log_file)) {
+    [IO.File]::WriteAllText($d.log_file, '')
+  }
+  $code = Invoke-Icacls $d.log_file /inheritance:r /grant:r "$($d.account):M" `
+    '*S-1-5-18:F' '*S-1-5-32-544:F'
+  if ($code -ne 0) { throw "icacls refused the log file of $($d.account)" }
 }
-$code = Invoke-Icacls $d.log_file /inheritance:r /grant:r "$($d.account):M" `
-  '*S-1-5-18:F' '*S-1-5-32-544:F'
-if ($code -ne 0) { throw "icacls refused the log file of $($d.account)" }
 $is_registered = $false
 $task = Get-ScheduledTask -TaskName $d.task -ErrorAction SilentlyContinue
 if (-not $task -or "$($task.Description)" -ne $d.description) {
@@ -185,12 +190,16 @@ def task_arguments(program: str, arguments: list, log_file: str) -> str:
     Args:
         program: The program, or the script that starts it.
         arguments: The program's own arguments.
-        log_file: The file its output and its errors are appended to.
+        log_file: The file its output and its errors are appended to; empty
+            sends both to the null device.
 
     Returns:
-        ``/s /c "<program> <arguments> >> <log> 2>&1"``.
+        ``/s /c "<program> <arguments> >> <log> 2>&1"``, or with ``> NUL``
+        in place of the log.
     """
     command = subprocess.list2cmdline([program, *arguments])
+    if not log_file:
+        return f'/s /c "{command} > {ACCOUNT_SERVICE_WINDOWS_NULL_DEVICE} 2>&1"'
     log = subprocess.list2cmdline([log_file])
     return f'/s /c "{command} >> {log} 2>&1"'
 
@@ -251,6 +260,21 @@ def script_path(service, machine) -> str:
     )
 
 
+def output_mark(service, machine) -> str:
+    """What an instance's processes are found by on their command line.
+
+    Args:
+        service: The service.
+        machine: The machine.
+
+    Returns:
+        The instance's log file, or its script where the output is discarded.
+    """
+    if service.is_output_discarded:
+        return script_path(service, machine)
+    return log_path(service.name, service.account, machine, service.log_name)
+
+
 def rule_prefix(name: str) -> str:
     """The name an older build gave the module's firewall rules, without the port."""
     return f"{ACCOUNT_SERVICE_TASK_PREFIX}{name}{ACCOUNT_SERVICE_WINDOWS_RULE_INFIX}"
@@ -287,9 +311,10 @@ def arguments_of(service, machine) -> str:
         machine: The machine.
 
     Returns:
-        The task's arguments, the output appended to the instance's log.
+        The task's arguments, the output appended to the instance's log, or
+        discarded where the service says.
     """
-    log = log_path(service.name, service.account, machine, service.log_name)
+    log = _output_log(service, machine)
     if _is_scripted(service):
         return task_arguments(script_path(service, machine), [], log)
     return task_arguments(service.command[0], list(service.command[1:]), log)
@@ -297,7 +322,7 @@ def arguments_of(service, machine) -> str:
 
 def write(service, machine) -> bool:
     """Write the account's files and register the task; whether it was registered."""
-    log = log_path(service.name, service.account, machine, service.log_name)
+    log = _output_log(service, machine)
     files = task_files(service, machine)
     arguments = arguments_of(service, machine)
     answer = machine.powershell(
@@ -312,7 +337,7 @@ def write(service, machine) -> bool:
                 arguments, service, [file["text"] for file in files]
             ),
             "log_file": log,
-            "mark": log,
+            "mark": output_mark(service, machine),
             "files": files,
             "directories": list(service.directories),
             "rule_prefix": rule_prefix(service.name),
@@ -333,9 +358,11 @@ def stop(service, machine) -> None:
 
 def remove(service, machine) -> None:
     """Stop the instance, unregister its task and delete its files."""
-    log = log_path(service.name, service.account, machine, service.log_name)
     paths = [path for path, _text in service.files]
-    paths += [script_path(service, machine), log, *service.directories]
+    paths.append(script_path(service, machine))
+    if not service.is_output_discarded:
+        paths.append(log_path(service.name, service.account, machine, service.log_name))
+    paths += list(service.directories)
     machine.powershell(
         REMOVE_SCRIPT, dict(_task_document(service, machine), paths=paths)
     )
@@ -358,9 +385,7 @@ def states(services: list, machine) -> dict:
             if service.listen_port
         },
         "marks": {
-            task_name(name, service.account): log_path(
-                name, service.account, machine, service.log_name
-            )
+            task_name(name, service.account): output_mark(service, machine)
             for service in services
         },
     }
@@ -408,9 +433,20 @@ def log_path(name: str, account: str, machine, log_name: str) -> str:
 
 
 def _is_scripted(service) -> bool:
-    return bool(service.environment or service.working_directory)
+    return bool(
+        service.environment or service.working_directory or service.is_output_discarded
+    )
+
+
+def _output_log(service, machine) -> str:
+    """The file a task's output is appended to; empty for a discarded output."""
+    if service.is_output_discarded:
+        return ""
+    return log_path(service.name, service.account, machine, service.log_name)
 
 
 def _task_document(service, machine) -> dict:
-    log = log_path(service.name, service.account, machine, service.log_name)
-    return {"task": task_name(service.name, service.account), "mark": log}
+    return {
+        "task": task_name(service.name, service.account),
+        "mark": output_mark(service, machine),
+    }

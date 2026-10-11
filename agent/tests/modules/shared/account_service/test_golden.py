@@ -1,12 +1,13 @@
-"""The service texts of VS Code, code-server and CloudCLI, pinned byte for byte.
+"""The service texts of VS Code, code-server, CloudCLI and Codeg, pinned byte for byte.
 
 The fixtures under ``golden/`` were rendered by the code before the shared
 account service layer existed, and the hooks of each module through the
 layer render the same texts now, with one change: CloudCLI's Node.js is its
 ``node`` component, so every path that named ``node-v<version>-<os>-<arch>``
-names ``node``. What these pin: the unit templates, the
-environment files, the LaunchDaemon plists, the Windows task arguments and
-scripts, and the install commands each module produces for fixed inputs.
+names ``node``. Codeg's were rendered by its hooks through the layer when
+the module arrived. What these pin: the unit templates, the environment
+files, the LaunchDaemon plists, the Windows task arguments and scripts, and
+the install commands each module produces for fixed inputs.
 """
 
 import json
@@ -18,6 +19,8 @@ from neutrino_agent.modules.cloudcli.config import CloudcliConfig, jwt_secret
 from neutrino_agent.modules.cloudcli.hooks import CloudcliHooks
 from neutrino_agent.modules.code_server.config import CodeServerConfig
 from neutrino_agent.modules.code_server.hooks import CodeServerHooks
+from neutrino_agent.modules.codeg.config import CodegConfig, instance_token
+from neutrino_agent.modules.codeg.hooks import CodegHooks
 from neutrino_agent.modules.shared.account_service import (
     AccountEntry,
     ServiceMachine,
@@ -88,8 +91,10 @@ def golden_json(name: str) -> dict:
 
 
 def masked(text: str) -> str:
-    """The text with the login secret derived from the test secret taken out."""
-    return text.replace(jwt_secret("s"), "{jwt_secret}")
+    """The text with the secrets derived from the test secret taken out."""
+    return text.replace(jwt_secret("s"), "{jwt_secret}").replace(
+        instance_token("s"), "{codeg_token}"
+    )
 
 
 def machine_for(os_name: str, module: str, state: str, config: str, **tools):
@@ -325,6 +330,56 @@ def test_cloudcli_windows_install_script_and_arguments(tmp_path):
     assert with_fixed_state(document["arguments"], tmp_path, WIN_STATE) == (
         texts["install_arguments"]
     )
+
+
+# --- Codeg ---
+
+CODEG_RECORD = {"account": "ann", "port": 3101, "upstream_port": 41234, "secret": "s"}
+
+
+def codeg_instance(password=""):
+    config = CodegConfig.from_dict(
+        {
+            "instances": [
+                {"account": "ann", "port": 3101, "secret": "s", "password": password}
+            ]
+        }
+    )
+    return config.instances[0]
+
+
+def test_codeg_linux_unit_and_environment():
+    machine = machine_for("linux", "codeg", LINUX_STATE, LINUX_CONFIG)
+    hooks = bound(CodegHooks, "linux", machine)
+
+    service = hooks.service(codeg_instance(), ANN, CODEG_RECORD)
+
+    assert unit_text(hooks, machine) == golden_text("codeg_linux_unit.service")
+    assert masked(environment_text(service)) == golden_text(
+        "codeg_linux_environment.env"
+    )
+
+
+def test_codeg_darwin_plist():
+    machine = machine_for("darwin", "codeg", MAC_STATE, MAC_CONFIG)
+    hooks = bound(CodegHooks, "darwin", machine)
+
+    service = hooks.service(codeg_instance(), MAC_ANN, CODEG_RECORD)
+
+    assert masked(plist_text(service, machine, MAC_ANN)) == golden_text(
+        "codeg_darwin.plist"
+    )
+
+
+def test_codeg_windows_script_and_arguments():
+    machine = machine_for("windows", "codeg", WIN_STATE, WIN_CONFIG)
+    hooks = bound(CodegHooks, "windows", machine)
+    texts = golden_json("codeg_windows.json")
+
+    service = hooks.service(codeg_instance("login-pw"), WIN_ANN, CODEG_RECORD)
+
+    assert masked(windows_layer.render_script(service)) == texts["script"]
+    assert windows_layer.arguments_of(service, machine) == texts["arguments"]
 
 
 class Recorder:

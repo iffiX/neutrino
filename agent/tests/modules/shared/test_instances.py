@@ -10,11 +10,14 @@ its record and its forwarder; one forwarder runs per record and follows
 it; a stop closes the forwarders and keeps the records; a restarted agent
 starts the forwarders from the records; a row runs only while its service
 runs and its forwarder listens; the details carry what the hooks add; the
-journal is the units' or the log files', the refusal last; an install and
+journal is the units' or the log files', the module's own log first
+where the hooks name one and nothing of a service whose output is
+discarded, the refusal last; an install and
 an uninstall go through the hooks and the module directory; and a record
 changed by the hooks is applied again.
 """
 
+import dataclasses
 import functools
 import io
 import json
@@ -630,6 +633,61 @@ def test_without_units_the_log_files_come_then_the_agents_lines(tmp_path):
     assert first[:2] == ["ann: a1", "10:00 demo: running"]
     assert first[2].startswith("10:02 demo: started")
     assert any("cannot read the log source" in line for line in first)
+
+
+def test_a_modules_own_log_is_read_in_place_of_the_units_journal(
+    runner, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(
+        "neutrino_agent.modules.shared.base.units_journal",
+        lambda units, lines: ["journal of the unit"],
+    )
+    runner.apply(CONFIG)
+    own = tmp_path / "codeg-server.2026-10-11.log"
+    own.write_text("l1\nl2\n")
+
+    before = runner.journal_text(10)
+    runner.hooks.journal_log = lambda record: (
+        str(own) if record["account"] == "ann" else ""
+    )
+    after = runner.journal_text(10)
+
+    assert before == ["journal of the unit"]
+    assert after == ["ann: l1", "ann: l2"]
+
+
+def test_a_discarded_output_without_an_own_log_reads_no_file(tmp_path):
+    agent_log = tmp_path / "agent.log"
+    agent_log.write_text("10:00 demo: running\n")
+    platform = Platform("darwin", root=str(tmp_path), log_path=str(agent_log))
+    machine = ServiceMachine(
+        os_name="darwin",
+        module_dir=str(tmp_path / "state" / "demo"),
+        record_dir=str(tmp_path / "config" / "demo"),
+        lookup_account=lookup,
+        run=lambda command, **kwargs: CommandResult(list(command), 113, "", ""),
+        chown=lambda path, uid, gid: None,
+        launchd_dir=str(tmp_path / "daemons"),
+        log_dir=str(tmp_path / "logs"),
+    )
+    (tmp_path / "daemons").mkdir()
+    FakeForwarder.made = []
+    runner = InstancesModuleRunner(
+        hooks_class=DemoHooks,
+        platform=platform,
+        log=lambda line: None,
+        machine=machine,
+        forwarder_factory=FakeForwarder,
+    )
+    runner.apply(CONFIG)
+    kept_service = runner.hooks.service
+    runner.hooks.service = lambda instance, entry, record: dataclasses.replace(
+        kept_service(instance, entry, record), is_output_discarded=True
+    )
+
+    lines = runner.journal_text(200)
+
+    assert lines == ["10:00 demo: running"]
 
 
 # --- a record the hooks change ---

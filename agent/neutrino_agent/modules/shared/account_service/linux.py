@@ -58,6 +58,8 @@ def render_unit(template, *, environment_dir: str) -> str:
         lines.append(f"WorkingDirectory={template.working_directory}")
     if template.umask:
         lines.append(f"UMask={template.umask}")
+    if template.is_output_discarded:
+        lines += ["StandardOutput=null", "StandardError=null"]
     lines += [
         f"ExecStart={' '.join(template.command)}",
         "Restart=always",

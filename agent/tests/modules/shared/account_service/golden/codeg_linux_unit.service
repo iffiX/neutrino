@@ -1,0 +1,19 @@
+[Unit]
+Description=Codeg for %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=%i
+EnvironmentFile=/etc/neutrino/agent/codeg/%i.env
+WorkingDirectory=~
+UMask=077
+StandardOutput=null
+StandardError=null
+ExecStart=/var/lib/neutrino/agent/codeg/server/codeg-server
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

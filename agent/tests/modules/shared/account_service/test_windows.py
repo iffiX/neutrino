@@ -4,7 +4,9 @@ What these pin: a register writes the account's files and its log,
 reachable by the account, SYSTEM and the administrators alone, and
 registers a task signed in with the account's login, started at boot with
 no time limit and a limited token; a service with an environment or a
-working directory runs a script, a bare one runs the program itself; the
+working directory runs a script, a bare one runs the program itself; a
+service that discards its output runs its script into the null device and
+is found by the script; the
 task's description carries a digest that moves when what it runs, its
 login or a file it reads changes; a stop ends the instance's whole process
 tree, taken before the task stops; a start first ends what is left of the
@@ -120,6 +122,45 @@ def test_a_service_with_an_environment_runs_a_script():
         'cd /d "%USERPROFILE%"\r\n'
         "C:\\node\\node.exe C:\\app\\index.js\r\n"
     )
+
+
+def test_a_discarded_output_runs_the_script_into_the_null_device():
+    powershell = FakePowerShell({REGISTER_SCRIPT: {"is_registered": True}})
+    machine = machine_with(powershell)
+    service = service_with(is_output_discarded=True)
+    script_path = MODULE_DIR + "\\run\\hanha.cmd"
+
+    account_service.write(service, machine)
+    account_service.stop(service, machine)
+    account_service.remove(service, machine)
+
+    register, stop, remove = (document for _script, document in powershell.runs)
+    assert register["arguments"] == f'/s /c "{script_path} > NUL 2>&1"'
+    assert register["log_file"] == ""
+    assert register["mark"] == script_path
+    (file,) = register["files"]
+    assert file["path"] == script_path
+    assert stop["mark"] == script_path
+    assert remove["paths"] == [script_path]
+    assert "if ($d.log_file) {" in REGISTER_SCRIPT
+    assert (
+        task_arguments("C:\\x.exe", ["--a"], "") == '/s /c "C:\\x.exe --a > NUL 2>&1"'
+    )
+
+
+def test_the_states_find_a_discarded_output_by_its_script():
+    powershell = FakePowerShell({STATUS_SCRIPT: {"tasks": []}})
+
+    account_service.states(
+        [service_with(is_output_discarded=True), service_with(account="bob")],
+        machine_with(powershell),
+    )
+
+    ((_script, document),) = powershell.runs
+    assert document["marks"] == {
+        "neutrino_demo_hanha": MODULE_DIR + "\\run\\hanha.cmd",
+        "neutrino_demo_bob": MODULE_DIR + "\\bob.log",
+    }
 
 
 def test_a_script_without_a_working_directory_enters_none():

@@ -39,6 +39,7 @@ def test_the_rows_come_in_the_order_the_modules_page_lists_them():
         "vscode",
         "code_server",
         "cloudcli",
+        "codeg",
         "podman",
         "zfs",
     ]
@@ -60,13 +61,14 @@ def test_every_row_is_one_of_the_four_kinds():
         "vscode": DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
         "code_server": DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
         "cloudcli": DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
+        "codeg": DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
         "podman": DEVICE_MODULE_KIND_SYSTEM_PACKAGE,
         "zfs": DEVICE_MODULE_KIND_SYSTEM_PACKAGE,
     }
 
 
-def test_the_programs_run_as_an_account_are_three_rows_in_table_order():
-    assert account_program_names() == ("vscode", "code_server", "cloudcli")
+def test_the_programs_run_as_an_account_are_four_rows_in_table_order():
+    assert account_program_names() == ("vscode", "code_server", "cloudcli", "codeg")
     assert [row.name for row in account_program_rows()] == list(account_program_names())
     assert rows_of_kind(DEVICE_MODULE_KIND_AGENT) == (
         module_row("terminal"),
@@ -76,7 +78,8 @@ def test_the_programs_run_as_an_account_are_three_rows_in_table_order():
 
 def test_each_program_run_as_an_account_seals_its_own_fields():
     """VS Code its token, code-server its secret, CloudCLI its password and
-    its secret, each opened under the key the state carries."""
+    its secret, Codeg its secret, each opened under the key the state
+    carries."""
     sealed = {
         row.name: [(field.key, field.opened_key) for field in row.sealed_fields]
         for row in account_program_rows()
@@ -89,12 +92,21 @@ def test_each_program_run_as_an_account_seals_its_own_fields():
             ("web_password_sealed", "web_password"),
             ("token_secret_sealed", "token_secret"),
         ],
+        "codeg": [("secret_sealed", "secret")],
     }
     assert module_row("vscode").sealed_field("token_sealed").aad == (
         b"device_vscode:token"
     )
     assert module_row("vscode").sealed_field("token_sealed").secret_bytes == 24
     assert module_row("cloudcli").sealed_field("token_secret_sealed").secret_bytes == 32
+    assert module_row("codeg").sealed_field("secret_sealed").aad == (
+        b"device_codeg:secret"
+    )
+    assert module_row("codeg").sealed_field("secret_sealed").secret_bytes == 32
+    assert module_row("codeg").sealed_field("secret_sealed").aad == (
+        b"device_codeg:secret"
+    )
+    assert module_row("codeg").sealed_field("secret_sealed").secret_bytes == 32
     assert all(
         not row.sealed_fields
         for row in DEVICE_MODULE_ROWS
@@ -103,8 +115,8 @@ def test_each_program_run_as_an_account_seals_its_own_fields():
 
 
 def test_each_program_run_as_an_account_names_its_token_and_its_login():
-    """VS Code's server takes its token itself; the other two are opened with
-    a token minted from the secret; code-server names no login."""
+    """VS Code's server takes its token itself; the other three are opened
+    with a token minted from the secret; code-server names no login."""
     rows = {row.name: row for row in account_program_rows()}
 
     assert (rows["vscode"].token_field, rows["vscode"].is_token_minted) == (
@@ -119,11 +131,17 @@ def test_each_program_run_as_an_account_names_its_token_and_its_login():
         "token_secret_sealed",
         True,
     )
+    assert (rows["codeg"].token_field, rows["codeg"].is_token_minted) == (
+        "secret_sealed",
+        True,
+    )
     assert {name: row.is_login_named for name, row in rows.items()} == {
         "vscode": True,
         "code_server": False,
         "cloudcli": True,
+        "codeg": True,
     }
+    assert rows["codeg"].config_head == ()
     assert rows["vscode"].config_head == (("address", ""),)
     assert rows["code_server"].config_head == ()
 
@@ -141,6 +159,7 @@ def test_each_row_names_its_published_entry():
         "vscode": ("vscode_module", "VS Code ({account})"),
         "code_server": ("code_server_module", "code-server ({account})"),
         "cloudcli": ("cloudcli_module", "CloudCLI ({account})"),
+        "codeg": ("codeg_module", "Codeg ({account})"),
         "podman": ("container", ""),
         "zfs": ("", ""),
     }

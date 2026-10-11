@@ -186,6 +186,7 @@ DEVICE_MODULE_NAMES = (
     "vscode",
     "code_server",
     "cloudcli",
+    "codeg",
 )
 # What ``config/devices/<id>/modules.json`` is called, and the per-module
 # files beside it. A device directory is named by the device's id.
@@ -271,7 +272,15 @@ DEVICE_TERMINAL_ACCOUNT_OS = ("linux", "darwin")
 DEVICE_CODE_SERVER_SECRET_KEY = "secret_sealed"  # scan: allow
 DEVICE_CODE_SERVER_SECRET_AAD = b"device_code_server:secret"
 DEVICE_CODE_SERVER_SECRET_BYTES = 32
-# A token a CloudCLI or code-server instance's forwarder takes once:
+# Codeg, once per account. Each instance in its file holds, beside its
+# account and port, the vault login a Windows machine runs it as and the
+# secret its tokens are signed with, which the hub generates once and keeps
+# sealed.
+DEVICE_CODEG_MODULE = "codeg"
+DEVICE_CODEG_SECRET_KEY = "secret_sealed"  # scan: allow
+DEVICE_CODEG_SECRET_AAD = b"device_codeg:secret"
+DEVICE_CODEG_SECRET_BYTES = 32
+# A token a CloudCLI, code-server or Codeg instance's forwarder takes once:
 # ``base64url(expiry || nonce || HMAC-SHA256(secret, expiry || nonce))``,
 # the expiry eight bytes big-endian in seconds since the epoch, minted for
 # one ``service`` answer; the agent's forwarder checks the same layout.

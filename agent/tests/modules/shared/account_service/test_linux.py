@@ -2,8 +2,9 @@
 
 What these pin: the template unit runs the program as ``User=%i``, with an
 environment file, a working directory and a umask only when the service
-names them; a secret environment is root-only and quoted, a plain one
-readable and bare; the template is loaded once when it changed; a changed
+names them; a discarded output goes to systemd's null; a secret
+environment is root-only and quoted, a plain one readable and bare; the
+template is loaded once when it changed; a changed
 instance is started again and an unchanged one only kept up; a stop keeps
 the unit enabled; a remove disables it and deletes what it ran from; and
 the states are read off ``systemctl is-active``.
@@ -110,6 +111,19 @@ def test_a_template_without_an_environment_names_no_file():
     assert "EnvironmentFile" not in unit
     assert "WorkingDirectory" not in unit
     assert "UMask" not in unit
+
+
+def test_a_discarded_output_goes_to_systemds_null():
+    discarded = render_unit(
+        service_with(account="%i", umask="077", is_output_discarded=True),
+        environment_dir="/etc/x",
+    )
+    kept = render_unit(service_with(account="%i"), environment_dir="/etc/x")
+
+    assert "UMask=077\nStandardOutput=null\nStandardError=null\nExecStart=" in (
+        discarded
+    )
+    assert "StandardOutput" not in kept and "StandardError" not in kept
 
 
 def test_an_environment_file_is_bare_or_quoted():

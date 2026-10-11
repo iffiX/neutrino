@@ -45,7 +45,7 @@ SCHEME_PORTS = {"http": 80, "https": 443}
 # The module states under which the hub has configured a module.
 CONFIGURED_STATES = ("stopped", "running")
 # The modules whose configured instances each answer on their own port.
-INSTANCE_MODULES = ("vscode", "cloudcli", "code_server")
+INSTANCE_MODULES = ("vscode", "cloudcli", "code_server", "codeg")
 # How long the hub's side waits for an item before it looks again.
 POLL_S = 0.5
 

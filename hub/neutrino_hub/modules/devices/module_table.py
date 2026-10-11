@@ -22,6 +22,10 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_CODE_SERVER_SECRET_AAD,
     DEVICE_CODE_SERVER_SECRET_BYTES,
     DEVICE_CODE_SERVER_SECRET_KEY,
+    DEVICE_CODEG_MODULE,
+    DEVICE_CODEG_SECRET_AAD,
+    DEVICE_CODEG_SECRET_BYTES,
+    DEVICE_CODEG_SECRET_KEY,
     DEVICE_GITEA_MODULE,
     DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
     DEVICE_MODULE_KIND_AGENT,
@@ -38,6 +42,7 @@ from neutrino_hub.modules.devices.constants import (
 from neutrino_hub.modules.services.constants import (
     SERVICES_DESCRIPTION_CLOUDCLI_MODULE,
     SERVICES_DESCRIPTION_CODE_SERVER_MODULE,
+    SERVICES_DESCRIPTION_CODEG_MODULE,
     SERVICES_DESCRIPTION_CONTAINER,
     SERVICES_DESCRIPTION_GITEA_MODULE,
     SERVICES_DESCRIPTION_SAMBA_MODULE,
@@ -204,6 +209,24 @@ DEVICE_MODULE_ROWS = (
         panel=DEVICE_MODULE_PANEL_INSTANCES,
         is_login_named=True,
         token_field=DEVICE_CLOUDCLI_SECRET_KEY,
+        is_token_minted=True,
+    ),
+    _row(
+        DEVICE_CODEG_MODULE,
+        DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
+        sealed_fields=(
+            SealedField(
+                key=DEVICE_CODEG_SECRET_KEY,
+                opened_key="secret",
+                aad=DEVICE_CODEG_SECRET_AAD,
+                secret_bytes=DEVICE_CODEG_SECRET_BYTES,
+            ),
+        ),
+        description_code=SERVICES_DESCRIPTION_CODEG_MODULE,
+        entry_title="Codeg ({account})",
+        panel=DEVICE_MODULE_PANEL_INSTANCES,
+        is_login_named=True,
+        token_field=DEVICE_CODEG_SECRET_KEY,
         is_token_minted=True,
     ),
     _row(

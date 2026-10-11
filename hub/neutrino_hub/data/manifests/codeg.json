@@ -1,0 +1,139 @@
+{
+  "_comment": "Codeg, hub-tier: two components per platform, the server bundle spacering-net/codeg publishes at one pinned release (codeg-server, codeg-mcp, codeg-computer-helper and the web UI) and the same nodejs.org standalone build of Node.js 22 LTS CloudCLI's manifest pins, each unpacked under codeg/<component> without the archive's top directory; the agent then runs codeg-server as each account. Each server url and sha256 is the publisher's GitHub release and its .sha256 sidecar, mirrored nowhere; each Node url and sha256 is what nodejs.org/dist/v22.23.3/SHASUMS256.txt names, and each cn_url the same file on npmmirror. The Linux server binaries need glibc 2.34, the agent's own floor. corresponding_source names Codeg's source at the pinned tag.",
+  "name": "codeg",
+  "title": "Codeg",
+  "kind": "codeg",
+  "installer": "hub",
+  "source": "spacering-net/codeg",
+  "version": "0.35.1",
+  "license": "Apache-2.0",
+  "corresponding_source": "https://github.com/spacering-net/codeg/tree/v0.35.1", "_source_scan": "scan: allow",
+  "description": "AI coding sessions in the browser from Codeg, one per account, opened from a client with a token",
+  "platforms": {
+    "linux-amd64": {
+      "components": [
+        {
+          "name": "server",
+          "url": "https://github.com/spacering-net/codeg/releases/download/v0.35.1/codeg-server-linux-x64.tar.gz", "_url_scan": "scan: allow",
+          "sha256": "40e9d854967f34834ceeb64d4a5b89295e76877e9dbdc81e8b466619fcd84f5f", "_sha256_scan": "scan: allow",
+          "package_kind": "tar",
+          "directory": "server"
+        },
+        {
+          "name": "node",
+          "url": "https://nodejs.org/dist/v22.23.3/node-v22.23.3-linux-x64.tar.gz", "_url_scan": "scan: allow",
+          "cn_url": "https://registry.npmmirror.com/-/binary/node/v22.23.3/node-v22.23.3-linux-x64.tar.gz", "_cn_url_scan": "scan: allow",
+          "sha256": "1084aa36196bba4c3a5e69a1ee388a6e4ff729dad09445fbcd434b28fe3c24af", "_sha256_scan": "scan: allow",
+          "package_kind": "tar",
+          "directory": "node"
+        }
+      ],
+      "verify": "/var/lib/neutrino/agent/codeg/server/codeg-server --version",
+      "uninstall": {
+        "packages": [],
+        "post_uninstall": [],
+        "is_data_kept": true
+      }
+    },
+    "linux-arm64": {
+      "components": [
+        {
+          "name": "server",
+          "url": "https://github.com/spacering-net/codeg/releases/download/v0.35.1/codeg-server-linux-arm64.tar.gz", "_url_scan": "scan: allow",
+          "sha256": "2a97353b919c13ec76212970f50b2184123492ca7b2ce983fe9db0eece7b1ff6", "_sha256_scan": "scan: allow",
+          "package_kind": "tar",
+          "directory": "server"
+        },
+        {
+          "name": "node",
+          "url": "https://nodejs.org/dist/v22.23.3/node-v22.23.3-linux-arm64.tar.gz", "_url_scan": "scan: allow",
+          "cn_url": "https://registry.npmmirror.com/-/binary/node/v22.23.3/node-v22.23.3-linux-arm64.tar.gz", "_cn_url_scan": "scan: allow",
+          "sha256": "5ced2d48d1d7198739b7f86804de0171aefb6823b684b12341d3321afc3cb0b2", "_sha256_scan": "scan: allow",
+          "package_kind": "tar",
+          "directory": "node"
+        }
+      ],
+      "verify": "/var/lib/neutrino/agent/codeg/server/codeg-server --version",
+      "uninstall": {
+        "packages": [],
+        "post_uninstall": [],
+        "is_data_kept": true
+      }
+    },
+    "darwin-amd64": {
+      "components": [
+        {
+          "name": "server",
+          "url": "https://github.com/spacering-net/codeg/releases/download/v0.35.1/codeg-server-darwin-x64.tar.gz", "_url_scan": "scan: allow",
+          "sha256": "5e1fd9ee3587e6046381da6de70428608987b6a747949996ecb658e755763730", "_sha256_scan": "scan: allow",
+          "package_kind": "tar",
+          "directory": "server"
+        },
+        {
+          "name": "node",
+          "url": "https://nodejs.org/dist/v22.23.3/node-v22.23.3-darwin-x64.tar.gz", "_url_scan": "scan: allow",
+          "cn_url": "https://registry.npmmirror.com/-/binary/node/v22.23.3/node-v22.23.3-darwin-x64.tar.gz", "_cn_url_scan": "scan: allow",
+          "sha256": "8a677b0219178efd6eb0e475457c4afb452b521a92f6e67845a73bd85727f2a8", "_sha256_scan": "scan: allow",
+          "package_kind": "tar",
+          "directory": "node"
+        }
+      ],
+      "verify": "\"/Library/Application Support/Neutrino/agent/state/codeg/server/codeg-server\" --version",
+      "uninstall": {
+        "packages": [],
+        "post_uninstall": [],
+        "is_data_kept": true
+      }
+    },
+    "darwin-arm64": {
+      "components": [
+        {
+          "name": "server",
+          "url": "https://github.com/spacering-net/codeg/releases/download/v0.35.1/codeg-server-darwin-arm64.tar.gz", "_url_scan": "scan: allow",
+          "sha256": "3d53baa54d4f834be101b6c5216e15001c71263a52efd2cabd4c9bf47ee2dc7c", "_sha256_scan": "scan: allow",
+          "package_kind": "tar",
+          "directory": "server"
+        },
+        {
+          "name": "node",
+          "url": "https://nodejs.org/dist/v22.23.3/node-v22.23.3-darwin-arm64.tar.gz", "_url_scan": "scan: allow",
+          "cn_url": "https://registry.npmmirror.com/-/binary/node/v22.23.3/node-v22.23.3-darwin-arm64.tar.gz", "_cn_url_scan": "scan: allow",
+          "sha256": "23b25245dcfb9af7262f8ff142e9e2e0af025368117329e7a7458a51e5922f53", "_sha256_scan": "scan: allow",
+          "package_kind": "tar",
+          "directory": "node"
+        }
+      ],
+      "verify": "\"/Library/Application Support/Neutrino/agent/state/codeg/server/codeg-server\" --version",
+      "uninstall": {
+        "packages": [],
+        "post_uninstall": [],
+        "is_data_kept": true
+      }
+    },
+    "windows-amd64": {
+      "components": [
+        {
+          "name": "server",
+          "url": "https://github.com/spacering-net/codeg/releases/download/v0.35.1/codeg-server-windows-x64.zip", "_url_scan": "scan: allow",
+          "sha256": "6e610a4a8d214bc15951e082dd05765ac51d02fdb5d657de5aa9162b35446262", "_sha256_scan": "scan: allow",
+          "package_kind": "zip",
+          "directory": "server"
+        },
+        {
+          "name": "node",
+          "url": "https://nodejs.org/dist/v22.23.3/node-v22.23.3-win-x64.zip", "_url_scan": "scan: allow",
+          "cn_url": "https://registry.npmmirror.com/-/binary/node/v22.23.3/node-v22.23.3-win-x64.zip", "_cn_url_scan": "scan: allow",
+          "sha256": "2b0ff57b049cda1bbcea2240eec20467018713c1efe1f7360c2681859b90ed71", "_sha256_scan": "scan: allow",
+          "package_kind": "zip",
+          "directory": "node"
+        }
+      ],
+      "verify": "powershell -NoProfile -Command \"$p = Join-Path $env:ProgramData 'Neutrino\\agent\\state\\codeg\\server\\codeg-server.exe'; if (-not (Test-Path $p)) { exit 1 }; & $p --version; exit $LASTEXITCODE\"",
+      "uninstall": {
+        "packages": [],
+        "post_uninstall": [],
+        "is_data_kept": true
+      }
+    }
+  }
+}

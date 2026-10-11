@@ -99,6 +99,7 @@ def test_every_shipped_manifest_names_its_installer_tier():
         "vscode": "hub",
         "code_server": "hub",
         "cloudcli": "hub",
+        "codeg": "hub",
     }
 
 
@@ -117,6 +118,7 @@ def test_every_shipped_manifest_says_where_its_software_comes_from():
         "vscode": "Microsoft",
         "code_server": "Coder",
         "cloudcli": "nodejs.org",
+        "codeg": "spacering-net/codeg",
     }
 
 
@@ -131,6 +133,7 @@ def test_the_manifests_come_back_in_the_order_both_surfaces_draw():
         "zfs",
         "cloudcli",
         "code_server",
+        "codeg",
         "gitea",
         "vscode",
     ]
@@ -646,6 +649,101 @@ def test_cloudclis_node_names_the_same_file_on_npmmirror():
         path = node["url"].split("/dist/", 1)[1]
         assert node["cn_url"] == f"{NODE_MIRROR}{path}", key
         assert "cn_latest_url" not in node
+
+
+CODEG_VERSION = "0.35.1"
+# The sha256 of each server bundle, from the publisher's own .sha256 sidecar.
+CODEG_SERVER_BUILDS = {
+    "linux-amd64": (
+        "linux-x64.tar.gz",
+        "40e9d854967f34834ceeb64d4a5b89295e76877e9dbdc81e8b466619fcd84f5f",  # scan: allow
+    ),
+    "linux-arm64": (
+        "linux-arm64.tar.gz",
+        "2a97353b919c13ec76212970f50b2184123492ca7b2ce983fe9db0eece7b1ff6",  # scan: allow
+    ),
+    "darwin-amd64": (
+        "darwin-x64.tar.gz",
+        "5e1fd9ee3587e6046381da6de70428608987b6a747949996ecb658e755763730",  # scan: allow
+    ),
+    "darwin-arm64": (
+        "darwin-arm64.tar.gz",
+        "3d53baa54d4f834be101b6c5216e15001c71263a52efd2cabd4c9bf47ee2dc7c",  # scan: allow
+    ),
+    "windows-amd64": (
+        "windows-x64.zip",
+        "6e610a4a8d214bc15951e082dd05765ac51d02fdb5d657de5aa9162b35446262",  # scan: allow
+    ),
+}
+
+
+def test_codeg_pins_the_server_bundle_and_node_as_two_components_per_platform():
+    """The server bundle from the publisher's release, mirrored nowhere, and
+    the Node.js build CloudCLI's manifest pins, each under its own directory;
+    no Windows arm64, and no glibc floor since Codeg's is the agent's own."""
+    manifest = load_module_manifests()["codeg"]
+    node_builds = load_module_manifests()["cloudcli"]["platforms"]
+
+    assert manifest["version"] == CODEG_VERSION
+    assert manifest["license"] == "Apache-2.0"
+    assert manifest["corresponding_source"] == (
+        f"https://github.com/spacering-net/codeg/tree/v{CODEG_VERSION}"
+    )
+    assert set(manifest["platforms"]) == set(CODEG_SERVER_BUILDS)
+    assert "windows-arm64" not in manifest["platforms"]
+    for key, (build, digest) in CODEG_SERVER_BUILDS.items():
+        entry = manifest["platforms"][key]
+        assert "url" not in entry and "min_version" not in entry
+        server, node = entry["components"]
+        assert server["name"] == "server" and server["directory"] == "server"
+        assert server["url"] == (
+            "https://github.com/spacering-net/codeg/releases/download/"
+            f"v{CODEG_VERSION}/codeg-server-{build}"
+        )
+        assert server["sha256"] == digest
+        assert server["package_kind"] == ("zip" if build.endswith(".zip") else "tar")
+        assert "cn_url" not in server
+        (cloudcli_node,) = node_builds[key]["components"]
+        assert node == cloudcli_node
+        assert entry["uninstall"] == {
+            "packages": [],
+            "post_uninstall": [],
+            "is_data_kept": True,
+        }
+    assert manifest["platforms"]["linux-amd64"]["verify"] == (
+        "/var/lib/neutrino/agent/codeg/server/codeg-server --version"
+    )
+    assert manifest["platforms"]["darwin-arm64"]["verify"] == (
+        '"/Library/Application Support/Neutrino/agent/state/codeg/server/codeg-server"'
+        " --version"
+    )
+    assert "codeg\\server\\codeg-server.exe" in (
+        manifest["platforms"]["windows-amd64"]["verify"]
+    )
+
+
+def test_codeg_resolves_to_two_components_by_machine_and_refuses_the_rest():
+    manifest = load_module_manifests()["codeg"]
+    windows_arm = {"os": "windows", "family": "", "arch": "arm64", "version": "26100"}
+
+    resolved = resolve_module(manifest, {**DEBIAN, "version": "2.34"})
+    old = resolve_module(manifest, {**DEBIAN, "version": "2.28"})
+
+    assert [component["name"] for component in resolved["components"]] == [
+        "server",
+        "node",
+    ]
+    assert resolved["components"][0] == {
+        "name": "server",
+        "package_kind": "tar",
+        "directory": "server",
+        "sha256": CODEG_SERVER_BUILDS["linux-amd64"][1],
+    }
+    assert [component["name"] for component in old["components"]] == [
+        "server",
+        "node",
+    ]
+    assert resolve_platform_entry(manifest, windows_arm) == ("", None)
 
 
 def test_code_server_has_no_windows_branch_and_no_glibc_floor():

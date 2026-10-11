@@ -47,6 +47,7 @@ const MODULE_TITLES: Record<string, string> = {
   vscode: "VS Code",
   code_server: "code-server",
   cloudcli: "CloudCLI",
+  codeg: "Codeg",
 };
 
 /** The word and the tone of each reported result. */
