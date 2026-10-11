@@ -249,7 +249,7 @@ def test_terminal_without_a_verb_prints_its_help(monkeypatch, capsys):
             ((), {"hub": "office"}),
         ),
         (
-            ["service", "desktop", "connect", "2"],
+            ["service", "rdp", "connect", "2"],
             "main_desktop_connect",
             (("2",), {"hub": ""}),
         ),

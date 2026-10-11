@@ -494,24 +494,22 @@ def _add_service_parser(subparsers):
         ),
     )
 
-    desktop_parser = kinds.add_parser("desktop", help="desktops the fleet shares")
-    desktop_actions = desktop_parser.add_subparsers(
-        dest="desktop_action", metavar="<action>"
-    )
-    desktop_connect = desktop_actions.add_parser(
+    rdp_parser = kinds.add_parser("rdp", help="desktops the fleet shares")
+    rdp_actions = rdp_parser.add_subparsers(dest="rdp_action", metavar="<action>")
+    rdp_connect = rdp_actions.add_parser(
         "connect", help="open the viewer at one shared desktop"
     )
-    desktop_connect.add_argument(
+    rdp_connect.add_argument(
         "ref", help="the entry's number in service list, or its id"
     )
-    _add_hub_argument(desktop_connect)
+    _add_hub_argument(rdp_connect)
 
     kind_parsers = {
         "web": web_parser,
         "port": port_parser,
         "file": file_parser,
         "ai": ai_parser,
-        "desktop": desktop_parser,
+        "rdp": rdp_parser,
     }
     return service_parser, kind_parsers
 
@@ -566,7 +564,7 @@ def _run_service(arguments, service_parser, kind_parsers) -> int:
             gemini_model=arguments.gemini_model,
             hub=arguments.hub,
         )
-    if kind == "desktop" and arguments.desktop_action == "connect":
+    if kind == "rdp" and arguments.rdp_action == "connect":
         return service.main_desktop_connect(arguments.ref, hub=arguments.hub)
     if kind in kind_parsers:
         kind_parsers[kind].print_help()
