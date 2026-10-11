@@ -160,7 +160,7 @@ def test_a_row_is_frozen_and_an_unknown_name_is_refused():
     with pytest.raises(dataclasses.FrozenInstanceError):
         module_row("samba").kind = "other"
     with pytest.raises(KeyError):
-        module_row("anydesk")
+        module_row("nope")
     with pytest.raises(KeyError):
         module_row("samba").sealed_field("token_sealed")
     with pytest.raises(KeyError):

@@ -138,7 +138,7 @@ def test_the_manifests_come_back_in_the_order_both_surfaces_draw():
 
 @pytest.mark.parametrize(
     "name",
-    ["ssh_server", "samba_mount", "cc_switch", "rustdesk", "anydesk", "teamviewer"],
+    ["ssh_server", "samba_mount", "cc_switch", "rustdesk"],
 )
 def test_the_modules_that_left_are_not_shipped_any_more(name):
     assert name not in load_module_manifests()

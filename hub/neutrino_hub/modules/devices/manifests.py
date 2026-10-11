@@ -64,12 +64,7 @@ def load_module_manifests() -> dict:
             )
         _check_branches(path.name, manifest)
         loaded.append((name, manifest))
-    loaded.sort(
-        key=lambda pair: (
-            AGENT_MODULE_INSTALLER_TIERS.index(pair[1]["installer"]),
-            str(pair[1].get("title", pair[0])).lower(),
-        )
-    )
+    loaded.sort(key=_display_order)
     return dict(loaded)
 
 
@@ -124,6 +119,15 @@ def _read_manifests() -> list:
         if name:
             read.append((path, name, manifest))
     return read
+
+
+def _display_order(pair: tuple) -> tuple:
+    """Where one ``(name, manifest)`` sorts: by installer tier, then by title."""
+    name, manifest = pair
+    return (
+        AGENT_MODULE_INSTALLER_TIERS.index(manifest["installer"]),
+        str(manifest.get("title", name)).lower(),
+    )
 
 
 def _check_branches(file_name: str, manifest: dict) -> None:
