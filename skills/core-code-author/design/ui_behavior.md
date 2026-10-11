@@ -101,21 +101,21 @@ carries `ui.network.unsaved_interface` as an accent badge on the
 **Network** page, on its exposure chip and in its summary, the way a
 VLAN the next apply creates carries `ui.network.vlan_new_on_apply`.
 The page reads it from the interface's `is_unsaved` and works out
-nothing itself ([modules/network.md](modules/network.md), "An
+nothing itself ([hub_components/network.md](hub_components/network.md), "An
 interface the configuration does not name").
 
 A Wi-Fi radio that publishes a network has a **Country code** field
 (`ui.network.field_country_code`) beside **Band**: two letters, or empty.
 The band picker offers 5 GHz only while the field holds a code, and with
 it empty the access point runs on 2.4 GHz
-([modules/network.md](modules/network.md), "The access point's country").
+([hub_components/network.md](hub_components/network.md), "The access point's country").
 
 In router mode, a chip turned on for a port whose role is `disabled` carries
 the role choice in the same row: `ui.network.role_wan`, and
 `ui.network.role_lan` for a wired port, as a two-button picker beside the
 chip. **Apply exposure** stays disabled until every such chip has a role
 chosen, and the request sends it in `interface_roles`
-([modules/network.md](modules/network.md), "An interface the configuration
+([hub_components/network.md](hub_components/network.md), "An interface the configuration
 does not name").
 
 ## Filters
@@ -562,7 +562,7 @@ then.
 ## Account sign-in on the AI page
 
 An account sign-in runs in a dialog on the **AI** page's **Accounts**
-surface ([modules/ai.md](modules/ai.md), "What each panel surface owns"),
+surface ([hub_components/ai.md](hub_components/ai.md), "What each panel surface owns"),
 which the page polls with `GET /api/hub/ai/gateway/account_login` until the
 gateway reports the flow `complete` or `failed`.
 

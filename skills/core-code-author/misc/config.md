@@ -161,7 +161,7 @@ Each `*.example.json` is annotated field-by-field. The load-bearing ones:
   (the gateway's own traffic through the proxy, default `false`), and the
   proxy's two resolver lists, `remote_dns` and `direct_dns`, each a list of
   `{address, port}` asked in order. An empty `direct_dns` follows the
-  network's resolvers ([../design/modules/proxy.md](../design/modules/proxy.md),
+  network's resolvers ([../design/hub_components/proxy.md](../design/hub_components/proxy.md),
   "Where names resolve").
 - **`connections.json`** — `connections[]`, one per wireless network the box
   knows: `ssid`, `key_mgmt` (`WPA-PSK` | `SAE` | `NONE`), `psk` (the
@@ -199,14 +199,14 @@ Each `*.example.json` is annotated field-by-field. The load-bearing ones:
   row.
 - **`direct.json`**, in `config/overlay/`: `is_enabled`, `public_host` (empty
   for none) and `public_port` (default 8443); a missing file reads as Direct
-  off ([../design/modules/network.md](../design/modules/network.md), "Direct").
+  off ([../design/hub_components/network.md](../design/hub_components/network.md), "Direct").
 - **`relay.json`**, in `config/overlay/`: `is_enabled`, `host`, `ssh_port`
   (default 22), `account`, `key_id`, `login_id` and `public_port` (default
   8443). At most one of `key_id` and `login_id` is set, the relay's
   credential kind. The relay is configured when `host`, `account` and one of
   the two are set; a missing file reads as a relay that is off and not
   configured
-  ([../design/modules/network.md](../design/modules/network.md), "The relay,
+  ([../design/hub_components/network.md](../design/hub_components/network.md), "The relay,
   the third way in").
 - **`identity.json`** — the hub's own `id` (a uuid generated at setup) and
   `name` (the hostname until the Settings page changes it); the `welcome`

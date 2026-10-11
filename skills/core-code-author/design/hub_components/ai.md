@@ -174,19 +174,18 @@ sections").
 | | On a person's computer | On a managed machine |
 | --- | --- | --- |
 | Who runs the steps | the client | the agent |
-| As whom | the person, in their own session | each account the hub names, never root or SYSTEM: `runuser -u <account> --` on Linux, a process with the account's uid and groups on macOS, a one-shot scheduled task under the account's login on Windows ([../agent.md](../agent.md), "The machine's AI tools") |
+| As whom | the person, in their own session | each account the hub names, never root or SYSTEM: `runuser -u <account> --` on Linux, a process with the account's uid and groups on macOS, a one-shot scheduled task under the account's login on Windows ([../agent/ai_tools.md](../agent/ai_tools.md)) |
 | The accounts | the person's own | every account with an instance in the machine's VS Code, code-server or CloudCLI configuration, worked out by the hub and sent in the state |
 | The endpoint | `http://127.0.0.1:<local-port><path>`, the client's forward | `http://<hub-address>:<listen-port>`, the gateway as the machine reaches it on the LAN, from `device_gateway()` in `modules/clients/ai_keys.py` |
 | The key | the client's own, from the `service` stream | the device's own, from the `ai_tools` section |
 | The unchosen models | the gateway's first model, from the `service` stream | the gateway's first served model, filled in by the hub before the state is sent |
 | The cc-switch | the copy the client's package carries | the copy the agent fetches from the hub into `ai_tools/bin/` under its state root, the same pinned version |
-| The record per tool | `original/<tool>.json` under the client's configuration | `ai_tools/<account>/<tool>.json` under the agent's state root, never in the account's home ([../agent.md](../agent.md), "The machine's AI tools") |
+| The record per tool | `original/<tool>.json` under the client's configuration | `ai_tools/<account>/<tool>.json` under the agent's state root, never in the account's home ([../agent/ai_tools.md](../agent/ai_tools.md)) |
 | Switched back | when the chip goes off | when the setting goes off, when the account's last instance is removed, before `nagent service uninstall`, and when the machine leaves the hub |
 
 cc-switch runs on a store of the agent's own in the account's Neutrino
 tree, as the client's runs on a store of the client's own, so the
-account's `~/.cc-switch` is never read or written ([../agent.md](../agent.md),
-"The machine's AI tools"). An account gained while the setting is on is
+account's `~/.cc-switch` is never read or written ([../agent/ai_tools.md](../agent/ai_tools.md)). An account gained while the setting is on is
 switched at the next state. While the gateway serves no model, the hub sends
 the setting as off, so every account is switched back; the stored setting
 and the device's key stay, and the next state after the gateway serves again

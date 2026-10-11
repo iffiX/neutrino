@@ -114,7 +114,7 @@ macOS and Windows").
 | Installing units | writes them | skipped: the installer registered the one service |
 | Applying interface roles | by the mode | skipped |
 | The network mode | asks for one of three; `cn` offers `router` and `server` | `server`, with no question |
-| The hub's own traffic through the proxy | asked in `intl` | asked in `intl`; it diverts through the TUN there ([modules/proxy.md](modules/proxy.md), "The TUN on macOS and Windows") |
+| The hub's own traffic through the proxy | asked in `intl` | asked in `intl`; it diverts through the TUN there ([hub_components/proxy.md](hub_components/proxy.md), "The TUN on macOS and Windows") |
 | Starting services | each unit | the service is already running; the steps before this one write `services.json`, and the service starts each child as the file names it. From the terminal path this step is a restart of the service into the panel, after the panel password and before the local agent; from the browser path the service restarts itself; on macOS and Windows this step also writes the system firewall once, so the panel answers through it from the first minute |
 | The local agent | from the cache by `AGENT_PACKAGE_FAMILY_OF_PLATFORM` | from the cache by `AGENT_PACKAGE_FAMILY_OF_OS`: `installer -pkg <file> -target /` or `msiexec /i <file> /qn /norestart`, then `nagent join <link> --yes` |
 
@@ -211,7 +211,7 @@ this way; the hub itself never runs it. On a managed Mac or Windows machine
 the Gitea module installs no `git`: the machine's owner installs it, the
 developer tools or Homebrew on a Mac and Git for Windows on Windows, and the
 module refuses `gitea_git_missing` until one is there
-([agent.md](agent.md), "Gitea").
+([agent/modules/gitea.md](agent/modules/gitea.md)).
 
 A provisioner that would do more than install (build a kernel module, add a
 third-party repository, replace a system service) returns that as a consent
@@ -373,7 +373,7 @@ answer: an interpreter under `/opt/neutrino/agent` with the agent installed
 beside it and the RustDesk host, both built for one machine. It does not
 carry cc-switch: the agent fetches it from the hub the first time the
 machine's AI tools setting needs it and runs it as each account the setting
-names ([agent.md](agent.md), "The machine's AI tools"). The hub's
+names ([agent/ai_tools.md](agent/ai_tools.md)). The hub's
 `data/manifests/cc_switch.json` pins the client's version, the one
 `packaging/shared/constants.py` holds, with the same assets and sha256
 values, and a hub test keeps the two the same. The agent draws no window,

@@ -73,8 +73,8 @@ distribution provides.
 | fail2ban | 0.11 | the `nftables-multiport` ban action the SSH jail sets | `hub/neutrino_hub/system/constants.py:166` |
 | wpa_supplicant, hostapd | 2.9 | SAE with `ieee80211w` for a WPA3 network; the access point renders WPA2 only | `hub/neutrino_hub/modules/router/supplicant_renderer.py:101` |
 | dhcpcd | 7.1 | `nohook`, which keeps the client off resolv.conf and the hostname | `hub/neutrino_hub/modules/router/dhcp_renderer.py:58` |
-| OpenSSH client | 7.6 | `StrictHostKeyChecking=accept-new` in the relay's `ssh` start line | the relay's start line ([modules/network.md](modules/network.md)) |
-| OpenSSH client, a relay with a password | 8.4, or `DISPLAY` set before it | `SSH_ASKPASS_REQUIRE=force`, which makes ssh ask the askpass program and never a terminal; an older client asks it when it has no terminal and `DISPLAY` is set, and the start line sets both | the relay's password start line ([modules/network.md](modules/network.md), "What the hub runs") |
+| OpenSSH client | 7.6 | `StrictHostKeyChecking=accept-new` in the relay's `ssh` start line | the relay's start line ([hub_components/network.md](hub_components/network.md)) |
+| OpenSSH client, a relay with a password | 8.4, or `DISPLAY` set before it | `SSH_ASKPASS_REQUIRE=force`, which makes ssh ask the askpass program and never a terminal; an older client asks it when it has no terminal and `DISPLAY` is set, and the start line sets both | the relay's password start line ([hub_components/network.md](hub_components/network.md), "What the hub runs") |
 
 The relay needs an OpenSSH client on every system the hub runs on, and each
 system has one from its own vendor:

@@ -54,7 +54,7 @@ the program directory on `PATH` on Windows); `/lib/systemd/system/`,
 `/etc/systemd/system/`, `/Library/LaunchDaemons/` and `/Library/LaunchAgents/`
 because the service managers read from there and nowhere else, which is
 also why the Remote desktop module writes RustDesk's registration there
-under RustDesk's own names while its switch is on ([agent.md](agent.md),
+under RustDesk's own names while its switch is on ([agent/modules/remote_desktop.md](agent/modules/remote_desktop.md),
 "The desktop is the hub's order"); `/usr/share/doc/<package>/licenses/` because that is where a
 package's licences are looked for; the polkit rule of the client's mount
 helper under polkit's own directory; the agent's copy of RustDesk on Linux
@@ -231,7 +231,7 @@ the file when it is spent or expires ([protocol.md](protocol.md),
 `hub/relay/` holds what the relay's `ssh` reads: `key`, the private key the
 converge step writes from the vault while the relay runs and deletes when it
 stops, and `known_hosts`, the VPS's host key as `ssh` recorded it on its first
-connection ([network.md](modules/network.md), "The relay, the third way in").
+connection ([network.md](hub_components/network.md), "The relay, the third way in").
 Both are state: the key is in the vault, and a lost `known_hosts` is recorded
 again on the next connection.
 

@@ -5,7 +5,7 @@ The load-bearing structural principles of this repo.
 ## The shape of the system
 
 One box runs the hub: a Linux machine in any network mode, or a macOS or
-Windows machine in `server` mode ([network.md](modules/network.md)). A Linux,
+Windows machine in `server` mode ([network.md](hub_components/network.md)). A Linux,
 Windows or macOS machine the hub manages runs the agent, as root, headless.
 A person's own machine, Linux, Windows or macOS, runs the client in that
 person's session, never as root. The hub box runs its own
@@ -126,8 +126,8 @@ as its own child:
 | CLIProxyAPI | `cli-proxy-api --config` the rendered YAML |
 | NetBird | `netbird service run --config <state>/netbird/config.json --log-file <log>/netbird.log --daemon-addr` the hub's own address: `unix:///var/run/neutrino/hub/netbird.sock` on macOS, a loopback TCP port of the hub's own on Windows |
 | EasyTier | `easytier-core` with its rendered file and `--rpc-portal 127.0.0.1:15888` |
-| the relay | the system's OpenSSH client with the start line rendered from `config/overlay/relay.json`, while the relay is on and configured; its output in `relay.log` ([network.md](modules/network.md), "The relay, the third way in") |
-| tun2socks | `tun2socks` on the hub's TUN device, pointed at xray's `socks_local_in`, while the box's own scope or the overlay scope is on and xray runs; it requires xray, so it is ended before xray stops or restarts and started again once xray is back, and the routes follow it ([proxy.md](modules/proxy.md), "The TUN on macOS and Windows") |
+| the relay | the system's OpenSSH client with the start line rendered from `config/overlay/relay.json`, while the relay is on and configured; its output in `relay.log` ([network.md](hub_components/network.md), "The relay, the third way in") |
+| tun2socks | `tun2socks` on the hub's TUN device, pointed at xray's `socks_local_in`, while the box's own scope or the overlay scope is on and xray runs; it requires xray, so it is ended before xray stops or restarts and started again once xray is back, and the routes follow it ([proxy.md](hub_components/proxy.md), "The TUN on macOS and Windows") |
 
 - Every `netbird` command the hub runs names the same `--daemon-addr`, so a
   client's NetBird on the same machine is never the one it talks to.
@@ -150,7 +150,7 @@ as its own child:
   `KeepAlive` and the service control manager's failure recovery start it
   again.
 - No nftables layer exists outside Linux. The hub renders its exposure into
-  the system firewall instead ([network.md](modules/network.md), "What
+  the system firewall instead ([network.md](hub_components/network.md), "What
   answers, and where").
 - The service runs from the install. Before the box is set up it serves the
   setup wizard on the panel's HTTP port and nothing else; when the wizard's
@@ -402,7 +402,7 @@ is not multi-tenant and does not defend one enrolled machine from another.
 
 The wire gets no such trust. A "LAN" can be a campus network with a thousand
 strangers on it, so the panel answers only where an interface was deliberately
-exposed and on the running overlays ([network.md](modules/network.md), "What answers, and
+exposed and on the running overlays ([network.md](hub_components/network.md), "What answers, and
 where"), behind a password, and the agent channel carries its secrets under
 pinned TLS. Trusting the machines and distrusting the wire is the whole
 model.
@@ -553,6 +553,6 @@ the surface that needs privilege is small and auditable. What the unit narrows,
 and what it deliberately does not, is [privilege.md](privilege.md). On macOS
 and Windows the one service runs as root and as SYSTEM, and no input chain
 narrows what reaches the panel: it answers on every interface, behind the
-same password ([network.md](modules/network.md)). If this
+same password ([network.md](hub_components/network.md)). If this
 ever becomes multi-user or WAN-exposed, split the privileged helper out then —
 the apply layer is already the seam to split on.

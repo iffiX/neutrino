@@ -387,7 +387,8 @@ the forward listens on the phone's loopback, and the browser opens there.
 VS Code reads its token from a cookie in the page to authenticate its own
 connection, so the token must reach the browser in the URL. The forwarders
 in front of code-server and CloudCLI trade a token for a login of their own
-([agent.md](agent.md), "CloudCLI" and "code-server"). Their token is spent
+([agent/modules/cloudcli.md](agent/modules/cloudcli.md) and
+[agent/modules/code_server.md](agent/modules/code_server.md)). Their token is spent
 once and dies after 60 seconds, so every press of **Open** reads a new one.
 
 ## The Ports page
@@ -465,14 +466,14 @@ the forward listens. The desktop controls:
 
 | Control | Enabled | Does |
 | --- | --- | --- |
-| **AI tools use this gateway** (a chip) | when the entry is not unhealthy, the hub is not disabled and no switch runs | job `ui.job.switching`: makes the entry's forward, reads this client's key on the `service` stream, and points Claude Code, Codex and Gemini at `http://127.0.0.1:<local-port>` with that key ([modules/ai.md](modules/ai.md)); one hub is the exit at a time, and only a chip the person turned on makes it so: with no chip turned on no hub is the exit; the chip of the other hub turns off in the same push, and its forward ends |
+| **AI tools use this gateway** (a chip) | when the entry is not unhealthy, the hub is not disabled and no switch runs | job `ui.job.switching`: makes the entry's forward, reads this client's key on the `service` stream, and points Claude Code, Codex and Gemini at `http://127.0.0.1:<local-port>` with that key ([hub_components/ai.md](hub_components/ai.md)); one hub is the exit at a time, and only a chip the person turned on makes it so: with no chip turned on no hub is the exit; the chip of the other hub turns off in the same push, and its forward ends |
 | **Configure** | the same | opens the configuration dialog: a picker per tool for its model and, for Codex, its effort; **Save** and **Cancel**; the dialog is the inline-form idiom with a dirty frame |
 
 Under the controls is the line `ui.ai_needs_client`: the tools reach the
 gateway only while this client runs.
 
 A desktop client on a machine the Neutrino agent is installed on leaves the
-machine's AI tools to the agent ([modules/ai.md](modules/ai.md), "How a
+machine's AI tools to the agent ([hub_components/ai.md](hub_components/ai.md), "How a
 managed machine's tools are pointed at the gateway"). The agent is
 installed when its program directory exists: `/opt/neutrino/agent` on
 Linux, `/Library/Application Support/Neutrino/agent/app` on macOS,

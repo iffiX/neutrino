@@ -269,7 +269,7 @@ Exposure is the only control plane for what the box serves.
 `exposed_interfaces` decides where the panel port, the agent port and every
 published service listen; no route switches a service on for one network. A
 hub on macOS or Windows has no exposure and answers on every interface
-([network.md](modules/network.md), "Outside Linux, the system firewall").
+([network.md](hub_components/network.md), "Outside Linux, the system firewall").
 
 An action that needs the agent online is rejected with 409 `agent_offline`
 while the machine is away. The path does not say which actions those are.
@@ -410,14 +410,14 @@ the page's whole view.
 | `GET /api/hub/overlay/easytier/secret` | | the network secret |
 | `GET /api/hub/overlay/direct` | | `DirectView`: `is_enabled`, `public_host`, `public_port`; `urls`, what Direct adds to `urls` while it is on, in the order `urls` holds them: the exposed interfaces' stable IPv6 addresses, every other enabled interface's IPv4 and stable IPv6 addresses, then the stated public address, each once; `interface_state`, `added` when Direct adds an interface's address, `exposed` when it adds none because every interface address the hub holds already answers on the agent port, `none` when no interface has an address |
 | `POST /api/hub/overlay/direct/set` | `{public_host, public_port}`, an empty host stating none, the port 1 to 65535 | stores them in `config/overlay/direct.json` and runs the converge step; `DirectView`; 400 `direct_host_invalid {host}` for a value that is neither an IP address nor a host name, `port_out_of_range {minimum, maximum, value}`; 502 `direct_apply_failed {detail}` |
-| `GET /api/hub/overlay/relay` | | `RelayView`: `is_enabled`, `host`, `ssh_port`, `account`, `key_id`, `login_id`, `public_port`, `key_id` or `login_id` empty as `relay.json` holds it; `url`, the address the relay adds to `urls`, empty while it is not configured; `state`, one of the relay's state codes ([network.md](modules/network.md), "The states"); `host_key_fingerprint`, the recorded host key as `SHA256:<base64>`, empty when none is recorded; `last_error`, the last line `ssh` wrote before it exited or the failed check's reason, empty while connected; `checked_at`, the last check's time in ISO 8601, empty before the first |
+| `GET /api/hub/overlay/relay` | | `RelayView`: `is_enabled`, `host`, `ssh_port`, `account`, `key_id`, `login_id`, `public_port`, `key_id` or `login_id` empty as `relay.json` holds it; `url`, the address the relay adds to `urls`, empty while it is not configured; `state`, one of the relay's state codes ([network.md](hub_components/network.md), "The states"); `host_key_fingerprint`, the recorded host key as `SHA256:<base64>`, empty when none is recorded; `last_error`, the last line `ssh` wrote before it exited or the failed check's reason, empty while connected; `checked_at`, the last check's time in ISO 8601, empty before the first |
 | `POST /api/hub/overlay/relay/set` | `{host, ssh_port, account, key_id, login_id, public_port}`, the ports 1 to 65535, and exactly one of `key_id` and `login_id`, the other null or absent, as the agent install's request names its credential | stores them in `config/overlay/relay.json`, deletes the recorded host key when `host` or `ssh_port` changed, and runs the converge step; `RelayView`; 400 `relay_host_invalid {host}`, `relay_account_invalid {account}`, `unknown_credential {field: key_id}` for a key the vault does not hold or for a request naming both or neither, `unknown_credential {field: login_id}` for a login the vault does not hold, `port_out_of_range {minimum, maximum, value}`; 502 `relay_apply_failed {detail}` |
 | `POST /api/hub/overlay/relay/host_key/remove` | | deletes the recorded host key and starts the relay again, which records the key it meets next; `RelayView`. The key is recorded by the connection, so the path has no `add` |
 
 Every write on this page, the relay's included, the Network page's writes and
 the Proxy page's `apply` run one converge step, `PanelRuntime.converge_network`, and so does
 the address sampler when the channel's address set or an overlay's device
-moved. Its steps and their order are [network.md](modules/network.md),
+moved. Its steps and their order are [network.md](hub_components/network.md),
 "The converge step".
 
 #### `/api/hub/proxy`
@@ -425,7 +425,7 @@ moved. Its steps and their order are [network.md](modules/network.md),
 | Route | Parameters | Does |
 | --- | --- | --- |
 | `GET /api/hub/proxy` | | the view, with `geodata: {geoip_version, geosite_version, source, latest?}` |
-| `POST /api/hub/proxy/set` | routing policy; `remote_dns` and `direct_dns` are lists of `{address, port}`, `port` 53 when absent, asked in their order; an empty `direct_dns` follows the network's resolvers ([proxy.md](modules/proxy.md), "Where names resolve") | 400 `proxy_scope_unsupported {switch}` for `is_proxy_enabled`, `is_overlay_proxy_enabled` or `is_local_proxy_enabled` switched on outside Linux, `resolver_required {field: remote_dns}` for an empty `remote_dns`, `resolver_address_invalid {address}`, `port_out_of_range {minimum, maximum, value}` |
+| `POST /api/hub/proxy/set` | routing policy; `remote_dns` and `direct_dns` are lists of `{address, port}`, `port` 53 when absent, asked in their order; an empty `direct_dns` follows the network's resolvers ([proxy.md](hub_components/proxy.md), "Where names resolve") | 400 `proxy_scope_unsupported {switch}` for `is_proxy_enabled`, `is_overlay_proxy_enabled` or `is_local_proxy_enabled` switched on outside Linux, `resolver_required {field: remote_dns}` for an empty `remote_dns`, `resolver_address_invalid {address}`, `port_out_of_range {minimum, maximum, value}` |
 | `POST /api/hub/proxy/apply` | | renders and applies xray |
 | `GET /api/hub/proxy/node` | | the exit nodes |
 | `POST /api/hub/proxy/node/add` | a share link or a node | |
@@ -631,7 +631,7 @@ empty for a device that has none. The accounts it acts on are worked out
 when the state is composed, from the instances in the device's
 `vscode.json`, `code_server.json` and `cloudcli.json`, sorted by name. The
 device's gateway key lives in the gateway's `device_keys`
-([modules/ai.md](modules/ai.md), "A key per device as well as per client"):
+([hub_components/ai.md](hub_components/ai.md), "A key per device as well as per client"):
 `ai_tool/enable` mints it, and `ai_tool/disable` and removing the device
 revoke it.
 
@@ -770,9 +770,9 @@ whatever is exposed. While Direct is on, the exposed interfaces' stable
 IPv6 addresses follow the exposed set, every other enabled interface's
 IPv4 and then stable IPv6 addresses follow those, and the public address
 stated for Direct follows them; an IPv6 address is written in brackets
-([network.md](modules/network.md), "Direct"). While Direct is off, every
+([network.md](hub_components/network.md), "Direct"). While Direct is off, every
 address in `urls` is IPv4. While the relay is on and configured, `https://<host>:<public-port>` is
-its last member ([network.md](modules/network.md), "The relay's address"). `role` is `agent`
+its last member ([network.md](hub_components/network.md), "The relay's address"). `role` is `agent`
 or `client`, read on the pasting side before the first request. A client
 rejects a device link with `link_not_for_client` and an agent rejects a client
 link with `link_not_for_agent`, each code's `params` naming the link's `role`.
@@ -1056,7 +1056,7 @@ keeps one mark per module and one for the AI tools per device in
 dropped with the device ([files.md](files.md)).
 
 `ai_tools` in the state is the machine's AI tools setting
-([agent.md](agent.md), "The machine's AI tools"). `is_enabled` is true while
+([agent/ai_tools.md](agent/ai_tools.md)). `is_enabled` is true while
 the setting is on and the gateway serves a model. With it true, `base_url`
 is `http://<hub-address>:<listen-port>`, the gateway as the device reaches it
 on the LAN, `api_key` is the device's own gateway key, and `tool_configs` is
@@ -1302,7 +1302,8 @@ account a Linux machine or a Mac does not have; and `credential_invalid
 {account}` when Windows refuses the login.
 
 The `cloudcli` module runs CloudCLI once per account
-([agent.md](agent.md), "CloudCLI"). Its recipe names the Node.js archive
+([agent/modules/cloudcli.md](agent/modules/cloudcli.md)). Its recipe names
+the Node.js archive
 `data/manifests/cloudcli.json` pins for the platform, which the agent opens
 `package {module: cloudcli}` for, and its configuration carries the
 edition's `npm_registry` and `npm_environment`, the `npm_config_*` settings
@@ -1312,7 +1313,8 @@ step: `cloudcli_node_download_failed`, `cloudcli_npm_install_failed
 detail}` or `cloudcli_install_out_of_memory {account}`.
 
 The `code_server` module runs code-server once per account, on Linux and
-macOS ([agent.md](agent.md), "code-server"). Its configuration is
+macOS ([agent/modules/code_server.md](agent/modules/code_server.md)). Its
+configuration is
 `{instances: [{account, port, secret}]}`, `secret` the instance's token
 secret, which the hub generates the first time, keeps sealed in
 `config/devices/<id>/code_server.json` and sends opened inside the state,
@@ -1325,8 +1327,7 @@ release installed. An apply refuses `account_invalid`,
 each naming the `account` or the `port`, and `account_unknown {account}`
 for an account the machine does not have.
 
-The `gitea` module runs Gitea on Linux, macOS and Windows ([agent.md](agent.md),
-"Gitea"). Its configuration is `{listen_port, root_url,
+The `gitea` module runs Gitea on Linux, macOS and Windows ([agent/modules/gitea.md](agent/modules/gitea.md)). Its configuration is `{listen_port, root_url,
 is_registration_enabled, address, secrets}` on every system. Its recipe names
 the release binary `data/manifests/gitea.json` pins for the platform,
 `package_kind` `binary`, which the cache recognises by the ELF, Mach-O or PE
@@ -1511,7 +1512,7 @@ its code; the panel's are `binding_unknown`, `client_disabled` and
 | `rdp` | `{password}`: the seat password of the machine sharing the desktop |
 | `ai` | `{api_key, model}`: this client's own gateway key, which the gateway checks on every request, and the first model the gateway serves |
 | `web` with `description_code` `vscode_module` | `{token}`: the instance's connection token |
-| `web` with `description_code` `code_server_module` or `cloudcli_module` | `{token}`: `base64url(expiry \|\| nonce \|\| HMAC-SHA256(secret, expiry \|\| nonce))`, minted by the hub for this answer alone with `expiry` 60 seconds ahead and `secret` the instance's own ([agent.md](agent.md), "CloudCLI"); it works once |
+| `web` with `description_code` `code_server_module` or `cloudcli_module` | `{token}`: `base64url(expiry \|\| nonce \|\| HMAC-SHA256(secret, expiry \|\| nonce))`, minted by the hub for this answer alone with `expiry` 60 seconds ahead and `secret` the instance's own ([agent/modules/cloudcli.md](agent/modules/cloudcli.md)); it works once |
 | `web`, `port`, `file` | empty: the entry's `payload` is already everything the client needs |
 | the panel, `{is_panel: true}` | `{token}`: a sign-in for one browser, minted for this answer alone, which the client opens at its panel forward's address with `?tkn=<token>` ("The panel ports") |
 
@@ -1621,7 +1622,7 @@ with the agent's code:
 | End | Once the process ended and both outputs reached end of file, the agent sends what it holds and closes `params: {exit_code}`: the process's code, or 128 plus the signal's number for a process a signal ended. The hub closes the client's stream with the same params. |
 | A closed stream | A client that closes its stream, or whose socket ends, makes the hub close the agent's stream, and the agent kills the process and everything it started, as a shell's end does. |
 | Size | `cols` and `rows` size the pseudo-terminal with `is_tty`, and a later size is `resize` naming the stream ("The verbs on a `command` stream"); without `is_tty` they are ignored. |
-| Account | The Terminal module's account, else the account the agent runs as, root, and SYSTEM on Windows, as a new shell runs ([agent.md](agent.md), "The two modules the agent carries"); the module's shell program is not read, since `argv` names the program. |
+| Account | The Terminal module's account, else the account the agent runs as, root, and SYSTEM on Windows, as a new shell runs ([agent/modules/terminal.md](agent/modules/terminal.md)); the module's shell program is not read, since `argv` names the program. |
 
 ### The rules the details settle
 

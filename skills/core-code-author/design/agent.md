@@ -5,8 +5,9 @@ machine: one root service with one socket open to the hub. It hosts the
 modules the hub's state names, reports what is true, and shares the
 machine's desktop when told. It draws no window, and the only ports it
 listens on are the forwarders of CloudCLI and code-server, on `127.0.0.1`
-("CloudCLI" and "code-server" below). Its own code is pure standard
-library. The
+([modules/cloudcli.md](agent/modules/cloudcli.md) and
+[modules/code_server.md](agent/modules/code_server.md)). Its own code is
+pure standard library. The
 package includes the interpreter that runs it, so it installs on a machine
 with no Python and touches none the machine already has.
 
@@ -45,10 +46,11 @@ hub's pages, in the agent, and in the client:
 - **Services** are what the hub publishes and what a client consumes: a web
   link, a port, the AI gateway, a share, a shared desktop. The agent composes
   none of them and renders none of them. Its only part is the one entry a
-  machine declares once its Remote desktop module serves, described below.
+  machine declares once its Remote desktop module serves
+  ([modules/remote_desktop.md](agent/modules/remote_desktop.md)).
 
 The machine's AI tools are neither: a setting the hub sends and the agent
-makes true for the accounts it names ("The machine's AI tools").
+makes true for the accounts it names ([ai_tools.md](agent/ai_tools.md)).
 
 | The hub may | Root on the machine may |
 | --- | --- |
@@ -60,7 +62,7 @@ makes true for the accounts it names ("The machine's AI tools").
 
 Root is uid 0. `nagent` refuses any other account, with two exceptions:
 `nagent --version`, and `nagent answer`, which the agent runs as an account
-on Windows ("The machine's AI tools").
+on Windows ([ai_tools.md](agent/ai_tools.md)).
 
 ## One socket, everything on it
 
@@ -158,29 +160,17 @@ in `config/`. Machinery whose only purpose is surviving a restart is removed
 on sight ([../kill_on_sight.md](../kill_on_sight.md), "Unasked survival
 machinery").
 
-The file share on Windows and macOS is the one module that changes what the
-person set up. On Linux it owns the whole `smb.conf`; on Windows and macOS it
-owns who reaches the system's SMB server. It changes only the shares and
-accounts it made, the ones its record under the state root lists and its
-marker names, but its fence covers every share on the machine, the person's
-own included.
-
-Removing the agent's package takes away what the agent added in order to
-run and to fence, and leaves what the machine serves. On every system the
-shares and the accounts stay as they are and the system's SMB server goes on
-serving them. The agent's own units, scheduled tasks, firewall rules and
-fence go with the package, and so do its modules' Windows services, found
-by name as the rest are. An agent installed again finds the shares and
-accounts that were left and takes them back by the rule above: they are
-displayed, and the first report imports them.
+The file share's own rules, what it changes on each system and what a
+removal of the agent leaves, are
+[modules/file_share.md](agent/modules/file_share.md).
 
 `nagent service uninstall` stops the agent's service first and disables it
 (the Linux unit disabled, the macOS job unloaded, the Windows service's start
 type `disabled`), as the package's own removal leaves it, so no apply of its
 own runs beside what follows and nothing starts it at the next boot; then it
 switches every account's AI tools
-back ("The machine's AI tools") and removes the copy of cc-switch it ran,
-before it removes anything else.
+back ([ai_tools.md](agent/ai_tools.md)) and removes the copy of cc-switch it
+ran, before it removes anything else.
 
 **Status is typed.** A module reports `state`, `is_active` and
 `{code, params}`, never an English sentence, and every surface does its own
@@ -238,151 +228,9 @@ keeps the seat and RustDesk's settings files. Their constants carry the
 prefixes `TERMINAL_` and `REMOTE_DESKTOP_`, and the hub names the modules
 `DEVICE_TERMINAL_MODULE` and `DEVICE_REMOTE_DESKTOP_MODULE`.
 
-**Terminal** holds two settings: the account a `shell` or an `exec` stream
-runs as, and the path of the shell program, which an `exec` does not read.
-Both empty is the shell the platform table's "Shell stream" row names, run
-as the agent runs. A shell opened afterwards, from the panel or from a
-client, runs as the module says; a session already
-open keeps what it runs, and a container's shell is not touched. A named
-account the machine does not have refuses the open `account_unknown
-{account}`, and a shell path that is missing or not executable
-`shell_program_unusable {path}`; neither falls back to root or to the
-default. A shell for an account starts in that account's home with that
-account's environment, through `run_as_account`'s step-down ("Acting for an
-account"), on a pseudo-terminal of its own as before, which is handed to
-that account. On Linux and macOS the module's shell program starts as a
-login shell, `<program> -l`, as the agent or as the account alike; an
-account with no program named gets its own login shell. On Windows this
-version sets the shell program alone: the hub sends no account, and the
-shell runs as SYSTEM.
-
-**Remote desktop** holds one switch, off on a new machine. It is the one
-place a desktop share is decided: the hub writes it, the state carries it,
-and the agent makes it true and keeps it true across a restart of the
-machine. `nagent rdp start` and `nagent rdp stop` are gone, from the command
-line and from the control socket.
-
-## The desktop is the hub's order
-
-With the switch on, the agent takes the machine's RustDesk over and runs its
-own copy, the one in its package (the platform table's "RustDesk" row),
-under RustDesk's own service names:
-
-1. It stops RustDesk's service and session jobs and kills every RustDesk
-   host on the machine whose program is not its copy. A process started with
-   `--connect` is a viewer a person may be using and is left alone.
-1. It keeps aside whatever is registered under RustDesk's service names and
-   is not its own (a person's own RustDesk), in `remote_desktop/kept/` under
-   the state root, and records what it registers in
-   `remote_desktop/registered.json`.
-1. It writes the settings files with the host stopped: the direct
-   connection on port 21118, the rendezvous and relay servers set to the
-   machine's own loopback, `127.0.0.1`, because an empty value means
-   upstream's public server; and the seat password as `password = '<p>'` in
-   the service's own `RustDesk.toml`, since `--password` from a copy outside
-   the standard place sets nothing. The seat's host takes the password from
-   the service and keeps it in the seat's `RustDesk.toml` in its own
-   encrypted form, so the agent writes no password there. Every file it
-   writes is copied to `kept/` before its first write and put back when the
-   switch goes off.
-1. It registers and starts its copy under RustDesk's names, as the
-   platform table's "RustDesk" row says for each system, so the system's own
-   service manager brings the host back after a restart and at each login.
-
-With the switch off, the agent's copy does not run: it stops and removes
-what `registered.json` names, kills every host of its copy, puts back what
-`kept/` holds and starts it again when it ran before. No RustDesk process of
-the agent's and no registration of the agent's is left. A person's own
-RustDesk files are never changed or deleted. `nagent service uninstall`
-turns the switch off first. A machine that leaves the hub cuts its share
-off at once the same way, whatever the switch said: on `nagent leave`, and
-when a `binding_unknown` refusal ends the binding because the device was
-removed on the Devices page ("What a refusal means to the agent").
-
-A failed step reports the module `failed` with `rdp_takeover_failed {step,
-detail}` on the way on, or `rdp_restore_failed {step, detail}` on the way
-off; the same press again tries it again ("A retry is the same press
-again").
-
-**The seat password is the hub's.** A machine whose switch is on is given
-one, generated once and sealed under the vault's data key in that device's
-`rdp.json`. It is delivered in the `desktop` section of the state. The agent
-writes it into RustDesk's settings whenever it changed and keeps it in a
-root-only file so it knows what it already set. It enters neither the
-agent's store nor any report.
-
-The panel never shows it: the device drawer offers **Reset seat password**,
-which generates a new one and disconnects every viewer. A client that presses
-**Connect** opens a `service` stream, the hub unseals the password for that
-one close, and the viewer is spawned with it.
-
-**What leaves the machine.** With the rendezvous and relay servers on the
-loopback the host sends nothing to RustDesk's servers. One thing remains
-that no option of RustDesk 1.4.9 turns off: when its server starts on a
-machine with a global IPv6 address, it asks three public STUN servers
-(`stun.l.google.com`, `stun.cloudflare.com`, `stun.nextcloud.com`) for
-that address, and on every machine it looks their names up. The request
-carries no id and registers nothing.
-
-The module reads `running` while the agent's RustDesk service runs under
-RustDesk's names, whether anybody sits at the screen or not, so a headless
-machine with the switch on reads `running`; `stopped` while the switch is
-off and none of the agent's RustDesk processes runs.
-
-**A share is declared only once it listens.** RustDesk's root service holds
-no port of its own; it spawns a second process into the session of whoever
-is logged in at the seat, and that process is what listens. The agent reads
-the system's socket table, as the platform table's "Seat" row does, for its
-copy listening on 21118; it opens no connection to the host. So a machine
-with nobody logged in has nothing listening, which `rdp_nobody_seated`
-refuses in front of, and a Wayland session that has not granted screen
-capture reports `rdp_screen_not_allowed` instead of a desktop nobody can
-see. Whose desktop a peer sees is whoever sits at the screen; the report's
-`account` names them and decides nothing.
-
-**An upgrade replaces the copy under a running host.** The package lays
-the new copy over the old one while the host registered under RustDesk's
-names keeps running the old program, which then fails to start its session
-host from a file that is gone. So the agent, when it starts with the switch
-on, compares the copy's running processes with the copy on disk and, when
-one runs an older program, stops the host and starts it again under the
-same registration and settings. On Linux that is the file each process
-runs; on macOS, when each started against when the copy was written; on
-Windows, the image each process really runs, read with
-`QueryFullProcessImageName`: Windows Installer moves an executable in use
-into `C:\Config.Msi` and gives the new one the build's own time, while
-`Win32_Process` still names the old path, so neither the path WMI reports
-nor a time tells a replaced host apart. This is not an apply of the state,
-and the mark of the state last tried stays.
-
-**A share made by the old command is kept.** An agent of a version that had
-`nagent rdp start` recorded a share in its store. The package that upgrades
-it takes away the RustDesk the old package installed at the system's
-standard place, so the agent, when it starts and finds that record, takes
-the machine's RustDesk over with its own copy as the switch's way on does,
-and until the first state that names `remote_desktop` it keeps that share
-running and reports it.
-A share the agent runs for that record is declared with `origin`
-`command`. A hub that receives `desktop.is_shared` true with `origin`
-`command` from a device with no `remote_desktop.json` writes the switch on
-for it, so an upgrade closes no share; a share declared with `origin`
-`switch` is never adopted. A leave or a removal ends the record with the
-share.
-
-The declaration is the `desktop` section of every report,
-`{is_shared, origin, account, share_id, port, attention, connected_count}`,
-`origin` being `switch` for a share the switch made, `command` for one an
-old command's record keeps running, and empty while nothing is shared. The hub
-pairs it with the device's address, chosen for the caller's network
-([protocol.md](protocol.md), "Devices on the channel"), and keeps it in
-memory alone. It dies when the machine stops sharing, stops reporting, or the
-hub restarts, and the next report from a machine still sharing puts it back.
-
-A person's own AnyDesk or TeamViewer is not a module. The agent detects what
-is there, brings a stopped daemon up, reads the id a peer connects to and
-sets the unattended password when the drawer asks, as the seated account for
-AnyDesk and as root for TeamViewer, because that is where each keeps its
-configuration.
+- Terminal: [modules/terminal.md](agent/modules/terminal.md).
+- Remote desktop, and the desktop share it decides:
+  [modules/remote_desktop.md](agent/modules/remote_desktop.md).
 
 ## The connect stream
 
@@ -408,10 +256,8 @@ and a number published on the other protocol alone, is refused
 the stream `connect_failed {reason}`, `reason` being `refused`, `timeout` or
 `unreachable`.
 
-The Podman report gives each container's `host_bindings` as one `{address,
-port, protocol}` per published host port, on TCP and UDP alike, `address`
-empty for every address; `published_ports` reads the ports the machine
-publishes, per protocol, from it.
+What the Podman report gives this stream is
+[modules/containers.md](agent/modules/containers.md).
 
 A UDP stream keeps a table from each datagram's `source` to one UDP socket
 connected to the target, `127.0.0.1` or the address the binding names, so
@@ -457,7 +303,7 @@ is its only client:
 | `sync` | sends a report now |
 | `start`, `stop` | start and stop the agent's service through systemd, the service control manager or launchd; the binding is not touched |
 | `run` | the foreground entry systemd and launchd start; `service run` is Windows' |
-| `answer --prompt <text> --answer <keys> -- <program…>` | starts the program on a terminal of its own, types the keys and Enter once the text shows, prints what the terminal drew, and exits with the program's code; it does not reach this socket, and any account may run it ("The machine's AI tools") |
+| `answer --prompt <text> --answer <keys> -- <program…>` | starts the program on a terminal of its own, types the keys and Enter once the text shows, prints what the terminal drew, and exits with the program's code; it does not reach this socket, and any account may run it ([ai_tools.md](agent/ai_tools.md)) |
 
 Connections persist between requests and each is served on its own thread.
 Every refusal is `{"code": ...}`; a handler exception never drops the
@@ -483,194 +329,16 @@ account's login, because LocalSystem cannot start a process as another
 account without its password. Every server listens on `127.0.0.1` alone and
 the module opens no port in any firewall, since the hub reaches it through
 the agent's `connect` stream. CloudCLI and code-server are reached the same
-way ("CloudCLI" and "code-server" below). The third is the machine's AI
-tools, pointed at the gateway by cc-switch run as each account ("The
-machine's AI tools"). The fourth is a terminal or a command for the account
-the Terminal module names, on Linux and macOS: the shell, or the command an
+way ([modules/cloudcli.md](agent/modules/cloudcli.md) and
+[modules/code_server.md](agent/modules/code_server.md)). The third is the
+machine's AI tools, pointed at the gateway by cc-switch run as each account
+([ai_tools.md](agent/ai_tools.md)). The fourth is a terminal or a command for
+the account the Terminal module names, on Linux and macOS: the shell, or the
+command an
 `exec` stream names, runs through the platform's step-down with that
 account's home and environment, the shell as a login shell on a
 pseudo-terminal the agent makes. Everything else the agent does is root's
 own work.
-
-## The machine's AI tools
-
-The `ai_tools` section of the state says whether the machine's AI tools use
-the hub's gateway, and for which accounts ([protocol.md](protocol.md), "The
-sections"). It is a setting, not a module: nothing is installed, started or
-stopped, and it has no `want`. The agent makes it true and reports each
-account's result in the `ai_tools` section of its report.
-
-The accounts are the hub's word: every account with an instance in the
-machine's VS Code, code-server or CloudCLI configuration. The agent looks
-nothing up and adds no account of its own.
-
-For each account the state names while the section is on, the agent runs
-the client's steps as that account, with the copy of cc-switch the agent
-fetched from the hub ([modules/ai.md](modules/ai.md), "How a client points its tools at
-the gateway", and "How a managed machine's tools are pointed at the
-gateway" for what differs). An account whose records already carry the
-wanted settings is not run again. An account is switched back by the same
-steps as the client's deactivation:
-
-- when the section turns off, or the state names it no longer;
-- by `nagent service uninstall`, once the agent's service has stopped and
-  before anything is removed;
-- on `nagent leave`, and when a refusal of `binding_unknown` ends the
-  binding ("What a refusal means to the agent").
-
-`nagent leave` and `nagent service uninstall` print one line per account
-they switched back, `ai tools   <account>: <state> <code>`, and the agent
-package's removal on Linux shows what both print.
-
-**cc-switch comes from the hub when it is needed.** The agent's package
-does not carry it. While the section is on and names an account, the agent
-needs a copy of the version the section's `cc_switch_version` names. When
-it has none, or one of another version, it opens `package {module:
-cc_switch}` ([protocol.md](protocol.md), "The stream layer"), checks the bytes
-against the `sha256` the close names, unpacks the `cc-switch` at the
-archive's top (`cc-switch.exe` on Windows) into `ai_tools/bin/` under the
-state root, and writes the version beside it in `version`, replacing a copy
-of another version whole. The directory is root's own: every account may
-read and run what is in it and none may write it, as with any software the
-hub sends ("The platform layer"). A switch back while the section is off
-runs whatever copy is there, and fetches the version the section names when
-none is. A download or an unpack that fails gives every
-account the section names, and every account it would switch back, `failed`
-with `cc_switch_download_failed {detail}`, runs nothing, and leaves the
-state to be tried again at the next state or the next retry.
-
-The records are the client's, one per tool, `{is_present, previous, added}`,
-kept under the state root in `ai_tools/<account>/<tool>.json`, root's own,
-never in the account's home. An account whose records are all gone after
-a switch back has its directory removed.
-
-**cc-switch runs on a store of the agent's own.** Every cc-switch the agent
-starts for an account has `CC_SWITCH_CONFIG_DIR` set to `cc_switch` beside
-the payload in the account's Neutrino tree
-(`~/.local/share/neutrino/agent/ai_tools/cc_switch` on Linux,
-`~/Library/Application Support/Neutrino/agent/ai_tools/cc_switch` on macOS,
-`%LOCALAPPDATA%\Neutrino\agent\ai_tools\cc_switch` on Windows), made as
-the account, mode 700, which cc-switch requires of a store it is pointed at.
-The account's own `~/.cc-switch`, and the CC Switch app that keeps its store
-there, are never read or written. A tool's record says `is_own_store`; a
-tool switched before this store existed is switched back in
-`~/.cc-switch`, where it was switched. The switch back of every tool
-removes the store as the account, and with it each directory of the tree
-left empty.
-
-**The account's own files come back byte for byte.** Before a tool's first
-switch, its record also keeps `is_dir_present`, whether the tool's
-directory was there, and `kept`, the text of every file a switch may write
-in it, read as the account, or null for one that was absent: Claude Code's
-`~/.claude/settings.json`, Codex's `~/.codex/config.toml` and `auth.json`,
-and Gemini's `~/.gemini/.env` and `settings.json`. cc-switch writes a tool's
-files only into a directory that is there, so a switch makes the directory,
-as the account, for a tool that has none, and every tool the log names as
-switched has its files written and read back naming the hub. cc-switch
-writes them with the account's own file mask, so once it has run, every file
-that holds the gateway key, Claude Code's `settings.json`, Codex's
-`auth.json` and Gemini's `.env`, is set to mode 600 as the account, and the
-record keeps `kept_modes`, each kept file's own mode; on Windows a profile's
-files are its owner's by their access list and no mode is set or kept. The
-switch back, once cc-switch has switched away and deleted the hub's
-provider, writes each kept file back as it was with its own mode, takes
-away each that was absent, and takes away a directory the switch made once
-it is empty. A switch back that
-cannot run cc-switch, or cannot read its list of providers, is the
-account's `failed` with `switch_failed {account, detail}`, and the records,
-with the kept files, stay for the next try.
-
-Each account's switch or switch back holds that account's lock from its
-first step to its last: the file `ai_tools/.locks/<account>` under the state
-root, locked with `flock` on Linux and macOS and `msvcrt.locking` on
-Windows, so the service and a `nagent leave` or `nagent service uninstall`
-never run cc-switch for one account at once, nor replace each other's
-one-shot task on Windows. A run that finds the lock held waits up to five
-minutes and then fails as `switch_failed` with the detail `another run holds
-the account`, and since the system frees a lock when its process ends, a
-file a killed process left behind blocks no one. Holding the lock, the agent
-makes no switch once the machine has no binding: `nagent leave` and a
-`binding_unknown` refusal remove the binding before they switch back, so a
-service that waited on the lock finds none and switches nothing.
-
-**Every step in an account's home runs as that account, reads included.**
-cc-switch runs as the account, with the account's home and its own
-environment ("Running as an account" in the platform table), and so does
-each file step of the client's sequence: reading a tool's file, writing
-Codex's effort into `config.toml`, removing a file cc-switch made. An
-account can replace any file in its home with a link to a file only root
-reads, so a read made as root would hand that file to cc-switch and through
-it back to the account. On Linux and macOS the file steps are `cat`,
-`test -f`, `sh -c` writing what arrives on standard input, and `rm -f`; on
-Windows each is one PowerShell script in the account's task, the path
-written into it as a literal.
-
-`config common extract` and `config common set` read their input from a
-file. The agent writes that input as the account to `payload` in the
-account's own tree, `~/.local/share/neutrino/agent/ai_tools/` on Linux,
-`~/Library/Application Support/Neutrino/agent/ai_tools/` on macOS and
-`%LOCALAPPDATA%\Neutrino\agent\ai_tools\` on Windows, making the
-directories it lacks. It runs the one cc-switch call that reads the file,
-and straight after removes it as the account, then each of `ai_tools`,
-`agent` and the Neutrino directory that is left empty, in that order, so an
-account that had no Neutrino tree has none afterwards. The file holds a
-tool's live configuration in the shape `extract` reads, or the shared
-settings `set` stores ([files.md](files.md), "One root, three names").
-
-**The delete is answered on a terminal.** `provider delete` prints `(y/N)`
-and reads the reply from its terminal; with a pipe on its standard input it
-exits with `The input device is not a TTY`, and no flag stands in for the
-reply. On Linux and macOS the agent makes a pseudo-terminal itself, starts
-cc-switch on it as the account, and types `y` and Enter once the prompt
-shows. On Windows the agent reaches an account only through a scheduled
-task, so the terminal is made inside that task: the task runs
-`nagent answer --prompt "(y/N)" --answer y -- <cc-switch> --app <tool>
-provider delete neutrino`, `<cc-switch>` being the path of the agent's own
-cc-switch and `<tool>` the tool, and the agent's own program makes a pseudo
-console there, starts cc-switch on it, types the reply, and prints what the
-console drew.
-
-On macOS a program is put in an account's GUI session as the account by
-`launchctl asuser <uid> <nagent> step-down --uid <uid> --gid <gid> --
-<program>`: `launchctl` starts the agent's own program in the session, and
-`step-down` sets the account's group as its only supplementary group, then
-its group, then its user, and replaces itself with the program. It opens
-no socket and reads no state. `chroot -u` is not used: macOS kills a
-program with the hardened runtime under it. A command that does not start,
-or exits other than 0, leaves one line in the agent's log.
-
-`answer` is the one `nagent` verb any account may run. It starts the
-program it is given as the account that runs it, with that account's
-rights and no other; it reads no binding, opens neither the control socket
-nor a socket to the hub, and changes nothing the account could not change by
-running the program itself.
-
-**Windows keeps the login until the switch back.** A task runs as an account
-only with the account's password, and the state carries each account's login
-only while the section is on. The agent therefore keeps the login an account
-was switched with in `ai_tools/<account>/login.json` under the state root,
-readable by SYSTEM and the administrators alone as everything under
-`%ProgramData%\Neutrino\agent` is ([files.md](files.md)), and deletes it with
-the account's records. Every switch back reads it from there: after the
-section turns off, after the account leaves the list, at an uninstall, at a
-leave.
-
-The report names each account the state names and each one switched back
-under the current state's hash, `{account, state, code, params,
-has_records}`, `state` being `switched`, `switched_back` or `failed`, and
-`has_records` whether the agent keeps the account's records at the moment
-of the report: a tool of it still pointed at the hub, whose original files
-wait to be written back. A failure carries the client's
-code where it fits, `switch_failed {account, detail}`, the download's
-`cc_switch_download_failed {detail}`, and the module codes for an account it
-cannot run as:
-`account_unknown {account}`, and on Windows `credential_missing {account}`
-and `credential_invalid {account}`. A failed account is not tried again
-while the state's hash is unchanged, as a failed module is not.
-
-After the agent restarts it reports each account whose records stand as
-`switched` until a new state arrives, and acts on no state whose hash it
-already tried, so a restart switches nothing and switches nothing back.
 
 ## The platform layer
 
@@ -788,15 +456,15 @@ module a system cannot run is left out on that system.
 
 | Module | Linux | Windows | macOS |
 | --- | --- | --- | --- |
-| File share | Samba | the system's own SMB server | the system's own SMB server |
-| Gitea | amd64 and arm64 | amd64 | arm64 and amd64 |
-| Containers (Podman) | yes | no | no |
-| ZFS storage | yes | no | no |
-| VS Code | glibc 2.28 and above, amd64 and arm64 | amd64 | arm64 and amd64 |
-| code-server | glibc 2.28 and above, amd64 and arm64 | no | arm64 and amd64 |
-| CloudCLI | glibc 2.28 and above, amd64 and arm64 | amd64 and arm64 | arm64 and amd64 |
-| Terminal | yes | the shell program alone | yes |
-| Remote desktop (the agent's RustDesk) | yes | amd64 | yes |
+| [File share](agent/modules/file_share.md) | Samba | the system's own SMB server | the system's own SMB server |
+| [Gitea](agent/modules/gitea.md) | amd64 and arm64 | amd64 | arm64 and amd64 |
+| [Containers](agent/modules/containers.md) (Podman) | yes | no | no |
+| [ZFS storage](agent/modules/zfs.md) | yes | no | no |
+| [VS Code](agent/modules/vscode.md) | glibc 2.28 and above, amd64 and arm64 | amd64 | arm64 and amd64 |
+| [code-server](agent/modules/code_server.md) | glibc 2.28 and above, amd64 and arm64 | no | arm64 and amd64 |
+| [CloudCLI](agent/modules/cloudcli.md) | glibc 2.28 and above, amd64 and arm64 | amd64 and arm64 | arm64 and amd64 |
+| [Terminal](agent/modules/terminal.md) | yes | the shell program alone | yes |
+| [Remote desktop](agent/modules/remote_desktop.md) (the agent's RustDesk) | yes | amd64 | yes |
 | A person's own AnyDesk or TeamViewer | yes | yes | yes |
 
 A module's log, the answer to its `journal` verb, is the journal of its
@@ -829,266 +497,17 @@ The hub's own machine on macOS and Windows runs the local agent
 `nhub setup` installs ([install_and_dev.md](install_and_dev.md)), so its
 shares and VS Code are that agent's modules, as on any device.
 
-A VS Code instance listens on `127.0.0.1` alone, on every system. A client
-reaches it through a `connect` stream ("The connect stream"), and its token
-is what admits a browser.
+Each module's own page is under `agent/modules/`:
 
-On a Mac the connections land in the `RustDesk --server` job of the signed-in
-session (the LaunchAgent `com.carriez.RustDesk_server`), not in the root
-service alone. That job takes its configuration from the root service once,
-when it starts, and from then on pushes what it holds in memory back to the
-service whenever that changes, so a file written under a running job is
-overwritten within a second. So the host configures a Mac by booting out
-the job and then the service, writing both copies, and bootstrapping the
-service and then the job. The two plists keep upstream's labels, under
-which the root helper answers the session's host; under a label of the
-agent's own the host logs that it cannot reach `ipc_service`. The session
-plist's `KeepAlive` is true, so the host comes back after macOS quits and
-reopens it for the Screen Recording grant, and launchd starts both at boot
-and at each login from `/Library/LaunchDaemons` and `/Library/LaunchAgents`,
-the only folders it reads. The share is declared only once the direct port
-listens, as everywhere.
-
-A Mac shows a peer nothing until RustDesk holds both screen recording and
-accessibility, which only somebody at that Mac grants, and the privacy
-database that records them is closed to root, so the seat does not read it:
-its attention is empty. Instead, the switch turning on puts a dialog on
-that Mac's screen, in the signed-in
-session through `step-down` ("Acting for an account"), naming the two
-permissions, and opens the Screen Recording pane of the system settings;
-RustDesk is
-started whether or not the person has granted them yet. The hub's `rdp`
-entry carries the machine's `platform_os`, and a client shows a standing
-hint under a Mac's entry ([client.md](client.md)).
-
-### CloudCLI
-
-The `cloudcli` module runs CloudCLI, the npm package `@cloudcli-ai/cloudcli`
-pinned at 1.37.3 (AGPL-3.0), once per account: a web page for AI coding
-sessions. It is an ordinary module shaped like VS Code,
-`agent/neutrino_agent/modules/cloudcli/` with its config, constants, runner,
-installer and one applier per system, and its configuration is
-`{instances: [{account, port}]}`.
-
-**It runs as the account, never as root**: a unit
-`neutrino_cloudcli@<account>.service` with `User=<account>` on Linux, a
-LaunchDaemon with `UserName` on macOS, and on Windows a scheduled task
-registered with a login the Credentials page holds, chosen per instance as
-for VS Code.
-
-**Node.js comes from the hub and stays out of the system.**
-`data/manifests/cloudcli.json`, written like `vscode.json`, pins the
-nodejs.org standalone build of Node 22 LTS for Linux, macOS and Windows on
-x64 and arm64, each with its url and the sha256 of `SHASUMS256.txt`. The hub
-fetches it into its module cache and serves it on the `package` stream. The
-agent unpacks it under its state root, `/var/lib/neutrino/agent/cloudcli/` on
-Linux, `%ProgramData%\Neutrino\agent\state\cloudcli` on Windows and
-`/Library/Application Support/Neutrino/agent/state/cloudcli` on macOS, the one
-directory there opened to every account: owned by root, read-only, one copy
-per machine. It is never put on `PATH`, in any shell
-profile, or under `/usr/local`.
-
-**CloudCLI is installed per account, apart from the account's own npm.** As
-the account, with that Node, the agent runs
-`npm install @cloudcli-ai/cloudcli@1.37.3 --prefix <app dir>` with
-`npm_config_cache` inside the app directory and `npm_config_userconfig`
-naming an empty file, so no `~/.npmrc` is read, `~/.npm` is untouched and
-nothing is installed globally. The app directory is
-`~/.local/share/neutrino/agent/cloudcli/app` on Linux,
-`~/Library/Application Support/Neutrino/agent/cloudcli/app` on macOS and
-`%LOCALAPPDATA%\Neutrino\agent\cloudcli\app` on Windows. The install reaches
-nodejs.org, npm and GitHub; a LAN machine reaches them through the hub's
-proxy, and no mirror is configured.
-
-**The service's environment is written from scratch**: `HOST=127.0.0.1`,
-`SERVER_PORT` (CloudCLI's own name for its port) and `PATH`. Nothing is
-inherited from a login profile or a version manager, and nothing names the
-gateway. The tools CloudCLI starts read the account's own files: Claude
-Code its `~/.claude/settings.json`, Codex its `~/.codex/auth.json` and
-`~/.codex/config.toml`. Pointing those at the gateway is the machine's AI
-tools setting ("The machine's AI tools").
-
-**The service's `PATH` names directories, never a tool.** After Node's own
-directory it lists the account's `~/.local/bin` and `~/bin`, with `~` from
-the account's passwd entry, then `/usr/local/bin`, `/usr/bin` and `/bin` on
-Linux and `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin` and `/bin` on
-macOS. On Windows the task's script puts `%APPDATA%\npm` after Node's
-directory and then the account's own `PATH`, and nothing in any of them is
-checked for existence.
-
-**Node's own directory leads `PATH` for npm and for the service, on every
-system.** The install scripts of the native modules call `node` by name,
-and a task or a service that inherits no profile has nothing else on its
-path that answers to it.
-
-**A failed install names its step**: `cloudcli_node_download_failed`,
-`cloudcli_npm_install_failed`, or `cloudcli_native_module_failed` when
-better-sqlite3, node-pty or bcrypt cannot fetch its prebuilt binary; both
-npm codes carry `detail`, the last lines prebuild-install, node-gyp and npm
-wrote. node-pty and bcrypt carry their binaries inside their npm packages;
-better-sqlite3 fetches its own, from where the state's `npm_environment`
-says ("Where each edition fetches from" in
-[install_and_dev.md](install_and_dev.md)).
-
-**npm cannot take the agent down.** On Linux an account's npm runs as a
-transient service of its own, `neutrino_cloudcli_install_<account>.service`,
-started by `systemd-run --wait --pipe -p OOMPolicy=stop`, and the agent's
-unit has `OOMPolicy=continue`. When the kernel kills the
-install for want of memory, the install ends
-`cloudcli_install_out_of_memory {account}` and the agent keeps running. A
-failed install is tried again only with a state of another hash, and the
-hash last tried is kept on disk, so an agent that starts again does not try
-it again either.
-
-**The install's state is `installing` until it ends.** On Linux and macOS
-npm runs inside the apply; on Windows the apply starts the install task and
-leaves it running (four hours at most), reads its state on every apply, and
-starts no instance until it has ended; an ended task is judged by its
-result and by the app directory holding the package and the three native
-modules, then unregistered. The hub publishes an instance's `web` entry
-only while the device reports it running.
-
-**The agent's forwarder stands in front of CloudCLI.** CloudCLI listens on
-loopback alone. A thin HTTP forwarder of the agent's listens on
-`127.0.0.1` at the configured port, where the agent's end of a `connect`
-stream reaches it. The hub generates each
-instance's password and keeps it in its vault; on CloudCLI's first start the
-agent registers the account with it through CloudCLI's register endpoint,
-the first account registered being its administrator, and the forwarder
-answers nobody before that. A CloudCLI that already has its administrator
-and refuses the hub's password was set up for another hub: a reset or
-reinstalled hub generates new secrets. The agent then starts that instance
-afresh once: the instance's record names a new database file,
-`auth-<UTC time>.db` beside the old one, which stays where it is untouched,
-the instance is started again on it, and the forwarder registers the
-account in it. The record's `database` names the file an instance runs on,
-`auth.db` until it starts afresh.
-
-| A request | The forwarder |
-| --- | --- |
-| carries `?tkn=<token>` that verifies | logs in to CloudCLI with the hub's password, writes CloudCLI's login state into the browser, and redirects to the page |
-| carries `?tkn=<token>` that does not verify, has expired or was spent | 401 |
-| carries CloudCLI's login state | passes it on unchanged, WebSocket included |
-| carries neither | 401 |
-| asks for CloudCLI's register or login endpoint | 401; those are never passed on |
-
-**A token is verified on the device, with no call to the hub.** The hub
-mints one secret per instance, keeps it sealed, and the module's desired
-state carries it opened, as it carries the password; the agent keeps a
-root-only record per instance (its ports, password and secret) so the
-forwarder comes back after an agent restart. A token is
-`base64url(expiry || nonce || HMAC-SHA256(secret, expiry || nonce))`, minted
-by the hub on every `service` ask with `expiry` 60 seconds ahead ([protocol.md](protocol.md), the service material). The
-forwarder checks the HMAC and the expiry itself and keeps every nonce it
-accepted until that nonce's expiry, so a token works once. No token enters
-the device's state, and minting one leaves the state's hash as it is
-([client.md](client.md), "The Web page").
-
-### code-server
-
-The `code_server` module runs code-server, the browser build of VS Code
-that Coder publishes (MIT), once per account on Linux and macOS. Its
-extensions come from Open VSX, code-server's own default gallery. It is
-an ordinary module shaped like CloudCLI,
-`agent/neutrino_agent/modules/code_server/` with its config, constants,
-runner, installer, forwarder and one applier per system, and its
-configuration is `{instances: [{account, port, secret}]}`. Its manifest has
-no Windows branch, so the Modules page greys it out on Windows.
-
-**It runs as the account, never as root**: a unit
-`neutrino_code_server@<account>.service` with `User=<account>` on Linux, and
-a LaunchDaemon `com.neutrino.code_server.<account>` with `UserName` on
-macOS. Its settings and extensions are in code-server's own directories
-under the account's home.
-
-**The release comes from its publisher.** `data/manifests/code_server.json`
-pins the standalone release for Linux and macOS on amd64 and arm64, each
-with its url and sha256, at the source the edition names. In `cn` the
-installer tries the pinned version at the mirror and checks its sha256; when
-the mirror no longer carries it, the installer takes the mirror's current
-release, checked by HTTPS alone, and `details` name the version installed
-([install_and_dev.md](install_and_dev.md), "Where each edition fetches
-from"). The module's installer fetches the archive into the module cache and sends it down
-`package {module: code_server}`. The agent unpacks it under its state root,
-`/var/lib/neutrino/agent/code_server/` on Linux and `/Library/Application
-Support/Neutrino/agent/state/code_server` on macOS: owned by root, read-only
-to every account, one copy per machine, never on `PATH`. The release
-includes its own Node.js.
-
-**code-server listens on a socket only its account opens.** The service
-runs `code-server --auth none --socket <run-dir>/code_server.sock
---socket-mode 600 --disable-telemetry --disable-update-check`, where
-`<run-dir>` is `code_server/run/<account>/` under the state root, owned by the
-account, mode 700. Root and the account alone can open the socket, so
-`--auth none` admits nobody else.
-
-**The agent's forwarder is in front of it, as in front of CloudCLI.** It
-listens on `127.0.0.1` at the configured port, where the agent's end of a
-`connect` stream reaches it, and passes what it admits to the socket:
-
-| A request | The forwarder |
-| --- | --- |
-| carries `?tkn=<token>` that verifies | sets its own login cookie, `neutrino_code_server_<port>`, and redirects to the same path without the token |
-| carries `?tkn=<token>` that does not verify, has expired or was spent | 401 |
-| carries the login cookie with a good signature and expiry | passes it on unchanged, WebSocket included |
-| carries neither | 401 |
-
-The token is CloudCLI's: the hub mints it from the instance's secret on
-every `service` ask, it expires 60 seconds later, and it works once. The
-login cookie is `base64url(expiry || HMAC-SHA256(key, expiry))`, the key
-derived from the instance's secret, and lasts seven days. The agent keeps a
-root-only record per instance, its port and its secret, so the forwarder
-comes back after an agent restart.
-
-Each instance a running module serves is published as one `web` entry,
-`code_server_<device id>_<account>`, titled `code-server (<account>)`, with
-`is_token_required: true` and `description_code` `code_server_module`
-([protocol.md](protocol.md), "The services section, one entry per published
-service").
-
-### Gitea
-
-The `gitea` module runs Gitea, the release binary its publisher builds
-(MIT), one instance per machine, on Linux, macOS and Windows, the way
-Gitea's own page "Installation from binary" describes. One applier per
-system sits behind one runner in `agent/neutrino_agent/modules/gitea/`, and
-the configuration, the rendered `app.ini`, the accounts made through the
-gitea CLI, the published `web` entry and the verbs are the same on every
-system.
-
-| | Linux | macOS | Windows |
-| --- | --- | --- | --- |
-| Binary | `/usr/local/bin/gitea` | `gitea/gitea` under the state root | `gitea\gitea.exe` under the state root |
-| Data: the database, the repositories, the log, `custom/` | `/var/lib/gitea` | `gitea_data/` under the state root, owned by the account, mode 700 | `gitea_data\` under the state root, SYSTEM and the administrators alone as the root is |
-| `app.ini` | `/etc/gitea/app.ini`, root and the group `git`, mode 640 | `gitea_data/custom/conf/app.ini`, the account's, mode 600 | `gitea_data\custom\conf\app.ini` |
-| Runs as | the system account `git` the module makes | the hidden account `neutrino_gitea`, made with `sysadminctl` the way the file share makes its accounts, with the full name `Neutrino Gitea`, the shell `/usr/bin/false` and the data directory as its home, and read back before it counts | LocalSystem, `RUN_USER` being `<computer name>$` as Gitea's page prescribes |
-| Service | `neutrino_gitea.service` | the LaunchDaemon `com.neutrino.gitea` with `UserName`, its output in `/Library/Logs/Neutrino/agent/gitea.log` | the service `neutrino_gitea`, made with `sc.exe`, started at boot and again after a failure |
-| Git | the distribution's `git`, installed with the binary | the command line tools' or Xcode's own `git`, else Homebrew's, never `/usr/bin/git` | Git for Windows, found on the machine's `Path` as the service reads it, else under `%ProgramFiles%\Git\cmd` |
-| SSH | the system's `sshd` as `git` | none; clones and pushes over HTTP | none; clones and pushes over HTTP |
-
-**Git is the machine's.** The module installs none on macOS and Windows: an
-install or an apply there that finds no usable `git` is refused
-`gitea_git_missing`, and `app.ini` names the one found in `[git] PATH`. On a
-Mac without the developer tools `/usr/bin/git` is a stub that opens a dialog
-on the screen, so it is never run and never named.
-
-**The binary comes from its publisher.** `data/manifests/gitea.json` pins
-the release at one version for every system: `linux-amd64`, `linux-arm64`,
-`darwin-10.12-amd64`, `darwin-10.12-arm64` and `windows-4.0-amd64`, each with
-the sha256 dl.gitea.com publishes beside it. The Windows build is the one
-that runs `git`, as on Linux; the `gogit` build is not used. The hub's cache
-fetches it and sends it down `package {module: gitea}`.
-
-**The accounts are made through the gitea CLI as the server's own account**:
-`runuser -u git` on Linux, a process with the account's uid, gid, home and
-`USER` on macOS, and the agent itself on Windows, which is LocalSystem as
-the service is.
-
-**Uninstall takes what the module added and keeps the data**: the unit,
-the LaunchDaemon or the service, the binary and `app.ini` go; the data
-directory and the account stay, so an install afterwards serves the same
-repositories and accounts. Removing the agent takes the LaunchDaemon and
-the service with its own ("One socket, everything on it").
+- File share: [modules/file_share.md](agent/modules/file_share.md)
+- Terminal: [modules/terminal.md](agent/modules/terminal.md)
+- Remote desktop, and what differs on a Mac: [modules/remote_desktop.md](agent/modules/remote_desktop.md)
+- Gitea: [modules/gitea.md](agent/modules/gitea.md)
+- Containers: [modules/containers.md](agent/modules/containers.md)
+- ZFS storage: [modules/zfs.md](agent/modules/zfs.md)
+- VS Code: [modules/vscode.md](agent/modules/vscode.md)
+- code-server: [modules/code_server.md](agent/modules/code_server.md)
+- CloudCLI: [modules/cloudcli.md](agent/modules/cloudcli.md)
 
 ## Two ports, one process
 
@@ -1103,7 +522,7 @@ interface, WAN included, and on every exposed overlay; a served LAN that is
 not exposed gets DHCP, DNS and forwarding only. A device on such a LAN is
 enrolled after the LAN is exposed. A hub on macOS or Windows has no
 exposure, and the agent port answers on every interface there
-([network.md](modules/network.md), "Outside Linux, the system firewall").
+([network.md](hub_components/network.md), "Outside Linux, the system firewall").
 
 ## Joining: one ticket, thirty minutes, spent in one step
 
@@ -1204,7 +623,8 @@ A refusal at the door keeps the binding. The agent records it as
 sends `hello` again a minute later. The one refusal that unbinds is
 `binding_unknown`, which only the hub holding the pinned certificate can say.
 The agent then deletes its binding file, switches the AI tools back, turns
-the desktop share off ("The desktop is the hub's order") and is bound again
+the desktop share off ([modules/remote_desktop.md](agent/modules/remote_desktop.md),
+"The desktop is the hub's order") and is bound again
 by a fresh link.
 
 Admission by `PROTOCOL`, the two protocol codes, the close codes and the
