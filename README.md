@@ -11,6 +11,7 @@ A small tool I made so I could travel.
 [![License: MIT](https://img.shields.io/badge/license-MIT-0a0e14?labelColor=0a0e14&color=22d3ee)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.5.0-0a0e14?labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases)
 [![Mainland edition](https://img.shields.io/badge/mainland%20edition-Gitee%20mirror-0a0e14?labelColor=0a0e14&color=22d3ee)](https://gitee.com/iffiX/neutrino/releases)
+[![LINUX DO](https://img.shields.io/badge/LINUX%20DO-community-0a0e14?labelColor=0a0e14&color=ffb003&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB3aWR0aD0iMTIwIiBoZWlnaHQ9IjEyMCIgdmlld0JveD0iMCAwIDEyMCAxMjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI%2BPGNsaXBQYXRoIGlkPSJhIj48Y2lyY2xlIGN4PSI2MCIgY3k9IjYwIiByPSI0NyIvPjwvY2xpcFBhdGg%2BPGNpcmNsZSBmaWxsPSIjZjBmMGYwIiBjeD0iNjAiIGN5PSI2MCIgcj0iNTAiLz48cmVjdCBmaWxsPSIjMWMxYzFlIiBjbGlwLXBhdGg9InVybCgjYSkiIHg9IjEwIiB5PSIxMCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIzMCIvPjxyZWN0IGZpbGw9IiNmMGYwZjAiIGNsaXAtcGF0aD0idXJsKCNhKSIgeD0iMTAiIHk9IjQwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjQwIi8%2BPHJlY3QgZmlsbD0iI2ZmYjAwMyIgY2xpcC1wYXRoPSJ1cmwoI2EpIiB4PSIxMCIgeT0iODAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMzAiLz48L3N2Zz4%3D)](https://linux.do/)
 [![Platforms](https://img.shields.io/badge/runs%20on-Linux%20%C2%B7%20macOS%20%C2%B7%20Windows%20%C2%B7%20Android-0a0e14?labelColor=0a0e14&color=a78bfa)](https://neutrino.beyond-infinity.top/reference/platforms.html)
 
 [![CI](https://img.shields.io/github/actions/workflow/status/iffiX/neutrino/ci.yml?branch=main&label=CI&labelColor=0a0e14)](https://github.com/iffiX/neutrino/actions/workflows/ci.yml)
@@ -166,7 +167,7 @@ The details are in [design/connection.md](skills/core-code-author/design/connect
 Where this project is announced and discussed:
 
 - [V2EX](https://www.v2ex.com/t/1247759), in the 分享创造 node
-- [LINUX DO](https://linux.do), in the 开发调优 board
+- [LINUX DO](https://linux.do/), in the 开发调优 board
 
 ## Acknowledgements
 

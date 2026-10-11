@@ -11,6 +11,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-0a0e14?labelColor=0a0e14&color=22d3ee)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.5.0-0a0e14?labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases)
 [![国内精简版](https://img.shields.io/badge/%E5%9B%BD%E5%86%85%E7%B2%BE%E7%AE%80%E7%89%88-Gitee%20%E9%95%9C%E5%83%8F-0a0e14?labelColor=0a0e14&color=22d3ee)](https://gitee.com/iffiX/neutrino/releases)
+[![LINUX DO](https://img.shields.io/badge/LINUX%20DO-%E5%8F%8B%E9%93%BE-0a0e14?labelColor=0a0e14&color=ffb003&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB3aWR0aD0iMTIwIiBoZWlnaHQ9IjEyMCIgdmlld0JveD0iMCAwIDEyMCAxMjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI%2BPGNsaXBQYXRoIGlkPSJhIj48Y2lyY2xlIGN4PSI2MCIgY3k9IjYwIiByPSI0NyIvPjwvY2xpcFBhdGg%2BPGNpcmNsZSBmaWxsPSIjZjBmMGYwIiBjeD0iNjAiIGN5PSI2MCIgcj0iNTAiLz48cmVjdCBmaWxsPSIjMWMxYzFlIiBjbGlwLXBhdGg9InVybCgjYSkiIHg9IjEwIiB5PSIxMCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIzMCIvPjxyZWN0IGZpbGw9IiNmMGYwZjAiIGNsaXAtcGF0aD0idXJsKCNhKSIgeD0iMTAiIHk9IjQwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjQwIi8%2BPHJlY3QgZmlsbD0iI2ZmYjAwMyIgY2xpcC1wYXRoPSJ1cmwoI2EpIiB4PSIxMCIgeT0iODAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMzAiLz48L3N2Zz4%3D)](https://linux.do/)
 [![Platforms](https://img.shields.io/badge/runs%20on-Linux%20%C2%B7%20macOS%20%C2%B7%20Windows%20%C2%B7%20Android-0a0e14?labelColor=0a0e14&color=a78bfa)](https://neutrino.beyond-infinity.top/zh-CN/reference/platforms.html)
 
 [![CI](https://img.shields.io/github/actions/workflow/status/iffiX/neutrino/ci.yml?branch=main&label=CI&labelColor=0a0e14)](https://github.com/iffiX/neutrino/actions/workflows/ci.yml)
@@ -166,7 +167,7 @@ macOS 的命令和每一步留下什么，见文档站的[卸载](https://neutri
 这个项目在下面这些地方发布和讨论：
 
 - [V2EX](https://www.v2ex.com/t/1247759)：分享创造节点
-- [LINUX DO](https://linux.do)：开发调优版块
+- [LINUX DO](https://linux.do/)：开发调优版块
 
 ## 致谢
 
