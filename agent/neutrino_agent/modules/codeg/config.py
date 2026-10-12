@@ -2,8 +2,8 @@
 
 Each instance is one account's Codeg behind the agent's forwarder on one
 port. The hub sends each instance's token secret, which signs the one-time
-tokens a client opens the instance with and derives the token Codeg's own
-page keeps. On Windows an instance also carries the account's password,
+tokens a client opens the instance with, derives the token Codeg's own
+page keeps and keys the forwarder's login cookie. On Windows an instance also carries the account's password,
 from the login the hub holds for it, because a task that runs as an account
 needs its password to sign in.
 
@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.codeg.constants import (
+    CODEG_COOKIE_LABEL,
     CODEG_PORT_MAX,
     CODEG_PORT_MIN,
     CODEG_SUBPROTOCOL_PREFIX,
@@ -58,6 +59,18 @@ def subprotocol_of(token: str) -> str:
     """
     encoded = base64.urlsafe_b64encode(token.encode("utf-8")).rstrip(b"=")
     return CODEG_SUBPROTOCOL_PREFIX + encoded.decode("ascii")
+
+
+def cookie_key(secret: str) -> bytes:
+    """The key the forwarder's login cookie is signed with, derived from the instance's secret.
+
+    Args:
+        secret: The instance's token secret.
+
+    Returns:
+        32 bytes.
+    """
+    return hmac.new(secret.encode("utf-8"), CODEG_COOKIE_LABEL, hashlib.sha256).digest()
 
 
 @dataclass

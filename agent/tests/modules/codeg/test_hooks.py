@@ -12,11 +12,13 @@ Windows Node then the account's npm directory and its own ``PATH``, under
 account's own, mode 700, once; the record keeps the loopback port; and the
 forwarder, driven against a fake Codeg, listens on ``127.0.0.1`` alone,
 trades a token once for the page that keeps the instance token and opens
-the workspace, passes a request with the instance token as Bearer on
+the workspace, setting its own login cookie of the port's name, passes a
+request with the instance token as Bearer or with a good cookie on
 unchanged, relays a WebSocket whose subprotocol carries it both ways with
 its headers, and answers 401 to a wrong token, a wrong Bearer, a wrong
-subprotocol and a request with neither. The journal reads Codeg's newest
-daily log, and the version is what the server prints, read once per binary.
+subprotocol, a forged, expired or misnamed cookie and a request with none
+of these. The journal reads Codeg's newest daily log, and the version is
+what the server prints, read once per binary.
 """
 
 import json
@@ -31,10 +33,15 @@ import time
 import pytest
 
 from neutrino_agent.exceptions import ModuleApplyError
-from neutrino_agent.modules.codeg.config import instance_token, subprotocol_of
+from neutrino_agent.modules.codeg.config import (
+    cookie_key,
+    instance_token,
+    subprotocol_of,
+)
 from neutrino_agent.modules.codeg.hooks import (
     DATA_DIR_SCRIPT,
     CodegHooks,
+    cookie_name,
     data_dir,
     make_account_directory,
     newest_log,
@@ -44,7 +51,13 @@ from neutrino_agent.modules.shared.account_service import (
     AccountEntry,
     ServiceMachine,
 )
-from neutrino_agent.modules.shared.http_forward import InstanceForwarder, mint_token
+from neutrino_agent.modules.shared.http_forward import (
+    InstanceForwarder,
+    is_login_valid,
+    mint_login,
+    mint_token,
+    unpadded_decode,
+)
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
 from neutrino_agent.platforms.base import AgentPlatform
 
@@ -511,8 +524,21 @@ def status_of(answer: bytes) -> int:
     return int(answer.split(b" ", 2)[1])
 
 
+def header_of(answer: bytes, name: bytes) -> str:
+    for line in answer.split(b"\r\n\r\n")[0].split(b"\r\n")[1:]:
+        key, _, value = line.partition(b":")
+        if key.strip().lower() == name:
+            return value.strip().decode()
+    return ""
+
+
 def fresh_token() -> str:
     return mint_token(SECRET, expiry=int(time.time()) + 60, nonce=os.urandom(16))
+
+
+def good_cookie(port, *, expiry=None, secret=SECRET) -> str:
+    expiry = int(time.time()) + 3600 if expiry is None else expiry
+    return f"{cookie_name(port)}={mint_login(cookie_key(secret), expiry)}"
 
 
 def test_the_forwarder_listens_on_loopback_alone(listening):
@@ -535,13 +561,32 @@ def test_a_token_is_traded_once_for_the_page_that_keeps_the_instance_token(
     assert b"Content-Type: text/html; charset=utf-8" in head
     assert b"Cache-Control: no-store" in head
     assert b"Referrer-Policy: no-referrer" in head
-    assert b"Set-Cookie" not in head
     assert body == (
         b'<!doctype html><meta charset="utf-8"><title>Codeg</title>'
         b'<script>localStorage.setItem("codeg_token", "' + TOKEN.encode() + b'");'
         b'location.replace("/workspace");</script>'
     )
     assert status_of(again) == 401
+    assert codeg.requests == []
+
+
+def test_the_page_sets_the_login_cookie_of_the_port_for_seven_days(listening, codeg):
+    _forwarder, port = listening
+    before = int(time.time())
+
+    answer = ask(
+        port, f"GET /?tkn={fresh_token()} HTTP/1.1\r\nHost: x\r\n\r\n".encode()
+    )
+
+    cookie = header_of(answer, b"set-cookie")
+    pair, *attributes = [part.strip() for part in cookie.split(";")]
+    name, _, value = pair.partition("=")
+    assert name == f"neutrino_codeg_{port}" == cookie_name(port)
+    assert attributes == ["Path=/", "HttpOnly", "SameSite=Lax", "Max-Age=604800"]
+    assert is_login_valid(value, cookie_key(SECRET), time.time()) is True
+    assert is_login_valid(value, cookie_key("other"), time.time()) is False
+    expiry = int.from_bytes(unpadded_decode(value)[:8], "big")
+    assert before + 7 * 24 * 3600 <= expiry <= before + 7 * 24 * 3600 + 5
     assert codeg.requests == []
 
 
@@ -563,6 +608,47 @@ def test_a_request_with_neither_a_token_nor_the_instance_token_is_refused(
 
     assert status_of(ask(port, b"GET /api/health HTTP/1.1\r\nHost: x\r\n\r\n")) == 401
     assert status_of(ask(port, b"GET /workspace HTTP/1.1\r\nHost: x\r\n\r\n")) == 401
+    assert codeg.requests == []
+
+
+def test_a_request_with_a_good_cookie_is_passed_on_unchanged(listening, codeg):
+    _forwarder, port = listening
+    cookie = good_cookie(port)
+
+    page = ask(
+        port,
+        f"GET /workspace HTTP/1.1\r\nHost: x\r\nCookie: other=1; {cookie}\r\n"
+        f"Accept: text/html\r\n\r\n".encode(),
+    )
+    asset = ask(
+        port,
+        f"GET /assets/index.js HTTP/1.1\r\nHost: x\r\nCookie: {cookie}\r\n\r\n".encode(),
+    )
+
+    assert status_of(page) == 200 and b'"echo": "/workspace"' in page
+    assert status_of(asset) == 200 and b'"echo": "/assets/index.js"' in asset
+    (method, target, headers, body), (_m, asset_target, _h, _b) = codeg.requests
+    assert (method, target, body) == ("GET", "/workspace", b"")
+    assert ("Cookie", f"other=1; {cookie}") in headers
+    assert ("Accept", "text/html") in headers
+    assert ("Host", "x") in headers
+    assert asset_target == "/assets/index.js"
+
+
+def test_a_forged_expired_or_misnamed_cookie_is_refused(listening, codeg):
+    _forwarder, port = listening
+    expired = good_cookie(port, expiry=int(time.time()) - 1)
+    forged = good_cookie(port, secret="other")
+    other_port = good_cookie(port + 1)
+    junk = f"{cookie_name(port)}=junk"
+    renamed = f"neutrino_code_server_{port}={good_cookie(port).split('=', 1)[1]}"
+
+    for cookie in (expired, forged, other_port, junk, renamed):
+        answer = ask(
+            port,
+            f"GET /workspace HTTP/1.1\r\nHost: x\r\nCookie: {cookie}\r\n\r\n".encode(),
+        )
+        assert status_of(answer) == 401, cookie
     assert codeg.requests == []
 
 

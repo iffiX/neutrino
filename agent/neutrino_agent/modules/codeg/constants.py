@@ -84,6 +84,12 @@ CODEG_LOGIN_PAGE = (
     '<!doctype html><meta charset="utf-8"><title>Codeg</title>'
     "<script>localStorage.setItem(%s, %s);location.replace(%s);</script>"
 )
+# The forwarder's login cookie, per port, since a cookie belongs to a host
+# and not to a port; its value is the shared forwarder's, the key derived
+# from the instance's secret.
+CODEG_COOKIE_PREFIX = "neutrino_codeg_"
+CODEG_COOKIE_LABEL = b"neutrino codeg cookie"
+CODEG_LOGIN_LIFETIME_S = 7 * 24 * 3600
 
 # The fields one instance's record holds.
 CODEG_RECORD_FIELDS = ("account", "port", "upstream_port", "secret")

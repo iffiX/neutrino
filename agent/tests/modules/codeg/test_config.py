@@ -3,9 +3,10 @@
 What these pin: the shape the hub sends parses, the password included; every
 refusal the standard names comes with the account or the port it is about,
 ``credential_missing`` on Windows alone; the instance token is derived from
-the instance's secret and from nothing else, as unpadded base64url; and
-the subprotocol is the token's bytes as unpadded base64url behind
-``codeg-token.``.
+the instance's secret and from nothing else, as unpadded base64url; the
+subprotocol is the token's bytes as unpadded base64url behind
+``codeg-token.``; and the cookie key is derived from the secret with a
+label of its own.
 """
 
 import base64
@@ -17,6 +18,7 @@ import pytest
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.codeg.config import (
     CodegConfig,
+    cookie_key,
     instance_token,
     subprotocol_of,
 )
@@ -87,6 +89,18 @@ def test_the_instance_token_follows_the_secret_alone():
     )
     assert len(instance_token("s")) == 43
     assert "=" not in instance_token("s")
+
+
+def test_the_cookie_key_follows_the_secret_alone_with_its_own_label():
+    expected = hmac.new(b"s", b"neutrino codeg cookie", hashlib.sha256).digest()
+
+    assert cookie_key("s") == cookie_key("s") == expected
+    assert cookie_key("s") != cookie_key("t")
+    assert (
+        cookie_key("s")
+        != hmac.new(b"s", b"neutrino codeg token", hashlib.sha256).digest()
+    )
+    assert len(cookie_key("s")) == 32
 
 
 def test_the_subprotocol_carries_the_token_as_unpadded_base64url():
