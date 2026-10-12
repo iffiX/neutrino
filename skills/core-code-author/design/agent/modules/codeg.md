@@ -58,9 +58,10 @@ stream reaches it, and passes what it admits to `127.0.0.1:<CODEG_PORT>`:
 
 | A request | The forwarder |
 | --- | --- |
-| carries `?tkn=<token>` that verifies | answers a page of its own that stores the instance token in `localStorage['codeg_token']` and sends the browser to `/workspace` |
+| carries `?tkn=<token>` that verifies | answers a page of its own that stores the instance token in `localStorage['codeg_token']`, sets the forwarder's own login cookie, `neutrino_codeg_<port>`, as code-server's forwarder does, and sends the browser to `/workspace` |
 | carries `?tkn=<token>` that does not verify, has expired or was spent | 401 |
 | carries `Authorization: Bearer <token>` equal to the instance token, or is a WebSocket upgrade whose `Sec-WebSocket-Protocol` carries `codeg-token.<base64url(token) without padding>` | passed on unchanged |
+| carries the login cookie with a good signature and expiry | passed on unchanged, pages and files included |
 | carries neither | 401 |
 
 Every endpoint behind the check is passed on, Codeg's `/api/health` among
@@ -71,6 +72,10 @@ it works once. Codeg's web UI keeps the instance token in
 `localStorage['codeg_token']` itself, as the publisher's own pages do, sends
 it as the Bearer header on every call and as the second subprotocol of its
 one WebSocket, `/ws/events`, and a 401 sends the browser back to `/login`.
+The login cookie is `base64url(expiry || HMAC-SHA256(key, expiry))`, the key
+derived from the instance's secret, and lasts seven days, the same shape as
+code-server's ([code_server.md](code_server.md)); the instance token stays
+what Codeg's own calls carry.
 
 **The entry, the details and the refusals are code-server's.** Each instance
 a running module serves is published as one `web` entry,
