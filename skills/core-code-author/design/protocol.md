@@ -1374,7 +1374,10 @@ when the system will not make the server's account.
 
 Package bytes come to the agent down a `package {module, component}` stream it
 opens, `component` naming the component wanted and absent for a module with
-one archive, the same stream that serves its own upgrade. cc-switch, which the machine's AI
+one archive, the same stream that serves its own upgrade. A package asked
+for before the device's first report of the connection waits for that
+report, up to 15 seconds, since the report carries the platform that names
+the file; only then is it refused. cc-switch, which the machine's AI
 tools run and no module installs, comes down the same stream as `package
 {module: cc_switch}`: `data/manifests/cc_switch.json` pins it, says
 `is_module: false`, and so stays out of the catalog's modules. A `cn` hub

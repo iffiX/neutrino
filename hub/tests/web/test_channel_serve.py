@@ -907,6 +907,31 @@ def test_a_module_download_and_its_sending_are_lines_of_the_modules_task(api):
         socket.__exit__(None, None, None)
 
 
+def test_a_package_asked_before_the_first_report_waits_for_the_platform(api):
+    client, runtime = api
+    device_id, token = bound_device()
+    socket = welcomed(client, device_id, token)
+    try:
+        expected = runtime.package_path.read_bytes()
+        socket.send_json(
+            {"type": "open", "stream": 3, "kind": "package", "module": "cc_switch"}
+        )
+        socket.send_json(report())
+        frames = [socket.receive_json(), socket.receive_json()]
+        assert [frame["type"] for frame in frames].count("credit") == 1
+
+        socket.send_json({"type": "credit", "stream": 3, "bytes": len(expected)})
+        received = b""
+        while len(received) < len(expected):
+            received += socket.receive_bytes()[4:]
+        close = socket.receive_json()
+
+        assert close["params"]["sha256"] == hashlib.sha256(expected).hexdigest()
+        assert runtime.agent_modules.asked == [("cc_switch", PLATFORM)]
+    finally:
+        socket.__exit__(None, None, None)
+
+
 def test_a_package_the_hub_cannot_produce_is_closed_with_the_typed_reason(api):
     client, runtime = api
     device_id, token = bound_device()

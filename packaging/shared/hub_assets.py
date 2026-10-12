@@ -74,7 +74,9 @@ HUB_ASSET_LICENSES = {
 HUB_ASSET_WINDOWS_EXTRA_LICENSES = {"wintun.dll": "wintun.txt"}
 HUB_ASSET_GEODATA_LICENSES = ("v2fly_geoip.txt", "v2fly_domain_list_community.txt")
 HUB_ASSET_FETCH_TIMEOUT_S = 300
-HUB_ASSET_FETCH_TRIES = 3
+# A publisher answering 5xx for a few minutes is the usual way a build
+# fails, so a fetch is tried this many times with this wait between them.
+HUB_ASSET_FETCH_TRIES = 6
 HUB_ASSET_FETCH_RETRY_WAIT_S = 30
 
 

@@ -11,6 +11,7 @@ are ``package`` and ``log`` from an agent, and ``service``, ``shell``,
 """
 
 import asyncio
+import time
 import codecs
 import functools
 import hashlib
@@ -32,6 +33,8 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_STREAM_CONNECT,
     CHANNEL_STREAM_EXEC,
     CHANNEL_STREAM_LOG,
+    CHANNEL_PACKAGE_PLATFORM_POLL_S,
+    CHANNEL_PACKAGE_PLATFORM_WAIT_S,
     CHANNEL_STREAM_PACKAGE,
     CHANNEL_STREAM_SERVICE,
     CHANNEL_STREAM_SHELL,
@@ -184,6 +187,8 @@ async def serve_package_stream(
     module = str(stream.args.get("module", "") or "")
     component = str(stream.args.get("component", "") or "")
     platform = dict(runtime.device_platform.get(session.key, {}))
+    if not platform:
+        platform = await _platform_once_reported(runtime, session.key)
     is_module = bool(module) and module in load_module_manifests()
     on_progress = None
     if is_module:
@@ -347,6 +352,29 @@ def _file_size(path) -> int:
         return path.stat().st_size
     except OSError:
         return 0
+
+
+async def _platform_once_reported(runtime, key: str) -> dict:
+    """The device's platform once its first report of the connection lands.
+
+    An agent asks for its own package right after the welcome, before its
+    first report; the platform that report carries is what names the package.
+
+    Args:
+        runtime: The shared runtime.
+        key: The device's id.
+
+    Returns:
+        The platform tuple, or an empty dict when none arrived in
+        ``CHANNEL_PACKAGE_PLATFORM_WAIT_S``.
+    """
+    deadline = time.monotonic() + CHANNEL_PACKAGE_PLATFORM_WAIT_S
+    while time.monotonic() < deadline:
+        platform = dict(runtime.device_platform.get(key, {}))
+        if platform:
+            return platform
+        await asyncio.sleep(CHANNEL_PACKAGE_PLATFORM_POLL_S)
+    return {}
 
 
 def _package_path(

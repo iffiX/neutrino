@@ -53,6 +53,10 @@ CHANNEL_STREAM_EXEC = "exec"
 CHANNEL_STREAM_FILE = "file"
 CHANNEL_STREAM_COMMAND = "command"
 CHANNEL_STREAM_PACKAGE = "package"
+# A package asked for before the device's first report of the connection
+# waits for that report this long, polling this often, before it is refused.
+CHANNEL_PACKAGE_PLATFORM_WAIT_S = 15
+CHANNEL_PACKAGE_PLATFORM_POLL_S = 0.25
 CHANNEL_STREAM_LOG = "log"
 CHANNEL_STREAM_SERVICE = "service"
 CHANNEL_STREAM_CONNECT = "connect"
