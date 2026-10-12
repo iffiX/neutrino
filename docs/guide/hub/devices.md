@@ -17,7 +17,7 @@ The page has two sections, **Managed devices** and **Unmanaged devices**. Each t
 | **Agent**   | Managed: the agent reports the machine and takes modules.        | open its drawer                                 |
 | **SSH**     | Unmanaged, with a stored login.                                  | **Install agent**                               |
 | **Scanned** | Unmanaged, with no credentials.                                  | **Get link**                                    |
-| **Offline** | Not answering. It keeps its place and token for when it returns. | wake it, or install 0.5.0 on a 0.3 or 0.4 agent |
+| **Offline** | Not answering. It keeps its place and token for when it returns. | wake it, or install 0.5.1 on a 0.3 or 0.4 agent |
 
 The filters above the list narrow it by state. **Scan LAN** finds the machines on the networks the hub serves. The hub box is under **Managed devices** from the first sign-in, in a row named after its hostname. To rename the row, type a **Display name** in its drawer and select **Save device**.
 
@@ -57,4 +57,4 @@ Windows and Macs run the file share, the terminal, the remote desktop, Gitea, VS
 
 The drawer and the tile show **This agent is a different version from the hub.** An agent updates itself to the hub's version when it connects. When that update fails, select **Reinstall agent** in the drawer.
 
-A 0.3 or 0.4 agent stays **Offline**, because the 0.5.0 hub rejects it, and it cannot update from the hub. Install the 0.5.0 agent package on the machine and join it with a new link.
+A 0.3 or 0.4 agent stays **Offline**, because the 0.5.1 hub rejects it, and it cannot update from the hub. Install the 0.5.1 agent package on the machine and join it with a new link.

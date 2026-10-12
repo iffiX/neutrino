@@ -74,7 +74,7 @@ irm https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.ps1 | ie
 
 ### 在手机上加入
 
-1. 在手机浏览器里打开 `https://gitee.com/iffiX/neutrino/releases`，下载 `neutrino-client-0.5.0-android.apk`。
+1. 在手机浏览器里打开 `https://gitee.com/iffiX/neutrino/releases`，下载 `neutrino-client-0.5.1-android.apk`。
 1. 打开下载的文件。Android 提示时，允许浏览器安装应用。
 1. 选 **安装**，装好后打开 **微子**。
 1. 在电脑的面板侧栏打开 **客户端**，选择 **新建客户端链接**。

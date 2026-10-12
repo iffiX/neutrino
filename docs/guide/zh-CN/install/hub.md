@@ -71,20 +71,20 @@ Windows 弹出一次授权框，脚本在新开的管理员窗口里接着运行
 ::: code-group
 
 ```bash [Debian、Ubuntu、树莓派 OS]
-sudo apt install ./neutrino-hub_0.5.0_amd64.deb
+sudo apt install ./neutrino-hub_0.5.1_amd64.deb
 ```
 
 ```bash [Fedora]
-sudo dnf install ./neutrino-hub-0.5.0-1.x86_64.rpm
+sudo dnf install ./neutrino-hub-0.5.1-1.x86_64.rpm
 ```
 
 ```bash [RHEL、AlmaLinux、Rocky]
 sudo dnf install -y epel-release
-sudo dnf install ./neutrino-hub-0.5.0-1.x86_64.rpm
+sudo dnf install ./neutrino-hub-0.5.1-1.x86_64.rpm
 ```
 
 ```bash [Arch、EndeavourOS、Manjaro]
-sudo pacman -U neutrino-hub-0.5.0-1-x86_64.pkg.tar.zst
+sudo pacman -U neutrino-hub-0.5.1-1-x86_64.pkg.tar.zst
 ```
 
 :::
@@ -97,18 +97,18 @@ ARM64 机器用文件名带 `arm64` 或 `aarch64` 的包，Arch 的包只有 x86
 
 ### macOS
 
-Apple 芯片的 Mac 运行下面的命令，Intel 的 Mac 用 `neutrino-hub-0.5.0-macos-amd64.pkg`：
+Apple 芯片的 Mac 运行下面的命令，Intel 的 Mac 用 `neutrino-hub-0.5.1-macos-amd64.pkg`：
 
 ```bash
-sudo installer -pkg neutrino-hub-0.5.0-macos-arm64.pkg -target /
+sudo installer -pkg neutrino-hub-0.5.1-macos-arm64.pkg -target /
 ```
 
 ### Windows
 
-双击 `neutrino-hub-0.5.0-windows-amd64.msi`。静默安装时，在管理员 PowerShell 里运行：
+双击 `neutrino-hub-0.5.1-windows-amd64.msi`。静默安装时，在管理员 PowerShell 里运行：
 
 ```powershell
-msiexec /i neutrino-hub-0.5.0-windows-amd64.msi /qn
+msiexec /i neutrino-hub-0.5.1-windows-amd64.msi /qn
 ```
 
 安装程序把 `nhub` 加进系统的 `PATH`。

@@ -77,12 +77,12 @@ nagent join '<enroll-link>'
 ::: code-group
 
 ```bash [Debian、Ubuntu、树莓派 OS]
-sudo apt install ./neutrino-agent_0.5.0_amd64.deb
+sudo apt install ./neutrino-agent_0.5.1_amd64.deb
 sudo nagent join '<enroll-link>'
 ```
 
 ```bash [Fedora、RHEL 系]
-sudo dnf install ./neutrino-agent-0.5.0-1.x86_64.rpm
+sudo dnf install ./neutrino-agent-0.5.1-1.x86_64.rpm
 sudo nagent join '<enroll-link>'
 ```
 
@@ -92,20 +92,20 @@ ARM64 机器的文件名以 `_arm64.deb` 或 `.aarch64.rpm` 结尾。
 
 ### macOS
 
-Apple 芯片的 Mac 运行下面的命令，Intel 的 Mac 用 `neutrino-agent-0.5.0-macos-amd64.pkg`：
+Apple 芯片的 Mac 运行下面的命令，Intel 的 Mac 用 `neutrino-agent-0.5.1-macos-amd64.pkg`：
 
 ```bash
-sudo installer -pkg neutrino-agent-0.5.0-macos-arm64.pkg -target /
+sudo installer -pkg neutrino-agent-0.5.1-macos-arm64.pkg -target /
 sudo nagent join '<enroll-link>'
 ```
 
 ### Windows
 
-1. 运行 `neutrino-agent-0.5.0-windows-amd64.msi`。
+1. 运行 `neutrino-agent-0.5.1-windows-amd64.msi`。
 1. 以管理员身份新开一个 PowerShell，让它读到新的 `PATH`。
 1. 运行 `nagent join '<enroll-link>'`。
 
-静默安装时，在管理员 PowerShell 里运行 `msiexec /i neutrino-agent-0.5.0-windows-amd64.msi /qn`。
+静默安装时，在管理员 PowerShell 里运行 `msiexec /i neutrino-agent-0.5.1-windows-amd64.msi /qn`。
 
 ## 让中枢经 SSH 代装
 
