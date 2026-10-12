@@ -2,7 +2,8 @@
 
 What these pin: a token is the layout the standard names and works once,
 only with its secret, only before its expiry and within the horizon; a
-spent nonce is dropped once its token expired; a request's head is read up
+spent nonce is dropped once its token expired; a login cookie is the layout
+the standard names and works with its key before its expiry; a request's head is read up
 to its end and refused past the limit; a cookie's values are found across
 headers; an ordinary request is passed on with ``Connection: close`` and
 its body cut at its length; a chunked body is 411; a page that does not
@@ -31,6 +32,8 @@ from neutrino_agent.modules.shared.http_forward import (
     answered,
     closing_head,
     cookie_values,
+    is_login_valid,
+    mint_login,
     mint_token,
     parse_head,
     read_head,
@@ -89,6 +92,21 @@ def test_a_spent_nonce_is_dropped_once_its_token_expired():
     assert take_token(second, secret=SECRET, now=NOW + 61, spent=spent)
 
     assert list(spent) == [b"m" * 16]
+
+
+def test_a_login_is_the_layout_the_standard_names_and_works_with_its_key():
+    key = b"k" * 32
+    login = mint_login(key, NOW + 60)
+    raw = base64.urlsafe_b64decode(login + "=" * (-len(login) % 4))
+
+    assert "=" not in login
+    assert raw[:8] == (NOW + 60).to_bytes(8, "big")
+    assert raw[8:] == hmac.new(key, raw[:8], hashlib.sha256).digest()
+    assert is_login_valid(login, key, NOW) is True
+    assert is_login_valid(login, key, NOW + 60) is False
+    assert is_login_valid(mint_login(b"other", NOW + 60), key, NOW) is False
+    assert is_login_valid(login[:-4], key, NOW) is False
+    assert is_login_valid("junk", key, NOW) is False
 
 
 def test_a_head_is_read_to_its_end_and_refused_past_the_limit():

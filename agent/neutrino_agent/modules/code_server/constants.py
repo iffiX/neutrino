@@ -41,12 +41,10 @@ CODE_SERVER_PORT_MIN = 1024
 CODE_SERVER_PORT_MAX = 65535
 
 # The forwarder's login cookie, per port, since a cookie belongs to a host
-# and not to a port: ``base64url(expiry || HMAC-SHA256(key, expiry))``, the
-# expiry eight bytes big-endian, the key derived from the instance's secret.
+# and not to a port; its value is the shared forwarder's, the key derived
+# from the instance's secret.
 CODE_SERVER_COOKIE_PREFIX = "neutrino_code_server_"
 CODE_SERVER_COOKIE_LABEL = b"neutrino code_server cookie"
-CODE_SERVER_COOKIE_EXPIRY_BYTES = 8
-CODE_SERVER_COOKIE_MAC_BYTES = 32
 CODE_SERVER_LOGIN_LIFETIME_S = 7 * 24 * 3600
 
 # macOS: the environment a LaunchDaemon's instance starts with, and the

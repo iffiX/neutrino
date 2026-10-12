@@ -6,9 +6,10 @@ in the module's own, never on a ``PATH``. Each instance runs ``codeg-server``
 as its account, from an environment written from scratch, on a loopback
 port the agent picks and keeps in the record, with its data directory
 under the account's home and its output discarded on every system. The
-forwarder trades the hub's token for a page that
-keeps the instance token in the browser, and passes on a request carrying
-that token as its Bearer header or as the subprotocol of Codeg's WebSocket.
+forwarder trades the hub's token for a page that keeps the instance token in
+the browser and for its own login cookie, ``neutrino_codeg_<port>``, and
+passes on a request carrying that token as its Bearer header or as the
+subprotocol of Codeg's WebSocket, or carrying a good cookie.
 
 Not pure: writes the data directory and talks to Codeg.
 """
@@ -23,17 +24,20 @@ import ntpath
 import os
 import socket
 import subprocess
+import time
 
 from neutrino_agent.constants import AGENT_FORWARD_UPSTREAM_TIMEOUT_S
 from neutrino_agent.modules.codeg.config import (
     CodegConfig,
     CodegInstance,
+    cookie_key,
     instance_token,
     subprotocol_of,
 )
 from neutrino_agent.modules.codeg.constants import (
     CODEG_ACCOUNT_PATH_PARTS,
     CODEG_BRIDGE_PORTS_OFF,
+    CODEG_COOKIE_PREFIX,
     CODEG_DATA_PARTS,
     CODEG_DOWNLOAD_FAILED,
     CODEG_ENV_BRIDGE_PORTS,
@@ -48,6 +52,7 @@ from neutrino_agent.modules.codeg.constants import (
     CODEG_LOG_DIR_NAME,
     CODEG_LOG_PREFIX,
     CODEG_LOG_SUFFIX,
+    CODEG_LOGIN_LIFETIME_S,
     CODEG_LOGIN_PAGE,
     CODEG_NAME,
     CODEG_NODE_BIN_PARTS,
@@ -76,6 +81,8 @@ from neutrino_agent.modules.shared.http_forward import (
     RELAY,
     ForwardDecision,
     answered,
+    is_login_valid,
+    mint_login,
     refused,
 )
 from neutrino_agent.modules.shared.instances import InstanceHooks
@@ -277,6 +284,11 @@ def has_subprotocol(request, token: str) -> bool:
     return False
 
 
+def cookie_name(port: int) -> str:
+    """The cookie the forwarder of one port keeps its login in."""
+    return f"{CODEG_COOKIE_PREFIX}{int(port)}"
+
+
 def login_page(token: str) -> bytes:
     """The page that keeps the instance token in the browser and opens the workspace.
 
@@ -305,16 +317,18 @@ class CodegHooks(InstanceHooks):
     record_fields = CODEG_RECORD_FIELDS
     secret_field = "secret"
 
-    def __init__(self, *, platform, log=print, pick_port=None):
+    def __init__(self, *, platform, log=print, pick_port=None, clock=time.time):
         """
         Args:
             platform: The machine's platform.
             log: Callable used for progress messages.
             pick_port: Returns a free loopback port for a new instance; None
                 asks the system.
+            clock: Seconds since the epoch, which the login cookie is judged by.
         """
         super().__init__(platform=platform, log=log)
         self._pick_port = pick_port if pick_port is not None else free_loopback_port
+        self._clock = clock
         # The server binary's size and time, and the version it printed.
         self._version: tuple = ((), "")
 
@@ -452,31 +466,47 @@ class CodegHooks(InstanceHooks):
         )
 
     def admit(self, request, record: dict) -> ForwardDecision:
-        """The forwarder's rule: a token trades for the page that keeps the instance token, the instance token passes.
+        """The forwarder's rule: a token trades for the page and the login cookie; the instance token or the cookie passes.
 
         Args:
             request: The request.
             record: The instance's record.
 
         Returns:
-            The page for a token that verifies; the relay for a request whose
-            Bearer header is the instance token or whose WebSocket upgrade
-            carries its subprotocol; 401 otherwise.
+            The page for a token that verifies, setting the cookie; the relay
+            for a request whose Bearer header is the instance token, whose
+            WebSocket upgrade carries its subprotocol, or whose cookie
+            verifies; 401 otherwise.
         """
-        token = instance_token(str(record.get("secret", "") or ""))
+        secret = str(record.get("secret", "") or "")
+        token = instance_token(secret)
+        key = cookie_key(secret)
+        port = int(record.get("port", 0) or 0)
         if request.token:
             if not request.take_token():
                 return refused()
+            expiry = int(self._clock()) + CODEG_LOGIN_LIFETIME_S
+            cookie = (
+                f"{cookie_name(port)}={mint_login(key, expiry)}; Path=/; "
+                f"HttpOnly; SameSite=Lax; Max-Age={CODEG_LOGIN_LIFETIME_S}"
+            )
             return answered(
                 200,
                 login_page(token),
                 content_type="text/html; charset=utf-8",
                 headers=(
+                    ("Set-Cookie", cookie),
                     ("Cache-Control", "no-store"),
                     ("Referrer-Policy", "no-referrer"),
                 ),
             )
         if has_bearer(request, token) or has_subprotocol(request, token):
+            return RELAY
+        now = self._clock()
+        if any(
+            is_login_valid(value, key, now)
+            for value in request.cookie_values(cookie_name(port))
+        ):
             return RELAY
         return refused()
 

@@ -9,7 +9,10 @@ words, relaying a request and its answer, a WebSocket included, and
 hooks what each request is allowed and how the page is reached.
 
 A token is ``base64url(expiry || nonce || HMAC-SHA256(secret, expiry ||
-nonce))``, checked here with no call to the hub. Each connection carries
+nonce))``, checked here with no call to the hub. A login cookie, which a
+module's rule trades a token for, is ``base64url(expiry || HMAC-SHA256(key,
+expiry))`` with a key the module derives from the instance's secret. Each
+connection carries
 one request: an ordinary request is passed on with ``Connection: close`` in
 place of its own and its body cut at its ``Content-Length``; a WebSocket is
 passed on unchanged and relayed both ways until either side closes.
@@ -58,6 +61,10 @@ STATUS_LINES = {
     411: b"HTTP/1.1 411 Length Required",
     502: b"HTTP/1.1 502 Bad Gateway",
 }
+# A login cookie's value: the expiry eight bytes big-endian, then the
+# HMAC-SHA256 over it.
+HTTP_FORWARD_COOKIE_EXPIRY_BYTES = 8
+HTTP_FORWARD_COOKIE_MAC_BYTES = 32
 
 
 def mint_token(secret: str, *, expiry: int, nonce: bytes) -> str:
@@ -124,6 +131,48 @@ def unpadded_decode(text: str) -> bytes:
         binascii.Error: When the text is not base64url.
     """
     return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
+
+
+def mint_login(key: bytes, expiry: int) -> str:
+    """One login cookie's value.
+
+    Args:
+        key: The key the module derives from the instance's secret.
+        expiry: When it stops working, in seconds since the epoch.
+
+    Returns:
+        ``base64url(expiry || HMAC-SHA256(key, expiry))`` without padding.
+    """
+    body = int(expiry).to_bytes(HTTP_FORWARD_COOKIE_EXPIRY_BYTES, "big")
+    mac = hmac.new(key, body, hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(body + mac).rstrip(b"=").decode("ascii")
+
+
+def is_login_valid(login: str, key: bytes, now: float) -> bool:
+    """Whether a login cookie is signed with the key and still current.
+
+    Args:
+        login: The cookie's value.
+        key: The key the module derives from the instance's secret.
+        now: Seconds since the epoch.
+
+    Returns:
+        True when the signature matches and the expiry is ahead.
+    """
+    try:
+        raw = unpadded_decode(login)
+    except (ValueError, binascii.Error):
+        return False
+    if len(raw) != HTTP_FORWARD_COOKIE_EXPIRY_BYTES + HTTP_FORWARD_COOKIE_MAC_BYTES:
+        return False
+    body, mac = (
+        raw[:HTTP_FORWARD_COOKIE_EXPIRY_BYTES],
+        raw[HTTP_FORWARD_COOKIE_EXPIRY_BYTES:],
+    )
+    expected = hmac.new(key, body, hashlib.sha256).digest()
+    if not hmac.compare_digest(expected, mac):
+        return False
+    return int.from_bytes(body, "big") > now
 
 
 def read_head(client: socket.socket) -> tuple:

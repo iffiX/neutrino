@@ -16,10 +16,6 @@ Not pure: writes the release and opens the socket.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
-import base64
-import binascii
-import hashlib
-import hmac
 import json
 import os
 import shutil
@@ -41,8 +37,6 @@ from neutrino_agent.modules.code_server.config import (
     cookie_key,
 )
 from neutrino_agent.modules.code_server.constants import (
-    CODE_SERVER_COOKIE_EXPIRY_BYTES,
-    CODE_SERVER_COOKIE_MAC_BYTES,
     CODE_SERVER_COOKIE_PREFIX,
     CODE_SERVER_DARWIN_PATH,
     CODE_SERVER_DARWIN_SHELL,
@@ -70,8 +64,9 @@ from neutrino_agent.modules.shared.http_forward import (
     RELAY,
     ForwardDecision,
     answered,
+    is_login_valid,
+    mint_login,
     refused,
-    unpadded_decode,
 )
 from neutrino_agent.modules.shared.instances import InstanceHooks
 from neutrino_agent.modules.shared.unpacked_tree import (
@@ -214,48 +209,6 @@ def server_arguments(root: str, account: str) -> list:
 def cookie_name(port: int) -> str:
     """The cookie the forwarder of one port keeps its login in."""
     return f"{CODE_SERVER_COOKIE_PREFIX}{int(port)}"
-
-
-def mint_login(key: bytes, expiry: int) -> str:
-    """One login cookie's value.
-
-    Args:
-        key: From :func:`cookie_key`.
-        expiry: When it stops working, in seconds since the epoch.
-
-    Returns:
-        ``base64url(expiry || HMAC-SHA256(key, expiry))`` without padding.
-    """
-    body = int(expiry).to_bytes(CODE_SERVER_COOKIE_EXPIRY_BYTES, "big")
-    mac = hmac.new(key, body, hashlib.sha256).digest()
-    return base64.urlsafe_b64encode(body + mac).rstrip(b"=").decode("ascii")
-
-
-def is_login_valid(login: str, key: bytes, now: float) -> bool:
-    """Whether a login cookie is signed with the key and still current.
-
-    Args:
-        login: The cookie's value.
-        key: From :func:`cookie_key`.
-        now: Seconds since the epoch.
-
-    Returns:
-        True when the signature matches and the expiry is ahead.
-    """
-    try:
-        raw = unpadded_decode(login)
-    except (ValueError, binascii.Error):
-        return False
-    if len(raw) != CODE_SERVER_COOKIE_EXPIRY_BYTES + CODE_SERVER_COOKIE_MAC_BYTES:
-        return False
-    body, mac = (
-        raw[:CODE_SERVER_COOKIE_EXPIRY_BYTES],
-        raw[CODE_SERVER_COOKIE_EXPIRY_BYTES:],
-    )
-    expected = hmac.new(key, body, hashlib.sha256).digest()
-    if not hmac.compare_digest(expected, mac):
-        return False
-    return int.from_bytes(body, "big") > now
 
 
 def address_without_token(path: str, query: dict) -> str:
