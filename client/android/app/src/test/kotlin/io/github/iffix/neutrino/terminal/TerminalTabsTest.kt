@@ -46,7 +46,16 @@ class TerminalTabsTest {
     private fun hub(vararg sessions: ChannelTerminalSession) = HubView(
         Samples.binding,
         connection = HubConnection.CONNECTED,
-        terminals = listOf(ChannelTerminal("d1", "Argon", true, sessions.toList())),
+        terminals =
+            listOf(
+                ChannelTerminal(
+                    "d1",
+                    "Argon",
+                    isOnline = true,
+                    isShellAllowed = true,
+                    sessions = sessions.toList(),
+                ),
+            ),
     )
 
     private fun closeStream(id: Int, code: String = "") =

@@ -29,7 +29,16 @@ class TerminalSessionMergeTest {
     private fun hub(id: String, connection: HubConnection, vararg sessions: ChannelTerminalSession) = HubView(
         Samples.binding.copy(id = id),
         connection = connection,
-        terminals = listOf(ChannelTerminal("d-$id", "Argon", true, sessions.toList())),
+        terminals =
+            listOf(
+                ChannelTerminal(
+                    "d-$id",
+                    "Argon",
+                    isOnline = true,
+                    isShellAllowed = true,
+                    sessions = sessions.toList(),
+                ),
+            ),
     )
 
     private fun merge(tabs: List<TerminalTab>, vararg hubs: HubView, dismissed: Set<String> = emptySet()) =

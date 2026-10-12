@@ -86,7 +86,11 @@ object PreviewHubs {
                 deviceName = "Argon",
             ),
         ),
-        terminals = listOf(ChannelTerminal("d1", "Argon", true), ChannelTerminal("d2", "Neutrino", true)),
+        terminals =
+            listOf(
+                ChannelTerminal("d1", "Argon", isOnline = true, isShellAllowed = true),
+                ChannelTerminal("d2", "Neutrino", isOnline = true, isShellAllowed = true),
+            ),
     )
 
     /** The hub that waits for its next round. */
