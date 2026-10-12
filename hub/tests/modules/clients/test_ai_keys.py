@@ -207,6 +207,10 @@ def test_a_devices_gateway_is_the_hubs_address_and_its_own_key(unlocked):
         "gateway_url": "http://10.0.0.1:8317",
         "gateway_key": material,
     }
+    assert (
+        ai_keys.device_gateway("dev-1", "2001:db8::1")["gateway_url"]
+        == "http://[2001:db8::1]:8317"
+    )
     assert ai_keys.device_gateway("dev-1", "")["gateway_url"] == ""
 
 

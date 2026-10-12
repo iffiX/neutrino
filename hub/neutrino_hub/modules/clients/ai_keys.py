@@ -145,8 +145,9 @@ def device_gateway(device_id: str, hub_address: str) -> dict:
         material = key.open_key()
     except ValueError:
         return {"gateway_url": "", "gateway_key": ""}
+    host = f"[{hub_address}]" if ":" in hub_address else hub_address
     return {
-        "gateway_url": f"http://{hub_address}:{held.listen_port}",
+        "gateway_url": f"http://{host}:{held.listen_port}",
         "gateway_key": material,
     }
 

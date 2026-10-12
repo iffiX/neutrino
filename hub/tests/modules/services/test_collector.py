@@ -338,6 +338,27 @@ def test_resolution_substitutes_every_hub_self_host_for_the_hubs_scope_address()
     assert resolved["p1"]["payload"]["host"] == "192.168.93.1"
 
 
+def test_an_ipv6_scope_address_is_written_in_brackets_inside_a_url():
+    entries = collect(
+        is_ai_served=True,
+        device_modules=[
+            hosting(
+                host=HUB,
+                samba={"is_healthy": True, "share_names": ["media"]},
+                gitea={"is_healthy": True, "url": f"http://{HUB}:3000/"},
+            )
+        ],
+    )
+
+    resolved = {e["id"]: e for e in resolve(entries, hub_host="2001:db8::a10")}
+
+    assert (
+        resolved["gitea_device-one"]["payload"]["url"] == "http://[2001:db8::a10]:3000/"
+    )
+    assert resolved["ai"]["payload"]["endpoint"] == "http://[2001:db8::a10]:8317"
+    assert resolved["samba_device-one_media"]["payload"]["host"] == "2001:db8::a10"
+
+
 def test_resolution_leaves_a_device_host_alone_when_the_scope_names_none():
     entries = collect(
         device_modules=[

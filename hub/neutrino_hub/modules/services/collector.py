@@ -504,5 +504,7 @@ def _url_at(url: str, host: str) -> str:
     parts = urlsplit(url)
     if parts.hostname is None:
         return url
-    netloc = host if parts.port is None else f"{host}:{parts.port}"
+    netloc = f"[{host}]" if ":" in host else host
+    if parts.port is not None:
+        netloc = f"{netloc}:{parts.port}"
     return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))

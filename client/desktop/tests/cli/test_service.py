@@ -232,6 +232,17 @@ def test_list_heads_each_hub_and_numbers_per_kind_under_it(stack, capsys):
     assert "\x1b" not in out
 
 
+def test_list_writes_an_ipv6_host_in_brackets(stack, capsys):
+    port_entry = next(e for e in SERVICE_ENTRIES if e["id"] == "svc_tcp")
+    stack.service_entries = lambda: with_hub(
+        [{**port_entry, "payload": {"host": "2001:db8::a10", "port": 5432}}], "h1"
+    )
+
+    assert service_cli.main_list() == 0
+
+    assert "[2001:db8::a10]:5432" in capsys.readouterr().out
+
+
 def test_list_groups_the_entries_of_every_hub_joined(stack, capsys):
     stack.hubs_value.append(dict(OFFICE_ROW))
 

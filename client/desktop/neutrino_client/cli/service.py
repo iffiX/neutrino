@@ -688,14 +688,14 @@ def _entry_line(state: dict, kind: str, entry: dict, title_width: int) -> str:
         essence = str(payload.get("url", ""))
     elif kind == "port":
         suffix = _suffix(entry)
-        essence = f"{payload.get('host', '')}:{payload.get('port', '')}{suffix}"
+        essence = f"{_host_text(payload)}:{payload.get('port', '')}{suffix}"
         forward = _forward_of(state, entry)
         if forward:
             essence += f" -> {FORWARD_HOST}:{forward}{suffix}"
     elif kind == "ai":
         essence = str(payload.get("endpoint", ""))
     elif kind == "rdp":
-        essence = f"{payload.get('host', '')}:{payload.get('port', '')}"
+        essence = f"{_host_text(payload)}:{payload.get('port', '')}"
     else:
         essence = f"//{payload.get('host', '')}/{payload.get('share', '')}"
     notes = []
@@ -705,6 +705,12 @@ def _entry_line(state: dict, kind: str, entry: dict, title_width: int) -> str:
         notes.append(str(entry.get("description")))
     tail = f"  ({'; '.join(notes)})" if notes else ""
     return f"{str(entry.get('title', '')):<{title_width}}  {essence}{tail}"
+
+
+def _host_text(payload: dict) -> str:
+    """A payload's host as it is written before a port."""
+    host = str(payload.get("host", ""))
+    return f"[{host}]" if ":" in host else host
 
 
 def _records(state: dict, entry: dict) -> list:
