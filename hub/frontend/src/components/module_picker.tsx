@@ -34,11 +34,17 @@ export interface PickableModule {
 const PANEL_GAP_PX = 4;
 const PANEL_EDGE_PX = 12;
 const PANEL_WIDTH_PX = 220;
+/** Below this much room under the control, the panel opens above it. */
+const PANEL_MIN_HEIGHT_PX = 160;
 
-/** Where the open panel sits, measured against the viewport. */
+/** Where the open panel sits, measured against the viewport: under the
+ * control with `top`, or above it with `bottom`, never taller than the
+ * room on that side, scrolling inside when the list is longer. */
 interface PanelPlacement {
   left: number;
-  top: number;
+  top: number | null;
+  bottom: number | null;
+  maxHeight: number;
 }
 
 interface ModulePickerProps {
@@ -74,9 +80,15 @@ export function ModulePicker({
       rect.left,
       window.innerWidth - PANEL_WIDTH_PX - PANEL_EDGE_PX,
     );
+    const below =
+      window.innerHeight - rect.bottom - PANEL_GAP_PX - PANEL_EDGE_PX;
+    const above = rect.top - PANEL_GAP_PX - PANEL_EDGE_PX;
+    const isBelow = below >= PANEL_MIN_HEIGHT_PX || below >= above;
     setPlacement({
       left: Math.max(PANEL_EDGE_PX, left),
-      top: rect.bottom + PANEL_GAP_PX,
+      top: isBelow ? rect.bottom + PANEL_GAP_PX : null,
+      bottom: isBelow ? null : window.innerHeight - rect.top + PANEL_GAP_PX,
+      maxHeight: Math.max(PANEL_MIN_HEIGHT_PX, isBelow ? below : above),
     });
   }, []);
 
@@ -170,7 +182,9 @@ export function ModulePicker({
             aria-label={t("ui.module_picker.label")}
             style={{
               left: placement.left,
-              top: placement.top,
+              top: placement.top ?? undefined,
+              bottom: placement.bottom ?? undefined,
+              maxHeight: placement.maxHeight,
               width: PANEL_WIDTH_PX,
             }}
           >

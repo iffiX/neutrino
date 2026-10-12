@@ -1530,7 +1530,7 @@
       "viewport": "tall",
       "url": "/modules",
       "element": "viewport",
-      "wait_for": ".vscode_instance",
+      "wait_for": ".instance_row",
       "state": "hub with one VS Code instance running.",
       "press": [
         ".device_chip:has(.device_chip_name:text-is(\"server\"))",
@@ -1551,7 +1551,7 @@
       "viewport": "tall",
       "url": "/modules",
       "element": "viewport",
-      "wait_for": ".vscode_instance",
+      "wait_for": ".instance_row",
       "state": "hub with one VS Code instance running.",
       "press": [
         ".device_chip:has(.device_chip_name:text-is(\"server\"))",
@@ -1571,7 +1571,7 @@
       "viewport": "tall",
       "url": "/modules",
       "element": "viewport",
-      "wait_for": ".cloudcli_instance",
+      "wait_for": ".instance_row",
       "state": "server with CloudCLI running and one instance.",
       "press": [
         ".device_chip:has(.device_chip_name:text-is(\"server\"))",
@@ -1588,7 +1588,7 @@
       "viewport": "tall",
       "url": "/modules",
       "element": "viewport",
-      "wait_for": ".cloudcli_instance",
+      "wait_for": ".instance_row",
       "state": "server with CloudCLI running and one instance.",
       "press": [
         ".device_chip:has(.device_chip_name:text-is(\"server\"))",
