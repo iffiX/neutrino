@@ -649,7 +649,19 @@ class CloudcliHooks(InstanceHooks):
         """Remove the Node.js directory an older build kept under its own name.
 
         Raises:
-            OSError: When a directory cannot be removed.
+            OSError: When a directory cannot be listed.
+        """
+        self._remove_old_node()
+
+    def _remove_old_node(self) -> None:
+        """Remove every ``node-v*`` directory under the module directory.
+
+        A directory whose files are still open, as the old Node is on
+        Windows while an instance runs on it, stays until the next apply
+        tries again.
+
+        Raises:
+            OSError: When the module directory cannot be listed.
         """
         root = self.machine.module_dir
         try:
@@ -661,7 +673,8 @@ class CloudcliHooks(InstanceHooks):
                 remove_tree(os.path.join(root, name))
 
     def prepare_module(self) -> list:
-        """On Windows, read every install task once for this apply.
+        """Remove an old Node.js directory left behind, and on Windows read
+        every install task once for this apply.
 
         Returns:
             Nothing changed.
@@ -669,6 +682,7 @@ class CloudcliHooks(InstanceHooks):
         Raises:
             OSError: When PowerShell fails.
         """
+        self._remove_old_node()
         if self._os_name == "windows":
             read = self.machine.powershell(
                 INSTALL_STATUS_SCRIPT, {"prefix": CLOUDCLI_INSTALL_TASK_PREFIX}

@@ -174,6 +174,17 @@ def test_a_new_node_replaces_the_one_before_and_an_older_builds_directory_goes(
     assert not (tmp_path / "cloudcli" / "node" / "old").exists()
 
 
+def test_an_older_builds_directory_left_behind_goes_at_the_next_apply(tmp_path):
+    hooks = hooks_for("linux", str(tmp_path / "cloudcli"))
+    stale = tmp_path / "cloudcli" / "node-v22.22.0-linux-x64" / "bin"
+    stale.mkdir(parents=True)
+    (stale / "node").write_text("")
+
+    assert hooks.prepare_module() == []
+
+    assert os.listdir(tmp_path / "cloudcli") == []
+
+
 def test_a_zip_lands_the_same(tmp_path):
     path = tmp_path / "node.zip"
     with zipfile.ZipFile(path, "w") as archive:

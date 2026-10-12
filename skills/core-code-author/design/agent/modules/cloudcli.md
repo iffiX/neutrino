@@ -30,10 +30,11 @@ on Linux, `%ProgramData%\Neutrino\agent\state\cloudcli\node` on Windows and
 `/Library/Application Support/Neutrino/agent/state/cloudcli/node` on macOS,
 without the archive's own top directory, so `bin/node` sits directly under
 it ([template.md](template.md), "The install"); the directory is opened to
-every account: owned by root, read-only, one copy per machine. An install
-removes a `node-v<version>-<os>-<arch>/` directory it finds directly under
-`cloudcli/`. Node is never put on `PATH`, in any shell profile, or under
-`/usr/local`.
+every account: owned by root, read-only, one copy per machine. An install,
+and every apply after it, removes a `node-v<version>-<os>-<arch>/`
+directory it finds directly under `cloudcli/`; one whose files are still
+open, as on Windows while an instance runs on it, goes at a later apply.
+Node is never put on `PATH`, in any shell profile, or under `/usr/local`.
 
 **CloudCLI is installed per account, apart from the account's own npm.** As
 the account, with that Node, the agent runs
