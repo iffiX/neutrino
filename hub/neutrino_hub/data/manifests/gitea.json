@@ -63,7 +63,7 @@
       "sha256": "d9ed1fc48ec33a8cb97d7fed3882b4e159efc3fcae3a77d0d240e250d5bf6e21", "_sha256_scan": "scan: allow",
       "package_kind": "binary",
       "packages": [],
-      "verify": "powershell -NoProfile -Command \"$p = Join-Path $env:ProgramData 'Neutrino\\agent\\state\\gitea\\gitea.exe'; if (-not (Test-Path $p)) { exit 1 }; & $p --version; exit $LASTEXITCODE\"",
+      "verify": "\"%ProgramData%\\Neutrino\\agent\\state\\gitea\\gitea.exe\" --version",
       "uninstall": {
         "packages": [],
         "post_uninstall": [],

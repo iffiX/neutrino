@@ -64,7 +64,7 @@
           "directory": "node"
         }
       ],
-      "verify": "powershell -NoProfile -Command \"$p = Join-Path $env:ProgramData 'Neutrino\\agent\\state\\cloudcli\\node\\node.exe'; if (-not (Test-Path $p)) { exit 1 }; & $p --version; exit $LASTEXITCODE\"",
+      "verify": "\"%ProgramData%\\Neutrino\\agent\\state\\cloudcli\\node\\node.exe\" --version",
       "uninstall": {
         "packages": [],
         "post_uninstall": [],
@@ -82,7 +82,7 @@
           "directory": "node"
         }
       ],
-      "verify": "powershell -NoProfile -Command \"$p = Join-Path $env:ProgramData 'Neutrino\\agent\\state\\cloudcli\\node\\node.exe'; if (-not (Test-Path $p)) { exit 1 }; & $p --version; exit $LASTEXITCODE\"",
+      "verify": "\"%ProgramData%\\Neutrino\\agent\\state\\cloudcli\\node\\node.exe\" --version",
       "uninstall": {
         "packages": [],
         "post_uninstall": [],
