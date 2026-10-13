@@ -7,11 +7,17 @@ agent's service, which ends the process that asked for the update, so the
 install runs outside it: in a transient systemd unit on Linux, in a
 PowerShell detached from the service on Windows, and in a job submitted to
 launchd on macOS; the unit and the job run a script written beside the
-agent's state. An install to another version first reads the version
-installed now and installs nothing when it is that version already. Each
-writes what the installer said and how it exited beside the agent's state,
-in one shape, and the agent that install put on the machine reads it there
-and carries it up.
+agent's state, which links the package to a file of its own there first,
+since the agent an install starts clears the packages directory. Each
+install waits for another one's lock: apt by its own timeout, dnf by running
+again while it names the rpm lock, msiexec by the Windows Installer's mutex
+and once more after a busy answer. An install to another version reads the
+version installed before and after the package manager: it installs nothing
+when the agent is that version already, and the version afterwards, not the
+package manager's exit, decides whether it went through. Each writes what
+the installer said and how it exited beside the agent's state, in one shape,
+and the agent that install put on the machine reads it there and carries it
+up.
 
 launchd keeps a submitted job alive and runs it again every ten seconds,
 so the macOS job removes itself as its last act, and an agent that starts
@@ -39,8 +45,12 @@ from neutrino_agent.constants import (
     AGENT_REINSTALL_OUTPUT_LIMIT_BYTES,
     AGENT_REINSTALL_POLL_S,
     AGENT_REINSTALL_RESULT_NAME,
+    AGENT_UPDATE_DNF_LOCK_TEXT,
     AGENT_UPDATE_LAUNCH_TIMEOUT_S,
     AGENT_UPDATE_LOCK_TIMEOUT_S,
+    AGENT_UPDATE_MSI_BUSY_CODE,
+    AGENT_UPDATE_MSI_MUTEX,
+    AGENT_UPDATE_PACKAGE_STEM,
     AGENT_UPDATE_SCRIPT_MODE,
     AGENT_UPDATE_SCRIPT_NAME,
     AGENT_UPDATE_UNIT,
@@ -79,34 +89,68 @@ RELEASE_VERSION_PATTERN = re.compile(r"^neutrino-agent[_-]([^_-]+)[_-]")
 # result.
 WINDOWS_CREATE_BREAKAWAY_FROM_JOB = 0x01000000
 
-# The PowerShell the Windows install runs in: the version installed now,
-# read unless the install is a reinstall, msiexec, its verbose log, and the
-# result in the shape the reporting script writes elsewhere, UTF-8 without a
-# byte order mark.
+# The PowerShell the Windows install runs in: a wait for the Windows
+# Installer, the version installed now, read unless the install is a
+# reinstall, msiexec, run once more after a busy answer, its verbose log,
+# the version installed afterwards, which decides the exit of an install to
+# another version, and the result in the shape the reporting script writes
+# elsewhere, UTF-8 without a byte order mark.
 _WINDOWS_SCRIPT = """$ErrorActionPreference = 'Continue'
 $log = {log}
 $version = {version}
 $wanted = {wanted}
 $program = {program}
 $started = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
-$installed = ''
-if ($wanted -and (Test-Path -LiteralPath $program)) {{
-    $installed = & $program --version 2>$null | Select-Object -Last 1
+function Get-Installed {{
+    if ($wanted -and (Test-Path -LiteralPath $program)) {{
+        return [string](& $program --version 2>$null | Select-Object -Last 1)
+    }}
+    return ''
 }}
-if ($wanted -and $installed -eq $wanted) {{
-    [IO.File]::WriteAllText($log, "already $wanted`n")
-    $code = 0
-}} else {{
+function Wait-Installer {{
+    $deadline = (Get-Date).AddSeconds({lock_timeout})
+    while ((Get-Date) -lt $deadline) {{
+        $held = $null
+        try {{
+            if (-not [Threading.Mutex]::TryOpenExisting({mutex}, [ref]$held)) {{ return }}
+            $held.Dispose()
+        }} catch [UnauthorizedAccessException] {{
+        }}
+        Start-Sleep -Seconds 1
+    }}
+}}
+function Invoke-Install {{
+    Wait-Installer
+    if ($wanted -and (Get-Installed) -eq $wanted) {{
+        [IO.File]::WriteAllText($log, "already $wanted`n")
+        return 0
+    }}
     $run = Start-Process -FilePath msiexec.exe -Wait -PassThru -NoNewWindow -ArgumentList {arguments}
-    $code = $run.ExitCode
+    return $run.ExitCode
+}}
+$code = Invoke-Install
+if ($code -eq {busy}) {{ $code = Invoke-Install }}
+$note = ''
+if ($wanted) {{
+    $installed = Get-Installed
+    if ($installed -eq $wanted) {{
+        if ({installed_codes} -notcontains $code) {{
+            $note = "already $wanted`n"
+            $code = 0
+        }}
+    }} elseif ({installed_codes} -contains $code) {{
+        if (-not $installed) {{ $installed = 'none' }}
+        $note = "found version $installed`n"
+        $code = 1
+    }}
 }}
 $finished = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
 $output = ''
 if (Test-Path -LiteralPath $log) {{
     $output = [string](Get-Content -LiteralPath $log -Raw)
-    if ($output.Length -gt {tail}) {{ $output = $output.Substring($output.Length - {tail}) }}
-    $output = $output.Replace("`r", '')
 }}
+$output = ($output + $note).Replace("`r", '')
+if ($output.Length -gt {tail}) {{ $output = $output.Substring($output.Length - {tail}) }}
 $result = [ordered]@{{package = {package}; kind = 'msi'; version = $version; started_at = $started; finished_at = $finished; exit_code = $code; output = $output}}
 [IO.File]::WriteAllText({result}, ($result | ConvertTo-Json -Compress))
 """
@@ -177,11 +221,17 @@ def install_script(
 ) -> str:
     """The shell script a ``deb``, ``rpm`` or ``pkg`` install runs. Pure.
 
-    apt waits for the dpkg lock another install holds. An install that is
-    no reinstall reads the installed agent's ``--version`` first, installs
-    nothing when it names ``version``, and otherwise has the package
-    manager install the file as an upgrade; a reinstall installs the file
-    whatever is installed.
+    The script links the received file to a file of its own beside the
+    state before anything waits, installs from that one and deletes it at
+    the end. apt waits for the dpkg lock another install holds, and dnf
+    runs again while it says another transaction holds the rpm lock. An
+    install that is no reinstall reads the installed agent's ``--version``
+    first, installs nothing when it names ``version``, and otherwise has the
+    package manager install the file as an upgrade; it reads the version
+    again afterwards, and that version alone decides the exit it writes:
+    ``version`` is success whatever the package manager answered, and
+    another one is a failure. A reinstall installs the file whatever is
+    installed, and the package manager's exit is its own.
 
     Args:
         kind: ``deb``, ``rpm`` or ``pkg``.
@@ -196,16 +246,24 @@ def install_script(
         The script: the install, its log, its result, and on macOS the
         removal of the job it runs as.
     """
-    install = _package_manager_line(kind, path, is_reinstall=is_reinstall)
+    install = _package_manager_line(
+        kind, _work_path(state_dir, kind), is_reinstall=is_reinstall
+    )
+    program = ""
     if version and not is_reinstall:
-        program = shlex.quote(PACKAGE_KIND_TO_PROGRAM[kind])
+        program = PACKAGE_KIND_TO_PROGRAM[kind]
         target = shlex.quote(version)
         install = (
-            f'if [ "$({program} --version 2>/dev/null | tail -n 1)" = {target} ]; '
-            f"then echo already {target}; else {install}; fi"
+            f'if [ "$({shlex.quote(program)} --version 2>/dev/null | tail -n 1)" '
+            f"= {target} ]; then echo already {target}; else {install}; fi"
         )
     script = _reporting_script(
-        install, kind=kind, path=path, version=version, state_dir=state_dir
+        install,
+        kind=kind,
+        path=path,
+        version=version,
+        state_dir=state_dir,
+        program=program,
     )
     if kind == "pkg":
         script += f"\nlaunchctl remove {AGENT_UPDATE_UNIT}"
@@ -398,7 +456,8 @@ def run_update(
     Args:
         package_path: The package file :func:`receive_package` handed over.
             It outlives this process: the install restarts the service,
-            and the agent that starts then clears the directory.
+            and the agent that starts then clears the directory, so a Linux
+            or macOS install links it to a file of its own first.
         kind: ``deb``, ``rpm``, ``msi`` or ``pkg``.
         state_dir: The agent's state directory, where the install's script
             is written and the install writes what it did.
@@ -504,7 +563,13 @@ def _windows_install_command(
         version=_powershell_quote(version),
         wanted=_powershell_quote("" if is_reinstall else version),
         program=_powershell_quote(agent_program_path()),
+        lock_timeout=AGENT_UPDATE_LOCK_TIMEOUT_S,
+        mutex=_powershell_quote(AGENT_UPDATE_MSI_MUTEX),
         arguments=_powershell_quote(arguments),
+        busy=AGENT_UPDATE_MSI_BUSY_CODE,
+        installed_codes="@("
+        + ", ".join(str(code) for code in AGENT_REINSTALL_INSTALLED_CODES)
+        + ")",
         tail=AGENT_REINSTALL_OUTPUT_LIMIT_BYTES,
         package=_powershell_quote(ntpath.basename(path)),
         result=_powershell_quote(ntpath.join(state_dir, AGENT_REINSTALL_RESULT_NAME)),
@@ -535,6 +600,19 @@ def _reinstall_result_path(state_dir: str) -> str:
         The result file's path.
     """
     return os.path.join(state_dir, AGENT_REINSTALL_RESULT_NAME)
+
+
+def _work_path(state_dir: str, kind: str) -> str:
+    """Where a Linux or macOS install links the received package to.
+
+    Args:
+        state_dir: The agent's state directory.
+        kind: ``deb``, ``rpm`` or ``pkg``, the file's extension.
+
+    Returns:
+        The file's path.
+    """
+    return os.path.join(state_dir, f"{AGENT_UPDATE_PACKAGE_STEM}.{kind}")
 
 
 def _script_path(state_dir: str) -> str:
@@ -573,12 +651,13 @@ def _package_manager_line(kind: str, path: str, *, is_reinstall: bool) -> str:
 
     Args:
         kind: ``deb``, ``rpm`` or ``pkg``.
-        path: The received package file.
+        path: The package file the install reads.
         is_reinstall: Whether the file is the version installed now, which
             apt and dnf install only through their reinstall verbs.
 
     Returns:
-        The command line.
+        The command line; dnf's runs again each second while what it said
+        names the rpm lock, for as long as apt waits for the dpkg lock.
     """
     package = shlex.quote(path)
     if kind == "pkg":
@@ -591,20 +670,32 @@ def _package_manager_line(kind: str, path: str, *, is_reinstall: bool) -> str:
         )
     manager = "dnf" if shutil.which("dnf") else "yum"
     verb = "reinstall" if is_reinstall else "install"
-    return f"{manager} {verb} -y {package}"
+    return (
+        f"waited=0; while :; do out=$({manager} {verb} -y {package} 2>&1); "
+        'code=$?; [ -z "$out" ] || printf \'%s\\n\' "$out"; '
+        f"[ $code != 0 ] && [ $waited -lt {AGENT_UPDATE_LOCK_TIMEOUT_S} ] || break; "
+        f'case "$out" in *{shlex.quote(AGENT_UPDATE_DNF_LOCK_TEXT)}*) ;; '
+        "*) break ;; esac; sleep 1; waited=$((waited + 1)); done; (exit $code)"
+    )
 
 
 def _reporting_script(
-    install: str, *, kind: str, path: str, version: str, state_dir: str
+    install: str, *, kind: str, path: str, version: str, state_dir: str, program: str
 ) -> str:
     """The shell the install runs: the install, its log, its result.
 
     Args:
-        install: The package manager's own command line.
+        install: The package manager's own command line, naming the file
+            the received one is linked to.
         kind: ``deb``, ``rpm`` or ``pkg``.
         path: The received package file.
         version: The package's version, written into the result.
         state_dir: Where the log and the result are written.
+        program: The installed agent's program, whose ``--version`` after
+            the install decides its exit: ``version`` is 0, with ``already``
+            in the log where the package manager failed; another is 1, with
+            the version found in the log, where the package manager did
+            not. Empty leaves the package manager's exit as it is.
 
     Returns:
         The script. The umask makes both files 0600, and the
@@ -612,14 +703,32 @@ def _reporting_script(
     """
     log = shlex.quote(os.path.join(state_dir, AGENT_REINSTALL_LOG_NAME))
     result = shlex.quote(os.path.join(state_dir, AGENT_REINSTALL_RESULT_NAME))
+    received = shlex.quote(path)
+    work = shlex.quote(_work_path(state_dir, kind))
     tail = AGENT_REINSTALL_OUTPUT_LIMIT_BYTES
+    judged = []
+    if program:
+        target = shlex.quote(version)
+        judged = [
+            f"seen=$({shlex.quote(program)} --version 2>/dev/null | tail -n 1)",
+            f'if [ "$seen" = {target} ]; then',
+            f'    [ "$code" = 0 ] || {{ echo already {target} >> {log}; code=0; }}',
+            'elif [ "$code" = 0 ]; then',
+            f'    echo "found version ${{seen:-none}}" >> {log}',
+            "    code=1",
+            "fi",
+        ]
     return "\n".join(
         [
             "umask 077",
             f": > {log}",
             f"started=$({_RESULT_STAMP})",
+            f"ln -f {received} {work} 2>/dev/null"
+            f" || cp -f {received} {work} >> {log} 2>&1",
             f"( {install} ) >> {log} 2>&1",
             "code=$?",
+            *judged,
+            f"rm -f {work}",
             f"finished=$({_RESULT_STAMP})",
             f"printf {_RESULT_HEAD} {shlex.quote(os.path.basename(path))} "
             f"{shlex.quote(kind)} {shlex.quote(version)} "

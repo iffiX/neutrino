@@ -134,11 +134,22 @@ AGENT_MODULE_STATE_UNSUPPORTED = "unsupported"
 AGENT_UPDATE_UNIT = "neutrino_agent_update"
 AGENT_UPDATE_LAUNCH_TIMEOUT_S = 30
 # The script a Linux or macOS install runs, written root-only beside the
-# agent's state, and how long apt waits for another install to release the
-# dpkg lock.
+# agent's state, and how long an install waits for another one to release
+# the package manager's lock.
 AGENT_UPDATE_SCRIPT_NAME = "update.sh"
 AGENT_UPDATE_SCRIPT_MODE = 0o600
 AGENT_UPDATE_LOCK_TIMEOUT_S = 300
+# The name before the kind's extension of the file a Linux or macOS install
+# links the received package to beside its script, and installs from: an
+# agent that starts clears the packages directory.
+AGENT_UPDATE_PACKAGE_STEM = "update"
+# What dnf5 says when it refuses at once because another transaction holds
+# the rpm lock.
+AGENT_UPDATE_DNF_LOCK_TEXT = "rpm transaction lock"
+# The Windows Installer holds this mutex while it installs, and msiexec
+# answers this code while another install holds it.
+AGENT_UPDATE_MSI_MUTEX = "Global\\_MSIExecute"
+AGENT_UPDATE_MSI_BUSY_CODE = 1618
 # The agent's own program as the deb and the rpm install it.
 AGENT_LINUX_PROGRAM_PATH = "/usr/bin/nagent"
 
