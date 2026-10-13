@@ -4,14 +4,18 @@ What these pin: nothing starts until the first call, and the command line
 runs the library this package ships; each call is one request line with
 its own id, answered by the value it carries, and calls never overlap; a
 refusal is ``ModuleApplyError`` with its code and params and an error is
-``OSError`` with its message, the host kept; a host that does not answer
-in time is killed with ``TimeoutError`` and the next call starts another,
-while a call that cannot get the host in time kills nothing; a host that
-passes the private bytes ceiling answers, then is stopped; an idle host is
-stopped; a stop closes its standard input; a crash, an answer to another
-request, or a host that cannot start is ``OSError``, and the next call
-starts again; a line that is no JSON, and a byte order mark, are passed
-over; an operation the library lacks is refused before anything starts.
+``OSError`` with its message, the host kept after a read; every operation
+is a read or a change, and only the library's ``Get-`` functions read; a
+read leaves the host running, while a change is answered, refused or
+failed, then the host is stopped and the next call starts another; a host
+that does not answer in time is killed with ``TimeoutError`` and the next
+call starts another, while a call that cannot get the host in time kills
+nothing; a host that passes the private bytes ceiling answers, then is
+stopped; an idle host is stopped; a stop closes its standard input; a
+crash, an answer to another request, or a host that cannot start is
+``OSError``, and the next call starts again; a line that is no JSON, and
+a byte order mark, are passed over; an operation the library lacks is
+refused before anything starts.
 """
 
 import os
@@ -25,6 +29,8 @@ import pytest
 
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.platforms.powershell_host import (
+    WINDOWS_POWERSHELL_HOST_CHANGING_OPS,
+    WINDOWS_POWERSHELL_HOST_OPS,
     WindowsPowerShellHost,
     agent_host,
     host_command,
@@ -32,6 +38,26 @@ from neutrino_agent.platforms.powershell_host import (
 )
 
 FAKE_HOST = str(Path(__file__).parent / "fake_powershell_host.py")
+HOST_READS = {
+    "task_read",
+    "task_states",
+    "share_status",
+    "share_log",
+    "thermal_zones",
+    "added_list",
+}
+HOST_CHANGES = {
+    "task_write",
+    "task_run_once",
+    "task_start",
+    "task_stop",
+    "task_remove",
+    "rules_forget",
+    "share_apply",
+    "share_withdraw",
+    "share_password",
+    "added_remove",
+}
 
 
 class Starter:
@@ -161,7 +187,7 @@ def test_a_refusal_is_a_module_apply_error_and_an_error_an_os_error(started):
 
     with pytest.raises(ModuleApplyError) as refused:
         host.call(
-            "task_write",
+            "task_read",
             {
                 "mode": "refuse",
                 "code": "credential_invalid",
@@ -169,7 +195,7 @@ def test_a_refusal_is_a_module_apply_error_and_an_error_an_os_error(started):
             },
         )
     with pytest.raises(OSError, match="Access is denied"):
-        host.call("task_stop", {"mode": "error", "message": "Access is denied."})
+        host.call("task_states", {"mode": "error", "message": "Access is denied."})
 
     assert (refused.value.code, refused.value.params) == (
         "credential_invalid",
@@ -177,6 +203,61 @@ def test_a_refusal_is_a_module_apply_error_and_an_error_an_os_error(started):
     )
     assert host.call("task_read", {}) == {}
     assert starter.starts() == 1
+
+
+def test_every_operation_is_a_read_or_a_change_exactly_once():
+    assert HOST_READS.isdisjoint(HOST_CHANGES)
+    assert HOST_READS | HOST_CHANGES == set(WINDOWS_POWERSHELL_HOST_OPS)
+    assert WINDOWS_POWERSHELL_HOST_CHANGING_OPS == HOST_CHANGES
+    for op, name in WINDOWS_POWERSHELL_HOST_OPS.items():
+        assert name.startswith("Get-") == (op in HOST_READS), op
+
+
+def test_a_read_leaves_the_host_running(started):
+    starter, make = started
+    host = make()
+
+    for op in sorted(HOST_READS):
+        assert host.call(op, {"value": {"op": op}}) == {"op": op}
+
+    assert starter.starts() == 1
+    assert starter.processes[0].poll() is None
+    assert "eof" not in starter.lines()
+
+
+def test_a_change_is_answered_then_the_host_stops_and_the_next_call_starts_another(
+    started,
+):
+    starter, make = started
+    host = make()
+
+    for count, op in enumerate(sorted(HOST_CHANGES), start=1):
+        assert host.call(op, {"value": {"op": op}}) == {"op": op}
+        assert starter.starts() == count
+        assert starter.lines()[-1] == "eof"
+        assert starter.processes[-1].poll() == 0
+
+    assert host.call("task_read", {"value": {"n": 1}}) == {"n": 1}
+    assert starter.starts() == len(HOST_CHANGES) + 1
+    assert starter.processes[-1].poll() is None
+
+
+def test_a_change_refused_or_failed_stops_the_host_too(started):
+    starter, make = started
+    host = make()
+
+    with pytest.raises(ModuleApplyError):
+        host.call(
+            "share_apply",
+            {"mode": "refuse", "code": "share_name_taken", "params": {}},
+        )
+    assert starter.processes[0].poll() == 0
+    with pytest.raises(OSError, match="Access is denied"):
+        host.call("task_write", {"mode": "error", "message": "Access is denied."})
+    assert starter.processes[1].poll() == 0
+
+    host.call("task_read", {})
+    assert starter.starts() == 3
 
 
 def test_a_host_that_does_not_answer_in_time_is_killed_and_started_again(started):

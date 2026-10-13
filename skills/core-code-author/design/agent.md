@@ -569,7 +569,9 @@ The host runs in a job object the agent holds, so Windows kills it when the
 agent stops. The agent stops the host after 10 minutes without a request,
 and once it has read an answer that reports `private_bytes` over 200 MB. The
 ceiling bounds the modules cmdlets load, which stay in the host's memory
-until the host exits.
+until the host exits. The agent also stops the host after each request that
+changes the system, because PowerShell releases the memory such a request
+leaves slowly.
 
 ## Two ports, one process
 
