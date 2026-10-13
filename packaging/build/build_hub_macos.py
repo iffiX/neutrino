@@ -21,8 +21,10 @@ in the manifest; without it, the agent's ``.pkg`` of this machine alone.
 The ``com.neutrino.hub`` LaunchDaemon runs ``nhub run`` as root. The
 postinstall makes ``config`` and ``state`` root's alone and the log
 directory, loads and starts the service, which serves the setup wizard
-until the box is set up, and prints the wizard's address. An upgrade over a
-hub whose service was loaded loads it again.
+until the box is set up, and prints the wizard's address. The preinstall
+stops the service and deletes the earlier package's ``app`` whole, so a file
+the new package lacks does not stay. An upgrade over a hub whose service was
+loaded loads it again.
 
 ``/Applications/Neutrino Hub.app`` is the application entry: a bundle
 holding a script that runs ``nhub open``, and the icon.
@@ -112,6 +114,12 @@ rm -f "{RELOAD_MARKER}"
 if launchctl print system/{HUB_LAUNCHD_LABEL} >/dev/null 2>&1; then
     touch "{RELOAD_MARKER}"
     launchctl bootout system/{HUB_LAUNCHD_LABEL} 2>/dev/null || true
+fi
+# The installer keeps a file the earlier package had and this one does not,
+# so the program directory goes whole; the configuration and the state stay.
+program="{INSTALL_APP_DIR}"
+if [ -n "$program" ] && [ -d "$program" ] && [ ! -L "$program" ]; then
+    rm -rf "$program"
 fi
 exit 0
 """
