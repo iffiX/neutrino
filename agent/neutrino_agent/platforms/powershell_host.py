@@ -7,8 +7,9 @@ alone: one JSON line per request ``{id, op, args}``, one per answer. Calls
 are serialized and each has a timeout, past which the process is killed. A
 refusal is :class:`ModuleApplyError`, an error or a dead process
 :class:`OSError`, and the next call starts the process again. The host is
-stopped once the private bytes it reports pass a ceiling, and after ten
-idle minutes; the agent's kill-on-close job ends it with the agent.
+stopped after an operation that changes the system, once the private bytes
+it reports pass a ceiling, and after ten idle minutes; the agent's
+kill-on-close job ends it with the agent.
 
 Not pure: starts and stops a process.
 """
@@ -47,6 +48,22 @@ WINDOWS_POWERSHELL_HOST_OPS = {
     "share_log": "Get-NeutrinoShareLog",
     "share_password": "Set-NeutrinoSharePassword",
 }
+# The operations that change the system, after whose answer the host is
+# stopped; every other operation reads.
+WINDOWS_POWERSHELL_HOST_CHANGING_OPS = frozenset(
+    {
+        "task_write",
+        "task_run_once",
+        "task_start",
+        "task_stop",
+        "task_remove",
+        "rules_forget",
+        "share_apply",
+        "share_withdraw",
+        "share_password",
+        "added_remove",
+    }
+)
 WINDOWS_POWERSHELL_HOST_PROGRAM = "powershell.exe"
 # The library, under the package's own directory.
 WINDOWS_POWERSHELL_HOST_LIBRARY_PARTS = ("data", "windows", "powershell_host.ps1")
@@ -319,7 +336,10 @@ class WindowsPowerShellHost:
             private_bytes = int(answer.get("private_bytes") or 0)
         except (TypeError, ValueError):
             private_bytes = 0
-        if private_bytes > self._private_bytes_max:
+        if (
+            op in WINDOWS_POWERSHELL_HOST_CHANGING_OPS
+            or private_bytes > self._private_bytes_max
+        ):
             self._stop_locked(is_killed=False)
         return answer
 
