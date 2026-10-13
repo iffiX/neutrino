@@ -272,15 +272,34 @@ def test_every_branch_the_hub_installs_from_says_how_to_verify_and_uninstall():
             assert isinstance(removal["is_data_kept"], bool), (name, key)
 
 
-def test_a_windows_verify_that_runs_a_file_tests_the_path_first():
-    """PowerShell's ``&`` on a missing file is a non-terminating error that
-    leaves ``$LASTEXITCODE`` unset, so ``exit $LASTEXITCODE`` says installed;
-    the path has to be tested before the program is run."""
+@pytest.mark.parametrize(
+    ("name", "program"),
+    [
+        ("cloudcli", "cloudcli\\node\\node.exe"),
+        ("codeg", "codeg\\server\\codeg-server.exe"),
+        ("gitea", "gitea\\gitea.exe"),
+        ("vscode", "vscode\\code.exe"),
+    ],
+)
+def test_a_windows_verify_runs_the_unpacked_program_through_cmd(name, program):
+    """The agent's shell on Windows is cmd.exe: it expands ``%ProgramData%``,
+    and a program that is not there exits non-zero."""
+    branches = load_module_manifests()[name]["platforms"]
+    windows = [key for key in branches if key.startswith("windows")]
+
+    assert windows
+    for key in windows:
+        assert branches[key]["verify"] == (
+            f'"%ProgramData%\\Neutrino\\agent\\state\\{program}" --version'
+        ), key
+
+
+def test_no_windows_verify_starts_powershell():
     for name, manifest in load_module_manifests().items():
         for key, entry in manifest.get("platforms", {}).items():
-            verify = str(entry.get("verify", "") or "")
-            if key.startswith("windows") and "& " in verify:
-                assert "Test-Path" in verify, (name, key)
+            verify = str(entry.get("verify", "") or "").lower()
+            if key.startswith("windows"):
+                assert "powershell" not in verify, (name, key)
 
 
 def test_the_loader_refuses_a_branch_without_a_verify_command(tmp_path, monkeypatch):

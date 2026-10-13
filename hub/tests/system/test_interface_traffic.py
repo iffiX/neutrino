@@ -113,24 +113,19 @@ def test_elsewhere_the_counters_come_from_psutil(elsewhere, monkeypatch):
     assert interface_counters("en9") is None
 
 
-def test_elsewhere_the_default_route_is_read_once_per_interval(elsewhere, monkeypatch):
-    reads = []
+def test_elsewhere_the_default_route_is_read_on_every_call(elsewhere, monkeypatch):
+    answers = [
+        [{"dev": "en0", "metric": 0}, {"dev": "en1", "metric": 5}],
+        [{"dev": "en1", "metric": 5}],
+        [],
+    ]
 
     def routes():
-        reads.append(1)
-        return [{"dev": "en0", "metric": 0}]
+        return answers.pop(0)
 
-    clock = [100.0]
     monkeypatch.setattr(interface_traffic, "system_default_routes", routes)
-    monkeypatch.setattr(interface_traffic.time, "monotonic", lambda: clock[0])
-    monkeypatch.setattr(
-        interface_traffic, "_ROUTE_READING", {"interface": "", "taken_at": None}
-    )
 
     assert default_route_interface() == "en0"
-    clock[0] += 1
-    assert default_route_interface() == "en0"
-    assert len(reads) == 1
-    clock[0] += interface_traffic.ROUTE_READ_INTERVAL_S
-    assert default_route_interface() == "en0"
-    assert len(reads) == 2
+    assert default_route_interface() == "en1"
+    assert default_route_interface() == ""
+    assert answers == []

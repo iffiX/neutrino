@@ -3,7 +3,7 @@
 What these pin: an address outside loopback is where the box is reached, a
 port is every interface holding an IPv4 address outside loopback, and the
 default route comes from ``route -n get default`` on macOS and from
-``Get-NetRoute`` on Windows, lowest metric first. The IPv6 addresses kept
+iphlpapi on Windows, lowest metric first. The IPv6 addresses kept
 for a peer elsewhere are the global ones no system mark calls temporary,
 deprecated, tentative or duplicate, read on Linux, macOS and Windows. The
 proxy's TUN and the desktop client's files adapter are no network of the box.
@@ -15,19 +15,19 @@ from pathlib import Path
 
 import pytest
 
-from tests.conftest import FakePowerShell, FakePsutil, FakeTools
+from tests.conftest import FakeIphlpapiTables, FakePsutil, FakeTools
 from neutrino_hub.modules.router import link_status
 from neutrino_hub.modules.router.constants import ROUTER_CLIENT_FILES_ADAPTER_NAME
 from neutrino_hub.modules.router.link_status import (
     LINK_KIND_ETHERNET,
-    LINK_WINDOWS_IPV6_SCRIPT,
-    LINK_WINDOWS_ROUTE_SCRIPT,
     RouterLinkStatus,
     admin_up_interfaces,
     device_addresses,
     device_ipv6_addresses,
     system_default_routes,
 )
+from neutrino_hub.platforms import win32
+from neutrino_hub.system import windows_net
 
 ROUTE_GET_DEFAULT = """\
    route to: default
@@ -136,44 +136,25 @@ def test_macos_without_a_default_route_has_none(on_darwin, monkeypatch):
     assert RouterLinkStatus().default_gateway() is None
 
 
-def test_windows_reads_its_default_routes_lowest_metric_first(on_windows, monkeypatch):
-    powershell = FakePowerShell(
-        {
-            LINK_WINDOWS_ROUTE_SCRIPT: {
-                "routes": [
-                    {"dev": "Wi-Fi", "gateway": "10.1.1.1", "metric": 55},
-                    {"dev": "Ethernet", "gateway": "192.168.1.1", "metric": 25},
-                    {"dev": "wt0", "gateway": "0.0.0.0", "metric": 5},
-                ]
-            }
-        }
-    )
-    monkeypatch.setattr(link_status, "run_powershell", powershell)
+def test_windows_reads_its_default_routes_from_iphlpapi(on_windows, monkeypatch):
+    """Two routes at one metric, from tables a Windows machine recorded."""
+    monkeypatch.setattr(windows_net, "_READER", FakeIphlpapiTables.recorded())
 
     assert system_default_routes() == [
-        {"dev": "wt0", "metric": 5},
-        {"dev": "Ethernet", "metric": 25, "gateway": "192.168.1.1"},
-        {"dev": "Wi-Fi", "metric": 55, "gateway": "10.1.1.1"},
+        {"dev": "Ethernet Instance 0 2", "metric": 15, "gateway": "192.168.10.1"},
+        {"dev": "Ethernet Instance 0 3", "metric": 15, "gateway": "10.10.2.1"},
     ]
-    assert RouterLinkStatus().default_gateway() is None
-    assert RouterLinkStatus().gateway_for("Ethernet") == "192.168.1.1"
+    assert RouterLinkStatus().default_gateway() == "192.168.10.1"
+    assert RouterLinkStatus().gateway_for("Ethernet Instance 0 3") == "10.10.2.1"
 
 
-def test_windows_with_one_route_answers_it_bare(on_windows, monkeypatch):
-    powershell = FakePowerShell(
-        {LINK_WINDOWS_ROUTE_SCRIPT: {"routes": {"dev": "Ethernet", "metric": 1}}}
-    )
-    monkeypatch.setattr(link_status, "run_powershell", powershell)
-
-    assert system_default_routes() == [{"dev": "Ethernet", "metric": 1}]
-
-
-def test_windows_that_cannot_run_powershell_has_no_route(on_windows, monkeypatch):
+def test_windows_whose_route_table_cannot_be_read_has_no_route(on_windows, monkeypatch):
     monkeypatch.setattr(
-        link_status, "run_powershell", FakePowerShell(error=OSError("absent"))
+        windows_net, "_READER", FakeIphlpapiTables(error=OSError(5, "denied"))
     )
 
     assert system_default_routes() == []
+    assert RouterLinkStatus().default_gateway() is None
 
 
 # --- the IPv6 addresses a peer elsewhere can keep using ---
@@ -289,66 +270,50 @@ def test_macos_reads_the_words_ifconfig_prints_after_an_address(on_darwin, monke
 def test_windows_keeps_a_preferred_address_that_is_not_temporary(
     on_windows, monkeypatch
 ):
-    powershell = FakePowerShell(
+    addresses = [
+        ("2001:db8::1", "Preferred", "Link"),
+        ("2001:db8::a1", "Preferred", "Random"),
+        ("2001:db8::d1", "Deprecated", "Link"),
+        ("fd00:8::7", "Preferred", "Manual"),
+        ("fe80::1", "Preferred", "Link"),
+    ]
+    found = [
         {
-            LINK_WINDOWS_IPV6_SCRIPT: {
-                "addresses": [
-                    {
-                        "dev": "Ethernet",
-                        "address": "2001:db8::1",
-                        "prefixlen": 64,
-                        "state": "Preferred",
-                        "suffix": "Link",
-                    },
-                    {
-                        "dev": "Ethernet",
-                        "address": "2001:db8::a1",
-                        "prefixlen": 64,
-                        "state": "Preferred",
-                        "suffix": "Random",
-                    },
-                    {
-                        "dev": "Ethernet",
-                        "address": "2001:db8::d1",
-                        "prefixlen": 64,
-                        "state": "Deprecated",
-                        "suffix": "Link",
-                    },
-                    {
-                        "dev": "Ethernet",
-                        "address": "fd00:8::7",
-                        "prefixlen": 64,
-                        "state": "Preferred",
-                        "suffix": "Manual",
-                    },
-                    {
-                        "dev": "Ethernet",
-                        "address": "fe80::1%12",
-                        "prefixlen": 64,
-                        "state": "Preferred",
-                        "suffix": "Link",
-                    },
-                    {
-                        "dev": "Loopback Pseudo-Interface 1",
-                        "address": "::1",
-                        "prefixlen": 128,
-                        "state": "Preferred",
-                        "suffix": "WellKnown",
-                    },
-                ]
-            }
+            "dev": "Ethernet",
+            "address": address,
+            "prefixlen": 64,
+            "state": state,
+            "suffix": suffix,
         }
-    )
-    monkeypatch.setattr(link_status, "run_powershell", powershell)
+        for address, state, suffix in addresses
+    ]
+    asked = []
+
+    def unicast_addresses(family):
+        asked.append(family)
+        return found
+
+    monkeypatch.setattr(windows_net, "unicast_addresses", unicast_addresses)
 
     assert device_ipv6_addresses() == {"Ethernet": ["2001:db8::1/64", "fd00:8::7/64"]}
+    assert asked == [win32.AF_INET6]
 
 
-def test_windows_that_cannot_run_powershell_has_no_ipv6_address(
+def test_windows_reads_its_ipv6_addresses_from_iphlpapi(on_windows, monkeypatch):
+    """The recorded machine's temporary, link-local and loopback addresses
+    are left out; its RA address is kept."""
+    monkeypatch.setattr(windows_net, "_READER", FakeIphlpapiTables.recorded())
+
+    assert device_ipv6_addresses() == {
+        "Ethernet Instance 0 3": ["2001:db8:b:0:c60a:c2e9:531e:532f/64"]
+    }
+
+
+def test_windows_whose_address_table_cannot_be_read_has_no_ipv6_address(
     on_windows, monkeypatch
 ):
     monkeypatch.setattr(
-        link_status, "run_powershell", FakePowerShell(error=OSError("absent"))
+        windows_net, "_READER", FakeIphlpapiTables(error=OSError(5, "denied"))
     )
 
     assert device_ipv6_addresses() == {}

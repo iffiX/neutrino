@@ -9,7 +9,8 @@ import pytest
 
 from neutrino_hub.platforms import windows
 from neutrino_hub.platforms.windows import WindowsHubPlatform
-from tests.conftest import FakePowerShell, FakeServiceControlManager
+from neutrino_hub.system import windows_net
+from tests.conftest import FakeIphlpapiTables, FakeServiceControlManager
 
 
 @pytest.fixture
@@ -355,37 +356,25 @@ def test_the_handler_is_installed_on_windows_alone(monkeypatch, system, is_insta
     assert (loop.handler is windows.drop_connection_reset) is is_installed
 
 
-def test_the_systems_resolvers_are_every_connected_adapters(monkeypatch):
-    shell = FakePowerShell(
-        {
-            windows.PLATFORM_WINDOWS_RESOLVERS_SCRIPT: {
-                "servers": [
-                    "192.168.1.1",
-                    "127.0.0.1",
-                    "x",
-                    "192.0.2.53",
-                    "192.168.1.1",
-                ]
-            }
-        }
+def test_the_systems_resolvers_are_every_connected_interfaces(monkeypatch):
+    """From tables a Windows machine recorded: two interfaces at one metric,
+    the lower index first."""
+    monkeypatch.setattr(windows_net, "_READER", FakeIphlpapiTables.recorded())
+
+    assert WindowsHubPlatform().system_resolvers() == ["192.168.10.1", "10.10.2.1"]
+
+
+def test_a_loopback_resolver_is_left_out(monkeypatch):
+    monkeypatch.setattr(
+        windows_net, "resolvers", lambda: ["192.168.1.1", "127.0.0.1", "192.0.2.53"]
     )
-    monkeypatch.setattr(windows, "run_powershell", shell)
 
     assert WindowsHubPlatform().system_resolvers() == ["192.168.1.1", "192.0.2.53"]
 
 
-def test_one_resolver_comes_back_bare_and_reads_the_same(monkeypatch):
-    shell = FakePowerShell(
-        {windows.PLATFORM_WINDOWS_RESOLVERS_SCRIPT: {"servers": "192.168.1.1"}}
-    )
-    monkeypatch.setattr(windows, "run_powershell", shell)
-
-    assert WindowsHubPlatform().system_resolvers() == ["192.168.1.1"]
-
-
-def test_powershell_that_does_not_answer_names_no_resolver(monkeypatch):
+def test_iphlpapi_that_does_not_answer_names_no_resolver(monkeypatch):
     monkeypatch.setattr(
-        windows, "run_powershell", FakePowerShell(error=OSError("powershell exited 1"))
+        windows_net, "_READER", FakeIphlpapiTables(error=OSError(5, "denied"))
     )
 
     assert WindowsHubPlatform().system_resolvers() == []
