@@ -163,7 +163,7 @@ carries them opened. The panel draws the four with one `instances_panel.tsx`
 | `log_tail.py` | the last lines of a log file, and the mask every journal passes through |
 | `subprocess_run.py` | running one command for a module applier, with its output kept |
 | `windows_acl.py` | running `icacls.exe` for a module on Windows, the exit code read and the output dropped |
-| `account_service/` | one file per system: write the service definition for an account, start, stop, remove and query it |
+| `account_service/` | one file per system: write the service definition for an account, start, stop, remove and query it; its `__init__.py` also holds `write_if_changed`, which writes a file only when its text differs, so an apply that changes nothing rewrites no file |
 | `instances.py` | the generic runner of the account-program kind, which drives the hooks of each module |
 
 An applier on Windows runs its cmdlets through the agent's one PowerShell
