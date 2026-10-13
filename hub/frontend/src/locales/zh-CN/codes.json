@@ -187,6 +187,7 @@
   "code.release_http_error": "发行站点回答了 {status}，不是发行版本。",
   "code.release_not_latest": "最新发行版本已经不是刚才确认的那个，请重新检查。",
   "code.release_not_newer": "{version} 不比正在运行的版本新。",
+  "code.release_rate_limited": "GitHub 限制每个公网地址查询发行版本的次数，这个地址上的所有人共用这个额度。{minutes} 分钟后恢复。",
   "code.release_refused": "连不上发行站点。",
   "code.release_timed_out": "发行站点没有及时应答。",
   "code.release_unreachable": "读不懂发行站点的回答。",

@@ -29,6 +29,17 @@ HUB_UPDATE_HEADERS = {
 }
 HUB_UPDATE_FETCH_TIMEOUT_S = 600
 HUB_UPDATE_FETCH_LIMIT_BYTES = 1024 * 1024 * 1024
+# An install reuses a release a check read this recently instead of asking
+# the release API again.
+HUB_UPDATE_RELEASE_REUSE_S = 10 * 60
+# GitHub's answer when the address has spent its hourly allowance of API
+# calls: one of these statuses with no calls remaining, and the epoch second
+# the allowance renews.
+HUB_UPDATE_RATE_LIMIT_STATUSES = (403, 429)
+HUB_UPDATE_RATE_LIMIT_REMAINING_HEADER = "x-ratelimit-remaining"
+HUB_UPDATE_RATE_LIMIT_RESET_HEADER = "x-ratelimit-reset"
+HUB_UPDATE_RETRY_AFTER_HEADER = "retry-after"
+HUB_UPDATE_RATE_LIMIT_WINDOW_S = 60 * 60
 
 # Under the state root: the packages, the script the unit runs, its log and
 # its result. `nhub reset all` clears the directory.
@@ -162,6 +173,7 @@ HUB_UPDATE_ERROR_RELEASE_DNS = "release_dns_failed"
 HUB_UPDATE_ERROR_RELEASE_TIMEOUT = "release_timed_out"
 HUB_UPDATE_ERROR_RELEASE_REFUSED = "release_refused"
 HUB_UPDATE_ERROR_RELEASE_HTTP = "release_http_error"
+HUB_UPDATE_ERROR_RELEASE_RATE_LIMITED = "release_rate_limited"
 HUB_UPDATE_ERROR_RELEASE_UNREACHABLE = "release_unreachable"
 
 # How the newest release stands to the version running.

@@ -187,6 +187,7 @@
   "code.release_http_error": "The release site answered {status} instead of a release.",
   "code.release_not_latest": "The newest release is no longer the one confirmed; check again.",
   "code.release_not_newer": "{version} is not newer than the version running.",
+  "code.release_rate_limited": "GitHub limits how often one internet address may ask for releases, and everyone on this address shares that limit. It clears in {minutes} min.",
   "code.release_refused": "The release site could not be connected to.",
   "code.release_timed_out": "The release site did not answer in time.",
   "code.release_unreachable": "The release site's reply could not be read.",

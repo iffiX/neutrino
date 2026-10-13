@@ -338,3 +338,123 @@ def test_the_network_read_sends_a_user_agent(monkeypatch):
 )
 def test_why_github_gave_no_release_is_named(error, expected):
     assert release_module.unreachable_reason(error) == expected
+
+
+# --- GitHub's hourly allowance ---
+
+
+def spent(status: int, **headers) -> urllib.error.HTTPError:
+    """A refusal from an address with no API calls left this hour."""
+    return urllib.error.HTTPError(
+        "https://api",
+        status,
+        "rate limit exceeded",
+        {"x-ratelimit-remaining": "0", **headers},
+        None,
+    )
+
+
+@pytest.mark.parametrize("status", [403, 429])
+def test_an_address_with_no_calls_left_says_when_they_renew(monkeypatch, status):
+    monkeypatch.setattr(release_module.time, "time", lambda: 1_791_936_000.0)
+    error = spent(status, **{"x-ratelimit-reset": "1791936725"})
+
+    assert release_module.unreachable_reason(error) == (
+        "release_rate_limited",
+        {"minutes": 13, "reset_at": "2026-10-14T00:12:05Z"},
+    )
+
+
+def test_a_refusal_with_calls_left_is_an_http_error():
+    error = urllib.error.HTTPError(
+        "https://api", 403, "forbidden", {"x-ratelimit-remaining": "12"}, None
+    )
+
+    assert release_module.unreachable_reason(error) == (
+        "release_http_error",
+        {"status": 403},
+    )
+
+
+def test_a_renewal_naming_no_moment_is_read_off_retry_after_or_the_hour():
+    assert release_module.renewal({"retry-after": "30"}, now=0) == {
+        "minutes": 1,
+        "reset_at": "1970-01-01T00:00:30Z",
+    }
+    assert release_module.renewal({}, now=0) == {
+        "minutes": 60,
+        "reset_at": "1970-01-01T01:00:00Z",
+    }
+
+
+# --- what a checker remembers ---
+
+
+class Clock:
+    def __init__(self):
+        self.now = 1000.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def counting(table: dict, asked: list) -> callable:
+    fetch = answering(table)
+
+    def counted(url: str) -> bytes:
+        asked.append(url)
+        return fetch(url)
+
+    return counted
+
+
+def test_a_release_read_moments_ago_is_reused_when_asked_to():
+    asked: list = []
+    clock = Clock()
+    checker = HubReleaseChecker(
+        asset=ASSET,
+        edition="intl",
+        fetch_bytes=counting(
+            {
+                LATEST_URL: release_json("0.3.1"),
+                TAG_URL.format(tag="v0.3.0"): release_json("0.3.0"),
+            },
+            asked,
+        ),
+        clock=clock,
+    )
+    checker.latest()
+    checker.for_version("0.3.0")
+    clock.now += 599
+
+    assert checker.latest(max_age_s=600).version == "0.3.1"
+    assert checker.for_version("0.3.0", max_age_s=600).version == "0.3.0"
+    assert asked == [LATEST_URL, TAG_URL.format(tag="v0.3.0")]
+
+
+def test_a_check_always_asks_and_an_old_read_is_asked_again():
+    asked: list = []
+    clock = Clock()
+    checker = HubReleaseChecker(
+        asset=ASSET,
+        edition="intl",
+        fetch_bytes=counting({LATEST_URL: release_json("0.3.1")}, asked),
+        clock=clock,
+    )
+    checker.latest()
+    checker.latest()
+    clock.now += 601
+    checker.latest(max_age_s=600)
+
+    assert asked == [LATEST_URL] * 3
+
+
+def test_a_release_that_is_not_there_is_remembered_too():
+    asked: list = []
+    checker = HubReleaseChecker(
+        asset=ASSET, edition="intl", fetch_bytes=counting({}, asked), clock=Clock()
+    )
+
+    assert checker.for_version("0.3.0+ci") is None
+    assert checker.for_version("0.3.0+ci", max_age_s=600) is None
+    assert len(asked) == 1
