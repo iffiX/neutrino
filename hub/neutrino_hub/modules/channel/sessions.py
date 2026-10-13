@@ -256,6 +256,8 @@ class ChannelSession:
         state_hash: The state hash the peer last claimed.
         offered_hash: The hash of the state this connection was last handed;
             None before the first report was judged.
+        is_reinstall_due: True while an agent whose own package was refused
+            for want of a platform has sent no report naming one.
         stream_handlers: Stream kind to the coroutine function serving a
             stream the peer opens, called with ``(session, stream)``.
         shells: A client's open ``shell`` streams by id, each the
@@ -288,6 +290,7 @@ class ChannelSession:
         self.report_serial = 0
         self.state_hash = ""
         self.offered_hash: "str | None" = None
+        self.is_reinstall_due = False
         self.stream_handlers: dict = {}
         self.shells: dict = {}
         self.execs: dict = {}

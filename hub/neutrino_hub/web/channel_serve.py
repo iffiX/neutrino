@@ -7,7 +7,9 @@ peer-opened stream to its kind's handler, a ``close`` or a ``credit`` goes
 to the stream it names, a ``ping`` is answered with a ``pong`` carrying its
 nonce, and bytes go to theirs. The kinds a peer may open
 are ``package`` and ``log`` from an agent, and ``service``, ``shell``,
-``exec``, ``command`` and ``connect`` from a client.
+``exec``, ``command`` and ``connect`` from a client. An agent older than
+the hub whose own package was refused before the hub knew its platform is
+sent ``reinstall`` once, when the report naming the platform lands.
 """
 
 import asyncio
@@ -23,6 +25,8 @@ from fastapi import WebSocket, WebSocketDisconnect
 from neutrino_hub.exceptions import AgentArtifactFetchError, AgentOfflineError
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_CHUNK_BYTES,
+    CHANNEL_COMMAND_MODULE_AGENT,
+    CHANNEL_DEV_VERSION_SUFFIX,
     CHANNEL_ROLE_CLIENT,
     CHANNEL_FRAME_OPEN,
     CHANNEL_FRAME_PING,
@@ -38,8 +42,13 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_STREAM_PACKAGE,
     CHANNEL_STREAM_SERVICE,
     CHANNEL_STREAM_SHELL,
+    CHANNEL_VERB_REINSTALL,
 )
-from neutrino_hub.modules.channel.sessions import ChannelSession, ChannelStream
+from neutrino_hub.modules.channel.sessions import (
+    ChannelSession,
+    ChannelStream,
+    version_of_software,
+)
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.clients.services import panel_material, service_material
 from neutrino_hub.modules.devices.agent_module_cache import format_megabytes
@@ -53,6 +62,7 @@ from neutrino_hub.modules.devices.manifests import (
     load_module_manifests,
     load_tool_manifests,
 )
+from neutrino_hub.utils.version_number import parse_version
 from neutrino_hub.web import channel_state
 from neutrino_hub.web.channel_connect import serve_connect_stream
 from neutrino_hub.web.channel_shell import (
@@ -105,7 +115,13 @@ async def serve_agent(
             peer_host=session.address,
             reached_host=websocket.url.hostname or "",
         )
-        await _serve_frames(websocket, session, _AgentFrames(runtime, session, device))
+        frames = _AgentFrames(
+            runtime,
+            session,
+            device,
+            hub_version=version_of_software(welcome["software"]),
+        )
+        await _serve_frames(websocket, session, frames)
     except (WebSocketDisconnect, AgentOfflineError):
         pass
     finally:
@@ -203,6 +219,8 @@ async def serve_package_stream(
             _package_path, runtime, module, platform, on_progress, component
         )
     except AgentArtifactFetchError as error:
+        if not module and not platform:
+            session.is_reinstall_due = True
         if is_module:
             detail = " ".join(f"{k}={v}" for k, v in sorted(error.params.items()))
             publish_module_line(
@@ -491,13 +509,16 @@ def _is_panel_change(previous: dict, report: dict) -> bool:
 class _AgentFrames:
     """What an agent's reports do to the hub."""
 
-    def __init__(self, runtime, session: ChannelSession, device):
+    def __init__(self, runtime, session: ChannelSession, device, *, hub_version: str):
         self._runtime = runtime
         self._session = session
         self._device = device
+        self._hub_version = hub_version
 
     async def take_report(self, report: dict) -> None:
-        """Record one report, tell the panel, and offer the state once."""
+        """Record one report, tell the panel, offer the state once, and send
+        ``reinstall`` once to an older agent refused its package for want of
+        the platform this report names."""
         runtime = self._runtime
         session = self._session
         key = self._device.id
@@ -538,6 +559,81 @@ class _AgentFrames:
             if document["hash"] != session.offered_hash:
                 await session.push_state(document)
                 session.offered_hash = document["hash"]
+        if session.is_reinstall_due and runtime.device_platform.get(key):
+            session.is_reinstall_due = False
+            if _is_older_release(session.version, self._hub_version):
+                await _send_reinstall(session, self._hub_version)
+
+
+def _is_older_release(version: str, than: str) -> bool:
+    """Whether one released version comes before another.
+
+    Args:
+        version: The version that may be the older.
+        than: The version it is held against.
+
+    Returns:
+        True when ``version`` orders before ``than``; False when either does
+        not parse or ends in ``CHANNEL_DEV_VERSION_SUFFIX``.
+    """
+    if version.endswith(CHANNEL_DEV_VERSION_SUFFIX) or than.endswith(
+        CHANNEL_DEV_VERSION_SUFFIX
+    ):
+        return False
+    older = parse_version(version)
+    newer = parse_version(than)
+    return older is not None and newer is not None and older < newer
+
+
+async def _send_reinstall(session: ChannelSession, hub_version: str) -> None:
+    """Open ``command {module: agent, verb: reinstall}`` on an agent's socket.
+
+    The agent takes its package down a ``package`` stream and installs it,
+    as the Devices page's Reinstall agent has it do; the command's close is
+    logged when it comes.
+
+    Args:
+        session: The agent's session.
+        hub_version: The version the hub runs.
+
+    Raises:
+        AgentOfflineError: If the socket is gone.
+    """
+    stream = await session.open_stream(
+        CHANNEL_STREAM_COMMAND,
+        {"module": CHANNEL_COMMAND_MODULE_AGENT, "verb": CHANNEL_VERB_REINSTALL},
+    )
+    LOGGER.info(
+        "agent %s on %s asked for its package before the hub knew its platform; "
+        "reinstall sent to reach %s",
+        session.name,
+        session.version,
+        hub_version,
+    )
+    asyncio.create_task(_log_reinstall_close(session.name, stream))
+
+
+async def _log_reinstall_close(name: str, stream: ChannelStream) -> None:
+    """Read a ``reinstall`` command to its close and log the close.
+
+    Args:
+        name: The agent's name, for the line.
+        stream: The command's stream.
+    """
+    try:
+        while await stream.recv() is not None:
+            pass
+    except AgentOfflineError:
+        pass
+    info = stream.close_info or {"code": AgentOfflineError.code, "params": {}}
+    params = {
+        field: value
+        for field, value in (info.get("params") or {}).items()
+        if field != "output"
+    }
+    LOGGER.info(
+        "reinstall of agent %s closed: %s %s", name, info.get("code") or "ok", params
+    )
 
 
 class _ClientFrames:
