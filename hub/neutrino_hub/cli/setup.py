@@ -474,7 +474,7 @@ def _answers(arguments):
     if arguments.json:
         path = Path(arguments.json)
         try:
-            document = _parsed(path.read_text(encoding="utf-8"), str(path))
+            document = _parsed(path.read_text(encoding="utf-8-sig"), str(path))
         except OSError as error:
             raise WizardAborted(str(error)) from error
         return wizard.from_document(document), None
