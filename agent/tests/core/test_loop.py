@@ -10,9 +10,10 @@ answers on, the name first, the one that answered written back and a whole
 round failing being what backs off; the state's ``urls`` kept on disk; a
 network change under the machine starting a round at once and moving a
 live socket to the name's address; the self-update a welcome's
-``software`` triggers and its once-per-target latch; a reinstall of the
-running version told apart from an install to another; a start dropping a
-failed install record of the version it runs; ``sync`` sending a
+``software`` triggers once the first report has gone out, and its
+once-per-target latch; a reinstall of the running version told apart from
+an install to another; a start dropping a failed install record of the
+version it runs; ``sync`` sending a
 report now and what ``probe`` does; and the wake flag cleared before a
 turn rather than after it. Nothing here talks to a network.
 """
@@ -61,6 +62,11 @@ WELCOME = {
 HUNG_UP = GatewayUnreachable("hung up")
 # A script entry: the hub hangs up once the first report has gone up.
 DROP_AFTER_REPORT = object()
+# A script entry: the hub hangs up once the second report has gone up, after
+# what the agent does between its first two reports.
+DROP_AFTER_SECOND_REPORT = object()
+# The report each drop entry hangs up at.
+DROP_AT_REPORT = {DROP_AFTER_REPORT: 1, DROP_AFTER_SECOND_REPORT: 2}
 
 
 class _FakePlatform(AgentPlatform):
@@ -126,8 +132,8 @@ class ClientScript:
             client.connect_error = script
         else:
             for item in script:
-                if item is DROP_AFTER_REPORT:
-                    client.drop_after_report = True
+                if item is DROP_AFTER_REPORT or item is DROP_AFTER_SECOND_REPORT:
+                    client.drop_at_report = DROP_AT_REPORT[item]
                 else:
                     client.feed(item)
         self.clients.append(client)
@@ -1290,13 +1296,16 @@ def installer(monkeypatch) -> list:
 
 
 def welcomed_by(software: str) -> list:
-    return [dict(WELCOME, software=software), DROP_AFTER_REPORT]
+    """A hub of one ``software`` that hangs up after what the agent does
+    between its first two reports."""
+    return [dict(WELCOME, software=software), DROP_AFTER_SECOND_REPORT]
 
 
 def test_a_newer_hub_opens_a_package_stream_and_launches_the_install_once_per_target(
     config_path, monkeypatch, tmp_path
 ):
     monkeypatch.setattr(loop_module, "AGENT_VERSION", "1.0.0")
+    monkeypatch.setattr(loop_module, "AGENT_REPORT_INTERVAL_S", 0.01)
     agent, script = scripted_agent(
         config_path, monkeypatch, [welcomed_by("neutrino_hub/9.9.9")] * 2
     )
@@ -1310,6 +1319,25 @@ def test_a_newer_hub_opens_a_package_stream_and_launches_the_install_once_per_ta
     ]
     assert script.clients[0].frames("open") == [PACKAGE_OPEN]
     assert script.clients[1].frames("open") == []
+
+
+def test_the_package_is_asked_for_only_after_the_first_report_went_out(
+    config_path, monkeypatch
+):
+    """The hub names the package by the platform the first report carries."""
+    monkeypatch.setattr(loop_module, "AGENT_VERSION", "1.0.0")
+    monkeypatch.setattr(loop_module, "AGENT_REPORT_INTERVAL_S", 0.01)
+    agent, script = scripted_agent(
+        config_path, monkeypatch, [welcomed_by("neutrino_hub/9.9.9")]
+    )
+    installer(monkeypatch)
+
+    agent.run_once()
+
+    kinds = [message["type"] for message in script.clients[0].sent]
+    assert kinds.index("open") > kinds.index("report")
+    first_report, *_ = script.clients[0].frames("report")
+    assert first_report["machine"]["platform"] == agent._engine.platform_tuple
 
 
 @pytest.mark.parametrize(
@@ -1328,6 +1356,7 @@ def test_a_dev_older_equal_or_foreign_software_updates_nothing(
     config_path, monkeypatch, agent_version, software
 ):
     monkeypatch.setattr(loop_module, "AGENT_VERSION", agent_version)
+    monkeypatch.setattr(loop_module, "AGENT_REPORT_INTERVAL_S", 0.01)
     agent, script = scripted_agent(config_path, monkeypatch, [welcomed_by(software)])
     installed = installer(monkeypatch)
 

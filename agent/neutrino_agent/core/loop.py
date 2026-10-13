@@ -400,8 +400,13 @@ class Agent:
             with self._lock:
                 self._session = None
             return AGENT_BACKOFF_MIN_S
-        self._maybe_self_update(session.hub_software)
-        failure = session.serve()
+        # The hub names this agent's package by the platform the first
+        # report carries.
+        failure = session.serve(
+            on_first_report=functools.partial(
+                self._maybe_self_update, session.hub_software
+            )
+        )
         with self._lock:
             if self._session is session:
                 self._session = None

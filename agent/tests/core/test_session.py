@@ -3,7 +3,8 @@
 What these pin: the protocol number this build speaks, the hello card and
 the welcome card, a refusal at the door raised with its code and one on a
 live socket ending it the same way, a report on the interval and at once
-when something changed, the stream layer as protocol.md draws it: an even
+when something changed, a hook run once as soon as the first report has
+gone out, the stream layer as protocol.md draws it: an even
 id from the hub served, odd ids counting up for the streams this side
 opens, a binary frame as a big-endian u32 id and bytes, a short or
 unaddressed frame dropped, no ``opened`` frame ever, the kind table as the
@@ -52,9 +53,9 @@ class ScriptedClient:
     """A socket client whose inbound frames a test feeds one by one.
 
     Attributes:
-        drop_after_report: When set, the first report sent makes the reader
-            see the hub hanging up, so a scripted connection ends after the
-            report it was opened to observe.
+        drop_at_report: The count of the report whose sending makes the
+            reader see the hub hanging up, so a scripted connection ends
+            after the reports it was opened to observe; 0 never.
     """
 
     def __init__(self):
@@ -64,7 +65,7 @@ class ScriptedClient:
         self.is_connected = False
         self.is_closed = False
         self.connect_error = None
-        self.drop_after_report = False
+        self.drop_at_report = 0
         self.local_address = ""
 
     def connect(self) -> None:
@@ -77,10 +78,12 @@ class ScriptedClient:
             raise GatewayUnreachable("the socket is closed")
         message = json.loads(text)
         self.sent.append(message)
-        if self.drop_after_report and message.get("type") == "report":
+        if (
+            message.get("type") == "report"
+            and len(self.frames("report")) == self.drop_at_report
+        ):
             # A hub that hung up fails the next send too, so the loop cannot
-            # slip a second report in before the reader sees the drop.
-            self.drop_after_report = False
+            # slip another report in before the reader sees the drop.
             self.is_closed = True
             self.inbound.put(GatewayUnreachable("hung up"))
 
@@ -194,12 +197,12 @@ class EchoStream:
                 return {"code": "", "params": {"exit_code": 0}}
 
 
-def serving(session):
+def serving(session, on_first_report=None):
     """Run serve() on a thread; returns the thread and the outcome holder."""
     outcome: dict = {}
 
     def run():
-        outcome["failure"] = session.serve()
+        outcome["failure"] = session.serve(on_first_report)
 
     thread = threading.Thread(target=run, daemon=True)
     thread.start()
@@ -388,6 +391,25 @@ def test_the_tick_hook_runs_once_per_interval():
     client.wait_for("report", count=3)
 
     assert ticks
+    session.close()
+    thread.join(timeout=2)
+
+
+def test_the_first_report_hook_runs_once_after_the_first_report_went_out():
+    client = ScriptedClient()
+    session, _, _ = make_session(client, interval_s=0.02)
+    client.feed(welcome())
+    session.connect()
+    seen: list = []
+
+    def first_report():
+        seen.append(len(client.frames("report")))
+
+    thread, _ = serving(session, on_first_report=first_report)
+
+    client.wait_for("report", count=3)
+
+    assert seen == [1]
     session.close()
     thread.join(timeout=2)
 

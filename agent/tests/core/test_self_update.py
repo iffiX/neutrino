@@ -28,7 +28,7 @@ from neutrino_agent.constants import (
 from neutrino_agent.exceptions import GatewayUnreachable, SelfUpdateError
 from neutrino_agent.core.loop import Agent
 from tests.conftest import bind, discard
-from tests.core.test_loop import DROP_AFTER_REPORT, WELCOME, ClientScript
+from tests.core.test_loop import DROP_AFTER_SECOND_REPORT, WELCOME, ClientScript
 from tests.core.test_session import ScriptedClient
 from tests.streams.fake_channel import FakeChannel
 
@@ -105,7 +105,12 @@ def launched(monkeypatch):
 
 
 def welcomed_by(hub_version: str) -> list:
-    return [dict(WELCOME, software=f"neutrino_hub/{hub_version}"), DROP_AFTER_REPORT]
+    """A hub of one version that hangs up after what the agent does between
+    its first two reports."""
+    return [
+        dict(WELCOME, software=f"neutrino_hub/{hub_version}"),
+        DROP_AFTER_SECOND_REPORT,
+    ]
 
 
 def bound_agent(config_path, monkeypatch, *, hub_version, **hub):
@@ -113,6 +118,7 @@ def bound_agent(config_path, monkeypatch, *, hub_version, **hub):
     and whose package stream that hub answers as the knobs say."""
     bind(config_path)
     monkeypatch.setattr("neutrino_agent.core.loop.AGENT_VERSION", "1.0.0")
+    monkeypatch.setattr("neutrino_agent.core.loop.AGENT_REPORT_INTERVAL_S", 0.01)
     monkeypatch.setattr(self_update, "package_kind", lambda platform: "deb")
     script = ClientScript([], default=welcomed_by(hub_version))
     script.client_class = functools.partial(PackageHub, **hub)
