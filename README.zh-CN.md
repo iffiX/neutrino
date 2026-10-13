@@ -52,6 +52,8 @@
 
 电脑上装完，在系统里搜 **Neutrino Hub** 点开，三个系统都一样，浏览器里跟着向导走。几分钟，设好密码，面板就开了。
 
+<img src="images/web/search_hub.svg" width="100%" alt="搜索 Neutrino Hub 并点开" />
+
 没有桌面的机器，比如 ARM64 的软路由、开发板，或者 SSH 进去的电脑，在终端里启动向导，在终端里答，或者用别的电脑打开它打印的网址。Linux 和 macOS：
 
 ```bash
