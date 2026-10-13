@@ -188,22 +188,14 @@ async def _follow_events(websocket: WebSocket) -> None:
 
 
 async def _follow_dns_log(websocket: WebSocket) -> None:
-    """Send the recent queries, then each new one, until the socket goes."""
-    reader = DnsLogReader()
+    """Send the recent queries, then each new one, until the browser leaves."""
+    pump = asyncio.create_task(_pump_dns_log(websocket))
     try:
-        initial = await asyncio.to_thread(reader.tail)
-        await websocket.send_json(
-            {"entries": [entry.model_dump() for entry in reversed(initial)]}
-        )
-        while True:
-            await asyncio.sleep(DNS_LOG_POLL_INTERVAL_S)
-            entries = await asyncio.to_thread(reader.follow)
-            if entries:
-                await websocket.send_json(
-                    {"entries": [entry.model_dump() for entry in entries]}
-                )
-    except (WebSocketDisconnect, RuntimeError):
-        return
+        await _await_disconnect(websocket)
+    finally:
+        pump.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await pump
 
 
 async def _follow_task(websocket: WebSocket, task_id: str) -> None:
@@ -218,6 +210,23 @@ async def _follow_task(websocket: WebSocket, task_id: str) -> None:
         await websocket.send_json({"type": "done", "exit_code": stream.exit_code or 0})
     except (WebSocketDisconnect, RuntimeError):
         return
+
+
+async def _pump_dns_log(websocket: WebSocket) -> None:
+    """Send the recent queries, then each new one, until the socket goes away."""
+    reader = DnsLogReader()
+    with contextlib.suppress(WebSocketDisconnect, RuntimeError):
+        initial = await asyncio.to_thread(reader.tail)
+        await websocket.send_json(
+            {"entries": [entry.model_dump() for entry in reversed(initial)]}
+        )
+        while True:
+            await asyncio.sleep(DNS_LOG_POLL_INTERVAL_S)
+            entries = await asyncio.to_thread(reader.follow)
+            if entries:
+                await websocket.send_json(
+                    {"entries": [entry.model_dump() for entry in entries]}
+                )
 
 
 async def _pump_events(websocket: WebSocket, queue: asyncio.Queue) -> None:

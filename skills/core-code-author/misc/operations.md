@@ -219,8 +219,10 @@ When `/proc/meminfo` gives less than 300 MB of `MemAvailable` as the unit
 starts, it stops `neutrino_hub_web` and `neutrino_hub_cliproxyapi`, where
 running, before the package manager runs, and starts them again once it has
 finished, whether the install succeeded or not. After the gate passes, a box
-with `nagent` on it waits up to 120 seconds for the agent's own update in
-`neutrino_agent_update` to end, then reinstalls its own agent from the hub's cache,
+with `nagent` on it below the target gives the agent up to 20 seconds to start
+its own update in `neutrino_agent_update` and up to 120 seconds for it to end,
+then, unless `nagent --version` names the target by then, reinstalls its own
+agent from the hub's cache,
 `/var/lib/neutrino/hub/agent_cache/`, the file the new hub hands its own machine,
 as `nhub setup` does; a failure there is written to `update.log` and leaves
 the hub `installed`. That is how the hub's own agent follows a hub whose

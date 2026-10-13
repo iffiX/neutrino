@@ -128,13 +128,14 @@ def mac(tmp_path):
     return bin_dir, directory, cache, log
 
 
-def run_mac(mac, *, rollback=True, agent_wait_s=120):
+def run_mac(mac, *, rollback=True, agent_start_s=0, agent_wait_s=120):
     bin_dir, directory, cache, log = mac
     text = render_script(
         plan_for(directory, "pkg", rollback=rollback),
         directory=directory,
         gate_timeout_s=1,
         poll_s=0.2,
+        agent_start_s=agent_start_s,
         agent_wait_s=agent_wait_s,
     )
     text = (
@@ -314,6 +315,48 @@ def test_a_mac_agent_updating_itself_is_waited_out(mac):
     assert len([line for line in asked if line.startswith("installer")]) == 1
 
 
+def test_a_mac_agent_is_given_time_to_start_its_own_update(mac):
+    """The agent logs its update a second before its job exists."""
+    bin_dir, directory, cache, log = mac
+    (cache / "neutrino-agent-0.5.1-macos-arm64.pkg").write_bytes(b"agent")
+    count = directory / "agent_asked"
+    stub(
+        bin_dir,
+        "launchctl",
+        body=f'echo "launchctl $*" >> {log}\n'
+        'case "$*" in\n'
+        '  "print system/com.neutrino.hub") echo "state = running" ;;\n'
+        f'  "print system/neutrino_agent_update") echo x >> {count}\n'
+        f"    asked=$(wc -l < {count})\n"
+        '    if [ "$asked" -le 2 ]; then exit 113;\n'
+        '    elif [ "$asked" -le 4 ]; then echo "state = running";\n'
+        f"    else echo 0.5.1 > {directory}/agent_version; fi ;;\n"
+        "esac",
+    )
+
+    _code, raw, asked = run_mac(mac, agent_start_s=10)
+
+    assert raw["steps"][-2:] == ["agent already 0.5.1", "done"]
+    assert len([line for line in asked if line.startswith("installer")]) == 1
+
+
+def test_a_mac_agent_install_that_failed_with_the_target_in_place_says_already(mac):
+    bin_dir, directory, cache, log = mac
+    (cache / "neutrino-agent-0.5.1-macos-arm64.pkg").write_bytes(b"agent")
+    stub(
+        bin_dir,
+        "installer",
+        body='case "$2" in *neutrino-agent-*) '
+        f'echo 0.5.1 > {directory}/agent_version; echo "installer: failed"; exit 1;; esac\n'
+        + installer_stub(directory, log),
+    )
+
+    _code, raw, _asked = run_mac(mac)
+
+    assert raw["stage"] == "installed"
+    assert raw["steps"][-2:] == ["agent already 0.5.1", "done"]
+
+
 # --- the Windows script ---
 
 pwsh = shutil.which("pwsh")
@@ -331,6 +374,9 @@ function Start-Process {
         return [pscustomobject]@{ ExitCode = 1618 }
     }
     if ($env:FAKE_FAILING -and $ArgumentList -like "*$env:FAKE_FAILING*") {
+        if ($env:FAKE_LEAVES_AGENT) {
+            Set-Content -LiteralPath $env:FAKE_AGENT -Value $env:FAKE_LEAVES_AGENT
+        }
         return [pscustomobject]@{ ExitCode = 1603 }
     }
     if ($ArgumentList -match '^/i .*neutrino-hub-([0-9.]+)-') {
@@ -383,6 +429,7 @@ def run_windows(
     rollback=True,
     is_agent_here=False,
     is_busy=False,
+    leaves_agent="",
 ):
     directory, root, asked = windows
     text = render_script(
@@ -390,6 +437,7 @@ def run_windows(
         directory=directory,
         gate_timeout_s=1,
         poll_s=1,
+        agent_start_s=0,
     )
     text = text.replace(
         f"'{installer_module.constants.UTILS_STATIC_ROOT / 'nhub.exe'}'",
@@ -418,6 +466,7 @@ def run_windows(
             "FAKE_FAILING": failing,
             "FAKE_PANEL_ON": panel_on,
             "FAKE_BUSY": "1" if is_busy else "",
+            "FAKE_LEAVES_AGENT": leaves_agent,
             "FAKE_HUB": str(directory / "hub_version"),
             "FAKE_AGENT": str(directory / "agent_version"),
         },
@@ -442,6 +491,7 @@ def test_a_windows_install_the_gate_passes_is_installed(windows):
         "done",
     ]
     assert raw["finished_at"].endswith("Z")
+    assert raw["output"].startswith("msiexec /i ")
     assert asked[0] == (
         f'msiexec /i "{directory}/neutrino-hub-0.5.1-windows-amd64.msi" /qn /norestart'
     )
@@ -519,3 +569,26 @@ def test_a_windows_agent_install_another_install_held_off_is_tried_again(windows
     assert raw["steps"][-2:] == ["agent updated to 0.5.1", "done"]
     agent = [line for line in asked if "neutrino-agent" in line]
     assert len(agent) == 2
+
+
+def test_a_windows_agent_install_that_failed_with_the_target_in_place_says_already(
+    windows,
+):
+    _directory, root, _asked = windows
+    (root / "agent_cache" / "neutrino-agent-0.5.1-windows-amd64.msi").write_text("")
+
+    raw, _asked = run_windows(
+        windows, is_agent_here=True, failing="neutrino-agent", leaves_agent="0.5.1"
+    )
+
+    assert raw["stage"] == "installed"
+    assert raw["steps"][-2:] == ["agent already 0.5.1", "done"]
+
+
+def test_a_windows_agent_is_given_time_to_start_its_own_update(tmp_path):
+    text = render_script(
+        plan_for(tmp_path, "msi"), directory=tmp_path, agent_start_s=20
+    )
+
+    assert "$AgentStart = 20\n" in text
+    assert "while (((Get-Date) -lt $deadline) -and -not (Test-Installer)) {" in text

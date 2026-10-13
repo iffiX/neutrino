@@ -14,6 +14,7 @@ import functools
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 
 import pytest
@@ -163,9 +164,10 @@ def test_a_newer_hub_takes_the_package_down_a_stream_and_installs_it_detached(
         ]
     ]
     script = (tmp_path / "update.sh").read_text()
+    assert f"ln -f {path} {tmp_path / 'update.deb'}" in script
     assert (
         "apt-get install -y --allow-downgrades -o DPkg::Lock::Timeout=300 "
-        f"{path}" in script
+        f"{tmp_path / 'update.deb'}" in script
     )
     assert "/usr/bin/nagent --version" in script
     assert agent._update_error is None
@@ -514,7 +516,7 @@ def test_an_rpm_update_to_another_version_is_dnf_install_alone(monkeypatch):
 
     script = what_installs("rpm", "/tmp/hub.rpm", version="0.5.2")
 
-    assert "dnf install -y /tmp/hub.rpm" in script
+    assert "dnf install -y /s/update.rpm" in script
     assert "dnf reinstall" not in script
 
 
@@ -525,15 +527,15 @@ def test_an_rpm_reinstall_of_the_running_version_is_dnf_reinstall_alone(
 
     script = what_installs("rpm", "/tmp/hub.rpm", version="0.5.2", is_reinstall=True)
 
-    assert "dnf reinstall -y /tmp/hub.rpm" in script
+    assert "dnf reinstall -y /s/update.rpm" in script
     assert "dnf install" not in script
 
 
 def test_the_rpm_command_falls_back_to_yum_without_dnf(monkeypatch):
     monkeypatch.setattr(self_update.shutil, "which", lambda name: None)
 
-    assert "yum install -y /tmp/hub.rpm" in what_installs("rpm", "/tmp/hub.rpm")
-    assert "yum reinstall -y /tmp/hub.rpm" in what_installs(
+    assert "yum install -y /s/update.rpm" in what_installs("rpm", "/tmp/hub.rpm")
+    assert "yum reinstall -y /s/update.rpm" in what_installs(
         "rpm", "/tmp/hub.rpm", is_reinstall=True
     )
 
@@ -546,13 +548,32 @@ def test_a_deb_install_is_apt_waiting_for_the_dpkg_lock():
 
     assert (
         "apt-get install -y --allow-downgrades -o DPkg::Lock::Timeout=300 "
-        "/var/lib/neutrino/agent/packages/a.deb" in update
+        "/s/update.deb" in update
     )
     assert (
         "apt-get install -y --reinstall --allow-downgrades "
-        "-o DPkg::Lock::Timeout=300 /var/lib/neutrino/agent/packages/a.deb" in reinstall
+        "-o DPkg::Lock::Timeout=300 /s/update.deb" in reinstall
     )
     assert "dpkg -i" not in update + reinstall
+
+
+@pytest.mark.parametrize("kind", ["deb", "rpm", "pkg"])
+def test_the_install_links_the_received_file_to_its_own_before_anything_waits(
+    kind,
+):
+    script = what_installs(kind, f"/var/lib/neutrino/agent/packages/a.{kind}")
+    lines = script.splitlines()
+
+    link = next(i for i, line in enumerate(lines) if line.startswith("ln -f "))
+    install = next(i for i, line in enumerate(lines) if line.startswith("( "))
+    assert lines[link] == (
+        f"ln -f /var/lib/neutrino/agent/packages/a.{kind} /s/update.{kind} "
+        f"2>/dev/null || cp -f /var/lib/neutrino/agent/packages/a.{kind} "
+        f"/s/update.{kind} >> /s/reinstall.log 2>&1"
+    )
+    assert link < install
+    assert "packages/a." not in lines[install]
+    assert f"rm -f /s/update.{kind}" in lines[install:]
 
 
 def test_the_linux_install_runs_a_script_file_in_a_transient_unit(monkeypatch):
@@ -645,6 +666,7 @@ def run_unit(
         What the result file holds, unparsed.
     """
     bin_dir = tmp_path / "bin"
+    (tmp_path / package).write_bytes(b"package")
     script = tmp_path / "update.sh"
     script.write_text(
         self_update.install_script(
@@ -725,19 +747,153 @@ def test_an_update_the_installed_agent_is_at_already_installs_nothing(
     assert not calls.exists()
 
 
+def agent_at(stubbed, tmp_path, version: str) -> None:
+    """An installed agent of this version, which a stubbed install moves."""
+    (tmp_path / "agent_version").write_text(version + "\n")
+    stub_manager(stubbed, "nagent", body=f"cat {tmp_path / 'agent_version'}")
+
+
 @pytest.mark.parametrize("kind", ["deb", "rpm", "pkg"])
 def test_an_update_from_another_version_installs(tmp_path, stubbed, kind):
-    stub_manager(stubbed, "nagent", body="echo 0.5.1")
+    agent_at(stubbed, tmp_path, "0.5.1")
     calls = tmp_path / "calls"
     for manager in ("apt-get", "dnf", "yum", "installer", "launchctl"):
-        stub_manager(stubbed, manager, body=f'echo "{manager} $*" >> {calls}')
+        stub_manager(
+            stubbed,
+            manager,
+            body=f'echo "{manager} $*" >> {calls}; '
+            f"echo 0.5.2 > {tmp_path / 'agent_version'}",
+        )
 
     written = json.loads(
         run_unit(tmp_path, kind=kind, package=f"hub.{kind}", is_reinstall=False)
     )
 
     assert written["exit_code"] == 0
-    assert f"hub.{kind}" in calls.read_text().splitlines()[0]
+    assert f"update.{kind}" in calls.read_text().splitlines()[0]
+    assert not (tmp_path / f"update.{kind}").exists()
+
+
+def test_the_install_reads_its_own_link_when_the_received_file_is_cleared(
+    tmp_path, stubbed
+):
+    """The agent another install started clears the packages directory
+    while this install waits for the lock."""
+    agent_at(stubbed, tmp_path, "0.5.1")
+    stub_manager(
+        stubbed,
+        "apt-get",
+        body=f"rm -f {tmp_path / 'hub.deb'}\n"
+        'for word in "$@"; do last=$word; done\n'
+        '[ -f "$last" ] || { echo "missing $last"; exit 100; }\n'
+        f'echo "Setting up from $last"; echo 0.5.2 > {tmp_path / "agent_version"}',
+    )
+
+    written = json.loads(run_unit(tmp_path, is_reinstall=False))
+
+    assert written["exit_code"] == 0
+    assert written["output"] == f"Setting up from {tmp_path / 'update.deb'}\n"
+    assert not (tmp_path / "update.deb").exists()
+
+
+def test_a_failed_install_that_left_the_target_in_place_is_a_success(tmp_path, stubbed):
+    """The hub's own script installed the agent while this install waited
+    for the lock; the package manager then refused or found nothing to do."""
+    agent_at(stubbed, tmp_path, "0.5.1")
+    stub_manager(
+        stubbed,
+        "apt-get",
+        body=f"echo 0.5.2 > {tmp_path / 'agent_version'}; "
+        'echo "E: Could not open file"; exit 100',
+    )
+
+    written = json.loads(run_unit(tmp_path, is_reinstall=False))
+
+    assert written["exit_code"] == 0
+    assert written["output"] == "E: Could not open file\nalready 0.5.2\n"
+
+
+def test_an_install_that_left_another_version_fails_whatever_apt_said(
+    tmp_path, stubbed
+):
+    agent_at(stubbed, tmp_path, "0.5.1")
+    stub_manager(stubbed, "apt-get", body='echo "0 upgraded"')
+
+    written = json.loads(run_unit(tmp_path, is_reinstall=False))
+
+    assert written["exit_code"] == 1
+    assert written["output"] == "0 upgraded\nfound version 0.5.1\n"
+
+
+def test_an_install_that_left_no_agent_fails_naming_none(tmp_path, stubbed):
+    stub_manager(stubbed, "apt-get", body='echo "0 upgraded"')
+
+    written = json.loads(run_unit(tmp_path, is_reinstall=False))
+
+    assert written["exit_code"] == 1
+    assert written["output"].endswith("found version none\n")
+
+
+def test_a_failed_reinstall_keeps_its_own_exit(tmp_path, stubbed):
+    agent_at(stubbed, tmp_path, "0.5.2")
+    stub_manager(stubbed, "apt-get", body="exit 100")
+
+    written = json.loads(run_unit(tmp_path, is_reinstall=True))
+
+    assert written["exit_code"] == 100
+
+
+def dnf_refusing(stubbed, tmp_path, *, times: int, refusal: str):
+    """A dnf that refuses this many times, then installs the target."""
+    calls = tmp_path / "dnf_calls"
+    stub_manager(
+        stubbed,
+        "dnf",
+        body=f'echo "$*" >> {calls}\n'
+        f'if [ "$(wc -l < {calls})" -le {times} ]; then echo "{refusal}"; exit 1; fi\n'
+        f"echo Installed; echo 0.5.2 > {tmp_path / 'agent_version'}",
+    )
+    return calls
+
+
+def test_dnf_runs_again_while_another_transaction_holds_the_rpm_lock(
+    tmp_path, stubbed, monkeypatch
+):
+    """dnf5 does not wait for the lock: it refuses at once and says so."""
+    monkeypatch.setattr(self_update.shutil, "which", lambda name: "/usr/bin/dnf")
+    agent_at(stubbed, tmp_path, "0.5.1")
+    calls = dnf_refusing(
+        stubbed,
+        tmp_path,
+        times=2,
+        refusal="Failed to obtain rpm transaction lock. "
+        "Another transaction is in progress.",
+    )
+
+    written = json.loads(
+        run_unit(tmp_path, kind="rpm", package="hub.rpm", is_reinstall=False)
+    )
+
+    assert written["exit_code"] == 0
+    assert len(calls.read_text().splitlines()) == 3
+    assert written["output"].count("rpm transaction lock") == 2
+    assert written["output"].endswith("Installed\n")
+
+
+def test_dnf_refusing_for_another_reason_is_not_run_again(
+    tmp_path, stubbed, monkeypatch
+):
+    monkeypatch.setattr(self_update.shutil, "which", lambda name: "/usr/bin/dnf")
+    agent_at(stubbed, tmp_path, "0.5.1")
+    calls = dnf_refusing(stubbed, tmp_path, times=2, refusal="No match for argument")
+
+    written = json.loads(
+        run_unit(tmp_path, kind="rpm", package="hub.rpm", is_reinstall=False)
+    )
+
+    assert written["exit_code"] == 1
+    assert len(calls.read_text().splitlines()) == 1
+    assert written["output"] == "No match for argument\n"
 
 
 def test_a_reinstall_does_not_ask_the_installed_version(tmp_path, stubbed):
@@ -997,8 +1153,121 @@ def test_the_msi_install_reads_the_installed_version_unless_a_reinstall(
     assert f"$program = '{self_update.agent_program_path()}'" in script
     assert self_update.agent_program_path().endswith("\\Neutrino\\agent\\nagent.exe")
     assert "& $program --version 2>$null | Select-Object -Last 1" in script
-    assert "if ($wanted -and $installed -eq $wanted) {" in script
+    assert "if ($wanted -and (Get-Installed) -eq $wanted) {" in script
     assert '[IO.File]::WriteAllText($log, "already $wanted`n")' in script
+
+
+def test_the_msi_waits_for_the_windows_installer_before_each_try():
+    script = what_installs("msi", "C:\\s\\packages\\a.msi")
+
+    assert "[Threading.Mutex]::TryOpenExisting('Global\\_MSIExecute', [ref]$held)" in (
+        script
+    )
+    assert "$deadline = (Get-Date).AddSeconds(300)" in script
+    assert "if ($code -eq 1618) { $code = Invoke-Install }" in script
+
+
+# --- the Windows install, run in PowerShell where there is one ---
+
+pwsh = shutil.which("pwsh")
+
+# Stands in for msiexec: each call takes the next exit code of FAKE_CODES,
+# and every call but a busy one leaves FAKE_LEAVES as the installed version.
+WINDOWS_STAND_INS = """
+function Start-Process {
+    param([string]$FilePath, [switch]$Wait, [switch]$PassThru, [switch]$NoNewWindow,
+          [string]$ArgumentList)
+    Add-Content -LiteralPath $env:FAKE_ASKED -Value "msiexec $ArgumentList"
+    $calls = @(Get-Content -LiteralPath $env:FAKE_ASKED).Count
+    $code = [int]($env:FAKE_CODES.Split(',')[$calls - 1])
+    if ($code -ne 1618 -and $env:FAKE_LEAVES) {
+        Set-Content -LiteralPath $env:FAKE_AGENT -Value $env:FAKE_LEAVES
+    }
+    return [pscustomobject]@{ ExitCode = $code }
+}
+"""
+
+
+def run_windows_install(
+    tmp_path, monkeypatch, *, codes: str, leaves: str = "", is_reinstall=False
+):
+    """Run the PowerShell the Windows install runs, msiexec stood in for.
+
+    Returns:
+        The result it wrote, as the agent reads it, and the msiexec calls.
+    """
+    if pwsh is None:
+        pytest.skip("PowerShell is not installed")
+    agent = tmp_path / "agent_version"
+    agent.write_text("0.5.1\n")
+    program = tmp_path / "nagent.exe"
+    program.write_text(f"#!/bin/sh\ncat {agent}\n")
+    program.chmod(0o755)
+    monkeypatch.setattr(self_update, "agent_program_path", lambda: str(program))
+    state_dir = str(tmp_path) + "/"
+    script = self_update.install_command(
+        "msi",
+        str(tmp_path / "neutrino-agent-0.5.2-windows-amd64.msi"),
+        state_dir=state_dir,
+        version="0.5.2",
+        is_reinstall=is_reinstall,
+    )[6]
+    driver = tmp_path / "driver.ps1"
+    driver.write_text(WINDOWS_STAND_INS + script)
+    asked = tmp_path / "asked"
+    subprocess.run(
+        [pwsh, "-NoProfile", "-NonInteractive", "-File", str(driver)],
+        capture_output=True,
+        text=True,
+        env={
+            "PATH": os.environ["PATH"],
+            "HOME": str(tmp_path),
+            "FAKE_ASKED": str(asked),
+            "FAKE_CODES": codes,
+            "FAKE_LEAVES": leaves,
+            "FAKE_AGENT": str(agent),
+        },
+    )
+    calls = asked.read_text().splitlines() if asked.exists() else []
+    return self_update.read_reinstall_result(state_dir), calls
+
+
+def test_a_windows_install_another_install_held_off_runs_once_more(
+    tmp_path, monkeypatch
+):
+    result, calls = run_windows_install(
+        tmp_path, monkeypatch, codes="1618,0", leaves="0.5.2"
+    )
+
+    assert result["exit_code"] == 0
+    assert len(calls) == 2
+
+
+def test_a_windows_install_that_failed_with_the_target_in_place_is_a_success(
+    tmp_path, monkeypatch
+):
+    result, calls = run_windows_install(
+        tmp_path, monkeypatch, codes="1603", leaves="0.5.2"
+    )
+
+    assert result["exit_code"] == 0
+    assert result["output"].endswith("already 0.5.2\n")
+    assert len(calls) == 1
+
+
+def test_a_windows_install_that_left_another_version_fails(tmp_path, monkeypatch):
+    result, _calls = run_windows_install(tmp_path, monkeypatch, codes="0")
+
+    assert result["exit_code"] == 1
+    assert result["output"].endswith("found version 0.5.1\n")
+
+
+def test_a_windows_reinstall_keeps_msiexecs_own_exit(tmp_path, monkeypatch):
+    result, _calls = run_windows_install(
+        tmp_path, monkeypatch, codes="1603", leaves="0.5.2", is_reinstall=True
+    )
+
+    assert result["exit_code"] == 1603
 
 
 def test_a_quote_in_a_path_cannot_end_the_powershell_string():
@@ -1097,7 +1366,8 @@ def test_the_pkg_is_installed_by_a_job_submitted_to_launchd():
         "/bin/sh",
         "/Library/x y/update.sh",
     ]
-    assert "installer -pkg '/tmp/agent pkg/neutrino.pkg' -target /" in script
+    assert "ln -f '/tmp/agent pkg/neutrino.pkg' '/Library/x y/update.pkg'" in script
+    assert "installer -pkg '/Library/x y/update.pkg' -target /" in script
     assert "'/Library/x y/reinstall.json'" in script
     assert "/usr/local/bin/nagent --version" in script
 

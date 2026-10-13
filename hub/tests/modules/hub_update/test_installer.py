@@ -183,23 +183,77 @@ def test_rhel_installs_another_version_and_puts_the_old_package_back_with_rpm():
     do" and exit 0."""
     install, rollback = install_commands("rhel", Path("/x/a.rpm"))
 
-    assert install == "$PACE dnf install -y /x/a.rpm"
+    assert "out=$($PACE dnf install -y /x/a.rpm 2>&1)" in install
     assert rollback == "$PACE rpm -Uvh --oldpackage /x/a.rpm"
 
 
 def test_rhel_reinstalls_only_the_version_already_installed():
     install, rollback = install_commands("rhel", Path("/x/a.rpm"), is_reinstall=True)
 
-    assert install == "$PACE dnf reinstall -y /x/a.rpm"
+    assert "out=$($PACE dnf reinstall -y /x/a.rpm 2>&1)" in install
+    assert "dnf install" not in install
     assert rollback == "$PACE rpm -Uvh --oldpackage /x/a.rpm"
 
 
 def test_a_rendered_rhel_script_reinstalls_only_the_same_version(tmp_path):
     plan = rhel_plan(tmp_path, from_version="0.3.0", to_version="0.3.1")
-    assert "( $PACE dnf install -y " in render_script(plan, directory=tmp_path)
+    text = render_script(plan, directory=tmp_path)
+    assert "( waited=0; while :; do out=$($PACE dnf install -y /" in text
 
     plan = rhel_plan(tmp_path, from_version="0.3.1", to_version="0.3.1")
-    assert "( $PACE dnf reinstall -y " in render_script(plan, directory=tmp_path)
+    text = render_script(plan, directory=tmp_path)
+    assert "( waited=0; while :; do out=$($PACE dnf reinstall -y /" in text
+
+
+def dnf_refusing(tmp_path: Path, *, times: int, refusal: str) -> tuple[Path, Path]:
+    """A dnf on a PATH of its own that refuses this many times, then installs."""
+    calls = tmp_path / "calls"
+    fake = tmp_path / "bin"
+    fake.mkdir()
+    (fake / "dnf").write_text(
+        f'#!/bin/sh\necho "dnf $*" >> {calls}\n'
+        f'[ "$(wc -l < {calls})" -le {times} ] && {{ echo "{refusal}"; exit 1; }}\n'
+        "echo Complete!\n"
+    )
+    (fake / "dnf").chmod(0o755)
+    return fake, calls
+
+
+def run_line(line: str, fake: Path) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["sh", "-c", "PACE=; " + line],
+        capture_output=True,
+        text=True,
+        env={**os.environ, "PATH": f"{fake}:{os.environ['PATH']}"},
+    )
+
+
+def test_dnf_runs_again_while_another_transaction_holds_the_rpm_lock(tmp_path):
+    """dnf5 does not wait for the lock: it refuses at once and says so."""
+    fake, calls = dnf_refusing(
+        tmp_path,
+        times=2,
+        refusal="Failed to obtain rpm transaction lock. "
+        "Another transaction is in progress.",
+    )
+    install, _ = install_commands("rhel", Path("/x/a.rpm"))
+
+    ran = run_line(install, fake)
+
+    assert ran.returncode == 0
+    assert calls.read_text().splitlines() == ["dnf install -y /x/a.rpm"] * 3
+    assert ran.stdout.count("rpm transaction lock") == 2
+    assert ran.stdout.endswith("Complete!\n")
+
+
+def test_dnf_refusing_for_another_reason_runs_once_and_keeps_its_exit(tmp_path):
+    fake, calls = dnf_refusing(tmp_path, times=2, refusal="No match for argument")
+
+    ran = run_line(installer_module.agent_install_command("rhel"), fake)
+
+    assert ran.returncode == 1
+    assert len(calls.read_text().splitlines()) == 1
+    assert ran.stdout == "No match for argument\n"
 
 
 def test_the_steps_name_the_program_each_install_ran(tmp_path):
@@ -295,7 +349,7 @@ def test_staging_downloads_the_package_and_checks_its_digest(tmp_path, roots):
     assert plan.port == 8080
     assert plan.started_at.endswith("Z")
     assert lines == [
-        "downloading neutrino-hub_0.3.1_amd64.deb  1 MB",
+        "downloading neutrino-hub_0.3.1_amd64.deb  17\u00a0B",
         "25%",
         "50%",
         "75%",
@@ -304,11 +358,32 @@ def test_staging_downloads_the_package_and_checks_its_digest(tmp_path, roots):
         "no rollback package for 0.3.0",
     ]
     assert plan.steps == (
-        "downloading neutrino-hub_0.3.1_amd64.deb  1 MB",
+        "downloading neutrino-hub_0.3.1_amd64.deb  17\u00a0B",
         "25%  50%  75%  100%",
         "checked",
         "no rollback package for 0.3.0",
     )
+
+
+MEBIBYTE = 1024 * 1024
+
+
+@pytest.mark.parametrize(
+    "size, shown",
+    [
+        (0, "0 B"),
+        (17, "17 B"),
+        (1024, "1.0 KB"),
+        (int(4.25 * MEBIBYTE), "4.3 MB"),
+        (10 * MEBIBYTE - 1, "10.0 MB"),
+        (156 * MEBIBYTE + MEBIBYTE // 2 - 1, "156 MB"),
+        (156 * MEBIBYTE + MEBIBYTE // 2, "157 MB"),
+    ],
+)
+def test_a_size_reads_as_the_panels_card_shows_it(size, shown):
+    """format_bytes.ts: steps of 1024, one decimal below ten, toFixed's
+    rounding; the number and the unit never part."""
+    assert installer_module._size_text(size) == shown.replace(" ", "\u00a0")
 
 
 def test_a_staged_plan_keeps_when_the_update_was_asked_for(tmp_path, roots):
@@ -425,7 +500,7 @@ def test_the_rollback_is_fetched_from_the_running_versions_release(tmp_path, roo
     assert plan.rollback.read_bytes() == old
     assert checker.asked == [("0.3.0", 600)]
     assert lines[-7:] == [
-        "downloading rollback neutrino-hub_0.3.0_amd64.deb  1 MB",
+        "downloading rollback neutrino-hub_0.3.0_amd64.deb  3\u00a0B",
         "25%",
         "50%",
         "75%",
@@ -434,10 +509,10 @@ def test_the_rollback_is_fetched_from_the_running_versions_release(tmp_path, roo
         "rollback package 0.3.0 ready",
     ]
     assert plan.steps == (
-        "downloading neutrino-hub_0.3.1_amd64.deb  1 MB",
+        "downloading neutrino-hub_0.3.1_amd64.deb  3\u00a0B",
         "25%  50%  75%  100%",
         "checked",
-        "downloading rollback neutrino-hub_0.3.0_amd64.deb  1 MB",
+        "downloading rollback neutrino-hub_0.3.0_amd64.deb  3\u00a0B",
         "25%  50%  75%  100%",
         "checked",
         "rollback package 0.3.0 ready",
@@ -831,8 +906,8 @@ def test_the_agent_is_installed_by_the_forward_command_naming_the_file_found():
         "$PACE apt-get install -y --reinstall --allow-downgrades "
         '-o DPkg::Lock::Timeout=300 "$AGENT"'
     )
-    assert installer_module.agent_install_command("rhel") == (
-        '$PACE dnf install -y "$AGENT"'
+    assert 'out=$($PACE dnf install -y "$AGENT" 2>&1)' in (
+        installer_module.agent_install_command("rhel")
     )
 
 
@@ -1010,7 +1085,7 @@ def test_a_windows_update_is_a_powershell_started_apart_from_the_service(
     installer.launch(system_plan(directory, "msi"))
 
     script = directory / "update.ps1"
-    assert script.read_text().startswith("# Written by neutrino_hub")
+    assert script.read_bytes().startswith(b"\xef\xbb\xbf# Written by neutrino_hub")
     assert (directory / "update.pid").read_text() == "4242"
     assert state.load().stage == "installing"
     assert "update.pid" not in script.read_text()
