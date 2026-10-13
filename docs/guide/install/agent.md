@@ -77,11 +77,11 @@ Download the agent's file for the machine from the [releases page](https://githu
    ::: code-group
 
    ```bash [Debian, Ubuntu, Raspberry Pi OS]
-   sudo apt install ./neutrino-agent_0.5.1_amd64.deb
+   sudo apt install ./neutrino-agent_0.5.2_amd64.deb
    ```
 
    ```bash [Fedora, RHEL family]
-   sudo dnf install ./neutrino-agent-0.5.1-1.x86_64.rpm
+   sudo dnf install ./neutrino-agent-0.5.2-1.x86_64.rpm
    ```
 
    :::
@@ -92,14 +92,14 @@ Download the agent's file for the machine from the [releases page](https://githu
    sudo nagent join '<enroll-link>'
    ```
 
-On ARM64 the files are `neutrino-agent_0.5.1_arm64.deb` and `neutrino-agent-0.5.1-1.aarch64.rpm`.
+On ARM64 the files are `neutrino-agent_0.5.2_arm64.deb` and `neutrino-agent-0.5.2-1.aarch64.rpm`.
 
 ### macOS
 
 1. Install the package:
 
    ```bash
-   sudo installer -pkg neutrino-agent-0.5.1-macos-arm64.pkg -target /
+   sudo installer -pkg neutrino-agent-0.5.2-macos-arm64.pkg -target /
    ```
 
 1. Join the hub:
@@ -108,11 +108,11 @@ On ARM64 the files are `neutrino-agent_0.5.1_arm64.deb` and `neutrino-agent-0.5.
    sudo nagent join '<enroll-link>'
    ```
 
-On an Intel Mac the file is `neutrino-agent-0.5.1-macos-amd64.pkg`.
+On an Intel Mac the file is `neutrino-agent-0.5.2-macos-amd64.pkg`.
 
 ### Windows
 
-1. Run `neutrino-agent-0.5.1-windows-amd64.msi`.
+1. Run `neutrino-agent-0.5.2-windows-amd64.msi`.
 1. Open a new PowerShell as administrator.
 1. Run `nagent join '<enroll-link>'`.
 

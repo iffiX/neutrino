@@ -59,24 +59,24 @@ Windows 弹出一次授权框，安装在新开的管理员窗口里进行。加
 ::: code-group
 
 ```bash [Debian、Ubuntu]
-sudo apt install ./neutrino-client_0.5.1_amd64.deb
+sudo apt install ./neutrino-client_0.5.2_amd64.deb
 ```
 
 ```bash [RHEL、AlmaLinux、Fedora]
-sudo dnf install ./neutrino-client-0.5.1-1.x86_64.rpm
+sudo dnf install ./neutrino-client-0.5.2-1.x86_64.rpm
 ```
 
 ```powershell [Windows]
-msiexec /i neutrino-client-0.5.1-windows-amd64.msi
+msiexec /i neutrino-client-0.5.2-windows-amd64.msi
 ```
 
 ```bash [macOS]
-sudo installer -pkg neutrino-client-0.5.1-macos-arm64.pkg -target /
+sudo installer -pkg neutrino-client-0.5.2-macos-arm64.pkg -target /
 ```
 
 :::
 
-64 位 ARM 的 Linux 用文件名里带 `arm64` 或 `aarch64` 的包，Intel 的 Mac 用 `neutrino-client-0.5.1-macos-amd64.pkg`。
+64 位 ARM 的 Linux 用文件名里带 `arm64` 或 `aarch64` 的包，Intel 的 Mac 用 `neutrino-client-0.5.2-macos-amd64.pkg`。
 
 ::: warning
 `dpkg -i` 和 `rpm -i` 不装依赖。已经用了的话，Debian 系运行 `sudo apt -f install`，RHEL 系用 `sudo dnf install` 装上它列出的包。
@@ -92,7 +92,7 @@ macOS 上，**Neutrino Client** 装进 `/Applications`。这个应用只有临�
 
 ## 装安卓 App
 
-1. 在手机上从发布页下载 `neutrino-client-0.5.1-android.apk`。
+1. 在手机上从发布页下载 `neutrino-client-0.5.2-android.apk`。
 1. 打开这个文件。Android 提示时，允许浏览器或文件管理器安装应用。
 1. 选 **安装**，装好后打开 **微子**。
 
@@ -101,7 +101,7 @@ macOS 上，**Neutrino Client** 装进 `/Applications`。这个应用只有临�
 要核对 apk 的签名，在装有 Android SDK 构建工具的电脑上运行：
 
 ```bash
-apksigner verify --print-certs neutrino-client-0.5.1-android.apk
+apksigner verify --print-certs neutrino-client-0.5.2-android.apk
 ```
 
 ```text

@@ -80,7 +80,7 @@ nclient status
 ```
 
 ```text
-neutrino-client 0.5.1
+neutrino-client 0.5.2
 hub        hub  https://192.168.100.1:8443  Connected · LAN · 12 ms  exit
 resident   running
 ```
@@ -107,7 +107,7 @@ resident   running
     }
   ],
   "is_running": true,
-  "version": "0.5.1"
+  "version": "0.5.2"
 }
 ```
 

@@ -4,7 +4,7 @@ title: 支持的平台
 
 # 支持的平台
 
-微子 0.5.1 的中枢、被控端、桌面客户端和 Android 应用，各自装在下表列出的系统上，每一行对应发布页上的一个文件。完整版的文件在 [GitHub 发布页](https://github.com/iffiX/neutrino/releases)上，旁边有 `SHA256SUMS` 和源码包。所有组件都只有 64 位版本。
+微子 0.5.2 的中枢、被控端、桌面客户端和 Android 应用，各自装在下表列出的系统上，每一行对应发布页上的一个文件。完整版的文件在 [GitHub 发布页](https://github.com/iffiX/neutrino/releases)上，旁边有 `SHA256SUMS` 和源码包。所有组件都只有 64 位版本。
 
 ## 每个包装在哪、以谁运行
 
@@ -23,14 +23,14 @@ LocalSystem 是 Windows 自己的系统账户，面板和客户端上写作 SYST
 
 | 系统                                                                         | 架构   | 文件                                      |
 | ---------------------------------------------------------------------------- | ------ | ----------------------------------------- |
-| Debian 12 及以上，Ubuntu 22.04 及以上，Raspberry Pi OS 64 位 bookworm 及以上 | x86-64 | `neutrino-hub_0.5.1_amd64.deb`            |
-| 同上                                                                         | ARM64  | `neutrino-hub_0.5.1_arm64.deb`            |
-| Fedora 41 及以上；RHEL 9 系，例如 AlmaLinux、Rocky，先启用 EPEL              | x86-64 | `neutrino-hub-0.5.1-1.x86_64.rpm`         |
-| 同上                                                                         | ARM64  | `neutrino-hub-0.5.1-1.aarch64.rpm`        |
-| Arch、EndeavourOS、Manjaro                                                   | x86-64 | `neutrino-hub-0.5.1-1-x86_64.pkg.tar.zst` |
-| Windows 10 1809 及以上，Windows 11，只有服务器模式                           | x86-64 | `neutrino-hub-0.5.1-windows-amd64.msi`    |
-| Apple 芯片上的 macOS 12.3 及以上，只有服务器模式                             | ARM64  | `neutrino-hub-0.5.1-macos-arm64.pkg`      |
-| Intel 芯片上的 macOS 12.3 及以上，只有服务器模式                             | x86-64 | `neutrino-hub-0.5.1-macos-amd64.pkg`      |
+| Debian 12 及以上，Ubuntu 22.04 及以上，Raspberry Pi OS 64 位 bookworm 及以上 | x86-64 | `neutrino-hub_0.5.2_amd64.deb`            |
+| 同上                                                                         | ARM64  | `neutrino-hub_0.5.2_arm64.deb`            |
+| Fedora 41 及以上；RHEL 9 系，例如 AlmaLinux、Rocky，先启用 EPEL              | x86-64 | `neutrino-hub-0.5.2-1.x86_64.rpm`         |
+| 同上                                                                         | ARM64  | `neutrino-hub-0.5.2-1.aarch64.rpm`        |
+| Arch、EndeavourOS、Manjaro                                                   | x86-64 | `neutrino-hub-0.5.2-1-x86_64.pkg.tar.zst` |
+| Windows 10 1809 及以上，Windows 11，只有服务器模式                           | x86-64 | `neutrino-hub-0.5.2-windows-amd64.msi`    |
+| Apple 芯片上的 macOS 12.3 及以上，只有服务器模式                             | ARM64  | `neutrino-hub-0.5.2-macos-arm64.pkg`      |
+| Intel 芯片上的 macOS 12.3 及以上，只有服务器模式                             | x86-64 | `neutrino-hub-0.5.2-macos-amd64.pkg`      |
 
 Linux 上的中枢包自带 Python 环境，不动系统装的任何东西，其余依赖都写在包里：systemd、nftables、dnsmasq、iproute2、wpa_supplicant、dhcpcd、fail2ban、iw、arp-scan、vnstat、curl、smbclient、OpenSSH 客户端和 pkexec。要发 Wi-Fi 的机器还推荐装 hostapd。Debian 系上 dhcpcd 写作 `dhcpcd-base | dhcpcd5`，因为 Ubuntu 22.04 上这个程序叫后一个名字；pkexec 写作 `pkexec | policykit-1`。RHEL 9 系的 fail2ban、arp-scan 和 vnstat 在 EPEL 里。
 
@@ -40,13 +40,13 @@ Windows 和 macOS 上的中枢只运行 **服务器** 模式：只在机器所�
 
 | 系统                                                         | 架构   | 文件                                     |
 | ------------------------------------------------------------ | ------ | ---------------------------------------- |
-| Debian 12 及以上，Ubuntu 22.04 及以上，Raspberry Pi OS 64 位 | x86-64 | `neutrino-agent_0.5.1_amd64.deb`         |
-| 同上                                                         | ARM64  | `neutrino-agent_0.5.1_arm64.deb`         |
-| Fedora 41 及以上；RHEL 9 系                                  | x86-64 | `neutrino-agent-0.5.1-1.x86_64.rpm`      |
-| 同上                                                         | ARM64  | `neutrino-agent-0.5.1-1.aarch64.rpm`     |
-| Windows 10 1809 及以上，Windows 11                           | x86-64 | `neutrino-agent-0.5.1-windows-amd64.msi` |
-| Apple 芯片上的 macOS 12.3 及以上                             | ARM64  | `neutrino-agent-0.5.1-macos-arm64.pkg`   |
-| Intel 芯片上的 macOS 12.3 及以上                             | x86-64 | `neutrino-agent-0.5.1-macos-amd64.pkg`   |
+| Debian 12 及以上，Ubuntu 22.04 及以上，Raspberry Pi OS 64 位 | x86-64 | `neutrino-agent_0.5.2_amd64.deb`         |
+| 同上                                                         | ARM64  | `neutrino-agent_0.5.2_arm64.deb`         |
+| Fedora 41 及以上；RHEL 9 系                                  | x86-64 | `neutrino-agent-0.5.2-1.x86_64.rpm`      |
+| 同上                                                         | ARM64  | `neutrino-agent-0.5.2-1.aarch64.rpm`     |
+| Windows 10 1809 及以上，Windows 11                           | x86-64 | `neutrino-agent-0.5.2-windows-amd64.msi` |
+| Apple 芯片上的 macOS 12.3 及以上                             | ARM64  | `neutrino-agent-0.5.2-macos-arm64.pkg`   |
+| Intel 芯片上的 macOS 12.3 及以上                             | x86-64 | `neutrino-agent-0.5.2-macos-amd64.pkg`   |
 
 被控端没有窗口，不监听任何端口。Linux 上的包带着自己的解释器和 RustDesk 主机端。Windows 和 macOS 的安装程序带着编译好的被控端，RustDesk 放在被控端自己的目录里，机器的 **远程桌面** 开关打开时，被控端才登记它。
 
@@ -56,13 +56,13 @@ Windows 版只有 x86-64，因为 RustDesk 没有发布 Windows ARM64 版本。�
 
 | 系统                                                              | 架构   | 文件                                      |
 | ----------------------------------------------------------------- | ------ | ----------------------------------------- |
-| Debian 12 及以上，Ubuntu 22.04 及以上，带桌面会话                 | x86-64 | `neutrino-client_0.5.1_amd64.deb`         |
-| 同上                                                              | ARM64  | `neutrino-client_0.5.1_arm64.deb`         |
-| RHEL 9 系，例如 AlmaLinux、Rocky，和 Fedora 41 及以上，带桌面会话 | x86-64 | `neutrino-client-0.5.1-1.x86_64.rpm`      |
-| 同上                                                              | ARM64  | `neutrino-client-0.5.1-1.aarch64.rpm`     |
-| Windows 10 1809 及以上，Windows 11                                | x86-64 | `neutrino-client-0.5.1-windows-amd64.msi` |
-| Apple 芯片上的 macOS 12.3 及以上                                  | ARM64  | `neutrino-client-0.5.1-macos-arm64.pkg`   |
-| Intel 芯片上的 macOS 12.3 及以上                                  | x86-64 | `neutrino-client-0.5.1-macos-amd64.pkg`   |
+| Debian 12 及以上，Ubuntu 22.04 及以上，带桌面会话                 | x86-64 | `neutrino-client_0.5.2_amd64.deb`         |
+| 同上                                                              | ARM64  | `neutrino-client_0.5.2_arm64.deb`         |
+| RHEL 9 系，例如 AlmaLinux、Rocky，和 Fedora 41 及以上，带桌面会话 | x86-64 | `neutrino-client-0.5.2-1.x86_64.rpm`      |
+| 同上                                                              | ARM64  | `neutrino-client-0.5.2-1.aarch64.rpm`     |
+| Windows 10 1809 及以上，Windows 11                                | x86-64 | `neutrino-client-0.5.2-windows-amd64.msi` |
+| Apple 芯片上的 macOS 12.3 及以上                                  | ARM64  | `neutrino-client-0.5.2-macos-arm64.pkg`   |
+| Intel 芯片上的 macOS 12.3 及以上                                  | x86-64 | `neutrino-client-0.5.2-macos-amd64.pkg`   |
 
 Linux 客户端的窗口用 WebKitGTK，4.1 和 4.0 两种接口都行；挂载共享要用 `cifs-utils` 和 polkit。缺 appindicator 库时，托盘图标改用 GTK 状态图标画出。Windows 上的窗口用 WebView2 运行时，系统缺它时安装程序装上它。Windows 版只有 x86-64，因为 cc-switch 没有发布 Windows ARM64 版本。
 
@@ -70,7 +70,7 @@ Linux 客户端的窗口用 WebKitGTK，4.1 和 4.0 两种接口都行；挂载�
 
 | 系统               | 架构      | 文件                                |
 | ------------------ | --------- | ----------------------------------- |
-| Android 8.0 及以上 | arm64-v8a | `neutrino-client-0.5.1-android.apk` |
+| Android 8.0 及以上 | arm64-v8a | `neutrino-client-0.5.2-android.apk` |
 
 Android 8.0 对应 API 级别 26，即应用声明的 `minSdk`；更旧的手机上，系统的安装程序直接拒装。
 
@@ -87,15 +87,15 @@ Android 8.0 对应 API 级别 26，即应用声明的 `minSdk`；更旧的手机
 
 ## 协议号
 
-包和包之间要对上的是协议号，包的版本号不参与。0.5.1 的每个包都用协议 3，中枢只接受协议 3 的被控端和客户端。
+包和包之间要对上的是协议号，包的版本号不参与。0.5.2 的每个包都用协议 3，中枢只接受协议 3 的被控端和客户端。
 
 | 协议号 | 首个版本 |
 | ------ | -------- |
 | 1      | 0.3.0    |
 | 2      | 0.4.0    |
-| 3      | 0.5.1    |
+| 3      | 0.5.2    |
 
-所以 0.3 和 0.4 的被控端和客户端连不上 0.5.1 的中枢，0.5.1 的被控端和客户端也连不上 0.4 的中枢。0.4 的中枢不能升级到 0.5.1：全新安装 0.5.1 的中枢，每台机器装 0.5.1 的包，再用新链接加入。屏幕上看到的原因和处理，见[故障排查](./troubleshooting.md#中枢拒绝被控端或客户端)；协议号在通道上怎么核对，见[通道](../protocol/channel.md#协议号)。
+所以 0.3 和 0.4 的被控端和客户端连不上 0.5.2 的中枢，0.5.2 的被控端和客户端也连不上 0.4 的中枢。0.4 的中枢不能升级到 0.5.2：全新安装 0.5.2 的中枢，每台机器装 0.5.2 的包，再用新链接加入。屏幕上看到的原因和处理，见[故障排查](./troubleshooting.md#中枢拒绝被控端或客户端)；协议号在通道上怎么核对，见[通道](../protocol/channel.md#协议号)。
 
 ## 各系统能用的模块
 

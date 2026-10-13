@@ -78,7 +78,7 @@ nclient terminal stop server 3f2a
 ## What status prints
 
 ```text
-neutrino-client 0.5.1
+neutrino-client 0.5.2
 hub        hub  https://192.168.100.1:8443  Connected · LAN · 12 ms  exit
 resident   running
 ```
@@ -105,7 +105,7 @@ The exit status is 0 while the client runs and every hub is connected, and 1 oth
     }
   ],
   "is_running": true,
-  "version": "0.5.1"
+  "version": "0.5.2"
 }
 ```
 

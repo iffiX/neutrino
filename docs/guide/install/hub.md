@@ -72,25 +72,25 @@ Install the file with the system's package manager:
 ::: code-group
 
 ```bash [Debian, Ubuntu, Raspberry Pi OS]
-sudo apt install ./neutrino-hub_0.5.1_amd64.deb
+sudo apt install ./neutrino-hub_0.5.2_amd64.deb
 ```
 
 ```bash [Fedora]
-sudo dnf install ./neutrino-hub-0.5.1-1.x86_64.rpm
+sudo dnf install ./neutrino-hub-0.5.2-1.x86_64.rpm
 ```
 
 ```bash [RHEL, AlmaLinux, Rocky]
 sudo dnf install -y epel-release
-sudo dnf install ./neutrino-hub-0.5.1-1.x86_64.rpm
+sudo dnf install ./neutrino-hub-0.5.2-1.x86_64.rpm
 ```
 
 ```bash [Arch, EndeavourOS, Manjaro]
-sudo pacman -U neutrino-hub-0.5.1-1-x86_64.pkg.tar.zst
+sudo pacman -U neutrino-hub-0.5.2-1-x86_64.pkg.tar.zst
 ```
 
 :::
 
-On ARM64 the files are `neutrino-hub_0.5.1_arm64.deb` and `neutrino-hub-0.5.1-1.aarch64.rpm`; the Arch package is for x86-64 only. The RHEL family needs EPEL for fail2ban, arp-scan and vnstat.
+On ARM64 the files are `neutrino-hub_0.5.2_arm64.deb` and `neutrino-hub-0.5.2-1.aarch64.rpm`; the Arch package is for x86-64 only. The RHEL family needs EPEL for fail2ban, arp-scan and vnstat.
 
 ::: warning
 Install with `apt`, `dnf` or `pacman`. `dpkg -i` and `rpm -i` install none of the dependencies; after `dpkg -i`, run `sudo apt -f install` to finish.
@@ -101,17 +101,17 @@ Install with `apt`, `dnf` or `pacman`. `dpkg -i` and `rpm -i` install none of th
 Install the package from a terminal:
 
 ```bash
-sudo installer -pkg neutrino-hub-0.5.1-macos-arm64.pkg -target /
+sudo installer -pkg neutrino-hub-0.5.2-macos-arm64.pkg -target /
 ```
 
-On an Intel Mac the file is `neutrino-hub-0.5.1-macos-amd64.pkg`.
+On an Intel Mac the file is `neutrino-hub-0.5.2-macos-amd64.pkg`.
 
 ### Windows
 
-Open `neutrino-hub-0.5.1-windows-amd64.msi`. For a silent install, run this in PowerShell as administrator:
+Open `neutrino-hub-0.5.2-windows-amd64.msi`. For a silent install, run this in PowerShell as administrator:
 
 ```powershell
-msiexec /i neutrino-hub-0.5.1-windows-amd64.msi /qn
+msiexec /i neutrino-hub-0.5.2-windows-amd64.msi /qn
 ```
 
 ## Open the wizard

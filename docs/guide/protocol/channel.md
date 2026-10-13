@@ -4,7 +4,7 @@ title: The channel
 
 # The channel
 
-The channel is the one WebSocket a hub keeps with each machine it manages, at protocol 3 from Neutrino 0.5.1. Two roles use it: `agent`, the service on a managed machine, and `client`, a person's desktop client or phone app. This page lists the vocabulary a program written outside this repository speaks. It covers the link, the pin, the two HTTP endpoints, the frames, the streams, the documents each role exchanges, and the codes.
+The channel is the one WebSocket a hub keeps with each machine it manages, at protocol 3 from Neutrino 0.5.2. Two roles use it: `agent`, the service on a managed machine, and `client`, a person's desktop client or phone app. This page lists the vocabulary a program written outside this repository speaks. It covers the link, the pin, the two HTTP endpoints, the frames, the streams, the documents each role exchanges, and the codes.
 
 ## The port and the pin
 
@@ -97,7 +97,7 @@ The first frame each way is an identity card of one shape. `hello` goes up withi
 | `role`     | `agent` or `client`                               | `hub`                            |
 | `id`       | the binding id                                    | the hub's own id, a uuid         |
 | `name`     | the hostname, or the binding's name               | the hub's name from **Settings** |
-| `software` | `neutrino_agent/0.5.1` or `neutrino_client/0.5.1` | `neutrino_hub/0.5.1`             |
+| `software` | `neutrino_agent/0.5.2` or `neutrino_client/0.5.2` | `neutrino_hub/0.5.2`             |
 | `token`    | the binding token                                 | absent                           |
 
 A client joined to several hubs groups them by the hub's `id` and labels them by its `name`. A rejected `hello` gets `refused {code, params}` and close 4000. `hello_invalid` marks a first frame that is late, binary, of another type, or unreadable, and `channel_full {limit}` a port that already holds its most admitted sockets.
@@ -406,8 +406,8 @@ Each build declares one integer, `PROTOCOL`, and package versions take no part i
 | ---------- | ----------- |
 | 1          | 0.3.0       |
 | 2          | 0.4.0       |
-| 3          | 0.5.1       |
+| 3          | 0.5.2       |
 
-`PROTOCOL_MIN` is 3 from 0.5.1. Protocol 3 renamed the link's and the client state's `overlay`, one object or null, to `overlays`, a list. A 0.3 or 0.4 agent or client is rejected with `protocol_too_old` and does not update itself from a 0.5.1 hub. Each such machine installs the 0.5.1 package and joins with a new link.
+`PROTOCOL_MIN` is 3 from 0.5.2. Protocol 3 renamed the link's and the client state's `overlay`, one object or null, to `overlays`, a list. A 0.3 or 0.4 agent or client is rejected with `protocol_too_old` and does not update itself from a 0.5.2 hub. Each such machine installs the 0.5.2 package and joins with a new link.
 
 Reading is tolerant and writing is strict. An unknown field is ignored, an unknown kind closes with `kind_unknown`, and a program sends only what its own number defines. Adding a kind, a field or a code keeps the number. Removing anything, changing its meaning, or changing the link, the ticket, the pin or the words `hello`, `state`, `report` and `open` raises it by one.

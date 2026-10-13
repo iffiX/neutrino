@@ -77,7 +77,7 @@ Each device joins with a link of its own from the panel's **Clients** page, vali
 
 ### From the phone
 
-1. On the phone, download `https://github.com/iffiX/neutrino/releases/download/v0.5.1/neutrino-client-0.5.1-android.apk`.
+1. On the phone, download `https://github.com/iffiX/neutrino/releases/download/v0.5.2/neutrino-client-0.5.2-android.apk`.
 1. Open the file and select **Install**. If Android shows a prompt first, allow your browser to install apps.
 1. Open **Neutrino**.
 1. In the panel, open **Clients**, then select **New client link**.

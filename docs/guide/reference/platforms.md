@@ -4,20 +4,20 @@ title: Supported platforms
 
 # Supported platforms
 
-Each part of Neutrino 0.5.1 has a section here with the systems it installs on and its release files. Every file is on the [releases page](https://github.com/iffiX/neutrino/releases), beside `SHA256SUMS` and the source archive. Every build is 64-bit.
+Each part of Neutrino 0.5.2 has a section here with the systems it installs on and its release files. Every file is on the [releases page](https://github.com/iffiX/neutrino/releases), beside `SHA256SUMS` and the source archive. Every build is 64-bit.
 
 ## Hub
 
 | System                                                                                   | Architecture | File                                      |
 | ---------------------------------------------------------------------------------------- | ------------ | ----------------------------------------- |
-| Debian 12 and newer, Ubuntu 22.04 and newer, Raspberry Pi OS 64-bit, bookworm and newer  | x86-64       | `neutrino-hub_0.5.1_amd64.deb`            |
-| the same                                                                                 | ARM64        | `neutrino-hub_0.5.1_arm64.deb`            |
-| Fedora 41 and newer; RHEL 9 family, such as AlmaLinux and Rocky, with EPEL enabled first | x86-64       | `neutrino-hub-0.5.1-1.x86_64.rpm`         |
-| the same                                                                                 | ARM64        | `neutrino-hub-0.5.1-1.aarch64.rpm`        |
-| Arch, EndeavourOS, Manjaro                                                               | x86-64       | `neutrino-hub-0.5.1-1-x86_64.pkg.tar.zst` |
-| Windows 10 1809 and newer, Windows 11, server mode only                                  | x86-64       | `neutrino-hub-0.5.1-windows-amd64.msi`    |
-| macOS 12.3 and newer on Apple silicon, server mode only                                  | ARM64        | `neutrino-hub-0.5.1-macos-arm64.pkg`      |
-| macOS 12.3 and newer on Intel, server mode only                                          | x86-64       | `neutrino-hub-0.5.1-macos-amd64.pkg`      |
+| Debian 12 and newer, Ubuntu 22.04 and newer, Raspberry Pi OS 64-bit, bookworm and newer  | x86-64       | `neutrino-hub_0.5.2_amd64.deb`            |
+| the same                                                                                 | ARM64        | `neutrino-hub_0.5.2_arm64.deb`            |
+| Fedora 41 and newer; RHEL 9 family, such as AlmaLinux and Rocky, with EPEL enabled first | x86-64       | `neutrino-hub-0.5.2-1.x86_64.rpm`         |
+| the same                                                                                 | ARM64        | `neutrino-hub-0.5.2-1.aarch64.rpm`        |
+| Arch, EndeavourOS, Manjaro                                                               | x86-64       | `neutrino-hub-0.5.2-1-x86_64.pkg.tar.zst` |
+| Windows 10 1809 and newer, Windows 11, server mode only                                  | x86-64       | `neutrino-hub-0.5.2-windows-amd64.msi`    |
+| macOS 12.3 and newer on Apple silicon, server mode only                                  | ARM64        | `neutrino-hub-0.5.2-macos-arm64.pkg`      |
+| macOS 12.3 and newer on Intel, server mode only                                          | x86-64       | `neutrino-hub-0.5.2-macos-amd64.pkg`      |
 
 The Linux hub package includes its own Python. It depends on systemd, nftables, dnsmasq, iproute2, wpa_supplicant, dhcpcd, fail2ban, iw, arp-scan, vnstat, curl, smbclient, the OpenSSH client and pkexec. It recommends hostapd for a machine that serves Wi-Fi.
 
@@ -27,13 +27,13 @@ On the Debian family the dhcpcd dependency reads `dhcpcd-base | dhcpcd5`, becaus
 
 | System                                                              | Architecture | File                                     |
 | ------------------------------------------------------------------- | ------------ | ---------------------------------------- |
-| Debian 12 and newer, Ubuntu 22.04 and newer, Raspberry Pi OS 64-bit | x86-64       | `neutrino-agent_0.5.1_amd64.deb`         |
-| the same                                                            | ARM64        | `neutrino-agent_0.5.1_arm64.deb`         |
-| Fedora 41 and newer; RHEL 9 family                                  | x86-64       | `neutrino-agent-0.5.1-1.x86_64.rpm`      |
-| the same                                                            | ARM64        | `neutrino-agent-0.5.1-1.aarch64.rpm`     |
-| Windows 10 1809 and newer, Windows 11                               | x86-64       | `neutrino-agent-0.5.1-windows-amd64.msi` |
-| macOS 12.3 and newer on Apple silicon                               | ARM64        | `neutrino-agent-0.5.1-macos-arm64.pkg`   |
-| macOS 12.3 and newer on Intel                                       | x86-64       | `neutrino-agent-0.5.1-macos-amd64.pkg`   |
+| Debian 12 and newer, Ubuntu 22.04 and newer, Raspberry Pi OS 64-bit | x86-64       | `neutrino-agent_0.5.2_amd64.deb`         |
+| the same                                                            | ARM64        | `neutrino-agent_0.5.2_arm64.deb`         |
+| Fedora 41 and newer; RHEL 9 family                                  | x86-64       | `neutrino-agent-0.5.2-1.x86_64.rpm`      |
+| the same                                                            | ARM64        | `neutrino-agent-0.5.2-1.aarch64.rpm`     |
+| Windows 10 1809 and newer, Windows 11                               | x86-64       | `neutrino-agent-0.5.2-windows-amd64.msi` |
+| macOS 12.3 and newer on Apple silicon                               | ARM64        | `neutrino-agent-0.5.2-macos-arm64.pkg`   |
+| macOS 12.3 and newer on Intel                                       | x86-64       | `neutrino-agent-0.5.2-macos-amd64.pkg`   |
 
 The agent has no window. Its Linux package includes its own interpreter and the RustDesk host.
 
@@ -43,13 +43,13 @@ The Windows and macOS installers put RustDesk in the agent's own directory. The 
 
 | System                                                                                      | Architecture | File                                      |
 | ------------------------------------------------------------------------------------------- | ------------ | ----------------------------------------- |
-| Debian 12 and newer, Ubuntu 22.04 and newer, with a desktop session                         | x86-64       | `neutrino-client_0.5.1_amd64.deb`         |
-| the same                                                                                    | ARM64        | `neutrino-client_0.5.1_arm64.deb`         |
-| RHEL 9 family, such as AlmaLinux and Rocky, and Fedora 41 and newer, with a desktop session | x86-64       | `neutrino-client-0.5.1-1.x86_64.rpm`      |
-| the same                                                                                    | ARM64        | `neutrino-client-0.5.1-1.aarch64.rpm`     |
-| Windows 10 1809 and newer, Windows 11                                                       | x86-64       | `neutrino-client-0.5.1-windows-amd64.msi` |
-| macOS 12.3 and newer on Apple silicon                                                       | ARM64        | `neutrino-client-0.5.1-macos-arm64.pkg`   |
-| macOS 12.3 and newer on Intel                                                               | x86-64       | `neutrino-client-0.5.1-macos-amd64.pkg`   |
+| Debian 12 and newer, Ubuntu 22.04 and newer, with a desktop session                         | x86-64       | `neutrino-client_0.5.2_amd64.deb`         |
+| the same                                                                                    | ARM64        | `neutrino-client_0.5.2_arm64.deb`         |
+| RHEL 9 family, such as AlmaLinux and Rocky, and Fedora 41 and newer, with a desktop session | x86-64       | `neutrino-client-0.5.2-1.x86_64.rpm`      |
+| the same                                                                                    | ARM64        | `neutrino-client-0.5.2-1.aarch64.rpm`     |
+| Windows 10 1809 and newer, Windows 11                                                       | x86-64       | `neutrino-client-0.5.2-windows-amd64.msi` |
+| macOS 12.3 and newer on Apple silicon                                                       | ARM64        | `neutrino-client-0.5.2-macos-arm64.pkg`   |
+| macOS 12.3 and newer on Intel                                                               | x86-64       | `neutrino-client-0.5.2-macos-amd64.pkg`   |
 
 The Linux client opens its window on either WebKitGTK ABI, 4.1 or 4.0, and needs `cifs-utils` and polkit for shares. Without the AppIndicator library, the tray is drawn as a GTK status icon. The Windows build is x86-64 only, because cc-switch publishes no Windows ARM64 build, and its installer adds WebView2 when the runtime is absent.
 
@@ -57,7 +57,7 @@ The Linux client opens its window on either WebKitGTK ABI, 4.1 or 4.0, and needs
 
 | System                | Architecture | File                                |
 | --------------------- | ------------ | ----------------------------------- |
-| Android 8.0 and newer | arm64-v8a    | `neutrino-client-0.5.1-android.apk` |
+| Android 8.0 and newer | arm64-v8a    | `neutrino-client-0.5.2-android.apk` |
 
 Android 8.0 is API level 26, the `minSdk` the app declares, and the phone's installer rejects the app on an older system.
 
@@ -74,7 +74,7 @@ Android 8.0 is API level 26, the `minSdk` the app declares, and the phone's inst
 
 ## Versions and protocol
 
-Every part of one release speaks the same protocol number, and every 0.5.1 build speaks protocol 3. A 0.5.1 hub admits protocol 3 alone. It rejects a 0.3 or 0.4 agent or client, which speaks protocol 1 or 2, and a program with a newer protocol. The rejected program keeps its binding. An agent the hub admits updates itself when the hub names a newer version, and a 0.3 or 0.4 agent does not.
+Every part of one release speaks the same protocol number, and every 0.5.2 build speaks protocol 3. A 0.5.2 hub admits protocol 3 alone. It rejects a 0.3 or 0.4 agent or client, which speaks protocol 1 or 2, and a program with a newer protocol. The rejected program keeps its binding. An agent the hub admits updates itself when the hub names a newer version, and a 0.3 or 0.4 agent does not.
 
 [The channel](../protocol/channel.md#protocol-numbers) lists the protocol numbers.
 
