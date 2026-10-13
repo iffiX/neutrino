@@ -28,7 +28,7 @@ A small tool I made so I could travel.
 
 ## What it does
 
-- **AI sessions**: CloudCLI on a machine at home, picked up on your phone.
+- **AI sessions**: CloudCLI and Codeg on a machine at home, picked up on your phone.
 - **Editors**: VS Code and code-server, opened in the browser.
 - **Terminals**: kept and shared, the same session on several devices.
 - **Remote desktop**: one tap.
@@ -180,6 +180,7 @@ Where this project is announced and discussed:
 - [cc-switch](https://github.com/SaladDay/cc-switch-cli), which points Claude Code, Codex and Gemini CLI at the gateway
 - [RustDesk](https://github.com/rustdesk/rustdesk), the remote desktop host and viewer
 - [CloudCLI](https://github.com/siteboon/claudecodeui), AI coding sessions in the browser
+- [Codeg](https://github.com/spacering-net/codeg), AI coding sessions in the browser, with Claude Code, Codex, Gemini CLI and a dozen more agents behind one page
 - [code-server](https://github.com/coder/code-server), VS Code in the browser
 - [Gitea](https://github.com/go-gitea/gitea), the private git server
 - [Samba](https://www.samba.org/), the SMB shares

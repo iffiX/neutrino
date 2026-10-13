@@ -28,7 +28,7 @@
 
 ## 它能做什么
 
-- **AI 会话**：家里机器上的 CloudCLI，手机上接着聊。
+- **AI 会话**：家里机器上的 CloudCLI 和 Codeg，手机上接着聊。
 - **编辑器**：VS Code、code-server 在浏览器里打开。
 - **终端**：保持、共享，几台设备同一个会话。
 - **远程桌面**：点一下。
@@ -180,6 +180,7 @@ macOS 的命令和每一步留下什么，见文档站的[卸载](https://neutri
 - [cc-switch](https://github.com/SaladDay/cc-switch-cli)：切换 Claude Code、Codex 和 Gemini CLI 的配置
 - [RustDesk](https://github.com/rustdesk/rustdesk)：远程桌面的主机和查看器
 - [CloudCLI](https://github.com/siteboon/claudecodeui)：浏览器里的 AI 编程会话
+- [Codeg](https://github.com/spacering-net/codeg)：浏览器里的 AI 编程会话，Claude Code、Codex、Gemini CLI 等十几个 agent 共用一个页面
 - [code-server](https://github.com/coder/code-server)：浏览器里的 VS Code
 - [Gitea](https://github.com/go-gitea/gitea)：私有 git 服务器
 - [Samba](https://www.samba.org/)：SMB 共享
