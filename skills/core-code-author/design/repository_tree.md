@@ -55,7 +55,9 @@ hub/
                      site-packages can collide with anything else.
     modules/<name>/    One feature module each. See the shape below.
     system/            How this box's own OS is driven: systemd, a pty shell,
-                       the package manager, vnstat, listening sockets.
+                       the package manager, vnstat, listening sockets, and
+                       windows_net.py, the network Windows reports through
+                       iphlpapi.
     web/               The FastAPI panel over the modules: routers/, auth,
                        models, the shared PanelRuntime, the websockets.
     cli/               Every entry point behind `nhub`, one file per
@@ -113,11 +115,14 @@ agent/
     ai_tools/        The machine's AI tools: cc-switch run as each account the
                      hub names, the client's steps, the records per tool.
     platforms/       The OS layer: linux.py, windows.py and darwin.py behind
-                     one contract, with win32.py the one Win32 binding and
-                     windows_service.py the service control manager's side.
+                     one contract, with win32.py the one Win32 binding,
+                     windows_service.py the service control manager's side,
+                     windows_net.py the network iphlpapi reports, and
+                     powershell_host.py the one resident PowerShell host.
     exceptions.py    The package's one exception table; the channel kinds
                      are the copy the client keeps too.
-    data/            Ships inside the package: systemd/ its unit.
+    data/            Ships inside the package: systemd/ its unit, windows/
+                     powershell_host.ps1 the PowerShell host's functions.
   packaging/         Its .deb and .rpm builders and the payload every
                      package stages, the .msi and .pkg included.
   tests/
