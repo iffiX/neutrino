@@ -210,10 +210,11 @@ packaging/
                      natively; build_core_<core>.py for each core the phones
                      carry; build_sources.py, build_checksums.py and
                      build_docs.py.
-  ci/                What only the release workflow runs: check.py installs
-                     a built package where it runs and checks it works;
+  ci/                What only the workflows run: check.py installs a
+                     built package where it runs and checks it works;
                      publish_cn.py publishes the mainland release on
-                     Gitee.
+                     Gitee; count_tests.py writes the test counts the
+                     docs build serves for the README's badge.
   install/           install.sh for macOS and Linux and install.ps1 for
                      Windows: the one-command installers a release
                      publishes.
