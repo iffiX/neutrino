@@ -32,7 +32,7 @@ state, so the agent is handed conclusions and holds no manifest logic
 | `platforms.<os>-<arch>` | one entry per platform the module runs on; a platform with no entry cannot run the module, and the Modules page greys it out ([protocol.md](../../protocol.md), "The modules section, one entry per module") |
 | `url`, `sha256`, `package_kind` | on a platform entry: the publisher's file, its digest and how it unpacks; the digest is the publisher's, so a mirror serving the same file is covered by the same pin |
 | `components` | on a platform entry, in place of one `url`: a list of `{name, url, sha256, package_kind, directory}`, with `cn_url` optional on each, one per archive the module unpacks; a manifest with one archive lists none |
-| `verify` | the command whose success means the software is installed, run after the unpack and at every observation |
+| `verify` | the command whose success means the software is installed, run after the unpack and at every observation; on Windows `cmd.exe` runs it, and it is the program's quoted path with `--version`, such as `"%ProgramData%\Neutrino\agent\state\vscode\code.exe" --version`, which fails when the file is missing |
 | `uninstall` | `{packages, post_uninstall, is_data_kept}`: what an uninstall removes beyond the module's own directory; every shipped manifest keeps the data |
 | `cn_url` | the mirror's address of the same file, which a `cn` hub fetches from when the entry has one; a file no mirror carries has none, and the `cn` hub fetches `url` itself |
 
@@ -162,9 +162,12 @@ carries them opened. The panel draws the four with one `instances_panel.tsx`
 | `http_forward.py` | what every forwarder in front of a module's page shares: the listener, the token check, the pass-through |
 | `log_tail.py` | the last lines of a log file, and the mask every journal passes through |
 | `subprocess_run.py` | running one command for a module applier, with its output kept |
-| `powershell_run.py` | running one PowerShell script for a module on Windows, JSON in and out |
 | `account_service/` | one file per system: write the service definition for an account, start, stop, remove and query it |
 | `instances.py` | the generic runner of the account-program kind, which drives the hooks of each module |
+
+An applier on Windows runs its cmdlets through the agent's one PowerShell
+host in `platforms/` ([agent.md](../../agent.md), "The PowerShell host on
+Windows").
 
 ## Icons
 

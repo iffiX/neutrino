@@ -45,6 +45,11 @@ neutrino_hub/cli/apply.py
   never a `helpers.py`. `neutrino_agent/modules/shared/` is the agent's one
   package of what every module runner shares, each file one concept, never a
   `helpers.py`.
+- Code is never shared across the hub, the agent and the client. Each package
+  has its own copy of a binding or a decoder (`win32.py`, `windows_net.py`)
+  and changes it alone. What two packages pin equal is data alone, a schema or a
+  recorded answer, never a code file. A change on one side then fails the
+  other side's tests only when the data changed.
 
 ## The two-tier split (no exceptions)
 

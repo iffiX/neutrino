@@ -112,8 +112,11 @@ the client's sequence: reading a tool's file, writing Codex's effort into
 file in its home with a link to a file only root reads, so a read made as
 root would hand that file to cc-switch and through it back to the account. On
 Linux and macOS the file steps are `cat`, `test -f`, `sh -c` writing what
-arrives on standard input, and `rm -f`; on Windows each is one PowerShell
-script in the account's task, the path written into it as a literal.
+arrives on standard input, and `rm -f`. On Windows the agent reads a file, or
+checks that one exists, in its own process while it impersonates the
+account's login from `LogonUserW`. A write or a removal there is one
+PowerShell script in the account's task, the path written into it as a
+literal.
 
 `config common extract` and `config common set` read their input from a
 file. The agent writes that input as the account to `payload` in the

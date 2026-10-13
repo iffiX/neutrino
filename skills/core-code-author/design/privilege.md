@@ -165,12 +165,13 @@ a credential with nothing to spend it on and somewhere to leak from.
 ## A password on a managed machine's command line
 
 The agent's file share sets an account's password on the machine it
-manages. On Windows the password reaches PowerShell on standard input and
-never a command line. On macOS `sysadminctl` and `dscl -passwd` take a
-password only as an argument, so while `dscl -passwd` runs the share
-account's password is in the process list, where any local account can read
-it. The account can do nothing but reach the shares: it has no shell and no
-home, and the fence limits who reaches the server.
+manages. On Windows the password reaches the agent's PowerShell host in a
+request on the host's standard input, and never a command line. On macOS
+`sysadminctl` and `dscl -passwd` take a password only as an argument, so
+while `dscl -passwd` runs the share account's password is in the process
+list, where any local account can read it. The account can do nothing but
+reach the shares: it has no shell and no home, and the fence limits who
+reaches the server.
 
 ## VS Code runs as the account it serves
 
@@ -184,7 +185,8 @@ On Windows the account's password is needed to start it: the hub unseals the
 login it keeps in its vault and sends it inside the device's desired state,
 as it sends Gitea's secrets. The agent keeps its copy of that state in its
 data directory, which only SYSTEM and the administrators can open, and
-passes the password to PowerShell on standard input to register the task.
+passes the password to its PowerShell host on standard input to register
+the task.
 Windows keeps the password with the task from then on.
 
 CloudCLI runs the same way, as the account it serves and never as root

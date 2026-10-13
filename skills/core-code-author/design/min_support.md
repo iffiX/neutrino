@@ -112,7 +112,7 @@ releases a supported family provides.
 | systemd | 236 | `systemd-run --collect` for the transient unit a self-update runs in | `agent/neutrino_agent/core/self_update.py:90` |
 | systemd | 243 | `OOMPolicy=` on the transient service a CloudCLI install runs as; systemd 249 refuses it on a scope | `agent/neutrino_agent/modules/cloudcli/linux_applier.py` |
 | util-linux | any | `runuser` for stepping down to an account | `agent/neutrino_agent/platforms/linux.py:211` |
-| Windows PowerShell | 5.1, with the SmbShare, NetSecurity and LocalAccounts modules, all in Windows 10 1607 | the file share on Windows | `agent/neutrino_agent/modules/samba/windows_applier.py` |
+| Windows PowerShell | 5.1, with the SmbShare, NetSecurity, ScheduledTasks and LocalAccounts modules, all in Windows 10 1607 | the PowerShell host's function library on Windows: the file share, the scheduled tasks, the thermal zones | `agent/neutrino_agent/data/windows/powershell_host.ps1` |
 | `sharing`, `sysadminctl`, `pwpolicy`, `dscl`, `pfctl` | macOS 12 | the file share on macOS | `agent/neutrino_agent/modules/samba/darwin_applier.py` |
 | git | 2.0, Gitea's own floor | Gitea on every system; the machine's own on macOS and Windows, never installed by the module there | `agent/neutrino_agent/modules/gitea/` |
 | Gitea's release binaries | macOS 10.12 and Windows 10 by their builds, below the agent's own floors | the Gitea module on macOS and Windows | `hub/neutrino_hub/data/manifests/gitea.json` |

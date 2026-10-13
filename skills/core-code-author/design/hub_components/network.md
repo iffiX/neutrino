@@ -313,11 +313,17 @@ The network facts come from psutil: `device_addresses()` from
 `net_if_addrs()` and `net_if_stats()`, traffic counters from
 `net_io_counters(pernic=True)`, listening ports from `net_connections()`,
 memory from `virtual_memory()`. The default route is `route -n get default`
-on macOS and `Get-NetRoute` on Windows, and the machine id is
+on macOS and the IPv4 forward table on Windows, and the machine id is
 `IOPlatformUUID` and the registry's `MachineGuid`. An overlay's device is
 still found by its address, `utunN` on macOS and the adapter's name on
 Windows. The traffic history and the LAN scan return nothing, and the panel
 draws them empty. Linux keeps its `ip -json` path.
+
+Windows reads the forward table through iphlpapi and adds each route's
+metric to its interface's metric from the interface table. The IPv6
+addresses Direct lists come from the unicast address table, and the
+system's resolvers from the adapters table. Each of these reads is a call
+inside the hub's own process.
 
 ## Two overlays at once
 
@@ -379,7 +385,7 @@ page turns it on.
 | An interface Direct opens the agent port on is not thereby exposed. Wake-on-LAN, the served scopes and everything else that reads `is_exposed` read it unchanged. | Exposure is the whole interface; Direct is one port. |
 | While Direct is on, `urls` holds, in this order: the exposed set's IPv4 addresses, then the exposed interfaces' IPv6 addresses, then every other enabled interface's IPv4 addresses, then their IPv6 addresses, then NetBird's name for the hub, then `https://<public-host>:<public-port>`, then the relay's. An IPv6 address or host is written in brackets. While Direct is off, `urls` holds IPv4 addresses alone, as without it. | The hub's own addresses are tried first and the path through another server last. Within a group an IPv4 address comes first, because every network the hub is on carries IPv4. |
 | A stated host name needs nothing of the certificate. | A peer pins the certificate's fingerprint and does not check its names. |
-| An IPv6 address joins `urls` only when a peer elsewhere can keep using it: global scope, so not loopback, link-local, site-local or multicast; and not temporary, deprecated, tentative or failed in duplicate detection. Linux reads it from `ip -json addr show`, an address's `scope` and its `temporary`, `deprecated`, `tentative` and `dadfailed` flags. macOS reads it from `ifconfig`, an `inet6` line's `temporary`, `deprecated`, `tentative`, `duplicated` and `detached` words. Windows reads it from `Get-NetIPAddress -AddressFamily IPv6`: `AddressState` `Preferred`, and a `SuffixOrigin` other than `Random`, which is how Windows marks a temporary address. Where the reading fails, no IPv6 address joins. | A temporary address is replaced within a day and a link-local one reaches one link, so a peer that stored either loses the hub. |
+| An IPv6 address joins `urls` only when a peer elsewhere can keep using it: global scope, so not loopback, link-local, site-local or multicast; and not temporary, deprecated, tentative or failed in duplicate detection. Linux reads it from `ip -json addr show`, an address's `scope` and its `temporary`, `deprecated`, `tentative` and `dadfailed` flags. macOS reads it from `ifconfig`, an `inet6` line's `temporary`, `deprecated`, `tentative`, `duplicated` and `detached` words. Windows reads it from the unicast address table through iphlpapi: a `DadState` of `IpDadStatePreferred`, and a `SuffixOrigin` other than `IpSuffixOriginRandom`, which is how Windows marks a temporary address. Where the reading fails, no IPv6 address joins. | A temporary address is replaced within a day and a link-local one reaches one link, so a peer that stored either loses the hub. |
 | The agent port listens on IPv4 and IPv6 on Linux, macOS and Windows: one socket for each family, the IPv6 one set to IPv6 alone (`IPV6_V6ONLY`). A machine where the IPv6 socket cannot be made serves IPv4, and the log has one line saying so. | Two sockets keep each peer's address in its own family on every system. Which interfaces reach the port stays the firewall's matter. |
 | Every rule that opens the agent port covers both families. The nft table is `inet`, the pf anchor's lines name no family, and the Windows rules name no address. | An exposed interface, and with Direct on an enabled one, answers on IPv6 exactly as on IPv4. |
 

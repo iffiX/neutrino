@@ -47,7 +47,9 @@ Inside the hub package the layers only reach downward:
   else: the five roots, the elevation check, the process controller, the
   opening a browser and the file lock. The firewall is `modules/firewall/`,
   a renderer and one applier per system, and the network facts outside
-  Linux come from psutil inside the `system/` modules.
+  Linux come from psutil inside the `system/` modules. On Windows the
+  routes, the IPv6 addresses and the resolvers come from iphlpapi, through
+  `system/windows_net.py`.
   `base.py`, `linux.py`, `darwin.py` and `windows.py` follow the agent's
   shape, with `win32.py` and `windows_service.py` copied from the agent, since
   the packages share no code. `detect.hub_os()` returns `linux`, `darwin` or
