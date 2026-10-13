@@ -30,6 +30,8 @@ ACCOUNT_SERVICE_WINDOWS_NULL_DEVICE = "NUL"
 ACCOUNT_SERVICE_WINDOWS_RULE_INFIX = "_port_"
 # What a task's last result is when Windows could not sign its account in.
 ACCOUNT_SERVICE_LOGON_FAILURES = (0x8007052E,)
+# The state of a task whose program runs.
+ACCOUNT_SERVICE_WINDOWS_TASK_RUNNING = "Running"
 
 # The end of every instance's log file.
 ACCOUNT_SERVICE_LOG_SUFFIX = ".log"

@@ -39,7 +39,6 @@ from neutrino_agent.modules.codeg.config import (
     subprotocol_of,
 )
 from neutrino_agent.modules.codeg.hooks import (
-    DATA_DIR_SCRIPT,
     CodegHooks,
     cookie_name,
     data_dir,
@@ -96,19 +95,8 @@ class Recorder:
         return CommandResult(list(command), 0, "", "")
 
 
-class PowerShell:
-    def __init__(self):
-        self.calls: list = []
-
-    def __call__(self, script, document, timeout_s=120):
-        self.calls.append((script, dict(document)))
-        return {}
-
-
 def hooks_for(os_name, module_dir, *, home="/home/ann", **kwargs) -> CodegHooks:
-    tools = {
-        key: kwargs.pop(key) for key in ("run", "chown", "powershell") if key in kwargs
-    }
+    tools = {key: kwargs.pop(key) for key in ("run", "chown") if key in kwargs}
     hooks = CodegHooks(platform=Platform(os_name), log=lambda line: None, **kwargs)
     join = ntpath.join if os_name == "windows" else os.path.join
     entry = {"linux": ANN, "darwin": MAC_ANN, "windows": WIN_ANN}[os_name]
@@ -352,22 +340,39 @@ def test_an_existing_tree_is_left_as_it_is(tmp_path):
     assert stat.S_IMODE(os.stat(share).st_mode) == 0o755
 
 
-def test_on_windows_the_data_directory_is_made_through_powershell():
-    powershell = PowerShell()
-    hooks = hooks_for("windows", WIN_STATE, powershell=powershell)
-    config = hooks.parse(WINDOWS_CONFIG)
+def test_on_windows_the_data_directory_is_made_and_left_to_the_account(tmp_path):
+    grants = []
 
-    notes = hooks.prepare(config, config.instances[0], WIN_ANN)
+    def icacls(command, **_):
+        grants.append(list(command))
+        return CommandResult(list(command), 0, "", "")
+
+    home = str(tmp_path / "ann")
+    hooks = hooks_for("windows", WIN_STATE, home=home, run=icacls)
+    config = hooks.parse(WINDOWS_CONFIG)
+    entry = AccountEntry(0, 0, home, "")
+    directory = data_dir(home, "windows", ntpath.join)
+
+    notes = hooks.prepare(config, config.instances[0], entry)
 
     assert notes == ["made the data directory of ann"]
-    ((script, document),) = powershell.calls
-    assert script == DATA_DIR_SCRIPT
-    assert document == {
-        "account": "ann",
-        "directory": "C:\\Users\\ann\\AppData\\Local\\Neutrino\\agent\\codeg",
-    }
-    assert "(OI)(CI)M" in DATA_DIR_SCRIPT
-    assert data_dir("C:\\Users\\ann", "windows", ntpath.join) == document["directory"]
+    assert os.path.isdir(directory)
+    assert grants == [
+        [
+            "icacls.exe",
+            directory,
+            "/inheritance:r",
+            "/grant:r",
+            "ann:(OI)(CI)M",
+            "*S-1-5-18:(OI)(CI)F",
+            "*S-1-5-32-544:(OI)(CI)F",
+        ]
+    ]
+    assert hooks.prepare(config, config.instances[0], entry) == []
+    assert len(grants) == 1
+    assert data_dir("C:\\Users\\ann", "windows", ntpath.join) == (
+        "C:\\Users\\ann\\AppData\\Local\\Neutrino\\agent\\codeg"
+    )
 
 
 # --- the journal ---

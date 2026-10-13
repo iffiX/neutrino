@@ -6,7 +6,8 @@ of that name found running something else is reconfigured, and its image
 path, start type and whether it ran are kept in ``kept\\service.json``
 first. With the switch off the agent's service is stopped; it is deleted
 when the agent created it, and otherwise given back what was kept and
-started again when it ran.
+started again when it ran. The service's configuration is read from the
+service control manager, and RustDesk's processes from the process table.
 
 Not pure: drives the service manager and ends processes.
 """
@@ -21,21 +22,25 @@ import os
 import re
 import time
 
-from neutrino_agent.modules.shared.powershell_run import listed, run_powershell
 from neutrino_agent.modules.remote_desktop.constants import (
     REMOTE_DESKTOP_KEPT_SERVICE_NAME,
     REMOTE_DESKTOP_POLL_S,
     REMOTE_DESKTOP_STOP_TIMEOUT_S,
     REMOTE_DESKTOP_VIEWER_FLAGS,
     REMOTE_DESKTOP_WINDOWS_DISPLAY_NAME,
+    REMOTE_DESKTOP_WINDOWS_PROCESS_PREFIX,
     REMOTE_DESKTOP_WINDOWS_PROGRAM_FILES_DEFAULT,
     REMOTE_DESKTOP_WINDOWS_PROGRAM_PARTS,
     REMOTE_DESKTOP_WINDOWS_SERVICE,
+    REMOTE_DESKTOP_WINDOWS_SERVICE_STATES,
     REMOTE_DESKTOP_WINDOWS_SETTINGS_PARTS,
+    REMOTE_DESKTOP_WINDOWS_START_MODES,
     REMOTE_DESKTOP_WINDOWS_SYSTEM_ROOT_DEFAULT,
 )
 from neutrino_agent.modules.remote_desktop.records import read_json, write_json
 from neutrino_agent.modules.shared.subprocess_run import run as run_command
+from neutrino_agent.platforms import win32
+from neutrino_agent.platforms.windows_processes import WindowsProcessTable
 
 SC = "sc.exe"
 TASKKILL = "taskkill.exe"
@@ -48,23 +53,6 @@ START_TYPES = {"auto": "auto", "manual": "demand", "disabled": "disabled"}
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 # Where Windows Installer parks an executable it replaced while it ran.
 INSTALLER_PARKING_FOLDER = "config.msi"
-
-# What the service of RustDesk's name is, if there is one.
-READ_SERVICE_SCRIPT = """
-$s = Get-CimInstance Win32_Service -Filter "Name='RustDesk'"
-if ($null -eq $s) { @{is_present = $false} | ConvertTo-Json -Compress; exit 0 }
-@{is_present = $true; image_path = [string]$s.PathName;
-  start_mode = [string]$s.StartMode; state = [string]$s.State;
-  display_name = [string]$s.DisplayName} | ConvertTo-Json -Compress
-"""
-
-# Every RustDesk process, with its program and its command line.
-PROCESSES_SCRIPT = """
-$found = @(Get-CimInstance Win32_Process -Filter "Name LIKE 'rustdesk%'" |
-  ForEach-Object { @{pid = [int]$_.ProcessId; program = [string]$_.ExecutablePath;
-    command = [string]$_.CommandLine} })
-@{processes = $found} | ConvertTo-Json -Compress -Depth 4
-"""
 
 
 def program_path() -> str:
@@ -157,6 +145,84 @@ def process_program(pid: int) -> str:
         kernel32.CloseHandle(handle)
 
 
+def service_detail(data: bytes, base: int, state: int) -> dict:
+    """One service as a ``QueryServiceConfigW`` buffer and its state describe it.
+
+    Args:
+        data: The buffer's bytes.
+        base: The address the buffer sat at, which its pointers count from.
+        state: The service's current state, as the manager numbers it.
+
+    Returns:
+        ``{"is_present", "image_path", "start_mode", "state",
+        "display_name"}``, the start mode and the state in the words
+        Win32_Service gives them.
+
+    Raises:
+        ValueError: When the buffer is shorter than the configuration or a
+            pointer leads outside it.
+    """
+    if len(data) < ctypes.sizeof(win32.QueryServiceConfig):
+        raise ValueError("a service configuration shorter than its structure")
+    config = win32.QueryServiceConfig.from_buffer_copy(data)
+    return {
+        "is_present": True,
+        "image_path": win32.utf16_at(data, base, config.lpBinaryPathName),
+        "start_mode": REMOTE_DESKTOP_WINDOWS_START_MODES.get(config.dwStartType, ""),
+        "state": REMOTE_DESKTOP_WINDOWS_SERVICE_STATES.get(state, "Unknown"),
+        "display_name": win32.utf16_at(data, base, config.lpDisplayName),
+    }
+
+
+def read_service(name: str, *, advapi32=None) -> dict:
+    """What the service control manager holds of one service.
+
+    Args:
+        name: The service's name.
+        advapi32: The bound advapi32; None binds the real one.
+
+    Returns:
+        ``{"is_present": False}`` when there is no such service, else what
+        :func:`service_detail` reads.
+
+    Raises:
+        OSError: When the manager or the service cannot be asked.
+        ValueError: When the manager's answer cannot be read.
+    """
+    if advapi32 is None:
+        advapi32 = win32.libraries().advapi32
+    manager = advapi32.OpenSCManagerW(None, None, win32.SC_MANAGER_CONNECT)
+    if not manager:
+        raise win32.last_error()
+    try:
+        service = advapi32.OpenServiceW(
+            manager, name, win32.SERVICE_QUERY_CONFIG | win32.SERVICE_QUERY_STATUS
+        )
+        if not service:
+            error = win32.last_error()
+            if getattr(error, "winerror", None) == win32.ERROR_SERVICE_DOES_NOT_EXIST:
+                return {"is_present": False}
+            raise error
+        try:
+            needed = win32.DWORD(0)
+            advapi32.QueryServiceConfigW(service, None, 0, ctypes.byref(needed))
+            buffer = ctypes.create_string_buffer(max(needed.value, 1))
+            if not advapi32.QueryServiceConfigW(
+                service, buffer, len(buffer), ctypes.byref(needed)
+            ):
+                raise win32.last_error()
+            status = win32.ServiceStatus()
+            if not advapi32.QueryServiceStatus(service, ctypes.byref(status)):
+                raise win32.last_error()
+            return service_detail(
+                buffer.raw, ctypes.addressof(buffer), status.dwCurrentState
+            )
+        finally:
+            advapi32.CloseServiceHandle(service)
+    finally:
+        advapi32.CloseServiceHandle(manager)
+
+
 class RemoteDesktopWindowsApplier:
     """Takes RustDesk over on Windows and gives it back."""
 
@@ -165,7 +231,8 @@ class RemoteDesktopWindowsApplier:
         *,
         kept_dir: str,
         run=None,
-        powershell=None,
+        read_service_detail=None,
+        processes=None,
         program: str = "",
         program_of=process_program,
         sleep=time.sleep,
@@ -175,8 +242,12 @@ class RemoteDesktopWindowsApplier:
             kept_dir: Where what is kept aside goes.
             run: Runs one command as :func:`subprocess_run.run` does; None
                 runs it.
-            powershell: Runs one script as :func:`run_powershell` does;
-                None runs it.
+            read_service_detail: Reads one service by its name as
+                :func:`read_service` does; None asks the service control
+                manager.
+            processes: The machine's processes, as
+                :class:`WindowsProcessTable` reads them; None reads the
+                process table.
             program: The agent's copy; empty is the one under Program Files.
             program_of: Reads one pid's program.
             sleep: Waits a number of seconds.
@@ -184,7 +255,10 @@ class RemoteDesktopWindowsApplier:
         self.program = program or program_path()
         self._kept_dir = kept_dir
         self._run = run if run is not None else run_command
-        self._powershell = powershell if powershell is not None else run_powershell
+        self._read_service = (
+            read_service_detail if read_service_detail is not None else read_service
+        )
+        self._processes = processes if processes is not None else WindowsProcessTable()
         self._program_of = program_of
         self._sleep = sleep
 
@@ -213,7 +287,7 @@ class RemoteDesktopWindowsApplier:
 
     def is_service_running(self) -> bool:
         """Whether the service of RustDesk's name runs the agent's copy, read
-        through sc.exe, which costs no PowerShell."""
+        through sc.exe."""
         config = self._run(
             [SC, "qc", REMOTE_DESKTOP_WINDOWS_SERVICE], is_checked=False
         ).stdout
@@ -337,7 +411,8 @@ class RemoteDesktopWindowsApplier:
 
         Windows Installer moves an executable in use into ``Config.Msi``
         until the next restart and gives the new one the build's own time,
-        while ``Win32_Process`` still names the old path. So the image each
+        while the image path a process started with still names the old
+        path. So the image each
         host really runs is read with ``QueryFullProcessImageName``: a host
         whose image is no longer a file on disk, or lies in ``Config.Msi``,
         runs a replaced program. A person's own RustDesk, installed
@@ -382,8 +457,8 @@ class RemoteDesktopWindowsApplier:
 
     def _service(self) -> dict:
         try:
-            return self._powershell(READ_SERVICE_SCRIPT, {})
-        except OSError:
+            return self._read_service(REMOTE_DESKTOP_WINDOWS_SERVICE)
+        except (OSError, ValueError):
             return {}
 
     def _is_own(self, service: dict) -> bool:
@@ -405,23 +480,22 @@ class RemoteDesktopWindowsApplier:
             waited += REMOTE_DESKTOP_POLL_S
 
     def _rustdesk(self) -> list:
-        """Every RustDesk process: ``(pid, program, command line)``."""
+        """Every RustDesk process: ``(pid, program, command line)``, the
+        program and the command line the ones it started with."""
         try:
-            answer = self._powershell(PROCESSES_SCRIPT, {})
+            entries = self._processes.entries()
         except OSError:
             return []
-        found = []
-        for process in listed(answer.get("processes")):
-            if not isinstance(process, dict):
-                continue
-            found.append(
-                (
-                    int(process.get("pid") or 0),
-                    str(process.get("program") or ""),
-                    str(process.get("command") or ""),
-                )
+        return [
+            (
+                entry.pid,
+                self._processes.image_path(entry.pid),
+                self._processes.command_line(entry.pid),
             )
-        return [entry for entry in found if entry[0]]
+            for entry in entries
+            if entry.pid
+            and entry.name.lower().startswith(REMOTE_DESKTOP_WINDOWS_PROCESS_PREFIX)
+        ]
 
     def _end(self, pids: list) -> None:
         if not pids:

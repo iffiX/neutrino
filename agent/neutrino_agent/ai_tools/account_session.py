@@ -1,22 +1,25 @@
 """cc-switch and an account's own files, reached as that account.
 
 Everything the steps of the machine's AI tools do in an account's home is
-done as the account, through the platform's way of running as it: cc-switch
-itself, and reading, writing and removing a tool's file. Nothing the agent
-does as root or SYSTEM touches the account's home. On Linux and macOS the
-files are read with ``cat`` and written with ``sh``; on Windows each is a
-small PowerShell script, run in the account's own one-shot task.
+done as the account: cc-switch itself, through the platform's way of
+running a program as it, and reading, writing and removing a tool's file.
+Nothing the agent does as root or SYSTEM touches the account's home. On
+Linux and macOS the files are read with ``cat`` and written with ``sh`` run
+as the account; on Windows a thread of the agent acts as the account under
+its login and does each file step itself.
 
-Not pure: runs processes as an account.
+Not pure: runs processes as an account and acts as one.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
-import base64
+import codecs
 import ntpath
+import os
 import posixpath
+import shutil
 import subprocess
 
 from neutrino_agent.ai_tools.constants import (
@@ -52,68 +55,6 @@ POSIX_PRIVATE_DIR_SHELL = 'mkdir -p -- "$1" && chmod -- {mode} "$1"'
 POSIX_REMOVE_TREE_SHELL = (
     'rm -rf -- "$1"; shift; for d do rmdir -- "$d" 2>/dev/null || exit 0; done'
 )
-# The line every PowerShell file step starts with: no progress records.
-POWERSHELL_QUIET_PROGRESS = "$ProgressPreference = 'SilentlyContinue'\n"
-# The PowerShell that does the same four things on Windows, each given the
-# path as a literal.
-WINDOWS_READ_SCRIPT = """
-$p = {path}
-if (-not (Test-Path -LiteralPath $p -PathType Leaf)) {{ exit 1 }}
-$out = New-Object IO.StreamWriter ([Console]::OpenStandardOutput()), (New-Object Text.UTF8Encoding $false)
-$out.Write([IO.File]::ReadAllText($p))
-$out.Flush()
-exit 0
-"""
-WINDOWS_IS_FILE_SCRIPT = """
-if (Test-Path -LiteralPath {path} -PathType Leaf) {{ exit 0 }}
-exit 1
-"""
-WINDOWS_WRITE_SCRIPT = """
-$p = {path}
-$in = New-Object IO.StreamReader ([Console]::OpenStandardInput()), (New-Object Text.UTF8Encoding $false)
-$text = $in.ReadToEnd()
-$dir = Split-Path -Parent $p
-if (-not (Test-Path -LiteralPath $dir)) {{ New-Item -ItemType Directory -Path $dir -Force | Out-Null }}
-[IO.File]::WriteAllText($p, $text, (New-Object Text.UTF8Encoding $false))
-exit 0
-"""
-WINDOWS_REMOVE_SCRIPT = """
-Remove-Item -LiteralPath {path} -Force -ErrorAction SilentlyContinue
-exit 0
-"""
-WINDOWS_IS_DIR_SCRIPT = """
-if (Test-Path -LiteralPath {path} -PathType Container) {{ exit 0 }}
-exit 1
-"""
-WINDOWS_MAKE_DIR_SCRIPT = """
-New-Item -ItemType Directory -Path {path} -Force | Out-Null
-exit 0
-"""
-WINDOWS_REMOVE_EMPTY_DIR_SCRIPT = """
-$d = {path}
-if ((Test-Path -LiteralPath $d -PathType Container) -and -not (Get-ChildItem -LiteralPath $d -Force)) {{
-    Remove-Item -LiteralPath $d -Force -ErrorAction SilentlyContinue
-}}
-exit 0
-"""
-WINDOWS_REMOVE_TREE_WITH_DIRS_SCRIPT = """
-Remove-Item -LiteralPath {path} -Recurse -Force -ErrorAction SilentlyContinue
-foreach ($d in @({dirs})) {{
-    if (-not (Test-Path -LiteralPath $d -PathType Container)) {{ continue }}
-    if (Get-ChildItem -LiteralPath $d -Force) {{ break }}
-    Remove-Item -LiteralPath $d -Force -ErrorAction SilentlyContinue
-}}
-exit 0
-"""
-WINDOWS_REMOVE_WITH_DIRS_SCRIPT = """
-Remove-Item -LiteralPath {path} -Force -ErrorAction SilentlyContinue
-foreach ($d in @({dirs})) {{
-    if (-not (Test-Path -LiteralPath $d -PathType Container)) {{ continue }}
-    if (Get-ChildItem -LiteralPath $d -Force) {{ break }}
-    Remove-Item -LiteralPath $d -Force -ErrorAction SilentlyContinue
-}}
-exit 0
-"""
 
 
 def permission_bits(listed: str) -> "int | None":
@@ -143,30 +84,92 @@ def permission_bits(listed: str) -> "int | None":
     return bits
 
 
-def powershell_literal(text: str) -> str:
-    """A string as a single-quoted PowerShell literal."""
-    return "'" + text.replace("'", "''") + "'"
+def _step_read(path: str) -> "str | None":
+    """A file's text, its byte order mark read; None when it cannot be read."""
+    try:
+        with open(path, "rb") as stream:
+            data = stream.read()
+    except OSError:
+        return None
+    if data.startswith(codecs.BOM_UTF8):
+        return data[len(codecs.BOM_UTF8) :].decode("utf-8", "replace")
+    if data.startswith((codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)):
+        return data.decode("utf-16", "replace")
+    return data.decode("utf-8", "replace")
 
 
-def powershell_argv(script: str) -> list:
-    """PowerShell running one script, carried as ``-EncodedCommand``.
+def _step_is_file(path: str) -> bool:
+    """Whether a file is there."""
+    return os.path.isfile(path)
 
-    The script runs with progress records off: inside the account's task
-    its error stream shares the output file, and a progress record, such as
-    the one PowerShell writes while it prepares its modules for first use,
-    would land there as CLIXML before what the script prints.
-    """
-    script = POWERSHELL_QUIET_PROGRESS + script
-    encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
-    return [
-        "powershell.exe",
-        "-NoProfile",
-        "-NonInteractive",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-EncodedCommand",
-        encoded,
-    ]
+
+def _step_is_dir(path: str) -> bool:
+    """Whether a directory is there."""
+    return os.path.isdir(path)
+
+
+def _step_make_dir(path: str) -> str:
+    """Make a directory with its parents; what failed, empty when made."""
+    try:
+        os.makedirs(path, exist_ok=True)
+    except OSError as error:
+        return str(error)
+    return ""
+
+
+def _step_write(path: str, text: str) -> str:
+    """Write a file whole as UTF-8, its directory made; what failed, empty when written."""
+    try:
+        os.makedirs(ntpath.dirname(path), exist_ok=True)
+        with open(path, "wb") as stream:
+            stream.write(text.encode("utf-8"))
+    except OSError as error:
+        return str(error)
+    return ""
+
+
+def _step_remove(path: str) -> None:
+    """Delete a file; one that is not there is left."""
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+
+
+def _step_remove_empty_dir(path: str) -> None:
+    """Delete a directory when it holds nothing."""
+    try:
+        os.rmdir(path)
+    except OSError:
+        pass
+
+
+def _step_remove_with_dirs(path: str, dirs: list) -> None:
+    """Delete a file, then each directory after it that is empty, stopping at the first that is not."""
+    _step_remove(path)
+    _remove_empty_dirs(dirs)
+
+
+def _step_remove_tree_with_dirs(path: str, dirs: list) -> None:
+    """Delete a tree, then each directory after it that is empty, stopping at the first that is not."""
+    if os.path.isdir(path):
+        shutil.rmtree(path, ignore_errors=True)
+    else:
+        _step_remove(path)
+    _remove_empty_dirs(dirs)
+
+
+def _remove_empty_dirs(dirs: list) -> None:
+    """Delete each directory that is empty, stopping at the first that is not."""
+    for directory in dirs:
+        if not os.path.isdir(directory):
+            continue
+        try:
+            if os.listdir(directory):
+                return
+            os.rmdir(directory)
+        except OSError:
+            return
 
 
 class AiToolsAccountSession:
@@ -274,33 +277,21 @@ class AiToolsAccountSession:
     def read_text(self, path: str) -> str:
         """One file of the account's, read as the account; empty when absent."""
         if self._is_windows:
-            command = powershell_argv(
-                WINDOWS_READ_SCRIPT.format(path=powershell_literal(path))
-            )
-        else:
-            command = ["cat", "--", path]
-        result = self._run(command)
+            return self._as_account(_step_read, path) or ""
+        result = self._run(["cat", "--", path])
         return (result.stdout or "") if result.returncode == 0 else ""
 
     def is_file(self, path: str) -> bool:
         """Whether a file of the account's is there, as the account sees it."""
         if self._is_windows:
-            command = powershell_argv(
-                WINDOWS_IS_FILE_SCRIPT.format(path=powershell_literal(path))
-            )
-        else:
-            command = ["test", "-f", path]
-        return self._run(command).returncode == 0
+            return bool(self._as_account(_step_is_file, path))
+        return self._run(["test", "-f", path]).returncode == 0
 
     def is_dir(self, path: str) -> bool:
         """Whether a directory of the account's is there, as the account sees it."""
         if self._is_windows:
-            command = powershell_argv(
-                WINDOWS_IS_DIR_SCRIPT.format(path=powershell_literal(path))
-            )
-        else:
-            command = ["test", "-d", path]
-        return self._run(command).returncode == 0
+            return bool(self._as_account(_step_is_dir, path))
+        return self._run(["test", "-d", path]).returncode == 0
 
     def make_dir(self, path: str) -> None:
         """Make one directory of the account's, as the account, with its parents.
@@ -309,12 +300,11 @@ class AiToolsAccountSession:
             ToolSwitchError: When it cannot be made.
         """
         if self._is_windows:
-            command = powershell_argv(
-                WINDOWS_MAKE_DIR_SCRIPT.format(path=powershell_literal(path))
-            )
-        else:
-            command = ["mkdir", "-p", "--", path]
-        result = self._run(command)
+            words = self._as_account(_step_make_dir, path)
+            if words:
+                raise self.failure(f"could not make {path}: {words}")
+            return
+        result = self._run(["mkdir", "-p", "--", path])
         if result.returncode != 0:
             words = (result.stderr or result.stdout or "").strip()
             raise self.failure(f"could not make {path}: {words}")
@@ -322,12 +312,9 @@ class AiToolsAccountSession:
     def remove_empty_dir(self, path: str) -> None:
         """Delete one directory of the account's, as the account, when it holds nothing."""
         if self._is_windows:
-            command = powershell_argv(
-                WINDOWS_REMOVE_EMPTY_DIR_SCRIPT.format(path=powershell_literal(path))
-            )
-        else:
-            command = ["rmdir", "--", path]
-        self._run(command)
+            self._as_account(_step_remove_empty_dir, path)
+            return
+        self._run(["rmdir", "--", path])
 
     def mode_of(self, path: str) -> "int | None":
         """A file's permission bits, read as the account.
@@ -363,12 +350,11 @@ class AiToolsAccountSession:
             ToolSwitchError: When the file cannot be written.
         """
         if self._is_windows:
-            command = powershell_argv(
-                WINDOWS_WRITE_SCRIPT.format(path=powershell_literal(path))
-            )
-        else:
-            command = ["sh", "-c", POSIX_WRITE_SHELL, "sh", path]
-        result = self._run(command, stdin=text)
+            words = self._as_account(_step_write, path, text)
+            if words:
+                raise self.failure(f"could not write {path}: {words}")
+            return
+        result = self._run(["sh", "-c", POSIX_WRITE_SHELL, "sh", path], stdin=text)
         if result.returncode != 0:
             words = (result.stderr or result.stdout or "").strip()
             raise self.failure(f"could not write {path}: {words}")
@@ -376,12 +362,9 @@ class AiToolsAccountSession:
     def remove(self, path: str) -> None:
         """Delete one file of the account's, as the account; quiet when absent."""
         if self._is_windows:
-            command = powershell_argv(
-                WINDOWS_REMOVE_SCRIPT.format(path=powershell_literal(path))
-            )
-        else:
-            command = ["rm", "-f", "--", path]
-        self._run(command)
+            self._as_account(_step_remove, path)
+            return
+        self._run(["rm", "-f", "--", path])
 
     def payload_path(self) -> str:
         """The file a payload for cc-switch is handed in, in the account's Neutrino tree."""
@@ -395,16 +378,9 @@ class AiToolsAccountSession:
         """
         dirs = self._payload_dirs()
         if self._is_windows:
-            command = powershell_argv(
-                WINDOWS_REMOVE_WITH_DIRS_SCRIPT.format(
-                    path=powershell_literal(self.payload_path()),
-                    dirs=", ".join(powershell_literal(d) for d in dirs),
-                )
-            )
-        else:
-            command = ["sh", "-c", POSIX_REMOVE_SHELL, "sh", self.payload_path()]
-            command += dirs
-        self._run(command)
+            self._as_account(_step_remove_with_dirs, self.payload_path(), dirs)
+            return
+        self._run(["sh", "-c", POSIX_REMOVE_SHELL, "sh", self.payload_path(), *dirs])
 
     def store_path(self) -> str:
         """cc-switch's store for the agent's runs, in the account's Neutrino tree."""
@@ -418,18 +394,19 @@ class AiToolsAccountSession:
         """
         path = self.store_path()
         if self._is_windows:
-            command = powershell_argv(
-                WINDOWS_MAKE_DIR_SCRIPT.format(path=powershell_literal(path))
-            )
-        else:
-            command = [
+            words = self._as_account(_step_make_dir, path)
+            if words:
+                raise self.failure(f"could not make {path}: {words}")
+            return
+        result = self._run(
+            [
                 "sh",
                 "-c",
                 POSIX_PRIVATE_DIR_SHELL.format(mode=AI_TOOLS_STORE_MODE),
                 "sh",
                 path,
             ]
-        result = self._run(command)
+        )
         if result.returncode != 0:
             words = (result.stderr or result.stdout or "").strip()
             raise self.failure(f"could not make {path}: {words}")
@@ -438,16 +415,9 @@ class AiToolsAccountSession:
         """Delete cc-switch's store as the account, then each directory of its tree left empty."""
         dirs = self._payload_dirs()
         if self._is_windows:
-            command = powershell_argv(
-                WINDOWS_REMOVE_TREE_WITH_DIRS_SCRIPT.format(
-                    path=powershell_literal(self.store_path()),
-                    dirs=", ".join(powershell_literal(d) for d in dirs),
-                )
-            )
-        else:
-            command = ["sh", "-c", POSIX_REMOVE_TREE_SHELL, "sh", self.store_path()]
-            command += dirs
-        self._run(command)
+            self._as_account(_step_remove_tree_with_dirs, self.store_path(), dirs)
+            return
+        self._run(["sh", "-c", POSIX_REMOVE_TREE_SHELL, "sh", self.store_path(), *dirs])
 
     def _store_environment(self) -> "dict | None":
         """What cc-switch is started with to use the store in the account's tree."""
@@ -461,6 +431,23 @@ class AiToolsAccountSession:
         base = AI_TOOLS_PAYLOAD_BASE[key]
         tree = AI_TOOLS_PAYLOAD_TREE[key]
         return [self.path(*base, *tree[:depth]) for depth in range(len(tree), 0, -1)]
+
+    def _as_account(self, step, *arguments):
+        """Run one file step on this thread acting as the account.
+
+        Raises:
+            ToolSwitchError: ``credential_invalid`` when Windows refuses the
+                login, ``switch_failed`` when the thread cannot act as the
+                account.
+        """
+        try:
+            return self._platform.as_account(
+                self.account, step, *arguments, password=self._password
+            )
+        except ModuleApplyError as error:
+            raise self._refused(error) from error
+        except (PlatformUnsupportedError, OSError) as error:
+            raise self.failure(f"could not act as {self.account}: {error}") from error
 
     def _run(
         self, command: list, *, stdin: str = "", environment: "dict | None" = None

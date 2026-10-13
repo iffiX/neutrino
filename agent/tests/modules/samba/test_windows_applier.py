@@ -1,28 +1,29 @@
-"""The file share on Windows' own SMB server, with PowerShell faked.
+"""The file share on Windows' own SMB server, with the PowerShell host and icacls faked.
 
-What these pin: the document an apply sends names only what the module made, the fence as ranges outside
-the allowed subnets, each share's rights, and the accounts to retire; each
+What these pin: the request an apply sends the host names only what the
+module made, the fence as ranges outside the allowed subnets, each share's
+right, and the accounts to retire; once the host has converged the server
+each share's folder is granted to its accounts and taken from the module's
+others through icacls, a grant icacls refuses failing the apply; each
 configured account is denied the console and RDP through the local policy;
+a refusal stops before any folder or policy; the withdrawal, the server's
+log and a password are one request each, the password in the request alone;
 and the status reading is shaped the way the Linux module reports.
 """
 
 import ctypes
-import json
 
 import pytest
 
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.samba.config import SambaConfig
 from neutrino_agent.modules.samba.windows_applier import (
-    APPLY_SCRIPT,
-    PASSWORD_SCRIPT,
-    SERVER_LOG_SCRIPT,
-    STATUS_SCRIPT,
-    WITHDRAW_SCRIPT,
     SambaWindowsApplier,
     blocked_ranges,
     deny_interactive_logon,
 )
+from neutrino_agent.modules.shared.subprocess_run import CommandResult
+from tests.conftest import RecordingHost
 
 ALL_IPV6 = "::-ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"
 
@@ -43,19 +44,25 @@ CONFIG = SambaConfig.from_dict(
 )
 
 
-class FakePowerShell:
-    """Records each script and document, and answers a canned object."""
+class Icacls:
+    """icacls, recording each argument vector and refusing the ones asked."""
 
-    def __init__(self, answers=None, error=None):
-        self.runs: list = []
-        self._answers = dict(answers or {})
-        self._error = error
+    def __init__(self, refused=()):
+        self.calls: list = []
+        self._refused = set(refused)
 
-    def __call__(self, script, document):
-        self.runs.append((script, json.loads(json.dumps(document))))
-        if self._error is not None:
-            raise self._error
-        return dict(self._answers.get(script, {}))
+    def __call__(self, argv, **_):
+        self.calls.append(list(argv))
+        code = 5 if tuple(argv[2:]) in self._refused else 0
+        return CommandResult(command=list(argv), exit_code=code, stdout="", stderr="")
+
+
+def applier_with(host, *, run=None, denied=None) -> SambaWindowsApplier:
+    return SambaWindowsApplier(
+        powershell=host,
+        deny_logon=denied.append if denied is not None else None,
+        run=run if run is not None else Icacls(),
+    )
 
 
 def test_the_fence_blocks_every_address_outside_the_allowed_subnets():
@@ -84,122 +91,154 @@ def test_no_subnet_blocks_everything_and_every_address_blocks_nothing():
 
 
 def test_an_apply_names_only_what_the_module_made():
-    powershell = FakePowerShell({APPLY_SCRIPT: {"notes": ["created share media"]}})
+    host = RecordingHost({"share_apply": {"notes": ["created share media"]}})
     denied = []
-    applier = SambaWindowsApplier(powershell=powershell, deny_logon=denied.append)
+    icacls = Icacls()
+    applier = applier_with(host, run=icacls, denied=denied)
     record = {"shares": {"old": "D:\\old", "media": "D:\\media"}, "accounts": ["eve"]}
 
     notes = applier.apply(CONFIG, record)
 
     assert notes == ["created share media"]
-    ((script, document),) = powershell.runs
-    assert script == APPLY_SCRIPT
-    assert document["marker"] == "neutrino:"
-    assert document["owned_shares"] == ["media", "old"]
-    assert document["owned_accounts"] == ["eve"]
-    assert document["users"] == ["ann", "bob"]
-    assert document["retired_accounts"] == ["eve"]
-    assert document["removed_shares"] == ["old"]
-    assert document["rule_name"] == "neutrino_smb_fence"
-    assert document["share_owner"] == "BUILTIN\\Administrators"
-    assert document["blocked_addresses"] == [
-        "0.0.0.0-126.255.255.255",  # scan: allow
-        "128.0.0.0-192.168.0.255",  # scan: allow
-        "192.168.2.0-255.255.255.255",
-        "::",
-        "::2-ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
+    assert host.calls == [
+        (
+            "share_apply",
+            {
+                "marker": "neutrino:",
+                "owned_shares": ["media", "old"],
+                "owned_accounts": ["eve"],
+                "users": ["ann", "bob"],
+                "retired_accounts": ["eve"],
+                "removed_shares": ["old"],
+                "shares": [
+                    {
+                        "name": "media",
+                        "path": "D:\\media",
+                        "description": "neutrino: films",
+                        "accounts": ["ann", "bob"],
+                        "share_right": "Change",
+                    },
+                    {
+                        "name": "docs",
+                        "path": "D:\\docs",
+                        "description": "neutrino:",
+                        "accounts": ["ann"],
+                        "share_right": "Read",
+                    },
+                ],
+                "blocked_addresses": [
+                    "0.0.0.0-126.255.255.255",  # scan: allow
+                    "128.0.0.0-192.168.0.255",  # scan: allow
+                    "192.168.2.0-255.255.255.255",
+                    "::",
+                    "::2-ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
+                ],
+                "rule_name": "neutrino_smb_fence",
+                "rule_title": "Neutrino file share fence",
+                "share_owner": "BUILTIN\\Administrators",
+            },
+        )
     ]
-    media, docs = document["shares"]
-    assert media == {
-        "name": "media",
-        "path": "D:\\media",
-        "description": "neutrino: films",
-        "accounts": ["ann", "bob"],
-        "revoked": ["eve"],
-        "share_right": "Change",
-        "folder_right": "(OI)(CI)M",
-    }
-    assert docs["description"] == "neutrino:"
-    assert docs["accounts"] == ["ann"]
-    assert docs["revoked"] == ["eve", "bob"]
-    assert (docs["share_right"], docs["folder_right"]) == ("Read", "(OI)(CI)RX")
+    assert icacls.calls == [
+        ["icacls.exe", "D:\\media", "/remove:g", "eve"],
+        ["icacls.exe", "D:\\media", "/grant", "ann:(OI)(CI)M"],
+        ["icacls.exe", "D:\\media", "/grant", "bob:(OI)(CI)M"],
+        ["icacls.exe", "D:\\docs", "/remove:g", "eve"],
+        ["icacls.exe", "D:\\docs", "/remove:g", "bob"],
+        ["icacls.exe", "D:\\docs", "/grant", "ann:(OI)(CI)RX"],
+    ]
     assert denied == ["ann", "bob"]
 
 
-def test_a_refused_apply_denies_nobody_anything():
-    powershell = FakePowerShell(error=ModuleApplyError("user_name_taken", {}))
+def test_a_folder_icacls_refuses_fails_the_apply_and_denies_nobody():
     denied = []
-    applier = SambaWindowsApplier(powershell=powershell, deny_logon=denied.append)
+    icacls = Icacls(refused=[("/grant", "bob:(OI)(CI)M")])
+    applier = applier_with(RecordingHost(), run=icacls, denied=denied)
 
-    with pytest.raises(ModuleApplyError):
+    with pytest.raises(OSError, match="icacls refused bob on D:\\\\media"):
         applier.apply(CONFIG, {})
 
     assert denied == []
 
 
-def test_the_apply_script_refuses_foreign_names_and_never_grants_everyone():
-    assert "Send-Refusal 'share_name_taken'" in APPLY_SCRIPT
-    assert "Send-Refusal 'user_name_taken'" in APPLY_SCRIPT
-    assert "Everyone" not in APPLY_SCRIPT
-    assert "-NoPassword -Disabled" in APPLY_SCRIPT
-    assert "Add-LocalGroupMember" not in APPLY_SCRIPT
-    assert "SpecialAccounts\\UserList" in APPLY_SCRIPT
-    assert "-Action Block -Protocol TCP -LocalPort 445" in APPLY_SCRIPT
-    assert "Set-NetFirewallRule -Name $d.rule_name -RemoteAddress" in APPLY_SCRIPT
-    # The fence goes up before any share or account is made.
-    assert APPLY_SCRIPT.index("New-NetFirewallRule") < APPLY_SCRIPT.index(
-        "New-SmbShare"
-    )
-    assert APPLY_SCRIPT.index("New-NetFirewallRule") < APPLY_SCRIPT.index(
-        "New-LocalUser"
-    )
+def test_a_refused_apply_grants_and_denies_nobody_anything():
+    host = RecordingHost({"share_apply": ModuleApplyError("user_name_taken", {})})
+    denied = []
+    icacls = Icacls()
+    applier = applier_with(host, run=icacls, denied=denied)
+
+    with pytest.raises(ModuleApplyError):
+        applier.apply(CONFIG, {})
+
+    assert icacls.calls == []
+    assert denied == []
 
 
 def test_withdrawing_names_the_shares_and_says_whether_it_is_a_removal():
-    powershell = FakePowerShell()
-    applier = SambaWindowsApplier(powershell=powershell, deny_logon=None)
+    host = RecordingHost()
     record = {"shares": {"media": "D:\\media"}, "accounts": ["ann"]}
 
-    applier.withdraw(record, is_removed=True)
+    applier_with(host).withdraw(record, is_removed=True)
 
-    ((script, document),) = powershell.runs
-    assert script == WITHDRAW_SCRIPT
-    assert document["owned_shares"] == ["media"]
-    assert document["owned_accounts"] == ["ann"]
-    assert document["is_removed"] is True
+    assert host.calls == [
+        (
+            "share_withdraw",
+            {
+                "marker": "neutrino:",
+                "owned_shares": ["media"],
+                "owned_accounts": ["ann"],
+                "is_removed": True,
+                "rule_name": "neutrino_smb_fence",
+            },
+        )
+    ]
 
 
-def test_a_password_goes_in_the_document_only():
-    powershell = FakePowerShell()
-    applier = SambaWindowsApplier(powershell=powershell)
+def test_a_password_goes_in_the_request_only():
+    host = RecordingHost()
 
-    applier.set_password("ann", "pw")
+    applier_with(host).set_password("ann", "pw")
 
-    assert powershell.runs == [(PASSWORD_SCRIPT, {"name": "ann", "password": "pw"})]
-    assert "Enable-LocalUser" in PASSWORD_SCRIPT
+    assert host.calls == [("share_password", {"name": "ann", "password": "pw"})]
 
 
 def test_the_status_is_shaped_the_way_the_linux_module_reports():
     read = {
         "is_present": True,
         "is_running": True,
-        "shares": {
-            "name": "media",
-            "path": "D:\\media",
-            "description": "neutrino: films",
-            "access": [
-                {"account": "XENON\\ann", "right": "Change"},
-                {"account": "XENON\\bob", "right": "Read"},
-            ],
-        },
+        "shares": [
+            {
+                "name": "media",
+                "path": "D:\\media",
+                "description": "neutrino: films",
+                "access": [
+                    {"account": "XENON\\ann", "right": "Change"},
+                    {"account": "XENON\\bob", "right": "Read"},
+                ],
+            }
+        ],
         "sessions": [{"user": "XENON\\ann", "address": "192.168.1.20"}],
         "users": [{"name": "ann", "is_present": True, "is_enabled": False}],
-        "fence": {"is_present": True, "is_enabled": True, "blocked": "0.0.0.0-9.9.9.9"},
+        "fence": {
+            "is_present": True,
+            "is_enabled": True,
+            "blocked": ["0.0.0.0-9.9.9.9"],
+        },
     }
-    applier = SambaWindowsApplier(powershell=FakePowerShell({STATUS_SCRIPT: read}))
+    host = RecordingHost({"share_status": read})
 
-    status = applier.read_status({"accounts": ["ann"]})
+    status = applier_with(host).read_status({"accounts": ["ann"]})
 
+    assert host.calls == [
+        (
+            "share_status",
+            {
+                "marker": "neutrino:",
+                "accounts": ["ann"],
+                "rule_name": "neutrino_smb_fence",
+            },
+        )
+    ]
     assert status["is_present"] and status["is_running"]
     assert status["shares"] == [
         {
@@ -241,15 +280,19 @@ def test_a_share_granted_to_the_owner_alone_lists_no_user():
             }
         ]
     }
-    applier = SambaWindowsApplier(powershell=FakePowerShell({STATUS_SCRIPT: read}))
 
-    (share,) = applier.read_status({})["shares"]
+    (share,) = applier_with(RecordingHost({"share_status": read})).read_status({})[
+        "shares"
+    ]
 
     assert share["params"]["valid users"] == ""
 
 
-def test_a_status_powershell_cannot_give_reads_as_no_server():
-    applier = SambaWindowsApplier(powershell=FakePowerShell(error=OSError("gone")))
+@pytest.mark.parametrize(
+    "error", [OSError("gone"), TimeoutError("busy"), ModuleApplyError("x", {})]
+)
+def test_a_status_the_host_cannot_give_reads_as_no_server(error):
+    applier = applier_with(RecordingHost({"share_status": error}))
 
     assert applier.read_status({}) == {"is_present": False, "is_running": False}
 
@@ -324,22 +367,22 @@ def test_a_policy_that_refuses_is_an_os_error_and_the_handle_is_closed(
 
 
 def test_the_server_log_is_the_smb_server_s_latest_events():
-    answer = {"lines": ["2026-10-02T10:00:00 1001 A client connected."]}
-    powershell = FakePowerShell({SERVER_LOG_SCRIPT: answer})
+    answer = {"lines": ["2026-10-02T10:00:00 1001 A client connected.", " "]}
+    host = RecordingHost({"share_log": answer})
 
-    lines = SambaWindowsApplier(powershell=powershell).read_server_log(50)
+    lines = applier_with(host).read_server_log(50)
 
     assert lines == ["2026-10-02T10:00:00 1001 A client connected."]
-    ((script, document),) = powershell.runs
-    assert document == {
-        "log_name": "Microsoft-Windows-SMBServer/Operational",
-        "lines": 50,
-    }
-    assert "Get-WinEvent -LogName $d.log_name -MaxEvents $d.lines" in script
+    assert host.calls == [
+        (
+            "share_log",
+            {"log_name": "Microsoft-Windows-SMBServer/Operational", "lines": 50},
+        )
+    ]
 
 
-def test_a_server_log_powershell_cannot_give_is_an_os_error():
-    powershell = FakePowerShell(error=OSError("gone"))
+def test_a_server_log_the_host_cannot_give_is_an_os_error():
+    host = RecordingHost({"share_log": OSError("gone")})
 
     with pytest.raises(OSError):
-        SambaWindowsApplier(powershell=powershell).read_server_log(50)
+        applier_with(host).read_server_log(50)

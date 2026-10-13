@@ -69,9 +69,11 @@ POLICY_CREATE_ACCOUNT = 0x00000010
 POLICY_LOOKUP_NAMES = 0x00000800
 ERROR_INSUFFICIENT_BUFFER = 122
 
-# Job objects: every process of a shell dies with the job's last handle.
+# Job objects: every process of a shell dies with the job's last handle, and
+# a process opened by its pid is put into one with this access.
 JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
 JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS = 9
+PROCESS_SET_QUOTA = 0x0100
 
 # The system information classes the metrics read, and the answer a buffer
 # too small for them gets.
@@ -107,6 +109,57 @@ D3DKMT_ADAPTERTYPE_RENDER_SUPPORTED = 0x1
 D3DKMT_ADAPTERTYPE_SOFTWARE_DEVICE = 0x4
 D3DKMT_ADAPTERTYPE_COMPUTE_ONLY = 0x800
 D3DKMT_REGISTRY_STRING_CHARS = 260
+
+# The network tables: the address families, the adapters asked for without
+# their anycast and multicast addresses, the interface types that are no
+# adapter, the listening sockets with their processes, and the answer a
+# buffer too small gets.
+AF_UNSPEC = 0
+AF_INET = 2
+AF_INET6 = 23
+GAA_FLAG_SKIP_ANYCAST = 0x0002
+GAA_FLAG_SKIP_MULTICAST = 0x0004
+GAA_FLAG_INCLUDE_GATEWAYS = 0x0080
+IF_TYPE_SOFTWARE_LOOPBACK = 24
+IF_TYPE_TUNNEL = 131
+TCP_TABLE_OWNER_PID_LISTENER = 3
+ERROR_BUFFER_OVERFLOW = 111
+
+# The registry read from its 64-bit view whatever the process is.
+KEY_WOW64_64KEY = 0x0100
+
+# Local accounts: the normal ones, every row in one buffer, the flag of a
+# disabled one, the kind of SID an account is, and a name no SID answers.
+FILTER_NORMAL_ACCOUNT = 0x0002
+MAX_PREFERRED_LENGTH = 0xFFFFFFFF
+UF_ACCOUNTDISABLE = 0x0002
+SID_TYPE_USER = 1
+ERROR_NONE_MAPPED = 1332
+COMPUTER_NAME_CHARS = 256
+
+# Logons: the two kinds tried for an account's files, and the answer a wrong
+# password gets.
+LOGON32_LOGON_BATCH = 4
+LOGON32_LOGON_NETWORK_CLEARTEXT = 8
+LOGON32_PROVIDER_DEFAULT = 0
+ERROR_LOGON_FAILURE = 1326
+
+# Another process's memory: the access it is opened with, its basic
+# information, and where its parameters hold the image path and the command
+# line in a 64-bit process.
+PROCESS_QUERY_INFORMATION = 0x0400
+PROCESS_VM_READ = 0x0010
+PROCESS_BASIC_INFORMATION_CLASS = 0
+PEB_PROCESS_PARAMETERS_OFFSET = 0x20
+PROCESS_PARAMETERS_IMAGE_PATH_OFFSET = 0x60
+PROCESS_PARAMETERS_COMMAND_LINE_OFFSET = 0x70
+
+# Another service's configuration: the access the manager and the service
+# are opened with, and the answer for a service that is not there.
+SC_MANAGER_CONNECT = 0x0001
+SERVICE_QUERY_CONFIG = 0x0001
+SERVICE_QUERY_STATUS = 0x0004
+ERROR_SERVICE_DOES_NOT_EXIST = 1060
 
 
 def last_error() -> OSError:
@@ -148,6 +201,60 @@ def service_handler_type():
     return ctypes.WINFUNCTYPE(DWORD, DWORD, DWORD, ctypes.c_void_p, ctypes.c_void_p)
 
 
+def kill_on_close_job(kernel32):
+    """A job object that ends every process in it when its last handle closes.
+
+    Args:
+        kernel32: The bound kernel32.
+
+    Returns:
+        The job handle.
+
+    Raises:
+        OSError: When the job cannot be made or limited.
+    """
+    job = kernel32.CreateJobObjectW(None, None)
+    if not job:
+        raise last_error()
+    limits = JobObjectExtendedLimitInformation()
+    limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+    if not kernel32.SetInformationJobObject(
+        job,
+        JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS,
+        ctypes.byref(limits),
+        ctypes.sizeof(limits),
+    ):
+        kernel32.CloseHandle(job)
+        raise last_error()
+    return job
+
+
+def utf16_at(data: bytes, base: int, address: int) -> str:
+    """The null-terminated UTF-16 string a pointer inside a buffer names.
+
+    Args:
+        data: The buffer's bytes.
+        base: The address the buffer sat at, which its pointers count from.
+        address: The pointer; 0 is no string.
+
+    Returns:
+        The text up to its null, or to the buffer's end; empty for a null
+        pointer.
+
+    Raises:
+        ValueError: When the pointer leads outside the buffer.
+    """
+    if not address:
+        return ""
+    offset = address - base
+    if offset < 0 or offset >= len(data):
+        raise ValueError(f"a pointer {address:#x} outside the buffer at {base:#x}")
+    end = offset
+    while end + 1 < len(data) and data[end : end + 2] != b"\x00\x00":
+        end += 2
+    return data[offset:end].decode("utf-16-le", "replace")
+
+
 _LIBRARIES = None
 
 
@@ -163,6 +270,8 @@ def libraries() -> "Win32Libraries":
     """
     global _LIBRARIES
     if _LIBRARIES is None:
+        if not hasattr(ctypes, "WinDLL"):
+            raise OSError("no Win32 libraries on this system")
         _LIBRARIES = Win32Libraries()
     return _LIBRARIES
 
@@ -479,6 +588,136 @@ class D3dkmtCloseAdapter(ctypes.Structure):
     _fields_ = [("hAdapter", ctypes.c_uint32)]
 
 
+class SocketAddress(ctypes.Structure):
+    """SOCKET_ADDRESS, its pointer as a 64-bit address."""
+
+    _fields_ = [("lpSockaddr", ctypes.c_uint64), ("iSockaddrLength", ctypes.c_int32)]
+
+
+class IpAdapterAddresses(ctypes.Structure):
+    """IP_ADAPTER_ADDRESSES_LH up to its LUID, pointers as 64-bit addresses."""
+
+    _fields_ = [
+        ("Length", ctypes.c_uint32),
+        ("IfIndex", ctypes.c_uint32),
+        ("Next", ctypes.c_uint64),
+        ("AdapterName", ctypes.c_uint64),
+        ("FirstUnicastAddress", ctypes.c_uint64),
+        ("FirstAnycastAddress", ctypes.c_uint64),
+        ("FirstMulticastAddress", ctypes.c_uint64),
+        ("FirstDnsServerAddress", ctypes.c_uint64),
+        ("DnsSuffix", ctypes.c_uint64),
+        ("Description", ctypes.c_uint64),
+        ("FriendlyName", ctypes.c_uint64),
+        ("PhysicalAddress", ctypes.c_uint8 * 8),
+        ("PhysicalAddressLength", ctypes.c_uint32),
+        ("Flags", ctypes.c_uint32),
+        ("Mtu", ctypes.c_uint32),
+        ("IfType", ctypes.c_uint32),
+        ("OperStatus", ctypes.c_int32),
+        ("Ipv6IfIndex", ctypes.c_uint32),
+        ("ZoneIndices", ctypes.c_uint32 * 16),
+        ("FirstPrefix", ctypes.c_uint64),
+        ("TransmitLinkSpeed", ctypes.c_uint64),
+        ("ReceiveLinkSpeed", ctypes.c_uint64),
+        ("FirstWinsServerAddress", ctypes.c_uint64),
+        ("FirstGatewayAddress", ctypes.c_uint64),
+        ("Ipv4Metric", ctypes.c_uint32),
+        ("Ipv6Metric", ctypes.c_uint32),
+        ("Luid", ctypes.c_uint64),
+    ]
+
+
+class IpAdapterUnicastAddress(ctypes.Structure):
+    """IP_ADAPTER_UNICAST_ADDRESS_LH, pointers as 64-bit addresses."""
+
+    _fields_ = [
+        ("Length", ctypes.c_uint32),
+        ("Flags", ctypes.c_uint32),
+        ("Next", ctypes.c_uint64),
+        ("Address", SocketAddress),
+        ("PrefixOrigin", ctypes.c_int32),
+        ("SuffixOrigin", ctypes.c_int32),
+        ("DadState", ctypes.c_int32),
+        ("ValidLifetime", ctypes.c_uint32),
+        ("PreferredLifetime", ctypes.c_uint32),
+        ("LeaseLifetime", ctypes.c_uint32),
+        ("OnLinkPrefixLength", ctypes.c_uint8),
+    ]
+
+
+class MibTcpRowOwnerPid(ctypes.Structure):
+    """MIB_TCPROW_OWNER_PID: one IPv4 socket, its port in network order."""
+
+    _fields_ = [
+        ("dwState", ctypes.c_uint32),
+        ("dwLocalAddr", ctypes.c_uint32),
+        ("dwLocalPort", ctypes.c_uint32),
+        ("dwRemoteAddr", ctypes.c_uint32),
+        ("dwRemotePort", ctypes.c_uint32),
+        ("dwOwningPid", ctypes.c_uint32),
+    ]
+
+
+class MibTcp6RowOwnerPid(ctypes.Structure):
+    """MIB_TCP6ROW_OWNER_PID: one IPv6 socket, its port in network order."""
+
+    _fields_ = [
+        ("ucLocalAddr", ctypes.c_uint8 * 16),
+        ("dwLocalScopeId", ctypes.c_uint32),
+        ("dwLocalPort", ctypes.c_uint32),
+        ("ucRemoteAddr", ctypes.c_uint8 * 16),
+        ("dwRemoteScopeId", ctypes.c_uint32),
+        ("dwRemotePort", ctypes.c_uint32),
+        ("dwState", ctypes.c_uint32),
+        ("dwOwningPid", ctypes.c_uint32),
+    ]
+
+
+class UserInfo1(ctypes.Structure):
+    """USER_INFO_1, pointers as 64-bit addresses."""
+
+    _fields_ = [
+        ("usri1_name", ctypes.c_uint64),
+        ("usri1_password", ctypes.c_uint64),
+        ("usri1_password_age", ctypes.c_uint32),
+        ("usri1_priv", ctypes.c_uint32),
+        ("usri1_home_dir", ctypes.c_uint64),
+        ("usri1_comment", ctypes.c_uint64),
+        ("usri1_flags", ctypes.c_uint32),
+        ("usri1_script_path", ctypes.c_uint64),
+    ]
+
+
+class ProcessBasicInformation(ctypes.Structure):
+    """PROCESS_BASIC_INFORMATION of a 64-bit process."""
+
+    _fields_ = [
+        ("ExitStatus", ctypes.c_int32),
+        ("PebBaseAddress", ctypes.c_uint64),
+        ("AffinityMask", ctypes.c_uint64),
+        ("BasePriority", ctypes.c_int32),
+        ("UniqueProcessId", ctypes.c_uint64),
+        ("InheritedFromUniqueProcessId", ctypes.c_uint64),
+    ]
+
+
+class QueryServiceConfig(ctypes.Structure):
+    """QUERY_SERVICE_CONFIGW, pointers as 64-bit addresses."""
+
+    _fields_ = [
+        ("dwServiceType", ctypes.c_uint32),
+        ("dwStartType", ctypes.c_uint32),
+        ("dwErrorControl", ctypes.c_uint32),
+        ("lpBinaryPathName", ctypes.c_uint64),
+        ("lpLoadOrderGroup", ctypes.c_uint64),
+        ("dwTagId", ctypes.c_uint32),
+        ("lpDependencies", ctypes.c_uint64),
+        ("lpServiceStartName", ctypes.c_uint64),
+        ("lpDisplayName", ctypes.c_uint64),
+    ]
+
+
 class Win32Libraries:
     """Every DLL the agent calls, with its prototypes set once.
 
@@ -498,11 +737,17 @@ class Win32Libraries:
         self.ntdll = ctypes.WinDLL("ntdll")
         self.pdh = ctypes.WinDLL("pdh")
         self.gdi32 = ctypes.WinDLL("gdi32")
+        self.iphlpapi = ctypes.WinDLL("iphlpapi")
+        self.netapi32 = ctypes.WinDLL("netapi32")
         self._describe_kernel32()
         self._describe_advapi32()
         self._describe_shell32()
         self._describe_wtsapi32()
         self._describe_metrics()
+        self._describe_network()
+        self._describe_accounts()
+        self._describe_processes()
+        self._describe_services()
 
     def _describe_kernel32(self) -> None:
         """Prototype the kernel32 calls."""
@@ -774,3 +1019,106 @@ class Win32Libraries:
             self.gdi32.D3DKMTCloseAdapter.argtypes = [
                 ctypes.POINTER(D3dkmtCloseAdapter)
             ]
+
+    def _describe_network(self) -> None:
+        """Prototype the iphlpapi calls."""
+        self.iphlpapi.GetAdaptersAddresses.restype = DWORD
+        self.iphlpapi.GetAdaptersAddresses.argtypes = [
+            DWORD,
+            DWORD,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.POINTER(DWORD),
+        ]
+        self.iphlpapi.GetExtendedTcpTable.restype = DWORD
+        self.iphlpapi.GetExtendedTcpTable.argtypes = [
+            ctypes.c_void_p,
+            ctypes.POINTER(DWORD),
+            ctypes.c_int,
+            DWORD,
+            ctypes.c_int,
+            DWORD,
+        ]
+
+    def _describe_accounts(self) -> None:
+        """Prototype the local account, SID and logon calls."""
+        self.netapi32.NetUserEnum.restype = DWORD
+        self.netapi32.NetUserEnum.argtypes = [
+            ctypes.c_wchar_p,
+            DWORD,
+            DWORD,
+            ctypes.POINTER(ctypes.c_void_p),
+            DWORD,
+            ctypes.POINTER(DWORD),
+            ctypes.POINTER(DWORD),
+            ctypes.POINTER(DWORD),
+        ]
+        self.netapi32.NetApiBufferSize.restype = DWORD
+        self.netapi32.NetApiBufferSize.argtypes = [
+            ctypes.c_void_p,
+            ctypes.POINTER(DWORD),
+        ]
+        self.netapi32.NetApiBufferFree.restype = DWORD
+        self.netapi32.NetApiBufferFree.argtypes = [ctypes.c_void_p]
+        self.advapi32.ConvertSidToStringSidW.argtypes = [
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_void_p),
+        ]
+        self.advapi32.LogonUserW.argtypes = [
+            ctypes.c_wchar_p,
+            ctypes.c_wchar_p,
+            ctypes.c_wchar_p,
+            DWORD,
+            DWORD,
+            ctypes.POINTER(ctypes.c_void_p),
+        ]
+        self.advapi32.ImpersonateLoggedOnUser.argtypes = [ctypes.c_void_p]
+        self.advapi32.RevertToSelf.argtypes = []
+        self.kernel32.GetComputerNameW.argtypes = [
+            ctypes.c_wchar_p,
+            ctypes.POINTER(DWORD),
+        ]
+
+    def _describe_processes(self) -> None:
+        """Prototype the calls that read another process's parameters."""
+        self.ntdll.NtQueryInformationProcess.restype = DWORD
+        self.ntdll.NtQueryInformationProcess.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_int,
+            ctypes.c_void_p,
+            DWORD,
+            ctypes.POINTER(DWORD),
+        ]
+        self.kernel32.ReadProcessMemory.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_size_t),
+        ]
+
+    def _describe_services(self) -> None:
+        """Prototype the calls that read another service's configuration."""
+        self.advapi32.OpenSCManagerW.restype = ctypes.c_void_p
+        self.advapi32.OpenSCManagerW.argtypes = [
+            ctypes.c_wchar_p,
+            ctypes.c_wchar_p,
+            DWORD,
+        ]
+        self.advapi32.OpenServiceW.restype = ctypes.c_void_p
+        self.advapi32.OpenServiceW.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_wchar_p,
+            DWORD,
+        ]
+        self.advapi32.QueryServiceConfigW.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            DWORD,
+            ctypes.POINTER(DWORD),
+        ]
+        self.advapi32.QueryServiceStatus.argtypes = [
+            ctypes.c_void_p,
+            ctypes.POINTER(ServiceStatus),
+        ]
+        self.advapi32.CloseServiceHandle.argtypes = [ctypes.c_void_p]

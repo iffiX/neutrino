@@ -292,9 +292,7 @@ class ExecStream:
     @staticmethod
     def _windows_job(process: subprocess.Popen):
         """A job holding the process, that ends everything in it when closed."""
-        from neutrino_agent.streams.windows_shell import kill_on_close_job
-
         kernel32 = win32.libraries().kernel32
-        job = kill_on_close_job(kernel32)
+        job = win32.kill_on_close_job(kernel32)
         kernel32.AssignProcessToJobObject(job, int(process._handle))
         return job

@@ -246,9 +246,10 @@ def test_windows_needs_the_account_s_login_and_keeps_it_for_the_switch_back(
         "bob": ("failed", "credential_missing"),
     }
     assert {password for _account, password, _argv in platform.runs} == {"pw-ann"}
-    assert {argv[0] for _a, _p, argv in platform.runs} == {
-        binary + ".exe",
-        "powershell.exe",
+    assert {argv[0] for _a, _p, argv in platform.runs} == {binary + ".exe"}
+    assert platform.steps
+    assert {(account, password) for account, password, *_ in platform.steps} == {
+        ("ann", "pw-ann")
     }
     login = tmp_path / "state" / "ai_tools" / "ann" / "login.json"
     assert stat.S_IMODE(os.stat(login).st_mode) == 0o600

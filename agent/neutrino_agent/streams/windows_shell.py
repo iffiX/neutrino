@@ -171,34 +171,6 @@ def _start(kernel32, argv: list, attributes, start_dir: str):
     return process
 
 
-def kill_on_close_job(kernel32):
-    """A job object that ends every process in it when its last handle closes.
-
-    Args:
-        kernel32: The bound kernel32.
-
-    Returns:
-        The job handle.
-
-    Raises:
-        OSError: When the job cannot be made or limited.
-    """
-    job = kernel32.CreateJobObjectW(None, None)
-    if not job:
-        raise win32.last_error()
-    limits = win32.JobObjectExtendedLimitInformation()
-    limits.BasicLimitInformation.LimitFlags = win32.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-    if not kernel32.SetInformationJobObject(
-        job,
-        win32.JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS,
-        ctypes.byref(limits),
-        ctypes.sizeof(limits),
-    ):
-        kernel32.CloseHandle(job)
-        raise win32.last_error()
-    return job
-
-
 class ConsoleTerminal:
     """PowerShell, or another program, on a pseudo console."""
 
@@ -265,7 +237,7 @@ class ConsoleTerminal:
                 self._attributes,
                 self._start_dir,
             )
-            self._job = kill_on_close_job(kernel32)
+            self._job = win32.kill_on_close_job(kernel32)
             kernel32.AssignProcessToJobObject(self._job, self._process.hProcess)
             kernel32.ResumeThread(self._process.hThread)
         except OSError:

@@ -34,6 +34,7 @@ CONTRACT_CALLS = {
         {"prompt": "(y/N)", "answer": "y\n"},
     ),
     "account_process": ("account_shell", ("alice", ["id"]), {}),
+    "as_account": ("act_as", ("alice", len, "x"), {"password": "pw"}),
     "install_system_packages": ("system_packages", (["cifs-utils"],), {}),
     "remove_system_packages": ("system_packages", (["cifs-utils"],), {}),
     "read_agent_service_state": ("agent_service", (), {}),
@@ -57,8 +58,15 @@ CONTRACT_CALLS = {
 }
 
 # Capabilities only a system that carries its own server, has no signals,
-# or has no uninstaller has; Linux has every other one.
-NOT_ON_LINUX = {"smb_server", "hub_packages", "process_terminate", "self_removal"}
+# acts as an account inside the agent, or has no uninstaller has; Linux has
+# every other one.
+NOT_ON_LINUX = {
+    "smb_server",
+    "hub_packages",
+    "process_terminate",
+    "act_as",
+    "self_removal",
+}
 
 # Contract methods the base class answers for everyone.
 BASE_IMPLEMENTED = {
