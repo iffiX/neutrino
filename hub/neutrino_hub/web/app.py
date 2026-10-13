@@ -25,6 +25,7 @@ from neutrino_hub.modules.clients.ai_keys import settle_device_keys
 from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiConfigApplier, load_config
 from neutrino_hub.modules.devices.desired_state import DesiredStateStore
 from neutrino_hub.modules.devices.registry import DeviceRegistry
+from neutrino_hub.modules.hub_update.installer import retire_finished_job
 from neutrino_hub.web import ws
 from neutrino_hub.web.agent_port import ChannelRequestLimitMiddleware
 from neutrino_hub.web.constants import WEB_CODE_BODY_INVALID, WEB_FRONTEND_DIST_DIR
@@ -120,6 +121,7 @@ def create_app() -> FastAPI:
     app.add_middleware(PanelHttpsRedirectMiddleware, runtime=app.state.runtime)
     _settle_gateway_key()
     _settle_device_keys()
+    _retire_update_job()
     _start_samplers()
 
     for router in API_ROUTERS:
@@ -249,6 +251,21 @@ def _settle_device_keys() -> None:
         return
     if dropped:
         LOGGER.info("gateway: revoked the keys of %s", ", ".join(dropped))
+
+
+def _retire_update_job() -> None:
+    """On macOS, end the update job an earlier hub submitted, at the panel's start.
+
+    launchd runs a submitted job again each time it exits; once the update's
+    record is final, the job's script is replaced by one that removes the job.
+    """
+    try:
+        if retire_finished_job():
+            LOGGER.info("hub update: the finished launchd job removes itself next")
+    except OSError as error:
+        LOGGER.warning(
+            "hub update: the finished launchd job was not retired: %s", error
+        )
 
 
 def _start_samplers() -> None:

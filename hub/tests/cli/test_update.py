@@ -1,7 +1,9 @@
-"""`nhub update`: what it says, when it asks, and what it hands to systemd."""
+"""`nhub update`: what it says, when it asks, and what it hands to the system."""
 
 import io
+import os
 import threading
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -40,6 +42,17 @@ class Installer:
     def is_unit_active(self):
         return self.is_active
 
+    def settled_record(self, *, is_task_running):
+        record = self.state.load()
+        is_in_unit = record is not None and record.stage in (
+            "installing",
+            "rolling_back",
+        )
+        return self.state.settle(
+            is_unit_active=self.is_active if is_in_unit else False,
+            is_task_running=is_task_running,
+        )
+
     def is_rollback_available(self, current):
         return self.rollback_available
 
@@ -49,12 +62,18 @@ class Installer:
     def prepare(self, found, *, current, port, https_port, on_progress):
         on_progress("downloading")
         self.prepared.append((found.version, current, port, https_port))
-        return SimpleNamespace(from_version=current, to_version=found.version)
+        return SimpleNamespace(
+            from_version=current, to_version=found.version, steps=("downloading",)
+        )
 
     def plan_for_file(self, package, *, current, port, https_port, on_progress):
-        on_progress(f"{package.name} is in place")
+        on_progress(f"{package.name} in place")
         self.prepared.append((package.name, current, port, https_port))
-        return SimpleNamespace(from_version=current, to_version="0.3.1")
+        return SimpleNamespace(
+            from_version=current,
+            to_version="0.3.1",
+            steps=(f"{package.name} in place",),
+        )
 
     def launch(self, plan):
         self.launched.append(plan)
@@ -224,7 +243,8 @@ def test_a_yes_stages_hands_over_and_waits_for_the_record(box, capsys):
     assert installer.prepared == [("0.3.1", "0.3.0", 8090, 8091)]
     assert [plan.to_version for plan in installer.launched] == ["0.3.1"]
     assert "downloading" in out
-    assert "handed to systemd as neutrino_hub_update" in out
+    assert "installing; the panel restarts now" in out
+    assert "systemd" not in out
     assert "installed 0.3.1 over 0.3.0" in out
 
 
@@ -255,6 +275,63 @@ def test_a_rollback_is_reported_with_its_reason(box, capsys):
     assert "gate: timed out" in err
 
 
+def test_the_installs_steps_are_printed_as_the_record_gains_them(box, capsys):
+    installer, _, _ = box
+    installer.checker.latest = lambda: Release("0.3.1")
+    settle(
+        installer.state,
+        "installed",
+        steps=[
+            "downloading",
+            "installing; the panel restarts now",
+            "installed 0.3.1",
+            "panel answers",
+            "agent already 0.3.1",
+            "done",
+        ],
+    )
+
+    assert update_module.update(is_confirmed=True, package=None) == 0
+
+    out = capsys.readouterr().out.splitlines()
+    assert out.count("downloading") == 1
+    assert out.count("installing; the panel restarts now") == 1
+    tail = out[out.index("installing; the panel restarts now") :]
+    assert tail == [
+        "installing; the panel restarts now",
+        "installed 0.3.1",
+        "panel answers",
+        "agent already 0.3.1",
+        "done",
+        "installed 0.3.1 over 0.3.0",
+    ]
+
+
+def test_an_install_whose_script_died_is_reported_not_waited_out(box, capsys):
+    installer, _, _ = box
+    installer.checker.latest = lambda: Release("0.3.1")
+
+    def launch(plan):
+        installer.state.save(
+            HubUpdateRecord(
+                stage="installing",
+                from_version="0.3.0",
+                to_version="0.3.1",
+                started_at="s",
+            )
+        )
+        moment = time.time() - 60
+        os.utime(installer.state.path, (moment, moment))
+
+    installer.launch = launch
+
+    assert update_module.update(is_confirmed=True, package=None) == 1
+
+    err = capsys.readouterr().err
+    assert "failed: 0.3.1 was given up on (update_interrupted)" in err
+    assert "still not settled" not in err
+
+
 def test_a_record_that_never_settles_says_where_to_look(box, capsys):
     installer, _, _ = box
     installer.checker.latest = lambda: Release("0.3.1")
@@ -282,7 +359,7 @@ def test_a_package_file_is_asked_about_by_name_and_staged(box, tmp_path, capsys)
 
     assert asked == ["install neutrino-hub_0.3.1_amd64.deb over 0.3.0? [y/N] "]
     assert installer.prepared == [("neutrino-hub_0.3.1_amd64.deb", "0.3.0", 8090, 8091)]
-    assert "is in place" in capsys.readouterr().out
+    assert "neutrino-hub_0.3.1_amd64.deb in place" in capsys.readouterr().out
 
 
 def test_a_package_file_that_is_not_there_is_refused_with_its_code(

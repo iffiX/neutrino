@@ -15,10 +15,12 @@ import base64
 import hashlib
 import io
 import json
+import os
 import socket
 import stat
 import sys
 import tarfile
+import time
 import urllib.error
 from pathlib import Path
 from types import SimpleNamespace
@@ -1076,8 +1078,10 @@ class _Checker:
     def __init__(self, latest=None, *, failure=None):
         self.latest_release = latest
         self.failure = failure
+        self.ages = []
 
-    def latest(self):
+    def latest(self, *, max_age_s=0):
+        self.ages.append(max_age_s)
         if self.failure is not None:
             raise self.failure
         return self.latest_release
@@ -1099,18 +1103,31 @@ class _Installer:
     def is_unit_active(self):
         return self.is_active
 
+    def settled_record(self, *, is_task_running):
+        record = self.state.load()
+        is_in_unit = record is not None and record.stage in (
+            "installing",
+            "rolling_back",
+        )
+        return self.state.settle(
+            is_unit_active=self.is_active if is_in_unit else False,
+            is_task_running=is_task_running,
+        )
+
     def is_rollback_available(self, current):
         return self.rollback_available
 
     def is_rollback_present(self, current):
         return self.rollback_present
 
-    def prepare(self, found, *, current, port, https_port, on_progress):
-        on_progress("downloading")
+    def prepare(self, found, *, current, port, https_port, on_progress, started_at):
+        on_progress("downloading neutrino-hub_0.3.1_amd64.deb  1 MB")
+        on_progress("50%")
         on_progress("100%")
         if self.prepare_failure is not None:
             raise self.prepare_failure
-        self.prepared.append((found.version, current, port, https_port))
+        on_progress("checked")
+        self.prepared.append((found.version, current, port, https_port, started_at))
         return SimpleNamespace(to_version=found.version)
 
     def launch(self, plan):
@@ -1187,12 +1204,35 @@ def test_the_last_updates_record_is_read_as_written(update_box):
         "finished_at": "f",
         "reason": "",
         "output": "done",
+        "steps": [],
     }
+
+
+def test_the_records_steps_are_read_beside_the_install_log(update_box):
+    opened, installer, _ = update_box
+    installer.state.save(
+        _record(
+            "installed",
+            output="Setting up neutrino-hub (0.3.1) ...",
+            steps=["installed 0.3.1", "panel answers", "done"],
+        )
+    )
+
+    body = opened.get("/api/hub/setting/release").json()
+
+    assert body["update"]["steps"] == ["installed 0.3.1", "panel answers", "done"]
+    assert body["update"]["output"] == "Setting up neutrino-hub (0.3.1) ..."
+
+
+def _aged(state, seconds: float = 60) -> None:
+    moment = time.time() - seconds
+    os.utime(state.path, (moment, moment))
 
 
 def test_an_install_whose_unit_is_gone_reads_as_interrupted(update_box):
     opened, installer, _ = update_box
     installer.state.save(_record("installing"))
+    _aged(installer.state)
     installer.is_active = False
 
     body = opened.get("/api/hub/setting/release").json()
@@ -1358,8 +1398,41 @@ def test_an_install_stages_the_confirmed_release_as_a_task(update_box):
     assert record.stage == "preparing"
     assert record.from_version == "0.3.0"
     assert record.to_version == "0.3.1"
+    assert record.started_at.endswith("Z")
     for _, source in runtime.tasks.started:
         asyncio.run(source.aclose())
+
+
+def test_an_install_reuses_the_release_a_check_read_moments_before(update_box):
+    """Every address shares GitHub's sixty calls an hour."""
+    opened, installer, runtime = update_box
+    installer.checker.latest_release = _Release("0.3.1")
+
+    opened.post("/api/hub/setting/release/scan")
+    opened.post("/api/hub/setting/release/install", json={"version": "0.3.1"})
+
+    assert installer.checker.ages == [0, 600]
+    for _, source in runtime.tasks.started:
+        asyncio.run(source.aclose())
+
+
+def test_a_scan_github_refused_for_its_hourly_limit_says_when_it_clears(
+    update_box,
+):
+    opened, installer, _ = update_box
+    installer.checker.failure = urllib.error.HTTPError(
+        "https://api",
+        403,
+        "rate limit exceeded",
+        {"x-ratelimit-remaining": "0", "x-ratelimit-reset": str(int(time.time()))},
+        None,
+    )
+
+    response = opened.post("/api/hub/setting/release/scan")
+
+    assert response.status_code == 502
+    assert response.json()["detail"]["code"] == "release_rate_limited"
+    assert response.json()["detail"]["params"]["minutes"] == 1
 
 
 @pytest.mark.parametrize(
@@ -1452,6 +1525,7 @@ async def _drained(source) -> list:
 
 def test_the_staging_task_relays_progress_and_hands_over(update_box, monkeypatch):
     opened, installer, _ = update_box
+    installer.state.save(_record("preparing", started_at="2026-10-14T01:00:00Z"))
     found = _Release("0.3.1")
 
     lines = asyncio.run(
@@ -1461,13 +1535,53 @@ def test_the_staging_task_relays_progress_and_hands_over(update_box, monkeypatch
     )
 
     assert lines == [
-        "staging neutrino-hub_0.3.1_amd64.deb of v0.3.1\n",
-        "downloading\n",
+        "downloading neutrino-hub_0.3.1_amd64.deb  1 MB\n",
+        "50%\n",
         "100%\n",
-        "handing the install to systemd; the panel restarts now\n",
+        "checked\n",
+        "installing; the panel restarts now\n",
     ]
-    assert installer.prepared == [("0.3.1", "0.3.0", 8090, 8091)]
+    assert installer.prepared == [
+        ("0.3.1", "0.3.0", 8090, 8091, "2026-10-14T01:00:00Z")
+    ]
     assert [plan.to_version for plan in installer.launched] == ["0.3.1"]
+
+
+def test_the_staging_writes_each_line_into_the_record_as_it_goes(update_box):
+    """A page that lost the stream reads the lines on the record."""
+    opened, installer, _ = update_box
+    installer.state.save(_record("preparing"))
+
+    asyncio.run(
+        _drained(
+            settings_router._update_source(
+                installer, _Release("0.3.1"), port=8090, https_port=8091
+            )
+        )
+    )
+
+    record = installer.state.load()
+    assert record.stage == "preparing"
+    assert record.steps == [
+        "downloading neutrino-hub_0.3.1_amd64.deb  1 MB",
+        "50%  100%",
+        "checked",
+    ]
+
+
+def test_no_line_of_the_update_names_the_systems_service_manager(update_box):
+    opened, installer, _ = update_box
+    lines = asyncio.run(
+        _drained(
+            settings_router._update_source(
+                installer, _Release("0.3.1"), port=8090, https_port=8091
+            )
+        )
+    )
+
+    for line in lines:
+        for word in ("systemd", "launchd", "PowerShell"):
+            assert word not in line
 
 
 def test_a_staging_that_fails_records_why_and_ends_the_task_failed(update_box):
@@ -1494,6 +1608,10 @@ def test_a_staging_that_fails_records_why_and_ends_the_task_failed(update_box):
     assert record.reason == "package_sha256_mismatch"
     assert record.started_at == "2026-09-20T15:00:00Z"
     assert record.finished_at.endswith("Z")
+    assert record.steps == [
+        "downloading neutrino-hub_0.3.1_amd64.deb  1 MB",
+        "50%  100%",
+    ]
     assert installer.launched == []
 
 

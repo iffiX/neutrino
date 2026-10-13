@@ -1,12 +1,14 @@
-"""Staging a package and handing the install to systemd, with nothing real."""
+"""Staging a package and handing the install to the system, with nothing real."""
 
 import hashlib
 import json
 import os
 import io
 import subprocess
+import time
 from collections import namedtuple
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -55,8 +57,8 @@ class Checker:
     def latest(self):
         return self.latest_release
 
-    def for_version(self, version):
-        self.asked.append(version)
+    def for_version(self, version, *, max_age_s=0):
+        self.asked.append((version, max_age_s))
         return self.by_version.get(version)
 
     def digest_of(self, found):
@@ -176,20 +178,90 @@ def test_debian_installs_and_rolls_back_with_one_apt_line():
     assert rollback == install
 
 
-def test_rhel_reinstalls_forward_and_puts_the_old_package_back_with_rpm():
+def test_rhel_installs_another_version_and_puts_the_old_package_back_with_rpm():
+    """dnf5 answers a reinstall of a version not installed with "Nothing to
+    do" and exit 0."""
     install, rollback = install_commands("rhel", Path("/x/a.rpm"))
 
-    assert install == (
-        "$PACE dnf reinstall -y /x/a.rpm || $PACE dnf install -y /x/a.rpm"
-    )
+    assert install == "$PACE dnf install -y /x/a.rpm"
     assert rollback == "$PACE rpm -Uvh --oldpackage /x/a.rpm"
 
 
-def test_arch_takes_the_file_both_ways():
-    assert install_commands("arch", Path("/x/a.pkg.tar.zst")) == (
-        "$PACE pacman -U --noconfirm /x/a.pkg.tar.zst",
-        "$PACE pacman -U --noconfirm /x/a.pkg.tar.zst",
+def test_rhel_reinstalls_only_the_version_already_installed():
+    install, rollback = install_commands("rhel", Path("/x/a.rpm"), is_reinstall=True)
+
+    assert install == "$PACE dnf reinstall -y /x/a.rpm"
+    assert rollback == "$PACE rpm -Uvh --oldpackage /x/a.rpm"
+
+
+def test_a_rendered_rhel_script_reinstalls_only_the_same_version(tmp_path):
+    plan = rhel_plan(tmp_path, from_version="0.3.0", to_version="0.3.1")
+    assert "( $PACE dnf install -y " in render_script(plan, directory=tmp_path)
+
+    plan = rhel_plan(tmp_path, from_version="0.3.1", to_version="0.3.1")
+    assert "( $PACE dnf reinstall -y " in render_script(plan, directory=tmp_path)
+
+
+def test_the_steps_name_the_program_each_install_ran(tmp_path):
+    """A rhel rollback is rpm's, its install dnf's."""
+    rhel = render_script(
+        rhel_plan(tmp_path, from_version="0.3.0", to_version="0.3.1"),
+        directory=tmp_path,
     )
+    debian = render_script(plan_in(tmp_path), directory=tmp_path)
+
+    assert "\nMANAGER=dnf\nROLLBACK_MANAGER=rpm\n" in rhel
+    assert "\nMANAGER=apt-get\nROLLBACK_MANAGER=apt-get\n" in debian
+
+
+def rhel_plan(directory: Path, *, from_version: str, to_version: str):
+    return HubUpdatePlan(
+        from_version=from_version,
+        to_version=to_version,
+        package=directory / f"neutrino-hub-{to_version}.x86_64.rpm",
+        rollback=None,
+        family="rhel",
+        port=8080,
+        https_port=8444,
+        units=("neutrino_hub_web",),
+        started_at="2026-09-20T15:00:00Z",
+    )
+
+
+def test_arch_waits_for_pacmans_lock_and_takes_the_file_both_ways():
+    wait = (
+        "waited=0; while [ -e /var/lib/pacman/db.lck ] && [ $waited -lt 300 ]; "
+        "do sleep 1; waited=$((waited + 1)); done; "
+    )
+
+    assert install_commands("arch", Path("/x/a.pkg.tar.zst")) == (
+        wait + "$PACE pacman -U --noconfirm /x/a.pkg.tar.zst",
+        wait + "$PACE pacman -U --noconfirm /x/a.pkg.tar.zst",
+    )
+
+
+def test_pacman_runs_once_its_lock_is_released(tmp_path, monkeypatch):
+    lock = tmp_path / "db.lck"
+    lock.write_text("")
+    calls = tmp_path / "calls"
+    fake = tmp_path / "bin"
+    fake.mkdir()
+    (fake / "pacman").write_text(
+        f'#!/bin/sh\n[ -e {lock} ] && echo "locked" >> {calls}; echo "pacman $*" >> {calls}\n'
+    )
+    (fake / "pacman").chmod(0o755)
+    monkeypatch.setattr(installer_module, "HUB_UPDATE_PACMAN_LOCK_PATH", str(lock))
+    install, _ = install_commands("arch", Path("/x/a.pkg.tar.zst"))
+    releasing = subprocess.Popen(["sh", "-c", f"sleep 1.5; rm {lock}"])
+
+    subprocess.run(
+        ["sh", "-c", "PACE=; " + install],
+        env={**os.environ, "PATH": f"{fake}:{os.environ['PATH']}"},
+        check=True,
+    )
+    releasing.wait()
+
+    assert calls.read_text() == "pacman -U --noconfirm /x/a.pkg.tar.zst\n"
 
 
 def test_an_unknown_family_has_no_command():
@@ -222,9 +294,40 @@ def test_staging_downloads_the_package_and_checks_its_digest(tmp_path, roots):
     assert plan.family == "debian"
     assert plan.port == 8080
     assert plan.started_at.endswith("Z")
-    assert lines[0].startswith("downloading neutrino-hub_0.3.1_amd64.deb")
-    assert "100%" in lines
-    assert "the package matches its published digest" in lines
+    assert lines == [
+        "downloading neutrino-hub_0.3.1_amd64.deb  1 MB",
+        "25%",
+        "50%",
+        "75%",
+        "100%",
+        "checked",
+        "no rollback package for 0.3.0",
+    ]
+    assert plan.steps == (
+        "downloading neutrino-hub_0.3.1_amd64.deb  1 MB",
+        "25%  50%  75%  100%",
+        "checked",
+        "no rollback package for 0.3.0",
+    )
+
+
+def test_a_staged_plan_keeps_when_the_update_was_asked_for(tmp_path, roots):
+    payload = b"new"
+    wanted = release("0.3.1", payload)
+    checker = Checker(digests={wanted.asset_name: hashlib.sha256(payload).hexdigest()})
+    installer = make_installer(
+        tmp_path, checker=checker, payloads={wanted.asset_url: payload}
+    )
+
+    plan = installer.prepare(
+        wanted,
+        current="0.3.0",
+        port=8080,
+        https_port=8444,
+        started_at="2026-10-14T01:00:00Z",
+    )
+
+    assert plan.started_at == "2026-10-14T01:00:00Z"
 
 
 def test_a_package_whose_digest_differs_is_deleted_and_refused(tmp_path, roots):
@@ -269,7 +372,7 @@ def test_a_package_already_here_that_matches_is_not_downloaded_again(tmp_path, r
     )
 
     assert plan.package.read_bytes() == payload
-    assert lines[0].endswith("is already here and matches its digest")
+    assert lines[0] == "neutrino-hub_0.3.1_amd64.deb already here, checked"
 
 
 def test_staging_keeps_only_the_target_and_the_rollback(tmp_path, roots):
@@ -320,8 +423,48 @@ def test_the_rollback_is_fetched_from_the_running_versions_release(tmp_path, roo
     )
 
     assert plan.rollback.read_bytes() == old
-    assert checker.asked == ["0.3.0"]
-    assert "the rollback package matches its published digest" in lines
+    assert checker.asked == [("0.3.0", 600)]
+    assert lines[-7:] == [
+        "downloading rollback neutrino-hub_0.3.0_amd64.deb  1 MB",
+        "25%",
+        "50%",
+        "75%",
+        "100%",
+        "checked",
+        "rollback package 0.3.0 ready",
+    ]
+    assert plan.steps == (
+        "downloading neutrino-hub_0.3.1_amd64.deb  1 MB",
+        "25%  50%  75%  100%",
+        "checked",
+        "downloading rollback neutrino-hub_0.3.0_amd64.deb  1 MB",
+        "25%  50%  75%  100%",
+        "checked",
+        "rollback package 0.3.0 ready",
+    )
+
+
+def test_a_rollback_package_already_here_is_said_so(tmp_path, roots):
+    new = b"new"
+    wanted = release("0.3.1", new)
+    directory = roots[0] / "hub_update"
+    directory.mkdir()
+    (directory / "neutrino-hub_0.3.0_amd64.deb").write_bytes(b"old")
+    checker = Checker(digests={wanted.asset_name: hashlib.sha256(new).hexdigest()})
+    installer = make_installer(
+        tmp_path, checker=checker, payloads={wanted.asset_url: new}
+    )
+    lines = []
+
+    installer.prepare(
+        wanted, current="0.3.0", port=8080, https_port=8444, on_progress=lines.append
+    )
+
+    assert lines[-2:] == [
+        "rollback neutrino-hub_0.3.0_amd64.deb already here, checked",
+        "rollback package 0.3.0 ready",
+    ]
+    assert checker.asked == []
 
 
 def test_no_release_for_the_running_version_means_no_rollback(tmp_path, roots):
@@ -338,7 +481,7 @@ def test_no_release_for_the_running_version_means_no_rollback(tmp_path, roots):
     )
 
     assert plan.rollback is None
-    assert any("there is no rollback" in line for line in lines)
+    assert lines[-1] == "no rollback package for 0.3.0"
 
 
 def test_a_rollback_a_release_carries_but_cannot_be_fetched_refuses(tmp_path, roots):
@@ -432,7 +575,11 @@ def test_a_package_file_is_linked_in_and_its_version_read_off_its_name(tmp_path,
     assert plan.package.read_bytes() == b"brought"
     assert plan.package.stat().st_ino == brought.stat().st_ino
     assert plan.rollback is None
-    assert lines[0] == "neutrino-hub_0.3.1_amd64.deb is in place"
+    assert lines[0] == "neutrino-hub_0.3.1_amd64.deb in place"
+    assert plan.steps == (
+        "neutrino-hub_0.3.1_amd64.deb in place",
+        "no rollback package for 0.3.0",
+    )
 
 
 def test_a_package_file_on_another_filesystem_is_copied_in(
@@ -507,6 +654,7 @@ def plan_in(directory: Path, *, rollback: bool = True) -> HubUpdatePlan:
         https_port=8444,
         units=("neutrino_hub_web",),
         started_at="2026-09-20T15:00:00Z",
+        steps=("downloading neutrino-hub_0.3.1_amd64.deb  1 MB", "checked"),
     )
 
 
@@ -543,6 +691,22 @@ def test_launching_writes_the_script_and_the_record_and_starts_the_unit(
     assert record.from_version == "0.3.0"
     assert record.to_version == "0.3.1"
     assert record.started_at == "2026-09-20T15:00:00Z"
+    assert record.steps == [
+        "downloading neutrino-hub_0.3.1_amd64.deb  1 MB",
+        "checked",
+        "installing; the panel restarts now",
+    ]
+
+
+def test_the_record_says_installing_only_once_the_unit_is_started(tmp_path, roots):
+    installer = make_installer(tmp_path, checker=Checker())
+    seen = []
+    installer._run = lambda command, **keywords: seen.append(installer._state.load())
+
+    installer.launch(plan_in(roots[0] / "hub_update"))
+
+    assert seen == [None]
+    assert installer._state.load().stage == "installing"
 
 
 def test_a_unit_systemd_would_not_start_is_a_failed_record(tmp_path, roots):
@@ -567,6 +731,64 @@ def test_the_unit_is_active_while_systemd_says_so(tmp_path, roots):
         tmp_path, checker=Checker(), units={"neutrino_hub_update": "activating"}
     ).is_unit_active()
     assert not make_installer(tmp_path, checker=Checker()).is_unit_active()
+
+
+def test_the_unit_is_asked_of_systemd_without_loading_it(tmp_path, monkeypatch):
+    asked = []
+    monkeypatch.setattr(
+        installer_module, "held_unit_state", lambda unit: asked.append(unit) or "active"
+    )
+    installer = HubUpdateInstaller(
+        checker=Checker(),
+        state=HubUpdateStateFile(path=tmp_path / "state.json"),
+        family="debian",
+    )
+
+    assert installer.is_unit_active()
+    assert asked == ["neutrino_hub_update"]
+
+
+def aged(state: HubUpdateStateFile, seconds: float) -> None:
+    """Make the record look written this many seconds ago."""
+    moment = time.time() - seconds
+    os.utime(state.path, (moment, moment))
+
+
+def test_a_settled_record_asks_about_the_unit_only_while_it_should_run(tmp_path, roots):
+    asked = []
+    installer = make_installer(tmp_path, checker=Checker())
+    installer._unit_state = lambda unit: asked.append(unit) or "inactive"
+    installer._state.save(record_of("installed"))
+
+    assert installer.settled_record(is_task_running=False).stage == "installed"
+    assert asked == []
+
+    installer._state.save(record_of("installing"))
+    aged(installer._state, 60)
+    settled = installer.settled_record(is_task_running=False)
+
+    assert asked == ["neutrino_hub_update"]
+    assert settled.stage == "failed"
+    assert settled.reason == "update_interrupted"
+    assert settled.finished_at.endswith("Z")
+
+
+def test_a_record_just_handed_over_is_not_taken_for_an_interrupted_one(tmp_path, roots):
+    installer = make_installer(tmp_path, checker=Checker())
+    installer._state.save(record_of("installing"))
+
+    assert installer.settled_record(is_task_running=False).stage == "installing"
+
+
+def record_of(stage: str):
+    from neutrino_hub.modules.hub_update.state import HubUpdateRecord
+
+    return HubUpdateRecord(
+        stage=stage,
+        from_version="0.3.0",
+        to_version="0.3.1",
+        started_at="2026-09-20T15:00:00Z",
+    )
 
 
 # --- the script's text ---
@@ -610,7 +832,7 @@ def test_the_agent_is_installed_by_the_forward_command_naming_the_file_found():
         '-o DPkg::Lock::Timeout=300 "$AGENT"'
     )
     assert installer_module.agent_install_command("rhel") == (
-        '$PACE dnf reinstall -y "$AGENT" || $PACE dnf install -y "$AGENT"'
+        '$PACE dnf install -y "$AGENT"'
     )
 
 
@@ -768,20 +990,30 @@ def test_a_windows_update_is_a_powershell_started_apart_from_the_service(
     tmp_path, roots
 ):
     started = []
+    state = HubUpdateStateFile(path=tmp_path / "state" / "hub_update" / "state.json")
+    directory = roots[0] / "hub_update"
+
+    def start(command):
+        started.append(command)
+        assert state.load() is None
+        return 4242
+
     installer = HubUpdateInstaller(
         checker=Checker(),
-        state=HubUpdateStateFile(path=tmp_path / "state" / "hub_update" / "state.json"),
+        state=state,
         asset="neutrino-hub-{version}-windows-amd64.msi",
         family="msi",
-        start_detached=started.append,
+        start_detached=start,
         disk_usage=lambda path: Usage(10**12, 0, 10**12),
     )
-    directory = roots[0] / "hub_update"
 
     installer.launch(system_plan(directory, "msi"))
 
     script = directory / "update.ps1"
     assert script.read_text().startswith("# Written by neutrino_hub")
+    assert (directory / "update.pid").read_text() == "4242"
+    assert state.load().stage == "installing"
+    assert "update.pid" not in script.read_text()
     assert started == [
         [
             "powershell.exe",
@@ -816,12 +1048,32 @@ def test_the_detached_start_falls_back_when_the_job_refuses_breakaway(monkeypatc
         tried.append(keywords["creationflags"])
         if keywords["creationflags"] & 0x01000000:
             raise OSError("breakaway refused")
+        return SimpleNamespace(pid=77)
+
+    monkeypatch.setattr(installer_module.subprocess, "Popen", popen)
+
+    assert installer_module._start_detached(["powershell.exe"]) == 77
+
+    assert tried == [0x09000000, 0x08000000]
+
+
+def test_the_windows_script_is_started_with_no_window_never_detached(monkeypatch):
+    """powershell.exe started with DETACHED_PROCESS exits at once without
+    running its script."""
+    tried = []
+
+    def popen(command, **keywords):
+        tried.append(keywords["creationflags"])
+        return SimpleNamespace(pid=77)
 
     monkeypatch.setattr(installer_module.subprocess, "Popen", popen)
 
     installer_module._start_detached(["powershell.exe"])
 
-    assert tried == [0x01000008, 0x00000008]
+    assert tried == [0x08000000 | 0x01000000]
+    for flags in installer_module.HUB_UPDATE_CREATION_FLAGS_WINDOWS:
+        assert flags & 0x08000000
+        assert not flags & 0x00000008
 
 
 def test_a_system_hub_holds_its_gate_on_its_one_service(tmp_path, roots):
@@ -916,3 +1168,72 @@ def test_old_system_scripts_and_packages_are_pruned(tmp_path, roots):
     installer._prune(keep=set())
 
     assert sorted(path.name for path in directory.iterdir()) == ["state.json"]
+
+
+# --- a macOS job an earlier hub left behind ---
+
+
+def finished_box(tmp_path, stage: str):
+    directory = tmp_path / "hub_update"
+    directory.mkdir()
+    state = HubUpdateStateFile(path=directory / "state.json")
+    state.save(record_of(stage))
+    (directory / "update.sh").write_text("#!/bin/sh\ninstaller -pkg x -target /\n")
+    return directory, state
+
+
+RETIRED = (
+    "#!/bin/sh\n"
+    "# Written by neutrino_hub.modules.hub_update; removes the launchd job\n"
+    "# neutrino_hub_update once its update has ended. Do not edit.\n"
+    "launchctl remove neutrino_hub_update\n"
+)
+
+
+@pytest.mark.parametrize("stage", ["installed", "rolled_back", "failed"])
+def test_a_mac_hub_starting_after_an_update_retires_its_job(tmp_path, stage):
+    """A job submitted by 0.5.0 or 0.5.1 runs its script again whenever it
+    exits; the script it runs next only removes it."""
+    directory, state = finished_box(tmp_path, stage)
+
+    assert installer_module.retire_finished_job(
+        system="darwin", state=state, directory=directory
+    )
+
+    script = directory / "update.sh"
+    assert script.read_text() == RETIRED
+    assert script.stat().st_mode & 0o777 == 0o700
+    assert not list(directory.glob(".tmp_*"))
+    assert not installer_module.retire_finished_job(
+        system="darwin", state=state, directory=directory
+    )
+
+
+@pytest.mark.parametrize("stage", ["preparing", "installing", "rolling_back"])
+def test_an_update_still_under_way_keeps_its_script(tmp_path, stage):
+    directory, state = finished_box(tmp_path, stage)
+
+    assert not installer_module.retire_finished_job(
+        system="darwin", state=state, directory=directory
+    )
+    assert "installer -pkg" in (directory / "update.sh").read_text()
+
+
+@pytest.mark.parametrize("system", ["linux", "windows"])
+def test_only_a_mac_retires_a_job(tmp_path, system):
+    directory, state = finished_box(tmp_path, "installed")
+
+    assert not installer_module.retire_finished_job(
+        system=system, state=state, directory=directory
+    )
+    assert "installer -pkg" in (directory / "update.sh").read_text()
+
+
+def test_a_mac_with_no_script_has_no_job_to_retire(tmp_path):
+    directory, state = finished_box(tmp_path, "installed")
+    (directory / "update.sh").unlink()
+
+    assert not installer_module.retire_finished_job(
+        system="darwin", state=state, directory=directory
+    )
+    assert not (directory / "update.sh").exists()
