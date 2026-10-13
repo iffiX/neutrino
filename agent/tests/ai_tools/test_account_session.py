@@ -4,36 +4,39 @@ What these pin: cc-switch runs as the account with the app selector first;
 a refusal is the command's own error and its words; the delete is answered
 on a terminal with the client's prompt and answer; on Linux and macOS a
 file is read with ``cat``, tested with ``test -f``, written by ``sh`` from
-standard input and removed with ``rm -f``; on Windows each is a PowerShell
-script naming the path as a literal; the login rides along on Windows; a
-login Windows refuses is ``credential_invalid``; anything else that stops a
-run is ``switch_failed`` with the account. The payload lives in the
+standard input and removed with ``rm -f``; on Windows each is a step of the
+agent's own code run while the thread acts as the account, and the steps do
+to real files what the tools do; the login rides along on Windows; a login
+Windows refuses is ``credential_invalid``; anything else that stops a run or
+a step is ``switch_failed`` with the account. The payload lives in the
 account's own Neutrino tree on each system, and its removal, as the
 account, takes the tree's directories left empty and stops at the first
 that holds anything else.
 """
 
-import base64
+import codecs
 import shutil
 import subprocess
 
 import pytest
 
+from neutrino_agent.ai_tools import account_session
 from neutrino_agent.ai_tools.account_session import (
     POSIX_REMOVE_SHELL,
     AiToolsAccountSession,
-    powershell_literal,
 )
 from neutrino_agent.exceptions import ModuleApplyError, ToolSwitchError
 
 
 class RecordingPlatform:
-    """Answers every run with a set result and records it."""
+    """Answers every run and every step with a set result and records it."""
 
     def __init__(self, os_name="linux", *, code=0, out="", err="", refusal=None):
         self.os_name = os_name
         self.runs: list = []
+        self.steps: list = []
         self.answered: list = []
+        self.step_answer = None
         self._result = (code, out, err)
         self._refusal = refusal
 
@@ -53,6 +56,19 @@ class RecordingPlatform:
             raise self._refusal
         code, out, err = self._result
         return subprocess.CompletedProcess(argv, code, out, err)
+
+    def as_account(self, account, step, *arguments, password=""):
+        self.steps.append(
+            {
+                "account": account,
+                "step": step.__name__,
+                "arguments": list(arguments),
+                "password": password,
+            }
+        )
+        if self._refusal is not None:
+            raise self._refusal
+        return self.step_answer
 
     def run_as_account_answering(
         self,
@@ -80,18 +96,6 @@ def session_on(platform, home="/home/ann", password=""):
         binary="/opt/neutrino/agent/bin/cc-switch",
         password=password,
     )
-
-
-def script_of(argv) -> str:
-    assert argv[:6] == [
-        "powershell.exe",
-        "-NoProfile",
-        "-NonInteractive",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-EncodedCommand",
-    ]
-    return base64.b64decode(argv[6]).decode("utf-16-le")
 
 
 def test_cc_switch_runs_as_the_account_with_the_app_first():
@@ -166,6 +170,7 @@ def test_posix_files_are_reached_with_the_system_s_own_tools():
         run["argv"][-1] == "/home/ann/.claude/settings.json" for run in platform.runs
     )
     assert platform.runs[2]["stdin"] == "{}"
+    assert platform.steps == []
 
 
 def test_an_absent_file_reads_empty():
@@ -175,24 +180,146 @@ def test_an_absent_file_reads_empty():
     assert session_on(platform).is_file("/home/ann/x") is False
 
 
-def test_windows_files_are_reached_by_powershell_with_the_path_as_a_literal():
+def test_windows_files_are_reached_by_steps_acting_as_the_account():
     platform = RecordingPlatform("windows")
     session = session_on(platform, "C:\\Users\\o'neil", "pw")
     path = session.path(".codex", "config.toml")
+    folder = session.path(".codex")
 
-    session.read_text(path)
+    platform.step_answer = "model = 0"
+    assert session.read_text(path) == "model = 0"
+    platform.step_answer = ""
     session.write_text(path, "model = 1")
+    session.make_dir(folder)
     session.remove(path)
+    platform.step_answer = True
+    assert session.is_file(path) is True
+    assert session.is_dir(folder) is True
 
     assert path == "C:\\Users\\o'neil\\.codex\\config.toml"
-    scripts = [script_of(run["argv"]) for run in platform.runs]
-    literal = powershell_literal(path)
-    assert literal == "'C:\\Users\\o''neil\\.codex\\config.toml'"
-    assert all(literal in script for script in scripts)
-    assert "ReadAllText" in scripts[0]
-    assert "ReadToEnd" in scripts[1] and platform.runs[1]["stdin"] == "model = 1"
-    assert "Remove-Item" in scripts[2]
-    assert {run["password"] for run in platform.runs} == {"pw"}
+    assert [(step["step"], step["arguments"]) for step in platform.steps] == [
+        ("_step_read", [path]),
+        ("_step_write", [path, "model = 1"]),
+        ("_step_make_dir", [folder]),
+        ("_step_remove", [path]),
+        ("_step_is_file", [path]),
+        ("_step_is_dir", [folder]),
+    ]
+    assert {(step["account"], step["password"]) for step in platform.steps} == {
+        ("ann", "pw")
+    }
+    assert platform.runs == []
+
+
+def test_an_absent_windows_file_reads_empty():
+    platform = RecordingPlatform("windows")
+
+    assert session_on(platform, "C:\\Users\\ann", "pw").read_text("C:\\x") == ""
+
+
+def test_a_windows_step_that_fails_is_switch_failed_with_its_words():
+    platform = RecordingPlatform("windows")
+    platform.step_answer = "[Errno 13] Permission denied"
+    session = session_on(platform, "C:\\Users\\ann", "pw")
+
+    with pytest.raises(ToolSwitchError) as made:
+        session.make_dir("C:\\Users\\ann\\.codex")
+    with pytest.raises(ToolSwitchError) as stored:
+        session.prepare_store()
+    with pytest.raises(ToolSwitchError) as written:
+        session.write_text("C:\\Users\\ann\\.codex\\config.toml", "x")
+
+    for caught in (made, stored, written):
+        assert caught.value.code == "switch_failed"
+        assert caught.value.params["account"] == "ann"
+        assert "Permission denied" in caught.value.params["detail"]
+    assert written.value.params["detail"].startswith("could not write")
+
+
+def test_a_windows_login_refused_or_not_granted_stops_the_step():
+    refused = RecordingPlatform(
+        "windows", refusal=ModuleApplyError("credential_invalid", {"account": "x"})
+    )
+    not_granted = RecordingPlatform("windows", refusal=OSError("logon not granted"))
+
+    with pytest.raises(ToolSwitchError) as caught:
+        session_on(refused, "C:\\Users\\ann", "pw").read_text("C:\\x")
+    assert (caught.value.code, caught.value.params) == (
+        "credential_invalid",
+        {"account": "ann"},
+    )
+    with pytest.raises(ToolSwitchError) as caught:
+        session_on(not_granted, "C:\\Users\\ann", "pw").is_file("C:\\x")
+    assert caught.value.code == "switch_failed"
+    assert "could not act as ann" in caught.value.params["detail"]
+
+
+def test_the_windows_steps_do_to_real_files_what_the_tools_do(tmp_path):
+    path = str(tmp_path / "home" / ".codex" / "config.toml")
+
+    assert account_session._step_read(path) is None
+    assert account_session._step_is_file(path) is False
+    assert account_session._step_write(path, "model = \u00e9\r\n") == ""
+    assert (tmp_path / "home" / ".codex" / "config.toml").read_bytes() == (
+        "model = \u00e9\r\n".encode("utf-8")
+    )
+    assert account_session._step_read(path) == "model = \u00e9\r\n"
+    assert account_session._step_is_file(path) is True
+    assert account_session._step_is_dir(str(tmp_path / "home" / ".codex")) is True
+    account_session._step_remove(path)
+    account_session._step_remove(path)
+    assert account_session._step_is_file(path) is False
+    made = str(tmp_path / "a" / "b")
+    assert account_session._step_make_dir(made) == ""
+    assert account_session._step_make_dir(made) == ""
+    account_session._step_remove_empty_dir(made)
+    assert not (tmp_path / "a" / "b").exists()
+    (tmp_path / "file").write_text("x")
+    assert account_session._step_make_dir(str(tmp_path / "file" / "c")) != ""
+
+
+@pytest.mark.parametrize(
+    "data,text",
+    [
+        (codecs.BOM_UTF8 + "\u00e9".encode("utf-8"), "\u00e9"),
+        (codecs.BOM_UTF16_LE + "\u00e9".encode("utf-16-le"), "\u00e9"),
+        (b"plain", "plain"),
+    ],
+)
+def test_a_windows_read_takes_the_byte_order_mark_off(tmp_path, data, text):
+    (tmp_path / "f").write_bytes(data)
+
+    assert account_session._step_read(str(tmp_path / "f")) == text
+
+
+@pytest.mark.parametrize(
+    "kept,left",
+    [
+        (None, []),
+        ("neutrino/agent/cloudcli", ["neutrino/agent"]),
+        ("neutrino/client", ["neutrino"]),
+    ],
+)
+def test_the_windows_removal_leaves_no_empty_neutrino_directory(tmp_path, kept, left):
+    share = tmp_path / "Local"
+    tree = share / "neutrino" / "agent" / "ai_tools"
+    (tree / "cc_switch").mkdir(parents=True)
+    (tree / "cc_switch" / "db").write_text("{}")
+    (tree / "payload").write_text("{}")
+    if kept:
+        (share / kept).mkdir(parents=True, exist_ok=True)
+    dirs = [str(tree), str(tree.parent), str(tree.parent.parent)]
+
+    account_session._step_remove_tree_with_dirs(str(tree / "cc_switch"), dirs)
+    assert tree.is_dir()
+    account_session._step_remove_with_dirs(str(tree / "payload"), dirs)
+
+    assert not tree.exists()
+    assert share.exists()
+    for name in left:
+        assert (share / name).is_dir()
+    if not kept:
+        assert not (share / "neutrino").exists()
 
 
 def test_a_write_that_fails_is_switch_failed():
@@ -270,17 +397,19 @@ def test_the_payload_is_removed_as_the_account_with_its_tree_deepest_first():
     ]
 
 
-def test_windows_removes_the_payload_and_its_empty_tree_by_powershell():
+def test_windows_removes_the_payload_and_the_store_with_their_empty_tree():
     platform = RecordingPlatform("windows")
+    session = session_on(platform, "C:\\Users\\ann", "pw")
 
-    session_on(platform, "C:\\Users\\ann", "pw").remove_payload()
+    session.remove_payload()
+    session.remove_store()
 
-    script = script_of(platform.runs[0]["argv"])
     tree = "C:\\Users\\ann\\AppData\\Local\\Neutrino"
-    assert powershell_literal(tree + "\\agent\\ai_tools\\payload") in script
     dirs = [tree + "\\agent\\ai_tools", tree + "\\agent", tree]
-    assert ", ".join(powershell_literal(d) for d in dirs) in script
-    assert "Get-ChildItem" in script and "break" in script
+    assert [(step["step"], step["arguments"]) for step in platform.steps] == [
+        ("_step_remove_with_dirs", [tree + "\\agent\\ai_tools\\payload", dirs]),
+        ("_step_remove_tree_with_dirs", [tree + "\\agent\\ai_tools\\cc_switch", dirs]),
+    ]
 
 
 @pytest.mark.skipif(shutil.which("sh") is None, reason="needs a POSIX shell")
@@ -346,6 +475,7 @@ def test_a_mode_is_read_and_set_as_the_account_and_never_on_windows():
     assert session_on(windows, "C:\\Users\\ann").mode_of("C:\\x") is None
     session_on(windows, "C:\\Users\\ann").set_mode("C:\\x", 0o600)
     assert windows.runs == []
+    assert windows.steps == []
 
 
 STORE = "/home/ann/.local/share/neutrino/agent/ai_tools/cc_switch"

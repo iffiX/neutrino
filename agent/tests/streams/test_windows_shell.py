@@ -19,6 +19,7 @@ import time
 import pytest
 
 from neutrino_agent.exceptions import StreamRefused
+import neutrino_agent.platforms.windows as windows_module
 from neutrino_agent.platforms import win32
 from neutrino_agent.platforms.windows import WindowsPlatform
 from neutrino_agent.streams import shell as shell_module
@@ -285,18 +286,17 @@ def test_powershell_starts_suspended_and_is_resumed_once_in_the_job():
     ) in kernel32.calls
 
 
-def test_the_shell_starts_in_the_console_accounts_profile(tmp_path):
+def test_the_shell_starts_in_the_console_accounts_profile(monkeypatch, tmp_path):
     kernel32 = FakeKernel32()
     channel = FakeChannel()
     channel.feed(("data", b"exit 0\r"))
     homes = {"alice": str(tmp_path)}
-    platform = WindowsPlatform(
-        seat=FakeSeat(["alice"]),
-        powershell=lambda script, document: {
-            "is_present": True,
-            "home": homes[document["name"]],
-        },
-    )
+
+    def account_home(account, *, advapi32=None, kernel32=None):
+        return homes[account]
+
+    monkeypatch.setattr(windows_module, "account_home", account_home)
+    platform = WindowsPlatform(seat=FakeSeat(["alice"]))
 
     run_shell(kernel32, channel, platform=platform)
 

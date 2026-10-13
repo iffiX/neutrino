@@ -128,6 +128,26 @@ REMOTE_DESKTOP_WINDOWS_SETTINGS_PARTS = (
 REMOTE_DESKTOP_WINDOWS_PROGRAM_NAME = "rustdesk.exe"
 # What sc.exe exits with for a service that does not exist.
 REMOTE_DESKTOP_WINDOWS_NO_SERVICE = 1060
+# A service's start type and state as the service control manager numbers
+# them, by the words Win32_Service gives them.
+REMOTE_DESKTOP_WINDOWS_START_MODES = {
+    0: "Boot",
+    1: "System",
+    2: "Auto",
+    3: "Manual",
+    4: "Disabled",
+}
+REMOTE_DESKTOP_WINDOWS_SERVICE_STATES = {
+    1: "Stopped",
+    2: "Start Pending",
+    3: "Stop Pending",
+    4: "Running",
+    5: "Continue Pending",
+    6: "Pause Pending",
+    7: "Paused",
+}
+# How a RustDesk process's image name starts, compared without case.
+REMOTE_DESKTOP_WINDOWS_PROCESS_PREFIX = "rustdesk"
 
 # The user-tier remote desktops the module detects.
 REMOTE_DESKTOP_SUPPORTED_PRODUCTS = ("anydesk", "teamviewer")

@@ -42,12 +42,10 @@ from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.cloudcli import hooks as hooks_module
 from neutrino_agent.modules.cloudcli.config import CloudcliConfig, jwt_secret
 from neutrino_agent.modules.cloudcli.hooks import (
-    FINISH_INSTALL_SCRIPT,
-    INSTALL_SCRIPT,
-    INSTALL_STATUS_SCRIPT,
     NATIVE_CHECK_EXIT,
     CloudcliHooks,
     cookie_name,
+    install_output,
     is_login_valid,
     node_dir,
     node_path,
@@ -63,6 +61,7 @@ from neutrino_agent.modules.shared.account_service import (
 from neutrino_agent.modules.shared.http_forward import InstanceForwarder, mint_token
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
 from neutrino_agent.platforms.base import AgentPlatform
+from tests.conftest import RecordingHost
 
 SECRET = "instance-secret"  # scan: allow
 PASSWORD = "hub-password-1"  # scan: allow
@@ -445,23 +444,13 @@ def test_a_mac_install_runs_npm_as_the_account(tmp_path):
 # --- the install on Windows ---
 
 
-class PowerShell:
-    def __init__(self):
-        self.calls: list = []
-        self.answers: dict = {}
-        self.install_tasks: list = []
+def granted(argv, **_):
+    """icacls granting whatever it is asked, each call recorded."""
+    GRANTS.append(list(argv))
+    return CommandResult(command=list(argv), exit_code=0, stdout="", stderr="")
 
-    def __call__(self, script, document, timeout_s=120):
-        self.calls.append((script, document))
-        if script == INSTALL_STATUS_SCRIPT:
-            return {"tasks": list(self.install_tasks)}
-        answer = self.answers.get(script, {})
-        if isinstance(answer, Exception):
-            raise answer
-        return answer
 
-    def scripts(self) -> list:
-        return [script for script, _document in self.calls]
+GRANTS: list = []
 
 
 def install_task(state, last_result=0):
@@ -482,34 +471,47 @@ def ready(monkeypatch):
 
 @pytest.fixture
 def windows(tmp_path, ready):
-    powershell = PowerShell()
+    GRANTS.clear()
+    host = RecordingHost({"task_states": {"tasks": []}})
     hooks = hooks_for(
         "windows",
         with_node(tmp_path, "windows"),
-        powershell=powershell,
+        powershell=host,
+        run=granted,
     )
-    return hooks, powershell, AccountEntry(0, 0, "C:\\Users\\ann", "")
+    return hooks, host, AccountEntry(0, 0, "C:\\Users\\ann", "")
 
 
 def test_an_install_is_started_as_a_task_and_left_to_run(windows):
-    hooks, powershell, entry = windows
+    hooks, host, entry = windows
 
     hooks.prepare_module()
     notes = hooks.prepare(CONFIG, CONFIG.instances[0], entry)
 
     assert notes == []
-    assert powershell.scripts() == [INSTALL_STATUS_SCRIPT, INSTALL_SCRIPT]
-    _script, document = powershell.calls[1]
-    assert document["account"] == "ann"
-    assert document["password"] == "login-pw"
-    assert document["task"] == "neutrino_cloudcli_install_ann"
-    assert "@cloudcli-ai/cloudcli@1.37.3" in document["script_text"]
-    assert 'set "npm_config_registry=https://registry.npmmirror.com"' in (
-        document["script_text"]
+    assert host.ops() == ["task_states", "task_run_once"]
+    assert host.args_of("task_states") == [{"prefix": "neutrino_cloudcli_install_"}]
+    (started,) = host.args_of("task_run_once")
+    script = hooks.machine.module_dir + "\\run\\install_ann.cmd"
+    log = hooks.machine.module_dir + "\\run\\install_ann.log"
+    assert started == {
+        "task": "neutrino_cloudcli_install_ann",
+        "program": "cmd.exe",
+        "arguments": f'/s /c "{script} >> {log} 2>&1"',
+        "account": "ann",
+        "password": "login-pw",  # scan: allow
+        "timeout_s": 4 * 3600,
+    }
+    with open(script, encoding="utf-8") as stream:
+        text = stream.read()
+    assert "@cloudcli-ai/cloudcli@1.37.3" in text
+    assert 'set "npm_config_registry=https://registry.npmmirror.com"' in text
+    with open(log, encoding="utf-8") as stream:
+        assert stream.read() == ""
+    assert [grant[1] for grant in GRANTS] == [script, log]
+    assert all(
+        grant[2:5] == ["/inheritance:r", "/grant:r", "ann:M"] for grant in GRANTS
     )
-    assert document["timeout_s"] > 1800
-    assert "Start-ScheduledTask" in INSTALL_SCRIPT
-    assert "Unregister-ScheduledTask" not in INSTALL_SCRIPT
     assert hooks.installing == frozenset({"ann"})
     assert hooks.install_log("ann").endswith("cloudcli\\run\\install_ann.log")
     assert hooks.install_log("bob") == ""
@@ -517,38 +519,42 @@ def test_an_install_is_started_as_a_task_and_left_to_run(windows):
 
 @pytest.mark.parametrize("state", ["Running", "Queued"])
 def test_a_running_install_starts_nothing_and_keeps_waiting(windows, state):
-    hooks, powershell, entry = windows
-    powershell.install_tasks = [install_task(state, 0x41301)]
+    hooks, host, entry = windows
+    host.answers["task_states"] = {"tasks": [install_task(state, 0x41301)]}
 
     hooks.prepare_module()
     hooks.prepare(CONFIG, CONFIG.instances[0], entry)
 
-    assert powershell.scripts() == [INSTALL_STATUS_SCRIPT]
+    assert host.ops() == ["task_states"]
     assert hooks.installing == frozenset({"ann"})
 
 
 def test_an_ended_install_is_unregistered_and_judged(windows, ready):
-    hooks, powershell, entry = windows
-    powershell.install_tasks = [install_task("Ready", 0)]
+    hooks, host, entry = windows
+    host.answers["task_states"] = {"tasks": [install_task("Ready", 0)]}
+    script = hooks.machine.module_dir + "\\run\\install_ann.cmd"
+    with open(script, "w", encoding="utf-8") as stream:
+        stream.write("@echo off\r\n")
     ready["is_ready"] = True
 
     hooks.prepare_module()
     notes = hooks.prepare(CONFIG, CONFIG.instances[0], entry)
 
-    assert powershell.scripts() == [INSTALL_STATUS_SCRIPT, FINISH_INSTALL_SCRIPT]
-    assert powershell.calls[1][1]["task"] == "neutrino_cloudcli_install_ann"
+    assert host.ops() == ["task_states", "task_remove"]
+    assert host.args_of("task_remove") == [{"task": "neutrino_cloudcli_install_ann"}]
+    assert not os.path.exists(script)
     assert notes == ["installed CloudCLI for ann"]
     assert hooks.installing == frozenset()
 
 
 def test_an_app_already_there_starts_no_install(windows, ready):
-    hooks, powershell, entry = windows
+    hooks, host, entry = windows
     ready["is_ready"] = True
 
     hooks.prepare_module()
 
     assert hooks.prepare(CONFIG, CONFIG.instances[0], entry) == []
-    assert powershell.scripts() == [INSTALL_STATUS_SCRIPT]
+    assert host.ops() == ["task_states"]
 
 
 @pytest.mark.parametrize(
@@ -575,9 +581,11 @@ def test_an_app_already_there_starts_no_install(windows, ready):
     ],
 )
 def test_a_failed_windows_install_names_its_step(windows, result, output, expected):
-    hooks, powershell, entry = windows
-    powershell.install_tasks = [install_task("Ready", result)]
-    powershell.answers[FINISH_INSTALL_SCRIPT] = {"output": output}
+    hooks, host, entry = windows
+    host.answers["task_states"] = {"tasks": [install_task("Ready", result)]}
+    log = hooks.machine.module_dir + "\\run\\install_ann.log"
+    with open(log, "w", encoding="utf-8") as stream:
+        stream.write(output)
 
     hooks.prepare_module()
     with pytest.raises(ModuleApplyError) as caught:
@@ -586,9 +594,20 @@ def test_a_failed_windows_install_names_its_step(windows, result, output, expect
     assert (caught.value.code, caught.value.params) == expected
 
 
+def test_only_the_end_of_a_long_install_output_is_judged(tmp_path):
+    log = tmp_path / "install.log"
+    log.write_bytes(b"\xef\xbb\xbf" + b"x" * 9000 + b"npm error last")
+
+    output = install_output(str(log))
+
+    assert len(output) == 8000
+    assert output.endswith("npm error last")
+    assert install_output(str(tmp_path / "absent.log")) == ""
+
+
 def test_a_refused_login_is_credential_invalid(windows):
-    hooks, powershell, entry = windows
-    powershell.answers[INSTALL_SCRIPT] = ModuleApplyError(
+    hooks, host, entry = windows
+    host.answers["task_run_once"] = ModuleApplyError(
         "credential_invalid", {"account": "ann"}
     )
 

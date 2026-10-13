@@ -13,10 +13,13 @@ or a discarded output runs a script that sets them first. The files the task
 reads are reachable by their account, SYSTEM and the administrators alone.
 An instance's processes are the ones whose command line names its log file,
 or its script where the output is discarded, and every process they
-started; a stop ends all of them. Every operation is
-one PowerShell script, the password on its standard input.
+started; a stop ends all of them, and an instance with a port runs while
+one of them listens on it. The task goes through the agent's PowerShell
+host, the password on its standard input; the files, their access lists and
+the processes are the agent's own work.
 
-Not pure: runs PowerShell.
+Not pure: writes files, runs icacls, drives the Task Scheduler and ends
+processes.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -26,6 +29,8 @@ from __future__ import annotations
 import hashlib
 import json
 import ntpath
+import os
+import shutil
 import subprocess
 
 from neutrino_agent.exceptions import ModuleApplyError
@@ -40,148 +45,10 @@ from neutrino_agent.modules.shared.account_service.constants import (
     ACCOUNT_SERVICE_WINDOWS_SCRIPT_DIR_NAME,
     ACCOUNT_SERVICE_WINDOWS_SCRIPT_SUFFIX,
     ACCOUNT_SERVICE_WINDOWS_SHELL,
+    ACCOUNT_SERVICE_WINDOWS_TASK_RUNNING,
 )
-from neutrino_agent.modules.shared.powershell_run import listed
-
-# An instance's process tree: every process whose command line names the
-# instance's log file, and their descendants by parent process id, a child
-# never older than its parent. A stop takes the tree before the task stops
-# and ends what is left of it after.
-TREE_FUNCTIONS = """
-function Get-InstanceTree($mark) {
-  $all = @(Get-CimInstance Win32_Process)
-  $tree = @($all | Where-Object { "$($_.CommandLine)".Contains($mark) })
-  for ($n = 0; $n -lt $tree.Count; $n++) {
-    $parent = $tree[$n]
-    foreach ($child in $all) {
-      if ($child.ParentProcessId -eq $parent.ProcessId -and
-          $child.CreationDate -ge $parent.CreationDate -and
-          @($tree | ForEach-Object { $_.ProcessId }) -notcontains $child.ProcessId) {
-        $tree += $child
-      }
-    }
-  }
-  ,$tree
-}
-function Stop-Instance($task, $mark) {
-  $tree = Get-InstanceTree $mark
-  Stop-ScheduledTask -TaskName $task -ErrorAction SilentlyContinue
-  foreach ($process in $tree) {
-    Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
-  }
-}
-function Test-InstanceListening($mark, $port) {
-  $owners = @(Get-NetTCPConnection -State Listen -LocalPort $port `
-    -ErrorAction SilentlyContinue | ForEach-Object { $_.OwningProcess })
-  if ($owners.Count -eq 0) { return $false }
-  $tree = Get-InstanceTree $mark
-  return (@($tree | Where-Object { $owners -contains $_.ProcessId }).Count -gt 0)
-}
-"""
-
-# Writes the account's files and its log, registers the task when it is
-# missing or runs something else, and removes every firewall rule an older
-# build opened for an instance's port.
-REGISTER_SCRIPT = TREE_FUNCTIONS + """
-foreach ($file in @($d.files)) {
-  $dir = Split-Path -Parent $file.path
-  if (-not (Test-Path -LiteralPath $dir)) {
-    New-Item -ItemType Directory -Path $dir -Force | Out-Null
-  }
-  [IO.File]::WriteAllText($file.path, $file.text)
-  $code = Invoke-Icacls $file.path /inheritance:r /grant:r "$($d.account):R" `
-    '*S-1-5-18:F' '*S-1-5-32-544:F'
-  if ($code -ne 0) { throw "icacls refused $($file.path)" }
-}
-foreach ($dir in @($d.directories)) {
-  if (-not (Test-Path -LiteralPath $dir)) {
-    New-Item -ItemType Directory -Path $dir -Force | Out-Null
-  }
-  $code = Invoke-Icacls $dir /inheritance:r /grant:r "$($d.account):(OI)(CI)M" `
-    '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F'
-  if ($code -ne 0) { throw "icacls refused $dir" }
-}
-if ($d.log_file) {
-  if (-not (Test-Path -LiteralPath $d.log_file)) {
-    [IO.File]::WriteAllText($d.log_file, '')
-  }
-  $code = Invoke-Icacls $d.log_file /inheritance:r /grant:r "$($d.account):M" `
-    '*S-1-5-18:F' '*S-1-5-32-544:F'
-  if ($code -ne 0) { throw "icacls refused the log file of $($d.account)" }
-}
-$is_registered = $false
-$task = Get-ScheduledTask -TaskName $d.task -ErrorAction SilentlyContinue
-if (-not $task -or "$($task.Description)" -ne $d.description) {
-  if ($task) { Stop-Instance $d.task $d.mark }
-  $action = New-ScheduledTaskAction -Execute $d.program -Argument $d.arguments
-  $trigger = New-ScheduledTaskTrigger -AtStartup
-  $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) `
-    -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) `
-    -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
-  try {
-    Register-ScheduledTask -TaskName $d.task -Description $d.description `
-      -Action $action -Trigger $trigger -Settings $settings `
-      -User $d.account -Password $d.password -RunLevel Limited -Force | Out-Null
-  } catch {
-    if (Test-LogonRefused $_) {
-      Send-Refusal 'credential_invalid' @{account = $d.account}
-    }
-    throw
-  }
-  $is_registered = $true
-}
-$stale = @(Get-NetFirewallRule -Name "$($d.rule_prefix)*" -ErrorAction SilentlyContinue)
-if ($stale.Count -gt 0) { $stale | Remove-NetFirewallRule }
-@{is_registered = $is_registered} | ConvertTo-Json -Compress -Depth 4
-"""
-
-# Starts the task unless it runs, ending what is left of the instance first.
-START_SCRIPT = TREE_FUNCTIONS + """
-if ((Get-ScheduledTask -TaskName $d.task).State -ne 'Running') {
-  Stop-Instance $d.task $d.mark
-  Start-ScheduledTask -TaskName $d.task
-}
-'{}'
-"""
-
-# Stops the task and ends the instance's whole process tree.
-STOP_SCRIPT = TREE_FUNCTIONS + """
-Stop-Instance $d.task $d.mark
-'{}'
-"""
-
-# Stops the instance, unregisters its task and deletes what it ran from.
-REMOVE_SCRIPT = TREE_FUNCTIONS + """
-Stop-Instance $d.task $d.mark
-Unregister-ScheduledTask -TaskName $d.task -Confirm:$false -ErrorAction SilentlyContinue
-foreach ($path in @($d.paths)) {
-  Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction SilentlyContinue
-}
-'{}'
-"""
-
-# Each of the module's tasks: its state, its last result, and whether its
-# process tree listens on the port the service names.
-STATUS_SCRIPT = TREE_FUNCTIONS + """
-$tasks = @()
-foreach ($task in @(Get-ScheduledTask -TaskName "$($d.prefix)*" -ErrorAction SilentlyContinue)) {
-  $info = Get-ScheduledTaskInfo -TaskName $task.TaskName
-  $listening = $false
-  $port = $d.ports.($task.TaskName)
-  if ($port) {
-    $listening = Test-InstanceListening $d.marks.($task.TaskName) ([int]$port)
-  }
-  $tasks += @{name = $task.TaskName; state = "$($task.State)";
-    last_result = [int64]$info.LastTaskResult; is_listening = $listening}
-}
-@{tasks = $tasks} | ConvertTo-Json -Compress -Depth 4
-"""
-
-# Removes every firewall rule an older build opened for the module's ports.
-FORGET_SCRIPT = """
-Remove-NetFirewallRule -Name "$($d.rule_prefix)*" -ErrorAction SilentlyContinue
-'{}'
-"""
+from neutrino_agent.modules.shared.windows_acl import grant_account_alone
+from neutrino_agent.platforms.windows_processes import lineage, process_tree
 
 
 def task_arguments(program: str, arguments: list, log_file: str) -> str:
@@ -321,51 +188,82 @@ def arguments_of(service, machine) -> str:
 
 
 def write(service, machine) -> bool:
-    """Write the account's files and register the task; whether it was registered."""
+    """Write the account's files and its log, and register the task when it changed.
+
+    Every firewall rule an older build opened for an instance's port goes.
+
+    Returns:
+        Whether the task was registered.
+    """
     log = _output_log(service, machine)
     files = task_files(service, machine)
+    for file in files:
+        write_text(file["path"], file["text"])
+        grant_account_alone(
+            machine.run, file["path"], service.account, "R", is_tree=False
+        )
+    for directory in service.directories:
+        os.makedirs(directory, exist_ok=True)
+        grant_account_alone(machine.run, directory, service.account, "M", is_tree=True)
+    if log:
+        if not os.path.exists(log):
+            write_text(log, "")
+        grant_account_alone(machine.run, log, service.account, "M", is_tree=False)
     arguments = arguments_of(service, machine)
-    answer = machine.powershell(
-        REGISTER_SCRIPT,
-        {
-            "account": service.account,
-            "password": service.password,
-            "task": task_name(service.name, service.account),
-            "program": ACCOUNT_SERVICE_WINDOWS_SHELL,
-            "arguments": arguments,
-            "description": task_description(
-                arguments, service, [file["text"] for file in files]
-            ),
-            "log_file": log,
-            "mark": output_mark(service, machine),
-            "files": files,
-            "directories": list(service.directories),
-            "rule_prefix": rule_prefix(service.name),
-        },
-    )
-    return answer.get("is_registered") is True
+    description = task_description(arguments, service, [file["text"] for file in files])
+    task = task_name(service.name, service.account)
+    held = machine.powershell.call("task_read", {"task": task})
+    is_registered = False
+    if not held.get("is_present") or held.get("description") != description:
+        if held.get("is_present"):
+            _stop_instance(task, output_mark(service, machine), machine)
+        machine.powershell.call(
+            "task_write",
+            {
+                "task": task,
+                "description": description,
+                "program": ACCOUNT_SERVICE_WINDOWS_SHELL,
+                "arguments": arguments,
+                "account": service.account,
+                "password": service.password,
+            },
+        )
+        is_registered = True
+    machine.powershell.call("rules_forget", {"prefix": rule_prefix(service.name)})
+    return is_registered
 
 
 def start(service, machine, *, is_restart: bool) -> None:
-    """Start the task unless it runs; a changed task was registered again."""
-    machine.powershell(START_SCRIPT, _task_document(service, machine))
+    """Start the task unless it runs, ending what is left of the instance first."""
+    task = task_name(service.name, service.account)
+    held = machine.powershell.call("task_read", {"task": task})
+    if held.get("state") == ACCOUNT_SERVICE_WINDOWS_TASK_RUNNING:
+        return
+    _stop_instance(task, output_mark(service, machine), machine)
+    machine.powershell.call("task_start", {"task": task})
 
 
 def stop(service, machine) -> None:
     """Stop the task and end the instance's process tree; it starts again at boot."""
-    machine.powershell(STOP_SCRIPT, _task_document(service, machine))
+    _stop_instance(
+        task_name(service.name, service.account),
+        output_mark(service, machine),
+        machine,
+    )
 
 
 def remove(service, machine) -> None:
-    """Stop the instance, unregister its task and delete its files."""
+    """Stop the instance, unregister its task and delete what it ran from."""
+    task = task_name(service.name, service.account)
+    _stop_instance(task, output_mark(service, machine), machine)
+    machine.powershell.call("task_remove", {"task": task})
     paths = [path for path, _text in service.files]
     paths.append(script_path(service, machine))
     if not service.is_output_discarded:
         paths.append(log_path(service.name, service.account, machine, service.log_name))
     paths += list(service.directories)
-    machine.powershell(
-        REMOVE_SCRIPT, dict(_task_document(service, machine), paths=paths)
-    )
+    for path in paths:
+        remove_path(path)
 
 
 def states(services: list, machine) -> dict:
@@ -377,35 +275,34 @@ def states(services: list, machine) -> dict:
     if not services:
         return {}
     name = services[0].name
-    document = {
-        "prefix": f"{ACCOUNT_SERVICE_TASK_PREFIX}{name}_",
-        "ports": {
-            task_name(name, service.account): service.listen_port
-            for service in services
-            if service.listen_port
-        },
-        "marks": {
-            task_name(name, service.account): output_mark(service, machine)
-            for service in services
-        },
-    }
     try:
-        read = machine.powershell(STATUS_SCRIPT, document)
-    except (OSError, subprocess.SubprocessError, ModuleApplyError):
+        read = machine.powershell.call(
+            "task_states", {"prefix": f"{ACCOUNT_SERVICE_TASK_PREFIX}{name}_"}
+        )
+    except (OSError, ModuleApplyError):
         read = {}
     tasks = {
         str(entry.get("name", "")): entry
-        for entry in listed(read.get("tasks"))
+        for entry in read.get("tasks") or []
         if isinstance(entry, dict)
     }
+    entries = None
     held = {}
     for service in services:
-        entry = tasks.get(task_name(name, service.account)) or {}
-        result = int(entry.get("last_result", 0) or 0) & 0xFFFFFFFF
-        if service.listen_port:
-            is_running = entry.get("is_listening") is True
+        entry = tasks.get(task_name(name, service.account))
+        result = int((entry or {}).get("last_result", 0) or 0) & 0xFFFFFFFF
+        if entry is None:
+            is_running = False
+        elif service.listen_port:
+            if entries is None:
+                entries = _process_entries(machine)
+            is_running = _is_listening(
+                output_mark(service, machine), service.listen_port, entries, machine
+            )
         else:
-            is_running = str(entry.get("state", "")) == "Running"
+            is_running = (
+                str(entry.get("state", "")) == ACCOUNT_SERVICE_WINDOWS_TASK_RUNNING
+            )
         held[service.account] = {
             "is_running": is_running,
             "code": (
@@ -417,7 +314,7 @@ def states(services: list, machine) -> dict:
 
 def forget(name: str, machine) -> None:
     """Remove the firewall rules an older build opened for the module."""
-    machine.powershell(FORGET_SCRIPT, {"rule_prefix": rule_prefix(name)})
+    machine.powershell.call("rules_forget", {"prefix": rule_prefix(name)})
 
 
 def units(services: list, machine) -> list:
@@ -432,6 +329,66 @@ def log_path(name: str, account: str, machine, log_name: str) -> str:
     )
 
 
+def write_text(path: str, text: str) -> None:
+    """Write one file whole as UTF-8 without a byte order mark, its folder made.
+
+    Args:
+        path: The file.
+        text: What it holds afterwards, line ends as given.
+
+    Raises:
+        OSError: When the file cannot be written.
+    """
+    os.makedirs(ntpath.dirname(path), exist_ok=True)
+    with open(path, "wb") as stream:
+        stream.write(text.encode("utf-8"))
+
+
+def remove_path(path: str) -> None:
+    """Delete a file or a tree; what cannot be deleted stays.
+
+    Args:
+        path: The file or the directory.
+    """
+    if os.path.isdir(path) and not os.path.islink(path):
+        shutil.rmtree(path, ignore_errors=True)
+        return
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+
+
+def _stop_instance(task: str, mark: str, machine) -> None:
+    """Take the instance's process tree, stop its task, and end what is left."""
+    entries = machine.processes.entries()
+    roots = [
+        entry.pid
+        for entry in entries
+        if entry.pid and mark in machine.processes.command_line(entry.pid)
+    ]
+    tree = process_tree(entries, roots)
+    machine.powershell.call("task_stop", {"task": task})
+    machine.processes.end(tree)
+
+
+def _process_entries(machine) -> list:
+    """The process table, empty when the kernel refuses it."""
+    try:
+        return machine.processes.entries()
+    except OSError:
+        return []
+
+
+def _is_listening(mark: str, port: int, entries: list, machine) -> bool:
+    """Whether a process of the instance's tree listens on its port."""
+    for pid in machine.processes.listener_pids(port):
+        for member in lineage(entries, pid):
+            if mark in machine.processes.command_line(member):
+                return True
+    return False
+
+
 def _is_scripted(service) -> bool:
     return bool(
         service.environment or service.working_directory or service.is_output_discarded
@@ -443,10 +400,3 @@ def _output_log(service, machine) -> str:
     if service.is_output_discarded:
         return ""
     return log_path(service.name, service.account, machine, service.log_name)
-
-
-def _task_document(service, machine) -> dict:
-    return {
-        "task": task_name(service.name, service.account),
-        "mark": output_mark(service, machine),
-    }

@@ -123,11 +123,11 @@ jobs:
 
       - run: shellcheck packaging/install/install.sh
 
-      - name: Invoke-ScriptAnalyzer on install.ps1
+      - name: Invoke-ScriptAnalyzer on install.ps1 and the agent's PowerShell host
         shell: pwsh
         run: |
           Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
-          $found = Invoke-ScriptAnalyzer -Path packaging/install/install.ps1
+          $found = @('packaging/install/install.ps1', 'agent/neutrino_agent/data/windows/powershell_host.ps1') | ForEach-Object { Invoke-ScriptAnalyzer -Path $_ }
           $found | Format-List RuleName, Severity, Line, Message
           if ($found) { throw "PSScriptAnalyzer found $(@($found).Count) issues" }
 

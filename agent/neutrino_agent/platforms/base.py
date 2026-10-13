@@ -1,7 +1,8 @@
 """The contract every platform implements.
 
 The contract names intents, not mechanisms: enumerate human accounts;
-resolve an account's home; run a process as an account; control the agent's
+resolve an account's home; run a process as an account, or a step of the
+agent's own code as one; control the agent's
 own service; power actions; read host metrics; read the network interfaces;
 read the machine id; install and remove a package of a kind; drive the SMB
 server the system carries; unpack the hub's software; find the agent's own
@@ -59,10 +60,18 @@ class AgentPlatform:
 
     The base class is also the honest answer for a platform the agent does
     not know: it advertises nothing and refuses every capability.
+
+    Attributes:
+        powershell_host: Windows: the agent's PowerShell host; None
+            elsewhere.
+        process_table: Windows: the machine's processes, read and ended as
+            :class:`WindowsProcessTable` does; None elsewhere.
     """
 
     os_name = ""
     capabilities: frozenset = frozenset()
+    powershell_host = None
+    process_table = None
 
     def agent_data_dir(self) -> str:
         """Where the agent keeps what the hub decided on this platform.
@@ -219,6 +228,25 @@ class AgentPlatform:
                 make a terminal.
         """
         raise PlatformUnsupportedError("cannot run as another account here")
+
+    def as_account(self, account: str, step, *arguments, password: str = ""):
+        """Run one step of the agent's own code on this thread, acting as an account.
+
+        Args:
+            account: The account.
+            step: Called with ``arguments``; what it reaches, it reaches with
+                the account's rights.
+            *arguments: What the step is called with.
+            password: The account's login.
+
+        Returns:
+            What the step returned.
+
+        Raises:
+            PlatformUnsupportedError: When the platform cannot act as an
+                account inside the agent's own process.
+        """
+        raise PlatformUnsupportedError("cannot act as another account here")
 
     def read_agent_service_state(self) -> str:
         """The state of the agent's own service.

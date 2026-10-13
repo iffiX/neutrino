@@ -1,14 +1,15 @@
-"""The Windows platform: native metrics, PowerShell interfaces, sc, winreg.
+"""The Windows platform: native metrics, the Win32 reads, the PowerShell host, sc.
 
 Nothing here needs Windows: kernel32, ntdll, advapi32, pdh, gdi32 and
-shell32 are fakes that fill the structures they are handed, PowerShell and
-``sc`` are faked at ``subprocess.run`` or as the injected runner, and the
-registry is a fake ``winreg``. What is pinned is what each source is turned
-into.
+shell32 are fakes that fill the structures they are handed, the PowerShell
+host is a recording one, ``sc`` and icacls are faked at ``subprocess.run``
+or as the injected runner, the iphlpapi and netapi32 reads are replaced at
+their seam, and the registry is a fake ``winreg``. What is pinned is what
+each source is turned into and every request the host is sent.
 """
 
+import contextlib
 import ctypes
-import json
 import subprocess
 
 import pytest
@@ -16,6 +17,8 @@ import pytest
 import neutrino_agent.core.metrics as metrics_module
 import neutrino_agent.platforms.windows as windows_module
 from neutrino_agent.constants import AGENT_PROCESS_TOP_COUNT
+from neutrino_agent.exceptions import ModuleApplyError
+from neutrino_agent.modules.shared.subprocess_run import CommandResult
 from neutrino_agent.platforms import win32
 from neutrino_agent.platforms.base import is_added_name
 from neutrino_agent.platforms.windows import (
@@ -23,6 +26,7 @@ from neutrino_agent.platforms.windows import (
     WindowsHostMetricsReader,
     WindowsPlatform,
 )
+from tests.conftest import FakeProcessTable, RecordingHost
 
 
 @pytest.fixture(autouse=True)
@@ -122,8 +126,9 @@ def test_the_first_cpu_sample_is_zero_and_the_next_is_the_share_busy():
     assert reader.read().cpu_percent == pytest.approx(50.0)
 
 
-def refusing_powershell(script, document):
-    raise OSError("powershell is not here")
+def refusing_host():
+    """A PowerShell host that cannot answer."""
+    return RecordingHost({"thermal_zones": OSError("the host is not here")})
 
 
 def unreadable_disk(path):
@@ -142,7 +147,7 @@ def test_memory_uptime_and_disk_are_read_and_a_missing_source_is_empty(monkeypat
     monkeypatch.setenv("SystemDrive", "D:")
 
     metrics = WindowsHostMetricsReader(
-        kernel32=FakeKernel32(), powershell=refusing_powershell
+        kernel32=FakeKernel32(), powershell=refusing_host()
     ).read()
 
     assert metrics.memory_percent == pytest.approx(75.0)
@@ -166,7 +171,7 @@ def test_a_refusing_kernel32_reads_as_the_defaults(monkeypatch):
     monkeypatch.setattr(windows_module.shutil, "disk_usage", disk_usage)
 
     metrics = WindowsHostMetricsReader(
-        kernel32=kernel32, powershell=refusing_powershell
+        kernel32=kernel32, powershell=refusing_host()
     ).read()
 
     assert (metrics.cpu_percent, metrics.memory_percent, metrics.disk_percent) == (
@@ -198,8 +203,10 @@ class ProcessTable:
         names = [name.encode("utf-16-le") for _pid, name, _time, _ws in processes]
         strides = [(entry_size + len(name) + 7) // 8 * 8 for name in names]
         self.buffer = ctypes.create_string_buffer(sum(strides))
+        self.offsets: list = []
         offset = 0
         for index, (pid, _name, times, working_set) in enumerate(processes):
+            self.offsets.append(offset)
             entry = win32.SystemProcessInformation.from_buffer(self.buffer, offset)
             is_last = index == len(processes) - 1
             entry.NextEntryOffset = 0 if is_last else strides[index]
@@ -217,6 +224,15 @@ class ProcessTable:
                 ctypes.addressof(self.buffer) + offset + entry_size if name else None
             )
             offset += strides[index]
+
+    def fill(self, buffer) -> None:
+        """Copy the table into the caller's buffer, its names pointing inside it."""
+        ctypes.memmove(buffer, self.buffer, ctypes.sizeof(self.buffer))
+        shift = ctypes.addressof(buffer) - ctypes.addressof(self.buffer)
+        for offset in self.offsets:
+            entry = win32.SystemProcessInformation.from_buffer(buffer, offset)
+            if entry.ImageName.Buffer:
+                entry.ImageName.Buffer += shift
 
 
 class FakeNtdll:
@@ -238,7 +254,10 @@ class FakeNtdll:
         needed._obj.value = ctypes.sizeof(data)
         if size < ctypes.sizeof(data):
             return win32.STATUS_INFO_LENGTH_MISMATCH
-        ctypes.memmove(buffer, data, ctypes.sizeof(data))
+        if isinstance(answer, ProcessTable):
+            answer.fill(buffer)
+        else:
+            ctypes.memmove(buffer, data, ctypes.sizeof(data))
         return 0
 
 
@@ -404,16 +423,9 @@ GDI_ADAPTERS = [
 ]
 
 
-class FakeThermalZones:
-    """The PowerShell runner, answering the thermal zones in tenths of K."""
-
-    def __init__(self, readings):
-        self.readings = readings
-        self.scripts = []
-
-    def __call__(self, script, document):
-        self.scripts.append(script)
-        return {"readings": self.readings}
+def thermal_host(readings):
+    """A PowerShell host answering the thermal zones in tenths of a kelvin."""
+    return RecordingHost({"thermal_zones": {"readings": readings}})
 
 
 def windows_reader(**overrides):
@@ -450,7 +462,7 @@ def windows_reader(**overrides):
         "advapi32": FakeAdvapi32({100: "pat", 200: "SYSTEM", 300: "pat"}),
         "pdh": FakePdh(),
         "gdi32": FakeGdi32(GDI_ADAPTERS),
-        "powershell": FakeThermalZones([3011.5, 3231.5]),
+        "powershell": thermal_host([3011.5, 3231.5]),
     }
     parts.update(overrides)
     return WindowsHostMetricsReader(**parts), parts
@@ -532,8 +544,7 @@ def test_every_windows_field_is_filled_from_its_native_source(monkeypatch):
     assert parts["gdi32"].closed == [1, 2]
     # One account name per SID, and one thermal reading per minute.
     assert len(parts["advapi32"].lookups) == 2
-    assert len(parts["powershell"].scripts) == 1
-    assert "MSAcpi_ThermalZoneTemperature" in parts["powershell"].scripts[0]
+    assert parts["powershell"].calls == [("thermal_zones", {})]
 
 
 def test_the_process_table_lists_the_busiest_few(monkeypatch):
@@ -622,7 +633,7 @@ def test_missing_native_sources_read_as_empty_fields(monkeypatch):
         ntdll=Refusing(),
         pdh=Refusing(),
         gdi32=object(),
-        powershell=FakeThermalZones([]),
+        powershell=thermal_host([]),
     )
 
     metrics = reader.read()
@@ -633,108 +644,92 @@ def test_missing_native_sources_read_as_empty_fields(monkeypatch):
     assert metrics.temperature_c is None
 
 
-# What the PowerShell call prints on a machine with a wire, a radio with
-# no address, and a VPN adapter with no MAC; the loopback pseudo interface
-# holds addresses and no adapter.
-POWERSHELL_SAMPLE = {
-    "adapters": [
-        {"Name": "Ethernet", "ifIndex": 12, "MacAddress": "02-00-00-00-00-01"},
-        {"Name": "Wi-Fi", "ifIndex": 14, "MacAddress": "02-00-00-00-00-02"},
-        {"Name": "WireGuard", "ifIndex": 20, "MacAddress": ""},
-    ],
-    "addresses": [
-        {"InterfaceIndex": 1, "IPAddress": "127.0.0.1"},
-        {"InterfaceIndex": 1, "IPAddress": "::1"},
-        {"InterfaceIndex": 12, "IPAddress": "fe80::1%12"},
-        {"InterfaceIndex": 12, "IPAddress": "192.0.2.10"},
-        {"InterfaceIndex": 20, "IPAddress": "10.8.0.2"},
-    ],
-}
-
-
-def test_the_interfaces_join_adapters_to_their_addresses(monkeypatch):
-    calls = []
-
-    def run(command, **kwargs):
-        calls.append(command)
-        return completed(json.dumps(POWERSHELL_SAMPLE))
-
-    monkeypatch.setattr(windows_module.subprocess, "run", run)
-
-    interfaces = WindowsPlatform().read_network_interfaces()
-
-    assert interfaces == [
-        {
-            "name": "Ethernet",
-            "mac": "02:00:00:00:00:01",
-            "addresses": ["fe80::1", "192.0.2.10"],
-        },
-        {"name": "Wi-Fi", "mac": "02:00:00:00:00:02", "addresses": []},
-        {"name": "WireGuard", "mac": "", "addresses": ["10.8.0.2"]},
-    ]
-    assert calls[0][0] == "powershell.exe"
-    assert "Get-NetAdapter" in calls[0][-1] and "Get-NetIPAddress" in calls[0][-1]
-
-
-def test_one_adapter_printed_bare_is_still_read(monkeypatch):
-    sample = {
-        "adapters": {
-            "Name": "Ethernet",
-            "ifIndex": 3,
-            "MacAddress": "02-00-00-00-00-03",
-        },
-        "addresses": {"InterfaceIndex": 3, "IPAddress": "192.0.2.3"},
-    }
-    monkeypatch.setattr(
-        windows_module.subprocess, "run", lambda *a, **k: completed(json.dumps(sample))
-    )
-
-    assert WindowsPlatform().read_network_interfaces() == [
-        {"name": "Ethernet", "mac": "02:00:00:00:00:03", "addresses": ["192.0.2.3"]}
-    ]
-
-
-def test_the_interfaces_are_read_once_per_thirty_seconds(monkeypatch):
-    calls = []
+def test_the_thermal_zones_are_asked_of_the_host_once_a_minute(monkeypatch):
+    monkeypatch.setattr(windows_module.shutil, "disk_usage", unreadable_disk)
     now = [100.0]
-
-    def run(command, **kwargs):
-        calls.append(command)
-        return completed(json.dumps(POWERSHELL_SAMPLE))
-
-    monkeypatch.setattr(windows_module.subprocess, "run", run)
     monkeypatch.setattr(windows_module.time, "monotonic", lambda: now[0])
-    platform = WindowsPlatform()
+    host = thermal_host([3011.5])
+    reader, _parts = windows_reader(powershell=host)
 
-    platform.read_network_interfaces()
-    now[0] += 29
-    platform.read_network_interfaces()
-    assert len(calls) == 1
+    assert reader.read().temperature_c == pytest.approx(28.0)
+    now[0] += 59
+    reader.read()
+    assert len(host.calls) == 1
     now[0] += 2
-    platform.read_network_interfaces()
-    assert len(calls) == 2
+    reader.read()
+    assert len(host.calls) == 2
+
+
+def test_a_machine_whose_firmware_has_no_zone_is_asked_again_an_hour_later(
+    monkeypatch,
+):
+    monkeypatch.setattr(windows_module.shutil, "disk_usage", unreadable_disk)
+    now = [100.0]
+    monkeypatch.setattr(windows_module.time, "monotonic", lambda: now[0])
+    host = thermal_host([0, "not a number"])
+    reader, _parts = windows_reader(powershell=host)
+
+    assert reader.read().temperature_c is None
+    now[0] += 3599
+    reader.read()
+    assert len(host.calls) == 1
+    now[0] += 2
+    reader.read()
+    assert len(host.calls) == 2
+
+
+def test_a_host_that_cannot_answer_is_asked_again_a_minute_later(monkeypatch):
+    monkeypatch.setattr(windows_module.shutil, "disk_usage", unreadable_disk)
+    now = [100.0]
+    monkeypatch.setattr(windows_module.time, "monotonic", lambda: now[0])
+    host = refusing_host()
+    reader, _parts = windows_reader(powershell=host)
+
+    assert reader.read().temperature_c is None
+    now[0] += 61
+    reader.read()
+    assert len(host.calls) == 2
+
+
+INTERFACES = [
+    {
+        "name": "Ethernet",
+        "mac": "02:00:00:00:00:01",
+        "addresses": ["fe80::1", "192.0.2.10"],
+    },
+    {"name": "WireGuard", "mac": "", "addresses": ["10.8.0.2"]},
+]
+
+
+def test_the_interfaces_are_iphlpapi_s_adapters_read_every_time(monkeypatch):
+    seen = []
+
+    def read_interfaces(iphlpapi):
+        seen.append(iphlpapi)
+        return [dict(entry) for entry in INTERFACES]
+
+    monkeypatch.setattr(windows_module, "read_interfaces", read_interfaces)
+    iphlpapi = object()
+    platform = WindowsPlatform(iphlpapi=iphlpapi)
+
+    assert platform.read_network_interfaces() == INTERFACES
+    assert platform.read_network_interfaces() == INTERFACES
+    assert seen == [iphlpapi, iphlpapi]
 
 
 @pytest.mark.parametrize(
-    "outcome",
-    [
-        completed("", returncode=1),
-        completed("not json"),
-        completed("[]"),
-    ],
+    "error", [OSError(87, "GetAdaptersAddresses answered 87"), ValueError("short")]
 )
-def test_a_powershell_that_fails_reads_as_no_interfaces(monkeypatch, outcome):
-    monkeypatch.setattr(windows_module.subprocess, "run", lambda *a, **k: outcome)
+def test_adapters_that_cannot_be_read_are_no_interfaces(monkeypatch, error):
+    def read_interfaces(iphlpapi):
+        raise error
+
+    monkeypatch.setattr(windows_module, "read_interfaces", read_interfaces)
 
     assert WindowsPlatform().read_network_interfaces() == []
 
 
-def test_a_missing_powershell_reads_as_no_interfaces(monkeypatch):
-    def run(*args, **kwargs):
-        raise FileNotFoundError("powershell.exe")
-
-    monkeypatch.setattr(windows_module.subprocess, "run", run)
-
+def test_off_windows_the_adapters_cannot_be_read():
     assert WindowsPlatform().read_network_interfaces() == []
 
 
@@ -780,19 +775,34 @@ def test_the_file_share_drives_windows_own_smb_server():
     assert isinstance(WindowsPlatform().smb_server_applier(), SambaWindowsApplier)
 
 
-def test_a_directory_opened_to_accounts_grants_the_users_group_read_and_run():
-    calls = []
+class Icacls:
+    """icacls, recording each argument vector and exiting with a set code."""
 
-    def powershell(script, document):
-        calls.append((script, document))
-        return {"is_open": True}
+    def __init__(self, code=0):
+        self.calls: list = []
+        self.code = code
+
+    def __call__(self, argv, **_):
+        self.calls.append(list(argv))
+        return CommandResult(
+            command=list(argv), exit_code=self.code, stdout="", stderr=""
+        )
+
+
+def test_a_directory_opened_to_accounts_grants_the_users_group_read_and_run():
+    icacls = Icacls()
 
     assert "hub_packages" in WindowsPlatform.capabilities
-    WindowsPlatform(powershell=powershell).open_to_accounts("D:\\state\\vscode")
+    WindowsPlatform(run=icacls).open_to_accounts("D:\\state\\vscode")
 
-    script, document = calls[0]
-    assert document == {"directory": "D:\\state\\vscode"}
-    assert "'*S-1-5-32-545:(OI)(CI)RX'" in script
+    assert icacls.calls == [
+        ["icacls.exe", "D:\\state\\vscode", "/grant", "*S-1-5-32-545:(OI)(CI)RX"]
+    ]
+
+
+def test_a_directory_icacls_will_not_open_is_an_os_error():
+    with pytest.raises(OSError, match="icacls exited 5"):
+        WindowsPlatform(run=Icacls(5)).open_to_accounts("D:\\state\\vscode")
 
 
 class FakeSeat:
@@ -805,44 +815,52 @@ class FakeSeat:
         return None if self.accounts is None else list(self.accounts)
 
 
-def test_a_shell_starts_in_the_console_accounts_profile(tmp_path):
-    platform = WindowsPlatform(
-        seat=FakeSeat(["alice"]),
-        powershell=lambda script, document: {"is_present": True, "home": str(tmp_path)},
+def homes_of(table):
+    """``account_home`` answering from a table: a path, or what to raise."""
+
+    def account_home(account, *, advapi32=None, kernel32=None):
+        found = table.get(account, KeyError(account))
+        if isinstance(found, BaseException):
+            raise found
+        return found
+
+    return account_home
+
+
+def test_a_shell_starts_in_the_console_accounts_profile(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        windows_module, "account_home", homes_of({"alice": str(tmp_path)})
     )
+    platform = WindowsPlatform(seat=FakeSeat(["alice"]))
 
     assert platform.shell_start_dir() == str(tmp_path)
 
 
 @pytest.mark.parametrize(
-    "accounts, read",
+    "accounts, homes",
     [
-        ([], {"is_present": True, "home": "unused"}),
-        (None, {"is_present": True, "home": "unused"}),
-        (["alice"], {"is_present": False, "home": ""}),
-        (["alice"], {"is_present": True, "home": ""}),
-        (["alice"], {"is_present": True, "home": "Z:\\no\\such\\profile"}),
+        ([], {}),
+        (None, {}),
+        (["alice"], {}),
+        (["alice"], {"alice": "Z:\\no\\such\\profile"}),
+        (["alice"], {"alice": OSError("the registry cannot be read")}),
     ],
-    ids=["nobody", "no_session_api", "no_account", "no_profile", "missing_profile"],
+    ids=["nobody", "no_session_api", "no_account", "missing_profile", "no_answer"],
 )
 def test_a_shell_without_a_profile_starts_at_the_system_drives_root(
-    monkeypatch, accounts, read
+    monkeypatch, accounts, homes
 ):
     monkeypatch.setenv("SystemDrive", "D:")
-    platform = WindowsPlatform(
-        seat=FakeSeat(accounts), powershell=lambda script, document: read
-    )
+    monkeypatch.setattr(windows_module, "account_home", homes_of(homes))
+    platform = WindowsPlatform(seat=FakeSeat(accounts))
 
     assert platform.shell_start_dir() == "D:\\"
 
 
-def test_a_powershell_that_cannot_answer_starts_the_shell_at_the_root(monkeypatch):
+def test_off_windows_the_shell_starts_at_the_root(monkeypatch):
     monkeypatch.delenv("SystemDrive", raising=False)
 
-    def powershell(script, document):
-        raise subprocess.TimeoutExpired("powershell", 1)
-
-    platform = WindowsPlatform(seat=FakeSeat(["alice"]), powershell=powershell)
+    platform = WindowsPlatform(seat=FakeSeat(["alice"]))
 
     assert platform.shell_start_dir() == "C:\\"
 
@@ -905,98 +923,137 @@ def test_elevation_is_what_is_user_an_admin_says(answer, is_elevated):
     assert WindowsPlatform(shell32=FakeShell32(answer)).is_elevated() is is_elevated
 
 
-class FakePowerShell:
-    """PowerShell, recorded, answering one document or raising."""
+def users_reading(users):
+    """``read_users`` answering a list, or raising what it is handed."""
+    calls = []
 
-    def __init__(self, answer=None, error=None):
-        self.runs: list = []
-        self._answer = answer or {}
-        self._error = error
+    def read_users(netapi32):
+        calls.append(netapi32)
+        if isinstance(users, BaseException):
+            raise users
+        return [dict(user) for user in users]
 
-    def __call__(self, script, document):
-        self.runs.append((script, document))
-        if self._error is not None:
-            raise self._error
-        return dict(self._answer)
+    read_users.calls = calls
+    return read_users
 
 
-def test_the_accounts_are_the_enabled_people_without_the_builtin_or_share_ones():
-    powershell = FakePowerShell(
-        {
-            "users": [
-                {"name": "zoe", "description": ""},
-                {"name": "Administrator", "description": "Built-in account"},
-                {"name": "DefaultAccount", "description": ""},
-                {"name": "WDAGUtilityAccount", "description": ""},
-                {"name": "Guest", "description": ""},
-                {"name": "media", "description": "neutrino:"},
-                {"name": "hanha", "description": "Hanha's account"},
-            ]
-        }
+def user(name, description="", is_enabled=True):
+    return {"name": name, "description": description, "is_enabled": is_enabled}
+
+
+def test_the_accounts_are_the_enabled_people_without_the_builtin_or_share_ones(
+    monkeypatch,
+):
+    reading = users_reading(
+        [
+            user("zoe"),
+            user("Administrator", "Built-in account"),
+            user("DefaultAccount"),
+            user("WDAGUtilityAccount"),
+            user("Guest"),
+            user("media", "neutrino:"),
+            user("old", is_enabled=False),
+            user(""),
+            user("hanha", "Hanha's account"),
+        ]
     )
+    monkeypatch.setattr(windows_module, "read_users", reading)
+    netapi32 = object()
 
-    accounts = WindowsPlatform(powershell=powershell).human_accounts()
+    accounts = WindowsPlatform(netapi32=netapi32).human_accounts()
 
     assert accounts == ["hanha", "zoe"]
-    ((script, _document),) = powershell.runs
-    assert "Get-LocalUser" in script and "$_.Enabled" in script
+    assert reading.calls == [netapi32]
     assert "accounts" in WindowsPlatform.capabilities
 
 
-def test_one_account_printed_bare_is_still_read():
-    powershell = FakePowerShell({"users": {"name": "hanha", "description": ""}})
-
-    assert WindowsPlatform(powershell=powershell).human_accounts() == ["hanha"]
-
-
-def test_a_powershell_that_fails_reads_as_no_accounts():
-    powershell = FakePowerShell(error=OSError("powershell exited 1"))
-
-    assert WindowsPlatform(powershell=powershell).human_accounts() == []
-
-
-def test_the_accounts_are_read_once_per_thirty_seconds(monkeypatch):
-    powershell = FakePowerShell({"users": [{"name": "hanha", "description": ""}]})
-    now = [100.0]
-    monkeypatch.setattr(windows_module.time, "monotonic", lambda: now[0])
-    platform = WindowsPlatform(powershell=powershell)
+def test_the_accounts_are_read_every_time(monkeypatch):
+    reading = users_reading([user("hanha")])
+    monkeypatch.setattr(windows_module, "read_users", reading)
+    platform = WindowsPlatform()
 
     platform.human_accounts()
-    now[0] += 29
     platform.human_accounts()
-    assert len(powershell.runs) == 1
-    now[0] += 2
-    platform.human_accounts()
-    assert len(powershell.runs) == 2
+
+    assert len(reading.calls) == 2
 
 
-def test_an_account_home_is_its_profile_directory():
-    powershell = FakePowerShell({"is_present": True, "home": "C:\\Users\\hanha"})
+@pytest.mark.parametrize("error", [OSError(5, "denied"), ValueError("short")])
+def test_accounts_that_cannot_be_listed_are_none(monkeypatch, error):
+    monkeypatch.setattr(windows_module, "read_users", users_reading(error))
 
-    home = WindowsPlatform(powershell=powershell).account_home("hanha")
+    assert WindowsPlatform().human_accounts() == []
+
+
+def test_off_windows_no_account_is_listed():
+    assert WindowsPlatform().human_accounts() == []
+
+
+def test_an_account_home_is_what_the_profile_list_names(monkeypatch):
+    seen = []
+
+    def account_home(account, *, advapi32=None, kernel32=None):
+        seen.append((account, advapi32, kernel32))
+        return "C:\\Users\\hanha"
+
+    monkeypatch.setattr(windows_module, "account_home", account_home)
+    advapi32, kernel32 = object(), object()
+
+    home = WindowsPlatform(advapi32=advapi32, kernel32=kernel32).account_home("hanha")
 
     assert home == "C:\\Users\\hanha"
-    ((script, document),) = powershell.runs
-    assert "Win32_UserProfile" in script
-    assert document == {"name": "hanha"}
+    assert seen == [("hanha", advapi32, kernel32)]
 
 
-@pytest.mark.parametrize(
-    "answer",
-    [{"is_present": False, "home": ""}, {"is_present": True, "home": ""}],
-)
-def test_an_account_with_no_profile_has_no_home(answer):
-    platform = WindowsPlatform(powershell=FakePowerShell(answer))
+@pytest.mark.parametrize("error", [KeyError("ghost"), OSError(5, "denied")])
+def test_an_account_home_keeps_its_contract(monkeypatch, error):
+    monkeypatch.setattr(windows_module, "account_home", homes_of({"ghost": error}))
 
-    with pytest.raises(KeyError):
-        platform.account_home("ghost")
+    with pytest.raises(type(error)):
+        WindowsPlatform().account_home("ghost")
 
 
-def test_an_account_home_powershell_cannot_give_is_an_os_error():
-    powershell = FakePowerShell(error=subprocess.TimeoutExpired("powershell", 120))
+def test_a_step_runs_on_this_thread_acting_as_the_account(monkeypatch):
+    acted = []
 
-    with pytest.raises(OSError):
-        WindowsPlatform(powershell=powershell).account_home("hanha")
+    @contextlib.contextmanager
+    def impersonated(account, password, *, advapi32=None, kernel32=None):
+        acted.append(("logon", account, password))
+        yield
+        acted.append(("revert", account))
+
+    def step(path, text):
+        acted.append(("step", path, text))
+        return "done"
+
+    monkeypatch.setattr(windows_module, "impersonated", impersonated)
+
+    answer = WindowsPlatform().as_account("ann", step, "C:\\x", "y", password="pw")
+
+    assert answer == "done"
+    assert acted == [
+        ("logon", "ann", "pw"),
+        ("step", "C:\\x", "y"),
+        ("revert", "ann"),
+    ]
+    assert "act_as" in WindowsPlatform.capabilities
+
+
+def test_a_refused_logon_runs_no_step(monkeypatch):
+    @contextlib.contextmanager
+    def impersonated(account, password, *, advapi32=None, kernel32=None):
+        raise ModuleApplyError("credential_invalid", {"account": account})
+        yield
+
+    def step():
+        raise AssertionError("the step ran")
+
+    monkeypatch.setattr(windows_module, "impersonated", impersonated)
+
+    with pytest.raises(ModuleApplyError) as caught:
+        WindowsPlatform().as_account("ann", step, password="old")
+
+    assert caught.value.code == "credential_invalid"
 
 
 def test_the_agent_s_log_is_agent_log_under_the_log_root(monkeypatch):
@@ -1072,44 +1129,59 @@ def test_terminate_process_denied_is_an_os_error_and_the_handle_closes(monkeypat
     assert refused.calls[-1] == ("close", 0x2000)
 
 
+ADDED = {
+    "services": ["neutrino_gitea", "neutrino_agent", "neutrino_hub"],
+    "tasks": [
+        "neutrino_vscode_ann",
+        "neutrino_cloudcli_install_bob",
+        "neutrino_client_tray",
+    ],
+    "rules": [
+        "neutrino_smb_fence",
+        "neutrino_vscode_port_ann",
+        "neutrino_hub_panel",
+    ],
+}
+
+
 def test_windows_removal_takes_the_modules_tasks_and_rules_and_leaves_the_hubs(
-    monkeypatch,
+    monkeypatch, tmp_path
 ):
     """The fence is one of the rules; the hub's own rules stay, and every
-    process under the state root is ended with the tasks."""
-    monkeypatch.setenv("ProgramData", "C:\\ProgramData")
-    ran = []
+    process under the state root is ended with the tasks, a child with its
+    parent, without regard to case."""
+    monkeypatch.setenv("ProgramData", f"{tmp_path}/")
+    host = RecordingHost({"added_list": ADDED})
+    state = f"{tmp_path}/Neutrino\\agent\\state"
+    table = FakeProcessTable(
+        [
+            (4, 0, 0, "System", "", ""),
+            (30, 4, 100, "cmd.exe", f'cmd /c "x >> {state.upper()}\\ann.log"', ""),
+            (31, 30, 101, "code.exe", "code serve-web", ""),
+            (40, 4, 100, "node.exe", "node index.js", f"{state}\\cloudcli\\node.exe"),
+            (41, 40, 99, "old.exe", "a pid reused before node started", ""),
+            (50, 4, 100, "explorer.exe", "explorer", "C:\\Windows\\explorer.exe"),
+        ]
+    )
+    run_as = tmp_path / "Neutrino\\agent\\state\\run_as"
+    run_as.mkdir()
+    (run_as / "left.txt").write_text("x")
 
-    def powershell(script, document):
-        ran.append((script, document))
-        if script is windows_module.WINDOWS_ADDED_LIST_SCRIPT:
-            return {
-                "services": ["neutrino_gitea", "neutrino_agent", "neutrino_hub"],
-                "tasks": [
-                    "neutrino_vscode_ann",
-                    "neutrino_cloudcli_install_bob",
-                    "neutrino_client_tray",
-                ],
-                "rules": [
-                    "neutrino_smb_fence",
-                    "neutrino_vscode_port_ann",
-                    "neutrino_hub_panel",
-                ],
-            }
-        return {"is_removed": True}
+    removed = WindowsPlatform(powershell=host, processes=table).remove_added()
 
-    removed = WindowsPlatform(powershell=powershell).remove_added()
-
-    assert ran[0][1] == {"prefix": "neutrino_"}
-    script, document = ran[1]
-    assert script is windows_module.WINDOWS_ADDED_REMOVE_SCRIPT
-    assert document == {
-        "services": ["neutrino_gitea"],
-        "tasks": ["neutrino_cloudcli_install_bob", "neutrino_vscode_ann"],
-        "rules": ["neutrino_smb_fence", "neutrino_vscode_port_ann"],
-        "state_root": "C:\\ProgramData\\Neutrino\\agent\\state",
-        "run_as_dir": "run_as",
-    }
+    assert host.calls == [
+        ("added_list", {"prefix": "neutrino_"}),
+        (
+            "added_remove",
+            {
+                "services": ["neutrino_gitea"],
+                "tasks": ["neutrino_cloudcli_install_bob", "neutrino_vscode_ann"],
+                "rules": ["neutrino_smb_fence", "neutrino_vscode_port_ann"],
+            },
+        ),
+    ]
+    assert table.ended == [30, 40, 31]
+    assert not run_as.exists()
     assert removed == [
         "service neutrino_gitea",
         "task neutrino_cloudcli_install_bob",
@@ -1119,89 +1191,185 @@ def test_windows_removal_takes_the_modules_tasks_and_rules_and_leaves_the_hubs(
     ]
 
 
-def test_windows_removal_with_one_task_and_no_rules_reads_powershells_bare_value():
-    ran = []
+def test_windows_removal_with_nothing_added_removes_nothing(monkeypatch, tmp_path):
+    monkeypatch.setenv("ProgramData", f"{tmp_path}/")
+    host = RecordingHost({"added_list": {"services": [], "tasks": [], "rules": []}})
 
-    def powershell(script, document):
-        ran.append(document)
-        if script is windows_module.WINDOWS_ADDED_LIST_SCRIPT:
-            return {"tasks": "neutrino_vscode_ann", "rules": None}
-        return {"is_removed": True}
+    removed = WindowsPlatform(
+        powershell=host, processes=FakeProcessTable()
+    ).remove_added()
 
-    removed = WindowsPlatform(powershell=powershell).remove_added()
-
-    assert removed == ["task neutrino_vscode_ann"]
-    assert ran[1]["rules"] == []
-    assert ran[1]["services"] == []
+    assert removed == []
+    assert host.args_of("added_remove") == [{"services": [], "tasks": [], "rules": []}]
 
 
-def test_windows_removal_says_when_powershell_does_not_answer():
-    def powershell(script, document):
-        raise subprocess.TimeoutExpired("powershell.exe", 120)
+@pytest.mark.parametrize("failing", ["added_list", "added_remove"])
+def test_windows_removal_says_when_the_host_does_not_answer(failing):
+    host = RecordingHost({"added_list": ADDED, failing: TimeoutError("busy")})
 
     with pytest.raises(OSError):
-        WindowsPlatform(powershell=powershell).remove_added()
+        WindowsPlatform(powershell=host, processes=FakeProcessTable()).remove_added()
 
 
-def test_the_removal_script_ends_processes_under_the_state_root_without_case():
-    script = windows_module.WINDOWS_ADDED_REMOVE_SCRIPT
+def test_windows_removal_says_when_the_process_table_is_refused(monkeypatch, tmp_path):
+    monkeypatch.setenv("ProgramData", f"{tmp_path}/")
+    table = FakeProcessTable()
+    table.is_refusing = True
 
-    assert "Unregister-ScheduledTask -TaskName $name -Confirm:$false" in script
-    assert "Remove-NetFirewallRule -Name $name" in script
-    assert "OrdinalIgnoreCase" in script
-    assert script.index("Unregister-ScheduledTask") < script.index("Stop-Process")
-    assert "Join-Path $d.state_root $d.run_as_dir" in script
+    with pytest.raises(OSError):
+        WindowsPlatform(powershell=RecordingHost(), processes=table).remove_added()
 
 
 def test_a_one_shot_run_as_task_is_one_the_removal_takes():
     assert is_added_name("neutrino_run_as_ann", "neutrino_")
 
 
-class RunAsPowershell:
-    """Answers the one-shot task's script and records its document."""
+class OneShotTask:
+    """The host's one-shot task: it runs the script at once, writing the
+    output and the exit code its script would, and records each request."""
 
-    def __init__(self, answer):
-        self.answer = answer
-        self.documents: list = []
+    def __init__(self, *, exit_text="3\r\n", output="drawn"):
+        self.exit_text = exit_text
+        self.output = output
+        self.host = RecordingHost({"task_run_once": self.run})
+        self.seen: dict = {}
 
-    def __call__(self, script, document):
-        self.documents.append((script, document))
-        return dict(self.answer)
+    def run(self, args):
+        script = args["arguments"][len('/d /c "') : -1]
+        directory = script[: -len("\\command.cmd")]
+        with open(script, encoding="utf-8", newline="") as stream:
+            self.seen["script"] = stream.read()
+        with open(directory + "\\command.input", encoding="utf-8") as stream:
+            self.seen["input"] = stream.read()
+        with open(directory + "\\command.output", "w", encoding="utf-8") as stream:
+            stream.write(self.output)
+        if self.exit_text is not None:
+            with open(directory + "\\command.done", "w", encoding="utf-8") as stream:
+                stream.write(self.exit_text)
+        return {}
 
 
-def test_windows_runs_as_an_account_in_a_one_shot_task_under_its_login(monkeypatch):
-    monkeypatch.setenv("ProgramData", "C:\\ProgramData")
-    powershell = RunAsPowershell({"exit_code": 3, "output": "drawn"})
-    platform = WindowsPlatform(kernel32=FakeKernel32(), powershell=powershell)
+def run_as_platform(task, icacls=None):
+    return WindowsPlatform(
+        kernel32=FakeKernel32(),
+        powershell=task.host,
+        run=icacls if icacls is not None else Icacls(),
+        sleep=lambda seconds: None,
+    )
+
+
+def test_windows_runs_as_an_account_in_a_one_shot_task_under_its_login(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setenv("ProgramData", f"{tmp_path}/")
+    task = OneShotTask()
+    icacls = Icacls()
+    platform = run_as_platform(task, icacls)
 
     done = platform.run_as_account(
         "ann",
         ["C:\\P F\\cc-switch.exe", "--app", "claude"],
         stdin="in",
         password="pw",  # scan: allow
+        timeout_s=30,
     )
 
     assert (done.returncode, done.stdout) == (3, "drawn")
-    ((script, document),) = powershell.documents
-    assert "Register-ScheduledTask" in script and "-RunLevel Limited" in script
-    assert "Unregister-ScheduledTask" in script
-    assert (document["account"], document["password"]) == ("ann", "pw")
-    assert document["task"] == "neutrino_run_as_ann"
-    assert document["dir"].endswith("\\agent\\state\\run_as\\ann")
-    assert document["input_text"] == "in"
-    assert document["script_text"].split("\r\n")[2] == (
+    directory = f"{tmp_path}/Neutrino\\agent\\state\\run_as\\ann"
+    assert task.host.calls == [
+        (
+            "task_run_once",
+            {
+                "task": "neutrino_run_as_ann",
+                "program": "cmd.exe",
+                "arguments": f'/d /c "{directory}\\command.cmd"',
+                "account": "ann",
+                "password": "pw",  # scan: allow
+                "timeout_s": 30,
+            },
+        ),
+        ("task_remove", {"task": "neutrino_run_as_ann"}),
+    ]
+    assert icacls.calls == [
+        [
+            "icacls.exe",
+            directory,
+            "/inheritance:r",
+            "/grant:r",
+            "ann:(OI)(CI)M",
+            "*S-1-5-18:(OI)(CI)F",
+            "*S-1-5-32-544:(OI)(CI)F",
+        ]
+    ]
+    assert task.seen["input"] == "in"
+    lines = task.seen["script"].split("\r\n")
+    assert lines[1] == 'cd /d "%USERPROFILE%"'
+    assert lines[2] == (
         '"C:\\P F\\cc-switch.exe" "--app" "claude" < '
-        + f'"{document["input"]}" > "{document["output"]}" 2>&1'
+        f'"{directory}\\command.input" > "{directory}\\command.output" 2>&1'
     )
-    assert 'cd /d "%USERPROFILE%"' in document["script_text"]
+    assert lines[3] == f'>"{directory}\\command.done" echo %errorlevel%'
+    assert sorted(path.name for path in tmp_path.iterdir()) == [
+        "Neutrino\\agent\\state\\run_as\\ann"
+    ]
+
+
+def test_a_command_that_never_wrote_its_end_reads_minus_one(monkeypatch, tmp_path):
+    monkeypatch.setenv("ProgramData", f"{tmp_path}/")
+    task = OneShotTask(exit_text=None, output="half")
+    clock = [0.0]
+    monkeypatch.setattr(windows_module.time, "monotonic", lambda: clock[0])
+    waits = []
+
+    def sleep(seconds):
+        waits.append(seconds)
+        clock[0] += seconds
+
+    platform = WindowsPlatform(
+        powershell=task.host, run=Icacls(), sleep=sleep, kernel32=FakeKernel32()
+    )
+
+    done = platform.run_as_account("ann", ["cc.exe"], password="pw", timeout_s=3)
+
+    assert (done.returncode, done.stdout) == (-1, "half")
+    assert sum(waits) >= 3
+    assert task.host.ops() == ["task_run_once", "task_remove"]
+
+
+def test_a_login_windows_refuses_leaves_no_task_and_no_file(monkeypatch, tmp_path):
+    monkeypatch.setenv("ProgramData", f"{tmp_path}/")
+    refusal = ModuleApplyError("credential_invalid", {"account": "ann"})
+    host = RecordingHost({"task_run_once": refusal})
+    platform = WindowsPlatform(powershell=host, run=Icacls(), kernel32=FakeKernel32())
+
+    with pytest.raises(ModuleApplyError) as caught:
+        platform.run_as_account("ann", ["cc.exe"], stdin="secret", password="old")
+
+    assert caught.value.code == "credential_invalid"
+    assert host.ops() == ["task_run_once", "task_remove"]
+    assert sorted(path.name for path in tmp_path.iterdir()) == [
+        "Neutrino\\agent\\state\\run_as\\ann"
+    ]
+
+
+def test_a_run_folder_icacls_refuses_starts_no_task(monkeypatch, tmp_path):
+    monkeypatch.setenv("ProgramData", f"{tmp_path}/")
+    host = RecordingHost()
+    platform = WindowsPlatform(powershell=host, run=Icacls(5), kernel32=FakeKernel32())
+
+    with pytest.raises(OSError, match="icacls refused"):
+        platform.run_as_account("ann", ["cc.exe"], password="pw")
+
+    assert host.calls == []
 
 
 def test_windows_answers_a_question_through_its_own_program_inside_the_task(
-    monkeypatch,
+    monkeypatch, tmp_path
 ):
+    monkeypatch.setenv("ProgramData", f"{tmp_path}/")
     monkeypatch.setenv("ProgramFiles", "C:\\Program Files")
-    powershell = RunAsPowershell({"exit_code": 0, "output": "Deleted"})
-    platform = WindowsPlatform(kernel32=FakeKernel32(), powershell=powershell)
+    task = OneShotTask(exit_text="0", output="Deleted")
+    platform = run_as_platform(task)
 
     answered = platform.run_as_account_answering(
         "ann",
@@ -1212,9 +1380,8 @@ def test_windows_answers_a_question_through_its_own_program_inside_the_task(
     )
 
     assert answered == (0, "Deleted")
-    ((_script, document),) = powershell.documents
     assert (
-        document["script_text"]
+        task.seen["script"]
         .split("\r\n")[2]
         .startswith(
             '"C:\\Program Files\\Neutrino\\agent\\nagent.exe" "answer" "--prompt" "(y/N)" '
@@ -1246,10 +1413,10 @@ def test_the_uninstall_disables_the_agents_service(monkeypatch):
     assert commands == [["sc", "config", "neutrino_agent", "start=", "disabled"]]
 
 
-def test_the_one_shot_task_sets_the_variables_it_is_given_first(monkeypatch):
-    monkeypatch.setenv("ProgramData", "C:\\ProgramData")
-    powershell = RunAsPowershell({"exit_code": 0, "output": ""})
-    platform = WindowsPlatform(kernel32=FakeKernel32(), powershell=powershell)
+def test_the_one_shot_task_sets_the_variables_it_is_given_first(monkeypatch, tmp_path):
+    monkeypatch.setenv("ProgramData", f"{tmp_path}/")
+    task = OneShotTask(exit_text="0", output="")
+    platform = run_as_platform(task)
 
     platform.run_as_account(
         "ann",
@@ -1258,7 +1425,6 @@ def test_the_one_shot_task_sets_the_variables_it_is_given_first(monkeypatch):
         environment={"CC_SWITCH_CONFIG_DIR": "C:\\Users\\ann\\x%y"},
     )
 
-    ((_script, document),) = powershell.documents
-    lines = document["script_text"].split("\r\n")
+    lines = task.seen["script"].split("\r\n")
     assert lines[2] == 'set "CC_SWITCH_CONFIG_DIR=C:\\Users\\ann\\x%%y"'
     assert lines[3].startswith('"cc.exe"')

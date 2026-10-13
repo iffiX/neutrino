@@ -1,6 +1,11 @@
 """The agent's RustDesk on Windows: the ``RustDesk`` service running the
-agent's copy, what is kept of one found before, and what is never ended."""
+agent's copy, what is kept of one found before, and what is never ended.
 
+The service's configuration is read from the service control manager, in
+Win32_Service's words, and RustDesk's processes from the process table with
+the program and the command line each started with."""
+
+import ctypes
 import json
 
 import pytest
@@ -11,15 +16,20 @@ from neutrino_agent.modules.remote_desktop.windows_applier import (
     image_path,
     is_viewer_command,
     listening_pids,
+    read_service,
+    service_detail,
 )
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
+from neutrino_agent.platforms import win32
+from neutrino_agent.platforms.windows_processes import WindowsProcessEntry
 
 COPY = "C:\\Program Files\\Neutrino\\agent\\rustdesk\\rustdesk.exe"
 UPSTREAM = "C:\\Program Files\\RustDesk\\rustdesk.exe"
 
 
 class FakeWindows:
-    """sc.exe, netstat and PowerShell answering from a table."""
+    """sc.exe, netstat, the service control manager and the process table,
+    answering from a table."""
 
     def __init__(self):
         self.calls = []
@@ -38,26 +48,180 @@ class FakeWindows:
             return CommandResult(list(command), 0, out, "")
         return CommandResult(list(command), 0, "", "")
 
-    def powershell(self, script, document):
-        if script is windows_applier.READ_SERVICE_SCRIPT:
-            return dict(self.service)
-        return {"processes": list(self.processes)}
+    def read_service(self, name):
+        assert name == "RustDesk"
+        return dict(self.service)
+
+    def entries(self):
+        listed = [WindowsProcessEntry(9, 4, 0, "svchost.exe", 0, 0)]
+        for process in self.processes:
+            name = process.get("name", "rustdesk.exe")
+            listed.append(WindowsProcessEntry(process["pid"], 4, 0, name, 0, 0))
+        return listed
+
+    def command_line(self, pid):
+        return self._of(pid).get("command", "")
+
+    def image_path(self, pid):
+        return self._of(pid).get("program", "")
+
+    def _of(self, pid):
+        return next((p for p in self.processes if p["pid"] == pid), {})
+
+
+def applier_on(windows, root, *, program=COPY, program_of=None):
+    return RemoteDesktopWindowsApplier(
+        kept_dir=str(root / "kept"),
+        run=windows.run,
+        read_service_detail=windows.read_service,
+        processes=windows,
+        program=program,
+        program_of=program_of or {7: COPY, 8: UPSTREAM}.get,
+        sleep=lambda seconds: None,
+    )
 
 
 @pytest.fixture()
 def made(tmp_path):
     windows = FakeWindows()
-    applier = RemoteDesktopWindowsApplier(
-        kept_dir=str(tmp_path / "kept"),
-        run=windows.run,
-        powershell=windows.powershell,
-        program=COPY,
-        program_of=lambda pid: {7: COPY, 8: UPSTREAM}.get(pid, ""),
-        sleep=lambda seconds: None,
-    )
+    applier = applier_on(windows, tmp_path)
     applier.windows = windows
     applier.root = tmp_path
     return applier
+
+
+def configuration(base, *, image, start_type, display):
+    """A QUERY_SERVICE_CONFIGW buffer, its strings after the structure."""
+    head = win32.QueryServiceConfig()
+    size = ctypes.sizeof(head)
+    image_bytes = image.encode("utf-16-le") + b"\x00\x00"
+    display_bytes = display.encode("utf-16-le") + b"\x00\x00"
+    head.dwServiceType = 0x10
+    head.dwStartType = start_type
+    head.lpBinaryPathName = base + size
+    head.lpDisplayName = base + size + len(image_bytes)
+    return bytes(head) + image_bytes + display_bytes
+
+
+def test_a_service_s_configuration_reads_in_win32_service_s_words():
+    data = configuration(
+        0x5000, image=image_path(UPSTREAM), start_type=3, display="RustDesk Service"
+    )
+
+    assert service_detail(data, 0x5000, 4) == {
+        "is_present": True,
+        "image_path": image_path(UPSTREAM),
+        "start_mode": "Manual",
+        "state": "Running",
+        "display_name": "RustDesk Service",
+    }
+    assert service_detail(data, 0x5000, 1)["state"] == "Stopped"
+    assert service_detail(data, 0x5000, 99)["state"] == "Unknown"
+    with pytest.raises(ValueError):
+        service_detail(data[:10], 0x5000, 4)
+    with pytest.raises(ValueError):
+        service_detail(data, 0x9000, 4)
+
+
+class FakeAdvapi32:
+    """The service control manager's calls, answering one service or none."""
+
+    def __init__(self, data=None, start_type=2, state=4):
+        self.data = data
+        self.start_type = start_type
+        self.state = state
+        self.closed = []
+
+    def OpenSCManagerW(self, machine, database, access):
+        assert access == win32.SC_MANAGER_CONNECT
+        return 0x10
+
+    def OpenServiceW(self, manager, name, access):
+        assert (manager, name) == (0x10, "RustDesk")
+        assert access == win32.SERVICE_QUERY_CONFIG | win32.SERVICE_QUERY_STATUS
+        return 0x20 if self.data is not None else 0
+
+    def QueryServiceConfigW(self, service, buffer, size, needed):
+        data = configuration(
+            ctypes.addressof(buffer) if buffer is not None else 0,
+            image=image_path(COPY),
+            start_type=self.start_type,
+            display="RustDesk Service",
+        )
+        needed._obj.value = len(data)
+        if buffer is None or size < len(data):
+            return 0
+        ctypes.memmove(buffer, data, len(data))
+        return 1
+
+    def QueryServiceStatus(self, service, status):
+        status._obj.dwCurrentState = self.state
+        return 1
+
+    def CloseServiceHandle(self, handle):
+        self.closed.append(handle)
+        return 1
+
+
+def test_the_service_is_read_from_the_service_control_manager():
+    advapi32 = FakeAdvapi32(data=True, start_type=2, state=4)
+
+    assert read_service("RustDesk", advapi32=advapi32) == {
+        "is_present": True,
+        "image_path": image_path(COPY),
+        "start_mode": "Auto",
+        "state": "Running",
+        "display_name": "RustDesk Service",
+    }
+    assert advapi32.closed == [0x20, 0x10]
+
+
+def test_a_service_that_is_not_there_reads_as_absent(monkeypatch):
+    missing = OSError(win32.ERROR_SERVICE_DOES_NOT_EXIST, "no such service")
+    missing.winerror = win32.ERROR_SERVICE_DOES_NOT_EXIST
+    monkeypatch.setattr(win32, "last_error", lambda: missing)
+    advapi32 = FakeAdvapi32(data=None)
+
+    assert read_service("RustDesk", advapi32=advapi32) == {"is_present": False}
+    assert advapi32.closed == [0x10]
+
+
+def test_a_service_the_manager_will_not_read_is_no_service_to_the_applier(tmp_path):
+    windows = FakeWindows()
+
+    def refused(name):
+        raise OSError(5, "access denied")
+
+    applier = RemoteDesktopWindowsApplier(
+        kept_dir=str(tmp_path / "kept"),
+        run=windows.run,
+        read_service_detail=refused,
+        processes=windows,
+        program=COPY,
+    )
+
+    assert applier.keep_aside() == {}
+    assert applier.is_registered() is False
+
+
+def test_rustdesk_s_processes_are_the_table_s_by_their_image_name(made):
+    made.windows.processes = [
+        {"pid": 5, "name": "RustDesk.exe", "program": COPY, "command": "a"},
+        {"pid": 6, "name": "rustdesk.exe", "program": UPSTREAM, "command": "b"},
+        {"pid": 7, "name": "notrustdesk.exe", "program": COPY, "command": "c"},
+    ]
+
+    assert made._rustdesk() == [(5, COPY, "a"), (6, UPSTREAM, "b")]
+
+
+def test_a_process_table_the_kernel_refuses_lists_no_rustdesk(made):
+    def refused():
+        raise OSError("refused")
+
+    made.windows.entries = refused
+
+    assert made._rustdesk() == []
+    assert made.copy_pids() == []
 
 
 def test_the_service_command_line_quotes_the_copy():
@@ -254,9 +418,9 @@ def test_off_windows_no_program_is_read_by_pid():
 
 def test_a_host_whose_real_image_was_parked_by_the_installer_is_stale(tmp_path):
     """As T21t measured on nmxwin: the msi gives the new rustdesk.exe the
-    build's own time, so every tray started after it, and Win32_Process
-    still names the Program Files path; only QueryFullProcessImageName shows
-    the image moved into Config.Msi."""
+    build's own time, so every tray started after it, and the image path a
+    process started with still names the Program Files path; only
+    QueryFullProcessImageName shows the image moved into Config.Msi."""
     copy = tmp_path / "rustdesk.exe"
     copy.write_bytes(b"new")
     other = tmp_path / "RustDesk" / "rustdesk.exe"
@@ -272,16 +436,10 @@ def test_a_host_whose_real_image_was_parked_by_the_installer_is_stale(tmp_path):
         {"pid": 64, "program": str(copy), "command": "--connect a", "started": 9e9},
         {"pid": 65, "program": str(copy), "command": "--server", "started": 9e9},
     ]
-    applier = RemoteDesktopWindowsApplier(
-        kept_dir=str(tmp_path / "kept"),
-        run=windows.run,
-        powershell=windows.powershell,
-        program=str(copy),
-        program_of=images.get,
-    )
+    applier = applier_on(windows, tmp_path, program=str(copy), program_of=images.get)
 
     # 61 runs the copy; 63 is a person's own; 64 is a viewer; 65's image
-    # cannot be read and WMI names the copy.
+    # cannot be read and its start names the copy.
     assert applier.stale_pids() == [62]
 
 
@@ -332,13 +490,11 @@ def test_a_tray_left_running_on_a_moved_aside_executable_is_stale_and_ended(
             "started": written - 900,
         },
     ]
-    applier = RemoteDesktopWindowsApplier(
-        kept_dir=str(tmp_path / "kept"),
-        run=windows.run,
-        powershell=windows.powershell,
+    applier = applier_on(
+        windows,
+        tmp_path,
         program=str(copy),
         program_of={71: str(copy), 72: str(copy), 73: parked, 74: parked}.get,
-        sleep=lambda seconds: None,
     )
 
     assert applier.stale_pids() == [73]

@@ -86,6 +86,7 @@ from neutrino_agent.modules.shared.http_forward import (
     refused,
 )
 from neutrino_agent.modules.shared.instances import InstanceHooks
+from neutrino_agent.modules.shared.windows_acl import grant_account_alone
 
 # The header a request carries the instance token in, and its scheme.
 AUTHORIZATION_HEADER = "authorization"
@@ -94,18 +95,6 @@ BEARER_SCHEME = "bearer"
 UPGRADE_HEADER = "upgrade"
 WEBSOCKET_UPGRADE = "websocket"
 SUBPROTOCOL_HEADER = "sec-websocket-protocol"
-
-# Makes an account's data directory on Windows, reachable by the account,
-# SYSTEM and the administrators alone.
-DATA_DIR_SCRIPT = """
-if (-not (Test-Path -LiteralPath $d.directory)) {
-  New-Item -ItemType Directory -Path $d.directory -Force | Out-Null
-}
-$code = Invoke-Icacls $d.directory /inheritance:r /grant:r "$($d.account):(OI)(CI)M" `
-  '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F'
-if ($code -ne 0) { throw "icacls refused $($d.directory)" }
-'{}'
-"""
 
 
 def data_dir(home: str, os_name: str, join=os.path.join) -> str:
@@ -394,16 +383,15 @@ class CodegHooks(InstanceHooks):
             One note when the directory was made.
 
         Raises:
-            OSError: When the directory cannot be made, or PowerShell fails.
-            ModuleApplyError: What a PowerShell refusal carries.
+            OSError: When the directory cannot be made or granted.
         """
         directory = data_dir(entry.home, self._os_name, self._join)
         if os.path.isdir(directory):
             return []
         if self._os_name == "windows":
-            self.machine.powershell(
-                DATA_DIR_SCRIPT,
-                {"account": instance.account, "directory": directory},
+            os.makedirs(directory, exist_ok=True)
+            grant_account_alone(
+                self.machine.run, directory, instance.account, "M", is_tree=True
             )
         else:
             make_account_directory(directory, entry, self.machine.chown)

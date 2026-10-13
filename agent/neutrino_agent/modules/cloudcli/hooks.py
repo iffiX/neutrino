@@ -90,6 +90,7 @@ from neutrino_agent.modules.cloudcli.constants import (
     CLOUDCLI_UPSTREAM_HOST,
     CLOUDCLI_VERSION,
     CLOUDCLI_WINDOWS_INSTALL_LIMIT_S,
+    CLOUDCLI_WINDOWS_INSTALL_OUTPUT_CHARS,
     CLOUDCLI_WINDOWS_NPM_PATH,
     CLOUDCLI_WINDOWS_SERVICE_PATH,
 )
@@ -102,7 +103,11 @@ from neutrino_agent.modules.shared.account_service.constants import (
     ACCOUNT_SERVICE_WINDOWS_SCRIPT_DIR_NAME,
     ACCOUNT_SERVICE_WINDOWS_SHELL,
 )
-from neutrino_agent.modules.shared.account_service.windows import task_arguments
+from neutrino_agent.modules.shared.account_service.windows import (
+    remove_path,
+    task_arguments,
+    write_text,
+)
 from neutrino_agent.modules.shared.http_forward import (
     RELAY,
     ForwardDecision,
@@ -111,9 +116,9 @@ from neutrino_agent.modules.shared.http_forward import (
     unpadded_decode,
 )
 from neutrino_agent.modules.shared.instances import InstanceHooks
-from neutrino_agent.modules.shared.powershell_run import listed
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
 from neutrino_agent.modules.shared.unpacked_tree import remove_tree, unpack_into
+from neutrino_agent.modules.shared.windows_acl import grant_account_alone
 
 # The words in npm's output that say a native module could not get its
 # binary: prebuild-install gave up, and node-gyp could not build it either.
@@ -151,59 +156,6 @@ EXCHANGE_PAGE = (
     '<!doctype html><meta charset="utf-8"><title>CloudCLI</title>'
     "<script>localStorage.setItem(%s, %s);location.replace('/');</script>"
 )
-
-# Writes an account's install script and starts it as a task with the
-# account's login, leaving it to run.
-INSTALL_SCRIPT = """
-$dir = Split-Path -Parent $d.script
-if (-not (Test-Path -LiteralPath $dir)) {
-  New-Item -ItemType Directory -Path $dir -Force | Out-Null
-}
-[IO.File]::WriteAllText($d.script, $d.script_text)
-[IO.File]::WriteAllText($d.log, '')
-foreach ($file in @($d.script, $d.log)) {
-  $code = Invoke-Icacls $file /inheritance:r /grant:r "$($d.account):M" `
-    '*S-1-5-18:F' '*S-1-5-32-544:F'
-  if ($code -ne 0) { throw "icacls refused $file" }
-}
-$action = New-ScheduledTaskAction -Execute $d.program -Argument $d.arguments
-$settings = New-ScheduledTaskSettingsSet `
-  -ExecutionTimeLimit (New-TimeSpan -Seconds $d.timeout_s) `
-  -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
-try {
-  Register-ScheduledTask -TaskName $d.task -Action $action -Settings $settings `
-    -User $d.account -Password $d.password -RunLevel Limited -Force | Out-Null
-} catch {
-  if (Test-LogonRefused $_) {
-    Send-Refusal 'credential_invalid' @{account = $d.account}
-  }
-  throw
-}
-Start-ScheduledTask -TaskName $d.task
-'{}'
-"""
-
-# Unregisters an account's ended install task, deletes its script, and
-# answers the end of its output.
-FINISH_INSTALL_SCRIPT = """
-Unregister-ScheduledTask -TaskName $d.task -Confirm:$false -ErrorAction SilentlyContinue
-Remove-Item -LiteralPath $d.script -Force -ErrorAction SilentlyContinue
-$output = ''
-if (Test-Path -LiteralPath $d.log) { $output = [IO.File]::ReadAllText($d.log) }
-if ($output.Length -gt 8000) { $output = $output.Substring($output.Length - 8000) }
-@{output = $output} | ConvertTo-Json -Compress -Depth 4
-"""
-
-# Each install task: its state and its last result.
-INSTALL_STATUS_SCRIPT = """
-$tasks = @()
-foreach ($task in @(Get-ScheduledTask -TaskName "$($d.prefix)*" -ErrorAction SilentlyContinue)) {
-  $info = Get-ScheduledTaskInfo -TaskName $task.TaskName
-  $tasks += @{name = $task.TaskName; state = "$($task.State)";
-    last_result = [int64]$info.LastTaskResult}
-}
-@{tasks = $tasks} | ConvertTo-Json -Compress -Depth 4
-"""
 
 
 def node_dir(root: str) -> str:
@@ -380,6 +332,23 @@ def failure_detail(output: str) -> str:
     ]
     kept = named[-CLOUDCLI_FAILURE_LINES:] or lines[-1:]
     return " | ".join(kept)[-CLOUDCLI_FAILURE_DETAIL_CHARS:]
+
+
+def install_output(log_file: str) -> str:
+    """The end of a Windows install's output, as its log holds it.
+
+    Args:
+        log_file: The install's log.
+
+    Returns:
+        Its last characters; empty when the log is not there.
+    """
+    try:
+        with open(log_file, "rb") as stream:
+            text = stream.read().decode("utf-8", "replace")
+    except OSError:
+        return ""
+    return text.lstrip("\ufeff")[-CLOUDCLI_WINDOWS_INSTALL_OUTPUT_CHARS:]
 
 
 def registry_host(registry: str) -> str:
@@ -680,16 +649,16 @@ class CloudcliHooks(InstanceHooks):
             Nothing changed.
 
         Raises:
-            OSError: When PowerShell fails.
+            OSError: When the PowerShell host fails.
         """
         self._remove_old_node()
         if self._os_name == "windows":
-            read = self.machine.powershell(
-                INSTALL_STATUS_SCRIPT, {"prefix": CLOUDCLI_INSTALL_TASK_PREFIX}
+            read = self.machine.powershell.call(
+                "task_states", {"prefix": CLOUDCLI_INSTALL_TASK_PREFIX}
             )
             self._install_tasks = {
                 str(entry.get("name", "")): entry
-                for entry in listed(read.get("tasks"))
+                for entry in read.get("tasks") or []
                 if isinstance(entry, dict)
             }
             self.installing = frozenset()
@@ -713,7 +682,8 @@ class CloudcliHooks(InstanceHooks):
                 ``cloudcli_install_out_of_memory``,
                 ``cloudcli_native_module_failed`` or ``credential_invalid``,
                 each naming the account.
-            OSError: When a command cannot run, or PowerShell fails.
+            OSError: When a command cannot run, a file cannot be written, or
+                the PowerShell host fails.
             subprocess.SubprocessError: When a command does not finish.
         """
         account = instance.account
@@ -1040,23 +1010,27 @@ class CloudcliHooks(InstanceHooks):
             return INSTALL_READY
         node = self.node
         npm = npm_path(ntpath.dirname(node), "windows", ntpath.join)
-        self.machine.powershell(
-            INSTALL_SCRIPT,
+        write_text(
+            script,
+            render_install_script(
+                app=app,
+                node=node,
+                npm=npm,
+                registry=self._registry,
+                extra=self._npm_extra,
+            ),
+        )
+        write_text(log_file, "")
+        for path in (script, log_file):
+            grant_account_alone(self.machine.run, path, account, "M", is_tree=False)
+        self.machine.powershell.call(
+            "task_run_once",
             {
-                "account": account,
-                "password": instance.password,
                 "task": name,
-                "script": script,
-                "script_text": render_install_script(
-                    app=app,
-                    node=node,
-                    npm=npm,
-                    registry=self._registry,
-                    extra=self._npm_extra,
-                ),
-                "log": log_file,
                 "program": ACCOUNT_SERVICE_WINDOWS_SHELL,
                 "arguments": task_arguments(script, [], log_file),
+                "account": account,
+                "password": instance.password,
                 "timeout_s": CLOUDCLI_WINDOWS_INSTALL_LIMIT_S,
             },
         )
@@ -1067,10 +1041,9 @@ class CloudcliHooks(InstanceHooks):
         self, task: dict, app: str, name: str, script: str, log_file: str, account: str
     ) -> None:
         """Unregister an ended install task and raise the step it failed at."""
-        answer = self.machine.powershell(
-            FINISH_INSTALL_SCRIPT, {"task": name, "script": script, "log": log_file}
-        )
-        output = str(answer.get("output", "") or "")
+        self.machine.powershell.call("task_remove", {"task": name})
+        remove_path(script)
+        output = install_output(log_file)
         result = int(task.get("last_result", 0) or 0) & 0xFFFFFFFF
         if result in ACCOUNT_SERVICE_LOGON_FAILURES:
             raise ModuleApplyError("credential_invalid", {"account": account})

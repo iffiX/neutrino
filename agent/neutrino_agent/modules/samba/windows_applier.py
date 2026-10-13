@@ -1,17 +1,18 @@
 """The file share on Windows' own SMB server.
 
-Each operation is one PowerShell script, handed a JSON document on its
-standard input and answering one JSON document on its standard output
-(:mod:`neutrino_agent.modules.shared.powershell_run`), so a password never appears
-on a command line. The module changes only the shares
-and accounts it made: a share whose description starts with the marker and
-that the module's record lists, an account the record lists. Accounts are
-local, in no group, hidden from the sign-in screen and denied the console
-and RDP. One inbound block rule for TCP 445, covering every address outside
-the allowed subnets, fences the server; it also covers shares the person
-made themselves.
+Each operation is one function of the agent's PowerShell host, handed a
+JSON object and answering one, so a password never appears on a command
+line. The module changes only the shares and accounts it made: a share
+whose description starts with the marker and that the module's record
+lists, an account the record lists. Accounts are local, in no group, hidden
+from the sign-in screen and denied the console and RDP. Each share's folder
+is granted to its accounts with ``icacls`` once the host has made it. One
+inbound block rule for TCP 445, covering every address outside the allowed
+subnets, fences the server; it also covers shares the person made
+themselves.
 
-Not pure: runs PowerShell and calls the local security policy.
+Not pure: drives the PowerShell host, runs icacls and calls the local
+security policy.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -20,10 +21,8 @@ from __future__ import annotations
 
 import ctypes
 import ipaddress
-import subprocess
 
 from neutrino_agent.exceptions import ModuleApplyError
-from neutrino_agent.modules.shared.powershell_run import listed, run_powershell
 from neutrino_agent.modules.samba.config import SambaConfig
 from neutrino_agent.modules.samba.constants import (
     SAMBA_LOOPBACK_NETWORKS,
@@ -38,195 +37,9 @@ from neutrino_agent.modules.samba.constants import (
     SAMBA_WINDOWS_SHARE_OWNER,
     SAMBA_WINDOWS_SHARE_READ,
 )
+from neutrino_agent.modules.shared.subprocess_run import run as run_command
+from neutrino_agent.modules.shared.windows_acl import icacls
 from neutrino_agent.platforms import win32
-
-# The server's state, the marked shares, the listed accounts, the sessions
-# and the fence.
-STATUS_SCRIPT = """
-$svc = Get-Service -Name LanmanServer -ErrorAction SilentlyContinue
-$shares = @()
-foreach ($share in @(Get-SmbShare -ErrorAction SilentlyContinue)) {
-  if (-not "$($share.Description)".StartsWith($d.marker)) { continue }
-  $access = @()
-  foreach ($entry in @(Get-SmbShareAccess -Name $share.Name)) {
-    $access += @{account = "$($entry.AccountName)"; right = "$($entry.AccessRight)"}
-  }
-  $shares += @{name = $share.Name; path = $share.Path;
-    description = "$($share.Description)"; access = $access}
-}
-$sessions = @()
-foreach ($session in @(Get-SmbSession -ErrorAction SilentlyContinue)) {
-  $sessions += @{user = "$($session.ClientUserName)";
-    address = "$($session.ClientComputerName)"}
-}
-$users = @()
-foreach ($name in @($d.accounts)) {
-  $held = Get-LocalUser -Name $name -ErrorAction SilentlyContinue
-  $users += @{name = $name; is_present = [bool]$held;
-    is_enabled = [bool]($held -and $held.Enabled)}
-}
-$fence = @{is_present = $false; is_enabled = $false; blocked = @()}
-$rule = Get-NetFirewallRule -Name $d.rule_name -ErrorAction SilentlyContinue
-if ($rule) {
-  $fence.is_present = $true
-  $fence.is_enabled = "$($rule.Enabled)" -eq 'True'
-  $fence.blocked = @(($rule | Get-NetFirewallAddressFilter).RemoteAddress)
-}
-@{is_present = [bool]$svc; is_running = [bool]($svc -and $svc.Status -eq 'Running');
-  shares = $shares; sessions = $sessions; users = $users; fence = $fence} |
-  ConvertTo-Json -Compress -Depth 6
-"""
-
-# Refuses names the module did not make, then converges the server, the
-# fence, the accounts and the shares.
-APPLY_SCRIPT = """
-$computer = $env:COMPUTERNAME
-foreach ($s in @($d.shares)) {
-  $held = Get-SmbShare -Name $s.name -ErrorAction SilentlyContinue
-  $is_ours = (@($d.owned_shares) -contains $s.name) -and
-    "$($held.Description)".StartsWith($d.marker)
-  if ($held -and -not $is_ours) { Send-Refusal 'share_name_taken' @{name = $s.name} }
-}
-foreach ($u in @($d.users)) {
-  $held = Get-LocalUser -Name $u -ErrorAction SilentlyContinue
-  $is_ours = (@($d.owned_accounts) -contains $u) -or
-    ("$($held.Description)" -eq $d.marker)
-  if ($held -and -not $is_ours) {
-    Send-Refusal 'user_name_taken' @{user = $u}
-  }
-}
-$notes = @()
-$svc = Get-Service -Name LanmanServer
-if ("$($svc.StartType)" -eq 'Disabled') {
-  Set-Service -Name LanmanServer -StartupType Automatic
-}
-if ($svc.Status -ne 'Running') {
-  Start-Service -Name LanmanServer
-  $notes += 'started the server'
-}
-$blocked = @($d.blocked_addresses)
-$rule = Get-NetFirewallRule -Name $d.rule_name -ErrorAction SilentlyContinue
-if ($blocked.Count -eq 0) {
-  if ($rule) { Set-NetFirewallRule -Name $d.rule_name -Enabled False }
-} elseif (-not $rule) {
-  New-NetFirewallRule -Name $d.rule_name -DisplayName $d.rule_title `
-    -Direction Inbound -Action Block -Protocol TCP -LocalPort 445 `
-    -RemoteAddress $blocked -Profile Any | Out-Null
-  $notes += 'fenced the server'
-} else {
-  Set-NetFirewallRule -Name $d.rule_name -RemoteAddress $blocked -Enabled True
-}
-$hidden = 'HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\SpecialAccounts\\UserList'
-if (-not (Test-Path -Path $hidden)) { New-Item -Path $hidden -Force | Out-Null }
-foreach ($u in @($d.users)) {
-  if (-not (Get-LocalUser -Name $u -ErrorAction SilentlyContinue)) {
-    New-LocalUser -Name $u -NoPassword -Disabled -AccountNeverExpires `
-      -UserMayNotChangePassword -Description $d.marker | Out-Null
-    Set-LocalUser -Name $u -PasswordNeverExpires $true
-    $notes += "created account $u"
-  }
-  New-ItemProperty -Path $hidden -Name $u -Value 0 -PropertyType DWord -Force | Out-Null
-}
-foreach ($u in @($d.retired_accounts)) {
-  $held = Get-LocalUser -Name $u -ErrorAction SilentlyContinue
-  if ($held -and $held.Enabled) {
-    Disable-LocalUser -Name $u
-    $notes += "retired $u"
-  }
-}
-foreach ($name in @($d.removed_shares)) {
-  $held = Get-SmbShare -Name $name -ErrorAction SilentlyContinue
-  if ($held -and "$($held.Description)".StartsWith($d.marker)) {
-    Remove-SmbShare -Name $name -Force
-    $notes += "removed share $name"
-  }
-}
-foreach ($s in @($d.shares)) {
-  if (-not (Test-Path -LiteralPath $s.path)) {
-    New-Item -ItemType Directory -Path $s.path -Force | Out-Null
-  }
-  foreach ($u in @($s.revoked)) { Invoke-Icacls $s.path /remove:g $u | Out-Null }
-  foreach ($u in @($s.accounts)) {
-    $code = Invoke-Icacls $s.path /grant "${u}:$($s.folder_right)"
-    if ($code -ne 0) { throw "icacls refused $u on $($s.path)" }
-  }
-  $wanted = @()
-  foreach ($u in @($s.accounts)) { $wanted += "$computer\\$u" }
-  $held = Get-SmbShare -Name $s.name -ErrorAction SilentlyContinue
-  if ($held -and $held.Path -ne $s.path) {
-    Remove-SmbShare -Name $s.name -Force
-    $held = $null
-  }
-  if (-not $held) {
-    $made = @{Name = $s.name; Path = $s.path; Description = $s.description}
-    if ($wanted.Count -eq 0) { $made.FullAccess = $d.share_owner }
-    elseif ($s.share_right -eq 'Change') { $made.ChangeAccess = $wanted }
-    else { $made.ReadAccess = $wanted }
-    New-SmbShare @made | Out-Null
-    $notes += "created share $($s.name)"
-    continue
-  }
-  Set-SmbShare -Name $s.name -Description $s.description -Force
-  foreach ($entry in @(Get-SmbShareAccess -Name $s.name)) {
-    $account = "$($entry.AccountName)"
-    $is_kept = ($wanted -contains $account) -and ("$($entry.AccessRight)" -eq $s.share_right)
-    if ($wanted.Count -eq 0) { $is_kept = $account -eq $d.share_owner }
-    if (-not $is_kept) {
-      Revoke-SmbShareAccess -Name $s.name -AccountName $account -Force | Out-Null
-    }
-  }
-  foreach ($account in $wanted) {
-    Grant-SmbShareAccess -Name $s.name -AccountName $account `
-      -AccessRight $s.share_right -Force | Out-Null
-  }
-  if ($wanted.Count -eq 0) {
-    Grant-SmbShareAccess -Name $s.name -AccountName $d.share_owner `
-      -AccessRight Full -Force | Out-Null
-  }
-}
-@{notes = $notes} | ConvertTo-Json -Compress -Depth 4
-"""
-
-# Takes down the marked shares the record lists; with ``is_removed`` also
-# disables the listed accounts and deletes the fence.
-WITHDRAW_SCRIPT = """
-foreach ($name in @($d.owned_shares)) {
-  $held = Get-SmbShare -Name $name -ErrorAction SilentlyContinue
-  if ($held -and "$($held.Description)".StartsWith($d.marker)) {
-    Remove-SmbShare -Name $name -Force
-  }
-}
-if ($d.is_removed) {
-  foreach ($u in @($d.owned_accounts)) {
-    $held = Get-LocalUser -Name $u -ErrorAction SilentlyContinue
-    if ($held -and $held.Enabled) { Disable-LocalUser -Name $u }
-  }
-  Remove-NetFirewallRule -Name $d.rule_name -ErrorAction SilentlyContinue
-}
-'{}'
-"""
-
-# The server's latest events, oldest first: time, event id and the first
-# line of the message.
-SERVER_LOG_SCRIPT = """
-$events = @(Get-WinEvent -LogName $d.log_name -MaxEvents $d.lines -ErrorAction SilentlyContinue)
-$lines = @()
-for ($k = $events.Count - 1; $k -ge 0; $k--) {
-  $e = $events[$k]
-  $first = @("$($e.Message)" -split '\r?\n' | Where-Object { $_.Trim() })
-  $text = if ($first.Count -gt 0) { $first[0].Trim() } else { '' }
-  $lines += "$($e.TimeCreated.ToString('s')) $($e.Id) $text".TrimEnd()
-}
-@{lines = $lines} | ConvertTo-Json -Compress -Depth 3
-"""
-
-# Sets one listed account's password and lets it sign in over the network.
-PASSWORD_SCRIPT = """
-$secret = ConvertTo-SecureString -String $d.password -AsPlainText -Force
-Set-LocalUser -Name $d.name -Password $secret -PasswordNeverExpires $true
-Enable-LocalUser -Name $d.name
-'{}'
-"""
 
 
 def blocked_ranges(allowed_subnets: list) -> list:
@@ -344,191 +157,24 @@ def _address_range(version: int, first: int, last: int) -> str:
     return f"{make(first)}-{make(last)}"
 
 
-class SambaWindowsApplier:
-    """Converges Windows' SMB server with the module's configuration."""
-
-    def __init__(self, *, powershell=None, deny_logon=None):
-        """
-        Args:
-            powershell: Called with ``(script, document)``; returns the JSON
-                object the script printed. None runs PowerShell.
-            deny_logon: Called with an account name to deny it the console
-                and RDP. None calls the local security policy.
-        """
-        self._powershell = powershell if powershell is not None else run_powershell
-        self._deny_logon = (
-            deny_logon if deny_logon is not None else deny_interactive_logon
-        )
-
-    def read_status(self, record: dict) -> dict:
-        """What the server holds of the module's, read now.
-
-        Args:
-            record: The module's record: ``{"shares", "accounts"}``.
-
-        Returns:
-            ``{"is_present", "is_running", "shares", "sessions", "users",
-            "fence"}``; ``is_present`` false when PowerShell cannot answer.
-        """
-        try:
-            read = self._powershell(
-                STATUS_SCRIPT,
-                {
-                    "marker": SAMBA_WINDOWS_MARKER,
-                    "accounts": list(record.get("accounts") or []),
-                    "rule_name": SAMBA_WINDOWS_FENCE_RULE,
-                },
-            )
-        except (OSError, subprocess.SubprocessError, ModuleApplyError):
-            return {"is_present": False, "is_running": False}
-        return {
-            "is_present": bool(read.get("is_present")),
-            "is_running": bool(read.get("is_running")),
-            "shares": [_share_detail(entry) for entry in listed(read.get("shares"))],
-            "sessions": [
-                _session_detail(entry) for entry in listed(read.get("sessions"))
-            ],
-            "users": [
-                {
-                    "name": str(entry.get("name", "")),
-                    "is_present": bool(entry.get("is_present")),
-                    "has_password": bool(entry.get("is_enabled")),
-                }
-                for entry in listed(read.get("users"))
-                if isinstance(entry, dict)
-            ],
-            "fence": _fence_detail(read.get("fence")),
-        }
-
-    def apply(self, config: SambaConfig, record: dict) -> list:
-        """Make the server serve the configuration, and nothing else of ours.
-
-        An account is the module's when the record lists it or its
-        description is the marker; a share is the module's when the record
-        lists it and its description starts with the marker.
-
-        Args:
-            config: The validated configuration.
-            record: The module's record: ``{"shares", "accounts"}``.
-
-        Returns:
-            What changed, one note each.
-
-        Raises:
-            ModuleApplyError: ``share_name_taken`` or ``user_name_taken`` for
-                a name the module did not make.
-            OSError: When PowerShell or the local policy fails.
-        """
-        owned_shares = dict(record.get("shares") or {})
-        owned_accounts = list(record.get("accounts") or [])
-        wanted_shares = {share.name for share in config.shares}
-        known_accounts = owned_accounts + [
-            name for name in config.users if name not in owned_accounts
-        ]
-        answer = self._powershell(
-            APPLY_SCRIPT,
-            {
-                "marker": SAMBA_WINDOWS_MARKER,
-                "owned_shares": sorted(owned_shares),
-                "owned_accounts": owned_accounts,
-                "users": list(config.users),
-                "retired_accounts": [
-                    name for name in owned_accounts if name not in config.users
-                ],
-                "removed_shares": sorted(set(owned_shares) - wanted_shares),
-                "shares": [
-                    _share_document(share, config, known_accounts)
-                    for share in config.shares
-                ],
-                "blocked_addresses": blocked_ranges(
-                    list(config.allowed_subnets) + list(SAMBA_LOOPBACK_NETWORKS)
-                ),
-                "rule_name": SAMBA_WINDOWS_FENCE_RULE,
-                "rule_title": SAMBA_WINDOWS_FENCE_TITLE,
-                "share_owner": SAMBA_WINDOWS_SHARE_OWNER,
-            },
-        )
-        for name in config.users:
-            self._deny_logon(name)
-        return [str(note) for note in listed(answer.get("notes"))]
-
-    def withdraw(self, record: dict, *, is_removed: bool) -> None:
-        """Take the module's shares off the server.
-
-        Args:
-            record: The module's record: ``{"shares", "accounts"}``.
-            is_removed: Also disable the module's accounts and delete the
-                fence, as an uninstall does.
-
-        Raises:
-            OSError: When PowerShell fails.
-        """
-        self._powershell(
-            WITHDRAW_SCRIPT,
-            {
-                "marker": SAMBA_WINDOWS_MARKER,
-                "owned_shares": sorted(record.get("shares") or {}),
-                "owned_accounts": list(record.get("accounts") or []),
-                "is_removed": is_removed,
-                "rule_name": SAMBA_WINDOWS_FENCE_RULE,
-            },
-        )
-
-    def reload_fence(self) -> None:
-        """Nothing to load: the firewall keeps the rule across a restart."""
-
-    def read_server_log(self, lines: int) -> list:
-        """The SMB server's latest events from its event log, oldest first.
-
-        Args:
-            lines: How many events to read at most.
-
-        Returns:
-            One line per event, ``<time> <event id> <message>``.
-
-        Raises:
-            OSError: When PowerShell fails.
-            subprocess.SubprocessError: When PowerShell does not answer in
-                time.
-            ModuleApplyError: When the script refuses.
-        """
-        read = self._powershell(
-            SERVER_LOG_SCRIPT,
-            {"log_name": SAMBA_WINDOWS_SERVER_LOG, "lines": int(lines)},
-        )
-        return [str(line) for line in listed(read.get("lines")) if str(line).strip()]
-
-    def set_password(self, name: str, password: str) -> None:
-        """Set one of the module's accounts' password and enable it.
-
-        Args:
-            name: An account the record lists.
-            password: The new password; it reaches PowerShell on standard
-                input.
-
-        Raises:
-            OSError: When PowerShell fails.
-        """
-        self._powershell(PASSWORD_SCRIPT, {"name": name, "password": password})
-
-
-def _share_document(share, config: SambaConfig, known_accounts: list) -> dict:
-    """One share as the apply script converges it."""
-    accounts = list(share.valid_users or config.users)
-    is_writable = not share.is_read_only
+def _share_request(share, config: SambaConfig) -> dict:
+    """One share as the host's apply converges it."""
     return {
         "name": share.name,
         "path": share.path,
         "description": f"{SAMBA_WINDOWS_MARKER} {share.comment}".strip(),
-        "accounts": accounts,
-        "revoked": [name for name in known_accounts if name not in accounts],
+        "accounts": list(share.valid_users or config.users),
         "share_right": (
-            SAMBA_WINDOWS_SHARE_CHANGE if is_writable else SAMBA_WINDOWS_SHARE_READ
-        ),
-        "folder_right": (
-            SAMBA_WINDOWS_FOLDER_CHANGE if is_writable else SAMBA_WINDOWS_FOLDER_READ
+            SAMBA_WINDOWS_SHARE_READ
+            if share.is_read_only
+            else SAMBA_WINDOWS_SHARE_CHANGE
         ),
     }
+
+
+def _listed(value) -> list:
+    """A member the host answers as a list; anything else is none."""
+    return value if isinstance(value, list) else []
 
 
 def _share_detail(entry) -> dict:
@@ -538,7 +184,7 @@ def _share_detail(entry) -> dict:
     comment = description[len(SAMBA_WINDOWS_MARKER) :].strip()
     access = [
         item
-        for item in listed(entry.get("access"))
+        for item in _listed(entry.get("access"))
         if isinstance(item, dict)
         and str(item.get("account", "")) != SAMBA_WINDOWS_SHARE_OWNER
     ]
@@ -575,5 +221,190 @@ def _fence_detail(entry) -> dict:
     return {
         "is_present": bool(entry.get("is_present")),
         "is_enabled": bool(entry.get("is_enabled")),
-        "blocked": [str(item) for item in listed(entry.get("blocked"))],
+        "blocked": [str(item) for item in _listed(entry.get("blocked"))],
     }
+
+
+class SambaWindowsApplier:
+    """Converges Windows' SMB server with the module's configuration."""
+
+    def __init__(self, *, powershell, deny_logon=None, run=None):
+        """
+        Args:
+            powershell: The agent's PowerShell host, asked as
+                :meth:`WindowsPowerShellHost.call` is.
+            deny_logon: Called with an account name to deny it the console
+                and RDP. None calls the local security policy.
+            run: Runs one command as :func:`subprocess_run.run` does; None
+                runs it.
+        """
+        self._powershell = powershell
+        self._deny_logon = (
+            deny_logon if deny_logon is not None else deny_interactive_logon
+        )
+        self._run = run if run is not None else run_command
+
+    def read_status(self, record: dict) -> dict:
+        """What the server holds of the module's, read now.
+
+        Args:
+            record: The module's record: ``{"shares", "accounts"}``.
+
+        Returns:
+            ``{"is_present", "is_running", "shares", "sessions", "users",
+            "fence"}``; ``is_present`` false when the host cannot answer.
+        """
+        try:
+            read = self._powershell.call(
+                "share_status",
+                {
+                    "marker": SAMBA_WINDOWS_MARKER,
+                    "accounts": list(record.get("accounts") or []),
+                    "rule_name": SAMBA_WINDOWS_FENCE_RULE,
+                },
+            )
+        except (OSError, ModuleApplyError):
+            return {"is_present": False, "is_running": False}
+        return {
+            "is_present": bool(read.get("is_present")),
+            "is_running": bool(read.get("is_running")),
+            "shares": [_share_detail(entry) for entry in _listed(read.get("shares"))],
+            "sessions": [
+                _session_detail(entry) for entry in _listed(read.get("sessions"))
+            ],
+            "users": [
+                {
+                    "name": str(entry.get("name", "")),
+                    "is_present": bool(entry.get("is_present")),
+                    "has_password": bool(entry.get("is_enabled")),
+                }
+                for entry in _listed(read.get("users"))
+                if isinstance(entry, dict)
+            ],
+            "fence": _fence_detail(read.get("fence")),
+        }
+
+    def apply(self, config: SambaConfig, record: dict) -> list:
+        """Make the server serve the configuration, and nothing else of ours.
+
+        An account is the module's when the record lists it or its
+        description is the marker; a share is the module's when the record
+        lists it and its description starts with the marker. Once the host
+        has converged the server, each share's folder is granted to its
+        accounts and taken from the module's others.
+
+        Args:
+            config: The validated configuration.
+            record: The module's record: ``{"shares", "accounts"}``.
+
+        Returns:
+            What changed, one note each.
+
+        Raises:
+            ModuleApplyError: ``share_name_taken`` or ``user_name_taken`` for
+                a name the module did not make.
+            OSError: When the host, icacls or the local policy fails.
+        """
+        owned_shares = dict(record.get("shares") or {})
+        owned_accounts = list(record.get("accounts") or [])
+        wanted_shares = {share.name for share in config.shares}
+        known_accounts = owned_accounts + [
+            name for name in config.users if name not in owned_accounts
+        ]
+        answer = self._powershell.call(
+            "share_apply",
+            {
+                "marker": SAMBA_WINDOWS_MARKER,
+                "owned_shares": sorted(owned_shares),
+                "owned_accounts": owned_accounts,
+                "users": list(config.users),
+                "retired_accounts": [
+                    name for name in owned_accounts if name not in config.users
+                ],
+                "removed_shares": sorted(set(owned_shares) - wanted_shares),
+                "shares": [_share_request(share, config) for share in config.shares],
+                "blocked_addresses": blocked_ranges(
+                    list(config.allowed_subnets) + list(SAMBA_LOOPBACK_NETWORKS)
+                ),
+                "rule_name": SAMBA_WINDOWS_FENCE_RULE,
+                "rule_title": SAMBA_WINDOWS_FENCE_TITLE,
+                "share_owner": SAMBA_WINDOWS_SHARE_OWNER,
+            },
+        )
+        for share in config.shares:
+            self._grant_folder(share, config, known_accounts)
+        for name in config.users:
+            self._deny_logon(name)
+        return [str(note) for note in _listed(answer.get("notes"))]
+
+    def withdraw(self, record: dict, *, is_removed: bool) -> None:
+        """Take the module's shares off the server.
+
+        Args:
+            record: The module's record: ``{"shares", "accounts"}``.
+            is_removed: Also disable the module's accounts and delete the
+                fence, as an uninstall does.
+
+        Raises:
+            OSError: When the host fails.
+        """
+        self._powershell.call(
+            "share_withdraw",
+            {
+                "marker": SAMBA_WINDOWS_MARKER,
+                "owned_shares": sorted(record.get("shares") or {}),
+                "owned_accounts": list(record.get("accounts") or []),
+                "is_removed": is_removed,
+                "rule_name": SAMBA_WINDOWS_FENCE_RULE,
+            },
+        )
+
+    def reload_fence(self) -> None:
+        """Nothing to load: the firewall keeps the rule across a restart."""
+
+    def read_server_log(self, lines: int) -> list:
+        """The SMB server's latest events from its event log, oldest first.
+
+        Args:
+            lines: How many events to read at most.
+
+        Returns:
+            One line per event, ``<time> <event id> <message>``.
+
+        Raises:
+            OSError: When the host fails or does not answer in time.
+            ModuleApplyError: When the host refuses.
+        """
+        read = self._powershell.call(
+            "share_log",
+            {"log_name": SAMBA_WINDOWS_SERVER_LOG, "lines": int(lines)},
+        )
+        return [str(line) for line in _listed(read.get("lines")) if str(line).strip()]
+
+    def set_password(self, name: str, password: str) -> None:
+        """Set one of the module's accounts' password and enable it.
+
+        Args:
+            name: An account the record lists.
+            password: The new password; it reaches the host on its standard
+                input.
+
+        Raises:
+            OSError: When the host fails.
+        """
+        self._powershell.call("share_password", {"name": name, "password": password})
+
+    def _grant_folder(self, share, config: SambaConfig, known_accounts: list) -> None:
+        """Grant one share's folder to its accounts and take it from the others."""
+        accounts = list(share.valid_users or config.users)
+        right = (
+            SAMBA_WINDOWS_FOLDER_READ
+            if share.is_read_only
+            else SAMBA_WINDOWS_FOLDER_CHANGE
+        )
+        for name in known_accounts:
+            if name not in accounts:
+                icacls(self._run, [share.path, "/remove:g", name])
+        for name in accounts:
+            if icacls(self._run, [share.path, "/grant", f"{name}:{right}"]) != 0:
+                raise OSError(f"icacls refused {name} on {share.path}")

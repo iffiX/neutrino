@@ -26,11 +26,18 @@ from neutrino_agent.modules.shared.subprocess_run import CommandResult
 import neutrino_agent.platforms.base as platforms_base_module
 import neutrino_agent.platforms.darwin as darwin_module
 import neutrino_agent.platforms.linux as linux_module
+import neutrino_agent.platforms.powershell_host as powershell_host_module
 import neutrino_agent.platforms.windows as windows_module
 from neutrino_agent.platforms.base import AgentPlatform
 from neutrino_agent.platforms.darwin import DarwinPlatform
 from neutrino_agent.platforms.linux import LinuxPlatform
+from neutrino_agent.platforms.powershell_host import (
+    WINDOWS_POWERSHELL_HOST_CALL_TIMEOUT_S,
+    WINDOWS_POWERSHELL_HOST_OPS,
+    WindowsPowerShellHost,
+)
 from neutrino_agent.platforms.windows import WindowsPlatform
+from neutrino_agent.platforms.windows_processes import WindowsProcessEntry
 
 
 @pytest.fixture(autouse=True)
@@ -70,6 +77,21 @@ def _no_system_commands_from_the_appliers(monkeypatch):
 
     for module in (linux_applier_module, darwin_applier_module, windows_applier_module):
         monkeypatch.setattr(module, "run_command", refused)
+
+
+def _no_powershell(argv):
+    raise OSError("no PowerShell is started in tests")
+
+
+@pytest.fixture(autouse=True)
+def _no_powershell_host(monkeypatch):
+    """The agent's one PowerShell host starts nothing: a test that needs the
+    host hands its platform or applier a :class:`RecordingHost`."""
+    monkeypatch.setattr(
+        powershell_host_module,
+        "_AGENT_HOST",
+        WindowsPowerShellHost(start_process=_no_powershell),
+    )
 
 
 @pytest.fixture
@@ -314,3 +336,72 @@ def service_manager(request, monkeypatch):
         monkeypatch.setattr(module, "detect_platform", this_platform)
     monkeypatch.setattr(status_module, "SERVICE_SETTLE_POLL_S", 0)
     return manager
+
+
+class RecordingHost:
+    """The PowerShell host: each operation and its arguments recorded, a canned
+    answer given.
+
+    Every operation must be one the library has, and its arguments must
+    travel as JSON. An answer is a dict, an exception to raise, or a
+    function of the arguments.
+    """
+
+    def __init__(self, answers=None):
+        self.calls: list = []
+        self.answers = dict(answers or {})
+
+    def call(self, op, args, *, timeout_s=WINDOWS_POWERSHELL_HOST_CALL_TIMEOUT_S):
+        assert op in WINDOWS_POWERSHELL_HOST_OPS, op
+        self.calls.append((op, json.loads(json.dumps(args))))
+        answer = self.answers.get(op, {})
+        if isinstance(answer, BaseException):
+            raise answer
+        if callable(answer):
+            return answer(args)
+        return json.loads(json.dumps(answer))
+
+    def ops(self) -> list:
+        """The operations asked, in order."""
+        return [op for op, _args in self.calls]
+
+    def args_of(self, op) -> list:
+        """The arguments of every call of one operation, in order."""
+        return [args for asked, args in self.calls if asked == op]
+
+
+class FakeProcessTable:
+    """The machine's processes: each one's parent, start, name, command line
+    and program, the listeners on each port, and the ones ended."""
+
+    def __init__(self, processes=(), listeners=None):
+        """
+        Args:
+            processes: ``(pid, parent pid, create time, name, command line,
+                program)`` per process.
+            listeners: Each port to the pids listening on it.
+        """
+        self.processes = list(processes)
+        self.listeners = dict(listeners or {})
+        self.ended: list = []
+        self.is_refusing = False
+
+    def entries(self) -> list:
+        if self.is_refusing:
+            raise OSError("the kernel refused the process table")
+        return [
+            WindowsProcessEntry(pid, parent, created, name, 0, 0)
+            for pid, parent, created, name, _command, _program in self.processes
+        ]
+
+    def command_line(self, pid) -> str:
+        return next((p[4] for p in self.processes if p[0] == pid), "")
+
+    def image_path(self, pid) -> str:
+        return next((p[5] for p in self.processes if p[0] == pid), "")
+
+    def listener_pids(self, port) -> list:
+        return list(self.listeners.get(port, []))
+
+    def end(self, pids) -> None:
+        self.ended.extend(pids)

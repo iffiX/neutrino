@@ -3,11 +3,12 @@
 The agent runs as the ``neutrino_agent`` service under LocalSystem and keeps
 its configuration, state and log under ``%ProgramData%\\Neutrino\\agent``.
 Metrics come from kernel32, ntdll, PDH and the graphics kernel through
-ctypes, with ``nvidia-smi`` for NVIDIA cards and PowerShell for the thermal
-zones; the interfaces and the accounts come from PowerShell, the machine id
-from the registry. The file share module drives Windows' own SMB server.
-Windows has no account this agent steps down to and no package it installs,
-so those capabilities are not advertised.
+ctypes, with ``nvidia-smi`` for NVIDIA cards and the agent's PowerShell host
+for the thermal zones; the interfaces come from iphlpapi, the accounts from
+netapi32, a home from the registry's profile list, the machine id from the
+registry. The Task Scheduler, the file share and the uninstall cleanup go
+through the PowerShell host. Windows has no account this agent steps down
+to and no package it installs, so those capabilities are not advertised.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -15,7 +16,6 @@ so those capabilities are not advertised.
 from __future__ import annotations
 
 import ctypes
-import json
 import ntpath
 import os
 import re
@@ -51,12 +51,38 @@ from neutrino_agent.core.metrics import (
     gpu_vendor,
     read_nvidia_gpus,
 )
-from neutrino_agent.modules.shared.powershell_run import listed, run_powershell
+from neutrino_agent.exceptions import ModuleApplyError
+from neutrino_agent.modules.remote_desktop.rdp.windows_seat import WindowsSeat
 from neutrino_agent.modules.samba.constants import SAMBA_WINDOWS_MARKER
 from neutrino_agent.modules.samba.windows_applier import SambaWindowsApplier
+from neutrino_agent.modules.shared.account_service.constants import (
+    ACCOUNT_SERVICE_WINDOWS_SHELL,
+)
+from neutrino_agent.modules.shared.account_service.windows import (
+    remove_path,
+    write_text,
+)
+from neutrino_agent.modules.shared.subprocess_run import run as run_command
+from neutrino_agent.modules.shared.windows_acl import (
+    grant_account_alone,
+    open_to_users,
+)
 from neutrino_agent.platforms import win32
 from neutrino_agent.platforms.base import AgentPlatform, is_added_name
-from neutrino_agent.modules.remote_desktop.rdp.windows_seat import WindowsSeat
+from neutrino_agent.platforms.powershell_host import agent_host
+from neutrino_agent.platforms.windows_accounts import (
+    account_home,
+    impersonated,
+    read_users,
+)
+from neutrino_agent.platforms.windows_net import read_interfaces
+from neutrino_agent.platforms.windows_processes import (
+    WindowsProcessTable,
+    process_entries,
+    process_tree,
+    query_system_information,
+    terminate_process,
+)
 
 try:
     import winreg
@@ -81,193 +107,28 @@ WINDOWS_SERVICE_STATES = {
 WINDOWS_SERVICE_STATE_PATTERN = re.compile(r"STATE\s*:\s*(\d+)")
 WINDOWS_SERVICE_TIMEOUT_S = 10
 
-# Every adapter and every address, as one JSON object. The loopback pseudo
-# interface holds addresses but is no adapter, so it is left out by the join.
-WINDOWS_INTERFACES_SCRIPT = (
-    "$a = @(Get-NetAdapter | Select-Object Name, ifIndex, MacAddress); "
-    "$i = @(Get-NetIPAddress | Select-Object InterfaceIndex, IPAddress); "
-    "@{adapters = $a; addresses = $i} | ConvertTo-Json -Compress -Depth 3"
-)
-WINDOWS_INTERFACES_COMMAND = (
-    "powershell.exe",
-    "-NoProfile",
-    "-NonInteractive",
-    "-Command",
-    WINDOWS_INTERFACES_SCRIPT,
-)
-WINDOWS_INTERFACES_TIMEOUT_S = 20
-# How long one reading of the interfaces is believed. PowerShell takes a
-# second or more to start, and a report goes up every few seconds.
-WINDOWS_INTERFACES_TTL_S = 30.0
-
-# Every enabled local account with its description.
-WINDOWS_ACCOUNTS_SCRIPT = """
-$users = @()
-foreach ($user in @(Get-LocalUser | Where-Object { $_.Enabled })) {
-  $users += @{name = "$($user.Name)"; description = "$($user.Description)"}
-}
-@{users = $users} | ConvertTo-Json -Compress -Depth 3
-"""
-# One account's profile directory, empty when it has signed in nowhere yet.
-# Runs one command as an account in a one-shot scheduled task registered with
-# the account's login and a limited token: the command's script, its
-# standard input and its output live in a directory only the account, SYSTEM
-# and the administrators open; the end is the exit code the script writes
-# last; the task and the files go afterwards.
-WINDOWS_RUN_AS_SCRIPT = """
-if (-not (Test-Path -LiteralPath $d.dir)) {
-  New-Item -ItemType Directory -Path $d.dir -Force | Out-Null
-}
-$code = Invoke-Icacls $d.dir /inheritance:r /grant:r "$($d.account):(OI)(CI)M" `
-  '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F'
-if ($code -ne 0) { throw "icacls refused $($d.dir)" }
-foreach ($file in @($d.output, $d.done)) {
-  Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
-}
-$utf8 = New-Object Text.UTF8Encoding $false
-[IO.File]::WriteAllText($d.script, $d.script_text)
-[IO.File]::WriteAllText($d.input, $d.input_text, $utf8)
-$action = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument "/d /c `"$($d.script)`""
-$settings = New-ScheduledTaskSettingsSet `
-  -ExecutionTimeLimit (New-TimeSpan -Seconds $d.timeout_s) `
-  -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
-try {
-  Register-ScheduledTask -TaskName $d.task -Action $action -Settings $settings `
-    -User $d.account -Password $d.password -RunLevel Limited -Force | Out-Null
-} catch {
-  if (Test-LogonRefused $_) {
-    Send-Refusal 'credential_invalid' @{account = $d.account}
-  }
-  throw
-}
-$exit = -1
-$output = ''
-try {
-  Start-ScheduledTask -TaskName $d.task
-  $deadline = (Get-Date).AddSeconds($d.timeout_s)
-  while (-not (Test-Path -LiteralPath $d.done) -and (Get-Date) -lt $deadline) {
-    Start-Sleep -Milliseconds $d.poll_ms
-  }
-  if (Test-Path -LiteralPath $d.done) {
-    $exit = [int]([IO.File]::ReadAllText($d.done).Trim())
-  }
-  if (Test-Path -LiteralPath $d.output) {
-    $output = [IO.File]::ReadAllText($d.output, $utf8)
-  }
-} finally {
-  Stop-ScheduledTask -TaskName $d.task -ErrorAction SilentlyContinue
-  Unregister-ScheduledTask -TaskName $d.task -Confirm:$false -ErrorAction SilentlyContinue
-  foreach ($file in @($d.script, $d.input, $d.output, $d.done)) {
-    Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
-  }
-}
-@{exit_code = $exit; output = $output} | ConvertTo-Json -Compress -Depth 3
-"""
-# The extra seconds PowerShell is given beyond the command's own time, for
-# registering the task and cleaning up after it.
-WINDOWS_RUN_AS_MARGIN_S = 60
 # The exit code a command reports when its end was never written.
 WINDOWS_RUN_AS_NO_EXIT = -1
-
-WINDOWS_ACCOUNT_HOME_SCRIPT = """
-$user = Get-LocalUser -Name $d.name -ErrorAction SilentlyContinue
-$home_path = ''
-if ($user) {
-  $sid = $user.SID.Value
-  $held = Get-CimInstance Win32_UserProfile -Filter "SID = '$sid'"
-  $home_path = "$($held.LocalPath)"
-}
-@{is_present = [bool]$user; home = $home_path} | ConvertTo-Json -Compress
-"""
-# One directory and everything under it readable and runnable by the Users
-# group, named by its well-known SID so no language's group name matters.
-WINDOWS_OPEN_TO_ACCOUNTS_SCRIPT = """
-$code = Invoke-Icacls $d.directory '/grant' '*S-1-5-32-545:(OI)(CI)RX'
-if ($code -ne 0) { throw "icacls exited $code" }
-@{is_open = $true} | ConvertTo-Json -Compress
-"""
-# The services, the scheduled tasks and the firewall rules whose names
-# carry a prefix.
-WINDOWS_ADDED_LIST_SCRIPT = """
-$services = @(Get-Service -Name "$($d.prefix)*" -ErrorAction SilentlyContinue |
-  ForEach-Object { [string]$_.Name })
-$tasks = @(Get-ScheduledTask -TaskName "$($d.prefix)*" -ErrorAction SilentlyContinue |
-  ForEach-Object { [string]$_.TaskName })
-$rules = @(Get-NetFirewallRule -Name "$($d.prefix)*" -ErrorAction SilentlyContinue |
-  ForEach-Object { [string]$_.Name })
-@{services = $services; tasks = $tasks; rules = $rules} | ConvertTo-Json -Compress -Depth 3
-"""
-# Stops and deletes the services named, stops and unregisters the tasks
-# named, ends every process whose command line or program lies under the
-# state root and their descendants, a child never older than its parent,
-# and removes the rules named.
-WINDOWS_ADDED_REMOVE_SCRIPT = """
-foreach ($name in @($d.services)) {
-  Stop-Service -Name $name -Force -ErrorAction SilentlyContinue
-  & sc.exe delete $name | Out-Null
-}
-foreach ($name in @($d.tasks)) {
-  Stop-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
-  Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue
-}
-$all = @(Get-CimInstance Win32_Process)
-$tree = @($all | Where-Object {
-  "$($_.CommandLine)|$($_.ExecutablePath)".IndexOf(
-    $d.state_root, [StringComparison]::OrdinalIgnoreCase) -ge 0 })
-for ($n = 0; $n -lt $tree.Count; $n++) {
-  $parent = $tree[$n]
-  foreach ($child in $all) {
-    if ($child.ParentProcessId -eq $parent.ProcessId -and
-        $child.CreationDate -ge $parent.CreationDate -and
-        @($tree | ForEach-Object { $_.ProcessId }) -notcontains $child.ProcessId) {
-      $tree += $child
-    }
-  }
-}
-foreach ($process in $tree) {
-  Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
-}
-foreach ($name in @($d.rules)) {
-  Remove-NetFirewallRule -Name $name -ErrorAction SilentlyContinue
-}
-Remove-Item -LiteralPath (Join-Path $d.state_root $d.run_as_dir) -Recurse -Force `
-  -ErrorAction SilentlyContinue
-@{is_removed = $true} | ConvertTo-Json -Compress
-"""
 # The accounts Windows makes for itself, by their lower-case names.
 WINDOWS_BUILTIN_ACCOUNTS = frozenset(
     {"administrator", "guest", "defaultaccount", "wdagutilityaccount"}
 )
-# How long one reading of the accounts is believed.
-WINDOWS_ACCOUNTS_TTL_S = 30.0
 
 # Where Windows keeps the id it gave this installation.
 WINDOWS_MACHINE_GUID_KEY = "SOFTWARE\\Microsoft\\Cryptography"
 WINDOWS_MACHINE_GUID_VALUE = "MachineGuid"
-# Read from the 64-bit view whatever the process is.
-WINDOWS_KEY_WOW64_64KEY = 0x0100
 
-# The thermal zones the firmware exposes, in tenths of a kelvin; none on
-# most machines.
-WINDOWS_THERMAL_ZONES_SCRIPT = """
-$readings = @()
-try {
-  $zones = @(Get-CimInstance -Namespace root/wmi -ClassName MSAcpi_ThermalZoneTemperature)
-  foreach ($zone in $zones) { $readings += [double]$zone.CurrentTemperature }
-} catch {}
-@{readings = $readings} | ConvertTo-Json -Compress
-"""
-WINDOWS_METRICS_POWERSHELL_TIMEOUT_S = 20
-# How long one reading of the thermal zones is believed.
+# How long the thermal zones are waited for, how long a reading is
+# believed, and how long a machine whose firmware exposes none is believed.
+WINDOWS_THERMAL_ZONES_TIMEOUT_S = 20
 WINDOWS_TEMPERATURE_TTL_S = 60.0
+WINDOWS_TEMPERATURE_ABSENT_TTL_S = 3600.0
 WINDOWS_KELVIN_OFFSET = 273.15
 
 # The cores one processor group holds, and where the process table's buffer
-# starts; a buffer too small grows to what the kernel asks for.
+# starts.
 WINDOWS_CORE_SLOTS = 64
 WINDOWS_PROCESS_BUFFER_BYTES = 512 * 1024
-WINDOWS_QUERY_ATTEMPTS = 4
-WINDOWS_QUERY_SLACK_BYTES = 64 * 1024
 WINDOWS_ACCOUNT_NAME_CHARS = 256
 
 # The GPU counters, by their English paths, and how an instance names its
@@ -375,31 +236,22 @@ def system_drive_root() -> str:
     return drive.rstrip("\\") + "\\"
 
 
-def _mac_of(text: str) -> str:
-    """One adapter's MAC as the other platforms spell it, empty when none."""
-    mac = str(text or "").strip().replace("-", ":").lower()
-    return "" if not mac or set(mac) <= {"0", ":"} else mac
-
-
-def _listed(value) -> list:
-    """A PowerShell JSON member as a list: one object comes back bare."""
-    if isinstance(value, list):
-        return value
-    return [value] if isinstance(value, dict) else []
-
-
-def _run_metrics_powershell(script: str, document: dict) -> dict:
-    """Run one metrics script, waiting no longer than a report can."""
-    return run_powershell(
-        script, document, timeout_s=WINDOWS_METRICS_POWERSHELL_TIMEOUT_S
-    )
-
-
-def _image_name(name: "win32.UnicodeString") -> str:
-    """A process's image name, empty for the idle process."""
-    if not name.Buffer or not name.Length:
+def _file_text(path: str) -> str:
+    """A file's text as UTF-8, empty when it is not there."""
+    try:
+        with open(path, "rb") as stream:
+            data = stream.read()
+    except OSError:
         return ""
-    return ctypes.string_at(name.Buffer, name.Length).decode("utf-16-le", "replace")
+    return data.decode("utf-8", "replace").lstrip("\ufeff")
+
+
+def _exit_code_in(path: str) -> int:
+    """The exit code a one-shot task's script wrote last; -1 when it wrote none."""
+    try:
+        return int(_file_text(path).strip())
+    except ValueError:
+        return WINDOWS_RUN_AS_NO_EXIT
 
 
 def _utf16_text(units) -> str:
@@ -429,12 +281,20 @@ def _is_hardware_gpu(kind: int) -> bool:
 
 
 class WindowsPlatform(AgentPlatform):
-    """Windows behind the platform contract."""
+    """Windows behind the platform contract.
+
+    Attributes:
+        powershell_host: The agent's PowerShell host, asked as
+            :meth:`WindowsPowerShellHost.call` is.
+        process_table: The machine's processes, as
+            :class:`WindowsProcessTable` reads and ends them.
+    """
 
     os_name = "windows"
     capabilities = frozenset(
         {
             "run_as",
+            "act_as",
             "accounts",
             "control_socket",
             "agent_service",
@@ -449,29 +309,62 @@ class WindowsPlatform(AgentPlatform):
         }
     )
 
-    def __init__(self, *, kernel32=None, shell32=None, powershell=None, seat=None):
+    def __init__(
+        self,
+        *,
+        kernel32=None,
+        shell32=None,
+        advapi32=None,
+        iphlpapi=None,
+        netapi32=None,
+        powershell=None,
+        processes=None,
+        run=None,
+        seat=None,
+        sleep=time.sleep,
+    ):
         """
         Args:
             kernel32: The bound kernel32; None binds the real one on first
                 use.
             shell32: The bound shell32; None binds the real one on first
                 use.
-            powershell: Called with ``(script, document)``; returns the JSON
-                object the script printed. None runs PowerShell.
+            advapi32: The bound advapi32, for an account's SID and logon;
+                None binds the real one on first use.
+            iphlpapi: The bound iphlpapi, for the interfaces; None binds the
+                real one on first use.
+            netapi32: The bound netapi32, for the accounts; None binds the
+                real one on first use.
+            powershell: The PowerShell host, asked as
+                :meth:`WindowsPowerShellHost.call` is; None is the agent's
+                one host.
+            processes: The machine's processes, as
+                :class:`WindowsProcessTable` reads them; None reads the
+                process table.
+            run: Runs one command as :func:`subprocess_run.run` does; None
+                runs it.
             seat: Names the account signed in at the console; None reads
                 the console session.
+            sleep: Waits a number of seconds, between looks at a one-shot
+                task's end.
         """
         self._kernel32 = kernel32
         self._shell32 = shell32
+        self._advapi32 = advapi32
+        self._iphlpapi = iphlpapi
+        self._netapi32 = netapi32
         self._seat = seat if seat is not None else WindowsSeat()
-        self._powershell = powershell if powershell is not None else run_powershell
-        self._metrics_reader = WindowsHostMetricsReader(
-            kernel32=kernel32, powershell=powershell
+        self._run = run if run is not None else run_command
+        self._sleep = sleep
+        self.powershell_host = powershell if powershell is not None else agent_host()
+        self.process_table = (
+            processes
+            if processes is not None
+            else WindowsProcessTable(kernel32=kernel32)
         )
-        self._interfaces: list = []
-        self._interfaces_at: "float | None" = None
-        self._accounts: list = []
-        self._accounts_at: "float | None" = None
+        self._metrics_reader = WindowsHostMetricsReader(
+            kernel32=kernel32, powershell=self.powershell_host
+        )
 
     def agent_data_dir(self) -> str:
         """Where the agent keeps what the hub decided: ``...\\agent\\config``.
@@ -500,23 +393,29 @@ class WindowsPlatform(AgentPlatform):
         )
 
     def human_accounts(self) -> list:
-        """The enabled local accounts that are people, read at most every 30 s.
+        """The enabled local accounts that are people.
 
         The accounts Windows makes for itself and the ones the file share
         made, whose description starts with its marker, are left out.
 
         Returns:
-            Account names, sorted; empty when PowerShell cannot answer.
+            Account names, sorted; empty when the accounts cannot be listed.
         """
-        now = time.monotonic()
-        if (
-            self._accounts_at is not None
-            and now - self._accounts_at < WINDOWS_ACCOUNTS_TTL_S
-        ):
-            return list(self._accounts)
-        self._accounts = self._read_accounts()
-        self._accounts_at = now
-        return list(self._accounts)
+        try:
+            users = read_users(self._netapi32)
+        except (OSError, ValueError):
+            return []
+        accounts = set()
+        for user in users:
+            name = user["name"]
+            if not user["is_enabled"] or not name:
+                continue
+            if name.lower() in WINDOWS_BUILTIN_ACCOUNTS:
+                continue
+            if user["description"].startswith(SAMBA_WINDOWS_MARKER):
+                continue
+            accounts.add(name)
+        return sorted(accounts)
 
     def account_home(self, account: str) -> str:
         """One account's profile directory, as Windows records it.
@@ -530,16 +429,9 @@ class WindowsPlatform(AgentPlatform):
         Raises:
             KeyError: When the machine has no such account, or the account
                 has no profile yet.
-            OSError: When PowerShell cannot answer.
+            OSError: When the account's SID or the registry cannot be read.
         """
-        try:
-            read = self._powershell(WINDOWS_ACCOUNT_HOME_SCRIPT, {"name": account})
-        except subprocess.SubprocessError as error:
-            raise OSError(f"powershell did not answer: {error}") from error
-        home = str(read.get("home", "") or "")
-        if not read.get("is_present") or not home:
-            raise KeyError(account)
-        return home
+        return account_home(account, advapi32=self._advapi32, kernel32=self._kernel32)
 
     def run_as_account(
         self,
@@ -554,7 +446,9 @@ class WindowsPlatform(AgentPlatform):
         """Run a command as an account, in a one-shot scheduled task under its login.
 
         The task runs with a limited token in the account's profile; its
-        output, errors included, comes back as standard output.
+        script, its standard input, its output and its exit code are files
+        in a directory only the account, SYSTEM and the administrators
+        reach, all removed with the task once the exit code is read.
 
         Args:
             account: The account.
@@ -566,50 +460,61 @@ class WindowsPlatform(AgentPlatform):
                 command; None sets none.
 
         Returns:
-            The completed process; its return code is -1 when the command
-            never wrote its end.
+            The completed process, its output and errors as standard output;
+            its return code is -1 when the command never wrote its end.
 
         Raises:
             ModuleApplyError: ``credential_invalid {account}`` when Windows
                 refuses the login.
-            OSError: When PowerShell cannot register or run the task.
+            OSError: When the files cannot be written, or the host cannot
+                register or start the task.
         """
         directory = ntpath.join(self.agent_var_dir(), AGENT_RUN_AS_DIR_NAME, account)
         paths = {
             name: ntpath.join(directory, f"command.{name}")
             for name in ("cmd", "input", "output", "done")
         }
-        answer = self._powershell_timed(
-            WINDOWS_RUN_AS_SCRIPT,
-            {
-                "account": account,
-                "password": password,
-                "task": AGENT_RUN_AS_TASK_PREFIX + account,
-                "dir": directory,
-                "script": paths["cmd"],
-                "script_text": run_as_script(
+        os.makedirs(directory, exist_ok=True)
+        grant_account_alone(self._run, directory, account, "M", is_tree=True)
+        for name in ("output", "done"):
+            remove_path(paths[name])
+        task = AGENT_RUN_AS_TASK_PREFIX + account
+        try:
+            write_text(
+                paths["cmd"],
+                run_as_script(
                     argv,
                     input_path=paths["input"],
                     output_path=paths["output"],
                     done_path=paths["done"],
                     environment=environment,
                 ),
-                "input": paths["input"],
-                "input_text": stdin,
-                "output": paths["output"],
-                "done": paths["done"],
-                "timeout_s": int(timeout_s),
-                "poll_ms": int(AGENT_RUN_AS_POLL_S * 1000),
-            },
-            timeout_s=int(timeout_s) + WINDOWS_RUN_AS_MARGIN_S,
-        )
-        try:
-            code = int(answer.get("exit_code", WINDOWS_RUN_AS_NO_EXIT))
-        except (TypeError, ValueError):
-            code = WINDOWS_RUN_AS_NO_EXIT
-        return subprocess.CompletedProcess(
-            list(argv), code, str(answer.get("output", "") or ""), ""
-        )
+            )
+            write_text(paths["input"], stdin)
+            self.powershell_host.call(
+                "task_run_once",
+                {
+                    "task": task,
+                    "program": ACCOUNT_SERVICE_WINDOWS_SHELL,
+                    "arguments": f'/d /c "{paths["cmd"]}"',
+                    "account": account,
+                    "password": password,
+                    "timeout_s": int(timeout_s),
+                },
+            )
+            deadline = time.monotonic() + timeout_s
+            while not os.path.exists(paths["done"]) and time.monotonic() < deadline:
+                self._sleep(AGENT_RUN_AS_POLL_S)
+            code = _exit_code_in(paths["done"])
+            output = _file_text(paths["output"])
+        finally:
+            try:
+                self.powershell_host.call("task_remove", {"task": task})
+            except (OSError, ModuleApplyError):
+                pass
+            for path in paths.values():
+                remove_path(path)
+        return subprocess.CompletedProcess(list(argv), code, output, "")
 
     def run_as_account_answering(
         self,
@@ -644,7 +549,7 @@ class WindowsPlatform(AgentPlatform):
         Raises:
             ModuleApplyError: ``credential_invalid {account}`` when Windows
                 refuses the login.
-            OSError: When PowerShell cannot register or run the task.
+            OSError: When the host cannot register or run the task.
         """
         command = [
             agent_program_path(),
@@ -665,16 +570,31 @@ class WindowsPlatform(AgentPlatform):
         )
         return done.returncode, done.stdout
 
-    def _powershell_timed(self, script: str, document: dict, *, timeout_s: int) -> dict:
-        """One PowerShell script given longer than the default to answer.
+    def as_account(self, account: str, step, *arguments, password: str = ""):
+        """Run one step of the agent's own code on this thread, as an account.
+
+        The thread acts as the account under a logon its password makes, and
+        reverts once the step returns.
+
+        Args:
+            account: The account.
+            step: Called with ``arguments``.
+            *arguments: What the step is called with.
+            password: The account's login.
+
+        Returns:
+            What the step returned.
 
         Raises:
-            ModuleApplyError: The refusal the script sent.
-            OSError: When PowerShell cannot run or fails.
+            ModuleApplyError: ``credential_invalid {account}`` when Windows
+                refuses the login.
+            OSError: When no logon is granted or the thread cannot act as
+                the account.
         """
-        if self._powershell is run_powershell:
-            return run_powershell(script, document, timeout_s=timeout_s)
-        return self._powershell(script, document)
+        with impersonated(
+            account, password, advapi32=self._advapi32, kernel32=self._kernel32
+        ):
+            return step(*arguments)
 
     def shell_start_dir(self) -> str:
         """Where a shell here starts.
@@ -780,18 +700,7 @@ class WindowsPlatform(AgentPlatform):
             ProcessLookupError: When no process holds the pid.
             OSError: When the process cannot be opened or ended.
         """
-        kernel32 = self._kernel32 or win32.libraries().kernel32
-        process = kernel32.OpenProcess(win32.PROCESS_TERMINATE, False, pid)
-        if not process:
-            error = win32.last_error()
-            if getattr(error, "winerror", None) == win32.ERROR_INVALID_PARAMETER:
-                raise ProcessLookupError(pid)
-            raise error
-        try:
-            if not kernel32.TerminateProcess(process, win32.TERMINATED_EXIT_CODE):
-                raise win32.last_error()
-        finally:
-            kernel32.CloseHandle(process)
+        terminate_process(self._kernel32 or win32.libraries().kernel32, pid)
 
     def read_host_metrics(self) -> HostMetrics:
         """One sample of the machine's health.
@@ -803,21 +712,17 @@ class WindowsPlatform(AgentPlatform):
         return self._metrics_reader.read()
 
     def read_network_interfaces(self) -> list:
-        """Every adapter with its MAC and addresses, read at most every 30 s.
+        """Every adapter with its MAC and addresses, read now.
 
         Returns:
-            ``[{"name", "mac", "addresses"}]`` in PowerShell's order; empty
-            when PowerShell is missing, fails, or prints no JSON.
+            ``[{"name", "mac", "addresses"}]`` in iphlpapi's order, the
+            loopback pseudo interface and the tunnels left out; empty when
+            the adapters cannot be read.
         """
-        now = time.monotonic()
-        if (
-            self._interfaces_at is not None
-            and now - self._interfaces_at < WINDOWS_INTERFACES_TTL_S
-        ):
-            return [dict(entry) for entry in self._interfaces]
-        self._interfaces = self._read_interfaces()
-        self._interfaces_at = now
-        return [dict(entry) for entry in self._interfaces]
+        try:
+            return read_interfaces(self._iphlpapi)
+        except (OSError, ValueError):
+            return []
 
     def read_machine_id(self) -> str:
         """The id Windows gave this installation, from the registry.
@@ -832,7 +737,7 @@ class WindowsPlatform(AgentPlatform):
                 winreg.HKEY_LOCAL_MACHINE,
                 WINDOWS_MACHINE_GUID_KEY,
                 0,
-                winreg.KEY_READ | WINDOWS_KEY_WOW64_64KEY,
+                winreg.KEY_READ | win32.KEY_WOW64_64KEY,
             ) as key:
                 value, _kind = winreg.QueryValueEx(key, WINDOWS_MACHINE_GUID_VALUE)
         except OSError:
@@ -846,12 +751,9 @@ class WindowsPlatform(AgentPlatform):
             directory: An existing directory under the state root.
 
         Raises:
-            OSError: When PowerShell or icacls fails.
+            OSError: When icacls fails.
         """
-        try:
-            self._powershell(WINDOWS_OPEN_TO_ACCOUNTS_SCRIPT, {"directory": directory})
-        except subprocess.SubprocessError as error:
-            raise OSError(f"powershell did not answer: {error}") from error
+        open_to_users(self._run, directory)
 
     def remove_added(self) -> list:
         """Delete the services, unregister the scheduled tasks and remove the
@@ -860,47 +762,36 @@ class WindowsPlatform(AgentPlatform):
 
         A service, a task or a rule is the modules' when
         :func:`is_added_name` says so; the agent's own service, the hub's
-        and the client's are not touched. Every process running
-        from under the state root is ended with its descendants, so no
-        instance outlives its task. Shares and accounts stay.
+        and the client's are not touched. Every process running from under
+        the state root is ended with its descendants, so no instance
+        outlives its task, and the one-shot tasks' files go. Shares and
+        accounts stay.
 
         Returns:
             What was removed, one line each.
 
         Raises:
-            OSError: When PowerShell cannot run or fails.
+            OSError: When the host or the process table fails.
         """
-        try:
-            found = self._powershell(
-                WINDOWS_ADDED_LIST_SCRIPT, {"prefix": AGENT_ADDED_NAME_PREFIX}
-            )
-            services = sorted(
+        found = self.powershell_host.call(
+            "added_list", {"prefix": AGENT_ADDED_NAME_PREFIX}
+        )
+        services, tasks, rules = (
+            sorted(
                 str(name)
-                for name in listed(found.get("services"))
+                for name in found.get(kind) or []
                 if is_added_name(str(name), AGENT_ADDED_NAME_PREFIX)
             )
-            tasks = sorted(
-                str(name)
-                for name in listed(found.get("tasks"))
-                if is_added_name(str(name), AGENT_ADDED_NAME_PREFIX)
-            )
-            rules = sorted(
-                str(name)
-                for name in listed(found.get("rules"))
-                if is_added_name(str(name), AGENT_ADDED_NAME_PREFIX)
-            )
-            self._powershell(
-                WINDOWS_ADDED_REMOVE_SCRIPT,
-                {
-                    "services": services,
-                    "tasks": tasks,
-                    "rules": rules,
-                    "state_root": self.agent_var_dir(),
-                    "run_as_dir": AGENT_RUN_AS_DIR_NAME,
-                },
-            )
-        except subprocess.SubprocessError as error:
-            raise OSError(f"powershell did not answer: {error}") from error
+            for kind in ("services", "tasks", "rules")
+        )
+        self.powershell_host.call(
+            "added_remove", {"services": services, "tasks": tasks, "rules": rules}
+        )
+        state_root = self.agent_var_dir()
+        self._end_processes_under(state_root)
+        shutil.rmtree(
+            ntpath.join(state_root, AGENT_RUN_AS_DIR_NAME), ignore_errors=True
+        )
         return (
             [f"service {name}" for name in services]
             + [f"task {name}" for name in tasks]
@@ -911,9 +802,9 @@ class WindowsPlatform(AgentPlatform):
         """The applier that drives Windows' own SMB server.
 
         Returns:
-            A :class:`SambaWindowsApplier` running PowerShell.
+            A :class:`SambaWindowsApplier` asking the PowerShell host.
         """
-        return SambaWindowsApplier()
+        return SambaWindowsApplier(powershell=self.powershell_host, run=self._run)
 
     def is_elevated(self) -> bool:
         """Whether this process runs with an administrator's token.
@@ -927,66 +818,20 @@ class WindowsPlatform(AgentPlatform):
         except (OSError, AttributeError):
             return False
 
-    def _read_accounts(self) -> list:
-        """Run PowerShell once and keep the accounts that are people."""
-        try:
-            read = self._powershell(WINDOWS_ACCOUNTS_SCRIPT, {})
-        except (OSError, subprocess.SubprocessError):
-            return []
-        accounts = set()
-        for entry in listed(read.get("users")):
-            if not isinstance(entry, dict):
-                continue
-            name = str(entry.get("name", "") or "")
-            description = str(entry.get("description", "") or "")
-            if not name or name.lower() in WINDOWS_BUILTIN_ACCOUNTS:
-                continue
-            if description.startswith(SAMBA_WINDOWS_MARKER):
-                continue
-            accounts.add(name)
-        return sorted(accounts)
-
-    def _read_interfaces(self) -> list:
-        """Run PowerShell once and join adapters to their addresses."""
-        try:
-            result = subprocess.run(
-                WINDOWS_INTERFACES_COMMAND,
-                capture_output=True,
-                text=True,
-                timeout=WINDOWS_INTERFACES_TIMEOUT_S,
-            )
-        except (OSError, subprocess.SubprocessError):
-            return []
-        if result.returncode != 0:
-            return []
-        try:
-            read = json.loads(result.stdout or "")
-        except ValueError:
-            return []
-        if not isinstance(read, dict):
-            return []
-        addresses: dict = {}
-        for entry in _listed(read.get("addresses")):
-            if not isinstance(entry, dict):
-                continue
-            address = str(entry.get("IPAddress", "") or "").split("%", 1)[0]
-            if address:
-                addresses.setdefault(entry.get("InterfaceIndex"), []).append(address)
-        interfaces = []
-        for adapter in _listed(read.get("adapters")):
-            if not isinstance(adapter, dict):
-                continue
-            name = str(adapter.get("Name", "") or "")
-            if not name:
-                continue
-            interfaces.append(
-                {
-                    "name": name,
-                    "mac": _mac_of(adapter.get("MacAddress", "")),
-                    "addresses": addresses.get(adapter.get("ifIndex"), []),
-                }
-            )
-        return interfaces
+    def _end_processes_under(self, root: str) -> None:
+        """End every process whose command line or program names a folder, and
+        every process they started, a child never older than its parent."""
+        table = self.process_table
+        entries = table.entries()
+        folded = root.lower()
+        roots = [
+            entry.pid
+            for entry in entries
+            if entry.pid
+            and folded
+            in f"{table.command_line(entry.pid)}|{table.image_path(entry.pid)}".lower()
+        ]
+        table.end(process_tree(entries, roots))
 
 
 class WindowsHostMetricsReader:
@@ -1019,17 +864,16 @@ class WindowsHostMetricsReader:
                 one on first use.
             gdi32: The bound gdi32, for the adapters' names and memory; None
                 binds the real one on first use.
-            powershell: Called with ``(script, document)``; returns the JSON
-                object the script printed. None runs PowerShell.
+            powershell: The PowerShell host, for the thermal zones, asked as
+                :meth:`WindowsPowerShellHost.call` is; None is the agent's
+                one host.
         """
         self._kernel32 = kernel32
         self._ntdll = ntdll
         self._advapi32 = advapi32
         self._pdh = pdh
         self._gdi32 = gdi32
-        self._powershell = (
-            powershell if powershell is not None else _run_metrics_powershell
-        )
+        self._powershell = powershell if powershell is not None else agent_host()
         self._previous_cpu: "tuple[int, int] | None" = None
         self._previous_cores: "dict[int, tuple[int, int]]" = {}
         self._previous_process_times: "dict[int, int]" = {}
@@ -1107,7 +951,7 @@ class WindowsHostMetricsReader:
         if ntdll is None:
             return []
         entry_size = ctypes.sizeof(win32.SystemProcessorPerformanceInformation)
-        answer = self._query_system_information(
+        answer = query_system_information(
             ntdll,
             win32.SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION_CLASS,
             entry_size * WINDOWS_CORE_SLOTS,
@@ -1163,35 +1007,40 @@ class WindowsHostMetricsReader:
 
     def _read_temperature_c(self) -> "float | None":
         now = time.monotonic()
-        if (
-            self._temperature_at is not None
-            and now - self._temperature_at < WINDOWS_TEMPERATURE_TTL_S
-        ):
+        if self._temperature_at is not None and now < self._temperature_at:
             return self._temperature_c
-        self._temperature_at = now
-        self._temperature_c = self._read_thermal_zones()
+        self._temperature_c, is_absent = self._read_thermal_zones()
+        self._temperature_at = now + (
+            WINDOWS_TEMPERATURE_ABSENT_TTL_S if is_absent else WINDOWS_TEMPERATURE_TTL_S
+        )
         return self._temperature_c
 
-    def _read_thermal_zones(self) -> "float | None":
+    def _read_thermal_zones(self) -> "tuple[float | None, bool]":
+        """The hottest zone, and whether the firmware answered with none."""
         try:
-            read = self._powershell(WINDOWS_THERMAL_ZONES_SCRIPT, {})
-        except (OSError, ValueError, subprocess.SubprocessError):
-            return None
+            read = self._powershell.call(
+                "thermal_zones", {}, timeout_s=WINDOWS_THERMAL_ZONES_TIMEOUT_S
+            )
+        except (OSError, ValueError, ModuleApplyError):
+            return None, False
+        values = read.get("readings")
         readings = []
-        for value in listed(read.get("readings")):
+        for value in values if isinstance(values, list) else []:
             try:
                 tenths_kelvin = float(value)
             except (TypeError, ValueError):
                 continue
             if tenths_kelvin > 0:
                 readings.append(tenths_kelvin / 10.0 - WINDOWS_KELVIN_OFFSET)
-        return max(readings) if readings else None
+        if not readings:
+            return None, True
+        return max(readings), False
 
     def _read_processes(self) -> "list[ProcessMetrics]":
         ntdll = self._bound("ntdll")
         if ntdll is None:
             return []
-        answer = self._query_system_information(
+        answer = query_system_information(
             ntdll, win32.SYSTEM_PROCESS_INFORMATION_CLASS, self._process_buffer_bytes
         )
         if answer is None:
@@ -1201,19 +1050,11 @@ class WindowsHostMetricsReader:
 
         current_times: "dict[int, int]" = {}
         processes = []
-        entry_size = ctypes.sizeof(win32.SystemProcessInformation)
-        offset = 0
-        while offset + entry_size <= len(buffer):
-            entry = win32.SystemProcessInformation.from_buffer(buffer, offset)
-            pid = entry.UniqueProcessId or 0
+        for entry in process_entries(buffer.raw, ctypes.addressof(buffer)):
             # Pid 0 is the idle process, whose time is the machine's idleness.
-            if pid:
-                times = entry.UserTime + entry.KernelTime
-                current_times[pid] = times
-                processes.append(self._process_metrics(pid, entry, times))
-            if entry.NextEntryOffset == 0:
-                break
-            offset += entry.NextEntryOffset
+            if entry.pid:
+                current_times[entry.pid] = entry.cpu_time
+                processes.append(self._process_metrics(entry))
 
         # Replaced wholesale so the times of exited processes are not kept,
         # and a recycled pid cannot inherit a dead process's total.
@@ -1223,44 +1064,22 @@ class WindowsHostMetricsReader:
             process.user = self._process_user(process.pid)
         return chosen
 
-    def _process_metrics(
-        self, pid: int, entry: "win32.SystemProcessInformation", times: int
-    ) -> ProcessMetrics:
-        previous = self._previous_process_times.get(pid, times)
+    def _process_metrics(self, entry) -> ProcessMetrics:
+        previous = self._previous_process_times.get(entry.pid, entry.cpu_time)
         cpu_percent = 0.0
         if self._total_time_delta > 0:
-            share = (times - previous) / self._total_time_delta
+            share = (entry.cpu_time - previous) / self._total_time_delta
             cpu_percent = max(0.0, 100.0 * share * self._core_count)
         memory_percent = 0.0
         if self._memory_total_bytes > 0:
-            memory_percent = 100.0 * entry.WorkingSetSize / self._memory_total_bytes
+            memory_percent = 100.0 * entry.working_set / self._memory_total_bytes
         return ProcessMetrics(
-            pid=pid,
+            pid=entry.pid,
             user="",
-            name=_image_name(entry.ImageName),
+            name=entry.name,
             cpu_percent=cpu_percent,
             memory_percent=memory_percent,
         )
-
-    def _query_system_information(self, ntdll, info_class: int, size: int):
-        """One system information class, the buffer grown until it fits.
-
-        Returns:
-            The buffer and the length the kernel filled, or None when the
-            kernel refuses.
-        """
-        for _attempt in range(WINDOWS_QUERY_ATTEMPTS):
-            buffer = ctypes.create_string_buffer(size)
-            needed = win32.DWORD(0)
-            status = ntdll.NtQuerySystemInformation(
-                info_class, buffer, size, ctypes.byref(needed)
-            )
-            if status == 0:
-                return buffer, min(needed.value, size)
-            if status != win32.STATUS_INFO_LENGTH_MISMATCH:
-                return None
-            size = max(size * 2, needed.value + WINDOWS_QUERY_SLACK_BYTES)
-        return None
 
     def _process_user(self, pid: int) -> str:
         """The account a process runs as; empty when its token cannot be read."""

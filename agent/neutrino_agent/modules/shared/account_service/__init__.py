@@ -29,7 +29,6 @@ from neutrino_agent.modules.shared.account_service.constants import (
     ACCOUNT_SERVICE_UNIT_PREFIX,
     ACCOUNT_SERVICE_UNIT_SUFFIX,
 )
-from neutrino_agent.modules.shared.powershell_run import run_powershell
 from neutrino_agent.modules.shared.subprocess_run import run as run_command
 
 # The systems the layer has a file for, by the platform's name.
@@ -129,7 +128,10 @@ class ServiceMachine:
             raises KeyError for one the machine does not have.
         run: Runs one command as :func:`subprocess_run.run` does.
         chown: Changes a file's owner as :func:`os.chown` does.
-        powershell: Runs one script as :func:`run_powershell` does.
+        powershell: Windows: the agent's PowerShell host, asked as
+            :meth:`WindowsPowerShellHost.call` is; None elsewhere.
+        processes: Windows: the machine's processes, read and ended as
+            :class:`WindowsProcessTable` does; None elsewhere.
         systemd_dir: Where the template unit is written.
         launchd_dir: Where the plists are written.
         log_dir: Where the macOS log files are.
@@ -141,7 +143,8 @@ class ServiceMachine:
     lookup_account: object
     run: object = run_command
     chown: object = getattr(os, "chown", _no_chown)
-    powershell: object = run_powershell
+    powershell: object = None
+    processes: object = None
     systemd_dir: str = ACCOUNT_SERVICE_SYSTEMD_DIR
     launchd_dir: str = ACCOUNT_SERVICE_LAUNCHD_DIR
     log_dir: str = ACCOUNT_SERVICE_DARWIN_LOG_DIR
@@ -265,7 +268,7 @@ def write(service: AccountService, machine: ServiceMachine) -> bool:
         ModuleApplyError: ``credential_invalid`` when Windows refuses the
             account's login.
         KeyError: When the machine does not have the account.
-        OSError: When a file cannot be written, or PowerShell fails.
+        OSError: When a file cannot be written, or the PowerShell host fails.
     """
     return _system(machine).write(service, machine)
 
@@ -282,7 +285,7 @@ def start(
 
     Raises:
         PlatformUnsupportedError: On a system the layer has no file for.
-        OSError: When PowerShell fails.
+        OSError: When the PowerShell host fails.
         subprocess.CalledProcessError: When the service manager refuses.
     """
     _system(machine).start(service, machine, is_restart=is_restart)
@@ -297,7 +300,7 @@ def stop(service: AccountService, machine: ServiceMachine) -> None:
 
     Raises:
         PlatformUnsupportedError: On a system the layer has no file for.
-        OSError: When PowerShell fails.
+        OSError: When the PowerShell host fails.
     """
     _system(machine).stop(service, machine)
 
@@ -311,7 +314,7 @@ def remove(service: AccountService, machine: ServiceMachine) -> None:
 
     Raises:
         PlatformUnsupportedError: On a system the layer has no file for.
-        OSError: When PowerShell fails.
+        OSError: When the PowerShell host fails.
     """
     _system(machine).remove(service, machine)
 
@@ -343,7 +346,7 @@ def forget(name: str, machine: ServiceMachine) -> None:
 
     Raises:
         PlatformUnsupportedError: On a system the layer has no file for.
-        OSError: When PowerShell fails.
+        OSError: When the PowerShell host fails.
     """
     _system(machine).forget(name, machine)
 

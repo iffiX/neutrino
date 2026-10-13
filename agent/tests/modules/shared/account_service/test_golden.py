@@ -33,6 +33,7 @@ from neutrino_agent.modules.shared.subprocess_run import CommandResult
 from neutrino_agent.modules.vscode.config import VscodeConfig
 from neutrino_agent.modules.vscode.hooks import VscodeHooks
 from neutrino_agent.platforms.base import AgentPlatform
+from tests.conftest import RecordingHost
 
 GOLDEN = Path(__file__).parent / "golden"
 LINUX_STATE = "/var/lib/neutrino/agent"
@@ -290,15 +291,15 @@ def test_cloudcli_windows_script_and_arguments(tmp_path):
     assert arguments == texts["arguments"]
 
 
+def granted(argv, **_):
+    """icacls granting whatever it is asked."""
+    return CommandResult(command=list(argv), exit_code=0, stdout="", stderr="")
+
+
 def test_cloudcli_windows_install_script_and_arguments(tmp_path):
-    runs = []
-
-    def powershell(script, document, timeout_s=120):
-        runs.append((script, document))
-        return {"tasks": []}
-
+    host = RecordingHost({"task_states": {"tasks": []}})
     machine = cloudcli_machine(
-        "windows", WIN_CONFIG, tmp_path, WIN_NODE_DIR, powershell=powershell
+        "windows", WIN_CONFIG, tmp_path, WIN_NODE_DIR, powershell=host, run=granted
     )
     hooks = bound(CloudcliHooks, "windows", machine)
     texts = golden_json("cloudcli_windows.json")
@@ -323,11 +324,15 @@ def test_cloudcli_windows_install_script_and_arguments(tmp_path):
     hooks.prepare_module()
     hooks.prepare(config, config.instances[0], WIN_ANN)
 
-    _script, document = runs[1]
-    assert with_fixed_state(document["script_text"], tmp_path, WIN_STATE) == (
+    assert host.ops() == ["task_states", "task_run_once"]
+    (started,) = host.args_of("task_run_once")
+    script = ntpath.join(machine.module_dir, "run", "install_ann.cmd")
+    with open(script, "rb") as stream:
+        script_text = stream.read().decode("utf-8")
+    assert with_fixed_state(script_text, tmp_path, WIN_STATE) == (
         texts["install_script"]
     )
-    assert with_fixed_state(document["arguments"], tmp_path, WIN_STATE) == (
+    assert with_fixed_state(started["arguments"], tmp_path, WIN_STATE) == (
         texts["install_arguments"]
     )
 
