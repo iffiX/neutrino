@@ -19,6 +19,7 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_ROLE_AGENT,
     CHANNEL_ROLE_CLIENT,
     CHANNEL_STREAM_COMMAND,
+    CHANNEL_VERB_REINSTALL,
     ENROLLMENT_TTL_S,
 )
 from neutrino_hub.modules.clients.ai_keys import revoke_device_key
@@ -97,7 +98,6 @@ router = APIRouter(
 # The agent's own verbs this page opens a ``command {module: agent}`` for.
 AGENT_VERB_REBOOT = "reboot"
 AGENT_VERB_SHUTDOWN = "shutdown"
-AGENT_VERB_REINSTALL = "reinstall"
 AGENT_VERB_KILL = "kill"
 AGENT_VERB_REMOTE_DESKTOP_READ = "remote_desktop_read"
 AGENT_VERB_REMOTE_DESKTOP_PASSWORD_SET = "remote_desktop_password_set"  # scan: allow
@@ -836,7 +836,7 @@ async def reinstall_agent(
     """
     key = _require_online(runtime, request.device_id)
     return _start_task(
-        runtime, f"{AGENT_VERB_REINSTALL} {key}", _reinstall_stream(runtime, key)
+        runtime, f"{CHANNEL_VERB_REINSTALL} {key}", _reinstall_stream(runtime, key)
     )
 
 
@@ -1285,7 +1285,7 @@ async def _reinstall_stream(runtime: PanelRuntime, key: str) -> AsyncIterator[st
     before_failure = _reinstall_failure(before)
     try:
         stream = await runtime.agent_sessions.open_stream(
-            key, CHANNEL_STREAM_COMMAND, _command_args(AGENT_VERB_REINSTALL)
+            key, CHANNEL_STREAM_COMMAND, _command_args(CHANNEL_VERB_REINSTALL)
         )
     except AgentOfflineError as error:
         yield _coded_line(error.code, dict(error.params))

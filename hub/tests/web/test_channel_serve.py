@@ -14,10 +14,15 @@ an unknown kind closed ``kind_unknown``, a machine whose AI tools are on
 handed its state again when the gateway stops or starts serving, a client's ``is_refresh`` report
 answered with its whole state whatever the hash, a ``ping`` from either role
 answered with a ``pong`` carrying its nonce, and a socket ending taking the
-binding offline.
+binding offline. An agent older than the hub that asked for its own
+package before its first report and was refused is sent ``reinstall`` once
+that report names its platform, and its package is then served; an agent at
+the hub's version, ahead of it or built from a checkout, and the agent on the
+hub's own machine, are sent nothing.
 """
 
 import hashlib
+import logging
 import os
 import time
 from pathlib import Path
@@ -220,20 +225,32 @@ def bound_device(name: str = "testbox") -> tuple:
     return device.id, DeviceRegistry().issue_token(device.id)
 
 
+def device_machine_id() -> str:
+    """The hub's machine id when the hub runs on the device ``bound_device`` makes."""
+    return "m1"
+
+
+def hub_machine_id() -> str:
+    """The hub's machine id when it runs on a machine of its own."""
+    return "hub-machine"
+
+
 def bound_client(name: str = "alice") -> tuple:
     registry = ClientRegistry()
     client_id = registry.create(name)
     return client_id, registry.issue_token(client_id)
 
 
-def hello(binding_id: str, token: str, role: str = "agent") -> dict:
+def hello(
+    binding_id: str, token: str, role: str = "agent", version: str = "1.2.3"
+) -> dict:
     return {
         "type": "hello",
         "protocol": PROTOCOL,
         "role": role,
         "id": binding_id,
         "name": "box",
-        "software": f"neutrino_{role}/1.2.3",
+        "software": f"neutrino_{role}/{version}",
         "token": token,
     }
 
@@ -266,10 +283,12 @@ def report(**sections) -> dict:
     return body
 
 
-def welcomed(client, binding_id: str, token: str, role: str = "agent"):
+def welcomed(
+    client, binding_id: str, token: str, role: str = "agent", version: str = "1.2.3"
+):
     socket = client.websocket_connect("/api/channel/socket")
     socket.__enter__()
-    socket.send_json(hello(binding_id, token, role))
+    socket.send_json(hello(binding_id, token, role, version))
     assert socket.receive_json()["type"] == "welcome"
     return socket
 
@@ -298,6 +317,11 @@ def frames_until(socket, kind: str, limit: int = 20) -> list:
         if frame.get("text") and f'"type": "{kind}"' in frame["text"]:
             return frames
     raise AssertionError(f"no {kind} frame among {frames}")
+
+
+def logged(caplog) -> list:
+    """Every line logged so far, as text."""
+    return [record.getMessage() for record in caplog.records]
 
 
 def text_frames(frames: list) -> list:
@@ -959,6 +983,156 @@ def test_a_package_the_hub_cannot_produce_is_closed_with_the_typed_reason(api):
         }
     finally:
         socket.__exit__(None, None, None)
+
+
+def test_an_older_agent_refused_its_package_before_reporting_is_sent_reinstall_once(
+    api, monkeypatch, caplog
+):
+    """A 1.2.0 agent asks for its package before its first report and is
+    refused, the hub not knowing its platform yet; the report names the
+    platform, so the hub sends ``reinstall`` after the state, serves the
+    package that reinstall asks for, sends nothing on the next report, and
+    logs the command's close without its output."""
+    client, runtime = api
+    monkeypatch.setattr(channel_serve, "CHANNEL_PACKAGE_PLATFORM_WAIT_S", 0.05)
+    monkeypatch.setattr(channel_serve, "machine_id", hub_machine_id)
+    caplog.set_level(logging.INFO, logger=channel_serve.__name__)
+    device_id, token = bound_device()
+    socket = welcomed(client, device_id, token, version="1.2.0")
+    try:
+        socket.send_json({"type": "open", "stream": 1, "kind": "package"})
+        refused = [socket.receive_json(), socket.receive_json()]
+        socket.send_json(report())
+        assert wait_until(
+            lambda: any("reinstall sent" in line for line in logged(caplog))
+        )
+        answer = [socket.receive_json() for _ in range(3)]
+
+        expected = runtime.package_path.read_bytes()
+        socket.send_json({"type": "open", "stream": 3, "kind": "package"})
+        socket.receive_json()
+        socket.send_json({"type": "credit", "stream": 3, "bytes": len(expected)})
+        received = b""
+        while len(received) < len(expected):
+            received += socket.receive_bytes()[4:]
+        served = socket.receive_json()
+
+        socket.send_json(report())
+        assert wait_until(
+            lambda: runtime.agent_sessions.get(device_id).report_serial == 2
+        )
+        socket.send_json({"type": "open", "stream": 5, "kind": "nonsense"})
+        after = socket.receive_json()
+
+        socket.send_json(
+            {
+                "type": "close",
+                "stream": 0,
+                "code": "reinstall_failed",
+                "params": {"exit_code": 2, "output": "dpkg: locked"},
+            }
+        )
+        assert wait_until(lambda: any("closed" in line for line in logged(caplog)))
+    finally:
+        socket.__exit__(None, None, None)
+
+    assert refused[1] == {
+        "type": "close",
+        "stream": 1,
+        "code": "agent_package_missing",
+        "params": {"platform": ""},
+    }
+    assert [frame["type"] for frame in answer] == ["state", "open", "credit"]
+    assert answer[1] == {
+        "type": "open",
+        "stream": 0,
+        "kind": "command",
+        "module": "agent",
+        "verb": "reinstall",
+    }
+    assert served["params"]["sha256"] == hashlib.sha256(expected).hexdigest()
+    assert runtime.agent_packages.asked == [("", ""), ("deb", "amd64")]
+    assert after == {
+        "type": "close",
+        "stream": 5,
+        "code": "kind_unknown",
+        "params": {"kind": "nonsense"},
+    }
+    lines = logged(caplog)
+    assert [line for line in lines if "reinstall sent" in line] == [
+        "agent box on 1.2.0 asked for its package before the hub knew its "
+        "platform; reinstall sent to reach 1.2.3"
+    ]
+    assert "reinstall of agent box closed: reinstall_failed {'exit_code': 2}" in lines
+
+
+@pytest.mark.parametrize(
+    "version", ["1.2.3", "1.3.0", "1.2.0+dev"], ids=["same", "ahead", "checkout"]
+)
+def test_an_agent_not_behind_the_hub_refused_before_reporting_is_sent_nothing(
+    api, monkeypatch, version
+):
+    client, runtime = api
+    monkeypatch.setattr(channel_serve, "CHANNEL_PACKAGE_PLATFORM_WAIT_S", 0.05)
+    device_id, token = bound_device()
+    socket = welcomed(client, device_id, token, version=version)
+    try:
+        socket.send_json({"type": "open", "stream": 1, "kind": "package"})
+        refused = [socket.receive_json(), socket.receive_json()]
+        socket.send_json(report())
+        state = socket.receive_json()
+        socket.send_json({"type": "open", "stream": 3, "kind": "nonsense"})
+        after = socket.receive_json()
+    finally:
+        socket.__exit__(None, None, None)
+
+    assert refused[1]["code"] == "agent_package_missing"
+    assert state["type"] == "state"
+    assert after == {
+        "type": "close",
+        "stream": 3,
+        "code": "kind_unknown",
+        "params": {"kind": "nonsense"},
+    }
+
+
+def test_the_agent_on_the_hubs_own_machine_is_left_to_the_hubs_update(
+    api, monkeypatch, caplog
+):
+    """The hub's update installs the agent on the hub's machine, so an older
+    agent there, refused its package before its first report, is sent no
+    ``reinstall`` that would race the update's package manager."""
+    client, runtime = api
+    monkeypatch.setattr(channel_serve, "CHANNEL_PACKAGE_PLATFORM_WAIT_S", 0.05)
+    monkeypatch.setattr(channel_serve, "machine_id", device_machine_id)
+    caplog.set_level(logging.INFO, logger=channel_serve.__name__)
+    device_id, token = bound_device()
+    socket = welcomed(client, device_id, token, version="1.2.0")
+    try:
+        socket.send_json({"type": "open", "stream": 1, "kind": "package"})
+        refused = [socket.receive_json(), socket.receive_json()]
+        socket.send_json(report())
+        state = socket.receive_json()
+        assert wait_until(lambda: any("own machine" in line for line in logged(caplog)))
+        socket.send_json({"type": "open", "stream": 3, "kind": "nonsense"})
+        after = socket.receive_json()
+    finally:
+        socket.__exit__(None, None, None)
+
+    assert refused[1]["code"] == "agent_package_missing"
+    assert state["type"] == "state"
+    assert after == {
+        "type": "close",
+        "stream": 3,
+        "code": "kind_unknown",
+        "params": {"kind": "nonsense"},
+    }
+    lines = logged(caplog)
+    assert not [line for line in lines if "reinstall sent" in line]
+    assert (
+        "agent box on 1.2.0 is on the hub's own machine; the hub's update installs it"
+        in lines
+    )
 
 
 def test_a_log_stream_is_the_task_the_panel_follows_to_the_modules_state(api):

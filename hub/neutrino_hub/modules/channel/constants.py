@@ -86,6 +86,12 @@ CHANNEL_VERB_JOURNAL = "journal"
 # opener generated.
 CHANNEL_VERB_PERSIST = "persist"
 CHANNEL_VERB_STOP_SESSION = "stop_session"
+# The agent's verb that installs it again from the hub's package: the
+# Devices page's, and the one an agent older than the hub is sent when the
+# report that names its platform follows a refusal of its own package.
+CHANNEL_VERB_REINSTALL = "reinstall"
+# A version built from a checkout ends in this; it orders before or after no other.
+CHANNEL_DEV_VERSION_SUFFIX = "+dev"
 # The owner the hub stamps on a kept shell's open: the panel's own, or a
 # client's as the prefix followed by its id.
 CHANNEL_SHELL_OWNER_HUB = "hub"
