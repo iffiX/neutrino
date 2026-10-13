@@ -5,9 +5,9 @@ drawn. Linux packages install those files as they are; Windows wants one
 ``.ico`` and macOS one ``.icns``, so both are assembled here at build time
 rather than committed as a second copy of the same artwork.
 
-Both containers may carry PNG members directly — Windows has accepted them
-since Vista, macOS since 10.7 — so nothing is re-encoded and no imaging
-library is needed.
+Both containers carry the PNGs unchanged: Windows reads PNG in every ``.ico``
+member, and macOS in the ``.icns`` entries ``ICNS_TYPES`` names. Nothing is
+re-encoded and no imaging library is needed.
 
 Not pure: reads the icon sources and writes files.
 """
@@ -19,18 +19,19 @@ ICONS_DIR = Path(__file__).resolve().parents[3] / "images" / "icons"
 # The client's icon set; the hub's builds ask for ``neutrino_hub``.
 DEFAULT_ICON_NAME = "neutrino"
 
-# The edges each container carries, and for macOS the four-letter type that
-# names one. Sizes above what the source set holds are left out rather than
-# scaled up.
+# The edges each container carries; an edge the source set lacks is left out
+# rather than scaled up. For macOS, each entry's four-letter type and the edge
+# of the source PNG it holds, in the order written.
 ICO_EDGES = (16, 32, 48, 64, 128, 256)
-ICNS_TYPES = {
-    16: b"icp4",
-    32: b"icp5",
-    64: b"icp6",
-    128: b"ic07",
-    256: b"ic08",
-    512: b"ic09",
-}
+ICNS_TYPES = (
+    (b"ic11", 32),  # 16x16@2x
+    (b"ic12", 64),  # 32x32@2x
+    (b"ic07", 128),  # 128x128
+    (b"ic13", 256),  # 128x128@2x
+    (b"ic08", 256),  # 256x256
+    (b"ic14", 512),  # 256x256@2x
+    (b"ic09", 512),  # 512x512
+)
 
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
@@ -86,8 +87,15 @@ def write_ico(target: Path, name: str = DEFAULT_ICON_NAME) -> Path:
 def write_icns(target: Path, name: str = DEFAULT_ICON_NAME) -> Path:
     """Assemble the macOS icon.
 
+    The 16 and 32 point slots are the @2x entries ``ic11`` and ``ic12``,
+    holding the 32 and 64 pixel sources: macOS shows PNG under ``icp4``,
+    ``icp5`` or ``icp6`` as noise at those sizes.
+
     Args:
         target: The ``.icns`` to write.
+        name: The icon set, the stem the PNGs under ``images/icons`` share:
+            ``neutrino`` for the client's plain mark, ``neutrino_hub`` for
+            the hub's.
 
     Returns:
         The path written.
@@ -96,7 +104,7 @@ def write_icns(target: Path, name: str = DEFAULT_ICON_NAME) -> Path:
         SystemExit: When the source set holds none of the edges.
     """
     members = b""
-    for edge, kind in sorted(ICNS_TYPES.items()):
+    for kind, edge in ICNS_TYPES:
         payload = _source(edge, name)
         if payload is None:
             continue
