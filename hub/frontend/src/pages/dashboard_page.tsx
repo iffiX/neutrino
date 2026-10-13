@@ -97,6 +97,8 @@ export function DashboardPage() {
   const network = useApiResource<NetworkView>("/hub/network");
   const isDnsLogShown =
     network.data?.hub_os === "linux" && network.data.mode !== "server";
+  // The side column holds the exits and the DNS log.
+  const isSideShown = IS_PROXY_CARRIED || isDnsLogShown;
   // The history is vnstat's, which runs only on a hub on Linux.
   const isHistoryKept =
     network.data?.hub_os !== "darwin" && network.data?.hub_os !== "windows";
@@ -248,7 +250,9 @@ export function DashboardPage() {
         />
       </div>
 
-      <div className="dashboard_layout">
+      <div
+        className={`dashboard_layout ${isSideShown ? "" : "dashboard_layout_single"}`}
+      >
         <div className="dashboard_column">
           <section className="card">
             <div className="card_header">
@@ -470,68 +474,70 @@ export function DashboardPage() {
           </section>
         </div>
 
-        <div className="dashboard_column">
-          {IS_PROXY_CARRIED && (
-            <section className="card dashboard_exits_card">
-              <div className="card_header">
-                <div className="card_title">
-                  <h2>{t("ui.dashboard.exits_title")}</h2>
+        {isSideShown && (
+          <div className="dashboard_column">
+            {IS_PROXY_CARRIED && (
+              <section className="card dashboard_exits_card">
+                <div className="card_header">
+                  <div className="card_title">
+                    <h2>{t("ui.dashboard.exits_title")}</h2>
+                  </div>
                 </div>
-              </div>
-              {activeExits.length === 0 ? (
-                <div className="placeholder">
-                  <span>{t("ui.dashboard.exits_empty")}</span>
-                </div>
-              ) : (
-                <div className="dashboard_exits">
-                  {activeExits.map((exit) => (
-                    <div
-                      key={exit.tag}
-                      className={`dashboard_exit ${exit.is_alive ? "" : "dashboard_exit--dead"}`}
-                    >
-                      <StatusDot
-                        tone={exit.is_alive ? "ok" : "error"}
-                        isPulsing={exit.is_alive}
-                        isLarge
-                      />
-                      <div>
-                        <div className="dashboard_exit_tag">{exit.tag}</div>
-                        <div className="dashboard_exit_meta">
-                          <span className="dashboard_exit_latency">
-                            {formatLatency(exit.delayMs)}
-                          </span>
-                          <span>
-                            {t("ui.dashboard.exit_window", {
-                              bytes: formatBytes(exit.totalBytes),
-                            })}
-                          </span>
+                {activeExits.length === 0 ? (
+                  <div className="placeholder">
+                    <span>{t("ui.dashboard.exits_empty")}</span>
+                  </div>
+                ) : (
+                  <div className="dashboard_exits">
+                    {activeExits.map((exit) => (
+                      <div
+                        key={exit.tag}
+                        className={`dashboard_exit ${exit.is_alive ? "" : "dashboard_exit--dead"}`}
+                      >
+                        <StatusDot
+                          tone={exit.is_alive ? "ok" : "error"}
+                          isPulsing={exit.is_alive}
+                          isLarge
+                        />
+                        <div>
+                          <div className="dashboard_exit_tag">{exit.tag}</div>
+                          <div className="dashboard_exit_meta">
+                            <span className="dashboard_exit_latency">
+                              {formatLatency(exit.delayMs)}
+                            </span>
+                            <span>
+                              {t("ui.dashboard.exit_window", {
+                                bytes: formatBytes(exit.totalBytes),
+                              })}
+                            </span>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-          )}
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
 
-          {isDnsLogShown && (
-            <section className="card dashboard_dns_card">
-              <div className="card_header dashboard_dns_head">
-                <div className="card_title">
-                  <h2>{t("ui.dashboard.dns_title")}</h2>
-                  <span className="badge">{t("ui.dashboard.dns_order")}</span>
+            {isDnsLogShown && (
+              <section className="card dashboard_dns_card">
+                <div className="card_header dashboard_dns_head">
+                  <div className="card_title">
+                    <h2>{t("ui.dashboard.dns_title")}</h2>
+                    <span className="badge">{t("ui.dashboard.dns_order")}</span>
+                  </div>
+                  <StatusDot
+                    tone={dnsLog.status === "open" ? "ok" : "warn"}
+                    label={t("ui.dashboard.dns_held", {
+                      count: dnsLog.entries.length,
+                    })}
+                  />
                 </div>
-                <StatusDot
-                  tone={dnsLog.status === "open" ? "ok" : "warn"}
-                  label={t("ui.dashboard.dns_held", {
-                    count: dnsLog.entries.length,
-                  })}
-                />
-              </div>
-              <DnsLogList entries={dnsLog.entries} />
-            </section>
-          )}
-        </div>
+                <DnsLogList entries={dnsLog.entries} />
+              </section>
+            )}
+          </div>
+        )}
       </div>
 
       <AiUsageOverview />

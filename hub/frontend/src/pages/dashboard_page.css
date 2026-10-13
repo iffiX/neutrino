@@ -5,6 +5,10 @@
   align-items: stretch;
 }
 
+.dashboard_layout_single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 /* The DNS card follows the charts' height instead of setting the row's own:
    the list fills what is left and scrolls inside. */
 .dashboard_dns_card {

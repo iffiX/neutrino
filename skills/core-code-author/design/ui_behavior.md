@@ -292,6 +292,10 @@ it; the dashboard's active exits beside the two traffic charts are the
 reference. A panel that shrinks to its empty state leaves a hole where the
 page's shape was.
 
+The dashboard's side column, which holds the active exits and the DNS log,
+is drawn only when one of them is, and the two traffic charts then take the
+full width.
+
 ## Notices and errors
 
 A failure renders in place. An inline `notice--error` where an action failed, an
