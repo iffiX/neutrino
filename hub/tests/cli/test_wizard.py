@@ -8,13 +8,15 @@ document — and the one default whose being wrong would cost somebody their
 uplink.
 """
 
+import argparse
 import io
+import json
 import os
 import sys
 
 import pytest
 
-from neutrino_hub.cli import wizard
+from neutrino_hub.cli import setup, wizard
 from neutrino_hub.exceptions import WizardAborted
 from neutrino_hub.modules.router.link_status import LinkStatus
 from neutrino_hub.web.constants import WEB_LANGUAGES
@@ -69,6 +71,33 @@ def test_an_answers_document_needs_no_terminal():
     assert answers.password == "a-long-enough-password"
     assert [i.name for i in answers.network.wan_interfaces] == ["enp2s0"]
     assert [i.name for i in answers.network.lan_interfaces] == ["enp1s0"]
+
+
+def test_an_answers_file_with_a_byte_order_mark_reads_like_one_without(tmp_path):
+    """PowerShell 5.1's `Set-Content -Encoding UTF8` writes the mark."""
+    text = json.dumps(
+        {
+            "password": "a-long-enough-password",
+            "vault_passphrase": VAULT_PASSPHRASE,
+            "network": {
+                "mode": "router",
+                "wan": ["enp2s0"],
+                "lan": ["enp1s0"],
+                "address": "192.168.8.1",
+                "prefix_len": 24,
+            },
+        }
+    )
+    plain = tmp_path / "plain.json"
+    plain.write_text(text, encoding="utf-8")
+    marked = tmp_path / "marked.json"
+    marked.write_text(text, encoding="utf-8-sig")
+
+    plain_answers = setup._answers(argparse.Namespace(stdin=False, json=str(plain)))
+    marked_answers = setup._answers(argparse.Namespace(stdin=False, json=str(marked)))
+
+    assert marked.read_bytes().startswith(b"\xef\xbb\xbf")
+    assert marked_answers == plain_answers
 
 
 def test_a_misspelled_key_is_refused_rather_than_ignored():
