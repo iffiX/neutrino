@@ -9,7 +9,7 @@ A machine the hub does not address runs whatever it runs and may have no
 manager the hub knows; its ports still have to be drawn, because the panel
 shows them and offers to take them over. On macOS and Windows the same
 answers come from psutil, and the default route from ``route`` or
-``Get-NetRoute``.
+iphlpapi.
 """
 
 import ipaddress
@@ -22,9 +22,10 @@ import psutil
 
 from neutrino_hub import edition
 from neutrino_hub.modules.router.constants import ROUTER_CLIENT_FILES_ADAPTER_NAME
+from neutrino_hub.platforms import win32
 from neutrino_hub.platforms.constants import PLATFORM_OS_DARWIN
 from neutrino_hub.platforms.detect import hub_os, is_linux
-from neutrino_hub.system.powershell_run import listed, run_powershell
+from neutrino_hub.system import windows_net
 from neutrino_hub.utils.subprocess_run import run
 
 # The interface kinds the Network page is about. Everything else the kernel
@@ -57,16 +58,6 @@ LINK_SYSFS_ROOT = Path("/sys/class/net")
 LINK_DARWIN_ROUTE_COMMAND = ("route", "-n", "get", "default")
 LINK_DARWIN_ROUTE_GATEWAY_KEY = "gateway"
 LINK_DARWIN_ROUTE_DEVICE_KEY = "interface"
-LINK_WINDOWS_ROUTE_SCRIPT = """
-$routes = @(Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue |
-  ForEach-Object {
-    @{dev = [string]$_.InterfaceAlias; gateway = [string]$_.NextHop;
-      metric = [int]$_.RouteMetric + [int]$_.InterfaceMetric}
-  })
-@{routes = $routes} | ConvertTo-Json -Compress -Depth 4
-"""
-# What Windows names as the next hop of a route with none.
-LINK_NO_GATEWAY = "0.0.0.0"
 # What marks an IPv6 address a peer elsewhere cannot keep using: the flags
 # `ip -json addr show` sets on it, and the words `ifconfig` prints after it
 # on macOS.
@@ -79,15 +70,6 @@ LINK_DARWIN_IPV6_UNSTABLE_WORDS = (
     "duplicated",
     "detached",
 )
-LINK_WINDOWS_IPV6_SCRIPT = """
-$found = @(Get-NetIPAddress -AddressFamily IPv6 -ErrorAction SilentlyContinue |
-  ForEach-Object {
-    @{dev = [string]$_.InterfaceAlias; address = [string]$_.IPAddress;
-      prefixlen = [int]$_.PrefixLength; state = [string]$_.AddressState;
-      suffix = [string]$_.SuffixOrigin}
-  })
-@{addresses = $found} | ConvertTo-Json -Compress -Depth 4
-"""
 # Windows: the one state of an address in use, and the suffix origin of a
 # temporary address.
 LINK_WINDOWS_IPV6_PREFERRED = "Preferred"
@@ -437,9 +419,9 @@ def device_ipv6_addresses() -> dict[str, list[str]]:
     Global scope only, so no loopback, link-local, site-local or multicast
     address; and no address the system marks temporary, deprecated,
     tentative or failed in duplicate detection. Linux reads the marks from
-    ``ip -json addr show``, macOS from ``ifconfig``, Windows from
-    ``Get-NetIPAddress``, where ``AddressState`` and ``SuffixOrigin`` say
-    them.
+    ``ip -json addr show``, macOS from ``ifconfig``, Windows from iphlpapi's
+    unicast address table, where the duplicate detection state and the
+    suffix origin say them.
 
     Returns:
         Device name to its addresses, each with its prefix, in the order the
@@ -501,29 +483,23 @@ def _darwin_ipv6_addresses() -> dict[str, list[str]]:
 
 
 def _windows_ipv6_addresses() -> dict[str, list[str]]:
-    """The stable IPv6 addresses ``Get-NetIPAddress`` lists on Windows."""
+    """The stable IPv6 addresses iphlpapi lists on Windows."""
     try:
-        answer = run_powershell(LINK_WINDOWS_IPV6_SCRIPT, {})
+        entries = windows_net.unicast_addresses(win32.AF_INET6)
     except OSError:
         return {}
     hidden = _hidden_devices()
     found = {}
-    for entry in listed(answer.get("addresses")):
-        if not isinstance(entry, dict):
-            continue
-        name = str(entry.get("dev") or "")
-        local = str(entry.get("address") or "").split("%", 1)[0]
+    for entry in entries:
+        name = entry["dev"]
         if (
-            not name
-            or name in hidden
-            or entry.get("state") != LINK_WINDOWS_IPV6_PREFERRED
-            or entry.get("suffix") == LINK_WINDOWS_IPV6_TEMPORARY_SUFFIX
-            or not _is_stable_ipv6(local)
+            name in hidden
+            or entry["state"] != LINK_WINDOWS_IPV6_PREFERRED
+            or entry["suffix"] == LINK_WINDOWS_IPV6_TEMPORARY_SUFFIX
+            or not _is_stable_ipv6(entry["address"])
         ):
             continue
-        found.setdefault(name, []).append(
-            f"{local}/{int(entry.get('prefixlen') or 128)}"
-        )
+        found.setdefault(name, []).append(f"{entry['address']}/{entry['prefixlen']}")
     return found
 
 
@@ -580,8 +556,9 @@ def system_default_routes() -> list[dict]:
 
     Returns:
         Entries shaped as ``ip -json route show default`` prints them:
-        ``dev``, and ``gateway`` when the route has a next hop. Empty when
-        the machine has no default route or it cannot be read.
+        ``dev``, ``metric``, and ``gateway`` when the route has a next hop;
+        on Windows equal metrics in the order of ``dev``. Empty when the
+        machine has no default route or it cannot be read.
     """
     if hub_os() == PLATFORM_OS_DARWIN:
         result = run(list(LINK_DARWIN_ROUTE_COMMAND), is_checked=False)
@@ -600,20 +577,9 @@ def system_default_routes() -> list[dict]:
             route["gateway"] = fields[LINK_DARWIN_ROUTE_GATEWAY_KEY]
         return [route]
     try:
-        answer = run_powershell(LINK_WINDOWS_ROUTE_SCRIPT, {})
+        return windows_net.default_routes(win32.AF_INET)
     except OSError:
         return []
-    routes = []
-    for entry in listed(answer.get("routes")):
-        if not isinstance(entry, dict) or not entry.get("dev"):
-            continue
-        route = {"dev": str(entry["dev"]), "metric": int(entry.get("metric") or 0)}
-        gateway = str(entry.get("gateway") or "")
-        if gateway and gateway != LINK_NO_GATEWAY:
-            route["gateway"] = gateway
-        routes.append(route)
-    routes.sort(key=lambda route: route["metric"])
-    return routes
 
 
 def _system_entries() -> dict[str, dict]:

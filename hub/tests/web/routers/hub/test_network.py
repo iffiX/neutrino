@@ -23,11 +23,12 @@ from neutrino_hub.modules.router.credentials import RouterCredentialReader
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.router import link_status
 from neutrino_hub.modules.router.link_status import LINK_KIND_WIFI, RouterLinkStatus
+from neutrino_hub.system import windows_net
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers.hub import network as network_router
 
 from tests.conftest import (
-    FakePowerShell,
+    FakeIphlpapiTables,
     FakePsutil,
     StubLinkStatus,
     lan_entry,
@@ -1401,7 +1402,7 @@ def windows_server(on_windows, monkeypatch):
     }
     machine.stats = {name: (True, 1000) for name in machine.addresses}
     monkeypatch.setattr(link_status, "psutil", machine)
-    monkeypatch.setattr(link_status, "run_powershell", FakePowerShell())
+    monkeypatch.setattr(windows_net, "_READER", FakeIphlpapiTables())
     config = RouterNetworkConfig.from_dict(
         {
             "mode": "server",

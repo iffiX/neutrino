@@ -25,6 +25,7 @@ import os
 import secrets
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -85,6 +86,10 @@ REFUSED_PROGRAMS = {
     "poweroff",
 }
 MUTATING_IP_VERBS = {"add", "del", "delete", "replace", "change", "set", "flush"}
+
+# iphlpapi's tables as a Windows machine answered them, with what its
+# PowerShell cmdlets answered at the same moment.
+WINDOWS_NET_GOLDEN = Path(__file__).parent / "system/golden/windows_net_nmxwin.json"
 
 _real_subprocess_run = subprocess.run
 _real_popen = subprocess.Popen
@@ -1191,6 +1196,73 @@ class FakePowerShell:
         if self._error is not None:
             raise self._error
         return dict(self._answers.get(script, {}))
+
+
+class FakeIphlpapiTables:
+    """iphlpapi's tables answered from bytes, in place of the live reader.
+
+    Empty when built bare; :meth:`recorded` answers what a Windows machine
+    answered.
+
+    Attributes:
+        tables: Table bytes by ``(kind, family)``, kind ``forward``,
+            ``interface`` or ``unicast``; a table not named is empty.
+        adapters: The adapters buffer and the address it was filled at.
+        aliases: Alias by LUID; a LUID not named has none.
+        error: Raised by every table and adapters read when set.
+    """
+
+    def __init__(self, *, tables=None, adapters=(b"", 0), aliases=None, error=None):
+        self.tables = dict(tables or {})
+        self.adapters = adapters
+        self.aliases = dict(aliases or {})
+        self.error = error
+
+    @classmethod
+    def recorded(cls) -> "FakeIphlpapiTables":
+        """The tables in :data:`WINDOWS_NET_GOLDEN`."""
+        import base64
+        import json
+
+        from neutrino_hub.platforms import win32
+
+        golden = json.loads(WINDOWS_NET_GOLDEN.read_text(encoding="utf-8"))
+        tables = {}
+        for kind, name in (
+            ("forward", "routes"),
+            ("interface", "interfaces"),
+            ("unicast", "unicast"),
+        ):
+            for family, suffix in ((win32.AF_INET, "v4"), (win32.AF_INET6, "v6")):
+                tables[(kind, family)] = base64.b64decode(golden[f"{name}_{suffix}"])
+        adapters = golden["adapters"]
+        return cls(
+            tables=tables,
+            adapters=(base64.b64decode(adapters["data"]), adapters["base"]),
+            aliases={int(luid): alias for luid, alias in golden["aliases"].items()},
+        )
+
+    def forward_table(self, family):
+        return self._table("forward", family)
+
+    def interface_table(self, family):
+        return self._table("interface", family)
+
+    def unicast_table(self, family):
+        return self._table("unicast", family)
+
+    def adapters_buffer(self, family):
+        if self.error is not None:
+            raise self.error
+        return self.adapters
+
+    def alias(self, luid):
+        return self.aliases.get(luid, "")
+
+    def _table(self, kind, family):
+        if self.error is not None:
+            raise self.error
+        return self.tables.get((kind, family), b"")
 
 
 class FakeTools:
