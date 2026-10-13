@@ -235,8 +235,9 @@ health gate and installs the previous version's package when the new one
 does not answer. [files.md](files.md) names what the directory keeps.
 
 On macOS and Windows the install runs as the agent's self-update does: a
-detached PowerShell started with `DETACHED_PROCESS | CREATE_BREAKAWAY_FROM_JOB`
-on Windows, a job given to `launchctl submit` on macOS. It installs the
+PowerShell started with `CREATE_NO_WINDOW | CREATE_BREAKAWAY_FROM_JOB` on
+Windows, whose process id the hub writes beside `state.json`, and a job given
+to `launchctl submit` on macOS, which removes itself when it ends. It installs the
 `.msi` or the `.pkg`, holds the same gate (the service running,
 `/api/hub/display` answering 200 on 127.0.0.1, `nhub --version` printing the
 target), installs the kept previous package when the gate fails, reinstalls

@@ -64,6 +64,32 @@ def unit_state(unit: str) -> str:
     return result.stdout.strip() or SYSTEM_UNIT_STATE_INACTIVE
 
 
+def held_unit_state(unit: str) -> str:
+    """What systemd says a unit it holds in memory is doing now.
+
+    systemd is asked for the units it holds, which loads none: asking for a
+    transient unit by name once systemd collected it logs "Failed to open"
+    under that unit after a daemon-reload.
+
+    Args:
+        unit: The unit's name; a name without a type is a service.
+
+    Returns:
+        ``active``, ``activating``, ``failed`` or another word systemd
+        prints; ``inactive`` for a unit systemd does not hold.
+    """
+    name = unit if "." in unit else f"{unit}.service"
+    result = run(
+        ["systemctl", "list-units", "--all", "--plain", "--no-legend", "--full", name],
+        is_checked=False,
+    )
+    for line in result.stdout.splitlines():
+        words = line.split()
+        if name in words and len(words) > words.index(name) + 2:
+            return words[words.index(name) + 2]
+    return SYSTEM_UNIT_STATE_INACTIVE
+
+
 def is_unit_startable(state: str, *, is_failed_restarted: bool) -> bool:
     """Whether a unit in this state is one to start.
 

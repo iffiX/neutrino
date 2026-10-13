@@ -3,8 +3,9 @@
 The macOS sh runs under ``sh`` with ``launchctl``, ``installer``, ``curl``,
 ``nhub`` and ``nagent`` as scripts on a PATH of the test's own. The Windows
 PowerShell runs where ``pwsh`` is, dot-sourced after functions that stand in
-for msiexec, the service and curl. Each leaves the state file the panel
-reads, and that is what is asserted.
+for msiexec, the service and curl. Each installer stand-in writes down the
+version it installed, and ``nhub`` and ``nagent`` say it back. Each script
+leaves the state file the panel reads, and that is what is asserted.
 """
 
 import json
@@ -22,6 +23,9 @@ from neutrino_hub.modules.hub_update.installer import (
     render_script,
 )
 from neutrino_hub.modules.hub_update.state import HubUpdateStateFile
+
+STAGING = ["neutrino-hub-0.5.1 already here, checked"]
+HANDED_OVER = [*STAGING, "installing; the panel restarts now"]
 
 
 def stub(bin_dir: Path, name: str, *, body: str) -> None:
@@ -42,6 +46,7 @@ def plan_for(directory: Path, family: str, *, rollback: bool = True) -> HubUpdat
         https_port=8443,
         units=(),
         started_at="2026-10-03T12:00:00Z",
+        steps=tuple(STAGING),
     )
 
 
@@ -81,6 +86,22 @@ def test_the_family_is_the_systems_outside_linux(monkeypatch):
 # --- the macOS script ---
 
 
+def installer_stub(directory: Path, log: Path, *, failing: str = "") -> str:
+    """macOS's installer, writing down each call and the version it put in."""
+    failure = ""
+    if failing:
+        failure = (
+            f'case "$*" in *hub-{failing}-*) echo "installer: failed"; exit 1;; esac\n'
+        )
+    return (
+        f'echo "installer $*" >> {log}\n'
+        + failure
+        + f'case "$2" in *neutrino-hub-*) echo "$2" | sed -E "s/.*hub-([0-9.]+)-.*/\\1/" > {directory}/hub_version;;\n'
+        + f'  *neutrino-agent-*) echo "$2" | sed -E "s/.*agent-([0-9.]+)-.*/\\1/" > {directory}/agent_version;; esac\n'
+        + "echo installed"
+    )
+
+
 @pytest.fixture
 def mac(tmp_path):
     """A directory for the job, and a PATH where everything passes."""
@@ -91,26 +112,30 @@ def mac(tmp_path):
     cache = tmp_path / "agent_cache"
     cache.mkdir()
     log = tmp_path / "asked"
-    stub(bin_dir, "installer", body=f'echo "installer $*" >> {log}; echo installed')
+    (directory / "hub_version").write_text("0.5.0\n")
+    (directory / "agent_version").write_text("0.5.0\n")
+    stub(bin_dir, "installer", body=installer_stub(directory, log))
     stub(
         bin_dir,
         "launchctl",
         body=f'echo "launchctl $*" >> {log}\n'
-        'case "$1" in print) echo "state = running" ;; esac',
+        f'[ "$1" = remove ] && cp {directory}/state.json {directory}/at_remove.json\n'
+        'case "$*" in "print system/com.neutrino.hub") echo "state = running" ;; esac',
     )
     stub(bin_dir, "curl", body="exit 0")
-    stub(bin_dir, "nhub", body='echo "0.5.1"')
-    stub(bin_dir, "nagent", body='echo "0.5.0"')
+    stub(bin_dir, "nhub", body=f"cat {directory}/hub_version")
+    stub(bin_dir, "nagent", body=f"cat {directory}/agent_version")
     return bin_dir, directory, cache, log
 
 
-def run_mac(mac, *, rollback=True):
+def run_mac(mac, *, rollback=True, agent_wait_s=120):
     bin_dir, directory, cache, log = mac
     text = render_script(
         plan_for(directory, "pkg", rollback=rollback),
         directory=directory,
         gate_timeout_s=1,
         poll_s=0.2,
+        agent_wait_s=agent_wait_s,
     )
     text = (
         text.replace("/usr/local/bin/nhub", str(bin_dir / "nhub"))
@@ -140,6 +165,13 @@ def test_a_mac_install_the_gate_passes_is_installed_and_the_agent_follows(mac):
     assert code == 0
     assert raw["stage"] == "installed"
     assert raw["reason"] == ""
+    assert raw["steps"] == [
+        *HANDED_OVER,
+        "installed 0.5.1",
+        "panel answers",
+        "agent updated to 0.5.1",
+        "done",
+    ]
     installs = [line for line in asked if line.startswith("installer")]
     assert installs[0].endswith("neutrino-hub-0.5.1-macos-arm64.pkg -target /")
     assert installs[1] == (
@@ -148,34 +180,75 @@ def test_a_mac_install_the_gate_passes_is_installed_and_the_agent_follows(mac):
     assert "launchctl kickstart system/com.neutrino.hub" in asked
 
 
-def test_a_mac_job_ends_with_zero_whatever_happened(mac):
-    """launchd starts a submitted job that fails again."""
-    bin_dir, _directory, _cache, _log = mac
-    stub(bin_dir, "nhub", body='echo "0.0.1"')
-
-    code, raw, _asked = run_mac(mac)
-
-    assert code == 0
-    assert raw["stage"] == "failed"
-    assert raw["reason"] == "health_gate_failed"
+def stub_failing_gate(mac) -> None:
+    """A panel that answers only on 0.5.0."""
+    bin_dir, directory, _cache, _log = mac
+    stub(bin_dir, "curl", body=f"grep -q 0.5.0 {directory}/hub_version")
 
 
-def test_a_mac_install_that_fails_puts_the_older_package_back(mac):
+@pytest.mark.parametrize(
+    "case, stage",
+    [
+        ("installed", "installed"),
+        ("nothing changed", "rolled_back"),
+        ("rolled back", "rolled_back"),
+        ("failed", "failed"),
+    ],
+)
+def test_every_mac_end_removes_its_job_after_the_record_is_final(mac, case, stage):
+    """launchd runs a submitted job again whenever it exits."""
     bin_dir, directory, _cache, log = mac
-    stub(
-        bin_dir,
-        "installer",
-        body=f'echo "installer $*" >> {log}\n'
-        'case "$*" in *0.5.1*) echo "installer: failed"; exit 1;; esac',
-    )
-    stub(bin_dir, "nhub", body='echo "0.5.0"')
+    if case == "nothing changed":
+        stub(bin_dir, "installer", body=installer_stub(directory, log, failing="0.5.1"))
+    if case == "rolled back":
+        stub_failing_gate(mac)
+    if case == "failed":
+        stub(bin_dir, "curl", body="exit 7")
 
     code, raw, asked = run_mac(mac)
 
     assert code == 0
+    assert raw["stage"] == stage
+    assert [line for line in asked if line.startswith("launchctl remove")] == [
+        "launchctl remove neutrino_hub_update"
+    ]
+    assert asked[-1] == "launchctl remove neutrino_hub_update"
+    at_remove = json.loads((directory / "at_remove.json").read_text())
+    assert at_remove["stage"] == stage
+    assert at_remove["steps"][-1] == "done"
+
+
+def test_a_mac_install_that_changed_nothing_is_not_rolled_back(mac):
+    bin_dir, directory, _cache, log = mac
+    stub(bin_dir, "installer", body=installer_stub(directory, log, failing="0.5.1"))
+
+    _code, raw, asked = run_mac(mac)
+
     assert raw["stage"] == "rolled_back"
     assert raw["reason"] == "package_install_failed"
+    assert raw["steps"][len(HANDED_OVER) :] == [
+        "install failed: installer exited 1",
+        "nothing changed, still 0.5.0",
+        "done",
+    ]
     assert "installer: failed" in raw["output"]
+    assert len([line for line in asked if line.startswith("installer")]) == 1
+
+
+def test_a_mac_gate_that_fails_puts_the_older_package_back(mac):
+    _bin_dir, directory, _cache, _log = mac
+    stub_failing_gate(mac)
+
+    _code, raw, asked = run_mac(mac)
+
+    assert raw["stage"] == "rolled_back"
+    assert raw["reason"] == "health_gate_failed"
+    assert raw["steps"][len(HANDED_OVER) :] == [
+        "installed 0.5.1",
+        "panel did not answer in 1 s",
+        "rolled back to 0.5.0",
+        "done",
+    ]
     assert (
         f"installer -pkg {directory}/neutrino-hub-0.5.0-macos-arm64.pkg -target /"
         in asked
@@ -185,7 +258,7 @@ def test_a_mac_install_that_fails_puts_the_older_package_back(mac):
 
 
 def test_a_mac_gate_reports_a_stopped_service(mac):
-    bin_dir, _directory, _cache, log = mac
+    bin_dir, directory, _cache, log = mac
     stub(
         bin_dir,
         "launchctl",
@@ -205,7 +278,8 @@ def test_a_service_launchd_does_not_know_is_bootstrapped(mac):
         bin_dir,
         "launchctl",
         body=f'echo "launchctl $*" >> {log}\n'
-        f'case "$1" in print) [ -e {log}.boot ] && echo "state = running" && exit 0;'
+        f'case "$1" in print) [ "$2" = system/com.neutrino.hub ] && [ -e {log}.boot ]'
+        ' && echo "state = running" && exit 0;'
         f" exit 113;; bootstrap) touch {log}.boot;; esac",
     )
 
@@ -216,6 +290,28 @@ def test_a_service_launchd_does_not_know_is_bootstrapped(mac):
         "launchctl bootstrap system /Library/LaunchDaemons/com.neutrino.hub.plist"
         in asked
     )
+
+
+def test_a_mac_agent_updating_itself_is_waited_out(mac):
+    bin_dir, directory, cache, log = mac
+    (cache / "neutrino-agent-0.5.1-macos-arm64.pkg").write_bytes(b"agent")
+    count = directory / "agent_asked"
+    stub(
+        bin_dir,
+        "launchctl",
+        body=f'echo "launchctl $*" >> {log}\n'
+        'case "$*" in\n'
+        '  "print system/com.neutrino.hub") echo "state = running" ;;\n'
+        f'  "print system/neutrino_agent_update") echo x >> {count}\n'
+        f'    if [ "$(wc -l < {count})" -le 2 ]; then echo "state = running";\n'
+        f"    else echo 0.5.1 > {directory}/agent_version; fi ;;\n"
+        "esac",
+    )
+
+    _code, raw, asked = run_mac(mac)
+
+    assert raw["steps"][-2:] == ["agent already 0.5.1", "done"]
+    assert len([line for line in asked if line.startswith("installer")]) == 1
 
 
 # --- the Windows script ---
@@ -229,7 +325,20 @@ function Start-Process {
           [string]$ArgumentList)
     Add-Content -LiteralPath $env:FAKE_ASKED -Value "msiexec $ArgumentList"
     $code = 0
-    if ($env:FAKE_FAILING -and $ArgumentList -like "*$env:FAKE_FAILING*") { $code = 1603 }
+    if ($env:FAKE_BUSY -and $ArgumentList -like "*neutrino-agent-*" -and
+        -not (Test-Path -LiteralPath "$env:FAKE_ASKED.busy")) {
+        Set-Content -LiteralPath "$env:FAKE_ASKED.busy" -Value ''
+        return [pscustomobject]@{ ExitCode = 1618 }
+    }
+    if ($env:FAKE_FAILING -and $ArgumentList -like "*$env:FAKE_FAILING*") {
+        return [pscustomobject]@{ ExitCode = 1603 }
+    }
+    if ($ArgumentList -match '^/i .*neutrino-hub-([0-9.]+)-') {
+        Set-Content -LiteralPath $env:FAKE_HUB -Value $Matches[1]
+    }
+    if ($ArgumentList -match '^/i .*neutrino-agent-([0-9.]+)-') {
+        Set-Content -LiteralPath $env:FAKE_AGENT -Value $Matches[1]
+    }
     return [pscustomobject]@{ ExitCode = $code }
 }
 function Start-Service {
@@ -240,7 +349,13 @@ function Get-Service {
     param([string]$Name, $ErrorAction)
     return [pscustomobject]@{ Status = $env:FAKE_SERVICE }
 }
-function curl.exe { $global:LASTEXITCODE = 0 }
+function curl.exe {
+    $global:LASTEXITCODE = 0
+    if ($env:FAKE_PANEL_ON -and
+        (Get-Content -LiteralPath $env:FAKE_HUB) -ne $env:FAKE_PANEL_ON) {
+        $global:LASTEXITCODE = 7
+    }
+}
 """
 
 
@@ -250,15 +365,26 @@ def windows(tmp_path):
         pytest.skip("PowerShell is not installed")
     directory = tmp_path / "hub_update"
     directory.mkdir()
-    nhub = tmp_path / "nhub.exe"
-    return directory, nhub, tmp_path / "asked"
+    (directory / "hub_version").write_text("0.5.0\n")
+    (directory / "agent_version").write_text("0.5.0\n")
+    stub(tmp_path, "nhub.exe", body=f"cat {directory}/hub_version")
+    stub(tmp_path, "nagent.exe", body=f"cat {directory}/agent_version")
+    cache = tmp_path / "agent_cache"
+    cache.mkdir()
+    return directory, tmp_path, tmp_path / "asked"
 
 
 def run_windows(
-    windows, *, version="0.5.1", service="Running", failing="", rollback=True
+    windows,
+    *,
+    service="Running",
+    failing="",
+    panel_on="",
+    rollback=True,
+    is_agent_here=False,
+    is_busy=False,
 ):
-    directory, nhub, asked = windows
-    stub(nhub.parent, nhub.name, body=f'echo "{version}"')
+    directory, root, asked = windows
     text = render_script(
         plan_for(directory, "msi", rollback=rollback),
         directory=directory,
@@ -266,8 +392,16 @@ def run_windows(
         poll_s=1,
     )
     text = text.replace(
-        f"'{installer_module.constants.UTILS_STATIC_ROOT / 'nhub.exe'}'", f"'{nhub}'"
+        f"'{installer_module.constants.UTILS_STATIC_ROOT / 'nhub.exe'}'",
+        f"'{root / 'nhub.exe'}'",
+    ).replace(
+        f"'{installer_module.AGENT_PACKAGE_CACHE_DIR}'", f"'{root / 'agent_cache'}'"
     )
+    if is_agent_here:
+        text = text.replace(
+            "'C:\\Program Files\\Neutrino\\agent\\nagent.exe'",
+            f"'{root / 'nagent.exe'}'",
+        )
     script = directory / "update.ps1"
     script.write_text(text)
     driver = directory / "driver.ps1"
@@ -282,6 +416,10 @@ def run_windows(
             "FAKE_ASKED": str(asked),
             "FAKE_SERVICE": service,
             "FAKE_FAILING": failing,
+            "FAKE_PANEL_ON": panel_on,
+            "FAKE_BUSY": "1" if is_busy else "",
+            "FAKE_HUB": str(directory / "hub_version"),
+            "FAKE_AGENT": str(directory / "agent_version"),
         },
     )
     raw = json.loads((directory / "state.json").read_text())
@@ -290,30 +428,58 @@ def run_windows(
 
 
 def test_a_windows_install_the_gate_passes_is_installed(windows):
-    directory, _nhub, _asked = windows
+    directory, _root, _asked = windows
 
     raw, asked = run_windows(windows)
 
     assert raw["stage"] == "installed"
     assert raw["from_version"] == "0.5.0"
+    assert raw["steps"] == [
+        *HANDED_OVER,
+        "installed 0.5.1",
+        "panel answers",
+        "no agent on this machine",
+        "done",
+    ]
+    assert raw["finished_at"].endswith("Z")
     assert asked[0] == (
         f'msiexec /i "{directory}/neutrino-hub-0.5.1-windows-amd64.msi" /qn /norestart'
     )
     assert "start neutrino_hub" in asked
-    assert (directory / "update.pid").read_text().strip().isdigit()
+    assert not (directory / "update.pid").exists()
     assert HubUpdateStateFile(path=directory / "state.json").load().stage == (
         "installed"
     )
 
 
-def test_a_windows_rollback_takes_the_newer_version_away_first(windows):
-    """msiexec refuses an older version over a newer one."""
-    directory, _nhub, _asked = windows
-
-    raw, asked = run_windows(windows, version="0.5.0", failing="0.5.1")
+def test_a_windows_install_msiexec_refused_changed_nothing(windows):
+    """msiexec rolls a failed install back itself."""
+    raw, asked = run_windows(windows, failing="0.5.1")
 
     assert raw["stage"] == "rolled_back"
     assert raw["reason"] == "package_install_failed"
+    assert raw["steps"][len(HANDED_OVER) :] == [
+        "install failed: msiexec exited 1603",
+        "nothing changed, still 0.5.0",
+        "done",
+    ]
+    assert len([line for line in asked if line.startswith("msiexec")]) == 1
+
+
+def test_a_windows_rollback_takes_the_newer_version_away_first(windows):
+    """msiexec refuses an older version over a newer one."""
+    directory, _root, _asked = windows
+
+    raw, asked = run_windows(windows, panel_on="0.5.0")
+
+    assert raw["stage"] == "rolled_back"
+    assert raw["reason"] == "health_gate_failed"
+    assert raw["steps"][len(HANDED_OVER) :] == [
+        "installed 0.5.1",
+        "panel did not answer in 1 s",
+        "rolled back to 0.5.0",
+        "done",
+    ]
     msiexec = [line for line in asked if line.startswith("msiexec")]
     assert msiexec == [
         f'msiexec /i "{directory}/neutrino-hub-0.5.1-windows-amd64.msi" /qn /norestart',
@@ -328,3 +494,28 @@ def test_a_windows_gate_says_which_check_failed(windows):
     assert raw["stage"] == "failed"
     assert raw["reason"] == "health_gate_failed"
     assert "service=stopped" in raw["output"]
+    assert raw["steps"][-2:] == ["rollback failed: no package of 0.5.0", "done"]
+
+
+def test_a_windows_agent_is_updated_from_the_cache(windows):
+    _directory, root, _asked = windows
+    (root / "agent_cache" / "neutrino-agent-0.5.1-windows-amd64.msi").write_text("")
+
+    raw, asked = run_windows(windows, is_agent_here=True)
+
+    assert raw["steps"][-2:] == ["agent updated to 0.5.1", "done"]
+    assert asked[-1].startswith("msiexec /i ")
+    assert asked[-1].endswith('neutrino-agent-0.5.1-windows-amd64.msi" /qn /norestart')
+
+
+def test_a_windows_agent_install_another_install_held_off_is_tried_again(windows):
+    """The agent's own update holds the Windows Installer: msiexec answers
+    1618 until it is done."""
+    _directory, root, _asked = windows
+    (root / "agent_cache" / "neutrino-agent-0.5.1-windows-amd64.msi").write_text("")
+
+    raw, asked = run_windows(windows, is_agent_here=True, is_busy=True)
+
+    assert raw["steps"][-2:] == ["agent updated to 0.5.1", "done"]
+    agent = [line for line in asked if "neutrino-agent" in line]
+    assert len(agent) == 2

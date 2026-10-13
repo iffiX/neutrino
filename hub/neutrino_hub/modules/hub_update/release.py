@@ -6,15 +6,19 @@ release is the one `releases/latest` names, which by GitHub's definition is
 neither a draft nor a pre-release; the package this box wants from it is the
 one whose name the build stamped into this package with the version left
 open, so nothing here knows how any family spells a machine. Pure but for the
-one fetch, which a test replaces.
+one fetch, which a test replaces. A checker remembers each release it read,
+so an install can reuse what a check read moments before.
 """
 
 import json
+import math
 import re
 import socket
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Callable
 
 from neutrino_hub import HUB_PACKAGE_ASSET
@@ -23,6 +27,7 @@ from neutrino_hub.modules.hub_update.constants import (
     HUB_UPDATE_CHECKSUMS_NAME,
     HUB_UPDATE_ERROR_RELEASE_DNS,
     HUB_UPDATE_ERROR_RELEASE_HTTP,
+    HUB_UPDATE_ERROR_RELEASE_RATE_LIMITED,
     HUB_UPDATE_ERROR_RELEASE_REFUSED,
     HUB_UPDATE_ERROR_RELEASE_TIMEOUT,
     HUB_UPDATE_ERROR_RELEASE_UNREACHABLE,
@@ -30,10 +35,15 @@ from neutrino_hub.modules.hub_update.constants import (
     HUB_UPDATE_HEADERS,
     HUB_UPDATE_LATEST_URLS,
     HUB_UPDATE_PAGE_URLS,
+    HUB_UPDATE_RATE_LIMIT_REMAINING_HEADER,
+    HUB_UPDATE_RATE_LIMIT_RESET_HEADER,
+    HUB_UPDATE_RATE_LIMIT_STATUSES,
+    HUB_UPDATE_RATE_LIMIT_WINDOW_S,
     HUB_UPDATE_RELATION_CURRENT,
     HUB_UPDATE_RELATION_MAJOR,
     HUB_UPDATE_RELATION_NEWER,
     HUB_UPDATE_REPOSITORY,
+    HUB_UPDATE_RETRY_AFTER_HEADER,
     HUB_UPDATE_TAG_PREFIX,
     HUB_UPDATE_TAG_URLS,
 )
@@ -149,6 +159,7 @@ class HubReleaseChecker:
         repository: str = HUB_UPDATE_REPOSITORY,
         edition: str = EDITION,
         fetch_bytes: Callable[[str], bytes] | None = None,
+        clock: Callable[[], float] = time.monotonic,
     ):
         """Set up a checker.
 
@@ -158,14 +169,21 @@ class HubReleaseChecker:
             edition: The hub's edition, whose release API is read.
             fetch_bytes: How one address is read; None reads it over the
                 network, and a test answers from its own table instead.
+            clock: Monotonic seconds, which age what the checker remembers.
         """
         self._asset = asset
         self._repository = repository
         self._edition = edition
         self._read = _read if fetch_bytes is None else fetch_bytes
+        self._clock = clock
+        self._remembered: dict[str, tuple[float, HubRelease | None]] = {}
 
-    def latest(self) -> HubRelease | None:
+    def latest(self, *, max_age_s: float = 0) -> HubRelease | None:
         """The newest release, neither a draft nor a pre-release.
+
+        Args:
+            max_age_s: How old a release this checker read before may be
+                and still be answered without asking again; 0 always asks.
 
         Returns:
             The release, ``has_package`` False when it carries no package for
@@ -176,14 +194,17 @@ class HubReleaseChecker:
             ValueError: If the reply is not a release.
         """
         return self._release_at(
-            HUB_UPDATE_LATEST_URLS[self._edition].format(repository=self._repository)
+            HUB_UPDATE_LATEST_URLS[self._edition].format(repository=self._repository),
+            max_age_s=max_age_s,
         )
 
-    def for_version(self, version: str) -> HubRelease | None:
+    def for_version(self, version: str, *, max_age_s: float = 0) -> HubRelease | None:
         """The release of one version, for the package the box runs now.
 
         Args:
             version: The version wanted.
+            max_age_s: How old a release this checker read before may be
+                and still be answered without asking again; 0 always asks.
 
         Returns:
             The release, ``has_package`` False when it carries no package for
@@ -198,7 +219,8 @@ class HubReleaseChecker:
         return self._release_at(
             HUB_UPDATE_TAG_URLS[self._edition].format(
                 repository=self._repository, tag=tag
-            )
+            ),
+            max_age_s=max_age_s,
         )
 
     def digest_of(self, release: HubRelease) -> str:
@@ -224,8 +246,29 @@ class HubReleaseChecker:
                 return parts[0]
         raise ValueError(f"{HUB_UPDATE_CHECKSUMS_NAME} names no {release.asset_name}")
 
-    def _release_at(self, url: str) -> HubRelease | None:
-        """One release as GitHub describes it.
+    def _release_at(self, url: str, *, max_age_s: float) -> HubRelease | None:
+        """One release as GitHub describes it, read now or remembered.
+
+        Args:
+            url: The API address of the release.
+            max_age_s: How old a remembered answer may be.
+
+        Returns:
+            The release, or None when GitHub has nothing at that address.
+
+        Raises:
+            OSError: If GitHub cannot be reached.
+            ValueError: If the reply is not a release.
+        """
+        remembered = self._remembered.get(url)
+        if remembered is not None and self._clock() - remembered[0] < max_age_s:
+            return remembered[1]
+        release = self._read_release(url)
+        self._remembered[url] = (self._clock(), release)
+        return release
+
+    def _read_release(self, url: str) -> HubRelease | None:
+        """One release as GitHub describes it, read now.
 
         Args:
             url: The API address of the release.
@@ -306,11 +349,15 @@ def unreachable_reason(error: Exception) -> tuple:
             a release.
 
     Returns:
-        ``(code, params)``: an HTTP refusal names its status, a name that
-        did not resolve, a connection that timed out, one that was refused
-        or found no route, and a reply that was not a release.
+        ``(code, params)``: an address with no GitHub API calls left this
+        hour names the whole minutes until they renew and the moment they
+        do, any other HTTP refusal names its status, then a name that did
+        not resolve, a connection that timed out, one that was refused or
+        found no route, and a reply that was not a release.
     """
     if isinstance(error, urllib.error.HTTPError):
+        if _is_rate_limited(error):
+            return HUB_UPDATE_ERROR_RELEASE_RATE_LIMITED, renewal(error.headers)
         return HUB_UPDATE_ERROR_RELEASE_HTTP, {"status": error.code}
     cause = error.reason if isinstance(error, urllib.error.URLError) else error
     if isinstance(cause, socket.gaierror):
@@ -320,6 +367,42 @@ def unreachable_reason(error: Exception) -> tuple:
     if isinstance(error, OSError):
         return HUB_UPDATE_ERROR_RELEASE_REFUSED, {}
     return HUB_UPDATE_ERROR_RELEASE_UNREACHABLE, {}
+
+
+def renewal(headers, *, now: float | None = None) -> dict:
+    """When an address's spent GitHub API calls renew, from the refusal.
+
+    Args:
+        headers: The refusal's headers.
+        now: The epoch second to count from; None is now.
+
+    Returns:
+        ``{minutes, reset_at}``: whole minutes until they renew, at least
+        one, and the moment as an ISO stamp in UTC. A refusal naming no
+        moment is taken to renew in GitHub's own hour.
+    """
+    now = time.time() if now is None else now
+    try:
+        reset = float(headers.get(HUB_UPDATE_RATE_LIMIT_RESET_HEADER))
+    except (TypeError, ValueError):
+        try:
+            reset = now + float(headers.get(HUB_UPDATE_RETRY_AFTER_HEADER))
+        except (TypeError, ValueError):
+            reset = now + HUB_UPDATE_RATE_LIMIT_WINDOW_S
+    reset = max(reset, now)
+    return {
+        "minutes": max(1, math.ceil((reset - now) / 60)),
+        "reset_at": datetime.fromtimestamp(reset, tz=timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        ),
+    }
+
+
+def _is_rate_limited(error: urllib.error.HTTPError) -> bool:
+    """Whether GitHub refused because the address has no API calls left."""
+    if error.code not in HUB_UPDATE_RATE_LIMIT_STATUSES or error.headers is None:
+        return False
+    return error.headers.get(HUB_UPDATE_RATE_LIMIT_REMAINING_HEADER) == "0"
 
 
 def _read(url: str) -> bytes:

@@ -202,7 +202,10 @@ with `package_name_mismatch`, and a path with no file with `package_missing`. Ei
 package into `/var/lib/neutrino/hub/hub_update/`, checks it against the release's
 `SHA256SUMS`, keeps the running version's own package beside it, and starts
 the transient unit `neutrino_hub_update` with `update.sh` from that directory.
-The unit runs the package manager, then holds a gate of up to 180 seconds:
+The unit runs the package manager and reads `nhub --version`: a version other
+than the target fails the update at once, and a box still on the version it
+started from is left as it is. With the target in place it holds a gate of up
+to 180 seconds:
 `neutrino_hub_web` and whichever of `neutrino_hub_router` and
 `neutrino_hub_dnsmasq` were running must be active, `GET /api/hub/display`
 must answer, on `https://127.0.0.1:<https_listen_port>` while
@@ -216,7 +219,8 @@ When `/proc/meminfo` gives less than 300 MB of `MemAvailable` as the unit
 starts, it stops `neutrino_hub_web` and `neutrino_hub_cliproxyapi`, where
 running, before the package manager runs, and starts them again once it has
 finished, whether the install succeeded or not. After the gate passes, a box
-with `nagent` on it reinstalls its own agent from the hub's cache,
+with `nagent` on it waits up to 120 seconds for the agent's own update in
+`neutrino_agent_update` to end, then reinstalls its own agent from the hub's cache,
 `/var/lib/neutrino/hub/agent_cache/`, the file the new hub hands its own machine,
 as `nhub setup` does; a failure there is written to `update.log` and leaves
 the hub `installed`. That is how the hub's own agent follows a hub whose
@@ -224,7 +228,8 @@ protocol number rose past it.
 
 `state.json` in that directory records where it stands: `installing`,
 `installed`, `rolling_back`, `rolled_back` or `failed`, with `reason` naming
-the first failure and `output` the tail of `update.log`. The panel reads it
+the first failure, `steps` the lines the update dialog shows, and `output` the
+tail of `update.log`. The panel reads it
 back once it is up again. A box left on neither version, which only a
 rollback that failed too can leave, is put back by hand:
 

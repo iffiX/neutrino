@@ -1412,12 +1412,28 @@ class PanelHttpsResetView(PanelHttpsView):
     authority_der: str
 
 
+class PanelDisplayUpdate(BaseModel):
+    """An update of the hub itself, as a page with no session follows it.
+
+    ``steps`` holds the lines a person reads, versions and file names only;
+    ``finished_at`` is empty while it runs.
+    """
+
+    stage: str
+    from_version: str
+    to_version: str
+    steps: list[str] = Field(default_factory=list)
+    finished_at: str = ""
+
+
 class PanelDisplay(BaseModel):
     """The language and the palette the panel is drawn in, before there is a
-    session."""
+    session, and an update of the hub under way or ended in the last 30
+    minutes, else None."""
 
     language: str
     theme: str
+    update: PanelDisplayUpdate | None = None
 
 
 class AcknowledgementView(BaseModel):
@@ -1454,6 +1470,8 @@ class HubUpdateRecordView(BaseModel):
 
     ``reason`` is why the target version was given up on, the first failure
     whatever the rollback did after it; ``stage`` says what came of that.
+    ``steps`` are the lines a person reads, one per step; ``output`` is the
+    tail of the package manager's own log.
     """
 
     stage: str
@@ -1463,6 +1481,7 @@ class HubUpdateRecordView(BaseModel):
     finished_at: str = ""
     reason: str = ""
     output: str = ""
+    steps: list[str] = Field(default_factory=list)
 
 
 class HubReleaseView(BaseModel):

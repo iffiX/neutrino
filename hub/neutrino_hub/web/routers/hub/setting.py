@@ -11,7 +11,6 @@ import sys
 import tarfile
 import time
 from dataclasses import asdict
-from datetime import datetime, timezone
 
 import psutil
 from fastapi import (
@@ -37,9 +36,10 @@ from neutrino_hub.exceptions import (
 from neutrino_hub.modules.hub_update.constants import (
     HUB_UPDATE_RELATION_CURRENT,
     HUB_UPDATE_RELATION_MAJOR,
+    HUB_UPDATE_RELEASE_REUSE_S,
     HUB_UPDATE_STAGE_FAILED,
     HUB_UPDATE_STAGE_PREPARING,
-    HUB_UPDATE_STAGES_IN_UNIT,
+    HUB_UPDATE_STEP_INSTALLING,
     HUB_UPDATE_TASK_LABEL,
 )
 from neutrino_hub.modules.hub_update.installer import (
@@ -53,7 +53,12 @@ from neutrino_hub.modules.hub_update.release import (
     relation,
     unreachable_reason,
 )
-from neutrino_hub.modules.hub_update.state import HubUpdateRecord, HubUpdateStateFile
+from neutrino_hub.modules.hub_update.state import (
+    HubUpdateRecord,
+    HubUpdateStateFile,
+    append_step,
+    stamp_now,
+)
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.system.installation import is_packaged
 from neutrino_hub.system.machine import machine_id
@@ -1113,12 +1118,7 @@ def read_release(runtime: PanelRuntime = Depends(get_runtime)) -> HubReleaseView
     """
     installer = _update_installer()
     running = runtime.tasks.running(HUB_UPDATE_TASK_LABEL)
-    record = installer.state.load()
-    is_in_unit = record is not None and record.stage in HUB_UPDATE_STAGES_IN_UNIT
-    record = installer.state.settle(
-        is_unit_active=installer.is_unit_active() if is_in_unit else False,
-        is_task_running=running is not None,
-    )
+    record = installer.settled_record(is_task_running=running is not None)
     return HubReleaseView(
         current=HUB_VERSION,
         is_packaged=is_packaged(),
@@ -1184,7 +1184,10 @@ async def scan_release() -> HubReleaseScanView:
 async def install_release(
     request: HubUpdateRequest, runtime: PanelRuntime = Depends(get_runtime)
 ) -> TaskStarted:
-    """Stage the newest release and hand its install to systemd.
+    """Stage the newest release and hand its install to the system.
+
+    The release a check read in the last ten minutes is installed without
+    asking GitHub again.
 
     Args:
         request: The version the person confirmed.
@@ -1209,7 +1212,9 @@ async def install_release(
     if installer.is_unit_active():
         raise _conflict(UPDATE_ERROR_IN_PROGRESS)
     try:
-        found = await asyncio.to_thread(installer.checker.latest)
+        found = await asyncio.to_thread(
+            installer.checker.latest, max_age_s=HUB_UPDATE_RELEASE_REUSE_S
+        )
     except (OSError, ValueError) as error:
         raise _unreachable(error) from error
     if found is None or found.version != request.version:
@@ -1233,7 +1238,7 @@ async def install_release(
             stage=HUB_UPDATE_STAGE_PREPARING,
             from_version=HUB_VERSION,
             to_version=found.version,
-            started_at=_stamp_now(),
+            started_at=stamp_now(),
         )
     )
     stream = runtime.tasks.start(
@@ -1253,6 +1258,9 @@ async def _update_source(
 ):
     """Stage the release in a thread, relaying its progress, then hand over.
 
+    Each line goes into the record's steps as it is said, so a page that
+    lost the stream reads them there.
+
     Args:
         installer: What stages and launches.
         found: The release to install.
@@ -1268,11 +1276,18 @@ async def _update_source(
     """
     loop = asyncio.get_running_loop()
     lines: asyncio.Queue = asyncio.Queue()
+    record = installer.state.load() or HubUpdateRecord(
+        stage=HUB_UPDATE_STAGE_PREPARING,
+        from_version=HUB_VERSION,
+        to_version=found.version,
+        started_at=stamp_now(),
+    )
 
     def say(line: str) -> None:
+        append_step(record.steps, line)
+        installer.state.save(record)
         loop.call_soon_threadsafe(lines.put_nowait, line)
 
-    yield f"staging {found.asset_name} of {found.tag}\n"
     staging = asyncio.ensure_future(
         asyncio.to_thread(
             installer.prepare,
@@ -1281,6 +1296,7 @@ async def _update_source(
             port=port,
             https_port=https_port,
             on_progress=say,
+            started_at=record.started_at,
         )
     )
     while not staging.done():
@@ -1296,27 +1312,31 @@ async def _update_source(
     except HubUpdateError as error:
         _record_failure(installer.state, found, error)
         raise
-    yield "handing the install to systemd; the panel restarts now\n"
+    yield f"{HUB_UPDATE_STEP_INSTALLING}\n"
     await asyncio.to_thread(installer.launch, plan)
 
 
 def _record_failure(
     state: HubUpdateStateFile, found: HubRelease, error: HubUpdateError
 ) -> None:
-    """Write why the staging stopped, keeping when it started."""
+    """Write why the staging stopped, keeping when it started and its steps."""
     record = state.load()
-    started_at = record.started_at if record is not None else _stamp_now()
     state.save(
         HubUpdateRecord(
             stage=HUB_UPDATE_STAGE_FAILED,
             from_version=HUB_VERSION,
             to_version=found.version,
-            started_at=started_at,
-            finished_at=_stamp_now(),
+            started_at=record.started_at if record is not None else stamp_now(),
+            finished_at=stamp_now(),
             reason=error.code,
             output=str(error.params.get("detail", "")),
+            steps=record.steps if record is not None else [],
         )
     )
+
+
+# One checker for every request, so an install reuses what a check read.
+_release_checker = HubReleaseChecker()
 
 
 def _update_installer() -> HubUpdateInstaller:
@@ -1325,16 +1345,12 @@ def _update_installer() -> HubUpdateInstaller:
     Returns:
         An installer over the real releases and the real state file.
     """
-    return HubUpdateInstaller(checker=HubReleaseChecker(), state=HubUpdateStateFile())
+    return HubUpdateInstaller(checker=_release_checker, state=HubUpdateStateFile())
 
 
 def _listen_port(runtime: PanelRuntime) -> int:
     """The port the panel answers on, for the unit's gate."""
     return int(runtime.settings.get("listen_port", WEB_DEFAULT_LISTEN_PORT))
-
-
-def _stamp_now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _conflict(code: str, **params) -> HTTPException:

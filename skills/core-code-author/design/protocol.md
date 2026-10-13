@@ -181,7 +181,7 @@ segment of a write, which is a verb.
 | A read is a GET on a path of nouns and returns a view. A write is a POST whose last segment is one verb, with every argument in the body, and it returns what the matching read returns. The methods are GET and POST. | The page replaces its state with the response and merges nothing, so it cannot hold a version of the box that the box does not. |
 | A verb comes from the verb table, an opposite is added with its pair, and paths of paired verbs have the same depth: `channel/join` and `channel/leave`, `module/install` and `module/uninstall`, `module/start` and `module/stop`. A new verb enters the table before it enters a path. | The table is closed, so the route test checks every path against it. |
 | A word with a fixed meaning inside a domain (`scrub`, `import`, `backup`) can be a noun in the middle of a path: `pool/scrub/stop`. | The domain's own word is the one a reader searches for. |
-| `/api/hub/setup`, `/api/hub/auth`, `/api/hub/display`, `GET /api/hub/setting/https/authority` and `GET /api/hub/setting/https/probe` take no session dependency. `GET /api/hub/display` returns `{language, theme}` in one response, and both change through `POST /api/hub/setting/set`. | The login page reads them before there is a session, a browser installs the authority before it trusts the panel, and a page on HTTP probes the HTTPS port before it offers HTTPS. |
+| `/api/hub/setup`, `/api/hub/auth`, `/api/hub/display`, `GET /api/hub/setting/https/authority` and `GET /api/hub/setting/https/probe` take no session dependency. `GET /api/hub/display` returns `{language, theme, update}` in one response; the language and the theme change through `POST /api/hub/setting/set`, and `update` is the hub's own update while it runs and for 30 minutes after it ends. | The login page reads them before there is a session, a page follows the hub's update across the restart that ends its session, a browser installs the authority before it trusts the panel, and a page on HTTP probes the HTTPS port before it offers HTTPS. |
 | The router file is named after its page; the library package under `modules/` keeps its own name, so `modules/router` serves `/api/hub/network` and `modules/xray` serves `/api/hub/proxy`. | A page is what a person sees; a package is what the code does. |
 
 ### The verbs
@@ -301,7 +301,7 @@ The HTTP status names the class of the refusal:
 | 413 | a body past the agent port's limit | `request_too_large {limit}` |
 | 409 | a state the action cannot run in | `agent_offline`, `protocol_too_old`, `protocol_too_new`, `role_mismatch`, `update_in_progress`, `release_not_latest`, `no_platform_build {module}`, `admission_paused {retry_after_s}`, `terms_not_accepted {module}`, `gateway_not_serving` |
 | 500 | the hub could not write its own `config/` | `config_unwritable {detail}`, from the per-device module routes |
-| 502 | a service the hub asked did not answer as one | `gateway_unreachable`, `geodata_unreachable`, `release_dns_failed`, `release_timed_out`, `release_refused`, `release_http_error {status}`, `release_unreachable`, `relay_apply_failed {detail}`, `direct_apply_failed {detail}` |
+| 502 | a service the hub asked did not answer as one | `gateway_unreachable`, `geodata_unreachable`, `release_dns_failed`, `release_timed_out`, `release_refused`, `release_http_error {status}`, `release_rate_limited {minutes, reset_at}`, `release_unreachable`, `relay_apply_failed {detail}`, `direct_apply_failed {detail}` |
 
 Every surface words a code itself: the hub's catalogs are
 `hub/frontend/src/locales/<language>/codes.json` under `code.<code>`, the
@@ -321,7 +321,7 @@ TLS port.
 | --- | --- |
 | `/api/hub/setup` | The first run's questions and the steps that answer them, served by the hub's service before the box is set up, behind the setup token |
 | `/api/hub/auth` | Signing in and out, and what the session is |
-| `/api/hub/display` | The language and the palette the panel is drawn in, read before there is a session |
+| `/api/hub/display` | The language and the palette the panel is drawn in, and the hub's own update, read before there is a session |
 | `/api/hub/dashboard` | The summary, the traffic history, the DNS log; `/ws/hub/dashboard/stat` and `/ws/hub/dashboard/dns_log` are its live readings |
 | `/api/hub/network` | The mode, the interfaces and their roles, Wi-Fi, what listens where |
 | `/api/hub/overlay` | The **Access** page: which ways in the box runs, and under it `direct` (the agent port on every enabled interface, and the public address the person states), `relay` (the reverse forward to a server the person owns), `netbird` (the network it joins) and `easytier` (the network it defines: peers, networks, secret) |
@@ -370,7 +370,7 @@ the page's whole view.
 
 | Route | Parameters | Does |
 | --- | --- | --- |
-| `GET /api/hub/display` | | `{language, theme}` |
+| `GET /api/hub/display` | | `{language, theme, update}`: `update` is null, or `{stage, from_version, to_version, steps, finished_at}` for an update under way or ended in the last 30 minutes, a run that died marked `failed`; `steps` holds the lines the update dialog shows, versions and file names only |
 
 #### `/api/hub/dashboard`
 
@@ -581,9 +581,9 @@ has is refused 400 `permission_device_unknown {device_id}`.
 | `POST /api/hub/setting/backup` | | an archive of `config/` |
 | `POST /api/hub/setting/restore` | the archive | |
 | `GET /api/hub/setting/about` | | `AboutView`: versions, the credited components, and `os` and `os_version`, the system the hub runs on and its version |
-| `GET /api/hub/setting/release` | | `HubReleaseView`: the version running, whether this hub came from a package, `package_family` (`deb`, `rpm`, `arch`, `msi`, `pkg`, or empty in a checkout) and `log_root`, the record of its last update, and the staging task while one runs |
+| `GET /api/hub/setting/release` | | `HubReleaseView`: the version running, whether this hub came from a package, `package_family` (`deb`, `rpm`, `arch`, `msi`, `pkg`, or empty in a checkout) and `log_root`, the record of its last update with its `steps` and `output`, the tail of the package manager's log, and the staging task while one runs |
 | `POST /api/hub/setting/release/scan` | | reads the newest release from GitHub; returns `HubReleaseScanView`: the release or none published, whether it carries a package of this hub's family (`has_package`; a release without one is not an error), whether it is newer or a new major, whether a rollback package can be had, and the room the update needs and has; 409 `hub_not_packaged` from a checkout |
-| `POST /api/hub/setting/release/install` | `{version}`, the release confirmed | stages the package and hands the install to the `neutrino_hub_update` unit; returns `TaskStarted`, output on `/ws/hub/task`; 409 `release_not_latest` when the newest release is no longer the one named, `release_not_newer`, `release_major`, `disk_space_short`, `update_in_progress` |
+| `POST /api/hub/setting/release/install` | `{version}`, the release confirmed | reads the newest release, or takes the one a scan read in the last 10 minutes, stages the package and hands the install to the `neutrino_hub_update` unit; returns `TaskStarted`, output on `/ws/hub/task`; 409 `release_not_latest` when the newest release is no longer the one named, `release_not_newer`, `release_major`, `disk_space_short`, `update_in_progress` |
 
 ### The agent group
 

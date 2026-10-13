@@ -29,6 +29,17 @@ HUB_UPDATE_HEADERS = {
 }
 HUB_UPDATE_FETCH_TIMEOUT_S = 600
 HUB_UPDATE_FETCH_LIMIT_BYTES = 1024 * 1024 * 1024
+# An install reuses a release a check read this recently instead of asking
+# the release API again.
+HUB_UPDATE_RELEASE_REUSE_S = 10 * 60
+# GitHub's answer when the address has spent its hourly allowance of API
+# calls: one of these statuses with no calls remaining, and the epoch second
+# the allowance renews.
+HUB_UPDATE_RATE_LIMIT_STATUSES = (403, 429)
+HUB_UPDATE_RATE_LIMIT_REMAINING_HEADER = "x-ratelimit-remaining"
+HUB_UPDATE_RATE_LIMIT_RESET_HEADER = "x-ratelimit-reset"
+HUB_UPDATE_RETRY_AFTER_HEADER = "retry-after"
+HUB_UPDATE_RATE_LIMIT_WINDOW_S = 60 * 60
 
 # Under the state root: the packages, the script the unit runs, its log and
 # its result. `nhub reset all` clears the directory.
@@ -84,18 +95,36 @@ HUB_UPDATE_GATE_POLL_S = 2
 HUB_UPDATE_OUTPUT_LIMIT_BYTES = 4 * 1024
 # The package manager waits this long for another install to release its lock.
 HUB_UPDATE_LOCK_TIMEOUT_S = 300
+# The file pacman holds while it runs, which it does not wait for itself.
+HUB_UPDATE_PACMAN_LOCK_PATH = "/var/lib/pacman/db.lck"
+# The agent's own update, which the script waits out before it reinstalls the
+# machine's agent: a transient unit on Linux, a launchd job on macOS, and on
+# Windows any install the Windows Installer is running.
+HUB_UPDATE_AGENT_UPDATE_UNIT = "neutrino_agent_update"
+HUB_UPDATE_AGENT_WAIT_S = 120
+# The Windows Installer holds this mutex while it installs, and msiexec
+# answers this code while another install holds it.
+HUB_UPDATE_MSI_MUTEX = "Global\\_MSIExecute"
+HUB_UPDATE_MSI_BUSY_CODE = 1618
+# A record written this recently is never taken for an interrupted run: the
+# unit, job or process that writes it next may not be running yet.
+HUB_UPDATE_SETTLE_GRACE_S = 30
+# How long after it ends an update is still shown before anybody signs in.
+HUB_UPDATE_DISPLAY_WINDOW_S = 30 * 60
 
 # macOS and Windows: the package family each installs, and how the install
 # runs there. On macOS the script is a launchd job of the unit's name, given
-# to `launchctl submit`; on Windows it is a PowerShell started detached from
-# the service, which writes its process id beside the state file.
+# to `launchctl submit`, which removes itself when it ends; on Windows it is a
+# PowerShell started apart from the service, whose process id the hub writes
+# beside the state file.
 HUB_UPDATE_FAMILY_OF_OS = {"darwin": "pkg", "windows": "msi"}
 HUB_UPDATE_SCRIPT_NAME_WINDOWS = "update.ps1"
 HUB_UPDATE_PID_NAME = "update.pid"
 HUB_UPDATE_JOB_DARWIN = f"system/{HUB_UPDATE_UNIT}"
-# DETACHED_PROCESS with CREATE_BREAKAWAY_FROM_JOB, then DETACHED_PROCESS
-# alone for a job that refuses breakaway.
-HUB_UPDATE_CREATION_FLAGS_WINDOWS = (0x00000008 | 0x01000000, 0x00000008)
+# CREATE_NO_WINDOW with CREATE_BREAKAWAY_FROM_JOB, then CREATE_NO_WINDOW
+# alone for a job that refuses breakaway. A PowerShell started with
+# DETACHED_PROCESS exits at once without running its script.
+HUB_UPDATE_CREATION_FLAGS_WINDOWS = (0x08000000 | 0x01000000, 0x08000000)
 # The one service the package registers, and the commands the gate and the
 # agent's reinstall run.
 HUB_UPDATE_SERVICE_DARWIN = "system/com.neutrino.hub"
@@ -117,6 +146,12 @@ HUB_UPDATE_MSI_INSTALLED_CODES = (0, 3010)
 
 # The task the panel streams while the package is staged.
 HUB_UPDATE_TASK_LABEL = "hub_update"
+
+# The record's steps: the lines a person reads, the same on every system.
+# The staging writes the download lines, the hand-over the first line here,
+# and the script ends every run with the second.
+HUB_UPDATE_STEP_INSTALLING = "installing; the panel restarts now"
+HUB_UPDATE_STEP_DONE = "done"
 
 # Where an update stands, as the state file records it.
 HUB_UPDATE_STAGE_PREPARING = "preparing"
@@ -162,6 +197,7 @@ HUB_UPDATE_ERROR_RELEASE_DNS = "release_dns_failed"
 HUB_UPDATE_ERROR_RELEASE_TIMEOUT = "release_timed_out"
 HUB_UPDATE_ERROR_RELEASE_REFUSED = "release_refused"
 HUB_UPDATE_ERROR_RELEASE_HTTP = "release_http_error"
+HUB_UPDATE_ERROR_RELEASE_RATE_LIMITED = "release_rate_limited"
 HUB_UPDATE_ERROR_RELEASE_UNREACHABLE = "release_unreachable"
 
 # How the newest release stands to the version running.

@@ -2,11 +2,12 @@
 
     sudo nhub update [--yes] [--package <file>]
 
-The same staging and the same install unit the panel uses: the package is
+The same staging and the same install the panel uses: the package is
 downloaded and checked, the running version's own package is kept beside it
-as the rollback, and systemd installs it outside this process, holding a
+as the rollback, and the system installs it outside this process, holding a
 health gate and putting the previous version back when the new one does not
-answer. This command waits for the unit's record and prints how it ended.
+answer. This command prints the install's steps from its record as they are
+written, and how it ended.
 """
 
 import argparse
@@ -23,6 +24,7 @@ from neutrino_hub.modules.hub_update.constants import (
     HUB_UPDATE_RELATION_MAJOR,
     HUB_UPDATE_STAGE_INSTALLED,
     HUB_UPDATE_STAGES_SETTLED,
+    HUB_UPDATE_STEP_INSTALLING,
     HUB_UPDATE_UNIT,
 )
 from neutrino_hub.modules.hub_update.installer import (
@@ -126,8 +128,8 @@ def update(*, is_confirmed: bool, package: "Path | None") -> int:
     except HubUpdateError as error:
         print(f"error: {_worded(error)}", file=sys.stderr)
         return STATUS_FAILED
-    print(f"handed to systemd as {HUB_UPDATE_UNIT}; the panel restarts now")
-    return _wait(installer.state)
+    print(HUB_UPDATE_STEP_INSTALLING)
+    return _wait(installer, shown=len(plan.steps) + 1)
 
 
 def _plan_from_release(installer: HubUpdateInstaller, *, is_confirmed: bool, port: int):
@@ -215,11 +217,15 @@ def _plan_from_file(
     return STATUS_DONE, plan
 
 
-def _wait(state: HubUpdateStateFile) -> int:
-    """Follow the unit's record until it settles.
+def _wait(installer: HubUpdateInstaller, *, shown: int) -> int:
+    """Follow the install's record until it settles, printing its new steps.
+
+    The record is settled the way the panel settles it, so an install whose
+    script died is reported as interrupted.
 
     Args:
-        state: The record the unit writes.
+        installer: What launched the install, and reads its record.
+        shown: How many of the record's steps were printed already.
 
     Returns:
         0 when the new version is installed, 1 otherwise.
@@ -228,7 +234,11 @@ def _wait(state: HubUpdateStateFile) -> int:
     follow = hub_platform().log_hint(UPDATE_LOG_NAME, HUB_UPDATE_UNIT)
     try:
         while time.monotonic() < deadline:
-            record = state.load()
+            record = installer.settled_record(is_task_running=False)
+            if record is not None:
+                for step in record.steps[shown:]:
+                    print(step)
+                shown = max(shown, len(record.steps))
             if record is not None and record.stage in HUB_UPDATE_STAGES_SETTLED:
                 break
             time.sleep(UPDATE_WAIT_POLL_S)
