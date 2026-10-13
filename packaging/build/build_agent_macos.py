@@ -15,9 +15,10 @@ RustDesk comes as upstream's app bundle out of its pinned disk image, copied
 as it is, its signature intact, to ``app/rustdesk/RustDesk.app`` in the
 agent's own folder. The package registers nothing of RustDesk's and starts
 nothing of it: the agent registers its copy when the hub's Remote desktop
-switch is on. The preinstall script takes away what the agent's earlier
-packages installed of RustDesk at the system's standard place, as their
-receipt lists it, and nothing else; the postinstall script starts the agent.
+switch is on. The preinstall script deletes the earlier package's ``app``
+whole, so a file the new package lacks does not stay, and takes away what
+the agent's earlier packages installed of RustDesk at the system's standard
+place, as their receipt lists it; the postinstall script starts the agent.
 A package on macOS has no uninstaller: ``sudo nagent service uninstall``
 removes the agent and what the agent's modules added, and keeps the
 configuration and the state.
@@ -98,6 +99,14 @@ MACOS_MACHINES = {"aarch64": "arm64", "x86_64": "amd64"}
 PREINSTALL = f"""#!/bin/sh
 # An upgrade replaces files the running job holds.
 launchctl bootout system/{AGENT_LAUNCHD_LABEL} 2>/dev/null || true
+
+# The installer keeps a file the earlier package had and this one does not,
+# so the program directory goes whole, its copy of RustDesk with it; the
+# configuration and the state stay.
+program="{INSTALL_AGENT_DIR}"
+if [ -n "$program" ] && [ -d "$program" ] && [ ! -L "$program" ]; then
+    rm -rf "$program"
+fi
 
 # What an earlier package of the agent installed of RustDesk at the system's
 # standard place goes, by what its receipt lists: its two jobs are booted

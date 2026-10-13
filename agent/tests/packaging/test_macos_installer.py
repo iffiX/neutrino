@@ -256,10 +256,24 @@ PROCESSES = """  101 /Applications/RustDesk.app/Contents/MacOS/RustDesk --server
 """
 
 
+def _preinstall_in(staged: dict, agent_dir: Path) -> str:
+    """The preinstall the build wrote, with the agent's directory of the tree
+    moved to ``agent_dir``, so nothing outside it is touched."""
+    text = (
+        (staged["scripts"] / "preinstall")
+        .read_text()
+        .replace(str(build_agent_macos.INSTALL_ROOT_DIR), str(agent_dir))
+    )
+    assert "/Library/Application Support" not in text
+    return text
+
+
 def _run_preinstall(tmp_path, laid_out, receipt):
     """Run the preinstall script with every command it touches the Mac with
-    replaced by one that records what it was asked."""
+    replaced by one that records what it was asked, over an agent whose
+    program directory is there."""
     staged, _signed, _checked = laid_out
+    (tmp_path / "agent" / "app").mkdir(parents=True)
     fakes = tmp_path / "fakes"
     fakes.mkdir()
     record = tmp_path / "calls"
@@ -277,10 +291,8 @@ def _run_preinstall(tmp_path, laid_out, receipt):
         fake = fakes / name
         fake.write_text(f"#!/bin/sh\n{body}\n")
         fake.chmod(0o755)
-    text = (
-        (staged["scripts"] / "preinstall")
-        .read_text()
-        .replace('kill "$pid"', '"$KILL" "$pid"')
+    text = _preinstall_in(staged, tmp_path / "agent").replace(
+        'kill "$pid"', '"$KILL" "$pid"'
     )
     script = tmp_path / "preinstall"
     script.write_text(text)
@@ -297,6 +309,10 @@ def test_an_upgrade_takes_away_what_the_old_package_put_under_applications(
 ):
     calls = _run_preinstall(tmp_path, laid_out, OLD_RECEIPT)
 
+    assert calls[:2] == [
+        "launchctl bootout system/com.neutrino.agent",
+        f"rm -rf {tmp_path}/agent/app",
+    ]
     assert "launchctl bootout system/com.carriez.RustDesk_service" in calls
     assert "launchctl bootout gui/501/com.carriez.RustDesk_server" in calls
     assert "rm -f /Library/LaunchDaemons/com.carriez.RustDesk_service.plist" in calls
@@ -325,7 +341,100 @@ def test_a_rustdesk_the_receipt_does_not_list_is_left_alone(
     under RustDesk's names, are no package's files."""
     calls = _run_preinstall(tmp_path, laid_out, receipt)
 
-    assert calls == ["launchctl bootout system/com.neutrino.agent"]
+    assert calls == [
+        "launchctl bootout system/com.neutrino.agent",
+        f"rm -rf {tmp_path}/agent/app",
+    ]
+
+
+def _run_preinstall_on_files(tmp_path, staged, agent_dir):
+    """Run the preinstall over ``agent_dir`` with its own ``rm``, launchd and
+    the package receipt stood in for by commands that fail."""
+    fakes = tmp_path / "fakes"
+    fakes.mkdir(exist_ok=True)
+    for name in ("launchctl", "pkgutil"):
+        (fakes / name).write_text("#!/bin/sh\nexit 1\n")
+        (fakes / name).chmod(0o755)
+    script = tmp_path / "preinstall"
+    script.write_text(_preinstall_in(staged, agent_dir))
+    subprocess.run(
+        ["sh", str(script)],
+        env=dict(os.environ, PATH=f"{fakes}:/usr/bin:/bin"),
+        check=True,
+    )
+
+
+def test_the_preinstall_deletes_the_earlier_program_and_keeps_config_and_state(
+    tmp_path, laid_out
+):
+    """The installer keeps a file the earlier package had and the new one
+    lacks; the program directory goes whole, its copy of RustDesk with it."""
+    staged, _signed, _checked = laid_out
+    agent_dir = tmp_path / "agent"
+    kept = {
+        agent_dir / "config" / "agent.json": b'{"hub": "h"}',
+        agent_dir / "state" / "codeg" / "server" / "index.js": b"js",
+        agent_dir / "state" / "remote_desktop" / "registered.json": b"{}",
+    }
+    for path, content in kept.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+    rustdesk = agent_dir / "app" / "rustdesk" / "RustDesk.app" / "Contents" / "MacOS"
+    rustdesk.mkdir(parents=True)
+    (rustdesk / "RustDesk").write_bytes(b"old")
+    (agent_dir / "app" / "nagent").write_bytes(b"old")
+    (agent_dir / "app" / "retired.txt").write_text("only the old package had it")
+
+    _run_preinstall_on_files(tmp_path, staged, agent_dir)
+
+    assert not (agent_dir / "app").exists()
+    assert {path: path.read_bytes() for path in kept} == kept
+
+
+def test_the_preinstall_deletes_no_program_it_does_not_find_as_a_directory(
+    tmp_path, laid_out
+):
+    staged, _signed, _checked = laid_out
+    agent_dir = tmp_path / "agent"
+    agent_dir.mkdir()
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "nagent").write_bytes(b"kept")
+
+    _run_preinstall_on_files(tmp_path, staged, agent_dir)
+    assert list(agent_dir.iterdir()) == []
+
+    (agent_dir / "app").symlink_to(elsewhere)
+    _run_preinstall_on_files(tmp_path, staged, agent_dir)
+    assert (agent_dir / "app").is_symlink()
+    assert (elsewhere / "nagent").read_bytes() == b"kept"
+
+
+def test_the_preinstall_removes_the_program_and_no_config_or_state(laid_out):
+    staged, _signed, _checked = laid_out
+    script = (staged["scripts"] / "preinstall").read_text()
+    removals = [
+        line.strip() for line in script.splitlines() if line.strip().startswith("rm ")
+    ]
+    program = build_agent_macos.INSTALL_AGENT_DIR
+
+    assert program == build_agent_macos.INSTALL_ROOT_DIR / "app"
+    assert f'program="{program}"\n' in script
+    assert '[ -n "$program" ] && [ -d "$program" ] && [ ! -L "$program" ]' in script
+    assert removals == [
+        'rm -rf "$program"',
+        f'rm -f "/{build_agent_macos.OLD_RUSTDESK_SERVICE_PLIST}"',
+        f'rm -f "/{build_agent_macos.OLD_RUSTDESK_SERVER_PLIST}"',
+        f'rm -rf "{build_agent_macos.OLD_RUSTDESK_APP_DIR}"',
+    ]
+    for root in (
+        build_agent_macos.INSTALL_CONFIG_DIR,
+        build_agent_macos.INSTALL_STATE_DIR,
+    ):
+        assert str(root) not in script
+    assert script.index("launchctl bootout system/com.neutrino.agent") < (
+        script.index('rm -rf "$program"')
+    )
 
 
 def test_the_postinstall_tells_only_a_machine_that_has_not_joined_to_join(laid_out):

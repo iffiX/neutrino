@@ -270,27 +270,106 @@ def test_the_entry_is_a_bundle_whose_script_opens_the_panel(laid_out):
     assert (contents / "Resources" / "neutrino_hub.icns").read_bytes()[:4] == b"icns"
 
 
-def test_the_preinstall_marks_a_loaded_service_for_loading_again(tmp_path):
-    """An upgrade over a set-up hub leaves it running; a fresh install does
-    not start it."""
-    marker = tmp_path / "state" / ".reload"
-    marker.parent.mkdir()
+@pytest.fixture
+def fake_launchctl(tmp_path):
+    """A directory whose ``launchctl`` answers ``print`` with ``$LOADED``."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     launchctl = bin_dir / "launchctl"
     launchctl.write_text('#!/bin/sh\n[ "$1" = print ] && exit "$LOADED"\nexit 0\n')
     launchctl.chmod(0o755)
+    return bin_dir
+
+
+def _run_preinstall(bin_dir: Path, hub_dir: Path, loaded: str) -> None:
+    """Run the preinstall with the hub's directory of the tree moved to
+    ``hub_dir``, so nothing outside it is touched."""
     script = build_hub_macos.PREINSTALL.replace(
-        str(build_hub_macos.RELOAD_MARKER), str(marker)
+        str(build_hub_macos.INSTALL_HUB_DIR), str(hub_dir)
+    )
+    assert "/Library/" not in script
+    subprocess.run(
+        ["sh", "-c", script],
+        check=True,
+        env={"PATH": f"{bin_dir}:/usr/bin:/bin", "LOADED": loaded},
     )
 
+
+def test_the_preinstall_marks_a_loaded_service_for_loading_again(
+    tmp_path, fake_launchctl
+):
+    """An upgrade over a set-up hub leaves it running; a fresh install does
+    not start it."""
+    hub_dir = tmp_path / "hub"
+    marker = hub_dir / "state" / build_hub_macos.RELOAD_MARKER.name
+    marker.parent.mkdir(parents=True)
+
     for loaded, expected in (("0", True), ("113", False)):
-        subprocess.run(
-            ["sh", "-c", script],
-            check=True,
-            env={"PATH": f"{bin_dir}:/usr/bin:/bin", "LOADED": loaded},
-        )
+        _run_preinstall(fake_launchctl, hub_dir, loaded)
         assert marker.exists() is expected
+
+
+@pytest.mark.parametrize("loaded", ["0", "113"], ids=["loaded", "not_loaded"])
+def test_the_preinstall_deletes_the_earlier_program_and_keeps_config_and_state(
+    tmp_path, fake_launchctl, loaded
+):
+    """The installer keeps a file the earlier package had and the new one
+    lacks, such as a manifest the new hub refuses."""
+    hub_dir = tmp_path / "hub"
+    kept = {
+        hub_dir / "config" / "web" / "panel.json": b'{"is_set_up": true}',
+        hub_dir / "state" / "geodata" / "geoip.dat": b"db",
+        hub_dir / "state" / "hub_update" / "update.sh": b"#!/bin/sh\n",
+    }
+    for path, content in kept.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+    stale = hub_dir / "app" / "neutrino_hub" / "data" / "manifests" / "anydesk.json"
+    stale.parent.mkdir(parents=True)
+    stale.write_text("{}")
+    (hub_dir / "app" / "nhub").write_bytes(b"old")
+
+    _run_preinstall(fake_launchctl, hub_dir, loaded)
+
+    assert not (hub_dir / "app").exists()
+    assert {path: path.read_bytes() for path in kept} == kept
+
+
+def test_the_preinstall_deletes_no_program_it_does_not_find_as_a_directory(
+    tmp_path, fake_launchctl
+):
+    hub_dir = tmp_path / "hub"
+    hub_dir.mkdir()
+
+    _run_preinstall(fake_launchctl, hub_dir, "113")
+    assert list(hub_dir.iterdir()) == []
+
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "nhub").write_bytes(b"kept")
+    (hub_dir / "app").symlink_to(elsewhere)
+
+    _run_preinstall(fake_launchctl, hub_dir, "113")
+    assert (hub_dir / "app").is_symlink()
+    assert (elsewhere / "nhub").read_bytes() == b"kept"
+
+
+def test_the_preinstall_removes_the_program_alone_once_the_service_is_out():
+    script = build_hub_macos.PREINSTALL
+    removals = [
+        line.strip() for line in script.splitlines() if line.strip().startswith("rm ")
+    ]
+
+    assert build_hub_macos.INSTALL_APP_DIR == build_hub_macos.INSTALL_HUB_DIR / "app"
+    assert f'program="{build_hub_macos.INSTALL_APP_DIR}"\n' in script
+    assert '[ -n "$program" ] && [ -d "$program" ] && [ ! -L "$program" ]' in script
+    assert removals == [
+        f'rm -f "{build_hub_macos.RELOAD_MARKER}"',
+        'rm -rf "$program"',
+    ]
+    assert f'"{build_hub_macos.INSTALL_CONFIG_DIR}' not in script
+    assert f'"{build_hub_macos.INSTALL_STATE_DIR}"' not in script
+    assert script.index("launchctl bootout") < script.index('rm -rf "$program"')
 
 
 def test_the_package_is_named_the_way_the_release_publishes_it():
