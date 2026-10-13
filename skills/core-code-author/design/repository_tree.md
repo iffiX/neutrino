@@ -111,13 +111,16 @@ agent/
                      who is at the screen and writing RustDesk's files;
                      shared/ what every runner shares: the package and
                      unpack machinery, the account service layer, the
-                     forwarder, the instances runner.
+                     forwarder, the instances runner, icacls on Windows.
     ai_tools/        The machine's AI tools: cc-switch run as each account the
                      hub names, the client's steps, the records per tool.
     platforms/       The OS layer: linux.py, windows.py and darwin.py behind
                      one contract, with win32.py the one Win32 binding,
                      windows_service.py the service control manager's side,
-                     windows_net.py the network iphlpapi reports, and
+                     windows_net.py the network iphlpapi reports,
+                     windows_accounts.py the local accounts through netapi32
+                     and the impersonation of one, windows_processes.py the
+                     process table with command lines and trees, and
                      powershell_host.py the one resident PowerShell host.
     exceptions.py    The package's one exception table; the channel kinds
                      are the copy the client keeps too.

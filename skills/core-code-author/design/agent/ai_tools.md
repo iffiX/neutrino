@@ -114,9 +114,8 @@ root would hand that file to cc-switch and through it back to the account. On
 Linux and macOS the file steps are `cat`, `test -f`, `sh -c` writing what
 arrives on standard input, and `rm -f`. On Windows the agent reads a file, or
 checks that one exists, in its own process while it impersonates the
-account's login from `LogonUserW`. A write or a removal there is one
-PowerShell script in the account's task, the path written into it as a
-literal.
+account's login from `LogonUserW`. A write, a directory made and a removal there run the same way,
+in the agent's own process while it impersonates the account.
 
 `config common extract` and `config common set` read their input from a
 file. The agent writes that input as the account to `payload` in the

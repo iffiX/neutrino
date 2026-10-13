@@ -387,7 +387,9 @@ terminal, each done the way the "Running as an account" row below says.
 Linux and macOS also have `account_shell`, the contract's `account_process`,
 which hands back how a long-lived process starts as an account by the same
 step-down without running it; the shell stream starts the Terminal
-module's shell for an account with it. The engine
+module's shell for an account with it. Windows alone has `act_as`, the
+contract's `as_account`, under which the calling thread acts as the account
+through `LogonUserW` and impersonation for the AI tools' file steps. The engine
 builds the package-backed runners only on a platform with `packages`. A
 platform with `smb_server` gets the file share, driving the SMB server the
 system carries, with nothing to install or uninstall; there, any other

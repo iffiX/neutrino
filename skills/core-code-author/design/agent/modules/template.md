@@ -162,6 +162,7 @@ carries them opened. The panel draws the four with one `instances_panel.tsx`
 | `http_forward.py` | what every forwarder in front of a module's page shares: the listener, the token check, the pass-through |
 | `log_tail.py` | the last lines of a log file, and the mask every journal passes through |
 | `subprocess_run.py` | running one command for a module applier, with its output kept |
+| `windows_acl.py` | running `icacls.exe` for a module on Windows, the exit code read and the output dropped |
 | `account_service/` | one file per system: write the service definition for an account, start, stop, remove and query it |
 | `instances.py` | the generic runner of the account-program kind, which drives the hooks of each module |
 
