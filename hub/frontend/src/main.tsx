@@ -29,7 +29,7 @@ async function panelDisplay(): Promise<PanelDisplay> {
   try {
     return await apiGet<PanelDisplay>("/hub/display");
   } catch {
-    return { language: LANGUAGE_DEFAULT, theme: THEME_DEFAULT };
+    return { language: LANGUAGE_DEFAULT, theme: THEME_DEFAULT, update: null };
   }
 }
 

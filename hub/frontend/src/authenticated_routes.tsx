@@ -1,7 +1,9 @@
 import { Route, Routes } from "react-router-dom";
+import type { ReactNode } from "react";
 
 import { AppShell } from "./components/app_shell";
 import { Icon } from "./components/icon";
+import { UpdateDialog } from "./components/update_dialog";
 import { AiPage } from "./pages/ai_page";
 import { ClientsPage } from "./pages/clients_page";
 import { CredentialsPage } from "./pages/credentials_page";
@@ -26,11 +28,24 @@ import "./app.css";
  * Authentication is a whole-app switch rather than a per-route guard because
  * the panel has exactly one credential and nothing worth showing without it.
  * A 401 from anywhere flips `isAuthenticated` through the auth provider, so an
- * expired session lands on the login card from whichever page was open.
+ * expired session lands on the login card from whichever page was open. The
+ * hub's update dialog sits beside the gate, so a sign-out leaves it open.
  */
 export function AuthenticatedRoutes() {
   const { isAuthenticated, isChecking } = useAuth();
 
+  return (
+    <>
+      {gatedContent(isChecking, isAuthenticated)}
+      <UpdateDialog />
+    </>
+  );
+}
+
+function gatedContent(
+  isChecking: boolean,
+  isAuthenticated: boolean,
+): ReactNode {
   if (isChecking) {
     return (
       <div className="app_splash">

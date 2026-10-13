@@ -1,0 +1,17 @@
+.update_modal_fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 0;
+  padding: 0 var(--space-5) var(--space-4);
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+}
+
+.confirm_modal .update_dialog_log {
+  max-height: 240px;
+}
+
+.update_dialog_progress {
+  padding-top: var(--space-4);
+}
