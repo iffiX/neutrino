@@ -167,8 +167,12 @@ class AgentSession:
         )
         self._reader.start()
 
-    def serve(self) -> "Exception | None":
+    def serve(self, on_first_report=None) -> "Exception | None":
         """Report until the socket ends.
+
+        Args:
+            on_first_report: Called once, on this thread, as soon as the
+                first report has gone out; the next report waits for it.
 
         Returns:
             What ended it: the refusal a ``refused`` frame carried, the
@@ -181,6 +185,9 @@ class AgentSession:
             except GatewayUnreachable as error:
                 self._end(error)
                 break
+            if on_first_report is not None:
+                on_first_report()
+                on_first_report = None
             self._news.wait(timeout=self._interval_s)
             self._news.clear()
             if self._on_tick is not None:

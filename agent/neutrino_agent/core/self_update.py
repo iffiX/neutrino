@@ -6,9 +6,12 @@ close named, and installs the file. Installing the package restarts the
 agent's service, which ends the process that asked for the update, so the
 install runs outside it: in a transient systemd unit on Linux, in a
 PowerShell detached from the service on Windows, and in a job submitted to
-launchd on macOS. Each writes what the installer said and how it exited
-beside the agent's state, in one shape, and the agent that install put on
-the machine reads it there and carries it up.
+launchd on macOS; the unit and the job run a script written beside the
+agent's state. An install to another version first reads the version
+installed now and installs nothing when it is that version already. Each
+writes what the installer said and how it exited beside the agent's state,
+in one shape, and the agent that install put on the machine reads it there
+and carries it up.
 
 launchd keeps a submitted job alive and runs it again every ten seconds,
 so the macOS job removes itself as its last act, and an agent that starts
@@ -22,22 +25,30 @@ from __future__ import annotations
 import json
 import ntpath
 import os
+import re
 import shlex
 import shutil
 import subprocess
 import time
 
 from neutrino_agent.constants import (
+    AGENT_DARWIN_LINK_PATH,
+    AGENT_LINUX_PROGRAM_PATH,
+    AGENT_REINSTALL_INSTALLED_CODES,
     AGENT_REINSTALL_LOG_NAME,
     AGENT_REINSTALL_OUTPUT_LIMIT_BYTES,
     AGENT_REINSTALL_POLL_S,
     AGENT_REINSTALL_RESULT_NAME,
     AGENT_UPDATE_LAUNCH_TIMEOUT_S,
+    AGENT_UPDATE_LOCK_TIMEOUT_S,
+    AGENT_UPDATE_SCRIPT_MODE,
+    AGENT_UPDATE_SCRIPT_NAME,
     AGENT_UPDATE_UNIT,
 )
 from neutrino_agent.exceptions import GatewayUnreachable, SelfUpdateError
 from neutrino_agent.modules.shared.log_tail import mask_secrets
 from neutrino_agent.platforms import win32
+from neutrino_agent.platforms.windows import agent_program_path
 from neutrino_agent.streams.package import (
     CODE_DIGEST_MISMATCH,
     CODE_UNREACHABLE,
@@ -51,6 +62,16 @@ FAMILY_TO_PACKAGE_KIND = {"debian": "deb", "rhel": "rpm"}
 PACKAGE_FILE_STEM = "neutrino_agent"
 # The package kind a machine installs by its operating system alone.
 OS_TO_PACKAGE_KIND = {"windows": "msi", "darwin": "pkg"}
+# The agent's own program where the install runs a shell script; its
+# ``--version`` names the agent installed now.
+PACKAGE_KIND_TO_PROGRAM = {
+    "deb": AGENT_LINUX_PROGRAM_PATH,
+    "rpm": AGENT_LINUX_PROGRAM_PATH,
+    "pkg": AGENT_DARWIN_LINK_PATH,
+}
+# The version a release file name carries: after ``neutrino-agent``, up to
+# the next ``_`` or ``-``.
+RELEASE_VERSION_PATTERN = re.compile(r"^neutrino-agent[_-]([^_-]+)[_-]")
 
 # How the Windows install is started: with a console that has no window,
 # and outside any job the service runs in, so stopping the service does not
@@ -58,14 +79,27 @@ OS_TO_PACKAGE_KIND = {"windows": "msi", "darwin": "pkg"}
 # result.
 WINDOWS_CREATE_BREAKAWAY_FROM_JOB = 0x01000000
 
-# The PowerShell the Windows install runs in: msiexec, its verbose log, and
-# the result in the shape the reporting script writes elsewhere, UTF-8
-# without a byte order mark.
+# The PowerShell the Windows install runs in: the version installed now,
+# read unless the install is a reinstall, msiexec, its verbose log, and the
+# result in the shape the reporting script writes elsewhere, UTF-8 without a
+# byte order mark.
 _WINDOWS_SCRIPT = """$ErrorActionPreference = 'Continue'
 $log = {log}
+$version = {version}
+$wanted = {wanted}
+$program = {program}
 $started = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
-$run = Start-Process -FilePath msiexec.exe -Wait -PassThru -NoNewWindow -ArgumentList {arguments}
-$code = $run.ExitCode
+$installed = ''
+if ($wanted -and (Test-Path -LiteralPath $program)) {{
+    $installed = & $program --version 2>$null | Select-Object -Last 1
+}}
+if ($wanted -and $installed -eq $wanted) {{
+    [IO.File]::WriteAllText($log, "already $wanted`n")
+    $code = 0
+}} else {{
+    $run = Start-Process -FilePath msiexec.exe -Wait -PassThru -NoNewWindow -ArgumentList {arguments}
+    $code = $run.ExitCode
+}}
 $finished = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
 $output = ''
 if (Test-Path -LiteralPath $log) {{
@@ -73,7 +107,7 @@ if (Test-Path -LiteralPath $log) {{
     if ($output.Length -gt {tail}) {{ $output = $output.Substring($output.Length - {tail}) }}
     $output = $output.Replace("`r", '')
 }}
-$result = [ordered]@{{package = {package}; kind = 'msi'; started_at = $started; finished_at = $finished; exit_code = $code; output = $output}}
+$result = [ordered]@{{package = {package}; kind = 'msi'; version = $version; started_at = $started; finished_at = $finished; exit_code = $code; output = $output}}
 [IO.File]::WriteAllText({result}, ($result | ConvertTo-Json -Compress))
 """
 
@@ -84,7 +118,7 @@ _RESULT_STAMP = "date -u +%Y-%m-%dT%H:%M:%SZ"
 _RESULT_ESCAPE = r"""sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/$/\\n/'"""
 _RESULT_HEAD = (
     "'"
-    '{"package":"%s","kind":"%s","started_at":"%s",'
+    '{"package":"%s","kind":"%s","version":"%s","started_at":"%s",'
     '"finished_at":"%s","exit_code":%s,"output":"'
     "'"
 )
@@ -107,52 +141,75 @@ def package_kind(platform: dict) -> str:
     return FAMILY_TO_PACKAGE_KIND.get(platform.get("family", ""), "")
 
 
-def install_command(kind: str, path: str, *, state_dir: str) -> list:
+def install_command(
+    kind: str, path: str, *, state_dir: str, version: str, is_reinstall: bool
+) -> list:
     """The detached command that installs a received package. Pure.
 
     Args:
         kind: ``deb``, ``rpm``, ``msi`` or ``pkg``.
         path: The received package file.
-        state_dir: The agent's state directory, where the install's log and
-            its result are written.
+        state_dir: The agent's state directory, where the install's script,
+            its log and its result are written.
+        version: The package's version, as :func:`install_script` takes it.
+        is_reinstall: Whether the package is the version installed now, as
+            :func:`install_script` takes it.
 
     Returns:
         An argument vector that outlives the agent's own restart: a
-        ``systemd-run`` transient unit, a PowerShell running msiexec, or a
-        ``launchctl submit`` of ``installer``.
+        ``systemd-run`` transient unit or a ``launchctl submit`` job, each
+        running the script :func:`install_script` gives from its file in
+        ``state_dir``, or a PowerShell running msiexec.
     """
     if kind == "msi":
-        return _windows_install_command(path, state_dir=state_dir)
+        return _windows_install_command(
+            path, state_dir=state_dir, version=version, is_reinstall=is_reinstall
+        )
+    script = ["/bin/sh", _script_path(state_dir)]
     if kind == "pkg":
-        install = f"installer -pkg {shlex.quote(path)} -target /"
-        script = _reporting_script(install, kind=kind, path=path, state_dir=state_dir)
-        script += f"\nlaunchctl remove {AGENT_UPDATE_UNIT}"
-        return [
-            "launchctl",
-            "submit",
-            "-l",
-            AGENT_UPDATE_UNIT,
-            "--",
-            "sh",
-            "-c",
-            script,
-        ]
-    if kind == "deb":
-        # dpkg installs a same-version file where apt would call it already
-        # newest, and the reinstall verb installs exactly that; apt then
-        # settles anything dpkg named as missing.
-        install = f"dpkg -i {path} || (apt-get -f install -y && dpkg -i {path})"
-        setenv = ["--setenv=DEBIAN_FRONTEND=noninteractive"]
-    else:
-        manager = "dnf" if shutil.which("dnf") else "yum"
-        install = f"{manager} reinstall -y {path} || {manager} install -y {path}"
-        setenv = []
-    script = _reporting_script(install, kind=kind, path=path, state_dir=state_dir)
-    return (
-        ["systemd-run", "--unit", AGENT_UPDATE_UNIT, "--collect"]
-        + setenv
-        + ["sh", "-c", script]
+        return ["launchctl", "submit", "-l", AGENT_UPDATE_UNIT, "--"] + script
+    setenv = ["--setenv=DEBIAN_FRONTEND=noninteractive"] if kind == "deb" else []
+    return ["systemd-run", "--unit", AGENT_UPDATE_UNIT, "--collect"] + setenv + script
+
+
+def install_script(
+    kind: str, path: str, *, state_dir: str, version: str, is_reinstall: bool
+) -> str:
+    """The shell script a ``deb``, ``rpm`` or ``pkg`` install runs. Pure.
+
+    apt waits for the dpkg lock another install holds. An install that is
+    no reinstall reads the installed agent's ``--version`` first, installs
+    nothing when it names ``version``, and otherwise has the package
+    manager install the file as an upgrade; a reinstall installs the file
+    whatever is installed.
+
+    Args:
+        kind: ``deb``, ``rpm`` or ``pkg``.
+        path: The received package file.
+        state_dir: Where the log and the result are written.
+        version: The package's version, the hub's own; written into the
+            result, and empty when the hub named none.
+        is_reinstall: Whether the package is the version installed now,
+            which apt and dnf take only through their reinstall verbs.
+
+    Returns:
+        The script: the install, its log, its result, and on macOS the
+        removal of the job it runs as.
+    """
+    install = _package_manager_line(kind, path, is_reinstall=is_reinstall)
+    if version and not is_reinstall:
+        program = shlex.quote(PACKAGE_KIND_TO_PROGRAM[kind])
+        target = shlex.quote(version)
+        install = (
+            f'if [ "$({program} --version 2>/dev/null | tail -n 1)" = {target} ]; '
+            f"then echo already {target}; else {install}; fi"
+        )
+    script = _reporting_script(
+        install, kind=kind, path=path, version=version, state_dir=state_dir
     )
+    if kind == "pkg":
+        script += f"\nlaunchctl remove {AGENT_UPDATE_UNIT}"
+    return script + "\n"
 
 
 def remove_stale_job(kind: str) -> bool:
@@ -196,9 +253,10 @@ def read_reinstall_result(state_dir: str) -> "dict | None":
         state_dir: The agent's state directory.
 
     Returns:
-        ``{"package", "kind", "started_at", "finished_at", "exit_code",
-        "output"}``, the output's tokens masked, or None when no readable
-        result stands there.
+        ``{"package", "kind", "version", "started_at", "finished_at",
+        "exit_code", "output"}``, the output's tokens masked, ``version``
+        empty where the result names none, or None when no readable result
+        stands there.
     """
     try:
         with open(
@@ -216,6 +274,7 @@ def read_reinstall_result(state_dir: str) -> "dict | None":
     return {
         "package": str(written.get("package", "") or ""),
         "kind": str(written.get("kind", "") or ""),
+        "version": str(written.get("version", "") or ""),
         "started_at": str(written.get("started_at", "") or ""),
         "finished_at": str(written.get("finished_at", "") or ""),
         "exit_code": exit_code,
@@ -260,6 +319,43 @@ def clear_reinstall_result(state_dir: str) -> None:
         pass
 
 
+def clear_failed_result(state_dir: str, *, version: str) -> bool:
+    """Drop the result of a failed install whose package is the version given.
+
+    The package's version is the result's ``version``, or where the result
+    names none, the one its package's release name carries.
+
+    Args:
+        state_dir: The agent's state directory.
+        version: The version this agent runs.
+
+    Returns:
+        Whether a result was dropped.
+    """
+    result = read_reinstall_result(state_dir)
+    if result is None or result["exit_code"] in AGENT_REINSTALL_INSTALLED_CODES:
+        return False
+    target = result["version"] or release_version(result["package"])
+    if not version or target != version:
+        return False
+    clear_reinstall_result(state_dir)
+    return True
+
+
+def release_version(name: str) -> str:
+    """The version a release file name carries. Pure.
+
+    Args:
+        name: The package's file name, such as
+            ``neutrino-agent_0.5.2_amd64.deb``.
+
+    Returns:
+        The version, or empty when the name carries none.
+    """
+    match = RELEASE_VERSION_PATTERN.match(name)
+    return match.group(1) if match else ""
+
+
 def receive_package(channel, *, directory: str, kind: str) -> str:
     """Take the agent's own package down a ``package {}`` stream.
 
@@ -294,7 +390,9 @@ def receive_package(channel, *, directory: str, kind: str) -> str:
     raise SelfUpdateError(code)
 
 
-def run_update(package_path: str, *, kind: str, state_dir: str) -> None:
+def run_update(
+    package_path: str, *, kind: str, state_dir: str, version: str, is_reinstall: bool
+) -> None:
     """Install a package whose digest was checked, detached from this process.
 
     Args:
@@ -302,19 +400,36 @@ def run_update(package_path: str, *, kind: str, state_dir: str) -> None:
             It outlives this process: the install restarts the service,
             and the agent that starts then clears the directory.
         kind: ``deb``, ``rpm``, ``msi`` or ``pkg``.
-        state_dir: The agent's state directory, where the install writes
-            what it did.
+        state_dir: The agent's state directory, where the install's script
+            is written and the install writes what it did.
+        version: The package's version, as :func:`install_script` takes it.
+        is_reinstall: Whether the package is the version installed now, as
+            :func:`install_script` takes it.
 
     Raises:
         SelfUpdateError: When the install cannot be launched, as
             ``agent_update_launch_failed``; the file is deleted.
     """
     clear_reinstall_result(state_dir)
-    command = install_command(kind, package_path, state_dir=state_dir)
+    command = install_command(
+        kind,
+        package_path,
+        state_dir=state_dir,
+        version=version,
+        is_reinstall=is_reinstall,
+    )
     try:
         if kind == "msi":
             _start_detached(command)
             return
+        script = install_script(
+            kind,
+            package_path,
+            state_dir=state_dir,
+            version=version,
+            is_reinstall=is_reinstall,
+        )
+        _write_script(state_dir, script)
         if kind == "pkg":
             # A job an earlier update submitted keeps its label until removed.
             subprocess.run(
@@ -364,12 +479,18 @@ def _start_detached(command: list) -> None:
     raise refusal
 
 
-def _windows_install_command(path: str, *, state_dir: str) -> list:
+def _windows_install_command(
+    path: str, *, state_dir: str, version: str, is_reinstall: bool
+) -> list:
     """The PowerShell that runs msiexec and writes its result.
 
     Args:
         path: The received ``.msi``.
         state_dir: Where the log and the result are written.
+        version: The package's version, written into the result; unless
+            the install is a reinstall, msiexec does not run when the
+            installed agent's ``--version`` names it.
+        is_reinstall: Whether the package is the version installed now.
 
     Returns:
         The argument vector.
@@ -380,6 +501,9 @@ def _windows_install_command(path: str, *, state_dir: str) -> list:
     arguments = f'/i "{path}" /qn /norestart /l*v "{log}"'
     script = _WINDOWS_SCRIPT.format(
         log=_powershell_quote(log),
+        version=_powershell_quote(version),
+        wanted=_powershell_quote("" if is_reinstall else version),
+        program=_powershell_quote(agent_program_path()),
         arguments=_powershell_quote(arguments),
         tail=AGENT_REINSTALL_OUTPUT_LIMIT_BYTES,
         package=_powershell_quote(ntpath.basename(path)),
@@ -413,17 +537,77 @@ def _reinstall_result_path(state_dir: str) -> str:
     return os.path.join(state_dir, AGENT_REINSTALL_RESULT_NAME)
 
 
-def _reporting_script(install: str, *, kind: str, path: str, state_dir: str) -> str:
-    """The shell the transient unit runs: the install, its log, its result.
+def _script_path(state_dir: str) -> str:
+    """Where the install's shell script is written.
+
+    Args:
+        state_dir: The agent's state directory.
+
+    Returns:
+        The script file's path.
+    """
+    return os.path.join(state_dir, AGENT_UPDATE_SCRIPT_NAME)
+
+
+def _write_script(state_dir: str, script: str) -> None:
+    """Write the install's shell script beside the state, root-only.
+
+    Args:
+        state_dir: The agent's state directory.
+        script: What :func:`install_script` gave.
+
+    Raises:
+        OSError: When the file cannot be written.
+    """
+    descriptor = os.open(
+        _script_path(state_dir),
+        os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+        AGENT_UPDATE_SCRIPT_MODE,
+    )
+    with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+        stream.write(script)
+
+
+def _package_manager_line(kind: str, path: str, *, is_reinstall: bool) -> str:
+    """The package manager's own command line for one install. Pure.
+
+    Args:
+        kind: ``deb``, ``rpm`` or ``pkg``.
+        path: The received package file.
+        is_reinstall: Whether the file is the version installed now, which
+            apt and dnf install only through their reinstall verbs.
+
+    Returns:
+        The command line.
+    """
+    package = shlex.quote(path)
+    if kind == "pkg":
+        return f"installer -pkg {package} -target /"
+    if kind == "deb":
+        reinstall = " --reinstall" if is_reinstall else ""
+        return (
+            f"apt-get install -y{reinstall} --allow-downgrades "
+            f"-o DPkg::Lock::Timeout={AGENT_UPDATE_LOCK_TIMEOUT_S} {package}"
+        )
+    manager = "dnf" if shutil.which("dnf") else "yum"
+    verb = "reinstall" if is_reinstall else "install"
+    return f"{manager} {verb} -y {package}"
+
+
+def _reporting_script(
+    install: str, *, kind: str, path: str, version: str, state_dir: str
+) -> str:
+    """The shell the install runs: the install, its log, its result.
 
     Args:
         install: The package manager's own command line.
         kind: ``deb``, ``rpm`` or ``pkg``.
         path: The received package file.
+        version: The package's version, written into the result.
         state_dir: Where the log and the result are written.
 
     Returns:
-        One ``sh -c`` script. The umask makes both files 0600, and the
+        The script. The umask makes both files 0600, and the
         install runs in a subshell so its own exit cannot skip the result.
     """
     log = shlex.quote(os.path.join(state_dir, AGENT_REINSTALL_LOG_NAME))
@@ -438,7 +622,8 @@ def _reporting_script(install: str, *, kind: str, path: str, state_dir: str) -> 
             "code=$?",
             f"finished=$({_RESULT_STAMP})",
             f"printf {_RESULT_HEAD} {shlex.quote(os.path.basename(path))} "
-            f'{shlex.quote(kind)} "$started" "$finished" "$code" > {result}',
+            f"{shlex.quote(kind)} {shlex.quote(version)} "
+            f'"$started" "$finished" "$code" > {result}',
             f"tail -c {tail} {log} | tr -d '\\r' | tr '\\t' ' ' "
             f"| {_RESULT_ESCAPE} | tr -d '\\n' >> {result}",
             f"""printf '"}}\\n' >> {result}""",

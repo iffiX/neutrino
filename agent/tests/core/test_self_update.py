@@ -5,8 +5,9 @@ A hub whose welcome names a later ``software`` makes the agent open a
 digest the close named, and install the file in a transient unit that
 outlives the process. Nothing here talks to a network: the socket is
 scripted, and the hub's side of the stream is played by it. The script the
-transient unit runs is run for real against package managers stubbed onto
-PATH, since what it writes is what the panel reads back.
+transient unit runs is run for real from its file, against package managers
+stubbed onto PATH and an agent program stubbed in place of the installed
+one, since what it writes is what the panel reads back.
 """
 
 import functools
@@ -27,7 +28,7 @@ from neutrino_agent.constants import (
 from neutrino_agent.exceptions import GatewayUnreachable, SelfUpdateError
 from neutrino_agent.core.loop import Agent
 from tests.conftest import bind, discard
-from tests.core.test_loop import DROP_AFTER_REPORT, WELCOME, ClientScript
+from tests.core.test_loop import DROP_AFTER_SECOND_REPORT, WELCOME, ClientScript
 from tests.core.test_session import ScriptedClient
 from tests.streams.fake_channel import FakeChannel
 
@@ -104,7 +105,12 @@ def launched(monkeypatch):
 
 
 def welcomed_by(hub_version: str) -> list:
-    return [dict(WELCOME, software=f"neutrino_hub/{hub_version}"), DROP_AFTER_REPORT]
+    """A hub of one version that hangs up after what the agent does between
+    its first two reports."""
+    return [
+        dict(WELCOME, software=f"neutrino_hub/{hub_version}"),
+        DROP_AFTER_SECOND_REPORT,
+    ]
 
 
 def bound_agent(config_path, monkeypatch, *, hub_version, **hub):
@@ -112,6 +118,7 @@ def bound_agent(config_path, monkeypatch, *, hub_version, **hub):
     and whose package stream that hub answers as the knobs say."""
     bind(config_path)
     monkeypatch.setattr("neutrino_agent.core.loop.AGENT_VERSION", "1.0.0")
+    monkeypatch.setattr("neutrino_agent.core.loop.AGENT_REPORT_INTERVAL_S", 0.01)
     monkeypatch.setattr(self_update, "package_kind", lambda platform: "deb")
     script = ClientScript([], default=welcomed_by(hub_version))
     script.client_class = functools.partial(PackageHub, **hub)
@@ -144,17 +151,23 @@ def test_a_newer_hub_takes_the_package_down_a_stream_and_installs_it_detached(
     assert (tmp_path / "packages" / "neutrino_agent.deb").read_bytes() == (
         PACKAGE_BYTES
     )
-    launched_command = launched[0]
-    assert launched_command[:4] == [
-        "systemd-run",
-        "--unit",
-        "neutrino_agent_update",
-        "--collect",
+    assert launched == [
+        [
+            "systemd-run",
+            "--unit",
+            "neutrino_agent_update",
+            "--collect",
+            "--setenv=DEBIAN_FRONTEND=noninteractive",
+            "/bin/sh",
+            str(tmp_path / "update.sh"),
+        ]
     ]
-    assert launched_command[4] == "--setenv=DEBIAN_FRONTEND=noninteractive"
-    assert launched_command[5:7] == ["sh", "-c"]
-    assert f"dpkg -i {path}" in launched_command[7]
-    assert "apt-get -f install -y" in launched_command[7]
+    script = (tmp_path / "update.sh").read_text()
+    assert (
+        "apt-get install -y --allow-downgrades -o DPkg::Lock::Timeout=300 "
+        f"{path}" in script
+    )
+    assert "/usr/bin/nagent --version" in script
     assert agent._update_error is None
 
 
@@ -351,6 +364,15 @@ def stream_outcome(tmp_path, chunks, close, kind="deb"):
     )
 
 
+def what_installs(kind: str, path: str, **shape) -> str:
+    """The text that names the package to its installer: the PowerShell's
+    command line on Windows, the script elsewhere."""
+    shape = {"state_dir": "/s", "version": "0.5.0", "is_reinstall": False, **shape}
+    if kind == "msi":
+        return " ".join(self_update.install_command(kind, path, **shape))
+    return self_update.install_script(kind, path, **shape)
+
+
 def test_receive_package_hands_over_the_file_the_close_vouches_for(tmp_path):
     path = stream_outcome(
         tmp_path, [PACKAGE_BYTES], ("", {"sha256": sha256(PACKAGE_BYTES)})
@@ -369,9 +391,9 @@ def test_the_installer_sees_the_package_under_its_final_name(tmp_path, kind):
 
     assert path == str(tmp_path / "packages" / f"neutrino_agent.{kind}")
     assert landed(tmp_path) == [f"neutrino_agent.{kind}"]
-    command = " ".join(self_update.install_command(kind, path, state_dir="/s"))
-    assert f"neutrino_agent.{kind}" in command
-    assert ".part" not in command
+    install = what_installs(kind, path)
+    assert f"neutrino_agent.{kind}" in install
+    assert ".part" not in install
 
 
 RELEASE_NAMES = {
@@ -394,15 +416,17 @@ def test_the_package_takes_the_file_name_its_release_gave_it(tmp_path, kind):
 
     assert path == str(tmp_path / "packages" / name)
     assert landed(tmp_path) == [name]
-    command = " ".join(self_update.install_command(kind, path, state_dir="/s"))
-    assert path in command
-    assert "neutrino_agent." not in command
+    install = what_installs(kind, path)
+    assert path in install
+    assert "neutrino_agent." not in install
 
 
 def test_the_msi_reinstall_runs_the_file_under_its_release_name():
     path = "C:\\ProgramData\\Neutrino\\agent\\state\\packages\\" + RELEASE_NAMES["msi"]
 
-    script = self_update.install_command("msi", path, state_dir="C:\\s")[-1]
+    script = self_update.install_command(
+        "msi", path, state_dir="C:\\s", version="0.5.0", is_reinstall=True
+    )[-1]
 
     assert f'/i "{path}" /qn /norestart' in script
     assert "REINSTALL" not in script
@@ -475,33 +499,106 @@ def test_receive_package_raises_unreachable_for_a_stream_that_ended_early(tmp_pa
     assert landed(tmp_path) == []
 
 
-def test_the_rpm_command_falls_back_to_yum_without_dnf(monkeypatch):
-    monkeypatch.setattr(self_update.shutil, "which", lambda name: None)
-
-    command = self_update.install_command("rpm", "/tmp/hub.rpm", state_dir="/etc/agent")
-
-    assert "yum reinstall -y /tmp/hub.rpm" in command[6]
-    assert "yum install -y /tmp/hub.rpm" in command[6]
-
-
-def test_the_rpm_command_uses_the_family_manager(monkeypatch):
+def has_dnf(monkeypatch) -> None:
     monkeypatch.setattr(
         self_update.shutil,
         "which",
         lambda name: "/usr/bin/dnf" if name == "dnf" else None,
     )
 
-    command = self_update.install_command("rpm", "/tmp/hub.rpm", state_dir="/etc/agent")
 
-    assert command[:4] == [
+def test_an_rpm_update_to_another_version_is_dnf_install_alone(monkeypatch):
+    """dnf5 answers a reinstall of a version not installed with nothing to
+    do and exit 0."""
+    has_dnf(monkeypatch)
+
+    script = what_installs("rpm", "/tmp/hub.rpm", version="0.5.2")
+
+    assert "dnf install -y /tmp/hub.rpm" in script
+    assert "dnf reinstall" not in script
+
+
+def test_an_rpm_reinstall_of_the_running_version_is_dnf_reinstall_alone(
+    monkeypatch,
+):
+    has_dnf(monkeypatch)
+
+    script = what_installs("rpm", "/tmp/hub.rpm", version="0.5.2", is_reinstall=True)
+
+    assert "dnf reinstall -y /tmp/hub.rpm" in script
+    assert "dnf install" not in script
+
+
+def test_the_rpm_command_falls_back_to_yum_without_dnf(monkeypatch):
+    monkeypatch.setattr(self_update.shutil, "which", lambda name: None)
+
+    assert "yum install -y /tmp/hub.rpm" in what_installs("rpm", "/tmp/hub.rpm")
+    assert "yum reinstall -y /tmp/hub.rpm" in what_installs(
+        "rpm", "/tmp/hub.rpm", is_reinstall=True
+    )
+
+
+def test_a_deb_install_is_apt_waiting_for_the_dpkg_lock():
+    update = what_installs("deb", "/var/lib/neutrino/agent/packages/a.deb")
+    reinstall = what_installs(
+        "deb", "/var/lib/neutrino/agent/packages/a.deb", is_reinstall=True
+    )
+
+    assert (
+        "apt-get install -y --allow-downgrades -o DPkg::Lock::Timeout=300 "
+        "/var/lib/neutrino/agent/packages/a.deb" in update
+    )
+    assert (
+        "apt-get install -y --reinstall --allow-downgrades "
+        "-o DPkg::Lock::Timeout=300 /var/lib/neutrino/agent/packages/a.deb" in reinstall
+    )
+    assert "dpkg -i" not in update + reinstall
+
+
+def test_the_linux_install_runs_a_script_file_in_a_transient_unit(monkeypatch):
+    """The unit's command line holds no script text, so systemd has no
+    multi-line property to parse on a daemon-reload."""
+    has_dnf(monkeypatch)
+
+    command = self_update.install_command(
+        "rpm", "/tmp/hub.rpm", state_dir="/etc/agent", version="1", is_reinstall=False
+    )
+
+    assert command == [
         "systemd-run",
         "--unit",
         "neutrino_agent_update",
         "--collect",
+        "/bin/sh",
+        "/etc/agent/update.sh",
     ]
-    assert command[4:6] == ["sh", "-c"]
-    assert "dnf reinstall -y /tmp/hub.rpm" in command[6]
-    assert "dnf install -y /tmp/hub.rpm" in command[6]
+
+
+def test_an_update_writes_its_script_root_only_beside_the_state_and_runs_it(
+    launched, tmp_path
+):
+    package = tmp_path / "neutrino-agent_0.5.2_amd64.deb"
+    package.write_bytes(b"deb")
+
+    self_update.run_update(
+        str(package),
+        kind="deb",
+        state_dir=str(tmp_path),
+        version="0.5.2",
+        is_reinstall=False,
+    )
+
+    script = tmp_path / "update.sh"
+    assert script.stat().st_mode & 0o777 == 0o600
+    assert script.read_text() == self_update.install_script(
+        "deb",
+        str(package),
+        state_dir=str(tmp_path),
+        version="0.5.2",
+        is_reinstall=False,
+    )
+    assert launched[0][-2:] == ["/bin/sh", str(script)]
+    assert not any("\n" in word for word in launched[0])
 
 
 def test_the_family_names_the_package_kind():
@@ -526,41 +623,64 @@ def stub_manager(bin_dir, name: str, *, body: str) -> None:
     program.chmod(0o755)
 
 
-def run_unit(tmp_path, *, kind: str = "deb", package: str = "hub.deb") -> str:
-    """Run the script the unit would run, with the managers stubbed.
+def run_unit(
+    tmp_path,
+    *,
+    kind: str = "deb",
+    package: str = "hub.deb",
+    version: str = "0.5.2",
+    is_reinstall: bool = True,
+) -> str:
+    """Run the script the unit would run, from its file, with the managers
+    stubbed.
 
     Args:
         tmp_path: The test's directory, which is also the agent's data dir.
-        kind: ``deb`` or ``rpm``.
+        kind: ``deb``, ``rpm`` or ``pkg``.
         package: The package file's name.
+        version: The package's version.
+        is_reinstall: Whether the package is the version installed now.
 
     Returns:
         What the result file holds, unparsed.
     """
     bin_dir = tmp_path / "bin"
-    command = self_update.install_command(
-        kind, str(tmp_path / package), state_dir=str(tmp_path)
+    script = tmp_path / "update.sh"
+    script.write_text(
+        self_update.install_script(
+            kind,
+            str(tmp_path / package),
+            state_dir=str(tmp_path),
+            version=version,
+            is_reinstall=is_reinstall,
+        )
     )
     environment = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}")
-    subprocess.run(["sh", "-c", command[-1]], capture_output=True, env=environment)
+    subprocess.run(["sh", str(script)], capture_output=True, env=environment)
     return (tmp_path / "reinstall.json").read_text()
 
 
 @pytest.fixture
-def stubbed(tmp_path):
-    """A PATH whose package managers are this test's own."""
+def stubbed(tmp_path, monkeypatch):
+    """A PATH whose package managers are this test's own, and an agent
+    program of its own that reports no version until a test gives it one."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
+    for kind in ("deb", "rpm", "pkg"):
+        monkeypatch.setitem(
+            self_update.PACKAGE_KIND_TO_PROGRAM, kind, str(bin_dir / "nagent")
+        )
     return bin_dir
 
 
 def test_the_unit_writes_what_the_install_said_and_how_it_exited(tmp_path, stubbed):
-    stub_manager(stubbed, "dpkg", body='echo "Setting up neutrino-agent"')
+    stub_manager(stubbed, "apt-get", body='echo "Setting up neutrino-agent"')
 
     written = json.loads(run_unit(tmp_path))
 
     assert written["package"] == "hub.deb"
     assert written["kind"] == "deb"
+    assert written["version"] == "0.5.2"
     assert written["exit_code"] == 0
     assert written["output"] == "Setting up neutrino-agent\n"
     assert written["started_at"].endswith("Z")
@@ -568,7 +688,7 @@ def test_the_unit_writes_what_the_install_said_and_how_it_exited(tmp_path, stubb
 
 
 def test_the_unit_leaves_the_log_and_the_result_root_only(tmp_path, stubbed):
-    stub_manager(stubbed, "dpkg", body="echo done")
+    stub_manager(stubbed, "apt-get", body="echo done")
 
     run_unit(tmp_path)
 
@@ -576,15 +696,58 @@ def test_the_unit_leaves_the_log_and_the_result_root_only(tmp_path, stubbed):
     assert (tmp_path / "reinstall.json").stat().st_mode & 0o777 == 0o600
 
 
-def test_a_failed_install_carries_its_exit_status_and_both_attempts(tmp_path, stubbed):
-    stub_manager(stubbed, "dpkg", body='echo "dpkg: dependency problems"; exit 1')
-    stub_manager(stubbed, "apt-get", body='echo "fixing"')
+def test_a_failed_install_carries_its_exit_status_and_what_apt_said(tmp_path, stubbed):
+    stub_manager(
+        stubbed,
+        "apt-get",
+        body='echo "E: Could not get lock /var/lib/dpkg/lock-frontend"; exit 100',
+    )
 
     written = json.loads(run_unit(tmp_path))
 
-    assert written["exit_code"] == 1
-    assert written["output"].count("dpkg: dependency problems") == 2
-    assert "fixing" in written["output"]
+    assert written["exit_code"] == 100
+    assert "Could not get lock" in written["output"]
+
+
+def test_an_update_the_installed_agent_is_at_already_installs_nothing(
+    tmp_path, stubbed
+):
+    """The hub's own update script got there first: success, and no second
+    install to restart the agent again."""
+    stub_manager(stubbed, "nagent", body="echo 0.5.2")
+    calls = tmp_path / "apt_calls"
+    stub_manager(stubbed, "apt-get", body=f'echo "$*" >> {calls}')
+
+    written = json.loads(run_unit(tmp_path, is_reinstall=False))
+
+    assert written["exit_code"] == 0
+    assert written["output"] == "already 0.5.2\n"
+    assert not calls.exists()
+
+
+@pytest.mark.parametrize("kind", ["deb", "rpm", "pkg"])
+def test_an_update_from_another_version_installs(tmp_path, stubbed, kind):
+    stub_manager(stubbed, "nagent", body="echo 0.5.1")
+    calls = tmp_path / "calls"
+    for manager in ("apt-get", "dnf", "yum", "installer", "launchctl"):
+        stub_manager(stubbed, manager, body=f'echo "{manager} $*" >> {calls}')
+
+    written = json.loads(
+        run_unit(tmp_path, kind=kind, package=f"hub.{kind}", is_reinstall=False)
+    )
+
+    assert written["exit_code"] == 0
+    assert f"hub.{kind}" in calls.read_text().splitlines()[0]
+
+
+def test_a_reinstall_does_not_ask_the_installed_version(tmp_path, stubbed):
+    stub_manager(stubbed, "nagent", body="echo 0.5.2")
+    calls = tmp_path / "apt_calls"
+    stub_manager(stubbed, "apt-get", body=f'echo "$*" >> {calls}')
+
+    json.loads(run_unit(tmp_path, is_reinstall=True))
+
+    assert "--reinstall" in calls.read_text()
 
 
 def test_the_rpm_unit_writes_the_same_shape(tmp_path, stubbed, monkeypatch):
@@ -601,7 +764,7 @@ def test_the_rpm_unit_writes_the_same_shape(tmp_path, stubbed, monkeypatch):
 def test_the_result_carries_only_the_tail_of_a_long_log(tmp_path, stubbed):
     stub_manager(
         stubbed,
-        "dpkg",
+        "apt-get",
         body="i=0; while [ $i -lt 400 ]; do "
         "echo 0123456789012345678901234567890123456789; i=$((i+1)); done",
     )
@@ -614,7 +777,7 @@ def test_the_result_carries_only_the_tail_of_a_long_log(tmp_path, stubbed):
 
 def test_output_a_shell_would_choke_on_stays_readable_json(tmp_path, stubbed):
     stub_manager(
-        stubbed, "dpkg", body=r"""printf 'a "quote" and a \\ and a\ttab\r\n'"""
+        stubbed, "apt-get", body=r"""printf 'a "quote" and a \\ and a\ttab\r\n'"""
     )
 
     written = json.loads(run_unit(tmp_path))
@@ -623,7 +786,7 @@ def test_output_a_shell_would_choke_on_stays_readable_json(tmp_path, stubbed):
 
 
 def test_the_result_reads_back_in_the_shape_the_hub_is_given(tmp_path, stubbed):
-    stub_manager(stubbed, "dpkg", body="echo done")
+    stub_manager(stubbed, "apt-get", body="echo done")
     run_unit(tmp_path)
 
     read = self_update.read_reinstall_result(str(tmp_path))
@@ -631,6 +794,7 @@ def test_the_result_reads_back_in_the_shape_the_hub_is_given(tmp_path, stubbed):
     assert set(read) == {
         "package",
         "kind",
+        "version",
         "started_at",
         "finished_at",
         "exit_code",
@@ -653,6 +817,71 @@ def test_the_result_reads_back_with_its_tokens_masked(tmp_path):
     result = self_update.read_reinstall_result(str(tmp_path))
 
     assert result["output"] == "Web UI available at http://h:8000?tkn=***\n"
+    assert result["version"] == ""
+
+
+@pytest.mark.parametrize(
+    "name, version",
+    [
+        ("neutrino-agent_0.5.2_amd64.deb", "0.5.2"),
+        ("neutrino-agent-0.5.2-1.x86_64.rpm", "0.5.2"),
+        ("neutrino-agent-0.5.2-windows-amd64.msi", "0.5.2"),
+        ("neutrino-agent-0.5.2-macos-arm64.pkg", "0.5.2"),
+        ("neutrino_agent.deb", ""),
+        ("", ""),
+    ],
+)
+def test_a_release_name_carries_its_version(name, version):
+    assert self_update.release_version(name) == version
+
+
+@pytest.mark.parametrize(
+    "written, is_dropped",
+    [
+        ({"package": "neutrino-agent_0.5.2_amd64.deb", "exit_code": 100}, True),
+        ({"package": "neutrino-agent-0.5.2-1.x86_64.rpm", "exit_code": 1}, True),
+        (
+            {"package": "neutrino-agent-0.5.2-windows-amd64.msi", "exit_code": 1618},
+            True,
+        ),
+        ({"package": "neutrino-agent-0.5.2-macos-arm64.pkg", "exit_code": 1}, True),
+        (
+            {"package": "neutrino_agent.deb", "version": "0.5.2", "exit_code": 100},
+            True,
+        ),
+        (
+            {
+                "package": "neutrino-agent_0.5.2_amd64.deb",
+                "version": "0.5.1",
+                "exit_code": 100,
+            },
+            False,
+        ),
+        ({"package": "neutrino-agent_0.5.1_amd64.deb", "exit_code": 100}, False),
+        ({"package": "neutrino_agent.deb", "exit_code": 100}, False),
+        ({"package": "neutrino-agent_0.5.2_amd64.deb", "exit_code": 0}, False),
+    ],
+)
+def test_a_failed_result_of_the_running_version_is_dropped(
+    tmp_path, written, is_dropped
+):
+    """The record's own version is compared; a record an older agent wrote
+    names none, and its release name says it."""
+    record = tmp_path / "reinstall.json"
+    record.write_text(json.dumps(written))
+
+    assert self_update.clear_failed_result(str(tmp_path), version="0.5.2") == (
+        is_dropped
+    )
+    assert record.exists() != is_dropped
+
+
+def test_no_running_version_drops_nothing(tmp_path):
+    record = tmp_path / "reinstall.json"
+    record.write_text(json.dumps({"package": "neutrino_agent.deb", "exit_code": 1}))
+
+    assert self_update.clear_failed_result(str(tmp_path), version="") is False
+    assert record.exists()
 
 
 def test_the_wait_for_a_result_returns_it_once_written(tmp_path):
@@ -721,7 +950,9 @@ def test_the_msi_runs_quietly_in_powershell_and_writes_the_same_result():
     state_dir = "C:\\ProgramData\\Neutrino\\agent\\state"
     package = state_dir + "\\packages\\neutrino-agent-0.4.0-windows-amd64.msi"
 
-    command = self_update.install_command("msi", package, state_dir=state_dir)
+    command = self_update.install_command(
+        "msi", package, state_dir=state_dir, version="0.4.0", is_reinstall=False
+    )
 
     assert command[:6] == [
         "powershell.exe",
@@ -742,14 +973,41 @@ def test_the_msi_runs_quietly_in_powershell_and_writes_the_same_result():
     assert f"'{state_dir}\\reinstall.json'" in script
     assert "package = 'neutrino-agent-0.4.0-windows-amd64.msi'" in script
     assert "kind = 'msi'" in script
-    for field in ("started_at", "finished_at", "exit_code", "output"):
+    for field in ("version", "started_at", "finished_at", "exit_code", "output"):
         assert f"{field} = " in script
     assert "WriteAllText" in script
 
 
+@pytest.mark.parametrize("is_reinstall, wanted", [(False, "'0.4.0'"), (True, "''")])
+def test_the_msi_install_reads_the_installed_version_unless_a_reinstall(
+    is_reinstall, wanted
+):
+    """The installed agent naming the version the install is to leaves
+    msiexec unrun, the log saying so, and the result an exit of 0."""
+    script = self_update.install_command(
+        "msi",
+        "C:\\s\\packages\\neutrino-agent-0.4.0-windows-amd64.msi",
+        state_dir="C:\\s",
+        version="0.4.0",
+        is_reinstall=is_reinstall,
+    )[6]
+
+    assert "$version = '0.4.0'" in script
+    assert f"$wanted = {wanted}" in script
+    assert f"$program = '{self_update.agent_program_path()}'" in script
+    assert self_update.agent_program_path().endswith("\\Neutrino\\agent\\nagent.exe")
+    assert "& $program --version 2>$null | Select-Object -Last 1" in script
+    assert "if ($wanted -and $installed -eq $wanted) {" in script
+    assert '[IO.File]::WriteAllText($log, "already $wanted`n")' in script
+
+
 def test_a_quote_in_a_path_cannot_end_the_powershell_string():
     command = self_update.install_command(
-        "msi", "C:\\it's\\agent.msi", state_dir="C:\\it's"
+        "msi",
+        "C:\\it's\\agent.msi",
+        state_dir="C:\\it's",
+        version="0.4.0",
+        is_reinstall=False,
     )
 
     assert "'C:\\it''s\\reinstall.json'" in command[6]
@@ -768,7 +1026,9 @@ def test_the_msi_is_started_with_no_window_and_outside_the_services_job(
     package = tmp_path / "agent.msi"
     package.write_bytes(b"msi")
 
-    self_update.run_update(str(package), kind="msi", state_dir=str(tmp_path))
+    self_update.run_update(
+        str(package), kind="msi", state_dir=str(tmp_path), version="", is_reinstall=True
+    )
 
     command, flags = started[0]
     assert command[0] == "powershell.exe"
@@ -793,7 +1053,9 @@ def test_a_job_that_refuses_breakaway_still_starts_the_install_with_no_window(
     package = tmp_path / "agent.msi"
     package.write_bytes(b"msi")
 
-    self_update.run_update(str(package), kind="msi", state_dir=str(tmp_path))
+    self_update.run_update(
+        str(package), kind="msi", state_dir=str(tmp_path), version="", is_reinstall=True
+    )
 
     assert tried == [0x08000000 | 0x01000000, 0x08000000]
     assert started == [0x08000000]
@@ -808,28 +1070,36 @@ def test_an_msi_that_cannot_be_started_is_coded_and_cleaned_up(monkeypatch, tmp_
     package.write_bytes(b"msi")
 
     with pytest.raises(SelfUpdateError) as refused:
-        self_update.run_update(str(package), kind="msi", state_dir=str(tmp_path))
+        self_update.run_update(
+            str(package),
+            kind="msi",
+            state_dir=str(tmp_path),
+            version="",
+            is_reinstall=True,
+        )
 
     assert str(refused.value) == "agent_update_launch_failed"
     assert not package.exists()
 
 
 def test_the_pkg_is_installed_by_a_job_submitted_to_launchd():
-    command = self_update.install_command(
-        "pkg", "/tmp/agent pkg/neutrino.pkg", state_dir="/Library/x"
-    )
+    shape = {"state_dir": "/Library/x y", "version": "0.5.2", "is_reinstall": False}
 
-    assert command[:6] == [
+    command = self_update.install_command("pkg", "/tmp/agent pkg/neutrino.pkg", **shape)
+    script = self_update.install_script("pkg", "/tmp/agent pkg/neutrino.pkg", **shape)
+
+    assert command == [
         "launchctl",
         "submit",
         "-l",
         "neutrino_agent_update",
         "--",
-        "sh",
+        "/bin/sh",
+        "/Library/x y/update.sh",
     ]
-    assert command[6] == "-c"
-    assert "installer -pkg '/tmp/agent pkg/neutrino.pkg' -target /" in command[7]
-    assert "/Library/x/reinstall.json" in command[7]
+    assert "installer -pkg '/tmp/agent pkg/neutrino.pkg' -target /" in script
+    assert "'/Library/x y/reinstall.json'" in script
+    assert "/usr/local/bin/nagent --version" in script
 
 
 def test_a_pkg_update_removes_the_job_the_last_one_left_then_submits(
@@ -845,7 +1115,13 @@ def test_a_pkg_update_removes_the_job_the_last_one_left_then_submits(
     package = tmp_path / "agent.pkg"
     package.write_bytes(b"pkg")
 
-    self_update.run_update(str(package), kind="pkg", state_dir=str(tmp_path))
+    self_update.run_update(
+        str(package),
+        kind="pkg",
+        state_dir=str(tmp_path),
+        version="0.5.2",
+        is_reinstall=False,
+    )
 
     assert commands == [
         ["launchctl", "remove", "neutrino_agent_update"],
@@ -884,19 +1160,19 @@ def test_the_pkg_job_removes_itself_last_whatever_installer_did(
 
     assert written["exit_code"] == installer_exit
     assert calls.read_text() == "remove neutrino_agent_update\n"
-    script = self_update.install_command(
-        "pkg", str(tmp_path / "agent.pkg"), state_dir=str(tmp_path)
-    )[-1]
+    script = what_installs("pkg", str(tmp_path / "agent.pkg"))
     assert script.splitlines()[-1] == "launchctl remove neutrino_agent_update"
 
 
 def test_the_linux_unit_and_the_windows_install_run_once():
     """A transient unit with no restart runs once and --collect unloads it
     even after a failure; the Windows install is one detached process."""
-    unit = self_update.install_command("deb", "/tmp/a.deb", state_dir="/var/x")
+    unit = self_update.install_command(
+        "deb", "/tmp/a.deb", state_dir="/var/x", version="1", is_reinstall=False
+    )
     assert unit[:4] == ["systemd-run", "--unit", "neutrino_agent_update", "--collect"]
     assert not any(word.startswith("--property=Restart") for word in unit)
-    assert "launchctl" not in unit[-1]
+    assert "launchctl" not in what_installs("deb", "/tmp/a.deb")
 
 
 def launchctl_answering(monkeypatch, *, printed_rc, printed=""):

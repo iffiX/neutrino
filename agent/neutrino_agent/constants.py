@@ -133,6 +133,14 @@ AGENT_MODULE_STATE_UNSUPPORTED = "unsupported"
 # started it.
 AGENT_UPDATE_UNIT = "neutrino_agent_update"
 AGENT_UPDATE_LAUNCH_TIMEOUT_S = 30
+# The script a Linux or macOS install runs, written root-only beside the
+# agent's state, and how long apt waits for another install to release the
+# dpkg lock.
+AGENT_UPDATE_SCRIPT_NAME = "update.sh"
+AGENT_UPDATE_SCRIPT_MODE = 0o600
+AGENT_UPDATE_LOCK_TIMEOUT_S = 300
+# The agent's own program as the deb and the rpm install it.
+AGENT_LINUX_PROGRAM_PATH = "/usr/bin/nagent"
 
 # How often a report goes up while nothing changes. Every report carries
 # the machine's metrics, which the panel draws live, so this is the rate
