@@ -210,3 +210,42 @@ def test_a_unit_that_never_ran_has_no_run_output(monkeypatch):
 
     assert SystemdServiceController().run_output("relay", line_count=20) == []
     assert [call[0] for call in calls] == ["systemctl"]
+
+
+# --- a unit asked about without loading it ---
+
+
+@pytest.mark.parametrize(
+    ("listed", "state"),
+    [
+        ("neutrino_hub_update.service loaded active running /bin/sh x\n", "active"),
+        ("neutrino_hub_update.service loaded activating start /bin/sh\n", "activating"),
+        ("● neutrino_hub_update.service loaded failed failed /bin/sh\n", "failed"),
+        ("", "inactive"),
+    ],
+)
+def test_a_held_unit_is_read_off_the_units_systemd_holds(monkeypatch, listed, state):
+    """Asking for a collected transient unit by name, with is-active or show,
+    logs "Failed to open /run/systemd/transient/..." under it once a
+    daemon-reload ran while it lived; listing the units systemd holds loads
+    none."""
+    calls: list = []
+
+    def fake_run(command, **keywords):
+        calls.append(list(command))
+        return _Result(listed)
+
+    monkeypatch.setattr(systemd_ctl, "run", fake_run)
+
+    assert systemd_ctl.held_unit_state("neutrino_hub_update") == state
+    assert calls == [
+        [
+            "systemctl",
+            "list-units",
+            "--all",
+            "--plain",
+            "--no-legend",
+            "--full",
+            "neutrino_hub_update.service",
+        ]
+    ]
