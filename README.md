@@ -52,6 +52,8 @@ The computer you want to reach gets one package, the phone gets the app, one sca
 
 Once the computer has it, search for **Neutrino Hub** and open it, the same on all three systems, and follow the wizard in your browser. A few minutes, a password, and the panel is up.
 
+<img src="images/web/search_hub.svg" width="100%" alt="Searching for Neutrino Hub and opening it" />
+
 On a machine with no desktop, an ARM64 router box, a dev board, or a computer you reach over SSH, start the wizard in the terminal: answer it there, or open the address it prints from another computer. Linux and macOS:
 
 ```bash
