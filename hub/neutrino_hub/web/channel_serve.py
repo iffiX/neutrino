@@ -9,7 +9,8 @@ nonce, and bytes go to theirs. The kinds a peer may open
 are ``package`` and ``log`` from an agent, and ``service``, ``shell``,
 ``exec``, ``command`` and ``connect`` from a client. An agent older than
 the hub whose own package was refused before the hub knew its platform is
-sent ``reinstall`` once, when the report naming the platform lands.
+sent ``reinstall`` once, when the report naming the platform lands, unless
+it runs on the hub's own machine, whose agent the hub's update installs.
 """
 
 import asyncio
@@ -62,6 +63,7 @@ from neutrino_hub.modules.devices.manifests import (
     load_module_manifests,
     load_tool_manifests,
 )
+from neutrino_hub.system.machine import machine_id
 from neutrino_hub.utils.version_number import parse_version
 from neutrino_hub.web import channel_state
 from neutrino_hub.web.channel_connect import serve_connect_stream
@@ -518,7 +520,7 @@ class _AgentFrames:
     async def take_report(self, report: dict) -> None:
         """Record one report, tell the panel, offer the state once, and send
         ``reinstall`` once to an older agent refused its package for want of
-        the platform this report names."""
+        the platform this report names, unless it is on the hub's machine."""
         runtime = self._runtime
         session = self._session
         key = self._device.id
@@ -561,8 +563,23 @@ class _AgentFrames:
                 session.offered_hash = document["hash"]
         if session.is_reinstall_due and runtime.device_platform.get(key):
             session.is_reinstall_due = False
-            if _is_older_release(session.version, self._hub_version):
-                await _send_reinstall(session, self._hub_version)
+            if not _is_older_release(session.version, self._hub_version):
+                return
+            if await asyncio.to_thread(_is_hub_machine, self._device):
+                LOGGER.info(
+                    "agent %s on %s is on the hub's own machine; "
+                    "the hub's update installs it",
+                    session.name,
+                    session.version,
+                )
+                return
+            await _send_reinstall(session, self._hub_version)
+
+
+def _is_hub_machine(device) -> bool:
+    """Whether a device is the machine this hub runs on, by the id its join noted."""
+    own_machine = machine_id()
+    return bool(own_machine) and device.machine_id == own_machine
 
 
 def _is_older_release(version: str, than: str) -> bool:

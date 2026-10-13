@@ -17,7 +17,8 @@ answered with a ``pong`` carrying its nonce, and a socket ending taking the
 binding offline. An agent older than the hub that asked for its own
 package before its first report and was refused is sent ``reinstall`` once
 that report names its platform, and its package is then served; an agent at
-the hub's version, ahead of it or built from a checkout is sent nothing.
+the hub's version, ahead of it or built from a checkout, and the agent on the
+hub's own machine, are sent nothing.
 """
 
 import hashlib
@@ -222,6 +223,16 @@ def api(monkeypatch, tmp_path):
 def bound_device(name: str = "testbox") -> tuple:
     device = DeviceRegistry().create(name, machine_id="m1")
     return device.id, DeviceRegistry().issue_token(device.id)
+
+
+def device_machine_id() -> str:
+    """The hub's machine id when the hub runs on the device ``bound_device`` makes."""
+    return "m1"
+
+
+def hub_machine_id() -> str:
+    """The hub's machine id when it runs on a machine of its own."""
+    return "hub-machine"
 
 
 def bound_client(name: str = "alice") -> tuple:
@@ -984,6 +995,7 @@ def test_an_older_agent_refused_its_package_before_reporting_is_sent_reinstall_o
     logs the command's close without its output."""
     client, runtime = api
     monkeypatch.setattr(channel_serve, "CHANNEL_PACKAGE_PLATFORM_WAIT_S", 0.05)
+    monkeypatch.setattr(channel_serve, "machine_id", hub_machine_id)
     caplog.set_level(logging.INFO, logger=channel_serve.__name__)
     device_id, token = bound_device()
     socket = welcomed(client, device_id, token, version="1.2.0")
@@ -1082,6 +1094,45 @@ def test_an_agent_not_behind_the_hub_refused_before_reporting_is_sent_nothing(
         "code": "kind_unknown",
         "params": {"kind": "nonsense"},
     }
+
+
+def test_the_agent_on_the_hubs_own_machine_is_left_to_the_hubs_update(
+    api, monkeypatch, caplog
+):
+    """The hub's update installs the agent on the hub's machine, so an older
+    agent there, refused its package before its first report, is sent no
+    ``reinstall`` that would race the update's package manager."""
+    client, runtime = api
+    monkeypatch.setattr(channel_serve, "CHANNEL_PACKAGE_PLATFORM_WAIT_S", 0.05)
+    monkeypatch.setattr(channel_serve, "machine_id", device_machine_id)
+    caplog.set_level(logging.INFO, logger=channel_serve.__name__)
+    device_id, token = bound_device()
+    socket = welcomed(client, device_id, token, version="1.2.0")
+    try:
+        socket.send_json({"type": "open", "stream": 1, "kind": "package"})
+        refused = [socket.receive_json(), socket.receive_json()]
+        socket.send_json(report())
+        state = socket.receive_json()
+        assert wait_until(lambda: any("own machine" in line for line in logged(caplog)))
+        socket.send_json({"type": "open", "stream": 3, "kind": "nonsense"})
+        after = socket.receive_json()
+    finally:
+        socket.__exit__(None, None, None)
+
+    assert refused[1]["code"] == "agent_package_missing"
+    assert state["type"] == "state"
+    assert after == {
+        "type": "close",
+        "stream": 3,
+        "code": "kind_unknown",
+        "params": {"kind": "nonsense"},
+    }
+    lines = logged(caplog)
+    assert not [line for line in lines if "reinstall sent" in line]
+    assert (
+        "agent box on 1.2.0 is on the hub's own machine; the hub's update installs it"
+        in lines
+    )
 
 
 def test_a_log_stream_is_the_task_the_panel_follows_to_the_modules_state(api):
