@@ -11,7 +11,8 @@ round failing being what backs off; the state's ``urls`` kept on disk; a
 network change under the machine starting a round at once and moving a
 live socket to the name's address; the self-update a welcome's
 ``software`` triggers and its once-per-target latch; a reinstall of the
-running version told apart from an install to another; ``sync`` sending a
+running version told apart from an install to another; a start dropping a
+failed install record of the version it runs; ``sync`` sending a
 report now and what ``probe`` does; and the wake flag cleared before a
 turn rather than after it. Nothing here talks to a network.
 """
@@ -1624,6 +1625,48 @@ def test_a_start_sweeps_the_package_the_last_process_left(
         agent.run_forever()
 
     assert os.listdir(packages) == []
+
+
+@pytest.mark.parametrize(
+    "written, is_kept",
+    [
+        # An older agent's record names no version; its release name does.
+        ({"package": "neutrino-agent_1.0.0_amd64.deb"}, False),
+        ({"package": "neutrino-agent-1.0.0-1.x86_64.rpm", "exit_code": 1}, False),
+        (
+            {"package": "neutrino-agent-1.0.0-windows-amd64.msi", "exit_code": 1618},
+            False,
+        ),
+        ({"package": "neutrino-agent-1.0.0-macos-arm64.pkg", "exit_code": 1}, False),
+        ({"package": "neutrino-agent_0.9.9_amd64.deb"}, True),
+        ({"package": "neutrino_agent.deb"}, True),
+        # A record's own version is the one compared.
+        ({"package": "neutrino_agent.deb", "version": "1.0.0"}, False),
+        ({"package": "neutrino-agent_1.0.0_amd64.deb", "version": "0.9.9"}, True),
+        # An install that went through is no failure to drop.
+        ({"package": "neutrino-agent_1.0.0_amd64.deb", "exit_code": 0}, True),
+    ],
+)
+def test_a_start_drops_a_failed_install_record_of_the_version_it_runs(
+    config_path, monkeypatch, tmp_path, written, is_kept
+):
+    """Another install of the same package that went through leaves this
+    one's failure on a machine that is at its version."""
+    monkeypatch.setattr(loop_module, "AGENT_VERSION", "1.0.0")
+    agent, _ = scripted_agent(config_path, monkeypatch)
+    monkeypatch.setattr(agent._rdp, "resume_old_share", lambda: None)
+    record = tmp_path / AGENT_REINSTALL_RESULT_NAME
+    record.write_text(json.dumps(dict(FAILED_REINSTALL, **written)))
+
+    def stop():
+        raise _Stop()
+
+    monkeypatch.setattr(agent, "run_once", stop)
+
+    with pytest.raises(_Stop):
+        agent.run_forever()
+
+    assert record.exists() == is_kept
 
 
 # --- stopping ---

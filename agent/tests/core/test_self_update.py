@@ -814,6 +814,70 @@ def test_the_result_reads_back_with_its_tokens_masked(tmp_path):
     assert result["version"] == ""
 
 
+@pytest.mark.parametrize(
+    "name, version",
+    [
+        ("neutrino-agent_0.5.2_amd64.deb", "0.5.2"),
+        ("neutrino-agent-0.5.2-1.x86_64.rpm", "0.5.2"),
+        ("neutrino-agent-0.5.2-windows-amd64.msi", "0.5.2"),
+        ("neutrino-agent-0.5.2-macos-arm64.pkg", "0.5.2"),
+        ("neutrino_agent.deb", ""),
+        ("", ""),
+    ],
+)
+def test_a_release_name_carries_its_version(name, version):
+    assert self_update.release_version(name) == version
+
+
+@pytest.mark.parametrize(
+    "written, is_dropped",
+    [
+        ({"package": "neutrino-agent_0.5.2_amd64.deb", "exit_code": 100}, True),
+        ({"package": "neutrino-agent-0.5.2-1.x86_64.rpm", "exit_code": 1}, True),
+        (
+            {"package": "neutrino-agent-0.5.2-windows-amd64.msi", "exit_code": 1618},
+            True,
+        ),
+        ({"package": "neutrino-agent-0.5.2-macos-arm64.pkg", "exit_code": 1}, True),
+        (
+            {"package": "neutrino_agent.deb", "version": "0.5.2", "exit_code": 100},
+            True,
+        ),
+        (
+            {
+                "package": "neutrino-agent_0.5.2_amd64.deb",
+                "version": "0.5.1",
+                "exit_code": 100,
+            },
+            False,
+        ),
+        ({"package": "neutrino-agent_0.5.1_amd64.deb", "exit_code": 100}, False),
+        ({"package": "neutrino_agent.deb", "exit_code": 100}, False),
+        ({"package": "neutrino-agent_0.5.2_amd64.deb", "exit_code": 0}, False),
+    ],
+)
+def test_a_failed_result_of_the_running_version_is_dropped(
+    tmp_path, written, is_dropped
+):
+    """The record's own version is compared; a record an older agent wrote
+    names none, and its release name says it."""
+    record = tmp_path / "reinstall.json"
+    record.write_text(json.dumps(written))
+
+    assert self_update.clear_failed_result(str(tmp_path), version="0.5.2") == (
+        is_dropped
+    )
+    assert record.exists() != is_dropped
+
+
+def test_no_running_version_drops_nothing(tmp_path):
+    record = tmp_path / "reinstall.json"
+    record.write_text(json.dumps({"package": "neutrino_agent.deb", "exit_code": 1}))
+
+    assert self_update.clear_failed_result(str(tmp_path), version="") is False
+    assert record.exists()
+
+
 def test_the_wait_for_a_result_returns_it_once_written(tmp_path):
     slept = []
 

@@ -357,6 +357,8 @@ class Agent:
             self_update.package_kind(self._engine.platform_tuple)
         ):
             self._log(f"removed the stale update job {AGENT_UPDATE_UNIT}")
+        if self_update.clear_failed_result(self._var_dir, version=AGENT_VERSION):
+            self._log(f"cleared the failed install record of {AGENT_VERSION}")
         # A share an earlier agent's command made runs again on this agent's
         # copy, beside the connection rather than before it.
         threading.Thread(

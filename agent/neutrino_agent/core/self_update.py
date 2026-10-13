@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 import ntpath
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -33,6 +34,7 @@ import time
 from neutrino_agent.constants import (
     AGENT_DARWIN_LINK_PATH,
     AGENT_LINUX_PROGRAM_PATH,
+    AGENT_REINSTALL_INSTALLED_CODES,
     AGENT_REINSTALL_LOG_NAME,
     AGENT_REINSTALL_OUTPUT_LIMIT_BYTES,
     AGENT_REINSTALL_POLL_S,
@@ -67,6 +69,9 @@ PACKAGE_KIND_TO_PROGRAM = {
     "rpm": AGENT_LINUX_PROGRAM_PATH,
     "pkg": AGENT_DARWIN_LINK_PATH,
 }
+# The version a release file name carries: after ``neutrino-agent``, up to
+# the next ``_`` or ``-``.
+RELEASE_VERSION_PATTERN = re.compile(r"^neutrino-agent[_-]([^_-]+)[_-]")
 
 # How the Windows install is started: with a console that has no window,
 # and outside any job the service runs in, so stopping the service does not
@@ -312,6 +317,43 @@ def clear_reinstall_result(state_dir: str) -> None:
         os.unlink(_reinstall_result_path(state_dir))
     except OSError:
         pass
+
+
+def clear_failed_result(state_dir: str, *, version: str) -> bool:
+    """Drop the result of a failed install whose package is the version given.
+
+    The package's version is the result's ``version``, or where the result
+    names none, the one its package's release name carries.
+
+    Args:
+        state_dir: The agent's state directory.
+        version: The version this agent runs.
+
+    Returns:
+        Whether a result was dropped.
+    """
+    result = read_reinstall_result(state_dir)
+    if result is None or result["exit_code"] in AGENT_REINSTALL_INSTALLED_CODES:
+        return False
+    target = result["version"] or release_version(result["package"])
+    if not version or target != version:
+        return False
+    clear_reinstall_result(state_dir)
+    return True
+
+
+def release_version(name: str) -> str:
+    """The version a release file name carries. Pure.
+
+    Args:
+        name: The package's file name, such as
+            ``neutrino-agent_0.5.2_amd64.deb``.
+
+    Returns:
+        The version, or empty when the name carries none.
+    """
+    match = RELEASE_VERSION_PATTERN.match(name)
+    return match.group(1) if match else ""
 
 
 def receive_package(channel, *, directory: str, kind: str) -> str:
