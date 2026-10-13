@@ -1308,12 +1308,14 @@ export interface PanelSettings {
 }
 
 /**
- * The language and the palette the panel is drawn in, answered before there
- * is a session.
+ * The language and the palette the panel is drawn in, and the hub's update
+ * under way or finished in the last 30 minutes, answered before there is a
+ * session.
  */
 export interface PanelDisplay {
   language: string;
   theme: string;
+  update: HubUpdateProgress | null;
 }
 
 /** One component the hub's package carries, with its license and exact
@@ -1355,6 +1357,18 @@ export interface HubUpdateRecord {
   finished_at: string;
   reason: string;
   output: string;
+  /** The update's short lines, one stage each. */
+  steps: string[];
+}
+
+/** Where an update of the hub stands, as a page without a session reads it. */
+export interface HubUpdateProgress {
+  stage: HubUpdateStage;
+  from_version: string;
+  to_version: string;
+  /** The update's short lines, one stage each. */
+  steps: string[];
+  finished_at: string;
 }
 
 /** The kind of package the hub was installed from; empty in a checkout. */

@@ -70,13 +70,3 @@
   max-height: 240px;
   margin-top: var(--space-2);
 }
-
-.update_modal_fields {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  min-height: 0;
-  padding: 0 var(--space-5) var(--space-4);
-  overflow-y: auto;
-  overflow-wrap: anywhere;
-}

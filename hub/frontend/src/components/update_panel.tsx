@@ -12,14 +12,12 @@ import {
   DEFAULT_POLL_INTERVAL_MS,
   usePolledResource,
 } from "../use_polled_resource";
-import { useTaskStream } from "../use_task_stream";
+import { openUpdateDialog, useUpdateDialog } from "../use_update_dialog";
 import type {
   HubPackageFamily,
   HubReleaseScanView,
   HubReleaseView,
   HubUpdateRecord,
-  HubUpdateRequest,
-  TaskStarted,
 } from "../api_types";
 
 import "./update_panel.css";
@@ -29,19 +27,14 @@ import "./update_panel.css";
  *
  * Nothing is asked of GitHub until the button is pressed. What a check
  * found is kept for the visit, so the page can be left and come back to
- * without checking again. An install is confirmed in a modal that then
- * follows the staging task; the install itself runs in a unit of its own
- * and restarts the panel, at which point the app-wide identity watch
- * reloads this page. The record of what became of it is read from the
- * backend once the panel is back, and shown until the next update.
+ * without checking again. An install is confirmed in the update dialog,
+ * which follows the update through the panel's restart to its end. The
+ * record of what became of it is read from the backend, and shown until the
+ * next update.
  */
 
 /** How often the record is read while an update is under way. */
 const INFLIGHT_POLL_INTERVAL_MS = 3000;
-/** How long the restart is waited for before the modal says it is taking long. */
-const RESTART_PATIENCE_MS = 90_000;
-/** The install and a rollback each hold a gate of three minutes. */
-const RESTART_LOST_MS = 8 * 60_000;
 
 const STAGES_IN_FLIGHT = new Set(["preparing", "installing", "rolling_back"]);
 
@@ -58,8 +51,6 @@ const INSTALLER_WORDED_REASONS = new Set([
   "update_launch_failed",
 ]);
 
-type ModalPhase = "ask" | "preparing" | "restarting" | "failed";
-
 export function UpdatePanel() {
   // Redrawn when the panel's language changes.
   useLanguage();
@@ -69,8 +60,6 @@ export function UpdatePanel() {
   );
   const [isScanning, setIsScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
-  const [taskId, setTaskId] = useState<string | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
   const [pollIntervalMs, setPollIntervalMs] = useState(
     DEFAULT_POLL_INTERVAL_MS,
   );
@@ -78,7 +67,13 @@ export function UpdatePanel() {
     "/hub/setting/release",
     pollIntervalMs,
   );
+  const { reload: reloadRelease } = release;
   const record = release.data?.update ?? null;
+  const runningTaskId = release.data?.task_id ?? null;
+  const packageFamily = release.data?.package_family ?? "";
+  const isDialogOpen = useUpdateDialog() !== null;
+  const followedTaskId = useRef<string | null>(null);
+  const wasDialogOpen = useRef(false);
 
   // An update under way is watched closely; the rest of the time the record
   // only changes when somebody presses Install.
@@ -89,13 +84,33 @@ export function UpdatePanel() {
     );
   }, [record]);
 
-  // A page opened while the staging runs follows it from where it is.
+  // A page opened while the staging runs follows it from where it is, once.
   useEffect(() => {
-    if (release.data?.task_id && taskId === null) {
-      setTaskId(release.data.task_id);
-      setIsModalOpen(true);
+    if (runningTaskId === null || runningTaskId === followedTaskId.current) {
+      return;
     }
-  }, [release.data?.task_id, taskId]);
+    followedTaskId.current = runningTaskId;
+    if (isDialogOpen || record === null || record.stage !== "preparing") {
+      return;
+    }
+    openUpdateDialog(
+      {
+        from: record.from_version,
+        version: record.to_version,
+        isRollbackAvailable: true,
+      },
+      INSTALLER_FAMILIES.has(packageFamily),
+      runningTaskId,
+    );
+  }, [runningTaskId, isDialogOpen, record, packageFamily]);
+
+  // The record is read again as soon as the dialog closes.
+  useEffect(() => {
+    if (wasDialogOpen.current && !isDialogOpen) {
+      reloadRelease();
+    }
+    wasDialogOpen.current = isDialogOpen;
+  }, [isDialogOpen, reloadRelease]);
 
   const check = async () => {
     setScanError(null);
@@ -118,22 +133,6 @@ export function UpdatePanel() {
     scan.is_newer &&
     !scan.is_major &&
     scan.is_space_enough;
-  // What the modal is about: the release just checked, or, on a page opened
-  // while a staging runs, the versions its record names.
-  const target: UpdateTarget | null =
-    scan !== null && latest !== null
-      ? {
-          from: scan.current,
-          version: latest.version,
-          isRollbackAvailable: scan.is_rollback_available,
-        }
-      : record !== null && record.stage === "preparing"
-        ? {
-            from: record.from_version,
-            version: record.to_version,
-            isRollbackAvailable: true,
-          }
-        : null;
 
   return (
     <section className="card">
@@ -179,7 +178,7 @@ export function UpdatePanel() {
                   type="button"
                   className="button"
                   onClick={() => void check()}
-                  disabled={isScanning || isModalOpen}
+                  disabled={isScanning || isDialogOpen}
                 >
                   {isScanning ? (
                     <Spinner size={14} />
@@ -194,8 +193,18 @@ export function UpdatePanel() {
                   <button
                     type="button"
                     className="button button--primary"
-                    onClick={() => setIsModalOpen(true)}
-                    disabled={isModalOpen}
+                    onClick={() =>
+                      openUpdateDialog(
+                        {
+                          from: scan.current,
+                          version: latest.version,
+                          isRollbackAvailable: scan.is_rollback_available,
+                        },
+                        INSTALLER_FAMILIES.has(view.package_family),
+                        null,
+                      )
+                    }
+                    disabled={isDialogOpen}
                   >
                     <Icon name="download" size={14} />
                     {t("ui.settings.update_install", {
@@ -216,21 +225,6 @@ export function UpdatePanel() {
             </>
           )}
         </div>
-      )}
-
-      {isModalOpen && target !== null && (
-        <UpdateModal
-          target={target}
-          packageFamily={view?.package_family ?? ""}
-          logRoot={view?.log_root ?? ""}
-          taskId={taskId}
-          onStarted={setTaskId}
-          onClose={() => {
-            setIsModalOpen(false);
-            setTaskId(null);
-            release.reload();
-          }}
-        />
       )}
     </section>
   );
@@ -366,239 +360,6 @@ function RecordNotice({ record, packageFamily }: RecordNoticeProps) {
           </pre>
         </details>
       )}
-    </div>
-  );
-}
-
-interface UpdateTarget {
-  from: string;
-  version: string;
-  isRollbackAvailable: boolean;
-}
-
-interface UpdateModalProps {
-  target: UpdateTarget;
-  packageFamily: HubPackageFamily;
-  logRoot: string;
-  taskId: string | null;
-  onStarted: (taskId: string) => void;
-  onClose: () => void;
-}
-
-function UpdateModal({
-  target,
-  packageFamily,
-  logRoot,
-  taskId,
-  onStarted,
-  onClose,
-}: UpdateModalProps) {
-  // Redrawn when the panel's language changes.
-  useLanguage();
-  const isInstallerFamily = INSTALLER_FAMILIES.has(packageFamily);
-  const task = useTaskStream(taskId);
-  const [isStarting, setIsStarting] = useState(false);
-  const [startError, setStartError] = useState<string | null>(null);
-  const [isRestarting, setIsRestarting] = useState(false);
-  const [isTakingLong, setIsTakingLong] = useState(false);
-  const [isLost, setIsLost] = useState(false);
-  const wasRunning = useRef(false);
-  const logRef = useRef<HTMLPreElement | null>(null);
-
-  const isStagingFailed = task.exitCode !== null && task.exitCode !== 0;
-  const phase: ModalPhase =
-    taskId === null
-      ? "ask"
-      : isStagingFailed || isLost
-        ? "failed"
-        : isRestarting
-          ? "restarting"
-          : "preparing";
-  const isDismissable = phase === "ask" || phase === "failed";
-
-  useEffect(() => {
-    const element = logRef.current;
-    if (element !== null) {
-      element.scrollTop = element.scrollHeight;
-    }
-  }, [task.lines]);
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && isDismissable && !isStarting) {
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, isDismissable, isStarting]);
-
-  useEffect(() => {
-    if (task.isRunning) {
-      wasRunning.current = true;
-      return;
-    }
-    if (!wasRunning.current) {
-      return;
-    }
-    wasRunning.current = false;
-    if (task.exitCode !== null && task.exitCode !== 0) {
-      return;
-    }
-    // The task ends when the staging hands over, or when the restart takes
-    // its socket; either way the panel is on its way down. The identity
-    // watch reloads the page when the new one answers.
-    setIsRestarting(true);
-    const patience = window.setTimeout(
-      () => setIsTakingLong(true),
-      RESTART_PATIENCE_MS,
-    );
-    const lost = window.setTimeout(() => setIsLost(true), RESTART_LOST_MS);
-    return () => {
-      window.clearTimeout(patience);
-      window.clearTimeout(lost);
-    };
-  }, [task.isRunning, task.exitCode]);
-
-  const start = async () => {
-    setStartError(null);
-    setIsStarting(true);
-    try {
-      const request: HubUpdateRequest = { version: target.version };
-      const started = await apiPost<TaskStarted>(
-        "/hub/setting/release/install",
-        request,
-      );
-      onStarted(started.task_id);
-    } catch (cause: unknown) {
-      setStartError(describeError(cause));
-    } finally {
-      setIsStarting(false);
-    }
-  };
-
-  const version = target.version;
-  return (
-    <div
-      className="confirm_backdrop"
-      role="dialog"
-      aria-modal="true"
-      aria-label={t("ui.settings.update_confirm_title", { version })}
-      onClick={(event) => {
-        if (
-          event.target === event.currentTarget &&
-          isDismissable &&
-          !isStarting
-        ) {
-          onClose();
-        }
-      }}
-    >
-      <div className="confirm_modal">
-        <div className="confirm_head">
-          <Icon name="download" size={16} />
-          <h2>{t("ui.settings.update_confirm_title", { version })}</h2>
-        </div>
-
-        {phase === "ask" && (
-          <>
-            <p className="confirm_body">
-              {t(
-                isInstallerFamily
-                  ? "ui.settings.update_confirm_body_installer"
-                  : "ui.settings.update_confirm_body",
-                { from: target.from, version },
-              )}
-            </p>
-            {!target.isRollbackAvailable && (
-              <div className="update_modal_fields">
-                <div className="notice notice--warn">
-                  <Icon name="alert" size={15} />
-                  <div className="notice_body">
-                    {t("ui.settings.update_confirm_no_rollback", {
-                      from: target.from,
-                      version,
-                    })}
-                  </div>
-                </div>
-              </div>
-            )}
-            {startError !== null && (
-              <div className="update_modal_fields">
-                <div className="notice notice--error">
-                  <Icon name="alert" size={15} />
-                  <div className="notice_body">{startError}</div>
-                </div>
-              </div>
-            )}
-            <div className="confirm_foot">
-              <button
-                type="button"
-                className="button"
-                onClick={onClose}
-                disabled={isStarting}
-              >
-                {t("ui.settings.cancel")}
-              </button>
-              <button
-                type="button"
-                className="button button--primary"
-                onClick={() => void start()}
-                disabled={isStarting}
-              >
-                {isStarting ? (
-                  <Spinner size={14} />
-                ) : (
-                  <Icon name="download" size={14} />
-                )}
-                {t("ui.settings.update_install_short")}
-              </button>
-            </div>
-          </>
-        )}
-
-        {phase !== "ask" && (
-          <div className="update_modal_fields">
-            {task.lines.length > 0 && (
-              <pre className="device_drawer_log_output update_log" ref={logRef}>
-                {stripAnsi(task.lines.join("\n"))}
-              </pre>
-            )}
-            {phase === "failed" ? (
-              <>
-                <div className="notice notice--error">
-                  <Icon name="alert" size={15} />
-                  <div className="notice_body">
-                    {!isLost
-                      ? t("ui.settings.update_failed")
-                      : isInstallerFamily
-                        ? t("ui.settings.update_lost_installer", {
-                            path: logRoot,
-                          })
-                        : t("ui.settings.update_lost")}
-                  </div>
-                </div>
-                <div className="confirm_foot">
-                  <button type="button" className="button" onClick={onClose}>
-                    {t("ui.settings.close")}
-                  </button>
-                </div>
-              </>
-            ) : phase === "restarting" ? (
-              <>
-                <Spinner size={18} label={t("ui.settings.update_restarting")} />
-                {isTakingLong && (
-                  <span className="field_hint">
-                    {t("ui.settings.update_restarting_long")}
-                  </span>
-                )}
-              </>
-            ) : (
-              <Spinner size={18} label={t("ui.settings.update_preparing")} />
-            )}
-          </div>
-        )}
-      </div>
     </div>
   );
 }
