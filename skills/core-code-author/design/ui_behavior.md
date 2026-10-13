@@ -491,6 +491,15 @@ The **Modules** page has three panels, top to bottom:
 | **Global configuration** | the settings of the picked machine that belong to no module; today one part, its AI tools |
 | **Module configuration** | a left and right split under the title `ui.modules.tabs_title`: on the left a vertical, scrollable list of the machine's modules, each row the module's icon (`images/icons/modules/<module>.svg`, the generic glyph for a module without one) and its title; on the right the picked module's panels, its output box and its buttons, the buttons aligned to the right edge |
 
+In a window 880 px wide or narrower, or one no wider than it is tall, the
+split is one column. The module list is then one row above the picked
+module, and that row scrolls sideways.
+
+The module picker opens under the `+` ending the list, and above it when
+less than 160 px is free under it and more above. Its greatest height is
+the room free on that side, 160 px at least, and a longer list scrolls
+inside it.
+
 A module the machine reports `installed`, `stopped` or `running` while
 the hub holds no `want` for it, as after a reset or a new join on a machine
 that kept its modules, has **Start** live, whatever its state; the press
