@@ -254,7 +254,7 @@ function ScanResult({ scan, packageFamily }: ScanResultProps) {
     <div className="update_found">
       <div className="update_found_line">
         <span className="mono">{latest.version}</span>
-        <span className="faint">{latest.published_at.slice(0, 10)}</span>
+        <span className="faint">{localDate(latest.published_at)}</span>
         <span className="faint">{formatBytes(latest.size_bytes)}</span>
         <span className="faint">
           {t("ui.settings.update_room", {
@@ -328,7 +328,7 @@ function RecordNotice({ record, packageFamily }: RecordNoticeProps) {
   const values = {
     from: record.from_version,
     to: record.to_version,
-    date: (record.finished_at || record.started_at).slice(0, 10),
+    date: localDate(record.finished_at || record.started_at),
     reason,
   };
   const tone =
@@ -362,4 +362,25 @@ function RecordNotice({ record, packageFamily }: RecordNoticeProps) {
       )}
     </div>
   );
+}
+
+/**
+ * The calendar date of a UTC stamp, in the browser's own time zone.
+ *
+ * Args:
+ *   isoTimestamp: An ISO 8601 stamp.
+ *
+ * Returns:
+ *   `YYYY-MM-DD` in local time, or the stamp's first ten characters when it
+ *   will not parse.
+ */
+function localDate(isoTimestamp: string): string {
+  const parsed = Date.parse(isoTimestamp);
+  if (Number.isNaN(parsed)) {
+    return isoTimestamp.slice(0, 10);
+  }
+  const date = new Date(parsed);
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
 }
