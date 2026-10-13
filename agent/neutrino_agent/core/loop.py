@@ -971,6 +971,7 @@ class Agent:
                 return
             self._update_target = target
             self._update_error = None
+            session = self._session
         kind = self_update.package_kind(self._engine.platform_tuple)
         if not kind:
             self._log("no reinstall: no package for this platform")
@@ -980,8 +981,11 @@ class Agent:
                     "params": {"target": target},
                 }
             return
+        hub_version = (
+            hub_version_of(session.hub_software) if session is not None else ""
+        )
         self._log("reinstalling from the hub's package")
-        if self._install_from_hub(target, kind):
+        if self._install_from_hub(target, kind, hub_version):
             self._log("reinstall launched; the service restarts")
 
     def _maybe_self_update(self, hub_software: str) -> None:
@@ -1014,10 +1018,10 @@ class Agent:
             self._log(f"no self-update to {hub_version}: no package for this platform")
             return
         self._log(f"updating to {hub_version}")
-        if self._install_from_hub(hub_version, kind):
+        if self._install_from_hub(hub_version, kind, hub_version):
             self._log(f"self-update to {hub_version} launched; the service restarts")
 
-    def _install_from_hub(self, target: str, kind: str) -> bool:
+    def _install_from_hub(self, target: str, kind: str, version: str) -> bool:
         """Take this agent's package down a ``package {}`` stream and install it.
 
         A transfer the socket dropped leaves the target unlatched, so the
@@ -1028,6 +1032,10 @@ class Agent:
         Args:
             target: What the attempt is latched under.
             kind: ``deb``, ``rpm``, ``msi`` or ``pkg``.
+            version: The package's version, the hub's own, empty when the
+                welcome named none. The install reinstalls when it is
+                empty or this agent's own, and is to that version
+                otherwise.
 
         Returns:
             True when the install was launched.
@@ -1052,7 +1060,13 @@ class Agent:
             self._log(f"update to {target} refused: {error}")
             return False
         try:
-            self_update.run_update(path, kind=kind, state_dir=self._var_dir)
+            self_update.run_update(
+                path,
+                kind=kind,
+                state_dir=self._var_dir,
+                version=version,
+                is_reinstall=version in ("", AGENT_VERSION),
+            )
         except SelfUpdateError as error:
             with self._lock:
                 self._update_error = {"code": str(error), "params": {"target": target}}

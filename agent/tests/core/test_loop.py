@@ -10,7 +10,8 @@ answers on, the name first, the one that answered written back and a whole
 round failing being what backs off; the state's ``urls`` kept on disk; a
 network change under the machine starting a round at once and moving a
 live socket to the name's address; the self-update a welcome's
-``software`` triggers and its once-per-target latch; ``sync`` sending a
+``software`` triggers and its once-per-target latch; a reinstall of the
+running version told apart from an install to another; ``sync`` sending a
 report now and what ``probe`` does; and the wake flag cleared before a
 turn rather than after it. Nothing here talks to a network.
 """
@@ -1279,11 +1280,11 @@ def installer(monkeypatch) -> list:
         "receive_package",
         lambda channel, directory, kind: f"{directory}/neutrino_agent.{kind}",
     )
-    monkeypatch.setattr(
-        loop_module.self_update,
-        "run_update",
-        lambda path, kind, state_dir: installed.append((path, kind)),
-    )
+
+    def run_update(path, kind, state_dir, version, is_reinstall):
+        installed.append((path, kind, version, is_reinstall))
+
+    monkeypatch.setattr(loop_module.self_update, "run_update", run_update)
     return installed
 
 
@@ -1303,7 +1304,9 @@ def test_a_newer_hub_opens_a_package_stream_and_launches_the_install_once_per_ta
     agent.run_once()
     agent.run_once()
 
-    assert installed == [(f"{tmp_path / 'packages'}/neutrino_agent.deb", "deb")]
+    assert installed == [
+        (f"{tmp_path / 'packages'}/neutrino_agent.deb", "deb", "9.9.9", False)
+    ]
     assert script.clients[0].frames("open") == [PACKAGE_OPEN]
     assert script.clients[1].frames("open") == []
 
@@ -1346,7 +1349,7 @@ def test_a_reinstall_command_opens_the_same_package_stream(config_path, monkeypa
 
     outcome = agent._run_command("agent", "reinstall", {})
 
-    assert [kind for _, kind in installed] == ["deb"]
+    assert [kind for _, kind, _, _ in installed] == ["deb"]
     assert script.clients[0].frames("open") == [PACKAGE_OPEN]
     assert outcome == {
         "exit_code": 0,
@@ -1354,6 +1357,35 @@ def test_a_reinstall_command_opens_the_same_package_stream(config_path, monkeypa
         "params": {},
         "output": "reinstall launched\n",
     }
+    session.close()
+
+
+@pytest.mark.parametrize(
+    "agent_version, software, version, is_reinstall",
+    [
+        ("0.0.1", "neutrino_hub/0.0.1", "0.0.1", True),
+        ("1.0.0", "neutrino_hub/0.0.1", "0.0.1", False),
+        ("0.0.1+dev", "neutrino_hub/0.0.1", "0.0.1", False),
+        ("0.0.1", "something_else/0.0.1", "", True),
+    ],
+)
+def test_a_reinstall_of_the_running_version_is_a_reinstall_and_any_other_an_update(
+    config_path, monkeypatch, agent_version, software, version, is_reinstall
+):
+    """The hub's package is the hub's own version: the install is to it
+    unless this agent runs it already or the welcome names none."""
+    monkeypatch.setattr(loop_module, "AGENT_VERSION", agent_version)
+    agent, _ = scripted_agent(
+        config_path, monkeypatch, [[dict(WELCOME, software=software)]]
+    )
+    installed = installer(monkeypatch)
+    session = agent._open_session()
+    session.connect()
+    agent._session = session
+
+    agent._run_command("agent", "reinstall", {})
+
+    assert [given[2:] for given in installed] == [(version, is_reinstall)]
     session.close()
 
 
@@ -1368,7 +1400,7 @@ def test_a_reinstall_the_installer_refused_ends_with_its_code_and_a_failed_exit(
         "http://host:8000/?tkn=s3cr3t-token\n",
     )
 
-    def install(path, kind, state_dir):
+    def install(path, kind, state_dir, version, is_reinstall):
         (tmp_path / AGENT_REINSTALL_RESULT_NAME).write_text(json.dumps(failed))
 
     monkeypatch.setattr(loop_module.self_update, "run_update", install)
