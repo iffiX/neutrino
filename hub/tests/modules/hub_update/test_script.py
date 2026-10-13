@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 
+from neutrino_hub.modules.hub_update import installer as installer_module
 from neutrino_hub.modules.hub_update.installer import HubUpdatePlan, render_script
 from neutrino_hub.modules.hub_update.state import HubUpdateStateFile
 
@@ -72,14 +73,14 @@ def box(tmp_path):
 
 
 def plan_for(
-    directory: Path, *, rollback: bool = True, python: str = ""
+    directory: Path, *, rollback: bool = True, python: str = "", family: str = "debian"
 ) -> HubUpdatePlan:
     return HubUpdatePlan(
         from_version="0.3.0",
         to_version="0.3.1",
         package=directory / "neutrino-hub_0.3.1_amd64.deb",
         rollback=directory / "neutrino-hub_0.3.0_amd64.deb" if rollback else None,
-        family="debian",
+        family=family,
         port=8080,
         https_port=8444,
         units=("neutrino_hub_web", "neutrino_hub_router"),
@@ -95,9 +96,12 @@ def run_script(
     rollback: bool = True,
     available_kb: int = 2_000_000,
     python: str = "",
+    agent_start_s: int = 0,
     agent_wait_s: int = 120,
+    family: str = "debian",
 ) -> tuple[int, dict]:
-    """Run the rendered script and read the record it left."""
+    """Run the rendered script and read the record it left; what it wrote to
+    its standard error is left beside the record."""
     bin_dir, directory = box
     meminfo = directory / "meminfo"
     meminfo.write_text(
@@ -106,12 +110,13 @@ def run_script(
     script = directory / "update.sh"
     script.write_text(
         render_script(
-            plan_for(directory, rollback=rollback, python=python),
+            plan_for(directory, rollback=rollback, python=python, family=family),
             directory=directory,
             gate_timeout_s=1,
             poll_s=0.2,
             meminfo_path=str(meminfo),
             agent_command=str(bin_dir / "nagent"),
+            agent_start_s=agent_start_s,
             agent_wait_s=agent_wait_s,
         )
     )
@@ -119,6 +124,7 @@ def run_script(
     result = subprocess.run(
         ["sh", str(script)], capture_output=True, text=True, env=environment
     )
+    (directory / "stderr").write_text(result.stderr)
     raw = json.loads((directory / "state.json").read_text())
     return result.returncode, raw
 
@@ -249,6 +255,23 @@ def test_a_gate_that_never_passes_rolls_back_and_says_which_check_failed(box):
         "done",
     ]
     assert "gate: timed out after 1s: panel=failed" in raw["output"]
+
+
+def test_a_probe_the_panel_refuses_says_nothing_on_the_units_error_stream(box):
+    """The unit's standard error is the journal."""
+    bin_dir, directory = box
+    stub(
+        bin_dir,
+        "curl",
+        body=f"[ -e {directory}/probed ] && exit 0\n"
+        f"touch {directory}/probed\n"
+        'echo "curl: (7) Failed to connect" >&2; exit 7',
+    )
+
+    _, raw = run_script(box)
+
+    assert raw["stage"] == "installed"
+    assert "Failed to connect" not in (directory / "stderr").read_text()
 
 
 def test_a_gate_reports_every_check_that_failed(box):
@@ -534,3 +557,123 @@ def test_an_agent_update_that_never_ends_is_waited_out_only_so_long(box):
 
     assert code == 0
     assert raw["steps"][-2:] == ["agent updated to 0.3.1", "done"]
+
+
+def agent_starting(bin_dir: Path, directory: Path, *, idle: int, running: int):
+    """A systemctl whose agent update unit is absent for this many questions,
+    then runs for this many, and whose next answer finds the agent updated."""
+    count = directory / "asked"
+    stub(
+        bin_dir,
+        "systemctl",
+        body=(
+            '[ "$1" = list-units ] || exit 0\n'
+            '[ "$6" = neutrino_agent_update.service ] || exit 0\n'
+            f"echo x >> {count}\n"
+            f"asked=$(wc -l < {count})\n"
+            f'[ "$asked" -le {idle} ] && exit 0\n'
+            f'if [ "$asked" -le {idle + running} ]; then\n'
+            '  echo "neutrino_agent_update.service loaded active running sh -c"\n'
+            f"else echo 0.3.1 > {directory / 'agent_version'}; fi"
+        ),
+    )
+
+
+def test_the_agent_is_given_time_to_start_its_own_update(box):
+    """The agent reconnects to the new panel and starts its own update a
+    moment after the panel answers; the script installs nothing beside it."""
+    bin_dir, directory = box
+    agent_stubs(bin_dir, directory)
+    agent_starting(bin_dir, directory, idle=2, running=2)
+
+    code, raw = run_script(box, python=str(bin_dir / "hub_python"), agent_start_s=10)
+
+    assert code == 0
+    assert raw["steps"][-2:] == ["agent already 0.3.1", "done"]
+    assert not any("neutrino-agent" in line for line in installs(directory))
+    assert len((directory / "asked").read_text().splitlines()) == 5
+
+
+def test_an_agent_that_starts_no_update_of_its_own_is_installed_once_given_up_on(
+    box,
+):
+    bin_dir, directory = box
+    agent_stubs(bin_dir, directory)
+    agent_starting(bin_dir, directory, idle=10**6, running=0)
+
+    code, raw = run_script(box, python=str(bin_dir / "hub_python"), agent_start_s=1)
+
+    assert code == 0
+    assert raw["steps"][-2:] == ["agent updated to 0.3.1", "done"]
+    assert installs(directory)[1].endswith(AGENT_PACKAGE)
+
+
+def test_an_agent_already_on_the_target_is_not_waited_for(box):
+    bin_dir, directory = box
+    agent_stubs(bin_dir, directory)
+    (directory / "agent_version").write_text("0.3.1\n")
+    agent_starting(bin_dir, directory, idle=10**6, running=0)
+
+    _, raw = run_script(box, python=str(bin_dir / "hub_python"), agent_start_s=60)
+
+    assert raw["steps"][-2:] == ["agent already 0.3.1", "done"]
+    assert not (directory / "asked").exists()
+
+
+def test_an_agent_install_that_failed_with_the_target_in_place_says_already(box):
+    """The agent's own update installed the target while this install
+    waited for the lock, and the package manager then refused."""
+    bin_dir, directory = box
+    agent_stubs(bin_dir, directory)
+    stub(
+        bin_dir,
+        "apt-get",
+        body='case "$*" in *neutrino-agent*) '
+        f"echo 0.3.1 > {directory / 'agent_version'}; exit 100;; esac\n"
+        + apt_get(directory),
+    )
+
+    code, raw = run_script(box, python=str(bin_dir / "hub_python"))
+
+    assert code == 0
+    assert raw["steps"][-2:] == ["agent already 0.3.1", "done"]
+
+
+# --- arch: pacman's lock ----------------------------------------------------
+
+
+def arch_box(box, monkeypatch, *, is_locked: bool) -> Path:
+    """pacman in place of apt-get, and its lock file a file of the test's."""
+    bin_dir, directory = box
+    stub(bin_dir, "pacman", body=apt_get(directory))
+    lock = directory / "db.lck"
+    if is_locked:
+        lock.write_text("")
+        subprocess.Popen(["sh", "-c", f"sleep 1.5; rm {lock}"])
+    monkeypatch.setattr(installer_module, "HUB_UPDATE_PACMAN_LOCK_PATH", str(lock))
+    return lock
+
+
+def test_a_held_pacman_lock_is_a_step_before_the_install_waits(box, monkeypatch):
+    arch_box(box, monkeypatch, is_locked=True)
+
+    code, raw = run_script(box, family="arch")
+
+    assert code == 0
+    assert raw["steps"] == [
+        *HANDED_OVER,
+        "waiting for the package manager",
+        "installed 0.3.1",
+        "panel answers",
+        "no agent on this machine",
+        "done",
+    ]
+
+
+def test_a_free_pacman_lock_says_nothing(box, monkeypatch):
+    arch_box(box, monkeypatch, is_locked=False)
+
+    _, raw = run_script(box, family="arch")
+
+    assert raw["stage"] == "installed"
+    assert "waiting for the package manager" not in raw["steps"]

@@ -21,6 +21,7 @@ import sys
 import tempfile
 import urllib.request
 from dataclasses import dataclass
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from typing import Callable
 
@@ -39,6 +40,7 @@ from neutrino_hub.modules.hub_update.constants import (
     HUB_UPDATE_AGENT_COMMAND_DARWIN,
     HUB_UPDATE_AGENT_COMMAND_WINDOWS,
     HUB_UPDATE_AGENT_PATTERNS,
+    HUB_UPDATE_AGENT_START_S,
     HUB_UPDATE_AGENT_UPDATE_UNIT,
     HUB_UPDATE_AGENT_WAIT_S,
     HUB_UPDATE_CREATION_FLAGS_WINDOWS,
@@ -57,6 +59,7 @@ from neutrino_hub.modules.hub_update.constants import (
     HUB_UPDATE_SERVICE_WINDOWS,
     HUB_UPDATE_DIR_MODE,
     HUB_UPDATE_DIR_NAME,
+    HUB_UPDATE_DNF_LOCK_TEXT,
     HUB_UPDATE_FETCH_LIMIT_BYTES,
     HUB_UPDATE_FETCH_TIMEOUT_S,
     HUB_UPDATE_GATE_POLL_S,
@@ -98,6 +101,7 @@ from neutrino_hub.modules.hub_update.constants import (
     HUB_UPDATE_STATE_NAME,
     HUB_UPDATE_STEP_DONE,
     HUB_UPDATE_STEP_INSTALLING,
+    HUB_UPDATE_STEP_WAITING,
     HUB_UPDATE_UNIT,
     HUB_UPDATE_UNIT_ENVIRONMENT,
     HUB_UPDATE_UNIT_MEMORY_HIGH,
@@ -124,8 +128,13 @@ from neutrino_hub.utils.subprocess_run import run
 from neutrino_hub.utils.tls_trust import public_ssl_context
 
 DOWNLOAD_CHUNK_BYTES = 1024 * 1024
-MEGABYTE = 1024 * 1024
 PROGRESS_STEPS = 4
+# A size in the steps, as the panel's card shows it: steps of 1024, one
+# decimal below ten in any unit but bytes, the number and the unit joined by
+# a no-break space so a line never breaks between them.
+SIZE_UNITS = ("B", "KB", "MB", "GB", "TB", "PB")
+SIZE_STEP = 1024
+SIZE_SPACE = "\u00a0"
 UNIT_ACTIVE_STATES = ("active", "activating")
 PACKAGE_SUFFIXES = (".deb", ".rpm", ".zst", ".xz", ".msi", ".pkg")
 # The exact digest of a file already on disk decides whether it downloads
@@ -137,12 +146,22 @@ DIGEST_CHUNK_BYTES = 1024 * 1024
 # scripts, `--allow-downgrades` lets the rollback take the same line, and the
 # lock timeout waits out an unattended upgrade holding dpkg. pacman has no
 # such wait and refuses at once while its lock is held, so its line waits for
-# the lock first, as long. `$PACE` is the script's own: it puts the package
-# manager below every other process for the disk and the processor, because a
-# package unpacking on a slow card has held PID 1 past its hardware watchdog.
+# the lock first, as long. dnf5 refuses at once too, saying another
+# transaction holds the rpm lock, so its lines run again each second while
+# that is what it said, as long. `$PACE` is the script's own: it puts the
+# package manager below every other process for the disk and the processor,
+# because a package unpacking on a slow card has held PID 1 past its hardware
+# watchdog.
 PACMAN_LOCK_WAIT = (
     "waited=0; while [ -e @PACMAN_LOCK@ ] && [ $waited -lt @LOCK@ ]; "
     "do sleep 1; waited=$((waited + 1)); done; "
+)
+DNF_LOCK_WAIT = (
+    "waited=0; while :; do out=$(@COMMAND@ 2>&1); code=$?; "
+    '[ -z "$out" ] || printf \'%s\\n\' "$out"; '
+    "[ $code != 0 ] && [ $waited -lt @LOCK@ ] || break; "
+    'case "$out" in *@DNF_LOCK@*) ;; *) break ;; esac; '
+    "sleep 1; waited=$((waited + 1)); done; (exit $code)"
 )
 INSTALL_COMMANDS = {
     "debian": (
@@ -152,7 +171,7 @@ INSTALL_COMMANDS = {
         "-o DPkg::Lock::Timeout=@LOCK@ @PATH@",
     ),
     "rhel": (
-        "$PACE dnf install -y @PATH@",
+        DNF_LOCK_WAIT.replace("@COMMAND@", "$PACE dnf install -y @PATH@"),
         "$PACE rpm -Uvh --oldpackage @PATH@",
     ),
     "arch": (
@@ -174,7 +193,12 @@ INSTALL_COMMANDS = {
 # dnf5 answers a reinstall of a version other than the one installed with
 # "Nothing to do" and exit 0, so a reinstall is asked for only when the
 # version stays the same.
-REINSTALL_COMMANDS = {"rhel": "$PACE dnf reinstall -y @PATH@"}
+REINSTALL_COMMANDS = {
+    "rhel": DNF_LOCK_WAIT.replace("@COMMAND@", "$PACE dnf reinstall -y @PATH@")
+}
+# What a family's script runs before each install: on arch, a step saying it
+# waits, when pacman's lock is held.
+LOCK_STEPS = {"arch": "[ ! -e @PACMAN_LOCK@ ] || step @STEP_WAITING@"}
 # The program each family's install runs, as the steps name it.
 MANAGER_NAMES = {
     "debian": "apt-get",
@@ -187,6 +211,10 @@ MANAGER_NAMES = {
 ROLLBACK_MANAGER_NAMES = {"rhel": "rpm"}
 # Where each family's script is written, and in what language it is rendered.
 SCRIPT_NAMES = {"msi": HUB_UPDATE_SCRIPT_NAME_WINDOWS}
+# How a family's script is encoded where it is not plain UTF-8: Windows
+# PowerShell reads a script with no byte order mark in the system's ANSI code
+# page.
+SCRIPT_ENCODINGS = {"msi": "utf-8-sig"}
 
 SCRIPT = r"""#!/bin/sh
 # Written by neutrino_hub.modules.hub_update; runs as the transient unit
@@ -211,6 +239,7 @@ SHED=@SHED@
 PYTHON=@PYTHON@
 AGENT_COMMAND=@AGENT_COMMAND@
 AGENT_UNIT=@AGENT_UNIT@
+AGENT_START=@AGENT_START@
 AGENT_WAIT=@AGENT_WAIT@
 MANAGER=@MANAGER@
 ROLLBACK_MANAGER=@ROLLBACK_MANAGER@
@@ -303,23 +332,33 @@ install_agent() {
         return 0
     fi
     WANTED=$(basename "$AGENT" | sed -E 's/^neutrino-agent[_-]([^_-]+)[_-].*$/\1/')
-    deadline=$(( $(date +%s) + AGENT_WAIT ))
-    while is_running "$AGENT_UNIT" && [ "$(date +%s)" -lt "$deadline" ]; do
-        sleep "$POLL"
-    done
     INSTALLED=$("$AGENT_COMMAND" --version 2>/dev/null | tail -n 1)
+    if [ "$INSTALLED" != "$WANTED" ]; then
+        deadline=$(( $(date +%s) + AGENT_START ))
+        while ! is_running "$AGENT_UNIT" && [ "$(date +%s)" -lt "$deadline" ]; do
+            sleep 1
+        done
+        deadline=$(( $(date +%s) + AGENT_WAIT ))
+        while is_running "$AGENT_UNIT" && [ "$(date +%s)" -lt "$deadline" ]; do
+            sleep "$POLL"
+        done
+        INSTALLED=$("$AGENT_COMMAND" --version 2>/dev/null | tail -n 1)
+    fi
     if [ -n "$INSTALLED" ] && [ "$INSTALLED" = "$WANTED" ]; then
         step "agent already $WANTED"
         return 0
     fi
     echo "agent: reinstalling $AGENT" >> "$LOG"
+    @LOCK_STEP@
     ( @AGENT_INSTALL@ ) >> "$LOG" 2>&1
     code=$?
     INSTALLED=$("$AGENT_COMMAND" --version 2>/dev/null | tail -n 1)
-    if [ "$code" = 0 ] && [ "$INSTALLED" = "$WANTED" ]; then
+    if [ "$INSTALLED" != "$WANTED" ]; then
+        step "agent update failed: $(why "$code" "$INSTALLED")"
+    elif [ "$code" = 0 ]; then
         step "agent updated to $WANTED"
     else
-        step "agent update failed: $(why "$code" "$INSTALLED")"
+        step "agent already $WANTED"
     fi
 }
 
@@ -336,8 +375,8 @@ gate() {
         second="https://127.0.0.1:$HTTPS_PORT"
         grep -Eq '"is_https_enabled": *true' @SETTINGS@ 2>/dev/null \
             && { first="https://127.0.0.1:$HTTPS_PORT"; second="http://127.0.0.1:$PORT"; }
-        curl -fsS -m 5 --cacert @AUTHORITY@ -o /dev/null "$first$HEALTH_PATH" \
-            || curl -fsS -m 5 --cacert @AUTHORITY@ -o /dev/null "$second$HEALTH_PATH" \
+        curl -fsS -m 5 --cacert @AUTHORITY@ -o /dev/null "$first$HEALTH_PATH" 2>/dev/null \
+            || curl -fsS -m 5 --cacert @AUTHORITY@ -o /dev/null "$second$HEALTH_PATH" 2>/dev/null \
             || { ok=0; report="$report panel=failed"; }
         seen=$(nhub --version 2>/dev/null)
         [ "$seen" = "$1" ] || { ok=0; report="$report version=$seen"; }
@@ -351,6 +390,7 @@ gate() {
 : > "$LOG"
 sync
 shed
+@LOCK_STEP@
 ( @INSTALL@ ) >> "$LOG" 2>&1
 code=$?
 unshed
@@ -378,6 +418,7 @@ if [ -z "$ROLLBACK" ]; then
 fi
 STAGE=@STAGE_ROLLING_BACK@
 write_state
+@LOCK_STEP@
 ( @ROLLBACK_INSTALL@ ) >> "$LOG" 2>&1
 code=$?
 seen=$(nhub --version 2>/dev/null | tail -n 1)
@@ -418,6 +459,7 @@ AGENT_COMMAND=@AGENT_COMMAND@
 AGENT_CACHE=@AGENT_CACHE@
 AGENT_PATTERN=@AGENT_PATTERN@
 AGENT_JOB=@AGENT_JOB@
+AGENT_START=@AGENT_START@
 AGENT_WAIT=@AGENT_WAIT@
 MANAGER=@MANAGER@
 STEPS=@STEPS@
@@ -476,6 +518,10 @@ start_service() {
     launchctl kickstart "$SERVICE" >> "$LOG" 2>&1 || true
 }
 
+agent_updating() {
+    launchctl print "$AGENT_JOB" 2>/dev/null | grep -q 'state = running'
+}
+
 install_agent() {
     if [ ! -x "$AGENT_COMMAND" ]; then
         step 'no agent on this machine'
@@ -490,12 +536,18 @@ install_agent() {
         step 'agent update failed: no agent package for this machine'
         return 0
     fi
-    deadline=$(( $(date +%s) + AGENT_WAIT ))
-    while launchctl print "$AGENT_JOB" 2>/dev/null | grep -q 'state = running' \
-        && [ "$(date +%s)" -lt "$deadline" ]; do
-        sleep "$POLL"
-    done
     INSTALLED=$("$AGENT_COMMAND" --version 2>/dev/null | tail -n 1)
+    if [ "$INSTALLED" != "$TO" ]; then
+        deadline=$(( $(date +%s) + AGENT_START ))
+        while ! agent_updating && [ "$(date +%s)" -lt "$deadline" ]; do
+            sleep 1
+        done
+        deadline=$(( $(date +%s) + AGENT_WAIT ))
+        while agent_updating && [ "$(date +%s)" -lt "$deadline" ]; do
+            sleep "$POLL"
+        done
+        INSTALLED=$("$AGENT_COMMAND" --version 2>/dev/null | tail -n 1)
+    fi
     if [ "$INSTALLED" = "$TO" ]; then
         step "agent already $TO"
         return 0
@@ -504,10 +556,12 @@ install_agent() {
     ( @AGENT_INSTALL@ ) >> "$LOG" 2>&1
     code=$?
     INSTALLED=$("$AGENT_COMMAND" --version 2>/dev/null | tail -n 1)
-    if [ "$code" = 0 ] && [ "$INSTALLED" = "$TO" ]; then
+    if [ "$INSTALLED" != "$TO" ]; then
+        step "agent update failed: $(why "$code" "$INSTALLED")"
+    elif [ "$code" = 0 ]; then
         step "agent updated to $TO"
     else
-        step "agent update failed: $(why "$code" "$INSTALLED")"
+        step "agent already $TO"
     fi
 }
 
@@ -522,8 +576,8 @@ gate() {
         second="https://127.0.0.1:$HTTPS_PORT"
         grep -Eq '"is_https_enabled": *true' @SETTINGS@ 2>/dev/null \
             && { first="https://127.0.0.1:$HTTPS_PORT"; second="http://127.0.0.1:$PORT"; }
-        curl -fsS -m 5 --cacert @AUTHORITY@ -o /dev/null "$first$HEALTH_PATH" \
-            || curl -fsS -m 5 --cacert @AUTHORITY@ -o /dev/null "$second$HEALTH_PATH" \
+        curl -fsS -m 5 --cacert @AUTHORITY@ -o /dev/null "$first$HEALTH_PATH" 2>/dev/null \
+            || curl -fsS -m 5 --cacert @AUTHORITY@ -o /dev/null "$second$HEALTH_PATH" 2>/dev/null \
             || { ok=0; report="$report panel=failed"; }
         seen=$("$NHUB" --version 2>/dev/null)
         [ "$seen" = "$1" ] || { ok=0; report="$report version=$seen"; }
@@ -608,6 +662,7 @@ $Authority = @AUTHORITY@
 $AgentCommand = @AGENT_COMMAND@
 $AgentCache = @AGENT_CACHE@
 $AgentPattern = @AGENT_PATTERN@
+$AgentStart = @AGENT_START@
 $AgentWait = @AGENT_WAIT@
 $Installed = @INSTALLED_CODES@
 $Settled = @STAGES_SETTLED@
@@ -676,15 +731,19 @@ function Start-Hub {
     Start-Service -Name $Service -ErrorAction SilentlyContinue
 }
 
+function Test-Installer {
+    $held = $null
+    try {
+        if (-not [Threading.Mutex]::TryOpenExisting(@MSI_MUTEX@, [ref]$held)) { return $false }
+        $held.Dispose()
+    } catch [UnauthorizedAccessException] {
+    }
+    return $true
+}
+
 function Wait-Installer {
     $deadline = (Get-Date).AddSeconds($AgentWait)
-    while ((Get-Date) -lt $deadline) {
-        $held = $null
-        try {
-            if (-not [Threading.Mutex]::TryOpenExisting(@MSI_MUTEX@, [ref]$held)) { return }
-            $held.Dispose()
-        } catch [UnauthorizedAccessException] {
-        }
+    while (((Get-Date) -lt $deadline) -and (Test-Installer)) {
         Start-Sleep -Seconds $Poll
     }
 }
@@ -701,7 +760,13 @@ function Install-Agent {
         Add-Step 'agent update failed: no agent package for this machine'
         return
     }
-    Wait-Installer
+    if ((Get-Version $AgentCommand) -ne $To) {
+        $deadline = (Get-Date).AddSeconds($AgentStart)
+        while (((Get-Date) -lt $deadline) -and -not (Test-Installer)) {
+            Start-Sleep -Seconds 1
+        }
+        Wait-Installer
+    }
     if ((Get-Version $AgentCommand) -eq $To) {
         Add-Step "agent already $To"
         return
@@ -718,10 +783,12 @@ function Install-Agent {
         $code = Invoke-Msi $arguments
     }
     $seen = Get-Version $AgentCommand
-    if (($Installed -contains $code) -and $seen -eq $To) {
+    if ($seen -ne $To) {
+        Add-Step "agent update failed: $(Get-Why $code $seen)"
+    } elseif ($Installed -contains $code) {
         Add-Step "agent updated to $To"
     } else {
-        Add-Step "agent update failed: $(Get-Why $code $seen)"
+        Add-Step "agent already $To"
     }
 }
 
@@ -763,7 +830,7 @@ function Test-Gate($Version) {
     return $false
 }
 
-Set-Content -LiteralPath $Log -Value ''
+[IO.File]::WriteAllText($Log, '')
 $code = Invoke-Msi @INSTALL@
 Start-Hub
 $seen = Get-Version $Nhub
@@ -1053,6 +1120,7 @@ def render_script(
     meminfo_path: str = HUB_UPDATE_MEMINFO_PATH,
     low_memory_bytes: int = HUB_UPDATE_LOW_MEMORY_BYTES,
     agent_command: str = HUB_UPDATE_AGENT_COMMAND,
+    agent_start_s: int = HUB_UPDATE_AGENT_START_S,
     agent_wait_s: int = HUB_UPDATE_AGENT_WAIT_S,
 ) -> str:
     """The script the update runs: the transient unit's shell on Linux, the
@@ -1063,8 +1131,12 @@ def render_script(
     after. Right after the package step it reads the version installed: a
     box still on the version it started from is left as it is, one on
     another version that is not the target is rolled back. Once the new hub
-    passes its gate it waits out the agent's own update, then reinstalls the
-    machine's own agent from the hub's cache unless it is already there.
+    passes its gate, an agent not on the target is given ``agent_start_s``
+    to start its own update and ``agent_wait_s`` to end it; the script then
+    reinstalls the machine's own agent from the hub's cache unless it is
+    already there, and an install that failed with the agent on the target
+    is taken for one that was not needed. On arch it says it waits before
+    each install while pacman's lock is held.
 
     Args:
         plan: What to install and what to hold for.
@@ -1077,6 +1149,7 @@ def render_script(
             the unpack.
         agent_command: The command whose presence says the machine has an
             agent of its own.
+        agent_start_s: How long the agent is given to start its own update.
         agent_wait_s: How long the agent's own update is waited out.
 
     Returns:
@@ -1092,6 +1165,7 @@ def render_script(
             gate_timeout_s=gate_timeout_s,
             poll_s=poll_s,
             output_limit_bytes=output_limit_bytes,
+            agent_start_s=agent_start_s,
             agent_wait_s=agent_wait_s,
         )
     install, _ = install_commands(
@@ -1120,6 +1194,7 @@ def render_script(
         "@HEALTH_PATH@": shlex.quote(HUB_UPDATE_HEALTH_PATH),
         "@SETTINGS@": shlex.quote(str(HUB_UPDATE_PANEL_SETTINGS_PATH)),
         "@AUTHORITY@": shlex.quote(str(HUB_UPDATE_PANEL_AUTHORITY_PATH)),
+        "@LOCK_STEP@": _filled(LOCK_STEPS.get(plan.family, ""), ""),
         "@INSTALL@": install,
         "@AGENT_INSTALL@": agent_install_command(plan.family),
         "@MEMINFO@": shlex.quote(meminfo_path),
@@ -1128,6 +1203,7 @@ def render_script(
         "@PYTHON@": shlex.quote(plan.python),
         "@AGENT_COMMAND@": shlex.quote(agent_command),
         "@AGENT_UNIT@": shlex.quote(HUB_UPDATE_AGENT_UPDATE_UNIT),
+        "@AGENT_START@": str(int(agent_start_s)),
         "@AGENT_WAIT@": str(int(agent_wait_s)),
         "@MANAGER@": shlex.quote(MANAGER_NAMES[plan.family]),
         "@ROLLBACK_MANAGER@": shlex.quote(
@@ -1429,8 +1505,7 @@ class HubUpdateInstaller:
             staging.say(f"{release.asset_name} already here, checked")
         else:
             staging.say(
-                f"downloading {release.asset_name}  "
-                f"{_megabytes(release.asset_size)} MB"
+                f"downloading {release.asset_name}  {_size_text(release.asset_size)}"
             )
             received = self._download(
                 release.asset_url, target, total=release.asset_size, say=staging.say
@@ -1563,7 +1638,10 @@ class HubUpdateInstaller:
         """
         directory = self._ready_directory()
         script = directory / script_name(plan.family)
-        script.write_text(render_script(plan, directory=directory), encoding="utf-8")
+        script.write_text(
+            render_script(plan, directory=directory),
+            encoding=SCRIPT_ENCODINGS.get(plan.family, "utf-8"),
+        )
         os.chmod(script, HUB_UPDATE_SCRIPT_MODE)
         record = HubUpdateRecord(
             stage=HUB_UPDATE_STAGE_INSTALLING,
@@ -1697,7 +1775,7 @@ class HubUpdateInstaller:
             digest = self._checker.digest_of(previous)
             say(
                 f"downloading rollback {previous.asset_name}  "
-                f"{_megabytes(previous.asset_size)} MB"
+                f"{_size_text(previous.asset_size)}"
             )
             received = self._download(
                 previous.asset_url, rollback, total=previous.asset_size, say=say
@@ -1781,6 +1859,7 @@ def _render_system_script(
     gate_timeout_s: int,
     poll_s: float,
     output_limit_bytes: int,
+    agent_start_s: int,
     agent_wait_s: int,
 ) -> str:
     """The macOS sh or the Windows PowerShell an update runs. Pure."""
@@ -1850,6 +1929,7 @@ def _render_system_script(
             "@AGENT_PATTERN@": quote(
                 HUB_UPDATE_AGENT_PATTERNS[plan.family].format(version=plan.to_version)
             ),
+            "@AGENT_START@": str(int(agent_start_s)),
             "@AGENT_WAIT@": str(int(agent_wait_s)),
             "@MANAGER@": quote(MANAGER_NAMES[plan.family]),
             "@STEP_DONE@": quote(HUB_UPDATE_STEP_DONE),
@@ -1914,7 +1994,7 @@ def _filled(line: str, path: str) -> str:
     """One shell command line with its file and the lock it waits for named.
 
     Args:
-        line: A line of :data:`INSTALL_COMMANDS`.
+        line: A line of :data:`INSTALL_COMMANDS` or :data:`LOCK_STEPS`.
         path: The file, already quoted for the shell.
 
     Returns:
@@ -1924,6 +2004,8 @@ def _filled(line: str, path: str) -> str:
         line.replace("@PATH@", path)
         .replace("@LOCK@", str(HUB_UPDATE_LOCK_TIMEOUT_S))
         .replace("@PACMAN_LOCK@", shlex.quote(HUB_UPDATE_PACMAN_LOCK_PATH))
+        .replace("@DNF_LOCK@", shlex.quote(HUB_UPDATE_DNF_LOCK_TEXT))
+        .replace("@STEP_WAITING@", shlex.quote(HUB_UPDATE_STEP_WAITING))
     )
 
 
@@ -1973,6 +2055,21 @@ def _existing_parent(path: Path) -> Path:
     return candidate
 
 
-def _megabytes(size: int) -> int:
-    """A size in whole megabytes, rounded up."""
-    return -(-size // MEGABYTE)
+def _size_text(size: int) -> str:
+    """A byte count as the steps say it, the way the panel's card shows it.
+
+    Args:
+        size: The count; a negative one is shown as nothing.
+
+    Returns:
+        Such as ``156 MB`` or ``4.2 MB``, the space a no-break one, the
+        number rounded half up.
+    """
+    value = float(max(size, 0))
+    unit = 0
+    while value >= SIZE_STEP and unit < len(SIZE_UNITS) - 1:
+        value /= SIZE_STEP
+        unit += 1
+    places = Decimal("0.1") if value < 10 and unit > 0 else Decimal("1")
+    number = Decimal(value).quantize(places, rounding=ROUND_HALF_UP)
+    return f"{number}{SIZE_SPACE}{SIZE_UNITS[unit]}"

@@ -97,10 +97,16 @@ HUB_UPDATE_OUTPUT_LIMIT_BYTES = 4 * 1024
 HUB_UPDATE_LOCK_TIMEOUT_S = 300
 # The file pacman holds while it runs, which it does not wait for itself.
 HUB_UPDATE_PACMAN_LOCK_PATH = "/var/lib/pacman/db.lck"
+# What dnf5 says when it refuses at once because another transaction holds
+# the rpm lock.
+HUB_UPDATE_DNF_LOCK_TEXT = "rpm transaction lock"
 # The agent's own update, which the script waits out before it reinstalls the
 # machine's agent: a transient unit on Linux, a launchd job on macOS, and on
-# Windows any install the Windows Installer is running.
+# Windows any install the Windows Installer is running. The agent is given
+# the first span to start it once the panel answers, and the second to end
+# it.
 HUB_UPDATE_AGENT_UPDATE_UNIT = "neutrino_agent_update"
+HUB_UPDATE_AGENT_START_S = 20
 HUB_UPDATE_AGENT_WAIT_S = 120
 # The Windows Installer holds this mutex while it installs, and msiexec
 # answers this code while another install holds it.
@@ -149,8 +155,10 @@ HUB_UPDATE_TASK_LABEL = "hub_update"
 
 # The record's steps: the lines a person reads, the same on every system.
 # The staging writes the download lines, the hand-over the first line here,
-# and the script ends every run with the second.
+# the script the second before it waits for pacman's lock, and it ends every
+# run with the third.
 HUB_UPDATE_STEP_INSTALLING = "installing; the panel restarts now"
+HUB_UPDATE_STEP_WAITING = "waiting for the package manager"
 HUB_UPDATE_STEP_DONE = "done"
 
 # Where an update stands, as the state file records it.
