@@ -70,3 +70,7 @@
   max-height: 240px;
   margin-top: var(--space-2);
 }
+
+.update_record .update_steps {
+  max-height: 240px;
+}

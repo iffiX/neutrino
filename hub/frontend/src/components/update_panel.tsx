@@ -51,6 +51,12 @@ const INSTALLER_WORDED_REASONS = new Set([
   "update_launch_failed",
 ]);
 
+/** How a step naming the version a failed update left the hub on begins. */
+const STEP_PREFIXES_KNOWN_VERSION = [
+  "rolled back to ",
+  "nothing changed, still ",
+];
+
 export function UpdatePanel() {
   // Redrawn when the panel's language changes.
   useLanguage();
@@ -337,12 +343,17 @@ function RecordNotice({ record, packageFamily }: RecordNoticeProps) {
       : record.stage === "rolled_back"
         ? "notice--warn"
         : "notice--error";
+  const isVersionKnown = record.steps.some((step) =>
+    STEP_PREFIXES_KNOWN_VERSION.some((prefix) => step.startsWith(prefix)),
+  );
   const key =
     record.stage === "installed"
       ? "ui.settings.update_result_installed"
       : record.stage === "rolled_back"
         ? "ui.settings.update_result_rolled_back"
-        : "ui.settings.update_result_failed";
+        : isVersionKnown
+          ? "ui.settings.update_result_failed"
+          : "ui.settings.update_result_failed_unknown";
   return (
     <div className="update_record">
       <div className={`notice ${tone}`}>
@@ -352,6 +363,11 @@ function RecordNotice({ record, packageFamily }: RecordNoticeProps) {
         />
         <div className="notice_body">{t(key, values)}</div>
       </div>
+      {record.stage !== "installed" && record.steps.length > 0 && (
+        <pre className="device_drawer_log_output update_steps">
+          {record.steps.join("\n")}
+        </pre>
+      )}
       {record.output.trim() !== "" && (
         <details className="update_output">
           <summary>{t("ui.settings.update_output")}</summary>
