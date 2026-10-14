@@ -19,7 +19,7 @@ Each part of Neutrino 0.5.2 has a section here with the systems it installs on a
 | macOS 12.3 and newer on Apple silicon, server mode only                                  | ARM64        | `neutrino-hub-0.5.2-macos-arm64.pkg`      |
 | macOS 12.3 and newer on Intel, server mode only                                          | x86-64       | `neutrino-hub-0.5.2-macos-amd64.pkg`      |
 
-The Linux hub package includes its own Python. It depends on systemd, nftables, dnsmasq, iproute2, wpa_supplicant, dhcpcd, fail2ban, iw, arp-scan, vnstat, curl, smbclient, the OpenSSH client and pkexec. It recommends hostapd for a machine that serves Wi-Fi.
+The Linux hub package includes its own Python. It depends on systemd, nftables, dnsmasq, iproute2, wpa_supplicant, dhcpcd, fail2ban, iw, arp-scan, curl, smbclient, the OpenSSH client and pkexec. It recommends hostapd for a machine that serves Wi-Fi.
 
 On the Debian family the dhcpcd dependency reads `dhcpcd-base | dhcpcd5`, because Ubuntu 22.04 has the daemon under the second name. The pkexec dependency reads `pkexec | policykit-1` there, and on the Fedora family and Arch it is `polkit`. The Windows and macOS packages include every program the hub drives and name no dependency. Server mode, the one mode the hub has there, is described on [Network](../hub/network.md).
 

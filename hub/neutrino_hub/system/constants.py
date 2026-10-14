@@ -135,10 +135,8 @@ SYSTEM_RUNTIME_PACKAGES = (
     # Reports what a radio can actually do. The panel asks it whether a Wi-Fi
     # card supports access-point mode before offering to serve a network on it.
     "iw",
-    # The Devices page sweeps the LAN with it, and the traffic history reads
-    # from vnstat.
+    # The Devices page sweeps the LAN with it.
     "arp-scan",
-    "vnstat",
     # Provisioners that install from a vendor's own script fetch it with this.
     "curl",
     # Asks a file server what it exports, which is how a declared file

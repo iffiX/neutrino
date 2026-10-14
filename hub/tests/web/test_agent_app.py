@@ -31,6 +31,19 @@ class StubRelayMonitor:
         return None
 
 
+class StubTrafficHistory:
+    """The traffic history, recording its start and its stop."""
+
+    def __init__(self):
+        self.calls: list = []
+
+    def start(self) -> None:
+        self.calls.append("start")
+
+    def stop(self) -> None:
+        self.calls.append("stop")
+
+
 class StubUsageCollector:
     def __init__(self, **kwargs):
         self.kwargs = kwargs
@@ -46,6 +59,7 @@ class StubRuntime:
         self.served_models = None
         self.link_sampler = StubLinkSampler()
         self.address_sampler = StubLinkSampler()
+        self.traffic_history = StubTrafficHistory()
         self.proxy = StubExitController()
         self.relay_monitor = StubRelayMonitor()
 
@@ -180,6 +194,19 @@ def test_both_apps_share_one_runtime(factories):
     agent = factories.create_agent_app()
 
     assert panel.state.runtime is agent.state.runtime
+
+
+def test_the_panel_counts_the_traffic_history_and_writes_it_at_its_stop(factories):
+    factories.create_app()
+    factories.stop_samplers()
+
+    assert factories.shared_runtime().traffic_history.calls == ["start", "stop"]
+
+
+def test_a_stop_before_the_panel_started_builds_no_runtime(factories):
+    factories.stop_samplers()
+
+    assert factories._shared_runtime is None
 
 
 @pytest.fixture

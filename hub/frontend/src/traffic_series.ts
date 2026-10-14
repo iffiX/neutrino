@@ -151,7 +151,7 @@ function nodeTotals(frame: StatsFrame): TrafficPair {
   return totals;
 }
 
-/** Shape the vnstat history for the bar chart. */
+/** Shape the traffic history for the bar chart. */
 export function toHistorySeries(samples: TrafficSample[]): HistoryPoint[] {
   return samples.map((sample) => ({
     label: sample.label,

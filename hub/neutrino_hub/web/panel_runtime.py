@@ -64,6 +64,7 @@ from neutrino_hub.modules.router.link_status import (
     device_ipv6_addresses,
 )
 from neutrino_hub.modules.router.share_fence import share_subnets
+from neutrino_hub.modules.router.traffic_history import RouterTrafficHistory
 from neutrino_hub.modules.services.probe import DeclaredServiceProbe
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
 from neutrino_hub.modules.services.host_scope import HostScope, served_scopes
@@ -262,6 +263,9 @@ class PanelRuntime:
         # The channel's own address set moves the same way, and every peer
         # holds a copy; sampled, and pushed to both roles when it moved.
         self.address_sampler = PanelAddressSampler(runtime=self)
+        # The Dashboard's traffic history, counted once a second and written
+        # every 5 minutes. The application starts it and writes it at a stop.
+        self.traffic_history = RouterTrafficHistory()
         # The routes the running overlays installed that the hub refused, as
         # the last check found them. Runtime only: the next check reads the
         # kernel again.
