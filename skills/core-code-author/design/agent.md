@@ -7,8 +7,8 @@ machine's desktop when told. It draws no window. Every port it listens on
 is on `127.0.0.1`: the forwarders in front of the programs run as an
 account, CloudCLI, code-server and Codeg
 ([modules/template.md](agent/modules/template.md), "The run"), and the AI
-gateway forward while the machine's AI tools use the gateway ("The AI
-gateway forward"). Its own
+gateway forward, 8317, while the machine's AI tools use the gateway, on
+every machine but the hub's own ("The AI gateway forward"). Its own
 code is pure standard library. The
 package includes the interpreter that runs it, so it installs on a machine
 with no Python and touches none the machine already has.
@@ -326,17 +326,20 @@ connection"), and each also answers the agent's dial on loopback:
 The hub's AI gateway listens on the hub's own loopback alone
 ([hub_components/ai.md](hub_components/ai.md), "What serves"), so a managed
 machine's AI tools reach it through the agent. While the `ai_tools` section
-is on, the agent listens on one port of `127.0.0.1`, and the endpoint the
-switch writes into each tool is that port ([ai_tools.md](agent/ai_tools.md)).
-For each connection it accepts there, the agent opens a `connect` stream to
-the hub, and the hub joins it to the gateway on the hub's loopback
-([protocol.md](protocol.md), "The connect stream"). The client's forward of
-its `ai` entry works the same way.
+is on, the agent listens on `127.0.0.1:8317`, and the endpoint the switch
+writes into each tool is that port ([ai_tools.md](agent/ai_tools.md)). For
+each connection it accepts there, the agent opens `connect {id}` to the
+hub, `id` being the `ai` entry's id, the same kind and arguments a client's
+AI forward opens; the hub joins it to the gateway on the hub's loopback
+([protocol.md](protocol.md), "The connect stream").
 
 | Rule | Reason |
 | --- | --- |
 | The forward listens on `127.0.0.1` alone, opens no port in any firewall, and closes when the section turns off. | The gateway serves the hub's own machine, its clients and its managed machines, and no other host on the LAN; a port on any other address opens it to the LAN. |
+| While the agent has no channel to the hub, the forward stops accepting new connections and stays bound; the connections waiting in its listen queue are served once the channel is back. | A client's forward does the same ([client.md](client.md), "The local port table"), for the same reason: a connection accepted with no channel can only be closed at once. |
+| The hub refuses the stream with `permission_denied {kind: ai}` while that machine's AI tools setting is off. | The setting is the machine's one permission for the gateway. |
 | The forward adds no key and reads none; each request holds the device's own key, which the switch wrote into the tool, and the gateway checks it. | The gateway's key check is the one gate on it, wherever a request comes from. |
+| The agent on the hub's own machine opens no forward. Its tools are pointed at the gateway's own loopback port, `listen_port`. | The gateway already listens on that machine's loopback, at 8317 by default, where a forward would collide with it. |
 | Bytes go both ways under the channel's credit, and either socket's end closes the stream. | It is a `connect` stream like any other, in the other direction. |
 
 ## The local control channel
