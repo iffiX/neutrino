@@ -259,6 +259,25 @@ def test_a_hub_not_connected_shows_no_tags(resident, capsys):
     )
 
 
+def test_on_windows_the_dot_and_the_ellipsis_print_in_ascii(
+    resident, capsys, monkeypatch
+):
+    monkeypatch.setattr(wording, "CLIENT_IS_WINDOWS_CONSOLE", True)
+    resident.hubs_value[0].update(reached_through="lan", rtt_ms=12)
+    resident.hubs_value[1].update(connection="connecting")
+
+    status_cli.main()
+
+    out = capsys.readouterr().out
+    assert out.isascii()
+    lines = [" ".join(line.split()) for line in out.strip().splitlines()]
+    assert (
+        f"hub home {GATEWAY_URL} Connected - LAN - 12 ms {status_cli.EXIT_MARK}"
+        in lines
+    )
+    assert "hub office https://office.lan:8443 Connecting..." in lines
+
+
 @pytest.mark.parametrize("way", ["direct", "a_way_this_client_does_not_know"])
 def test_json_passes_the_hubs_way_in_through_unchanged(resident, capsys, way):
     resident.hubs_value[0]["reached_through"] = way

@@ -71,6 +71,14 @@ class FakeHubTransport(private val onConnect: (String) -> List<ChannelSocketEven
         val silent: List<ChannelSocketEvent> =
             listOf(ChannelSocketEvent.Failed(ChannelResult.refused("hub_unreachable", "detail" to "timed out")))
 
+        /** The events of an address whose host is up with the port not open. */
+        val refused: List<ChannelSocketEvent> = listOf(
+            ChannelSocketEvent.Failed(
+                ChannelResult.refused("hub_unreachable", "detail" to "Connection refused"),
+                isPortClosed = true,
+            ),
+        )
+
         /** The events of an address another certificate answers on. */
         val impostor: List<ChannelSocketEvent> =
             listOf(ChannelSocketEvent.Failed(ChannelResult.refused("hub_untrusted", "url" to "x")))

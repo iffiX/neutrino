@@ -150,7 +150,7 @@ private fun PortLine(pieces: List<String>) {
 private fun PortsScreenPreview() {
     PreviewHubs.Frame(
         mapOf(
-            "ui.machine_provided_by" to "由 {hub}:{device} 提供",
+            "ui.provided_by" to "由 {hub}:{device}:{module} 提供",
             "ui.port_connect" to "连接",
             "ui.port_disconnect" to "断开",
             "ui.configure" to "配置",

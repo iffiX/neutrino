@@ -14,12 +14,16 @@ import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.thread
+import kotlin.concurrent.withLock
 
 /**
  * One listening loopback port whose every accepted connection is one `connect` stream to the
  * hub: the two are copied into each other, and when either ends, what was read is written and
- * both close. No connection dials a device address; the stream's open names the far end.
+ * both close. No connection dials a device address; the stream's open names the far end. While
+ * the hub has no channel the port accepts nothing and stays bound, and the connections waiting in
+ * its queue are served once the channel is back.
  *
  * @property name What the log calls the far end.
  * @param open Opens one `connect` stream for one accepted connection.
@@ -33,6 +37,9 @@ open class PortForwardRelay(
     private val connections = mutableSetOf<Socket>()
     private var listener: ServerSocket? = null
     private var acceptor: Thread? = null
+    private val gate = ReentrantLock()
+    private val channelOpened = gate.newCondition()
+    private var isChannelOpen = true
 
     @Volatile
     private var isClosed = false
@@ -63,9 +70,20 @@ open class PortForwardRelay(
         return localPort
     }
 
+    /**
+     * The hub's channel opened or closed: accepting stops while it is closed and goes on once it opens.
+     *
+     * @param isOpen Whether the hub has a channel now.
+     */
+    override fun channelChanged(isOpen: Boolean) = gate.withLock {
+        isChannelOpen = isOpen
+        channelOpened.signalAll()
+    }
+
     /** Stop listening and close every open connection; the loopback number is free once it returns. */
     override fun close() {
         isClosed = true
+        gate.withLock { channelOpened.signalAll() }
         try {
             listener?.close()
         } catch (_: IOException) {
@@ -87,7 +105,7 @@ open class PortForwardRelay(
     }
 
     private fun accept(server: ServerSocket) {
-        while (!isClosed) {
+        while (awaitChannel()) {
             val client = try {
                 server.accept()
             } catch (_: IOException) {
@@ -101,7 +119,17 @@ open class PortForwardRelay(
         }
     }
 
+    /** Wait until the hub's channel is open; false once the relay is closed. */
+    private fun awaitChannel(): Boolean = gate.withLock {
+        while (!isChannelOpen && !isClosed) channelOpened.await()
+        !isClosed
+    }
+
     private fun serve(client: Socket) {
+        if (!awaitChannel()) {
+            closeQuietly(client)
+            return
+        }
         val upstream = ChannelConnectSocket(open)
         try {
             upstream.open()

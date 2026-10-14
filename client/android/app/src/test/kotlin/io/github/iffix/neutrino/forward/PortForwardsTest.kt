@@ -15,6 +15,7 @@ import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.net.SocketTimeoutException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CompletableDeferred
@@ -342,6 +343,47 @@ class PortForwardsTest {
     }
 
     @Test
+    fun withNoChannelAForwardAcceptsNothing() = runTest {
+        val forwards = PortForwards(noMaterial, streams, backgroundScope, table)
+        forwards.connect("b1", "p1", 30080)
+        runCurrent()
+        val port = forwards.rows.value.getValue("b1/p1").localPort
+        forwards.take(listOf(hub("b1", HubConnection.CONNECTING)))
+        Socket("127.0.0.1", port).use { waiting ->
+            waiting.getOutputStream().write("queued".toByteArray())
+            assertTrue(isSilent(waiting))
+            assertTrue(opened.isEmpty())
+            assertTrue(forwards.rows.value.getValue("b1/p1").isForwarded)
+            forwards.take(listOf(hub("b1", HubConnection.CONNECTED, "p1")))
+            waiting.soTimeout = 5000
+            val echoed = ByteArray(6)
+            var read = 0
+            while (read < echoed.size) {
+                val count = waiting.getInputStream().read(echoed, read, echoed.size - read)
+                if (count < 0) break
+                read += count
+            }
+            assertEquals("queued", String(echoed, 0, read))
+        }
+        assertEquals(1, opened.size)
+        forwards.stopAll()
+    }
+
+    @Test
+    fun aForwardMadeWhileItsHubHasNoChannelWaitsForIt() = runTest {
+        val forwards = PortForwards(noMaterial, streams, backgroundScope, table)
+        forwards.take(listOf(hub("b1", HubConnection.CONNECTING)))
+        val bound = (forwards.hold("b1", "r1", 31119) as ChannelResult.Ok).value
+        Socket("127.0.0.1", bound).use { waiting ->
+            assertTrue(isSilent(waiting))
+        }
+        assertTrue(opened.isEmpty())
+        forwards.take(listOf(hub("b1", HubConnection.CONNECTED, "r1")))
+        assertEquals("rd", exchange(bound, "rd"))
+        forwards.release("b1", "r1")
+    }
+
+    @Test
     fun leavingAHubEndsItsForwards() = runTest {
         val forwards = PortForwards(noMaterial, streams, backgroundScope, table)
         forwards.connect("b1", "p1", 30080)
@@ -556,7 +598,18 @@ class PortForwardsTest {
         binding = HubBinding(id = id, gatewayUrl = "https://10.0.0.1:8443", fingerprint = "f", token = "t"),
         connection = connection,
         services = entries.map { ChannelServiceEntry(id = it, type = "port", title = it) },
+        connectedAddress = if (connection == HubConnection.CONNECTED) "https://10.0.0.1:8443" else "",
     )
+
+    private fun isSilent(client: Socket): Boolean {
+        client.soTimeout = 300
+        return try {
+            client.getInputStream().read()
+            false
+        } catch (_: SocketTimeoutException) {
+            true
+        }
+    }
 
     private fun isFree(port: Int): Boolean = try {
         ServerSocket(port, 50, InetAddress.getByName("127.0.0.1")).close()

@@ -184,7 +184,7 @@ def _hub_lines(cells: list) -> list:
         cells: ``(name, url, state, is_exit)`` per hub, in the order joined.
 
     Returns:
-        The lines to print.
+        The lines to print, as this system's console shows them.
     """
     name_width = max((len(name) for name, _url, _state, _is_exit in cells), default=0)
     url_width = max((len(url) for _name, url, _state, _is_exit in cells), default=0)
@@ -192,7 +192,7 @@ def _hub_lines(cells: list) -> list:
     for name, url, state, is_exit in cells:
         mark = f"  {EXIT_MARK}" if is_exit else ""
         line = f"hub        {name:<{name_width}}  {url:<{url_width}}  {state}{mark}"
-        lines.append(line.rstrip())
+        lines.append(wording.console_text(line.rstrip()))
     return lines
 
 

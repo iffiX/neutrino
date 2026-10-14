@@ -12,7 +12,12 @@ import org.junit.Test
 
 class ServiceListTest {
     private val words = WordCatalog(
-        mapOf("ui.machine_provided_by" to "由 {hub}:{device} 提供", "ui.module_ai_gateway" to "AI 网关"),
+        mapOf(
+            "ui.provided_by" to "由 {hub}:{device}:{module} 提供",
+            "ui.module_ai_gateway" to "AI 网关",
+            "ui.module_title.samba" to "文件共享",
+            "ui.module_title.remote_desktop" to "远程桌面",
+        ),
     )
     private val hub = HubView(Samples.binding.copy(hubName = "nmxhub"), HubConnection.CONNECTED)
 
@@ -31,19 +36,27 @@ class ServiceListTest {
         )
 
     @Test
-    fun anEntryOfAnotherMachineNamesTheHubAndTheMachine() {
-        assertEquals("由 nmxhub:Argon 提供", providerLine(hub, entry("Argon"), "10.0.0.5", words))
-        assertEquals("由 nmxhub:10.0.0.5 提供", providerLine(hub, entry(""), "10.0.0.5", words))
+    fun everyEntryNamesItsHubItsMachineAndItsModulesTitle() {
+        assertEquals("由 nmxhub:nmxhub:AI 网关 提供", providerLine(hub, entry("nmxhub", "ai_gateway"), "", words))
+        assertEquals("由 nmxhub:nmxhub:文件共享 提供", providerLine(hub, entry("nmxhub", "samba_module"), "", words))
+        assertEquals("由 nmxhub:Argon:文件共享 提供", providerLine(hub, entry("Argon", "samba_module"), "", words))
+        assertEquals("由 nmxhub:studio:远程桌面 提供", providerLine(hub, entry("studio", "device_share"), "", words))
+        assertEquals("由 nmxhub:Argon:Gitea 提供", providerLine(hub, entry("Argon", "gitea_module"), "", words))
+        assertEquals(
+            "由 nmxhub:Argon:VS Code 提供",
+            providerLine(hub, entry("Argon", "vscode_module", title = "VS Code (alice)"), "", words),
+        )
+        assertEquals(
+            "由 nmxhub:nmxhub:whoami:latest 提供",
+            providerLine(hub, entry("nmxhub", "container", image = "docker.io/traefik/whoami:latest"), "", words),
+        )
     }
 
     @Test
-    fun anEntryTheHubsOwnMachineServesNamesTheHubOnce() {
-        assertEquals("由 nmxhub:AI 网关 提供", providerLine(hub, entry("nmxhub", "ai_gateway"), "", words))
-        assertEquals("由 nmxhub:Gitea 提供", providerLine(hub, entry("nmxhub", "gitea_module"), "", words))
+    fun aMachineTheHubDoesNotNameIsTheEntrysAddressAndARecordIsNamedByItsTitle() {
         assertEquals(
-            "由 nmxhub:whoami:latest 提供",
-            providerLine(hub, entry("nmxhub", "container", image = "docker.io/traefik/whoami:latest"), "", words),
+            "由 nmxhub:10.0.0.5:wiki 提供",
+            providerLine(hub, entry("", "declared", title = "wiki"), "10.0.0.5", words),
         )
-        assertEquals("由 nmxhub:wiki 提供", providerLine(hub, entry("nmxhub", "declared", title = "wiki"), "", words))
     }
 }

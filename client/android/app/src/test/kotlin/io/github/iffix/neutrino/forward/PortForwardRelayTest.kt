@@ -8,6 +8,7 @@ import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.net.SocketTimeoutException
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
@@ -85,7 +86,7 @@ class PortForwardRelayTest {
     }
 
     @Test
-    fun aHubThatIsNotConnectedClosesTheAcceptedConnection() {
+    fun aStreamThatCannotOpenClosesTheAcceptedConnection() {
         val relay = PortForwardRelay("b1/e1", { ChannelResult.refused("hub_unreachable") }, 0).also { opened += it }
         val client = Socket("127.0.0.1", relay.start()).also { opened += it }
         client.soTimeout = 5000
@@ -110,6 +111,76 @@ class PortForwardRelayTest {
             fail("the loopback still listens")
         } catch (_: IOException) {
             // Refused, as a closed listener is.
+        }
+    }
+
+    @Test
+    fun withNoChannelTheRelayAcceptsNothingAndServesTheWaitingConnectionOnceItIsBack() {
+        val hub = FakeConnectHub()
+        val relay = relay(hub, preferred = 0)
+        relay.channelChanged(false)
+        val bound = relay.start()
+        val client = Socket("127.0.0.1", bound).also { opened += it }
+        client.getOutputStream().write("queued".toByteArray())
+        assertTrue(isSilent(client))
+        assertTrue(hub.opens.isEmpty())
+        assertTrue(relay.isActive)
+        relay.channelChanged(true)
+        client.soTimeout = 5000
+        assertArrayEquals("queued".toByteArray(), readFully(client, 6))
+        assertEquals(1, hub.opens.size)
+    }
+
+    @Test
+    fun aChannelThatDropsStopsTheAcceptingUntilItIsBack() {
+        val hub = FakeConnectHub()
+        val relay = relay(hub, preferred = 0)
+        val bound = relay.start()
+        Socket("127.0.0.1", bound).use { client ->
+            client.soTimeout = 5000
+            client.getOutputStream().write("before".toByteArray())
+            assertArrayEquals("before".toByteArray(), readFully(client, 6))
+        }
+        relay.channelChanged(false)
+        val waiting = List(3) { Socket("127.0.0.1", bound).also { opened += it } }
+        waiting.forEachIndexed { index, client -> client.getOutputStream().write("queued$index".toByteArray()) }
+        assertTrue(waiting.all { isSilent(it) })
+        assertEquals(1, hub.opens.size)
+        relay.channelChanged(true)
+        waiting.forEachIndexed { index, client ->
+            client.soTimeout = 5000
+            assertArrayEquals("queued$index".toByteArray(), readFully(client, 7))
+        }
+        assertEquals(4, hub.opens.size)
+    }
+
+    @Test
+    fun closingARelayThatWaitsForItsChannelEndsTheWaitingConnectionAndTheListener() {
+        val hub = FakeConnectHub()
+        val relay = relay(hub, preferred = 0)
+        relay.channelChanged(false)
+        val bound = relay.start()
+        val client = Socket("127.0.0.1", bound).also { opened += it }
+        client.soTimeout = 5000
+        relay.close()
+        assertFalse(relay.isActive)
+        assertEquals(-1, readOrEnd(client))
+        assertTrue(hub.opens.isEmpty())
+        try {
+            Socket().use { it.connect(InetSocketAddress("127.0.0.1", bound), 1000) }
+            fail("the loopback still listens")
+        } catch (_: IOException) {
+            // Refused, as a closed listener is.
+        }
+    }
+
+    private fun isSilent(client: Socket): Boolean {
+        client.soTimeout = 300
+        return try {
+            client.getInputStream().read()
+            false
+        } catch (_: SocketTimeoutException) {
+            true
         }
     }
 
