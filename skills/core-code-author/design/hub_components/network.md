@@ -775,14 +775,17 @@ another tool rewriting nftables, stays until the next event or apply.
 The Dashboard's traffic history is the hub's own count, by one mechanism on
 Linux, macOS and Windows. The hub reads the interface byte counters once a
 second for the live chart, and adds each reading's difference to totals it
-keeps in memory by hour, by day and by month, the windows
-`GET /api/hub/dashboard/history` serves. Every 5 minutes it writes the
-totals and the last counters it read to a file under the state root.
+keeps in memory for every interface but loopback, by hour, by day and by
+month. Every 5 minutes it writes the totals, the last counters it read and
+the machine's boot time to `traffic_history.json` under the state root
+([../files.md](../files.md)). `GET /api/hub/dashboard/history` serves the
+totals of the interface the history card draws.
 
 | Rule | Reason |
 | --- | --- |
+| Hourly totals are kept 8 days, daily totals 13 months and monthly totals 10 years; older ones are dropped at the write. | Every window the card offers fits inside them, and the file stays small. |
 | A power loss costs at most the 5 minutes since the last write. | A write every second wears the disk for the sake of a chart. |
-| After a hub restart without a reboot, the first reading adds its difference from the saved last counters. | The kernel kept counting while the hub was down, and those bytes are the person's traffic. |
+| A reboot is told by the boot time, `psutil.boot_time()`, differing from the saved one. After a hub restart without a reboot, the first reading adds its difference from the saved last counters. | The kernel kept counting while the hub was down, and those bytes are the person's traffic. |
 | After a reboot the counters start again from zero, and the hub counts from their first reading. | The counters before the reboot are gone, and the totals hold everything up to the last write. |
 | No other program counts for the hub, on any system. | One mechanism draws one chart everywhere. |
 
