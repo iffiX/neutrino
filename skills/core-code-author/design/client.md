@@ -124,6 +124,7 @@ languages, and the English column is the wording the English catalog holds.
 | `ui.state.admission_paused` | The hub pauses new devices |
 | `ui.state.unknown_device` | The hub does not know this device |
 | `ui.state.too_old` | Version too old |
+| `ui.action.update_client` | update the client |
 | `ui.state.join_refused` | Join refused |
 | `ui.action.retry_in` | retrying in `<s>` s |
 | `ui.state.replaced` | Replaced by another client |
@@ -206,7 +207,8 @@ after the ` · ` is what ends the wait:
 | `ui.state.untrusted` · `ui.action.retry_in`, Certificate mismatch · retrying in 60 s | 证书不符 · 60 秒后重试 | `hub_untrusted` | the countdown, at `CLIENT_BACKOFF_MAX_S` each time |
 | `ui.state.admission_paused` · `ui.action.retry_in`, The hub pauses new devices · retrying in 60 s | 中枢暂停接纳 · 60 秒后重试 | `admission_paused {retry_after_s}` on the join | the countdown of `retry_after_s` |
 | `ui.state.unknown_device`, The hub does not know this device | 中枢不认识本机 | `binding_unknown` | nothing; **Leave** is the row's only action |
-| `ui.state.too_old`, Version too old | 版本太旧 | `protocol_too_old` or `protocol_too_new` | nothing automatic; a refresh after an upgrade |
+| `ui.state.too_old` · `ui.action.update_client`, Version too old · update the client | 版本太旧 · 更新客户端 | `protocol_too_old` | nothing automatic: the person installs the new client, which keeps this state and its bindings, and the next round connects |
+| `ui.state.too_old`, Version too old | 版本太旧 | `protocol_too_new` | nothing automatic; a refresh after an upgrade |
 | `ui.state.join_refused` · `<the code's wording>`, Join refused · `<reason>` | 加入被拒 · 原因 | the hub refused the ticket (`ticket_spent`, any refusal of the join) | nothing; **Leave** |
 | `ui.state.replaced` · **Reconnect**, Replaced by another client · Reconnect | 已被替换 · 重新连接 | `replaced` | the press on **Reconnect** |
 | `ui.state.disabled`, Disabled by the hub | 已停用 | the frame says the client is disabled | the frame says enabled |

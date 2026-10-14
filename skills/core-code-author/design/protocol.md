@@ -1721,18 +1721,20 @@ number; the hub meets peers from different releases and needs a range,
 
 | Code | When | `params` |
 | --- | --- | --- |
-| `protocol_too_old` | `protocol < PROTOCOL_MIN`, but for an agent's `hello` at 3; and every stream an agent at 3 opens but its own package | `{peer, hub, min}` |
+| `protocol_too_old` | `protocol < PROTOCOL_MIN`, except for an agent's `hello` at 3; and every stream an agent at 3 opens, except its own package | `{peer, hub, min}` |
 | `protocol_too_new` | `protocol > PROTOCOL` | `{peer, hub, min}` |
 
-A client refused `protocol_too_old` keeps its binding, and its Hubs row reads
-`ui.state.too_old` ([client.md](client.md), "The Hubs page"). The person
-installs the new client, since a client does not update itself.
+A client refused `protocol_too_old` keeps its binding, and its Hubs row
+reads that the client is too old and says to update it ([client.md](client.md),
+"The Hubs page"). The person installs the new client, since a client does
+not update itself. A new client keeps the old one's state, so the binding
+stays and the next round connects.
 
 Package versions take no part in admission. An agent whose `welcome` names a
 newer `software` than its own upgrades itself with the package the hub keeps.
-It stays as it is when the version does not parse or ends in `+dev`. The
-hub's `software` is always `neutrino_hub/{HUB_VERSION}`, and the client has no
-self-upgrade.
+The agent stays as it is when the hub's version does not parse or ends in
+`+dev`, so a hub of `+dev` offers no update. The hub's `software` is always
+`neutrino_hub/{HUB_VERSION}`, and the client has no self-upgrade.
 
 ### An agent of 0.5
 
@@ -1747,10 +1749,16 @@ closes every other stream the agent opens:
 | opens `package {}`, its own package | streams it, as for any agent's upgrade |
 | opens any other stream | closes it `protocol_too_old {peer, hub, min}` |
 
-The hub opens no stream to it. The newer `software` in `welcome` makes the
-agent install the package and restart, and the updated agent connects with
-4 and is admitted as any agent. The hub's own agent is updated by the hub's
-own update, from the hub's cache.
+The hub opens no stream to it. The agent reads the newer `software` in
+`welcome`, installs the package and restarts, and the updated agent connects
+with 4 and is admitted as any agent. The hub's own agent is updated by the
+hub's own update, from the hub's cache.
+
+| Case | What follows |
+| --- | --- |
+| the update runs | the Devices page shows the machine updating, `ui.device_tile.agent_updating`, from the admitted `hello` until the agent connects with 4 |
+| the hub has no package for the machine's platform, the install fails and the agent comes back at 3, or the hub's version ends in `+dev` | the session stays update-only, and the Devices page shows the machine's version mismatch (`is_version_mismatched`), which asks for a reinstall |
+| an unbound agent of 0.5 joins | the `join` is refused `protocol_too_old`; the person installs a 0.6 agent with the install script and joins with it |
 
 ### What a leave does to the binding
 
@@ -1771,11 +1779,16 @@ it was.
 
 ### What a refusal does to the binding
 
-A refusal keeps the binding. The agent or the client records it as
-`last_error` and sends `hello` again a minute later. `protocol_too_old`,
-`protocol_too_new`, `ticket_spent`, `role_mismatch` and every transient
-refusal behave this way; `channel_full` and `admission_paused` are
-transient.
+A refusal of `hello` keeps the binding. The agent or the client records it
+as `last_error` and sends `hello` again a minute later. `protocol_too_old`,
+`protocol_too_new`, `channel_full` and every other refusal of `hello` except
+`binding_unknown` behave this way.
+
+A refused `join` leaves no binding to keep. `nagent join` exits with the
+code, and a client's row reads the join's refusal ([client.md](client.md),
+"Joining before the hub is reached"). `ticket_spent`, `role_mismatch` and
+`protocol_too_old` end a join this way; after `admission_paused` the client
+tries the join again once `retry_after_s` has passed.
 
 `binding_unknown` is the one refusal that unbinds: the hub says it has no such
 binding, because the row was removed on the panel. Only the hub holding the
@@ -1906,7 +1919,9 @@ more or one fewer fails. Changing a channel model fails that test until
 3 renamed the link's and the client state's `overlay`, one object or null,
 to `overlays`, a list. A 0.3 or 0.4 agent or client is refused
 `protocol_too_old` and does not update itself from the hub; such an agent is
-reinstalled from the Devices page or by hand.
+reinstalled from the Devices page or by hand. A bound 0.5 agent updates
+itself from a 0.6 hub ("An agent of 0.5"); an unbound one is refused at
+`join`, and a 0.6 agent is installed in its place and joins.
 
 4 changes what a peer of 3 reads. A `terminals` entry lists a machine with
 no flag beside it, and an `exec` stream is judged by the `terminal` kind, as
