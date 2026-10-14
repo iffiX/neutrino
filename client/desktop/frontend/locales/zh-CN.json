@@ -166,6 +166,8 @@
   "ui.menu.paste": "粘贴",
   "ui.menu.select_all": "全选",
   "ui.module_ai_gateway": "AI 网关",
+  "ui.module_title.remote_desktop": "远程桌面",
+  "ui.module_title.samba": "文件共享",
   "ui.mount": "挂载",
   "ui.mount_drive_caption": "在文件资源管理器中显示为该盘符",
   "ui.mount_drive_label": "盘符",

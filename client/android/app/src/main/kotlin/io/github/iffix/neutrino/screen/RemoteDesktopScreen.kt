@@ -125,7 +125,7 @@ internal fun rowAddress(entry: ChannelServiceEntry): String = "${entry.text("hos
 private fun RemoteDesktopScreenPreview() {
     PreviewHubs.Frame(
         mapOf(
-            "ui.machine_provided_by" to "由 {hub}:{device} 提供",
+            "ui.provided_by" to "由 {hub}:{device}:{module} 提供",
             "ui.rdp_connect" to "连接",
             "ui.unhealthy" to "当前无法访问",
         ),
