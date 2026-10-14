@@ -38,12 +38,21 @@ class FakeTasks:
         return self.running_stream
 
 
+class NoPortsHeld:
+    """A box where no other program listens on any port."""
+
+    def ports(self, *, ignoring: str = "") -> set:
+        return set()
+
+
 class FakeRuntime:
-    """The settings dictionary the panel keeps in memory, and its tasks."""
+    """The settings dictionary the panel keeps in memory, its tasks, and the
+    box's listening ports."""
 
     def __init__(self, settings: dict):
         self.settings = settings
         self.tasks = FakeTasks()
+        self.listening_ports = NoPortsHeld()
 
 
 @pytest.fixture(autouse=True)

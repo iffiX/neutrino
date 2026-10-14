@@ -23,8 +23,10 @@ one shared runtime. That runtime is where a ticket generated on a panel port
 is spent on the agent port. The panel app does not include the channel
 routes, so the channel has no plaintext form. A change of any of the three
 ports through `POST /api/hub/setting/set` restarts the process; a port that
-is one of the other two is refused 400 `port_already_in_use {value}`. The
-**Network** page sets all three.
+is one of the other two is refused 400 `port_already_in_use {value}`. A new
+port that another program on the box listens on, over IPv4 or IPv6, is
+refused with the same code before any setting changes. The **Network** page
+sets all three.
 
 An agent port change moves every peer. Before the process restarts, the hub
 pushes every online client and agent its state, whose `urls` name the new

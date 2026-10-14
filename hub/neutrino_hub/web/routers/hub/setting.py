@@ -253,10 +253,11 @@ def update_settings(
     Raises:
         HTTPException: 400 with ``port_out_of_range`` when a port is not one
             a listener may take, 400 with ``port_already_in_use`` when two of
-            the three ports are one, 400 with ``language_unknown`` for a
-            language this panel does not ship, 400 with ``theme_unknown`` for
-            a theme it does not have, and 400 with ``hub_name_required`` for
-            a blank name.
+            the three ports are one or a new port is one another program on
+            the box listens on, 400 with ``language_unknown`` for a language
+            this panel does not ship, 400 with ``theme_unknown`` for a theme
+            it does not have, and 400 with ``hub_name_required`` for a blank
+            name.
     """
     https_port = (
         request.https_listen_port
@@ -280,6 +281,9 @@ def update_settings(
         raise _coded_bad_request(SETTINGS_ERROR_PORT_TAKEN, value=https_port)
     if agent_port in (request.listen_port, https_port):
         raise _coded_bad_request(SETTINGS_ERROR_PORT_TAKEN, value=agent_port)
+    taken = _port_held_elsewhere(runtime, (request.listen_port, https_port, agent_port))
+    if taken is not None:
+        raise _coded_bad_request(SETTINGS_ERROR_PORT_TAKEN, value=taken)
     if request.language not in WEB_LANGUAGES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -595,6 +599,20 @@ def _settings_view(runtime: PanelRuntime, **settings) -> SettingsView:
         offline_client_count=client_count,
         offline_agent_count=agent_count,
     )
+
+
+def _port_held_elsewhere(runtime: PanelRuntime, ports: tuple) -> "int | None":
+    """The first new port another program listens on; the panel's own are skipped."""
+    own = {
+        int(runtime.settings.get("listen_port", WEB_DEFAULT_LISTEN_PORT)),
+        _https_listen_port(runtime),
+        _agent_listen_port(runtime),
+    }
+    moved = [port for port in ports if port not in own]
+    if not moved:
+        return None
+    held = runtime.listening_ports.ports()
+    return next((port for port in moved if port in held), None)
 
 
 def _offline_counts(runtime: PanelRuntime) -> tuple[int, int]:

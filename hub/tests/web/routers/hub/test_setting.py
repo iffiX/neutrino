@@ -64,14 +64,28 @@ class RecordingSessions(FakeChannelSessions):
         self._happened.append(("push", key, document["urls"]))
 
 
+class HeldPorts:
+    """The box's listening ports as the route reads them, and the reads."""
+
+    def __init__(self):
+        self.held: set = set()
+        self.reads = 0
+
+    def ports(self, *, ignoring: str = "") -> set:
+        self.reads += 1
+        return set(self.held)
+
+
 class PortRuntime:
-    """The settings the panel keeps in memory, its live sessions, and a
-    converge step that writes when it ran into the list of what happened."""
+    """The settings the panel keeps in memory, its live sessions, the box's
+    listening ports, and a converge step that writes when it ran into the
+    list of what happened."""
 
     def __init__(self, happened: list):
         self.settings = {"listen_port": 8080}
         self.agent_sessions = RecordingSessions(happened)
         self.client_sessions = RecordingSessions(happened)
+        self.listening_ports = HeldPorts()
         self.converge_failure = None
         self._happened = happened
 
@@ -342,6 +356,56 @@ def test_an_agent_port_no_listener_can_take_is_refused_by_code(port_client, port
     }
     assert stored == {"listen_port": 8080}
     assert happened == []
+
+
+@pytest.mark.parametrize(
+    "body, value",
+    [
+        ({"listen_port": 9080}, 9080),
+        ({"listen_port": 8080, "https_listen_port": 8444}, 8444),
+        ({"listen_port": 8080, "agent_listen_port": 9443}, 9443),
+    ],
+)
+def test_a_new_port_another_program_listens_on_is_refused_by_code(
+    port_client, body, value
+):
+    opened, runtime, stored, happened = port_client
+    runtime.agent_sessions.online = {"device-one"}
+    runtime.listening_ports.held = {22, value}
+
+    response = opened.post("/api/hub/setting/set", json=body)
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == {
+        "code": "port_already_in_use",
+        "params": {"value": value},
+    }
+    assert stored == {"listen_port": 8080}
+    assert runtime.settings == {"listen_port": 8080}
+    assert happened == []
+
+
+def test_the_panels_own_ports_can_trade_places(port_client):
+    opened, runtime, stored, happened = port_client
+    runtime.listening_ports.held = {8080, 443, 8443}
+
+    response = opened.post(
+        "/api/hub/setting/set",
+        json={"listen_port": 8443, "https_listen_port": 443, "agent_listen_port": 8080},
+    )
+
+    assert response.status_code == 200
+    assert stored["listen_port"] == 8443
+    assert stored["agent_listen_port"] == 8080
+    assert happened == ["converge", "restarted"]
+
+
+def test_a_save_that_moves_no_port_reads_no_listening_port(port_client):
+    opened, runtime, _, _ = port_client
+
+    opened.post("/api/hub/setting/set", json={"listen_port": 8080, "theme": "light"})
+
+    assert runtime.listening_ports.reads == 0
 
 
 def test_the_settings_count_the_peers_with_a_binding_and_no_session(port_client):
