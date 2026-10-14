@@ -329,6 +329,36 @@ def test_local_files_install_with_nothing_downloaded(stand_ins):
     assert f"{stand_ins.served}/neutrino-client-9.9.9-macos-amd64.pkg" in install
 
 
+def test_a_download_names_its_source_its_checksum_and_the_install(stand_ins):
+    result, _asked = stand_ins()
+
+    lines = result.stdout.splitlines()
+    name = "neutrino-hub_9.9.9_amd64.deb"
+    assert lines[:4] == [
+        f"Downloaded {name} from {RELEASE}/latest/download",
+        f"{name} matches its SHA256SUMS line",
+        f"Installing {name}",
+        f"Installed {name}",
+    ]
+
+
+def test_local_files_name_the_directory_they_came_from(stand_ins):
+    result, _asked = stand_ins(
+        "client",
+        system="Darwin",
+        machine="x86_64",
+        environment={"NEUTRINO_ASSET_DIR": str(stand_ins.served)},
+    )
+
+    name = "neutrino-client-9.9.9-macos-amd64.pkg"
+    assert result.stdout.splitlines()[:4] == [
+        f"Found {name} in {stand_ins.served}",
+        f"{name} matches its SHA256SUMS line",
+        f"Installing {name}",
+        f"Installed {name}",
+    ]
+
+
 def test_a_package_that_does_not_match_its_checksum_is_never_installed(stand_ins):
     (stand_ins.served / "neutrino-hub_9.9.9_amd64.deb").write_bytes(b"tampered")
 
@@ -730,6 +760,7 @@ def test_a_joined_machine_is_given_no_join_line(stand_ins, tmp_path, system, mac
 
     assert result.returncode == 0, result.stderr
     assert "nagent join" not in result.stdout
+    assert result.stdout.splitlines()[-1].startswith("Installed neutrino-agent")
     assert any("grep -Eq" in line for line in asked if line.startswith("sudo -n"))
 
 
