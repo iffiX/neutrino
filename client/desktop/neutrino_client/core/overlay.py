@@ -4,7 +4,7 @@ A virtual network is not a service a hub publishes: it is a way to reach the
 hub, so it lives beside the sessions rather than among the handlers. Each
 hub's state names how to join each of its networks, preferred first: for
 EasyTier either a manual network's name, secret and peer or an EasyTier
-console's address, and what each engine the edition table adds takes. Per
+console's address, and for NetBird its setup key and management plane. Per
 hub the network is ``off`` or ``on``, on the one engine the person chose; a
 connect in progress is the job ``connecting``, and a failure is kept as the
 error while it is off. The daemons the packages register as
@@ -500,7 +500,7 @@ class OverlayMemberships:
                 the network stands and the engine chosen onto the binding,
                 raising OSError when it cannot; None keeps nothing.
             drivers: ``{provider: driver}``; None builds EasyTier's driver
-                and those the edition table adds over the platform.
+                and NetBird's over the platform.
             start_thread: ``start_thread(target)`` runs a step; None uses a
                 daemon thread. Tests pass one that runs inline.
             clock: Returns the monotonic time; None uses ``time.monotonic``.
