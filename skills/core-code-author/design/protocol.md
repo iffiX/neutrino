@@ -483,7 +483,7 @@ moved. Its steps and their order are [network.md](hub_components/network.md),
 | `POST /api/hub/device/set` | `{device_id, name, icon, ssh, shown_module}`, each optional | the name, the icon, the stored SSH credential the hub reaches it with, and which module tabs its Modules page shows |
 | `POST /api/hub/device/add` | `{host, ...}`, the host the person typed and the fields of `agent/install` except `device_id` | the **Add by address** press: creates the device's row, named by `host` until the machine reports, and starts the agent's install over SSH in the same request; `TaskStarted` |
 | `POST /api/hub/device/remove` | `{device_id}` | forgets the device; its socket is closed with `binding_unknown` |
-| `POST /api/hub/device/wake` | `{device_id}` | Wake-on-LAN to the last link MAC, broadcast on every network the hub serves, or in `server` mode on every exposed IPv4 segment, never on an overlay; `wol_no_mac` when none is stored, `no_reachable_address` when there is no such network |
+| `POST /api/hub/device/wake` | `{device_id}` | Wake-on-LAN to the last link MAC, broadcast on every network of the exposed IPv4 segments, in every mode, never on an overlay; `wol_no_mac` when none is stored, `no_reachable_address` when there is no such network |
 | `POST /api/hub/device/agent/install` | `{device_id, ...}` | installs the agent over SSH; `TaskStarted` |
 | `POST /api/hub/device/agent/reinstall` | `{device_id}` | the `reinstall` verb over the channel |
 | `POST /api/hub/device/reboot` | `{device_id}` | the `reboot` verb |
@@ -1816,7 +1816,7 @@ agent has reported on its link.
 | --- | --- |
 | a blank link joins: which row | the row whose `machine_id` matches, else a new one |
 | a scan row merges into which device | any stored MAC |
-| Wake-on-LAN goes to | the most recent link MAC, on the served networks, or a `server` hub's exposed ones |
+| Wake-on-LAN goes to | the most recent link MAC, on the networks of the exposed IPv4 segments |
 | `is_hub` | `machine_id` equals the hub box's own |
 
 The device's address is the report's `network.link.address`; the socket's peer

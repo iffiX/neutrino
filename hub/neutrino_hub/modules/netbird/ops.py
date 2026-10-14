@@ -24,6 +24,8 @@ from neutrino_hub.modules.netbird.constants import (
     NETBIRD_ACTIVE_PROFILE_NAME,
     NETBIRD_ACTIVE_PROFILE_PATH,
     NETBIRD_BINARY_PATH,
+    NETBIRD_BLOCK_INBOUND_KEY,
+    NETBIRD_BLOCK_INBOUND_OFF_FLAG,
     NETBIRD_DAEMON_ADDRESS_FLAG,
     NETBIRD_DISABLE_DNS_FLAG,
     NETBIRD_DISABLE_DNS_KEY,
@@ -103,6 +105,23 @@ def iface_blacklist_flag() -> str:
         RuntimeError: The system is none of the three.
     """
     return f"{NETBIRD_IFACE_BLACKLIST_FLAG}={','.join(own_device_prefixes())}"
+
+
+def session_flags() -> list:
+    """The session flags every ``netbird up`` states.
+
+    Returns:
+        DNS management off, the daemon's own inbound block off, and the
+        devices it must not listen on.
+
+    Raises:
+        RuntimeError: The system is none of the three.
+    """
+    return [
+        NETBIRD_DISABLE_DNS_FLAG,
+        NETBIRD_BLOCK_INBOUND_OFF_FLAG,
+        iface_blacklist_flag(),
+    ]
 
 
 def state_layout() -> tuple:
@@ -321,12 +340,29 @@ def _age_s(value) -> "int | None":
 class NetbirdSessionApplier:
     """Keeps the daemon's stored session settings the hub's.
 
-    Two settings: its DNS management off, since a daemon still managing DNS
-    holds the box's resolver behind a forwarder whose upstream it read once,
-    and a served network changing address leaves the box resolving nothing;
-    and its interface blacklist holding every device the box made, which the
+    Its DNS management off, since a daemon still managing DNS holds the box's
+    resolver behind a forwarder whose upstream it read once, and a served
+    network changing address leaves the box resolving nothing. Its own
+    inbound block off, since the hub's port chain closes a NetBird chip.
+    And its interface blacklist holding every device the box made, which the
     daemon only ever adds to.
     """
+
+    def is_inbound_open(self) -> bool:
+        """Whether the daemon's own inbound block is off.
+
+        Returns:
+            True when the stored profile says it is off or says nothing;
+            False when it says the block is on.
+        """
+        for path in self._state_paths():
+            try:
+                stored = json.loads(path.read_text())
+            except (OSError, ValueError):
+                continue
+            if NETBIRD_BLOCK_INBOUND_KEY in stored:
+                return not bool(stored[NETBIRD_BLOCK_INBOUND_KEY])
+        return True
 
     def is_dns_off(self) -> bool:
         """Whether the daemon was told to leave the box's resolver alone.
@@ -382,18 +418,21 @@ class NetbirdSessionApplier:
             subprocess.CalledProcessError: If the daemon refuses to come back up.
         """
         is_dns_off = self.is_dns_off()
-        if is_dns_off and self.is_blacklist_stored():
+        is_inbound_open = self.is_inbound_open()
+        if is_dns_off and is_inbound_open and self.is_blacklist_stored():
             return ""
         status = NetbirdStatusReader().survey()
         if not status.is_installed or not status.is_enrolled:
             return ""
         run(netbird_command("down"), is_checked=False, timeout_s=30)
         run(
-            netbird_command("up", NETBIRD_DISABLE_DNS_FLAG, iface_blacklist_flag()),
+            netbird_command("up", *session_flags()),
             timeout_s=NETBIRD_UP_TIMEOUT_S,
         )
         if not is_dns_off:
             return "overlay DNS management turned off"
+        if not is_inbound_open:
+            return "overlay's own inbound block turned off"
         return "overlay listens on no device the box made"
 
     def _state_paths(self) -> list:
@@ -455,13 +494,7 @@ class NetbirdEnroller:
         if state.is_installed and state.daemon_status in NETBIRD_STATUSES_WITHOUT_LOGIN:
             self._reset_identity()
             is_reset = True
-        words = [
-            "up",
-            "--setup-key",
-            setup_key,
-            NETBIRD_DISABLE_DNS_FLAG,
-            iface_blacklist_flag(),
-        ]
+        words = ["up", "--setup-key", setup_key, *session_flags()]
         if management_url:
             words += ["--management-url", management_url]
         command = netbird_command(*words)

@@ -259,8 +259,7 @@ def test_a_connected_peer_joins_again_as_itself(monkeypatch, tmp_path):
         "up",
         "--setup-key",
         "KEY-1",
-        "--disable-dns",
-        ops.iface_blacklist_flag(),
+        *ops.session_flags(),
     ]
     assert driven(commands)[3][-2:] == ["--management-url", "https://mgmt.example.com"]
     assert [NETBIRD, "deregister"] not in driven(commands)
@@ -290,8 +289,7 @@ def test_a_profile_without_a_login_is_reset_before_the_key_is_used(
             "up",
             "--setup-key",
             "KEY-1",
-            "--disable-dns",
-            ops.iface_blacklist_flag(),
+            *ops.session_flags(),
         ],
     ]
     assert not (tmp_path / "default.json").exists()
@@ -321,8 +319,7 @@ def test_an_idle_identity_the_plane_refuses_is_reset_and_the_key_used_again(
             "up",
             "--setup-key",
             "KEY-1",
-            "--disable-dns",
-            ops.iface_blacklist_flag(),
+            *ops.session_flags(),
         ],
         *RESET,
         [
@@ -330,8 +327,7 @@ def test_an_idle_identity_the_plane_refuses_is_reset_and_the_key_used_again(
             "up",
             "--setup-key",
             "KEY-1",
-            "--disable-dns",
-            ops.iface_blacklist_flag(),
+            *ops.session_flags(),
         ],
     ]
 
@@ -352,8 +348,7 @@ def test_a_key_the_plane_refuses_twice_is_refused_to_the_caller(monkeypatch, tmp
                 "up",
                 "--setup-key",
                 "KEY-1",
-                "--disable-dns",
-                ops.iface_blacklist_flag(),
+                *ops.session_flags(),
             ]
         )
         == 1
@@ -373,7 +368,7 @@ def test_a_refused_or_expired_login_reads_as_not_enrolled(monkeypatch, word):
 # `netbird up` does nothing while the client is connected, and a flag left
 # off keeps what the profile stored.
 
-UP = [NETBIRD, "up", "--disable-dns"]
+UP = [NETBIRD, "up", *ops.session_flags()]
 
 
 def session_over(monkeypatch, tmp_path, *, stored, status=None):
@@ -413,16 +408,38 @@ def test_settings_that_already_agree_cost_no_reconnection(monkeypatch, tmp_path)
     assert ran == []
 
 
-def test_no_up_states_an_inbound_setting_of_netbirds_own(monkeypatch, tmp_path):
-    """The hub's port rules close a NetBird chip; NetBird's own switch is
-    never set, whatever the profile holds."""
+def test_every_up_states_the_daemons_own_inbound_block_off():
+    """The hub's port chain closes a NetBird chip; the daemon's own block
+    stays off, so a flag a profile kept is cleared by the next up."""
+    assert ops.session_flags() == [
+        "--disable-dns",
+        "--block-inbound=false",
+        ops.iface_blacklist_flag(),
+    ]
+
+
+def test_a_profile_with_the_inbound_block_on_is_brought_up_with_it_off(
+    monkeypatch, tmp_path
+):
+    """A profile a hub of 0.5 left blocked for a closed chip refuses every
+    NetBird peer, whatever the chip says now."""
     session, ran = session_over(
-        monkeypatch, tmp_path, stored={**SETTLED, "DisableDNS": False}
+        monkeypatch, tmp_path, stored={**SETTLED, "BlockInbound": True}
     )
 
-    session.converge()
+    note = session.converge()
 
-    assert not any("inbound" in word for command in ran for word in command)
+    assert ran == [[NETBIRD, "down"], UP]
+    assert note == "overlay's own inbound block turned off"
+
+
+def test_a_profile_with_the_inbound_block_off_is_left_alone(monkeypatch, tmp_path):
+    session, ran = session_over(
+        monkeypatch, tmp_path, stored={**SETTLED, "BlockInbound": False}
+    )
+
+    assert session.converge() == ""
+    assert ran == []
 
 
 def test_a_daemon_still_managing_dns_is_told_to_stop(monkeypatch, tmp_path):
@@ -432,7 +449,7 @@ def test_a_daemon_still_managing_dns_is_told_to_stop(monkeypatch, tmp_path):
 
     note = session.converge()
 
-    assert ran == [[NETBIRD, "down"], [*UP, ops.iface_blacklist_flag()]]
+    assert ran == [[NETBIRD, "down"], UP]
     assert note == "overlay DNS management turned off"
 
 
@@ -544,7 +561,7 @@ def test_a_profile_missing_one_of_them_is_told_again(monkeypatch, tmp_path):
     )
 
     assert session.converge() == "overlay listens on no device the box made"
-    assert ran == [[NETBIRD, "down"], [*UP, ops.iface_blacklist_flag()]]
+    assert ran == [[NETBIRD, "down"], UP]
 
 
 # --- the hub's own daemon outside Linux -------------------------------------
@@ -605,7 +622,7 @@ def test_elsewhere_the_session_applier_names_the_daemon_and_reads_beside_the_hub
     )
     assert ran == [
         [NETBIRD, "down", *tail],
-        [*UP, ops.iface_blacklist_flag(), *tail],
+        [NETBIRD, "up", *ops.session_flags(), *tail],
     ]
 
 

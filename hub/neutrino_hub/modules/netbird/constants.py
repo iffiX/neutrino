@@ -90,6 +90,11 @@ NETBIRD_DAEMON_ADDRESS_FLAG = "--daemon-addr"
 # value.
 NETBIRD_DISABLE_DNS_KEY = "DisableDNS"
 NETBIRD_DISABLE_DNS_FLAG = "--disable-dns"
+# The daemon's own inbound block stays off on the hub: the hub's port chain
+# closes a NetBird chip, and NetBird's own rules decide every other port.
+# Stored in the profile, and stated on every `netbird up`.
+NETBIRD_BLOCK_INBOUND_KEY = "BlockInbound"
+NETBIRD_BLOCK_INBOUND_OFF_FLAG = "--block-inbound=false"
 # NetBird listens on no device the box made itself: an ICE candidate on
 # a container bridge or another engine's tunnel sends replies from an
 # address no peer can answer. Matched by name prefix, as NetBird's own
