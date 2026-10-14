@@ -975,7 +975,7 @@ and platform, which change between releases.
 | `network` | | `{link: {interface, mac, address}, interfaces: [{name, mac, addresses[]}]}` | | |
 | `modules` | `{name: {want, config, install, uninstall, retry_mark}}` | `{name: {state, is_active, code, params, details}}` | | |
 | `desktop` | `{seat_password}` | `{is_shared, origin, account, share_id, port, attention, connected_count}`, `origin` `switch` or `command` (a share an old `nagent rdp start` record keeps running), empty while nothing is shared | | |
-| `ai_tools` | `{is_enabled, base_url, api_key, tool_configs, accounts: [{account, password}], cc_switch_version, retry_mark}` | `{accounts: [{account, state, code, params, has_records}]}` | | |
+| `ai_tools` | `{is_enabled, is_forwarded, base_url, api_key, tool_configs, accounts: [{account, password}], cc_switch_version, retry_mark}` | `{accounts: [{account, state, code, params, has_records}]}` | | |
 | `services` | | | `[{id, type, title, payload, is_healthy, source, description, description_code, description_params, device_id, device_name, is_own_machine}]` | |
 | `is_disabled` | | | bool | |
 | `urls` | `["https://<address>:<port>", ...]` | | the same list | |
@@ -1082,10 +1082,13 @@ dropped with the device ([files.md](files.md)).
 
 `ai_tools` in the state is the machine's AI tools setting
 ([agent/ai_tools.md](agent/ai_tools.md)). `is_enabled` is true while
-the setting is on and the gateway serves a model. With it true, `base_url`
-is `http://127.0.0.1:8317`, the agent's own AI gateway forward
-([agent.md](agent.md), "The AI gateway forward"), and on the hub's own
-machine `http://127.0.0.1:<listen-port>`, the gateway itself; `api_key` is
+the setting is on and the gateway serves a model. With it true,
+`is_forwarded` says whether the agent opens its AI gateway forward
+([agent.md](agent.md), "The AI gateway forward"): true on a managed
+machine, where `base_url` is `http://127.0.0.1:8317`, that forward, and
+false on the hub's own machine, where `base_url` is
+`http://127.0.0.1:<listen-port>`, the gateway itself. The hub sets both, and
+the agent infers neither from anything else in the state; `api_key` is
 the device's own gateway key, and `tool_configs` is
 `{claude: {default, opus, sonnet, haiku}, codex: {model,
 model_reasoning_effort}, gemini: {model}}`, every Claude slot filled with the
@@ -1491,7 +1494,7 @@ is added without a change to the protocol; a kind is added by a row here.
 | client, to the hub | `exec` | `{device_id, argv, is_tty, cols, rows}`: one command on a managed machine, which the hub opens as the agent's own `exec` with the same `argv`, `is_tty`, `cols` and `rows`, and relays bytes both ways, each side under the other's credit, and the client's `eof` up; no `session_id`, and no `owner` stamped; closed with the agent's `params: {exit_code}`, or refused `binding_unknown`, `client_disabled`, `permission_denied {kind: terminal}` (no `terminal`, or a machine outside its device list) or `agent_offline {device}` before any agent stream opens; closed with the agent's refusal |
 | client, to the hub | `command` | `{module: agent, verb: resize, shell, cols, rows}`, `shell` being the client's own `shell` stream id, or its own `exec` stream id opened with `is_tty`, which the hub maps to the agent's; closed empty once sent on, `shell_unknown {shell}` when no such shell is open. `{module: agent, verb: persist, session_id, is_persistent, is_shared}` and `{module: agent, verb: stop_session, session_id}` go unchanged to the machine holding the session, the one this client's open `shell` names for the id or else the online machine whose report lists it, and close with the agent's close; `session_unknown {session_id}` when no machine holds it, `session_not_owned {session_id}` for a `persist` on a session the machine reports under another owner, and the `shell` stream's permission refusals for that machine. A `persist` names only the flags it carries. `verb_unknown` for any other module or verb. A hub before 0.4.0 closes both kinds `kind_unknown`, which a client reads as a refusal |
 | client, to the hub | `connect` | `{id}`, one published entry by the id a `service` stream takes, or `{is_panel: true}`, the hub's own panel: one TCP connection to that service, or every datagram of one UDP `port` entry. Bytes both ways under credit; closed empty when either end's socket ends, or with a refusal's code. "The connect stream" has the checks, the far ends and the codes |
-| agent, to the hub | `connect` | `{id}`, the `ai` entry's id, as a client's AI forward opens it: one TCP connection from the machine's AI tools, opened for each connection the agent's AI gateway forward accepts ([agent.md](agent.md), "The AI gateway forward"); the hub dials the gateway on `127.0.0.1` at its `listen_port` and relays bytes both ways under credit; refused `permission_denied {kind: ai}` while that machine's AI tools setting is off; closed empty when either socket ends, `connect_failed {reason}` when the dial fails |
+| agent, to the hub | `connect` | `{id}`, the `ai` entry's id, as a client's AI forward opens it: one TCP connection from the machine's AI tools, opened for each connection the agent's AI gateway forward accepts ([agent.md](agent.md), "The AI gateway forward"); the hub dials the gateway on `127.0.0.1` at its `listen_port` and relays bytes both ways under credit; refused `service_unknown {service_id}` for any other `id`, and `permission_denied {kind: ai}` while that machine's AI tools setting is off; no `connect_limit` holds on an agent's socket; closed empty when either socket ends, `connect_failed {reason}` when the dial fails |
 | hub, to an agent | `connect` | `{port, protocol}`, `protocol` being `tcp` or `udp` and `tcp` when absent: one TCP connection to `127.0.0.1:<port>` on the machine, or every datagram of one UDP entry to that port, a port the machine publishes now on that protocol; bytes both ways under credit; closed empty when either socket ends, `port_not_published {port}` for any other port or protocol, `connect_failed {reason}` when the dial fails |
 
 Installing and uninstalling are no kind and no verb: they follow from `want`.

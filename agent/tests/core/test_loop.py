@@ -1872,7 +1872,7 @@ AI_ON = {
     "hash": "h-on",
     "urls": ["https://192.0.2.1:8443"],
     "modules": {},
-    "ai_tools": {"is_enabled": True},
+    "ai_tools": {"is_enabled": True, "is_forwarded": True},
 }
 AI_OFF = dict(AI_ON, hash="h-off", ai_tools={"is_enabled": False})
 
@@ -1893,9 +1893,7 @@ def test_a_state_with_the_ai_tools_on_opens_the_forward_and_off_closes_it(
 def test_the_hubs_own_agent_opens_no_forward(config_path, monkeypatch):
     agent, _ = scripted_agent(config_path, monkeypatch)
 
-    agent._take_state(
-        dict(AI_ON, urls=["https://127.0.0.1:8443", "https://192.0.2.1:8443"])
-    )
+    agent._take_state(dict(AI_ON, ai_tools={"is_enabled": True, "is_forwarded": False}))
 
     assert agent._ai_forward.local_port == 0
 

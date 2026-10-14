@@ -1,14 +1,15 @@
 """The AI gateway forward: how the machine's AI tools reach the hub's gateway.
 
 The gateway answers on the hub's loopback alone, so while the state's
-``ai_tools`` section is on, on every machine but the hub's own, the agent
-listens on ``127.0.0.1:8317``, the endpoint the switch writes into each
-tool, and opens ``connect {id: ai}`` to the hub for each connection it
-accepts. Bytes go both ways under credit; end of file on either side ends
-the stream and the connection, with no half-close. While the agent has no
-channel to the hub the listener accepts nothing and stays bound, and the
-connections waiting in its queue are served once the channel is back. The
-forward adds no key and reads none.
+``ai_tools`` section is on and its ``is_forwarded`` is true, which the hub
+sends false on its own machine alone, the agent listens on
+``127.0.0.1:8317``, the endpoint the switch writes into each tool, and opens
+``connect {id: ai}`` to the hub for each connection it accepts. Bytes go
+both ways under credit; end of file on either side ends the stream and the
+connection, with no half-close. While the agent has no channel to the hub
+the listener accepts nothing and stays bound, and the connections waiting in
+its queue are served once the channel is back. The forward adds no key and
+reads none.
 
 Not pure: listens on a socket and opens streams.
 """
@@ -18,11 +19,9 @@ Not pure: listens on a socket and opens streams.
 from __future__ import annotations
 
 import contextlib
-import ipaddress
 import socket
 import threading
 import time
-import urllib.parse
 
 from neutrino_agent.constants import (
     AGENT_AI_ENTRY_ID,
@@ -40,35 +39,16 @@ def is_forward_wanted(document: dict) -> bool:
     """Whether a state asks for the forward.
 
     Args:
-        document: The state, ``{urls, ai_tools, ...}``.
+        document: The state, ``{ai_tools, ...}``.
 
     Returns:
-        True while its ``ai_tools`` section is on and it is not the state
-        of the hub's own agent.
+        True while its ``ai_tools`` section is on and its ``is_forwarded``
+        is true.
     """
     section = document.get("ai_tools")
-    if not isinstance(section, dict) or section.get("is_enabled") is not True:
+    if not isinstance(section, dict):
         return False
-    return not is_hub_machine(document.get("urls"))
-
-
-def is_hub_machine(urls) -> bool:
-    """Whether a state's addresses are the ones the hub's own agent is given.
-
-    Args:
-        urls: The state's ``urls``.
-
-    Returns:
-        True when the first is a loopback address, which the hub names
-        first for its own agent alone.
-    """
-    if not isinstance(urls, list) or not urls:
-        return False
-    try:
-        host = urllib.parse.urlsplit(str(urls[0])).hostname or ""
-        return ipaddress.ip_address(host).is_loopback
-    except ValueError:
-        return False
+    return section.get("is_enabled") is True and section.get("is_forwarded") is True
 
 
 def _close_socket(connection: socket.socket) -> None:

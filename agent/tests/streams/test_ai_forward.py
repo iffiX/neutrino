@@ -1,8 +1,8 @@
 """The AI gateway forward: the machine's AI tools reach the hub's gateway.
 
 What these pin: the forward is wanted while the state's ``ai_tools`` section
-is on and the state is not the hub's own agent's, whose addresses start with
-loopback; it listens on ``127.0.0.1`` alone, at 8317 unless told otherwise,
+is on and says ``is_forwarded``, and on the hub's own machine, where the hub
+sends ``is_forwarded`` false, it is not; it listens on ``127.0.0.1`` alone, at 8317 unless told otherwise,
 while wanted, and on nothing once the section is off; each connection it
 accepts opens one ``connect {id: ai}`` to the hub and its bytes cross both
 ways, up no faster than the hub's credit and down no faster than the credit
@@ -25,18 +25,14 @@ from neutrino_agent.constants import (
     AGENT_WS_STREAM_CREDIT_BYTES,
 )
 from neutrino_agent.exceptions import GatewayUnreachable
-from neutrino_agent.streams.ai_forward import (
-    AiGatewayForward,
-    is_forward_wanted,
-    is_hub_machine,
-)
+from neutrino_agent.streams.ai_forward import AiGatewayForward, is_forward_wanted
 from neutrino_agent.streams.channel import StreamChannel
 from tests.streams.fake_channel import FakeChannel
 
-LAN_URLS = ["https://192.168.1.1:8443"]
-OWN_URLS = ["https://127.0.0.1:8443", "https://192.168.1.1:8443"]
-ON = {"ai_tools": {"is_enabled": True}, "urls": LAN_URLS}
-OFF = {"ai_tools": {"is_enabled": False}, "urls": LAN_URLS}
+ON = {"ai_tools": {"is_enabled": True, "is_forwarded": True}}
+OFF = {"ai_tools": {"is_enabled": False}}
+# The hub's own machine: the tools reach the gateway itself.
+OWN = {"ai_tools": {"is_enabled": True, "is_forwarded": False}}
 
 
 class FakeHub:
@@ -103,30 +99,17 @@ def dial(forward) -> socket.socket:
     [
         (ON, True),
         (OFF, False),
-        ({"urls": LAN_URLS}, False),
-        ({"ai_tools": {"is_enabled": True}, "urls": OWN_URLS}, False),
-        ({"ai_tools": {"is_enabled": True}, "urls": ["https://[::1]:8443"]}, False),
-        ({"ai_tools": {"is_enabled": "yes"}, "urls": LAN_URLS}, False),
+        (OWN, False),
+        ({}, False),
+        ({"ai_tools": {"is_enabled": True}}, False),
+        ({"ai_tools": {"is_enabled": False, "is_forwarded": True}}, False),
+        ({"ai_tools": {"is_enabled": "yes", "is_forwarded": "yes"}}, False),
     ],
 )
-def test_the_forward_is_wanted_while_the_section_is_on_off_the_hubs_own_machine(
+def test_the_forward_is_wanted_while_the_section_is_on_and_forwarded(
     document, is_wanted
 ):
     assert is_forward_wanted(document) is is_wanted
-
-
-@pytest.mark.parametrize(
-    "urls, is_own",
-    [
-        (OWN_URLS, True),
-        (LAN_URLS, False),
-        (["https://hub.lan:8443"], False),
-        ([], False),
-        (None, False),
-    ],
-)
-def test_the_hubs_own_agent_is_told_by_loopback_first(urls, is_own):
-    assert is_hub_machine(urls) is is_own
 
 
 def test_it_listens_on_8317_on_loopback_alone_unless_told_otherwise():
@@ -152,9 +135,7 @@ def test_it_listens_while_the_section_is_on_and_on_nothing_once_it_is_off(forwar
         socket.create_connection(("127.0.0.1", port), 1)
 
 
-@pytest.mark.parametrize(
-    "document", [{"ai_tools": {"is_enabled": True}, "urls": OWN_URLS}, None, {}]
-)
+@pytest.mark.parametrize("document", [OWN, None, {}])
 def test_it_listens_on_nothing_on_the_hubs_own_machine_or_with_no_state(
     forward, document
 ):

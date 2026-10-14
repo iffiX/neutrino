@@ -1788,6 +1788,31 @@ class ChannelDesktopState(BaseModel):
     seat_password: str = ""
 
 
+class ChannelAiToolsAccount(BaseModel):
+    """One account the machine's AI tools setting acts on."""
+
+    account: str
+    # The login's own password, sent to a Windows machine alone.
+    password: str = ""
+
+
+class ChannelAiToolsState(BaseModel):
+    """The machine's AI tools setting; off, it carries ``cc_switch_version`` alone."""
+
+    is_enabled: bool = False
+    # Whether the agent opens its AI gateway forward on 127.0.0.1:8317: true
+    # on a managed machine, false on the hub's own.
+    is_forwarded: bool = False
+    # What the tools are pointed at: the forward, or the gateway itself on
+    # the hub's own machine.
+    base_url: str = ""
+    api_key: str = ""
+    tool_configs: dict = Field(default_factory=dict)
+    accounts: list[ChannelAiToolsAccount] = Field(default_factory=list)
+    cc_switch_version: str = ""
+    retry_mark: str = ""
+
+
 class ChannelAgentState(BaseModel):
     """The ``state`` frame to an agent."""
 
@@ -1796,6 +1821,7 @@ class ChannelAgentState(BaseModel):
     desktop: ChannelDesktopState = Field(default_factory=ChannelDesktopState)
     # Every address the hub answers the channel on.
     urls: list[str] = Field(default_factory=list)
+    ai_tools: ChannelAiToolsState = Field(default_factory=ChannelAiToolsState)
 
 
 class ChannelShellSession(BaseModel):
