@@ -117,9 +117,9 @@ def test_a_cn_tree_holding_a_left_out_path_is_refused_by_name(tmp_path):
 
 def test_an_intl_tree_lacking_a_left_out_path_is_refused_by_name(tmp_path):
     root = intl_tree(tmp_path)
-    (root / "hub/neutrino_hub/web/routers/hub/overlay_netbird.py").unlink()
+    (root / "hub/neutrino_hub/web/routers/hub/proxy_node.py").unlink()
 
-    with pytest.raises(SystemExit, match="overlay_netbird.py"):
+    with pytest.raises(SystemExit, match="proxy_node.py"):
         check_tree(root, "intl")
 
 
@@ -145,7 +145,8 @@ def test_the_cn_archive_carries_no_upstream_source_of_a_left_out_feature():
         if not name.startswith(build_sources.CN_LEFT_OUT_SOURCES)
     ]
 
-    assert not any("netbird" in name or "xray" in name for name in kept)
+    assert not any("xray" in name for name in kept)
+    assert any(name.startswith("netbird-") for name in kept)
     assert any(name.startswith("easytier-") for name in kept)
     assert any(name.startswith("rustdesk-") for name in kept)
 
@@ -163,7 +164,7 @@ def test_both_archives_carry_the_source_of_the_pinned_cc_switch():
 
 def test_the_removal_scripts_stop_only_units_this_tree_carries():
     """The removal scripts' list comes from the code, so in the mainland
-    tree it names no unit of the proxy or NetBird."""
+    tree it names no unit of the proxy."""
     import re
 
     import venv_tree

@@ -273,10 +273,9 @@ def overlay_name(network) -> str:
         exposed, not running, or has no name.
     """
     overlay = network.overlay(ROUTER_OVERLAY_NETBIRD)
-    part = overlay_parts().get(ROUTER_OVERLAY_NETBIRD)
-    if overlay is None or not overlay.is_exposed or part is None:
+    if overlay is None or not overlay.is_exposed:
         return ""
-    return part().name()
+    return overlay_parts()[ROUTER_OVERLAY_NETBIRD]().name()
 
 
 def enrollment_link_parts(runtime, *, is_hub: bool = False) -> tuple[list, str]:

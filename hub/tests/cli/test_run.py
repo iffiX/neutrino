@@ -188,7 +188,7 @@ class _Controller:
 
 @pytest.fixture
 def service_roots(monkeypatch, tmp_path):
-    for name in ("UTILS_LOG_ROOT", "UTILS_RUNTIME_ROOT"):
+    for name in ("UTILS_LOG_ROOT", "UTILS_RUNTIME_ROOT", "NETBIRD_HUB_STATE_DIR"):
         monkeypatch.setattr(run, name, tmp_path / name.lower())
     monkeypatch.setattr(run, "CLIPROXYAPI_DIR", tmp_path / "state" / "cliproxyapi")
     monkeypatch.setattr(run, "reload_firewall", lambda: None)
@@ -230,6 +230,7 @@ def test_the_service_serves_the_panel_and_supervises_the_children(
         ("shutdown",),
     ]
     assert (service_roots / "utils_runtime_root").is_dir()
+    assert (service_roots / "netbird_hub_state_dir").is_dir()
 
 
 @pytest.mark.feature("proxy")
@@ -291,10 +292,12 @@ def test_the_ai_gateway_starts_in_its_own_directory():
     assert line.cwd == str(run.CLIPROXYAPI_DIR)
 
 
-@pytest.mark.feature("proxy")
-@pytest.mark.feature("netbird")
-def test_the_service_runs_the_proxy_core_and_netbird_where_the_tree_carries_them():
-    assert sorted(run.child_start_lines()) == ["cliproxyapi", "netbird", "xray"]
+def test_the_service_runs_netbird_and_the_proxy_core_where_the_tree_carries_it():
+    assert sorted(run.child_start_lines()) == [
+        "cliproxyapi",
+        "netbird",
+        *(["xray"] if edition.has_feature("proxy") else []),
+    ]
 
 
 @pytest.mark.feature("proxy")

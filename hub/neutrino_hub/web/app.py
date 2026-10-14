@@ -61,14 +61,15 @@ from neutrino_hub.web.routers.hub import (
     overlay,
     overlay_direct,
     overlay_easytier,
+    overlay_netbird,
     overlay_relay,
     service,
     setting,
 )
 from neutrino_hub.web.routers.hub import client as hub_client
 
-# The hub group in sidebar order, then the agent group. NetBird's and the
-# proxy's routers come from the edition table.
+# The hub group in sidebar order, then the agent group. The proxy's routers
+# come from the edition table.
 API_ROUTERS = (
     auth.router,
     display.router,
@@ -78,6 +79,7 @@ API_ROUTERS = (
     overlay_direct.router,
     overlay_easytier.router,
     overlay_relay.router,
+    overlay_netbird.router,
     *edition.hooks("api_routers"),
     ai.router,
     ai_gateway.router,

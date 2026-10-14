@@ -308,7 +308,6 @@ def test_macos_and_windows_stop_the_service_and_hand_back_nothing(
     assert not hub_service.is_running
 
 
-@pytest.mark.feature("netbird")
 def test_reset_all_forgets_the_services_children(box):
     state = box.parent / "state"
     (state / "services.json").write_text('{"enabled": ["xray"]}')

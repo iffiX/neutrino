@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from neutrino_hub import edition
+from neutrino_hub.modules.netbird.constants import NETBIRD_UNIT
 
 # What a machine may be reachable through from outside the building. Any of
 # them, all at once or none; the engine table's order is the order the panel
@@ -44,12 +44,16 @@ class OverlayEngine:
     is_integrated: bool
 
 
-# NetBird's row is NetBird's own, and present where the tree carries it.
 OVERLAY_ENGINES = {
-    **{
-        key: OverlayEngine(key=key, **fields)
-        for key, fields in edition.hooks("overlay_engines")
-    },
+    OVERLAY_NETBIRD: OverlayEngine(
+        key=OVERLAY_NETBIRD,
+        title="NetBird",
+        device_name="wt0",
+        peer_port=51820,
+        unit=NETBIRD_UNIT,
+        subnet="100.64.0.0/10",
+        is_integrated=True,
+    ),
     OVERLAY_EASYTIER: OverlayEngine(
         key=OVERLAY_EASYTIER,
         title="EasyTier",

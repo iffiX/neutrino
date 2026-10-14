@@ -1,8 +1,8 @@
 """The edition table: the one way the rest of the hub reaches a left-out feature.
 
 A left-out feature is one the mainland edition ``cn`` builds without, by
-deleting its files from the tree: the proxy and NetBird. Code outside a
-feature's own files never imports them; it asks this table for the hooks
+deleting its files from the tree: the proxy. Code outside a feature's own
+files never imports them; it asks this table for the hooks
 of one registration point and gets those of the present features alone.
 A feature is present when its package imports. Every hook is named by its
 dotted path and imported on its first lookup, so loading this file imports
@@ -24,38 +24,19 @@ EDITIONS = (EDITION_INTL, EDITION_CN)
 EDITION_FILE_NAME = "EDITION"
 
 EDITION_FEATURE_PROXY = "proxy"
-EDITION_FEATURE_NETBIRD = "netbird"
 # Each feature, by the package whose presence is the feature's.
 EDITION_FEATURE_PACKAGES = {
     EDITION_FEATURE_PROXY: "neutrino_hub.modules.xray",
-    EDITION_FEATURE_NETBIRD: "neutrino_hub.modules.netbird",
 }
 
 _PROXY = EDITION_FEATURE_PROXY
-_NETBIRD = EDITION_FEATURE_NETBIRD
 # Each registration point, by the hooks the features give it, in the order
 # the point takes them. A hook is ``module:attribute``.
 EDITION_HOOKS = {
     # web/app.py, API_ROUTERS.
     "api_routers": (
-        (_NETBIRD, "neutrino_hub.web.routers.hub.overlay_netbird:router"),
         (_PROXY, "neutrino_hub.web.routers.hub.proxy:router"),
         (_PROXY, "neutrino_hub.web.routers.hub.proxy_node:router"),
-    ),
-    # modules/registry.py, MODULE_SPECS: ``(key, ModuleSpec fields)``.
-    "module_specs": (
-        (_NETBIRD, "neutrino_hub.modules.netbird.provisioner:NETBIRD_MODULE_SPEC"),
-    ),
-    # modules/overlay/constants.py, OVERLAY_ENGINES: ``(key, OverlayEngine
-    # fields)``.
-    "overlay_engines": (
-        (_NETBIRD, "neutrino_hub.modules.netbird.constants:NETBIRD_OVERLAY_ENGINE"),
-    ),
-    # The overlay engines' own parts: ``(key, class)`` with ``provisioner``,
-    # ``address``, ``name``, ``relayed_peer_addresses``, ``material``,
-    # ``deselect`` and ``gate``.
-    "overlay_parts": (
-        (_NETBIRD, "neutrino_hub.modules.netbird.overlay_part:NETBIRD_OVERLAY_PART"),
     ),
     # The network modes setup and the Network page offer beyond ``router``
     # and ``server``: ``{key, summary}``.
@@ -83,21 +64,13 @@ EDITION_HOOKS = {
         (_PROXY, "neutrino_hub.modules.tun.constants:TUN_DEVICE_NAMES"),
     ),
     "hidden_networks": ((_PROXY, "neutrino_hub.modules.tun.constants:TUN_NETWORK"),),
-    # The programs the system firewall allows on macOS: the proxy core's,
-    # and each overlay engine's as ``(key, path)``.
+    # The program the system firewall allows for the proxy core on macOS.
     "proxy_program": ((_PROXY, "neutrino_hub.modules.xray.constants:XRAY_BINARY"),),
-    "overlay_programs": (
-        (_NETBIRD, "neutrino_hub.modules.netbird.constants:NETBIRD_FIREWALL_PROGRAM"),
-    ),
     # The daemons the hub runs itself: the units, the names the service
     # knows, the core daemons, and the start line of each outside Linux.
     "core_units": ((_PROXY, "neutrino_hub.modules.xray.constants:XRAY_CORE_UNIT"),),
-    "optional_units": (
-        (_NETBIRD, "neutrino_hub.modules.netbird.constants:NETBIRD_OPTIONAL_UNIT"),
-    ),
     "supervised_names": (
         (_PROXY, "neutrino_hub.modules.xray.constants:XRAY_SUPERVISED_NAMES"),
-        (_NETBIRD, "neutrino_hub.modules.netbird.constants:NETBIRD_SUPERVISED_NAMES"),
     ),
     "child_requirements": (
         (_PROXY, "neutrino_hub.modules.xray.constants:XRAY_CHILD_REQUIREMENTS"),
@@ -107,29 +80,18 @@ EDITION_HOOKS = {
     "unit_templates": (
         (_PROXY, "neutrino_hub.modules.xray.constants:XRAY_UNIT_TEMPLATE"),
     ),
-    # cli/reset.py: the state files and directories a full reset clears.
+    # cli/reset.py: the state files a full reset clears.
     "reset_state_paths": (
         (_PROXY, "neutrino_hub.modules.xray.constants:XRAY_NODE_HEALTH_RELATIVE"),
     ),
-    "reset_state_dirs": (
-        (_NETBIRD, "neutrino_hub.modules.netbird.constants:NETBIRD_STATE_DIR_NAME"),
-    ),
-    # web/constants.py: the domains a panel certificate may name.
-    "panel_tls_domains": (
-        (_NETBIRD, "neutrino_hub.modules.netbird.constants:NETBIRD_PANEL_TLS_DOMAIN"),
-    ),
     "child_start_lines": (
         (_PROXY, "neutrino_hub.modules.xray.run_part:child_start_lines"),
-        (_NETBIRD, "neutrino_hub.modules.netbird.run_part:child_start_lines"),
     ),
     # cli/run.py: ``nhub run --only-<name>``, the Linux children of a plain
     # ``nhub run``, and what the service does before and while it supervises.
     "run_only": ((_PROXY, "neutrino_hub.modules.xray.run_part:RUN_ONLY"),),
     "run_children": ((_PROXY, "neutrino_hub.modules.xray.run_part:RUN_CHILDREN"),),
-    "service_start": (
-        (_PROXY, "neutrino_hub.modules.tun.ops:withdraw_tun_on_start"),
-        (_NETBIRD, "neutrino_hub.modules.netbird.run_part:make_directories"),
-    ),
+    "service_start": ((_PROXY, "neutrino_hub.modules.tun.ops:withdraw_tun_on_start"),),
     "service_watcher": ((_PROXY, "neutrino_hub.modules.tun.ops:TunRouteKeeper"),),
     # cli/reset.py: what a reset withdraws first.
     "reset_withdraw": ((_PROXY, "neutrino_hub.modules.tun.ops:withdraw_tun"),),
@@ -145,7 +107,6 @@ EDITION_HOOKS = {
     ),
     "setup_carried_programs": (
         (_PROXY, "neutrino_hub.modules.xray.constants:XRAY_BINARY"),
-        (_NETBIRD, "neutrino_hub.modules.netbird.constants:NETBIRD_BINARY_PATH"),
     ),
     # cli/wizard.py and the browser's setup: the proxy screen's defaults and
     # how it reads a share link.
@@ -177,7 +138,6 @@ EDITION_HOOKS = {
     "about_versions": ((_PROXY, "neutrino_hub.web.routers.hub.proxy:about_versions"),),
     "about_components": (
         (_PROXY, "neutrino_hub.web.routers.hub.proxy:PROXY_ABOUT_COMPONENTS"),
-        (_NETBIRD, "neutrino_hub.modules.netbird.constants:NETBIRD_ABOUT"),
     ),
 }
 
@@ -188,7 +148,7 @@ def has_feature(name: str) -> bool:
     """Whether a left-out feature is in this tree.
 
     Args:
-        name: ``proxy`` or ``netbird``.
+        name: ``proxy``.
 
     Returns:
         True when the feature's package imports.

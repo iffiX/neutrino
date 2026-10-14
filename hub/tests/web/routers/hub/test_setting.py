@@ -515,7 +515,6 @@ def test_the_release_names_the_package_family_the_build_stamped(
     assert body["package_family"] == family
 
 
-@pytest.mark.feature("netbird")
 @pytest.mark.feature("proxy")
 def test_the_hub_credits_every_component_it_carries(monkeypatch):
     """The binaries in the hub package, at the exact tag each was built from,
@@ -531,11 +530,11 @@ def test_the_hub_credits_every_component_it_carries(monkeypatch):
 
     assert [credit.name for credit in credits] == [
         "CLIProxyAPI",
+        "NetBird",
         "EasyTier",
         "Xray-core",
         "v2fly geoip",
         "v2fly domain-list-community",
-        "NetBird",
     ]
     assert by_name["Xray-core"].version == XRAY_VERSION
     assert by_name["Xray-core"].corresponding_source.endswith(f"/tree/v{XRAY_VERSION}")
@@ -572,13 +571,13 @@ def test_a_package_off_linux_credits_what_it_adds(monkeypatch, system, added):
     assert tun2socks.version == HUB_CARRIED_VERSIONS.get("tun2socks", "")
 
 
-def test_a_tree_without_the_proxy_or_netbird_credits_neither(monkeypatch):
+def test_a_tree_without_the_proxy_credits_netbird_and_no_proxy(monkeypatch):
     monkeypatch.setattr(settings_router, "hub_os", lambda: "windows")
     monkeypatch.setattr(edition, "has_feature", lambda name: False)
 
     names = [credit.name for credit in settings_router._acknowledgements()]
 
-    assert names == ["CLIProxyAPI", "EasyTier", "Wintun"]
+    assert names == ["CLIProxyAPI", "NetBird", "EasyTier", "Wintun"]
 
 
 def test_no_module_a_machine_installs_is_credited(monkeypatch):
@@ -871,12 +870,10 @@ def test_a_backup_in_a_mode_this_hub_does_not_offer_writes_nothing(client, monke
 def test_a_backup_holding_a_left_out_features_files_restores_them_unread(
     client, monkeypatch
 ):
-    """The proxy's and NetBird's files land beside the rest, and a hub
-    without either reads none of them."""
+    """The proxy's files land beside the rest, and a hub without the proxy
+    reads none of them."""
     opened, config_dir = client
     seed_config(config_dir)
-    (config_dir / "netbird").mkdir()
-    (config_dir / "netbird" / "netbird.json").write_text(json.dumps({}))
     (config_dir / "router").mkdir()
     (config_dir / "router" / "network.json").write_text(
         json.dumps({"mode": "router", "interfaces": []})
@@ -887,7 +884,6 @@ def test_a_backup_holding_a_left_out_features_files_restores_them_unread(
 
     assert upload_restore(opened, archive_bytes, PASSPHRASE).status_code == 200
     assert (config_dir / "xray" / "nodes.json").is_file()
-    assert (config_dir / "netbird" / "netbird.json").is_file()
 
 
 def test_a_restored_key_replaces_the_one_already_on_the_box(client):

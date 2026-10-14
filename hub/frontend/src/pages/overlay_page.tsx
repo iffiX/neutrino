@@ -5,8 +5,8 @@ import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
 import { OverlayModePanel } from "../components/overlay_mode_panel";
 import { DirectSection } from "../components/direct_panels";
+import { NetbirdCard } from "../components/netbird_card";
 import { RelaySection } from "../components/relay_panels";
-import { NetbirdCard } from "../edition";
 import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import { usePageMemory } from "../use_page_memory";
@@ -110,9 +110,9 @@ export function OverlayPage() {
         </div>
       )}
 
-      {NetbirdCard !== null &&
-        selected === PROVIDER_NETBIRD &&
-        isEnabled(PROVIDER_NETBIRD) && <NetbirdCard />}
+      {selected === PROVIDER_NETBIRD && isEnabled(PROVIDER_NETBIRD) && (
+        <NetbirdCard />
+      )}
 
       {selected === PROVIDER_EASYTIER && isEnabled(PROVIDER_EASYTIER) && (
         <EasyTierSection />

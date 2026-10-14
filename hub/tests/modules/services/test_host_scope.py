@@ -52,7 +52,6 @@ def test_each_served_lan_is_a_scope_named_by_its_network():
     ]
 
 
-@pytest.mark.feature("netbird")
 def test_the_overlay_scope_comes_from_the_hubs_own_overlay_address():
     network = network_config(
         lan_entry("enp1s0", address="192.168.100.1"),

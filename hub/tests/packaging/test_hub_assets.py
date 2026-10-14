@@ -78,7 +78,7 @@ def fetched(monkeypatch):
 
 
 # The programs of a left-out feature, by that feature.
-PROGRAM_FEATURES = {"xray": "proxy", "tun2socks": "proxy", "netbird": "netbird"}
+PROGRAM_FEATURES = {"xray": "proxy", "tun2socks": "proxy"}
 
 
 @pytest.mark.parametrize(
@@ -113,7 +113,6 @@ def test_every_system_a_hub_is_built_for_has_a_pin(program):
 
 
 @pytest.mark.feature("proxy")
-@pytest.mark.feature("netbird")
 def test_the_linux_rows_are_the_files_the_linux_constants_name():
     """A Linux package carries what the panel reports and a checkout fetches."""
     from neutrino_hub.modules.easytier import constants as easytier
@@ -151,7 +150,6 @@ def test_the_linux_rows_are_the_files_the_linux_constants_name():
 
 
 @pytest.mark.feature("proxy")
-@pytest.mark.feature("netbird")
 def test_every_asset_that_names_a_version_names_its_own():
     """xray's and tun2socks's assets name no version; every other release
     names its own."""
@@ -164,7 +162,6 @@ def test_every_asset_that_names_a_version_names_its_own():
             assert version in name, (program, name)
 
 
-@pytest.mark.feature("netbird")
 def test_a_system_nothing_is_pinned_for_stops_the_build():
     with pytest.raises(SystemExit) as refused:
         hub_assets.pinned("netbird", "windows", "arm64")
@@ -173,7 +170,6 @@ def test_a_system_nothing_is_pinned_for_stops_the_build():
 
 
 @pytest.mark.feature("proxy")
-@pytest.mark.feature("netbird")
 def test_linux_takes_the_five_programs_and_nothing_beside_them(tmp_path, fetched):
     written = hub_assets.stage_programs(tmp_path, "linux", "amd64")
 
@@ -192,7 +188,6 @@ def test_linux_takes_the_five_programs_and_nothing_beside_them(tmp_path, fetched
 
 
 @pytest.mark.feature("proxy")
-@pytest.mark.feature("netbird")
 def test_an_intel_mac_takes_the_x86_64_builds(tmp_path, fetched):
     hub_assets.stage_programs(tmp_path, "darwin", "amd64")
 
@@ -249,7 +244,6 @@ def test_the_tun2socks_pins_are_the_packaging_s_own():
 
 
 @pytest.mark.feature("proxy")
-@pytest.mark.feature("netbird")
 def test_windows_takes_the_executables_and_easytiers_tun_driver(tmp_path, fetched):
     """wintun.dll comes out of EasyTier's archive, never xray's, and Npcap's
     Packet.dll stays behind."""

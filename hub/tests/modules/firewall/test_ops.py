@@ -89,7 +89,6 @@ def recorder(monkeypatch):
 
 
 @pytest.mark.feature("proxy")
-@pytest.mark.feature("netbird")
 def test_windows_opens_the_ports_the_settings_name(on_windows, recorder, monkeypatch):
     stored = {
         "web/settings.json": {"listen_port": 9080, "https_listen_port": 9443},
@@ -126,7 +125,6 @@ def test_windows_before_setup_opens_the_default_ports(
 
 
 @pytest.mark.feature("proxy")
-@pytest.mark.feature("netbird")
 def test_windows_answers_on_the_exposed_interfaces_and_overlays(
     on_windows, recorder, monkeypatch
 ):
@@ -150,7 +148,6 @@ def test_windows_answers_on_the_exposed_interfaces_and_overlays(
 
 
 @pytest.mark.feature("proxy")
-@pytest.mark.feature("netbird")
 def test_macos_blocks_the_ports_where_they_do_not_answer(
     on_darwin, recorder, monkeypatch
 ):
@@ -180,7 +177,6 @@ def test_the_kept_anchor_is_loaded_again_on_macos_only(elsewhere, recorder):
         assert recorder.handed == []
 
 
-@pytest.mark.feature("netbird")
 @pytest.mark.feature("proxy")
 def test_macos_allows_the_programs_of_the_enabled_overlays(
     on_darwin, recorder, monkeypatch
@@ -218,7 +214,6 @@ def test_a_pass_records_the_interfaces_it_scoped_the_rules_to(
     assert ops.is_interface_set_moved() is True
 
 
-@pytest.mark.feature("netbird")
 @pytest.mark.feature("proxy")
 def test_a_reset_takes_everything_away(elsewhere, recorder):
     from neutrino_hub.modules.netbird.constants import NETBIRD_BINARY_PATH
@@ -246,7 +241,6 @@ def test_a_reset_takes_everything_away(elsewhere, recorder):
 
 
 @pytest.mark.feature("proxy")
-@pytest.mark.feature("netbird")
 def test_direct_opens_the_agent_port_alone_on_windows_enabled_interfaces(
     on_windows, recorder, monkeypatch
 ):
@@ -270,7 +264,6 @@ def test_direct_opens_the_agent_port_alone_on_windows_enabled_interfaces(
     )
 
 
-@pytest.mark.feature("netbird")
 def test_direct_lifts_the_agent_ports_block_on_macos_interfaces_alone(
     on_darwin, recorder, monkeypatch
 ):

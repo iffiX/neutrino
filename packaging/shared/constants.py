@@ -25,10 +25,10 @@ PACKAGING_ARCHITECTURE_NAMES = {
 PACKAGING_EDITIONS = ("intl", "cn")
 PACKAGING_EDITION_FILE = "EDITION"
 
-# Every repository path that exists for a feature the mainland edition `cn`
-# leaves out, the proxy and NetBird, and for nothing else: its packages, their
-# mirrored tests, its frontend files, its examples and unit templates, and the
-# scripts that build its programs. Deleting these from the tree is the whole of
+# Every repository path that exists for the feature the mainland edition `cn`
+# leaves out, the proxy, and for nothing else: its packages, their mirrored
+# tests, its frontend files, its examples and unit templates, and the scripts
+# that build its programs. Deleting these from the tree is the whole of
 # what makes the mainland tree. The one list of what `cn` leaves out.
 PACKAGING_CN_LEFT_OUT_PATHS = (
     # The hub: the proxy.
@@ -45,14 +45,6 @@ PACKAGING_CN_LEFT_OUT_PATHS = (
     "licenses/xray_core.txt",
     "licenses/v2fly_geoip.txt",
     "licenses/v2fly_domain_list_community.txt",
-    # The hub: NetBird.
-    "hub/neutrino_hub/modules/netbird",
-    "hub/neutrino_hub/web/routers/hub/overlay_netbird.py",
-    "hub/neutrino_hub/data/examples/netbird",
-    "hub/neutrino_hub/data/services/neutrino_hub_netbird.service",
-    "hub/tests/modules/netbird",
-    "hub/tests/web/routers/hub/test_overlay_netbird.py",
-    "licenses/netbird.txt",
     # The panel: the Proxy page and the panels only it shows.
     "hub/frontend/src/pages/proxy_page.tsx",
     "hub/frontend/src/pages/proxy_page.css",
@@ -65,9 +57,6 @@ PACKAGING_CN_LEFT_OUT_PATHS = (
     "hub/frontend/src/components/geodata_panel.css",
     "hub/frontend/src/components/socks_ports_panel.tsx",
     "hub/frontend/src/components/socks_ports_panel.css",
-    # The panel: NetBird's card on the Access page.
-    "hub/frontend/src/components/netbird_card.tsx",
-    "hub/frontend/src/components/netbird_card.css",
     # The desktop client: NetBird and the daemon that runs it.
     "client/desktop/neutrino_client/netbird",
     "client/desktop/neutrino_client/data/services/neutrino_client_netbird.service",
