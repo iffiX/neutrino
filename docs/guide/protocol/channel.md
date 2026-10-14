@@ -407,6 +407,7 @@ Each build declares one integer, `PROTOCOL`, and package versions take no part i
 | 1          | 0.3.0       |
 | 2          | 0.4.0       |
 | 3          | 0.5.2       |
+| 4          | 0.6.0       |
 
 `PROTOCOL_MIN` is 3 from 0.5.2. Protocol 3 renamed the link's and the client state's `overlay`, one object or null, to `overlays`, a list. A 0.3 or 0.4 agent or client is rejected with `protocol_too_old` and does not update itself from a 0.5.2 hub. Each such machine installs the 0.5.2 package and joins with a new link.
 

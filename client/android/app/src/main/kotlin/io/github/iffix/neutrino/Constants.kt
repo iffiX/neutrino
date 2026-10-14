@@ -110,7 +110,7 @@ const val CLIENT_PLATFORM_OS_DARWIN = "darwin"
 const val CLIENT_PLATFORM_OS_LINUX = "linux"
 
 /** The protocol number this build speaks; no prefix, one number has one name in every package. */
-const val PROTOCOL = 3
+const val PROTOCOL = 4
 
 /** The tag of every line the app writes to the system log. */
 const val CLIENT_LOG_TAG = "neutrino"

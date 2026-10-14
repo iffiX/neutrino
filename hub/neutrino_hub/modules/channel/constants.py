@@ -4,8 +4,8 @@ from neutrino_hub.utils.constants import UTILS_STATE_ROOT
 
 # The protocol number this hub speaks, and the oldest it still accepts. One
 # number has one name in every package, so neither carries a package prefix.
-PROTOCOL = 3
-PROTOCOL_MIN = 3
+PROTOCOL = 4
+PROTOCOL_MIN = 4
 
 # An enrolment ticket: its size in bytes before encoding, and how long it
 # lives, counted across hub restarts. The standard names both, so neither

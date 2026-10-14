@@ -21,7 +21,7 @@ CLIENT_TERMINAL_FONT_SIZE_MAX = 32
 
 # The protocol number this build speaks. The name has no package prefix:
 # one number has one name in every package.
-PROTOCOL = 3
+PROTOCOL = 4
 CLIENT_ROLE = "client"
 # What ``software`` reads in the join body and the hello, before the version.
 CLIENT_SOFTWARE_PREFIX = "neutrino_client/"
