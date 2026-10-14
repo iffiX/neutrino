@@ -314,7 +314,6 @@ ALL_KINDS = [
     "rdp",
     "overlay",
     "terminal",
-    "exec",
     "panel",
 ]
 
@@ -325,7 +324,7 @@ def test_the_list_carries_the_default_and_every_kind(api):
 
     payload = client.get("/api/hub/client").json()
 
-    assert payload["default_permission"] == ALL_KINDS[:-2]
+    assert payload["default_permission"] == ALL_KINDS[:-1]
     assert payload["permission_kinds"] == ALL_KINDS
     assert payload["clients"][0]["id"] == client_id
     assert payload["clients"][0]["permission"] is None

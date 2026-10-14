@@ -96,6 +96,7 @@ CLIENT_MD_WORDS = {
     "ui.state.admission_paused": "The hub pauses new devices",
     "ui.state.unknown_device": "The hub does not know this device",
     "ui.state.too_old": "Version too old",
+    "ui.action.update_client": "update the client",
     "ui.state.join_refused": "Join refused",
     "ui.action.retry_in": "retrying in {s} s",
     "ui.state.replaced": "Replaced by another client",
@@ -123,6 +124,7 @@ CLIENT_MD_CHINESE = {
     "ui.state.admission_paused": "中枢暂停接纳",
     "ui.state.unknown_device": "中枢不认识本机",
     "ui.state.too_old": "版本太旧",
+    "ui.action.update_client": "更新客户端",
     "ui.state.join_refused": "加入被拒",
     "ui.action.retry_in": "{s} 秒后重试",
     "ui.state.replaced": "已被替换",
@@ -505,6 +507,13 @@ def test_a_connected_hub_row_shows_its_way_in_and_its_round_trip_as_tags():
     assert "tags: tags," in row
     assert CATALOGS["en"]["ui.state.rtt"] == CATALOGS["zh-CN"]["ui.state.rtt"]
     assert EN_WORDS["ui.state.rtt"] == "{ms} ms"
+
+
+def test_a_client_too_old_for_its_hub_says_to_update_the_client():
+    wait = PAGE_JS.split("function waitWord(hub)")[1].split("\n}")[0]
+
+    assert "hub.wait_code.code === 'protocol_too_old'" in wait
+    assert "return word + ' · ' + t('ui.action.update_client');" in wait
 
 
 def test_a_hub_is_keyed_by_its_id_and_by_its_binding_before_a_welcome():

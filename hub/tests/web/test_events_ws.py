@@ -73,6 +73,7 @@ class FakeRuntime:
         self.published_services = StubPublishedServices()
         self.desired_states = StubDesiredStates()
         self.agent_sessions = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
+        self.agent_update_sessions = {}
         self.agent_sessions.on_presence_change = self._publish_devices
         self.desired = ("", {"modules": {}, "desktop": {}})
 

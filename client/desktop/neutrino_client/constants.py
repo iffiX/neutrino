@@ -21,12 +21,18 @@ CLIENT_TERMINAL_FONT_SIZE_MAX = 32
 
 # The protocol number this build speaks. The name has no package prefix:
 # one number has one name in every package.
-PROTOCOL = 3
+PROTOCOL = 4
 CLIENT_ROLE = "client"
 # What ``software`` reads in the join body and the hello, before the version.
 CLIENT_SOFTWARE_PREFIX = "neutrino_client/"
+# The refusal of a client older than the hub's floor: the row says to
+# update the client.
+CLIENT_REFUSAL_CODE_PROTOCOL_TOO_OLD = "protocol_too_old"
 # The refusals the hub answers a protocol number it does not speak with.
-CLIENT_PROTOCOL_REFUSAL_CODES = ("protocol_too_old", "protocol_too_new")
+CLIENT_PROTOCOL_REFUSAL_CODES = (
+    CLIENT_REFUSAL_CODE_PROTOCOL_TOO_OLD,
+    "protocol_too_new",
+)
 # The one refusal that unbinds: the hub holds no such binding.
 CLIENT_REFUSAL_CODE_BINDING_UNKNOWN = "binding_unknown"
 # The one refusal of a join that keeps the ticket: the hub paused new

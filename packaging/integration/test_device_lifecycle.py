@@ -313,20 +313,37 @@ def test_the_lifecycle_walks_every_transition(panel, stranger):
 
     # A protocol outside the hub's range is turned away at the door, on both
     # sides of it, and the binding is untouched: only a hub that has
-    # forgotten this machine unbinds it.
-    spoken, accepted = (
+    # forgotten this machine unbinds it. The number of 0.5 is let in for the
+    # agent's own update alone: the Devices page reads it updating, and the
+    # agent is not online for anything else.
+    spoken, update_only = (
         int(word)
         for word in machine_state.run(
             [
                 HUB_PYTHON,
                 "-c",
-                "from neutrino_hub.modules.channel.constants import PROTOCOL, PROTOCOL_MIN; "
-                "print(PROTOCOL, PROTOCOL_MIN)",
+                "from neutrino_hub.modules.channel.constants import "
+                "PROTOCOL, CHANNEL_PROTOCOL_UPDATE_ONLY; "
+                "print(PROTOCOL, CHANNEL_PROTOCOL_UPDATE_ONLY)",
             ]
         ).split()
     )
+    patched = patch_protocol(host, update_only)
+    assert f"PROTOCOL = {update_only}" in patched.stdout, (
+        patched.stdout + patched.stderr
+    )
+    wait_for(
+        "the agent of 0.5 to be welcomed for its own update alone",
+        lambda: (
+            ((device_by_id(panel, device_id) or {}).get("client") or {}).get(
+                "is_updating"
+            )
+        ),
+        DRILL_TIMEOUT_S,
+    )
+    assert not device_by_id(panel, device_id)["is_agent_online"]
     for number, advice in (
-        (accepted - 1, "update this agent"),
+        (update_only - 1, "update this agent"),
         (spoken + 1, "update the hub"),
     ):
         patched = patch_protocol(host, number)

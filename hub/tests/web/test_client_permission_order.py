@@ -33,7 +33,6 @@ def test_the_drawer_lists_the_overlay_first_and_the_desktops_last():
         "ai",
         "file",
         "terminal",
-        "exec",
         "rdp",
     ]
 

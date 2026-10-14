@@ -4,11 +4,9 @@ The Clients routes run as they do in the panel, in a request thread, against
 a real client socket registry whose sessions live on a loop of their own.
 What these pin, cause by cause: switching a client off closes every stream
 it opened with ``client_disabled`` and then its socket; deleting it refuses
-its socket; taking ``terminal`` or one of its machines closes the shells on
-that machine with ``permission_denied {kind: terminal}``; taking ``exec`` or
-one of its machines closes the commands there with ``permission_denied
-{kind: exec}`` and no shell; a switched-off client's commands close with
-the rest; taking a kind or a
+its socket; taking ``terminal`` or one of its machines closes the shells and
+the commands on that machine with ``permission_denied {kind: terminal}``; a
+switched-off client's commands close with the rest; taking a kind or a
 machine closes the ``connect`` streams it covers with ``permission_denied
 {kind}``, the panel's forward and a UDP ``port`` entry's one stream among
 them; a change to the default reaches
@@ -280,41 +278,37 @@ def running_commands(
     return session, socket
 
 
-def test_taking_exec_or_one_of_its_machines_closes_those_commands_alone(channel):
+def test_taking_terminal_or_one_of_its_machines_closes_the_commands_there_too(
+    channel,
+):
     client, runtime, loop = channel
     first = DeviceRegistry().create("first").id
     second = DeviceRegistry().create("second").id
-    registry = ClientRegistry()
-    client_id = registry.create("laptop")
-    registry.set_permission(client_id, ["web", "terminal", "exec", "panel"])
+    client_id = holding_everything()
     _, socket = running_commands(runtime, loop, client_id, (first, second))
 
     client.post(
         "/api/hub/client/permission/set",
         json={
             "client_id": client_id,
-            "kinds": ["web", "terminal", "exec", "panel"],
-            "devices": {"exec": [second]},
+            "kinds": ["web", "terminal", "panel"],
+            "devices": {"terminal": [second]},
         },
     )
     narrowed = socket.closes()
     client.post(
         "/api/hub/client/permission/set",
-        json={"client_id": client_id, "kinds": ["web", "terminal", "panel"]},
+        json={"client_id": client_id, "kinds": ["web", "panel"]},
     )
 
-    assert narrowed == {21: ("permission_denied", {"kind": "exec"})}
-    assert socket.closes() == {
-        21: ("permission_denied", {"kind": "exec"}),
-        23: ("permission_denied", {"kind": "exec"}),
-    }
+    lost = ("permission_denied", {"kind": "terminal"})
+    assert narrowed == {1: lost, 21: lost}
+    assert socket.closes() == {1: lost, 3: lost, 21: lost, 23: lost}
 
 
 def test_switching_a_client_off_closes_its_commands_too(channel):
     client, runtime, loop = channel
-    registry = ClientRegistry()
-    client_id = registry.create("laptop")
-    registry.set_permission(client_id, ["web", "terminal", "exec", "panel"])
+    client_id = holding_everything()
     _, socket = running_commands(runtime, loop, client_id)
 
     client.post("/api/hub/client/disable", json={"client_id": client_id})

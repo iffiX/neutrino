@@ -22,7 +22,7 @@ from fastapi import (
 from pydantic import ValidationError
 
 from neutrino_hub import HUB_VERSION
-from neutrino_hub.modules.channel.admission import admit
+from neutrino_hub.modules.channel.admission import admit, is_update_only
 from neutrino_hub.modules.channel.bindings import resolve_token, spend_ticket
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_CLOSE_REFUSED,
@@ -179,6 +179,8 @@ def leave(
 async def socket(websocket: WebSocket) -> None:
     """Serve one peer's channel from its hello to its last frame.
 
+    An agent of 0.5 is served for its own update alone.
+
     Args:
         websocket: The peer's socket.
     """
@@ -212,7 +214,8 @@ async def socket(websocket: WebSocket) -> None:
         address=_peer_host(websocket),
     )
     refusal = admit(hello.protocol)
-    if refusal is not None:
+    is_update = refusal is not None and is_update_only(hello.role, hello.protocol)
+    if refusal is not None and not is_update:
         await session.refuse(refusal["code"], refusal["params"])
         return
     binding = await asyncio.to_thread(resolve_token, hello.token)
@@ -233,6 +236,11 @@ async def socket(websocket: WebSocket) -> None:
         welcome = await asyncio.to_thread(_welcome)
         if binding.role == CHANNEL_ROLE_AGENT:
             device = await asyncio.to_thread(DeviceRegistry().get, binding.id)
+            if is_update:
+                await channel_serve.serve_update_only_agent(
+                    websocket, runtime, session, device, welcome
+                )
+                return
             await channel_serve.serve_agent(
                 websocket, runtime, session, device, welcome
             )

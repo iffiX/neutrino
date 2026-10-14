@@ -167,17 +167,17 @@ Every action is a stream: its `open` is the request, its `close` is the reply, a
 
 The hub sends a client its `state` after a report whose `state_hash` differs from the hub's or that has `is_refresh: true`. It also sends it whenever the hub's own changes.
 
-| Section            | Holds                                                                                                                                                               |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `hash`             | an opaque string the client names back in every report                                                                                                              |
-| `is_disabled`      | `true` after **Disable** on **Clients**: the lists are empty and every action is rejected with `client_disabled`                                                    |
-| `services`         | the published entries this client is allowed, resolved for the address its socket came from                                                                         |
-| `urls`             | every address the hub serves the channel on, which the client keeps for its next connection round                                                                   |
-| `relay_url`        | the member of `urls` that is the SSH Relay's address, an empty string while the relay is off; the client ranks a candidate address's path by it                     |
-| `overlays`         | what the client joins each of the hub's overlays with, the preferred first                                                                                          |
-| `terminals`        | the managed machines the client is allowed to open a shell on or run a command on, each `{device_id, name, is_online, is_shell_allowed, is_exec_allowed, sessions}` |
-| `is_panel_allowed` | `true` while the client is switched on and its permission includes `panel`: it can open the hub's panel through `connect`                                           |
-| `reached_through`  | the path this client's socket took to the hub: `lan`, `direct`, `netbird`, `easytier` or `relay`, the last being the SSH Relay                                      |
+| Section            | Holds                                                                                                                                           |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `hash`             | an opaque string the client names back in every report                                                                                          |
+| `is_disabled`      | `true` after **Disable** on **Clients**: the lists are empty and every action is rejected with `client_disabled`                                |
+| `services`         | the published entries this client is allowed, resolved for the address its socket came from                                                     |
+| `urls`             | every address the hub serves the channel on, which the client keeps for its next connection round                                               |
+| `relay_url`        | the member of `urls` that is the SSH Relay's address, an empty string while the relay is off; the client ranks a candidate address's path by it |
+| `overlays`         | what the client joins each of the hub's overlays with, the preferred first                                                                      |
+| `terminals`        | the managed machines the client is allowed to open a shell on or run a command on, each `{device_id, name, is_online, sessions}`                |
+| `is_panel_allowed` | `true` while the client is switched on and its permission includes `panel`: it can open the hub's panel through `connect`                       |
+| `reached_through`  | the path this client's socket took to the hub: `lan`, `direct`, `netbird`, `easytier` or `relay`, the last being the SSH Relay                  |
 
 ### Overlays
 
@@ -213,7 +213,7 @@ The hub sends a client its `state` after a report whose `state_hash` differs fro
 
 ### Terminals and sessions
 
-`terminals` lists every managed machine, the hub's own among them, when the client's permission includes `terminal` or `exec`, narrowed to the machines each permission names; `is_shell_allowed` and `is_exec_allowed` say which of the two holds for the machine. Each entry's `sessions` is the shell sessions this client sees on the machine. These are every session it opened, and every shared session where it has terminal rights. They are ordered by `started_at`, and the list is empty while the machine is offline:
+`terminals` lists every managed machine, the hub's own among them, when the client's permission includes `terminal`, narrowed to the machines that permission names. Each entry's `sessions` is the shell sessions this client sees on the machine. These are every session it opened, and every shared session where it has terminal rights. They are ordered by `started_at`, and the list is empty while the machine is offline:
 
 | Field            | Holds                                                                                                                              |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
@@ -346,7 +346,7 @@ Any number of streams attach to one session at once. Each receives all the outpu
 
 ### The exec stream
 
-A client with the `exec` permission opens `exec {device_id, argv, is_tty, cols, rows}` to run one command on a machine; the hub opens the same stream to the machine's agent, with no session and no `owner`. The stream may close with `permission_denied {kind: exec}`, `shell_program_unusable {path}` for an empty `argv` or a program the machine cannot run, or `agent_offline {device}`. Frames from the machine carry one leading byte, the file descriptor: `1` for stdout and `2` for stderr, every byte `1` when `is_tty` is set; frames from the client are the command's stdin. The text frame `eof {stream}` ends stdin, and the agent then closes the process's stdin. The close carries `exit_code`, the command's own, or 128 plus the signal's number when a signal ended it. A `resize` names an exec stream opened with `is_tty` as it names a `shell` stream.
+A client with the `terminal` permission opens `exec {device_id, argv, is_tty, cols, rows}` to run one command on a machine; the hub opens the same stream to the machine's agent, with no session and no `owner`. The stream may close with `permission_denied {kind: terminal}`, `shell_program_unusable {path}` for an empty `argv` or a program the machine cannot run, or `agent_offline {device}`. Frames from the machine carry one leading byte, the file descriptor: `1` for stdout and `2` for stderr, every byte `1` when `is_tty` is set; frames from the client are the command's stdin. The text frame `eof {stream}` ends stdin, and the agent then closes the process's stdin. The close carries `exit_code`, the command's own, or 128 plus the signal's number when a signal ended it. A `resize` names an exec stream opened with `is_tty` as it names a `shell` stream.
 
 ## The agent's sections
 
@@ -407,6 +407,7 @@ Each build declares one integer, `PROTOCOL`, and package versions take no part i
 | 1          | 0.3.0       |
 | 2          | 0.4.0       |
 | 3          | 0.5.2       |
+| 4          | 0.6.0       |
 
 `PROTOCOL_MIN` is 3 from 0.5.2. Protocol 3 renamed the link's and the client state's `overlay`, one object or null, to `overlays`, a list. A 0.3 or 0.4 agent or client is rejected with `protocol_too_old` and does not update itself from a 0.5.2 hub. Each such machine installs the 0.5.2 package and joins with a new link.
 

@@ -114,6 +114,7 @@
   "ui.about_this_machine": "This machine",
   "ui.about_version": "Version",
   "ui.action.retry_in": "retrying in {s} s",
+  "ui.action.update_client": "update the client",
   "ui.add_hub": "Join a hub",
   "ui.ai_needs_client": "The tools reach the gateway only while this client runs.",
   "ui.ai_on": "The tools point at the hub",

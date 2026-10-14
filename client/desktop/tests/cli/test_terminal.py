@@ -39,40 +39,30 @@ STATE = {
                 "device_id": "d1",
                 "name": "lepton",
                 "is_online": True,
-                "is_shell_allowed": True,
-                "is_exec_allowed": True,
             },
             {
                 "hub_id": "h2",
                 "device_id": "d2",
                 "name": "lepton",
                 "is_online": True,
-                "is_shell_allowed": True,
-                "is_exec_allowed": False,
             },
             {
                 "hub_id": "h2",
                 "device_id": "d3",
                 "name": "muon",
                 "is_online": True,
-                "is_shell_allowed": True,
-                "is_exec_allowed": True,
             },
             {
                 "hub_id": "h2",
                 "device_id": "d4",
                 "name": "tau",
                 "is_online": True,
-                "is_shell_allowed": False,
-                "is_exec_allowed": True,
             },
             {
                 "hub_id": "h2",
                 "device_id": "d5",
                 "name": "gone",
                 "is_online": False,
-                "is_shell_allowed": True,
-                "is_exec_allowed": True,
             },
         ],
         "sessions": [
@@ -314,7 +304,6 @@ def test_one_name_on_two_hubs_is_refused_as_ambiguous(resident, capsys):
 
 def test_a_machine_nobody_offers_a_shell_on_is_exit_2(resident, capsys):
     assert terminal.main_open("pion", platform=FakePlatform(FakeTerm())) == 2
-    assert terminal.main_open("tau", platform=FakePlatform(FakeTerm())) == 2
     assert resident["upgrades"] == []
 
 
@@ -431,15 +420,14 @@ def test_exec_with_tty_on_a_terminal_goes_through_raw_mode(resident):
     assert resident["requests"][-1][0] == "/api/terminal/resize"
 
 
-@pytest.mark.parametrize("machine", ["pion", "d2"])
-def test_exec_on_a_machine_not_offered_for_commands_is_126(resident, machine):
-    status, _out, _err = run_exec(resident, machine=machine)
+def test_exec_on_a_machine_no_hub_offers_is_126(resident):
+    status, _out, _err = run_exec(resident, machine="pion")
 
     assert status == terminal.EXIT_EXEC_NO_MACHINE
     assert resident["upgrades"] == []
 
 
-def test_exec_on_a_machine_offered_for_commands_alone_runs(resident):
+def test_exec_runs_on_every_machine_the_hub_offers_a_terminal_on(resident):
     status, _out, _err = run_exec(resident, machine="tau")
 
     assert status == 0
@@ -449,13 +437,13 @@ def test_exec_on_a_machine_offered_for_commands_alone_runs(resident):
 def test_execs_refused_open_is_125_in_words(resident, capsys):
     resident["answers"]["/api/terminal/exec"] = (
         403,
-        {"code": "permission_denied", "params": {"kind": "exec"}},
+        {"code": "permission_denied", "params": {"kind": "terminal"}},
     )
 
     status, _out, _err = run_exec(resident)
 
     assert status == terminal.EXIT_EXEC_REFUSED
-    assert "exec" in capsys.readouterr().err
+    assert "terminal" in capsys.readouterr().err
 
 
 def test_a_command_the_machine_cannot_run_is_125_in_words(resident, capsys):
@@ -518,7 +506,7 @@ def test_list_as_json_is_one_object_of_whole_ids(resident, capsys):
     listed = json.loads(capsys.readouterr().out)
     assert [row["name"] for row in listed["machines"]] == ["lepton", "muon", "tau"]
     muon = listed["machines"][1]
-    assert (muon["hub_name"], muon["is_exec_allowed"]) == ("office", True)
+    assert muon["hub_name"] == "office"
     assert muon["sessions"][0] == {
         "session_id": SESSION,
         "title": "vim notes.md",

@@ -22,10 +22,9 @@ with ``argv``, ``is_tty``, ``cols`` and ``rows`` and no session; the
 client's stdin and its ``eof`` go up in order, the agent's frames come down
 with their ``fd`` byte, a frame with nothing after it dropped, and the
 agent's close, ``exit_code`` or refusal, is the client's; a client without
-``exec``, the default's case, or outside its ``exec`` device list is refused
-``permission_denied {kind: exec}`` before any agent stream opens, and the
-``terminal`` list does not narrow it; a client that closes first closes the
-agent's stream; a ``resize`` naming an ``exec`` with ``is_tty`` reaches the
+``terminal``, or outside its ``terminal`` device list, is refused
+``permission_denied {kind: terminal}`` before any agent stream opens; a
+client that closes first closes the agent's stream; a ``resize`` naming an ``exec`` with ``is_tty`` reaches the
 agent and one naming an ``exec`` without it is closed empty.
 """
 
@@ -666,7 +665,7 @@ def test_a_session_opened_a_moment_ago_is_not_joined_by_its_id(config_dir):
 ARGV = ["sh", "-c", "echo out; echo err >&2; exit 7"]
 
 
-def exec_allowed(kinds=("exec",), devices=None) -> str:
+def exec_allowed(kinds=("terminal",), devices=None) -> str:
     """A client whose own permission names the kinds."""
     registry = ClientRegistry()
     client_id = registry.create("alice")
@@ -760,27 +759,21 @@ def test_the_agents_refusal_closes_the_clients_exec(config_dir):
     assert closed == {"code": "shell_program_unusable", "params": {"path": "nope"}}
 
 
-def test_a_client_without_exec_is_refused_before_any_agent_stream(config_dir):
-    registry = ClientRegistry()
-    by_default = registry.create("alice")
-    shell_only = exec_allowed(kinds=("terminal",))
+def test_a_client_without_terminal_is_refused_an_exec_before_any_agent_stream(
+    config_dir,
+):
+    client_id = exec_allowed(kinds=("web",))
     runtime = FakeRuntime()
 
-    refusals = [
-        asyncio.run(refused_exec(runtime, client_id, exec_open()))
-        for client_id in (by_default, shell_only)
-    ]
+    closed = asyncio.run(refused_exec(runtime, client_id, exec_open()))
 
-    assert refusals == [{"code": "permission_denied", "params": {"kind": "exec"}}] * 2
+    assert closed == {"code": "permission_denied", "params": {"kind": "terminal"}}
     assert runtime.agent_sessions.streams == []
 
 
-def test_the_exec_device_list_applies_and_the_terminal_list_does_not(config_dir):
-    outside = exec_allowed(devices={"exec": ["another"]})
-    inside = exec_allowed(
-        kinds=("terminal", "exec"),
-        devices={"terminal": ["another"], "exec": [DEVICE]},
-    )
+def test_the_terminal_device_list_holds_an_exec(config_dir):
+    outside = exec_allowed(devices={"terminal": ["another"]})
+    inside = exec_allowed(devices={"terminal": [DEVICE]})
     runtime = FakeRuntime()
     runtime.agent_sessions.scripts["exec"] = lambda args: (
         [],
@@ -790,7 +783,7 @@ def test_the_exec_device_list_applies_and_the_terminal_list_does_not(config_dir)
     refused = asyncio.run(refused_exec(runtime, outside, exec_open()))
     allowed = asyncio.run(refused_exec(runtime, inside, exec_open()))
 
-    assert refused == {"code": "permission_denied", "params": {"kind": "exec"}}
+    assert refused == {"code": "permission_denied", "params": {"kind": "terminal"}}
     assert allowed == {"code": "", "params": {"exit_code": 0}}
     assert len(runtime.agent_sessions.streams) == 1
 

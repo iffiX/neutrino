@@ -18,7 +18,10 @@ binding offline. An agent older than the hub that asked for its own
 package before its first report and was refused is sent ``reinstall`` once
 that report names its platform, and its package is then served; an agent at
 the hub's version, ahead of it or built from a checkout, and the agent on the
-hub's own machine, are sent nothing.
+hub's own machine, are sent nothing. An agent of 0.5 has its reports read
+for the platform alone, is pushed no state, is served its own package, has
+every other stream it opens closed ``protocol_too_old``, and is marked when
+its own package is refused.
 """
 
 import hashlib
@@ -36,10 +39,12 @@ from neutrino_hub.modules.channel.tickets import ChannelTicketRegistry
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_CHUNK_BYTES,
     CHANNEL_PING_NONCE_CHARS_MAX,
+    CHANNEL_PROTOCOL_UPDATE_ONLY,
     CHANNEL_ROLE_AGENT,
     CHANNEL_ROLE_CLIENT,
     CHANNEL_STREAM_CREDIT_BYTES,
     PROTOCOL,
+    PROTOCOL_MIN,
 )
 from neutrino_hub.modules.channel.sessions import ChannelSessionRegistry
 from neutrino_hub.modules.clients.registry import ClientRegistry
@@ -168,6 +173,7 @@ class FakeRuntime:
         self.desired_states = SeatPasswords()
         self.served_models = StubServedModels()
         self.agent_sessions = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
+        self.agent_update_sessions = {}
         self.client_sessions = ChannelSessionRegistry(CHANNEL_ROLE_CLIENT)
         self.package_path = tmp_path / "neutrino-agent-0.5.0-amd64.deb"
         self.package_path.write_bytes(b"agent package bytes " * 3000)
@@ -1229,6 +1235,113 @@ def test_a_kind_the_hub_does_not_serve_is_closed_kind_unknown(api):
         socket.__exit__(None, None, None)
 
 
+# --- an agent of 0.5 ---
+
+
+def welcomed_at_0_5(client, device_id: str, token: str):
+    """An agent of 0.5's socket past its hello, with the welcome read."""
+    socket = client.websocket_connect("/api/channel/socket")
+    socket.__enter__()
+    socket.send_json(
+        {
+            **hello(device_id, token, version="0.5.2"),
+            "protocol": CHANNEL_PROTOCOL_UPDATE_ONLY,
+        }
+    )
+    assert socket.receive_json()["type"] == "welcome"
+    return socket
+
+
+def test_an_agent_of_0_5_is_read_for_its_platform_and_served_its_package(api):
+    client, runtime = api
+    device_id, token = bound_device()
+    expected = runtime.package_path.read_bytes()
+    socket = welcomed_at_0_5(client, device_id, token)
+    try:
+        socket.send_json(report())
+        socket.send_json({"type": "open", "stream": 1, "kind": "package"})
+        socket.send_json({"type": "credit", "stream": 1, "bytes": len(expected)})
+        frames = frames_until(socket, "close", limit=200)
+    finally:
+        socket.__exit__(None, None, None)
+
+    texts = text_frames(frames)
+    received = b"".join(frame["bytes"][4:] for frame in frames if frame.get("bytes"))
+    assert [frame["type"] for frame in texts] == ["credit", "close"]
+    assert received == expected
+    assert texts[-1]["params"]["sha256"] == hashlib.sha256(expected).hexdigest()
+    assert runtime.agent_packages.asked == [("deb", "amd64")]
+    assert runtime.device_platform[device_id] == PLATFORM
+    assert runtime.state_requests == 0
+    assert device_id not in runtime.device_metrics
+    assert device_id not in runtime.device_modules
+    assert not runtime.agent_sessions.is_online(device_id)
+
+
+def test_no_state_push_reaches_an_agent_of_0_5(api):
+    client, runtime = api
+    device_id, token = bound_device()
+    socket = welcomed_at_0_5(client, device_id, token)
+    try:
+        socket.send_json(report())
+        assert wait_until(lambda: device_id in runtime.device_platform)
+        channel_state.push_states(runtime, CHANNEL_ROLE_AGENT)
+        unpushed = channel_state.push_every_state(runtime)
+        socket.send_json({"type": "ping", "nonce": "after"})
+
+        assert socket.receive_json() == {"type": "pong", "nonce": "after"}
+        assert unpushed == []
+        assert runtime.state_requests == 0
+    finally:
+        socket.__exit__(None, None, None)
+
+
+def test_every_other_stream_an_agent_of_0_5_opens_is_closed_protocol_too_old(api):
+    client, runtime = api
+    device_id, token = bound_device()
+    socket = welcomed_at_0_5(client, device_id, token)
+    try:
+        socket.send_json(
+            {"type": "open", "stream": 1, "kind": "log", "module": "samba"}
+        )
+        socket.send_json(
+            {"type": "open", "stream": 3, "kind": "package", "module": "samba"}
+        )
+        socket.send_json({"type": "open", "stream": 5, "kind": "connect", "id": "ai"})
+        frames = [socket.receive_json() for _ in range(6)]
+    finally:
+        socket.__exit__(None, None, None)
+
+    closes = {frame["stream"]: frame for frame in frames if frame["type"] == "close"}
+    too_old = {"peer": 3, "hub": PROTOCOL, "min": PROTOCOL_MIN}
+    assert closes == {
+        stream: {
+            "type": "close",
+            "stream": stream,
+            "code": "protocol_too_old",
+            "params": too_old,
+        }
+        for stream in (1, 3, 5)
+    }
+    assert runtime.agent_modules.asked == []
+
+
+def test_an_agent_of_0_5_refused_its_package_is_marked_for_the_devices_page(api):
+    client, runtime = api
+    device_id, token = bound_device()
+    socket = welcomed_at_0_5(client, device_id, token)
+    try:
+        socket.send_json(report(machine={"platform": {"family": "arch"}}))
+        socket.send_json({"type": "open", "stream": 1, "kind": "package"})
+        frames = [socket.receive_json() for _ in range(2)]
+        session = runtime.agent_update_sessions[device_id]
+    finally:
+        socket.__exit__(None, None, None)
+
+    assert frames[1]["code"] == "agent_package_missing"
+    assert session.is_package_refused
+
+
 # --- the client's socket ---
 
 
@@ -1494,7 +1607,7 @@ def test_a_clients_exec_carries_stdin_and_eof_up_and_both_outputs_down(api):
     client, runtime = api
     device_id, device_token = bound_device()
     client_id, client_token = bound_client()
-    ClientRegistry().set_permission(client_id, ["exec"])
+    ClientRegistry().set_permission(client_id, ["terminal"])
     argv = ["sh", "-c", "cat; echo err >&2; exit 7"]
     agent = welcomed(client, device_id, device_token)
     person = welcomed(client, client_id, client_token, role="client")

@@ -17,10 +17,10 @@ session another viewer owns and has not shared is refused
 and an unshare closes every other client's stream on the session.
 
 A client opens ``exec {device_id, argv, is_tty, cols, rows}`` under the
-``exec`` kind; the hub opens the agent's own ``exec`` with the rest of the
-fields and no session, relays the client's stdin and its ``eof`` up and the
-agent's frames down with their ``fd`` byte, and closes the client's stream
-with the agent's close. A ``resize`` may name an ``exec`` opened with
+``terminal`` kind, as a ``shell`` is; the hub opens the agent's own ``exec``
+with the rest of the fields and no session, relays the client's stdin and its
+``eof`` up and the agent's frames down with their ``fd`` byte, and closes the
+client's stream with the agent's close. A ``resize`` may name an ``exec`` opened with
 ``is_tty``; one naming an ``exec`` without it is closed empty.
 """
 
@@ -46,7 +46,6 @@ from neutrino_hub.modules.channel.sessions import ChannelSession, ChannelStream
 from neutrino_hub.modules.clients.constants import (
     CLIENT_CODE_DISABLED,
     CLIENT_CODE_PERMISSION_DENIED,
-    CLIENT_PERMISSION_EXEC,
     CLIENT_PERMISSION_TERMINAL,
 )
 from neutrino_hub.modules.clients.permissions import (
@@ -84,9 +83,7 @@ async def serve_shell_stream(
     """
     device_id = str(stream.args.get("device_id", "") or "")
     session_id = str(stream.args.get("session_id", "") or "")
-    code, params = await asyncio.to_thread(
-        _judge, session.key, device_id, CLIENT_PERMISSION_TERMINAL
-    )
+    code, params = await asyncio.to_thread(_judge, session.key, device_id)
     if code:
         await stream.close(code, params)
         return
@@ -143,9 +140,7 @@ async def serve_exec_stream(
         stream: The client's stream, closed here with the agent's close.
     """
     device_id = str(stream.args.get("device_id", "") or "")
-    code, params = await asyncio.to_thread(
-        _judge, session.key, device_id, CLIENT_PERMISSION_EXEC
-    )
+    code, params = await asyncio.to_thread(_judge, session.key, device_id)
     if code:
         await stream.close(code, params)
         return
@@ -250,9 +245,7 @@ async def _serve_session_verb(
     if not device_id:
         await stream.close(CHANNEL_CODE_SESSION_UNKNOWN, {"session_id": session_id})
         return
-    code, params = await asyncio.to_thread(
-        _judge, session.key, device_id, CLIENT_PERMISSION_TERMINAL
-    )
+    code, params = await asyncio.to_thread(_judge, session.key, device_id)
     if code:
         await stream.close(code, params)
         return
@@ -277,15 +270,16 @@ async def _serve_session_verb(
     await stream.close(info["code"], info["params"])
 
 
-def _judge(client_id: str, device_id: str, kind: str) -> tuple:
+def _judge(client_id: str, device_id: str) -> tuple:
     """Whether a client may open a shell or run a command on one device now,
-    as ``(code, params)``; ``kind`` is ``terminal`` or ``exec``."""
+    as ``(code, params)``."""
     registry = ClientRegistry()
     client = registry.get(client_id)
     if client is None:
         return CHANNEL_CODE_BINDING_UNKNOWN, {}
     if client.is_disabled:
         return CLIENT_CODE_DISABLED, {}
+    kind = CLIENT_PERMISSION_TERMINAL
     if kind not in permitted_kinds(registry, client) or not is_device_permitted(
         permitted_devices(registry, client), kind, device_id
     ):

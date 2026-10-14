@@ -333,7 +333,7 @@ def test_the_hello_is_the_bindings_identity_card(bound, monkeypatch):
         "software": f"{CLIENT_SOFTWARE_PREFIX}{CLIENT_VERSION}",
         "token": "tok",
     }
-    assert PROTOCOL == 3 and CLIENT_ROLE == "client"
+    assert PROTOCOL == 4 and CLIENT_ROLE == "client"
     for absent in ("hostname", "platform", "catalog_hash", "state_hash", "kind"):
         assert absent not in hello
 
@@ -2225,10 +2225,9 @@ TERMINALS = [
         "device_id": "d1",
         "name": "lepton",
         "is_online": True,
-        "is_shell_allowed": True,
         "sessions": [KEPT, {"account": "no id"}, dict(KEPT, session_id="s2", x=1)],
     },
-    {"device_id": "d2", "name": "", "is_online": False, "is_exec_allowed": True},
+    {"device_id": "d2", "name": "", "is_online": False},
     {"name": "no id"},
     "junk",
 ]
@@ -2461,20 +2460,8 @@ def test_the_states_terminals_are_held_while_the_socket_is_up(bound, monkeypatch
     take(session, made, dict(STATE, terminals=TERMINALS))
 
     assert session.terminal_entries() == [
-        {
-            "device_id": "d1",
-            "name": "lepton",
-            "is_online": True,
-            "is_shell_allowed": True,
-            "is_exec_allowed": False,
-        },
-        {
-            "device_id": "d2",
-            "name": "d2",
-            "is_online": False,
-            "is_shell_allowed": False,
-            "is_exec_allowed": True,
-        },
+        {"device_id": "d1", "name": "lepton", "is_online": True},
+        {"device_id": "d2", "name": "d2", "is_online": False},
     ]
     assert session.terminal_sessions() == [
         KEPT_ROW,
@@ -2496,13 +2483,7 @@ def test_the_terminals_as_two_lists_read_the_same(bound, monkeypatch):
     take(session, made, dict(STATE, terminals=terminals))
 
     assert session.terminal_entries() == [
-        {
-            "device_id": "d1",
-            "name": "lepton",
-            "is_online": True,
-            "is_shell_allowed": False,
-            "is_exec_allowed": False,
-        }
+        {"device_id": "d1", "name": "lepton", "is_online": True}
     ]
     assert session.terminal_sessions() == [KEPT_ROW]
 

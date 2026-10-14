@@ -1644,7 +1644,6 @@ def test_the_terminals_of_every_hub_are_stamped_with_it(two_hubs_up):
         "device_id": "d1",
         "name": "lepton",
         "is_online": True,
-        "is_shell_allowed": True,
         "sessions": [
             {
                 "session_id": "s1",
@@ -1662,8 +1661,6 @@ def test_the_terminals_of_every_hub_are_stamped_with_it(two_hubs_up):
             "device_id": "d1",
             "name": "lepton",
             "is_online": True,
-            "is_shell_allowed": True,
-            "is_exec_allowed": False,
             "hub_id": "h1",
         }
     ]
@@ -1677,21 +1674,9 @@ def test_the_terminals_of_every_hub_are_stamped_with_it(two_hubs_up):
 
 
 def offered(resident) -> None:
-    """The home hub offers a shell and commands on lepton, commands alone on muon."""
-    lepton = {
-        "device_id": "d1",
-        "name": "lepton",
-        "is_online": True,
-        "is_shell_allowed": True,
-        "is_exec_allowed": True,
-    }
-    muon = {
-        "device_id": "d2",
-        "name": "muon",
-        "is_online": True,
-        "is_shell_allowed": False,
-        "is_exec_allowed": True,
-    }
+    """The home hub offers a terminal on lepton and on muon."""
+    lepton = {"device_id": "d1", "name": "lepton", "is_online": True}
+    muon = {"device_id": "d2", "name": "muon", "is_online": True}
     resident._sessions["c1"]._take_state(dict(HOME_STATE, terminals=[lepton, muon]))
 
 
@@ -1786,17 +1771,17 @@ def test_a_new_shared_terminal_says_so_and_a_resumed_one_does_not(two_hubs_up):
     assert [frame.get("is_shared") for frame in shells] == [True, None]
 
 
-def test_a_machine_offered_for_commands_alone_opens_no_shell(two_hubs_up):
+def test_a_machine_the_hub_does_not_offer_opens_no_shell(two_hubs_up):
     resident, _scripts = two_hubs_up
     offered(resident)
 
-    assert resident.open_terminal("h1", "d2", 80, 24) == {
+    assert resident.open_terminal("h1", "d9", 80, 24) == {
         "code": "unknown_terminal",
-        "params": {"device_id": "d2"},
+        "params": {"device_id": "d9"},
     }
 
 
-def test_an_exec_opens_on_a_machine_offered_for_commands(two_hubs_up):
+def test_an_exec_opens_on_a_machine_the_hub_offers(two_hubs_up):
     resident, scripts = two_hubs_up
     offered(resident)
 
@@ -1817,26 +1802,19 @@ def test_an_exec_opens_on_a_machine_offered_for_commands(two_hubs_up):
     assert resident.has_terminal(outcome["terminal_id"])
 
 
-def test_an_exec_on_a_machine_not_offered_for_commands_opens_nothing(two_hubs_up):
+def test_an_exec_on_a_machine_the_hub_does_not_offer_opens_nothing(two_hubs_up):
     resident, _scripts = two_hubs_up
     offered(resident)
     resident._sessions["c1"]._take_state(
         dict(
             HOME_STATE,
-            terminals=[
-                {
-                    "device_id": "d1",
-                    "name": "lepton",
-                    "is_online": True,
-                    "is_shell_allowed": True,
-                }
-            ],
+            terminals=[{"device_id": "d1", "name": "lepton", "is_online": True}],
         )
     )
 
-    assert resident.open_exec("h1", "d1", ["ls"], False, 80, 24) == {
+    assert resident.open_exec("h1", "d2", ["ls"], False, 80, 24) == {
         "code": "unknown_terminal",
-        "params": {"device_id": "d1"},
+        "params": {"device_id": "d2"},
     }
     assert resident.open_exec("h9", "d1", ["ls"], False, 80, 24)["code"] == (
         "unknown_hub"
