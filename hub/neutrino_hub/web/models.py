@@ -7,6 +7,7 @@ so a rename here is a rename there.
 from pydantic import BaseModel, ConfigDict, Field
 
 from neutrino_hub.web.constants import (
+    WEB_DEFAULT_AGENT_LISTEN_PORT,
     WEB_DEFAULT_HTTPS_LISTEN_PORT,
     WEB_DEFAULT_LANGUAGE,
     WEB_DEFAULT_LISTEN_PORT,
@@ -1353,6 +1354,8 @@ class PanelSettings(BaseModel):
         listen_port: The TCP port the panel answers HTTP on.
         https_listen_port: The TCP port the panel answers HTTPS on. A write
             that leaves it out leaves it as it is.
+        agent_listen_port: The TCP port agents and clients connect to. A
+            write that leaves it out leaves it as it is.
         language: The language the panel is drawn in. A write that leaves it
             out leaves it as it is.
         theme: The palette the panel is drawn in. A write that leaves it out
@@ -1363,9 +1366,24 @@ class PanelSettings(BaseModel):
 
     listen_port: int
     https_listen_port: int = WEB_DEFAULT_HTTPS_LISTEN_PORT
+    agent_listen_port: int = WEB_DEFAULT_AGENT_LISTEN_PORT
     language: str = WEB_DEFAULT_LANGUAGE
     theme: str = WEB_DEFAULT_THEME
     hub_name: str = ""
+
+
+class SettingsView(PanelSettings):
+    """The panel's own settings, with the peers an agent port change loses.
+
+    Attributes:
+        offline_client_count: The clients with a binding row and no live
+            session at this moment.
+        offline_agent_count: The agents with a binding row and no live
+            session at this moment.
+    """
+
+    offline_client_count: int = 0
+    offline_agent_count: int = 0
 
 
 class PanelHttpsView(BaseModel):

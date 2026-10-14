@@ -4,9 +4,11 @@ import base64
 import hashlib
 import io
 import json
+import logging
 import os
 import platform
 import asyncio
+import subprocess
 import sys
 import tarfile
 import time
@@ -59,6 +61,7 @@ from neutrino_hub.modules.hub_update.state import (
     append_step,
     stamp_now,
 )
+from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.system.installation import is_packaged
 from neutrino_hub.system.machine import machine_id
@@ -74,7 +77,7 @@ from neutrino_hub.utils.json_file import (
     write_config,
 )
 from neutrino_hub.utils.passwords import PASSWORDS_PANEL_RULES, validate
-from neutrino_hub.utils.subprocess_run import run
+from neutrino_hub.utils.subprocess_run import command_failure_text, run
 from neutrino_hub.platforms.detect import hub_platform, is_linux, process_controller
 from neutrino_hub.system.sandbox import outside_sandbox
 from neutrino_hub.utils.constants import is_dev_root_set
@@ -98,6 +101,7 @@ from neutrino_hub.web.constants import (
     WEB_SETTING_HTTPS_PORT,
     WEB_THEMES,
 )
+from neutrino_hub.web import channel_state
 from neutrino_hub.web.channel_addresses import channel_hosts
 from neutrino_hub.web import panel_tls
 from neutrino_hub.web.dependencies import get_runtime, require_session, session_cookie
@@ -115,6 +119,7 @@ from neutrino_hub.web.models import (
     PanelSettings,
     PasswordChange,
     PasswordChangeResult,
+    SettingsView,
     TaskStarted,
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
@@ -130,6 +135,8 @@ from neutrino_hub.modules.easytier.constants import (
     EASYTIER_SOURCE_URLS,
     EASYTIER_VERSION,
 )
+
+LOGGER = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/api/hub/setting", tags=["setting"], dependencies=[Depends(require_session)]
@@ -192,64 +199,75 @@ UPDATE_ERROR_MAJOR = "release_major"
 UPDATE_PROGRESS_WAIT_S = 0.5
 
 
-@router.get("", response_model=PanelSettings)
-def read_settings(runtime: PanelRuntime = Depends(get_runtime)) -> PanelSettings:
+@router.get("", response_model=SettingsView)
+def read_settings(runtime: PanelRuntime = Depends(get_runtime)) -> SettingsView:
     """Read the panel's own settings.
 
     Args:
         runtime: The shared runtime.
 
     Returns:
-        The ports the panel answers HTTP and HTTPS on, the language and the
-        palette it is drawn in, and the name clients show this hub as.
+        The ports the panel answers HTTP and HTTPS on, the port agents and
+        clients connect to, the language and the palette the panel is drawn
+        in, the name clients show this hub as, and how many clients and
+        agents are offline at this moment.
     """
-    return PanelSettings(
+    return _settings_view(
+        runtime,
         listen_port=int(runtime.settings.get("listen_port", WEB_DEFAULT_LISTEN_PORT)),
         https_listen_port=_https_listen_port(runtime),
+        agent_listen_port=_agent_listen_port(runtime),
         language=str(runtime.settings.get("language", WEB_DEFAULT_LANGUAGE)),
         theme=str(runtime.settings.get("theme", WEB_DEFAULT_THEME)),
-        hub_name=hub_name(),
     )
 
 
-@router.post("/set", response_model=PanelSettings)
+@router.post("/set", response_model=SettingsView)
 def update_settings(
     request: PanelSettings,
     background: BackgroundTasks,
     runtime: PanelRuntime = Depends(get_runtime),
-) -> PanelSettings:
+) -> SettingsView:
     """Write the panel's own settings.
 
-    A change of either port restarts the panel, and the answer goes out first
-    with the restart behind it: the process serving this request is the one
-    being restarted, so the browser is told where to look before the socket
-    it asked on closes.
+    A change of any of the three ports restarts the panel, and the answer
+    goes out first with the restart behind it: the process serving this
+    request is the one being restarted, so the browser is told where to look
+    before the socket it asked on closes. A change of the agent port hands
+    every online agent and client its new addresses before the restart.
 
     Args:
-        request: The HTTP and HTTPS ports to answer on, the language and the
-            palette to draw in, and the hub's name. A body leaving one of
-            those out leaves it as it is, the HTTP port excepted.
+        request: The HTTP and HTTPS ports to answer on, the port agents and
+            clients connect to, the language and the palette to draw in, and
+            the hub's name. A body leaving one of those out leaves it as it
+            is, the HTTP port excepted.
         background: Where the restart is queued.
         runtime: The shared runtime.
 
     Returns:
         The ports the panel is moving to, the language and the palette it is
-        drawn in, and the hub's name.
+        drawn in, the hub's name, and how many clients and agents are
+        offline at this moment.
 
     Raises:
         HTTPException: 400 with ``port_out_of_range`` when a port is not one
-            a listener may take, 400 with ``port_already_in_use`` when the
-            two ports are one or either is the agent port, 400 with
-            ``language_unknown`` for a language this panel does not ship,
-            400 with ``theme_unknown`` for a theme it does not have, and 400
-            with ``hub_name_required`` for a blank name.
+            a listener may take, 400 with ``port_already_in_use`` when two of
+            the three ports are one, 400 with ``language_unknown`` for a
+            language this panel does not ship, 400 with ``theme_unknown`` for
+            a theme it does not have, and 400 with ``hub_name_required`` for
+            a blank name.
     """
     https_port = (
         request.https_listen_port
         if "https_listen_port" in request.model_fields_set
         else _https_listen_port(runtime)
     )
-    for port in (request.listen_port, https_port):
+    agent_port = (
+        request.agent_listen_port
+        if "agent_listen_port" in request.model_fields_set
+        else _agent_listen_port(runtime)
+    )
+    for port in (request.listen_port, https_port, agent_port):
         if not WEB_PORT_MIN <= port <= WEB_PORT_MAX:
             raise _coded_bad_request(
                 "port_out_of_range",
@@ -257,14 +275,10 @@ def update_settings(
                 maximum=WEB_PORT_MAX,
                 value=port,
             )
-    agent_port = int(
-        runtime.settings.get("agent_listen_port", WEB_DEFAULT_AGENT_LISTEN_PORT)
-    )
     if https_port == request.listen_port:
         raise _coded_bad_request(SETTINGS_ERROR_PORT_TAKEN, value=https_port)
-    for port in (request.listen_port, https_port):
-        if port == agent_port:
-            raise _coded_bad_request(SETTINGS_ERROR_PORT_TAKEN, value=port)
+    if agent_port in (request.listen_port, https_port):
+        raise _coded_bad_request(SETTINGS_ERROR_PORT_TAKEN, value=agent_port)
     if request.language not in WEB_LANGUAGES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -298,28 +312,71 @@ def update_settings(
     stored_https_port = int(
         settings.get(WEB_SETTING_HTTPS_PORT, WEB_DEFAULT_HTTPS_LISTEN_PORT)
     )
-    is_moving = stored_port != request.listen_port or stored_https_port != https_port
+    stored_agent_port = int(
+        settings.get("agent_listen_port", WEB_DEFAULT_AGENT_LISTEN_PORT)
+    )
+    is_agent_moving = stored_agent_port != agent_port
+    is_moving = (
+        stored_port != request.listen_port
+        or stored_https_port != https_port
+        or is_agent_moving
+    )
     if is_moving or language != stored_language or theme != stored_theme:
         settings["listen_port"] = request.listen_port
         settings[WEB_SETTING_HTTPS_PORT] = https_port
+        settings["agent_listen_port"] = agent_port
         settings["language"] = language
         settings["theme"] = theme
         write_config(PANEL_SETTINGS_FILE, settings)
         runtime.settings["listen_port"] = request.listen_port
         runtime.settings[WEB_SETTING_HTTPS_PORT] = https_port
+        runtime.settings["agent_listen_port"] = agent_port
         runtime.settings["language"] = language
         runtime.settings["theme"] = theme
     if is_renaming:
         set_hub_name(request.hub_name)
-    if is_moving:
+    if is_agent_moving:
+        background.add_task(_move_agent_port, runtime)
+    elif is_moving:
         background.add_task(_restart_panel)
-    return PanelSettings(
+    return _settings_view(
+        runtime,
         listen_port=request.listen_port,
         https_listen_port=https_port,
+        agent_listen_port=agent_port,
         language=language,
         theme=theme,
-        hub_name=hub_name(),
     )
+
+
+def _move_agent_port(runtime: PanelRuntime) -> None:
+    """Hand every online peer the new agent port, then restart on it.
+
+    Every online agent and client is handed its state, whose ``urls`` name
+    the port the settings now hold; the converge step then makes the
+    firewall and the relay follow the port. The panel restarts on it
+    whatever either step met.
+
+    Args:
+        runtime: The shared runtime, its settings holding the new port.
+    """
+    try:
+        unpushed = channel_state.push_every_state(runtime)
+        if unpushed:
+            LOGGER.warning(
+                "agent port: not handed the new addresses: %s", ", ".join(unpushed)
+            )
+        runtime.converge_network_blocking()
+    except (
+        subprocess.SubprocessError,
+        OSError,
+        RuntimeError,
+        TimeoutError,
+        ValueError,
+    ) as error:
+        LOGGER.warning("agent port: %s", command_failure_text(error))
+    finally:
+        _restart_panel()
 
 
 def _restart_panel() -> None:
@@ -521,6 +578,37 @@ def _https_listen_port(runtime: PanelRuntime) -> int:
     return int(
         runtime.settings.get(WEB_SETTING_HTTPS_PORT, WEB_DEFAULT_HTTPS_LISTEN_PORT)
     )
+
+
+def _agent_listen_port(runtime: PanelRuntime) -> int:
+    """The port agents and clients connect to."""
+    return int(runtime.settings.get("agent_listen_port", WEB_DEFAULT_AGENT_LISTEN_PORT))
+
+
+def _settings_view(runtime: PanelRuntime, **settings) -> SettingsView:
+    """The settings given, with the hub's name and the offline counts."""
+    client_count, agent_count = _offline_counts(runtime)
+    return SettingsView(
+        **settings,
+        hub_name=hub_name(),
+        offline_client_count=client_count,
+        offline_agent_count=agent_count,
+    )
+
+
+def _offline_counts(runtime: PanelRuntime) -> tuple[int, int]:
+    """The clients and the agents with a binding row and no live session."""
+    clients = sum(
+        1
+        for client in ClientRegistry().all()
+        if client.is_enrolled and not runtime.client_sessions.is_online(client.id)
+    )
+    agents = sum(
+        1
+        for device in DeviceRegistry().all_stored()
+        if device.is_managed and not runtime.agent_sessions.is_online(device.id)
+    )
+    return clients, agents
 
 
 def _https_view(runtime: PanelRuntime) -> PanelHttpsView:

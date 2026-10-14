@@ -1299,12 +1299,22 @@ export interface PanelSettings {
   listen_port: number;
   /** The port the panel answers HTTPS on. Left out of a write, it stays. */
   https_listen_port: number;
+  /** The port agents and clients connect to. Left out of a write, it stays. */
+  agent_listen_port: number;
   /** The language the panel is drawn in. Left out of a write, it stays. */
   language: string;
   /** The palette the panel is drawn in. Left out of a write, it stays. */
   theme: string;
   /** The name clients show this hub as. Left out of a write, it stays. */
   hub_name: string;
+}
+
+/** The panel's own settings, with the peers an agent port change loses. */
+export interface SettingsView extends PanelSettings {
+  /** The clients with a binding row and no live session at this moment. */
+  offline_client_count: number;
+  /** The agents with a binding row and no live session at this moment. */
+  offline_agent_count: number;
 }
 
 /**

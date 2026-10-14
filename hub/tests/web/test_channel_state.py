@@ -12,6 +12,7 @@ import asyncio
 
 import pytest
 
+from neutrino_hub.exceptions import AgentOfflineError
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_ROLE_AGENT,
     CHANNEL_ROLE_CLIENT,
@@ -636,6 +637,37 @@ def test_push_states_hands_every_client_whose_hash_differs_the_list(config_dir):
         assert pushed["services"][0]["payload"] == {"url": "http://192.168.100.1:3000"}
 
     asyncio.run(scenario())
+
+
+def test_every_live_agent_and_client_is_pushed_its_state_agents_first(
+    config_dir, hub_urls
+):
+    runtime = FakeRuntime()
+    client_id = ClientRegistry().create("alice")
+    runtime.client_sessions = FakeChannelSessions(online=[client_id])
+    hub_urls[:] = ["https://192.168.100.1:9443"]
+
+    unpushed = channel_state.push_every_state(runtime)
+
+    assert unpushed == []
+    assert [key for key, _, _ in runtime.agent_sessions.pushes] == [DEVICE]
+    ((key, _, document),) = runtime.client_sessions.pushes
+    assert key == client_id
+    assert document["urls"] == ["https://192.168.100.1:9443"]
+
+
+def test_a_binding_whose_socket_ended_is_named_and_the_others_are_pushed(config_dir):
+    runtime = FakeRuntime()
+    client_id = ClientRegistry().create("alice")
+    runtime.client_sessions = FakeChannelSessions(online=[client_id])
+
+    def ended(key, document, timeout=5.0):
+        raise AgentOfflineError(key)
+
+    runtime.agent_sessions.push_state_from_thread = ended
+
+    assert channel_state.push_every_state(runtime) == [DEVICE]
+    assert [key for key, _, _ in runtime.client_sessions.pushes] == [client_id]
 
 
 def test_the_panel_is_allowed_while_the_client_is_on_and_holds_panel(config_dir):
