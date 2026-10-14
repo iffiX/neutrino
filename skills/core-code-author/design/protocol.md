@@ -266,7 +266,7 @@ A write answers with what a read answers.
 `GET /api/hub/network` returns, and applying is part of the request: the
 response means the interface is already doing this.
 
-A field is spelled once. `is_exposed` is the key in
+A field is spelled once. `is_ipv4_exposed` is the key in
 `config/router/network.json`, the attribute on the Pydantic model in
 `web/models.py`, and the property on the TypeScript interface in
 `frontend/src/api_types.ts`. A path segment is spelled the way the model that
@@ -394,8 +394,8 @@ the page's whole view.
 
 | Route | Parameters | Does |
 | --- | --- | --- |
-| `GET /api/hub/network` | | `NetworkView`, with `hub_os` (`linux`, `darwin` or `windows`) and `modes`, which holds `server` alone outside Linux; each interface's `link.lease_dns` lists the resolvers its DHCP lease names, empty for a static uplink and for an interface holding no lease; `is_unsaved` is true for an interface the configuration does not name and the hub does not use, which is every such interface on Linux and none on macOS and Windows; the exposure: each interface's IPv4 segment and IPv6 segment, each with the networks it holds now and its switch, and each overlay's switch |
-| `POST /api/hub/network/set` | the page's own settings, `{uplink_policy, is_inter_lan_allowed, static_leases, interface_roles}` and the exposure: the switch of each interface's IPv4 segment and of its IPv6 segment, and each overlay's switch; an absent exposure is left as it is; `interface_roles` maps a port with a segment turned on to the role it takes with it, `wan` or `lan` | `NetworkView`; in router mode 400 `network_invalid {field: role, name}` when a port with an exposed segment would keep the role `disabled` |
+| `GET /api/hub/network` | | `NetworkView`, with `hub_os` (`linux`, `darwin` or `windows`) and `modes`, which holds `server` alone outside Linux; each interface's `link.lease_dns` lists the resolvers its DHCP lease names, empty for a static uplink and for an interface holding no lease; `is_unsaved` is true for an interface the configuration does not name and the hub does not use, which is every such interface on Linux and none on macOS and Windows; each interface's `is_ipv4_exposed` and `is_ipv6_exposed`, with the networks each segment holds now, and each overlay's `is_exposed` |
+| `POST /api/hub/network/set` | the page's own settings, `{uplink_policy, is_inter_lan_allowed, ipv4_exposed_interfaces, ipv6_exposed_interfaces, exposed_overlays, static_leases, interface_roles}`: the two interface lists name the interfaces whose IPv4 or IPv6 segment is exposed, and absent lists leave the exposure as it is; `interface_roles` maps a port with a segment turned on to the role it takes with it, `wan` or `lan` | `NetworkView`; in router mode 400 `network_invalid {field: role, name}` when a port with an exposed segment would keep the role `disabled` |
 | `POST /api/hub/network/mode/set` | `{mode, ...}` | replaces the whole shape; `NetworkView` |
 | `POST /api/hub/network/interface/set` | `{name, ...}`; a static uplink's `wan.dns` is its resolvers, `[{address, port}]`, `port` 53 when absent, in the order they are asked | one interface's role and settings; `NetworkView`; 400 `resolver_address_invalid {address}` for a row that is not an IP address, `port_out_of_range {minimum, maximum, value}`, in router mode `network_invalid {field: role, name}` for the role `disabled` on a port with an exposed segment, and `network_invalid {field: country_code, name}` for an access point on 5 GHz with no `ap_country_code` |
 | `POST /api/hub/network/interface/remove` | `{name}` | `NetworkView` |
