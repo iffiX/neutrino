@@ -168,6 +168,8 @@ def ai_tools_agent_config(
     gateway: dict,
     models: list,
     switcher_version: str = "",
+    *,
+    is_forwarded: bool = True,
 ) -> dict:
     """What the agent is sent for the machine's AI tools.
 
@@ -181,15 +183,17 @@ def ai_tools_agent_config(
             reach the gateway, and the device's own key.
         models: The names the gateway serves now.
         switcher_version: The cc-switch version the hub's manifest pins.
+        is_forwarded: Whether the agent opens its AI gateway forward: true on
+            a managed machine, false on the hub's own.
 
     Returns:
         ``{is_enabled: false, cc_switch_version}`` while the setting is off,
         the gateway serves no model, or the device has no key for it, the
         version left out when none is given; else
-        ``{is_enabled, base_url, api_key, tool_configs, accounts: [{account,
-        password}], cc_switch_version}``, every Claude slot filled with the
-        first served model where none was chosen and ``password`` sent to a
-        Windows machine alone.
+        ``{is_enabled, is_forwarded, base_url, api_key, tool_configs,
+        accounts: [{account, password}], cc_switch_version}``, every Claude
+        slot filled with the first served model where none was chosen and
+        ``password`` sent to a Windows machine alone.
     """
     base_url = str(gateway.get("gateway_url", "") or "")
     api_key = str(gateway.get("gateway_key", "") or "")
@@ -207,6 +211,7 @@ def ai_tools_agent_config(
         sent_accounts.append(sent)
     return {
         "is_enabled": True,
+        "is_forwarded": is_forwarded,
         "base_url": base_url,
         "api_key": api_key,
         "tool_configs": resolved_tool_configs(
@@ -811,6 +816,7 @@ class DesiredStateStore:
                     .get("version", "")
                     or ""
                 ),
+                is_forwarded=not is_hub_machine,
             ),
         }
         if marks.get(DEVICE_AI_TOOLS_NAME):

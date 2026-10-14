@@ -284,6 +284,74 @@
     },
     "ChannelAgentState": {
       "$defs": {
+        "ChannelAiToolsAccount": {
+          "description": "One account the machine's AI tools setting acts on.",
+          "properties": {
+            "account": {
+              "title": "Account",
+              "type": "string"
+            },
+            "password": {
+              "default": "",
+              "title": "Password",
+              "type": "string"
+            }
+          },
+          "required": [
+            "account"
+          ],
+          "title": "ChannelAiToolsAccount",
+          "type": "object"
+        },
+        "ChannelAiToolsState": {
+          "description": "The machine's AI tools setting; off, it carries ``cc_switch_version`` alone.",
+          "properties": {
+            "is_enabled": {
+              "default": false,
+              "title": "Is Enabled",
+              "type": "boolean"
+            },
+            "is_forwarded": {
+              "default": false,
+              "title": "Is Forwarded",
+              "type": "boolean"
+            },
+            "base_url": {
+              "default": "",
+              "title": "Base Url",
+              "type": "string"
+            },
+            "api_key": {
+              "default": "",
+              "title": "Api Key",
+              "type": "string"
+            },
+            "tool_configs": {
+              "additionalProperties": true,
+              "title": "Tool Configs",
+              "type": "object"
+            },
+            "accounts": {
+              "items": {
+                "$ref": "#/$defs/ChannelAiToolsAccount"
+              },
+              "title": "Accounts",
+              "type": "array"
+            },
+            "cc_switch_version": {
+              "default": "",
+              "title": "Cc Switch Version",
+              "type": "string"
+            },
+            "retry_mark": {
+              "default": "",
+              "title": "Retry Mark",
+              "type": "string"
+            }
+          },
+          "title": "ChannelAiToolsState",
+          "type": "object"
+        },
         "ChannelDesktopState": {
           "description": "The desktop share's settings.",
           "properties": {
@@ -299,6 +367,10 @@
         "ChannelModuleState": {
           "description": "What one module on a device is to be.",
           "properties": {
+            "want": {
+              "title": "Want",
+              "type": "string"
+            },
             "config": {
               "additionalProperties": true,
               "title": "Config",
@@ -313,10 +385,6 @@
               "additionalProperties": true,
               "title": "Uninstall",
               "type": "object"
-            },
-            "want": {
-              "title": "Want",
-              "type": "string"
             }
           },
           "required": [
@@ -328,9 +396,6 @@
       },
       "description": "The ``state`` frame to an agent.",
       "properties": {
-        "desktop": {
-          "$ref": "#/$defs/ChannelDesktopState"
-        },
         "hash": {
           "title": "Hash",
           "type": "string"
@@ -342,18 +407,113 @@
           "title": "Modules",
           "type": "object"
         },
+        "desktop": {
+          "$ref": "#/$defs/ChannelDesktopState"
+        },
         "urls": {
           "items": {
             "type": "string"
           },
           "title": "Urls",
           "type": "array"
+        },
+        "ai_tools": {
+          "$ref": "#/$defs/ChannelAiToolsState"
         }
       },
       "required": [
         "hash"
       ],
       "title": "ChannelAgentState",
+      "type": "object"
+    },
+    "ChannelAiToolsAccount": {
+      "description": "One account the machine's AI tools setting acts on.",
+      "properties": {
+        "account": {
+          "title": "Account",
+          "type": "string"
+        },
+        "password": {
+          "default": "",
+          "title": "Password",
+          "type": "string"
+        }
+      },
+      "required": [
+        "account"
+      ],
+      "title": "ChannelAiToolsAccount",
+      "type": "object"
+    },
+    "ChannelAiToolsState": {
+      "$defs": {
+        "ChannelAiToolsAccount": {
+          "description": "One account the machine's AI tools setting acts on.",
+          "properties": {
+            "account": {
+              "title": "Account",
+              "type": "string"
+            },
+            "password": {
+              "default": "",
+              "title": "Password",
+              "type": "string"
+            }
+          },
+          "required": [
+            "account"
+          ],
+          "title": "ChannelAiToolsAccount",
+          "type": "object"
+        }
+      },
+      "description": "The machine's AI tools setting; off, it carries ``cc_switch_version`` alone.",
+      "properties": {
+        "is_enabled": {
+          "default": false,
+          "title": "Is Enabled",
+          "type": "boolean"
+        },
+        "is_forwarded": {
+          "default": false,
+          "title": "Is Forwarded",
+          "type": "boolean"
+        },
+        "base_url": {
+          "default": "",
+          "title": "Base Url",
+          "type": "string"
+        },
+        "api_key": {
+          "default": "",
+          "title": "Api Key",
+          "type": "string"
+        },
+        "tool_configs": {
+          "additionalProperties": true,
+          "title": "Tool Configs",
+          "type": "object"
+        },
+        "accounts": {
+          "items": {
+            "$ref": "#/$defs/ChannelAiToolsAccount"
+          },
+          "title": "Accounts",
+          "type": "array"
+        },
+        "cc_switch_version": {
+          "default": "",
+          "title": "Cc Switch Version",
+          "type": "string"
+        },
+        "retry_mark": {
+          "default": "",
+          "title": "Retry Mark",
+          "type": "string"
+        }
+      },
+      "title": "ChannelAiToolsState",
       "type": "object"
     },
     "ChannelClientMachine": {

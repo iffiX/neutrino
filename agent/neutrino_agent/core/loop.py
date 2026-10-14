@@ -13,8 +13,8 @@ each is to be, and this machine observes, installs, configures and reports
 until it matches, the bytes coming down and the output going up on streams
 this side opens. The desktop share is the other way round: decided only on
 the machine, and reported upward. While the state's ``ai_tools`` section is
-on, the AI gateway forward carries the machine's AI tools to the hub's
-gateway over the same socket.
+on and its ``is_forwarded`` is true, the AI gateway forward carries the
+machine's AI tools to the hub's gateway over the same socket.
 
 Errors cross the wire as ``{"code", "params"}``, never an English sentence;
 every surface does its own wording.

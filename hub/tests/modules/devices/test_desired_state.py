@@ -378,6 +378,7 @@ def test_a_setting_that_is_on_sends_the_gateway_the_key_and_the_accounts(
 
     assert desired["ai_tools"] == {
         "is_enabled": True,
+        "is_forwarded": True,
         "base_url": "http://127.0.0.1:8317",
         "api_key": "dev-key",
         "tool_configs": {
@@ -398,6 +399,8 @@ def test_a_setting_that_is_on_sends_the_gateway_the_key_and_the_accounts(
 def test_the_hubs_own_machine_is_composed_with_the_gateways_own_address(
     config, monkeypatch
 ):
+    """A managed machine is sent its agent's forward to open; the hub's own
+    machine, the gateway's own port and no forward."""
     from neutrino_hub.modules.devices import desired_state
 
     store, models = ai_tools_box(monkeypatch)
@@ -416,7 +419,23 @@ def test_the_hubs_own_machine_is_composed_with_the_gateways_own_address(
 
     assert asked == [False, True]
     assert managed["ai_tools"]["base_url"] == "http://127.0.0.1:8317"
+    assert managed["ai_tools"]["is_forwarded"] is True
     assert own["ai_tools"]["base_url"] == "http://127.0.0.1:9417"
+    assert own["ai_tools"]["is_forwarded"] is False
+
+
+def test_a_composed_state_is_the_channels_agent_state(config, monkeypatch):
+    """Every field the composer writes is one the pinned model names."""
+    from neutrino_hub.web.models import ChannelAgentState
+
+    store, models = ai_tools_box(monkeypatch)
+    store.set_ai_tools(DEVICE, is_enabled=True)
+    on, digest = store.compose(DEVICE, WINDOWS, ai_models=models)
+    off, _ = store.compose(DEVICE, PLATFORM, ai_models=[])
+
+    for desired in (on, off):
+        held = ChannelAgentState.model_validate({"hash": digest, **desired})
+        assert held.ai_tools.model_dump(exclude_unset=True) == desired["ai_tools"]
 
 
 def test_a_windows_machine_is_sent_each_accounts_login_password(config, monkeypatch):
