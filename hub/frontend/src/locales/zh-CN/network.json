@@ -53,8 +53,6 @@
   "ui.dashboard.exits_empty": "还没有活动出口",
   "ui.dashboard.exits_title": "活动出口",
   "ui.dashboard.history_empty": "还没有历史",
-  "ui.dashboard.history_none": "这个系统上没有流量历史",
-  "ui.dashboard.history_source": "vnstat",
   "ui.dashboard.history_title": "流量历史",
   "ui.dashboard.history_unavailable": "读不到历史",
   "ui.dashboard.legend_down": "下行",

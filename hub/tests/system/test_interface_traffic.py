@@ -1,12 +1,13 @@
-"""Reading the uplink's byte counters and working out which uplink it is.
+"""Reading the interfaces' byte counters and working out which one is the uplink.
 
 What this guards is the tile on the dashboard: it has to be the machine's own
-interface, the same one vnstat draws the history chart from, and not the proxy
-core's totals it used to add up.
+interface, the same one the history chart is drawn from, and not the proxy
+core's totals.
 """
 
 from neutrino_hub.system import interface_traffic
 from neutrino_hub.system.interface_traffic import (
+    all_interface_counters,
     default_route_interface,
     interface_counters,
     traffic_interface,
@@ -43,6 +44,16 @@ def test_an_interface_reports_what_it_has_received_and_sent(monkeypatch, tmp_pat
     _tables(monkeypatch, tmp_path)
 
     assert interface_counters("enp2s0") == (90000000, 4500000)
+
+
+def test_every_interface_is_read_from_one_table(monkeypatch, tmp_path):
+    _tables(monkeypatch, tmp_path, dev=PROC_NET_DEV + "broken: 12 x\n")
+
+    assert all_interface_counters() == {
+        "lo": (1024, 1024),
+        "enp2s0": (90000000, 4500000),
+        "enp1s0": (700000, 310000),
+    }
 
 
 def test_a_name_the_table_does_not_carry_reads_as_nothing(monkeypatch, tmp_path):
@@ -111,6 +122,7 @@ def test_elsewhere_the_counters_come_from_psutil(elsewhere, monkeypatch):
 
     assert interface_counters("en0") == (1200, 340)
     assert interface_counters("en9") is None
+    assert all_interface_counters() == {"en0": (1200, 340)}
 
 
 def test_elsewhere_the_default_route_is_read_on_every_call(elsewhere, monkeypatch):

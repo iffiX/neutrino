@@ -2,7 +2,11 @@
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from neutrino_hub.system.vnstat_history import VnstatHistoryReader
+from neutrino_hub.modules.router.traffic_history import (
+    RouterTrafficHistory,
+    RouterTrafficTotal,
+)
+from neutrino_hub.system.interface_traffic import traffic_interface
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.dns_log import DnsLogReader
 from neutrino_hub.web.models import (
@@ -57,7 +61,7 @@ def summary(runtime: PanelRuntime = Depends(get_runtime)) -> DashboardSummary:
 def history(
     range: str = HISTORY_RANGE_MONTH, runtime: PanelRuntime = Depends(get_runtime)
 ) -> TrafficHistory:
-    """Read long-term WAN traffic history from vnstat.
+    """Read the traffic history the hub counted, of the interface the card draws.
 
     Args:
         range: One of ``day`` (24 hours), ``week`` (7 days), ``month`` (30
@@ -75,31 +79,31 @@ def history(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": "invalid_range", "params": {"range": range}},
         )
-    uplinks = runtime.network().wan_device_names
-    reader = VnstatHistoryReader(interface=uplinks[0] if uplinks else "")
-    today = reader.daily(day_count=1)
+    interface = traffic_interface(network=runtime.network())
+    counted = runtime.traffic_history
+    today = counted.daily(interface, day_count=1)
     return TrafficHistory(
         range=range,
-        samples=[_to_view(sample) for sample in _buckets(reader, range)],
+        samples=[_to_view(total) for total in _buckets(counted, interface, range)],
         today=_to_view(today[-1]) if today else None,
     )
 
 
-def _buckets(reader: VnstatHistoryReader, range: str) -> list:
+def _buckets(counted: RouterTrafficHistory, interface: str, range: str) -> list:
     if range == HISTORY_RANGE_DAY:
-        return reader.hourly(hour_count=24)
+        return counted.hourly(interface, hour_count=24)
     if range == HISTORY_RANGE_WEEK:
-        return reader.daily(day_count=7)
+        return counted.daily(interface, day_count=7)
     if range == HISTORY_RANGE_YEAR:
-        return reader.monthly(month_count=12)
-    return reader.daily(day_count=30)
+        return counted.monthly(interface, month_count=12)
+    return counted.daily(interface, day_count=30)
 
 
-def _to_view(sample) -> TrafficSample:
+def _to_view(total: RouterTrafficTotal) -> TrafficSample:
     return TrafficSample(
-        label=sample.label,
-        received_bytes=sample.received_bytes,
-        sent_bytes=sample.sent_bytes,
+        label=total.label,
+        received_bytes=total.received_bytes,
+        sent_bytes=total.sent_bytes,
     )
 
 
