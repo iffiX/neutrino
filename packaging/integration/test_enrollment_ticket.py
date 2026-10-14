@@ -29,7 +29,7 @@ TICKET_FILE = "/var/lib/neutrino/hub/enrollment_tickets.json"
 PANEL_UNIT = "neutrino_hub_web"
 PANEL_RETURN_S = 60
 JOIN_TIMEOUT_S = 10
-PROTOCOL = 3
+PROTOCOL = 4
 
 
 def link_payload(link: str) -> dict:

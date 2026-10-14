@@ -1286,9 +1286,11 @@ def test_no_state_push_reaches_an_agent_of_0_5(api):
         socket.send_json(report())
         assert wait_until(lambda: device_id in runtime.device_platform)
         channel_state.push_states(runtime, CHANNEL_ROLE_AGENT)
+        unpushed = channel_state.push_every_state(runtime)
         socket.send_json({"type": "ping", "nonce": "after"})
 
         assert socket.receive_json() == {"type": "pong", "nonce": "after"}
+        assert unpushed == []
         assert runtime.state_requests == 0
     finally:
         socket.__exit__(None, None, None)
