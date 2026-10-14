@@ -15,8 +15,9 @@ the round's one hello and the others closed before one, an address that
 refused dialled again every interval until the round's connect time ends
 while a silent one is dialled once, the one that answered written back, a
 whole round failing being what backs off, the state's ``urls`` kept on
-disk, a network change starting a round at once.
-The client's ``ping`` frame and the round trip its ``pong`` sets are pinned too.
+disk, a network change starting a round at once. The client's ``ping``
+frame and the round trip its ``pong`` sets are pinned too, and the channel
+a forward waits on, open from the welcome until the socket ends.
 """
 
 import functools
@@ -848,6 +849,17 @@ def test_a_socket_that_ends_wakes_the_stream_unreachable(bound, monkeypatch):
 
     assert isinstance(outcome.get("error"), GatewayUnreachable)
     assert session._streams is None
+
+
+def test_the_channel_is_open_from_the_welcome_until_the_socket_ends(bound, monkeypatch):
+    session, _listener = bound
+    assert session.wait_channel(0.01) is False
+
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+    assert session.wait_channel(0.01) is True
+
+    session._end_socket(made)
+    assert session.wait_channel(0.01) is False
 
 
 def test_a_close_for_nobody_is_dropped(bound, monkeypatch):

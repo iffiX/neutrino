@@ -496,6 +496,8 @@ class ClientHubSession:
         self._source_address: "str | None" = None
         self._streams: "ClientStreamRegistry | None" = None
         self._is_welcomed = False
+        # Set while a welcomed socket carries the channel.
+        self._channel_open = threading.Event()
         # The round trip the last pong on the live socket measured, in
         # whole milliseconds; None before the first pong.
         self._rtt_ms: "int | None" = None
@@ -601,6 +603,17 @@ class ClientHubSession:
         """Where the socket stands, one of ``CONNECTION_STATES``."""
         with self._lock:
             return self._connection()
+
+    def wait_channel(self, timeout_s: float) -> bool:
+        """Wait until a welcomed socket carries the channel.
+
+        Args:
+            timeout_s: How long to wait.
+
+        Returns:
+            Whether one does.
+        """
+        return self._channel_open.wait(timeout_s)
 
     def is_refreshing(self) -> bool:
         """Whether a refresh waits for its answer, within its limit.
@@ -1557,6 +1570,7 @@ class ClientHubSession:
                 log=self._log,
             )
             self._is_welcomed = True
+            self._channel_open.set()
             self._hub_software = str(welcome.get("software", "") or "")
             self._backoff_s = CLIENT_BACKOFF_MIN_S
             # A hub whose state hash the report matches pushes no state; what
@@ -2034,6 +2048,7 @@ class ClientHubSession:
                 self._client = None
                 streams, self._streams = self._streams, None
                 self._is_welcomed = False
+                self._channel_open.clear()
                 self._rtt_ms = None
                 self._ping_sent = None
         client.close()
