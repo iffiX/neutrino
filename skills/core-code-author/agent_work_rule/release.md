@@ -503,9 +503,7 @@ runs its `packaging/build/` script inside it with `--edition cn`, then
 `packaging/ci/check.py`. The `draft_cn` job fetches the pinned cc-switch
 release files with `build_cc_switch.py`, writes `SHA256SUMS` over the `cn`
 packages, the `cn` install scripts, the mainland source tree and those
-files, runs
-`packaging/ci/publish_cn.py --check-only` over them, and uploads them as the
-workflow artifact `release_dist_cn`. Nothing of `cn` is attached to the
+files, and uploads them as the workflow artifact `release_dist_cn`. Nothing of `cn` is attached to the
 GitHub release.
 
 Fill in the changelog, check the section headings still match what shipped,
