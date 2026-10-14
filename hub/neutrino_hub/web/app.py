@@ -277,7 +277,7 @@ def _start_samplers() -> None:
     the interfaces are doing, and, with the proxy, what every exit node
     measures. Each
     publishes an event when its reading moves, so no page has to ask on a
-    timer.
+    timer. The traffic history counts every interface's bytes beside them.
     """
     global _usage_collector
     runtime = shared_runtime()
@@ -289,9 +289,16 @@ def _start_samplers() -> None:
         _usage_collector.start()
     runtime.link_sampler.start()
     runtime.address_sampler.start()
+    runtime.traffic_history.start()
     if runtime.proxy is not None:
         runtime.proxy.start()
     runtime.relay_monitor.start()
+
+
+def stop_samplers() -> None:
+    """Write the traffic history, as the panel stops."""
+    if _shared_runtime is not None:
+        _shared_runtime.traffic_history.stop()
 
 
 def _mount_frontend(app: FastAPI) -> None:

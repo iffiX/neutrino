@@ -34,11 +34,18 @@ export function isDeviceManaged(device: DeviceView): boolean {
   return device.client !== null && device.client.is_managed;
 }
 
-/** What a device is called: its name, else the MAC its agent last used, else its id. */
+/**
+ * What a device is called: its name, else the MAC its agent last used, else
+ * the host it was added by, else its id.
+ */
 export function toDeviceLabel(device: DeviceView): string {
-  return (
-    device.name ?? (device.link_mac.length > 0 ? device.link_mac : device.id)
-  );
+  if (device.name !== null) {
+    return device.name;
+  }
+  if (device.link_mac.length > 0) {
+    return device.link_mac;
+  }
+  return device.ssh?.host || device.id;
 }
 
 /**

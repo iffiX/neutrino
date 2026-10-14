@@ -154,7 +154,7 @@ class LanScanner:
         return devices
 
     def _read_neighbours(self, interface: str) -> list[DiscoveredDevice]:
-        result = run(["ip", "neigh", "show", "dev", interface], is_checked=False)
+        result = run(["ip", "-4", "neigh", "show", "dev", interface], is_checked=False)
         if not result.is_success:
             return []
         devices = []

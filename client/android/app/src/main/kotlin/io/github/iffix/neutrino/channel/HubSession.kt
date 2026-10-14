@@ -13,6 +13,7 @@ import io.github.iffix.neutrino.CLIENT_JOIN_PATH
 import io.github.iffix.neutrino.CLIENT_LOG_TAG
 import io.github.iffix.neutrino.CLIENT_PING_INTERVAL_S
 import io.github.iffix.neutrino.CLIENT_PROTOCOL_REFUSAL_CODES
+import io.github.iffix.neutrino.CLIENT_REDIAL_INTERVAL_S
 import io.github.iffix.neutrino.CLIENT_REFRESH_TIMEOUT_S
 import io.github.iffix.neutrino.CLIENT_REFUSAL_CODE_ADMISSION_PAUSED
 import io.github.iffix.neutrino.CLIENT_REFUSAL_CODE_BINDING_UNKNOWN
@@ -59,7 +60,8 @@ import kotlinx.serialization.json.longOrNull
  * state taken and the reports sent, and the rounds again with the desktop client's backoff.
  *
  * A round dials at once the hub's address on the virtual network that is up, the address the
- * hub's name resolves to, and the binding's addresses, each with its own connect time. The first
+ * hub's name resolves to, and the binding's addresses, each with its own connect time; an address
+ * that refuses is dialled again every second until the round's connect time ends. The first
  * socket to open on the pinned certificate is the round's: the others are closed before any
  * hello, and the one hello of the round goes there. The view is `connecting` while a round dials,
  * `connected` while the socket is open, and `waiting` with a [HubWaitReason] otherwise, with the
@@ -358,9 +360,10 @@ class HubSession(
     }
 
     /**
-     * Dial every address at once, each with its own connect time. The first socket that opens on
-     * the pinned certificate is the round's; every other socket, and every socket of a round that
-     * is cancelled or interrupted, is closed before this returns.
+     * Dial every address at once, each with its own connect time. An address that refuses is
+     * dialled again every second until the round's connect time ends. The first socket that opens
+     * on the pinned certificate is the round's; every other socket, and every socket of a round
+     * that is cancelled or interrupted, is closed before this returns.
      *
      * @param urls The round's addresses.
      * @param fingerprint The pinned SHA-256.
@@ -375,18 +378,26 @@ class HubSession(
         var isInterrupted = false
         var isSettled = false
         try {
-            for (url in urls) {
-                val events = Channel<ChannelSocketEvent>(Channel.UNLIMITED)
-                val startedNanos = nanoClock()
-                sockets += DialledSocket(url, transport.connect(url, fingerprint, events), events, startedNanos)
-            }
+            for (url in urls) sockets += dial(url, fingerprint)
             coroutineScope {
-                val watchers = sockets.map { dialled ->
+                val watchers = sockets.indices.map { index ->
                     launch {
-                        val first = withTimeoutOrNull(CLIENT_CONNECT_TIMEOUT_S * 1000) { dialled.events.receive() }
-                            ?: ChannelSocketEvent.Failed(
-                                unreachable("the address did not open in ${CLIENT_CONNECT_TIMEOUT_S}s"),
-                            )
+                        var dialled = sockets[index]
+                        var refused: ChannelSocketEvent.Failed? = null
+                        val first = withTimeoutOrNull(CLIENT_CONNECT_TIMEOUT_S * 1000) {
+                            var event = dialled.events.receive()
+                            while (event is ChannelSocketEvent.Failed && event.isPortClosed) {
+                                refused = event
+                                delay(CLIENT_REDIAL_INTERVAL_S * 1000)
+                                dialled.socket.close(CLIENT_WS_CLOSE_NORMAL, "")
+                                dialled = dial(dialled.url, fingerprint)
+                                sockets[index] = dialled
+                                event = dialled.events.receive()
+                            }
+                            event
+                        } ?: refused ?: ChannelSocketEvent.Failed(
+                            unreachable("the address did not open in ${CLIENT_CONNECT_TIMEOUT_S}s"),
+                        )
                         dialled.openNanos = nanoClock() - dialled.startedNanos
                         opens.send(Dialled(dialled, first))
                     }
@@ -414,6 +425,12 @@ class HubSession(
             sockets.filter { it !== kept }.forEach { it.socket.close(CLIENT_WS_CLOSE_NORMAL, "") }
         }
         return Round(winner, refusals, isInterrupted)
+    }
+
+    private fun dial(url: String, fingerprint: String): DialledSocket {
+        val events = Channel<ChannelSocketEvent>(Channel.UNLIMITED)
+        val startedNanos = nanoClock()
+        return DialledSocket(url, transport.connect(url, fingerprint, events), events, startedNanos)
     }
 
     private suspend fun nextDialOrNews(opens: Channel<Dialled>): Dialled? = select {

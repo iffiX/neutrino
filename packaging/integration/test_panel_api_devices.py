@@ -1,9 +1,9 @@
 """Every operation the Devices page offers, and the edges around them.
 
-A device is an id the hub mints, and the only way a row comes into being
-without an agent joining is a scan row being named. The addresses here are
-QEMU's own prefix and belong to no machine on any network this runs on: what
-is checked is the register, never a device answering.
+A device is an id the hub mints, and a row comes into being without an
+agent joining when a scan row is named or a machine is added by address. The
+addresses here are QEMU's own prefix and belong to no machine on any network
+this runs on: what is checked is the register, never a device answering.
 """
 
 import pytest
@@ -15,6 +15,8 @@ DEVICE_SCAN_ID = f"scan:{DEVICE_MAC}"
 LEAVER_MAC = "52:54:00:aa:bb:cd"
 # More devices than a LAN this size holds, added and then forgotten.
 CROWD_SIZE = 50
+# A host from the documentation range, typed into Add by address.
+ADDED_HOST = "192.0.2.10"
 
 
 def devices(panel) -> list:
@@ -103,6 +105,17 @@ def test_installing_the_agent_with_no_credential_is_refused(registered, panel):
     body = {"device_id": registered, "host": "192.0.2.9", "username": "itest"}
 
     assert panel.status("POST", "/hub/device/agent/install", body) == 400
+
+
+def test_adding_by_address_with_no_credential_is_refused_and_stores_no_row(panel):
+    body = {"host": ADDED_HOST, "username": "itest"}
+
+    assert panel.status("POST", "/hub/device/add", body) == 400
+    assert [
+        entry
+        for entry in devices(panel)
+        if (entry["ssh"] or {}).get("host") == ADDED_HOST
+    ] == []
 
 
 def test_a_device_with_no_agent_has_none_online(registered, panel):

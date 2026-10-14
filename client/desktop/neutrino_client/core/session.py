@@ -2,9 +2,10 @@
 
 A session belongs to one binding and speaks to one hub. It holds the socket
 open and reconnects when it drops: a round dials every address of the hub at
-once and keeps the first socket to connect with the pinned certificate. A
-network change starts a round at once: a virtual network turning on, this
-machine's address toward the hub changing, a state naming other
+once and keeps the first socket to connect with the pinned certificate, and
+dials an address that refused again every second until the round's connect
+time ends. A network change starts a round at once: a virtual network
+turning on, this machine's address toward the hub changing, a state naming other
 addresses, or the peers of a virtual network that is on changing. On a hub
 that is not connected the change ends the wait and the round in flight,
 whose dials still waiting are closed; on a connected hub the round runs
@@ -64,6 +65,7 @@ from neutrino_client.constants import (
     CLIENT_PATH_RANKS,
     CLIENT_PING_INTERVAL_S,
     CLIENT_PROTOCOL_REFUSAL_CODES,
+    CLIENT_REDIAL_INTERVAL_S,
     CLIENT_REFRESH_TIMEOUT_S,
     CLIENT_REFUSAL_CODE_ADMISSION_PAUSED,
     CLIENT_REFUSAL_CODE_BINDING_UNKNOWN,
@@ -216,6 +218,18 @@ def is_on_local_network(host: str, networks: list) -> bool:
         except (TypeError, ValueError):
             continue
     return False
+
+
+def is_port_closed(error: Exception) -> bool:
+    """Whether a dial failed on a host that is up with the port not open.
+
+    Args:
+        error: What the dial raised.
+
+    Returns:
+        True when the connect was refused.
+    """
+    return isinstance(error.__cause__, ConnectionRefusedError)
 
 
 def is_offline(networks: list) -> bool:
@@ -482,6 +496,8 @@ class ClientHubSession:
         self._source_address: "str | None" = None
         self._streams: "ClientStreamRegistry | None" = None
         self._is_welcomed = False
+        # Set while a welcomed socket carries the channel.
+        self._channel_open = threading.Event()
         # The round trip the last pong on the live socket measured, in
         # whole milliseconds; None before the first pong.
         self._rtt_ms: "int | None" = None
@@ -587,6 +603,17 @@ class ClientHubSession:
         """Where the socket stands, one of ``CONNECTION_STATES``."""
         with self._lock:
             return self._connection()
+
+    def wait_channel(self, timeout_s: float) -> bool:
+        """Wait until a welcomed socket carries the channel.
+
+        Args:
+            timeout_s: How long to wait.
+
+        Returns:
+            Whether one does.
+        """
+        return self._channel_open.wait(timeout_s)
 
     def is_refreshing(self) -> bool:
         """Whether a refresh waits for its answer, within its limit.
@@ -1387,7 +1414,8 @@ class ClientHubSession:
             settled.
         """
         dialing = _ClientDialRound(
-            clients=[(url, self._open_client(url)) for url in urls]
+            clients=[(url, self._open_client(url)) for url in urls],
+            open_client=self._open_client,
         )
         with self._lock:
             self._dialings.append(dialing)
@@ -1480,11 +1508,15 @@ class ClientHubSession:
                 urls.append(url)
         return urls
 
-    def _open_client(self, gateway_url: str) -> WebSocketClient:
+    def _open_client(
+        self, gateway_url: str, timeout_s: "float | None" = None
+    ) -> WebSocketClient:
         """A socket for the binding at one of the hub's addresses.
 
         Args:
             gateway_url: The address to open the socket at.
+            timeout_s: How long its connect may take; None for
+                ``CLIENT_CONNECT_TIMEOUT_S``.
 
         Returns:
             The unconnected socket.
@@ -1497,7 +1529,7 @@ class ClientHubSession:
             port=parts.port or 443,
             path=CLIENT_CHANNEL_WS_PATH,
             fingerprint=fingerprint,
-            timeout_s=CLIENT_CONNECT_TIMEOUT_S,
+            timeout_s=CLIENT_CONNECT_TIMEOUT_S if timeout_s is None else timeout_s,
         )
 
     def _greet(self, client, url: str = "") -> None:
@@ -1538,6 +1570,7 @@ class ClientHubSession:
                 log=self._log,
             )
             self._is_welcomed = True
+            self._channel_open.set()
             self._hub_software = str(welcome.get("software", "") or "")
             self._backoff_s = CLIENT_BACKOFF_MIN_S
             # A hub whose state hash the report matches pushes no state; what
@@ -2015,6 +2048,7 @@ class ClientHubSession:
                 self._client = None
                 streams, self._streams = self._streams, None
                 self._is_welcomed = False
+                self._channel_open.clear()
                 self._rtt_ms = None
                 self._ping_sent = None
         client.close()
@@ -2165,21 +2199,31 @@ class ClientHubSession:
 
 
 class _ClientDialRound:
-    """One round's sockets, dialled at once; the first to connect is kept."""
+    """One round's sockets, dialled at once; the first to connect is kept.
 
-    def __init__(self, *, clients: list):
+    An address that refuses is dialled again every ``CLIENT_REDIAL_INTERVAL_S``
+    until ``CLIENT_CONNECT_TIMEOUT_S`` has passed since the round started; an
+    address that fails any other way is dialled once.
+    """
+
+    def __init__(self, *, clients: list, open_client):
         """
         Args:
             clients: ``(url, client)`` per address, each socket unconnected.
+            open_client: ``open_client(url, timeout_s)`` makes the unconnected
+                socket of a dial again.
         """
-        self._clients = list(clients)
+        self._clients = dict(clients)
+        self._open_client = open_client
         self._results: queue.Queue = queue.Queue()
         self._lock = threading.Lock()
-        self._is_settled = False
+        self._settled = threading.Event()
+        self._deadline = 0.0
 
     def start(self) -> None:
         """Dial every address, each on a thread of its own."""
-        for url, client in self._clients:
+        self._deadline = time.monotonic() + CLIENT_CONNECT_TIMEOUT_S
+        for url, client in self._clients.items():
             threading.Thread(
                 target=self._dial,
                 args=(url, client),
@@ -2210,22 +2254,46 @@ class _ClientDialRound:
             kept: The round's socket, left open; None ends every dial.
         """
         with self._lock:
-            self._is_settled = True
-        for _url, client in self._clients:
+            self._settled.set()
+            clients = list(self._clients.values())
+        for client in clients:
             if client is not kept:
                 client.abort()
 
     def _dial(self, url: str, client) -> None:
-        """Connect one socket, timed; one that connects after the round settled is closed."""
-        started = time.monotonic()
-        try:
-            client.connect()
-        except (GatewayRefused, GatewayUnreachable, GatewayUntrusted) as error:
-            self._results.put((url, None, error, 0.0))
+        """Connect one address, timed, again after each refusal; a late one is closed."""
+        while True:
+            started = time.monotonic()
+            try:
+                client.connect()
+            except (GatewayRefused, GatewayUnreachable, GatewayUntrusted) as error:
+                client = self._redial(url, error)
+                if client is None:
+                    self._results.put((url, None, error, 0.0))
+                    return
+                continue
+            handshake_s = time.monotonic() - started
+            with self._lock:
+                if not self._settled.is_set():
+                    self._results.put((url, client, None, handshake_s))
+                    return
+            client.close()
             return
-        handshake_s = time.monotonic() - started
+
+    def _redial(self, url: str, error: Exception):
+        """The next socket of an address that refused, after the interval; None to stop."""
+        if not is_port_closed(error):
+            return None
+        if time.monotonic() + CLIENT_REDIAL_INTERVAL_S >= self._deadline:
+            return None
+        if self._settled.wait(CLIENT_REDIAL_INTERVAL_S):
+            return None
+        timeout_s = self._deadline - time.monotonic()
+        if timeout_s <= 0:
+            return None
+        client = self._open_client(url, timeout_s)
         with self._lock:
-            if not self._is_settled:
-                self._results.put((url, client, None, handshake_s))
-                return
-        client.close()
+            if self._settled.is_set():
+                return None
+            self._clients[url] = client
+        return client

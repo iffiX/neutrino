@@ -12,6 +12,7 @@ import { t, useLanguage } from "../i18n";
 import { stripAnsi } from "../strip_ansi";
 import { useTaskStream } from "../use_task_stream";
 import type {
+  DeviceAddRequest,
   DeviceAgentInstallRequest,
   DeviceView,
   TaskStarted,
@@ -22,10 +23,11 @@ import "./install_agent_modal.css";
 /**
  * The SSH login the hub installs a machine's agent with, and the install.
  *
- * The credential is one the vault holds: a key or a login, picked here and
- * stored here where it is not stored yet. The login whose password sudo is
- * given on the device comes from the same vault; nothing echoes a secret into
- * the output below.
+ * With no device, the person types the host and one press adds the machine
+ * and installs. The credential is one the vault holds: a key or a login,
+ * picked here and stored here where it is not stored yet. The login whose
+ * password sudo is given on the device comes from the same vault; nothing
+ * echoes a secret into the output below.
  */
 
 // The {code, params} an install is refused with, worded.
@@ -41,7 +43,8 @@ const DEFAULT_SSH_PORT = 22;
 type CredentialKind = "key" | "login";
 
 interface InstallAgentModalProps {
-  device: DeviceView;
+  /** The device to install on, or null to add a machine by its host. */
+  device: DeviceView | null;
   /** Whether the machine already had an agent, which only changes wording. */
   isReinstall: boolean;
   onClose: () => void;
@@ -57,18 +60,15 @@ export function InstallAgentModal({
 }: InstallAgentModalProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
-  const [host, setHost] = useState(device.ssh?.host ?? device.ipv4_address);
-  const [port, setPort] = useState(
-    String(device.ssh?.port ?? DEFAULT_SSH_PORT),
-  );
-  const [username, setUsername] = useState(device.ssh?.username ?? "");
+  const ssh = device?.ssh ?? null;
+  const [host, setHost] = useState(ssh?.host ?? device?.ipv4_address ?? "");
+  const [port, setPort] = useState(String(ssh?.port ?? DEFAULT_SSH_PORT));
+  const [username, setUsername] = useState(ssh?.username ?? "");
   const [credentialKind, setCredentialKind] = useState<CredentialKind>(
-    device.ssh?.login_id != null ? "login" : "key",
+    ssh?.login_id != null ? "login" : "key",
   );
-  const [keyId, setKeyId] = useState<string | null>(device.ssh?.key_id ?? null);
-  const [loginId, setLoginId] = useState<string | null>(
-    device.ssh?.login_id ?? null,
-  );
+  const [keyId, setKeyId] = useState<string | null>(ssh?.key_id ?? null);
+  const [loginId, setLoginId] = useState<string | null>(ssh?.login_id ?? null);
   const [sudoLoginId, setSudoLoginId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [taskId, setTaskId] = useState<string | null>(null);
@@ -108,19 +108,20 @@ export function InstallAgentModal({
   const isPortValid = isValidPort(port);
   const hasCredential =
     credentialKind === "key" ? keyId !== null : loginId !== null;
+  // One press adds the machine; a retry is the install in its row's drawer.
+  const isAdded = device === null && taskId !== null;
   const isReady =
     host.trim().length > 0 &&
     username.trim().length > 0 &&
     isPortValid &&
     hasCredential &&
-    !task.isRunning;
-  const deviceName = toDeviceLabel(device);
+    !task.isRunning &&
+    !isAdded;
 
   const handleSubmit = async () => {
     setError(null);
     setTaskId(null);
-    const request: DeviceAgentInstallRequest = {
-      device_id: device.id,
+    const fields: DeviceAddRequest = {
       host: host.trim(),
       port: Number(port),
       username: username.trim(),
@@ -128,11 +129,12 @@ export function InstallAgentModal({
       login_id: credentialKind === "login" ? loginId : null,
       sudo_login_id: sudoLoginId,
     };
+    const path =
+      device === null ? "/hub/device/add" : "/hub/device/agent/install";
+    const request: DeviceAddRequest | DeviceAgentInstallRequest =
+      device === null ? fields : { ...fields, device_id: device.id };
     try {
-      const started = await apiPost<TaskStarted>(
-        "/hub/device/agent/install",
-        request,
-      );
+      const started = await apiPost<TaskStarted>(path, request);
       setTaskId(started.task_id);
     } catch (cause: unknown) {
       setError(describeInstallError(cause));
@@ -156,11 +158,7 @@ export function InstallAgentModal({
         <div className="install_modal_head">
           <div className="install_modal_title">
             <Icon name="download" size={15} />
-            <h2>
-              {isReinstall
-                ? t("ui.install_agent.reinstall_title", { device: deviceName })
-                : t("ui.install_agent.install_title", { device: deviceName })}
-            </h2>
+            <h2>{toTitle(device, isReinstall)}</h2>
           </div>
           <button
             type="button"
@@ -310,6 +308,17 @@ export function InstallAgentModal({
     </div>,
     document.body,
   );
+}
+
+/** The dialog's title: adding a machine, or installing on one. */
+function toTitle(device: DeviceView | null, isReinstall: boolean): string {
+  if (device === null) {
+    return t("ui.install_agent.add_title");
+  }
+  const name = toDeviceLabel(device);
+  return isReinstall
+    ? t("ui.install_agent.reinstall_title", { device: name })
+    : t("ui.install_agent.install_title", { device: name });
 }
 
 /** Wording for a refused install, from the code the API returned. */

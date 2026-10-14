@@ -516,6 +516,7 @@ def _serve_panel(arguments) -> int:
         servers.append(AgentPortServer(_agent_config(arguments.host, agent_key_path)))
     _finish_first_run()
     asyncio.run(_serve_together(servers))
+    _stop_samplers()
     return 0
 
 
@@ -558,6 +559,13 @@ def _agent_port_guard():
     from neutrino_hub.web.app import shared_runtime
 
     return shared_runtime().channel_port
+
+
+def _stop_samplers() -> None:
+    """Write the traffic history once more, after the servers stopped."""
+    from neutrino_hub.web.app import stop_samplers
+
+    stop_samplers()
 
 
 def _finish_first_run() -> None:

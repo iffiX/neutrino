@@ -945,21 +945,22 @@ function panelCard(title, isDirty) {
 // --- the entries of the service pages ---
 
 // Which hub, which of its machines and which module an entry comes from; a
-// hub that names no machine leaves the address the entry points at, and an
-// entry the hub's own machine serves names the hub once.
+// hub that names no machine leaves the address the entry points at.
 function providerLine(hub, entry) {
-  const name = hubName(hub);
   const device = entry.device_name || entryHost(entry);
-  if (device === name) {
-    return t('ui.machine_provided_by', { hub: name, device: entryModule(entry) });
-  }
-  return t('ui.provided_by', { hub: name, device: device, module: entryModule(entry) });
+  return t('ui.provided_by', { hub: hubName(hub), device: device, module: entryModule(entry) });
 }
 
-// The module names an origin code stands for; the AI gateway is worded in
-// the page's language.
+// The module titles an origin code stands for, as the hub's panel titles its
+// modules; the titles it translates are worded in the page's language.
 const ENTRY_MODULES = {
-  gitea_module: 'Gitea', samba_module: 'Samba', device_share: 'RustDesk',
+  gitea_module: 'Gitea', vscode_module: 'VS Code', code_server_module: 'code-server',
+  cloudcli_module: 'CloudCLI', codeg_module: 'Codeg',
+};
+const ENTRY_MODULE_KEYS = {
+  ai_gateway: 'ui.module_ai_gateway',
+  samba_module: 'ui.module_title.samba',
+  device_share: 'ui.module_title.remote_desktop',
 };
 
 // The module an entry comes from, by its origin code: a container by its
@@ -967,7 +968,7 @@ const ENTRY_MODULES = {
 // and an entry from a hub that sends no code, by its own title.
 function entryModule(entry) {
   const code = entry.description_code;
-  if (code === 'ai_gateway') return t('ui.module_ai_gateway');
+  if (ENTRY_MODULE_KEYS[code]) return t(ENTRY_MODULE_KEYS[code]);
   if (code === 'container') {
     const image = (entry.description_params || {}).image || '';
     return image.split('/').pop() || entry.title;

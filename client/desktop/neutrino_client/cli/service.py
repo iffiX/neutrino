@@ -8,7 +8,9 @@ entry by its number within that hub, or by its id.
 
 The resident reports refusals as ``{"code", "params"}``; the wording lives
 in ``wording.py``. A share password is read from the terminal and travels
-only in the one request that sends it, never on argv.
+only in the one request that sends it, never on argv. ``web open`` and
+``file unmount`` wait for the job they start on the entry and print how it
+ended.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -16,11 +18,13 @@ only in the one request that sends it, never on argv.
 from __future__ import annotations
 
 import sys
+import time
 
 from neutrino_client.cli import wording
 from neutrino_client.services.base import is_unhealthy, service_key
 from neutrino_client.services.forward import FORWARD_PROTOCOL_UDP
 from neutrino_client.services.port import entry_protocol
+from neutrino_client.services.web import local_url
 
 SERVICE_KIND_TITLES = (
     ("web", "Web"),
@@ -40,6 +44,8 @@ SERVICE_AI_ON = "the tools point at the hub"
 SERVICE_AI_OFF = "the tools are as they were"
 
 FORWARD_HOST = "127.0.0.1"
+# How often a command looks again at an entry whose job runs.
+SERVICE_JOB_POLL_S = 0.2
 
 
 def main_list(*, hub: str = "") -> int:
@@ -72,7 +78,9 @@ def main_list(*, hub: str = "") -> int:
 
 
 def main_web_open(ref: str, *, hub: str = "") -> int:
-    """Open the browser on one published link.
+    """Open the browser on one published link, and print the address it opens.
+
+    The address is the entry's forward on this machine, its token left out.
 
     Args:
         ref: The entry's number under its hub, or its id.
@@ -80,7 +88,7 @@ def main_web_open(ref: str, *, hub: str = "") -> int:
             binding's id; empty names the one hub joined.
 
     Returns:
-        Process exit status.
+        Process exit status: 1 for an open that failed.
     """
     state = wording.read_state()
     if state is None:
@@ -96,7 +104,20 @@ def main_web_open(ref: str, *, hub: str = "") -> int:
         return 1
     if _act("web", _address(entry)) is None:
         return 1
-    print(f"opening {(entry.get('payload') or {}).get('url', '')}")
+    state = _settled(entry)
+    if state is None:
+        return 1
+    row = _row_of(state, entry) or {}
+    if _job_failed(row):
+        return 1
+    address = local_url(
+        str((entry.get("payload") or {}).get("url", "")),
+        str(entry.get("id", "")),
+        int(row.get("forward") or 0),
+        "",
+        str((state.get("platform") or {}).get("os", "")),
+    )
+    print(f"opening {address}")
     return 0
 
 
@@ -237,13 +258,16 @@ def main_file_mount(ref: str, *, hub: str = "") -> int:
 def main_file_unmount(ref: str, *, hub: str = "") -> int:
     """Unmount one share; its record and login stay for the next mount.
 
+    A mount or an unmount that runs on the share is waited for first, and
+    the unmount is waited for before its outcome is printed.
+
     Args:
         ref: The entry's number under its hub, or its id.
         hub: The hub the entry belongs to, by its name, its id or its
             binding's id; empty names the one hub joined.
 
     Returns:
-        Process exit status.
+        Process exit status: 1 for an unmount that failed.
     """
     state = wording.read_state()
     if state is None:
@@ -254,6 +278,12 @@ def main_file_unmount(ref: str, *, hub: str = "") -> int:
     entry = _resolve(state, "file", ref, hub_id)
     if entry is None:
         return 2
+    if (_row_of(state, entry) or {}).get("job"):
+        for record in _records(state, entry):
+            print(_record_line(record))
+        state = _settled(entry)
+        if state is None:
+            return 1
     records = _records(state, entry)
     if not records:
         print(f"nothing is mounted for {entry.get('title', '')}")
@@ -277,8 +307,13 @@ def main_file_unmount(ref: str, *, hub: str = "") -> int:
     )
     if reply is None:
         return 1
+    state = _settled(entry)
+    if state is None:
+        return 1
+    if _job_failed(_row_of(state, entry) or {}):
+        return 1
     path = str(record.get("path", ""))
-    fresh = _record_at(reply, entry, path)
+    fresh = _record_at(state, entry, path)
     if fresh is None or not (fresh.get("is_attached") or fresh.get("code")):
         print(_placed(path, wording.CLIENT_MOUNT_UNMOUNTED_WORD))
     else:
@@ -590,14 +625,49 @@ def _suffix(entry: dict) -> str:
 
 def _forward_of(state: dict, entry: dict) -> int:
     """The loopback port one entry's forward listens on, 0 when none runs."""
+    return int((_row_of(state, entry) or {}).get("forward") or 0)
+
+
+def _row_of(state: dict, entry: dict) -> "dict | None":
+    """One entry's row in the state, with its job and its last failure; None when gone."""
     for row in state.get("services") or []:
         if (
             isinstance(row, dict)
             and row.get("hub_id") == entry.get("hub_id")
             and row.get("id") == entry.get("id")
         ):
-            return int(row.get("forward") or 0)
-    return 0
+            return row
+    return None
+
+
+def _settled(entry: dict) -> "dict | None":
+    """The state once no job runs on one entry.
+
+    Args:
+        entry: The entry.
+
+    Returns:
+        The state payload, or None after the honest line was printed.
+    """
+    while True:
+        state = wording.read_state()
+        if state is None:
+            return None
+        if not (_row_of(state, entry) or {}).get("job"):
+            return state
+        time.sleep(SERVICE_JOB_POLL_S)
+
+
+def _job_failed(row: dict) -> bool:
+    """Whether an entry's last job ended in a failure, its words printed when it did."""
+    failure = row.get("last_error")
+    if not isinstance(failure, dict) or not failure.get("code"):
+        return False
+    print(
+        wording.word_code(str(failure.get("code")), failure.get("params")),
+        file=sys.stderr,
+    )
+    return True
 
 
 def _entries(state: dict, kind: str = "", hub_id: "str | None" = None) -> list:

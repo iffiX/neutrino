@@ -12,7 +12,9 @@ listens on it on any address of the machine, else the first free port from
 ``FORWARD_AUTO_FIRST_PORT`` up, and the pick is kept for every later forward.
 No number is held by two entries. The listeners are runtime state and end
 with the resident; they are held by service key, so two hubs publishing the
-same entry id never collide.
+same entry id never collide. While its hub has no channel, a TCP forward
+accepts nothing and stays bound; the connections waiting in its listen queue
+are served once the channel is back.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -318,6 +320,11 @@ def _nobody() -> None:
     """Nobody listening for changes."""
 
 
+def _channel_always_open(*_args) -> bool:
+    """A channel that is always open."""
+    return True
+
+
 class PortLocalTable:
     """The one table of the loopback ports this client's forwards take.
 
@@ -482,9 +489,14 @@ class PortLocalTable:
 
 
 class ForwardListener:
-    """One loopback listener whose every connection is one ``connect`` stream."""
+    """One loopback listener whose every connection is one ``connect`` stream.
 
-    def __init__(self, *, open_stream, local_port: int, kind: str, log=print):
+    It accepts only while its hub's channel is open.
+    """
+
+    def __init__(
+        self, *, open_stream, local_port: int, kind: str, log=print, wait_channel=None
+    ):
         """
         Args:
             open_stream: ``open_stream()`` opens one ``connect`` stream to
@@ -494,10 +506,16 @@ class ForwardListener:
             local_port: The loopback number to listen on.
             kind: What is forwarded: an entry's type, or ``panel``.
             log: Callable used for progress messages.
+            wait_channel: ``wait_channel(timeout_s)`` waits until the hub's
+                channel is open and says whether it is; None for a channel
+                that is always open.
         """
         self.kind = kind
         self.local_port = 0
         self._open_stream = open_stream
+        self._wait_channel = (
+            wait_channel if wait_channel is not None else _channel_always_open
+        )
         self._bind_port = local_port
         self._log = log
         # A failure that repeats at every connection is one line a state.
@@ -542,7 +560,7 @@ class ForwardListener:
         self._lines.clear_all()
 
     def _accept(self) -> None:
-        while not self._is_closed:
+        while self._is_channel_open():
             try:
                 connection, _address = self._listener.accept()
             except OSError:
@@ -557,7 +575,17 @@ class ForwardListener:
                 daemon=True,
             ).start()
 
+    def _is_channel_open(self) -> bool:
+        """Wait until the hub's channel is open; False once the forward is closed."""
+        while not self._is_closed:
+            if self._wait_channel(FORWARD_STREAM_WAIT_S):
+                return not self._is_closed
+        return False
+
     def _serve(self, connection) -> None:
+        if not self._is_channel_open():
+            _close_socket(connection)
+            return
         try:
             stream = self._open_stream()
         except GatewayUnreachable as error:
@@ -894,6 +922,7 @@ class ForwardListenerRegistry:
         on_change=None,
         on_refused=None,
         on_answered=None,
+        wait_channel=None,
     ):
         """
         Args:
@@ -914,8 +943,15 @@ class ForwardListenerRegistry:
             on_answered: ``on_answered(hub_id, entry_id)`` is told when a UDP
                 forward that outlived a refusal gets its first frame back on
                 a later stream; None for nobody listening.
+            wait_channel: ``wait_channel(hub_id, timeout_s)`` waits until
+                that hub's channel is open and says whether it is; a TCP
+                forward accepts only while it is. None for channels that are
+                always open.
         """
         self._open_connect = open_connect
+        self._wait_channel = (
+            wait_channel if wait_channel is not None else _channel_always_open
+        )
         self._on_refused = on_refused if on_refused is not None else _nobody_told
         self._on_answered = on_answered if on_answered is not None else _nobody_told
         self.ports = ports if ports is not None else PortLocalTable()
@@ -961,6 +997,9 @@ class ForwardListenerRegistry:
         def open_stream():
             return self._open_connect(hub_id, args)
 
+        def wait_channel(timeout_s: float) -> bool:
+            return self._wait_channel(hub_id, timeout_s)
+
         with self._lock:
             listener = self._listeners.get(key)
             if listener is not None and listener.is_active:
@@ -986,7 +1025,11 @@ class ForwardListenerRegistry:
                 )
             else:
                 listener = ForwardListener(
-                    open_stream=open_stream, local_port=port, kind=kind, log=self._log
+                    open_stream=open_stream,
+                    local_port=port,
+                    kind=kind,
+                    log=self._log,
+                    wait_channel=wait_channel,
                 )
             bound = listener.start()
             self._listeners[key] = listener

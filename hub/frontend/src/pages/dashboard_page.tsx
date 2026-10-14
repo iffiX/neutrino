@@ -99,9 +99,6 @@ export function DashboardPage() {
     network.data?.hub_os === "linux" && network.data.mode !== "server";
   // The side column holds the exits and the DNS log.
   const isSideShown = IS_PROXY_CARRIED || isDnsLogShown;
-  // The history is vnstat's, which runs only on a hub on Linux.
-  const isHistoryKept =
-    network.data?.hub_os !== "darwin" && network.data?.hub_os !== "windows";
   // The same status view the top bar reads. A gateway that is absent or has
   // served nothing leaves the tile blank rather than reporting a failure.
   const ai = useApiResource<CliproxyApiStatusView>("/hub/ai/gateway", {
@@ -389,29 +386,18 @@ export function DashboardPage() {
             <div className="card_header">
               <div className="card_title">
                 <h2>{t("ui.dashboard.history_title")}</h2>
-                {isHistoryKept && (
-                  <span className="badge">
-                    {t("ui.dashboard.history_source")}
-                  </span>
-                )}
               </div>
-              {isHistoryKept && (
-                <RangeSwitch
-                  options={HISTORY_RANGE_OPTIONS.map((option) => ({
-                    value: option.value,
-                    label: t(option.labelKey),
-                  }))}
-                  value={historyRange}
-                  onChange={setHistoryRange}
-                />
-              )}
+              <RangeSwitch
+                options={HISTORY_RANGE_OPTIONS.map((option) => ({
+                  value: option.value,
+                  label: t(option.labelKey),
+                }))}
+                value={historyRange}
+                onChange={setHistoryRange}
+              />
             </div>
 
-            {!isHistoryKept ? (
-              <div className="placeholder">
-                <span>{t("ui.dashboard.history_none")}</span>
-              </div>
-            ) : history.error !== null ? (
+            {history.error !== null ? (
               <ErrorPanel
                 title={t("ui.dashboard.history_unavailable")}
                 message={history.error}

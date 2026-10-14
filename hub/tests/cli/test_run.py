@@ -45,10 +45,11 @@ class FakeServer:
 @pytest.fixture
 def served(monkeypatch):
     """Run ``_serve_panel`` with every effect recorded instead of made."""
-    recorded = {"servers": [], "watched": []}
+    recorded = {"servers": [], "watched": [], "steps": []}
 
     def serve_together(servers):
         recorded["servers"] = servers
+        recorded["steps"].append("served")
 
     def asyncio_run(awaited):
         return awaited
@@ -68,6 +69,9 @@ def served(monkeypatch):
     monkeypatch.setattr(run, "_configured_agent_port", lambda: 8443)
     monkeypatch.setattr(run, "watch_served_context", recorded["watched"].append)
     monkeypatch.setattr(run, "_agent_port_guard", lambda: "guard")
+    monkeypatch.setattr(
+        run, "_stop_samplers", lambda: recorded["steps"].append("samplers stopped")
+    )
     monkeypatch.setattr(
         run, "agent_port_context", lambda cert, key: f"context of {cert} {key}"
     )
@@ -90,6 +94,14 @@ def test_three_servers_each_on_its_own_port(served, monkeypatch):
         run.AGENT_APPLICATION_PATH,
     ]
     assert [config.keywords["port"] for config in configs] == [80, 443, 8443]
+
+
+def test_the_samplers_stop_once_the_servers_have(served, monkeypatch):
+    monkeypatch.setattr(run, "_panel_certificate", dict)
+
+    run._serve_panel(arguments())
+
+    assert served["steps"] == ["served", "samplers stopped"]
 
 
 def test_only_the_https_and_agent_ports_speak_tls(served, monkeypatch):
