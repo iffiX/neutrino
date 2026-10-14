@@ -1091,20 +1091,25 @@ export interface DeviceWolResult {
 }
 
 /**
- * What installing the agent over SSH needs.
+ * What installing the agent over SSH needs, on a machine added by the host
+ * typed here.
  *
  * The credential is exactly one of the two the vault holds: a stored key or a
  * stored login. `sudo_login_id` is the stored login whose password sudo is
  * given on the device, and null where sudo asks for none.
  */
-export interface DeviceAgentInstallRequest {
-  device_id: string;
+export interface DeviceAddRequest {
   host: string;
   port: number;
   username: string;
   key_id: string | null;
   login_id: string | null;
   sudo_login_id: string | null;
+}
+
+/** The same install, on a device on record. */
+export interface DeviceAgentInstallRequest extends DeviceAddRequest {
+  device_id: string;
 }
 
 /** The job an action started, followed on `/ws/hub/task`. */

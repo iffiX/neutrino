@@ -6,9 +6,11 @@ import { DeviceMonitor } from "../components/device_monitor";
 import { DeviceTile } from "../components/device_tile";
 import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
+import { InstallAgentModal } from "../components/install_agent_modal";
 import { apiPost, describeError } from "../api_client";
 import {
   isDeviceManaged,
+  toDeviceLabel,
   toDeviceReach,
   toDevicePresence,
 } from "../device_level";
@@ -110,6 +112,7 @@ export function DevicesPage() {
   const [enrollment, setEnrollment] = useState<DeviceEnrollmentView | null>(
     null,
   );
+  const [isAddOpen, setIsAddOpen] = useState(false);
 
   useEffect(() => {
     if (resource.data !== null) {
@@ -218,6 +221,14 @@ export function DevicesPage() {
           >
             <Icon name="link" size={14} />
             {t("ui.devices.add_by_link")}
+          </button>
+          <button
+            type="button"
+            className="button"
+            onClick={() => setIsAddOpen(true)}
+          >
+            <Icon name="plus" size={14} />
+            {t("ui.devices.add_by_address")}
           </button>
           {canScan && (
             <button
@@ -337,6 +348,15 @@ export function DevicesPage() {
         </>
       )}
 
+      {isAddOpen && (
+        <InstallAgentModal
+          device={null}
+          isReinstall={false}
+          onClose={() => setIsAddOpen(false)}
+          onFinished={handleTaskFinished}
+        />
+      )}
+
       {selectedDevice !== null && (
         <>
           <DeviceMonitor device={selectedDevice} />
@@ -421,7 +441,7 @@ function matchesSearch(device: DeviceView, search: string): boolean {
     return true;
   }
   return [
-    device.name ?? "",
+    toDeviceLabel(device),
     device.ipv4_address,
     device.link_mac,
     device.vendor,

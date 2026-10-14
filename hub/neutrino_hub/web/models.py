@@ -1142,8 +1142,9 @@ class DeviceAnnotation(BaseModel):
     shown_module: list[str] | None = None
 
 
-class DeviceAgentInstallRequest(BaseModel):
-    """How to reach a machine over SSH to put the agent on it.
+class DeviceAddRequest(BaseModel):
+    """A machine by the host a person typed, and the SSH login the agent is
+    installed with.
 
     Exactly one of a stored key, a stored login, or a password typed now,
     which ``is_password_saved`` stores as a login. ``sudo_login_id`` names
@@ -1152,7 +1153,6 @@ class DeviceAgentInstallRequest(BaseModel):
     typed for one install.
     """
 
-    device_id: str
     host: str = ""
     port: int = 22
     username: str = ""
@@ -1162,6 +1162,12 @@ class DeviceAgentInstallRequest(BaseModel):
     is_password_saved: bool = False
     sudo_login_id: str | None = None
     sudo_password: str | None = None
+
+
+class DeviceAgentInstallRequest(DeviceAddRequest):
+    """The SSH login the agent is installed with, on a device on record."""
+
+    device_id: str
 
 
 class DeviceProcessKill(BaseModel):
