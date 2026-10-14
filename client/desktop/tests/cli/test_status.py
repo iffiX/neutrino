@@ -181,6 +181,28 @@ def test_a_refused_join_prints_the_codes_wording(resident, capsys):
     assert "ticket_spent" not in out
 
 
+@pytest.mark.parametrize(
+    "code, line",
+    [
+        ("protocol_too_old", "Version too old · update the client"),
+        ("protocol_too_new", "Version too old"),
+    ],
+)
+def test_a_client_too_old_for_its_hub_says_to_update_the_client(
+    resident, capsys, code, line
+):
+    resident.hubs_value[0].update(
+        connection="waiting",
+        wait_reason="too_old",
+        wait_code={"code": code, "params": {"peer": 3, "hub": 4, "min": 4}},
+        next_round_at=None,
+    )
+
+    status_cli.main()
+
+    assert f"hub home {GATEWAY_URL} {line} {status_cli.EXIT_MARK}" in printed(capsys)
+
+
 def test_a_resident_of_another_account_reads_as_none(platform, config_path, capsys):
     bind(config_path, url=GATEWAY_URL)
     platform.peer = {"account": "bob", "uid": 1001, "is_same_user": False}

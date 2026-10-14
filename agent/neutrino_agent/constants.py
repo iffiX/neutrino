@@ -26,7 +26,7 @@ AGENT_DARWIN_LOG_PATH = "/Library/Logs/Neutrino/agent/agent.log"
 
 # The protocol number this build speaks. The name has no package prefix:
 # one number has one name in every package.
-PROTOCOL = 3
+PROTOCOL = 4
 # What this side answers as, in the join body and the hello, and what the
 # hub answers as in its welcome.
 AGENT_ROLE = "agent"

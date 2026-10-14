@@ -4,8 +4,11 @@ from neutrino_hub.utils.constants import UTILS_STATE_ROOT
 
 # The protocol number this hub speaks, and the oldest it still accepts. One
 # number has one name in every package, so neither carries a package prefix.
-PROTOCOL = 3
-PROTOCOL_MIN = 3
+PROTOCOL = 4
+PROTOCOL_MIN = 4
+# The number an agent of 0.5 speaks, one below the floor: its hello is
+# admitted for its own update alone.
+CHANNEL_PROTOCOL_UPDATE_ONLY = 3
 
 # An enrolment ticket: its size in bytes before encoding, and how long it
 # lives, counted across hub restarts. The standard names both, so neither
@@ -60,6 +63,16 @@ CHANNEL_PACKAGE_PLATFORM_POLL_S = 0.25
 CHANNEL_STREAM_LOG = "log"
 CHANNEL_STREAM_SERVICE = "service"
 CHANNEL_STREAM_CONNECT = "connect"
+CHANNEL_STREAM_KINDS = (
+    CHANNEL_STREAM_SHELL,
+    CHANNEL_STREAM_EXEC,
+    CHANNEL_STREAM_FILE,
+    CHANNEL_STREAM_COMMAND,
+    CHANNEL_STREAM_PACKAGE,
+    CHANNEL_STREAM_LOG,
+    CHANNEL_STREAM_SERVICE,
+    CHANNEL_STREAM_CONNECT,
+)
 
 # A ``shell`` inside a container names the module that runs it.
 CHANNEL_SHELL_CONTAINER_MODULE = "podman"

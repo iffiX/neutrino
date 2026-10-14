@@ -665,13 +665,18 @@ function hubWord(hub) {
 }
 
 // A waiting hub's state line: its reason, then the seconds until its next
-// round, or the reason a refused join gives; at 0 the line is connecting.
+// round, the reason a refused join gives, or the update a client too old
+// for the hub needs; at 0 the line is connecting.
 function waitWord(hub) {
   const reason = WAIT_REASONS.indexOf(hub.wait_reason) >= 0
     ? hub.wait_reason : 'hub_silent';
   const word = t('ui.state.' + reason);
   if (reason === 'join_refused' && hub.wait_code) {
     return word + ' · ' + wordError(hub.wait_code);
+  }
+  if (reason === 'too_old' && hub.wait_code
+    && hub.wait_code.code === 'protocol_too_old') {
+    return word + ' · ' + t('ui.action.update_client');
   }
   if (typeof hub.next_round_at !== 'number') return word;
   const left = secondsLeft(hub);
@@ -1458,7 +1463,7 @@ function machineStrip(state) {
   for (const hub of state.hubs || []) {
     if (!isReachable(hub)) continue;
     const machines = (((state.terminals || {}).machines) || []).filter(
-      (machine) => machine.hub_id === hub.hub_id && machine.is_shell_allowed);
+      (machine) => machine.hub_id === hub.hub_id);
     for (const machine of machines) {
       count += 1;
       const isPicked = !!picked && picked.machine === machine;
@@ -1499,7 +1504,7 @@ function pickedMachine(state) {
   for (const hub of state.hubs || []) {
     if (!isReachable(hub) || hub.hub_id !== shellPick.hub_id) continue;
     const machine = machineOf(state, hub.hub_id, shellPick.device_id);
-    if (machine && machine.is_shell_allowed) return { hub: hub, machine: machine };
+    if (machine) return { hub: hub, machine: machine };
   }
   return null;
 }

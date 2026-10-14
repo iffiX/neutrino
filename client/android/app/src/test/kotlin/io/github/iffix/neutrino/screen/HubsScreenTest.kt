@@ -55,7 +55,8 @@ class HubsScreenTest {
             waiting(HubWaitReason.UNTRUSTED, 60_000) to "Certificate mismatch · retrying in 60 s",
             waiting(HubWaitReason.ADMISSION_PAUSED, 42_000) to "The hub pauses new devices · retrying in 42 s",
             waiting(HubWaitReason.UNKNOWN_DEVICE) to "The hub does not know this device",
-            waiting(HubWaitReason.TOO_OLD) to "Version too old",
+            waiting(HubWaitReason.TOO_OLD, refusal = ChannelResult.refused("protocol_too_old")) to
+                "Version too old · update the client",
             waiting(HubWaitReason.JOIN_REFUSED, refusal = ChannelResult.refused("ticket_spent")) to
                 "Join refused · $ticketSpent",
             waiting(HubWaitReason.REPLACED) to "Replaced by another client · Reconnect",
@@ -67,6 +68,14 @@ class HubsScreenTest {
         assertEquals("中枢未响应 · 5 秒后重试", hubStateLine(waiting(HubWaitReason.HUB_SILENT, 5_000), zh, 0))
         assertEquals("已被替换 · 重新连接", hubStateLine(waiting(HubWaitReason.REPLACED), zh, 0))
         assertEquals("已停用", hubStateLine(waiting(HubWaitReason.DISABLED), zh, 0))
+    }
+
+    @Test
+    fun onlyTheClientTooOldIsToldToUpdate() {
+        val tooOld = waiting(HubWaitReason.TOO_OLD, refusal = ChannelResult.refused("protocol_too_old"))
+        val tooNew = waiting(HubWaitReason.TOO_OLD, refusal = ChannelResult.refused("protocol_too_new"))
+        assertEquals("版本太旧 · 更新客户端", hubStateLine(tooOld, catalog("zh-CN"), 0))
+        assertEquals("Version too old", hubStateLine(tooNew, catalog("en"), 0))
     }
 
     @Test

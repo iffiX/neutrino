@@ -52,7 +52,6 @@ class TerminalTabsTest {
                     "d1",
                     "Argon",
                     isOnline = true,
-                    isShellAllowed = true,
                     sessions = sessions.toList(),
                 ),
             ),

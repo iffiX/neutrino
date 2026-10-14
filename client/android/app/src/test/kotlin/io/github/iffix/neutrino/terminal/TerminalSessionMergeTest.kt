@@ -35,7 +35,6 @@ class TerminalSessionMergeTest {
                     "d-$id",
                     "Argon",
                     isOnline = true,
-                    isShellAllowed = true,
                     sessions = sessions.toList(),
                 ),
             ),

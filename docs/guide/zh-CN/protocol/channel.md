@@ -173,17 +173,17 @@ title: 通道
 
 客户端的汇报里 `state_hash` 和中枢的不同时，或汇报带 `is_refresh: true` 时，或中枢自己的状态变了时，中枢下发 `state`。
 
-| 段                 | 内容                                                                                                                          |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
-| `hash`             | 一个不透明的字符串，客户端在每次汇报里原样带回                                                                                |
-| `is_disabled`      | 在 **客户端** 页停用这个客户端后为 `true`：列表为空，所有操作都返回 `client_disabled`                                         |
-| `services`         | 这个客户端有权使用的已发布条目，按它的套接字来源地址解析                                                                      |
-| `urls`             | 中枢提供通道的每个地址，客户端存下来，每一轮连接都拨                                                                          |
-| `relay_url`        | `urls` 里属于 SSH 中继的那一个，中继关着时为空；客户端靠它判断一个地址走的是哪条路                                            |
-| `overlays`         | 客户端加入中枢每个虚拟网要用的材料，首选的排在前面                                                                            |
-| `terminals`        | 客户端有权打开 shell 或运行命令的受管机器，每台是 `{device_id, name, is_online, is_shell_allowed, is_exec_allowed, sessions}` |
-| `is_panel_allowed` | 客户端未停用且权限含 `panel` 时为 `true`：能经 `connect` 打开中枢的面板                                                       |
-| `reached_through`  | 这个客户端的套接字以哪条路连到中枢：`lan`、`direct`、`netbird`、`easytier` 或 `relay`                                         |
+| 段                 | 内容                                                                                       |
+| ------------------ | ------------------------------------------------------------------------------------------ |
+| `hash`             | 一个不透明的字符串，客户端在每次汇报里原样带回                                             |
+| `is_disabled`      | 在 **客户端** 页停用这个客户端后为 `true`：列表为空，所有操作都返回 `client_disabled`      |
+| `services`         | 这个客户端有权使用的已发布条目，按它的套接字来源地址解析                                   |
+| `urls`             | 中枢提供通道的每个地址，客户端存下来，每一轮连接都拨                                       |
+| `relay_url`        | `urls` 里属于 SSH 中继的那一个，中继关着时为空；客户端靠它判断一个地址走的是哪条路         |
+| `overlays`         | 客户端加入中枢每个虚拟网要用的材料，首选的排在前面                                         |
+| `terminals`        | 客户端有权打开 shell 或运行命令的受管机器，每台是 `{device_id, name, is_online, sessions}` |
+| `is_panel_allowed` | 客户端未停用且权限含 `panel` 时为 `true`：能经 `connect` 打开中枢的面板                    |
+| `reached_through`  | 这个客户端的套接字以哪条路连到中枢：`lan`、`direct`、`netbird`、`easytier` 或 `relay`      |
 
 客户端按 `reached_through` 在中枢那一行显示路径，见[客户端怎么拨中枢](#客户端怎么拨中枢)。
 
@@ -221,7 +221,7 @@ title: 通道
 
 ### 终端与会话
 
-客户端的权限包含 `terminal` 或 `exec` 时，`terminals` 列出每台受管机器，中枢自己的也在内；每种权限指定了机器时，只列那几台，`is_shell_allowed` 和 `is_exec_allowed` 说明这台机器允许哪一种。每一项的 `sessions` 是这个客户端在这台机器上看得见的会话：它自己打开的全部会话，加上它有终端权限的机器上共享的会话。按 `started_at` 排序，机器离线时为空。
+客户端的权限包含 `terminal` 时，`terminals` 列出每台受管机器，中枢自己的也在内；这个权限指定了机器时，只列那几台。每一项的 `sessions` 是这个客户端在这台机器上看得见的会话：它自己打开的全部会话，加上它有终端权限的机器上共享的会话。按 `started_at` 排序，机器离线时为空。
 
 | 字段             | 内容                                                                         |
 | ---------------- | ---------------------------------------------------------------------------- |
@@ -348,7 +348,7 @@ UDP 流上每个二进制帧是一个数据报，前面是它的 `source`：大�
 
 ### exec 流
 
-有 `exec` 权限的客户端打开 `exec {device_id, argv, is_tty, cols, rows}`，在一台机器上运行一条命令；中枢向那台机器的被控端打开同样的流，不记会话，也不盖 `owner`。流可能以 `permission_denied {kind: exec}`、`shell_program_unusable {path}`（`argv` 为空，或程序在机器上不能运行）或 `agent_offline {device}` 关闭。机器发来的每一帧开头多一个字节，表示文件描述符：`1` 是 stdout，`2` 是 stderr，带 `is_tty` 时全是 `1`；客户端发去的帧是命令的 stdin。文本帧 `eof {stream}` 表示输入结束，被控端随即关掉进程的 stdin。关闭时带 `exit_code`，即命令自己的退出码，被信号结束时是 128 加信号号。`resize` 可以指向带 `is_tty` 打开的 exec 流，和指向 `shell` 流一样。
+有 `terminal` 权限的客户端打开 `exec {device_id, argv, is_tty, cols, rows}`，在一台机器上运行一条命令；中枢向那台机器的被控端打开同样的流，不记会话，也不盖 `owner`。流可能以 `permission_denied {kind: terminal}`、`shell_program_unusable {path}`（`argv` 为空，或程序在机器上不能运行）或 `agent_offline {device}` 关闭。机器发来的每一帧开头多一个字节，表示文件描述符：`1` 是 stdout，`2` 是 stderr，带 `is_tty` 时全是 `1`；客户端发去的帧是命令的 stdin。文本帧 `eof {stream}` 表示输入结束，被控端随即关掉进程的 stdin。关闭时带 `exit_code`，即命令自己的退出码，被信号结束时是 128 加信号号。`resize` 可以指向带 `is_tty` 打开的 exec 流，和指向 `shell` 流一样。
 
 ## 被控端的段
 
@@ -404,6 +404,7 @@ UDP 流上每个二进制帧是一个数据报，前面是它的 `source`：大�
 | 1          | 0.3.0      |
 | 2          | 0.4.0      |
 | 3          | 0.5.2      |
+| 4          | 0.6.0      |
 
 0.5.2 起 `PROTOCOL_MIN` 是 3。协议 3 把链接和客户端状态里的 `overlay`（一个对象或 null）改名为 `overlays`（一个列表）。0.3 和 0.4 的被控端或客户端接入 0.5.2 的中枢时返回 `protocol_too_old`，也不会从中枢自动升级。0.4 的中枢不能升级到 0.5.2：全新安装的 0.5.2 中枢有新的证书，每台机器都装 0.5.2 的包，再用新链接加入。
 

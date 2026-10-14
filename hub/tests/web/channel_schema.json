@@ -581,16 +581,6 @@
               "title": "Is Online",
               "type": "boolean"
             },
-            "is_shell_allowed": {
-              "default": false,
-              "title": "Is Shell Allowed",
-              "type": "boolean"
-            },
-            "is_exec_allowed": {
-              "default": false,
-              "title": "Is Exec Allowed",
-              "type": "boolean"
-            },
             "sessions": {
               "items": {
                 "$ref": "#/$defs/ChannelTerminalSession"
@@ -1586,16 +1576,6 @@
           "title": "Is Online",
           "type": "boolean"
         },
-        "is_shell_allowed": {
-          "default": false,
-          "title": "Is Shell Allowed",
-          "type": "boolean"
-        },
-        "is_exec_allowed": {
-          "default": false,
-          "title": "Is Exec Allowed",
-          "type": "boolean"
-        },
         "sessions": {
           "items": {
             "$ref": "#/$defs/ChannelTerminalSession"
@@ -1720,5 +1700,5 @@
       "type": "object"
     }
   },
-  "protocol": 3
+  "protocol": 4
 }

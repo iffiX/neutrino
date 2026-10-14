@@ -35,7 +35,7 @@ from neutrino_agent.streams import STREAM_KINDS
 from neutrino_agent.streams.module_command import ModuleCommandStream
 
 HELLO = {
-    "protocol": 3,
+    "protocol": 4,
     "role": "agent",
     "id": "dev-1",
     "name": "box",
@@ -230,8 +230,8 @@ def wait_until(condition, timeout_s: float = 3.0) -> None:
 # --- the number at the door ---
 
 
-def test_this_build_speaks_protocol_three():
-    assert PROTOCOL == 3
+def test_this_build_speaks_protocol_four():
+    assert PROTOCOL == 4
     assert HELLO["protocol"] == PROTOCOL
 
 

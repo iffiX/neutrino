@@ -860,6 +860,9 @@ export interface DeviceClientInfo {
   /** Whether the agent is answering inside the heartbeat window. */
   is_online: boolean;
   version: string | null;
+  /** While an agent of 0.5, admitted for its own update alone, takes the
+   * hub's version. */
+  is_updating: boolean;
   is_version_mismatched: boolean;
   /** When its channel last ended; null while it is online. */
   last_seen: string | null;

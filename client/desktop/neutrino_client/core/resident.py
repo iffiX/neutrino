@@ -514,8 +514,7 @@ class ClientResident:
         """The machines every connected hub offers a terminal on, merged.
 
         Returns:
-            ``[{hub_id, device_id, name, is_online, is_shell_allowed,
-            is_exec_allowed}]`` in hub order.
+            ``[{hub_id, device_id, name, is_online}]`` in hub order.
         """
         with self._lock:
             sessions = list(self._sessions.values())
@@ -972,17 +971,13 @@ class ClientResident:
 
         Returns:
             ``{"terminal_id", "session_id"}``; ``unknown_hub``,
-            ``unknown_terminal`` for a machine the hub offers no shell on,
+            ``unknown_terminal`` for a machine the hub offers no terminal on,
             or ``hub_unreachable`` otherwise.
         """
         session = self._find_session(hub_id)
         if session is None:
             return {"code": "unknown_hub", "params": {"hub_id": hub_id}}
-        known = {
-            entry["device_id"]
-            for entry in session.terminal_entries()
-            if entry.get("is_shell_allowed")
-        }
+        known = {entry["device_id"] for entry in session.terminal_entries()}
         if device_id not in known:
             return {"code": "unknown_terminal", "params": {"device_id": device_id}}
         is_resumed = bool(session_id)
@@ -1030,17 +1025,13 @@ class ClientResident:
 
         Returns:
             ``{"terminal_id"}``; ``unknown_hub``, ``unknown_terminal`` for a
-            machine the hub offers no command on, or ``hub_unreachable``
+            machine the hub offers no terminal on, or ``hub_unreachable``
             otherwise.
         """
         session = self._find_session(hub_id)
         if session is None:
             return {"code": "unknown_hub", "params": {"hub_id": hub_id}}
-        known = {
-            entry["device_id"]
-            for entry in session.terminal_entries()
-            if entry.get("is_exec_allowed")
-        }
+        known = {entry["device_id"] for entry in session.terminal_entries()}
         if device_id not in known:
             return {"code": "unknown_terminal", "params": {"device_id": device_id}}
         try:

@@ -111,7 +111,7 @@ def main_open(
     state = wording.read_state()
     if state is None:
         return EXIT_REFUSED
-    chosen = _choose_machine(state, machine, hub, "is_shell_allowed")
+    chosen = _choose_machine(state, machine, hub)
     if chosen is None:
         return EXIT_NO_MACHINE
     return _run_shell(
@@ -139,7 +139,7 @@ def main_attach(machine: str, session: str, *, hub: str = "", platform=None) -> 
     state = wording.read_state()
     if state is None:
         return EXIT_REFUSED
-    chosen = _choose_machine(state, machine, hub, "is_shell_allowed")
+    chosen = _choose_machine(state, machine, hub)
     if chosen is None:
         return EXIT_NO_MACHINE
     row = _choose_session(state, chosen, session)
@@ -189,7 +189,7 @@ def main_exec(
     state = wording.read_state()
     if state is None:
         return EXIT_EXEC_REFUSED
-    chosen = _choose_machine(state, machine, hub, "is_exec_allowed")
+    chosen = _choose_machine(state, machine, hub)
     if chosen is None:
         return EXIT_EXEC_NO_MACHINE
     try:
@@ -322,8 +322,6 @@ def _json_machine(machine: dict) -> dict:
         "hub_name": str(machine.get("hub_name", "")),
         "device_id": str(machine.get("device_id", "")),
         "name": str(machine.get("name", "")),
-        "is_shell_allowed": machine.get("is_shell_allowed") is True,
-        "is_exec_allowed": machine.get("is_exec_allowed") is True,
         "sessions": [
             {
                 "session_id": str(row.get("session_id", "")),
@@ -379,15 +377,13 @@ def _print_table(rows: list) -> None:
         print("  ".join(cell.ljust(width) for cell, width in zip(row, widths)).rstrip())
 
 
-def _choose_machine(state: dict, needle: str, hub: str, kind: str) -> "dict | None":
-    """The one named machine that offers ``kind``, or None after saying why."""
+def _choose_machine(state: dict, needle: str, hub: str) -> "dict | None":
+    """The one named machine, or None after saying why."""
     machines = _machines(state, hub)
     if machines is None:
         return None
     matches = [
-        row
-        for row in machines
-        if needle in (row.get("device_id"), row.get("name")) and row.get(kind) is True
+        row for row in machines if needle in (row.get("device_id"), row.get("name"))
     ]
     if not matches:
         print(
@@ -440,7 +436,7 @@ def _session_verb(machine: str, session: str, hub: str, path: str, flags: dict) 
     state = wording.read_state()
     if state is None:
         return EXIT_REFUSED
-    chosen = _choose_machine(state, machine, hub, "is_shell_allowed")
+    chosen = _choose_machine(state, machine, hub)
     if chosen is None:
         return EXIT_NO_MACHINE
     row = _choose_session(state, chosen, session)

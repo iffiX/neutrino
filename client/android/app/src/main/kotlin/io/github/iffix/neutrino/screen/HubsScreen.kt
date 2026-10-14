@@ -12,6 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import io.github.iffix.neutrino.CLIENT_REACHED_THROUGH
+import io.github.iffix.neutrino.CLIENT_REFUSAL_CODE_PROTOCOL_TOO_OLD
 import io.github.iffix.neutrino.channel.ChannelOverlay
 import io.github.iffix.neutrino.channel.HubConnection
 import io.github.iffix.neutrino.channel.HubView
@@ -165,7 +166,8 @@ fun hubStateWord(hub: HubView, words: WordCatalog, nowMillis: Long): String =
 
 /**
  * The state line of a hub row: the state word, then ` · ` and what ends the wait when the row
- * waits for one: the seconds left, the refusal's wording, or the Reconnect button's name.
+ * waits for one: the seconds left, the refusal's wording, the update a client too old for the
+ * hub needs, or the Reconnect button's name.
  *
  * @param hub The hub.
  * @param words The catalog.
@@ -182,6 +184,9 @@ fun hubStateLine(hub: HubView, words: WordCatalog, nowMillis: Long): String {
 
         hub.waitReason == HubWaitReason.JOIN_REFUSED && refusal != null ->
             words.refusal(refusal.code, refusal.wordParams)
+
+        hub.waitReason == HubWaitReason.TOO_OLD && refusal?.code == CLIENT_REFUSAL_CODE_PROTOCOL_TOO_OLD ->
+            words.word("ui.action.update_client")
 
         hub.waitReason == HubWaitReason.REPLACED -> words.word("ui.reconnect")
 

@@ -7,6 +7,7 @@ by itself.
 """
 
 import asyncio
+import contextlib
 import ipaddress
 import logging
 import re
@@ -114,7 +115,10 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_ROLE_AGENT,
     CHANNEL_ROLE_CLIENT,
 )
-from neutrino_hub.modules.channel.sessions import ChannelSessionRegistry
+from neutrino_hub.modules.channel.sessions import (
+    ChannelSession,
+    ChannelSessionRegistry,
+)
 from neutrino_hub.web.shell_bridge import ShellSessionLedger
 from neutrino_hub.web.task_stream import TaskStreamRegistry
 
@@ -172,6 +176,10 @@ class PanelRuntime:
         # Every managed machine's live socket, and the streams on it.
         self.agent_sessions = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
         self.agent_sessions.on_presence_change = self._publish_devices
+        # The channel of each machine whose agent of 0.5 is admitted for its
+        # own update alone, by device id, kept after its socket ends until
+        # the agent says hello with this hub's number.
+        self.agent_update_sessions: dict[str, ChannelSession] = {}
         # The owner and the sharing of each terminal session as the hub
         # stamped and relayed them, ahead of the machines' reports.
         self.shell_ledger = ShellSessionLedger()
@@ -873,6 +881,10 @@ class PanelRuntime:
         self.device_last_error.pop(key, None)
         self.device_shares.withdraw(key)
         self.agent_sessions.refuse_from_thread(key, CHANNEL_CODE_BINDING_UNKNOWN)
+        update = self.agent_update_sessions.pop(key, None)
+        if update is not None and not update.is_closed:
+            with contextlib.suppress(StreamRefusedError, RuntimeError):
+                update.call(update.refuse(CHANNEL_CODE_BINDING_UNKNOWN), timeout=5.0)
 
     def forget_client(self, client_id: str) -> None:
         """Drop everything held in memory about one client.
