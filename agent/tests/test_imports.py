@@ -193,6 +193,7 @@ SURVIVING_MODULES = {
     "neutrino_agent.platforms.windows_processes",
     "neutrino_agent.platforms.windows_service",
     "neutrino_agent.streams",
+    "neutrino_agent.streams.ai_forward",
     "neutrino_agent.streams.channel",
     "neutrino_agent.streams.connect",
     "neutrino_agent.streams.connect_udp",

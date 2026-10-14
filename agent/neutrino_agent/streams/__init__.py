@@ -18,6 +18,7 @@ carries when it did what it was asked:
 | hub | ``connect`` | ``{port}``, a port this machine publishes now | empty, once either end ended |
 | agent | ``log`` | ``{module}``, for an install or an uninstall | ``{state}`` |
 | agent | ``package`` | ``{module}``, or ``{}`` for the agent's own | ``{sha256}``, from the hub |
+| agent | ``connect`` | ``{id}``, the ``ai`` entry's, for each connection the AI gateway forward accepts | empty, once either end ended |
 
 A close with a ``code`` is a refusal, and its ``params`` are what the
 code's wording names. An unknown kind is closed ``kind_unknown``; an

@@ -79,6 +79,14 @@ AGENT_CONNECT_UDP = "udp"
 # CHANNEL_UDP_SOURCES_MAX.
 AGENT_UDP_IDLE_TIMEOUT_S = 60
 AGENT_UDP_SOURCES_MAX = 64
+# The AI gateway forward: where the machine's AI tools reach the hub's
+# gateway while the state's ``ai_tools`` section is on, the ``ai`` entry's id
+# each connection's ``connect`` stream names, and how often a forward with
+# no channel to the hub looks for one again.
+AGENT_AI_FORWARD_HOST = "127.0.0.1"
+AGENT_AI_FORWARD_PORT = 8317
+AGENT_AI_ENTRY_ID = "ai"
+AGENT_AI_FORWARD_POLL_S = 0.5
 # Close codes: a refused hello, after the ``refused`` frame that says why,
 # and a socket replaced by a second one for the same binding.
 AGENT_WS_CLOSE_REFUSED = 4000
