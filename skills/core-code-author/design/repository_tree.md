@@ -156,8 +156,6 @@ client/desktop/
                      polkit/ the policy for the mount helper.
   frontend/          The window's page: plain HTML, CSS and JavaScript, no
                      framework and no node toolchain.
-    parts/           Scripts inlined before app.js: NetBird's engine
-                     name, way in and About row.
   packaging/         The .deb and .rpm builders, the payload every package
                      stages, the .msi and .pkg included, and the icon
                      containers.
@@ -176,10 +174,8 @@ tests pin, so one commit changes the channel for all three clients.
 ```
 client/android/      Gradle project, Kotlin and Jetpack Compose, minSdk 26
                      (Android 8), applicationId `io.github.iffix.neutrino`.
-                     Style: ../coding_style/kotlin_style.md.
-  app/src/netbird/   NetBird's Kotlin, and beside it NetBird's core.
-  app/src/test_netbird/
-                     NetBird's tests.
+                     Style: ../coding_style/kotlin_style.md. NetBird's
+                     Kotlin is in the main source set, in every edition.
 client/ios/          Xcode project, Swift and SwiftUI, iOS 16. Three targets:
                      the app, the Packet Tunnel extension that runs the
                      overlay, the File Provider extension that shows the

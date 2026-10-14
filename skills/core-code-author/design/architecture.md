@@ -206,7 +206,12 @@ feature through one table and through no other import.
 The hub is the one package that leaves something out, and its one table is
 `hub/neutrino_hub/edition.py`. `has_feature(<name>)` answers whether a
 feature is present, by the name `proxy`. The desktop client, the Android app
-and the agent leave nothing out: NetBird is in every edition of each.
+and the agent leave nothing out: NetBird is in every edition of each, so the
+desktop client and the Android app keep no NetBird hook table in
+`edition.py` or `Edition.kt`, no source set added only when its directory
+exists, and no part script inlined only when the tree holds it. Their
+`EDITION` stamp stays for what reads it, such as where a package fetches
+from.
 
 Every place the hub registers something today takes a left-out feature's
 part from the table:
