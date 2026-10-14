@@ -134,7 +134,8 @@ def list_devices(runtime: PanelRuntime = Depends(get_runtime)) -> DeviceListView
 
 @router.post("/scan", response_model=DeviceListView)
 def scan(runtime: PanelRuntime = Depends(get_runtime)) -> DeviceListView:
-    """Actively sweep the LAN with arp-scan and return what answered.
+    """Actively sweep the exposed IPv4 segments with arp-scan and return
+    what answered.
 
     Args:
         runtime: The shared runtime.
@@ -182,7 +183,7 @@ def _hub_first(row: DeviceOnlineView) -> tuple:
 
 
 def _device_list(runtime: PanelRuntime, *, is_active: bool) -> DeviceListView:
-    scanner = LanScanner(lan_interfaces=runtime.network().lan_device_names)
+    scanner = LanScanner(network=runtime.network(), read_held=device_held_addresses)
     registry = DeviceRegistry()
     return DeviceListView(
         devices=[

@@ -32,6 +32,7 @@ from neutrino_hub.modules.devices.registry import (
     ManagedDevice,
 )
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
+from neutrino_hub.modules.router.link_status import device_held_addresses
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
 from neutrino_hub.modules.services.host_scope import link_scope
 from neutrino_hub.web import channel_addresses
@@ -99,8 +100,10 @@ class ListRegistry:
 class FakeScanner:
     """A sweep that finds nothing, so the stored device is all there is."""
 
-    def __init__(self, *, lan_interfaces):
-        self.lan_interfaces = lan_interfaces
+    built: dict = {}
+
+    def __init__(self, *, network, read_held):
+        FakeScanner.built = {"network": network, "read_held": read_held}
 
     def scan(self, *, is_active: bool) -> list:
         return []
@@ -120,13 +123,13 @@ class ListRuntime:
         self.agent_sessions = FakeChannelSessions()
         self.agent_update_sessions = {}
         self.desired_states = StubDesiredStates()
+        self.network_config = _EmptyNetwork()
 
     def network(self):
-        return _EmptyNetwork()
+        return self.network_config
 
 
 class _EmptyNetwork:
-    lan_device_names: list = []
     lan_interfaces: list = []
 
 
@@ -162,6 +165,14 @@ def test_a_device_carries_its_id_and_the_facts_its_agent_reported(listed):
     assert device["mac_addresses"] == [LINK_MAC, "11:22:33:44:55:66"]
     assert device["link_mac"] == LINK_MAC
     assert "mac_address" not in device
+
+
+def test_the_scan_covers_what_the_network_exposes_on_the_addresses_held_now(listed):
+    client, runtime = listed
+
+    assert client.post(f"{DEVICE_PATH}/scan").status_code == 200
+    assert FakeScanner.built["network"] is runtime.network()
+    assert FakeScanner.built["read_held"] is device_held_addresses
 
 
 def test_a_managed_device_carries_the_platform_its_agent_reported(listed):
