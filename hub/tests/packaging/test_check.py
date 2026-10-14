@@ -417,15 +417,14 @@ def client_data(check, monkeypatch, tmp_path):
 
 def test_a_client_data_tree_closed_to_people_passes(check, client_data):
     data, _, asked = client_data
-    (data / "state" / "netbird").mkdir()
 
     check._check_client_windows_data()
 
     assert asked == [
         str(data / ""),
         str(data / "state"),
-        str(data / "log"),
         str(data / "state" / "netbird"),
+        str(data / "log"),
         str(data / "log" / "earlier_build.log"),
         str(data / "state" / "earlier_build.txt"),
     ]
@@ -443,7 +442,6 @@ def test_a_folder_or_leftover_every_person_can_read_fails_the_check(
     check, client_data, relative, grant
 ):
     data, access, _ = client_data
-    (data / "state" / "netbird").mkdir()
     access[str(data / relative)] = "NT AUTHORITY\\SYSTEM:(I)(F)" + grant
 
     with pytest.raises(SystemExit, match="is open to"):

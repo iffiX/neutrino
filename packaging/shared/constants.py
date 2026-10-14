@@ -57,13 +57,6 @@ PACKAGING_CN_LEFT_OUT_PATHS = (
     "hub/frontend/src/components/geodata_panel.css",
     "hub/frontend/src/components/socks_ports_panel.tsx",
     "hub/frontend/src/components/socks_ports_panel.css",
-    # The desktop client: NetBird and the daemon that runs it.
-    "client/desktop/neutrino_client/netbird",
-    "client/desktop/neutrino_client/data/services/neutrino_client_netbird.service",
-    "client/desktop/frontend/parts/netbird.js",
-    "client/desktop/packaging/netbird_payload.py",
-    "client/desktop/tests/netbird",
-    "client/desktop/tests/packaging/test_netbird_payload.py",
     # The Android app: the NetBird core and the script that builds it.
     "client/android/app/src/netbird",
     "client/android/app/src/test_netbird",

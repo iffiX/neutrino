@@ -17,6 +17,7 @@ import zipfile
 import pytest
 
 from shared import nuitka_build
+import netbird_payload
 import payload
 
 # A readelf whose answer for a file is the version its own name spells, so a
@@ -94,11 +95,8 @@ def test_the_versions_of_what_the_package_carries_are_stamped_beside_it(tmp_path
 
     stamped = {}
     exec((staged / "_version.py").read_text(), stamped)
-    parts = {}
-    for part in payload.parts():
-        parts.update(part.CARRIED_VERSIONS)
     assert stamped["CLIENT_CARRIED_VERSIONS"] == {
-        **parts,
+        **netbird_payload.CARRIED_VERSIONS,
         "easytier": bundled.EASYTIER_VERSION,
         "rustdesk": rustdesk_assets.RUSTDESK_VERSION,
         "cc-switch": constants.PACKAGING_CC_SWITCH_VERSION,
@@ -366,7 +364,7 @@ def test_the_licences_the_package_owes_are_staged(tmp_path):
 
     carried = tmp_path / "usr/share/doc/neutrino-client/licenses"
     assert sorted(path.name for path in carried.iterdir()) == sorted(
-        [name for part in payload.parts() for name in part.CARRIED_LICENSES]
+        list(netbird_payload.CARRIED_LICENSES)
         + [
             "cc_switch.txt",
             "easytier.txt",

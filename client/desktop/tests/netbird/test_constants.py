@@ -1,12 +1,12 @@
-"""What NetBird registers through the edition table, and its part of the page.
+"""What NetBird adds beside EasyTier, and its words on the page.
 
 Pinned here: a binding keeps a NetBird object with its setup key and may
 name no management URL, fqdn or address; the carried binary resolves where
-each package puts it; the page inlines NetBird's part before its own script,
-which names the engine, the way in and the row of About.
+each package puts it; the page names the engine, the way in and the row of
+About.
 """
 
-from neutrino_client import bundled, edition
+from neutrino_client import bundled
 from neutrino_client.control import page
 from neutrino_client.core import enrollment
 from neutrino_client.core.overlay import overlay_engines
@@ -22,8 +22,7 @@ NETBIRD = {
 }
 
 
-def test_the_table_gives_the_driver_and_the_object():
-    assert edition.has_feature("netbird") is True
+def test_netbird_is_the_driver_beside_easytier():
     assert overlay_engines() == {"netbird": OverlayNetbirdDriver}
 
 
@@ -45,11 +44,14 @@ def test_the_carried_binary_resolves_under_the_linux_prefix(monkeypatch, tmp_pat
     assert NETBIRD_BUNDLED_PATHS["windows"]["netbird"] == "bin\\netbird.exe"
 
 
-def test_the_page_inlines_the_part_before_its_own_script():
-    document = page.control_page_html()
-    part = page.gui_parts()
+def test_the_page_names_netbird_itself():
+    script = page.gui_asset("app.js")
 
-    assert "overlayTitles: { netbird: 'NetBird' }" in part
-    assert "throughWays: ['netbird']" in part
-    assert "{ name: 'NetBird', key: 'netbird', licence: 'BSD-3-Clause'," in part
-    assert document.index(part) < document.index("const PARTS = window.NEUTRINO_PARTS")
+    assert "const OVERLAY_TITLES = { netbird: 'NetBird', easytier: 'EasyTier' };" in (
+        script
+    )
+    assert (
+        "const THROUGH_WAYS = ['lan', 'direct', 'netbird', 'easytier', 'relay'];"
+        in script
+    )
+    assert "{ name: 'NetBird', key: 'netbird', licence: 'BSD-3-Clause'," in script

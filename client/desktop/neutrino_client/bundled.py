@@ -1,7 +1,7 @@
 """Where the binaries the client carries are installed.
 
-The packages put cc-switch, the RustDesk viewer, the EasyTier CLIs and those
-of the engines the edition table adds beside the client: under
+The packages put cc-switch, the RustDesk viewer, the EasyTier CLIs and
+NetBird beside the client: under
 ``/opt/neutrino/client`` on Linux,
 next to the package on Windows, under the app bundle's
 ``Contents/Resources`` on macOS. A checkout carries none of them, and
@@ -12,13 +12,13 @@ import os
 import pathlib
 import sys
 
-from neutrino_client import edition
 from neutrino_client.constants import (
     CLIENT_BUNDLED_PATHS_DARWIN,
     CLIENT_BUNDLED_PATHS_LINUX,
     CLIENT_BUNDLED_PATHS_WINDOWS,
     CLIENT_INSTALL_PREFIX_LINUX,
 )
+from neutrino_client.netbird.constants import NETBIRD_BUNDLED_PATHS
 
 _PACKAGE_DIR = pathlib.Path(__file__).resolve().parent
 
@@ -40,7 +40,7 @@ def bundled_path(binary: str) -> str:
 
     Args:
         binary: ``cc-switch``, ``rustdesk``, ``easytier-core``,
-            ``easytier-cli`` or one the edition table adds.
+            ``easytier-cli`` or ``netbird``.
 
     Returns:
         The path when the binary is on the machine, empty otherwise.
@@ -54,9 +54,7 @@ def bundled_path(binary: str) -> str:
     else:
         system, paths = "linux", CLIENT_BUNDLED_PATHS_LINUX
         root = pathlib.Path(CLIENT_INSTALL_PREFIX_LINUX)
-    relative = paths.get(binary, "")
-    for added in edition.hooks("bundled_paths"):
-        relative = relative or added[system].get(binary, "")
+    relative = paths.get(binary, "") or NETBIRD_BUNDLED_PATHS[system].get(binary, "")
     if not relative:
         return ""
     candidate = root / relative

@@ -220,12 +220,12 @@ def test_the_page_is_four_files_the_loader_assembles():
     assert '<link rel="stylesheet" href="style.css">' in PAGE_HTML
     assert page.GUI_WORDS_TAG in PAGE_HTML
     assert '<script src="app.js"></script>' in PAGE_HTML
-    assert PAGE_HTML.index(page.GUI_PARTS_TAG) < PAGE_HTML.index(page.GUI_SCRIPT_TAG)
+    assert "parts" not in PAGE_HTML
 
     document = page.control_page_html()
 
     assert "href=" not in document.split("<body>")[0].split("<title>")[1]
-    assert "const PARTS = window.NEUTRINO_PARTS || [];" in PAGE_JS
+    assert "NEUTRINO_PARTS" not in PAGE_JS
     assert ".card" in document
     assert "const CATALOGS" in document
     assert "const WORDS" not in document
@@ -1197,7 +1197,6 @@ def run_state_line(hub: dict, now: float) -> dict:
     )
     script = "\n".join(
         [
-            "const PARTS = [];",
             "const CATALOG = " + json.dumps(EN_WORDS) + ";",
             "function fill(template, params)"
             + function_body("function fill(template, params)")
@@ -1541,7 +1540,10 @@ def test_the_hub_row_says_the_way_in_and_offers_the_panel():
     assert "{ way: t('ui.through.' + hub.reached_through) }" in word
     # Every way the hub names has its word; a way the list lacks reads as
     # the plain connected word.
-    assert "const THROUGH_WAYS = ['lan', 'direct'].concat(" in PAGE_JS
+    assert (
+        "const THROUGH_WAYS = ['lan', 'direct', 'netbird', 'easytier', 'relay'];"
+        in PAGE_JS
+    )
     assert (
         "if (connection === 'connected' && "
         "THROUGH_WAYS.indexOf(hub.reached_through) >= 0) {" in word
@@ -1999,10 +2001,9 @@ def test_about_carries_the_client_and_each_core_as_credits_rows_with_a_source_wo
     assert "const CLIENT_LICENCE = 'MIT';" in PAGE_JS
     assert "intl: 'https://github.com/iffiX/neutrino'," in PAGE_JS
     assert "cn: 'https://gitee.com/iffiX/neutrino'," in PAGE_JS
-    assert "const CARRIED = PARTS.flatMap((part) => part.carried || []).concat([" in (
-        PAGE_JS
-    )
+    assert "const CARRIED = [" in PAGE_JS
     for name, licence in (
+        ("NetBird", "BSD-3-Clause"),
         ("EasyTier", "LGPL-3.0"),
         ("RustDesk", "AGPL-3.0"),
         ("cc-switch", "MIT"),

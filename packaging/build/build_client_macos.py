@@ -19,8 +19,8 @@ person at the screen asks it to quit before the files are replaced and
 opens the new one for that person afterwards; an install with no client
 running, or with nobody at the screen, opens nothing. The installer puts the bundle under
 ``/Applications`` and links ``nclient`` into ``/usr/local/bin``. The overlay
-daemons it carries are LaunchDaemons, all kept running: each one a part of
-the payload the tree holds adds, and the client's own EasyTier daemon,
+daemons it carries are LaunchDaemons, all kept running: NetBird's own
+daemon, and the client's own EasyTier daemon,
 ``nclient easytier-daemon``, which runs EasyTier's core only while a network
 or a console is configured.
 
@@ -53,6 +53,7 @@ import bundled  # noqa: E402
 import icons  # noqa: E402
 from shared import edition_build  # noqa: E402
 from shared import nuitka_build  # noqa: E402
+import netbird_payload  # noqa: E402
 import payload  # noqa: E402
 from shared import pkg_build  # noqa: E402
 from shared.constants import PACKAGING_ASSET_PATTERNS  # noqa: E402
@@ -100,22 +101,18 @@ INSTALL_LINK_PATH = Path("/usr/local/bin") / CLIENT_BINARY_NAME
 LOG_DIR = CLIENT_LOG_DIR_DARWIN
 EASYTIER_LOG_PATH = LOG_DIR + "/easytier.log"
 
-# The LaunchDaemons the parts of the payload the tree holds add before
-# EasyTier's, each ``{label, program_arguments, log_path, extra, state_dir}``.
-PART_DAEMONS = tuple(
-    daemon
-    for part in payload.parts()
-    for daemon in part.darwin_daemons(
-        INSTALL_APPLICATIONS_DIR / APP_BUNDLE_NAME / "Contents", LOG_DIR
-    )
+# NetBird's LaunchDaemons, written before EasyTier's, each ``{label,
+# program_arguments, log_path, extra, state_dir}``.
+NETBIRD_DAEMONS = netbird_payload.darwin_daemons(
+    INSTALL_APPLICATIONS_DIR / APP_BUNDLE_NAME / "Contents", LOG_DIR
 )
 DAEMON_LABELS = " ".join(
-    [daemon["label"] for daemon in PART_DAEMONS] + [CLIENT_EASYTIER_LAUNCHD_LABEL]
+    [daemon["label"] for daemon in NETBIRD_DAEMONS] + [CLIENT_EASYTIER_LAUNCHD_LABEL]
 )
 DAEMON_STATE_DIRS = " ".join(
     f'"{directory}"'
     for directory in [CLIENT_STATE_DIR_DARWIN]
-    + [daemon["state_dir"] for daemon in PART_DAEMONS]
+    + [daemon["state_dir"] for daemon in NETBIRD_DAEMONS]
     + [CLIENT_EASYTIER_STATE_DIR_DARWIN]
 )
 
@@ -393,7 +390,7 @@ def write_daemons(package_root: Path) -> None:
     Args:
         package_root: The directory standing in for the filesystem root.
     """
-    for daemon in PART_DAEMONS:
+    for daemon in NETBIRD_DAEMONS:
         pkg_build.write_launchd_plist(
             package_root,
             label=daemon["label"],

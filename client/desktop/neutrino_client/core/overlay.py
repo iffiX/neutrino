@@ -30,7 +30,6 @@ import threading
 import time
 import urllib.parse
 
-from neutrino_client import edition
 from neutrino_client.constants import (
     CLIENT_EASYTIER_RPC_PORTAL,
     CLIENT_OVERLAY_CONNECT_POLL_S,
@@ -42,6 +41,8 @@ from neutrino_client.control.easytier_socket import ask_easytier_daemon
 from neutrino_client.core.easytier_daemon import console_digest
 from neutrino_client.core.easytier_config import safe_hostname
 from neutrino_client.exceptions import OverlayControlError, PlatformUnsupportedError
+from neutrino_client.netbird.constants import NETBIRD_PROVIDER
+from neutrino_client.netbird.driver import OverlayNetbirdDriver
 
 # The two states of a hub's virtual network.
 OVERLAY_STATE_OFF = "off"
@@ -79,13 +80,13 @@ def is_console_material(material: dict) -> bool:
 
 
 def overlay_engines() -> dict:
-    """The driver classes the edition table adds beside EasyTier's.
+    """The driver classes beside EasyTier's: NetBird's.
 
     Returns:
         ``{provider: class}``, each class with ``key``, ``network``,
         ``hub_network`` and ``hub_name``.
     """
-    return {driver.provider: driver for driver in edition.hooks("overlay_drivers")}
+    return {NETBIRD_PROVIDER: OverlayNetbirdDriver}
 
 
 def overlay_key(material: dict) -> str:

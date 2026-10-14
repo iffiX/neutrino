@@ -35,8 +35,7 @@ from tests.packaging.test_linux_packages import carried, deb, rpm, spec  # noqa:
 from tests.packaging.test_windows_installer import WXS, services, source  # noqa: F401
 
 
-def test_the_payload_takes_the_part_while_the_tree_holds_it():
-    assert netbird_payload in payload.parts()
+def test_the_payload_carries_netbird_in_every_edition():
     assert "netbird.txt" in payload.CARRIED_LICENSES
     assert payload.CONFLICTS == ("netbird",)
 

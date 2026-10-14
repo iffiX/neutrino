@@ -23,8 +23,6 @@ Not pure: downloads interpreters and wheels, compiles, writes package trees.
 """
 
 import hashlib
-import importlib
-import importlib.util
 import re
 import shutil
 import subprocess
@@ -45,6 +43,7 @@ from shared.constants import (  # noqa: E402
 )
 from constants import PACKAGING_GLIBC_FLOOR  # noqa: E402
 from gui_assets import stage_gui  # noqa: E402
+import netbird_payload  # noqa: E402
 
 CLIENT_ROOT = Path(__file__).resolve().parent.parent
 REPO_ROOT = CLIENT_ROOT.parent.parent
@@ -64,24 +63,6 @@ INSTALL_PREFIX = Path("/opt/neutrino/client")
 CLIENT_BINARY_NAME = "nclient"
 MOUNT_HELPER_BINARY_NAME = "mount_helper"
 
-# The parts of the left-out features, by module name beside this one; a part
-# the tree does not hold adds nothing to any package.
-PAYLOAD_PARTS = ("netbird_payload",)
-
-
-def parts() -> tuple:
-    """The packaging parts of the left-out features the tree holds.
-
-    Returns:
-        Each present part's module, in :data:`PAYLOAD_PARTS` order.
-    """
-    return tuple(
-        importlib.import_module(name)
-        for name in PAYLOAD_PARTS
-        if importlib.util.find_spec(name) is not None
-    )
-
-
 # The overlay daemons' units the tree holds, where systemd reads a package's
 # own, and the directory their state lives under. The EasyTier one runs the
 # client's own EasyTier daemon, ``nclient easytier-daemon``.
@@ -94,8 +75,8 @@ OVERLAY_UNITS = tuple(
 SYSTEMD_UNIT_DIR = "usr/lib/systemd/system"
 OVERLAY_STATE_DIR = "/var/lib/neutrino/client"
 # The distribution packages the Linux packages conflict with: each holds the
-# state and the socket of a daemon a part registers.
-CONFLICTS = tuple(name for part in parts() for name in part.CONFLICTS)
+# state and the socket of a daemon the packages register.
+CONFLICTS = netbird_payload.CONFLICTS
 
 # The interpreter the Linux client is compiled against, pinned by hash. The
 # same build the hub's and the agent's packages carry, and the same minor the
@@ -179,7 +160,7 @@ LINUX_GUI_BUILD_HEADERS = (
 
 # The licences of what the client packages carry, by the file name they have
 # in the repository's own ``licenses/``.
-CARRIED_LICENSES = tuple(name for part in parts() for name in part.CARRIED_LICENSES) + (
+CARRIED_LICENSES = netbird_payload.CARRIED_LICENSES + (
     PACKAGING_CC_SWITCH_LICENSE,
     "rustdesk.txt",
     "easytier.txt",
@@ -232,9 +213,9 @@ OVERLAY_UNITS_START = f"""if [ -d /run/systemd/system ]; then
 fi
 """
 
-# What both formats run before the package goes: what each part runs first,
-# then the daemons stopped and disabled.
-OVERLAY_UNITS_STOP = "".join(part.LINUX_UNITS_STOP for part in parts()) + (
+# What both formats run before the package goes: NetBird taken off its
+# network first, then the daemons stopped and disabled.
+OVERLAY_UNITS_STOP = netbird_payload.LINUX_UNITS_STOP + (
     f"""if [ -d /run/systemd/system ]; then
     systemctl disable --now {" ".join(OVERLAY_UNITS)} >/dev/null 2>&1 || true
 fi
@@ -330,10 +311,8 @@ def stage_client_tree(
     )
     import bundled  # bundled imports this module, so not at the top
 
-    carried = {}
-    for part in parts():
-        carried.update(part.CARRIED_VERSIONS)
-    carried |= {
+    carried = {
+        **netbird_payload.CARRIED_VERSIONS,
         "easytier": bundled.EASYTIER_VERSION,
         "rustdesk": bundled.rustdesk_assets.RUSTDESK_VERSION,
         "cc-switch": PACKAGING_CC_SWITCH_VERSION,

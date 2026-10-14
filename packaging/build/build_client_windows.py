@@ -18,8 +18,7 @@ build machine's Python is pinned to a minor here and checked.
 
 The client is a person's application, not a service and not an autostart: it
 runs when the person opens it. The overlay daemons it carries are services
-that start with Windows: each one a part of the payload the tree holds
-registers, the client's own EasyTier
+that start with Windows: NetBird's own daemon, the client's own EasyTier
 daemon, ``nclient.exe easytier-daemon --service`` as SYSTEM, which runs
 EasyTier's core as its child only while a network or a console is
 configured, and the files daemon, ``nclient.exe files-daemon --service`` as
@@ -74,6 +73,7 @@ import bundled  # noqa: E402
 import icons  # noqa: E402
 from shared import edition_build  # noqa: E402
 from shared import nuitka_build  # noqa: E402
+import netbird_payload  # noqa: E402
 import payload  # noqa: E402
 from shared import wix_build  # noqa: E402
 from shared.constants import PACKAGING_ASSET_PATTERNS  # noqa: E402
@@ -392,7 +392,7 @@ WIX_BODY = r"""
     <ComponentGroup Id="Payload" Directory="INSTALLFOLDER">
       <!-- The daemons' binaries are the service components below, not
            files of the glob. -->
-      <Files Include="@PAYLOAD@\**">@PART_EXCLUDES@
+      <Files Include="@PAYLOAD@\**">@NETBIRD_EXCLUDES@
         <Exclude Files="@CLIENT_EXE@" />
       </Files>
       <Component Id="WebView2Bootstrapper" Guid="*">
@@ -735,12 +735,12 @@ def main() -> int:
 
 def daemons_source(payload_dir: Path) -> str:
     """The overlay daemons and the files daemon as services: the EasyTier
-    and files daemons, and each part's own with the folder its state is in.
+    and files daemons, and NetBird's with the folder its state is in.
 
     Args:
         payload_dir: The staged payload: the console client, which is the
-            EasyTier daemon and the files daemon, is at its top, and each
-            part's binary where the part staged it.
+            EasyTier daemon and the files daemon, is at its top, and
+            NetBird's binary where its staging put it.
 
     Returns:
         The ``Daemons`` component group.
@@ -762,15 +762,10 @@ def daemons_source(payload_dir: Path) -> str:
             permissions=(EASYTIER_DAEMON_RECOVERY,),
         ),
     )
-    added = tuple(
-        component
-        for part in payload.parts()
-        for component in part.windows_components(wix_build, payload_dir)
-    )
     return wix_build.element(
         "ComponentGroup",
         {"Id": "Daemons", "Directory": "INSTALLFOLDER"},
-        (easytier,) + added,
+        (easytier,) + tuple(netbird_payload.windows_components(wix_build, payload_dir)),
     )
 
 
@@ -817,17 +812,13 @@ def _wix_source(staged: dict, version: str, publisher: str, machine: str) -> str
         },
     )
     payload_dir = Path(staged["payload"])
-    parts = payload.parts()
     excludes = "".join(
         "\n        " + wix_build.element("Exclude", {"Files": str(path)})
-        for part in parts
-        for path in part.windows_excluded(payload_dir)
+        for path in netbird_payload.windows_excluded(payload_dir)
     )
-    folders = "".join(
-        folder for part in parts for folder in part.windows_state_folders(wix_build)
-    )
+    folders = "".join(netbird_payload.windows_state_folders(wix_build))
     body = (
-        body.replace("@PART_EXCLUDES@", excludes)
+        body.replace("@NETBIRD_EXCLUDES@", excludes)
         .replace("@STATE_FOLDERS@", folders)
         .replace("@DAEMONS@", daemons_source(payload_dir))
     )

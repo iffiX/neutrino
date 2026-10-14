@@ -23,6 +23,7 @@ import pytest
 
 import build_client_windows
 from shared import nuitka_build
+import netbird_payload
 import payload
 from shared import wix_build
 
@@ -33,13 +34,11 @@ AGENT_UPGRADE_CODE = "9F4E4A1C-9C0B-4C0E-9E2E-6C5A2C7C1E33"
 WXS = "{http://wixtoolset.org/schemas/v4/wxs}"
 UTIL = "{http://wixtoolset.org/schemas/v4/wxs/util}"
 
-# The services the installer registers: the EasyTier and files daemons, and
-# those of the parts the tree holds.
-DAEMON_SERVICES = {"NeutrinoClientEasytier", "NeutrinoClientFiles"} | {
-    name for part in payload.parts() for name in part.WINDOWS_SERVICES
-}
-# The licences the parts the tree holds add.
-PARTS_LICENSES = [name for part in payload.parts() for name in part.CARRIED_LICENSES]
+# The services the installer registers: the EasyTier, files and NetBird
+# daemons.
+DAEMON_SERVICES = {"NeutrinoClientEasytier", "NeutrinoClientFiles"} | set(
+    netbird_payload.WINDOWS_SERVICES
+)
 
 
 @pytest.fixture
@@ -190,12 +189,11 @@ def test_the_daemon_binaries_are_service_components_and_not_files_of_the_glob(
         component.get("Id"): component for component in root.iter(f"{WXS}Component")
     }
 
-    parts_excluded = [
+    netbird_excluded = [
         str(path).replace("\\", "/")
-        for part in payload.parts()
-        for path in part.windows_excluded(Path("C:\\build\\payload"))
+        for path in netbird_payload.windows_excluded(Path("C:\\build\\payload"))
     ]
-    assert [name.replace("\\", "/") for name in excluded] == parts_excluded + [
+    assert [name.replace("\\", "/") for name in excluded] == netbird_excluded + [
         "C:/build/payload/nclient.exe"
     ]
     assert components["EasytierDaemon"].get("Subdirectory") is None
@@ -574,7 +572,7 @@ def test_the_licences_travel_beside_the_payload(tmp_path):
 
     carried = tmp_path / "licenses"
     assert sorted(path.name for path in carried.iterdir()) == sorted(
-        PARTS_LICENSES
+        list(netbird_payload.CARRIED_LICENSES)
         + [
             "cc_switch.txt",
             "easytier.txt",

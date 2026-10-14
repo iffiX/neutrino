@@ -15,6 +15,7 @@ import pytest
 
 import build_deb
 import build_rpm
+import netbird_payload
 import payload
 
 from neutrino_client.constants import (
@@ -218,7 +219,7 @@ def test_the_deb_carries_the_licences_of_everything_in_it(deb):
     carried = deb / "usr/share/doc/neutrino-client/licenses"
 
     assert sorted(path.name for path in carried.iterdir()) == sorted(
-        [name for part in payload.parts() for name in part.CARRIED_LICENSES]
+        list(netbird_payload.CARRIED_LICENSES)
         + [
             "cc_switch.txt",
             "easytier.txt",
