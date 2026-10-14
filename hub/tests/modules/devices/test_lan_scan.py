@@ -1,7 +1,6 @@
 """Counting the devices on the gateway's own networks."""
 
 from neutrino_hub.modules.devices import lan_scan
-from neutrino_hub.modules.devices import lan_scan
 from neutrino_hub.modules.devices.lan_scan import LanScanner, count_lan_neighbours
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 
@@ -102,6 +101,31 @@ def test_a_failed_or_incomplete_neighbour_is_gone(monkeypatch):
     found = scanned(monkeypatch)
 
     assert set(found) == {"192.168.100.20", "192.168.100.21"}
+
+
+# The same machine as `ip neigh` lists it with no family: its IPv4 neighbour
+# first, then its link-local IPv6 one under the same MAC.
+NEIGHBOURS_IPV4 = "192.168.100.30 lladdr 52:54:00:6d:07:8e REACHABLE\n"
+NEIGHBOURS_IPV6 = "fe80::5054:ff:fe6d:78e lladdr 52:54:00:6d:07:8e REACHABLE\n"
+
+
+class _IpNeigh:
+    """``ip neigh``, listing the IPv6 neighbours too unless ``-4`` is given."""
+
+    def __init__(self, command: list, **kwargs):
+        self.is_success = True
+        self.stdout = NEIGHBOURS_IPV4
+        if "-4" not in command:
+            self.stdout += NEIGHBOURS_IPV6
+
+
+def test_an_ipv6_neighbour_is_never_a_devices_ipv4_address(monkeypatch):
+    monkeypatch.setattr(lan_scan, "run", _IpNeigh)
+
+    (found,) = LanScanner(lan_interfaces=["enp1s0"]).scan(is_active=False)
+
+    assert found.mac_address == "52:54:00:6d:07:8e"
+    assert found.ipv4_address == "192.168.100.30"
 
 
 def test_the_device_list_carries_the_neighbour_through(tmp_path, monkeypatch):
