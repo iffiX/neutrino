@@ -89,8 +89,8 @@ The hub runs on macOS and Windows in `server` mode only. Its package, a
 
 - `nhub`, the hub compiled by Nuitka into one binary with
   `neutrino_hub/data/` inside it;
-- cli-proxy-api, easytier-core and easytier-cli, and in `intl` xray,
-  tun2socks and netbird, each pinned by version and sha256 for the system and
+- cli-proxy-api, netbird, easytier-core and easytier-cli, and in `intl`
+  xray and tun2socks, each pinned by version and sha256 for the system and
   the architecture, and on Windows `wintun.dll` and the `packet.dll`
   stand-in beside them;
 - in `intl`, the geodata;

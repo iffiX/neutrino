@@ -160,7 +160,7 @@ show:
 | a small VM on libvirt's NAT network standing in for the VPS | the relay: the forward, the self-check, each failure state, and the hub's certificate at the public address |
 | an Android emulator that reaches the hub only through the relay | every page of the app with the hub's LAN out of reach |
 | the Windows VM | a drive letter mounted through the files adapter, on the hub's LAN and through the relay |
-| a box installed from the `cn` packages | no proxy and no NetBird anywhere, updates read from Gitee, Node.js fetched from npmmirror |
+| a box installed from the `cn` packages | no proxy and no side gateway mode anywhere, NetBird on the hub, the desktop client and the phone, updates read from Gitee, Node.js fetched from npmmirror |
 
 What belongs here is only what the in-process blocks cannot see: a real
 `dpkg` refusing, a real systemd unit flapping, a lease on a served wire,

@@ -387,8 +387,7 @@ assumed.
 A way in is how a client or an agent away from the hub's LAN reaches the
 agent port. The hub offers Direct, the relay, NetBird and EasyTier. The
 panel draws them on one page, **Access** (外部访问 in Chinese), as one card
-each in that order, NetBird's from the edition table, so a tree without
-NetBird draws Direct, Relay and EasyTier; the configuration, the routes and
+each in that order, in both editions; the configuration, the routes and
 the protocol keep the word `overlay` ([ui_text.md](../ui_text.md), "Names
 that are fixed"). Where each way reaches the port is
 [../connection.md](../connection.md), "Where the port is reached".

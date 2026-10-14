@@ -33,18 +33,19 @@ version and the same `PROTOCOL`:
 | Edition | Features | Released on |
 | --- | --- | --- |
 | `intl` | every feature | GitHub, `https://github.com/iffiX/neutrino/releases`, every release kept |
-| `cn` | every feature except the proxy and NetBird | Gitee, `https://gitee.com/iffiX/neutrino/releases`, the latest release only |
+| `cn` | every feature except the proxy and the side gateway mode | Gitee, `https://gitee.com/iffiX/neutrino/releases`, the latest release only |
 
-The mainland edition does not carry the proxy or NetBird:
+The mainland edition does not carry the proxy:
 
 | Package | What `cn` leaves out |
 | --- | --- |
-| hub | the proxy: xray, the proxy TUN and its `tun2socks`, the geodata, the **Proxy** page, the proxy scopes of the network modes, and the `side_gateway` mode; NetBird: its module, its unit and its card on the **Access** page |
-| desktop client | NetBird and the daemon that runs it |
-| Android app | the NetBird core |
+| hub | the proxy: xray, the proxy TUN and its `tun2socks`, the geodata, the **Proxy** page, the proxy scopes of the network modes, and the `side_gateway` mode |
+| desktop client | nothing |
+| Android app | nothing |
 | agent | nothing |
 
-`cn` keeps EasyTier, the relay, the client's files adapter, VS Code,
+`cn` keeps NetBird in the hub, the desktop client and the Android app, and
+keeps EasyTier, the relay, the client's files adapter, VS Code,
 code-server, CloudCLI, Codeg, Gitea, Samba, Podman, ZFS and the AI gateway.
 
 The build writes the edition into each package as `EDITION`, `intl` or `cn`,
@@ -301,7 +302,7 @@ checks the signing certificate's
 fingerprint before it attaches the file. In both editions the apk stores its
 native libraries compressed (`packaging.jniLibs.useLegacyPackaging = true`
 in `client/android/app/build.gradle.kts`), which halves the file; the phone
-unpacks them at install. The `cn` apk has no NetBird core.
+unpacks them at install.
 
 | File | For |
 | --- | --- |
@@ -506,8 +507,9 @@ GitHub release.
 
 Fill in the changelog, check the section headings still match what shipped,
 and publish with `.github/workflows/publish.yml`, which takes the tag and the
-notes. Its `publish` job publishes the GitHub draft, and its `publish_cn` job
-then publishes `cn` on Gitee ("The mainland release on Gitee").
+notes. Its `publish` job publishes the GitHub draft. Gitee releases are
+paused, so it has no other job and no workflow runs `publish_cn.py` ("The
+mainland release on Gitee").
 
 Running the same workflow from the Actions tab builds the packages and attaches
 them as artifacts without creating a release, which is how a change to the
@@ -517,6 +519,9 @@ Draft, not published, is deliberate: the notes are written by a person who knows
 what the release is for.
 
 ## The mainland release on Gitee
+
+Gitee releases are paused: no workflow runs the script this section
+describes.
 
 `https://gitee.com/iffiX/neutrino` holds the mainland tree and the files of
 the latest `cn` release. GitHub is the one source; nothing is built on Gitee
@@ -559,9 +564,8 @@ A file over a limit fails the job before the first upload, with the file's
 name, its size and the limit in the message. The build's first answer to a
 package over 100 MB is stronger compression in that package's build.
 
-`publish_cn` runs `packaging/ci/publish_cn.py` on a Linux runner, after
-`publish`, for a tag with no suffix; a pre-release is published on GitHub
-alone. The script:
+`packaging/ci/publish_cn.py` runs on Linux for a tag with no suffix; a
+pre-release is published on GitHub alone. The script:
 
 1. Downloads `release_dist_cn` from the latest successful run of
    `release.yml` for the tag, and writes the notes `publish.yml` was given
