@@ -23,6 +23,7 @@ from neutrino_hub.modules.router.link_status import (
     RouterLinkStatus,
     admin_up_interfaces,
     device_addresses,
+    device_held_addresses,
     device_ipv6_addresses,
     system_default_routes,
 )
@@ -317,6 +318,77 @@ def test_windows_whose_address_table_cannot_be_read_has_no_ipv6_address(
     )
 
     assert device_ipv6_addresses() == {}
+
+
+# --- every address each device holds, what the segments are made of ---
+
+
+def test_linux_holds_every_address_of_both_families_link_local_included(
+    monkeypatch,
+):
+    tools = FakeTools()
+    tools.answers[("ip", "-json", "addr", "show")] = json.dumps(IP_ADDR_SHOW)
+    monkeypatch.setattr(link_status, "run", tools)
+    monkeypatch.setattr(link_status, "is_linux", lambda: True)
+    monkeypatch.setattr(link_status, "hub_os", lambda: "linux")
+
+    assert device_held_addresses() == {
+        "enp1s0": [
+            "192.168.8.1/24",
+            "fd00:8::1/64",
+            "2001:db8::1/64",
+            "2001:db8::a1/64",
+            "2001:db8::d1/64",
+            "2001:db8::e1/64",
+            "2001:db8::f1/64",
+            "fe80::1/64",
+        ]
+    }
+
+
+def test_macos_holds_what_psutil_reads_with_each_prefix(on_darwin, machine):
+    machine.addresses["en0"] += [
+        (socket.AF_INET6, "fe80::10:1%en0", "ffff:ffff:ffff:ffff::"),
+        (socket.AF_INET6, "2001:db8::1", "ffff:ffff:ffff:ffff::"),
+    ]
+    machine.addresses["lo0"].append(
+        (socket.AF_INET6, "::1", "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff")
+    )
+
+    held = device_held_addresses()
+
+    assert held["en0"] == ["192.168.1.20/24", "fe80::10:1/64", "2001:db8::1/64"]
+    assert "lo0" not in held
+
+
+def test_windows_holds_its_ipv6_addresses_from_iphlpapi(
+    on_windows, machine, monkeypatch
+):
+    monkeypatch.setattr(
+        windows_net,
+        "unicast_addresses",
+        lambda family: [
+            {
+                "dev": "Ethernet 2",
+                "address": "2001:db8::7",
+                "prefixlen": 64,
+                "state": "Preferred",
+                "suffix": "Random",
+            },
+            {
+                "dev": "Loopback Pseudo-Interface 1",
+                "address": "::1",
+                "prefixlen": 128,
+                "state": "Preferred",
+                "suffix": "WellKnown",
+            },
+        ],
+    )
+
+    held = device_held_addresses()
+
+    assert held["Ethernet 2"] == ["10.0.0.7/24", "2001:db8::7/64"]
+    assert "Loopback Pseudo-Interface 1" not in held
 
 
 # --- the desktop client's files adapter ---

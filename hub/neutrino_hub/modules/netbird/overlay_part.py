@@ -8,8 +8,8 @@ without NetBird runs the same code with EasyTier alone.
 from neutrino_hub.modules.netbird.config import read_stored
 from neutrino_hub.modules.netbird.constants import NETBIRD_CONNECTION_RELAYED
 from neutrino_hub.modules.netbird.ops import (
-    NetbirdInboundGate,
     NetbirdRouteSelector,
+    NetbirdSessionApplier,
     NetbirdStatusReader,
 )
 from neutrino_hub.modules.netbird.provisioner import NetbirdProvisioner
@@ -107,11 +107,8 @@ class NetbirdOverlayPart:
         """
         return NetbirdRouteSelector().deselect(route)
 
-    def gate(self, *, is_blocked: bool) -> str:
-        """Make the daemon's own inbound setting agree with the exposure switch.
-
-        Args:
-            is_blocked: Whether the overlay's peers are kept out.
+    def converge_session(self) -> str:
+        """Make the daemon's stored session settings the hub's.
 
         Returns:
             What was changed, empty when the daemon already agreed.
@@ -119,7 +116,7 @@ class NetbirdOverlayPart:
         Raises:
             subprocess.CalledProcessError: When the daemon refuses.
         """
-        return NetbirdInboundGate().converge(is_blocked=is_blocked)
+        return NetbirdSessionApplier().converge()
 
 
 # The part, by the overlay's key.

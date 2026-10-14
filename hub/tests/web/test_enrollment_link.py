@@ -8,6 +8,7 @@ exposed interface, whatever its role, and every exposed overlay.
 """
 
 import base64
+import ipaddress
 import json
 import re
 import zlib
@@ -17,6 +18,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from neutrino_hub.modules.channel.tickets import ChannelTicketRegistry
+from neutrino_hub.modules.firewall.renderer import render_exposure
 from neutrino_hub.modules.router.nft_renderer import RouterNftRenderer
 from neutrino_hub.web import channel_addresses
 from neutrino_hub.web.events import PanelEventBus
@@ -175,29 +177,49 @@ def test_the_link_carries_the_overlay_a_remote_machine_is_the_only_one_on(
 
 @pytest.mark.feature("netbird")
 def test_the_links_address_set_is_the_firewalls_open_set(fingerprinted, live_addresses):
-    """One test asserts the two are one set: what the ruleset accepts on
-    is what the link names, exposed interfaces of every role and exposed
-    overlays alike."""
+    """One test asserts the two are one set: the link names the hub's own
+    address in each IPv4 network the ruleset opens the agent port to,
+    exposed segments of every role and exposed overlays alike, and no other
+    address."""
     network = network_config(
         wan_entry("enp2s0", is_exposed=True),
         lan_entry("enp1s0", address="192.168.8.1", is_exposed=True),
         lan_entry("wlp3s0", address="10.0.0.1", is_exposed=False),
         overlays=[{"provider": "netbird", "is_exposed": True}],
     )
+    held = {name: [address] for name, address in live_addresses.items()}
+    exposure = render_exposure(
+        network,
+        held=held,
+        panel_http_port=8080,
+        panel_https_port=8444,
+        agent_port=8443,
+        socks_ports=[],
+        is_direct=False,
+    )
     ruleset = RouterNftRenderer(
-        network=network, routing=ROUTING_DIRECT, xray_uid=999
+        network=network, routing=ROUTING_DIRECT, xray_uid=999, exposure=exposure
     ).render()
 
     urls = urls_of(FakeRuntime(network))
 
-    assert network.exposed_interfaces == ["enp2s0", "enp1s0", "wt0"]
-    assert 'iifname { "enp2s0", "enp1s0", "wt0" } accept' in ruleset
+    opened = exposure.networks("ipv4")
+    assert f"ip saddr {{ {', '.join(opened)} }} accept" in ruleset
     assert urls == [
         "https://203.0.113.7:8443",
         "https://192.168.8.1:8443",
         "https://100.88.178.129:8443",
     ]
-    assert len(urls) == len(network.exposed_interfaces)
+    hosts = [ipaddress.ip_address(url[8:].rsplit(":", 1)[0]) for url in urls]
+    assert sorted(
+        network
+        for network in opened
+        if any(host in ipaddress.ip_network(network) for host in hosts)
+    ) == sorted(opened)
+    assert all(
+        any(host in ipaddress.ip_network(network) for network in opened)
+        for host in hosts
+    )
 
 
 def test_generating_again_replaces_the_outstanding_ticket(

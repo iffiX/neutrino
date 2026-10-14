@@ -74,6 +74,16 @@ def test_the_lan_name_service_is_the_hubs_own_unit():
     assert "neutrino_hub_dnsmasq.service" in units.SYSTEM_UNIT_TEMPLATES.values()
 
 
+def test_the_router_unit_starts_after_firewalld():
+    """The first pass of a boot finds firewalld running and writes into it."""
+    from neutrino_hub.utils.constants import UTILS_DATA_DIR
+
+    unit = (UTILS_DATA_DIR / "services/neutrino_hub_router.service").read_text()
+    (after,) = [line for line in unit.splitlines() if line.startswith("After=")]
+
+    assert "firewalld.service" in after.split("=", 1)[1].split()
+
+
 def _true() -> bool:
     return True
 

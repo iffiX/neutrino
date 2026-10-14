@@ -6,9 +6,9 @@ must allow it, and the packet must reach the target's link. The last one is why
 the packet is broadcast on a network the hub is on rather than sent to a
 unicast address.
 
-A router or side gateway hub sends to each network it serves, a server hub to
-each network it is exposed on. The packet goes to that network's own
-broadcast address, from the hub's own address on that network.
+The hub sends to each network of its exposed IPv4 segments, in every mode.
+The packet goes to that network's own broadcast address, from the hub's own
+address on that network.
 """
 
 import ipaddress
@@ -16,7 +16,6 @@ import socket
 from dataclasses import dataclass
 
 from neutrino_hub.modules.devices.constants import DEVICE_WOL_PORT
-from neutrino_hub.modules.router.constants import ROUTER_MODE_SERVER
 
 MAGIC_PACKET_REPEAT_COUNT = 16
 # The longest prefix whose network has a broadcast address of its own.
@@ -37,37 +36,26 @@ class WakeTarget:
     source_address: str
 
 
-def wake_targets(network, read_addresses) -> list[WakeTarget]:
+def wake_targets(network, read_held) -> list[WakeTarget]:
     """Every network a magic packet is broadcast on, one per network.
 
     Args:
         network: The router configuration, a
             :class:`neutrino_hub.modules.router.interfaces.RouterNetworkConfig`.
-        read_addresses: Called with nothing for device name to the address
-            with its prefix the box holds, as
-            :func:`neutrino_hub.modules.router.link_status.device_addresses`
-            reads them; called for a server hub alone.
+        read_held: Called with nothing for device name to every address it
+            holds with its prefix, as
+            :func:`neutrino_hub.modules.router.link_status.device_held_addresses`
+            reads them.
 
     Returns:
-        For a server hub, the network of each exposed interface holding an
-        IPv4 address, an interface the configuration does not name read as
-        :meth:`RouterNetworkConfig.exposed_device_names_on` reads it; for a
-        router or side gateway hub, each served network. Never an overlay's: a tunnel has no broadcast domain, and its device
-        refuses the packet rather than dropping it.
+        In every mode, the network of each address the hub holds in an
+        exposed IPv4 segment, as
+        :meth:`RouterNetworkConfig.exposed_ipv4_addresses` reads them, a
+        served network's configured address among them. Never an overlay's:
+        a tunnel has no broadcast domain, and its device refuses the packet
+        rather than dropping it.
     """
-    held: list = []
-    if network.mode == ROUTER_MODE_SERVER:
-        overlays = set(network.overlay_device_names)
-        addresses = read_addresses()
-        for name in network.exposed_device_names_on(list(addresses)):
-            if name not in overlays:
-                held.append(str(addresses.get(name, "") or ""))
-    else:
-        held = [
-            f"{interface.lan.address}/{_prefix_of(interface.lan.cidr)}"
-            for interface in network.lan_interfaces
-            if interface.lan.address
-        ]
+    held = [address for _, address in network.exposed_ipv4_addresses(read_held())]
     targets: list[WakeTarget] = []
     for text in held:
         try:
@@ -110,14 +98,6 @@ def send_magic_packet(
         if source_address:
             sock.bind((source_address, 0))
         sock.sendto(payload, (broadcast_address, DEVICE_WOL_PORT))
-
-
-def _prefix_of(cidr: str) -> str:
-    """The prefix length a served network's CIDR names, empty when it names none."""
-    try:
-        return str(ipaddress.ip_network(cidr, strict=False).prefixlen)
-    except ValueError:
-        return ""
 
 
 def _build_magic_packet(mac_address: str) -> bytes:

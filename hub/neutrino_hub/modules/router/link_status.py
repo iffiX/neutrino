@@ -413,6 +413,97 @@ def device_addresses() -> dict[str, str]:
     return found
 
 
+def device_held_addresses() -> dict[str, list[str]]:
+    """Every address each device holds, both families, link-local included.
+
+    What the exposed segments are made of: an interface's segment is every
+    network of one family it holds an address in. Linux reads ``ip -json addr
+    show``; macOS reads psutil; Windows reads psutil for IPv4 and iphlpapi's
+    unicast address table for IPv6, which gives each address its prefix.
+
+    Returns:
+        Device name to its addresses, each with its prefix, IPv4 first, in
+        the order the system lists them; loopback, the proxy's TUN and the
+        desktop client's files adapter left out. Empty when the system cannot
+        be read.
+    """
+    hidden = _hidden_devices()
+    found: dict[str, list[str]] = {}
+    if is_linux():
+        result = run(["ip", "-json", "addr", "show"], is_checked=False)
+        if not result.is_success:
+            return {}
+        for entry in json.loads(result.stdout or "[]"):
+            name = str(entry.get("ifname", ""))
+            for address in entry.get("addr_info", []):
+                if address.get("family") in ("inet", "inet6"):
+                    _add_held(
+                        found,
+                        name,
+                        str(address.get("local", "")),
+                        address.get("prefixlen"),
+                        hidden,
+                    )
+        return found
+    for name, addresses in psutil.net_if_addrs().items():
+        for address in addresses:
+            if address.family == socket.AF_INET:
+                _add_held(
+                    found,
+                    name,
+                    address.address,
+                    _prefix_length(address.netmask),
+                    hidden,
+                )
+            elif address.family == socket.AF_INET6 and hub_os() == PLATFORM_OS_DARWIN:
+                _add_held(
+                    found,
+                    name,
+                    address.address,
+                    _ipv6_prefix_length(address.netmask),
+                    hidden,
+                )
+    if hub_os() != PLATFORM_OS_DARWIN:
+        try:
+            entries = windows_net.unicast_addresses(win32.AF_INET6)
+        except OSError:
+            entries = []
+        for entry in entries:
+            _add_held(found, entry["dev"], entry["address"], entry["prefixlen"], hidden)
+    return found
+
+
+def _add_held(found: dict, name: str, address: str, prefix, hidden: set) -> None:
+    """Add one held address to its device, unless it is left out.
+
+    Args:
+        found: Device name to its addresses so far, added to.
+        name: The device.
+        address: The address, possibly with a zone after ``%``.
+        prefix: Its prefix length.
+        hidden: The devices left out.
+    """
+    local = address.split("%", 1)[0]
+    try:
+        held = ipaddress.ip_interface(f"{local}/{int(prefix)}")
+    except (TypeError, ValueError):
+        return
+    if not name or name in hidden or name == "lo" or held.ip.is_loopback:
+        return
+    text = f"{held.ip}/{held.network.prefixlen}"
+    if text not in found.setdefault(name, []):
+        found[name].append(text)
+
+
+def _ipv6_prefix_length(netmask: str | None) -> int:
+    """The prefix length of an IPv6 netmask as psutil gives it; 128 when none."""
+    try:
+        bits = int(ipaddress.IPv6Address(str(netmask)))
+    except ValueError:
+        return 128
+    return bin(bits).count("1")
+
+
 def device_ipv6_addresses() -> dict[str, list[str]]:
     """Every device's IPv6 addresses that a peer elsewhere can keep using.
 

@@ -14,10 +14,12 @@ import subprocess
 import threading
 
 from neutrino_hub.modules.router.constants import (
+    ROUTER_FAMILY_IPV6,
     ROUTER_FWMARK_TPROXY,
     ROUTER_MONITOR_COMMAND,
     ROUTER_ROUTE_TABLE,
 )
+from neutrino_hub.modules.router.interfaces import held_networks
 from neutrino_hub.utils.subprocess_run import run
 
 
@@ -75,8 +77,10 @@ class RouterLinkMonitor:
 def link_fingerprint() -> tuple:
     """The fields of the kernel's state the routing state depends on.
 
-    Address lifetimes, IPv6 and signal strength are left out, so a lease
-    renewal or a replace that changed nothing reads the same.
+    Address lifetimes, signal strength and which IPv6 address an interface
+    holds inside one network are left out, so a lease renewal, a replace
+    that changed nothing or a temporary address replaced reads the same; a
+    new IPv6 network does not, since an exposed segment's rules name it.
 
     Returns:
         A value equal before and after an event that changed none of them.
@@ -115,17 +119,23 @@ def _links() -> tuple:
 
 
 def _addresses() -> tuple:
-    found = []
-    for entry in _json(["-4", "addr", "show"]):
+    found = set()
+    for entry in _json(["addr", "show"]):
+        name = str(entry.get("ifname", ""))
         for address in entry.get("addr_info", []):
-            found.append(
-                (
-                    str(entry.get("ifname", "")),
-                    str(address.get("local", "")),
-                    int(address.get("prefixlen", 0)),
-                    bool(address.get("dynamic")),
+            if address.get("family") == "inet":
+                found.add(
+                    (
+                        name,
+                        str(address.get("local", "")),
+                        int(address.get("prefixlen", 0)),
+                        bool(address.get("dynamic")),
+                    )
                 )
-            )
+            elif address.get("family") == "inet6":
+                held = f"{address.get('local', '')}/{address.get('prefixlen', 128)}"
+                for network in held_networks([held], ROUTER_FAMILY_IPV6, is_link=True):
+                    found.add((name, network, 0, False))
     return tuple(sorted(found))
 
 

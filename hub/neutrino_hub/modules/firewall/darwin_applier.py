@@ -5,8 +5,8 @@ the hub serves through is added with ``socketfilterfw --add`` and allowed
 with ``--unblockapp``. ``--listapps`` says which are there already, and a
 program already allowed is left as it is.
 
-The pf sub-anchor ``com.apple/neutrino_hub`` blocks the hub's ports on the
-interfaces that are not exposed. Its rules are kept in a file under the
+The pf sub-anchor ``com.apple/neutrino_hub`` keeps the hub's ports to
+loopback and the exposed segments. Its rules are kept in a file under the
 state root and loaded with ``pfctl -a <anchor> -f <file>`` at every routing
 pass and when the service starts, since pf forgets them at boot.
 
@@ -118,10 +118,10 @@ class FirewallDarwinApplier:
     def load_anchor(self, rules: str) -> list:
         """Keep the anchor's rules and load them into pf.
 
-        pf is turned on when it is off and the rules block anything.
+        pf is turned on when it is off and the rules hold anything.
 
         Args:
-            rules: The anchor text the renderer gave; empty blocks nothing.
+            rules: The anchor text the renderer gave; empty holds nothing.
 
         Returns:
             One line when the rules differ from the ones kept before; empty
@@ -139,7 +139,7 @@ class FirewallDarwinApplier:
         self._load_anchor(rules)
         if kept == rules:
             return []
-        return [f"firewall anchor {FIREWALL_DARWIN_PF_ANCHOR} blocks {_count(rules)}"]
+        return [f"firewall anchor {FIREWALL_DARWIN_PF_ANCHOR} holds {_count(rules)}"]
 
     def reload_anchor(self) -> None:
         """Load the kept rules into pf again, as the service does at start.
@@ -191,6 +191,6 @@ class FirewallDarwinApplier:
 
 
 def _count(rules: str) -> str:
-    """How many block lines the anchor holds, said in words."""
+    """How many lines the anchor holds, said in words."""
     count = sum(1 for line in rules.splitlines() if line.strip())
     return "nothing" if count == 0 else f"{count} rule{'s' if count != 1 else ''}"

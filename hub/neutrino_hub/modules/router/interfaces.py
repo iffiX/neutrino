@@ -22,7 +22,11 @@ from neutrino_hub.modules.router.constants import (
     ROUTER_INTENT_AUTO,
     ROUTER_INTENT_BACKUP_ONLY,
     ROUTER_INTENT_PRIMARY,
+    ROUTER_FAMILIES,
+    ROUTER_FAMILY_IPV4,
+    ROUTER_FAMILY_IPV6,
     ROUTER_INTENTS,
+    ROUTER_IPV6_LINK_LOCAL_NETWORK,
     ROUTER_MODE_ROUTER,
     ROUTER_MODES_ADDRESSING_OWNED,
     ROUTER_MODES_KEYS,
@@ -328,10 +332,12 @@ class RouterInterface:
         name: Kernel interface name, for example ``enp1s0`` — or
             ``enp1s0.10`` for a VLAN, following the kernel's own convention.
         role: One of ``wan``, ``lan``, ``split``, ``disabled``.
-        is_exposed: Whether what this box listens on answers on this
-            interface. One answer for the whole interface rather than a port
-            list: every service here binds every address and settles its own
-            port, so what is left to decide is which wires reach them.
+        is_ipv4_exposed: Whether the hub's own ports answer the senders
+            inside this interface's IPv4 segment, every IPv4 network it holds
+            an address in.
+        is_ipv6_exposed: The same for its IPv6 segment: every global and
+            unique local network it holds an address in, and ``fe80::/64``
+            on this link.
         wan: Settings used while the role is ``wan``.
         lan: Settings used while the role is ``lan``.
         wifi: Radio settings, used in either role on a wireless interface.
@@ -341,7 +347,8 @@ class RouterInterface:
 
     name: str
     role: str = ROUTER_ROLE_DISABLED
-    is_exposed: bool = False
+    is_ipv4_exposed: bool = False
+    is_ipv6_exposed: bool = False
     wan: RouterWanSettings = field(default_factory=RouterWanSettings)
     lan: RouterLanSettings = field(default_factory=RouterLanSettings)
     wifi: RouterWifiSettings = field(default_factory=RouterWifiSettings)
@@ -371,6 +378,36 @@ class RouterInterface:
     def is_vlan(self) -> bool:
         """Whether this interface rides on a trunk rather than being a port."""
         return self.vlan is not None
+
+    @property
+    def has_exposed_segment(self) -> bool:
+        """Whether either of this interface's segments is exposed."""
+        return self.is_ipv4_exposed or self.is_ipv6_exposed
+
+    def is_exposed_in(self, family: str) -> bool:
+        """Whether this interface's segment of one family is exposed.
+
+        Args:
+            family: ``ipv4`` or ``ipv6``.
+
+        Returns:
+            The switch of that family.
+        """
+        if family == ROUTER_FAMILY_IPV6:
+            return self.is_ipv6_exposed
+        return self.is_ipv4_exposed
+
+    def set_exposed_in(self, family: str, is_exposed: bool) -> None:
+        """Set the switch of this interface's segment of one family.
+
+        Args:
+            family: ``ipv4`` or ``ipv6``.
+            is_exposed: Whether that segment is exposed.
+        """
+        if family == ROUTER_FAMILY_IPV6:
+            self.is_ipv6_exposed = is_exposed
+        else:
+            self.is_ipv4_exposed = is_exposed
 
     @property
     def is_untagged(self) -> bool:
@@ -403,14 +440,18 @@ class RouterInterface:
         Returns:
             The parsed interface. An unrecognised role reads as ``disabled``,
             which is the safe direction to fail in: an interface the gateway
-            does not understand is one it should not be routing through.
+            does not understand is one it should not be routing through. An
+            entry stored with the earlier ``is_exposed`` reads as both
+            segments set to its value.
         """
         role = str(data.get("role", ROUTER_ROLE_DISABLED))
         vlan = data.get("vlan")
+        earlier = bool(data.get("is_exposed", False))
         return cls(
             name=str(data["name"]),
             role=role if role in ROUTER_ROLES else ROUTER_ROLE_DISABLED,
-            is_exposed=bool(data.get("is_exposed", False)),
+            is_ipv4_exposed=bool(data.get("is_ipv4_exposed", earlier)),
+            is_ipv6_exposed=bool(data.get("is_ipv6_exposed", earlier)),
             wan=RouterWanSettings.from_dict(data.get("wan") or {}),
             lan=RouterLanSettings.from_dict(data.get("lan") or {}),
             wifi=RouterWifiSettings.from_dict(data.get("wifi") or {}),
@@ -426,7 +467,8 @@ class RouterInterface:
         return {
             "name": self.name,
             "role": self.role,
-            "is_exposed": self.is_exposed,
+            "is_ipv4_exposed": self.is_ipv4_exposed,
+            "is_ipv6_exposed": self.is_ipv6_exposed,
             "wan": self.wan.to_dict(),
             "lan": self.lan.to_dict(),
             "wifi": self.wifi.to_dict(),
@@ -462,10 +504,9 @@ class RouterOverlay:
             :data:`ROUTER_OVERLAY_KEYS`.
         is_enabled: Whether the hub runs this engine. A row stored without
             the field, the 0.4.0 shape, is a running one.
-        is_exposed: Whether this box answers on the overlay, and whether the
-            served networks reach it. One switch for both, because closing an
-            overlay means cutting it off rather than going quiet on it while
-            still forwarding into the LAN. Kept while the engine is off.
+        is_exposed: Whether the hub's own ports answer the overlay's
+            senders; the forward chain and the proxy's overlay scope follow
+            it too. Kept while the engine is off.
     """
 
     provider: str
@@ -481,11 +522,6 @@ class RouterOverlay:
     def title(self) -> str:
         """What the overlay is called where a person reads it."""
         return OVERLAY_ENGINES[self.provider].title
-
-    @property
-    def peer_port(self) -> int:
-        """The UDP port the overlay's own peers knock on."""
-        return OVERLAY_ENGINES[self.provider].peer_port
 
     @classmethod
     def from_dict(cls, data: dict) -> "RouterOverlay":
@@ -646,29 +682,33 @@ class RouterNetworkConfig:
         """
         return self.mode in ROUTER_MODES_ADDRESSING_OWNED
 
-    @property
-    def exposed_device_names(self) -> list[str]:
-        """The kernel devices what this box listens on answers on.
+    def exposed_device_names(self, family: str) -> list[str]:
+        """The kernel devices whose segment of one family is exposed.
+
+        Args:
+            family: ``ipv4`` or ``ipv6``.
 
         Returns:
-            One name per exposed interface, deduplicated: a trunk and its
-            untagged main are one device, and naming it twice would render an
-            nft set with a repeated element.
+            One name per interface the configuration names with that
+            segment exposed, deduplicated: a trunk and its untagged main are
+            one device.
         """
         return _unique(
             interface.device_name
             for interface in self.interfaces
-            if interface.is_exposed
+            if interface.is_exposed_in(family)
         )
 
-    def exposed_device_names_on(self, present) -> list[str]:
-        """The kernel devices this box answers on, of the ones it names and has.
+    def exposed_device_names_on(self, present, family: str) -> list[str]:
+        """The devices whose segment of one family is exposed, of the ones it
+        names and has.
 
         Args:
             present: The devices the box has now, as the system names them.
+            family: ``ipv4`` or ``ipv6``.
 
         Returns:
-            :attr:`exposed_device_names`, then each present device the
+            :meth:`exposed_device_names`, then each present device the
             configuration does not name that :meth:`interface_or_new` reads
             as exposed, which is none on Linux. An overlay's device is never
             among the second part.
@@ -679,9 +719,96 @@ class RouterNetworkConfig:
             for name in present
             if name not in overlays
             and self.interface(name) is None
-            and self.interface_or_new(name).is_exposed
+            and self.interface_or_new(name).is_exposed_in(family)
         ]
-        return _unique(self.exposed_device_names + unnamed)
+        return _unique(self.exposed_device_names(family) + unnamed)
+
+    def exposed_segments(self, held: dict) -> list["RouterSegment"]:
+        """The exposed segments, with the networks each holds now.
+
+        Args:
+            held: Device name to every address it holds with its prefix,
+                both families, link-local ones included, as
+                :func:`neutrino_hub.modules.router.link_status.device_held_addresses`
+                reads them.
+
+        Returns:
+            One segment per interface and family whose switch is on and that
+            holds a network, IPv4 first, in configuration order; then one per
+            device and family of each running overlay whose chip is on. A
+            served network's configured network is in its IPv4 segment beside
+            the networks its addresses are in. An interface's IPv6 segment
+            holds ``fe80::/64`` while the interface has a link-local address;
+            an overlay's holds no link-local network.
+        """
+        overlays = set(self.overlay_device_names)
+        segments = []
+        for family in ROUTER_FAMILIES:
+            for name in self.exposed_device_names_on(list(held), family):
+                networks = self.segment_networks(name, family, held)
+                if name not in overlays and networks:
+                    segments.append(RouterSegment(name, family, tuple(networks)))
+        for name in self.exposed_overlay_device_names:
+            for family in ROUTER_FAMILIES:
+                networks = held_networks(held.get(name, []), family, is_link=False)
+                if networks:
+                    segments.append(RouterSegment(name, family, tuple(networks)))
+        return segments
+
+    def exposed_ipv4_addresses(self, held: dict) -> list[tuple[str, str]]:
+        """The hub's own addresses in its interfaces' exposed IPv4 segments.
+
+        The overlays are left out: an overlay has no broadcast domain and no
+        neighbours.
+
+        Args:
+            held: Device name to every address it holds with its prefix, as
+                :func:`neutrino_hub.modules.router.link_status.device_held_addresses`
+                reads them.
+
+        Returns:
+            ``(device, address/prefix)`` pairs, in configuration order: a
+            served network's configured address first, then every IPv4
+            address the device holds, each pair once.
+        """
+        overlays = set(self.overlay_device_names)
+        found = []
+        for name in self.exposed_device_names_on(list(held), ROUTER_FAMILY_IPV4):
+            if name in overlays:
+                continue
+            configured = [
+                f"{interface.lan.address}/{interface.lan.prefix_len}"
+                for interface in self.lan_interfaces
+                if interface.device_name == name and interface.lan.address
+            ]
+            for text in [*configured, *held.get(name, [])]:
+                if _family_of(text) == ROUTER_FAMILY_IPV4 and (name, text) not in found:
+                    found.append((name, text))
+        return found
+
+    def segment_networks(self, device: str, family: str, held: dict) -> list[str]:
+        """The networks one interface's segment of one family holds now.
+
+        Args:
+            device: The interface's kernel device.
+            family: ``ipv4`` or ``ipv6``.
+            held: Device name to every address it holds with its prefix.
+
+        Returns:
+            For IPv4, a served network's configured network on the device,
+            then every IPv4 network the device holds an address in; for IPv6,
+            every global and unique local network, and ``fe80::/64`` while
+            the device has a link-local address. Each network once.
+        """
+        networks = []
+        if family == ROUTER_FAMILY_IPV4:
+            networks = [
+                _network_of(interface.lan.cidr)
+                for interface in self.lan_interfaces
+                if interface.device_name == device and interface.lan.address
+            ]
+        networks += held_networks(held.get(device, []), family, is_link=True)
+        return _unique(network for network in networks if network)
 
     def is_interface_enabled(self, name: str) -> bool:
         """Whether an interface is one the hub uses, exposed or not.
@@ -691,10 +818,10 @@ class RouterNetworkConfig:
         on. Where it addresses nothing, ``server`` and ``side_gateway``, no
         role says whether a port is used, so every port the configuration
         names is on. A port it does not name is on exactly where
-        :meth:`interface_or_new` reads it as exposed: never on Linux, always
-        on macOS and Windows. Direct opens the agent port on every enabled
-        interface; whether the rest of the box answers there is
-        :attr:`RouterInterface.is_exposed` alone.
+        :meth:`interface_or_new` reads its segments as exposed: never on
+        Linux, always on macOS and Windows. Direct opens the agent port on
+        every enabled interface; which senders reach the hub's other ports
+        is the segments' switches alone.
 
         Args:
             name: Kernel interface name.
@@ -704,7 +831,7 @@ class RouterNetworkConfig:
         """
         stored = self.interface(name)
         if stored is None:
-            return self.interface_or_new(name).is_exposed
+            return self.interface_or_new(name).has_exposed_segment
         return not self.is_addressing_owned or not stored.is_disabled
 
     @property
@@ -736,23 +863,12 @@ class RouterNetworkConfig:
 
     @property
     def exposed_overlay_device_names(self) -> list[str]:
-        """The overlay devices this box answers on and forwards to."""
+        """The devices of the running overlays whose chip is on."""
         return _unique(
             name
             for overlay in self.enabled_overlays
             if overlay.is_exposed
             for name in self.devices_of(overlay)
-        )
-
-    @property
-    def exposed_overlay_peer_ports(self) -> list[int]:
-        """The UDP ports the exposed overlays' peers knock on, ascending."""
-        return sorted(
-            {
-                overlay.peer_port
-                for overlay in self.enabled_overlays
-                if overlay.is_exposed
-            }
         )
 
     def local_networks(self, addresses: dict) -> list:
@@ -864,17 +980,6 @@ class RouterNetworkConfig:
         return lan.lan.address if lan and lan.lan.address else "127.0.0.1"
 
     @property
-    def exposed_interfaces(self) -> list[str]:
-        """The kernel devices this box answers agents and clients on.
-
-        Returns:
-            The exposed interfaces of every role, then the exposed overlays,
-            one name per kernel device. The firewall opens the agent port
-            on this set and an enrolment link names its addresses.
-        """
-        return _unique(self.exposed_device_names + self.exposed_overlay_device_names)
-
-    @property
     def wan_names(self) -> list[str]:
         """Interface names of the uplinks, in preference order."""
         return [interface.name for interface in self.wan_interfaces]
@@ -938,13 +1043,16 @@ class RouterNetworkConfig:
             name: Kernel interface name.
 
         Returns:
-            The stored interface, or a new roleless one, exposed outside
-            Linux.
+            The stored interface, or a new roleless one with both segments
+            exposed outside Linux.
         """
         stored = self.interface(name)
         if stored is not None:
             return stored
-        return RouterInterface(name=name, is_exposed=not is_linux())
+        is_exposed = not is_linux()
+        return RouterInterface(
+            name=name, is_ipv4_exposed=is_exposed, is_ipv6_exposed=is_exposed
+        )
 
     def vlan_children(self, parent: str) -> list[RouterInterface]:
         """The VLANs riding on one trunk port, in configuration order.
@@ -1068,6 +1176,61 @@ class RouterNetworkConfig:
         }
 
 
+@dataclass(frozen=True)
+class RouterSegment:
+    """One exposed segment: the networks of one family a device holds now.
+
+    Attributes:
+        device: The kernel device the networks are on.
+        family: ``ipv4`` or ``ipv6``.
+        networks: Each network in CIDR form, ``fe80::/64`` among an
+            interface's IPv6 ones while it has a link-local address.
+    """
+
+    device: str
+    family: str
+    networks: tuple
+
+
+def _family_of(text: str) -> str:
+    """The family of an address with its prefix, empty when it is none."""
+    try:
+        version = ipaddress.ip_interface(text).version
+    except ValueError:
+        return ""
+    return ROUTER_FAMILY_IPV6 if version == 6 else ROUTER_FAMILY_IPV4
+
+
+def held_networks(addresses: list, family: str, *, is_link: bool) -> list[str]:
+    """The networks of one family a device's addresses are in.
+
+    Args:
+        addresses: The device's addresses, each with its prefix.
+        family: ``ipv4`` or ``ipv6``.
+        is_link: Whether a link-local IPv6 address counts, as ``fe80::/64``.
+
+    Returns:
+        Each network once, in the order of its first address; a loopback,
+        multicast or unspecified address is in none.
+    """
+    networks = []
+    for text in addresses:
+        if _family_of(text) != family:
+            continue
+        held = ipaddress.ip_interface(text)
+        if held.ip.is_loopback or held.ip.is_multicast or held.ip.is_unspecified:
+            continue
+        if held.version == 6 and held.ip.is_link_local:
+            if not is_link:
+                continue
+            network = ROUTER_IPV6_LINK_LOCAL_NETWORK
+        else:
+            network = str(held.network)
+        if network not in networks:
+            networks.append(network)
+    return networks
+
+
 def _optional_text(value: object) -> str | None:
     if value is None:
         return None
@@ -1109,6 +1272,7 @@ __all__ = [
     "RouterInterface",
     "RouterLanSettings",
     "RouterNetworkConfig",
+    "RouterSegment",
     "RouterStaticLease",
     "RouterVlanSettings",
     "RouterWanSettings",

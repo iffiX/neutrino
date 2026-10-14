@@ -83,10 +83,9 @@ NETBIRD_ACTIVE_PROFILE_NAME = "active_profile.json"
 NETBIRD_SUPERVISED_NAME = "netbird"
 # Where every `netbird` command names the daemon it talks to.
 NETBIRD_DAEMON_ADDRESS_FLAG = "--daemon-addr"
-NETBIRD_BLOCK_INBOUND_KEY = "BlockInbound"
 # The daemon's DNS management stays off on the hub: the box resolves at its
 # own dnsmasq, and an overlay's DNS is a member's tool for roaming through the
-# hub as its exit, never the hub's. Stored in the profile like BlockInbound,
+# hub as its exit, never the hub's. Stored in the profile,
 # and stated on every `netbird up`, since a flag left off keeps its stored
 # value.
 NETBIRD_DISABLE_DNS_KEY = "DisableDNS"
@@ -111,7 +110,7 @@ NETBIRD_OWN_DEVICE_PREFIXES = (
 
 # `netbird up` re-establishes the session, so it is given the same room as an
 # enrollment rather than a command's usual seconds.
-NETBIRD_INBOUND_TIMEOUT_S = 60
+NETBIRD_UP_TIMEOUT_S = 60
 # The daemon's words for a profile that holds no login the plane takes: one
 # that never enrolled, one the plane refused, and one whose SSO session ran
 # out. A join with a setup key starts from a deregistered profile in each,

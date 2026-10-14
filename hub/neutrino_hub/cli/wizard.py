@@ -1579,7 +1579,7 @@ def _review_role(interface) -> str:
     """
     if interface.role != ROUTER_ROLE_DISABLED:
         return interface.role
-    return "answers" if interface.is_exposed else "closed"
+    return "answers" if interface.has_exposed_segment else "closed"
 
 
 def _offered_modes(port_count: int, wired_count: int) -> tuple:

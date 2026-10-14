@@ -59,7 +59,8 @@ def pristine(name: str) -> dict:
     return {
         "name": name,
         "role": "disabled",
-        "is_exposed": False,
+        "is_ipv4_exposed": False,
+        "is_ipv6_exposed": False,
         "wan": {
             "method": "dhcp",
             "address": None,
@@ -82,13 +83,19 @@ def pristine(name: str) -> dict:
     }
 
 
-def options_body(panel, **over) -> dict:
-    """The page-wide options as they are now, with some of them changed."""
+def options_body(panel, *, exposed_interfaces=None, **over) -> dict:
+    """The page-wide options as they are now, with some of them changed.
+
+    ``exposed_interfaces`` names the interfaces both of whose segments are
+    exposed.
+    """
     view = panel.read("/hub/network")
+    exposed = exposed_now(panel) if exposed_interfaces is None else exposed_interfaces
     body = {
         "uplink_policy": view["uplink_policy"],
         "is_inter_lan_allowed": view["is_inter_lan_allowed"],
-        "exposed_interfaces": exposed_now(panel),
+        "ipv4_exposed_interfaces": list(exposed),
+        "ipv6_exposed_interfaces": list(exposed),
     }
     body.update(over)
     return body
@@ -109,11 +116,11 @@ def interface_body(panel, name: str, **over) -> dict:
 
 
 def exposed_now(panel) -> list:
-    """Which interfaces the firewall lets in, sorted."""
+    """Which interfaces have an exposed segment, sorted."""
     return sorted(
         entry["settings"]["name"]
         for entry in panel.read("/hub/network")["interfaces"]
-        if entry["settings"]["is_exposed"]
+        if entry["settings"]["is_ipv4_exposed"] or entry["settings"]["is_ipv6_exposed"]
     )
 
 

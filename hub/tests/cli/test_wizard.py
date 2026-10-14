@@ -468,7 +468,10 @@ def test_a_server_is_asked_nothing_about_its_ports(monkeypatch):
     planned = asked._plan()
 
     assert {interface.role for interface in planned.interfaces} == {"disabled"}
-    assert all(interface.is_exposed for interface in planned.interfaces)
+    assert all(
+        interface.is_ipv4_exposed and interface.is_ipv6_exposed
+        for interface in planned.interfaces
+    )
 
 
 class _WiredAndRadio:

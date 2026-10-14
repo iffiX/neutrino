@@ -129,25 +129,44 @@ def test_the_engine_cgroups_the_ruleset_already_names_run_nothing(monkeypatch):
     assert passes.passes == 0
 
 
-def test_outside_linux_a_moved_interface_set_runs_one_converge(on_windows, monkeypatch):
-    """The firewall rules are scoped again when an adapter comes back under a
-    new name, from the same pass that follows the overlay devices."""
+def test_outside_linux_a_moved_network_set_runs_one_converge(on_windows, monkeypatch):
+    """The firewall rules are written again when an adapter comes back under
+    a new name or an exposed segment's network moves, from the same pass
+    that follows the overlay devices."""
     panel, passes = following(
         monkeypatch, {"easytier": ["tun0"]}, {"easytier": ["tun0"]}
     )
-    monkeypatch.setattr(runtime_module, "is_interface_set_moved", lambda: True)
+    monkeypatch.setattr(runtime_module, "is_network_set_moved", lambda: True)
 
     assert panel.follow_overlay_devices() is True
     assert passes.passes == 1
 
 
-def test_outside_linux_the_interface_set_the_rules_name_runs_nothing(
+def test_outside_linux_the_network_set_the_rules_name_runs_nothing(
     on_windows, monkeypatch
 ):
     panel, passes = following(
         monkeypatch, {"easytier": ["tun0"]}, {"easytier": ["tun0"]}
     )
-    monkeypatch.setattr(runtime_module, "is_interface_set_moved", lambda: False)
+    monkeypatch.setattr(runtime_module, "is_network_set_moved", lambda: False)
+
+    assert panel.follow_overlay_devices() is False
+    assert passes.passes == 0
+
+
+def test_on_linux_firewalld_holding_other_rules_runs_one_converge(monkeypatch):
+    """firewalld started at a later boot, or reloaded, holds none of the
+    hub's runtime rules."""
+    panel, passes = following(monkeypatch, {}, {})
+    monkeypatch.setattr(runtime_module, "is_firewalld_moved", lambda: True)
+
+    assert panel.follow_overlay_devices() is True
+    assert passes.passes == 1
+
+
+def test_on_linux_firewalld_holding_the_rules_runs_nothing(monkeypatch):
+    panel, passes = following(monkeypatch, {}, {})
+    monkeypatch.setattr(runtime_module, "is_firewalld_moved", lambda: False)
 
     assert panel.follow_overlay_devices() is False
     assert passes.passes == 0

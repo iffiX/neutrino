@@ -53,7 +53,7 @@ EDITION_HOOKS = {
     ),
     # The overlay engines' own parts: ``(key, class)`` with ``provisioner``,
     # ``address``, ``name``, ``relayed_peer_addresses``, ``material``,
-    # ``deselect`` and ``gate``.
+    # ``deselect`` and ``converge_session``.
     "overlay_parts": (
         (_NETBIRD, "neutrino_hub.modules.netbird.overlay_part:NETBIRD_OVERLAY_PART"),
     ),

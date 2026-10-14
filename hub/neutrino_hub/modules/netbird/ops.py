@@ -24,13 +24,12 @@ from neutrino_hub.modules.netbird.constants import (
     NETBIRD_ACTIVE_PROFILE_NAME,
     NETBIRD_ACTIVE_PROFILE_PATH,
     NETBIRD_BINARY_PATH,
-    NETBIRD_BLOCK_INBOUND_KEY,
     NETBIRD_DAEMON_ADDRESS_FLAG,
     NETBIRD_DISABLE_DNS_FLAG,
     NETBIRD_DISABLE_DNS_KEY,
     NETBIRD_HUB_CONFIG_NAME,
     NETBIRD_HUB_STATE_DIR,
-    NETBIRD_INBOUND_TIMEOUT_S,
+    NETBIRD_UP_TIMEOUT_S,
     NETBIRD_IFACE_BLACKLIST_FLAG,
     NETBIRD_IFACE_BLACKLIST_KEY,
     NETBIRD_LEGACY_CONFIG_PATH,
@@ -319,36 +318,15 @@ def _age_s(value) -> "int | None":
     return int(seconds) if seconds >= 0 else 0
 
 
-class NetbirdInboundGate:
-    """Whether NetBird itself accepts inbound connections on the overlay.
+class NetbirdSessionApplier:
+    """Keeps the daemon's stored session settings the hub's.
 
-    The exposure switch has to reach here, because the daemon does not leave
-    the firewall to us: within ten seconds of any reload it inserts an accept
-    for its own interface at the top of whatever input chain it finds, this
-    hub's included. A rule we render and it overrides is a switch that reads
-    as closed and is open, so closing the overlay tells NetBird as well.
-
-    The same pass keeps the daemon's DNS management off: a daemon still
-    managing DNS holds the box's resolver behind a forwarder whose upstream
-    it read once, and a served network changing address leaves the box
-    resolving nothing.
+    Two settings: its DNS management off, since a daemon still managing DNS
+    holds the box's resolver behind a forwarder whose upstream it read once,
+    and a served network changing address leaves the box resolving nothing;
+    and its interface blacklist holding every device the box made, which the
+    daemon only ever adds to.
     """
-
-    def state(self) -> bool | None:
-        """What the daemon was last told about inbound connections.
-
-        Returns:
-            True when it is blocking them, False when it is not, and None
-            when nothing on this box says either way.
-        """
-        for path in self._state_paths():
-            try:
-                stored = json.loads(path.read_text())
-            except (OSError, ValueError):
-                continue
-            if NETBIRD_BLOCK_INBOUND_KEY in stored:
-                return bool(stored[NETBIRD_BLOCK_INBOUND_KEY])
-        return None
 
     def is_dns_off(self) -> bool:
         """Whether the daemon was told to leave the box's resolver alone.
@@ -387,48 +365,33 @@ class NetbirdInboundGate:
                 return set(own_device_prefixes()) <= names
         return False
 
-    def converge(self, *, is_blocked: bool) -> str:
-        """Make the daemon agree, and only then.
+    def converge(self) -> str:
+        """Make the daemon's stored settings agree, and only then.
 
-        Two things about ``netbird up`` are settled by what it does rather
-        than by what reads well, both measured on a running client: it is a
-        no-op while the client is already connected, so the session is taken
-        down first the way an enrollment does; and the flag is sticky, so
-        leaving it off keeps whatever was stored last rather than clearing
-        it, and the value is always stated.
-
-        Args:
-            is_blocked: Whether inbound connections should be refused.
+        ``netbird up`` is a no-op while the client is already connected,
+        measured on a running client, so the session is taken down first the
+        way an enrollment does.
 
         Returns:
             A note for the apply summary, empty when nothing had to change.
-            Setting it re-establishes the session, so a state that already
-            agrees, DNS management off included, is left alone: a network
-            apply must not cost the overlay a reconnection every time
-            somebody saves an unrelated interface.
+            Setting them re-establishes the session, so settings that already
+            agree are left alone: a network apply must not cost the overlay a
+            reconnection every time somebody saves an unrelated interface.
 
         Raises:
             subprocess.CalledProcessError: If the daemon refuses to come back up.
         """
-        is_inbound_settled = self.state() == is_blocked
         is_dns_off = self.is_dns_off()
-        if is_inbound_settled and is_dns_off and self.is_blacklist_stored():
+        if is_dns_off and self.is_blacklist_stored():
             return ""
         status = NetbirdStatusReader().survey()
         if not status.is_installed or not status.is_enrolled:
             return ""
         run(netbird_command("down"), is_checked=False, timeout_s=30)
         run(
-            netbird_command(
-                "up",
-                f"--block-inbound={'true' if is_blocked else 'false'}",
-                NETBIRD_DISABLE_DNS_FLAG,
-                iface_blacklist_flag(),
-            ),
-            timeout_s=NETBIRD_INBOUND_TIMEOUT_S,
+            netbird_command("up", NETBIRD_DISABLE_DNS_FLAG, iface_blacklist_flag()),
+            timeout_s=NETBIRD_UP_TIMEOUT_S,
         )
-        if not is_inbound_settled:
-            return "overlay closed" if is_blocked else "overlay opened"
         if not is_dns_off:
             return "overlay DNS management turned off"
         return "overlay listens on no device the box made"

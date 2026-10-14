@@ -20,6 +20,7 @@ import pytest
 from neutrino_hub import edition
 from neutrino_hub.exceptions import NetworkApplyError, StreamRefusedError
 from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_CLIENT
+from neutrino_hub.modules.firewall.renderer import render_exposure
 from neutrino_hub.modules.overlay.config import enabled_providers, set_enabled
 from neutrino_hub.modules.overlay.constants import OVERLAY_EASYTIER, OVERLAY_NETBIRD
 from neutrino_hub.modules.router.constants import (
@@ -617,6 +618,22 @@ class _LinkStatus:
         return [self._Link(name, address) for name, address in ADDRESSES.items()]
 
 
+def _ruleset(network, routing) -> str:
+    """The ruleset rendered from nothing, the box holding :data:`ADDRESSES`."""
+    exposure = render_exposure(
+        network,
+        held={name: [address] for name, address in ADDRESSES.items()},
+        panel_http_port=8080,
+        panel_https_port=8444,
+        agent_port=8443,
+        socks_ports=[],
+        is_direct=False,
+    )
+    return RouterNftRenderer(
+        network=network, routing=routing, xray_uid=999, exposure=exposure
+    ).render()
+
+
 @pytest.mark.feature("proxy")
 def test_every_switch_leaves_what_a_fresh_render_would(applied, monkeypatch):
     """EasyTier on, NetBird off, NetBird on, EasyTier off: after each, the
@@ -631,9 +648,7 @@ def test_every_switch_leaves_what_a_fresh_render_would(applied, monkeypatch):
     class Controller:
         def reconcile_locked(self, *, only=None):
             network = RouterNetworkConfig.from_dict(files["router/network.json"])
-            seen["ruleset"] = RouterNftRenderer(
-                network=network, routing=files["xray/routing.json"], xray_uid=999
-            ).render()
+            seen["ruleset"] = _ruleset(network, files["xray/routing.json"])
             return []
 
     class Applier:
@@ -669,12 +684,7 @@ def test_every_switch_leaves_what_a_fresh_render_would(applied, monkeypatch):
         panel.converge_network_blocking()
 
         fresh = RouterNetworkConfig.from_dict(files["router/network.json"])
-        assert (
-            seen["ruleset"]
-            == RouterNftRenderer(
-                network=fresh, routing=files["xray/routing.json"], xray_uid=999
-            ).render()
-        )
+        assert seen["ruleset"] == _ruleset(fresh, files["xray/routing.json"])
         assert seen["xray"] == xray_render(panel, files["xray/routing.json"])
         fence = share_subnets(
             network=fresh,

@@ -9,8 +9,17 @@ edition table; a tree without the proxy renders the firewall alone.
 import ipaddress
 
 from neutrino_hub import edition
+from neutrino_hub.modules.firewall.constants import (
+    FIREWALL_PROTOCOL_TCP,
+    FIREWALL_PROTOCOL_UDP,
+)
+from neutrino_hub.modules.firewall.renderer import FirewallExposure
 from neutrino_hub.modules.router.constants import (
+    ROUTER_FAMILY_IPV4,
+    ROUTER_FAMILY_IPV6,
+    ROUTER_IPV6_LINK_LOCAL_NETWORK,
     ROUTER_NFT_FAMILY,
+    ROUTER_NFT_INPUT_PRIORITY,
     ROUTER_NFT_TABLE,
     ROUTER_RESERVED_NETWORKS,
 )
@@ -26,11 +35,11 @@ class RouterNftRenderer:
     masquerades whatever leaves through a WAN. The first two are the proxy's,
     and a tree without it renders the other three.
 
-    Which interfaces those chains name comes from the roles in the network
-    config, so a box with two LANs or two uplinks renders the same rules over
-    a larger set rather than needing different ones. ``input`` is the one that
-    reads something else: what answers where is a firewall question, not a
-    role, and it is asked once per interface.
+    Which interfaces ``forward`` and ``postrouting`` name comes from the
+    roles in the network config, so a box with two LANs or two uplinks
+    renders the same rules over a larger set rather than needing different
+    ones. ``input`` reads the exposure instead: it governs the hub's own
+    ports alone, by the sender's network.
     """
 
     def __init__(
@@ -39,9 +48,9 @@ class RouterNftRenderer:
         network: RouterNetworkConfig,
         routing: dict,
         xray_uid: int,
+        exposure: FirewallExposure,
         overlay_devices: dict | None = None,
         engine_cgroups: list | None = None,
-        direct_port: "int | None" = None,
     ):
         """
         Args:
@@ -50,6 +59,8 @@ class RouterNftRenderer:
                 empty in a tree without the proxy.
             xray_uid: Numeric uid the xray service runs as, handed to the
                 proxy's chains; 0 in a tree without the proxy.
+            exposure: What the firewall answers: the hub's ports, the
+                exposed segments and Direct.
             overlay_devices: Provider to the kernel devices its overlay rides
                 on, found at run time; a provider left out rides on its
                 engine's own device. None keeps what ``network`` carries.
@@ -58,9 +69,6 @@ class RouterNftRenderer:
                 ``system.slice/neutrino_hub_netbird.service``. Their packets
                 leave directly while the local proxy is on. Only paths that
                 exist: nft refuses one that does not.
-            direct_port: The agent port while Direct is on, which opens that
-                port alone on every enabled interface not already answering;
-                None while Direct is off.
         """
         if overlay_devices is not None:
             network = network.with_overlay_devices(overlay_devices)
@@ -68,25 +76,13 @@ class RouterNftRenderer:
         # config-side only, and the firewall must match the port itself.
         self._wans = network.wan_device_names
         self._lans = network.lan_device_names
-        self._exposed = network.exposed_device_names
         self._exposed_overlays = network.exposed_overlay_device_names
         self._overlay_groups = [
             network.devices_of(overlay)
             for overlay in network.enabled_overlays
             if network.devices_of(overlay)
         ]
-        self._answering = network.exposed_interfaces
-        self._direct_port = direct_port
-        self._direct_devices = (
-            []
-            if direct_port is None
-            else [
-                name
-                for name in network.enabled_device_names
-                if name not in self._answering
-            ]
-        )
-        self._overlay_ports = network.exposed_overlay_peer_ports
+        self._exposure = exposure
         self._side_lans = _side_lan_subnets(network)
         self._is_inter_lan_allowed = network.is_inter_lan_allowed
         part = edition.hook("router_nft")
@@ -262,66 +258,58 @@ class RouterNftRenderer:
         return "\n".join(lines)
 
     def _render_input(self) -> str:
+        """The hub's own ports, answering loopback and the exposed segments.
+
+        A nat chain, so no overlay daemon edits it: NetBird's inserts an
+        accept for its device into every filter chain on the input hook,
+        and into no nat chain. A packet passes only when every chain on the
+        hook accepts it, so an accept elsewhere passes nothing this chain
+        drops. A nat chain sees the first packet of each connection, which
+        is the packet the drop is for; its ``ct state`` match is what has
+        conntrack follow this table's packets on a box where nothing else
+        does. Every other port passes on the chain's accept policy, and the
+        overlays' peer ports and DHCP with it.
+
+        Returns:
+            The chain.
+        """
+        exposure = self._exposure
         lines = [
             "    chain input {",
-            "        type filter hook input priority filter; policy drop;",
+            f"        type nat hook input priority {ROUTER_NFT_INPUT_PRIORITY}; "
+            "policy accept;",
             "",
-            "        ct state established,related accept",
-            "        ct state invalid drop",
             '        iifname "lo" accept',
         ]
         if self._proxy is not None:
             lines += self._proxy.input_lines()
-        lines.append("")
-        if self._answering:
-            lines += [
-                "        # Where this box answers. Every service here binds every",
-                "        # address and settles its own port, so which wires reach",
-                "        # them is the whole of the question, and it is one answer",
-                "        # per interface, an overlay included.",
-                f"        iifname {_interface_set(self._answering)} accept",
+        ipv4 = exposure.networks(ROUTER_FAMILY_IPV4)
+        if ipv4:
+            lines.append(f"        ip saddr {_element_set(ipv4)} accept")
+        ipv6 = exposure.networks(ROUTER_FAMILY_IPV6)
+        if ipv6:
+            lines.append(f"        ip6 saddr {_element_set(ipv6)} accept")
+        for device in exposure.link_local_devices:
+            lines.append(
+                f'        iifname "{device}" ip6 saddr '
+                f"{ROUTER_IPV6_LINK_LOCAL_NETWORK} accept"
+            )
+        if exposure.direct_port is not None and exposure.enabled_devices:
+            lines.append(
+                f"        iifname {_interface_set(list(exposure.enabled_devices))} "
+                f"tcp dport {exposure.direct_port} accept"
+            )
+        for protocol in (FIREWALL_PROTOCOL_TCP, FIREWALL_PROTOCOL_UDP):
+            ports = [
+                str(port.port)
+                for port in exposure.hub_ports
+                if port.protocol == protocol
             ]
-        if self._direct_devices:
-            lines += [
-                "        # Direct: the agent port alone on every other enabled",
-                "        # interface; the rest of this box stays as exposed.",
-                f"        iifname {_interface_set(self._direct_devices)} "
-                f"tcp dport {self._direct_port} accept",
-            ]
-        lines.append("")
-        closed_wans = [name for name in self._wans if name not in self._exposed]
-        if closed_wans:
-            external = _interface_set(closed_wans)
-            lines += [
-                "        # An uplink nobody exposed still has to be able to take a",
-                "        # lease: this is the box being a client, not a service.",
-                f"        iifname {external} udp dport 68 accept",
-                f"        iifname {external} udp sport 67 accept",
-            ]
-        closed_lans = [name for name in self._lans if name not in self._exposed]
-        if closed_lans:
-            served = _interface_set(closed_lans)
-            lines += [
-                "        # A served network nobody exposed still gets its leases",
-                "        # and its names: that is this box being its router, not a",
-                "        # service somebody opted into.",
-                f"        iifname {served} udp dport 67 accept",
-                f"        iifname {served} udp dport 53 accept",
-                f"        iifname {served} tcp dport 53 accept",
-            ]
-        lines += [
-            "        icmp type { echo-request, destination-unreachable, "
-            "time-exceeded, parameter-problem } accept",
-            "        icmpv6 type { echo-request, nd-neighbor-solicit, "
-            "nd-neighbor-advert, nd-router-advert } accept",
-        ]
-        if self._overlay_ports:
-            ports = ", ".join(str(port) for port in self._overlay_ports)
-            lines += [
-                "        # Where each overlay's own peers knock, so they reach",
-                "        # this box directly instead of through a relay.",
-                f"        udp dport {{ {ports} }} accept",
-            ]
+            if ports:
+                lines.append(
+                    f"        ct state new {protocol.lower()} dport "
+                    f"{_element_set(list(dict.fromkeys(ports)))} drop"
+                )
         lines.append("    }\n")
         return "\n".join(lines)
 
@@ -381,3 +369,16 @@ def _interface_set(names: list[str]) -> str:
     """
     quoted = ", ".join(f'"{name}"' for name in names)
     return f"{{ {quoted} }}"
+
+
+def _element_set(elements: list[str]) -> str:
+    """Render addresses, networks or ports as an nft anonymous set.
+
+    Args:
+        elements: One or more elements, written as nft reads them.
+
+    Returns:
+        A set literal such as ``{ 192.168.1.0/24, 10.0.0.0/8 }``. Callers
+        must not pass an empty list: nft rejects an empty set.
+    """
+    return f"{{ {', '.join(elements)} }}"
