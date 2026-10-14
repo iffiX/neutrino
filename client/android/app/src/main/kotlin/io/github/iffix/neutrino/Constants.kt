@@ -60,14 +60,6 @@ val CLIENT_SOURCE_URLS: Map<String, String> = mapOf(
     EDITION_CN to "https://gitee.com/iffiX/neutrino",
 )
 
-/** The left-out feature NetBird, by the name `Edition.hasFeature` takes. */
-const val EDITION_FEATURE_NETBIRD = "netbird"
-
-/** Each left-out feature, by the class of its part, an object the edition table loads by name. */
-val EDITION_FEATURE_PARTS: Map<String, String> = mapOf(
-    EDITION_FEATURE_NETBIRD to "io.github.iffix.neutrino.netbird.NetbirdPart",
-)
-
 /** The carried core whose source and patch the About card links. */
 const val CLIENT_RUSTDESK_CORE = "RustDesk"
 
@@ -80,11 +72,20 @@ const val CLIENT_RUSTDESK_SOURCE_URL = "https://github.com/rustdesk/rustdesk/tre
  */
 const val CLIENT_RUSTDESK_PATCH_URL = "{source}/blob/v{version}/packaging/build/build_core_rustdesk.patch"
 
+/** The NetBird release the app's core is built from, as `build_core_netbird.py` pins it. */
+const val OVERLAY_NETBIRD_VERSION = "0.78.1"
+
 /**
  * The cores every edition of the app carries, for the About card. The mainland edition links EasyTier's
  * own Gitee repository and Gitee's RustDesk mirror, each holding the same tag at the same commit.
  */
 val CLIENT_CARRIED_CORES: List<CarriedCore> = listOf(
+    CarriedCore(
+        "NetBird",
+        OVERLAY_NETBIRD_VERSION,
+        "BSD-3-Clause",
+        "https://github.com/netbirdio/netbird/tree/v$OVERLAY_NETBIRD_VERSION",
+    ),
     CarriedCore(
         "EasyTier",
         "2.6.4",
@@ -260,6 +261,9 @@ val CLIENT_HUB_CODES: List<String> = listOf(
     "verb_unknown",
 )
 
+/** NetBird's provider name in an overlay object. */
+const val OVERLAY_PROVIDER_NETBIRD = "netbird"
+
 /** EasyTier's provider name in an overlay object. */
 const val OVERLAY_PROVIDER_EASYTIER = "easytier"
 
@@ -377,6 +381,9 @@ const val CLIENT_KEY_MASK_LENGTH = 16
 /** How long a connect's `login` stage may take: the engine's start, its login and its address. */
 const val OVERLAY_LOGIN_TIMEOUT_S = 90L
 
+/** The addresses a NetBird network gives its members, where the hub's own is looked for in its list. */
+const val OVERLAY_NETBIRD_NETWORK = "100.64.0.0/10"
+
 /** How long a disconnect waits for the engine to say it stopped. */
 const val OVERLAY_STOP_TIMEOUT_S = 10L
 
@@ -388,6 +395,9 @@ const val OVERLAY_POLL_MILLIS = 1000L
 
 /** The MTU of an EasyTier TUN device. */
 const val OVERLAY_TUN_MTU = 1380
+
+/** NetBird's own management plane, for a hub that names none. */
+const val OVERLAY_NETBIRD_DEFAULT_MANAGEMENT_URL = "https://api.netbird.io:443"
 
 /** The VPN service's action that runs one hub's network. */
 const val OVERLAY_SERVICE_ACTION_START = "io.github.iffix.neutrino.overlay.START"

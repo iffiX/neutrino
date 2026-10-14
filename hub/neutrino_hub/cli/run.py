@@ -56,6 +56,10 @@ from neutrino_hub.modules.cliproxyapi.constants import (
     CLIPROXYAPI_DIR,
     CLIPROXYAPI_GENERATED_NAME,
 )
+from neutrino_hub.modules.netbird.constants import NETBIRD_HUB_STATE_DIR
+from neutrino_hub.modules.netbird.run_part import (
+    child_start_lines as netbird_start_lines,
+)
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_MESSAGE_BYTES_MAX,
     CHANNEL_PING_INTERVAL_S,
@@ -262,8 +266,7 @@ def child_start_lines() -> dict:
     """How the service starts each daemon whose start line it knows itself.
 
     EasyTier's is not among them: its module hands it over through the
-    process controller. The proxy core's and NetBird's come from the
-    edition table.
+    process controller. The proxy core's comes from the edition table.
 
     Returns:
         Name to :class:`ChildStartLine`.
@@ -277,6 +280,7 @@ def child_start_lines() -> dict:
             ],
             cwd=str(CLIPROXYAPI_DIR),
         ),
+        **netbird_start_lines(),
     }
     for start_lines in edition.hooks("child_start_lines"):
         lines.update(start_lines())
@@ -740,7 +744,12 @@ def _supervise_service(arguments) -> int:
         Process exit status.
     """
     _log_to_service_file()
-    for directory in (UTILS_LOG_ROOT, UTILS_RUNTIME_ROOT, CLIPROXYAPI_DIR):
+    for directory in (
+        UTILS_LOG_ROOT,
+        UTILS_RUNTIME_ROOT,
+        NETBIRD_HUB_STATE_DIR,
+        CLIPROXYAPI_DIR,
+    ):
         directory.mkdir(parents=True, exist_ok=True)
     try:
         reload_firewall()

@@ -249,8 +249,8 @@ CLIENT_LOG_KEEP_BYTES = 1024 * 1024
 
 # The overlay daemons the packages carry and register as system services:
 # the client's EasyTier daemon, which runs EasyTier's core and which the
-# person asks over its socket, and those of the engines the edition table
-# adds. None asks the person for an administrator. What the machine
+# person asks over its socket, and NetBird's. None asks the person for an
+# administrator. What the machine
 # accumulated for them: under /var/lib on Linux, and the client's state
 # directory of the one Neutrino tree elsewhere, under /Library/Application
 # Support on macOS and %PROGRAMDATA% on Windows.

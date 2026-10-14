@@ -37,7 +37,7 @@ from shared.edition_tree import make_cn_tree  # noqa: E402
 
 # The upstream source the mainland packages do not carry, left out of its
 # archive's third_party/.
-CN_LEFT_OUT_SOURCES = ("netbird-", "xray-core-")
+CN_LEFT_OUT_SOURCES = ("xray-core-",)
 
 # The source of everything the packages carry, pinned to the archive at the
 # tag the binaries were built from: RustDesk (AGPL-3.0) in the agent and the

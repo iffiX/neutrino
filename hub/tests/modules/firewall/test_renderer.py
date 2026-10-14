@@ -32,7 +32,6 @@ def rules_on(exposed: list, *, exposed_overlays=("netbird",)) -> list:
 
 
 @pytest.mark.feature("proxy")
-@pytest.mark.feature("netbird")
 def test_every_port_the_hub_serves_has_one_rule_per_purpose():
     rules = render_port_rules(
         panel_http_port=8080,
@@ -84,7 +83,6 @@ def test_an_overlay_turned_off_opens_nothing():
 
 
 @pytest.mark.feature("proxy")
-@pytest.mark.feature("netbird")
 def test_one_of_two_interfaces_exposed_scopes_every_rule_to_it():
     rules = rules_on(["Ethernet Instance 0 2", "wt0"])
 
@@ -100,7 +98,6 @@ def test_one_of_two_interfaces_exposed_scopes_every_rule_to_it():
     ]
 
 
-@pytest.mark.feature("netbird")
 def test_a_closed_overlay_s_peer_port_answers_nowhere():
     rules = rules_on(["Wi-Fi"], exposed_overlays=())
 
@@ -114,7 +111,6 @@ def test_none_exposed_leaves_every_rule_on_no_interface():
 
 
 @pytest.mark.feature("proxy")
-@pytest.mark.feature("netbird")
 def test_the_pf_anchor_blocks_each_port_on_the_interface_not_exposed():
     anchor = render_pf_anchor(
         rules_on(["en1", "utun4"]), interfaces=["en0", "en1", "utun4"]
@@ -131,7 +127,6 @@ def test_the_pf_anchor_blocks_each_port_on_the_interface_not_exposed():
     )
 
 
-@pytest.mark.feature("netbird")
 def test_the_pf_anchor_with_none_exposed_blocks_everywhere_but_loopback():
     anchor = render_pf_anchor(
         rules_on([], exposed_overlays=()), interfaces=["en0", "en1"]

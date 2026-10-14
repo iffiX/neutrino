@@ -18,11 +18,9 @@ import pytest
 import build_client_macos
 import bundled
 from shared import nuitka_build
+import netbird_payload
 import payload
 from shared import pkg_build
-
-# The licences the parts the tree holds add.
-PARTS_LICENSES = [name for part in payload.parts() for name in part.CARRIED_LICENSES]
 
 
 def darwin_build_machine(monkeypatch, *, machine="arm64", version=(3, 13, 7)):
@@ -259,7 +257,7 @@ def test_the_package_root_carries_the_signed_bundle_and_the_link(monkeypatch, tm
     assert sorted(
         path.name for path in (contents / "Resources" / "licenses").iterdir()
     ) == sorted(
-        PARTS_LICENSES
+        list(netbird_payload.CARRIED_LICENSES)
         + [
             "cc_switch.txt",
             "easytier.txt",
@@ -285,7 +283,7 @@ def test_the_package_root_carries_the_signed_bundle_and_the_link(monkeypatch, tm
         path.name for path in (tmp_path / "root/Library/LaunchDaemons").iterdir()
     )
     assert daemons == sorted(
-        [f"{daemon['label']}.plist" for daemon in build_client_macos.PART_DAEMONS]
+        [f"{daemon['label']}.plist" for daemon in build_client_macos.NETBIRD_DAEMONS]
         + ["com.neutrino.client.easytier.plist"]
     )
 
@@ -420,7 +418,7 @@ def test_the_install_scripts_unload_then_make_the_directories_and_load(tmp_path)
 def test_each_daemon_writes_into_the_clients_log_directory(tmp_path):
     easytier = daemon(tmp_path, "com.neutrino.client.easytier")
 
-    for added in build_client_macos.PART_DAEMONS:
+    for added in build_client_macos.NETBIRD_DAEMONS:
         job = daemon(tmp_path, added["label"])
         assert job["StandardOutPath"].startswith("/Library/Logs/Neutrino/client/")
     assert easytier["StandardOutPath"] == "/Library/Logs/Neutrino/client/easytier.log"
@@ -459,7 +457,7 @@ def test_the_licences_travel_inside_the_bundle(tmp_path):
     build_client_macos._stage_licenses(tmp_path / "licenses")
 
     assert sorted(path.name for path in (tmp_path / "licenses").iterdir()) == sorted(
-        PARTS_LICENSES
+        list(netbird_payload.CARRIED_LICENSES)
         + [
             "cc_switch.txt",
             "easytier.txt",

@@ -1,16 +1,16 @@
 package io.github.iffix.neutrino.channel
 
-import io.github.iffix.neutrino.Edition
 import io.github.iffix.neutrino.OVERLAY_EASYTIER_MODE_CONSOLE
 import io.github.iffix.neutrino.OVERLAY_EASYTIER_MODE_MANUAL
 import io.github.iffix.neutrino.OVERLAY_PROVIDER_EASYTIER
+import io.github.iffix.neutrino.OVERLAY_PROVIDER_NETBIRD
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
  * What this phone joins one of a hub's virtual networks with, from the link and each `state`.
  *
- * @property provider The network's provider, such as `easytier`.
+ * @property provider `netbird` or `easytier`.
  * @property mode EasyTier's mode, `manual` or `console`; empty for NetBird.
  * @property setupKey NetBird's reusable setup key.
  * @property managementUrl NetBird's management plane; empty for NetBird's own.
@@ -43,6 +43,8 @@ data class ChannelOverlay(
     /** Whether this object carries everything its provider and mode need. */
     val isUsable: Boolean
         get() = when (provider) {
+            OVERLAY_PROVIDER_NETBIRD -> setupKey.isNotBlank()
+
             OVERLAY_PROVIDER_EASYTIER -> when (easyTierMode) {
                 OVERLAY_EASYTIER_MODE_MANUAL -> networkName.isNotBlank() && networkSecret.isNotBlank() &&
                     peer.isNotBlank()
@@ -52,16 +54,14 @@ data class ChannelOverlay(
                 else -> false
             }
 
-            else -> Edition.overlayPart(provider)?.isUsable(this) == true
+            else -> false
         }
 
     /** The name the picker shows it by. */
     val title: String
-        get() = if (provider ==
-            OVERLAY_PROVIDER_EASYTIER
-        ) {
-            "EasyTier"
-        } else {
-            Edition.overlayPart(provider)?.title ?: provider
+        get() = when (provider) {
+            OVERLAY_PROVIDER_NETBIRD -> "NetBird"
+            OVERLAY_PROVIDER_EASYTIER -> "EasyTier"
+            else -> provider
         }
 }

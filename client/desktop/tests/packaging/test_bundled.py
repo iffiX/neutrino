@@ -320,7 +320,7 @@ def test_the_macos_staging_puts_both_under_the_bundles_resources(
         "rustdesk-1.4.9-aarch64.dmg",
     ]
     assert names[-1] == "easytier-macos-aarch64-v2.6.4.zip"
-    assert len(names) == 3 + len(payload.parts())
+    assert len(names) == 4
 
 
 def test_an_intel_mac_takes_the_x86_64_builds(tmp_path, downloads, attached_image):

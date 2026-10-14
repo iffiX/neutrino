@@ -1,8 +1,7 @@
-"""NetBird's part of the overlay machinery, given through the edition table.
+"""NetBird's part of the overlay machinery.
 
 The overlay module, the router's pass, the proxy's TUN and the channel reach
-NetBird's daemon and its stored settings through this one class, so a tree
-without NetBird runs the same code with EasyTier alone.
+NetBird's daemon and its stored settings through this one class.
 """
 
 from neutrino_hub.modules.netbird.config import read_stored
@@ -120,7 +119,3 @@ class NetbirdOverlayPart:
             subprocess.CalledProcessError: When the daemon refuses.
         """
         return NetbirdInboundGate().converge(is_blocked=is_blocked)
-
-
-# The part, by the overlay's key.
-NETBIRD_OVERLAY_PART = (OVERLAY_NETBIRD, NetbirdOverlayPart)

@@ -15,7 +15,6 @@ import socket
 import time
 from typing import Callable
 
-from neutrino_hub import edition
 from neutrino_hub.modules.easytier.ops import (
     EasyTierStatusReader,
     apply_stored_if_changed,
@@ -23,12 +22,14 @@ from neutrino_hub.modules.easytier.ops import (
 from neutrino_hub.modules.easytier.ops import console_device_names, devices_holding
 from neutrino_hub.modules.easytier.ops import read_stored as read_easytier
 from neutrino_hub.modules.easytier.provisioner import EasyTierProvisioner
+from neutrino_hub.modules.netbird.overlay_part import NetbirdOverlayPart
 from neutrino_hub.modules.overlay.config import enabled_providers
 from neutrino_hub.modules.overlay.constants import (
     OVERLAY_ADDRESS_POLL_S,
     OVERLAY_ADDRESS_WAIT_S,
     OVERLAY_EASYTIER,
     OVERLAY_ENGINES,
+    OVERLAY_NETBIRD,
 )
 from neutrino_hub.modules.overlay.route_check import (
     OverlayRouteConflict,
@@ -43,9 +44,9 @@ from neutrino_hub.utils.subprocess_run import run
 
 # What installs each engine. An engine the table names but nothing here
 # provisions is one this hub cannot run yet, and asking for it is refused
-# rather than half-done. NetBird's is NetBird's own, from the edition table.
+# rather than half-done.
 OVERLAY_PROVISIONERS = {
-    **{key: part.provisioner for key, part in edition.hooks("overlay_parts")},
+    OVERLAY_NETBIRD: NetbirdOverlayPart.provisioner,
     OVERLAY_EASYTIER: EasyTierProvisioner,
 }
 
@@ -54,10 +55,10 @@ def overlay_parts() -> dict:
     """The engines that keep a part of their own beside the overlay module.
 
     Returns:
-        Provider to its part's class, for each engine the tree carries:
-        NetBird's, which reads its daemon and drives its own settings.
+        Provider to its part's class: NetBird's, which reads its daemon and
+        drives its own settings.
     """
-    return dict(edition.hooks("overlay_parts"))
+    return {OVERLAY_NETBIRD: NetbirdOverlayPart}
 
 
 def overlay_devices(network: RouterNetworkConfig) -> dict:

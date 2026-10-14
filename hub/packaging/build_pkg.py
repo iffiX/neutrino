@@ -34,6 +34,7 @@ from venv_tree import (
     write,
     WRAPPER,
     FIRST_INSTALL,
+    HUB_IS_SET_UP,
     stage_desktop_entry,
 )
 
@@ -61,7 +62,8 @@ package() {{
 }}
 """
 
-INSTALL_SCRIPT = """pre_upgrade() {
+INSTALL_SCRIPT = """@IS_SET_UP@
+pre_upgrade() {
     # Python writes __pycache__ into the carried tree while the hub runs;
     # pacman does not own those files, and a directory the new version no
     # longer ships would stay behind over them. Cleared before the new
@@ -82,12 +84,16 @@ post_install() {
 
 post_upgrade() {
     # An upgrade can change the unit files and the software they start, and
-    # `nhub apply` is what writes them onto a box somebody already set up.
+    # `nhub apply` is what writes them onto a box somebody already set up. An
+    # upgrade over a box nobody set up goes on as a first install does.
     install -d -m 755 /etc/neutrino
     install -d -m 700 /etc/neutrino/hub
     install -d -m 755 /var/lib/neutrino/hub
     install -d -m 755 /var/lib/neutrino/hub/generated
     install -d -m 755 /var/log/neutrino/hub
+    if ! hub_is_set_up; then
+@FIRST_INSTALL@        return 0
+    fi
     nhub apply >/dev/null 2>&1 ||
         echo "  Run 'sudo nhub apply' to pick up this version."
     # The router unit is resident, so restarting it is what moves the box
@@ -99,8 +105,7 @@ post_upgrade() {
     # just replaced. `nhub apply` re-renders what the modules produce and
     # restarts what consumes it, but the panel serves itself: without this it
     # goes on running the old Python behind the new frontend, which is a strip
-    # asking for fields the old API does not send. Only when it is already up
-    # — a box nobody has set up has no panel to restart.
+    # asking for fields the old API does not send. Only when it is already up.
     systemctl try-restart neutrino_hub_web.service >/dev/null 2>&1 || true
 }
 
@@ -130,8 +135,10 @@ def install_script() -> str:
     Returns:
         The script's text.
     """
-    return INSTALL_SCRIPT.replace("@FIRST_INSTALL@", FIRST_INSTALL).replace(
-        "@STOP_HUB@", stop_hub_lines()
+    return (
+        INSTALL_SCRIPT.replace("@FIRST_INSTALL@", FIRST_INSTALL)
+        .replace("@STOP_HUB@", stop_hub_lines())
+        .replace("@IS_SET_UP@", HUB_IS_SET_UP)
     )
 
 

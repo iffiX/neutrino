@@ -12,9 +12,6 @@ let theme = DEFAULT_THEME;
 // The desktop's own scheme, which 'system' resolves through.
 const DARK_SCHEME = window.matchMedia('(prefers-color-scheme: dark)');
 DARK_SCHEME.addEventListener('change', () => setTheme(theme));
-// What each left-out feature the tree holds adds to the page, from its own
-// file inlined before this one; none in a tree without them.
-const PARTS = window.NEUTRINO_PARTS || [];
 
 // Codes worded through their params' own detail text when they carry one.
 const DETAIL_CODES = [
@@ -40,7 +37,9 @@ const CLIENT_SOURCES = {
   intl: 'https://github.com/iffiX/neutrino',
   cn: 'https://gitee.com/iffiX/neutrino',
 };
-const CARRIED = PARTS.flatMap((part) => part.carried || []).concat([
+const CARRIED = [
+  { name: 'NetBird', key: 'netbird', licence: 'BSD-3-Clause',
+    repository: 'https://github.com/netbirdio/netbird', tag: 'v{version}' },
   { name: 'EasyTier', key: 'easytier', licence: 'LGPL-3.0',
     repository: 'https://github.com/EasyTier/EasyTier',
     mainland: 'https://gitee.com/easytier/EasyTier', tag: 'v{version}' },
@@ -52,7 +51,7 @@ const CARRIED = PARTS.flatMap((part) => part.carried || []).concat([
   { name: 'tun2socks', key: 'tun2socks', licence: 'MIT',
     repository: 'https://github.com/xjasonlyu/tun2socks', tag: 'v{version}',
     os: 'windows' },
-]);
+];
 
 function fill(template, params) {
   return template.replace(/\{(\w+)\}/g, (whole, key) =>
@@ -326,8 +325,7 @@ const LEAVE_ONLY_REASONS = ['unknown_device', 'join_refused'];
 // The three states of a hub's virtual network.
 const OVERLAY_STATES = ['off', 'on'];
 // The name each virtual network's engine goes by.
-const OVERLAY_TITLES = Object.assign(
-  {}, ...PARTS.map((part) => part.overlayTitles || {}), { easytier: 'EasyTier' });
+const OVERLAY_TITLES = { netbird: 'NetBird', easytier: 'EasyTier' };
 
 // A status mark: a dot in its tone; 'pulse' is the amber dot of work running.
 function marker(tone) {
@@ -646,8 +644,7 @@ function hubTone(hub) {
 
 // The ways the channel reaches a hub, as the hub's state names them. A
 // way not in the list reads as the plain connected word.
-const THROUGH_WAYS = ['lan', 'direct'].concat(
-  ...PARTS.map((part) => part.throughWays || []), ['easytier', 'relay']);
+const THROUGH_WAYS = ['lan', 'direct', 'netbird', 'easytier', 'relay'];
 
 // The hub's state line: the job running on it, else its connection's word
 // with the way in once the hub has named it, a waiting hub's reason with

@@ -44,6 +44,7 @@ from venv_tree import (
     write,
     WRAPPER,
     FIRST_INSTALL,
+    HUB_IS_SET_UP,
     stage_desktop_entry,
 )
 from constants import HUB_DEB_CN_COMPRESSION  # noqa: E402
@@ -68,6 +69,7 @@ POSTINST = """#!/bin/sh
 set -e
 
 {prune}
+{is_set_up}
 if [ "$1" = configure ]; then
     listing=/var/lib/dpkg/info/{package}.list
     if [ -r "$listing" ]; then
@@ -84,8 +86,9 @@ install -d -m 755 /var/log/neutrino/hub
 systemctl daemon-reload || true
 
 # An upgrade can change the unit files and the software they start, and
-# `nhub apply` is what writes them onto a box somebody already set up.
-if [ "$1" = configure ] && [ -n "$2" ]; then
+# `nhub apply` is what writes them onto a box somebody already set up. An
+# upgrade over a box nobody set up goes on as a first install does.
+if [ "$1" = configure ] && [ -n "$2" ] && hub_is_set_up; then
     nhub apply >/dev/null 2>&1 ||
         echo "  Run 'sudo nhub apply' to pick up this version."
     # The router unit is resident, so restarting it is what moves the box
@@ -97,8 +100,7 @@ if [ "$1" = configure ] && [ -n "$2" ]; then
     # just replaced. `nhub apply` re-renders what the modules produce and
     # restarts what consumes it, but the panel serves itself: without this it
     # goes on running the old Python behind the new frontend, which is a strip
-    # asking for fields the old API does not send. Only when it is already up
-    # — a box nobody has set up has no panel to restart.
+    # asking for fields the old API does not send. Only when it is already up.
     systemctl try-restart neutrino_hub_web.service >/dev/null 2>&1 || true
     exit 0
 fi
@@ -237,6 +239,7 @@ def _lay_out(
             package=PACKAGE_NAME,
             prefix=INSTALL_PREFIX,
             first_install=FIRST_INSTALL,
+            is_set_up=HUB_IS_SET_UP,
         ),
         is_executable=True,
     )

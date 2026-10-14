@@ -1,8 +1,7 @@
 """How the hub's one service runs its own NetBird daemon outside Linux.
 
-Given through the edition table: the daemon's start line, with its profile
-under the state root, its log file, and where its own output goes, which is
-not that file.
+The daemon's start line, with its profile under the state root, its log
+file, and where its own output goes, which is not that file.
 """
 
 from neutrino_hub.modules.netbird.constants import (
@@ -41,12 +40,3 @@ def child_start_lines() -> dict:
             log_name=NETBIRD_CONSOLE_LOG_NAME,
         )
     }
-
-
-def make_directories() -> None:
-    """Make the directory the daemon keeps its profile in, as the service starts.
-
-    Raises:
-        OSError: When it cannot be made.
-    """
-    NETBIRD_HUB_STATE_DIR.mkdir(parents=True, exist_ok=True)

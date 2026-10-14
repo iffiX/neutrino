@@ -48,7 +48,6 @@ def store(monkeypatch, overlays) -> None:
     )
 
 
-@pytest.mark.feature("netbird")
 def test_the_stored_engines_are_started_and_the_others_stood_down(box, monkeypatch):
     store(monkeypatch, [{"provider": "netbird"}])
 

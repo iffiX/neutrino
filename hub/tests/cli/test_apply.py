@@ -105,14 +105,12 @@ def _stored_easytier(tmp_path, monkeypatch, providers: list) -> None:
     write_config(EASYTIER_CONFIG_NAME, stored.to_dict())
 
 
-@pytest.mark.feature("netbird")
 def test_an_apply_renders_easytier_when_it_is_enabled(tmp_path, monkeypatch):
     _stored_easytier(tmp_path, monkeypatch, ["netbird", "easytier"])
 
     assert apply._render(("overlay",))["easytier"].is_console_mode
 
 
-@pytest.mark.feature("netbird")
 def test_an_apply_leaves_easytier_down_when_it_is_off(tmp_path, monkeypatch):
     """A package upgrade runs this; a stored network must not start an
     overlay nobody turned on."""

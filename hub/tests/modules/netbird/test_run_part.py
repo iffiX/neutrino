@@ -35,11 +35,3 @@ def test_netbird_runs_on_the_hubs_own_address_and_log(monkeypatch, system, addre
         address,
     ]
     assert line.log_name == "netbird_console"
-
-
-def test_the_service_makes_the_daemons_profile_directory(monkeypatch, tmp_path):
-    monkeypatch.setattr(run_part, "NETBIRD_HUB_STATE_DIR", tmp_path / "netbird")
-
-    run_part.make_directories()
-
-    assert (tmp_path / "netbird").is_dir()

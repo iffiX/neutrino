@@ -139,7 +139,6 @@ def test_disabling_takes_it_out_and_stops_the_child(controller, popen, tmp_path)
     assert not controller.is_active("xray")
 
 
-@pytest.mark.feature("netbird")
 @pytest.mark.feature("proxy")
 def test_the_service_starts_every_enabled_child(tmp_path, controller, popen):
     (tmp_path / "state").mkdir()
@@ -209,7 +208,6 @@ def test_restarting_the_panel_inside_the_service_exits_it(controller, popen, exi
     assert popen.started[0].is_terminated
 
 
-@pytest.mark.feature("netbird")
 @pytest.mark.feature("proxy")
 def test_the_journal_is_the_tail_of_the_log_file(tmp_path, controller):
     (tmp_path / "log").mkdir()
@@ -245,7 +243,7 @@ def test_every_name_the_service_runs_has_a_status(controller):
     assert names == [
         "web",
         *(["xray", "tun2socks"] if edition.has_feature("proxy") else []),
-        *(["netbird"] if edition.has_feature("netbird") else []),
+        "netbird",
         "cliproxyapi",
         "easytier",
         "relay",
@@ -390,7 +388,6 @@ def test_a_command_reads_the_panel_from_the_service(controller, service):
     assert controller.status("web").is_active
 
 
-@pytest.mark.feature("netbird")
 def test_a_command_reads_an_enabled_child_as_running_with_the_service(
     controller, service
 ):

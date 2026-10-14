@@ -5,6 +5,7 @@ import subprocess
 
 import pytest
 
+from neutrino_hub import edition
 from neutrino_hub.modules.netbird import ops
 from neutrino_hub.modules.netbird.constants import NETBIRD_BINARY_PATH
 from neutrino_hub.modules.netbird.ops import NetbirdStatusReader
@@ -675,11 +676,20 @@ def test_elsewhere_the_inbound_gate_names_the_daemon_and_reads_beside_the_hub(
     ]
 
 
+@pytest.mark.feature("proxy")
 def test_elsewhere_the_proxy_s_tun_is_named_too(elsewhere):
     tun = {"darwin": "utun225", "win32": "neutrino_tun"}[elsewhere]
 
     assert ops.iface_blacklist_flag() == (
         "--extra-iface-blacklist=podman,veth,docker,br-,virbr,cni,lxc,easytier," + tun
+    )
+
+
+def test_a_tree_without_the_proxy_names_no_tun(elsewhere, monkeypatch):
+    monkeypatch.setattr(edition, "has_feature", lambda name: False)
+
+    assert ops.iface_blacklist_flag() == (
+        "--extra-iface-blacklist=podman,veth,docker,br-,virbr,cni,lxc,easytier"
     )
 
 

@@ -158,6 +158,28 @@ def test_local_files_install_with_nothing_downloaded(run):
     assert str(run.served / "neutrino-hub-9.9.9-windows-amd64.msi") in asked[0]
 
 
+def test_a_download_names_its_source_its_checksum_and_the_install(run):
+    outcome, _asked = run()
+
+    name = "neutrino-hub-9.9.9-windows-amd64.msi"
+    assert outcome == "ok"
+    assert run.said[:4] == [
+        f"Downloaded {name} from {RELEASE}/latest/download",
+        f"{name} matches its SHA256SUMS line",
+        f"Installing {name}",
+        f"Installed {name}",
+    ]
+
+
+def test_local_files_name_the_directory_they_came_from(run):
+    outcome, _asked = run(env={"NEUTRINO_ASSET_DIR": str(run.served)})
+
+    name = "neutrino-hub-9.9.9-windows-amd64.msi"
+    assert outcome == "ok"
+    assert run.said[0] == f"Found {name} in {run.served}"
+    assert run.said[1] == f"{name} matches its SHA256SUMS line"
+
+
 def test_a_package_that_does_not_match_its_checksum_is_never_installed(run):
     (run.served / "neutrino-hub-9.9.9-windows-amd64.msi").write_bytes(b"tampered")
 
@@ -385,6 +407,7 @@ def test_a_joined_machine_is_given_no_join_line(run, tmp_path):
 
     assert outcome == "ok"
     assert not any("nagent join" in line for line in run.said)
+    assert run.said[-1] == "Installed neutrino-agent-9.9.9-windows-amd64.msi"
 
 
 # What a set-up hub's panel settings hold, and what a fresh one's do.

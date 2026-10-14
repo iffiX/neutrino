@@ -34,6 +34,7 @@ def _spec():
         prune=venv_tree.PRUNE_UNTRACKED,
         desktop=venv_tree.DESKTOP_ENTRY_NAME,
         first_install=venv_tree.FIRST_INSTALL,
+        is_set_up=venv_tree.HUB_IS_SET_UP,
     )
 
 
@@ -126,7 +127,7 @@ def test_a_first_install_starts_the_panel_unit_and_prints_the_wizard_address():
     assert "sudo nhub setup" in first
 
 
-def test_the_deb_starts_the_panel_on_a_first_install_and_not_on_an_upgrade(tmp_path):
+def test_the_deb_starts_the_panel_after_the_upgrade_of_a_set_up_hub_left(tmp_path):
     build_deb._lay_out(tmp_path, "9.9.9", "amd64", "somebody")
 
     postinst = (tmp_path / "DEBIAN/postinst").read_text()
@@ -152,22 +153,145 @@ def test_every_linux_package_carries_the_neutrino_hub_entry(tmp_path):
     assert "/usr/share/icons/hicolor/*/apps/neutrino-hub.png\n" in spec
 
 
-def test_the_rpm_starts_the_panel_on_a_first_install_alone():
+def test_the_rpm_starts_the_panel_where_the_upgrade_of_a_set_up_hub_does_not():
     spec = _spec()
     post = spec[spec.index("%post\n") : spec.index("%preun")]
 
     assert post.index("else\n") < post.index(venv_tree.FIRST_INSTALL)
 
 
-def test_the_arch_package_starts_the_panel_on_a_first_install_alone():
-    script = build_pkg.INSTALL_SCRIPT.replace(
-        "@FIRST_INSTALL@", venv_tree.FIRST_INSTALL
-    )
+def test_the_arch_package_starts_the_panel_before_the_upgrade_of_a_set_up_hub():
+    script = build_pkg.install_script()
     install = script[script.index("post_install()") : script.index("post_upgrade()")]
     upgrade = script[script.index("post_upgrade()") : script.index("pre_remove()")]
 
     assert venv_tree.FIRST_INSTALL in install
-    assert "nhub open" not in upgrade
+    assert upgrade.index("if ! hub_is_set_up; then") < upgrade.index(
+        venv_tree.FIRST_INSTALL
+    )
+    assert upgrade.index(venv_tree.FIRST_INSTALL) < upgrade.index(
+        "    nhub apply >/dev/null"
+    )
+
+
+def test_a_first_install_restarts_a_wizard_already_running_onto_this_version():
+    first = venv_tree.FIRST_INSTALL
+
+    assert first.startswith(
+        "systemctl try-restart neutrino_hub_web.service >/dev/null 2>&1 || true\n"
+        "systemctl enable --now neutrino_hub_web.service"
+    )
+
+
+def test_the_set_up_check_reads_the_settings_where_the_hub_keeps_them():
+    from neutrino_hub.cli.password import PASSWORD_SETTINGS_FILE
+    from neutrino_hub.platforms.constants import (
+        PLATFORM_OS_LINUX,
+        PLATFORM_ROOT_CONFIG,
+        PLATFORM_ROOTS,
+    )
+
+    config = PLATFORM_ROOTS[PLATFORM_OS_LINUX][PLATFORM_ROOT_CONFIG]
+    assert venv_tree.HUB_SETTINGS_LINUX == f"{config}/{PASSWORD_SETTINGS_FILE}"
+    assert venv_tree.HUB_SETTINGS_LINUX in venv_tree.HUB_IS_SET_UP
+
+
+# What a set-up hub's panel settings hold, and what a fresh one's do.
+SET_UP_SETTINGS = (
+    '{\n  "admin_password_hash": "scrypt$73616c74$6b6579"\n}\n'  # scan: allow
+)
+FRESH_SETTINGS = (
+    '{\n  "admin_password_hash": "PLACEHOLDER_ARGON2ID_HASH"\n}\n'  # scan: allow
+)
+
+
+def _upgrade_calls(tmp_path, upgrade: str, command: list, settings) -> list:
+    """Run the upgrade part of a maintainer script against this test's settings.
+
+    Args:
+        tmp_path: Where the script, the settings and the fakes go.
+        upgrade: The script's text from its upgrade on, the set-up check
+            first.
+        command: How the script is run.
+        settings: The panel settings' text, or None for no settings.
+
+    Returns:
+        The commands it ran.
+    """
+    path = tmp_path / "settings.json"
+    if settings is not None:
+        path.write_text(settings)
+    script = tmp_path / "upgrade.sh"
+    script.write_text(upgrade.replace(venv_tree.HUB_SETTINGS_LINUX, str(path)))
+    return _run_with_fakes(tmp_path, [*command[:1], str(script), *command[1:]])
+
+
+def _deb_upgrade(tmp_path) -> str:
+    build_deb._lay_out(tmp_path / "tree", "9.9.9", "amd64", "somebody")
+    postinst = (tmp_path / "tree/DEBIAN/postinst").read_text()
+    return venv_tree.HUB_IS_SET_UP + postinst[postinst.index("# An upgrade can") :]
+
+
+def _rpm_upgrade() -> str:
+    spec = _spec()
+    post = spec[spec.index("# An upgrade can") : spec.index("\n%preun")]
+    return venv_tree.HUB_IS_SET_UP + post
+
+
+def _arch_upgrade() -> str:
+    return build_pkg.install_script() + "\npost_upgrade\n"
+
+
+@pytest.mark.parametrize(
+    "package, command",
+    [
+        ("deb", ["sh", "configure", "0.5.2"]),
+        ("rpm", ["sh", "2"]),
+        ("arch", ["sh"]),
+    ],
+)
+@pytest.mark.parametrize("settings", [None, FRESH_SETTINGS])
+def test_an_upgrade_over_a_hub_nobody_set_up_shows_the_wizard_and_applies_nothing(
+    tmp_path, package, command, settings
+):
+    upgrade = {
+        "deb": lambda: _deb_upgrade(tmp_path),
+        "rpm": _rpm_upgrade,
+        "arch": _arch_upgrade,
+    }[package]()
+
+    calls = _upgrade_calls(tmp_path, upgrade, command, settings)
+
+    assert "nhub apply" not in calls
+    assert "systemctl try-restart neutrino_hub_web.service" in calls
+    assert "systemctl enable --now neutrino_hub_web.service" in calls
+    assert "nhub open --print" in calls
+
+
+@pytest.mark.parametrize(
+    "package, command",
+    [
+        ("deb", ["sh", "configure", "0.5.2"]),
+        ("rpm", ["sh", "2"]),
+        ("arch", ["sh"]),
+    ],
+)
+def test_an_upgrade_over_a_hub_set_up_applies_and_shows_no_wizard(
+    tmp_path, package, command
+):
+    upgrade = {
+        "deb": lambda: _deb_upgrade(tmp_path),
+        "rpm": _rpm_upgrade,
+        "arch": _arch_upgrade,
+    }[package]()
+
+    calls = _upgrade_calls(tmp_path, upgrade, command, SET_UP_SETTINGS)
+
+    assert "nhub apply" in calls
+    assert "systemctl restart neutrino_hub_router.service" in calls
+    assert "systemctl try-restart neutrino_hub_web.service" in calls
+    assert "nhub open --print" not in calls
+    assert "systemctl enable --now neutrino_hub_web.service" not in calls
 
 
 def test_the_panel_unit_starts_again_when_the_wizard_exits_into_the_panel():
@@ -178,7 +302,8 @@ def test_the_panel_unit_starts_again_when_the_wizard_exits_into_the_panel():
 
 
 def _run_with_fakes(tmp_path, command: list) -> list:
-    """Run a maintainer script with nhub, systemctl, nft and ip recording calls.
+    """Run a maintainer script with nhub, systemctl, nft, ip and install
+    recording calls.
 
     Args:
         tmp_path: Where the fakes and their record go.
@@ -190,7 +315,7 @@ def _run_with_fakes(tmp_path, command: list) -> list:
     fakes = tmp_path / "fakes"
     fakes.mkdir(exist_ok=True)
     record = tmp_path / "calls"
-    for name in ("nhub", "systemctl", "nft", "ip"):
+    for name in ("nhub", "systemctl", "nft", "ip", "install"):
         fake = fakes / name
         fake.write_text(f'#!/bin/sh\necho "{name} $*" >>"{record}"\n')
         fake.chmod(0o755)

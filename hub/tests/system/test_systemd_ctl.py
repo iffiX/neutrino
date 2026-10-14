@@ -48,11 +48,7 @@ def test_each_verb_is_the_systemctl_call_it_always_was(systemctl, verb):
         ("router", "neutrino_hub_router.service"),
         ("dnsmasq", "neutrino_hub_dnsmasq.service"),
         ("cliproxyapi", "neutrino_hub_cliproxyapi.service"),
-        pytest.param(
-            "netbird",
-            "neutrino_hub_netbird.service",
-            marks=pytest.mark.feature("netbird"),
-        ),
+        ("netbird", "neutrino_hub_netbird.service"),
         ("easytier", "neutrino_hub_easytier.service"),
     ],
 )
@@ -76,7 +72,6 @@ def test_reload_is_daemon_reload(systemctl):
     assert systemctl == [["systemctl", "daemon-reload"]]
 
 
-@pytest.mark.feature("netbird")
 def test_the_journal_is_journalctl_on_the_unit(systemctl):
     SystemdServiceController().journal("netbird", line_count=7)
 

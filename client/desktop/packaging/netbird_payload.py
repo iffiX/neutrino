@@ -1,12 +1,11 @@
-"""NetBird's part of the client packages: its pinned binary and its daemon.
+"""NetBird in the client packages: its pinned binary and its daemon.
 
 The packages carry NetBird's own binary and register its daemon as a system
 service on every system: a systemd unit on Linux, a service on Windows, a
-LaunchDaemon on macOS. The payload takes this part when the tree holds it,
-through :func:`payload.parts`; the mainland tree does not. The part gives
-the versions and licences the package carries for it, what the Linux
-maintainer scripts run before the package goes, the package it conflicts
-with, and its staging and daemon for each system.
+LaunchDaemon on macOS. This module gives the versions and licences the
+package carries for it, what the Linux maintainer scripts run before the
+package goes, the package it conflicts with, and its staging and daemon for
+each system.
 
 Not pure: downloads, writes package trees.
 """
@@ -62,7 +61,7 @@ NETBIRD_WINDOWS_BINARY_NAME = "netbird.exe"
 # Resources, matching what the runtime resolver looks for.
 NETBIRD_INSTALL_PATH = "netbird/netbird"
 
-# What the part adds to every package: the version the About card shows, the
+# What NetBird adds to every package: the version the About card shows, the
 # licence the package carries, and the distribution package holding the same
 # state and socket, which the Linux packages conflict with.
 CARRIED_VERSIONS = {"netbird": NETBIRD_VERSION}
@@ -146,7 +145,7 @@ def stage(target: Path, os_name: str, machine: str) -> None:
         SystemExit: When there is no pin, what arrived is not what was
             pinned, or the tarball carries no binary.
     """
-    import bundled  # bundled reaches this part through payload
+    import bundled  # bundled and payload import this module, so not at the top
     import payload
 
     asset, digest = bundled._asset(NETBIRD_ASSETS, os_name, machine, "NetBird")

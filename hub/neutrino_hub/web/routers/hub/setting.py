@@ -135,6 +135,7 @@ from neutrino_hub.modules.easytier.constants import (
     EASYTIER_SOURCE_URLS,
     EASYTIER_VERSION,
 )
+from neutrino_hub.modules.netbird.constants import NETBIRD_VERSION
 
 LOGGER = logging.getLogger(__name__)
 
@@ -1469,15 +1470,22 @@ def _unreachable(error: Exception) -> HTTPException:
 # What the hub package itself carries, credited with the exact tag each
 # binary was built from, and the systems whose package carries it: None for
 # every system. The agent and the client carry RustDesk, the client
-# cc-switch, and each credits those in its own package. What the proxy and
-# NetBird carry comes from the edition table, and EasyTier's source is read
-# where the hub's edition reads it.
+# cc-switch, and each credits those in its own package. What the proxy
+# carries comes from the edition table, and EasyTier's source is read where
+# the hub's edition reads it.
 CARRIED_COMPONENTS = (
     (
         "CLIProxyAPI",
         CLIPROXYAPI_VERSION,
         "MIT",
         "https://github.com/router-for-me/CLIProxyAPI/tree/v{}",
+        None,
+    ),
+    (
+        "NetBird",
+        NETBIRD_VERSION,
+        "BSD-3-Clause",
+        "https://github.com/netbirdio/netbird/tree/v{}",
         None,
     ),
     (

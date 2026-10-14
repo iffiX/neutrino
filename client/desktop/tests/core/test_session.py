@@ -2234,7 +2234,6 @@ TERMINALS = [
 ]
 
 
-@pytest.mark.feature("netbird")
 def test_a_states_overlays_are_kept_on_the_binding(bound, monkeypatch, config_path):
     session, _listener = bound
     made = connected(session, socket_of(monkeypatch, [WELCOME]))

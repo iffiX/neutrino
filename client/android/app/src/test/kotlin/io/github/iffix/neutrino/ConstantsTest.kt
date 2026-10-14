@@ -13,6 +13,7 @@ class ConstantsTest {
     @Test
     fun theAboutScreenNamesTheCoresTheBuildScriptsPin() {
         val versions = CLIENT_CARRIED_CORES.associate { (name, version, _) -> name to version }
+        assertEquals(pinnedTag("build/build_core_netbird.py", "NETBIRD_MOBILE_TAG"), versions["NetBird"])
         assertEquals(pinnedTag("build/build_core_easytier.py", "EASYTIER_MOBILE_TAG"), versions["EasyTier"])
         assertEquals(pinnedTag("build/build_core_rustdesk.py", "RUSTDESK_MOBILE_TAG"), versions[CLIENT_RUSTDESK_CORE])
     }
@@ -25,13 +26,15 @@ class ConstantsTest {
 
     @Test
     fun everyCoreLinksItsPinnedSourceAndPatch() {
+        val netbird = CLIENT_CARRIED_CORES.single { it.name == "NetBird" }
         val easytier = CLIENT_CARRIED_CORES.single { it.name == "EasyTier" }
         val rustdesk = CLIENT_CARRIED_CORES.single { it.name == CLIENT_RUSTDESK_CORE }
+        assertEquals("https://github.com/netbirdio/netbird/tree/v${netbird.version}", netbird.sourceUrl)
         assertEquals("https://github.com/EasyTier/EasyTier/tree/v${easytier.version}", easytier.sourceUrl)
         assertEquals(CLIENT_RUSTDESK_SOURCE_URL, rustdesk.sourceUrl)
         assertEquals("https://gitee.com/easytier/EasyTier/tree/v${easytier.version}", easytier.mainlandSourceUrl)
         assertEquals("https://gitee.com/mirrors/rustdesk/tree/${rustdesk.version}", rustdesk.mainlandSourceUrl)
-        for (core in Edition.carriedCores) {
+        for (core in CLIENT_CARRIED_CORES) {
             val expected = if (Edition.current == EDITION_CN && core.mainlandSourceUrl.isNotEmpty()) {
                 core.mainlandSourceUrl
             } else {

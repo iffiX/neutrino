@@ -11,6 +11,7 @@ import re
 
 import pytest
 
+from neutrino_hub import edition
 from neutrino_hub.system import units
 from neutrino_hub.system.units import SystemdUnitInstaller
 
@@ -61,6 +62,43 @@ def test_the_proxy_core_has_a_unit_of_its_own(installer):
         units.SYSTEM_UNIT_TEMPLATES["neutrino_hub_xray.service"]
         == "neutrino_hub_xray.service"
     )
+
+
+ROUTER_ORDER = "[Unit]\nBefore=@PROXY_UNITS@ neutrino_hub_dnsmasq.service\n"
+
+
+@pytest.mark.feature("proxy")
+def test_the_router_starts_before_the_proxy_core_where_the_tree_carries_it(
+    installer, monkeypatch
+):
+    monkeypatch.setattr(units, "is_packaged", _true)
+
+    rendered = installer.render(ROUTER_ORDER, "/opt/neutrino/hub/python/bin/python3")
+
+    assert "Before=neutrino_hub_xray.service neutrino_hub_dnsmasq.service\n" in rendered
+
+
+def test_a_tree_without_the_proxy_orders_the_router_before_no_proxy_unit(
+    installer, monkeypatch
+):
+    """The mainland router unit names no unit it does not carry, so systemd
+    lists no unit that is not found."""
+    monkeypatch.setattr(units, "is_packaged", _true)
+    monkeypatch.setattr(edition, "has_feature", lambda name: False)
+
+    rendered = installer.render(ROUTER_ORDER, "/opt/neutrino/hub/python/bin/python3")
+
+    assert "Before=neutrino_hub_dnsmasq.service\n" in rendered
+    assert "xray" not in rendered
+
+
+def test_the_router_template_names_the_proxy_units_by_the_placeholder():
+    from neutrino_hub.utils.constants import UTILS_DATA_DIR
+
+    text = (UTILS_DATA_DIR / "services" / "neutrino_hub_router.service").read_text()
+
+    assert "Before=@PROXY_UNITS@ neutrino_hub_dnsmasq.service\n" in text
+    assert "xray" not in text
 
 
 def test_the_lan_name_service_is_the_hubs_own_unit():

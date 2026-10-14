@@ -72,6 +72,7 @@ from neutrino_hub.modules.easytier.constants import (
     EASYTIER_CLI_PATH,
     EASYTIER_CORE_PATH,
 )
+from neutrino_hub.modules.netbird.constants import NETBIRD_BINARY_PATH
 from neutrino_hub.modules.overlay.config import enabled_providers
 from neutrino_hub.modules.overlay.ops import OverlaySwitcher
 from neutrino_hub.system.machine import distribution_family, machine_architecture
@@ -192,6 +193,7 @@ SETUP_SERVICES_BEFORE_PANEL = SETUP_CORE_SERVICES[:-1]
 # in place of system packages.
 SETUP_CARRIED_PROGRAMS = (
     *edition.hooks("setup_carried_programs"),
+    NETBIRD_BINARY_PATH,
     CLIPROXYAPI_BINARY_PATH,
     EASYTIER_CORE_PATH,
     EASYTIER_CLI_PATH,

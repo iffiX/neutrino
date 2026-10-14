@@ -154,7 +154,6 @@ def test_a_server_generates_from_its_exposed_ports_live_address(
     assert urls_of(runtime) == ["https://192.168.100.7:8443"]
 
 
-@pytest.mark.feature("netbird")
 def test_the_link_carries_the_overlay_a_remote_machine_is_the_only_one_on(
     fingerprinted, live_addresses
 ):
@@ -173,7 +172,6 @@ def test_the_link_carries_the_overlay_a_remote_machine_is_the_only_one_on(
     ]
 
 
-@pytest.mark.feature("netbird")
 def test_the_links_address_set_is_the_firewalls_open_set(fingerprinted, live_addresses):
     """One test asserts the two are one set: what the ruleset accepts on
     is what the link names, exposed interfaces of every role and exposed
@@ -250,7 +248,6 @@ def test_a_box_with_nothing_exposed_has_no_link_to_give(fingerprinted, live_addr
     assert answer.json()["detail"]["code"] == "no_reachable_address"
 
 
-@pytest.mark.feature("netbird")
 def test_a_link_is_the_compact_json_compressed_at_level_9_in_unpadded_base64url():
     urls = ["https://192.168.8.1:9443", "https://10.0.0.1:9443"]
     overlays = [{"provider": "netbird", "setup_key": "k"}]  # scan: allow
