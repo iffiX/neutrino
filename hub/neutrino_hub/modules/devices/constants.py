@@ -12,6 +12,9 @@ DEVICE_SCAN_ID_PREFIX = "scan:"
 DEVICE_PACKAGES_DIR_NAME = "packages"
 
 DEVICE_LAN_SCAN_TIMEOUT_S = 30
+# The widest network a LAN scan covers whole, 256 addresses; of a wider one
+# it covers the network of this prefix that holds the hub's own address.
+DEVICE_LAN_SCAN_PREFIX_MIN = 24
 # How long a machine's last report still stands for what it declared: a
 # desktop share outlives the report that made it by this much.
 DEVICE_AGENT_ONLINE_WINDOW_S = 30

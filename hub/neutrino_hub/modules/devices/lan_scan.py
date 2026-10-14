@@ -1,12 +1,12 @@
-"""Discovering devices on the LAN.
+"""Discovering devices on the hub's exposed IPv4 segments, in every mode.
 
 Two sources are merged: an active ``arp-scan`` sweep finds devices that answer
-ARP right now, and the kernel neighbour table remembers ones seen recently. A
-device that has gone to sleep still shows up from the neighbour table, which is
-what makes the Wake-on-LAN button useful. Both are Linux's; on macOS and
-Windows a scan finds nothing and the panel draws an empty list.
+ARP right now, and the kernel's IPv4 neighbour table remembers ones seen
+recently, a sleeping one included, which the Wake-on-LAN button needs. Both
+are Linux's; on macOS and Windows a scan finds nothing.
 """
 
+import ipaddress
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,7 +14,10 @@ from pathlib import Path
 from neutrino_hub.platforms.detect import is_linux
 from neutrino_hub.utils.subprocess_run import run
 
-from neutrino_hub.modules.devices.constants import DEVICE_LAN_SCAN_TIMEOUT_S
+from neutrino_hub.modules.devices.constants import (
+    DEVICE_LAN_SCAN_PREFIX_MIN,
+    DEVICE_LAN_SCAN_TIMEOUT_S,
+)
 
 # The neighbour states the kernel keeps for an address nothing answered at.
 NEIGHBOUR_STATES_GONE = ("FAILED", "INCOMPLETE")
@@ -49,6 +52,22 @@ class DiscoveredDevice:
     vendor: str
     is_online: bool
     is_neighbour: bool = False
+
+
+@dataclass(frozen=True)
+class LanScanRange:
+    """One IPv4 network a scan covers.
+
+    Attributes:
+        device: The interface the network is on.
+        network: The network.
+        source_address: The hub's own address in it, which the sweep's
+            requests carry.
+    """
+
+    device: str
+    network: ipaddress.IPv4Network
+    source_address: str
 
 
 def count_lan_neighbours(lan_interfaces: list[str]) -> int:
@@ -90,20 +109,65 @@ def count_lan_neighbours(lan_interfaces: list[str]) -> int:
     return count
 
 
-class LanScanner:
-    """Sweeps the gateway's own networks for devices."""
+def lan_scan_ranges(exposed: list[tuple[str, str]]) -> list[LanScanRange]:
+    """The networks a scan covers.
 
-    def __init__(self, *, lan_interfaces: list[str]):
+    Args:
+        exposed: ``(device, address/prefix)`` pairs, the hub's own addresses
+            in its exposed IPv4 segments, as
+            :meth:`neutrino_hub.modules.router.interfaces.RouterNetworkConfig.exposed_ipv4_addresses`
+            reads them.
+
+    Returns:
+        One range per pair, in their order: the pair's network when it holds
+        at most 256 addresses, else the /24 that holds the hub's address. A
+        pair that is not an IPv4 address gives none, and a network is
+        covered once per device.
+    """
+    ranges: list[LanScanRange] = []
+    for device, text in exposed:
+        try:
+            interface = ipaddress.ip_interface(text)
+        except ValueError:
+            continue
+        if interface.version != 4:
+            continue
+        network = interface.network
+        if network.prefixlen < DEVICE_LAN_SCAN_PREFIX_MIN:
+            network = ipaddress.ip_network(
+                f"{interface.ip}/{DEVICE_LAN_SCAN_PREFIX_MIN}", strict=False
+            )
+        if any(
+            covered.device == device and covered.network == network
+            for covered in ranges
+        ):
+            continue
+        ranges.append(
+            LanScanRange(
+                device=device, network=network, source_address=str(interface.ip)
+            )
+        )
+    return ranges
+
+
+class LanScanner:
+    """Sweeps the hub's exposed IPv4 segments for devices."""
+
+    def __init__(self, *, network, read_held):
         """
         Args:
-            lan_interfaces: Interfaces to scan, for example ``["enp1s0"]``.
-                Every interface with the LAN role is swept, so a laptop on the
-                gateway's Wi-Fi appears alongside one on the wire.
+            network: The router configuration, a
+                :class:`neutrino_hub.modules.router.interfaces.RouterNetworkConfig`.
+            read_held: Called with nothing for device name to every address
+                it holds with its prefix, as
+                :func:`neutrino_hub.modules.router.link_status.device_held_addresses`
+                reads them.
         """
-        self._lan_interfaces = lan_interfaces
+        self._network = network
+        self._read_held = read_held
 
     def scan(self, *, is_active: bool = True) -> list[DiscoveredDevice]:
-        """Discover devices on the gateway's networks.
+        """Discover devices in the ranges of :func:`lan_scan_ranges`.
 
         Args:
             is_active: Whether to run an ``arp-scan`` sweep. The sweep finds
@@ -113,26 +177,39 @@ class LanScanner:
                 instant and silent.
 
         Returns:
-            One entry per device, sorted by address. Devices answering the
-            active sweep are marked online; the rest come from the neighbour
-            table and are marked offline. A device seen on two interfaces
-            appears once, under the interface swept last.
+            One entry per device inside a range, sorted by address. Devices
+            answering the active sweep are marked online; the rest come from
+            the IPv4 neighbour table of the range's interface and are marked
+            offline. A device seen in two ranges appears once, under the
+            range swept last.
         """
         if not is_linux():
             return []
+        ranges = lan_scan_ranges(
+            self._network.exposed_ipv4_addresses(self._read_held())
+        )
         devices: dict[str, DiscoveredDevice] = {}
-        for interface in self._lan_interfaces:
+        for interface in dict.fromkeys(covered.device for covered in ranges):
+            networks = [
+                covered.network for covered in ranges if covered.device == interface
+            ]
             for device in self._read_neighbours(interface):
-                devices[device.mac_address] = device
+                if _is_inside(device.ipv4_address, networks):
+                    devices[device.mac_address] = device
         if is_active:
-            for interface in self._lan_interfaces:
-                for device in self._run_arp_scan(interface):
+            for covered in ranges:
+                for device in self._run_arp_scan(covered):
                     devices[device.mac_address] = device
         return sorted(devices.values(), key=_address_sort_key)
 
-    def _run_arp_scan(self, interface: str) -> list[DiscoveredDevice]:
+    def _run_arp_scan(self, covered: LanScanRange) -> list[DiscoveredDevice]:
         result = run(
-            ["arp-scan", "--localnet", f"--interface={interface}"],
+            [
+                "arp-scan",
+                f"--interface={covered.device}",
+                f"--arpspa={covered.source_address}",
+                str(covered.network),
+            ],
             is_checked=False,
             timeout_s=DEVICE_LAN_SCAN_TIMEOUT_S,
         )
@@ -176,6 +253,15 @@ class LanScanner:
                 )
             )
         return devices
+
+
+def _is_inside(address: str, networks: list) -> bool:
+    """Whether an IPv4 address lies in one of the networks."""
+    try:
+        parsed = ipaddress.ip_address(address)
+    except ValueError:
+        return False
+    return any(parsed in network for network in networks)
 
 
 def _address_sort_key(device: DiscoveredDevice) -> tuple[int, ...]:
