@@ -1698,22 +1698,54 @@ is what a successful `join` leaves on both sides.
 
 The agent's and the client's `constants.py`, and the hub's
 `modules/channel/constants.py`, have `PROTOCOL`, the integer this build speaks,
-which is 1 in every 0.3 package, 2 in every 0.4 package and 3 from 0.5.0. The agent and the client send theirs in
-`hello`, and the hub sends its own in `welcome`. The hub alone also has
-`PROTOCOL_MIN`, the oldest number it still accepts. An agent or a client
-speaks one number; the hub meets peers from different releases and needs a
-range, `PROTOCOL_MIN <= protocol <= PROTOCOL`.
+which is 1 in every 0.3 package, 2 in every 0.4 package, 3 in every 0.5
+package and 4 from 0.6.0. The agent and the client send theirs in `hello`,
+and the hub sends its own in `welcome`. The hub alone also has
+`PROTOCOL_MIN`, the oldest number it admits to the channel's whole use: 4
+from 0.6.0, for agents and clients alike. An agent or a client speaks one
+number; the hub meets peers from different releases and needs a range,
+`PROTOCOL_MIN <= protocol <= PROTOCOL`. Below the range the two roles part:
+
+| Peer | `protocol` | At `join` | At `hello` |
+| --- | --- | --- | --- |
+| an agent or a client | `PROTOCOL_MIN` to `PROTOCOL` | admitted | admitted |
+| an agent | 3, the number of 0.5 | refused `protocol_too_old` | admitted for its own update alone ("An agent of 0.5") |
+| an agent | below 3 | refused `protocol_too_old` | refused `protocol_too_old` |
+| a client | below `PROTOCOL_MIN` | refused `protocol_too_old` | refused `protocol_too_old` |
+| an agent or a client | above `PROTOCOL` | refused `protocol_too_new` | refused `protocol_too_new` |
 
 | Code | When | `params` |
 | --- | --- | --- |
-| `protocol_too_old` | `protocol < PROTOCOL_MIN` | `{peer, hub, min}` |
+| `protocol_too_old` | `protocol < PROTOCOL_MIN`, but for an agent's `hello` at 3; and every stream an agent at 3 opens but its own package | `{peer, hub, min}` |
 | `protocol_too_new` | `protocol > PROTOCOL` | `{peer, hub, min}` |
+
+A client refused `protocol_too_old` keeps its binding, and its Hubs row reads
+`ui.state.too_old` ([client.md](client.md), "The Hubs page"); the person
+installs the new client, since a client does not update itself.
 
 Package versions take no part in admission. An agent whose `welcome` names a
 newer `software` than its own upgrades itself with the package the hub keeps.
 It stays as it is when the version does not parse or ends in `+dev`. The
 hub's `software` is always `neutrino_hub/{HUB_VERSION}`, and the client has no
 self-upgrade.
+
+### An agent of 0.5
+
+An agent of 0.5 speaks 3, one below `PROTOCOL_MIN`. The hub admits its
+`hello` for one purpose, the agent's own update to the hub's version, and
+closes every other stream the agent opens:
+
+| The agent | The hub |
+| --- | --- |
+| sends `hello` | sends `welcome`, whose `software` names the hub's newer version |
+| sends a `report` | reads the platform from its `machine` section, which names the package, and records nothing else; it pushes no `state` |
+| opens `package {}`, its own package | streams it, as for any agent's upgrade |
+| opens any other stream | closes it `protocol_too_old {peer, hub, min}` |
+
+The hub opens no stream to it. The newer `software` in `welcome` makes the
+agent install the package and restart, and the updated agent connects with
+4 and is admitted as any agent. The hub's own agent is updated by the hub's
+own update, from the hub's cache.
 
 ### What a leave does to the binding
 
@@ -1846,7 +1878,7 @@ one; a package version changes on every release. One rule ties the two.
 | Adding a kind, a field or a code keeps `PROTOCOL`, and a patch release can add them. | A peer that reads tolerantly is unaffected. |
 | Removing anything, or changing its meaning, adds one to `PROTOCOL`; so does a change to the link, the ticket, the pin or the four words `hello`, `state`, `report`, `open`. | An old peer misreads it. |
 | The relation to the package version is one-way: a `PROTOCOL` change requires a new minor before 1.0 and a new major after it; a new minor or major can keep the number; a patch never changes `PROTOCOL`. | A person reads compatibility off the version and finds it true. |
-| `PROTOCOL_MIN` rises only when a new minor opens (a new major after 1.0). It rises at most to the number the previous minor spoke, except where the owner decides a change is too wide to carry the old peers, as 0.5.0 did by raising it to its own 3. | A hub one release ahead still accepts the fleet it had, unless its release notes say how that fleet is reinstalled. |
+| `PROTOCOL_MIN` rises only when a new minor opens (a new major after 1.0). It rises at most to the number the previous minor spoke, except where the owner decides a change is too wide to carry the old peers, as 0.5.0 raises it to its own 3 and 0.6.0 to its own 4. | A hub one release ahead still accepts the fleet it had, unless its release notes say how that fleet is updated or reinstalled. |
 
 Reading is tolerant and writing is strict. An unknown kind is closed
 `kind_unknown`, an unknown field is ignored, and a peer sends only what its own
@@ -1864,9 +1896,18 @@ more or one fewer fails. Changing a channel model fails that test until
 | 1 | 0.3.0 |
 | 2 | 0.4.0 |
 | 3 | 0.5.0 |
+| 4 | 0.6.0 |
 
 3 renamed the link's and the client state's `overlay`, one object or null,
-to `overlays`, a list. `PROTOCOL_MIN` is 3 from 0.5.0: a 0.3 or 0.4 agent or
-client is refused `protocol_too_old` and does not update itself from the hub.
-The hub's update reinstalls the box's own agent from the hub's cache; any
-other agent is reinstalled from the Devices page or by hand.
+to `overlays`, a list. A 0.3 or 0.4 agent or client is refused
+`protocol_too_old` and does not update itself from the hub; such an agent is
+reinstalled from the Devices page or by hand.
+
+4 changes what a peer of 3 reads. A `terminals` entry lists a machine with
+no flag beside it, and an `exec` stream is judged by the `terminal` kind, as
+a `shell` is ("The exec stream"). The `ai_tools` section's `base_url` names
+the agent's own AI gateway forward on `127.0.0.1`, and the agent opens a
+`connect` stream to the hub for each connection made to it ("The connect
+stream"). `PROTOCOL_MIN` is 4: a client of 0.5 is refused
+`protocol_too_old`, and an agent of 0.5 is admitted for its own update alone
+and connects with 4 after it ("An agent of 0.5").

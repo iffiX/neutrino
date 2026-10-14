@@ -715,7 +715,9 @@ by a fresh link.
 
 Admission by `PROTOCOL`, the two protocol codes, the close codes and the
 upgrade an agent performs when `welcome` names a newer `software` are in
-[protocol.md](protocol.md), "Admission and the binding".
+[protocol.md](protocol.md), "Admission and the binding". An agent of 0.5,
+one number behind, is admitted for that upgrade alone and connects with
+the new number after it ([protocol.md](protocol.md), "An agent of 0.5").
 
 ## What an attacker in each position gets
 
