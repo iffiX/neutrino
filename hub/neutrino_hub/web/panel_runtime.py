@@ -25,7 +25,10 @@ from neutrino_hub.modules.router.routes import (
 from neutrino_hub.modules.router.connections import RouterConnectionSet
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.router.link_status import RouterLinkStatus
-from neutrino_hub.modules.firewall.ops import is_interface_set_moved
+from neutrino_hub.modules.firewall.ops import (
+    is_firewalld_moved,
+    is_network_set_moved,
+)
 from neutrino_hub.modules.router.controller import (
     RouterStateController,
     change_codes,
@@ -299,13 +302,15 @@ class PanelRuntime:
     def follow_overlay_devices(self) -> bool:
         """Converge again when an overlay's device or engine cgroup moved.
 
-        On macOS and Windows a change of the interfaces the system firewall
-        was last scoped to converges too.
+        On macOS and Windows a change of the networks the box's devices
+        hold, which the system firewall was last written for, converges too;
+        on Linux, firewalld's runtime holding other rules of the hub's than
+        the last pass wrote.
 
         Returns:
-            True when the devices, the engine cgroups or the firewall's
-            interfaces found now differ from the ones the last pass used and
-            a converge ran; False on a box not set up.
+            True when the devices, the engine cgroups, the networks or the
+            firewalld rules found now differ from the ones the last pass
+            used and a converge ran; False on a box not set up.
         """
         try:
             network = RouterNetworkConfig.from_dict(read_config("router/network.json"))
@@ -314,7 +319,7 @@ class PanelRuntime:
             return False
         found = overlay_devices(network)
         cgroups = engine_cgroups(routing) if is_linux() else {}
-        is_moved = not is_linux() and is_interface_set_moved()
+        is_moved = is_firewalld_moved() if is_linux() else is_network_set_moved()
         if (
             found == rendered_overlay_devices()
             and cgroups == rendered_engine_cgroups()

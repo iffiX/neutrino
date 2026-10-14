@@ -7,6 +7,7 @@ about files nobody asked the hub to touch, about the manager that was already
 running, and about what the kernel holds — so it is read here, from the box.
 """
 
+import ipaddress
 import json
 import re
 import subprocess
@@ -288,19 +289,35 @@ def first_interface() -> str:
 
 
 def is_answering_on(interface: str) -> bool:
-    """Whether the input chain lets everything in on one interface.
+    """Whether the input chain accepts the senders on one interface's IPv4
+    networks, its IPv4 segment exposed.
 
     Args:
         interface: The interface's name.
 
     Returns:
-        True when the chain carries an accept for it. Either spelling counts:
-        nft prints a one-element anonymous set as a bare match, so the braces
-        are there with two interfaces and gone with one.
+        True when every IPv4 address the interface holds is inside a network
+        an ``ip saddr`` accept of the chain names. nft prints a one-element
+        set as a bare network and merges neighbouring networks, so the
+        addresses are matched against what it printed.
     """
     chain = run(["nft", "list", "chain", "inet", "neutrino", "input"])
-    pattern = rf'iifname (\{{[^}}]*"{re.escape(interface)}"[^}}]*\}}|"{re.escape(interface)}") accept$'
-    return re.search(pattern, chain, re.MULTILINE) is not None
+    accepted = [
+        ipaddress.ip_network(element.strip(), strict=False)
+        for match in re.findall(r"ip saddr (\{[^}]*\}|\S+) accept", chain)
+        for element in match.strip("{} ").split(",")
+        if element.strip()
+    ]
+    held = [
+        ipaddress.ip_interface(line.split()[3]).ip
+        for line in run(
+            ["ip", "-4", "-o", "addr", "show", "dev", interface]
+        ).splitlines()
+        if len(line.split()) > 3
+    ]
+    return bool(held) and all(
+        any(address in network for network in accepted) for address in held
+    )
 
 
 def firewall_table() -> str:

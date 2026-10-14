@@ -8,6 +8,9 @@ appliers, which are replaced here by recorders.
 import pytest
 
 from neutrino_hub import edition
+from neutrino_hub.modules.firewall import ops as firewall_ops
+from neutrino_hub.modules.firewall.firewalld_applier import FirewallFirewalldApplier
+from neutrino_hub.modules.firewall.renderer import firewalld_rule
 from neutrino_hub.modules.router import controller, routes
 from neutrino_hub.modules.router.constants import (
     ROUTER_CODE_COMMAND_FAILED,
@@ -25,7 +28,7 @@ from neutrino_hub.modules.router.controller import (
 )
 from neutrino_hub.modules.router.steps import RouterStepResult
 
-from tests.conftest import lan_entry, wan_entry
+from tests.conftest import FakeFirewalld, lan_entry, wan_entry
 
 ROUTING = {
     "is_proxy_enabled": True,
@@ -118,6 +121,8 @@ def box(monkeypatch, tmp_path):
     monkeypatch.setattr(controller, "RouterInterfaceApplier", Interfaces)
     monkeypatch.setattr(controller, "admin_up_interfaces", lambda: {"enp1s0", "wlp3s0"})
     monkeypatch.setattr(routes, "run", kernel)
+    monkeypatch.setattr(firewall_ops, "device_held_addresses", lambda: {})
+    monkeypatch.setattr(firewall_ops, "read_config", lambda name: {})
     gated(monkeypatch, _Gate)
     return files, kernel
 
@@ -125,7 +130,7 @@ def box(monkeypatch, tmp_path):
 class _Gate:
     """NetBird's part, its daemon already agreeing."""
 
-    def gate(self, *, is_blocked):
+    def converge_session(self):
         return ""
 
 
@@ -153,14 +158,40 @@ def test_the_firewall_comes_first_and_the_served_routes_after_the_ports(box):
 
     results = pass_of(on_base_ready=lambda: order.append("ready")).reconcile()
 
-    assert names(results)[:4] == [
+    assert names(results)[:5] == [
         "forwarding",
         "policy_route",
         "ruleset",
+        "firewall",
         "interface enp1s0",
     ]
-    assert names(results)[4:] == ["served_route enp1s0", "served_route wlp3s0"]
+    assert names(results)[5:7] == ["served_route enp1s0", "served_route wlp3s0"]
     assert order == ["ready"]
+
+
+def test_firewalld_running_gets_the_hubs_ports_before_ready_is_said(box, monkeypatch):
+    """The first pass of a boot runs after firewalld and writes into it."""
+    firewalld = FakeFirewalld(zones={"public": {"interfaces": ["enp1s0"]}})
+    monkeypatch.setattr(
+        firewall_ops,
+        "FirewallFirewalldApplier",
+        lambda: FirewallFirewalldApplier(run=firewalld),
+    )
+    seen = []
+
+    results = pass_of(
+        on_base_ready=lambda: seen.append(list(firewalld.zones["public"]["runtime"]))
+    ).reconcile()
+
+    firewall = next(result for result in results if result.name == "firewall")
+    assert firewall.state == ROUTER_STEP_APPLIED
+    assert seen[0] and seen[0] == firewalld.zones["public"]["permanent"]
+    assert (
+        firewalld_rule(
+            family="ipv4", source="192.168.110.0/24", port=8443, protocol="TCP"
+        )
+        in seen[0]
+    )
 
 
 def test_ready_is_said_before_any_step_that_starts_a_unit(box, monkeypatch):
@@ -438,27 +469,27 @@ def server_elsewhere(elsewhere, box, monkeypatch):
 
 
 @pytest.mark.feature("proxy")
-def test_elsewhere_the_pass_drives_the_firewall_and_the_gate_alone(
+def test_elsewhere_the_pass_drives_the_firewall_and_the_session_alone(
     server_elsewhere, fake_controller, monkeypatch
 ):
     kernel, handed = server_elsewhere
     gates = []
 
     class Gate:
-        def gate(self, *, is_blocked):
-            gates.append(is_blocked)
+        def converge_session(self):
+            gates.append("converged")
             return ""
 
     gated(monkeypatch, Gate)
     ready = []
     results = pass_of(on_base_ready=lambda: ready.append(True)).reconcile()
 
-    assert names(results) == ["firewall", "tun", "overlay_gate NetBird"]
+    assert names(results) == ["firewall", "tun", "overlay_session NetBird"]
     assert results[0].state == ROUTER_STEP_APPLIED
     assert kernel.commands == []
     assert Interfaces.calls == []
     assert ready == [True]
-    assert gates == [False]
+    assert gates == ["converged"]
     assert handed[0][1] == ROUTING
     assert handed[0][0].overlay_device_names == ["utun4"]
     assert handed[1] == ("tun", ["utun4"], ROUTING)
@@ -477,7 +508,7 @@ def test_elsewhere_a_firewall_that_refuses_fails_its_step_alone(
 
     results = pass_of().reconcile()
 
-    assert names(results) == ["firewall", "tun", "overlay_gate NetBird"]
+    assert names(results) == ["firewall", "tun", "overlay_session NetBird"]
     assert results[0].state == ROUTER_STEP_FAILED
     assert results[0].code == ROUTER_CODE_COMMAND_FAILED
     assert controller.rendered_overlay_devices() == {"netbird": ["utun4"]}
@@ -502,7 +533,7 @@ def test_elsewhere_a_refused_rule_is_named_beside_the_firewall_that_applied(
         "firewall",
         "firewall neutrino_hub_easytier_tcp",
         "tun",
-        "overlay_gate NetBird",
+        "overlay_session NetBird",
     ]
     assert results[0].state == ROUTER_STEP_APPLIED
     assert controller.failure_codes(results) == [
@@ -521,7 +552,7 @@ def test_elsewhere_a_tun_route_that_failed_is_named_by_its_own_code(
 
     results = pass_of().reconcile()
 
-    assert names(results) == ["firewall", "tun", "overlay_gate NetBird"]
+    assert names(results) == ["firewall", "tun", "overlay_session NetBird"]
     assert results[1].state == ROUTER_STEP_FAILED
     assert results[1].code == "tun_route_failed"
     assert "File exists" in results[1].detail

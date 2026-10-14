@@ -7,8 +7,14 @@ and no way back in but a keyboard.
 """
 
 import pytest
-from neutrino_hub.modules.router.constants import ROUTER_MODE_ROUTER, ROUTER_MODES_KEYS
-from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
+from neutrino_hub.modules.router.constants import (
+    ROUTER_FAMILIES,
+    ROUTER_FAMILY_IPV4,
+    ROUTER_FAMILY_IPV6,
+    ROUTER_MODE_ROUTER,
+    ROUTER_MODES_KEYS,
+)
+from neutrino_hub.modules.router.interfaces import RouterNetworkConfig, RouterSegment
 
 from tests.conftest import lan_entry, network_config, wan_entry
 
@@ -51,8 +57,10 @@ def test_an_overlay_rides_on_the_devices_found_at_run_time_when_given():
 
     assert config.exposed_overlay_device_names == ["easytier"]
     assert found.overlay_device_names == ["tun0"]
-    assert found.exposed_interfaces == ["tun0"]
-    assert config.with_overlay_devices({"easytier": []}).exposed_interfaces == []
+    assert found.exposed_overlay_device_names == ["tun0"]
+    assert (
+        config.with_overlay_devices({"easytier": []}).exposed_overlay_device_names == []
+    )
 
 
 def test_the_devices_found_at_run_time_are_never_written_to_the_file():
@@ -80,7 +88,6 @@ def test_an_overlay_survives_a_round_trip_with_its_switch():
 
     assert again.overlays[0].is_exposed is False
     assert again.exposed_overlay_device_names == []
-    assert again.exposed_overlay_peer_ports == []
 
 
 def test_unknown_enums_fall_back_rather_than_raising():
@@ -309,23 +316,94 @@ def test_a_side_gateway_lan_round_trips():
     ).side_gateway_lans
 
 
-def test_exposed_interfaces_is_every_exposed_role_then_the_exposed_overlays():
-    """Exposure is the only control plane for what answers: an uplink counts
-    once exposed, a served network does not until it is, and the overlays
-    come last."""
+def test_the_exposed_devices_of_each_family_are_every_role_with_that_switch_on():
+    """An uplink counts once its segment is exposed, a served network does
+    not until it is, and an overlay is never among them."""
     network = network_config(
         wan_entry("enp2s0", is_exposed=True),
         lan_entry("enp1s0", address="192.168.100.1", is_exposed=False),
-        {"name": "enp3s0", "role": "disabled", "is_exposed": True},
-        {"name": "enp4s0", "role": "disabled", "is_exposed": False},
+        {"name": "enp3s0", "role": "disabled", "is_ipv4_exposed": True},
+        {"name": "enp4s0", "role": "disabled", "is_ipv6_exposed": True},
         overlays=[{"provider": "netbird", "is_exposed": True}],
     )
 
-    assert network.exposed_interfaces == ["enp2s0", "enp3s0", "wt0"]
-    assert (
-        network.exposed_interfaces
-        == network.exposed_device_names + network.exposed_overlay_device_names
+    assert network.exposed_device_names(ROUTER_FAMILY_IPV4) == ["enp2s0", "enp3s0"]
+    assert network.exposed_device_names(ROUTER_FAMILY_IPV6) == ["enp2s0", "enp4s0"]
+
+
+def test_a_row_with_the_earlier_switch_reads_as_both_families_and_is_written_new():
+    interface = network_config(
+        {"name": "enp1s0", "role": "lan", "is_exposed": True}
+    ).interface("enp1s0")
+
+    assert interface.is_ipv4_exposed and interface.is_ipv6_exposed
+    stored = interface.to_dict()
+    assert stored["is_ipv4_exposed"] is True
+    assert stored["is_ipv6_exposed"] is True
+    assert "is_exposed" not in stored
+
+
+def test_a_row_with_both_new_switches_ignores_nothing():
+    interface = network_config(
+        {"name": "enp1s0", "is_ipv4_exposed": False, "is_ipv6_exposed": True}
+    ).interface("enp1s0")
+
+    assert not interface.is_ipv4_exposed
+    assert interface.is_ipv6_exposed
+    assert interface.has_exposed_segment
+    interface.set_exposed_in(ROUTER_FAMILY_IPV6, False)
+    assert not interface.has_exposed_segment
+
+
+SEGMENT_HELD = {
+    "enp2s0": ["203.0.113.7/24", "2001:db8:2::7/64", "fe80::2/64"],
+    "enp1s0": [
+        "192.168.100.1/24",
+        "10.20.0.1/16",
+        "fd00:100::1/64",
+        "fd00:100::99/64",
+        "fe80::1/64",
+    ],
+    "wt0": ["100.92.4.5/16", "fe80::7/64"],
+    "lo": ["127.0.0.1/8", "::1/128"],
+}
+
+
+def test_a_segment_is_every_network_of_its_family_the_interface_holds_now():
+    network = network_config(
+        wan_entry("enp2s0"),
+        lan_entry("enp1s0", address="192.168.100.1"),
+        overlays=[{"provider": "netbird"}],
     )
+
+    assert network.exposed_segments(SEGMENT_HELD) == [
+        RouterSegment("enp1s0", "ipv4", ("192.168.100.0/24", "10.20.0.0/16")),
+        RouterSegment("enp1s0", "ipv6", ("fd00:100::/64", "fe80::/64")),
+        RouterSegment("wt0", "ipv4", ("100.92.0.0/16",)),
+    ]
+
+
+def test_a_served_network_is_in_its_segment_before_its_device_holds_it():
+    network = network_config(lan_entry("enp1s0", address="192.168.100.1"), overlays=[])
+
+    assert network.exposed_segments({}) == [
+        RouterSegment("enp1s0", "ipv4", ("192.168.100.0/24",))
+    ]
+
+
+def test_the_exposed_ipv4_addresses_are_the_hubs_own_in_each_exposed_ipv4_segment():
+    """What the LAN scan and Wake-on-LAN cover: an overlay has no neighbours,
+    and a closed segment is not covered."""
+    network = network_config(
+        wan_entry("enp2s0"),
+        lan_entry("enp1s0", address="192.168.100.1"),
+        overlays=[{"provider": "netbird"}],
+    )
+
+    assert network.exposed_ipv4_addresses(SEGMENT_HELD) == [
+        ("enp1s0", "192.168.100.1/24"),
+        ("enp1s0", "10.20.0.1/16"),
+    ]
 
 
 def test_a_server_answers_on_its_exposed_ports_alone():
@@ -336,7 +414,11 @@ def test_a_server_answers_on_its_exposed_ports_alone():
         mode="server",
     )
 
-    assert network.exposed_interfaces == ["enp1s0"]
+    assert network.exposed_device_names(ROUTER_FAMILY_IPV4) == ["enp1s0"]
+    assert [segment.device for segment in network.exposed_segments(SEGMENT_HELD)] == [
+        "enp1s0",
+        "enp1s0",
+    ]
 
 
 # --- Fixed addresses --------------------------------------------------------
@@ -441,7 +523,7 @@ def test_where_the_hub_addresses_nothing_every_listed_interface_is_enabled(mode)
     )
 
     assert network.enabled_device_names == ["eno1", "eno2"]
-    assert network.exposed_device_names == ["eno1"]
+    assert network.exposed_device_names(ROUTER_FAMILY_IPV4) == ["eno1"]
 
 
 # --- an interface the configuration does not name ---
@@ -457,8 +539,9 @@ def test_on_linux_an_unnamed_interface_is_neither_exposed_nor_enabled(mode):
 
     assert not network.is_interface_enabled("eno9")
     assert "eno9" not in network.enabled_device_names
-    assert network.exposed_device_names_on(["eno1", "eno9"]) == ["eno1"]
-    assert not network.interface_or_new("eno9").is_exposed
+    for family in ROUTER_FAMILIES:
+        assert network.exposed_device_names_on(["eno1", "eno9"], family) == ["eno1"]
+    assert not network.interface_or_new("eno9").has_exposed_segment
 
 
 @pytest.mark.parametrize("system", ["darwin", "win32"])
@@ -471,4 +554,5 @@ def test_on_macos_and_windows_an_unnamed_interface_counts_as_exposed_and_enabled
     network = RouterNetworkConfig.from_dict({"mode": "server", "interfaces": []})
 
     assert network.is_interface_enabled("Ethernet 3")
-    assert network.exposed_device_names_on(["Ethernet 3"]) == ["Ethernet 3"]
+    for family in ROUTER_FAMILIES:
+        assert network.exposed_device_names_on(["Ethernet 3"], family) == ["Ethernet 3"]

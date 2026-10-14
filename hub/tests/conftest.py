@@ -86,6 +86,17 @@ REFUSED_PROGRAMS = {
     "poweroff",
 }
 MUTATING_IP_VERBS = {"add", "del", "delete", "replace", "change", "set", "flush"}
+# firewalld's tools, and the starts of the options that change its rules.
+FIREWALLD_PROGRAMS = {"firewall-cmd", "firewall-offline-cmd"}
+MUTATING_FIREWALLD_OPTIONS = (
+    "--add-",
+    "--remove-",
+    "--reload",
+    "--complete-reload",
+    "--set-",
+    "--new-",
+    "--delete-",
+)
 
 # iphlpapi's tables as a Windows machine answered them, with what its
 # PowerShell cmdlets answered at the same moment.
@@ -102,6 +113,10 @@ def _refuses(command) -> str | None:
     program = os.path.basename(str(command[0]))
     if program in REFUSED_PROGRAMS:
         return f"{program} would ask for authorization or change the machine"
+    if program in FIREWALLD_PROGRAMS and any(
+        str(word).startswith(MUTATING_FIREWALLD_OPTIONS) for word in command[1:]
+    ):
+        return f"{program} would change firewalld's rules"
     if program not in READ_ONLY_VERBS:
         return None
     words = [str(word) for word in command[1:]]
@@ -224,16 +239,39 @@ def on_windows(monkeypatch):
     monkeypatch.setitem(sys.modules, "msvcrt", FakeMsvcrt())
 
 
+def _firewalld_stopped(command, **_keywords):
+    """firewall-cmd's answer on a box where firewalld is stopped."""
+    from neutrino_hub.utils.subprocess_run import CommandResult
+
+    return CommandResult(
+        command=command, exit_code=252, stdout="not running\n", stderr=""
+    )
+
+
 @pytest.fixture(autouse=True)
 def _router_lock_in_a_test_directory(tmp_path, monkeypatch):
     """Point the routing-state lock, its records and the ticket file where a
-    test may create them."""
+    test may create them, and stop firewalld for the test."""
     from neutrino_hub.modules.channel import tickets
     from neutrino_hub.modules.firewall import ops as firewall_ops
+    from neutrino_hub.modules.firewall.firewalld_applier import (
+        FirewallFirewalldApplier,
+    )
     from neutrino_hub.modules.router import controller, routes
 
     monkeypatch.setattr(
-        firewall_ops, "FIREWALL_INTERFACES_PATH", tmp_path / "firewall_interfaces.json"
+        firewall_ops, "FIREWALL_NETWORKS_PATH", tmp_path / "firewall_networks.json"
+    )
+    monkeypatch.setattr(
+        firewall_ops,
+        "FIREWALL_FIREWALLD_RECORD_PATH",
+        tmp_path / "firewall_firewalld.json",
+    )
+    # firewalld is stopped for every test unless the test says otherwise.
+    monkeypatch.setattr(
+        firewall_ops,
+        "FirewallFirewalldApplier",
+        lambda: FirewallFirewalldApplier(run=_firewalld_stopped),
     )
     monkeypatch.setattr(controller, "ROUTER_LOCK_PATH", tmp_path / "router.lock")
     monkeypatch.setattr(
@@ -739,13 +777,13 @@ def wan_entry(
 ) -> dict:
     """One WAN interface as it appears in ``config/router/network.json``.
 
-    Closed by default, as the planner leaves an uplink: what this box listens
-    on has no business answering the whole internet.
+    Both segments closed by default, as the planner leaves an uplink.
     """
     return {
         "name": name,
         "role": "wan",
-        "is_exposed": is_exposed,
+        "is_ipv4_exposed": is_exposed,
+        "is_ipv6_exposed": is_exposed,
         "wan": {"intent": intent, **wan},
     }
 
@@ -763,8 +801,8 @@ def lan_entry(
 ) -> dict:
     """One LAN interface, with a DHCP pool derived from its address by default.
 
-    Exposed by default, as the planner leaves a served network: it is where
-    the panel, the leases and DNS are reached.
+    Both segments exposed by default, as the planner leaves a served network:
+    it is where the panel, the leases and DNS are reached.
     """
     if pool is None:
         head = address.rsplit(".", 1)[0]
@@ -772,7 +810,8 @@ def lan_entry(
     return {
         "name": name,
         "role": "lan",
-        "is_exposed": is_exposed,
+        "is_ipv4_exposed": is_exposed,
+        "is_ipv6_exposed": is_exposed,
         "lan": {
             "address": address,
             "prefix_len": prefix_len,
@@ -1197,6 +1236,73 @@ class FakePowerShell:
         if self._error is not None:
             raise self._error
         return dict(self._answers.get(script, {}))
+
+
+class FakeFirewalld:
+    """firewalld behind ``firewall-cmd`` and ``firewall-offline-cmd``.
+
+    Attributes:
+        zones: Zone name to ``{"interfaces", "runtime", "permanent"}``, the
+            last two its rich rules in each layer.
+        commands: Every command run, in order.
+        is_running: Whether ``--state`` answers ``running``.
+    """
+
+    def __init__(self, *, zones=None, is_running=True, default_zone="public"):
+        self.zones = {
+            name: {
+                "interfaces": list(zone.get("interfaces", [])),
+                "runtime": list(zone.get("runtime", [])),
+                "permanent": list(zone.get("permanent", [])),
+            }
+            for name, zone in (zones or {}).items()
+        }
+        self.commands: list = []
+        self.is_running = is_running
+        self._default_zone = default_zone
+
+    def __call__(self, command, **_keywords):
+        from neutrino_hub.utils.subprocess_run import CommandResult
+
+        self.commands.append(list(command))
+        tool, *words = command
+        layer = "runtime"
+        if "--permanent" in words or tool == "firewall-offline-cmd":
+            layer = "permanent"
+        words = [word for word in words if word != "--permanent"]
+        if words == ["--state"]:
+            answer = "running\n" if self.is_running else "not running\n"
+            return CommandResult(command, 0 if self.is_running else 252, answer, "")
+        if tool == "firewall-cmd" and not self.is_running:
+            return CommandResult(command, 252, "", "FirewallD is not running")
+        if words == ["--get-default-zone"]:
+            return CommandResult(command, 0, f"{self._default_zone}\n", "")
+        if words == ["--list-all-zones"]:
+            return CommandResult(command, 0, self.listing(layer), "")
+        zone = self.zones.setdefault(
+            words[0].split("=", 1)[1],
+            {"interfaces": [], "runtime": [], "permanent": []},
+        )
+        for word in words[1:]:
+            option, _, rule = word.partition("=")
+            if option == "--add-rich-rule" and rule not in zone[layer]:
+                zone[layer].append(rule)
+            elif option == "--remove-rich-rule" and rule in zone[layer]:
+                zone[layer].remove(rule)
+        return CommandResult(command, 0, "success\n", "")
+
+    def listing(self, layer: str) -> str:
+        """What ``--list-all-zones`` prints of one layer."""
+        lines = []
+        for name, zone in self.zones.items():
+            lines.append(name + (" (active)" if zone["interfaces"] else ""))
+            lines.append("  target: default")
+            lines.append(f"  interfaces: {' '.join(zone['interfaces'])}")
+            lines.append("  services: dhcpv6-client ssh")
+            lines.append("  rich rules: ")
+            lines.extend(f"\t{rule}" for rule in zone[layer])
+            lines.append("")
+        return "\n".join(lines)
 
 
 class FakeIphlpapiTables:

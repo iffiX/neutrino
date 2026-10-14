@@ -15,6 +15,9 @@ import subprocess
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from neutrino_hub.modules.router.constants import (
+    ROUTER_FAMILIES,
+    ROUTER_FAMILY_IPV4,
+    ROUTER_FAMILY_IPV6,
     ROUTER_HOSTNAME_PATTERN,
     ROUTER_INTENTS,
     ROUTER_LEASE_TIME_PATTERN,
@@ -54,6 +57,7 @@ from neutrino_hub.modules.router.link_status import (
     RouterLinkStatus,
     admin_up_interfaces,
     device_addresses,
+    device_held_addresses,
 )
 from neutrino_hub.modules.router.network_resolvers import resolver_refusal
 from neutrino_hub.modules.router.modes import (
@@ -89,6 +93,7 @@ from neutrino_hub.web.models import (
     NetworkModeView,
     NetworkOptions,
     NetworkView,
+    SegmentView,
     OverlayView,
     PlannedUplinkView,
     StaticLeaseSettings,
@@ -141,9 +146,9 @@ async def update_options(
     Raises:
         HTTPException: 400 for an unknown policy, an interface this machine
             does not have or a fixed address that is refused, and in router
-            mode ``network_invalid {field: role, name}`` for an exposed port
-            left with the role ``disabled`` or given a role a port cannot take
-            here; 502 when the firewall reload fails.
+            mode ``network_invalid {field: role, name}`` for a port with an
+            exposed segment left with the role ``disabled`` or given a role a
+            port cannot take here; 502 when the firewall reload fails.
     """
     if options.uplink_policy not in ROUTER_POLICIES:
         raise _bad_request("uplink_policy_unknown", policy=options.uplink_policy)
@@ -152,9 +157,14 @@ async def update_options(
     network.is_inter_lan_allowed = options.is_inter_lan_allowed
     if options.interface_roles and network.is_addressing_owned:
         _give_roles(network, options.interface_roles, runtime=runtime)
-    if options.exposed_interfaces is not None:
-        _set_exposure(network, options.exposed_interfaces, runtime=runtime)
-        _refuse_exposed_disabled(network)
+    exposure = {
+        ROUTER_FAMILY_IPV4: options.ipv4_exposed_interfaces,
+        ROUTER_FAMILY_IPV6: options.ipv6_exposed_interfaces,
+    }
+    for family, names in exposure.items():
+        if names is not None:
+            _set_exposure(network, names, family=family, runtime=runtime)
+            _refuse_exposed_disabled(network)
     if options.exposed_overlays is not None:
         wanted = set(options.exposed_overlays)
         for overlay in network.overlays:
@@ -305,19 +315,27 @@ def _retune_roles(network: RouterNetworkConfig, *, runtime: PanelRuntime) -> lis
     # A served network answers by definition: it is where the panel, the
     # leases and DNS are reached, and the planner sets this for the same
     # reason when the wizard builds one.
-    interface.is_exposed = True
+    for family in ROUTER_FAMILIES:
+        interface.set_exposed_in(family, True)
     network.replace(interface)
     return removed
 
 
 def _set_exposure(
-    network: RouterNetworkConfig, names: list[str], *, runtime: PanelRuntime
+    network: RouterNetworkConfig,
+    names: list[str],
+    *,
+    family: str,
+    runtime: PanelRuntime,
 ) -> None:
-    """Write which interfaces answer, creating entries for ports that had none.
+    """Write which interfaces' segments of one family are exposed, creating
+    entries for ports that had none.
 
     Args:
         network: The configuration to change.
-        names: The interfaces that answer. Everything else stops answering.
+        names: The interfaces whose segment of that family is exposed. Every
+            other interface's segment of that family is closed.
+        family: ``ipv4`` or ``ipv6``.
         runtime: The shared runtime, for the ports this machine has.
 
     Raises:
@@ -335,17 +353,16 @@ def _set_exposure(
         if name not in present and network.interface(name) is None:
             raise _bad_request("interface_not_on_machine", name=name)
         opened = network.interface_or_new(name)
-        opened.is_exposed = True
+        opened.set_exposed_in(family, True)
         network.replace(opened)
     for name in sorted(present - wanted):
-        if (
-            network.interface(name) is None
-            and network.interface_or_new(name).is_exposed
-        ):
-            network.replace(RouterInterface(name=name, is_exposed=False))
+        unnamed = network.interface_or_new(name)
+        if network.interface(name) is None and unnamed.is_exposed_in(family):
+            unnamed.set_exposed_in(family, False)
+            network.replace(unnamed)
     for interface in network.interfaces:
         if interface.name not in wanted:
-            interface.is_exposed = False
+            interface.set_exposed_in(family, False)
 
 
 def _give_roles(
@@ -384,19 +401,20 @@ def _give_roles(
 
 
 def _refuse_exposed_disabled(network: RouterNetworkConfig) -> None:
-    """Refuse a router whose configuration exposes a stopped port.
+    """Refuse a router whose configuration exposes a segment of a stopped port.
 
     Args:
         network: The configuration about to be written.
 
     Raises:
         HTTPException: 400 ``network_invalid {field: role, name}`` for the
-            first exposed port whose role is ``disabled``, in router mode.
+            first port with an exposed segment whose role is ``disabled``, in
+            router mode.
     """
     if not network.is_addressing_owned:
         return
     for interface in network.interfaces:
-        if interface.is_exposed and interface.is_disabled:
+        if interface.has_exposed_segment and interface.is_disabled:
             raise _network_invalid(interface.name)
 
 
@@ -531,7 +549,7 @@ async def update_interface(
             network.remove(child.name)
             orphaned.append(child.name)
 
-    if network.is_addressing_owned and saved.is_disabled and saved.is_exposed:
+    if network.is_addressing_owned and saved.is_disabled and saved.has_exposed_segment:
         raise _network_invalid(name)
     network.replace(saved)
     if saved.is_split and network.untagged_child(name) is None:
@@ -547,7 +565,8 @@ async def update_interface(
                     if was in (ROUTER_ROLE_WAN, ROUTER_ROLE_LAN)
                     else ROUTER_ROLE_DISABLED
                 ),
-                is_exposed=saved.is_exposed,
+                is_ipv4_exposed=saved.is_ipv4_exposed,
+                is_ipv6_exposed=saved.is_ipv6_exposed,
                 wan=saved.wan,
                 lan=saved.lan,
                 vlan=RouterVlanSettings(parent=name, id=None),
@@ -950,6 +969,23 @@ def _count_reaching(addresses: list[str], cidr: str) -> int:
     return counted
 
 
+def _segment_view(networks: list[str], *, reaching: list[str]) -> SegmentView:
+    """One of an interface's segments, as the Exposure section draws it.
+
+    Args:
+        networks: The networks the segment holds now.
+        reaching: The connected devices' addresses.
+
+    Returns:
+        The networks, and how many connected devices reach the hub from
+        inside them.
+    """
+    return SegmentView(
+        networks=networks,
+        device_count=sum(_count_reaching(reaching, network) for network in networks),
+    )
+
+
 def _overlay_views(
     network: RouterNetworkConfig, *, runtime: PanelRuntime
 ) -> list[OverlayView]:
@@ -1021,6 +1057,7 @@ def _build_view(runtime: PanelRuntime) -> NetworkView:
         if link.name not in overlays
     }
     reaching = _reaching_addresses(runtime)
+    held = device_held_addresses()
 
     names = list(links)
     for interface in network.interfaces:
@@ -1039,6 +1076,10 @@ def _build_view(runtime: PanelRuntime) -> NetworkView:
         # The main entry has no device of its own; what it is doing is what
         # the trunk port is doing.
         link = links.get(interface.device_name, LinkStatus(name=name))
+        segments = {
+            family: network.segment_networks(interface.device_name, family, held)
+            for family in ROUTER_FAMILIES
+        }
         views.append(
             InterfaceView(
                 settings=_propose_lan(_to_settings(interface), network=network),
@@ -1054,8 +1095,13 @@ def _build_view(runtime: PanelRuntime) -> NetworkView:
                     speed_mbps=link.speed_mbps,
                     gateway=status_reader.gateway_for(interface.device_name),
                     is_ap_capable=link.is_ap_capable,
-                    device_count=_count_reaching(reaching, link.ipv4_address or ""),
                     lease_dns=_lease_dns(interface, network=network, link=link),
+                ),
+                ipv4_segment=_segment_view(
+                    segments[ROUTER_FAMILY_IPV4], reaching=reaching
+                ),
+                ipv6_segment=_segment_view(
+                    segments[ROUTER_FAMILY_IPV6], reaching=reaching
                 ),
                 is_unsaved=network.interface(name) is None
                 and not network.is_interface_enabled(name),
@@ -1256,11 +1302,13 @@ def _propose_lan(
 def _to_interface(
     settings: InterfaceSettings, *, network: RouterNetworkConfig
 ) -> RouterInterface:
-    # Whether an interface answers is written by the panel that shows all of
+    # Which segments are exposed is written by the panel that shows all of
     # them at once. Taking it from what is stored, not from the body, is what
     # keeps saving one interface's role from quietly reopening or closing it.
     interface = RouterInterface.from_dict(settings.model_dump())
-    interface.is_exposed = network.interface_or_new(settings.name).is_exposed
+    stored = network.interface_or_new(settings.name)
+    interface.is_ipv4_exposed = stored.is_ipv4_exposed
+    interface.is_ipv6_exposed = stored.is_ipv6_exposed
     return interface
 
 

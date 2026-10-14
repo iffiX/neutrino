@@ -7,8 +7,9 @@
     {
       "_comment": "The uplink. DHCP so that plugging into any network \u2014 campus, hotel, home broadband \u2014 just works.",
       "name": "enp2s0",
-      "_comment_is_exposed": "Whether what this box listens on answers on this interface. One answer for the whole interface and not a port list: every service here binds every address and settles its own port in its own tab, so which wires reach them is all that is left to decide. An uplink is closed by default \u2014 remote access arrives over the overlay, which always answers.",
-      "is_exposed": false,
+      "_comment_exposure": "Whether the hub's own ports (the panel over HTTP and HTTPS, the agent port, DNS in router and side_gateway, the SOCKS ports) answer the senders inside this interface's IPv4 segment and inside its IPv6 segment: every network of that family it holds an address in. SSH and every other service the hub does not run are the system firewall's. An uplink is closed by default: remote access arrives over an overlay, the relay or Direct.",
+      "is_ipv4_exposed": false,
+      "is_ipv6_exposed": false,
       "role": "wan",
       "wan": {
         "_comment_method": "'dhcp' or 'static'. address, prefix_len, gateway and dns are read only when static. dns lists the uplink's resolvers as {address, port}, asked in order; with none listed, 223.5.5.5 and 119.29.29.29 answer. A DHCP uplink uses the resolvers its lease names.",
@@ -43,7 +44,8 @@
     {
       "_comment": "The wired LAN the work machines plug into. Its address is what clients get as their gateway and resolver, and it is where the panel, the SOCKS listener, and the shares are reachable.",
       "name": "enp1s0",
-      "is_exposed": true,
+      "is_ipv4_exposed": true,
+      "is_ipv6_exposed": true,
       "role": "lan",
       "wan": {
         "method": "dhcp",
@@ -74,7 +76,8 @@
     {
       "_comment": "The radio, unused by default. Give it the 'wan' role to reach the internet over Wi-Fi \u2014 scan and join from the Network tab. The passphrase is not stored here; it lives in connections.json with every other network this box knows how to join. Give it the 'lan' role to publish an access point instead, using ap_ssid and ap_passphrase below. ap_country_code is the country it publishes in, two capital letters such as DE, or empty; ap_band 'a' (5 GHz) needs one, and with none the access point runs on 2.4 GHz.",
       "name": "wlp3s0",
-      "is_exposed": false,
+      "is_ipv4_exposed": false,
+      "is_ipv6_exposed": false,
       "role": "disabled",
       "wan": {
         "method": "dhcp",
@@ -106,7 +109,7 @@
       "vlan": null
     }
   ],
-  "_comment_overlays": "The overlays this box runs, beside the interfaces rather than among them: switching modes rebuilds that list, and an overlay in it would be dropped by a change that has nothing to do with it. One entry per engine, keyed by who runs the overlay and never by device name, because the device is theirs to name and a renamed one would leave the firewall matching nothing. Every entry with 'is_enabled' true runs, any number at once; an entry turned off keeps its 'is_exposed'. An entry with no 'is_enabled', the 0.4.0 shape, runs. An empty list is a box nobody reaches from outside, which is what a fresh one is: the Overlay page turns an engine on and writes its entry here. 'is_exposed' is the same question an interface answers, and it starts true: joining an overlay is joining your own network. A file with no 'overlays' key at all reads as one open NetBird entry, which is what the firewall did before this was configurable.",
+  "_comment_overlays": "The overlays this box runs, beside the interfaces rather than among them: switching modes rebuilds that list, and an overlay in it would be dropped by a change that has nothing to do with it. One entry per engine, keyed by who runs the overlay and never by device name, because the device is theirs to name and a renamed one would leave the firewall matching nothing. Every entry with 'is_enabled' true runs, any number at once; an entry turned off keeps its 'is_exposed'. An entry with no 'is_enabled', the 0.4.0 shape, runs. An empty list is a box nobody reaches from outside, which is what a fresh one is: the Overlay page turns an engine on and writes its entry here. 'is_exposed' says whether the hub's own ports answer the overlay's senders, and it starts true: joining an overlay is joining your own network. A file with no 'overlays' key at all reads as one open NetBird entry, which is what the firewall did before this was configurable.",
   "overlays": [],
   "_comment_static_leases": "Devices that always get one address, each {mac_address, address, name}. The address lies in a network that hands out leases and can sit inside its range, which dnsmasq then keeps for that MAC. name is optional; dnsmasq resolves it on the served networks.",
   "static_leases": [],

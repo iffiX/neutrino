@@ -6,9 +6,10 @@ applies. One order and one lock for all of them. Each step stands on its own,
 so a step that cannot be done yet waits for the event that allows it, and the
 steps after it still run.
 
-Not pure: drives the appliers in :mod:`neutrino_hub.modules.router.routes`.
-On macOS and Windows the pass drives the system firewall and the TUN
-device's plan instead, and touches no nftables table.
+Not pure: drives the appliers in :mod:`neutrino_hub.modules.router.routes`,
+and writes the hub's ports into firewalld where it runs. On macOS and
+Windows the pass drives the system firewall and the TUN device's plan
+instead, and touches no nftables table.
 """
 
 import contextlib
@@ -19,7 +20,11 @@ import time
 from pathlib import Path
 
 from neutrino_hub import edition
-from neutrino_hub.modules.firewall.ops import converge_firewall
+from neutrino_hub.modules.firewall.ops import (
+    converge_firewall,
+    converge_firewalld,
+    firewall_exposure,
+)
 from neutrino_hub.modules.overlay.ops import overlay_devices, overlay_parts
 from neutrino_hub.platforms.detect import hub_platform, is_linux
 from neutrino_hub.modules.router.constants import (
@@ -44,7 +49,6 @@ from neutrino_hub.modules.router.constants import (
 )
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.router.link_status import admin_up_interfaces
-from neutrino_hub.modules.overlay.direct_config import direct_agent_port
 from neutrino_hub.modules.router.nft_renderer import RouterNftRenderer
 from neutrino_hub.modules.router.routes import (
     RouterInterfaceApplier,
@@ -156,13 +160,16 @@ class RouterStateController:
             return self._reconcile_firewall(network, routing)
         devices = overlay_devices(network)
         cgroups = engine_cgroups(routing)
+        exposure = firewall_exposure(
+            network.with_overlay_devices(devices), routing=routing
+        )
         ruleset = RouterNftRenderer(
             network=network,
             routing=routing,
             xray_uid=proxy_uid(),
+            exposure=exposure,
             overlay_devices=devices,
             engine_cgroups=list(cgroups),
-            direct_port=direct_agent_port(),
         ).render()
         is_diverting = ROUTER_NFT_DIVERT_MARKER in ruleset
         rules = RouterRulesetApplier()
@@ -191,6 +198,7 @@ class RouterStateController:
         if not loaded.is_failed:
             write_generated(ROUTER_OVERLAY_DEVICES_PATH, json.dumps(devices))
             write_generated(ROUTER_ENGINE_CGROUPS_PATH, json.dumps(cgroups))
+        results.append(run_step("firewall", lambda: converge_firewalld(exposure)))
         if self._on_base_ready is not None:
             self._on_base_ready()
 
@@ -513,17 +521,15 @@ def _sync_served_routes(
 
 
 def _converge_overlays(network: RouterNetworkConfig) -> list[RouterStepResult]:
-    """Tell each overlay's own daemon what the exposure switch says.
+    """Keep each running overlay daemon's stored session settings the hub's.
 
-    NetBird's client puts an accept for its interface back into the input
-    chain within seconds of a reload, so the switch reaches its own setting
-    too. The gate is a no-op when the daemon already agrees.
+    A no-op when the daemon already agrees.
 
     Args:
         network: The parsed router configuration.
 
     Returns:
-        One result per running overlay whose engine keeps a gate of its own.
+        One result per running overlay whose engine keeps a part of its own.
     """
     results = []
     parts = overlay_parts()
@@ -532,9 +538,9 @@ def _converge_overlays(network: RouterNetworkConfig) -> list[RouterStepResult]:
         if part is None:
             continue
 
-        def converge(overlay=overlay, part=part) -> list[str]:
-            note = part().gate(is_blocked=not overlay.is_exposed)
+        def converge(part=part) -> list[str]:
+            note = part().converge_session()
             return [note] if note else []
 
-        results.append(run_step(f"overlay_gate {overlay.title}", converge))
+        results.append(run_step(f"overlay_session {overlay.title}", converge))
     return results

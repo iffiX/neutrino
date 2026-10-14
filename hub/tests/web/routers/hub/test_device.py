@@ -563,6 +563,7 @@ def sleeping(monkeypatch):
         id=DEVICE, name="box", mac_addresses=[LINK_MAC], link_mac=LINK_MAC
     )
     monkeypatch.setattr(devices_router, "DeviceRegistry", WakeRegistry)
+    monkeypatch.setattr(devices_router, "device_held_addresses", dict)
 
 
 @pytest.fixture
@@ -665,11 +666,11 @@ def test_a_server_wakes_on_every_network_it_is_exposed_on(monkeypatch, sleeping)
     )
     monkeypatch.setattr(
         devices_router,
-        "device_addresses",
+        "device_held_addresses",
         lambda: {
-            "enp3s0": "192.168.1.54/24",
-            "wlp4s0": "10.20.0.7/16",
-            "easytier": "10.126.126.1/24",
+            "enp3s0": ["192.168.1.54/24"],
+            "wlp4s0": ["10.20.0.7/16"],
+            "easytier": ["10.126.126.1/24"],
         },
     )
     sent = []
@@ -696,7 +697,9 @@ def test_a_server_exposed_nowhere_has_no_reachable_address(monkeypatch, sleeping
         mode="server",
     )
     monkeypatch.setattr(
-        devices_router, "device_addresses", lambda: {"enp3s0": "192.168.1.54/24"}
+        devices_router,
+        "device_held_addresses",
+        lambda: {"enp3s0": ["192.168.1.54/24"]},
     )
     monkeypatch.setattr(
         devices_router,

@@ -286,10 +286,11 @@ class InterfaceSettings(BaseModel):
 
     name: str
     role: str
-    # Read-only here. Which interfaces answer is written as a set, by the
-    # panel that shows all of them at once, so a save of one interface takes
-    # the stored answer and ignores whatever arrives in the body.
-    is_exposed: bool = False
+    # Read-only here. Which segments are exposed is written as two sets, by
+    # the panel that shows all of them at once, so a save of one interface
+    # takes the stored answers and ignores whatever arrives in the body.
+    is_ipv4_exposed: bool = False
+    is_ipv6_exposed: bool = False
     wan: WanInterfaceSettings = Field(default_factory=WanInterfaceSettings)
     lan: LanInterfaceSettings = Field(default_factory=LanInterfaceSettings)
     wifi: WifiInterfaceSettings = Field(default_factory=WifiInterfaceSettings)
@@ -297,11 +298,7 @@ class InterfaceSettings(BaseModel):
 
 
 class InterfaceLink(BaseModel):
-    """What an interface is actually doing, as opposed to what it is for.
-
-    ``device_count`` is how many managed devices are reaching this hub across
-    this network right now, which is what closing it would end.
-    """
+    """What an interface is actually doing, as opposed to what it is for."""
 
     name: str
     kind: str = "ethernet"
@@ -314,10 +311,25 @@ class InterfaceLink(BaseModel):
     speed_mbps: int | None = None
     gateway: str | None = None
     is_ap_capable: bool = True
-    device_count: int = 0
     # The resolvers a DHCP uplink's lease names; empty for a static uplink
     # and for an interface holding no lease.
     lease_dns: list[str] = Field(default_factory=list)
+
+
+class SegmentView(BaseModel):
+    """One of an interface's two segments, as the Exposure section draws it.
+
+    Attributes:
+        networks: Every network of the segment's family the interface holds
+            an address in now; an IPv6 segment holds ``fe80::/64`` while the
+            interface has a link-local address.
+        device_count: How many managed devices are reaching this hub from
+            inside those networks right now, which is what closing the
+            segment would end.
+    """
+
+    networks: list[str] = Field(default_factory=list)
+    device_count: int = 0
 
 
 class InterfaceView(BaseModel):
@@ -325,6 +337,8 @@ class InterfaceView(BaseModel):
 
     settings: InterfaceSettings
     link: InterfaceLink
+    ipv4_segment: SegmentView = Field(default_factory=SegmentView)
+    ipv6_segment: SegmentView = Field(default_factory=SegmentView)
     # The configuration does not name it and the hub does not use it until
     # the person turns it on: every such interface on Linux, none elsewhere.
     is_unsaved: bool = False
@@ -374,7 +388,7 @@ class OverlayView(BaseModel):
         provider: Who runs it, the key the write side names it by.
         title: What it is called where a person reads it.
         address: This box's address on it, empty when the overlay is not up.
-        is_exposed: Whether the box answers there.
+        is_exposed: Whether the hub's own ports answer its senders.
         device_count: How many managed devices are reaching this hub over it
             right now, which is what closing it would end.
     """
@@ -427,18 +441,20 @@ class NetworkOptions(BaseModel):
 
     uplink_policy: str = "failover"
     is_inter_lan_allowed: bool = True
-    # Which interfaces answer, by name. A set rather than a flag per request,
-    # because the panel shows every interface at once and applying it is one
-    # decision about the whole box.
-    exposed_interfaces: list[str] | None = None
+    # The interfaces whose IPv4 segment is exposed, and those whose IPv6
+    # segment is, by name. Sets rather than a flag per request, because the
+    # panel shows every segment at once and applying it is one decision
+    # about the whole box.
+    ipv4_exposed_interfaces: list[str] | None = None
+    ipv6_exposed_interfaces: list[str] | None = None
     # And which overlays, by provider. The same question about the same box,
     # so it is answered in the same write.
     exposed_overlays: list[str] | None = None
     # The devices that always get one address, whole.
     static_leases: list[StaticLeaseSettings] | None = None
-    # In router mode, the role each port turned on with this write takes:
-    # ``wan``, or ``lan`` for a wired port. A port with the role ``disabled``
-    # is not exposed there.
+    # In router mode, the role each port with a segment turned on with this
+    # write takes: ``wan``, or ``lan`` for a wired port. A port with the role
+    # ``disabled`` has no exposed segment there.
     interface_roles: dict[str, str] | None = None
 
 

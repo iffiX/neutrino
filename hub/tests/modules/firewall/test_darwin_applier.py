@@ -4,7 +4,7 @@ What these pin: a program the firewall does not list is added and allowed, a
 blocked one is allowed, an allowed one is left alone, and a removal takes
 only the programs it names and finds; the anchor's rules are kept under the
 state root and loaded into ``com.apple/neutrino_hub`` at every pass, pf is
-turned on only when it is off and the rules block something, the kept rules
+turned on only when it is off and the rules hold something, the kept rules
 are loaded again at start, and a flush empties the anchor and forgets them.
 """
 
@@ -101,7 +101,7 @@ def test_the_anchor_is_kept_loaded_and_pf_turned_on(pf):
 
     notes = applier.load_anchor(BLOCKING)
 
-    assert notes == [f"firewall anchor {ANCHOR} blocks 1 rule"]
+    assert notes == [f"firewall anchor {ANCHOR} holds 1 rule"]
     assert path.read_text() == BLOCKING
     assert oct(path.stat().st_mode & 0o777) == "0o600"
     assert tools.calls == [
@@ -127,7 +127,7 @@ def test_the_same_anchor_is_loaded_again_and_says_nothing(pf):
 def test_an_empty_anchor_is_loaded_and_leaves_pf_as_it_is(pf):
     tools, path, applier = pf
 
-    assert applier.load_anchor("") == [f"firewall anchor {ANCHOR} blocks nothing"]
+    assert applier.load_anchor("") == [f"firewall anchor {ANCHOR} holds nothing"]
     assert tools.calls == [["pfctl", "-a", ANCHOR, "-f", str(path)]]
 
 

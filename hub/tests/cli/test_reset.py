@@ -328,6 +328,33 @@ def test_macos_and_windows_hand_the_firewall_back(monkeypatch, elsewhere):
     assert reset._hand_back_network() == ["firewall closed neutrino_hub_agent"]
 
 
+def test_linux_takes_firewalld_s_rules_out_before_the_network_is_handed_back(
+    monkeypatch,
+):
+    """Even with no configuration left to read: firewalld's rules are found
+    by their marker, not by what the configuration names."""
+    order = []
+    monkeypatch.setattr(
+        reset,
+        "hand_back_firewall",
+        lambda: order.append("firewalld") or ["firewalld zone public: 0 added"],
+    )
+    monkeypatch.setattr(
+        reset, "hand_back", lambda network: order.append("network") or ["handed"]
+    )
+
+    def missing(name):
+        raise FileNotFoundError(name)
+
+    monkeypatch.setattr(reset, "read_config", missing)
+    assert reset._hand_back_network() == ["firewalld zone public: 0 added"]
+
+    monkeypatch.setattr(reset, "read_config", lambda name: {"mode": "server"})
+    order.clear()
+    assert reset._hand_back_network() == ["handed", "firewalld zone public: 0 added"]
+    assert order == ["firewalld", "network"]
+
+
 def test_a_firewall_that_will_not_hand_back_is_reported(monkeypatch, elsewhere):
     def refuse():
         raise OSError("powershell exited 1")

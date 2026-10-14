@@ -105,7 +105,7 @@ def serving(panel, before):
     exposed = [
         entry["settings"]["name"]
         for entry in panel.read("/hub/network")["interfaces"]
-        if entry["settings"]["is_exposed"]
+        if entry["settings"]["is_ipv4_exposed"]
     ]
     if spares[-1] not in exposed:
         matrix.put_options(panel, exposed_interfaces=exposed + [spares[-1]])

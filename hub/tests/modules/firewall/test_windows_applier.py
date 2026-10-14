@@ -1,10 +1,11 @@
 """Windows Firewall, with PowerShell faked.
 
-What these pin: the hub's rules are read by their prefix, a missing rule is
-created on its interfaces, a rule whose port or interfaces moved is changed,
-a rule on no interface is disabled rather than removed, a rule no purpose
-names is removed, all in one script, and a firewall already right is not
-touched. An alias Windows has no adapter by yet is waited for a bounded
+What these pin: the hub's rules are read by their prefix with their remote
+addresses and interfaces, a missing rule is created, a rule whose port,
+remote addresses or interfaces moved is removed and created again, a rule no
+purpose names is removed, all in one script, and a firewall already right
+is not touched, an IPv4 network Windows reads back with its mask spelled
+out included. An alias Windows has no adapter by yet is waited for a bounded
 number of runs, then left out with a note; a rule Windows refuses leaves the
 others applied and is answered by name; the next pass scopes a rule left
 narrowed or disabled again.
@@ -22,15 +23,17 @@ from neutrino_hub.modules.firewall.renderer import FirewallPortRule
 from neutrino_hub.modules.firewall.windows_applier import FirewallWindowsApplier
 from tests.conftest import FakePowerShell
 
-ON = ("Ethernet Instance 0 2",)
+SEGMENTS = ("192.168.1.0/24", "2001:db8:1::/64")
 RULES = [
-    FirewallPortRule("neutrino_hub_panel_http", "TCP", 8080, ON),
-    FirewallPortRule("neutrino_hub_agent", "TCP", 8443, ON),
-    FirewallPortRule("neutrino_hub_socks_1080_tcp", "TCP", 1080, ON),
+    FirewallPortRule("neutrino_hub_panel_http", "TCP", 8080, SEGMENTS),
+    FirewallPortRule("neutrino_hub_agent", "TCP", 8443, SEGMENTS),
+    FirewallPortRule("neutrino_hub_socks_1080_tcp", "TCP", 1080, SEGMENTS),
 ]
+# How Windows reads the same remote addresses back.
+READ_BACK = ["192.168.1.0/255.255.255.0", "2001:db8:1::/64"]
 
 
-def held(*entries, interfaces=ON, is_enabled=True) -> dict:
+def held(*entries, remote=READ_BACK, interfaces=("Any",), is_enabled=True) -> dict:
     return {
         "rules": [
             {
@@ -39,17 +42,19 @@ def held(*entries, interfaces=ON, is_enabled=True) -> dict:
                 "port": port,
                 "is_enabled": is_enabled,
                 "interfaces": list(interfaces),
+                "remote_addresses": list(remote),
             }
             for name, protocol, port in entries
         ]
     }
 
 
-def document(name, protocol, port, interfaces=ON) -> dict:
+def document(name, protocol, port, remote=SEGMENTS, interfaces=()) -> dict:
     return {
         "name": name,
         "protocol": protocol,
         "port": port,
+        "remote_addresses": list(remote),
         "interfaces": list(interfaces),
     }
 
@@ -64,6 +69,7 @@ def test_a_fresh_machine_has_every_rule_created():
         "firewall opened neutrino_hub_agent",
         "firewall opened neutrino_hub_socks_1080_tcp",
     ]
+    assert refused == []
     (read_script, read), (change_script, change) = powershell.runs
     assert read_script == FIREWALL_WINDOWS_READ_SCRIPT
     assert read == {"prefix": "neutrino_hub_"}
@@ -73,11 +79,11 @@ def test_a_fresh_machine_has_every_rule_created():
         document("neutrino_hub_agent", "TCP", "8443"),
         document("neutrino_hub_socks_1080_tcp", "TCP", "1080"),
     ]
-    assert change["update"] == [] and change["remove"] == []
+    assert change["remove"] == []
     assert change["description"]
 
 
-def test_a_moved_port_is_changed_and_a_rule_no_purpose_names_is_removed():
+def test_a_moved_port_is_written_again_and_a_rule_no_purpose_names_is_removed():
     powershell = FakePowerShell(
         {
             FIREWALL_WINDOWS_READ_SCRIPT: held(
@@ -96,12 +102,15 @@ def test_a_moved_port_is_changed_and_a_rule_no_purpose_names_is_removed():
         "firewall closed neutrino_hub_socks_1090_tcp",
     ]
     change = powershell.runs[1][1]
-    assert change["create"] == []
-    assert change["update"] == [document("neutrino_hub_panel_http", "TCP", "8080")]
-    assert change["remove"] == ["neutrino_hub_socks_1090_tcp"]
+    assert change["create"] == [document("neutrino_hub_panel_http", "TCP", "8080")]
+    assert change["remove"] == [
+        "neutrino_hub_socks_1090_tcp",
+        "neutrino_hub_panel_http",
+    ]
 
 
 def test_a_firewall_already_right_is_read_and_left_alone():
+    """Windows spells an IPv4 network with its mask; it is the same network."""
     powershell = FakePowerShell(
         {
             FIREWALL_WINDOWS_READ_SCRIPT: held(
@@ -116,6 +125,42 @@ def test_a_firewall_already_right_is_read_and_left_alone():
     assert len(powershell.runs) == 1
 
 
+def test_a_changed_ipv6_prefix_writes_the_rule_again_with_the_new_network():
+    powershell = FakePowerShell(
+        {
+            FIREWALL_WINDOWS_READ_SCRIPT: held(
+                ("neutrino_hub_agent", "TCP", "8443"),
+                remote=["192.168.1.0/255.255.255.0", "2001:db8:9::/64"],
+            )
+        }
+    )
+
+    notes, refused = FirewallWindowsApplier(powershell=powershell).apply(RULES[1:2])
+
+    assert notes == [
+        "firewall opened neutrino_hub_agent to 192.168.1.0/24, 2001:db8:1::/64"
+    ]
+    change = powershell.runs[1][1]
+    assert change["remove"] == ["neutrino_hub_agent"]
+    assert change["create"] == [document("neutrino_hub_agent", "TCP", "8443")]
+
+
+def test_a_rule_held_open_to_any_address_is_narrowed_to_the_segments():
+    powershell = FakePowerShell(
+        {
+            FIREWALL_WINDOWS_READ_SCRIPT: held(
+                ("neutrino_hub_panel_http", "TCP", "8080"), remote=["Any"]
+            )
+        }
+    )
+
+    notes, _ = FirewallWindowsApplier(powershell=powershell).apply(RULES[:1])
+
+    assert notes == [
+        "firewall opened neutrino_hub_panel_http to 192.168.1.0/24, 2001:db8:1::/64"
+    ]
+
+
 def test_one_rule_held_comes_back_bare_and_is_still_read():
     powershell = FakePowerShell(
         {
@@ -125,7 +170,8 @@ def test_one_rule_held_comes_back_bare_and_is_still_read():
                     "protocol": "TCP",
                     "port": "8443",
                     "is_enabled": True,
-                    "interfaces": "Ethernet Instance 0 2",
+                    "interfaces": "Any",
+                    "remote_addresses": READ_BACK,
                 }
             }
         }
@@ -172,92 +218,29 @@ def test_powershell_that_cannot_run_is_an_os_error():
         FirewallWindowsApplier(powershell=powershell).apply(RULES)
 
 
-def test_the_ai_gateway_s_port_is_opened_and_moved_like_the_rest():
-    held_rules = held(("neutrino_hub_ai_gateway", "TCP", "8317"))
-    powershell = FakePowerShell({FIREWALL_WINDOWS_READ_SCRIPT: held_rules})
-    rule = FirewallPortRule("neutrino_hub_ai_gateway", "TCP", 9317, ON)
-
-    notes, refused = FirewallWindowsApplier(powershell=powershell).apply([rule])
-
-    assert notes == ["firewall moved neutrino_hub_ai_gateway to 9317"]
-    (_, _), (_, change) = powershell.runs
-    assert change["update"] == [document("neutrino_hub_ai_gateway", "TCP", "9317")]
-
-
-def test_a_rule_held_on_every_interface_is_scoped_to_the_exposed_ones():
-    powershell = FakePowerShell(
-        {
-            FIREWALL_WINDOWS_READ_SCRIPT: held(
-                ("neutrino_hub_panel_http", "TCP", "8080"), interfaces=["Any"]
-            )
-        }
-    )
-    rule = FirewallPortRule(
-        "neutrino_hub_panel_http", "TCP", 8080, ("Ethernet Instance 0 2", "wt0")
-    )
-
-    notes, refused = FirewallWindowsApplier(powershell=powershell).apply([rule])
-
-    assert notes == [
-        "firewall scoped neutrino_hub_panel_http to Ethernet Instance 0 2, wt0"
-    ]
-    assert powershell.runs[1][1]["update"] == [
-        document(
-            "neutrino_hub_panel_http",
-            "TCP",
-            "8080",
-            ["Ethernet Instance 0 2", "wt0"],
-        )
-    ]
-
-
-def test_a_rule_on_no_interface_is_disabled_and_kept():
-    powershell = FakePowerShell(
-        {FIREWALL_WINDOWS_READ_SCRIPT: held(("neutrino_hub_panel_http", "TCP", "8080"))}
-    )
-    rule = FirewallPortRule("neutrino_hub_panel_http", "TCP", 8080, ())
-
-    notes, refused = FirewallWindowsApplier(powershell=powershell).apply([rule])
-
-    assert notes == ["firewall disabled neutrino_hub_panel_http"]
-    change = powershell.runs[1][1]
-    assert change["update"] == [document("neutrino_hub_panel_http", "TCP", "8080", [])]
-    assert change["remove"] == []
-
-
-def test_a_disabled_rule_still_on_no_interface_is_left_alone():
-    powershell = FakePowerShell(
-        {
-            FIREWALL_WINDOWS_READ_SCRIPT: held(
-                ("neutrino_hub_panel_http", "TCP", "8080"),
-                interfaces=["Wi-Fi"],
-                is_enabled=False,
-            )
-        }
-    )
-    rule = FirewallPortRule("neutrino_hub_panel_http", "TCP", 8080, ())
-
-    assert FirewallWindowsApplier(powershell=powershell).apply([rule]) == ([], [])
-    assert len(powershell.runs) == 1
-
-
 def test_the_aliases_are_compared_as_a_set_whatever_their_case():
     powershell = FakePowerShell(
         {
             FIREWALL_WINDOWS_READ_SCRIPT: held(
-                ("neutrino_hub_agent", "TCP", "8443"), interfaces=["WT0", "Wi-Fi"]
+                ("neutrino_hub_agent_direct", "TCP", "8443"),
+                remote=["Any"],
+                interfaces=["WT0", "Wi-Fi"],
             )
         }
     )
-    rule = FirewallPortRule("neutrino_hub_agent", "TCP", 8443, ("Wi-Fi", "wt0"))
+    rule = FirewallPortRule(
+        "neutrino_hub_agent_direct", "TCP", 8443, (), ("Wi-Fi", "wt0")
+    )
 
     assert FirewallWindowsApplier(powershell=powershell).apply([rule]) == ([], [])
 
 
-def test_the_change_script_scopes_or_disables_each_rule():
-    assert "-InterfaceAlias $aliases" in FIREWALL_WINDOWS_CHANGE_SCRIPT
-    assert "-Enabled False" in FIREWALL_WINDOWS_CHANGE_SCRIPT
+def test_the_scripts_name_the_remote_addresses_and_the_interfaces():
+    assert "Get-NetFirewallAddressFilter" in FIREWALL_WINDOWS_READ_SCRIPT
     assert "Get-NetFirewallInterfaceFilter" in FIREWALL_WINDOWS_READ_SCRIPT
+    assert "RemoteAddress = $remote" in FIREWALL_WINDOWS_CHANGE_SCRIPT
+    assert "$options.InterfaceAlias = $aliases" in FIREWALL_WINDOWS_CHANGE_SCRIPT
+    assert "$options.Enabled = 'False'" in FIREWALL_WINDOWS_CHANGE_SCRIPT
 
 
 def test_the_change_script_keeps_only_the_aliases_windows_knows():
@@ -308,7 +291,7 @@ class FakeWindows:
         dropped, failed = [], []
         for name in document["remove"]:
             self.rules.pop(name, None)
-        for rule in document["update"] + document["create"]:
+        for rule in document["create"]:
             aliases = [name for name in rule["interfaces"] if name.lower() in known]
             unknown = [name for name in rule["interfaces"] if name not in aliases]
             if unknown:
@@ -320,64 +303,68 @@ class FakeWindows:
                 "name": rule["name"],
                 "protocol": rule["protocol"],
                 "port": rule["port"],
-                "is_enabled": bool(aliases),
+                "is_enabled": bool(aliases) or not rule["interfaces"],
                 "interfaces": aliases or ["Any"],
+                "remote_addresses": rule["remote_addresses"] or ["Any"],
             }
         return {"changed": True, "dropped": dropped, "failed": failed}
 
 
-def easytier_rule(*interfaces) -> FirewallPortRule:
-    return FirewallPortRule("neutrino_hub_easytier_tcp", "TCP", 11010, interfaces)
+def link_rule(*interfaces) -> FirewallPortRule:
+    return FirewallPortRule(
+        "neutrino_hub_agent_link", "TCP", 8443, ("fe80::/64",), interfaces
+    )
 
 
-def easytier_held(*interfaces, is_enabled=True) -> dict:
+def link_held(*interfaces, is_enabled=True) -> dict:
     return {
-        "name": "neutrino_hub_easytier_tcp",
+        "name": "neutrino_hub_agent_link",
         "protocol": "TCP",
-        "port": "11010",
+        "port": "8443",
         "is_enabled": is_enabled,
         "interfaces": list(interfaces),
+        "remote_addresses": ["fe80::/64"],
     }
 
 
 def test_an_adapter_up_by_the_third_run_gets_the_rule_fully_scoped():
     windows = FakeWindows(
         known=[[ETHERNET], [ETHERNET], [ETHERNET, EASYTIER]],
-        held=[easytier_held(ETHERNET, "et_1_tncd")],
+        held=[link_held(ETHERNET, "et_1_tncd")],
     )
     waits = []
     applier = FirewallWindowsApplier(powershell=windows, sleep=waits.append)
 
-    notes, refused = applier.apply([easytier_rule(ETHERNET, EASYTIER)])
+    notes, refused = applier.apply([link_rule(ETHERNET, EASYTIER)])
 
     assert notes == [
-        f"firewall scoped neutrino_hub_easytier_tcp to {ETHERNET}, {EASYTIER}"
+        f"firewall scoped neutrino_hub_agent_link to {ETHERNET}, {EASYTIER}"
     ]
     assert refused == []
     assert waits == [FIREWALL_WINDOWS_RETRY_WAIT_S] * 2
     assert len(windows.changes) == 3
-    assert windows.rules["neutrino_hub_easytier_tcp"]["interfaces"] == [
+    assert windows.rules["neutrino_hub_agent_link"]["interfaces"] == [
         ETHERNET,
         EASYTIER,
     ]
 
 
 def test_an_adapter_never_up_is_left_out_after_the_last_run_with_a_note():
-    windows = FakeWindows(known=[[ETHERNET]], held=[easytier_held("et_1_tncd")])
+    windows = FakeWindows(known=[[ETHERNET]], held=[link_held("et_1_tncd")])
     waits = []
     applier = FirewallWindowsApplier(powershell=windows, sleep=waits.append)
 
-    notes, refused = applier.apply([easytier_rule(EASYTIER)])
+    notes, refused = applier.apply([link_rule(EASYTIER)])
 
     assert notes == [
-        "firewall disabled neutrino_hub_easytier_tcp",
-        f"firewall left {EASYTIER} out of neutrino_hub_easytier_tcp:"
+        "firewall disabled neutrino_hub_agent_link",
+        f"firewall left {EASYTIER} out of neutrino_hub_agent_link:"
         " Windows has no adapter by that name",
     ]
     assert refused == []
     assert len(windows.changes) == FIREWALL_WINDOWS_RETRY_COUNT
     assert waits == [FIREWALL_WINDOWS_RETRY_WAIT_S] * (FIREWALL_WINDOWS_RETRY_COUNT - 1)
-    assert windows.rules["neutrino_hub_easytier_tcp"]["is_enabled"] is False
+    assert windows.rules["neutrino_hub_agent_link"]["is_enabled"] is False
 
 
 def test_a_refused_rule_leaves_the_others_applied_and_is_answered_by_name():
@@ -394,7 +381,7 @@ def test_a_refused_rule_leaves_the_others_applied_and_is_answered_by_name():
     assert refused == [
         {
             "rule": "neutrino_hub_panel_http",
-            "detail": f"neutrino_hub_panel_http on {ETHERNET}: {REFUSAL}",
+            "detail": f"neutrino_hub_panel_http: {REFUSAL}",
         }
     ]
     assert sorted(windows.rules) == [
@@ -408,37 +395,25 @@ def test_a_refused_rule_leaves_the_others_applied_and_is_answered_by_name():
 
 
 def test_the_next_pass_scopes_a_rule_left_narrowed_or_disabled_again():
-    udp = FirewallPortRule("neutrino_hub_easytier_udp", "UDP", 11010, (EASYTIER,))
-    tcp = easytier_rule(ETHERNET, EASYTIER)
+    direct = FirewallPortRule("neutrino_hub_agent_direct", "TCP", 8443, (), (EASYTIER,))
+    link = link_rule(ETHERNET, EASYTIER)
     windows = FakeWindows(known=[[ETHERNET]])
     FirewallWindowsApplier(powershell=windows, sleep=lambda seconds: None).apply(
-        [tcp, udp]
+        [link, direct]
     )
-    assert windows.rules["neutrino_hub_easytier_tcp"]["interfaces"] == [ETHERNET]
-    assert windows.rules["neutrino_hub_easytier_udp"]["is_enabled"] is False
+    assert windows.rules["neutrino_hub_agent_link"]["interfaces"] == [ETHERNET]
+    assert windows.rules["neutrino_hub_agent_direct"]["is_enabled"] is False
 
     windows._known = [[ETHERNET, EASYTIER]]
     windows.changes = []
     notes, refused = FirewallWindowsApplier(
         powershell=windows, sleep=lambda seconds: None
-    ).apply([tcp, udp])
+    ).apply([link, direct])
 
     assert notes == [
-        f"firewall scoped neutrino_hub_easytier_tcp to {ETHERNET}, {EASYTIER}",
-        f"firewall scoped neutrino_hub_easytier_udp to {EASYTIER}",
+        f"firewall scoped neutrino_hub_agent_link to {ETHERNET}, {EASYTIER}",
+        f"firewall scoped neutrino_hub_agent_direct to {EASYTIER}",
     ]
     assert refused == []
     assert len(windows.changes) == 1
-    assert windows.rules["neutrino_hub_easytier_udp"]["interfaces"] == [EASYTIER]
-
-
-def test_the_agent_rule_names_no_address_so_it_covers_ipv4_and_ipv6():
-    """A rule with no local or remote address matches both families: the
-    agent port answers on IPv6 wherever it answers on IPv4."""
-    powershell = FakePowerShell({FIREWALL_WINDOWS_READ_SCRIPT: {"rules": []}})
-
-    FirewallWindowsApplier(powershell=powershell).apply(RULES)
-
-    _, (change_script, change) = powershell.runs
-    assert "Address" not in change_script
-    assert change["create"][1] == document("neutrino_hub_agent", "TCP", "8443")
+    assert windows.rules["neutrino_hub_agent_direct"]["interfaces"] == [EASYTIER]

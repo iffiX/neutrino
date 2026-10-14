@@ -1,9 +1,10 @@
 """Where a magic packet is broadcast, and how it leaves.
 
-A router or side gateway hub broadcasts on each network it serves; a server
-hub on the network of each exposed interface that holds an IPv4 address, an
-interface the configuration does not name exposed on macOS and Windows and
-not on Linux; an overlay never gets one. The packet goes to the network's own broadcast
+A hub broadcasts on each network of its exposed IPv4 segments, in every
+mode: every IPv4 network an interface whose IPv4 segment is exposed holds an
+address in, a served network's configured one among them, an interface the
+configuration does not name exposed on macOS and Windows and not on Linux;
+an overlay never gets one. The packet goes to the network's own broadcast
 address from a socket bound to the hub's address on that network, the same
 calls on Linux, macOS and Windows.
 """
@@ -29,14 +30,10 @@ def exposed(name: str, *, is_exposed: bool = True) -> dict:
     return {"name": name, "role": "disabled", "is_exposed": is_exposed}
 
 
-def never_read():
-    pytest.fail("a hub that serves its networks reads no live address")
-
-
 def test_a_server_broadcasts_on_its_one_exposed_network():
     network = network_config(exposed("enp3s0"), overlays=[], mode="server")
 
-    assert wake_targets(network, lambda: {"enp3s0": "192.168.1.54/24"}) == [
+    assert wake_targets(network, lambda: {"enp3s0": ["192.168.1.54/24"]}) == [
         WakeTarget(broadcast_address="192.168.1.255", source_address="192.168.1.54")
     ]
 
@@ -50,9 +47,9 @@ def test_a_server_broadcasts_on_each_exposed_network_and_no_closed_one():
         mode="server",
     )
     addresses = {
-        "enp3s0": "192.168.1.54/24",
-        "wlp4s0": "10.20.0.7/16",
-        "enp5s0": "172.16.9.2/24",
+        "enp3s0": ["192.168.1.54/24"],
+        "wlp4s0": ["10.20.0.7/16"],
+        "enp5s0": ["172.16.9.2/24"],
     }
 
     assert wake_targets(network, lambda: addresses) == [
@@ -68,7 +65,7 @@ def test_an_exposed_overlay_beside_a_lan_interface_gets_nothing():
         mode="server",
     )
     (overlay,) = network.exposed_overlay_device_names
-    addresses = {"enp3s0": "192.168.1.54/24", overlay: "10.126.126.1/24"}
+    addresses = {"enp3s0": ["192.168.1.54/24"], overlay: ["10.126.126.1/24"]}
 
     assert wake_targets(network, lambda: addresses) == [
         WakeTarget("192.168.1.255", "192.168.1.54")
@@ -79,22 +76,39 @@ def test_a_server_with_nothing_exposed_or_no_address_has_no_network():
     closed = network_config(exposed("enp3s0", is_exposed=False), mode="server")
     opened = network_config(exposed("enp3s0"), overlays=[], mode="server")
 
-    assert wake_targets(closed, lambda: {"enp3s0": "192.168.1.54/24"}) == []
+    assert wake_targets(closed, lambda: {"enp3s0": ["192.168.1.54/24"]}) == []
     assert wake_targets(opened, lambda: {}) == []
-    assert wake_targets(opened, lambda: {"enp3s0": "198.51.100.1/31"}) == []
+    assert wake_targets(opened, lambda: {"enp3s0": ["198.51.100.1/31"]}) == []
 
 
-def test_a_router_broadcasts_on_its_served_networks_as_before():
+def test_a_router_broadcasts_on_its_exposed_ipv4_segments_alone():
+    """A served network whose segment is closed keeps DHCP and forwarding
+    and gets no magic packet; an exposed uplink's network gets one."""
     network = network_config(
         wan_entry("enp2s0", is_exposed=True),
         lan_entry("enp1s0", address="192.168.100.1"),
         lan_entry("wlp3s0", address="192.168.101.1", is_exposed=False),
         overlays=[{"provider": "easytier", "is_exposed": True, "is_enabled": True}],
     )
+    held = {
+        "enp2s0": ["203.0.113.7/24", "2001:db8::7/64"],
+        "wlp3s0": ["192.168.101.1/24"],
+        "easytier": ["10.126.126.1/24"],
+    }
 
-    assert wake_targets(network, never_read) == [
+    assert wake_targets(network, lambda: held) == [
+        WakeTarget("203.0.113.255", "203.0.113.7"),
         WakeTarget("192.168.100.255", "192.168.100.1"),
-        WakeTarget("192.168.101.255", "192.168.101.1"),
+    ]
+
+
+def test_every_ipv4_network_an_exposed_interface_holds_gets_a_packet():
+    network = network_config(exposed("enp3s0"), overlays=[], mode="server")
+    held = {"enp3s0": ["192.168.1.54/24", "10.20.0.7/16", "fe80::1/64"]}
+
+    assert wake_targets(network, lambda: held) == [
+        WakeTarget("192.168.1.255", "192.168.1.54"),
+        WakeTarget("10.20.255.255", "10.20.0.7"),
     ]
 
 
@@ -173,9 +187,9 @@ def test_a_malformed_mac_is_refused(sockets):
 # One interface stored, two exposed on the machine: what the panel shows as
 # exposed for the one the configuration does not name differs by system.
 MAC_ADDRESSES = {
-    "en0": "192.168.10.125/24",
-    "en1": "192.168.122.127/24",
-    "utun4": "10.126.126.1/24",
+    "en0": ["192.168.10.125/24"],
+    "en1": ["192.168.122.127/24"],
+    "utun4": ["10.126.126.1/24"],
 }
 
 
@@ -199,7 +213,7 @@ def test_a_server_broadcasts_on_an_interface_the_config_does_not_name_as_the_pan
     shown = [
         name
         for name in MAC_ADDRESSES
-        if name != "utun4" and network.interface_or_new(name).is_exposed
+        if name != "utun4" and network.interface_or_new(name).is_ipv4_exposed
     ]
     targets = wake_targets(network, lambda: dict(MAC_ADDRESSES))
 
@@ -213,7 +227,7 @@ def test_an_interface_closed_in_the_config_gets_nothing_on_any_system(monkeypatc
         exposed("en0"), exposed("en1", is_exposed=False), overlays=[], mode="server"
     )
 
-    addresses = {"en0": "192.168.10.125/24", "en1": "192.168.122.127/24"}
+    addresses = {"en0": ["192.168.10.125/24"], "en1": ["192.168.122.127/24"]}
 
     assert wake_targets(network, lambda: addresses) == [
         WakeTarget("192.168.10.255", "192.168.10.125")

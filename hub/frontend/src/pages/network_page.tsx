@@ -160,9 +160,10 @@ function newVlanSettings(parent: string, id: number): InterfaceSettings {
   return {
     name: `${parent}.${id}`,
     role: "disabled",
-    // Sent and discarded: which interfaces answer is written as a set by the
-    // panel that shows all of them, not by a request about one of them.
-    is_exposed: false,
+    // Sent and discarded: which segments are exposed is written as two sets
+    // by the panel that shows all of them, not by a request about one.
+    is_ipv4_exposed: false,
+    is_ipv6_exposed: false,
     wan: {
       method: "dhcp",
       address: null,
@@ -785,8 +786,11 @@ function optionsOf(view: NetworkView): NetworkOptions {
   return {
     uplink_policy: view.uplink_policy,
     is_inter_lan_allowed: view.is_inter_lan_allowed,
-    exposed_interfaces: view.interfaces
-      .filter((entry) => entry.settings.is_exposed)
+    ipv4_exposed_interfaces: view.interfaces
+      .filter((entry) => entry.settings.is_ipv4_exposed)
+      .map((entry) => entry.settings.name),
+    ipv6_exposed_interfaces: view.interfaces
+      .filter((entry) => entry.settings.is_ipv6_exposed)
       .map((entry) => entry.settings.name),
     exposed_overlays: view.overlays
       .filter((overlay) => overlay.is_exposed)

@@ -61,16 +61,29 @@ class _Kernel:
     def __init__(self):
         self.answers = {
             ("link", "show"): [{"ifname": "enp1s0", "flags": ["UP", "LOWER_UP"]}],
-            ("-4", "addr", "show"): [
+            ("addr", "show"): [
                 {
                     "ifname": "enp2s0",
                     "addr_info": [
                         {
+                            "family": "inet",
                             "local": "192.168.12.170",
                             "prefixlen": 24,
                             "dynamic": True,
                             "valid_life_time": 3600,
-                        }
+                        },
+                        {
+                            "family": "inet6",
+                            "local": "2001:db8:12::5",
+                            "prefixlen": 64,
+                            "valid_life_time": 86400,
+                        },
+                        {
+                            "family": "inet6",
+                            "local": "2001:db8:12::a7",
+                            "prefixlen": 64,
+                            "temporary": True,
+                        },
                     ],
                 }
             ],
@@ -96,7 +109,7 @@ def test_a_renewed_lease_is_not_a_change(monkeypatch):
     monkeypatch.setattr(link_monitor, "run", kernel)
     before = link_fingerprint()
 
-    kernel.answers[("-4", "addr", "show")][0]["addr_info"][0]["valid_life_time"] = 3599
+    kernel.answers[("addr", "show")][0]["addr_info"][0]["valid_life_time"] = 3599
 
     assert link_fingerprint() == before
 
@@ -118,5 +131,30 @@ def test_losing_the_policy_rule_is_a_change(monkeypatch):
     before = link_fingerprint()
 
     kernel.answers[("rule", "show")] = []
+
+    assert link_fingerprint() != before
+
+
+def test_a_temporary_address_replaced_inside_its_network_is_not_a_change(
+    monkeypatch,
+):
+    kernel = _Kernel()
+    monkeypatch.setattr(link_monitor, "run", kernel)
+    before = link_fingerprint()
+
+    kernel.answers[("addr", "show")][0]["addr_info"][2]["local"] = "2001:db8:12::b9"
+
+    assert link_fingerprint() == before
+
+
+def test_a_new_ipv6_prefix_is_a_change(monkeypatch):
+    """An exposed IPv6 segment's rules name the prefix, so the pass that
+    follows renders them again."""
+    kernel = _Kernel()
+    monkeypatch.setattr(link_monitor, "run", kernel)
+    before = link_fingerprint()
+
+    for address in kernel.answers[("addr", "show")][0]["addr_info"][1:]:
+        address["local"] = address["local"].replace("2001:db8:12::", "2001:db8:99::")
 
     assert link_fingerprint() != before

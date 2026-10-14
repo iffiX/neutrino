@@ -86,7 +86,7 @@ def test_turning_an_engine_off_keeps_its_row_and_its_exposure():
     assert network.overlays[0].is_exposed is False
 
 
-def test_an_engine_that_is_off_takes_no_device_and_no_port():
+def test_an_engine_that_is_off_takes_no_device():
     network = config(
         [
             {"provider": OVERLAY_NETBIRD, "is_enabled": False},
@@ -95,7 +95,6 @@ def test_an_engine_that_is_off_takes_no_device_and_no_port():
     )
 
     assert network.exposed_overlay_device_names == ["easytier"]
-    assert network.exposed_overlay_peer_ports == [11010]
     assert network.overlay(OVERLAY_NETBIRD) is None
 
 

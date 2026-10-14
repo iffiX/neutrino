@@ -17,6 +17,9 @@ from neutrino_hub.utils.constants import (
 
 ROUTER_NFT_TABLE = "neutrino"
 ROUTER_NFT_FAMILY = "inet"
+# The priority of the hub's input chain, a nat chain: the kernel's own for
+# source NAT, which nft names no keyword for on the input hook.
+ROUTER_NFT_INPUT_PRIORITY = 100
 
 # What the whole machine is, stored in ``config/router/network.json``.
 # Everything downstream of it — which panels the page draws, whether the hub
@@ -70,6 +73,14 @@ ROUTER_ROLES = (
 # to do with it.
 ROUTER_OVERLAY_NETBIRD = OVERLAY_NETBIRD
 ROUTER_OVERLAY_KEYS = tuple(OVERLAY_ENGINES)
+
+# The two segments of an interface, one per address family, each with its own
+# exposure switch.
+ROUTER_FAMILY_IPV4 = "ipv4"
+ROUTER_FAMILY_IPV6 = "ipv6"
+ROUTER_FAMILIES = (ROUTER_FAMILY_IPV4, ROUTER_FAMILY_IPV6)
+# The one network every IPv6 link-local address of an interface is in.
+ROUTER_IPV6_LINK_LOCAL_NETWORK = "fe80::/64"
 
 # What a served or static address may be masked by. A /0 is not a network,
 # it is an on-link route for the whole internet, and `ip_network` accepts it
@@ -213,7 +224,6 @@ ROUTER_STEP_CHANGE_CODES = {
     "default_route": "default_route_changed",
     "resolver": "resolver_changed",
     "served_route": "served_route_changed",
-    "overlay_gate": "overlay_exposure_changed",
     "tun": "tun_changed",
 }
 ROUTER_CODE_NETWORK_CHANGED = "network_changed"

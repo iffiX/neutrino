@@ -367,16 +367,17 @@ def test_a_refused_or_expired_login_reads_as_not_enrolled(monkeypatch, word):
     assert state.is_enrolled is False
 
 
-# --- The inbound gate -------------------------------------------------------
+# --- The session's stored settings -------------------------------------------
 #
-# Measured on a running 0.77.1 client, because none of it is guessable: the
-# daemon re-inserts an accept for its interface into whatever input chain it
-# finds within seconds of a reload, `netbird up` does nothing while the client
-# is connected, and the flag is sticky rather than defaulting to off.
+# Measured on a running 0.77.1 client, because none of it is guessable:
+# `netbird up` does nothing while the client is connected, and a flag left
+# off keeps what the profile stored.
+
+UP = [NETBIRD, "up", "--disable-dns"]
 
 
-def gate_over(monkeypatch, tmp_path, *, stored, status=None):
-    """A gate reading a state directory of this test's own making."""
+def session_over(monkeypatch, tmp_path, *, stored, status=None):
+    """A session applier reading a state directory of this test's own making."""
     (tmp_path / "active_profile.json").write_text(json.dumps({"name": "default"}))
     if stored is not None:
         (tmp_path / "default.json").write_text(json.dumps(stored))
@@ -394,120 +395,69 @@ def gate_over(monkeypatch, tmp_path, *, stored, status=None):
         "survey",
         lambda self: status or ops.NetbirdState(is_installed=True, is_enrolled=True),
     )
-    return ops.NetbirdInboundGate(), ran
+    return ops.NetbirdSessionApplier(), ran
 
 
-def test_the_gate_reads_what_the_daemon_was_last_told(monkeypatch, tmp_path):
-    gate, _ = gate_over(monkeypatch, tmp_path, stored={"BlockInbound": True})
-
-    assert gate.state() is True
-
-
-def test_a_machine_that_never_enrolled_says_nothing_either_way(monkeypatch, tmp_path):
-    gate, _ = gate_over(monkeypatch, tmp_path, stored=None)
-
-    assert gate.state() is None
+SETTLED = {
+    "DisableDNS": True,
+    "IFaceBlackList": ["wt0", "lo", *ops.own_device_prefixes()],
+}
 
 
-def test_a_state_that_already_agrees_costs_no_reconnection(monkeypatch, tmp_path):
-    """A network apply runs on every interface save. Setting this each time
+def test_settings_that_already_agree_cost_no_reconnection(monkeypatch, tmp_path):
+    """A network apply runs on every interface save. Setting them each time
     would drop the overlay every time."""
-    gate, ran = gate_over(
-        monkeypatch,
-        tmp_path,
-        stored={
-            "BlockInbound": False,
-            "DisableDNS": True,
-            "IFaceBlackList": ["wt0", "lo", *ops.own_device_prefixes()],
-        },
+    session, ran = session_over(monkeypatch, tmp_path, stored=SETTLED)
+
+    assert session.converge() == ""
+    assert ran == []
+
+
+def test_no_up_states_an_inbound_setting_of_netbirds_own(monkeypatch, tmp_path):
+    """The hub's port rules close a NetBird chip; NetBird's own switch is
+    never set, whatever the profile holds."""
+    session, ran = session_over(
+        monkeypatch, tmp_path, stored={**SETTLED, "DisableDNS": False}
     )
 
-    assert gate.converge(is_blocked=False) == ""
-    assert ran == []
+    session.converge()
+
+    assert not any("inbound" in word for command in ran for word in command)
 
 
 def test_a_daemon_still_managing_dns_is_told_to_stop(monkeypatch, tmp_path):
     """The box resolves at its own dnsmasq, whatever the served network's
     address becomes; a daemon holding the resolver reads its upstream once."""
-    gate, ran = gate_over(
-        monkeypatch, tmp_path, stored={"BlockInbound": False, "DisableDNS": False}
-    )
+    session, ran = session_over(monkeypatch, tmp_path, stored={"DisableDNS": False})
 
-    note = gate.converge(is_blocked=False)
+    note = session.converge()
 
-    assert ran == [
-        [NETBIRD, "down"],
-        [
-            NETBIRD,
-            "up",
-            "--block-inbound=false",
-            "--disable-dns",
-            ops.iface_blacklist_flag(),
-        ],
-    ]
+    assert ran == [[NETBIRD, "down"], [*UP, ops.iface_blacklist_flag()]]
     assert note == "overlay DNS management turned off"
 
 
-def test_closing_takes_the_session_down_first_and_states_the_value(
-    monkeypatch, tmp_path
-):
-    """`netbird up` answers "already connected" and changes nothing while the
-    client is up, and the flag left off keeps whatever was stored."""
-    gate, ran = gate_over(monkeypatch, tmp_path, stored={"BlockInbound": False})
-
-    note = gate.converge(is_blocked=True)
-
-    assert ran == [
-        [NETBIRD, "down"],
-        [
-            NETBIRD,
-            "up",
-            "--block-inbound=true",
-            "--disable-dns",
-            ops.iface_blacklist_flag(),
-        ],
-    ]
-    assert note == "overlay closed"
-
-
-def test_opening_states_the_value_too_because_the_flag_is_sticky(monkeypatch, tmp_path):
-    """Running `netbird up` with no flag leaves a blocked client blocked."""
-    gate, ran = gate_over(monkeypatch, tmp_path, stored={"BlockInbound": True})
-
-    note = gate.converge(is_blocked=False)
-
-    assert ran[-1] == [
-        NETBIRD,
-        "up",
-        "--block-inbound=false",
-        "--disable-dns",
-        ops.iface_blacklist_flag(),
-    ]
-    assert note == "overlay opened"
-
-
 def test_a_box_without_netbird_is_left_alone(monkeypatch, tmp_path):
-    gate, ran = gate_over(
+    session, ran = session_over(
         monkeypatch,
         tmp_path,
-        stored={"BlockInbound": False},
+        stored={},
         status=ops.NetbirdState(is_installed=False),
     )
 
-    assert gate.converge(is_blocked=True) == ""
+    assert session.converge() == ""
     assert ran == []
 
 
 def test_a_box_that_has_not_joined_a_network_is_left_alone(monkeypatch, tmp_path):
     """`netbird up` on an unenrolled machine is a login it cannot finish."""
-    gate, ran = gate_over(
+    session, ran = session_over(
         monkeypatch,
         tmp_path,
         stored=None,
         status=ops.NetbirdState(is_installed=True, is_enrolled=False),
     )
 
-    assert gate.converge(is_blocked=True) == ""
+    assert session.converge() == ""
     assert ran == []
 
 
@@ -584,29 +534,17 @@ def test_every_up_names_the_devices_the_box_makes_itself():
 def test_a_profile_missing_one_of_them_is_told_again(monkeypatch, tmp_path):
     """The daemon adds to its list and gathers candidates on the next up, so
     a profile from before the list grew costs one reconnection."""
-    gate, ran = gate_over(
+    session, ran = session_over(
         monkeypatch,
         tmp_path,
         stored={
-            "BlockInbound": False,
             "DisableDNS": True,
             "IFaceBlackList": ["wt0", "docker", "veth", "br-", "lo"],
         },
     )
 
-    assert gate.converge(is_blocked=False) == (
-        "overlay listens on no device the box made"
-    )
-    assert ran == [
-        [NETBIRD, "down"],
-        [
-            NETBIRD,
-            "up",
-            "--block-inbound=false",
-            "--disable-dns",
-            ops.iface_blacklist_flag(),
-        ],
-    ]
+    assert session.converge() == "overlay listens on no device the box made"
+    assert ran == [[NETBIRD, "down"], [*UP, ops.iface_blacklist_flag()]]
 
 
 # --- the hub's own daemon outside Linux -------------------------------------
@@ -644,12 +582,12 @@ def test_elsewhere_every_command_names_the_hubs_own_daemon(elsewhere, monkeypatc
     ]
 
 
-def test_elsewhere_the_inbound_gate_names_the_daemon_and_reads_beside_the_hub(
+def test_elsewhere_the_session_applier_names_the_daemon_and_reads_beside_the_hub(
     elsewhere, tmp_path, monkeypatch
 ):
     monkeypatch.setattr(ops, "NETBIRD_HUB_STATE_DIR", tmp_path)
     (tmp_path / "active_profile.json").write_text('{"name": "default"}')
-    (tmp_path / "default.json").write_text('{"BlockInbound": true}')
+    (tmp_path / "default.json").write_text('{"DisableDNS": false}')
     ran = []
     monkeypatch.setattr(
         ops, "run", lambda command, **kwargs: ran.append(command) or FakeResult("")
@@ -661,18 +599,13 @@ def test_elsewhere_the_inbound_gate_names_the_daemon_and_reads_beside_the_hub(
     )
     tail = daemon_tail(elsewhere)
 
-    assert ops.NetbirdInboundGate().state() is True
-    assert ops.NetbirdInboundGate().converge(is_blocked=False) == "overlay opened"
+    assert not ops.NetbirdSessionApplier().is_dns_off()
+    assert ops.NetbirdSessionApplier().converge() == (
+        "overlay DNS management turned off"
+    )
     assert ran == [
         [NETBIRD, "down", *tail],
-        [
-            NETBIRD,
-            "up",
-            "--block-inbound=false",
-            "--disable-dns",
-            ops.iface_blacklist_flag(),
-            *tail,
-        ],
+        [*UP, ops.iface_blacklist_flag(), *tail],
     ]
 
 
@@ -697,9 +630,9 @@ def test_elsewhere_the_single_file_profile_is_the_one_the_daemon_started_with(
     elsewhere, tmp_path, monkeypatch
 ):
     monkeypatch.setattr(ops, "NETBIRD_HUB_STATE_DIR", tmp_path)
-    (tmp_path / "config.json").write_text('{"BlockInbound": false}')
+    (tmp_path / "config.json").write_text('{"DisableDNS": true}')
 
-    assert ops.NetbirdInboundGate().state() is False
+    assert ops.NetbirdSessionApplier().is_dns_off() is True
 
 
 def test_elsewhere_a_reset_restarts_the_child(

@@ -140,14 +140,18 @@ def put_interface(panel, name: str, **changes) -> None:
     """Save one interface. A router refuses an exposed port with the role
     ``disabled``, and exposure is written for the whole box, so a port about
     to be disabled is closed first."""
-    if changes.get("role") == "disabled" and settings_of(panel, name)["is_exposed"]:
+    if (
+        changes.get("role") == "disabled"
+        and settings_of(panel, name)["is_ipv4_exposed"]
+    ):
         view = panel.read("/hub/network")
         put_options(
             panel,
             exposed_interfaces=[
                 entry["settings"]["name"]
                 for entry in view["interfaces"]
-                if entry["settings"]["is_exposed"] and entry["settings"]["name"] != name
+                if entry["settings"]["is_ipv4_exposed"]
+                and entry["settings"]["name"] != name
             ],
         )
     body = settings_of(panel, name)
@@ -160,23 +164,25 @@ def put_interface(panel, name: str, **changes) -> None:
     assert status == 200, answer
 
 
-def put_options(panel, **changes) -> None:
+def put_options(panel, *, exposed_interfaces=None, **changes) -> None:
     """Save the page-wide options, the exposure as it is unless named.
 
-    A router refuses an exposed port with the role ``disabled``; a port a
-    server or a side gateway left exposed keeps that answer stored, so in
-    router mode such a port is left out of the set written, unless the
-    write gives it a role.
+    ``exposed_interfaces`` names the interfaces both of whose segments are
+    exposed. A router refuses a port with an exposed segment and the role
+    ``disabled``; a port a server or a side gateway left exposed keeps that
+    answer stored, so in router mode such a port is left out of the sets
+    written, unless the write gives it a role.
     """
     view = panel.read("/hub/network")
+    if exposed_interfaces is None:
+        exposed_interfaces = [
+            entry["settings"]["name"]
+            for entry in view["interfaces"]
+            if entry["settings"]["is_ipv4_exposed"]
+        ]
     body = {
         "uplink_policy": view["uplink_policy"],
         "is_inter_lan_allowed": view["is_inter_lan_allowed"],
-        "exposed_interfaces": [
-            entry["settings"]["name"]
-            for entry in view["interfaces"]
-            if entry["settings"]["is_exposed"]
-        ],
     }
     body.update(changes)
     if view["mode"] == "router":
@@ -185,11 +191,13 @@ def put_options(panel, **changes) -> None:
             for entry in view["interfaces"]
         }
         given = body.get("interface_roles") or {}
-        body["exposed_interfaces"] = [
+        exposed_interfaces = [
             name
-            for name in body["exposed_interfaces"]
+            for name in exposed_interfaces
             if name in given or roles.get(name) != "disabled"
         ]
+    body["ipv4_exposed_interfaces"] = list(exposed_interfaces)
+    body["ipv6_exposed_interfaces"] = list(exposed_interfaces)
     status, answer = panel.call("POST", "/hub/network/set", body)
     assert status == 200, answer
 
@@ -221,7 +229,8 @@ def vlan_lan_body(parent: str, tag: int, address: str) -> dict:
     return {
         "name": f"{parent}.{tag}",
         "role": "lan",
-        "is_exposed": True,
+        "is_ipv4_exposed": True,
+        "is_ipv6_exposed": True,
         "wan": {
             "method": "dhcp",
             "address": None,
@@ -466,7 +475,7 @@ def test_the_lan_moves_onto_a_tag(panel, wiring):
     exposed = [
         entry["settings"]["name"]
         for entry in view["interfaces"]
-        if entry["settings"]["is_exposed"]
+        if entry["settings"]["is_ipv4_exposed"]
     ]
     if name not in exposed:
         put_options(panel, exposed_interfaces=exposed + [name])

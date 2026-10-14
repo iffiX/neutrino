@@ -1,23 +1,25 @@
-"""Making Windows Firewall allow the ports the hub serves.
+"""Making Windows Firewall allow the hub's ports to the senders the exposure names.
 
-Reads the rules named ``neutrino_hub_*``, then creates the missing ones with
-``New-NetFirewallRule``, changes the ones whose port or interfaces moved with
-``Set-NetFirewallRule`` and removes the ones no purpose names any more with
-``Remove-NetFirewallRule``. Each rule is scoped with ``-InterfaceAlias`` to
-the interfaces it answers on that Windows has an adapter by, and a rule left
-with none is kept disabled. While an alias is left out or a rule is refused,
-the change runs again after a wait, a bounded number of times; one refused
-rule leaves the others applied. A pass that finds every rule as it should be
-changes nothing.
+Reads the rules named ``neutrino_hub_*``, then removes the ones no purpose
+names any more and the ones whose port, remote addresses or interfaces
+moved, and creates the missing and the moved ones with
+``New-NetFirewallRule``. A rule allows the remote addresses it names, or any
+sender when it names none, and is scoped with ``-InterfaceAlias`` to the
+interfaces it names that Windows has an adapter by. While an alias is left
+out or a rule is refused, the change runs again after a wait, a bounded
+number of times; one refused rule leaves the others applied. A pass that
+finds every rule as it should be changes nothing.
 
 Not pure: runs PowerShell.
 """
 
+import ipaddress
 import time
 from dataclasses import replace
 
 from neutrino_hub.modules.firewall.constants import (
     FIREWALL_RULE_PREFIX,
+    FIREWALL_WINDOWS_ANY,
     FIREWALL_WINDOWS_CHANGE_SCRIPT,
     FIREWALL_WINDOWS_RETRY_COUNT,
     FIREWALL_WINDOWS_RETRY_WAIT_S,
@@ -33,17 +35,19 @@ def _document(rule) -> dict:
         "name": rule.name,
         "protocol": rule.protocol,
         "port": str(rule.port),
+        "remote_addresses": list(rule.remote_addresses),
         "interfaces": list(rule.interfaces),
     }
 
 
 def _held_shape(rule) -> tuple:
-    """What a rule must look like in Windows: protocol, port, enabled, scope."""
+    """What a rule must look like in Windows: protocol, port, enabled, scopes."""
     return (
         rule.protocol.upper(),
         str(rule.port),
-        bool(rule.interfaces),
+        True,
         _scope(rule.interfaces),
+        _addresses(rule.remote_addresses),
     )
 
 
@@ -51,14 +55,36 @@ def _change_note(rule, held: tuple) -> str:
     """One line saying how a held rule changed."""
     if held[1] != str(rule.port):
         return f"firewall moved {rule.name} to {rule.port}"
-    if not rule.interfaces:
-        return f"firewall disabled {rule.name}"
+    if held[4] != _addresses(rule.remote_addresses):
+        return f"firewall opened {rule.name} to {_senders(rule)}"
     return f"firewall scoped {rule.name} to {', '.join(rule.interfaces)}"
+
+
+def _senders(rule) -> str:
+    """The senders a rule allows, in words."""
+    return ", ".join(rule.remote_addresses) if rule.remote_addresses else "any address"
 
 
 def _scope(interfaces) -> tuple:
     """Interface aliases in an order two scopes can be compared in."""
-    return tuple(sorted(str(name).lower() for name in interfaces))
+    names = sorted(str(name).lower() for name in interfaces)
+    return () if names == [FIREWALL_WINDOWS_ANY] else tuple(names)
+
+
+def _addresses(remote) -> tuple:
+    """Remote addresses in a form two spellings of them compare in.
+
+    Windows reads an IPv4 network back with its mask spelled out, so each
+    one is read as a network.
+    """
+    found = set()
+    for text in remote:
+        try:
+            found.add(str(ipaddress.ip_network(str(text), strict=False)))
+        except ValueError:
+            found.add(str(text).lower())
+    found.discard(FIREWALL_WINDOWS_ANY)
+    return tuple(sorted(found))
 
 
 def _plan(held: dict, wanted: dict) -> tuple:
@@ -153,7 +179,12 @@ class FirewallWindowsApplier:
             kept = tuple(
                 name for name in rule.interfaces if name.lower() not in left_out
             )
-            notes.append(_change_note(replace(rule, interfaces=kept), held[rule.name]))
+            if rule.interfaces and not kept:
+                notes.append(f"firewall disabled {rule.name}")
+            else:
+                notes.append(
+                    _change_note(replace(rule, interfaces=kept), held[rule.name])
+                )
         notes += [f"firewall closed {name}" for name in remove]
         notes += [
             f"firewall left {', '.join(map(str, listed(aliases)))} out of {name}:"
@@ -192,23 +223,25 @@ class FirewallWindowsApplier:
         for entry in listed(answer.get("rules")):
             if not isinstance(entry, dict) or not entry.get("name"):
                 continue
-            is_enabled = bool(entry.get("is_enabled", True))
             held[str(entry["name"])] = (
                 str(entry.get("protocol") or "").upper(),
                 str(entry.get("port") or ""),
-                is_enabled,
-                _scope(listed(entry.get("interfaces"))) if is_enabled else (),
+                bool(entry.get("is_enabled", True)),
+                _scope(listed(entry.get("interfaces"))),
+                _addresses(listed(entry.get("remote_addresses"))),
             )
         return held
 
     def _change(self, *, create: list, update: list, remove: list) -> dict:
-        """Run the one script that removes, changes and creates; its answer."""
+        """Run the one script that removes and creates; its answer.
+
+        A changed rule is removed and created again.
+        """
         return self._powershell(
             FIREWALL_WINDOWS_CHANGE_SCRIPT,
             {
                 "description": FIREWALL_WINDOWS_DESCRIPTION,
-                "create": [_document(rule) for rule in create],
-                "update": [_document(rule) for rule in update],
-                "remove": list(remove),
+                "create": [_document(rule) for rule in [*update, *create]],
+                "remove": [*remove, *(rule.name for rule in update)],
             },
         )

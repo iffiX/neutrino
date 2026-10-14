@@ -9,7 +9,10 @@ Pure: configuration and addresses in, network addresses out.
 
 import ipaddress
 
-from neutrino_hub.modules.router.constants import ROUTER_MODE_SERVER
+from neutrino_hub.modules.router.constants import (
+    ROUTER_FAMILY_IPV4,
+    ROUTER_MODE_SERVER,
+)
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 
 
@@ -61,7 +64,8 @@ def share_subnets(
         reachable = [address for address in link_addresses.values() if address]
     else:
         reachable = [
-            link_addresses.get(name, "") for name in network.exposed_device_names
+            link_addresses.get(name, "")
+            for name in network.exposed_device_names(ROUTER_FAMILY_IPV4)
         ]
     reachable += [
         device_addresses.get(name, "") for name in network.exposed_overlay_device_names

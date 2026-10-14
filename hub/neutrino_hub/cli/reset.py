@@ -265,24 +265,27 @@ def _hand_back_network() -> list:
     Returns:
         One line per thing stopped, empty on a machine the hub never drove.
         On macOS and Windows, one line per TUN route withdrawn and per
-        firewall rule or program taken away.
+        firewall rule or program taken away; on Linux, one per firewalld
+        zone the hub's rules were taken out of.
     """
+    notes = []
     if not is_linux():
-        notes = []
         for withdraw in edition.hooks("reset_withdraw"):
             try:
                 notes += withdraw()
             except OSError as error:
                 notes.append(f"tun routes not withdrawn: {error}")
-        try:
-            return notes + hand_back_firewall()
-        except (OSError, subprocess.SubprocessError) as error:
-            return notes + [f"firewall not handed back: {command_failure_text(error)}"]
+    try:
+        notes += hand_back_firewall()
+    except (OSError, subprocess.SubprocessError) as error:
+        notes.append(f"firewall not handed back: {command_failure_text(error)}")
+    if not is_linux():
+        return notes
     try:
         network = RouterNetworkConfig.from_dict(read_config("router/network.json"))
     except (FileNotFoundError, ValueError):
-        return []
-    return hand_back(network)
+        return notes
+    return hand_back(network) + notes
 
 
 def _forget_collected() -> list:

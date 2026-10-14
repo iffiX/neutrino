@@ -269,10 +269,16 @@ class RouterModePlanner:
             taken: The ports the mode has already made something of.
 
         Returns:
-            One entry per remaining port, roleless and exposed.
+            One entry per remaining port, roleless, with both segments
+            exposed.
         """
         return [
-            RouterInterface(name=name, role=ROUTER_ROLE_DISABLED, is_exposed=True)
+            RouterInterface(
+                name=name,
+                role=ROUTER_ROLE_DISABLED,
+                is_ipv4_exposed=True,
+                is_ipv6_exposed=True,
+            )
             for name in self._port_names
             if name not in taken
         ]
@@ -302,7 +308,8 @@ class RouterModePlanner:
             # A served network answers by definition: it is where the panel,
             # DNS and the leases are reached, and a fence around it would fence
             # out the devices it exists for.
-            is_exposed=True,
+            is_ipv4_exposed=True,
+            is_ipv6_exposed=True,
             lan=RouterLanSettings(
                 address=self._lan_address,
                 prefix_len=self._lan_prefix_len,

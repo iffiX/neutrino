@@ -1,8 +1,8 @@
 """Every address the hub answers the channel on.
 
-The set is the firewall's: every exposed interface, whatever its role, and
-every exposed overlay, plus the overlay's own name where its daemon reports
-one. An enrolment link carries it, both state documents carry it under
+The set is the firewall's: the hub's address in every exposed IPv4 segment,
+whatever the interface's role, and on every exposed overlay, plus the
+overlay's own name where its daemon reports one. An enrolment link carries it, both state documents carry it under
 their hash, and the address sampler pushes both when it changes.
 """
 
@@ -22,7 +22,11 @@ from neutrino_hub.modules.overlay.direct_config import (
 )
 from neutrino_hub.modules.overlay.relay_config import read_relay
 from neutrino_hub.modules.overlay.relay_ops import is_relay_configured
-from neutrino_hub.modules.router.constants import ROUTER_OVERLAY_NETBIRD
+from neutrino_hub.modules.router.constants import (
+    ROUTER_FAMILY_IPV4,
+    ROUTER_FAMILY_IPV6,
+    ROUTER_OVERLAY_NETBIRD,
+)
 from neutrino_hub.modules.router.link_status import (
     device_addresses,
     device_ipv6_addresses,
@@ -187,14 +191,15 @@ def relay_url() -> str:
 def channel_hosts(network, *, is_direct: bool = False) -> list[str]:
     """Every address and name the box answers on.
 
-    A served network contributes its configured address, every other exposed
-    interface the address its live link holds, an interface the configuration
-    does not name counting as :meth:`RouterNetworkConfig.exposed_device_names_on`
-    reads it, and an exposed NetBird
-    overlay its name as well, so a peer on the overlay reaches the hub after
-    its overlay address moved. While Direct is on, the exposed interfaces'
-    stable IPv6 addresses follow, then every enabled interface that is not
-    exposed by its IPv4 address and then its stable IPv6 addresses: the
+    Each interface whose IPv4 segment is exposed contributes its address, a
+    served network its configured one and every other interface the address
+    its live link holds, an interface the configuration does not name
+    counting as :meth:`RouterNetworkConfig.exposed_device_names_on` reads
+    it; each exposed overlay its address; and an exposed NetBird overlay its
+    name as well, so a peer on the overlay reaches the hub after its overlay
+    address moved. While Direct is on, the stable IPv6 addresses of the
+    interfaces whose IPv6 segment is exposed follow, then every other
+    enabled interface's IPv4 address and then its stable IPv6 addresses: the
     agent port answers there, and nothing else of the box.
 
     Args:
@@ -213,19 +218,22 @@ def channel_hosts(network, *, is_direct: bool = False) -> list[str]:
     live = device_addresses()
     held_ipv6 = device_ipv6_addresses() if is_direct else {}
     present = list(live) + [name for name in held_ipv6 if name not in live]
-    exposed = network.exposed_device_names_on(present)
+    exposed = network.exposed_device_names_on(present, ROUTER_FAMILY_IPV4)
     answering = exposed + [
         name for name in network.exposed_overlay_device_names if name not in exposed
     ]
     hosts = []
     _add_ipv4(hosts, answering, configured, live)
     if is_direct:
-        _add_ipv6(hosts, exposed, held_ipv6)
-        enabled = [
-            name for name in network.enabled_device_names if name not in answering
-        ]
-        _add_ipv4(hosts, enabled, configured, live)
-        _add_ipv6(hosts, enabled, held_ipv6)
+        exposed_ipv6 = network.exposed_device_names_on(present, ROUTER_FAMILY_IPV6)
+        _add_ipv6(hosts, exposed_ipv6, held_ipv6)
+        enabled = network.enabled_device_names
+        _add_ipv4(
+            hosts, [name for name in enabled if name not in answering], configured, live
+        )
+        _add_ipv6(
+            hosts, [name for name in enabled if name not in exposed_ipv6], held_ipv6
+        )
     name = overlay_name(network)
     if name and name not in hosts:
         hosts.append(name)

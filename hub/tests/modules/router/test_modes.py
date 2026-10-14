@@ -15,6 +15,7 @@ from neutrino_hub.modules.router.modes import (
     ROUTER_MODE_SERVER,
     RouterModePlanner,
 )
+from neutrino_hub.modules.firewall.renderer import render_exposure
 from neutrino_hub.modules.router.nft_renderer import RouterNftRenderer
 
 from tests.conftest import without_comments
@@ -85,13 +86,31 @@ def test_a_side_gateway_serves_no_leases_and_names_the_real_router():
     assert plan.side_gateway_lans
 
 
+def _rendered(plan) -> str:
+    """The ruleset of a plan, the box holding one address on each port."""
+    held = {"enp1s0": ["192.168.1.20/24"], "enp2s0": ["203.0.113.7/24"]}
+    exposure = render_exposure(
+        plan,
+        held=held,
+        panel_http_port=8080,
+        panel_https_port=8444,
+        agent_port=8443,
+        socks_ports=[],
+        is_direct=False,
+    )
+    return RouterNftRenderer(
+        network=plan, routing={}, xray_uid=None, exposure=exposure
+    ).render()
+
+
 def test_server_mode_routes_nothing_but_stays_reachable():
-    """The failure this guards: an input chain that drops the panel too."""
+    """The failure this guards: an input chain that drops the panel from the
+    network the machine was reached on."""
     plan = RouterModePlanner(mode=ROUTER_MODE_SERVER, port_names=("enp1s0",)).plan()
 
-    rendered = RouterNftRenderer(network=plan, routing={}, xray_uid=None).render()
+    rendered = _rendered(plan)
 
-    assert 'iifname { "enp1s0" } accept' in rendered
+    assert "ip saddr { 192.168.1.0/24 } accept" in rendered
     assert "masquerade" not in without_comments(rendered)
     assert not plan.wan_interfaces
     assert not plan.lan_interfaces
@@ -103,7 +122,7 @@ def test_server_mode_polices_no_traffic_that_is_not_its_own():
     there cuts every one of them off without saying so."""
     plan = RouterModePlanner(mode=ROUTER_MODE_SERVER, port_names=("enp1s0",)).plan()
 
-    rendered = RouterNftRenderer(network=plan, routing={}, xray_uid=None).render()
+    rendered = _rendered(plan)
 
     forward = rendered[rendered.index("chain forward") :]
     assert "policy accept" in forward[: forward.index("}")]
@@ -116,7 +135,7 @@ def test_every_mode_renders_a_ruleset(mode):
         mode=mode, wan_names=("enp2s0",), lan_names=("enp1s0",), trunk_name="enp1s0"
     ).plan()
 
-    rendered = RouterNftRenderer(network=plan, routing={}, xray_uid=None).render()
+    rendered = _rendered(plan)
 
     assert "chain input" in rendered
     assert "chain forward" in rendered

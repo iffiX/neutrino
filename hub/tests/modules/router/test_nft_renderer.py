@@ -5,10 +5,15 @@ The content assertions run anywhere. The ones that hand the result to the real
 netlink socket; run the suite with sudo to include them.
 """
 
+import re
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
+from neutrino_hub.modules.firewall.renderer import render_exposure
 from neutrino_hub.modules.router import nft_renderer
 from neutrino_hub.modules.router.constants import ROUTER_FWMARK_TPROXY
 from neutrino_hub.modules.router.nft_renderer import RouterNftRenderer
@@ -45,12 +50,59 @@ TOPOLOGIES = {
 }
 
 
-def render(*entries, routing=None) -> str:
+PANEL_HTTP_PORT = 8080
+PANEL_HTTPS_PORT = 8444
+AGENT_PORT = 8443
+# What the box holds in most tests: an uplink on a public network, the
+# served networks on their configured addresses, NetBird on its own.
+HELD = {
+    "enp2s0": ["203.0.113.7/24", "2001:db8:2::7/64", "fe80::2/64"],
+    "enp1s0": ["192.168.100.1/24", "fd00:100::1/64", "fe80::1/64"],
+    "wt0": ["100.92.4.5/16"],
+    "easytier": ["10.144.0.1/24"],
+}
+
+
+def render(
+    *entries,
+    routing=None,
+    held=None,
+    is_direct=False,
+    socks_ports=(),
+    overlay_devices=None,
+    engine_cgroups=None,
+    **rest,
+) -> str:
+    """The whole ruleset for these interfaces, with the exposure they give."""
+    network = network_config(*entries, **rest)
+    found = (
+        network
+        if overlay_devices is None
+        else network.with_overlay_devices(overlay_devices)
+    )
     return RouterNftRenderer(
-        network=network_config(*entries),
+        network=network,
         routing={**ROUTING_DIRECT, **(routing or {})},
         xray_uid=999,
+        exposure=render_exposure(
+            found,
+            held=HELD if held is None else held,
+            panel_http_port=PANEL_HTTP_PORT,
+            panel_https_port=PANEL_HTTPS_PORT,
+            agent_port=AGENT_PORT,
+            socks_ports=list(socks_ports),
+            is_direct=is_direct,
+        ),
+        overlay_devices=overlay_devices,
+        engine_cgroups=engine_cgroups,
     ).render()
+
+
+def input_chain(ruleset: str) -> list:
+    """The input chain's lines, comments left out."""
+    chain = without_comments(ruleset).split("chain input {", 1)[1]
+    chain = chain.split("\n    }", 1)[0]
+    return [line.strip() for line in chain.splitlines() if line.strip()]
 
 
 @pytest.mark.needs_root
@@ -97,68 +149,233 @@ def test_every_uplink_is_masqueraded():
     assert 'oifname { "enp2s0", "wlp3s0" } masquerade' in ruleset
 
 
-def test_an_uplink_answers_nothing_until_it_is_exposed():
-    """Remote access arrives over the overlay. An uplink that answers is one
-    somebody asked to answer, and then it answers with everything this box
-    listens on — there is no port list to get half right."""
-    served = lan_entry("enp1s0", address="192.168.100.1")
-    closed = render(wan_entry("enp2s0"), served)
-    opened = render(wan_entry("enp2s0", is_exposed=True), served)
-
-    assert 'iifname { "enp2s0" } accept' not in closed
-    assert 'iifname { "enp2s0", "enp1s0", "wt0" } accept' in opened
-
-
-def test_a_closed_uplink_can_still_take_a_lease():
-    """That is the box being a DHCP client, not a service answering."""
-    ruleset = render(wan_entry("enp2s0"), lan_entry("enp1s0", address="192.168.100.1"))
-
-    assert 'iifname { "enp2s0" } udp dport 68 accept' in ruleset
+ROUTER_INPUT = [
+    "type nat hook input priority 100; policy accept;",
+    'iifname "lo" accept',
+    "ip saddr { 192.168.100.0/24, 100.92.0.0/16 } accept",
+    "ip6 saddr { fd00:100::/64 } accept",
+    'iifname "enp1s0" ip6 saddr fe80::/64 accept',
+    "ct state new tcp dport { 8080, 8444, 8443, 53 } drop",
+    "ct state new udp dport { 53 } drop",
+]
 
 
-def test_an_exposed_uplink_is_not_told_twice_about_its_lease():
-    """The accept for the whole interface already covers it, and a second
-    rule saying so is a rule somebody has to read and dismiss."""
+def test_a_hub_port_answers_loopback_and_the_exposed_segments_and_no_one_else():
+    """The served network's two segments and NetBird's network are exposed,
+    the uplink's are not; every hub port is dropped from every other sender,
+    and no other port is named."""
     ruleset = render(
-        wan_entry("enp2s0", is_exposed=True), lan_entry("enp1s0", address="10.0.0.1")
+        wan_entry("enp2s0"),
+        lan_entry("enp1s0", address="192.168.100.1"),
+        routing={"is_proxy_enabled": False},
     )
 
-    assert "udp dport 68" not in ruleset
+    assert input_chain(ruleset) == ROUTER_INPUT
+
+
+def test_the_input_chain_is_the_only_input_chain_and_accepts_by_policy():
+    """SSH, a file share and every other service the hub does not run pass
+    the hub's chain: they are the system firewall's matter."""
+    ruleset = without_comments(
+        render(wan_entry("enp2s0"), lan_entry("enp1s0", address="192.168.100.1"))
+    )
+
+    assert ruleset.count("hook input") == 1
+    assert "policy drop" not in ruleset.split("chain input {", 1)[1].split("}", 1)[0]
+
+
+# NetBird 0.78.1's own test of a chain it inserts its accept into: a chain of
+# another table, of type filter, on the input or forward hook
+# (client/firewall/nftables/chains_linux.go, isExternalChain).
+NETBIRD_EDITED_HOOKS = ("input", "forward")
+
+
+def chains_an_engine_edits(ruleset: str) -> list:
+    """The base chains of the hub's table NetBird inserts an accept into."""
+    found = re.findall(r"chain (\w+) \{\s*type (\w+) hook (\w+)", ruleset)
+    return [
+        name
+        for name, kind, hook in found
+        if kind == "filter" and hook in NETBIRD_EDITED_HOOKS
+    ]
+
+
+def test_no_engine_edits_the_chain_that_drops_the_hub_ports():
+    """An accept NetBird inserts at the top of a chain would pass NetBird's
+    senders through that chain's drop, so the drop lives where it inserts
+    nothing."""
+    ruleset = without_comments(
+        render(wan_entry("enp2s0"), lan_entry("enp1s0", address="192.168.100.1"))
+    )
+    dropping = [
+        name
+        for name, body in re.findall(r"chain (\w+) \{(.*?)\n    \}", ruleset, re.S)
+        if "dport" in body and " drop" in body
+    ]
+
+    assert dropping == ["input"]
+    assert "input" not in chains_an_engine_edits(ruleset)
+    assert "forward" in chains_an_engine_edits(ruleset)
+
+
+def test_a_closed_segment_drops_the_hub_ports_and_leaves_every_other_port():
+    """A closed uplink's networks are in no accept; the drops name the hub's
+    ports alone, so the uplink's lease, SSH and the rest pass."""
+    chain = input_chain(
+        render(wan_entry("enp2s0"), lan_entry("enp1s0", address="192.168.100.1"))
+    )
+    drops = [line for line in chain if line.endswith(" drop")]
+
+    assert not any("203.0.113" in line or "2001:db8:2" in line for line in chain)
+    assert drops == [
+        "ct state new tcp dport { 8080, 8444, 8443, 53 } drop",
+        "ct state new udp dport { 53 } drop",
+    ]
+
+
+def test_an_exposed_uplink_segment_answers_the_senders_in_its_network_alone():
+    """A rule names the sender's network, never the wire: an uplink with a
+    public address exposed opens the hub's ports to its own network, not to
+    the internet behind it."""
+    chain = input_chain(
+        render(
+            wan_entry("enp2s0", is_exposed=True),
+            lan_entry("enp1s0", address="192.168.100.1", is_exposed=False),
+            overlays=[],
+        )
+    )
+
+    assert "ip saddr { 203.0.113.0/24 } accept" in chain
+    assert "ip6 saddr { 2001:db8:2::/64 } accept" in chain
+    assert 'iifname "enp2s0" ip6 saddr fe80::/64 accept' in chain
+    assert not any("iifname {" in line for line in chain)
+
+
+def test_each_family_has_its_own_switch():
+    entry = {
+        **lan_entry("enp1s0", address="192.168.100.1"),
+        "is_ipv4_exposed": True,
+        "is_ipv6_exposed": False,
+    }
+    chain = input_chain(render(entry, overlays=[]))
+
+    assert "ip saddr { 192.168.100.0/24 } accept" in chain
+    assert not any("ip6 saddr" in line for line in chain)
+
+
+def test_a_row_with_the_earlier_switch_opens_both_families():
+    entry = {"name": "enp1s0", "role": "disabled", "is_exposed": True}
+    chain = input_chain(render(entry, overlays=[], mode="server"))
+
+    assert "ip saddr { 192.168.100.0/24 } accept" in chain
+    assert "ip6 saddr { fd00:100::/64 } accept" in chain
+
+
+def test_a_changed_ipv6_prefix_keeps_its_switch():
+    """The rule follows the networks the interface holds now."""
+    entries = (lan_entry("enp1s0", address="192.168.100.1"),)
+    before = input_chain(render(*entries, overlays=[]))
+    after = input_chain(
+        render(
+            *entries,
+            overlays=[],
+            held={"enp1s0": ["192.168.100.1/24", "2001:db8:77::1/64"]},
+        )
+    )
+
+    assert "ip6 saddr { fd00:100::/64 } accept" in before
+    assert "ip6 saddr { 2001:db8:77::/64 } accept" in after
+    assert not any("fd00:100" in line for line in after)
+
+
+def test_a_link_local_sender_is_matched_on_its_own_interface():
+    """``fe80::/64`` is every link's, so it opens on the interface whose
+    IPv6 segment is exposed and on no other."""
+    chain = input_chain(
+        render(
+            wan_entry("enp2s0"),
+            lan_entry("enp1s0", address="192.168.100.1"),
+            overlays=[],
+        )
+    )
+
+    assert [line for line in chain if "fe80::/64" in line] == [
+        'iifname "enp1s0" ip6 saddr fe80::/64 accept'
+    ]
+
+
+@pytest.mark.parametrize(
+    ("mode", "is_dns"),
+    [("router", True), ("side_gateway", True), ("server", False)],
+)
+def test_dns_is_a_hub_port_where_the_hub_answers_names(mode, is_dns):
+    chain = input_chain(
+        render(lan_entry("enp1s0", address="192.168.100.1"), mode=mode, overlays=[])
+    )
+    drops = " ".join(line for line in chain if line.endswith(" drop"))
+
+    assert (" 53" in drops) is is_dns
+
+
+def test_each_socks_port_is_a_hub_port_over_tcp_and_udp():
+    chain = input_chain(
+        render(
+            lan_entry("enp1s0", address="192.168.100.1"),
+            socks_ports=[1080, 1081],
+            overlays=[],
+        )
+    )
+
+    assert "ct state new tcp dport { 8080, 8444, 8443, 53, 1080, 1081 } drop" in chain
+    assert "ct state new udp dport { 53, 1080, 1081 } drop" in chain
+
+
+def test_nothing_drops_the_peer_ports_or_dhcp():
+    """They open with no switch: the chain's accept policy passes them."""
+    ruleset = without_comments(
+        render(
+            wan_entry("enp2s0"),
+            lan_entry("enp1s0", address="192.168.100.1", is_exposed=False),
+            overlays=[{"provider": "netbird"}, {"provider": "easytier"}],
+        )
+    )
+
+    for port in ("51820", "11010", "67", "68"):
+        assert not re.search(rf"\b{port}\b", ruleset)
 
 
 def test_the_overlay_answers_on_a_box_that_exposes_nothing():
     """Otherwise closing the last interface is a lockout with no way back."""
-    ruleset = render(
-        wan_entry("enp2s0"), lan_entry("enp1s0", address="10.0.0.1", is_exposed=False)
+    chain = input_chain(
+        render(
+            wan_entry("enp2s0"),
+            lan_entry("enp1s0", address="192.168.100.1", is_exposed=False),
+        )
     )
 
-    assert 'iifname { "wt0" } accept' in ruleset
+    assert "ip saddr { 100.92.0.0/16 } accept" in chain
 
 
 def test_a_configuration_with_no_overlays_block_still_answers_on_one():
     """The firewall accepted the overlay unconditionally before it was
     configurable, so a box upgrading into this must find nothing changed. Who
     can reach the machine is not a thing to alter behind somebody's back."""
-    ruleset = render(lan_entry("enp1s0", address="10.0.0.1", is_exposed=False))
+    ruleset = render(lan_entry("enp1s0", address="192.168.100.1", is_exposed=False))
 
+    assert "ip saddr { 100.92.0.0/16 } accept" in input_chain(ruleset)
     assert 'iifname { "wt0" } accept' in ruleset
-    assert "udp dport { 51820 } accept" in ruleset
 
 
-def test_a_closed_overlay_is_absent_from_the_whole_ruleset():
-    """Closing one cuts it off rather than going quiet on it: the box stops
-    answering there, the served networks stop reaching it, and its peers stop
-    being able to knock."""
-    closed = RouterNftRenderer(
-        network=network_config(
-            lan_entry("enp1s0", address="10.0.0.1", is_exposed=True),
-            overlays=[{"provider": "netbird", "is_exposed": False}],
-        ),
-        routing=ROUTING_DIRECT,
-        xray_uid=999,
-    ).render()
+def test_a_closed_overlay_answers_none_of_the_hub_ports_and_forwards_nothing():
+    """Its network is in no accept of the input chain, and the forward chain
+    names it nowhere."""
+    closed = render(
+        lan_entry("enp1s0", address="192.168.100.1"),
+        overlays=[{"provider": "netbird", "is_exposed": False}],
+    )
 
     assert "wt0" not in closed
+    assert "100.92" not in closed
     assert "51820" not in closed
 
 
@@ -175,12 +392,13 @@ def test_no_overlay_is_named_in_the_renderer_itself():
 
 def render_console(*entries, devices, routing=None) -> str:
     """The ruleset for a box on EasyTier in console mode, its devices found."""
-    return RouterNftRenderer(
-        network=network_config(*entries, overlays=[{"provider": "easytier"}]),
-        routing={**ROUTING_DIRECT, **(routing or {})},
-        xray_uid=999,
+    return render(
+        *entries,
+        routing=routing,
+        held={**HELD, "tun0": ["10.126.0.3/24"], "tun1": ["10.127.0.3/24"]},
+        overlays=[{"provider": "easytier"}],
         overlay_devices={"easytier": devices},
-    ).render()
+    )
 
 
 def test_a_console_overlay_answers_on_the_device_found_in_place_of_easytier():
@@ -190,8 +408,9 @@ def test_a_console_overlay_answers_on_the_device_found_in_place_of_easytier():
         devices=["tun0"],
     )
 
-    assert 'iifname { "enp1s0", "tun0" } accept' in ruleset
+    assert "ip saddr { 192.168.100.0/24, 10.126.0.0/24 } accept" in ruleset
     assert '"easytier"' not in ruleset
+    assert "10.144" not in ruleset
 
 
 def test_a_console_overlay_is_forwarded_to_and_from_on_the_device_found():
@@ -228,47 +447,44 @@ def test_a_console_overlay_with_no_device_found_is_named_nowhere():
 
     assert "easytier" not in ruleset
     assert "tun0" not in ruleset
-    assert 'iifname { "enp1s0" } accept' in ruleset
-    assert "udp dport { 11010 } accept" in ruleset
+    assert "ip saddr { 192.168.100.0/24 } accept" in ruleset
+    assert "11010" not in ruleset
 
 
 def test_a_manual_overlay_keeps_the_device_its_engine_names():
-    ruleset = RouterNftRenderer(
-        network=network_config(
-            lan_entry("enp1s0", address="192.168.100.1"),
-            overlays=[{"provider": "easytier"}],
-        ),
-        routing=ROUTING_DIRECT,
-        xray_uid=999,
+    ruleset = render(
+        lan_entry("enp1s0", address="192.168.100.1"),
+        overlays=[{"provider": "easytier"}],
         overlay_devices={},
-    ).render()
+    )
 
-    assert 'iifname { "enp1s0", "easytier" } accept' in ruleset
+    assert 'iifname { "easytier" } accept' in ruleset
+    assert "ip saddr { 192.168.100.0/24, 10.144.0.0/24 } accept" in ruleset
 
 
 def render_both(*entries, routing=None, devices=None) -> str:
     """The ruleset for a box running NetBird and EasyTier at once."""
-    return RouterNftRenderer(
-        network=network_config(
-            *entries,
-            overlays=[
-                {"provider": "netbird", "is_enabled": True},
-                {"provider": "easytier", "is_enabled": True},
-            ],
-        ),
-        routing={**ROUTING_DIRECT, **(routing or {})},
-        xray_uid=999,
+    return render(
+        *entries,
+        routing=routing,
+        held={**HELD, "tun0": ["10.126.0.3/24"]},
+        overlays=[
+            {"provider": "netbird", "is_enabled": True},
+            {"provider": "easytier", "is_enabled": True},
+        ],
         overlay_devices=devices,
-    ).render()
+    )
 
 
-def test_two_overlays_answer_and_knock_on_both_devices_and_ports():
+def test_two_overlays_answer_and_are_forwarded_on_both_devices():
     ruleset = render_both(
         wan_entry("enp2s0"), lan_entry("enp1s0", address="192.168.100.1")
     )
 
-    assert 'iifname { "enp1s0", "wt0", "easytier" } accept' in ruleset
-    assert "udp dport { 11010, 51820 } accept" in ruleset
+    assert (
+        "ip saddr { 192.168.100.0/24, 100.92.0.0/16, 10.144.0.0/24 } accept" in ruleset
+    )
+    assert 'iifname { "wt0", "easytier" } accept' in ruleset
     assert 'iifname { "enp1s0" } oifname { "wt0", "easytier" } accept' in ruleset
 
 
@@ -323,19 +539,16 @@ def test_one_overlay_needs_no_fence():
 
 
 def test_an_overlay_turned_off_is_absent_from_the_whole_ruleset():
-    ruleset = RouterNftRenderer(
-        network=network_config(
-            lan_entry("enp1s0", address="10.0.0.1"),
-            overlays=[
-                {"provider": "netbird", "is_enabled": False},
-                {"provider": "easytier", "is_enabled": True},
-            ],
-        ),
-        routing=ROUTING_DIRECT,
-        xray_uid=999,
-    ).render()
+    ruleset = render(
+        lan_entry("enp1s0", address="192.168.100.1"),
+        overlays=[
+            {"provider": "netbird", "is_enabled": False},
+            {"provider": "easytier", "is_enabled": True},
+        ],
+    )
 
     assert "wt0" not in ruleset
+    assert "100.92" not in ruleset
     assert "51820" not in ruleset
     assert "forward_overlays" not in ruleset
 
@@ -367,14 +580,12 @@ ENGINE_CGROUPS = [
 
 
 def render_with_engines(routing: dict, cgroups=ENGINE_CGROUPS) -> str:
-    return RouterNftRenderer(
-        network=network_config(
-            wan_entry("enp2s0"), lan_entry("enp1s0", address="192.168.100.1")
-        ),
-        routing={**ROUTING_DIRECT, **routing},
-        xray_uid=999,
+    return render(
+        wan_entry("enp2s0"),
+        lan_entry("enp1s0", address="192.168.100.1"),
+        routing=routing,
         engine_cgroups=cgroups,
-    ).render()
+    )
 
 
 @pytest.mark.feature("proxy")
@@ -483,7 +694,8 @@ def test_an_unconfigured_box_renders_no_empty_sets():
 def test_a_box_with_no_uplink_still_serves_and_firewalls_its_lan():
     ruleset = render(lan_entry("enp1s0", address="192.168.100.1"))
 
-    assert 'iifname { "enp1s0", "wt0" } accept' in ruleset
+    assert "ip saddr { 192.168.100.0/24, 100.92.0.0/16 } accept" in ruleset
+    assert 'iifname { "enp1s0" } oifname { "wt0" } accept' in ruleset
     assert "masquerade" not in without_comments(ruleset)
 
 
@@ -568,11 +780,7 @@ def test_fenced_lans_cannot_reach_each_other():
         lan_entry("enp1s0", address="192.168.100.1"),
         lan_entry("enp1s0.10", address="192.168.110.1"),
     )
-    fenced = RouterNftRenderer(
-        network=network_config(*entries, is_inter_lan_allowed=False),
-        routing=ROUTING_DIRECT,
-        xray_uid=999,
-    ).render()
+    fenced = render(*entries, is_inter_lan_allowed=False)
 
     lan_set = 'iifname { "enp1s0", "enp1s0.10" }'
     assert f'{lan_set} oifname {{ "enp1s0", "enp1s0.10" }} accept' not in fenced
@@ -613,49 +821,30 @@ def test_a_side_gateway_hairpins_and_masquerades_precisely():
     assert 'oifname "enp1s0" ip daddr != 192.168.1.0/24 masquerade' in ruleset
 
 
-def test_a_closed_lan_is_still_served_its_lease_and_names():
-    """Exposure gates what the box hosts, never the serving itself: a LAN
-    nobody exposed still gets DHCP and DNS through the input chain."""
+def test_a_closed_lan_keeps_dhcp_and_forwarding_and_loses_the_hubs_dns():
+    """DHCP passes the chain's accept policy; DNS is a hub port, dropped
+    from the senders of a closed segment like the panel and the agent port."""
     ruleset = render(
         wan_entry("enp2s0"),
-        lan_entry("enp1s0", address="192.168.93.1", is_exposed=False),
+        lan_entry("enp1s0", address="192.168.100.1", is_exposed=False),
+        overlays=[],
+    )
+    chain = input_chain(ruleset)
+
+    assert not any("192.168.100" in line for line in chain)
+    assert "ct state new udp dport { 53 } drop" in chain
+    assert " 67" not in without_comments(ruleset)
+    assert 'iifname { "enp1s0" } oifname { "enp2s0" } accept' in ruleset
+
+
+def test_a_served_network_is_in_its_segment_before_its_device_holds_the_address():
+    """The router's first pass of a boot runs before the address is on the
+    port; the configured network is the segment's already."""
+    chain = input_chain(
+        render(lan_entry("enp1s0", address="192.168.100.1"), held={}, overlays=[])
     )
 
-    assert 'iifname { "enp1s0" } udp dport 67 accept' in ruleset
-    assert 'iifname { "enp1s0" } udp dport 53 accept' in ruleset
-    assert 'iifname { "enp1s0" } tcp dport 53 accept' in ruleset
-    assert 'iifname { "enp1s0" } accept' not in ruleset
-
-
-def test_an_exposed_lan_needs_no_extra_serving_rules():
-    ruleset = render(
-        wan_entry("enp2s0"),
-        lan_entry("enp1s0", address="192.168.93.1"),
-    )
-
-    assert 'iifname { "enp1s0", "wt0" } accept' in ruleset
-    assert 'iifname { "enp1s0" } udp dport 67 accept' not in ruleset
-    assert "tcp dport 8443" not in ruleset
-
-
-def test_the_agent_port_is_open_on_the_exposed_set_and_nowhere_else():
-    """Exposure is the only control plane for the agent port: a served
-    network nobody exposed gets its lease and its names and no more, and an
-    exposed uplink answers like any other exposed interface."""
-    ruleset = render(
-        wan_entry("enp2s0", is_exposed=True),
-        lan_entry("enp1s0", address="192.168.93.1", is_exposed=False),
-    )
-    network = network_config(
-        wan_entry("enp2s0", is_exposed=True),
-        lan_entry("enp1s0", address="192.168.93.1", is_exposed=False),
-    )
-
-    assert network.exposed_interfaces == ["enp2s0", "wt0"]
-    assert 'iifname { "enp2s0", "wt0" } accept' in ruleset
-    assert 'iifname { "enp1s0" } udp dport 67 accept' in ruleset
-    assert "tcp dport 8443" not in ruleset
-    assert 'iifname { "enp1s0" } accept' not in ruleset
+    assert "ip saddr { 192.168.100.0/24 } accept" in chain
 
 
 @pytest.mark.feature("proxy")
@@ -711,15 +900,14 @@ def test_a_server_diverts_its_exposed_overlay_and_nothing_else(is_proxy_enabled)
     """Server mode serves no network, so the served networks' switch reads
     as nothing there; the overlay scope diverts the overlay's members whose
     exit this box is, as in every mode."""
-    ruleset = RouterNftRenderer(
-        network=network_config(mode="server"),
+    ruleset = render(
+        mode="server",
         routing={
             "is_proxy_enabled": is_proxy_enabled,
             "is_overlay_proxy_enabled": True,
             "is_local_proxy_enabled": False,
         },
-        xray_uid=999,
-    ).render()
+    )
 
     start = ruleset.index("    chain prerouting {")
     end = ruleset.index("    }", start) + len("    }")
@@ -745,94 +933,181 @@ def test_the_overlay_scope_alone_diverts_only_the_overlay():
 @pytest.mark.parametrize("entries", TOPOLOGIES.values(), ids=list(TOPOLOGIES))
 def test_loopback_reaches_every_port_in_every_topology(entries):
     """The hub's own agent dials the agent port on loopback, exposed or not."""
-    ruleset = without_comments(render(*entries))
-    chain = ruleset.split("chain input {", 1)[1].split("}", 1)[0]
+    chain = input_chain(render(*entries))
 
-    assert 'iifname "lo" accept' in chain
+    assert chain[1] == 'iifname "lo" accept'
 
 
 # --- Direct ---
 
 
-def _input_chain(ruleset: str) -> str:
-    return without_comments(ruleset).split("chain input {", 1)[1].split("chain ", 1)[0]
-
-
-def _answering_lines(chain: str) -> list:
-    """The input chain's rules that accept everything on a set of interfaces."""
-    return [
-        line
-        for line in chain.splitlines()
-        if line.strip().startswith("iifname {") and line.strip().endswith("} accept")
-    ]
-
-
-def test_direct_off_opens_nothing_on_a_closed_uplink():
-    chain = _input_chain(
+def test_direct_off_opens_nothing_to_every_sender():
+    chain = input_chain(
         render(wan_entry("enp2s0"), lan_entry("enp1s0", address="192.168.100.1"))
     )
 
-    assert "tcp dport 8443" not in chain
+    assert not any("accept" in line and "tcp dport" in line for line in chain)
 
 
-def test_direct_opens_the_agent_port_alone_on_every_enabled_interface_not_exposed():
-    """The panel, the AI gateway and every other listener keep the exposure
-    the Network page gives them: the closed uplink gains one port."""
-    network = network_config(
-        wan_entry("enp2s0"),
-        lan_entry("enp1s0", address="192.168.100.1"),
-        {"name": "enp4s0", "role": "disabled", "is_exposed": False},
+def test_direct_opens_the_agent_port_alone_to_every_sender_on_the_enabled_interfaces():
+    """The panel and the hub's other ports keep the exposure the Network page
+    gives them; a port a router leaves disabled is not enabled."""
+    chain = input_chain(
+        render(
+            wan_entry("enp2s0"),
+            lan_entry("enp1s0", address="192.168.100.1"),
+            {"name": "enp4s0", "role": "disabled"},
+            held={**HELD, "enp4s0": ["198.51.100.4/24"]},
+            is_direct=True,
+        )
     )
 
-    chain = _input_chain(
-        RouterNftRenderer(
-            network=network,
-            routing=ROUTING_DIRECT,
-            xray_uid=999,
-            direct_port=8443,
-        ).render()
+    assert 'iifname { "enp2s0", "enp1s0" } tcp dport 8443 accept' in chain
+    assert not any("enp4s0" in line or "198.51.100" in line for line in chain)
+    assert chain.index('iifname { "enp2s0", "enp1s0" } tcp dport 8443 accept') < (
+        chain.index("ct state new tcp dport { 8080, 8444, 8443, 53 } drop")
     )
-
-    assert 'iifname { "enp2s0" } tcp dport 8443 accept' in chain
-    (answering,) = _answering_lines(chain)
-    assert '"enp1s0"' in answering
-    assert '"enp2s0"' not in answering
-    assert "enp4s0" not in chain
 
 
 def test_in_server_mode_every_listed_interface_is_enabled():
-    network = network_config(
-        {"name": "eno1", "role": "disabled", "is_exposed": True},
-        {"name": "eno2", "role": "disabled", "is_exposed": False},
-        mode="server",
+    chain = input_chain(
+        render(
+            {"name": "eno1", "role": "disabled", "is_exposed": True},
+            {"name": "eno2", "role": "disabled", "is_exposed": False},
+            held={"eno1": ["192.168.1.5/24"], "eno2": ["10.1.0.5/16"]},
+            is_direct=True,
+            mode="server",
+            overlays=[],
+        )
     )
 
-    chain = _input_chain(
-        RouterNftRenderer(
-            network=network, routing=ROUTING_DIRECT, xray_uid=999, direct_port=9443
-        ).render()
+    assert 'iifname { "eno1", "eno2" } tcp dport 8443 accept' in chain
+    assert "ip saddr { 192.168.1.0/24 } accept" in chain
+    assert not any("10.1.0.0" in line for line in chain)
+
+
+def test_directs_rule_names_no_family_and_each_segment_rule_one():
+    """The table is ``inet``: an IPv4 segment's rule matches IPv4 senders,
+    an IPv6 segment's IPv6 senders, and Direct's rule both."""
+    ruleset = render(
+        wan_entry("enp2s0"),
+        lan_entry("enp1s0", address="192.168.100.1"),
+        is_direct=True,
     )
-
-    assert 'iifname { "eno2" } tcp dport 9443 accept' in chain
-    (answering,) = _answering_lines(chain)
-    assert '"eno1"' in answering
-    assert '"eno2"' not in answering
-
-
-def test_the_rules_that_open_the_agent_port_cover_ipv4_and_ipv6():
-    """The table is ``inet`` and neither rule names a family, so each
-    matches IPv6 exactly as IPv4."""
-    network = network_config(
-        wan_entry("enp2s0"), lan_entry("enp1s0", address="192.168.100.1")
-    )
-    ruleset = RouterNftRenderer(
-        network=network, routing=ROUTING_DIRECT, xray_uid=999, direct_port=8443
-    ).render()
-    chain = _input_chain(ruleset)
+    chain = input_chain(ruleset)
 
     assert "table inet neutrino {" in ruleset
-    (answering,) = _answering_lines(chain)
-    direct = [line for line in chain.splitlines() if "tcp dport 8443" in line]
-    assert direct == ['        iifname { "enp2s0" } tcp dport 8443 accept']
-    for line in [answering, *direct]:
-        assert "ip " not in line and "ip6 " not in line and "nfproto" not in line
+    (direct,) = [line for line in chain if line.endswith("tcp dport 8443 accept")]
+    assert "ip " not in direct and "ip6 " not in direct
+    assert any(line.startswith("ip saddr") for line in chain)
+    assert any(line.startswith("ip6 saddr") for line in chain)
+
+
+# --- What a packet meets, in a network namespace of the test's own ---
+
+NAMESPACE_SCRIPT = r"""
+set -e
+ip link set lo up
+unshare -n sleep 30 &
+peer=$!
+sleep 0.3
+ip link add hub0 type veth peer name peer0 netns $peer
+ip addr add 10.9.0.1/24 dev hub0
+ip addr add fd00:9::1/64 dev hub0 nodad
+ip link set hub0 up
+nsenter -t $peer -n sh -c 'ip link set lo up; ip link set peer0 up
+  ip addr add 10.9.0.2/24 dev peer0; ip addr add 10.8.0.2/24 dev peer0
+  ip addr add fd00:9::2/64 dev peer0 nodad; ip route add default dev peer0'
+ip route add 10.8.0.0/24 dev hub0
+nft -f "$2"
+"$3" "$4" serve &
+sleep 0.5
+for source in 10.9.0.2 10.8.0.2 fd00:9::2; do
+  for port in 8080 2222; do
+    nsenter -t $peer -n "$3" "$4" probe $source $port
+  done
+done
+kill $peer
+"""
+
+NAMESPACE_PEER = r"""
+import socket, sys, threading, time
+
+if sys.argv[1] == "serve":
+    def serve(family, host, port):
+        server = socket.socket(family)
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if family == socket.AF_INET6:
+            server.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+        server.bind((host, port))
+        server.listen(8)
+        while True:
+            server.accept()[0].close()
+    for port in (8080, 2222):
+        threading.Thread(target=serve, args=(socket.AF_INET, "0.0.0.0", port), daemon=True).start()
+        threading.Thread(target=serve, args=(socket.AF_INET6, "::", port), daemon=True).start()
+    time.sleep(10)
+else:
+    source, port = sys.argv[2], int(sys.argv[3])
+    family = socket.AF_INET6 if ":" in source else socket.AF_INET
+    target = "fd00:9::1" if family == socket.AF_INET6 else "10.9.0.1"
+    client = socket.socket(family)
+    client.settimeout(0.6)
+    client.bind((source, 0))
+    try:
+        client.connect((target, port))
+        print(source, port, "open")
+    except OSError:
+        print(source, port, "dropped")
+"""
+
+
+def _has_namespaces() -> bool:
+    if shutil.which("unshare") is None or shutil.which("nft") is None:
+        return False
+    probe = subprocess.run(
+        ["unshare", "-rn", "nft", "list", "ruleset"], capture_output=True, text=True
+    )
+    return probe.returncode == 0
+
+
+@pytest.mark.skipif(not _has_namespaces(), reason="no user network namespace here")
+def test_a_closed_segment_drops_the_hub_ports_and_leaves_other_ports_alone(tmp_path):
+    """The rendered table loaded in a namespace of the test's own: the hub's
+    IPv4 segment is exposed and its IPv6 segment closed. A hub port answers
+    the sender inside the exposed segment alone; port 2222, which is no hub
+    port, answers every sender."""
+    ruleset = render(
+        {"name": "hub0", "role": "disabled", "is_ipv4_exposed": True},
+        held={"hub0": ["10.9.0.1/24", "fd00:9::1/64"]},
+        mode="server",
+        overlays=[],
+    )
+    (tmp_path / "table.nft").write_text(ruleset)
+    (tmp_path / "run.sh").write_text(NAMESPACE_SCRIPT)
+    (tmp_path / "peer.py").write_text(NAMESPACE_PEER)
+
+    result = subprocess.run(
+        [
+            "unshare",
+            "-rn",
+            "bash",
+            str(tmp_path / "run.sh"),
+            "--",
+            str(tmp_path / "table.nft"),
+            sys.executable,
+            str(tmp_path / "peer.py"),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+    assert result.stdout.splitlines() == [
+        "10.9.0.2 8080 open",
+        "10.9.0.2 2222 open",
+        "10.8.0.2 8080 dropped",
+        "10.8.0.2 2222 open",
+        "fd00:9::2 8080 dropped",
+        "fd00:9::2 2222 open",
+    ], result.stderr

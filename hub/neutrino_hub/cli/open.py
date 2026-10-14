@@ -25,6 +25,7 @@ from pathlib import Path
 
 
 from neutrino_hub.cli.password import is_password_set
+from neutrino_hub.modules.router.constants import ROUTER_FAMILY_IPV4
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.router.link_status import RouterLinkStatus, device_addresses
 from neutrino_hub.platforms.detect import hub_platform, process_controller
@@ -242,7 +243,7 @@ def _reachable_host() -> str:
     and the desktop client's files adapter.
 
     Returns:
-        The address of an interface this box answers on, as
+        The address of an interface whose IPv4 segment is exposed, as
         :meth:`RouterNetworkConfig.exposed_device_names_on` reads them; else
         of an interface holding a default route; else the first address the
         box holds; else the hostname.
@@ -254,7 +255,8 @@ def _reachable_host() -> str:
         network = RouterNetworkConfig.from_dict({})
     status = RouterLinkStatus()
     routed = [name for name in addresses if status.gateway_for(name) is not None]
-    for name in [*network.exposed_device_names_on(list(addresses)), *routed]:
+    exposed = network.exposed_device_names_on(list(addresses), ROUTER_FAMILY_IPV4)
+    for name in [*exposed, *routed]:
         if addresses.get(name):
             return addresses[name].partition("/")[0]
     for held in addresses.values():

@@ -1,7 +1,7 @@
 [Unit]
 Description=Neutrino Hub routing state (forwarding, policy route, nftables, interfaces)
 Documentation=file://@REPO_ROOT@/skills/core-code-author/misc/config.md
-After=network-pre.target
+After=network-pre.target firewalld.service
 Wants=network-pre.target
 Before=@PROXY_UNITS@ neutrino_hub_dnsmasq.service
 

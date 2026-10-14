@@ -43,7 +43,7 @@ from neutrino_hub.modules.devices.ssh_ops import (
     SshCredentials,
     login_password,
 )
-from neutrino_hub.modules.router.link_status import device_addresses
+from neutrino_hub.modules.router.link_status import device_held_addresses
 from neutrino_hub.modules.devices.wake_on_lan import (
     send_magic_packet,
     wake_targets,
@@ -394,8 +394,8 @@ def wake(
 ) -> WolResult:
     """Broadcast a Wake-on-LAN packet to a device, on its most recent link MAC.
 
-    The packet goes to every network the hub serves, or, in server mode,
-    every network it is exposed on, never to an overlay.
+    The packet goes to every network of the exposed IPv4 segments, in
+    every mode, never to an overlay.
 
     Args:
         request: The device.
@@ -422,7 +422,7 @@ def wake(
     # A magic packet reaches only its own broadcast domain, and which of the
     # hub's networks the sleeping device is on is exactly what cannot be
     # known while it is asleep. So send one to each; they are 102 bytes.
-    targets = wake_targets(runtime.network(), device_addresses)
+    targets = wake_targets(runtime.network(), device_held_addresses)
     if not targets:
         return WolResult(is_sent=False, code="no_reachable_address")
 

@@ -117,6 +117,7 @@ def box(monkeypatch):
     monkeypatch.setattr(network_router, "hand_back", lambda network: [])
     monkeypatch.setattr(network_router, "admin_up_interfaces", lambda: {"wt0"})
     monkeypatch.setattr(network_router, "RouterDhcpClient", FakeDhcpClient)
+    monkeypatch.setattr(network_router, "device_held_addresses", lambda: dict(HELD))
 
     app = FastAPI()
     app.include_router(network_router.router)
@@ -124,6 +125,14 @@ def box(monkeypatch):
     app.dependency_overrides[get_runtime] = lambda: runtime
     with TestClient(app) as client:
         yield client, runtime, status
+
+
+# What the box's ports hold now, both families.
+HELD = {
+    "enp2s0": ["198.51.100.203/25", "2001:db8:2::3/64", "fe80::3/64"],
+    "enp1s0": ["192.168.100.1/24", "fd00:100::1/64", "fe80::1/64"],
+    "wt0": ["100.88.178.129/16"],
+}
 
 
 def settings_of(client, name: str) -> dict:
@@ -552,6 +561,11 @@ def guest_box(monkeypatch):
     monkeypatch.setattr(network_router, "hand_back", lambda network: [])
     monkeypatch.setattr(network_router, "admin_up_interfaces", lambda: {"wt0"})
     monkeypatch.setattr(network_router, "RouterDhcpClient", FakeDhcpClient)
+    monkeypatch.setattr(
+        network_router,
+        "device_held_addresses",
+        lambda: {"enp1s0": ["198.51.100.7/24", "2001:db8:7::7/64"]},
+    )
 
     app = FastAPI()
     app.include_router(network_router.router)
@@ -622,12 +636,14 @@ def test_a_save_cannot_change_whether_an_interface_answers(guest_box):
     so a body claiming otherwise is a stale client."""
     client, runtime, _ = guest_box
     draft = settings_of(client, "enp1s0")
-    draft["is_exposed"] = False
+    draft["is_ipv4_exposed"] = False
+    draft["is_ipv6_exposed"] = False
 
     response = client.post("/api/hub/network/interface/set", json=draft)
 
     assert response.status_code == 200
-    assert runtime.network().interface("enp1s0").is_exposed
+    saved = runtime.network().interface("enp1s0")
+    assert saved.is_ipv4_exposed and saved.is_ipv6_exposed
 
 
 def test_closing_every_interface_is_allowed(guest_box):
@@ -639,7 +655,8 @@ def test_closing_every_interface_is_allowed(guest_box):
     response = client.post("/api/hub/network/set", json=_options(exposed=[]))
 
     assert response.status_code == 200
-    assert runtime.network().exposed_device_names == []
+    assert runtime.network().exposed_device_names("ipv4") == []
+    assert runtime.network().exposed_device_names("ipv6") == []
 
 
 def test_an_interface_this_machine_does_not_have_cannot_be_opened(guest_box):
@@ -648,6 +665,7 @@ def test_an_interface_this_machine_does_not_have_cannot_be_opened(guest_box):
     response = client.post("/api/hub/network/set", json=_options(exposed=["enp9s0"]))
 
     assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "interface_not_on_machine"
 
 
 def test_the_view_lists_every_overlay_this_box_is_a_member_of(box, monkeypatch):
@@ -745,13 +763,73 @@ def test_a_row_counts_the_devices_reaching_the_hub_across_it(box, monkeypatch):
         "four": "",
     }
 
+    runtime.device_address["five"] = "fd00:100::42"
+
     view = client.get("/api/hub/network").json()
     served = next(
         entry for entry in view["interfaces"] if entry["settings"]["name"] == "enp1s0"
     )
 
     assert view["overlays"][0]["device_count"] == 2
-    assert served["link"]["device_count"] == 1
+    assert served["ipv4_segment"]["device_count"] == 1
+    assert served["ipv6_segment"]["device_count"] == 1
+
+
+def test_each_interface_shows_its_two_segments_and_their_switches(box):
+    """Each segment holds the networks the interface holds now, closed or
+    exposed; the switches are the interface's own two."""
+    client, _, _ = box
+
+    rows = {
+        entry["settings"]["name"]: entry
+        for entry in client.get("/api/hub/network").json()["interfaces"]
+    }
+
+    assert rows["enp1s0"]["ipv4_segment"]["networks"] == ["192.168.100.0/24"]
+    assert rows["enp1s0"]["ipv6_segment"]["networks"] == [
+        "fd00:100::/64",
+        "fe80::/64",
+    ]
+    assert rows["enp2s0"]["ipv4_segment"]["networks"] == ["198.51.100.128/25"]
+    assert (
+        rows["enp1s0"]["settings"]["is_ipv4_exposed"],
+        rows["enp1s0"]["settings"]["is_ipv6_exposed"],
+        rows["enp2s0"]["settings"]["is_ipv4_exposed"],
+        rows["enp2s0"]["settings"]["is_ipv6_exposed"],
+    ) == (True, True, False, False)
+    assert "is_exposed" not in rows["enp1s0"]["settings"]
+
+
+def test_each_family_is_written_by_its_own_list(box):
+    client, runtime, _ = box
+
+    response = client.post(
+        "/api/hub/network/set",
+        json=_options(exposed=["enp1s0"], ipv6=["enp2s0"]),
+    )
+
+    assert response.status_code == 200
+    network = runtime.network()
+    assert network.exposed_device_names("ipv4") == ["enp1s0"]
+    assert network.exposed_device_names("ipv6") == ["enp2s0"]
+
+
+def test_a_write_naming_one_family_leaves_the_other_alone(box):
+    client, runtime, _ = box
+
+    response = client.post(
+        "/api/hub/network/set",
+        json={
+            "uplink_policy": "failover",
+            "is_inter_lan_allowed": True,
+            "ipv6_exposed_interfaces": [],
+        },
+    )
+
+    assert response.status_code == 200
+    network = runtime.network()
+    assert network.exposed_device_names("ipv4") == ["enp1s0"]
+    assert network.exposed_device_names("ipv6") == []
 
 
 def test_an_overlay_closes_and_reopens_through_the_same_write(box):
@@ -780,7 +858,8 @@ def test_a_write_that_says_nothing_about_overlays_leaves_them_alone(box):
         json={
             "uplink_policy": "failover",
             "is_inter_lan_allowed": True,
-            "exposed_interfaces": ["enp1s0"],
+            "ipv4_exposed_interfaces": ["enp1s0"],
+            "ipv6_exposed_interfaces": ["enp1s0"],
         },
     )
 
@@ -874,7 +953,8 @@ def test_a_side_gateway_answers_on_the_network_it_joined(guest_box):
 
     client.post("/api/hub/network/mode/set", json={"mode": "side_gateway"})
 
-    assert runtime.network().interface("enp1s0").is_exposed
+    joined = runtime.network().interface("enp1s0")
+    assert joined.is_ipv4_exposed and joined.is_ipv6_exposed
 
 
 def test_leaving_a_mode_with_trunks_takes_the_VLANs_with_it(box, monkeypatch):
@@ -916,11 +996,14 @@ def test_becoming_a_side_gateway_joins_the_network_it_is_already_on(guest_box):
     assert not joined.lan.is_dhcp_enabled
 
 
-def _options(*, exposed: list, overlays: list | None = None) -> dict:
+def _options(
+    *, exposed: list, ipv6: list | None = None, overlays: list | None = None
+) -> dict:
     return {
         "uplink_policy": "failover",
         "is_inter_lan_allowed": True,
-        "exposed_interfaces": exposed,
+        "ipv4_exposed_interfaces": exposed,
+        "ipv6_exposed_interfaces": exposed if ipv6 is None else ipv6,
         "exposed_overlays": ["netbird"] if overlays is None else overlays,
     }
 
@@ -1364,7 +1447,7 @@ def test_a_write_that_says_nothing_about_interfaces_leaves_the_exposure_alone(bo
     """A panel writing the list it owns must not close every interface by
     leaving the other list out."""
     client, runtime, _ = box
-    assert runtime.network().exposed_device_names == ["enp1s0"]
+    assert runtime.network().exposed_device_names("ipv4") == ["enp1s0"]
 
     response = client.post(
         "/api/hub/network/set",
@@ -1372,7 +1455,8 @@ def test_a_write_that_says_nothing_about_interfaces_leaves_the_exposure_alone(bo
     )
 
     assert response.status_code == 200
-    assert runtime.network().exposed_device_names == ["enp1s0"]
+    assert runtime.network().exposed_device_names("ipv4") == ["enp1s0"]
+    assert runtime.network().exposed_device_names("ipv6") == ["enp1s0"]
 
 
 # --- A server on Windows, its interfaces read through psutil ---------------
@@ -1432,7 +1516,7 @@ def test_a_windows_server_lists_its_interfaces_and_whether_each_answers(
     assert {
         entry["settings"]["name"]: (
             entry["settings"]["role"],
-            entry["settings"]["is_exposed"],
+            entry["settings"]["is_ipv4_exposed"],
             entry["link"]["ipv4_address"],
         )
         for entry in view["interfaces"]
@@ -1455,9 +1539,9 @@ def test_closing_an_interface_nobody_named_stores_it_closed(windows_server):
 
     assert response.status_code == 200
     network = runtime.network()
-    assert network.interface("Ethernet 3").is_exposed is False
+    assert network.interface("Ethernet 3").has_exposed_segment is False
     assert network.interface("wt0") is None
-    assert network.exposed_device_names == ["Ethernet Instance 0 2"]
+    assert network.exposed_device_names("ipv4") == ["Ethernet Instance 0 2"]
     assert runtime.applied == [None]
 
 
@@ -1473,7 +1557,8 @@ def test_on_linux_a_card_plugged_in_after_setup_is_shown_off_and_unsaved(guest_b
     rows = _rows(client)
 
     assert rows["enp9s0"]["is_unsaved"] is True
-    assert rows["enp9s0"]["settings"]["is_exposed"] is False
+    assert rows["enp9s0"]["settings"]["is_ipv4_exposed"] is False
+    assert rows["enp9s0"]["settings"]["is_ipv6_exposed"] is False
     assert rows["enp1s0"]["is_unsaved"] is False
 
 
@@ -1486,7 +1571,7 @@ def test_turning_the_new_card_on_saves_it_and_it_is_no_longer_unsaved(guest_box)
         json={
             "uplink_policy": "failover",
             "is_inter_lan_allowed": False,
-            "exposed_interfaces": ["enp1s0", "enp9s0"],
+            "ipv4_exposed_interfaces": ["enp1s0", "enp9s0"],
             "exposed_overlays": [],
         },
     )
@@ -1494,7 +1579,8 @@ def test_turning_the_new_card_on_saves_it_and_it_is_no_longer_unsaved(guest_box)
     assert answer.status_code == 200, answer.json()
     rows = _rows(client)
     assert rows["enp9s0"]["is_unsaved"] is False
-    assert rows["enp9s0"]["settings"]["is_exposed"] is True
+    assert rows["enp9s0"]["settings"]["is_ipv4_exposed"] is True
+    assert rows["enp9s0"]["settings"]["is_ipv6_exposed"] is False
 
 
 @pytest.mark.parametrize("system", ["darwin", "win32"])
@@ -1508,7 +1594,8 @@ def test_outside_linux_a_new_adapter_is_in_use_at_once(guest_box, monkeypatch, s
     rows = _rows(client)
 
     assert rows["Ethernet 3"]["is_unsaved"] is False
-    assert rows["Ethernet 3"]["settings"]["is_exposed"] is True
+    assert rows["Ethernet 3"]["settings"]["is_ipv4_exposed"] is True
+    assert rows["Ethernet 3"]["settings"]["is_ipv6_exposed"] is True
 
 
 # --- a router exposes no port with the role disabled ---
@@ -1525,11 +1612,16 @@ def _plug_in(status) -> None:
     status._links = [*status._links, link("enp10s0", address="10.9.0.2/24")]
 
 
-def test_a_router_refuses_a_card_turned_on_with_no_role(box):
+@pytest.mark.parametrize("family", ["ipv4", "ipv6"])
+def test_a_router_refuses_a_card_turned_on_with_no_role(box, family):
+    """Either segment turned on asks for the role."""
     client, runtime, status = box
     _plug_in(status)
+    body = _turned_on()
+    other = "ipv6" if family == "ipv4" else "ipv4"
+    body[f"{other}_exposed_interfaces"] = ["enp1s0"]
 
-    response = client.post("/api/hub/network/set", json=_turned_on())
+    response = client.post("/api/hub/network/set", json=body)
 
     assert response.status_code == 400
     assert response.json()["detail"] == {
@@ -1548,7 +1640,11 @@ def test_a_card_turned_on_as_an_uplink_is_written_with_its_role_and_applied(box)
 
     assert response.status_code == 200, response.json()
     stored = runtime.network().interface("enp10s0")
-    assert (stored.role, stored.is_exposed) == ("wan", True)
+    assert (stored.role, stored.is_ipv4_exposed, stored.is_ipv6_exposed) == (
+        "wan",
+        True,
+        True,
+    )
     assert runtime.applied == [None]
 
 
@@ -1608,4 +1704,4 @@ def test_a_server_still_exposes_a_card_with_no_role(guest_box):
     )
 
     assert response.status_code == 200, response.json()
-    assert runtime.network().interface("enp9s0").is_exposed
+    assert runtime.network().interface("enp9s0").has_exposed_segment

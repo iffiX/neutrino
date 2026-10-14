@@ -47,6 +47,7 @@ from pathlib import Path
 
 from neutrino_hub import edition
 from neutrino_hub.exceptions import WizardAborted
+from neutrino_hub.modules.router.constants import ROUTER_FAMILY_IPV4
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.router.link_status import RouterLinkStatus, device_addresses
 from neutrino_hub.modules.router.controller import (
@@ -1226,16 +1227,17 @@ def _panel_host() -> str:
     """The address the machine in front of the panel reaches it at.
 
     Returns:
-        The address of a network this box serves, or of an interface it
-        answers on where it serves none, which is every address a server
-        has, and the hostname when it has neither.
+        The address of a network this box serves, or of an interface whose
+        IPv4 segment is exposed where it serves none, which is every address
+        a server has, and the hostname when it has neither.
     """
     network = _network_config()
     for interface in network.interfaces:
         if interface.role == "lan" and interface.lan.address:
             return interface.lan.address
     status = RouterLinkStatus()
-    for name in network.exposed_device_names_on(list(device_addresses())):
+    present = list(device_addresses())
+    for name in network.exposed_device_names_on(present, ROUTER_FAMILY_IPV4):
         address = status.link(name).ipv4_address
         if address:
             return address.partition("/")[0]
