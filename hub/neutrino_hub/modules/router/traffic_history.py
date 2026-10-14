@@ -10,6 +10,7 @@ start in the same boot counts on from the saved counters.
 import json
 import logging
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -97,6 +98,17 @@ def _read_totals(stored) -> dict[str, dict[str, dict[str, list[int]]]]:
     return totals
 
 
+def _read_seen(stored, names, moment: datetime) -> dict[str, datetime]:
+    """When each of ``names`` was last read, or ``moment`` where the file has none."""
+    seen = {}
+    for name in names:
+        try:
+            seen[name] = datetime.fromisoformat(stored[name]).replace(tzinfo=None)
+        except (KeyError, TypeError, ValueError):
+            seen[name] = moment
+    return seen
+
+
 @dataclass
 class RouterTrafficTotal:
     """Traffic totals of one interface for one hour, day or month.
@@ -121,15 +133,20 @@ class RouterTrafficHistory:
         *,
         path: Path | None = None,
         interval_s: float = ROUTER_TRAFFIC_READ_INTERVAL_S,
+        drawn_interface: Callable[[], str] | None = None,
     ):
         """
         Args:
             path: The history file; None is ``traffic_history.json`` under the
                 state root.
             interval_s: Seconds between two readings.
+            drawn_interface: Called with nothing, returns the interface the
+                history card draws, which a write never drops; None protects
+                no interface.
         """
         self._path = path or ROUTER_TRAFFIC_HISTORY_PATH
         self._interval_s = interval_s
+        self._drawn_interface = drawn_interface
         self._lock = threading.Lock()
         self._is_stopped = threading.Event()
         self._thread: "threading.Thread | None" = None
@@ -138,6 +155,8 @@ class RouterTrafficHistory:
         # The reading the next one is measured from, interface name to
         # ``(received, sent)``.
         self._counters: dict[str, tuple[int, int]] = {}
+        # When each interface was last in a reading.
+        self._seen: dict[str, datetime] = {}
         self._boot_time = 0.0
         # None until the file is read, and nothing is written before that.
         self._written_at: datetime | None = None
@@ -175,6 +194,7 @@ class RouterTrafficHistory:
             now: When the file is read, which the next write is due 5 minutes
                 after; None is the real clock.
         """
+        moment = now or datetime.now()
         boot_time = psutil.boot_time()
         stored = self._read()
         saved_boot_time = stored.get("boot_time")
@@ -183,11 +203,12 @@ class RouterTrafficHistory:
         )
         with self._lock:
             self._totals = _read_totals(stored.get("interfaces"))
+            self._seen = _read_seen(stored.get("seen"), self._totals, moment)
             self._counters = (
                 _read_counters(stored.get("counters")) if is_same_boot else {}
             )
             self._boot_time = boot_time
-            self._written_at = now or datetime.now()
+            self._written_at = moment
 
     def count(self, *, now: datetime | None = None) -> None:
         """Read every interface's counters once and add each difference.
@@ -219,6 +240,7 @@ class RouterTrafficHistory:
                         moment,
                     )
             self._counters = readings
+            self._seen.update(dict.fromkeys(readings, moment))
             written_at = self._written_at
         if written_at is None:
             return
@@ -229,7 +251,11 @@ class RouterTrafficHistory:
             self.save(now=moment)
 
     def save(self, *, now: datetime | None = None) -> None:
-        """Drop the totals past their keeping time and write the file.
+        """Drop what is past its keeping time and write the file.
+
+        An interface no reading has held for 8 days goes with all its totals,
+        unless it is the one the card draws; while that cannot be read, no
+        interface goes.
 
         Args:
             now: The moment each keeping time reaches back from; None is the
@@ -239,14 +265,19 @@ class RouterTrafficHistory:
             OSError: When the file cannot be written.
         """
         moment = now or datetime.now()
+        drawn = self._drawn_name()
         with self._lock:
-            self._trim(moment)
+            self._trim(moment, drawn)
             data = {
                 "boot_time": self._boot_time,
                 "counters": {
                     name: list(counters) for name, counters in self._counters.items()
                 },
                 "interfaces": self._totals,
+                "seen": {
+                    name: self._seen[name].isoformat(timespec="seconds")
+                    for name in self._totals
+                },
             }
             write_generated(
                 self._path,
@@ -335,8 +366,18 @@ class RouterTrafficHistory:
             bucket[0] += received
             bucket[1] += sent
 
-    def _trim(self, moment: datetime) -> None:
-        """Drop each bucket at or before its period's floor, and what that empties."""
+    def _drawn_name(self) -> "str | None":
+        """The interface the card draws, empty for none; None when unreadable."""
+        if self._drawn_interface is None:
+            return ""
+        try:
+            return self._drawn_interface()
+        except (OSError, ValueError) as error:
+            LOGGER.warning("the traffic interface is unreadable: %s", error)
+            return None
+
+    def _trim(self, moment: datetime, drawn: "str | None") -> None:
+        """Drop old buckets, what that empties, and unseen interfaces but ``drawn``."""
         floors = {
             TRAFFIC_HOURS: (
                 moment - timedelta(days=ROUTER_TRAFFIC_HOURS_KEPT_DAYS)
@@ -345,8 +386,15 @@ class RouterTrafficHistory:
             + f"-{moment.day:02d}",
             TRAFFIC_MONTHS: _month_label(moment, ROUTER_TRAFFIC_MONTHS_KEPT_YEARS * 12),
         }
+        unseen_floor = moment - timedelta(days=ROUTER_TRAFFIC_HOURS_KEPT_DAYS)
         totals = {}
         for name, periods in self._totals.items():
+            if (
+                drawn is not None
+                and name != drawn
+                and self._seen.get(name, moment) <= unseen_floor
+            ):
+                continue
             kept = {}
             for period, buckets in periods.items():
                 newer = {
@@ -359,6 +407,11 @@ class RouterTrafficHistory:
             if kept:
                 totals[name] = kept
         self._totals = totals
+        self._seen = {
+            name: seen
+            for name, seen in self._seen.items()
+            if name in totals or name in self._counters
+        }
 
     def _totals_after(
         self, interface: str, period: str, floor: str

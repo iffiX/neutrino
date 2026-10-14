@@ -43,8 +43,18 @@ def machine(monkeypatch):
     return fake
 
 
-def _history(tmp_path) -> RouterTrafficHistory:
-    return RouterTrafficHistory(path=tmp_path / "traffic_history.json")
+def _history(tmp_path, drawn_interface=None) -> RouterTrafficHistory:
+    return RouterTrafficHistory(
+        path=tmp_path / "traffic_history.json", drawn_interface=drawn_interface
+    )
+
+
+def _read_both(machine, history) -> None:
+    """Two readings at :data:`START` on ``enp2s0`` and ``veth0``, both moving."""
+    machine.counters = {"enp2s0": (1000, 500), "veth0": (10, 10)}
+    history.count(now=START)
+    machine.counters = {"enp2s0": (1100, 600), "veth0": (20, 20)}
+    history.count(now=START)
 
 
 def _stored(tmp_path) -> dict:
@@ -240,6 +250,62 @@ def test_hours_are_kept_8_days_days_13_months_and_months_10_years(machine, tmp_p
             "months": {"2016-11": [6, 6]},
         }
     }
+
+
+def test_an_interface_unseen_for_8_days_goes_with_all_its_totals(machine, tmp_path):
+    history = _history(tmp_path)
+    history.load(now=START)
+    _read_both(machine, history)
+    machine.counters = {"enp2s0": (1100, 600)}
+    history.count(now=START + timedelta(days=8, minutes=-5))
+
+    assert set(_stored(tmp_path)["interfaces"]) == {"enp2s0", "veth0"}
+    assert _stored(tmp_path)["seen"]["veth0"] == "2026-10-15T14:30:00"
+
+    history.count(now=START + timedelta(days=8))
+
+    stored = _stored(tmp_path)
+    assert set(stored["interfaces"]) == {"enp2s0"}
+    assert set(stored["seen"]) == {"enp2s0"}
+    assert history.monthly("veth0", now=START) == []
+
+
+def test_the_interface_the_card_draws_stays_however_long_unseen(machine, tmp_path):
+    history = _history(tmp_path, drawn_interface=lambda: "veth0")
+    history.load(now=START)
+    _read_both(machine, history)
+    machine.counters = {"enp2s0": (1100, 600)}
+    history.count(now=START + timedelta(days=30))
+
+    assert set(_stored(tmp_path)["interfaces"]) == {"enp2s0", "veth0"}
+
+
+def test_while_the_drawn_interface_is_unreadable_no_interface_goes(machine, tmp_path):
+    def unreadable() -> str:
+        raise ValueError("network.json does not parse")
+
+    history = _history(tmp_path, drawn_interface=unreadable)
+    history.load(now=START)
+    _read_both(machine, history)
+    machine.counters = {}
+    history.count(now=START + timedelta(days=30))
+
+    assert set(_stored(tmp_path)["interfaces"]) == {"enp2s0", "veth0"}
+
+
+def test_a_restart_keeps_when_each_interface_was_last_seen(machine, tmp_path):
+    before = _history(tmp_path)
+    before.load(now=START)
+    _read_both(machine, before)
+    before.save(now=START)
+
+    machine.counters = {"enp2s0": (1200, 700)}
+    after = _history(tmp_path)
+    after.load(now=START + timedelta(days=9))
+    after.count(now=START + timedelta(days=9))
+    after.save(now=START + timedelta(days=9))
+
+    assert set(_stored(tmp_path)["interfaces"]) == {"enp2s0"}
 
 
 def test_each_window_reaches_back_its_own_count(machine, tmp_path):

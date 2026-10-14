@@ -73,6 +73,7 @@ from neutrino_hub.modules.services.probe import DeclaredServiceProbe
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
 from neutrino_hub.modules.services.host_scope import HostScope, served_scopes
 from neutrino_hub.modules.services.published import PublishedServiceCache
+from neutrino_hub.system.interface_traffic import traffic_interface
 from neutrino_hub.system.listening_ports import ListeningPortReader
 from neutrino_hub.web.constants import (
     WEB_DEFAULT_AGENT_LISTEN_PORT,
@@ -276,7 +277,9 @@ class PanelRuntime:
         self.address_sampler = PanelAddressSampler(runtime=self)
         # The Dashboard's traffic history, counted once a second and written
         # every 5 minutes. The application starts it and writes it at a stop.
-        self.traffic_history = RouterTrafficHistory()
+        self.traffic_history = RouterTrafficHistory(
+            drawn_interface=self._traffic_interface
+        )
         # The routes the running overlays installed that the hub refused, as
         # the last check found them. Runtime only: the next check reads the
         # kernel again.
@@ -943,6 +946,10 @@ class PanelRuntime:
     def _router_controller(self) -> RouterStateController:
         """The one pass every apply of the routing state runs."""
         return RouterStateController()
+
+    def _traffic_interface(self) -> str:
+        """The interface the traffic history card draws."""
+        return traffic_interface(network=self.network())
 
     def _push_desired_states(self) -> list[dict]:
         """Hand every online device the state the network now composes.

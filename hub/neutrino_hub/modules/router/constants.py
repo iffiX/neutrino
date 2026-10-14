@@ -361,6 +361,8 @@ ROUTER_TRAFFIC_HISTORY_PATH = UTILS_STATE_ROOT / "traffic_history.json"
 ROUTER_TRAFFIC_READ_INTERVAL_S = 1
 ROUTER_TRAFFIC_WRITE_INTERVAL_S = 300
 # How long each period's totals are kept; older ones are dropped at a write.
+# An interface the counters have not shown for as long as the hours are kept
+# is dropped with all its totals, unless the card draws it.
 ROUTER_TRAFFIC_HOURS_KEPT_DAYS = 8
 ROUTER_TRAFFIC_DAYS_KEPT_MONTHS = 13
 ROUTER_TRAFFIC_MONTHS_KEPT_YEARS = 10
