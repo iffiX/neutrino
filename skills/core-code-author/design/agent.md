@@ -3,10 +3,12 @@
 The agent is the hub's presence on a managed Linux, Windows or macOS
 machine: one root service with one socket open to the hub. It hosts the
 modules the hub's state names, reports what is true, and shares the
-machine's desktop when told. It draws no window, and the only ports it
-listens on are the forwarders in front of the programs run as an account,
-CloudCLI, code-server and Codeg, on `127.0.0.1`
-([modules/template.md](agent/modules/template.md), "The run"). Its own
+machine's desktop when told. It draws no window, and every port it listens
+on is on `127.0.0.1`: the forwarders in front of the programs run as an
+account, CloudCLI, code-server and Codeg
+([modules/template.md](agent/modules/template.md), "The run"), and the AI
+gateway forward while the machine's AI tools use the gateway ("The AI
+gateway forward"). Its own
 code is pure standard library. The
 package includes the interpreter that runs it, so it installs on a machine
 with no Python and touches none the machine already has.
@@ -82,7 +84,8 @@ report's hash differs and again whenever the hub's copy changes, and the
 streams the hub opens.
 
 The hub opens `shell`, `exec`, `file`, `command` and `connect` streams to an agent;
-the agent opens `log` and `package` streams to the hub. A `command` names a
+the agent opens `log`, `package` and, for the AI gateway forward, `connect`
+streams to the hub. A `command` names a
 module and a verb (`{agent, reboot}`, `{samba, reload}`, `{zfs,
 validate}`). Every stream sits behind a credit window, so a long transfer
 never starves the reader, and a stream's result is its close.
@@ -317,6 +320,24 @@ connection"), and each also answers the agent's dial on loopback:
 | a Podman container's published port | every address, or the one address it is published on, which the agent dials |
 | VS Code | `127.0.0.1` alone |
 | the CloudCLI, code-server and Codeg forwarders | `127.0.0.1` alone, in front of CloudCLI and Codeg on loopback and code-server on its account's socket |
+
+## The AI gateway forward
+
+The hub's AI gateway listens on the hub's own loopback alone
+([hub_components/ai.md](hub_components/ai.md), "What serves"), so a managed
+machine's AI tools reach it through the agent. While the `ai_tools` section
+is on, the agent listens on one port of `127.0.0.1`, and the endpoint the
+switch writes into each tool is that port ([ai_tools.md](agent/ai_tools.md)).
+For each connection it accepts there, the agent opens a `connect` stream to
+the hub, and the hub joins it to the gateway on the hub's loopback
+([protocol.md](protocol.md), "The connect stream"). The client's forward of
+its `ai` entry works the same way.
+
+| Rule | Reason |
+| --- | --- |
+| The forward listens on `127.0.0.1` alone, opens no port in any firewall, and closes when the section turns off. | The gateway is for the machine's own accounts, and a port on any other address reaches the LAN, which the gateway no longer answers. |
+| The forward adds no key and reads none; each request carries the device's own key, which the switch wrote into the tool, and the gateway checks it. | The gateway's key check is the one gate on it, wherever a request comes from. |
+| Bytes go both ways under the channel's credit, and either socket's end closes the stream. | It is a `connect` stream like any other, in the other direction. |
 
 ## The local control channel
 
@@ -728,10 +749,13 @@ who can already strip TLS, who fails the fingerprint check first.
 
 **A local account on the managed machine**: the control socket is 0600 under
 a 0700 directory, so the kernel rejects their connection before a request is
-read. The agent's only local ports are the CloudCLI, code-server and Codeg
-forwarders on `127.0.0.1`, which answer 401 to a request carrying neither a
+read. The agent's only local ports are on `127.0.0.1`. The CloudCLI,
+code-server and Codeg forwarders answer 401 to a request carrying neither a
 token the hub minted nor a login the forwarder set, so neither the account
-nor a website in their browser reaches an instance through them.
+nor a website in their browser reaches an instance through them. The AI
+gateway forward passes a request to the gateway, which answers it only with
+the device's key, held in the tool files of the accounts the setting
+names.
 
 **Rooting the hub box** is outside the model: the key, the vault and the
 panel all live there. The panel port itself is plain HTTP unless its HTTPS is

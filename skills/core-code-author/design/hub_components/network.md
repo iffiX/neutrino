@@ -127,6 +127,9 @@ chain and the masquerade follow the roles, as below.
 | DNS, 53 over UDP and TCP | in `router` and `side_gateway` |
 | each SOCKS port | while the proxy has one |
 
+The AI gateway's port is not among them: the gateway listens on the hub's
+loopback alone ([ai.md](ai.md), "What serves").
+
 A hub port answers a sender whose address is inside an exposed segment, and
 no other sender. A segment is one network the hub holds an address in, and
 each is one chip and one switch under the **Network** page's **Exposure**
@@ -321,8 +324,8 @@ routing pass renders the answer into the system's own firewall:
 
 | System | How | What |
 | --- | --- | --- |
-| Windows | `New-NetFirewallRule`, one allow rule per purpose named `neutrino_hub_<purpose>`. A hub port's rule names the exposed segments as its remote addresses, `-RemoteAddress`; a peer port's rule takes any remote address. A port change rewrites the rule and an uninstall removes it. The profile's default inbound block is what closes a hub port to every other sender. The rules are written again whenever an exposed segment's networks change, from the pass that follows the overlay devices and the addresses | the panel's HTTP and HTTPS ports, the agent port, the AI gateway's port (CLIProxyAPI's `listen_port`, as `neutrino_hub_ai_gateway`), every SOCKS port, NetBird's UDP port, EasyTier's 11010 over TCP and UDP |
-| macOS | `/usr/libexec/ApplicationFirewall/socketfilterfw --add <program>` and `--unblockapp <program>`, since that firewall allows programs rather than ports, and the pf sub-anchor `com.apple/neutrino_hub`, loaded from a file under the state root at each routing pass and when the service starts. The anchor holds the exposed segments in address tables, passes a hub port's packet from an address in them and from loopback, and blocks it from every other address, the way the agent's `com.apple/neutrino_smb` fences the file share | the programs `nhub`, `xray`, `cli-proxy-api`, `netbird`, `easytier-core`, and the same port list as Windows in the anchor |
+| Windows | `New-NetFirewallRule`, one allow rule per purpose named `neutrino_hub_<purpose>`. A hub port's rule names the exposed segments as its remote addresses, `-RemoteAddress`; a peer port's rule takes any remote address. A port change rewrites the rule and an uninstall removes it. The profile's default inbound block is what closes a hub port to every other sender. The rules are written again whenever an exposed segment's networks change, from the pass that follows the overlay devices and the addresses | the panel's HTTP and HTTPS ports, the agent port, every SOCKS port, NetBird's UDP port, EasyTier's 11010 over TCP and UDP |
+| macOS | `/usr/libexec/ApplicationFirewall/socketfilterfw --add <program>` and `--unblockapp <program>`, since that firewall allows programs rather than ports, and the pf sub-anchor `com.apple/neutrino_hub`, loaded from a file under the state root at each routing pass and when the service starts. The anchor holds the exposed segments in address tables, passes a hub port's packet from an address in them and from loopback, and blocks it from every other address, the way the agent's `com.apple/neutrino_smb` fences the file share | the programs `nhub`, `xray`, `netbird`, `easytier-core`, and the same port list as Windows in the anchor |
 
 An overlay's peer port is open there while its engine runs, whatever its
 chip, as on Linux. A routing pass there looks up no `xray` account, sets no sysctl, adds no

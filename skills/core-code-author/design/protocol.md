@@ -1070,8 +1070,8 @@ dropped with the device ([files.md](files.md)).
 `ai_tools` in the state is the machine's AI tools setting
 ([agent/ai_tools.md](agent/ai_tools.md)). `is_enabled` is true while
 the setting is on and the gateway serves a model. With it true, `base_url`
-is `http://<hub-address>:<listen-port>`, the gateway as the device reaches it
-on the LAN, `api_key` is the device's own gateway key, and `tool_configs` is
+is the agent's own AI gateway forward on `127.0.0.1` ([agent.md](agent.md),
+"The AI gateway forward"), `api_key` is the device's own gateway key, and `tool_configs` is
 `{claude: {default, opus, sonnet, haiku}, codex: {model,
 model_reasoning_effort}, gemini: {model}}`, every Claude slot filled with the
 gateway's first served model where none was chosen, as the client's
@@ -1476,6 +1476,7 @@ is added without a change to the protocol; a kind is added by a row here.
 | client, to the hub | `exec` | `{device_id, argv, is_tty, cols, rows}`: one command on a managed machine, which the hub opens as the agent's own `exec` with the same `argv`, `is_tty`, `cols` and `rows`, and relays bytes both ways, each side under the other's credit, and the client's `eof` up; no `session_id`, and no `owner` stamped; closed with the agent's `params: {exit_code}`, or refused `binding_unknown`, `client_disabled`, `permission_denied {kind: terminal}` (no `terminal`, or a machine outside its device list) or `agent_offline {device}` before any agent stream opens; closed with the agent's refusal |
 | client, to the hub | `command` | `{module: agent, verb: resize, shell, cols, rows}`, `shell` being the client's own `shell` stream id, or its own `exec` stream id opened with `is_tty`, which the hub maps to the agent's; closed empty once sent on, `shell_unknown {shell}` when no such shell is open. `{module: agent, verb: persist, session_id, is_persistent, is_shared}` and `{module: agent, verb: stop_session, session_id}` go unchanged to the machine holding the session, the one this client's open `shell` names for the id or else the online machine whose report lists it, and close with the agent's close; `session_unknown {session_id}` when no machine holds it, `session_not_owned {session_id}` for a `persist` on a session the machine reports under another owner, and the `shell` stream's permission refusals for that machine. A `persist` names only the flags it carries. `verb_unknown` for any other module or verb. A hub before 0.4.0 closes both kinds `kind_unknown`, which a client reads as a refusal |
 | client, to the hub | `connect` | `{id}`, one published entry by the id a `service` stream takes, or `{is_panel: true}`, the hub's own panel: one TCP connection to that service, or every datagram of one UDP `port` entry. Bytes both ways under credit; closed empty when either end's socket ends, or with a refusal's code. "The connect stream" has the checks, the far ends and the codes |
+| agent, to the hub | `connect` | one TCP connection from the machine's AI tools, opened for each connection the agent's AI gateway forward accepts ([agent.md](agent.md), "The AI gateway forward"); the hub dials the gateway on `127.0.0.1` at its `listen_port` and relays bytes both ways under credit; closed empty when either socket ends, `connect_failed {reason}` when the dial fails |
 | hub, to an agent | `connect` | `{port, protocol}`, `protocol` being `tcp` or `udp` and `tcp` when absent: one TCP connection to `127.0.0.1:<port>` on the machine, or every datagram of one UDP entry to that port, a port the machine publishes now on that protocol; bytes both ways under credit; closed empty when either socket ends, `port_not_published {port}` for any other port or protocol, `connect_failed {reason}` when the dial fails |
 
 Installing and uninstalling are no kind and no verb: they follow from `want`.
@@ -1567,7 +1568,9 @@ page"), and never at the entry's address.
 A `connect` stream carries the bytes of one TCP connection between a client
 and one service the hub publishes, or the hub's own panel, or every datagram
 of one UDP `port` entry. With it a client reaches every service through the
-hub's agent port and dials nothing else. A client opens one stream per
+hub's agent port and dials nothing else. An agent opens one for each
+connection its AI gateway forward accepts, and the hub joins it to the
+gateway on `127.0.0.1` ([agent.md](agent.md), "The AI gateway forward"). A client opens one stream per
 connection its local listener accepts, and one stream for a UDP entry for as
 long as that entry is forwarded ([client.md](client.md), "The local port
 table").

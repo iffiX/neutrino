@@ -98,7 +98,7 @@ password hash and device keys. What each file may contain is documented by the
 agent/
   neutrino_agent/    The agent: the channel to the hub, desired-state sync,
                      the modules it hosts, the streams the panel drives. No
-                     window; it listens on nothing.
+                     window; it listens on 127.0.0.1 alone.
     core/            The one WebSocket to the hub, enrollment, the desired
                      state store and engine, metrics, self-update.
     control/         The root-only local socket `nagent` talks to, and the

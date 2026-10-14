@@ -28,6 +28,14 @@ the same steps as the client's deactivation:
 - on `nagent leave`, and when a refusal of `binding_unknown` ends the
   binding ([agent.md](../agent.md), "What a refusal means to the agent").
 
+**The tools reach the gateway through the agent.** The gateway answers on
+the hub's loopback alone, so while the section is on the agent listens on
+one port of the machine's own `127.0.0.1`, the AI gateway forward, and
+carries each connection made there to the hub over its channel
+([agent.md](../agent.md), "The AI gateway forward"). The endpoint the
+switch writes into each tool is that port. A tool reaches the gateway while
+the agent runs and its channel to the hub is up.
+
 `nagent leave` and `nagent service uninstall` print one line per account
 they switched back, `ai tools   <account>: <state> <code>`, and the agent
 package's removal on Linux shows what both print.

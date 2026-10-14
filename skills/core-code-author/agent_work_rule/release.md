@@ -223,7 +223,7 @@ is its own line, and only on RHEL rebuilds. Fedora carries all three itself.
 ### Agent
 
 The agent runs on the machines the hub manages, as root or LocalSystem and
-headless: it draws no window and listens on nothing. Each Linux package
+headless: it draws no window and listens on `127.0.0.1` alone. Each Linux package
 carries its own interpreter under `/opt/neutrino/agent` and the RustDesk
 host, and depends on no distribution package named `python`. The Windows
 and macOS installers include the agent compiled with Nuitka and upstream's
