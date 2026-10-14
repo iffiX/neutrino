@@ -279,6 +279,8 @@ A UDP port record is in neither number of the page's badge, `{healthy} of
 
 | Key | English | Chinese |
 | --- | --- | --- |
+| `ui.network.exposure_title` | Exposure | 开放范围 |
+| `ui.network.exposure_hint` | The networks whose hosts reach the hub's own ports: the panel over HTTP and HTTPS, the connection port, DNS and the SOCKS ports. SSH and the other services the hub does not run are the system firewall's. | 哪些网段的主机能连到中枢自己的端口：面板的 HTTP 和 HTTPS、连接端口、DNS、SOCKS 端口。SSH 等不归中枢的服务由系统防火墙管。 |
 | `ui.network.unsaved_interface` | New, not in use until turned on and applied | 新网口，打开并应用后才使用 |
 | `ui.network.field_country_code` | Country code | 国家代码 |
 | `ui.network.error_country_code` | Two letters, such as DE. 5 GHz needs one. | 两个字母，例如 CN。5 GHz 需要国家代码。 |

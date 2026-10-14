@@ -176,8 +176,9 @@ Each `*.example.json` is annotated field-by-field. The load-bearing ones:
   `[{address, port}]`, and with none listed the built-in fallbacks answer), `lan` (served network with its address and DHCP
   range — set `upstream_gateway` to an existing network's router to run as a
   side gateway, where that router is the box's way out over the same wire),
-  `split` (an 802.1Q trunk), or `disabled`. Each also carries `is_exposed`:
-  whether what this box listens on answers there. A VLAN is a further interface
+  `split` (an 802.1Q trunk), or `disabled`. Each also carries its exposure,
+  one switch for its IPv4 segment and one for its IPv6 segment: whether the
+  hub's own ports answer the senders inside that segment. A VLAN is a further interface
   entry named `<trunk>.<id>` with a `vlan: {parent, id}` block and a role of
   its own; the trunk's untagged traffic is the `<trunk>.main` entry
   (`id: null`), created with the split and configured like any other interface.

@@ -58,10 +58,10 @@ left `accept` — docker, libvirt and whatever else forwards across that machine
 are not the hub's to police, and a drop policy there cuts every one of them off
 without saying so.
 
-A `server` hub's exposed networks stand where a router's served ones do for
-reaching the machines around it: a Wake-on-LAN packet is broadcast on the
-network of each exposed interface that holds an IPv4 address, and never on an
-overlay, which has no broadcast domain.
+A `server` hub's exposed segments stand where a router's served networks do
+for reaching the machines around it: a Wake-on-LAN packet is broadcast on
+each exposed IPv4 segment, and never on an overlay, which has no broadcast
+domain.
 
 **`server` and `side_gateway` touch nothing at all.** No connection is edited,
 no manager is stopped, no file outside the hub's own roots is written. A
@@ -113,52 +113,72 @@ puts them back, with nothing retyped on the Proxy page.
 
 ## What answers, and where
 
-Every service this box runs binds every address and settles its own port in
-its own tab. What is left to decide is which wires reach them, and that is one
-answer per network — `is_exposed` — rather than a port list per network that
-would have to be kept in step with what is installed.
+The hub's firewall governs the hub's own ports and nothing else, in every
+mode, `router` included. SSH, a file share and every other service the hub
+does not run are the system firewall's matter: the hub opens none of them
+and closes none of them. Only the input rules follow this page; the forward
+chain and the masquerade follow the roles, as below.
 
-```text
-iifname { "enp1s0", "wt0" } accept  # everything this box listens on
-udp dport { 51820 } accept          # where the overlay's peers knock
-```
+| The hub's port | Present |
+| --- | --- |
+| the panel's HTTP port, `listen_port` | always |
+| the panel's HTTPS port, `https_listen_port` | always |
+| the agent port, `agent_listen_port`, 8443 by default | always |
+| DNS, 53 over UDP and TCP | in `router` and `side_gateway` |
+| each SOCKS port | while the proxy has one |
 
-A served network is exposed by definition — it is where the panel, the leases
-and DNS are reached — and an uplink is closed, because remote access arrives
-over an overlay or through the relay. Opening an uplink opens *everything*, which is why there is
-no "SSH from the WAN" switch: a per-port list on the one interface facing the
-internet is a list that gets half right, and the honest control is the whole
-interface with what it costs written beside it.
+A hub port answers a sender whose address is inside an exposed segment, and
+no other sender. A segment is one network the hub holds an address in, and
+each is one chip and one switch under the **Network** page's **Exposure**
+(开放范围):
 
-`is_exposed` renders the input chain only: what it decides is which wires
-reach a connection to this box's own services. The forward chain is rendered
-from the roles, and its `iifname "wt0" accept` carries no `oifname`, so a
-packet arriving from the overlay is forwarded anywhere this box routes, a
-closed uplink's network included, and postrouting masquerades it on the way
-out. The one exception is another overlay: with two running, a chain of its
-own, `forward_overlays`, drops what arrives on one overlay's devices and
-leaves by the other's ("Two overlays at once" below). Which peers reach which network is the overlay's management plane
-(NetBird's routing peer and its network resources): NetBird filters again in
-its own table and inserts its own `iifname "wt0" accept` at the top of this
-table's input and forward chains. So closing an uplink closes that wire to
-this box's own services, and from the overlay the box still answers on that
-wire's address, its own address on it included. Read off a running box:
+| Segment | What it is | Starts |
+| --- | --- | --- |
+| an interface's IPv4 segment | the networks of the IPv4 addresses the interface holds | as the interface's default below |
+| an interface's IPv6 segment | the networks of the IPv6 addresses the interface holds | as the interface's default below |
+| an overlay's segment | the network of the engine's device, one per engine | exposed |
 
-```text
-chain input   { policy drop; ... iifname { "wt0", "enp1s0", "wlp3s0" } accept ... }
-chain forward { policy drop; ... iifname "wt0" accept ... }
-chain postrouting { oifname "enp2s0" masquerade }
-```
+| Rule | Reason |
+| --- | --- |
+| A rule names the sender's network, never the wire it arrived on. | An interface with a public IPv6 address reaches the whole internet on that wire, so a rule by interface opens the hub's ports to every host on it. |
+| A switch is stored per interface and per family, never per network. The rule follows the networks the interface holds now, so a changed IPv6 prefix keeps its switch. | A prefix the provider changes is the same segment to the person who switched it on. |
+| The segments are the ones the hub holds addresses in, and nobody types one in. | A network the hub has no address in is not a network its ports answer on. |
+| An interface's two chips start the same, from the interface's default: on Linux an interface the configuration does not name is closed until it is turned on ("An interface the configuration does not name" below); in `router` a served network is exposed and an uplink is closed; in `server` and `side_gateway` every interface setup found is exposed; on macOS and Windows every interface is exposed. | A Linux hub opens nothing its person did not choose, a router serves its own networks, and a person's own computer stays reachable on the network it is on. |
+| Opening the agent port to every sender is Direct's alone, on the **Access** page ("Direct" below). | The agent port admits a peer by a token and a pinned certificate; the panel admits a browser by a password. |
 
-An overlay is one more row in that same list, and starts open: joining one is
-joining your own network, which is the whole reason somebody set it up. It
-answers the same single question and gets no matrix of its own, because a
-second mental model for one kind of network costs more than the control is
-worth. What it does get is the cost of closing it, said before the press: how
-many managed devices are reaching this hub across it right now. Closing an
-overlay cuts it off rather than going quiet on it, so the box stops answering
-there, the served networks stop reaching it, and its peers stop being able to
-knock.
+The ports that open with no switch:
+
+| Port | Where | Reason |
+| --- | --- | --- |
+| each running engine's peer port: NetBird's WireGuard port over UDP, EasyTier's 11010 over TCP and UDP | from every sender, on every system | An overlay's peers reach the box from anywhere on the internet. |
+| DHCP, 67 over UDP | on the interface of each network whose DHCP the hub serves | A DHCP client has no address yet, so no segment holds it. |
+
+On Linux the input chain's policy is accept. It accepts a packet to a hub
+port from loopback and from an address inside an exposed segment, and drops
+every other packet to a hub port. A served network whose segment is closed
+therefore keeps DHCP and forwarding and loses the hub's DNS and panel.
+
+The forward chain is rendered from the roles, and its `iifname "wt0" accept`
+carries no `oifname`, so a packet arriving from the overlay is forwarded
+anywhere this box routes, a closed uplink's network included, and
+postrouting masquerades it on the way out. The one exception is another
+overlay: with two running, a chain of its own, `forward_overlays`, drops
+what arrives on one overlay's devices and leaves by the other's ("Two
+overlays at once" below). Which peers reach which network is the overlay's
+management plane (NetBird's routing peer and its network resources): NetBird
+filters again in its own table and inserts its own `iifname "wt0" accept` at
+the top of this table's input and forward chains. So a closed uplink
+segment closes the hub's ports to the senders on it, and a sender on an
+exposed overlay still reaches the hub's ports at that uplink's address.
+
+An overlay's chip starts exposed: joining one is joining your own network,
+which is the whole reason somebody set it up. It answers the same single
+question and gets no matrix of its own, because a second mental model for
+one kind of network costs more than the control is worth. What it does get
+is the cost of closing it, said before the press: how many managed devices
+are reaching this hub across it right now. Closing an overlay closes the
+hub's ports to the senders on it; its peer port stays open while its engine
+runs.
 
 Overlays live in `overlays`, beside `interfaces` rather than in it, and are
 keyed by provider, one row per engine with `is_enabled` and `is_exposed`. Any
@@ -167,14 +187,14 @@ rendered over the devices of the enabled rows only. A row turned off keeps
 its `is_exposed` for the day it is turned on again. A row stored without
 `is_enabled`, the 0.4.0 shape, is an enabled one, so a hub upgraded from
 0.4.0 runs the one overlay it ran and no other. Both halves of the keying
-matter. Switching modes rebuilds the interface
-list, and an overlay riding in there would be dropped by a change that has
-nothing to do with it; and the device name belongs to the provider, so a
-configuration storing `wt0` would render rules for an interface that no longer
-exists the day somebody renamed it, matching nothing, silently. A
-configuration written before the switch existed reads as one open overlay,
-which is exactly what the firewall did unconditionally until then: who can
-reach a machine is not a thing to change behind somebody's back.
+matter. Switching modes rebuilds the interface list, and an overlay kept in
+there would be dropped by a change that has nothing to do with it; and the
+device name belongs to the provider, so a configuration storing `wt0` would
+render rules for an interface that no longer exists the day somebody
+renamed it, matching nothing. A configuration written before the switch
+existed reads as one exposed overlay, which is what the firewall did
+unconditionally until then: who can reach a machine is not a thing to change
+behind somebody's back.
 
 The firewall names no overlay of its own. A device name or a peer port
 written into `nft_renderer.py` is the next overlay's rules being written by
@@ -200,25 +220,26 @@ links, Wake-on-LAN, Direct and the **Network** page share.
 
 | System | Such an interface | Reason |
 | --- | --- | --- |
-| Linux, every mode | is shown on the **Network** page with its switches off and a badge saying it is not in use until turned on and applied. Until then it is not exposed and not enabled: no nftables rule names it, Direct opens nothing on it, it is in no link's `urls` and it is no wake target. Turning it on and applying writes it into the configuration. | A Linux hub is a machine whose network the person set up; a port appearing on its own is not a reason to open it, and a card plugged into the wrong network would otherwise answer there at once. |
-| macOS and Windows | counts as exposed, and so as enabled, until the person closes it on the **Network** page. | The hub there is a person's own computer whose network the system manages. A fresh install names no interface, and it must stay reachable on the network the computer is on; an adapter the system adds is the person's own. |
+| Linux, every mode | is shown on the **Network** page with its switches off and a badge saying it is not in use until turned on and applied. Until then neither of its segments is exposed and it is not enabled: no rule opens a hub port to its segments, Direct opens nothing on it, it is in no link's `urls` and it is no wake target. Turning it on and applying writes it into the configuration. | A Linux hub is a machine whose network the person set up; a port appearing on its own is not a reason to open it, and a card plugged into the wrong network would otherwise answer there at once. |
+| macOS and Windows | has both its segments exposed, and so is enabled, until the person closes them on the **Network** page. | The hub there is a person's own computer whose network the system manages. A fresh install names no interface, and it must stay reachable on the network the computer is on; an adapter the system adds is the person's own. |
 
 Router mode reads it the same way on Linux: an interface the configuration
-does not name has the role `disabled` and is not exposed.
+does not name has the role `disabled` and neither of its segments is exposed.
 
-In router mode an exposed port never carries the role `disabled`, because a
-port with that role is stopped: its link is down and its addresses are gone.
-On the **Network** page, turning on the chip of a port whose role is
-`disabled`, a card plugged in after setup among them, puts the role choice in
+In router mode a port with an exposed segment never carries the role
+`disabled`, because a port with that role is stopped: its link is down and
+its addresses are gone. On the **Network** page, turning on a chip of a port
+whose role is `disabled`, a card plugged in after setup among them, puts the
+role choice in
 the same row, the roles a router gives a port in one step: WAN, and LAN for
 a wired port, which takes the free network the page proposes. **Apply
 exposure** sends the role with the exposure, and the hub writes and applies
-both. The hub refuses a configuration that exposes a port whose role is
-`disabled` with `network_invalid {field, name}`, `field` being `role`: on
-`POST /api/hub/network/set` and on `POST /api/hub/network/interface/set`, which
-gives an exposed port the role `disabled`. In `server` and `side_gateway`, where
-no port is the hub's to stop, a port with the role `disabled` is exposed as
-before.
+both. The hub refuses a configuration that exposes a segment of a port whose
+role is `disabled` with `network_invalid {field, name}`, `field` being
+`role`: on `POST /api/hub/network/set`, and on
+`POST /api/hub/network/interface/set` when it gives a port with an exposed
+segment the role `disabled`. In `server` and `side_gateway`, where no port is
+the hub's to stop, a port with the role `disabled` keeps its exposure.
 
 ### An overlay's daemon is a second firewall, and it wins
 
@@ -286,25 +307,25 @@ served networks' rule does. Without the `fib` test, a connection from xray
 to one of the box's own public addresses would be sent back into xray, again
 and again: measured on the lab box, one connection became 15,020.
 
-`server` and `side_gateway` start with every interface open. That is what the
-machine was already doing before the hub arrived, and a machine reached over
-SSH that answers on nothing after an install is a machine nobody can reach.
+`server` and `side_gateway` start with both segments of every interface
+exposed. That is what the machine was already doing before the hub arrived,
+and a hub that answers on nothing after an install is a hub nobody can
+reach.
 
 ### Outside Linux, the system firewall
 
-macOS and Windows have the same exposure as Linux: one `is_exposed` per
-interface and per overlay, drawn on the same panel, with every interface
-exposed until somebody closes one. No nftables table exists there, so the
+macOS and Windows have the same exposure as Linux: the same segments and the
+same switches, drawn on the same panel, with every interface's segments
+exposed until somebody closes them. No nftables table exists there, so the
 routing pass renders the answer into the system's own firewall:
 
 | System | How | What |
 | --- | --- | --- |
-| Windows | `New-NetFirewallRule`, one allow rule per purpose named `neutrino_hub_<purpose>`, each scoped with `-InterfaceAlias` to the exposed interfaces; a port change rewrites the rule and an uninstall removes it. The profile's default inbound block is what closes an interface that is not listed. The rules are scoped again whenever the interface set changes, from the pass that follows the overlay devices, so an engine's adapter that comes back under a new name is listed and a dead one is dropped | the panel's HTTP and HTTPS ports, the agent port, the AI gateway's port (CLIProxyAPI's `listen_port`, as `neutrino_hub_ai_gateway`), every SOCKS port, NetBird's UDP port, EasyTier's 11010 over TCP and UDP |
-| macOS | `/usr/libexec/ApplicationFirewall/socketfilterfw --add <program>` and `--unblockapp <program>`, since that firewall allows programs rather than ports, and the pf sub-anchor `com.apple/neutrino_hub`, loaded from a file under the state root at each routing pass and when the service starts, which blocks those ports on every interface that is not exposed, the way the agent's `com.apple/neutrino_smb` fences the file share | the programs `nhub`, `xray`, `cli-proxy-api`, `netbird`, `easytier-core`, and the same port list as Windows in the anchor |
+| Windows | `New-NetFirewallRule`, one allow rule per purpose named `neutrino_hub_<purpose>`. A hub port's rule names the exposed segments as its remote addresses, `-RemoteAddress`; a peer port's rule takes any remote address. A port change rewrites the rule and an uninstall removes it. The profile's default inbound block is what closes a hub port to every other sender. The rules are written again whenever an exposed segment's networks change, from the pass that follows the overlay devices and the addresses | the panel's HTTP and HTTPS ports, the agent port, the AI gateway's port (CLIProxyAPI's `listen_port`, as `neutrino_hub_ai_gateway`), every SOCKS port, NetBird's UDP port, EasyTier's 11010 over TCP and UDP |
+| macOS | `/usr/libexec/ApplicationFirewall/socketfilterfw --add <program>` and `--unblockapp <program>`, since that firewall allows programs rather than ports, and the pf sub-anchor `com.apple/neutrino_hub`, loaded from a file under the state root at each routing pass and when the service starts. The anchor holds the exposed segments in address tables, passes a hub port's packet from an address in them and from loopback, and blocks it from every other address, the way the agent's `com.apple/neutrino_smb` fences the file share | the programs `nhub`, `xray`, `cli-proxy-api`, `netbird`, `easytier-core`, and the same port list as Windows in the anchor |
 
-A closed overlay's peer port is closed there as on Linux: the Windows rule
-is disabled and the pf anchor blocks it on every interface but loopback.
-A routing pass there looks up no `xray` account, sets no sysctl, adds no
+An overlay's peer port is open there while its engine runs, whatever its
+chip, as on Linux. A routing pass there looks up no `xray` account, sets no sysctl, adds no
 `ip rule` and loads no nftables table. It still writes
 `generated/router_overlay_devices.json` and still runs the NetBird inbound
 gate, and `OverlayRouteGuard` reports no conflict.
@@ -324,6 +345,18 @@ metric to its interface's metric from the interface table. The IPv6
 addresses Direct lists come from the unicast address table, and the
 system's resolvers from the adapters table. Each of these reads is a call
 inside the hub's own process.
+
+### firewalld on Linux
+
+On a Linux hub where firewalld runs, the routing pass also writes the hub's
+ports into firewalld: each hub port accepted from each exposed segment, and
+the peer ports and DHCP as above. Removing the package and a reset take them
+out again, with the hub's nftables table. A packet passes only when every
+table on its hook accepts it, so the hub's own accept is not enough while
+firewalld's zone drops the port. EPEL's fail2ban brings firewalld onto RHEL
+and its rebuilds, where it starts at the next boot, and a RHEL or Rocky
+installed from its own image runs it already. The hub's `fail2ban`
+dependency stays as it is.
 
 ## Two overlays at once
 
@@ -365,8 +398,8 @@ that are fixed"). Where each way reaches the port is
 
 ## Direct
 
-Direct opens the agent port on every enabled interface, and adds the public
-address the person states for the hub to `urls`. One switch on the **Access**
+Direct opens the agent port to every sender on every enabled interface, and
+adds the public address the person states for the hub to `urls`. One switch on the **Access**
 page turns it on.
 
 `config/overlay/direct.json` holds it:
@@ -379,15 +412,15 @@ page turns it on.
 
 | Rule | Reason |
 | --- | --- |
-| An enabled interface is one the hub uses. Where the hub addresses the machine, `router`, that is every interface whose role is not `disabled`. Where it addresses nothing, `server` and `side_gateway`, no role says whether a port is used, so it is every interface the configuration names. An interface the configuration does not name is enabled exactly where it counts as exposed: never on Linux, always on macOS and Windows ("An interface the configuration does not name" above). `RouterNetworkConfig.is_interface_enabled` answers it in one place. | One notion serves the firewall, `urls` and the page alike. |
-| Direct opens the agent port alone. On Linux the input chain gains `iifname { <enabled, not exposed> } tcp dport <agent-port> accept`; on macOS and Windows the agent port's own rule names those interfaces beside the exposed ones. Every other rule is left as it is. | The panel, the AI gateway and every other listener keep the exposure the **Network** page gives them. |
+| An enabled interface is one the hub uses. Where the hub addresses the machine, `router`, that is every interface whose role is not `disabled`. Where it addresses nothing, `server` and `side_gateway`, no role says whether a port is used, so it is every interface the configuration names. An interface the configuration does not name is enabled exactly where its segments start exposed: never on Linux, always on macOS and Windows ("An interface the configuration does not name" above). `RouterNetworkConfig.is_interface_enabled` answers it in one place. | One notion serves the firewall, `urls` and the page alike. |
+| Direct opens the agent port alone, to every sender on an enabled interface, whatever the sender's address. On Linux the input chain gains `iifname { <enabled> } tcp dport <agent-port> accept`; on Windows a rule of its own takes any remote address on those interfaces, and the pf anchor passes the port from any address on them. Every other rule is left as it is. | The panel and the hub's other ports keep the exposure the **Network** page gives them. |
 | Turning Direct off renders the same rules without that addition. | The converge step takes exactly what Direct added. |
-| An interface Direct opens the agent port on is not thereby exposed. Wake-on-LAN, the served scopes and everything else that reads `is_exposed` read it unchanged. | Exposure is the whole interface; Direct is one port. |
-| While Direct is on, `urls` holds, in this order: the exposed set's IPv4 addresses, then the exposed interfaces' IPv6 addresses, then every other enabled interface's IPv4 addresses, then their IPv6 addresses, then NetBird's name for the hub, then `https://<public-host>:<public-port>`, then the relay's. An IPv6 address or host is written in brackets. While Direct is off, `urls` holds IPv4 addresses alone, as without it. | The hub's own addresses are tried first and the path through another server last. Within a group an IPv4 address comes first, because every network the hub is on carries IPv4. |
+| Direct exposes no segment. Wake-on-LAN, the served scopes and everything else that reads the exposure read it unchanged. | An exposed segment opens every hub port to the senders inside it; Direct opens one port to every sender. |
+| While Direct is on, `urls` holds, in this order: the hub's IPv4 addresses in the exposed IPv4 segments and on the exposed overlays, then its IPv6 addresses in the exposed IPv6 segments, then every enabled interface's other IPv4 addresses, then its other IPv6 addresses, then NetBird's name for the hub, then `https://<public-host>:<public-port>`, then the relay's. An IPv6 address or host is written in brackets. While Direct is off, `urls` holds IPv4 addresses alone, as without it. | The hub's own addresses are tried first and the path through another server last. Within a group an IPv4 address comes first, because every network the hub is on carries IPv4. |
 | A stated host name needs nothing of the certificate. | A peer pins the certificate's fingerprint and does not check its names. |
 | An IPv6 address joins `urls` only when a peer elsewhere can keep using it: global scope, so not loopback, link-local, site-local or multicast; and not temporary, deprecated, tentative or failed in duplicate detection. Linux reads it from `ip -json addr show`, an address's `scope` and its `temporary`, `deprecated`, `tentative` and `dadfailed` flags. macOS reads it from `ifconfig`, an `inet6` line's `temporary`, `deprecated`, `tentative`, `duplicated` and `detached` words. Windows reads it from the unicast address table through iphlpapi: a `DadState` of `IpDadStatePreferred`, and a `SuffixOrigin` other than `IpSuffixOriginRandom`, which is how Windows marks a temporary address. Where the reading fails, no IPv6 address joins. | A temporary address is replaced within a day and a link-local one reaches one link, so a peer that stored either loses the hub. |
-| The agent port listens on IPv4 and IPv6 on Linux, macOS and Windows: one socket for each family, the IPv6 one set to IPv6 alone (`IPV6_V6ONLY`). A machine where the IPv6 socket cannot be made serves IPv4, and the log has one line saying so. | Two sockets keep each peer's address in its own family on every system. Which interfaces reach the port stays the firewall's matter. |
-| Every rule that opens the agent port covers both families. The nft table is `inet`, the pf anchor's lines name no family, and the Windows rules name no address. | An exposed interface, and with Direct on an enabled one, answers on IPv6 exactly as on IPv4. |
+| The agent port listens on IPv4 and IPv6 on Linux, macOS and Windows: one socket for each family, the IPv6 one set to IPv6 alone (`IPV6_V6ONLY`). A machine where the IPv6 socket cannot be made serves IPv4, and the log has one line saying so. | Two sockets keep each peer's address in its own family on every system. Which senders reach the port stays the firewall's matter. |
+| The nft table is `inet`, so one table holds the rules of both families: an exposed IPv4 segment's rule matches IPv4 senders, an exposed IPv6 segment's rule IPv6 senders, and Direct's rule names no family. | An exposed IPv6 segment answers on IPv6 exactly as an exposed IPv4 segment answers on IPv4, and Direct answers on both. |
 
 A host is refused at save with `direct_host_invalid {host}` unless it is an
 IP address or a host name of letters, digits, hyphens and dots.
@@ -905,7 +938,8 @@ A failed step keeps the kernel state it had, and the steps after it still
 run. The unit tells systemd it is ready once the firewall step has run,
 before any step that starts a unit ordered after it. Stopping it tears
 nothing down, so a restart leaves no gap in the firewall. Removing the
-package and `nhub reset all` hand the firewall back.
+package and `nhub reset all` hand the firewall back, firewalld's entries
+included.
 
 ### Neither engine's configuration can be checked before it is applied
 

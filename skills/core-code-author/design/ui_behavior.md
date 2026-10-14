@@ -98,7 +98,7 @@ Badges say one word and report state; they are never pressed.
 
 An interface the hub detects and the configuration does not name
 carries `ui.network.unsaved_interface` as an accent badge on the
-**Network** page, on its exposure chip and in its summary, the way a
+**Network** page, on its exposure chips and in its summary, the way a
 VLAN the next apply creates carries `ui.network.vlan_new_on_apply`.
 The page reads it from the interface's `is_unsaved` and works out
 nothing itself ([hub_components/network.md](hub_components/network.md), "An
@@ -419,6 +419,20 @@ The record is per machine, `terms_accepted_at` in that machine's
 shows in place under the button, which stays live. CloudCLI, Codeg, Gitea
 and code-server tabs carry no notice ([ui_text.md](ui_text.md), "Software the
 owner installs").
+
+## The Exposure section on the Network page
+
+The **Exposure** section (开放范围) draws one chip per segment
+([hub_components/network.md](hub_components/network.md), "What answers, and
+where"), each a switch, in the design it has for an interface. Each
+interface the page lists gives two chips, its IPv4 segment and its IPv6
+segment, and each names the segment's network and the interface it is on.
+Each overlay engine gives one chip. A chip's tag is its interface's role,
+`lan` or `wan`; in server mode an interface has no role and its chips carry
+no tag. The section has no **+** and takes no network typed by hand. The
+hint under it is `ui.network.exposure_hint` ([ui_text.md](ui_text.md), "The
+Network page's words"), and the apply bar is **Apply exposure**. Opening the
+agent port to every sender is Direct's switch on the **Access** page, below.
 
 ## The Direct and relay cards on the Access page
 

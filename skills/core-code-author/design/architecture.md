@@ -403,9 +403,10 @@ later — is somebody's own: locally administered, deliberately joined. The hub
 is not multi-tenant and does not defend one enrolled machine from another.
 
 The wire gets no such trust. A "LAN" can be a campus network with a thousand
-strangers on it, so the panel answers only where an interface was deliberately
-exposed and on the running overlays ([network.md](hub_components/network.md), "What answers, and
-where"), behind a password, and the agent channel carries its secrets under
+strangers on it, so the hub's ports answer only senders inside a segment
+deliberately exposed, a running overlay's among them
+([network.md](hub_components/network.md), "What answers, and where"), the
+panel behind a password, and the agent channel carries its secrets under
 pinned TLS. Trusting the machines and distrusting the wire is the whole
 model.
 

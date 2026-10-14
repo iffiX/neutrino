@@ -581,12 +581,12 @@ pinned TLS serving `/api/channel` alone. All three are uvicorn servers in one
 process. The ports, the certificate, the fingerprint and the hub's own
 identity are in [protocol.md](protocol.md), "Three ports, two audiences".
 
-Exposure is the only control plane. The agent port listens on every exposed
-interface, WAN included, and on every exposed overlay; a served LAN that is
-not exposed gets DHCP, DNS and forwarding only. A device on such a LAN is
-enrolled after the LAN is exposed. A hub on macOS or Windows has no
-exposure, and the agent port answers on every interface there
-([network.md](hub_components/network.md), "Outside Linux, the system firewall").
+Exposure is the only control plane for the hub's ports. The agent port
+answers a sender inside every exposed segment, an uplink's included, and on
+every exposed overlay, on Linux, macOS and Windows alike; a served LAN whose
+segment is not exposed gets DHCP and forwarding only. A device on such a LAN
+is enrolled after its segment is exposed
+([network.md](hub_components/network.md), "What answers, and where").
 
 ## Joining: one ticket, thirty minutes, spent in one step
 
@@ -616,7 +616,7 @@ endpoints"); `nagent join` inflates it before it reads:
 {"urls": ["https://192.168.93.1:8443", "..."], "token": "...", "fp": "<sha256 hex>", "role": "agent"}
 ```
 
-`urls` is every exposed address on the agent port, because only one of them
+`urls` is the hub's address in every exposed segment, because only one of them
 is on the joining machine's network and neither end knows which. The link
 `nhub setup` makes for the hub's own agent names `https://127.0.0.1:<agent-port>`
 first and the exposed addresses after it, so that agent joins over loopback

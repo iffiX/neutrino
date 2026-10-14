@@ -100,20 +100,22 @@ context, so the next connection gets it without a restart.
 
 ### The agent port
 
-The agent port listens on every exposed interface, whatever its role, WAN
-included, and on every exposed overlay. A served LAN that is not exposed keeps
-DHCP, DNS and forwarding only. The addresses in an enrolment link are this same
-set, `RouterNetworkConfig.exposed_interfaces` in `modules/router/interfaces.py`.
-It is a pure function equal to `exposed_device_names + exposed_overlay_device_names`;
-a LAN contributes its configured address, every other interface its live IPv4.
+The agent port answers a sender inside every exposed segment, whatever the
+interface's role, an uplink's included, and on every exposed overlay
+([network.md](hub_components/network.md), "What answers, and where"). A
+served LAN whose segment is not exposed keeps DHCP and forwarding only. The
+addresses in an enrolment link are the hub's own in that same set: its IPv4
+address in each exposed IPv4 segment (a LAN's configured address, every
+other interface's live IPv4) and its address on each exposed overlay.
 
 While Direct is on, every enabled interface's address follows the exposed
-ones: the firewall opens the agent port alone there
+ones: the firewall opens the agent port alone there, to every sender
 ([connection.md](connection.md), "Where the port is reached"). One test
-asserts that the link's address set equals the set the firewall opens the
-agent port on, with two extra members no local interface holds: the public
-address stated for Direct while Direct is on, and the relay's address while
-the relay is on and configured. Enrolling a device on a LAN begins with exposing that LAN.
+asserts that the link's address set equals the hub's addresses in the
+segments the firewall opens the agent port to, with two extra members no
+local interface holds: the public address stated for Direct while Direct is
+on, and the relay's address while the relay is on and configured. Enrolling
+a device on a LAN begins with exposing that LAN's segment.
 
 What the port does with a peer before it is admitted, and every limit on it,
 is in [connection.md](connection.md), "Before a peer is admitted".
@@ -265,11 +267,11 @@ returns it is, and booleans are questions in all three, `is_` and `has_`
 
 ### The principles behind every route
 
-Exposure is the only control plane for what the box serves.
-`exposed_interfaces` decides where the panel port, the agent port and every
-published service listen; no route switches a service on for one network. A
-hub on macOS or Windows has no exposure and answers on every interface
-([network.md](hub_components/network.md), "Outside Linux, the system firewall").
+Exposure is the only control plane for the hub's own ports. The exposed
+segments decide which senders reach the panel ports, the agent port, DNS and
+the SOCKS ports, on Linux, macOS and Windows alike; no route switches a port
+on for one network ([network.md](hub_components/network.md), "What answers,
+and where").
 
 An action that needs the agent online is rejected with 409 `agent_offline`
 while the machine is away. The path does not say which actions those are.
@@ -384,10 +386,10 @@ the page's whole view.
 
 | Route | Parameters | Does |
 | --- | --- | --- |
-| `GET /api/hub/network` | | `NetworkView`, with `hub_os` (`linux`, `darwin` or `windows`) and `modes`, which holds `server` alone outside Linux; each interface's `link.lease_dns` lists the resolvers its DHCP lease names, empty for a static uplink and for an interface holding no lease; `is_unsaved` is true for an interface the configuration does not name and the hub does not use, which is every such interface on Linux and none on macOS and Windows |
-| `POST /api/hub/network/set` | the page's own settings, `{uplink_policy, is_inter_lan_allowed, exposed_interfaces, exposed_overlays, static_leases, interface_roles}`; absent lists leave the exposure as it is; `interface_roles` maps a port turned on to the role it takes with it, `wan` or `lan` | `NetworkView`; in router mode 400 `network_invalid {field: role, name}` when an exposed port would keep the role `disabled` |
+| `GET /api/hub/network` | | `NetworkView`, with `hub_os` (`linux`, `darwin` or `windows`) and `modes`, which holds `server` alone outside Linux; each interface's `link.lease_dns` lists the resolvers its DHCP lease names, empty for a static uplink and for an interface holding no lease; `is_unsaved` is true for an interface the configuration does not name and the hub does not use, which is every such interface on Linux and none on macOS and Windows; the exposure: each interface's IPv4 segment and IPv6 segment, each with the networks it holds now and its switch, and each overlay's switch |
+| `POST /api/hub/network/set` | the page's own settings, `{uplink_policy, is_inter_lan_allowed, static_leases, interface_roles}` and the exposure: the switch of each interface's IPv4 segment and of its IPv6 segment, and each overlay's switch; an absent exposure is left as it is; `interface_roles` maps a port with a segment turned on to the role it takes with it, `wan` or `lan` | `NetworkView`; in router mode 400 `network_invalid {field: role, name}` when a port with an exposed segment would keep the role `disabled` |
 | `POST /api/hub/network/mode/set` | `{mode, ...}` | replaces the whole shape; `NetworkView` |
-| `POST /api/hub/network/interface/set` | `{name, ...}`; a static uplink's `wan.dns` is its resolvers, `[{address, port}]`, `port` 53 when absent, in the order they are asked | one interface's role and settings; `NetworkView`; 400 `resolver_address_invalid {address}` for a row that is not an IP address, `port_out_of_range {minimum, maximum, value}`, in router mode `network_invalid {field: role, name}` for the role `disabled` on an exposed port, and `network_invalid {field: country_code, name}` for an access point on 5 GHz with no `ap_country_code` |
+| `POST /api/hub/network/interface/set` | `{name, ...}`; a static uplink's `wan.dns` is its resolvers, `[{address, port}]`, `port` 53 when absent, in the order they are asked | one interface's role and settings; `NetworkView`; 400 `resolver_address_invalid {address}` for a row that is not an IP address, `port_out_of_range {minimum, maximum, value}`, in router mode `network_invalid {field: role, name}` for the role `disabled` on a port with an exposed segment, and `network_invalid {field: country_code, name}` for an access point on 5 GHz with no `ap_country_code` |
 | `POST /api/hub/network/interface/remove` | `{name}` | `NetworkView` |
 | `GET /api/hub/network/wifi_network` | | the saved Wi-Fi networks |
 | `POST /api/hub/network/wifi_network/leave` | `{ssid}` | forgets one |
@@ -408,7 +410,7 @@ the page's whole view.
 | `POST /api/hub/overlay/easytier/set` | `{mode, config_server, is_secure_mode, network_name, network_secret, address, hostname, peers, exported_networks}`: `mode` is `manual` or `console`; `config_server` null keeps the stored console address and empty forgets it; an empty `network_secret` keeps the stored secret | stores every setting at once, the console address with its token and the secret sealed in `config/easytier/easytier.json`, and runs the converge step; the manual network's name is checked in manual mode, and in console mode only when one is given; manual mode with no peer is refused 400 `easytier_invalid {field: peers}`; while EasyTier runs, a manual address whose network overlaps is refused 400 `overlay_subnet_overlap {title, subnet, conflict}`; 502 `easytier_apply_failed {detail}` |
 | `POST /api/hub/overlay/easytier/suggestion/create` | | a suggested network for a member |
 | `GET /api/hub/overlay/easytier/secret` | | the network secret |
-| `GET /api/hub/overlay/direct` | | `DirectView`: `is_enabled`, `public_host`, `public_port`; `urls`, what Direct adds to `urls` while it is on, in the order `urls` holds them: the exposed interfaces' stable IPv6 addresses, every other enabled interface's IPv4 and stable IPv6 addresses, then the stated public address, each once; `interface_state`, `added` when Direct adds an interface's address, `exposed` when it adds none because every interface address the hub holds already answers on the agent port, `none` when no interface has an address |
+| `GET /api/hub/overlay/direct` | | `DirectView`: `is_enabled`, `public_host`, `public_port`; `urls`, what Direct adds to `urls` while it is on, in the order `urls` holds them: the hub's stable IPv6 addresses in the exposed IPv6 segments, every enabled interface's other IPv4 and stable IPv6 addresses, then the stated public address, each once; `interface_state`, `added` when Direct adds an interface's address, `exposed` when it adds none because every interface address the hub holds is already in `urls` from an exposed segment, `none` when no interface has an address |
 | `POST /api/hub/overlay/direct/set` | `{public_host, public_port}`, an empty host stating none, the port 1 to 65535 | stores them in `config/overlay/direct.json` and runs the converge step; `DirectView`; 400 `direct_host_invalid {host}` for a value that is neither an IP address nor a host name, `port_out_of_range {minimum, maximum, value}`; 502 `direct_apply_failed {detail}` |
 | `GET /api/hub/overlay/relay` | | `RelayView`: `is_enabled`, `host`, `ssh_port`, `account`, `key_id`, `login_id`, `public_port`, `key_id` or `login_id` empty as `relay.json` holds it; `url`, the address the relay adds to `urls`, empty while it is not configured; `state`, one of the relay's state codes ([network.md](hub_components/network.md), "The states"); `host_key_fingerprint`, the recorded host key as `SHA256:<base64>`, empty when none is recorded; `last_error`, the last line `ssh` wrote before it exited or the failed check's reason, empty while connected; `checked_at`, the last check's time in ISO 8601, empty before the first |
 | `POST /api/hub/overlay/relay/set` | `{host, ssh_port, account, key_id, login_id, public_port}`, the ports 1 to 65535, and exactly one of `key_id` and `login_id`, the other null or absent, as the agent install's request names its credential | stores them in `config/overlay/relay.json`, deletes the recorded host key when `host` or `ssh_port` changed, and runs the converge step; `RelayView`; 400 `relay_host_invalid {host}`, `relay_account_invalid {account}`, `unknown_credential {field: key_id}` for a key the vault does not hold or for a request naming both or neither, `unknown_credential {field: login_id}` for a login the vault does not hold, `port_out_of_range {minimum, maximum, value}`; 502 `relay_apply_failed {detail}` |
@@ -469,7 +471,7 @@ moved. Its steps and their order are [network.md](hub_components/network.md),
 | `POST /api/hub/device/enrollment/create` | `{device_id?, name?, is_hub?}` | a link for that row, or for a new one; `is_hub` makes the link for the agent on the hub's own machine, which names loopback first and is not refused `no_reachable_address` |
 | `POST /api/hub/device/set` | `{device_id, name, icon, ssh, shown_module}`, each optional | the name, the icon, the stored SSH credential the hub reaches it with, and which module tabs its Modules page shows |
 | `POST /api/hub/device/remove` | `{device_id}` | forgets the device; its socket is closed with `binding_unknown` |
-| `POST /api/hub/device/wake` | `{device_id}` | Wake-on-LAN to the last link MAC, broadcast on every network the hub serves, or in `server` mode on the network of every exposed interface that holds an IPv4 address, never on an overlay; `wol_no_mac` when none is stored, `no_reachable_address` when there is no such network |
+| `POST /api/hub/device/wake` | `{device_id}` | Wake-on-LAN to the last link MAC, broadcast on every network the hub serves, or in `server` mode on every exposed IPv4 segment, never on an overlay; `wol_no_mac` when none is stored, `no_reachable_address` when there is no such network |
 | `POST /api/hub/device/agent/install` | `{device_id, ...}` | installs the agent over SSH; `TaskStarted` |
 | `POST /api/hub/device/agent/reinstall` | `{device_id}` | the `reinstall` verb over the channel |
 | `POST /api/hub/device/reboot` | `{device_id}` | the `reboot` verb |
@@ -773,13 +775,14 @@ when that permission does not allow `overlay` or there is nothing to join. A
 device link has no `overlays`. A peer that does not know the member ignores
 it.
 
-`urls` is every exposed address on the agent port, because one of them is on
-the joining machine's network and neither end knows which. The link for the
+`urls` is the hub's address in every exposed segment the agent port answers
+in, because one of them is on the joining machine's network and neither end
+knows which. The link for the
 hub's own agent, and every state the hub sends that agent, names
 `https://127.0.0.1:<agent-port>` first, so it reaches the hub over loopback
-whatever is exposed. While Direct is on, the exposed interfaces' stable
-IPv6 addresses follow the exposed set, every other enabled interface's
-IPv4 and then stable IPv6 addresses follow those, and the public address
+whatever is exposed. While Direct is on, the hub's stable IPv6 addresses
+in the exposed IPv6 segments follow the exposed set, every enabled
+interface's other IPv4 and then stable IPv6 addresses follow those, and the public address
 stated for Direct follows them; an IPv6 address is written in brackets
 ([network.md](hub_components/network.md), "Direct"). While Direct is off, every
 address in `urls` is IPv4. While the relay is on and configured, `https://<host>:<public-port>` is
@@ -1768,7 +1771,7 @@ shows and never dials, since its bytes go over `connect`:
    scopes the box serves: one per served LAN, named by its network CIDR, and
    one `overlay` scope per overlay interface holding an IPv4 address, told
    apart by the CIDR that address and its prefix name. The first scope whose
-   network holds the peer is the answer. Anything else (an exposed WAN, the
+   network holds the peer is the answer. Anything else (an uplink, the
    interface in server mode, a client behind NAT, a client that came
    through Direct) is `link`, with the address the client dialled as the
    hub's own. A peer on loopback came through the relay and dialled the
