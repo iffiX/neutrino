@@ -42,6 +42,8 @@ The uplink is the first interface in the WAN role, or in server and side gateway
 
 **Traffic history** shows the uplink's **received** and **sent** bytes as stacked bars, by **Day**, **Week**, **Month** or **Year**.
 
+The hub counts these bytes itself, the same way on Linux, macOS and Windows. It reads the interface counters every second and writes the totals to disk every 5 minutes, so a power loss costs at most the last 5 minutes. After a hub restart without a reboot, the hub adds the bytes the system counted while the hub was down.
+
 ## Active exits
 
 **Active exits** lists each exit node with traffic in the last two minutes, busiest first, with its latency and its bytes. A red dot marks a node whose last measurement failed. With no exit in use, the card reads **No exit is carrying traffic**.

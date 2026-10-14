@@ -66,7 +66,7 @@ Select **Apply route** to apply the switches, the lists and the resolvers.
 1. Under **Ports**, type a port, pick **Exit node** or **Direct**, and select **Add**.
 1. Select **Apply ports**.
 
-Every port listens on the networks ticked under **Exposure** on the **Network** page. When the hub rejects a port or a resolver list, the code is on [Troubleshooting](../reference/troubleshooting.md).
+A SOCKS port accepts connections from the senders in the segments switched on under **Exposure** on the **Network** page, overlays included. When the hub rejects a port or a resolver list, the code is on [Troubleshooting](../reference/troubleshooting.md).
 
 ## Check it
 

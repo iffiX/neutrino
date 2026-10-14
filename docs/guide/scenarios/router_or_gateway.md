@@ -59,12 +59,14 @@ A side gateway leaves the addresses to your router. Point each device at the hub
 
 ## Exposure
 
-**Exposure** lists the networks where the box accepts connections to the panel and its other services. In router mode, each network the box serves is exposed.
+**Exposure** sets which networks reach the hub's own ports: the panel, the connection port, DNS and the SOCKS ports. In a router the wizard sets up, each LAN's chips start on and the WAN's start off. A server that becomes a router keeps its chips as they were.
 
-1. Under **Exposure**, tick each network the box accepts connections from.
+1. Under **Exposure**, select a chip to switch it on or off.
 1. Read the warnings in the apply bar.
 1. Select **Apply exposure**. The section reads **Applied.**
 
-Leave the WAN unticked: an exposed uplink accepts connections from the internet on every port the box listens on. A ticked interface in router mode needs a role other than **Disabled**. When an apply fails, [Troubleshooting](../reference/troubleshooting.md#network-settings-are-refused) has the fix.
+Keep the WAN's chips off: a WAN chip switched on lets every host in the uplink's networks reach the hub's ports. A port with a chip on needs a role other than **Disabled**. When an apply fails, [Troubleshooting](../reference/troubleshooting.md#network-settings-are-refused) has the fix.
+
+The hub's rules cover its own ports alone, so SSH on the WAN is the system firewall's. When the machine's SSH server listens on every address, close port 22 on the WAN in the system firewall, such as ufw or firewalld.
 
 ![The Exposure section](/guide/en/network_exposure.webp)

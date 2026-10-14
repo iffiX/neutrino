@@ -18,7 +18,7 @@ Install the client on your computer or Android phone from a package file or in t
 
 ## Install the desktop client with one command
 
-The install script checks the client package against the release's `SHA256SUMS` and installs it.
+The install script checks the client package against the release's `SHA256SUMS` and installs it. It prints a line for each step: where the package came from, that it matches, and that it is installed.
 
 ### Linux and macOS
 
@@ -55,24 +55,24 @@ Download the client's file from the [releases page](https://github.com/iffiX/neu
 ::: code-group
 
 ```bash [Debian, Ubuntu]
-sudo apt install ./neutrino-client_0.5.2_amd64.deb
+sudo apt install ./neutrino-client_0.6.0_amd64.deb
 ```
 
 ```bash [Fedora, RHEL family]
-sudo dnf install ./neutrino-client-0.5.2-1.x86_64.rpm
+sudo dnf install ./neutrino-client-0.6.0-1.x86_64.rpm
 ```
 
 ```powershell [Windows]
-msiexec /i neutrino-client-0.5.2-windows-amd64.msi
+msiexec /i neutrino-client-0.6.0-windows-amd64.msi
 ```
 
 ```bash [macOS]
-sudo installer -pkg neutrino-client-0.5.2-macos-arm64.pkg -target /
+sudo installer -pkg neutrino-client-0.6.0-macos-arm64.pkg -target /
 ```
 
 :::
 
-On 64-bit ARM Linux the file name says `arm64` for the `.deb` and `aarch64` for the `.rpm`. On an Intel Mac the file is `neutrino-client-0.5.2-macos-amd64.pkg`.
+On 64-bit ARM Linux the file name says `arm64` for the `.deb` and `aarch64` for the `.rpm`. On an Intel Mac the file is `neutrino-client-0.6.0-macos-amd64.pkg`.
 
 ::: warning
 `dpkg -i` and `rpm -i` install none of the dependencies. After either one, run `sudo apt -f install` on Debian, or `sudo dnf install` with the missing packages on Fedora and RHEL.
@@ -84,21 +84,21 @@ On Windows, opening the `.msi` from File Explorer runs the same installer. Its *
 
 On macOS, Gatekeeper asks for a confirmation the first time **Neutrino Client** opens.
 
-Every package also installs the services for the virtual networks; the mainland edition's package joins EasyTier networks only.
+Every package of either edition also installs the services for the virtual networks, NetBird and EasyTier.
 
 ## Install the Android app
 
-1. On the phone, download `neutrino-client-0.5.2-android.apk` from the release.
+1. On the phone, download `neutrino-client-0.6.0-android.apk` from the release.
 1. Open the file. If Android shows a prompt, allow your browser or file manager to install apps.
 1. Select **Install**.
 1. Open **Neutrino**.
 
-The mainland edition's apk is on the [Gitee releases page](https://gitee.com/iffiX/neutrino/releases). It has no NetBird and joins EasyTier networks only.
+The mainland edition's apk is on the [Gitee releases page](https://gitee.com/iffiX/neutrino/releases).
 
 Every release apk is signed with the project's key. To check a downloaded apk on a computer with the Android SDK build tools, run:
 
 ```bash
-apksigner verify --print-certs neutrino-client-0.5.2-android.apk
+apksigner verify --print-certs neutrino-client-0.6.0-android.apk
 ```
 
 ```text
@@ -150,3 +150,11 @@ Android 13 and newer show a notification prompt at the first **Open** on **Web**
 ## Join another hub
 
 Make a client link in the other hub's panel, and join with it through **Join a hub** again. Each hub publishes its own services. [One client, several hubs](../scenarios/one_client_several_hubs.md) shows what the client lists once it has joined two hubs.
+
+## Update a client
+
+A client changes version only when you install a new release over it. A hub on a newer protocol, as a 0.6.0 hub is for a 0.5 client, makes the client's row read **Version too old · update the client**.
+
+- Install the new release over the old one, with the one command, the package file or the apk, as the sections on this page describe.
+
+The client keeps its hubs, and each row connects at its next round.

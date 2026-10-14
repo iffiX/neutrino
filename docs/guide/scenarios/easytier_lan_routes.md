@@ -4,7 +4,7 @@ title: LAN devices over EasyTier
 
 # Reach LAN devices without an agent through EasyTier
 
-Through EasyTier, a client away from home opens a LAN device that runs no agent at the device's own LAN address. Such a device is a printer or your router's admin page. In the mainland edition, this is the one route page.
+Through EasyTier, a client away from home opens a LAN device that runs no agent at the device's own LAN address. Such a device is a printer or your router's admin page.
 
 Before you start, check these:
 

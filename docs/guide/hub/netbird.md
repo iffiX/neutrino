@@ -4,7 +4,7 @@ title: NetBird
 
 # Join the hub to NetBird
 
-This page puts the hub on your NetBird network with a reusable setup key. The hub gives the same key to every client allowed on the virtual network, so its clients join the same network. The mainland edition has no NetBird; use [EasyTier](./easytier.md) there.
+This page puts the hub on your NetBird network with a reusable setup key. The hub gives the same key to every client allowed on the virtual network, so its clients join the same network.
 
 Before you start, you need:
 

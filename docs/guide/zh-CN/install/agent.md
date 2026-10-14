@@ -26,7 +26,7 @@ title: 安装被控端
 
 ## 一条命令安装
 
-下面的 `<enroll-link>` 是刚复制的加入链接。
+脚本用 `SHA256SUMS` 核对安装包后安装，每做完一步打印一行：安装包从哪里来，核对通过，已经装好。下面的 `<enroll-link>` 是刚复制的加入链接。
 
 ### Linux 和 macOS
 
@@ -77,12 +77,12 @@ nagent join '<enroll-link>'
 ::: code-group
 
 ```bash [Debian、Ubuntu、树莓派 OS]
-sudo apt install ./neutrino-agent_0.5.2_amd64.deb
+sudo apt install ./neutrino-agent_0.6.0_amd64.deb
 sudo nagent join '<enroll-link>'
 ```
 
 ```bash [Fedora、RHEL 系]
-sudo dnf install ./neutrino-agent-0.5.2-1.x86_64.rpm
+sudo dnf install ./neutrino-agent-0.6.0-1.x86_64.rpm
 sudo nagent join '<enroll-link>'
 ```
 
@@ -92,27 +92,26 @@ ARM64 机器的文件名以 `_arm64.deb` 或 `.aarch64.rpm` 结尾。
 
 ### macOS
 
-Apple 芯片的 Mac 运行下面的命令，Intel 的 Mac 用 `neutrino-agent-0.5.2-macos-amd64.pkg`：
+Apple 芯片的 Mac 运行下面的命令，Intel 的 Mac 用 `neutrino-agent-0.6.0-macos-amd64.pkg`：
 
 ```bash
-sudo installer -pkg neutrino-agent-0.5.2-macos-arm64.pkg -target /
+sudo installer -pkg neutrino-agent-0.6.0-macos-arm64.pkg -target /
 sudo nagent join '<enroll-link>'
 ```
 
 ### Windows
 
-1. 运行 `neutrino-agent-0.5.2-windows-amd64.msi`。
+1. 运行 `neutrino-agent-0.6.0-windows-amd64.msi`。
 1. 以管理员身份新开一个 PowerShell，让它读到新的 `PATH`。
 1. 运行 `nagent join '<enroll-link>'`。
 
-静默安装时，在管理员 PowerShell 里运行 `msiexec /i neutrino-agent-0.5.2-windows-amd64.msi /qn`。
+静默安装时，在管理员 PowerShell 里运行 `msiexec /i neutrino-agent-0.6.0-windows-amd64.msi /qn`。
 
 ## 让中枢经 SSH 代装
 
 只对 Linux 机器有效。先在[凭据](../hub/credentials.md)页存好那台机器的 SSH 密钥或登录信息。
 
-1. 在 **未管理的设备** 里打开那台机器的抽屉。
-1. 选择 **安装被控端**。
+1. 在 **设备** 页顶部选择 **按地址添加**。机器已经在 **未管理的设备** 里时，改在它的抽屉里选择 **安装被控端**。
 1. 填 **主机**、**端口** 和 **用户名**。
 1. 在 **凭据** 里选 **SSH 密钥** 或 **密码**，再选存好的那一条。
 1. 可选：账户要密码才能 sudo 时，在 **Sudo 密码** 里选一份登录信息。
@@ -120,7 +119,7 @@ sudo nagent join '<enroll-link>'
 
 ![SSH 安装对话框：主机、端口、用户名和凭据](/guide/zh/devices_install_ssh.webp)
 
-**安装输出** 实时显示安装过程。对方不是 Linux 时，改用加入链接。
+**安装输出** 实时显示安装过程。用 **按地址添加** 时，页面上同时多出这台机器的一行，以你填的主机命名。对方不是 Linux 时，改用加入链接。
 
 ## 核对机器
 

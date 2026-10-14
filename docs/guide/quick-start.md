@@ -35,7 +35,7 @@ irm https://github.com/iffiX/neutrino/releases/latest/download/install.ps1 | iex
 
 The script prompts once for administrator rights. On Windows it goes on in a new PowerShell window that Windows opens as administrator.
 
-After the install, the terminal prints the wizard's address on each network the computer is on. It then shows `Press Enter to begin:` and stays there until you finish the wizard in the browser. At that point it prints `The hub was set up in the browser; its panel is at` and the address, and the script exits.
+After the install, the terminal prints where the package came from, that it matches its checksum, and that it is installed. It then prints the wizard's address on each network the computer is on. It then shows `Press Enter to begin:` and stays there until you finish the wizard in the browser. At that point it prints `The hub was set up in the browser; its panel is at` and the address, and the script exits.
 
 [Install the hub](./install/hub.md) has the mainland edition's command and the package files.
 
@@ -77,7 +77,7 @@ Each device joins with a link of its own from the panel's **Clients** page, vali
 
 ### From the phone
 
-1. On the phone, download `https://github.com/iffiX/neutrino/releases/download/v0.5.2/neutrino-client-0.5.2-android.apk`.
+1. On the phone, download `https://github.com/iffiX/neutrino/releases/download/v0.6.0/neutrino-client-0.6.0-android.apk`.
 1. Open the file and select **Install**. If Android shows a prompt first, allow your browser to install apps.
 1. Open **Neutrino**.
 1. In the panel, open **Clients**, then select **New client link**.

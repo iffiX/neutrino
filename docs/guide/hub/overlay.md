@@ -10,7 +10,7 @@ The **Access** page turns on and off each way into the hub from outside your net
 
 ![The four cards, all switched on](/guide/en/overlay_switches.webp)
 
-**Engine** holds four cards: **Direct**, **SSH Relay**, **NetBird** and **EasyTier**. The mainland edition has no NetBird card.
+**Engine** holds four cards: **Direct**, **SSH Relay**, **NetBird** and **EasyTier**.
 
 1. On the card, turn on **Enable**.
 1. Select **Apply access**.
@@ -19,7 +19,7 @@ A card marked **active** is running, and its settings appear under the cards whe
 
 ## Turn on Direct
 
-Direct opens the hub's port 8443 on every enabled interface, so a client reaches the hub at the hub's own addresses. The panel keeps the exposure the [Network](./network.md) page gives it, and the AI gateway listens on the hub's loopback alone. In router mode an enabled interface is one whose role is not **Disabled**; in the other modes it is every interface.
+Direct opens the hub's connection port, 8443 by default, to every sender on every enabled interface, so a client reaches the hub at the hub's own addresses. The panel keeps the exposure the [Network](./network.md) page gives it, and the AI gateway listens on the hub's loopback alone. In router mode an enabled interface is one whose role is not **Disabled**; in the other modes it is every interface.
 
 ![The Direct settings with a public address and the addresses for clients](/guide/en/overlay_direct_settings.webp)
 
@@ -66,6 +66,6 @@ The NetBird and EasyTier sections end with **Peers**, read again every five seco
 
 An empty NetBird table reads **No peers yet. Log in on another device with the NetBird app.** An empty EasyTier table reads **No machine has joined yet.**
 
-**Topology** draws the box, its LANs and its peers after the box joins a network. **Exposure** on the **Network** page sets whether the box answers its own services on an overlay.
+**Topology** draws the box, its LANs and its peers after the box joins a network. The overlay's chip under **Exposure** on the **Network** page sets whether the overlay's senders reach the hub's own ports.
 
 When the hub rejects a setting on this page, the code is on [Troubleshooting](../reference/troubleshooting.md#access).

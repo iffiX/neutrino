@@ -12,10 +12,10 @@ Each Neutrino package comes off on its own. The hub comes off its computer, an a
 
 To keep the hub installed and start it over, run one of these commands on the hub's computer. On Windows, run it without `sudo` in an administrator PowerShell.
 
-| Command                   | What it does                                                                                                                                                    |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `sudo nhub reset network` | hands the computer's network back: the firewall, the network engines and the resolver. It stops the panel and keeps the configuration                           |
-| `sudo nhub reset all`     | hands the network back, returns the configuration to its first state, deletes the keys, tokens and certificate authorities the hub made, and stops the services |
+| Command                   | What it does                                                                                                                                                                      |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sudo nhub reset network` | hands the computer's network back: the firewall, the hub's rules in firewalld where it runs, the network engines and the resolver. It stops the panel and keeps the configuration |
+| `sudo nhub reset all`     | hands the network back, returns the configuration to its first state, deletes the keys, tokens and certificate authorities the hub made, and stops the services                   |
 
 Each command asks `[y/N]` before it acts, and `--yes` skips the question. After `nhub reset all` the vault is gone, so a backup from the **Settings** page is the only way to get the configuration back. The computer's own agent stays installed, and the panel returns after `sudo nhub setup`.
 

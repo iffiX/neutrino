@@ -4,11 +4,13 @@ title: The channel
 
 # The channel
 
-The channel is the one WebSocket a hub keeps with each machine it manages, at protocol 3 from Neutrino 0.5.2. Two roles use it: `agent`, the service on a managed machine, and `client`, a person's desktop client or phone app. This page lists the vocabulary a program written outside this repository speaks. It covers the link, the pin, the two HTTP endpoints, the frames, the streams, the documents each role exchanges, and the codes.
+The channel is the one WebSocket a hub keeps with each machine it manages, at protocol 4 from Neutrino 0.6.0. Two roles use it: `agent`, the service on a managed machine, and `client`, a person's desktop client or phone app. This page lists the vocabulary a program written outside this repository speaks. It covers the link, the pin, the two HTTP endpoints, the frames, the streams, the documents each role exchanges, and the codes.
 
 ## The port and the pin
 
 The channel is on the agent port, 8443 by default, which serves `/api/channel` over TLS and nothing else. The panel port is separate, and turning the panel's HTTPS on or off leaves the channel as it is.
+
+**Connection port** on the hub's **Network** page sets the agent port. A change reaches every online agent and client in its `urls` first, and the port moves right after. A program offline at that moment joins again with a new link.
 
 The certificate on the agent port is self-signed and valid for ten years, so its fingerprint is the hub's whole identity.
 
@@ -93,11 +95,11 @@ The first frame each way is an identity card of one shape. `hello` goes up withi
 
 | Field      | `hello`, up                                       | `welcome`, down                  |
 | ---------- | ------------------------------------------------- | -------------------------------- |
-| `protocol` | the number this build speaks, `3`                 | the hub's number, `3`            |
+| `protocol` | the number this build speaks, `4`                 | the hub's number, `4`            |
 | `role`     | `agent` or `client`                               | `hub`                            |
 | `id`       | the binding id                                    | the hub's own id, a uuid         |
 | `name`     | the hostname, or the binding's name               | the hub's name from **Settings** |
-| `software` | `neutrino_agent/0.5.2` or `neutrino_client/0.5.2` | `neutrino_hub/0.5.2`             |
+| `software` | `neutrino_agent/0.6.0` or `neutrino_client/0.6.0` | `neutrino_hub/0.6.0`             |
 | `token`    | the binding token                                 | absent                           |
 
 A client joined to several hubs groups them by the hub's `id` and labels them by its `name`. A rejected `hello` gets `refused {code, params}` and close 4000. `hello_invalid` marks a first frame that is late, binary, of another type, or unreadable, and `channel_full {limit}` a port that already holds its most admitted sockets.
@@ -126,7 +128,7 @@ Agents and clients treat 45 seconds without a frame as a dead socket, and reconn
 
 ## How a client picks an address
 
-A client reaches a hub in rounds. A round dials every candidate address of the hub at the same moment. The candidates are the hub's `hub_address` on each of its virtual networks that is on, the hub's name, and the `urls` the client kept. Each dial has its own connect time.
+A client reaches a hub in rounds. A round dials every candidate address of the hub at the same moment. The candidates are the hub's `hub_address` on each of its virtual networks that is on, the hub's name, and the `urls` the client kept. Each dial has its own connect time. An address that refuses the connection is dialled again every second until the round's connect time ends. A hub that restarts is then reached about a second after its port opens.
 
 The first socket to finish its TLS handshake with the pinned fingerprint is the round's socket. The client closes every other socket of the round before any `hello` on it, and sends one `hello` on the round's socket. The round ends connected when `welcome` follows, and in a code otherwise.
 
@@ -383,7 +385,7 @@ A refusal is `{code, params}` wherever it appears: `detail` on an HTTP error, a 
 
 | Code                           | Where                      | Effect on the binding                                         |
 | ------------------------------ | -------------------------- | ------------------------------------------------------------- |
-| `protocol_too_old`             | `join`, `hello`            | kept                                                          |
+| `protocol_too_old`             | `join`, `hello`, a stream  | kept                                                          |
 | `protocol_too_new`             | `join`, `hello`            | kept                                                          |
 | `role_mismatch`                | `join`, `hello`            | kept                                                          |
 | `hello_invalid`                | `hello`                    | kept                                                          |
@@ -402,15 +404,24 @@ A refusal is `{code, params}` wherever it appears: `detail` on an HTTP error, a 
 
 ## Protocol numbers
 
-Each build declares one integer, `PROTOCOL`, and package versions take no part in admission. The hub also holds `PROTOCOL_MIN` and admits a peer whose number is within `PROTOCOL_MIN` to `PROTOCOL`.
+Each build declares one integer, `PROTOCOL`, and package versions take no part in admission. The hub also holds `PROTOCOL_MIN` and admits a peer whose number is within `PROTOCOL_MIN` to `PROTOCOL`. An agent of 0.5 is the one exception.
 
 | `PROTOCOL` | First minor |
 | ---------- | ----------- |
 | 1          | 0.3.0       |
 | 2          | 0.4.0       |
-| 3          | 0.5.2       |
+| 3          | 0.5.0       |
 | 4          | 0.6.0       |
 
-`PROTOCOL_MIN` is 3 from 0.5.2. Protocol 3 renamed the link's and the client state's `overlay`, one object or null, to `overlays`, a list. A 0.3 or 0.4 agent or client is rejected with `protocol_too_old` and does not update itself from a 0.5.2 hub. Each such machine installs the 0.5.2 package and joins with a new link.
+`PROTOCOL_MIN` is 4 from 0.6.0. In protocol 4, a `terminals` entry lists a machine with no flag beside it. An `exec` stream is judged by the `terminal` permission, as a `shell` stream is. `ai_tools.base_url` names the agent's own AI gateway forward on `127.0.0.1`.
+
+| Program                         | At a 0.6 hub                                                                                                                                                                                                                                                                                        |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| a client of 0.5                 | rejected with `protocol_too_old` at `join` and at `hello`. It keeps its binding, and a 0.6 client installed over it connects at its next round                                                                                                                                                      |
+| a bound agent of 0.5            | admitted at `hello` for its own update alone. The hub sends `welcome` naming its newer `software`, reads the platform from the agent's `report`, and streams the agent its `package`. It pushes no `state` and closes every other stream with `protocol_too_old`. The updated agent connects with 4 |
+| an agent of 0.5 with no binding | rejected with `protocol_too_old` at `join`; a 0.6 agent is installed in its place and joins                                                                                                                                                                                                         |
+| a 0.3 or 0.4 agent or client    | rejected with `protocol_too_old`; it does not update itself from the hub and is installed again by hand                                                                                                                                                                                             |
+
+While a bound agent of 0.5 updates, **Devices** shows **Updating the agent** on its tile. The session stays update-only when the hub has no package for the machine's platform, when the install fails, or when the hub's version ends in `+dev`. The tile then shows that the agent is a different version from the hub.
 
 Reading is tolerant and writing is strict. An unknown field is ignored, an unknown kind closes with `kind_unknown`, and a program sends only what its own number defines. Adding a kind, a field or a code keeps the number. Removing anything, changing its meaning, or changing the link, the ticket, the pin or the words `hello`, `state`, `report` and `open` raises it by one.

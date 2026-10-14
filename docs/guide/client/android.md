@@ -14,7 +14,13 @@ The **Hubs** screen holds one row per hub: its name, its state line, its address
 
 The path is **LAN** for an address on a network the phone is on, and **Direct** for one the hub exposes outside. The others are **NetBird**, **EasyTier** and **SSH Relay**. [Turn on Direct](../hub/overlay.md#turn-on-direct) and [SSH Relay](../hub/relay.md) describe the two paths a hub owner sets up.
 
-While the channel is down, the line reads **Connecting…** as the app dials every address of the hub. When no address connects, the line names the reason, then `·` and what ends it, as in **The hub did not answer · retrying in 5 s**. The seconds count down live, and at 0 the line reads **Connecting…** again. The wait starts at 5 seconds and doubles up to 60, and a connection or a network change sets it back to 5. [The state line of a hub row](../reference/troubleshooting.md#the-state-line-of-a-hub-row) lists every reason with its fix.
+While the channel is down, the line reads **Connecting…** as the app dials every address of the hub. An address that refuses the connection is dialled again every second until the round ends.
+
+When no address connects, the line names the reason, then `·` and what ends it, as in **The hub did not answer · retrying in 5 s**. The seconds count down live, and at 0 the line reads **Connecting…** again. The wait starts at 5 seconds and doubles up to 60, and a connection or a network change sets it back to 5.
+
+For an app older than the hub accepts, the line reads **Version too old · update the client**. The line stays until you install the new apk over this one.
+
+[The state line of a hub row](../reference/troubleshooting.md#the-state-line-of-a-hub-row) lists every reason with its fix.
 
 A network change, such as moving from mobile data to Wi-Fi, makes the app dial each hub again at once. The refresh button at the top right does the same.
 
@@ -46,6 +52,8 @@ The phone is on one hub's network at a time, so while one is on, **Connect** on 
 ## Forwards
 
 A forward is a port on the phone's `127.0.0.1` that the app opens for one entry. A foreground service of the app holds every forward and every hub connection, so they keep running behind other apps. A forwarded row shows `→ 127.0.0.1:` and the port.
+
+While a hub's channel is down, its TCP forwards keep their ports and stop accepting new connections. The connections waiting on a forward are served once the channel is back.
 
 On the **Web** and **Ports** screens, **Configure** on a row sets the **Local port**. **Auto** keeps the entry's own port when it is free and otherwise takes one from 20000 up. **Fixed** takes a number from 1024 to 65535. **Configure** is greyed while the entry is forwarded.
 

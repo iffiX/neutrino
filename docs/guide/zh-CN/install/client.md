@@ -18,7 +18,7 @@ title: 安装客户端
 
 ## 一条命令装桌面客户端
 
-用你自己的账户运行下面的命令，前面不加 `sudo`。
+用你自己的账户运行下面的命令，前面不加 `sudo`。脚本用 `SHA256SUMS` 核对安装包后安装，每做完一步打印一行：安装包从哪里来，核对通过，已经装好。
 
 ### Linux 和 macOS
 
@@ -59,24 +59,24 @@ Windows 弹出一次授权框，安装在新开的管理员窗口里进行。加
 ::: code-group
 
 ```bash [Debian、Ubuntu]
-sudo apt install ./neutrino-client_0.5.2_amd64.deb
+sudo apt install ./neutrino-client_0.6.0_amd64.deb
 ```
 
 ```bash [RHEL、AlmaLinux、Fedora]
-sudo dnf install ./neutrino-client-0.5.2-1.x86_64.rpm
+sudo dnf install ./neutrino-client-0.6.0-1.x86_64.rpm
 ```
 
 ```powershell [Windows]
-msiexec /i neutrino-client-0.5.2-windows-amd64.msi
+msiexec /i neutrino-client-0.6.0-windows-amd64.msi
 ```
 
 ```bash [macOS]
-sudo installer -pkg neutrino-client-0.5.2-macos-arm64.pkg -target /
+sudo installer -pkg neutrino-client-0.6.0-macos-arm64.pkg -target /
 ```
 
 :::
 
-64 位 ARM 的 Linux 用文件名里带 `arm64` 或 `aarch64` 的包，Intel 的 Mac 用 `neutrino-client-0.5.2-macos-amd64.pkg`。
+64 位 ARM 的 Linux 用文件名里带 `arm64` 或 `aarch64` 的包，Intel 的 Mac 用 `neutrino-client-0.6.0-macos-amd64.pkg`。
 
 ::: warning
 `dpkg -i` 和 `rpm -i` 不装依赖。已经用了的话，Debian 系运行 `sudo apt -f install`，RHEL 系用 `sudo dnf install` 装上它列出的包。
@@ -88,20 +88,20 @@ Windows 上双击 `.msi` 也行。保持勾选 **Add the Neutrino Client to PATH
 
 macOS 上，**Neutrino Client** 装进 `/Applications`。这个应用只有临时签名，第一次打开时在 Gatekeeper 的提示里确认一次。
 
-每个包都带虚拟网用的 NetBird 和 EasyTier 守护进程，国内版只有 EasyTier。
+每个包都带虚拟网用的 NetBird 和 EasyTier 守护进程，两个版本一样。
 
 ## 装安卓 App
 
-1. 在手机上从发布页下载 `neutrino-client-0.5.2-android.apk`。
+1. 在手机上从发布页下载 `neutrino-client-0.6.0-android.apk`。
 1. 打开这个文件。Android 提示时，允许浏览器或文件管理器安装应用。
 1. 选 **安装**，装好后打开 **微子**。
 
-国内版的 apk 在 Gitee 的发布页上，里面没有 NetBird。
+国内版的 apk 在 Gitee 的发布页上。
 
 要核对 apk 的签名，在装有 Android SDK 构建工具的电脑上运行：
 
 ```bash
-apksigner verify --print-certs neutrino-client-0.5.2-android.apk
+apksigner verify --print-certs neutrino-client-0.6.0-android.apk
 ```
 
 ```text
@@ -155,3 +155,11 @@ Signer #1 certificate SHA-256 digest: 0e20b8b4542f329c4d3ed91632f3ea90730cb99472
 在另一台中枢的面板里生成一条客户端链接，照同样的步骤加入。每台中枢各记各的设备名字，各发布各的服务。
 
 加入之后各页怎样区分两台中枢的条目，见[一个客户端连多台中枢](../scenarios/one_client_several_hubs.md)。
+
+## 更新客户端
+
+客户端只在你装上新版本时才换版本。中枢换到更新的协议后，例如 0.6.0 的中枢遇到 0.5 的客户端，客户端上这台中枢的一行写着 **版本太旧 · 更新客户端**。
+
+- 照这一页前面的步骤，用一条命令、包文件或 apk，把新版本直接装在旧版本上。
+
+已加入的中枢都保留，每一行在下一轮拨号时连上。

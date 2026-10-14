@@ -4,20 +4,20 @@ title: Supported platforms
 
 # Supported platforms
 
-Each part of Neutrino 0.5.2 has a section here with the systems it installs on and its release files. Every file is on the [releases page](https://github.com/iffiX/neutrino/releases), beside `SHA256SUMS` and the source archive. Every build is 64-bit.
+Each part of Neutrino 0.6.0 has a section here with the systems it installs on and its release files. Every file is on the [releases page](https://github.com/iffiX/neutrino/releases), beside `SHA256SUMS` and the source archive. Every build is 64-bit.
 
 ## Hub
 
 | System                                                                                   | Architecture | File                                      |
 | ---------------------------------------------------------------------------------------- | ------------ | ----------------------------------------- |
-| Debian 12 and newer, Ubuntu 22.04 and newer, Raspberry Pi OS 64-bit, bookworm and newer  | x86-64       | `neutrino-hub_0.5.2_amd64.deb`            |
-| the same                                                                                 | ARM64        | `neutrino-hub_0.5.2_arm64.deb`            |
-| Fedora 41 and newer; RHEL 9 family, such as AlmaLinux and Rocky, with EPEL enabled first | x86-64       | `neutrino-hub-0.5.2-1.x86_64.rpm`         |
-| the same                                                                                 | ARM64        | `neutrino-hub-0.5.2-1.aarch64.rpm`        |
-| Arch, EndeavourOS, Manjaro                                                               | x86-64       | `neutrino-hub-0.5.2-1-x86_64.pkg.tar.zst` |
-| Windows 10 1809 and newer, Windows 11, server mode only                                  | x86-64       | `neutrino-hub-0.5.2-windows-amd64.msi`    |
-| macOS 12.3 and newer on Apple silicon, server mode only                                  | ARM64        | `neutrino-hub-0.5.2-macos-arm64.pkg`      |
-| macOS 12.3 and newer on Intel, server mode only                                          | x86-64       | `neutrino-hub-0.5.2-macos-amd64.pkg`      |
+| Debian 12 and newer, Ubuntu 22.04 and newer, Raspberry Pi OS 64-bit, bookworm and newer  | x86-64       | `neutrino-hub_0.6.0_amd64.deb`            |
+| the same                                                                                 | ARM64        | `neutrino-hub_0.6.0_arm64.deb`            |
+| Fedora 41 and newer; RHEL 9 family, such as AlmaLinux and Rocky, with EPEL enabled first | x86-64       | `neutrino-hub-0.6.0-1.x86_64.rpm`         |
+| the same                                                                                 | ARM64        | `neutrino-hub-0.6.0-1.aarch64.rpm`        |
+| Arch, EndeavourOS, Manjaro                                                               | x86-64       | `neutrino-hub-0.6.0-1-x86_64.pkg.tar.zst` |
+| Windows 10 1809 and newer, Windows 11, server mode only                                  | x86-64       | `neutrino-hub-0.6.0-windows-amd64.msi`    |
+| macOS 12.3 and newer on Apple silicon, server mode only                                  | ARM64        | `neutrino-hub-0.6.0-macos-arm64.pkg`      |
+| macOS 12.3 and newer on Intel, server mode only                                          | x86-64       | `neutrino-hub-0.6.0-macos-amd64.pkg`      |
 
 The Linux hub package includes its own Python. It depends on systemd, nftables, dnsmasq, iproute2, wpa_supplicant, dhcpcd, fail2ban, iw, arp-scan, curl, smbclient, the OpenSSH client and pkexec. It recommends hostapd for a machine that serves Wi-Fi.
 
@@ -27,15 +27,15 @@ On the Debian family the dhcpcd dependency reads `dhcpcd-base | dhcpcd5`, becaus
 
 | System                                                              | Architecture | File                                     |
 | ------------------------------------------------------------------- | ------------ | ---------------------------------------- |
-| Debian 12 and newer, Ubuntu 22.04 and newer, Raspberry Pi OS 64-bit | x86-64       | `neutrino-agent_0.5.2_amd64.deb`         |
-| the same                                                            | ARM64        | `neutrino-agent_0.5.2_arm64.deb`         |
-| Fedora 41 and newer; RHEL 9 family                                  | x86-64       | `neutrino-agent-0.5.2-1.x86_64.rpm`      |
-| the same                                                            | ARM64        | `neutrino-agent-0.5.2-1.aarch64.rpm`     |
-| Windows 10 1809 and newer, Windows 11                               | x86-64       | `neutrino-agent-0.5.2-windows-amd64.msi` |
-| macOS 12.3 and newer on Apple silicon                               | ARM64        | `neutrino-agent-0.5.2-macos-arm64.pkg`   |
-| macOS 12.3 and newer on Intel                                       | x86-64       | `neutrino-agent-0.5.2-macos-amd64.pkg`   |
+| Debian 12 and newer, Ubuntu 22.04 and newer, Raspberry Pi OS 64-bit | x86-64       | `neutrino-agent_0.6.0_amd64.deb`         |
+| the same                                                            | ARM64        | `neutrino-agent_0.6.0_arm64.deb`         |
+| Fedora 41 and newer; RHEL 9 family                                  | x86-64       | `neutrino-agent-0.6.0-1.x86_64.rpm`      |
+| the same                                                            | ARM64        | `neutrino-agent-0.6.0-1.aarch64.rpm`     |
+| Windows 10 1809 and newer, Windows 11                               | x86-64       | `neutrino-agent-0.6.0-windows-amd64.msi` |
+| macOS 12.3 and newer on Apple silicon                               | ARM64        | `neutrino-agent-0.6.0-macos-arm64.pkg`   |
+| macOS 12.3 and newer on Intel                                       | x86-64       | `neutrino-agent-0.6.0-macos-amd64.pkg`   |
 
-The agent has no window. Its Linux package includes its own interpreter and the RustDesk host.
+The agent has no window, and it dials the hub. It listens on one port, `127.0.0.1:8317`, on every machine but the hub's own, while the machine's AI tools setting is on. It passes the AI tools' connections there to the hub. Its Linux package includes its own interpreter and the RustDesk host.
 
 The Windows and macOS installers put RustDesk in the agent's own directory. The agent registers it with the system only while the machine's **Remote desktop** switch is on. Windows 10 1809 is the first release with the pseudo console the terminal runs on. The Windows build is x86-64 only, because RustDesk publishes no Windows ARM64 build.
 
@@ -43,13 +43,13 @@ The Windows and macOS installers put RustDesk in the agent's own directory. The 
 
 | System                                                                                      | Architecture | File                                      |
 | ------------------------------------------------------------------------------------------- | ------------ | ----------------------------------------- |
-| Debian 12 and newer, Ubuntu 22.04 and newer, with a desktop session                         | x86-64       | `neutrino-client_0.5.2_amd64.deb`         |
-| the same                                                                                    | ARM64        | `neutrino-client_0.5.2_arm64.deb`         |
-| RHEL 9 family, such as AlmaLinux and Rocky, and Fedora 41 and newer, with a desktop session | x86-64       | `neutrino-client-0.5.2-1.x86_64.rpm`      |
-| the same                                                                                    | ARM64        | `neutrino-client-0.5.2-1.aarch64.rpm`     |
-| Windows 10 1809 and newer, Windows 11                                                       | x86-64       | `neutrino-client-0.5.2-windows-amd64.msi` |
-| macOS 12.3 and newer on Apple silicon                                                       | ARM64        | `neutrino-client-0.5.2-macos-arm64.pkg`   |
-| macOS 12.3 and newer on Intel                                                               | x86-64       | `neutrino-client-0.5.2-macos-amd64.pkg`   |
+| Debian 12 and newer, Ubuntu 22.04 and newer, with a desktop session                         | x86-64       | `neutrino-client_0.6.0_amd64.deb`         |
+| the same                                                                                    | ARM64        | `neutrino-client_0.6.0_arm64.deb`         |
+| RHEL 9 family, such as AlmaLinux and Rocky, and Fedora 41 and newer, with a desktop session | x86-64       | `neutrino-client-0.6.0-1.x86_64.rpm`      |
+| the same                                                                                    | ARM64        | `neutrino-client-0.6.0-1.aarch64.rpm`     |
+| Windows 10 1809 and newer, Windows 11                                                       | x86-64       | `neutrino-client-0.6.0-windows-amd64.msi` |
+| macOS 12.3 and newer on Apple silicon                                                       | ARM64        | `neutrino-client-0.6.0-macos-arm64.pkg`   |
+| macOS 12.3 and newer on Intel                                                               | x86-64       | `neutrino-client-0.6.0-macos-amd64.pkg`   |
 
 The Linux client opens its window on either WebKitGTK ABI, 4.1 or 4.0, and needs `cifs-utils` and polkit for shares. Without the AppIndicator library, the tray is drawn as a GTK status icon. The Windows build is x86-64 only, because cc-switch publishes no Windows ARM64 build, and its installer adds WebView2 when the runtime is absent.
 
@@ -57,7 +57,7 @@ The Linux client opens its window on either WebKitGTK ABI, 4.1 or 4.0, and needs
 
 | System                | Architecture | File                                |
 | --------------------- | ------------ | ----------------------------------- |
-| Android 8.0 and newer | arm64-v8a    | `neutrino-client-0.5.2-android.apk` |
+| Android 8.0 and newer | arm64-v8a    | `neutrino-client-0.6.0-android.apk` |
 
 Android 8.0 is API level 26, the `minSdk` the app declares, and the phone's installer rejects the app on an older system.
 
@@ -74,7 +74,15 @@ Android 8.0 is API level 26, the `minSdk` the app declares, and the phone's inst
 
 ## Versions and protocol
 
-Every part of one release speaks the same protocol number, and every 0.5.2 build speaks protocol 3. A 0.5.2 hub admits protocol 3 alone. It rejects a 0.3 or 0.4 agent or client, which speaks protocol 1 or 2, and a program with a newer protocol. The rejected program keeps its binding. An agent the hub admits updates itself when the hub names a newer version, and a 0.3 or 0.4 agent does not.
+Every part of one release speaks the same protocol number, and every 0.6.0 build speaks protocol 4. A 0.6.0 hub admits protocol 4, and rejects a program that speaks a newer one. An agent the hub admits updates itself when the hub names a newer version.
+
+| Program at a 0.6.0 hub       | What happens                                                                                                       |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| a 0.5 agent joined to it     | the hub admits it to update itself to the hub's version and nothing else; it then connects as a 0.6.0 agent        |
+| a 0.5 client                 | rejected; its hub row reads **Version too old · update the client**, and the new client installed over it connects |
+| a 0.3 or 0.4 agent or client | rejected, and it does not update itself; the machine takes the new package and joins with a new link               |
+
+A rejected program keeps its binding.
 
 [The channel](../protocol/channel.md#protocol-numbers) lists the protocol numbers.
 
@@ -82,12 +90,12 @@ Every part of one release speaks the same protocol number, and every 0.5.2 build
 
 Each release has two editions built from one source at the same version. The full edition is on GitHub, and the mainland edition is on [Gitee](https://gitee.com/iffiX/neutrino/releases), with file names of the same pattern. The release page a file comes from names its edition.
 
-| Edition  | Files                                                                                                                                                | Left out                                                                                    |
-| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| full     | every file in the tables on this page                                                                                                                | nothing                                                                                     |
-| mainland | for the hub, the agent and the desktop client: the `.deb` for x86-64 and ARM64, the Windows `.msi`, the Apple silicon `.pkg`; and the Android `.apk` | the hub has no proxy and no NetBird; the desktop client and the Android app have no NetBird |
+| Edition  | Files                                                                                                                                                | Left out                                      |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| full     | every file in the tables on this page                                                                                                                | nothing                                       |
+| mainland | for the hub, the agent and the desktop client: the `.deb` for x86-64 and ARM64, the Windows `.msi`, the Apple silicon `.pkg`; and the Android `.apk` | the hub has no proxy and no side gateway mode |
 
-The agent program is the same in both editions; the mainland release has fewer of its files. A package upgrades only to a package of its own edition.
+The agent program is the same in both editions, and the desktop client and the Android app have the same features in both. The mainland release has fewer of their files. A package upgrades only to a package of its own edition.
 
 ## Modules by system
 
