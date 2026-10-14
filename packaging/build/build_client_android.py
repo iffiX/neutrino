@@ -7,8 +7,7 @@ naming it. The NetBird, EasyTier and RustDesk cores come from the cores
 cache, or are built when it does not have them, which needs what
 ``build_core_netbird.py``, ``build_core_easytier.py`` and
 ``build_core_rustdesk.py`` name. ``--edition cn`` runs in the mainland
-source tree, which holds no NetBird core script, so its apk carries no
-NetBird core.
+source tree, and its apk carries the same three cores.
 
 Then ``gradlew assembleDebug`` or ``assembleRelease`` runs in
 ``client/android``. A release build is signed when the four variables
@@ -36,8 +35,7 @@ from shared import edition_build  # noqa: E402
 BUILD_DIR = Path(__file__).resolve().parent
 ANDROID_DIR = REPO_ROOT / "client" / "android"
 
-# The scripts that put each core into the app, in the order they run; one
-# the tree does not hold is a core its edition leaves out.
+# The scripts that put each core into the app, in the order they run.
 CORE_SCRIPTS = (
     "build_core_netbird.py",
     "build_core_easytier.py",
@@ -75,12 +73,12 @@ def main() -> int:
     arguments = parser.parse_args()
     edition_build.require_edition_tree(arguments.edition)
     if arguments.cache_key:
-        keys = [_run_core(script, "--cache-key") for script in _core_scripts()]
+        keys = [_run_core(script, "--cache-key") for script in CORE_SCRIPTS]
         print("cores-" + "-".join(" ".join(keys).split()))
         return 0
     _check_tools()
 
-    for script in _core_scripts():
+    for script in CORE_SCRIPTS:
         _run_core(script)
     signing = [name for name in SIGNING_VARIABLES if os.environ.get(name)]
     if arguments.variant == "release" and len(signing) != len(SIGNING_VARIABLES):
@@ -106,11 +104,6 @@ def main() -> int:
         shutil.copyfile(built, output_dir / name)
         print(f"wrote {output_dir / name} ({built.stat().st_size // 1024 // 1024} MiB)")
     return 0
-
-
-def _core_scripts() -> list:
-    """The core scripts this tree holds, in the order they run."""
-    return [script for script in CORE_SCRIPTS if (BUILD_DIR / script).is_file()]
 
 
 def _run_core(script: str, *arguments: str) -> str:

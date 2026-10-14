@@ -57,10 +57,6 @@ PACKAGING_CN_LEFT_OUT_PATHS = (
     "hub/frontend/src/components/geodata_panel.css",
     "hub/frontend/src/components/socks_ports_panel.tsx",
     "hub/frontend/src/components/socks_ports_panel.css",
-    # The Android app: the NetBird core and the script that builds it.
-    "client/android/app/src/netbird",
-    "client/android/app/src/test_netbird",
-    "packaging/build/build_core_netbird.py",
 )
 
 # The released packages a Windows check installs first, so the package it

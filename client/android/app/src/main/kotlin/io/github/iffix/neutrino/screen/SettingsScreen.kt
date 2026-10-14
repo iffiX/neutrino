@@ -21,6 +21,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.iffix.neutrino.CLIENT_CARRIED_CORES
 import io.github.iffix.neutrino.CLIENT_LANGUAGES
 import io.github.iffix.neutrino.CLIENT_LICENCE
 import io.github.iffix.neutrino.CLIENT_THEMES
@@ -119,7 +120,7 @@ private fun AboutCard(deviceName: String, platform: String, version: String) {
                 links = listOf(source to Edition.sourceUrl),
             ),
         )
-        for (core in Edition.carriedCores) {
+        for (core in CLIENT_CARRIED_CORES) {
             val links = buildList {
                 add(source to Edition.sourceUrlOf(core))
                 if (core.patchUrl.isNotEmpty()) {

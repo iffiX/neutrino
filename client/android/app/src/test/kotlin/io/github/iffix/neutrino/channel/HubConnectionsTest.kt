@@ -43,7 +43,7 @@ class HubConnectionsTest {
         assertEquals("", binding.token)
         assertEquals("https://192.168.100.1:8443", binding.gatewayUrl)
         assertEquals(link.urls, binding.gatewayUrls)
-        assertEquals(Samples.clientProviders, binding.overlays.map { it.provider })
+        assertEquals(listOf("netbird", "easytier"), binding.overlays.map { it.provider })
         assertEquals(binding, store.get(binding.id))
         assertEquals(emptyList<Any>(), transport.posts)
     }
@@ -69,7 +69,7 @@ class HubConnectionsTest {
         assertEquals(null, row.waitReason)
         assertEquals(true, hanging.dialled.isNotEmpty())
         assertEquals("https://192.168.100.1:8443", row.binding.gatewayUrl)
-        assertEquals(Samples.clientProviders, row.binding.overlays.map { it.provider })
+        assertEquals(listOf("netbird", "easytier"), row.binding.overlays.map { it.provider })
     }
 
     @Test
@@ -299,7 +299,7 @@ class HubConnectionsTest {
         assertEquals("ticket-1", binding.ticket)
         assertEquals(Samples.FINGERPRINT, binding.fingerprint)
         assertEquals(link.urls, binding.gatewayUrls)
-        assertEquals(Samples.clientProviders, binding.overlays.map { it.provider })
+        assertEquals(listOf("netbird", "easytier"), binding.overlays.map { it.provider })
         assertEquals(emptyList<Any>(), transport.posts)
     }
 
@@ -313,7 +313,7 @@ class HubConnectionsTest {
         assertEquals(HubConnection.WAITING, row.connection)
         assertEquals(HubWaitReason.HUB_SILENT, row.waitReason)
         assertEquals("https://192.168.100.1:8443", row.binding.gatewayUrl)
-        assertEquals(Samples.clientProviders, row.binding.overlays.map { it.provider })
+        assertEquals(listOf("netbird", "easytier"), row.binding.overlays.map { it.provider })
         assertEquals("ticket-1", store.bindings.value.single().ticket)
     }
 
