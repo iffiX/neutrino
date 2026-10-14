@@ -15,7 +15,10 @@ import re
 import yaml
 
 from neutrino_hub.modules.cliproxyapi.config import CliproxyApiConfig
-from neutrino_hub.modules.cliproxyapi.constants import CLIPROXYAPI_AUTH_DIR
+from neutrino_hub.modules.cliproxyapi.constants import (
+    CLIPROXYAPI_AUTH_DIR,
+    CLIPROXYAPI_LISTEN_HOST,
+)
 from neutrino_hub.modules.ai.registry import AiProviderRecord
 
 KIND_TO_BLOCK = {
@@ -61,7 +64,7 @@ class CliproxyApiConfigRenderer:
             Text ready to write as ``cliproxyapi.yaml``.
         """
         document = {
-            "host": "",
+            "host": CLIPROXYAPI_LISTEN_HOST,
             "port": self._config.listen_port,
             "auth-dir": str(CLIPROXYAPI_AUTH_DIR),
             "api-keys": [

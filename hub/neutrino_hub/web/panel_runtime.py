@@ -778,7 +778,6 @@ class PanelRuntime:
             The hash and the state.
         """
         key = device if isinstance(device, str) else device.id
-        scope = self.device_scope.get(key)
         ai_models = (
             gateway_models(self.served_models)
             if self.desired_states.is_ai_tools_enabled(key)
@@ -790,7 +789,7 @@ class PanelRuntime:
             address=self.device_address.get(key, ""),
             allowed_subnets=self.share_subnets(),
             urls=self._device_urls(key),
-            hub_address=scope.hub_address if scope is not None else "",
+            is_hub_machine=self._is_hub_machine(key),
             ai_models=ai_models,
             retry_marks=DeviceRetryMarks().marks(key),
         )
@@ -829,11 +828,15 @@ class PanelRuntime:
             :func:`own_agent_urls` for the device on the hub's own machine,
             :func:`channel_urls` for every other.
         """
-        device = DeviceRegistry().get(key)
-        own_machine = machine_id()
-        if device is not None and own_machine and device.machine_id == own_machine:
+        if self._is_hub_machine(key):
             return own_agent_urls(self)
         return channel_urls(self)
+
+    def _is_hub_machine(self, key: str) -> bool:
+        """Whether a device is the machine the hub runs on."""
+        device = DeviceRegistry().get(key)
+        own_machine = machine_id()
+        return bool(device and own_machine and device.machine_id == own_machine)
 
     def share_subnets(self) -> list:
         """The networks a device's shares answer, from this hub's own fence.

@@ -216,7 +216,7 @@ def test_the_state_carries_the_opened_secret_the_two_components_and_never_a_seal
     store = DesiredStateStore()
     store.set_want(DEVICE, "codeg", "running")
 
-    desired, _ = store.compose(DEVICE, platform, hub_address=HUB)
+    desired, _ = store.compose(DEVICE, platform)
 
     module = desired["modules"]["codeg"]
     (instance,) = module["config"]["instances"]

@@ -12,7 +12,9 @@ modules: its state says what
 each is to be, and this machine observes, installs, configures and reports
 until it matches, the bytes coming down and the output going up on streams
 this side opens. The desktop share is the other way round: decided only on
-the machine, and reported upward.
+the machine, and reported upward. While the state's ``ai_tools`` section is
+on, the AI gateway forward carries the machine's AI tools to the hub's
+gateway over the same socket.
 
 Errors cross the wire as ``{"code", "params"}``, never an English sentence;
 every surface does its own wording.
@@ -79,6 +81,7 @@ from neutrino_agent.streams import (
     STREAM_KIND_SHELL,
     STREAM_KINDS,
 )
+from neutrino_agent.streams.ai_forward import AiGatewayForward
 from neutrino_agent.streams.connect import published_ports
 from neutrino_agent.streams.connect_udp import open_connect_stream
 from neutrino_agent.streams.exec import open_exec_stream
@@ -183,6 +186,10 @@ class Agent:
         self._ai_tools = AiToolsApplier(
             platform=self._platform, log=log, is_bound=enrollment.is_bound
         )
+        # The machine's AI tools reach the hub's gateway through it.
+        self._ai_forward = AiGatewayForward(
+            open_stream=self._open_stream, is_online=self.is_online, log=log
+        )
         self._desired = DesiredStateApplier(
             engine=self._engine,
             runners=self._engine.module_runners,
@@ -276,6 +283,7 @@ class Agent:
         enrollment.enroll(link, platform=self._platform)
         self._desired.forget_tried()
         self._drop_session()
+        self._ai_forward.stop()
         self._reset_binding_state()
         self._load_connection()
         self._news.set()
@@ -291,6 +299,7 @@ class Agent:
             Each account's result of switching its AI tools back.
         """
         self._drop_session()
+        self._ai_forward.stop()
         outcome = enrollment.unbind()
         if outcome:
             self._log(f"could not tell the hub we are leaving: {outcome['code']}")
@@ -364,6 +373,10 @@ class Agent:
         threading.Thread(
             target=self._rdp.settle_at_start, name="rdp_resume", daemon=True
         ).start()
+        # The forward stays bound while there is no channel, from the state
+        # kept before this start.
+        if self._is_bound_and_wanted():
+            self._ai_forward.take(self._desired.latest())
         while not self._is_stop_asked.is_set():
             # Cleared before the turn: news set during it is still standing
             # when the wait begins.
@@ -372,6 +385,7 @@ class Agent:
             if self._is_stop_asked.is_set():
                 break
             self._wait_out(delay)
+        self._ai_forward.stop()
         self._log("neutrino_agent stopped")
 
     def run_once(self) -> int:
@@ -555,7 +569,8 @@ class Agent:
         )
 
     def _take_state(self, document: dict) -> None:
-        """Keep the addresses a state names, then hand it to the applier.
+        """Keep the addresses a state names, open or close the AI gateway
+        forward by it, then hand it to the applier.
 
         Args:
             document: The state, ``{hash, urls, modules, desktop}``.
@@ -563,6 +578,7 @@ class Agent:
         urls = document.get("urls")
         if isinstance(urls, list):
             self._note_urls(urls)
+        self._ai_forward.take(document)
         self._desired.take(document)
 
     def _note_url(self, gateway_url: str) -> None:
@@ -595,13 +611,15 @@ class Agent:
         self._log(f"the hub answers at {', '.join(cleaned)}")
 
     def _tick(self) -> None:
-        """Between reports: adopt a binding written on disk, look at the network.
+        """Between reports: adopt a binding written on disk, look at the
+        network, and listen on the AI gateway forward's port if it could not.
 
         A live socket stays where it is, whatever the network does; the
         next round starts from the top of the hub's addresses.
         """
         self._adopt_external_binding()
         self._watch_network()
+        self._ai_forward.ensure()
 
     def _watch_network(self) -> bool:
         """Look at the route to the hub.
@@ -891,6 +909,7 @@ class Agent:
         code = rejection["code"]
         if code == AGENT_CODE_BINDING_UNKNOWN:
             enrollment.remove_binding()
+            self._ai_forward.stop()
             self._ai_tools.switch_back_all()
             self._rdp.leave_hub()
             self._reset_binding_state()
@@ -963,6 +982,7 @@ class Agent:
         self._desired.reload_tried()
         self._reset_binding_state()
         self._drop_session()
+        self._ai_forward.stop()
         self._engine.take_state({})
         self._log("adopted the binding written on disk")
 

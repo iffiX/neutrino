@@ -14,12 +14,16 @@ live socket to the name's address; the self-update a welcome's
 once-per-target latch; a reinstall of the running version told apart from
 an install to another; a start dropping a failed install record of the
 version it runs; ``sync`` sending a
-report now and what ``probe`` does; and the wake flag cleared before a
-turn rather than after it. Nothing here talks to a network.
+report now and what ``probe`` does; the wake flag cleared before a
+turn rather than after it; and the AI gateway forward following each state,
+the kept one at a start, and closed by a leave, a ``binding_unknown`` and a
+stop, a tool's connection riding the live socket as ``connect {id: ai}``.
+Nothing here talks to a network beyond loopback.
 """
 
 import json
 import os
+import socket
 import threading
 import time
 
@@ -1860,3 +1864,127 @@ def test_a_join_from_another_process_ends_a_failing_hubs_backoff(config_path):
     assert not waiter.is_alive()
     assert done["s"] < 5
     assert agent._backoff_s == AGENT_BACKOFF_MIN_S
+
+
+# --- the AI gateway forward ---
+
+AI_ON = {
+    "hash": "h-on",
+    "urls": ["https://192.0.2.1:8443"],
+    "modules": {},
+    "ai_tools": {"is_enabled": True},
+}
+AI_OFF = dict(AI_ON, hash="h-off", ai_tools={"is_enabled": False})
+
+
+def test_a_state_with_the_ai_tools_on_opens_the_forward_and_off_closes_it(
+    config_path, monkeypatch
+):
+    agent, _ = scripted_agent(config_path, monkeypatch)
+
+    agent._take_state(AI_ON)
+    listening = agent._ai_forward.local_port
+    agent._take_state(AI_OFF)
+
+    assert listening != 0
+    assert agent._ai_forward.local_port == 0
+
+
+def test_the_hubs_own_agent_opens_no_forward(config_path, monkeypatch):
+    agent, _ = scripted_agent(config_path, monkeypatch)
+
+    agent._take_state(
+        dict(AI_ON, urls=["https://127.0.0.1:8443", "https://192.0.2.1:8443"])
+    )
+
+    assert agent._ai_forward.local_port == 0
+
+
+def test_a_tools_connection_rides_the_live_socket_as_a_connect_to_the_ai_entry(
+    config_path, monkeypatch
+):
+    agent, script = scripted_agent(config_path, monkeypatch, [[WELCOME]])
+    session = agent._open_session()
+    session.connect()
+    agent._session = session
+    agent._take_state(AI_ON)
+    tool = socket.create_connection(("127.0.0.1", agent._ai_forward.local_port), 2)
+    tool.settimeout(3)
+    hub = script.clients[0]
+    try:
+        tool.sendall(b"POST")
+        (opened,) = hub.wait_for("open")
+        stream_id = opened["stream"]
+        hub.feed({"type": "credit", "stream": stream_id, "bytes": 65536})
+        deadline = time.monotonic() + 3
+        while not hub.sent_bytes and time.monotonic() < deadline:
+            time.sleep(0.01)
+        hub.feed(stream_id.to_bytes(4, "big") + b"200")
+        answer = tool.recv(1024)
+    finally:
+        tool.close()
+        agent._ai_forward.stop()
+        session.close()
+
+    assert (opened["kind"], opened["id"]) == ("connect", "ai")
+    assert hub.sent_bytes == [stream_id.to_bytes(4, "big") + b"POST"]
+    assert answer == b"200"
+
+
+def test_leave_closes_the_ai_gateway_forward(config_path, monkeypatch):
+    agent, _ = scripted_agent(config_path, monkeypatch, [[WELCOME]])
+    monkeypatch.setattr(
+        enrollment_module.BindingHttpClient,
+        "leave",
+        lambda self, binding_id, token: None,
+    )
+    agent._ai_tools = RecordedAiTools()
+    agent._take_state(AI_ON)
+
+    agent.leave()
+
+    assert agent._ai_forward.local_port == 0
+
+
+def test_binding_unknown_closes_the_ai_gateway_forward(config_path, monkeypatch):
+    agent, _ = scripted_agent(config_path, monkeypatch, [refused("binding_unknown")])
+    agent._ai_tools = RecordedAiTools()
+    agent._take_state(AI_ON)
+
+    agent.run_once()
+
+    assert agent._ai_forward.local_port == 0
+
+
+def test_a_start_opens_the_forward_from_the_state_kept_before_it(
+    config_path, monkeypatch
+):
+    """A restarted agent has no channel yet: the forward stays bound."""
+    agent, _ = scripted_agent(config_path, monkeypatch)
+    monkeypatch.setattr(agent._rdp, "resume_old_share", lambda: None)
+    agent._desired._store.write(AI_ON)
+
+    def stop():
+        raise _Stop()
+
+    monkeypatch.setattr(agent, "run_once", stop)
+
+    try:
+        with pytest.raises(_Stop):
+            agent.run_forever()
+        listening = agent._ai_forward.local_port
+    finally:
+        agent._ai_forward.stop()
+
+    assert listening != 0
+
+
+def test_a_stopped_loop_closes_the_ai_gateway_forward(config_path, monkeypatch):
+    agent, _ = scripted_agent(config_path, monkeypatch)
+    monkeypatch.setattr(agent._rdp, "resume_old_share", lambda: None)
+    agent._desired._store.write(AI_ON)
+    agent.stop()
+
+    agent.run_forever()
+
+    assert agent._ai_forward.local_port == 0

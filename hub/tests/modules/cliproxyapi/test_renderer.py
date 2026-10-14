@@ -58,6 +58,11 @@ def test_kinds_land_in_their_blocks():
     assert document["port"] == 8317
 
 
+def test_the_gateway_listens_on_the_loopback_alone():
+    document = _render([], {})
+    assert document["host"] == "127.0.0.1"
+
+
 def test_disabled_and_keyless_providers_are_left_out():
     document = _render(
         [

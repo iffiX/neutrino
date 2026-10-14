@@ -10,9 +10,9 @@ answer, under one hash the agent compares against. The document is the
 ``state`` frame's sections: ``modules``, one entry
 ``{want, config, install, uninstall}`` per module ``modules.json`` names
 and has not settled, ``desktop`` with the seat password, and ``ai_tools``,
-the machine's AI tools setting from ``ai_tools.json`` with the gateway's
-address and the device's key, for the accounts the instances of the
-programs run as an account name.
+the machine's AI tools setting from ``ai_tools.json`` with where its tools
+reach the gateway and the device's key, for the accounts the instances of
+the programs run as an account name.
 
 A module the state does not mention is left as it is, and the agent
 reports it all the same. A module the person uninstalled is mentioned
@@ -177,15 +177,15 @@ def ai_tools_agent_config(
             on, as :meth:`DesiredStateStore.ai_tool_accounts` gives them.
         platform: The tuple the agent reported; only a Windows machine is
             sent a password.
-        gateway: ``{gateway_url, gateway_key}``: the gateway as the device
-            reaches it, and the device's own key.
+        gateway: ``{gateway_url, gateway_key}``: where the device's tools
+            reach the gateway, and the device's own key.
         models: The names the gateway serves now.
         switcher_version: The cc-switch version the hub's manifest pins.
 
     Returns:
         ``{is_enabled: false, cc_switch_version}`` while the setting is off,
-        the gateway serves no model, or the device has no key or no address
-        for it, the version left out when none is given; else
+        the gateway serves no model, or the device has no key for it, the
+        version left out when none is given; else
         ``{is_enabled, base_url, api_key, tool_configs, accounts: [{account,
         password}], cc_switch_version}``, every Claude slot filled with the
         first served model where none was chosen and ``password`` sent to a
@@ -727,7 +727,7 @@ class DesiredStateStore:
         address: str = "",
         allowed_subnets: "list | tuple" = (),
         urls: "list | tuple" = (),
-        hub_address: str = "",
+        is_hub_machine: bool = False,
         ai_models: "list | tuple" = (),
         retry_marks: "dict | None" = None,
     ) -> tuple:
@@ -745,8 +745,9 @@ class DesiredStateStore:
             address: Where the device is, for the URLs it derives.
             allowed_subnets: The networks its shares answer.
             urls: Every address the hub answers the channel on.
-            hub_address: The hub's own address on the device's network, for
-                the AI gateway the machine's tools reach.
+            is_hub_machine: Whether the device is the hub's own machine,
+                whose AI tools reach the gateway itself rather than its
+                agent's forward.
             ai_models: The names the gateway serves now; none sends the AI
                 tools setting as off.
             retry_marks: Module name, or ``ai_tools``, to the mark the last
@@ -802,7 +803,7 @@ class DesiredStateStore:
                 self.ai_tools(key),
                 [entry[:2] for entry in self.ai_tool_accounts(key)],
                 platform,
-                device_gateway(key, hub_address),
+                device_gateway(key, is_hub_machine=is_hub_machine),
                 list(ai_models),
                 str(
                     load_tool_manifests()

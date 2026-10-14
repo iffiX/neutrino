@@ -20,6 +20,9 @@ CLIPROXYAPI_AUTH_DIR = CLIPROXYAPI_DIR / "auth"
 
 CLIPROXYAPI_UNIT = "neutrino_hub_cliproxyapi.service"
 CLIPROXYAPI_DEFAULT_PORT = 8317
+# The one address the gateway listens on: the hub's own loopback. Clients and
+# managed machines reach it through ``connect`` streams the hub relays.
+CLIPROXYAPI_LISTEN_HOST = "127.0.0.1"
 CLIPROXYAPI_GENERATED_NAME = "cliproxyapi.yaml"
 
 CLIPROXYAPI_CLIENT_KEY_BYTES = 24

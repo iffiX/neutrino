@@ -2,13 +2,15 @@
 
 The autouse redirect keeps every store off the real machine: the binding
 file, the machine's own state store, the credentials directory, the
-configured marks and the package directory all land in ``tmp_path``. The
-fakes here are the ones more than one directory drives: the control
+configured marks and the package directory all land in ``tmp_path``, and
+the AI gateway forward an agent builds listens on a port the system picks.
+The fakes here are the ones more than one directory drives: the control
 channel's platform and agent, the injected clock, the link builder and the
 log sink.
 """
 
 import base64
+import functools
 import json
 import subprocess
 import zlib
@@ -38,6 +40,7 @@ from neutrino_agent.platforms.powershell_host import (
 )
 from neutrino_agent.platforms.windows import WindowsPlatform
 from neutrino_agent.platforms.windows_processes import WindowsProcessEntry
+from neutrino_agent.streams.ai_forward import AiGatewayForward
 
 
 @pytest.fixture(autouse=True)
@@ -49,6 +52,17 @@ def _isolated_machine_paths(tmp_path, monkeypatch):
         engine_module, "AGENT_CONFIGURED_DIR", str(tmp_path / "configured")
     )
     monkeypatch.setattr(platforms_base_module, "AGENT_VAR_DIR", str(tmp_path))
+
+
+@pytest.fixture(autouse=True)
+def _isolated_ai_forward(monkeypatch):
+    """The AI gateway forward an agent builds listens on a port the system
+    picks, never on the machine's own 8317, and looks for a channel often."""
+    monkeypatch.setattr(
+        loop_module,
+        "AiGatewayForward",
+        functools.partial(AiGatewayForward, port=0, poll_s=0.02),
+    )
 
 
 @pytest.fixture(autouse=True)

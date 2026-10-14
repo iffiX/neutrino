@@ -19,7 +19,7 @@ A card marked **active** is running, and its settings appear under the cards whe
 
 ## Turn on Direct
 
-Direct opens the hub's port 8443 on every enabled interface, so a client reaches the hub at the hub's own addresses. The panel and the AI gateway keep the exposure the [Network](./network.md) page gives them. In router mode an enabled interface is one whose role is not **Disabled**; in the other modes it is every interface.
+Direct opens the hub's port 8443 on every enabled interface, so a client reaches the hub at the hub's own addresses. The panel keeps the exposure the [Network](./network.md) page gives it, and the AI gateway listens on the hub's loopback alone. In router mode an enabled interface is one whose role is not **Disabled**; in the other modes it is every interface.
 
 ![The Direct settings with a public address and the addresses for clients](/guide/en/overlay_direct_settings.webp)
 

@@ -15,11 +15,13 @@ CloudCLI by an earlier build, is revoked when the panel starts.
 """
 
 from neutrino_hub.modules.clients.constants import (
+    CLIENT_AI_DEVICE_FORWARD_URL,
     CLIENT_AI_DEVICE_KEY_LABEL_PREFIX,
     CLIENT_AI_KEY_LABEL_PREFIX,
 )
 from neutrino_hub.modules.clients.registry import Client, ClientRegistry
 from neutrino_hub.modules.cliproxyapi.config import CliproxyApiClientKey
+from neutrino_hub.modules.cliproxyapi.constants import CLIPROXYAPI_LISTEN_HOST
 from neutrino_hub.modules.cliproxyapi.ops import (
     CliproxyApiConfigApplier,
     load_config,
@@ -126,30 +128,32 @@ def revoke_device_key(device_id: str) -> None:
     _apply()
 
 
-def device_gateway(device_id: str, hub_address: str) -> dict:
+def device_gateway(device_id: str, *, is_hub_machine: bool = False) -> dict:
     """Where one device's AI tools reach the gateway, and with which key.
 
     Args:
         device_id: The device.
-        hub_address: The hub's address on the device's network.
+        is_hub_machine: Whether the device is the hub's own machine, whose
+            tools reach the gateway itself on its loopback port.
 
     Returns:
-        ``{gateway_url, gateway_key}``; both empty while the device holds no
-        key, its key does not open, or its network is not known.
+        ``{gateway_url, gateway_key}``: ``http://127.0.0.1:8317``, the
+        agent's AI gateway forward, or ``http://127.0.0.1:<listen-port>``
+        on the hub's own machine, and the device's key; both empty while
+        the device holds no key or its key does not open.
     """
     held = load_config()
     key = held.device_keys.get(device_id)
-    if key is None or not hub_address:
+    if key is None:
         return {"gateway_url": "", "gateway_key": ""}
     try:
         material = key.open_key()
     except ValueError:
         return {"gateway_url": "", "gateway_key": ""}
-    host = f"[{hub_address}]" if ":" in hub_address else hub_address
-    return {
-        "gateway_url": f"http://{host}:{held.listen_port}",
-        "gateway_key": material,
-    }
+    url = CLIENT_AI_DEVICE_FORWARD_URL
+    if is_hub_machine:
+        url = f"http://{CLIPROXYAPI_LISTEN_HOST}:{held.listen_port}"
+    return {"gateway_url": url, "gateway_key": material}
 
 
 def gateway_models(served_models) -> list:

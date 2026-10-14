@@ -6,8 +6,9 @@ loops read the same frames: a ``report`` is recorded, an ``open`` hands a
 peer-opened stream to its kind's handler, a ``close`` or a ``credit`` goes
 to the stream it names, a ``ping`` is answered with a ``pong`` carrying its
 nonce, and bytes go to theirs. The kinds a peer may open
-are ``package`` and ``log`` from an agent, and ``service``, ``shell``,
-``exec``, ``command`` and ``connect`` from a client. An agent older than
+are ``package``, ``log`` and, for its AI gateway forward, ``connect`` from
+an agent, and ``service``, ``shell``, ``exec``, ``command`` and ``connect``
+from a client. An agent older than
 the hub whose own package was refused before the hub knew its platform is
 sent ``reinstall`` once, when the report naming the platform lands, unless
 it runs on the hub's own machine, whose agent the hub's update installs.
@@ -76,7 +77,10 @@ from neutrino_hub.modules.devices.manifests import (
 from neutrino_hub.system.machine import machine_id
 from neutrino_hub.utils.version_number import parse_version
 from neutrino_hub.web import channel_state
-from neutrino_hub.web.channel_connect import serve_connect_stream
+from neutrino_hub.web.channel_connect import (
+    serve_agent_connect_stream,
+    serve_connect_stream,
+)
 from neutrino_hub.web.channel_shell import (
     serve_command_stream,
     serve_exec_stream,
@@ -116,6 +120,9 @@ async def serve_agent(
     )
     sessions.stream_handlers.setdefault(
         CHANNEL_STREAM_LOG, functools.partial(serve_log_stream, runtime)
+    )
+    sessions.stream_handlers.setdefault(
+        CHANNEL_STREAM_CONNECT, functools.partial(serve_agent_connect_stream, runtime)
     )
     update = runtime.agent_update_sessions.pop(device.id, None)
     if update is not None and not update.is_closed:

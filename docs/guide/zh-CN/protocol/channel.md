@@ -364,15 +364,17 @@ UDP 流上每个二进制帧是一个数据报，前面是它的 `source`：大�
 | `urls`     | 中枢提供通道的每个地址                                                                                          |                                                                            |
 | `error`    |                                                                                                                 | `{code, params}`：被控端最近一次值得显示的失败                             |
 
-| 字段                                | 内容                                                                                                                                                    |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `retry_mark`                        | 一个短的随机串，有人对失败的模块或失败的 AI 工具设置再按一次操作时，中枢写入新的一个；它只改变哈希，别的什么都不表示                                    |
-| `modules` 汇报里的 `state`          | `absent`、`installed`、`stopped`、`running`、`installing`、`uninstalling`、`queued`、`failed` 或 `unsupported`；`queued` 表示被控端正在先处理另一个模块 |
-| `desktop` 汇报里的 `origin`         | `switch` 是模块页开关打开的共享，`command` 是旧版 `nagent rdp start` 留下的共享；没在共享时为空                                                         |
-| `ai_tools` 的 `state` 里的开关      | `is_enabled` 为真时带网关地址、这台机器的网关密钥和各工具的模型；为假时只有 `cc_switch_version` 和 `retry_mark`                                         |
-| `ai_tools` 汇报里每个账户的 `state` | `switched`、`switched_back` 或 `failed`；失败时带 `{code, params}`，例如 `cc_switch_download_failed`                                                    |
+| 字段                                | 内容                                                                                                                                                                                  |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `retry_mark`                        | 一个短的随机串，有人对失败的模块或失败的 AI 工具设置再按一次操作时，中枢写入新的一个；它只改变哈希，别的什么都不表示                                                                  |
+| `modules` 汇报里的 `state`          | `absent`、`installed`、`stopped`、`running`、`installing`、`uninstalling`、`queued`、`failed` 或 `unsupported`；`queued` 表示被控端正在先处理另一个模块                               |
+| `desktop` 汇报里的 `origin`         | `switch` 是模块页开关打开的共享，`command` 是旧版 `nagent rdp start` 留下的共享；没在共享时为空                                                                                       |
+| `ai_tools` 的 `state` 里的开关      | `is_enabled` 为真时带被控端 AI 网关转发的地址 `http://127.0.0.1:8317`（中枢本机上是网关自己的端口）、这台机器的网关密钥和各工具的模型；为假时只有 `cc_switch_version` 和 `retry_mark` |
+| `ai_tools` 汇报里每个账户的 `state` | `switched`、`switched_back` 或 `failed`；失败时带 `{code, params}`，例如 `cc_switch_download_failed`                                                                                  |
 
-被控端每 5 秒汇报一次。中枢向它打开 `shell`、`exec`、`file`、`command` 和 `connect` 流，它向中枢打开 `log` 和 `package` 流。一个 `connect {port, protocol}` 流是被控端在 `127.0.0.1` 上拨出的一条 TCP 连接，容器端口只发布在某一个地址上时拨那个地址；UDP 条目则是发往那个端口的全部数据报。没有 `protocol` 就是 `tcp`。机器此刻没有在这个协议上发布的端口以 `port_not_published {port}` 关闭，拨不通以 `connect_failed {reason}` 关闭。
+被控端每 5 秒汇报一次。中枢向它打开 `shell`、`exec`、`file`、`command` 和 `connect` 流，它向中枢打开 `log`、`package` 和 `connect` 流。一个 `connect {port, protocol}` 流是被控端在 `127.0.0.1` 上拨出的一条 TCP 连接，容器端口只发布在某一个地址上时拨那个地址；UDP 条目则是发往那个端口的全部数据报。没有 `protocol` 就是 `tcp`。机器此刻没有在这个协议上发布的端口以 `port_not_published {port}` 关闭，拨不通以 `connect_failed {reason}` 关闭。
+
+`ai_tools.is_enabled` 为真时，被控端在 `127.0.0.1:8317` 上监听，这是它的 AI 网关转发。每接受一条连接，它向中枢打开一个 `connect {id}` 流，`id` 是 `ai` 条目的 id。中枢把这个流接到自己的网关上。这台机器的 AI 工具设置关着时，中枢以 `permission_denied {kind: ai}` 关闭这个流。中枢本机上的被控端不开这个转发。
 
 ## 拒绝与绑定
 

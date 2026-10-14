@@ -11,7 +11,9 @@ a service takes from the hub is opened, for one close.
 
 A ``connect`` stream is judged by the same checks, with the stream limit
 among them, and is answered with where its bytes go: a managed machine's
-agent at a port, or an address the hub dials itself.
+agent at a port, or an address the hub dials itself. An agent's ``connect``,
+opened by its AI gateway forward, names the ``ai`` entry and goes to the
+gateway while that machine's AI tools setting is on.
 """
 
 from dataclasses import dataclass, field
@@ -49,6 +51,7 @@ from neutrino_hub.modules.services.collector import catalog_entries
 from neutrino_hub.modules.services.constants import (
     SERVICES_PORT_PROTOCOLS,
     SERVICES_PROTOCOL_TCP,
+    SERVICES_AI_ID,
     SERVICES_SAMBA_DEFAULT_PORT,
     SERVICES_SOURCE_DECLARED,
     SERVICES_TYPE_AI,
@@ -229,6 +232,39 @@ def connect_target(
             kind=kind,
             provider=provider,
             protocol=entry_protocol(raw),
+        ),
+    )
+
+
+def agent_connect_target(runtime, device_id: str, args: dict) -> tuple:
+    """Where one ``connect`` stream an agent opened goes, judged now.
+
+    Args:
+        runtime: The shared runtime, which holds the devices' AI tools
+            settings.
+        device_id: The device whose agent opened the stream.
+        args: The open's arguments, ``{id}``.
+
+    Returns:
+        ``(code, params, target)``: ``service_unknown {service_id}`` for an
+        id other than the ``ai`` entry's, ``permission_denied {kind: ai}``
+        while the device's AI tools setting is off, each with None; else an
+        empty code, empty params and the gateway on loopback.
+    """
+    entry_id = str(args.get("id", "") or "")
+    if entry_id != SERVICES_AI_ID:
+        return CLIENT_CODE_SERVICE_UNKNOWN, {"service_id": entry_id}, None
+    if not runtime.desired_states.is_ai_tools_enabled(device_id):
+        return CLIENT_CODE_PERMISSION_DENIED, {"kind": SERVICES_TYPE_AI}, None
+    return (
+        "",
+        {},
+        ConnectTarget(
+            "",
+            CHANNEL_CONNECT_LOOPBACK,
+            load_config().listen_port,
+            kind=SERVICES_TYPE_AI,
+            provider=device_id,
         ),
     )
 

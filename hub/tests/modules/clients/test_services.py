@@ -7,7 +7,9 @@ published, a share that stopped, and a locked vault each close with their
 code and no material. A ``connect`` is judged by the same checks with the
 stream limit after the client's own two, and goes to the agent of the
 machine that provides the entry, to a declared record's own address, or
-to the gateway or the panel on loopback.
+to the gateway or the panel on loopback. An agent's ``connect`` names the
+``ai`` entry alone and goes to the gateway on loopback while its machine's
+AI tools setting is on.
 """
 
 import pytest
@@ -17,6 +19,7 @@ from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.channel.constants import CHANNEL_CONNECT_STREAMS_MAX
 from neutrino_hub.modules.clients.services import (
     ConnectTarget,
+    agent_connect_target,
     connect_target,
     entry_port,
     entry_protocol,
@@ -98,6 +101,10 @@ class StubPublishedServices:
 class StubDesiredStates:
     def __init__(self):
         self.tokens = {("dev", "alice"): "tkn-alice"}
+        self.ai_tools_on: set = set()
+
+    def is_ai_tools_enabled(self, key):
+        return key in self.ai_tools_on
 
     def seat_password(self, key):
         return "seat-pass" if key == "dev" else ""  # scan: allow
@@ -566,6 +573,45 @@ def test_the_gateway_is_dialled_on_loopback_at_its_port(config_dir, gateway_port
         "",
         {},
         ConnectTarget("", "127.0.0.1", 8317),
+    )
+
+
+def test_an_agents_connect_goes_to_the_gateway_while_its_ai_tools_are_on(
+    config_dir, gateway_port
+):
+    runtime = FakeRuntime()
+    runtime.desired_states.ai_tools_on.add("dev")
+
+    code, params, target = agent_connect_target(runtime, "dev", {"id": "ai"})
+
+    assert (code, params) == ("", {})
+    assert target == ConnectTarget("", "127.0.0.1", 8317)
+    assert (target.kind, target.provider, target.protocol) == ("ai", "dev", "tcp")
+
+
+def test_an_agents_connect_is_refused_while_its_ai_tools_are_off(
+    config_dir, gateway_port
+):
+    runtime = FakeRuntime()
+
+    assert agent_connect_target(runtime, "dev", {"id": "ai"}) == (
+        "permission_denied",
+        {"kind": "ai"},
+        None,
+    )
+
+
+@pytest.mark.parametrize("args", [{"id": "web_gitea"}, {"port": 8317}, {}])
+def test_an_agents_connect_to_anything_but_the_gateway_is_service_unknown(
+    config_dir, gateway_port, args
+):
+    runtime = FakeRuntime()
+    runtime.desired_states.ai_tools_on.add("dev")
+
+    assert agent_connect_target(runtime, "dev", args) == (
+        "service_unknown",
+        {"service_id": args.get("id", "")},
+        None,
     )
 
 
