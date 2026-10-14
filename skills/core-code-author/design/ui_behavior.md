@@ -428,7 +428,8 @@ owner installs").
 
 ## Finding and adding a device
 
-The Devices page's header carries **Scan LAN** and **Add by address**. A
+The Devices page's header carries **Scan LAN** and **Add by address**
+(按地址添加). A
 scan covers the exposed IPv4 segments in every mode
 ([protocol.md](protocol.md), `POST /api/hub/device/scan`): a segment of at
 most 256 addresses whole, and of a larger one only the /24 that holds the
@@ -436,8 +437,11 @@ hub's own address. It scans no IPv6 segment and reads the IPv4 neighbours
 alone, so a row's address is always an IPv4 one. **Add by address** opens a
 dialog in the style of the **Install agent** dialog, with the same fields:
 **Host**, **Port**, **User name**, **Credential**, **SSH key** and **Sudo
-password**, the host typed by the person. It reaches a machine no scan
-finds, such as one on a network the hub has no address in.
+password**, the host typed by the person. The dialog's button installs:
+one press creates the machine's row, named by its host until it reports,
+and starts the install ([protocol.md](protocol.md), `POST
+/api/hub/device/add`). It reaches a machine no scan finds, such as one on a
+network the hub has no address in.
 
 ## The Exposure section on the Network page
 
