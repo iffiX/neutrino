@@ -289,11 +289,13 @@ export interface InterfaceSettings {
   name: string;
   role: InterfaceRole;
   /**
-   * Whether what this box listens on answers on this interface. Read-only
-   * here: the whole set is written at once by the panel that shows every
-   * interface, so a save of one interface cannot reopen or close it.
+   * Whether the hub's own ports answer the senders inside this interface's
+   * IPv4 segment, and inside its IPv6 segment. Read-only here: both sets are
+   * written at once by the panel that shows every segment, so a save of one
+   * interface cannot reopen or close either.
    */
-  is_exposed: boolean;
+  is_ipv4_exposed: boolean;
+  is_ipv6_exposed: boolean;
   wan: WanInterfaceSettings;
   lan: LanInterfaceSettings;
   wifi: WifiInterfaceSettings;
@@ -319,20 +321,32 @@ export interface InterfaceLink {
    */
   is_ap_capable: boolean;
   /**
-   * Managed devices reaching this hub across this network right now, which is
-   * what closing it would end. Live, so a device that is off is not counted.
-   */
-  device_count: number;
-  /**
    * The resolvers a DHCP uplink's lease names; empty for a static uplink and
    * for an interface holding no lease.
    */
   lease_dns: string[];
 }
 
+/** One of an interface's two segments, as the Exposure section draws it. */
+export interface SegmentView {
+  /**
+   * Every network of the segment's family the interface holds an address in
+   * now; an IPv6 segment holds `fe80::/64` while it has a link-local address.
+   */
+  networks: string[];
+  /**
+   * Managed devices reaching this hub from inside those networks right now,
+   * which is what closing the segment would end. Live, so a device that is
+   * off is not counted.
+   */
+  device_count: number;
+}
+
 export interface InterfaceView {
   settings: InterfaceSettings;
   link: InterfaceLink;
+  ipv4_segment: SegmentView;
+  ipv6_segment: SegmentView;
   /** The configuration does not name it and the hub does not use it until
    * the person turns it on: every such interface on Linux, none elsewhere. */
   is_unsaved: boolean;
@@ -420,13 +434,17 @@ export interface NetworkView {
 export interface NetworkOptions {
   uplink_policy: UplinkPolicy;
   is_inter_lan_allowed: boolean;
-  /** The interfaces that answer, by name. Everything else is closed. */
-  exposed_interfaces?: string[];
+  /** The interfaces whose IPv4 segment is exposed, by name. Every other
+   * IPv4 segment is closed. */
+  ipv4_exposed_interfaces?: string[];
+  /** The interfaces whose IPv6 segment is exposed, by name. Every other
+   * IPv6 segment is closed. */
+  ipv6_exposed_interfaces?: string[];
   /** The overlays that answer, by provider. Everything else is closed. */
   exposed_overlays?: string[];
   /** The devices that always get one address, whole. */
   static_leases?: StaticLeaseSettings[];
-  /** In router mode, the role each port turned on takes with it. */
+  /** In router mode, the role each port with a segment turned on takes. */
   interface_roles?: Record<string, ExposedRole>;
 }
 

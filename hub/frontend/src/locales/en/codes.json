@@ -314,7 +314,6 @@
   "code.default_route_changed": "The default route changed.",
   "code.resolver_changed": "Name resolution changed.",
   "code.served_route_changed": "The route for {name} changed.",
-  "code.overlay_exposure_changed": "Exposure on {name} changed.",
   "code.network_changed": "The network changed.",
   "code.tun_changed": "The proxy's TUN device changed.",
   "code.tun_route_failed": "A route of the proxy's TUN device could not be set: {detail}",

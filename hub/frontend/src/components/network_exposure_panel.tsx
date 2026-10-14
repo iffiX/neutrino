@@ -13,20 +13,22 @@ import type {
   NetworkOptions,
   NetworkView,
   OverlayView,
+  SegmentView,
 } from "../api_types";
 
 import "./network_exposure_panel.css";
 
 /**
- * Which networks the services on this box answer on.
+ * Which segments' hosts reach the hub's own ports.
  *
- * One answer per network and no port list: every service binds every address
- * and settles its own port in its own tab, so the network is what is left to
- * decide. On Linux it lands in the nftables input chain; on macOS and Windows
- * in the system firewall, for the hub's own ports.
+ * Each interface gives two chips, its IPv4 segment and its IPv6 segment,
+ * each naming the networks it holds now and the interface it is on; each
+ * overlay gives one. On Linux the answer lands in the nftables input chain,
+ * and in firewalld where it runs; on macOS and Windows in the system
+ * firewall.
  *
- * An overlay is one of them. Joining one is joining your own network, so it
- * starts open, and closing it says first how many devices that would cut off.
+ * Joining an overlay is joining your own network, so its chip starts on,
+ * and closing a chip says first how many devices that would cut off.
  */
 
 const KIND_ICONS: Record<string, IconName> = {
@@ -35,6 +37,12 @@ const KIND_ICONS: Record<string, IconName> = {
   vlan: "network",
   ethernet: "link",
 };
+
+type Family = "ipv4" | "ipv6";
+
+const FAMILIES: Family[] = ["ipv4", "ipv6"];
+
+type Chosen = Record<Family, string[]>;
 
 interface NetworkExposurePanelProps {
   network: NetworkView;
@@ -49,7 +57,7 @@ export function NetworkExposurePanel({
   useLanguage();
   const applied = exposedNames(network);
   const appliedOverlays = exposedProviders(network);
-  const [chosen, setChosen] = useState<string[]>(applied);
+  const [chosen, setChosen] = useState<Chosen>(applied);
   const [chosenOverlays, setChosenOverlays] =
     useState<string[]>(appliedOverlays);
   const [roles, setRoles] = useState<Record<string, ExposedRole>>({});
@@ -60,14 +68,14 @@ export function NetworkExposurePanel({
   // The page polls, and a chip turned off but not applied stays off until
   // Apply or Reset says otherwise.
   const isReseedable = useDraftSeeding(
-    namesPayload([...chosen, ...chosenOverlays]),
-    namesPayload([...applied, ...appliedOverlays]),
+    choicePayload(chosen, chosenOverlays),
+    choicePayload(applied, appliedOverlays),
   );
 
   useEffect(() => {
     const fresh = exposedNames(network);
     const freshOverlays = exposedProviders(network);
-    if (!isReseedable(namesPayload([...fresh, ...freshOverlays]))) {
+    if (!isReseedable(choicePayload(fresh, freshOverlays))) {
       return;
     }
     setChosen(fresh);
@@ -79,14 +87,16 @@ export function NetworkExposurePanel({
   const offered = network.interfaces.filter(
     (entry) => entry.settings.role !== "split",
   );
-  // A router stops a port whose role is disabled, so one turned on here takes
-  // a role in the same row.
+  const isChosen = (name: string) =>
+    FAMILIES.some((family) => chosen[family].includes(name));
+  // A router stops a port whose role is disabled, so one with a segment
+  // turned on here takes a role in the same row.
   const roleless = offered
     .filter(
       (entry) =>
         network.is_addressing_owned &&
         entry.settings.role === "disabled" &&
-        chosen.includes(entry.settings.name),
+        isChosen(entry.settings.name),
     )
     .map((entry) => entry.settings.name);
   const chosenRoles: Record<string, ExposedRole> = {};
@@ -98,44 +108,50 @@ export function NetworkExposurePanel({
   }
   const isRoleMissing = roleless.some((name) => roles[name] === undefined);
   const isDirty =
-    !sameSet(chosen, applied) ||
+    FAMILIES.some((family) => !sameSet(chosen[family], applied[family])) ||
     !sameSet(chosenOverlays, appliedOverlays) ||
     Object.keys(chosenRoles).length > 0;
-  const closing = applied.filter((name) => !chosen.includes(name));
+  const closing = offered.flatMap((entry) =>
+    FAMILIES.filter(
+      (family) =>
+        applied[family].includes(entry.settings.name) &&
+        !chosen[family].includes(entry.settings.name),
+    ).map((family) => ({ entry, family })),
+  );
   const closingOverlays = network.overlays.filter(
     (overlay) =>
       overlay.is_exposed && !chosenOverlays.includes(overlay.provider),
   );
   const openedUplinks = offered.filter(
-    (entry) =>
-      entry.settings.role === "wan" && chosen.includes(entry.settings.name),
+    (entry) => entry.settings.role === "wan" && isChosen(entry.settings.name),
   );
-  // An overlay closes the same way an interface does and costs the same
-  // thing, so it is named in the same line rather than only in the count.
+  // An overlay closes the same way a segment does and costs the same thing,
+  // so it is named in the same line rather than only in the count.
   const closingNames = [
-    ...closing,
+    ...closing.map(({ entry, family }) =>
+      segmentLabel(entry.settings.name, family),
+    ),
     ...closingOverlays.map((overlay) => overlay.title),
   ];
   const cutOff = [
-    ...offered
-      .filter((entry) => closing.includes(entry.settings.name))
-      .map((entry) => ({
-        label: entry.settings.name,
-        count: entry.link.device_count,
-      })),
+    ...closing.map(({ entry, family }) => ({
+      label: segmentLabel(entry.settings.name, family),
+      count: segmentOf(entry, family).device_count,
+    })),
     ...closingOverlays.map((overlay) => ({
       label: overlay.title,
       count: overlay.device_count,
     })),
   ].filter((entry) => entry.count > 0);
 
-  const toggle = (name: string) => {
+  const toggle = (family: Family, name: string) => {
     setNotice(null);
-    setChosen((current) =>
-      current.includes(name)
-        ? current.filter((kept) => kept !== name)
-        : [...current, name],
-    );
+    setChosen((current) => ({
+      ...current,
+      [family]: current[family].includes(name)
+        ? current[family].filter((kept) => kept !== name)
+        : [...current[family], name],
+    }));
   };
 
   const toggleOverlay = (provider: string) => {
@@ -155,7 +171,8 @@ export function NetworkExposurePanel({
       const options: NetworkOptions = {
         uplink_policy: network.uplink_policy,
         is_inter_lan_allowed: network.is_inter_lan_allowed,
-        exposed_interfaces: chosen,
+        ipv4_exposed_interfaces: chosen.ipv4,
+        ipv6_exposed_interfaces: chosen.ipv6,
         exposed_overlays: chosenOverlays,
         interface_roles: chosenRoles,
       };
@@ -175,22 +192,20 @@ export function NetworkExposurePanel({
       <div className="settings_group_title">
         <h2>{t("ui.network.exposure_title")}</h2>
       </div>
-      <p className="field_hint">
-        {t(
-          isLinux
-            ? "ui.network.exposure_hint"
-            : "ui.network.exposure_hint_system",
-        )}
-      </p>
+      <p className="field_hint">{t("ui.network.exposure_hint")}</p>
 
       <div className="exposure_chips">
         {offered.map((entry) => (
           <div key={entry.settings.name} className="exposure_row">
-            <ExposureChip
-              entry={entry}
-              isOn={chosen.includes(entry.settings.name)}
-              onToggle={() => toggle(entry.settings.name)}
-            />
+            {FAMILIES.map((family) => (
+              <SegmentChip
+                key={family}
+                entry={entry}
+                family={family}
+                isOn={chosen[family].includes(entry.settings.name)}
+                onToggle={() => toggle(family, entry.settings.name)}
+              />
+            ))}
             {roleless.includes(entry.settings.name) && (
               <RolePicker
                 entry={entry}
@@ -241,16 +256,19 @@ export function NetworkExposurePanel({
   );
 }
 
-interface ExposureChipProps {
+interface SegmentChipProps {
   entry: InterfaceView;
+  family: Family;
   isOn: boolean;
   onToggle: () => void;
 }
 
-function ExposureChip({ entry, isOn, onToggle }: ExposureChipProps) {
+/** One segment of one interface: its networks, its interface, its role. */
+function SegmentChip({ entry, family, isOn, onToggle }: SegmentChipProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
   const { settings, link } = entry;
+  const { networks } = segmentOf(entry, family);
   return (
     <button
       type="button"
@@ -261,9 +279,11 @@ function ExposureChip({ entry, isOn, onToggle }: ExposureChipProps) {
       <Icon name={KIND_ICONS[link.kind] ?? "link"} size={14} />
       <span className="exposure_chip_name mono">{settings.name}</span>
       <span className="exposure_chip_state mono">
-        {link.ipv4_address ?? t("state.no_address")}
+        {networks.length > 0
+          ? networks.join(", ")
+          : t(`state.no_${family}_address`)}
       </span>
-      {settings.role !== "disabled" && (
+      {(settings.role === "lan" || settings.role === "wan") && (
         <span className="badge">{settings.role}</span>
       )}
       {entry.is_unsaved && (
@@ -331,8 +351,8 @@ function OverlayChip({ overlay, isOn, onToggle }: OverlayChipProps) {
 }
 
 /**
- * What applying costs: the devices a closed network is carrying, the sessions
- * on it, and an uplink being opened onto the internet. All three are the
+ * What applying costs: the devices a closed segment is carrying, the
+ * sessions on it, and an uplink's networks being opened. All three are the
  * press's cost rather than what the control does, which is what the
  * description above it carries.
  */
@@ -363,10 +383,24 @@ function devicesCutOff(cutOff: { label: string; count: number }[]): string {
     : t("ui.network.warning_cut_off_many", { count: total, where });
 }
 
-function exposedNames(network: NetworkView): string[] {
-  return network.interfaces
-    .filter((entry) => entry.settings.is_exposed)
-    .map((entry) => entry.settings.name);
+/** One segment named for a sentence: its interface and its family. */
+function segmentLabel(name: string, family: Family): string {
+  return t(`ui.network.segment_${family}`, { name });
+}
+
+function segmentOf(entry: InterfaceView, family: Family): SegmentView {
+  return family === "ipv4" ? entry.ipv4_segment : entry.ipv6_segment;
+}
+
+function exposedNames(network: NetworkView): Chosen {
+  return {
+    ipv4: network.interfaces
+      .filter((entry) => entry.settings.is_ipv4_exposed)
+      .map((entry) => entry.settings.name),
+    ipv6: network.interfaces
+      .filter((entry) => entry.settings.is_ipv6_exposed)
+      .map((entry) => entry.settings.name),
+  };
 }
 
 function exposedProviders(network: NetworkView): string[] {
@@ -375,9 +409,13 @@ function exposedProviders(network: NetworkView): string[] {
     .map((overlay) => overlay.provider);
 }
 
-/** One set of interfaces, in an order two of them can be compared in. */
-function namesPayload(names: string[]): string {
-  return JSON.stringify([...names].sort());
+/** Every chip's answer, in an order two of them can be compared in. */
+function choicePayload(chosen: Chosen, overlays: string[]): string {
+  return JSON.stringify({
+    ipv4: [...chosen.ipv4].sort(),
+    ipv6: [...chosen.ipv6].sort(),
+    overlays: [...overlays].sort(),
+  });
 }
 
 function sameSet(a: string[], b: string[]): boolean {

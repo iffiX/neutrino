@@ -314,7 +314,6 @@
   "code.default_route_changed": "默认路由已更新。",
   "code.resolver_changed": "域名解析已更新。",
   "code.served_route_changed": "{name} 的路由已更新。",
-  "code.overlay_exposure_changed": "{name} 的开放范围已更新。",
   "code.network_changed": "网络已更新。",
   "code.tun_changed": "代理的 TUN 网卡已更新。",
   "code.tun_route_failed": "代理的 TUN 网卡有一条路由没能设置：{detail}",
