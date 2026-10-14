@@ -58,10 +58,9 @@ left `accept` — docker, libvirt and whatever else forwards across that machine
 are not the hub's to police, and a drop policy there cuts every one of them off
 without saying so.
 
-A `server` hub's exposed segments stand where a router's served networks do
-for reaching the machines around it: a Wake-on-LAN packet is broadcast on
-each exposed IPv4 segment, and never on an overlay, which has no broadcast
-domain.
+The exposed IPv4 segments are how the hub reaches the machines around it, in
+every mode: a Wake-on-LAN packet is broadcast on each of them, and never on an
+overlay, which has no broadcast domain.
 
 **`server` and `side_gateway` touch nothing at all.** No connection is edited,
 no manager is stopped, no file outside the hub's own roots is written. A
@@ -146,6 +145,7 @@ Each segment is one chip under the **Network** page's **Exposure**
 | Rule | Reason |
 | --- | --- |
 | A rule names the sender's network, never the wire it arrived on. | An interface with a public IPv6 address reaches the whole internet on that wire, so a rule by interface opens the hub's ports to every host on it. |
+| `fe80::/64` is the one network matched together with the interface the packet arrives on: nft's `iifname`, pf's `on`, and a Windows `_link` rule. | Every link holds `fe80::/64`, so the network alone names no single link. |
 | A switch is stored per interface and per family, never per network: `is_ipv4_exposed` and `is_ipv6_exposed` on the interface's row in `config/router/network.json`. A row stored with the earlier `is_exposed` reads as both set to its value. The rule follows the networks the interface holds now, so a changed IPv6 prefix keeps its switch. | A prefix the provider changes is the same segment to the person who switched it on. |
 | The rules are rendered again whenever an exposed interface's addresses change, on every system: on Linux by the router service, which applies on every link, address, route and rule event ("Three engines, uniform everywhere" below); on macOS and Windows by the routing pass the address sampler runs. | A rule that names a prefix the interface no longer holds opens the hub to nobody, or to another network. |
 | The segments are the ones the hub holds addresses in, and nobody types one in. | A network the hub has no address in is not a network its ports answer on. |
@@ -160,11 +160,17 @@ The ports that open with no switch:
 | DHCP, 67 over UDP | on the interface of each network whose DHCP the hub serves | A DHCP client has no address yet, so no segment holds it. |
 
 On Linux the hub's port rules live in an input base chain of their own,
-which no engine edits. Its policy is accept: it accepts a packet to a hub
-port from loopback and from an address inside an exposed segment, and drops
-every other packet to a hub port. A packet passes only when every base chain
-on its hook accepts it, so an accept an engine inserts into another chain
-cannot pass a packet this chain drops.
+`input` in the hub's table, which no engine edits. Its policy is accept: it
+accepts a packet to a hub port from loopback and from an address inside an
+exposed segment, and drops every other packet to a hub port. A packet passes
+only when every base chain on its hook accepts it, so an accept an engine
+inserts into another chain cannot pass a packet this chain drops.
+
+| Rule | Reason |
+| --- | --- |
+| The chain is a nat chain at priority 100, the kernel's source NAT priority on the input hook. | NetBird 0.78.1 inserts its `iifname "wt0" accept` into every filter chain on the input and forward hooks outside its own table and firewalld's. Its `isExternalChain`, in `chains_linux.go`, selects filter chains alone. |
+| Each drop matches `ct state new`. | A nat chain sees only the first packet of each connection. On a box where no other rule uses conntrack, this match is what has conntrack follow the chain's packets. |
+| A connection open when a segment or an overlay's chip closes keeps running until it ends. | The chain sees no later packet of that connection. |
 
 A served network whose segment is closed keeps DHCP and forwarding, and
 loses the hub's DNS, the panel, the agent port unless Direct is on, and the
@@ -192,9 +198,12 @@ question and gets no matrix of its own, because a second mental model for
 one kind of network costs more than the control is worth. What it does get
 is the cost of closing it, said before the press: how many managed devices
 are reaching this hub across it right now. Closing an overlay's chip closes
-the hub's ports to that overlay's senders and nothing else: its peer port
-stays open while its engine runs, and every other port on the overlay is the
-engine's and the system firewall's matter.
+the hub's ports to that overlay's senders. It also takes the overlay's
+devices out of the forward chain's accepts, so where that chain's policy is
+drop, no new connection is forwarded to or from the overlay. The proxy's
+overlay scope stops diverting from it too. Its peer port stays open while its
+engine runs, and every other port on the overlay is the engine's and the
+system firewall's matter.
 
 Overlays live in `overlays`, beside `interfaces` rather than in it, and are
 keyed by provider, one row per engine with `is_enabled` and `is_exposed`. Any
@@ -269,8 +278,10 @@ plane's policy is what opens it.
 
 So the hub's port rules live in a base chain no engine edits ("What
 answers, and where" above), and a closed NetBird chip is that chain dropping
-the hub's ports for NetBird's senders. The hub sets no switch of NetBird's
-own for it, and NetBird's rules decide every other port on the overlay.
+the hub's ports for NetBird's senders. NetBird's own inbound block stays off:
+every `netbird up` carries `--block-inbound=false`, and the hub brings the
+session up again when the stored profile holds `BlockInbound` on. NetBird's
+rules govern every other port on the overlay.
 
 NetBird listens on no device the box made itself. Every `netbird up` carries
 `--extra-iface-blacklist` with the prefixes `podman`, `veth`, `docker`,
@@ -326,7 +337,7 @@ routing pass renders the answer into the system's own firewall:
 
 | System | How | What |
 | --- | --- | --- |
-| Windows | `New-NetFirewallRule`, one allow rule per purpose named `neutrino_hub_<purpose>`. A hub port's rule names the exposed segments as its remote addresses, `-RemoteAddress`; a peer port's rule takes any remote address. A port change rewrites the rule and an uninstall removes it. The profile's default inbound block is what closes a hub port to every other sender. The rules are written again whenever an exposed segment's networks change, from the pass that follows the overlay devices and the addresses | the panel's HTTP and HTTPS ports, the agent port, every SOCKS port, NetBird's UDP port, EasyTier's 11010 over TCP and UDP |
+| Windows | `New-NetFirewallRule`, one allow rule per purpose named `neutrino_hub_<purpose>`. A hub port's rule names the exposed segments as its remote addresses, `-RemoteAddress`; a peer port's rule takes any remote address. Beside each hub port's rule, `neutrino_hub_<purpose>_link` allows `fe80::/64` on the interfaces whose IPv6 segment is exposed, `-InterfaceAlias`. Direct's rule is `neutrino_hub_agent_direct`. A port change rewrites the rule and an uninstall removes it. The profile's default inbound block is what closes a hub port to every other sender. The rules are written again whenever an exposed segment's networks change, from the pass that follows the overlay devices and the addresses | the panel's HTTP and HTTPS ports, the agent port, every SOCKS port, NetBird's UDP port, EasyTier's 11010 over TCP and UDP |
 | macOS | `/usr/libexec/ApplicationFirewall/socketfilterfw --add <program>` and `--unblockapp <program>`, since that firewall allows programs rather than ports, and the pf sub-anchor `com.apple/neutrino_hub`, loaded from a file under the state root at each routing pass and when the service starts. The anchor holds the exposed segments in address tables, passes a hub port's packet from an address in them and from loopback, and blocks it from every other address, the way the agent's `com.apple/neutrino_smb` fences the file share | the programs `nhub`, `xray`, `netbird`, `easytier-core`, and the same port list as Windows in the anchor |
 
 An overlay's peer port is open there while its engine runs, whatever its
@@ -362,8 +373,9 @@ image runs it already. The hub's `fail2ban` dependency stays as it is.
 
 | Rule | Reason |
 | --- | --- |
-| Each hub port is one rich rule in the zone of each interface whose segment is exposed, its source address the segment and its port the hub port. The peer ports, DHCP and Direct's agent-port rule are rich rules of the same kind, with no source address. | firewalld decides by zone, and a zone holds the interfaces the person put in it. |
+| Each hub port is one rich rule per network of each exposed segment, in the zone of the segment's interface, its source address the network. The peer ports and Direct's agent-port rule are rich rules with no source address, in the zone of each enabled interface. DHCP is one in the zone of each network whose DHCP the hub serves. An interface in no zone is in the default zone. | firewalld decides by zone, and a zone holds the interfaces the person put in it. |
 | Each rule is written to the runtime and to the permanent configuration, and holds a marker the hub finds its own rules by. | A rule in one alone is lost at firewalld's next reload or at the next boot, and the marker keeps the person's own rules out of every change. |
+| The marker is the rich rule's priority, 32123. | A rich rule has no comment field. A positive priority places the rule after the zone's own rules and before its target. |
 | The router unit starts after firewalld (`After=firewalld.service`). | The first pass of a boot finds firewalld running and writes into it. |
 | The half-minute check that compares the overlay devices also compares the hub's rules in firewalld with the ones the pass wrote, and runs the pass again when they differ. | firewalld started at a later boot, or reloaded, holds none of the hub's runtime rules. |
 | Removing the package and a reset take the hub's rules out of firewalld, with the hub's nftables table. | The machine's firewall is the person's again. |
