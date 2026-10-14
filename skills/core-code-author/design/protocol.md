@@ -21,9 +21,17 @@ per scheme; an agent or a client trusts a pinned certificate on any network.
 All three are uvicorn servers in the one `nhub run --only-web` process, with
 one shared runtime. That runtime is where a ticket generated on a panel port
 is spent on the agent port. The panel app does not include the channel
-routes, so the channel has no plaintext form. A panel port change through
-`POST /api/hub/setting/set` restarts the process; a port that is the other
-panel port or the agent port is refused 400 `port_already_in_use {value}`.
+routes, so the channel has no plaintext form. A change of any of the three
+ports through `POST /api/hub/setting/set` restarts the process; a port that
+is one of the other two is refused 400 `port_already_in_use {value}`. The
+**Network** page sets all three.
+
+An agent port change moves every peer. Before the process restarts, the hub
+pushes every online client and agent its state, whose `urls` name the new
+port, and then restarts on it at once. A peer offline at that moment holds
+only the old addresses, cannot reach the hub, and joins again with a new
+link. Before the save the page says how many clients and how many agents are
+offline.
 
 ### The panel ports
 
@@ -569,7 +577,7 @@ has is refused 400 `permission_device_unknown {device_id}`.
 | Route | Parameters | Does |
 | --- | --- | --- |
 | `GET /api/hub/setting` | | `SettingsView` |
-| `POST /api/hub/setting/set` | the settings, `listen_port`, `https_listen_port`, `hub_name`, `language` and `theme` among them; an absent `https_listen_port` keeps it | `SettingsView`; a port change restarts the panel after answering; 400 `port_out_of_range {minimum, maximum, value}`, `port_already_in_use {value}` |
+| `POST /api/hub/setting/set` | the settings, `listen_port`, `https_listen_port`, `agent_listen_port`, `hub_name`, `language` and `theme` among them; an absent port keeps it | `SettingsView`; a port change restarts the panel after answering, an agent port change after every online peer was pushed its new `urls` ("Three ports, two audiences"); 400 `port_out_of_range {minimum, maximum, value}`, `port_already_in_use {value}` |
 | `GET /api/hub/setting/https` | | `PanelHttpsView`: `is_https_enabled`, `listen_port`, `https_listen_port`, `has_authority`, the authority's `authority_fingerprint` and `authority_created_at`, `authority_file_name`, the served certificate's `leaf_names`, `leaf_issued_at` and `leaf_expires_at`, and `renewed_at`, the last time it was issued again since the panel started |
 | `GET /api/hub/setting/https/authority` | | no session, and served by the HTTP port while HTTPS is on: the authority's DER as `neutrino-<hub>-ca.crt`, `application/x-x509-ca-cert`; 404 `https_authority_missing` before there is one |
 | `GET /api/hub/setting/https/probe` | | no session: 204 and an empty body; a page on HTTP fetches it from the HTTPS port, and a fetch that completes means the browser trusts the certificate |

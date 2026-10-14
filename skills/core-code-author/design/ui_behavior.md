@@ -23,7 +23,10 @@ A page reads top-down in one order:
 
 `network_page.tsx` is the reference: the mode panel, then the topology diagram,
 then the per-interface form, then routing behavior, then exposure, then the
-panel's own port.
+panel's own ports and the agent port. Before an agent port change is
+saved, the panel's apply bar warns how many clients and how many agents are
+offline, since those lose the hub and join again with a new link
+([protocol.md](protocol.md), "Three ports, two audiences").
 
 **A page carries no controls that belong to a panel** — no apply, no reset, no
 save. Its header may carry an action that belongs to no single panel and starts
