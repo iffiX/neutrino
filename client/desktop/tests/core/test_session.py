@@ -11,15 +11,18 @@ survives, at the door and on a live socket alike, a replaced socket waiting
 for a person, the backoff after a broken wire, and a stop that closes the
 socket. The connection round over every address the hub answers on is
 pinned too: every address dialled at once, the first to connect carrying
-the round's one hello and the others closed before one, the one that
-answered written back, a whole round failing being what backs off, the
-state's ``urls`` kept on disk, a network change starting a round at once.
+the round's one hello and the others closed before one, an address that
+refused dialled again every interval until the round's connect time ends
+while a silent one is dialled once, the one that answered written back, a
+whole round failing being what backs off, the state's ``urls`` kept on
+disk, a network change starting a round at once.
 The client's ``ping`` frame and the round trip its ``pong`` sets are pinned too.
 """
 
 import functools
 import json
 import os
+import socket
 import threading
 import time
 
@@ -37,7 +40,12 @@ from neutrino_client.constants import (
     PROTOCOL,
 )
 from neutrino_client.core import enrollment, protocol
-from neutrino_client.core.session import ClientHubSession, is_better_path
+from neutrino_client.core.session import (
+    ClientHubSession,
+    is_better_path,
+    is_port_closed,
+)
+from neutrino_client.core.ws_client import WebSocketClient
 from neutrino_client.exceptions import (
     EnrollmentError,
     GatewayProtocolRefused,
@@ -1528,6 +1536,121 @@ def test_a_hanging_first_address_costs_the_round_nothing(bound_everywhere, monke
     assert client is script.made[2]
     assert script.made[0].is_closed and script.made[0].sent == []
     assert session.gateway_url() == OVERLAY_URL
+
+
+def refused() -> GatewayUnreachable:
+    """What a dial to a host that is up with the port not open raises."""
+    error = GatewayUnreachable("cannot reach hub: [Errno 111] Connection refused")
+    error.__cause__ = ConnectionRefusedError(111, "Connection refused")
+    return error
+
+
+class DialScript(AddressScript):
+    """Each address's dials in turn, the last turn repeating.
+
+    Attributes:
+        timeouts: The connect time every socket was opened with, in order.
+    """
+
+    def __init__(self, by_host: dict):
+        """
+        Args:
+            by_host: Host to its turns: an exception ``connect`` raises, or
+                the frames of a socket that connects.
+        """
+        super().__init__(by_host)
+        self.timeouts = []
+
+    def __call__(self, **kwargs) -> ScriptedSocket:
+        host = kwargs.get("host", "")
+        turns = self._by_host.get(host, [DOWN])
+        script = turns[min(self.hosts.count(host), len(turns) - 1)]
+        if isinstance(script, Exception):
+            made = ScriptedSocket([], connect_error=script)
+        else:
+            made = ScriptedSocket(script)
+        self.hosts.append(host)
+        self.made.append(made)
+        self.timeouts.append(kwargs.get("timeout_s"))
+        return made
+
+
+def dials_of(monkeypatch, by_host: dict) -> DialScript:
+    script = DialScript(by_host)
+    monkeypatch.setattr(session_module, "WebSocketClient", script)
+    return script
+
+
+def test_a_refused_address_is_dialled_again_each_interval_until_it_answers(
+    bound_everywhere, monkeypatch
+):
+    session, _lines = bound_everywhere
+    monkeypatch.setattr(session_module, "CLIENT_REDIAL_INTERVAL_S", 0.05)
+    script = dials_of(monkeypatch, {"192.0.2.1": [refused(), refused(), [WELCOME]]})
+    started = time.monotonic()
+
+    client = session._connect_round()
+
+    assert 0.1 <= time.monotonic() - started < 1
+    assert script.hosts.count("192.0.2.1") == 3
+    assert script.hosts.count("198.51.100.1") == 1
+    assert script.hosts.count("100.64.0.1") == 1
+    assert client is [made for made in script.made if made.is_open][0]
+    assert session.gateway_url() == LAN_URL
+
+
+def test_a_refused_address_is_dialled_until_the_rounds_connect_time_and_a_silent_one_once(
+    bound_everywhere, monkeypatch
+):
+    session, _lines = bound_everywhere
+    monkeypatch.setattr(session_module, "CLIENT_REDIAL_INTERVAL_S", 0.05)
+    monkeypatch.setattr(session_module, "CLIENT_CONNECT_TIMEOUT_S", 0.5)
+    script = dials_of(monkeypatch, {"192.0.2.1": [refused()]})
+    started = time.monotonic()
+
+    delay = session.run_once()
+
+    assert 0.4 <= time.monotonic() - started < 1
+    assert delay == CLIENT_BACKOFF_MIN_S
+    assert 5 <= script.hosts.count("192.0.2.1") <= 10
+    assert script.hosts.count("198.51.100.1") == 1
+    assert script.hosts.count("100.64.0.1") == 1
+    redials = [
+        timeout
+        for host, timeout in zip(script.hosts, script.timeouts)
+        if host == "192.0.2.1"
+    ][1:]
+    assert all(0 < timeout < 0.5 for timeout in redials)
+    assert code_of(session) == "hub_unreachable"
+
+
+def test_a_stop_ends_a_round_waiting_to_dial_again(bound_everywhere, monkeypatch):
+    session, _lines = bound_everywhere
+    monkeypatch.setattr(session_module, "CLIENT_REDIAL_INTERVAL_S", 5)
+    script = dials_of(monkeypatch, {"192.0.2.1": [refused()]})
+    threading.Timer(0.2, session._stop.set).start()
+    started = time.monotonic()
+
+    with pytest.raises(GatewayUnreachable):
+        session._connect_round()
+
+    assert time.monotonic() - started < 1
+    assert script.hosts.count("192.0.2.1") == 1
+
+
+def test_a_port_nothing_listens_on_is_what_a_round_dials_again():
+    probe = socket.create_server(("127.0.0.1", 0))
+    port = probe.getsockname()[1]
+    probe.close()
+    client = WebSocketClient(
+        host="127.0.0.1", port=port, path="/", fingerprint="ab" * 32, timeout_s=2
+    )
+
+    with pytest.raises(GatewayUnreachable) as raised:
+        client.connect()
+
+    assert is_port_closed(raised.value)
+    assert not is_port_closed(DOWN)
 
 
 def test_one_hello_per_round_and_every_other_socket_closed_before_one(

@@ -1,11 +1,13 @@
 package io.github.iffix.neutrino.channel
 
 import io.github.iffix.neutrino.CLIENT_CHANNEL_WS_PATH
+import io.github.iffix.neutrino.CLIENT_CONNECT_REFUSED_TEXT
 import io.github.iffix.neutrino.CLIENT_CONNECT_TIMEOUT_S
 import io.github.iffix.neutrino.CLIENT_REQUEST_TIMEOUT_S
 import io.github.iffix.neutrino.CLIENT_WS_SILENCE_TIMEOUT_S
 import io.github.iffix.neutrino.HubUntrustedException
 import java.io.IOException
+import java.net.ConnectException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLContext
@@ -131,12 +133,16 @@ class OkHttpHubTransport : HubTransport {
         }
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-            events.trySend(ChannelSocketEvent.Failed(refusalOf(t, baseUrl)))
+            events.trySend(ChannelSocketEvent.Failed(refusalOf(t, baseUrl), isPortClosed(t)))
         }
     }
 
     private companion object {
         val JSON_TYPE = "application/json".toMediaType()
+
+        fun isPortClosed(error: Throwable): Boolean = generateSequence(error) { it.cause }.any {
+            it is ConnectException && it.message.orEmpty().contains(CLIENT_CONNECT_REFUSED_TEXT)
+        }
 
         fun refusalOf(error: Throwable, baseUrl: String): ChannelResult.Refused {
             var cause: Throwable? = error
