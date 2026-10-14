@@ -509,11 +509,10 @@ a ticket lives `ENROLLMENT_TTL_S` 30 minutes whether the hub restarted or not.
 | `POST /api/hub/client/permission/set` | `{client_id, kinds, devices}`, `kinds` null to follow the default, `devices` optional | that client's own permission; its `state` is pushed |
 
 A permission kind is a published service type (`web`, `port`, `ai`, `file`,
-`rdp`), `overlay`, `terminal`, `exec` or `panel`, `CLIENT_PERMISSION_KINDS` in
+`rdp`), `overlay`, `terminal` or `panel`, `CLIENT_PERMISSION_KINDS` in
 `modules/clients/constants.py`. `terminal` opens a `shell` on a managed
-machine and `exec` runs one command there through an `exec` stream ("The
-exec stream"); `exec` is off unless a permission names it, apart from
-`terminal`, since a script runs as root with nobody watching it. `panel` is the hub's own panel, opened from
+machine and runs one command there through an `exec` stream ("The exec
+stream"). `panel` is the hub's own panel, opened from
 a client through `connect {is_panel: true}` and signed in with the token of
 `service {is_panel: true}` ("The panel ports"); it is off unless a
 permission names it, since it manages the hub without the panel password. A permission may narrow each
@@ -522,18 +521,16 @@ of device ids, and a kind with no list, or an empty one, allows every device.
 `config/clients/clients.json` holds `default_permission: {kinds, devices}`
 beside `clients`, and each client a `permission` that is null or `{kinds,
 devices}`, `devices` written only when it names a list; a file with no
-default allows every kind but `panel` and `exec` on every device, and the
-default a fresh hub copies from `clients.example.json` names every kind but
-`panel` and `exec`.
+default allows every kind but `panel` on every device, and the default a
+fresh hub copies from `clients.example.json` names every kind but `panel`.
 The device providing an entry is
 the device that hosts it; the hub's own modules belong to the hub's own
 device when it has one; a declared record belongs to the device at its
 address, and one at no device's address passes only a kind with no list. A
 client's `services` section holds only the entries whose type and device it
-is allowed, its `terminals` only the machines its `terminal` or `exec` list
-allows, a `shell` on a machine outside the `terminal` list is refused
-`permission_denied {kind: terminal}`, and an `exec` on a machine outside the
-`exec` list `permission_denied {kind: exec}`. A `connect` is judged as the `service` stream is, and a panel
+is allowed, and its `terminals` only the machines its `terminal` list
+allows. A `shell` or an `exec` on a machine outside that list is refused
+`permission_denied {kind: terminal}`. A `connect` is judged as the `service` stream is, and a panel
 `connect` or `service` without `panel` is refused `permission_denied {kind:
 panel}`. Switching a client off, removing it, its leave, and taking `panel`
 from it, through its own permission or the default it follows, end the
@@ -968,7 +965,7 @@ and platform, which change between releases.
 | `urls` | `["https://<address>:<port>", ...]` | | the same list | |
 | `relay_url` | | | the member of `urls` that is the relay's address, empty while the relay is off; a client ranks a candidate's path by it ([client.md](client.md), "A network change starts a round") | |
 | `overlays` | | | `[{provider, ...}]`: what the client joins each of the hub's overlays with, the preferred first | |
-| `terminals` | | | `[{device_id, name, is_online, is_shell_allowed, is_exec_allowed, sessions}]`: the managed machines it may open a `shell` or an `exec` on, each with the sessions this client sees there | |
+| `terminals` | | | `[{device_id, name, is_online, sessions}]`: the managed machines its `terminal` kind allows, where it opens a `shell` or an `exec`, each with the sessions this client sees there | |
 | `is_panel_allowed` | | | bool: the client is allowed to open the hub's panel through `connect {is_panel: true}` | |
 | `reached_through` | | | `lan`, `direct`, `netbird`, `easytier` or `relay`: the way this client's socket reached the hub | |
 | `error` | | `{code, params}` | | |
@@ -1037,13 +1034,11 @@ socket's peer address ("The address a caller is given") and names the word
 the client's Hubs row shows. Both are in the state's hash, so a client that
 reconnects another way is pushed its state.
 
-`terminals` lists every managed machine, the hub's own among them, online or
-not, with `is_online` read from its socket; it holds the machines the
-client's `terminal` kind allows and the ones its `exec` kind allows, each
-kind narrowed by its own device list, and is empty when the permission
-allows neither. `is_shell_allowed` is true on a machine the `terminal` kind
-allows and `is_exec_allowed` on one the `exec` kind allows. Both are added
-fields and keep `PROTOCOL`. The hub pushes every client its state when
+`terminals` lists every managed machine the client's `terminal` kind
+allows, narrowed by that kind's device list, the hub's own among them,
+online or not, with `is_online` read from its socket; it is empty when the
+permission does not allow `terminal`. A machine in it takes a `shell` and an
+`exec` alike. The hub pushes every client its state when
 an agent's channel opens or ends, when a report's `machine.sessions` differs
 from the one before it, and when a device is deleted; the same report move
 publishes `device_report` to the panel, whose session list reads it.
@@ -1475,7 +1470,7 @@ is added without a change to the protocol; a kind is added by a row here.
 | agent, to the hub | `package` | `{module}` for a module's package bytes from the hub's cache, or `{module, component}` for one component of a module with several (`component` is an added field with a default, the module's one archive, and keeps `PROTOCOL`), `{module: cc_switch}` for cc-switch, `{}` for the agent's own package; the close's `params` has the `sha256` of the bytes sent and `name`, the file's own name as its release gave it, with no directory |
 | client, to the hub | `service` | `{id}`: one published entry, or `{is_panel: true}`: a sign-in to the hub's own panel. The close is the whole answer, its `params` the material that entry takes from the hub and its `code` the reason it takes none; a new service type adds no kind |
 | client, to the hub | `shell` | `{device_id, cols, rows, session_id, is_resumed, is_shared}`: a shell on a managed machine, which the hub opens as the agent's own `shell` with the same `session_id`, `is_resumed` and `is_shared`, stamped `owner: client:<id>`, and relays terminal bytes both ways, each side under the other's credit; closed with `params: {exit_code}`, or refused `binding_unknown`, `client_disabled`, `permission_denied {kind: terminal}` (no `terminal`, or a machine outside its device list), `session_not_owned {session_id}` (a session another viewer owns and has not shared) or `agent_offline {device}` before any agent stream opens; closed with the agent's refusal, `account_unknown {account}` or `shell_program_unusable {path}` among them; closed `session_not_owned {session_id}` when the owner stops sharing the session |
-| client, to the hub | `exec` | `{device_id, argv, is_tty, cols, rows}`: one command on a managed machine, which the hub opens as the agent's own `exec` with the same `argv`, `is_tty`, `cols` and `rows`, and relays bytes both ways, each side under the other's credit, and the client's `eof` up; no `session_id`, and no `owner` stamped; closed with the agent's `params: {exit_code}`, or refused `binding_unknown`, `client_disabled`, `permission_denied {kind: exec}` (no `exec`, or a machine outside its device list) or `agent_offline {device}` before any agent stream opens; closed with the agent's refusal |
+| client, to the hub | `exec` | `{device_id, argv, is_tty, cols, rows}`: one command on a managed machine, which the hub opens as the agent's own `exec` with the same `argv`, `is_tty`, `cols` and `rows`, and relays bytes both ways, each side under the other's credit, and the client's `eof` up; no `session_id`, and no `owner` stamped; closed with the agent's `params: {exit_code}`, or refused `binding_unknown`, `client_disabled`, `permission_denied {kind: terminal}` (no `terminal`, or a machine outside its device list) or `agent_offline {device}` before any agent stream opens; closed with the agent's refusal |
 | client, to the hub | `command` | `{module: agent, verb: resize, shell, cols, rows}`, `shell` being the client's own `shell` stream id, or its own `exec` stream id opened with `is_tty`, which the hub maps to the agent's; closed empty once sent on, `shell_unknown {shell}` when no such shell is open. `{module: agent, verb: persist, session_id, is_persistent, is_shared}` and `{module: agent, verb: stop_session, session_id}` go unchanged to the machine holding the session, the one this client's open `shell` names for the id or else the online machine whose report lists it, and close with the agent's close; `session_unknown {session_id}` when no machine holds it, `session_not_owned {session_id}` for a `persist` on a session the machine reports under another owner, and the `shell` stream's permission refusals for that machine. A `persist` names only the flags it carries. `verb_unknown` for any other module or verb. A hub before 0.4.0 closes both kinds `kind_unknown`, which a client reads as a refusal |
 | client, to the hub | `connect` | `{id}`, one published entry by the id a `service` stream takes, or `{is_panel: true}`, the hub's own panel: one TCP connection to that service, or every datagram of one UDP `port` entry. Bytes both ways under credit; closed empty when either end's socket ends, or with a refusal's code. "The connect stream" has the checks, the far ends and the codes |
 | hub, to an agent | `connect` | `{port, protocol}`, `protocol` being `tcp` or `udp` and `tcp` when absent: one TCP connection to `127.0.0.1:<port>` on the machine, or every datagram of one UDP entry to that port, a port the machine publishes now on that protocol; bytes both ways under credit; closed empty when either socket ends, `port_not_published {port}` for any other port or protocol, `connect_failed {reason}` when the dial fails |
@@ -1645,7 +1640,7 @@ order, and the first check that fails closes the stream with its code:
 | --- | --- |
 | `binding_unknown` | no client row has the id this socket is bound to |
 | `client_disabled` | that row is switched off on the Clients page |
-| `permission_denied {kind: exec}` | the client's kinds lack `exec`, or the machine is not in the `exec` kind's device list |
+| `permission_denied {kind: terminal}` | the client's kinds lack `terminal`, or the machine is not in the `terminal` kind's device list |
 | `agent_offline {device}` | the machine has no socket, and the same code when its socket ends under an open stream |
 
 The agent then judges what it runs, and the hub closes the client's stream

@@ -122,7 +122,7 @@ the entry, and reads the secret a service needs from its own store.
 | The panel | a loopback port, and the browser | a `service` for a sign-in token, then one `connect` for each connection | the `panel` kind | the hub, at the panel's loopback HTTP port |
 | Remote desktops | a loopback port, and the viewer | a `service` for the seat password, then one `connect` for each connection | the `rdp` kind, the machine, and that the machine reports the share, which it does only while its Remote desktop switch is on | the agent, at the viewer port on the machine's loopback |
 | Terminals | a terminal in the client's window | one `shell`, and a `command` for each resize, persist, share and end | the `terminal` kind and the machine | the agent, which keeps the session and runs the shell as the machine's Terminal module names, root by default |
-| Remote commands | `nclient terminal exec`, its stdin, stdout and stderr | one `exec`, and a `command` for each resize with `--tty` | the `exec` kind and the machine | the agent, which runs the command once as the machine's Terminal module names, root by default, and keeps nothing |
+| Commands | `nclient terminal exec`, its stdin, stdout and stderr | one `exec`, and a `command` for each resize with `--tty` | the `terminal` kind and the machine, as for a terminal | the agent, which runs the command once as the machine's Terminal module names, root by default, and keeps nothing |
 | The AI gateway | a loopback port the AI tools point at | a `service` for the client's key, then one `connect` for each connection | the `ai` kind | the hub, at the gateway's loopback port |
 
 ## What an admitted client reaches
