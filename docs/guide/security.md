@@ -34,7 +34,7 @@ The hub limits connections that have not joined yet:
 
 A joined client opens only the kinds of service and the machines that its row on the **Clients** page allows. Turning a client off or deleting it closes its connections at once. On a new hub the default permissions leave out the panel. A client opens the panel only after you turn it on for that client.
 
-**Direct**, the way in through a port forward on your home router, opens port 8443 alone. On every system, the panel and the AI gateway accept connections only on the networks under **Exposure** on the **Network** page. A port forward to 8443 leaves the panel's own ports closed to the internet.
+**Direct**, the way in through a port forward on your home router, opens port 8443 alone. On every system, the panel accepts connections only on the networks under **Exposure** on the **Network** page. A port forward to 8443 leaves the panel's own ports closed to the internet. The AI gateway listens on the hub's own loopback alone, and clients and managed machines reach it through port 8443.
 
 ## The panel
 
