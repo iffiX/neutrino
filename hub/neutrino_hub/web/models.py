@@ -1029,6 +1029,9 @@ class DeviceClientInfoView(BaseModel):
     # What the agent's last hello named, from memory: null for a device that
     # has not connected since the panel started.
     version: str | None = None
+    # True while an agent of 0.5, admitted for its own update alone, takes
+    # this hub's version, until it says hello with this hub's number.
+    is_updating: bool = False
     # True when the agent's version is not this hub's. The two ship together
     # and are only supported together, so the panel offers an upgrade rather
     # than trying to interoperate.

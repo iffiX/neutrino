@@ -16,6 +16,7 @@ from neutrino_hub.exceptions import (
 )
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_COMMAND_MODULE_AGENT,
+    CHANNEL_DEV_VERSION_SUFFIX,
     CHANNEL_ROLE_AGENT,
     CHANNEL_ROLE_CLIENT,
     CHANNEL_STREAM_COMMAND,
@@ -200,17 +201,28 @@ def _device_view(runtime: PanelRuntime, device: ManagedDevice) -> DeviceView:
 
     Returns:
         The view, carrying the platform and the agent version on a device
-        whose agent has beaten since the panel started.
+        whose agent has beaten since the panel started. An agent of 0.5
+        admitted for its own update alone reads updating while the update
+        can run, else its version mismatch.
     """
     key = device.id
+    is_agent_online = runtime.agent_sessions.is_online(key)
+    update = None if is_agent_online else runtime.agent_update_sessions.get(key)
     view = _to_view(
         device,
         runtime.device_metrics.get(key),
-        is_agent_online=runtime.agent_sessions.is_online(key),
-        version=runtime.agent_sessions.version_of(key),
+        is_agent_online=is_agent_online,
+        is_updating=update is not None and _is_update_running(update),
+        version=(
+            update.version
+            if update is not None
+            else runtime.agent_sessions.version_of(key)
+        ),
         last_seen=runtime.agent_sessions.last_seen_at(key),
         last_report_at=runtime.agent_sessions.last_report_at(key),
     )
+    if update is not None and not update.is_closed:
+        view.is_online = True
     # Where its channel comes from wins over a scan: an agent on the overlay
     # is on no served LAN, and a machine that moved is at its new address a
     # beat later.
@@ -1369,11 +1381,30 @@ def _reinstall_failure(session) -> "dict | None":
     return dict(params) if isinstance(params, dict) else {}
 
 
+def _is_update_running(update) -> bool:
+    """Whether an agent of 0.5 admitted for its own update can still take it.
+
+    Args:
+        update: The agent's update-only session, live or ended.
+
+    Returns:
+        False when this hub is a checkout, which offers no update, when the
+        hub refused the agent its package, or when its report names a failed
+        install; True otherwise.
+    """
+    return not (
+        HUB_VERSION.endswith(CHANNEL_DEV_VERSION_SUFFIX)
+        or update.is_package_refused
+        or _reinstall_failure(update) is not None
+    )
+
+
 def _to_view(
     device: ManagedDevice,
     metrics: dict | None = None,
     *,
     is_agent_online: bool = False,
+    is_updating: bool = False,
     version: str = "",
     last_seen: "str | None" = None,
     last_report_at: "str | None" = None,
@@ -1404,7 +1435,8 @@ def _to_view(
             is_managed=True,
             is_online=is_agent_online,
             version=version or None,
-            is_version_mismatched=_is_version_mismatched(version),
+            is_updating=is_updating,
+            is_version_mismatched=_is_version_mismatched(version) and not is_updating,
             last_seen=last_seen,
             last_report_at=last_report_at,
             cpu_percent=latest.get("cpu_percent"),

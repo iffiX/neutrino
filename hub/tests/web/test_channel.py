@@ -8,7 +8,10 @@ matches, a client landing on the row that machine already had, a leave
 removing the binding; and the hello gate on the socket,
 where a refusal is one ``refused`` frame then close 4000, a second socket
 for one binding closes the first with 4010, and a refusal leaves the
-binding standing.
+binding standing. An agent of 0.5 is welcomed for its own update alone,
+held apart from the agent sessions until it says hello with this hub's
+number, and refused ``binding_unknown`` when its row goes; a client of
+0.5, and an agent of 0.5 joining, are refused ``protocol_too_old``.
 """
 
 import time
@@ -23,6 +26,7 @@ from neutrino_hub.modules.channel.tickets import ChannelTicketRegistry
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_CLOSE_REFUSED,
     CHANNEL_CLOSE_REPLACED,
+    CHANNEL_PROTOCOL_UPDATE_ONLY,
     CHANNEL_ROLE_AGENT,
     CHANNEL_ROLE_CLIENT,
     PROTOCOL,
@@ -69,6 +73,7 @@ class FakeRuntime:
         self.published_services = StubPublishedServices()
         self.desired_states = StubDesiredStates()
         self.agent_sessions = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
+        self.agent_update_sessions = {}
         self.client_sessions = ChannelSessionRegistry(CHANNEL_ROLE_CLIENT)
         self.forgotten: list = []
         self.desired = ("", {"modules": {}, "desktop": {"seat_password": ""}})
@@ -506,7 +511,10 @@ def test_a_hello_the_hub_cannot_read_is_refused_then_closed_4000(api):
 
 @pytest.mark.parametrize(
     ("protocol", "code"),
-    [(PROTOCOL_MIN - 1, "protocol_too_old"), (PROTOCOL + 1, "protocol_too_new")],
+    [
+        (CHANNEL_PROTOCOL_UPDATE_ONLY - 1, "protocol_too_old"),
+        (PROTOCOL + 1, "protocol_too_new"),
+    ],
 )
 def test_a_protocol_outside_the_range_is_refused_then_closed_4000(api, protocol, code):
     client, runtime = api
@@ -613,6 +621,100 @@ def test_a_second_socket_for_one_binding_replaces_the_first_with_4010(api):
     finally:
         first.__exit__(None, None, None)
     assert wait_until(lambda: not runtime.agent_sessions.is_online(binding["id"]))
+
+
+# --- an agent of 0.5 ---
+
+
+def welcomed_at_0_5(client, binding: dict):
+    """An agent of 0.5's socket past its hello, with the welcome read."""
+    return welcomed(
+        client,
+        binding,
+        protocol=CHANNEL_PROTOCOL_UPDATE_ONLY,
+        software="neutrino_agent/0.5.2",
+    )
+
+
+def test_an_agent_of_0_5_is_welcomed_for_its_update_and_held_apart(api):
+    client, runtime = api
+    binding = joined_device(client, runtime)
+
+    socket, welcome = welcomed_at_0_5(client, binding)
+    try:
+        session = runtime.agent_update_sessions[binding["id"]]
+        assert welcome["software"] == "neutrino_hub/1.2.3"
+        assert session.version == "0.5.2"
+        assert not runtime.agent_sessions.is_online(binding["id"])
+    finally:
+        socket.__exit__(None, None, None)
+    assert wait_until(lambda: session.is_closed)
+    assert runtime.agent_update_sessions[binding["id"]] is session
+    assert runtime.agent_sessions.last_seen_at(binding["id"]) is None
+
+
+def test_the_agent_saying_hello_with_this_hubs_number_ends_its_update(api):
+    client, runtime = api
+    binding = joined_device(client, runtime)
+    old, _ = welcomed_at_0_5(client, binding)
+    try:
+        new, welcome = welcomed(client, binding)
+        try:
+            assert welcome["type"] == "welcome"
+            assert closed_with(old) == (CHANNEL_CLOSE_REPLACED, "replaced")
+            assert binding["id"] not in runtime.agent_update_sessions
+            assert runtime.agent_sessions.is_online(binding["id"])
+        finally:
+            new.__exit__(None, None, None)
+    finally:
+        old.__exit__(None, None, None)
+
+
+def test_an_agent_of_0_5_whose_row_goes_is_refused_binding_unknown(api, monkeypatch):
+    client, runtime = api
+    binding = joined_device(client, runtime)
+    monkeypatch.setattr(
+        runtime, "forget_device", partial(PanelRuntime.forget_device, runtime)
+    )
+    socket, _ = welcomed_at_0_5(client, binding)
+    try:
+        answer = client.post("/api/channel/leave", json=binding)
+
+        assert answer.status_code == 200
+        assert refused_with(socket)["code"] == "binding_unknown"
+        assert binding["id"] not in runtime.agent_update_sessions
+    finally:
+        socket.__exit__(None, None, None)
+
+
+def test_a_client_of_0_5_and_a_join_at_0_5_are_refused_too_old(api):
+    client, runtime = api
+    client_id, binding = joined_client(client, runtime)
+    ticket(runtime, "t1")
+
+    with client.websocket_connect("/api/channel/socket") as socket:
+        socket.send_json(
+            hello(
+                binding,
+                role="client",
+                software="neutrino_client/0.5.2",
+                protocol=CHANNEL_PROTOCOL_UPDATE_ONLY,
+            )
+        )
+        refused = refused_with(socket)
+    join = client.post(
+        "/api/channel/join",
+        json=join_body(protocol=CHANNEL_PROTOCOL_UPDATE_ONLY),
+    )
+
+    too_old = {
+        "code": "protocol_too_old",
+        "params": {"peer": 3, "hub": PROTOCOL, "min": PROTOCOL_MIN},
+    }
+    assert {key: refused[key] for key in ("code", "params")} == too_old
+    assert not runtime.client_sessions.is_online(client_id)
+    assert join.status_code == 409 and join.json()["detail"] == too_old
+    assert runtime.enrollments.get("t1") is not None
 
 
 # --- the agent port's limits ---

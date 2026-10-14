@@ -11,6 +11,11 @@ are ``package`` and ``log`` from an agent, and ``service``, ``shell``,
 the hub whose own package was refused before the hub knew its platform is
 sent ``reinstall`` once, when the report naming the platform lands, unless
 it runs on the hub's own machine, whose agent the hub's update installs.
+
+An agent of 0.5 is served for its own update alone: the welcome, its
+reports read for the platform, ``package {}``, and ``protocol_too_old`` for
+every other stream it opens. Its session is in ``agent_update_sessions``,
+never in ``agent_sessions``: the hub pushes it no state and opens it no stream.
 """
 
 import asyncio
@@ -24,8 +29,11 @@ import logging
 from fastapi import WebSocket, WebSocketDisconnect
 
 from neutrino_hub.exceptions import AgentArtifactFetchError, AgentOfflineError
+from neutrino_hub.modules.channel.admission import admit
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_CHUNK_BYTES,
+    CHANNEL_CLOSE_REPLACED,
+    CHANNEL_CODE_REPLACED,
     CHANNEL_COMMAND_MODULE_AGENT,
     CHANNEL_DEV_VERSION_SUFFIX,
     CHANNEL_ROLE_CLIENT,
@@ -34,9 +42,11 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_FRAME_PONG,
     CHANNEL_FRAME_REPORT,
     CHANNEL_PING_NONCE_CHARS_MAX,
+    CHANNEL_PROTOCOL_UPDATE_ONLY,
     CHANNEL_STREAM_COMMAND,
     CHANNEL_STREAM_CONNECT,
     CHANNEL_STREAM_EXEC,
+    CHANNEL_STREAM_KINDS,
     CHANNEL_STREAM_LOG,
     CHANNEL_PACKAGE_PLATFORM_POLL_S,
     CHANNEL_PACKAGE_PLATFORM_WAIT_S,
@@ -75,6 +85,7 @@ from neutrino_hub.web.channel_shell import (
 from neutrino_hub.web.constants import (
     WEB_EVENT_CLIENTS,
     WEB_EVENT_DEVICE_REPORT,
+    WEB_EVENT_DEVICES,
     WEB_EVENT_METRICS,
     WEB_TASK_LABEL_MODULE,
 )
@@ -106,6 +117,9 @@ async def serve_agent(
     sessions.stream_handlers.setdefault(
         CHANNEL_STREAM_LOG, functools.partial(serve_log_stream, runtime)
     )
+    update = runtime.agent_update_sessions.pop(device.id, None)
+    if update is not None and not update.is_closed:
+        await update.close(CHANNEL_CLOSE_REPLACED, CHANNEL_CODE_REPLACED)
     await sessions.attach(session)
     try:
         await session.send_json(welcome)
@@ -129,6 +143,41 @@ async def serve_agent(
     finally:
         if sessions.detach(session):
             record_offline(runtime, device)
+
+
+async def serve_update_only_agent(
+    websocket: WebSocket, runtime, session: ChannelSession, device, welcome: dict
+) -> None:
+    """Serve an agent of 0.5 for its own update alone, to its last frame.
+
+    The session stays in ``agent_update_sessions`` after its socket ends,
+    until the updated agent says hello with this hub's number.
+
+    Args:
+        websocket: The agent's socket, past its hello.
+        runtime: The shared runtime.
+        session: The session built from the hello.
+        device: The device the token resolved to.
+        welcome: The hub's identity card.
+    """
+    session.stream_handlers = {
+        kind: functools.partial(_serve_update_only_stream, runtime)
+        for kind in CHANNEL_STREAM_KINDS
+    }
+    previous = runtime.agent_update_sessions.get(device.id)
+    runtime.agent_update_sessions[device.id] = session
+    if previous is not None and not previous.is_closed:
+        await previous.close(CHANNEL_CLOSE_REPLACED, CHANNEL_CODE_REPLACED)
+    runtime.events.publish(WEB_EVENT_DEVICES)
+    try:
+        await session.send_json(welcome)
+        frames = _UpdateOnlyAgentFrames(runtime, session, device)
+        await _serve_frames(websocket, session, frames)
+    except (WebSocketDisconnect, AgentOfflineError):
+        pass
+    finally:
+        session.fail_streams()
+        runtime.events.publish(WEB_EVENT_DEVICES)
 
 
 async def serve_client(
@@ -366,6 +415,26 @@ def _publish_module_line_from_thread(loop, runtime, label: str, line: str) -> No
     loop.call_soon_threadsafe(publish_module_line, runtime, label, line)
 
 
+async def _serve_update_only_stream(
+    runtime, session: ChannelSession, stream: ChannelStream
+) -> None:
+    """Serve a stream an agent of 0.5 opened: its own package, and nothing else.
+
+    Args:
+        runtime: The shared runtime.
+        session: The agent's session; a refusal of its package marks it.
+        stream: The stream, closed here.
+    """
+    if stream.kind == CHANNEL_STREAM_PACKAGE and not stream.args.get("module"):
+        await serve_package_stream(runtime, session, stream)
+        if (stream.close_info or {}).get("code"):
+            session.is_package_refused = True
+            runtime.events.publish(WEB_EVENT_DEVICES)
+        return
+    refusal = admit(CHANNEL_PROTOCOL_UPDATE_ONLY)
+    await stream.close(refusal["code"], refusal["params"])
+
+
 def _file_size(path) -> int:
     """A file's size in bytes, 0 when it cannot be read."""
     try:
@@ -574,6 +643,27 @@ class _AgentFrames:
                 )
                 return
             await _send_reinstall(session, self._hub_version)
+
+
+class _UpdateOnlyAgentFrames:
+    """What an agent of 0.5's reports do to the hub: they name its platform."""
+
+    def __init__(self, runtime, session: ChannelSession, device):
+        self._runtime = runtime
+        self._session = session
+        self._device = device
+
+    async def take_report(self, report: dict) -> None:
+        """Keep the report on the session and the platform it names, which
+        names the package; tell the panel when its error moved."""
+        previous = self._session.report
+        self._session.record_report(report)
+        machine = report.get("machine")
+        platform = machine.get("platform") if isinstance(machine, dict) else None
+        if isinstance(platform, dict) and platform:
+            self._runtime.device_platform[self._device.id] = dict(platform)
+        if not previous or previous.get("error") != report.get("error"):
+            self._runtime.events.publish(WEB_EVENT_DEVICES)
 
 
 def _is_hub_machine(device) -> bool:

@@ -117,6 +117,11 @@ export function DeviceTile({ device, onOpen }: DeviceTileProps) {
         {presence === "offline" && reach !== "none" && (
           <span className="badge badge--warn">{t("state.offline")}</span>
         )}
+        {client !== null && client.is_updating && (
+          <span className="badge badge--accent">
+            {t("ui.device_tile.agent_updating")}
+          </span>
+        )}
         {client !== null && client.version !== null && (
           <span
             className={`badge${client.is_version_mismatched ? " badge--warn" : ""}`}

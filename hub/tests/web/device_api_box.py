@@ -89,6 +89,7 @@ class BoxRuntime:
         self.enrollments = ChannelTicketRegistry()
         self.device_shares = DeviceShareRegistry()
         self.agent_sessions = FakeChannelSessions()
+        self.agent_update_sessions = {}
         self.desired_states = DesiredStateStore()
         self.published_services = StubPublishedServices()
 

@@ -180,6 +180,7 @@
   "ui.device_pick.no_devices": "没有机器在应答",
   "ui.device_pick.no_devices_hint": "在“设备”页给某台机器装上被控端。",
   "ui.device_pick.title": "选择机器",
+  "ui.device_tile.agent_updating": "被控端升级中",
   "ui.device_tile.get_link": "获取链接",
   "ui.device_tile.install_agent": "安装被控端",
   "ui.device_tile.unknown_vendor": "厂商未知",

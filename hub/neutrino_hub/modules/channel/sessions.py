@@ -258,6 +258,8 @@ class ChannelSession:
             None before the first report was judged.
         is_reinstall_due: True while an agent whose own package was refused
             for want of a platform has sent no report naming one.
+        is_package_refused: True once an agent of 0.5, admitted for its own
+            update alone, was refused its own package.
         stream_handlers: Stream kind to the coroutine function serving a
             stream the peer opens, called with ``(session, stream)``.
         shells: A client's open ``shell`` streams by id, each the
@@ -291,6 +293,7 @@ class ChannelSession:
         self.state_hash = ""
         self.offered_hash: "str | None" = None
         self.is_reinstall_due = False
+        self.is_package_refused = False
         self.stream_handlers: dict = {}
         self.shells: dict = {}
         self.execs: dict = {}

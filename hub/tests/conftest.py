@@ -640,6 +640,7 @@ class FakeModuleRuntime:
         self.devices = {device.id: device for device in devices}
         self.tasks = TaskStreamRegistry()
         self.agent_sessions = FakeChannelSessions(online)
+        self.agent_update_sessions = {}
         self.published_services = StubPublishedServices()
         self.desired_states = DesiredStateStore()
         self.device_modules: dict = {}
