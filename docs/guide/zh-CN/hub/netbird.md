@@ -4,7 +4,7 @@ title: NetBird
 
 # 把中枢加入 NetBird
 
-中枢加入 NetBird 要一把可重复使用的 setup key，同一把 key 中枢再交给每个客户端。这一页在控制台里建这把 key，再在面板里用它加入。你需要一个 netbird.io 账号，或者一套自建的 NetBird 管理面。国内版没有 NetBird，国内版用[把中枢放到 EasyTier 网络里](./easytier.md)。
+中枢加入 NetBird 要一把可重复使用的 setup key，同一把 key 中枢再交给每个客户端。这一页在控制台里建这把 key，再在面板里用它加入。你需要一个 netbird.io 账号，或者一套自建的 NetBird 管理面。
 
 开始之前，在 **外部访问** 页打开 **NetBird** 卡片的开关，选择 **应用外部访问**。
 

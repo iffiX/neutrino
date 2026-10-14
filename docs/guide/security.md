@@ -34,7 +34,9 @@ The hub limits connections that have not joined yet:
 
 A joined client opens only the kinds of service and the machines that its row on the **Clients** page allows. Turning a client off or deleting it closes its connections at once. On a new hub the default permissions leave out the panel. A client opens the panel only after you turn it on for that client.
 
-**Direct**, the way in through a port forward on your home router, opens port 8443 alone. On every system, the panel accepts connections only on the networks under **Exposure** on the **Network** page. A port forward to 8443 leaves the panel's own ports closed to the internet. The AI gateway listens on the hub's own loopback alone, and clients and managed machines reach it through port 8443.
+**Direct**, the way in through a port forward on your home router, opens the connection port alone, 8443 by default. On every system, the hub's other ports, the panel's among them, accept connections only from the senders in the segments switched on under **Exposure** on the **Network** page. A port forward to 8443 leaves the panel's own ports closed to the internet. The AI gateway listens on the hub's own loopback alone, and clients and managed machines reach it through the connection port.
+
+The hub's firewall rules cover its own ports alone. SSH and every other service on the hub's computer are open or closed by the system's own firewall, in router mode too.
 
 ## The panel
 
@@ -76,7 +78,7 @@ The hub and the agents connect to these servers. The full edition uses the first
 | image tags                                                               | when the **Containers** tab lists an image's tags                        | `hub.docker.com`                                                 | `hub.docker.com`                                                 |
 | STUN servers, for the shared desktop                                     | each time a machine's shared desktop starts                              | `stun.l.google.com`, `stun.cloudflare.com`, `stun.nextcloud.com` | `stun.l.google.com`, `stun.cloudflare.com`, `stun.nextcloud.com` |
 | cc-switch, for a machine's AI tools                                      | when a machine's AI tools switch to the gateway                          | `github.com`                                                     | `gitee.com`                                                      |
-| the NetBird management server, and the signal and relay servers it names | while NetBird is on                                                      | the server the hub joins                                         | none                                                             |
+| the NetBird management server, and the signal and relay servers it names | while NetBird is on                                                      | the server the hub joins                                         | the server the hub joins                                         |
 | the EasyTier console                                                     | while the console address is set                                         | the address you paste                                            | the address you paste                                            |
 | your SSH Relay server                                                    | while SSH Relay is on                                                    | the server you name                                              | the server you name                                              |
 | AI providers and subscriptions                                           | when an AI tool sends a request through the gateway                      | the ones you add                                                 | the ones you add                                                 |

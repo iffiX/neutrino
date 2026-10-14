@@ -28,7 +28,7 @@ A key is the safer choice, since the server then limits it to one listener. If y
 
 ## Set up the server
 
-These steps run on the server, as root. The example account is `relay` and the example public port is `8443`. If you pick another public port, use it in every step; the hub's own port stays 8443.
+These steps run on the server, as root. The example account is `relay` and the example public port is `8443`. If you pick another public port, use it in every step; the hub's own connection port stays as it is.
 
 1. Create the account the hub signs in as:
 

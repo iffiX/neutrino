@@ -26,9 +26,13 @@ Under the hub's name, one line shows the connection. While the channel to the hu
 
 ![The client window connected to a hub, with the path and the round trip](/guide/en/client_connected.webp)
 
-The line reads **Connecting…** while the client dials the hub. When it stops, the line names the reason, then `·` and what ends the wait, such as **The hub did not answer · retrying in 5 s**. The seconds count down live, and at 0 the line reads **Connecting…** again. The wait starts at 5 seconds and doubles up to 60, and a connection or a network change sets it back to 5.
+The line reads **Connecting…** while the client dials the hub. An address that refuses the connection is dialled again every second until the round ends, so the client is back about a second after the hub restarts.
 
-The other reasons are **The hub is not on the virtual network**, **No network**, **Certificate mismatch**, **The hub pauses new devices**, **The hub does not know this device**, **Version too old**, **Join refused**, **Replaced by another client** and **Disabled by the hub**. [The state line of a hub row](../reference/troubleshooting.md#the-state-line-of-a-hub-row) in troubleshooting gives each one's cause and what to do. [The channel](../protocol/channel.md#how-a-client-picks-an-address) describes how the client picks among the hub's addresses.
+When the dialling stops, the line names the reason, then `·` and what ends the wait, such as **The hub did not answer · retrying in 5 s**. The seconds count down live, and at 0 the line reads **Connecting…** again. The wait starts at 5 seconds and doubles up to 60, and a connection or a network change sets it back to 5.
+
+The other reasons are **The hub is not on the virtual network**, **No network**, **Certificate mismatch**, **The hub pauses new devices**, **The hub does not know this device**, **Version too old**, **Join refused**, **Replaced by another client** and **Disabled by the hub**. For a client older than the hub accepts, the line reads **Version too old · update the client**. The line stays until you install the new client over this one.
+
+[The state line of a hub row](../reference/troubleshooting.md#the-state-line-of-a-hub-row) in troubleshooting gives each one's cause and what to do. [The channel](../protocol/channel.md#how-a-client-picks-an-address) describes how the client picks among the hub's addresses.
 
 The dot before the name is green while connected and pulsing amber while dialling or busy. It is amber while the next step is up to the network or the hub, and red when you must act. It is grey for a hub this computer has never reached.
 
@@ -79,6 +83,8 @@ A forward is a port on `127.0.0.1` that the client opens for one entry and conne
 | **Remote desktops** | from **Connect** until the viewer closes                        |
 
 Every program and every account on this computer can connect to a forward while it listens. Quitting the client ends every forward.
+
+While a hub's channel is down, its TCP forwards keep their ports and stop accepting new connections. The connections waiting on a forward are served once the channel is back.
 
 On the **Web** and **Ports** pages, **Configure** on a row opens the **Local port** choice:
 

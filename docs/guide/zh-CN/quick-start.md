@@ -17,7 +17,7 @@ title: 第零步
 - 一个 EasyTier 控制台账号，在 `https://console.easytier.net` 注册。按 EasyTier 的规定，控制台的免费档每月有 1 GB 中转流量，最多接入 20 台设备。<!-- 待核: 免费档的 1 GB 和 20 台两个数字取自 iffi 的清单，仓库里没有出处。 -->
 - 手机和笔记本先连上电脑所在的 Wi-Fi。
 
-想用 NetBird、直连或自己的服务器时，先按 [NetBird](./hub/netbird.md) 页、[外部访问](./hub/overlay.md)页的直连一节或[用自己的 VPS 中继连回家](./scenarios/vps_relay.md)做好，再从“把手机和笔记本挂上”接着做。NetBird 只有完整版有；直连和 VPS 中继没有虚拟网，跳过那一节。
+想用 NetBird、直连或自己的服务器时，先按 [NetBird](./hub/netbird.md) 页、[外部访问](./hub/overlay.md)页的直连一节或[用自己的 VPS 中继连回家](./scenarios/vps_relay.md)做好，再从“把手机和笔记本挂上”接着做。直连和 VPS 中继没有虚拟网，跳过那一节。
 
 ## 安装中枢
 
@@ -33,7 +33,7 @@ Windows 上打开 PowerShell，运行：
 irm https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.ps1 | iex
 ```
 
-脚本要一次管理员权限：Linux 和 macOS 上输入登录密码，Windows 上在授权框里选 **是**。装好后，终端打印设置向导的地址，末尾带一次性令牌，最后一行是 `Press Enter to begin:`。让终端开着，不按回车；在浏览器里做完下面的向导后，终端打印 `The hub was set up in the browser; its panel is at` 和面板地址，命令随即结束。
+脚本要一次管理员权限：Linux 和 macOS 上输入登录密码，Windows 上在授权框里选 **是**。装好后，终端先写出安装包从哪里来、和 `SHA256SUMS` 核对通过、已经装好这三行，再打印设置向导的地址，末尾带一次性令牌，最后一行是 `Press Enter to begin:`。让终端开着，不按回车；在浏览器里做完下面的向导后，终端打印 `The hub was set up in the browser; its panel is at` 和面板地址，命令随即结束。
 
 这是国内版的命令。完整版的命令见[安装中枢](./install/hub.md)。
 
@@ -74,7 +74,7 @@ irm https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.ps1 | ie
 
 ### 在手机上加入
 
-1. 在手机浏览器里打开 `https://gitee.com/iffiX/neutrino/releases`，下载 `neutrino-client-0.5.2-android.apk`。
+1. 在手机浏览器里打开 `https://gitee.com/iffiX/neutrino/releases`，下载 `neutrino-client-0.6.0-android.apk`。
 1. 打开下载的文件。Android 提示时，允许浏览器安装应用。
 1. 选 **安装**，装好后打开 **微子**。
 1. 在电脑的面板侧栏打开 **客户端**，选择 **新建客户端链接**。

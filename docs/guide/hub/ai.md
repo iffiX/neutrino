@@ -4,7 +4,7 @@ title: AI
 
 # AI
 
-The **AI** page sets up the hub's AI gateway, CLIProxyAPI, which serves your API keys and subscription accounts behind one endpoint on port 8317. Every client and managed machine reaches it with a key of its own.
+The **AI** page sets up the hub's AI gateway, CLIProxyAPI, which serves your API keys and subscription accounts behind one endpoint, port 8317 on the hub's loopback. A client reaches it through a forward of its own and a managed machine through its agent, each with a key of its own.
 
 ## Add a provider
 

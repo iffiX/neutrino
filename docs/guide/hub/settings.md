@@ -8,7 +8,7 @@ The **Settings** page holds the panel's HTTPS, its name, password, language and 
 
 ## HTTPS
 
-The panel serves HTTP on `8080` and HTTPS on `443` unless setup chose other ports, as set under [Panel ports](./network.md#panel-ports) on the **Network** page. The HTTPS port serves a certificate signed by a certificate authority this hub makes for itself.
+The panel serves HTTP on `8080` and HTTPS on `443` unless setup chose other ports, as set under [Ports](./network.md#ports) on the **Network** page. The HTTPS port serves a certificate signed by a certificate authority this hub makes for itself.
 
 Install the authority and restart the browser on each device you use, then turn HTTPS on once for the hub.
 
@@ -98,6 +98,8 @@ The panel downloads the package, checks it against the release's `SHA256SUMS`, a
 For up to three minutes after the install, the update checks that the panel and its services run. When the check fails, it installs the previous version again, and the section shows the reason and the **Install log**.
 
 After the check passes, the hub box's own agent is updated, and agents on other machines update themselves when they connect. A new major version does not install from here.
+
+A client changes version only when you install a new release over it. An update to a newer protocol, as from 0.5 to 0.6.0, leaves each client's row reading **Version too old · update the client** until then. [Install a client](../install/client.md#update-a-client) has the steps.
 
 `sudo nhub update` does the same from a terminal, and `--package` installs a package file you downloaded yourself. On Linux, the update's log is in `journalctl -u neutrino_hub_update`.
 

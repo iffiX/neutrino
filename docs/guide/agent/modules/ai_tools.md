@@ -18,6 +18,8 @@ Before you begin, the hub's [AI](../../hub/ai.md) page must serve at least one m
 
 The press takes effect at once, with no apply bar. The control is greyed while the agent is offline, and while the gateway serves no model. The first time a machine uses the setting, its agent fetches cc-switch from the hub, the program that rewrites each tool's settings.
 
+While the setting is on, the agent listens on the machine's `127.0.0.1:8317` and passes each connection to the hub's gateway, and the tools point at that address. On the hub's own machine, the tools point at the gateway itself.
+
 ## Choose the models
 
 1. Under **Global configuration**, select **Configure**.

@@ -24,7 +24,7 @@ The link is valid for 30 minutes. For a machine listed under **Unmanaged devices
 
 ## Install with one command
 
-The install script checks the agent package against the release's `SHA256SUMS` and installs it.
+The install script checks the agent package against the release's `SHA256SUMS` and installs it. It prints a line for each step: where the package came from, that it matches, and that it is installed.
 
 ### Linux and macOS
 
@@ -77,11 +77,11 @@ Download the agent's file for the machine from the [releases page](https://githu
    ::: code-group
 
    ```bash [Debian, Ubuntu, Raspberry Pi OS]
-   sudo apt install ./neutrino-agent_0.5.2_amd64.deb
+   sudo apt install ./neutrino-agent_0.6.0_amd64.deb
    ```
 
    ```bash [Fedora, RHEL family]
-   sudo dnf install ./neutrino-agent-0.5.2-1.x86_64.rpm
+   sudo dnf install ./neutrino-agent-0.6.0-1.x86_64.rpm
    ```
 
    :::
@@ -92,14 +92,14 @@ Download the agent's file for the machine from the [releases page](https://githu
    sudo nagent join '<enroll-link>'
    ```
 
-On ARM64 the files are `neutrino-agent_0.5.2_arm64.deb` and `neutrino-agent-0.5.2-1.aarch64.rpm`.
+On ARM64 the files are `neutrino-agent_0.6.0_arm64.deb` and `neutrino-agent-0.6.0-1.aarch64.rpm`.
 
 ### macOS
 
 1. Install the package:
 
    ```bash
-   sudo installer -pkg neutrino-agent-0.5.2-macos-arm64.pkg -target /
+   sudo installer -pkg neutrino-agent-0.6.0-macos-arm64.pkg -target /
    ```
 
 1. Join the hub:
@@ -108,11 +108,11 @@ On ARM64 the files are `neutrino-agent_0.5.2_arm64.deb` and `neutrino-agent-0.5.
    sudo nagent join '<enroll-link>'
    ```
 
-On an Intel Mac the file is `neutrino-agent-0.5.2-macos-amd64.pkg`.
+On an Intel Mac the file is `neutrino-agent-0.6.0-macos-amd64.pkg`.
 
 ### Windows
 
-1. Run `neutrino-agent-0.5.2-windows-amd64.msi`.
+1. Run `neutrino-agent-0.6.0-windows-amd64.msi`.
 1. Open a new PowerShell as administrator.
 1. Run `nagent join '<enroll-link>'`.
 
@@ -120,8 +120,7 @@ On an Intel Mac the file is `neutrino-agent-0.5.2-macos-amd64.pkg`.
 
 The hub can sign in to a Linux machine over SSH and install the agent itself. Before you start, store the machine's SSH key or login on [Credentials](../hub/credentials.md).
 
-1. On **Devices**, under **Unmanaged devices**, open the machine's drawer.
-1. Select **Install agent**.
+1. On **Devices**, select **Add by address**. For a machine listed under **Unmanaged devices**, select **Install agent** in its drawer instead.
 1. Fill **Host**, **Port** and **Username**.
 1. Under **Credential**, choose **SSH key** or **Password**, then pick the stored key or login.
 1. Optional: under **Sudo password**, pick the login whose password `sudo` prompts for.
@@ -129,7 +128,7 @@ The hub can sign in to a Linux machine over SSH and install the agent itself. Be
 
 ![The SSH install dialog with host, port, username and credential](/guide/en/devices_install_ssh.webp)
 
-**Install output** shows the installer as it runs, and the installer joins the machine by itself.
+**Install output** shows the installer as it runs, and the installer joins the machine by itself. **Add by address** also adds the machine's row to the page, named after the host you typed.
 
 ## Check the machine
 

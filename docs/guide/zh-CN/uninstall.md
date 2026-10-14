@@ -10,10 +10,10 @@ title: 卸载
 
 只想让中枢回到刚装好的状态，不必卸载。在中枢所在的电脑上运行下面的命令，Windows 上在管理员 PowerShell 里去掉 `sudo` 运行。
 
-| 命令                      | 效果                                                                                   |
-| ------------------------- | -------------------------------------------------------------------------------------- |
-| `sudo nhub reset network` | 交还这台电脑的网络（防火墙、引擎、解析器），停下面板，配置不变                         |
-| `sudo nhub reset all`     | 交还网络，把配置换回示例，删掉保险库密钥、被控端连接用的证书和面板的颁发机构，停下服务 |
+| 命令                      | 效果                                                                                     |
+| ------------------------- | ---------------------------------------------------------------------------------------- |
+| `sudo nhub reset network` | 交还这台电脑的网络（防火墙、firewalld 里中枢加的规则、引擎、解析器），停下面板，配置不变 |
+| `sudo nhub reset all`     | 交还网络，把配置换回示例，删掉保险库密钥、被控端连接用的证书和面板的颁发机构，停下服务   |
 
 每条命令先问 `[y/N]`，加 `--yes` 不问。`nhub reset all` 之后，再运行 `sudo nhub setup` 就能重新配置；在那之前面板打不开，从别处只能经 SSH 操作这台电脑。
 
@@ -68,7 +68,7 @@ sudo rm -rf "/Library/Application Support/Neutrino/agent" /Library/Logs/Neutrino
 - Debian 系：运行 `sudo apt remove neutrino-client`，每个账户自己的配置留下；`sudo apt purge neutrino-client` 把它们也删掉。
 - RHEL 系：运行 `sudo dnf remove neutrino-client`，每个账户自己的配置留下。
 - Windows：在系统的 **应用** 设置里卸载 **Neutrino Client**。卸载程序问 **Keep my configuration**，勾上时留下加入的中枢，下次装好直接连回去；没人回答时也留下。
-- macOS：安装包没有卸载程序。运行下面的命令，停下虚拟网用的两个 LaunchDaemon，再删掉应用。国内版没有 NetBird，第二条报错时不用管。<!-- 待核: 命令按安装包放下的文件写成，没在 Mac 上走过。 -->
+- macOS：安装包没有卸载程序。运行下面的命令，停下虚拟网用的两个 LaunchDaemon，再删掉应用。<!-- 待核: 命令按安装包放下的文件写成，没在 Mac 上走过。 -->
 
   ```bash
   sudo launchctl bootout system/com.neutrino.client.easytier

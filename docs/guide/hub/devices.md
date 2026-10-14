@@ -17,13 +17,13 @@ The page has two sections, **Managed devices** and **Unmanaged devices**. Each t
 | **Agent**   | Managed: the agent reports the machine and takes modules.        | open its drawer                                 |
 | **SSH**     | Unmanaged, with a stored login.                                  | **Install agent**                               |
 | **Scanned** | Unmanaged, with no credentials.                                  | **Get link**                                    |
-| **Offline** | Not answering. It keeps its place and token for when it returns. | wake it, or install 0.5.2 on a 0.3 or 0.4 agent |
+| **Offline** | Not answering. It keeps its place and token for when it returns. | wake it, or install 0.6.0 on a 0.3 or 0.4 agent |
 
-The filters above the list narrow it by state. **Scan LAN** finds the machines on the networks the hub serves. The hub box is under **Managed devices** from the first sign-in, in a row named after its hostname. To rename the row, type a **Display name** in its drawer and select **Save device**.
+The filters above the list narrow it by state. On a Linux hub, **Scan LAN** finds the machines on the IPv4 segments switched on under **Exposure** on the **Network** page. In a segment larger than 256 addresses, it scans the 256 that hold the hub's own address, its /24. The hub box is under **Managed devices** from the first sign-in, in a row named after its hostname. To rename the row, type a **Display name** in its drawer and select **Save device**.
 
 ## Add a machine
 
-A machine joins through **Add by link** at the top of the page, or **Get link** or **Install agent** in its drawer. The steps are in [Install an agent](../install/agent.md).
+A machine joins through **Add by link** or **Add by address** at the top of the page, or **Get link** or **Install agent** in its drawer. **Add by address** opens **Add a machine by address**, where you type a Linux machine's host and SSH login. The hub adds the machine's row and installs the agent over SSH. The steps are in [Install an agent](../install/agent.md).
 
 ## The drawer
 
@@ -34,7 +34,7 @@ A managed machine's drawer opens on **Live monitor**: CPU, memory, disk, load, u
 | **Reinstall agent** | The agent installs the hub's agent package again; a silent Linux machine gets the SSH dialog. |
 | **Reboot**          | The machine restarts at once, after a confirmation.                                           |
 | **Shut down**       | The machine powers off at once, after a confirmation.                                         |
-| **Wake-on-LAN**     | The hub sends a wake packet on the networks it serves, or in server mode on its exposed ones. |
+| **Wake-on-LAN**     | The hub sends a wake packet on the networks of its exposed IPv4 segments.                     |
 | **Forget device**   | The row and its SSH settings leave the hub; keys and logins stay on **Credentials**.          |
 
 Wake-on-LAN works from a panel opened over a virtual network too, because the box sends the packet. A machine wakes only with Wake-on-LAN turned on in its firmware and network card, and only on the box's own networks. A forgotten machine keeps its agent, and a new link adds it again.
@@ -57,4 +57,6 @@ Windows and Macs run the file share, the terminal, the remote desktop, Gitea, VS
 
 The drawer and the tile show **This agent is a different version from the hub.** An agent updates itself to the hub's version when it connects. When that update fails, select **Reinstall agent** in the drawer.
 
-A 0.3 or 0.4 agent stays **Offline**, because the 0.5.2 hub rejects it, and it cannot update from the hub. Install the 0.5.2 agent package on the machine and join it with a new link.
+A 0.5 agent joined to a 0.6.0 hub updates itself the same way, and its tile reads **Updating the agent** until it connects as 0.6.0. When the hub has no package for that machine's system, or the install fails, the tile shows the version mismatch instead.
+
+A 0.3 or 0.4 agent stays **Offline**, because the 0.6.0 hub rejects it, and it cannot update from the hub. Install the 0.6.0 agent package on the machine and join it with a new link.

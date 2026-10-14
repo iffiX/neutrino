@@ -20,16 +20,18 @@ Besides the one command of [Step zero](../quick-start.md), the hub installs from
 
 Every release comes in two editions:
 
-| Edition  | Published on                   | What it has                                                   |
-| -------- | ------------------------------ | ------------------------------------------------------------- |
-| full     | GitHub, every release kept     | every feature                                                 |
-| mainland | Gitee, the latest release only | every feature except the proxy, NetBird and side gateway mode |
+| Edition  | Published on                   | What it has                                          |
+| -------- | ------------------------------ | ---------------------------------------------------- |
+| full     | GitHub, every release kept     | every feature                                        |
+| mainland | Gitee, the latest release only | every feature except the proxy and side gateway mode |
 
 The mainland edition downloads from mirrors in mainland China. It publishes the hub for Debian, Ubuntu and Raspberry Pi OS on x86-64 and ARM64, Windows, and Apple silicon Macs.
 
 ## Install with one command
 
-The install script checks the package against the release's `SHA256SUMS`, installs it, and runs `nhub setup`. That command prints the wizard's address, then shows `Press Enter to begin:` and stays there. When you finish the wizard in a browser, it prints `The hub was set up in the browser; its panel is at` and the panel's address, then exits.
+The install script prints one line per step: where the package came from, that it matches the release's `SHA256SUMS`, and that it is installed. It then runs `nhub setup`. That command prints the wizard's address, then shows `Press Enter to begin:` and stays there. When you finish the wizard in a browser, it prints `The hub was set up in the browser; its panel is at` and the panel's address, then exits.
+
+Over a hub already set up, the script runs no setup and prints `The hub was upgraded; its panel is at` with the panel's address. Over a hub installed and never set up, it runs `nhub setup` as on a first install.
 
 ### Linux and macOS
 
@@ -63,7 +65,7 @@ irm https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.ps1 | ie
 
 ## Install from the package file
 
-Download the file for your system from the [releases page](https://github.com/iffiX/neutrino/releases), or for the mainland edition from the [Gitee releases page](https://gitee.com/iffiX/neutrino/releases).
+Download the file for your system from the [releases page](https://github.com/iffiX/neutrino/releases), or for the mainland edition from the [Gitee releases page](https://gitee.com/iffiX/neutrino/releases). A package installed over a hub nobody has set up starts the new version's wizard and prints its address, as a first install does.
 
 ### Linux
 
@@ -72,25 +74,25 @@ Install the file with the system's package manager:
 ::: code-group
 
 ```bash [Debian, Ubuntu, Raspberry Pi OS]
-sudo apt install ./neutrino-hub_0.5.2_amd64.deb
+sudo apt install ./neutrino-hub_0.6.0_amd64.deb
 ```
 
 ```bash [Fedora]
-sudo dnf install ./neutrino-hub-0.5.2-1.x86_64.rpm
+sudo dnf install ./neutrino-hub-0.6.0-1.x86_64.rpm
 ```
 
 ```bash [RHEL, AlmaLinux, Rocky]
 sudo dnf install -y epel-release
-sudo dnf install ./neutrino-hub-0.5.2-1.x86_64.rpm
+sudo dnf install ./neutrino-hub-0.6.0-1.x86_64.rpm
 ```
 
 ```bash [Arch, EndeavourOS, Manjaro]
-sudo pacman -U neutrino-hub-0.5.2-1-x86_64.pkg.tar.zst
+sudo pacman -U neutrino-hub-0.6.0-1-x86_64.pkg.tar.zst
 ```
 
 :::
 
-On ARM64 the files are `neutrino-hub_0.5.2_arm64.deb` and `neutrino-hub-0.5.2-1.aarch64.rpm`; the Arch package is for x86-64 only. The RHEL family needs EPEL for fail2ban and arp-scan.
+On ARM64 the files are `neutrino-hub_0.6.0_arm64.deb` and `neutrino-hub-0.6.0-1.aarch64.rpm`; the Arch package is for x86-64 only. The RHEL family needs EPEL for fail2ban and arp-scan.
 
 ::: warning
 Install with `apt`, `dnf` or `pacman`. `dpkg -i` and `rpm -i` install none of the dependencies; after `dpkg -i`, run `sudo apt -f install` to finish.
@@ -101,17 +103,17 @@ Install with `apt`, `dnf` or `pacman`. `dpkg -i` and `rpm -i` install none of th
 Install the package from a terminal:
 
 ```bash
-sudo installer -pkg neutrino-hub-0.5.2-macos-arm64.pkg -target /
+sudo installer -pkg neutrino-hub-0.6.0-macos-arm64.pkg -target /
 ```
 
-On an Intel Mac the file is `neutrino-hub-0.5.2-macos-amd64.pkg`.
+On an Intel Mac the file is `neutrino-hub-0.6.0-macos-amd64.pkg`.
 
 ### Windows
 
-Open `neutrino-hub-0.5.2-windows-amd64.msi`. For a silent install, run this in PowerShell as administrator:
+Open `neutrino-hub-0.6.0-windows-amd64.msi`. For a silent install, run this in PowerShell as administrator:
 
 ```powershell
-msiexec /i neutrino-hub-0.5.2-windows-amd64.msi /qn
+msiexec /i neutrino-hub-0.6.0-windows-amd64.msi /qn
 ```
 
 ## Open the wizard

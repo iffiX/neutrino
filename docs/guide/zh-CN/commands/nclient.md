@@ -43,12 +43,12 @@ this person has joined several hubs; name one with --hub: <names>
 | `nclient terminal share <machine> <session-id>`   | `--on` 或 `--off`，二选一                                                                                                                                                     | 让对这台机器有终端权限的其他客户端能连进这个会话，或收回；收回时中枢立刻断开它们。返回值同 `persist`。                                                                                                                                             |
 | `nclient terminal stop <machine> <session-id>`    |                                                                                                                                                                               | 结束一个保留的会话，和在面板上结束它相同。返回值同 `persist`。                                                                                                                                                                                     |
 | `nclient service list`                            |                                                                                                                                                                               | 按中枢、再按类别打印每个已发布的条目。                                                                                                                                                                                                             |
-| `nclient service web open <ref>`                  |                                                                                                                                                                               | 在浏览器里打开一个网页条目。                                                                                                                                                                                                                       |
+| `nclient service web open <ref>`                  |                                                                                                                                                                               | 经条目的转发在浏览器里打开一个网页条目，打印 `opening` 和浏览器打开的回环地址，地址里不带令牌。打开失败时返回 1。                                                                                                                                  |
 | `nclient service port forward <ref>`              | `--local-port <port>` 是优先用的本机端口                                                                                                                                      | 把一个端口转发到本机回环地址。                                                                                                                                                                                                                     |
 | `nclient service port unforward <ref>`            |                                                                                                                                                                               | 关掉这个转发。                                                                                                                                                                                                                                     |
 | `nclient service file config <ref>`               | `--path <path>`（必填）是挂载位置：Linux 上是家目录下的文件夹，Windows 上是空闲的盘符，例如 `Z:`，macOS 上填任意值，挂载点由系统决定；`--username <name>`；密码在提示符下输入 | 保存共享的登录信息和挂载位置，然后挂载。                                                                                                                                                                                                           |
 | `nclient service file mount <ref>`                |                                                                                                                                                                               | 用保存的登录信息再挂一次共享。                                                                                                                                                                                                                     |
-| `nclient service file unmount <ref>`              |                                                                                                                                                                               | 卸载共享，登录信息留着。                                                                                                                                                                                                                           |
+| `nclient service file unmount <ref>`              |                                                                                                                                                                               | 共享正在挂载或卸载时，先等它做完，再卸载共享，登录信息留着。打印挂载点和 `unmounted`；卸载失败时返回 1。                                                                                                                                           |
 | `nclient service ai show`                         |                                                                                                                                                                               | 打印 AI 工具现在指向哪里。                                                                                                                                                                                                                         |
 | `nclient service ai apply hub`                    | 每个工具的模型，见表下                                                                                                                                                        | 让 AI 工具指向出口中枢的网关。                                                                                                                                                                                                                     |
 | `nclient service ai apply off`                    |                                                                                                                                                                               | 让 AI 工具回到原来的配置。                                                                                                                                                                                                                         |
@@ -80,12 +80,12 @@ nclient status
 ```
 
 ```text
-neutrino-client 0.5.2
+neutrino-client 0.6.0
 hub        hub  https://192.168.100.1:8443  Connected · LAN · 12 ms  exit
 resident   running
 ```
 
-每台中枢一行，以 `hub` 开头，后面是中枢的名字、通道上次连上的地址和状态行。状态行和窗口里那一行相同，用英文写：已连接时带通道走的路和往返时间；等待时写原因和剩下的秒数，例如 `The hub did not answer · retrying in 5 s`。`exit` 标出 AI 工具指向的中枢。最后一行是客户端自己，`running` 或 `not running; open it: nclient gui`。客户端在运行、而且每台中枢都已连接时返回 0，否则返回 1。
+每台中枢一行，以 `hub` 开头，后面是中枢的名字、通道上次连上的地址和状态行。状态行和窗口里那一行相同，用英文写：已连接时带通道走的路和往返时间；等待时写原因和剩下的秒数，例如 `The hub did not answer · retrying in 5 s`。Windows 上，这几行把 `·` 写成 `-`，把 `…` 写成 `...`，代码页 437 的控制台才显示得对。`exit` 标出 AI 工具指向的中枢。最后一行是客户端自己，`running` 或 `not running; open it: nclient gui`。客户端在运行、而且每台中枢都已连接时返回 0，否则返回 1。
 
 带 `--json` 时打印一个对象，返回值相同：
 
@@ -107,7 +107,7 @@ resident   running
     }
   ],
   "is_running": true,
-  "version": "0.5.2"
+  "version": "0.6.0"
 }
 ```
 

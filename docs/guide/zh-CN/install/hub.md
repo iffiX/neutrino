@@ -19,16 +19,18 @@ title: 安装中枢
 
 ## 选版本
 
-| 版本   | 发布在哪                                            | 有什么                                           |
-| ------ | --------------------------------------------------- | ------------------------------------------------ |
-| 完整版 | `github.com/iffiX/neutrino/releases`，每一版都保留  | 全部功能                                         |
-| 国内版 | `gitee.com/iffiX/neutrino/releases`，只保留最新一版 | 没有代理、NetBird 和旁路网关模式；下载走国内镜像 |
+| 版本   | 发布在哪                                            | 有什么                                 |
+| ------ | --------------------------------------------------- | -------------------------------------- |
+| 完整版 | `github.com/iffiX/neutrino/releases`，每一版都保留  | 全部功能                               |
+| 国内版 | `gitee.com/iffiX/neutrino/releases`，只保留最新一版 | 没有代理和旁路网关模式；下载走国内镜像 |
 
 国内版没有 `.rpm`、Arch 和 Intel Mac 的包，这些机器只能装完整版。
 
 ## 一条命令安装
 
-安装脚本按系统和处理器选出安装包，用 `SHA256SUMS` 核对后安装，只要一次管理员权限。中枢已经设置过时，脚本最后打印面板的地址。没设置过时，脚本接着运行 `nhub setup`：终端打印向导地址，最后一行是 `Press Enter to begin:`，命令保持运行。在浏览器里做完向导，终端打印 `The hub was set up in the browser; its panel is at` 和面板地址，命令随即结束。
+安装脚本按系统和处理器选出安装包，用 `SHA256SUMS` 核对后安装，只要一次管理员权限。每做完一步，脚本打印一行：安装包从哪里来，和 `SHA256SUMS` 核对通过，已经装好。
+
+中枢已经设置过时，脚本最后打印面板的地址。装过但没设置过的中枢也算没设置过。没设置过时，脚本接着运行 `nhub setup`：终端打印向导地址，最后一行是 `Press Enter to begin:`，命令保持运行。在浏览器里做完向导，终端打印 `The hub was set up in the browser; its panel is at` 和面板地址，命令随即结束。
 
 ### Linux 和 macOS
 
@@ -64,27 +66,27 @@ Windows 弹出一次授权框，脚本在新开的管理员窗口里接着运行
 
 ## 用包文件安装
 
-从发布页下载这台机器对应的文件，用系统自己的安装工具装。
+从发布页下载这台机器对应的文件，用系统自己的安装工具装。中枢装过、还没设置过时，装上新版本的包和第一次安装一样：新版本的设置向导启动，终端打印它的地址。
 
 ### Linux
 
 ::: code-group
 
 ```bash [Debian、Ubuntu、树莓派 OS]
-sudo apt install ./neutrino-hub_0.5.2_amd64.deb
+sudo apt install ./neutrino-hub_0.6.0_amd64.deb
 ```
 
 ```bash [Fedora]
-sudo dnf install ./neutrino-hub-0.5.2-1.x86_64.rpm
+sudo dnf install ./neutrino-hub-0.6.0-1.x86_64.rpm
 ```
 
 ```bash [RHEL、AlmaLinux、Rocky]
 sudo dnf install -y epel-release
-sudo dnf install ./neutrino-hub-0.5.2-1.x86_64.rpm
+sudo dnf install ./neutrino-hub-0.6.0-1.x86_64.rpm
 ```
 
 ```bash [Arch、EndeavourOS、Manjaro]
-sudo pacman -U neutrino-hub-0.5.2-1-x86_64.pkg.tar.zst
+sudo pacman -U neutrino-hub-0.6.0-1-x86_64.pkg.tar.zst
 ```
 
 :::
@@ -97,18 +99,18 @@ ARM64 机器用文件名带 `arm64` 或 `aarch64` 的包，Arch 的包只有 x86
 
 ### macOS
 
-Apple 芯片的 Mac 运行下面的命令，Intel 的 Mac 用 `neutrino-hub-0.5.2-macos-amd64.pkg`：
+Apple 芯片的 Mac 运行下面的命令，Intel 的 Mac 用 `neutrino-hub-0.6.0-macos-amd64.pkg`：
 
 ```bash
-sudo installer -pkg neutrino-hub-0.5.2-macos-arm64.pkg -target /
+sudo installer -pkg neutrino-hub-0.6.0-macos-arm64.pkg -target /
 ```
 
 ### Windows
 
-双击 `neutrino-hub-0.5.2-windows-amd64.msi`。静默安装时，在管理员 PowerShell 里运行：
+双击 `neutrino-hub-0.6.0-windows-amd64.msi`。静默安装时，在管理员 PowerShell 里运行：
 
 ```powershell
-msiexec /i neutrino-hub-0.5.2-windows-amd64.msi /qn
+msiexec /i neutrino-hub-0.6.0-windows-amd64.msi /qn
 ```
 
 安装程序把 `nhub` 加进系统的 `PATH`。

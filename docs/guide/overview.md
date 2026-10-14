@@ -30,7 +30,7 @@ At home, a client reaches the hub over your network. From outside, it uses a way
 
 - **Direct** needs a public IPv4 or IPv6 address at home and a port forward to port 8443 on the home router.
 - **SSH Relay** needs a server with a public address that you run, such as a rented VPS. Its public port leads to port 8443.
-- **NetBird** needs an account with a NetBird management server, such as netbird.io. The mainland edition leaves it out.
+- **NetBird** needs an account with a NetBird management server, such as netbird.io.
 - **EasyTier** needs an account on an EasyTier console, or the address of a machine already on your EasyTier network.
 
 Several ways in can be on at once, and a client uses whichever one reaches the hub. [Choose a way in](./scenarios/choose_a_way_in.md) compares them for your home.
