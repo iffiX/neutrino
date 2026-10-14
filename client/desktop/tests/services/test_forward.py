@@ -1,6 +1,8 @@
 """The local forwards: a listener on ``127.0.0.1`` at the entry's local port,
 one ``connect`` stream per accepted connection and no dial to a device
-address, a clean end when the forward, the stream or the socket goes; and
+address, a clean end when the forward, the stream or the socket goes, a
+forward that accepts nothing while its hub has no channel, stays bound and
+serves the waiting connections once the channel is back; and
 the one table of local ports: auto takes the entry's own port when nothing
 listens on it on any address of the machine, else the first free one from
 20000, kept per entry; a fixed number is kept; no number is held by two
@@ -178,7 +180,7 @@ def test_a_refused_stream_closes_the_connection_and_the_listener_stays(hub, forw
     assert forwards.port_of("h1", "db") == port
 
 
-def test_a_hub_that_is_not_connected_closes_the_connection(hub, forwards):
+def test_a_stream_that_cannot_open_closes_the_connection(hub, forwards):
     hub.error = GatewayUnreachable("this hub is not connected")
     port = forwards.ensure(hub_id="h1", entry_id="db", own_port=0, kind="port")
     client = socket.create_connection(("127.0.0.1", port), timeout=5)
@@ -191,6 +193,111 @@ def test_a_hub_that_is_not_connected_closes_the_connection(hub, forwards):
 
     assert answer == b""
     client.close()
+
+
+class HubChannel:
+    """One hub's channel, opened and closed by the test.
+
+    Attributes:
+        asked: The hubs a forward asked about.
+    """
+
+    def __init__(self):
+        self._open = threading.Event()
+        self.asked = set()
+
+    def open(self) -> None:
+        self._open.set()
+
+    def close(self) -> None:
+        self._open.clear()
+
+    def wait(self, hub_id: str, timeout_s: float) -> bool:
+        self.asked.add(hub_id)
+        return self._open.wait(timeout_s)
+
+
+def is_answered(client, wait_s: float) -> bool:
+    """Whether anything, an end included, comes back on a connection within a wait."""
+    client.settimeout(wait_s)
+    try:
+        client.recv(1, socket.MSG_PEEK)
+    except socket.timeout:
+        return False
+    return True
+
+
+def test_a_forward_accepts_nothing_while_its_hub_has_no_channel(hub):
+    channel = HubChannel()
+    registry = ForwardListenerRegistry(
+        open_connect=hub.open_connect, log=discard, wait_channel=channel.wait
+    )
+    port = registry.ensure(hub_id="h1", entry_id="db", own_port=0, kind="port")
+    waiting = socket.create_connection(("127.0.0.1", port), timeout=5)
+    waiting.sendall(b"queued")
+
+    assert is_answered(waiting, 0.5) is False
+    assert hub.opens == []
+    assert registry.port_of("h1", "db") == port
+    assert channel.asked == {"h1"}
+
+    channel.open()
+    waiting.settimeout(5)
+    assert waiting.recv(4096) == b"queued"
+    assert hub.opens == [("h1", {"id": "db"})]
+    waiting.close()
+    registry.release()
+
+
+def test_a_forward_stops_accepting_when_the_channel_drops_and_serves_once_it_is_back(
+    hub,
+):
+    channel = HubChannel()
+    channel.open()
+    registry = ForwardListenerRegistry(
+        open_connect=hub.open_connect, log=discard, wait_channel=channel.wait
+    )
+    port = registry.ensure(hub_id="h1", entry_id="db", own_port=0, kind="port")
+    assert round_trip(port, b"before") == b"before"
+
+    channel.close()
+    queued = [
+        socket.create_connection(("127.0.0.1", port), timeout=5) for _ in range(3)
+    ]
+    for index, client in enumerate(queued):
+        client.sendall(b"queued %d" % index)
+
+    assert not any(is_answered(client, 0.3) for client in queued)
+    assert len(hub.opens) == 1
+
+    channel.open()
+    for index, client in enumerate(queued):
+        client.settimeout(5)
+        assert client.recv(4096) == b"queued %d" % index
+        client.close()
+    assert len(hub.opens) == 4
+    registry.release()
+
+
+def test_a_closed_forward_waiting_for_its_channel_lets_its_port_go(hub):
+    channel = HubChannel()
+    registry = ForwardListenerRegistry(
+        open_connect=hub.open_connect, log=discard, wait_channel=channel.wait
+    )
+    port = registry.ensure(hub_id="h1", entry_id="db", own_port=0, kind="port")
+    waiting = socket.create_connection(("127.0.0.1", port), timeout=5)
+
+    assert registry.stop("h1", "db") is True
+
+    waiting.settimeout(5)
+    try:
+        answer = waiting.recv(4096)
+    except OSError:
+        answer = b""
+    assert answer == b""
+    waiting.close()
+    assert wait_for(lambda: is_port_free(port))
+    assert hub.opens == []
 
 
 def test_relay_socket_carries_one_connection_for_any_caller(hub, far):

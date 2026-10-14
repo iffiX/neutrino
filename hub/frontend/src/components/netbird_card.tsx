@@ -21,8 +21,7 @@ import "./netbird_card.css";
 
 /**
  * NetBird's card on the Access page: its settings, LAN route guidance, and
- * live peers. A file of its own, which the mainland edition leaves out; the
- * page finds it through `edition.ts`.
+ * live peers.
  */
 
 /** The product's own name, which is the same in every language. */

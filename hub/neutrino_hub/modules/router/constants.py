@@ -354,6 +354,22 @@ ROUTER_DHCP_OPTION_END = 255
 # anybody's files, and losing it costs one `systemctl unmask` by hand.
 ROUTER_STACK_RECORD_PATH = UTILS_STATE_ROOT / "stood_down.json"
 
+# --- the traffic history ---
+# The Dashboard's history: every interface's bytes but loopback's, by hour,
+# day and month, counted by the hub itself on every system.
+ROUTER_TRAFFIC_HISTORY_PATH = UTILS_STATE_ROOT / "traffic_history.json"
+ROUTER_TRAFFIC_READ_INTERVAL_S = 1
+ROUTER_TRAFFIC_WRITE_INTERVAL_S = 300
+# How long each period's totals are kept; older ones are dropped at a write.
+ROUTER_TRAFFIC_HOURS_KEPT_DAYS = 8
+ROUTER_TRAFFIC_DAYS_KEPT_MONTHS = 13
+ROUTER_TRAFFIC_MONTHS_KEPT_YEARS = 10
+# Two readings of the boot time this close are one boot: Windows works it out
+# from the uptime, and it moves by a second between two processes.
+ROUTER_TRAFFIC_BOOT_TIME_TOLERANCE_S = 5
+# Loopback, as Linux, macOS and Windows name it.
+ROUTER_TRAFFIC_LOOPBACK_NAMES = ("lo", "lo0", "Loopback Pseudo-Interface 1")
+
 # What the two files under `config/router/` are called, for the code that
 # reads them by name rather than through the panel's runtime.
 ROUTER_NETWORK_FILE = "router/network.json"

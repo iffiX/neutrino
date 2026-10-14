@@ -213,8 +213,7 @@ CLIENT_WINDOWS_EASYTIER_STATE = (
 # reads, and what an earlier build is made to have left there before the
 # install: each readable by every person, as ProgramData's grants make it.
 CLIENT_WINDOWS_DATA = PROGRAM_DATA / "Neutrino" / "client"
-CLIENT_WINDOWS_DATA_FOLDERS = ("", "state", "log")
-CLIENT_WINDOWS_DATA_NETBIRD = "state/netbird"
+CLIENT_WINDOWS_DATA_FOLDERS = ("", "state", "state/netbird", "log")
 CLIENT_WINDOWS_DATA_LEFTOVERS = ("log/earlier_build.log", "state/earlier_build.txt")
 # The relaunch tasks an upgrade starts, and the one the check plants in their
 # name: run as SYSTEM, it writes a marker, which shows the installer's last
@@ -958,9 +957,6 @@ def _check_client_windows_data() -> None:
             list under the data folder names an account every person is in.
     """
     paths = [CLIENT_WINDOWS_DATA / relative for relative in CLIENT_WINDOWS_DATA_FOLDERS]
-    netbird = CLIENT_WINDOWS_DATA / CLIENT_WINDOWS_DATA_NETBIRD
-    if netbird.is_dir():
-        paths.append(netbird)
     paths += [
         CLIENT_WINDOWS_DATA / relative for relative in CLIENT_WINDOWS_DATA_LEFTOVERS
     ]

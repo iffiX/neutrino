@@ -36,11 +36,13 @@ from neutrino_hub.modules.firewall.renderer import (
     render_programs,
 )
 from neutrino_hub.modules.firewall.windows_applier import FirewallWindowsApplier
+from neutrino_hub.modules.netbird.constants import NETBIRD_BINARY_PATH
 from neutrino_hub.modules.overlay.config import enabled_providers
 from neutrino_hub.modules.overlay.direct_config import direct_agent_port
 from neutrino_hub.modules.overlay.constants import (
     OVERLAY_EASYTIER,
     OVERLAY_ENGINES,
+    OVERLAY_NETBIRD,
 )
 from neutrino_hub.modules.router.constants import ROUTER_FAMILIES
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig, held_networks
@@ -260,7 +262,7 @@ def _programs(overlays: list) -> list:
         hub_program=hub_platform().hub_command()[0],
         xray_program=edition.hook("proxy_program") or "",
         overlay_programs={
-            **dict(edition.hooks("overlay_programs")),
+            OVERLAY_NETBIRD: str(NETBIRD_BINARY_PATH),
             OVERLAY_EASYTIER: str(EASYTIER_CORE_PATH),
         },
         overlays=overlays,

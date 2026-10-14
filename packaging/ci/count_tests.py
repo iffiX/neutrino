@@ -29,7 +29,7 @@ COUNT_PYTEST_INTEGRATION_DIR = "packaging/integration"
 COUNT_PYTEST_SUMMARY = re.compile(r"^(\d+) tests? collected", re.MULTILINE)
 # The Android app's test source sets; a missing one counts nothing.
 COUNT_ANDROID_SOURCE_DIR = "client/android/app/src"
-COUNT_ANDROID_TEST_SOURCE_SETS = ("test", "test_netbird", "androidTest")
+COUNT_ANDROID_TEST_SOURCE_SETS = ("test", "androidTest")
 COUNT_ANDROID_TEST_ANNOTATION = re.compile(r"^\s*@Test\b", re.MULTILINE)
 # The endpoint answer: https://shields.io/badges/endpoint-badge
 COUNT_BADGE_LABEL = "tests"

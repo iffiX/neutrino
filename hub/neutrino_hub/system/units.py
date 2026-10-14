@@ -3,7 +3,9 @@
 The templates ship inside the package and name two things the installation
 decides: the interpreter to run, and the checkout they run from. Both are
 filled in here, so an upgraded package's units land the next time anything
-makes the box true rather than only on a first setup.
+makes the box true rather than only on a first setup. An ordering that
+names the proxy's units names them where the tree carries the proxy and
+names none in a tree without it.
 """
 
 from neutrino_hub import edition
@@ -40,6 +42,8 @@ SYSTEM_UNIT_CHECKOUT_LINES = (
 # of it: matching an exact path left two units naming @REPO_ROOT@ literally.
 SYSTEM_UNIT_DOCUMENTATION_PREFIX = "Documentation=file://@REPO_ROOT@"
 SYSTEM_UNIT_DOCUMENTATION_URL = "Documentation=https://github.com/iffiX/neutrino"
+# Where an ordering line names the proxy's units, with the space after them.
+SYSTEM_UNIT_PROXY_UNITS = "@PROXY_UNITS@ "
 
 
 class SystemdUnitInstaller:
@@ -87,6 +91,10 @@ class SystemdUnitInstaller:
         Returns:
             The unit to write.
         """
+        template = template.replace(
+            SYSTEM_UNIT_PROXY_UNITS,
+            "".join(f"{name} " for name in edition.hooks("unit_templates")),
+        )
         if not is_packaged():
             return template.replace("@REPO_ROOT@", str(checkout_root())).replace(
                 "@PYTHON@", python_path

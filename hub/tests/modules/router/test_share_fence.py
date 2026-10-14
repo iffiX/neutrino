@@ -28,7 +28,6 @@ def test_a_router_fences_its_shares_to_the_served_lan():
     assert subnets == ["192.168.100.0/24"]
 
 
-@pytest.mark.feature("netbird")
 def test_an_exposed_overlay_is_allowed_where_the_firewall_already_lets_it_in():
     network = network_config(lan_entry("enp1s0", address="192.168.100.1"))
 

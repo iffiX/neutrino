@@ -61,14 +61,15 @@ from neutrino_hub.web.routers.hub import (
     overlay,
     overlay_direct,
     overlay_easytier,
+    overlay_netbird,
     overlay_relay,
     service,
     setting,
 )
 from neutrino_hub.web.routers.hub import client as hub_client
 
-# The hub group in sidebar order, then the agent group. NetBird's and the
-# proxy's routers come from the edition table.
+# The hub group in sidebar order, then the agent group. The proxy's routers
+# come from the edition table.
 API_ROUTERS = (
     auth.router,
     display.router,
@@ -78,6 +79,7 @@ API_ROUTERS = (
     overlay_direct.router,
     overlay_easytier.router,
     overlay_relay.router,
+    overlay_netbird.router,
     *edition.hooks("api_routers"),
     ai.router,
     ai_gateway.router,
@@ -275,7 +277,7 @@ def _start_samplers() -> None:
     the interfaces are doing, and, with the proxy, what every exit node
     measures. Each
     publishes an event when its reading moves, so no page has to ask on a
-    timer.
+    timer. The traffic history counts every interface's bytes beside them.
     """
     global _usage_collector
     runtime = shared_runtime()
@@ -287,9 +289,16 @@ def _start_samplers() -> None:
         _usage_collector.start()
     runtime.link_sampler.start()
     runtime.address_sampler.start()
+    runtime.traffic_history.start()
     if runtime.proxy is not None:
         runtime.proxy.start()
     runtime.relay_monitor.start()
+
+
+def stop_samplers() -> None:
+    """Write the traffic history, as the panel stops."""
+    if _shared_runtime is not None:
+        _shared_runtime.traffic_history.stop()
 
 
 def _mount_frontend(app: FastAPI) -> None:

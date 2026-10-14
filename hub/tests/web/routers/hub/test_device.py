@@ -1170,6 +1170,69 @@ def test_installing_on_a_scan_row_stores_it_under_an_id_of_its_own(
     assert tickets[-1]["device_id"] == adopted.id
 
 
+# --- add by address: one request stores the row and starts the install ---
+
+ADDED_HOST = "192.168.100.40"
+
+
+def add(client, **fields):
+    body = {"host": ADDED_HOST, "port": 22, "username": "iffi", **fields}
+    return client.post(f"{DEVICE_PATH}/add", json=body)
+
+
+def added_rows() -> list:
+    return [d for d in DeviceRegistry().all_stored() if d.name != "xenode"]
+
+
+def test_adding_by_address_stores_a_row_by_its_host_and_starts_the_install(
+    install_api, monkeypatch
+):
+    client, tmp_path, _ = install_api
+    captured = ready(monkeypatch, tmp_path)
+    login_id = stored_login()
+
+    started = add(client, login_id=login_id)
+
+    assert started.status_code == 200
+    assert started.json()["task_id"]
+    (row,) = added_rows()
+    assert row.name is None
+    assert row.mac_addresses == []
+    assert row.ssh["host"] == ADDED_HOST
+    assert row.ssh["login_id"] == login_id
+    assert captured["credentials"].host == ADDED_HOST
+    (ticket,) = InstallRuntime.instance.enrollments.entries()
+    assert (ticket["device_id"], ticket["name"]) == (row.id, "")
+
+
+@pytest.mark.parametrize(
+    ("kernel", "has_package", "fields", "code"),
+    [
+        ("Linux", True, {}, "install_credentials_invalid"),
+        ("Linux", True, {"login_id": "absent"}, "unknown_credential"),
+        ("Darwin", True, None, "unsupported_remote_install"),
+        ("Linux", False, None, "agent_package_missing"),
+    ],
+)
+def test_a_refused_add_leaves_no_row(
+    install_api, monkeypatch, kernel, has_package, fields, code
+):
+    client, tmp_path, _ = install_api
+    if has_package:
+        hub_carries_a_package(tmp_path, monkeypatch)
+    probe_answers(monkeypatch, 0, kernel)
+    capture_install(monkeypatch)
+
+    refused = add(
+        client, **({"login_id": stored_login()} if fields is None else fields)
+    )
+
+    assert refused.status_code in (400, 409)
+    assert refused.json()["detail"]["code"] == code
+    assert added_rows() == []
+    assert InstallRuntime.instance.tasks.streams() == []
+
+
 # --- the reinstall ---
 
 

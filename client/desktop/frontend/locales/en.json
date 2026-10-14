@@ -166,6 +166,8 @@
   "ui.menu.paste": "Paste",
   "ui.menu.select_all": "Select all",
   "ui.module_ai_gateway": "AI gateway",
+  "ui.module_title.remote_desktop": "Remote desktop",
+  "ui.module_title.samba": "File share",
   "ui.mount": "Mount",
   "ui.mount_drive_caption": "Appears as this drive in File Explorer",
   "ui.mount_drive_label": "Drive",

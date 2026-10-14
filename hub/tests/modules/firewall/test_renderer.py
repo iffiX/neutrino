@@ -98,7 +98,6 @@ def test_the_segments_are_the_exposed_interfaces_networks_and_the_overlays():
     assert exposure.link_local_devices == ["en0"]
 
 
-@pytest.mark.feature("netbird")
 def test_a_running_engines_peer_port_opens_whatever_its_chip():
     exposure = exposure_of(
         server(
@@ -143,7 +142,6 @@ def test_direct_opens_the_agent_port_on_the_enabled_interfaces_holding_an_addres
 
 
 @pytest.mark.feature("proxy")
-@pytest.mark.feature("netbird")
 def test_windows_has_one_rule_per_purpose_naming_the_segments_as_remote_addresses():
     rules = render_port_rules(
         exposure_of(server(EN0_OPEN, EN1_CLOSED, overlays=[{"provider": "netbird"}]))
@@ -190,7 +188,6 @@ def test_windows_direct_takes_any_remote_address_on_the_enabled_interfaces():
 # --- macOS ---
 
 
-@pytest.mark.feature("netbird")
 def test_the_pf_anchor_passes_loopback_and_the_segments_and_blocks_the_rest():
     anchor = render_pf_anchor(
         exposure_of(server(EN0_OPEN, EN1_CLOSED, overlays=[{"provider": "netbird"}]))
@@ -257,7 +254,6 @@ def test_macos_allows_the_hub_xray_and_the_enabled_overlays_daemons():
 # --- firewalld ---
 
 
-@pytest.mark.feature("netbird")
 def test_firewalld_gets_a_rich_rule_per_network_and_hub_port_in_each_zone():
     network = network_config(
         wan_entry("en2"),

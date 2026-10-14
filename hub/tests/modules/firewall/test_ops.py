@@ -105,7 +105,6 @@ def recorder(monkeypatch):
 
 
 @pytest.mark.feature("proxy")
-@pytest.mark.feature("netbird")
 def test_windows_opens_the_ports_the_settings_name(on_windows, recorder, monkeypatch):
     stored = {"web/settings.json": {"listen_port": 9080, "https_listen_port": 9443}}
     monkeypatch.setattr(ops, "read_config", lambda name: stored[name])
@@ -143,7 +142,6 @@ def test_windows_before_setup_opens_the_default_ports(
 
 
 @pytest.mark.feature("proxy")
-@pytest.mark.feature("netbird")
 def test_windows_answers_the_exposed_segments_and_overlays_by_remote_address(
     on_windows, recorder, monkeypatch
 ):
@@ -162,7 +160,6 @@ def test_windows_answers_the_exposed_segments_and_overlays_by_remote_address(
     assert not any("10.144" in str(rule) for rule in rules)
 
 
-@pytest.mark.feature("netbird")
 def test_macos_passes_the_hub_ports_from_the_segments_and_blocks_the_rest(
     on_darwin, recorder, monkeypatch
 ):
@@ -191,7 +188,6 @@ def test_the_kept_anchor_is_loaded_again_on_macos_only(elsewhere, recorder):
         assert recorder.handed == []
 
 
-@pytest.mark.feature("netbird")
 @pytest.mark.feature("proxy")
 def test_macos_allows_the_programs_of_the_enabled_overlays(
     on_darwin, recorder, monkeypatch
@@ -241,7 +237,6 @@ def test_a_new_ipv6_prefix_moves_the_set_and_a_rotated_address_does_not(
     assert ops.is_network_set_moved() is True
 
 
-@pytest.mark.feature("netbird")
 @pytest.mark.feature("proxy")
 def test_a_reset_takes_everything_away(elsewhere, recorder):
     from neutrino_hub.modules.netbird.constants import NETBIRD_BINARY_PATH
@@ -268,7 +263,6 @@ def test_a_reset_takes_everything_away(elsewhere, recorder):
 
 
 @pytest.mark.feature("proxy")
-@pytest.mark.feature("netbird")
 def test_direct_opens_the_agent_port_alone_on_windows_enabled_interfaces(
     on_windows, recorder, monkeypatch
 ):
@@ -285,7 +279,6 @@ def test_direct_opens_the_agent_port_alone_on_windows_enabled_interfaces(
     assert by_name["neutrino_hub_panel_https"].remote_addresses == SEGMENTS
 
 
-@pytest.mark.feature("netbird")
 def test_direct_passes_the_agent_port_from_any_address_on_macos(
     on_darwin, recorder, monkeypatch
 ):

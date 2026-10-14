@@ -64,6 +64,7 @@ from neutrino_hub.web.constants import (
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
 from neutrino_hub.web.models import (
+    DeviceAddRequest,
     DeviceAgentInstallRequest,
     DeviceAnnotation,
     DeviceClientErrorView,
@@ -778,6 +779,61 @@ async def install_agent(
             hub carries no agent package.
     """
     device = _require_device(DeviceRegistry(), request.device_id)
+    return await _start_agent_install(runtime, device, request)
+
+
+@router.post("/add", response_model=TaskStarted)
+async def add_device(
+    request: DeviceAddRequest,
+    runtime: PanelRuntime = Depends(get_runtime),
+) -> TaskStarted:
+    """Store a machine by the host a person typed and put the agent on it
+    over SSH, as a task.
+
+    The row is stored with no name and the typed host as its SSH host, and
+    the machine's join names it. A request refused before the task starts
+    leaves no row.
+
+    Args:
+        request: The host and how to reach the machine.
+        runtime: The shared runtime.
+
+    Returns:
+        A task id the browser streams output from.
+
+    Raises:
+        HTTPException: 400 for an install naming no single credential, 409
+            when the install's pre-flight finds a device that is not Linux
+            (``{"code": "unsupported_remote_install", "os": ...}``) or the
+            hub carries no agent package.
+    """
+    device = DeviceRegistry().create(None)
+    try:
+        return await _start_agent_install(runtime, device, request)
+    except Exception:
+        DeviceRegistry().forget(device.id)
+        raise
+
+
+async def _start_agent_install(
+    runtime: PanelRuntime, device: ManagedDevice, request: DeviceAddRequest
+) -> TaskStarted:
+    """Start the agent's install over SSH on one device, as a task.
+
+    Args:
+        runtime: The shared runtime.
+        device: The device, a scan row or a stored one.
+        request: How to reach the machine.
+
+    Returns:
+        A task id the browser streams output from; the one already running
+        on this device, when an install is under way.
+
+    Raises:
+        HTTPException: 400 for an install naming no single credential, 409
+            when the install's pre-flight finds a device that is not Linux
+            or the hub carries no agent package.
+    """
     label = WEB_TASK_LABEL_AGENT_INSTALL.format(device_id=device.id)
     running = runtime.tasks.running(label)
     if running is not None:
@@ -933,9 +989,7 @@ def _start_task(runtime: PanelRuntime, label: str, source) -> TaskStarted:
     return TaskStarted(task_id=stream.id)
 
 
-def _install_credentials(
-    device: ManagedDevice, request: DeviceAgentInstallRequest
-) -> tuple:
+def _install_credentials(device: ManagedDevice, request: DeviceAddRequest) -> tuple:
     """Store the install's SSH block and open the credentials it names.
 
     Exactly one credential source is taken: a stored key, a stored login,
@@ -1004,7 +1058,7 @@ def _install_credentials(
     return device, credentials
 
 
-def _sudo_material(request: DeviceAgentInstallRequest) -> "str | None":
+def _sudo_material(request: DeviceAddRequest) -> "str | None":
     """The password sudo is fed on the device for this install.
 
     Args:

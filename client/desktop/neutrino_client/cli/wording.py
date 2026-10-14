@@ -14,6 +14,7 @@ the several a person has joined.
 from __future__ import annotations
 
 import getpass
+import os
 import re
 import sys
 
@@ -245,6 +246,26 @@ CLIENT_MOUNT_STATE_WORDS = {
     "mounted": "mounted",
     "detached": "not mounted",
 }
+
+# Whether the commands print to a Windows console, and what they print there
+# in place of two characters of the window's words, which a console reading
+# in code page 437 garbles.
+CLIENT_IS_WINDOWS_CONSOLE = os.name == "nt"
+CLIENT_WINDOWS_CONSOLE_TEXT = str.maketrans({"·": "-", "…": "..."})
+
+
+def console_text(text: str) -> str:
+    """A line as this system's console shows it.
+
+    Args:
+        text: The line.
+
+    Returns:
+        The line; on Windows with ``-`` for ``·`` and ``...`` for ``…``.
+    """
+    if not CLIENT_IS_WINDOWS_CONSOLE:
+        return text
+    return text.translate(CLIENT_WINDOWS_CONSOLE_TEXT)
 
 
 def word_code(code: str, params: "dict | None" = None) -> str:

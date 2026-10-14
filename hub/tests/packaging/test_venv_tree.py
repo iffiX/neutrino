@@ -358,6 +358,7 @@ def _expected_licenses(os_name, *, is_agent_carried):
     names = {
         "cliproxyapi.txt",
         "easytier.txt",
+        "netbird.txt",
         "xterm.txt",
         "qrcode_generator.txt",
         "meslolgs_nf.txt",
@@ -373,8 +374,6 @@ def _expected_licenses(os_name, *, is_agent_carried):
         names |= {"xray_core.txt", "v2fly_geoip.txt", "v2fly_domain_list_community.txt"}
         if os_name != "linux":
             names.add("tun2socks.txt")
-    if edition.has_feature("netbird"):
-        names.add("netbird.txt")
     return names
 
 

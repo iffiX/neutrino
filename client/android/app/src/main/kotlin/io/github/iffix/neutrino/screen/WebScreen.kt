@@ -126,7 +126,7 @@ private fun hostOf(url: String): String = try {
 private fun WebScreenPreview() {
     PreviewHubs.Frame(
         mapOf(
-            "ui.machine_provided_by" to "由 {hub}:{device} 提供",
+            "ui.provided_by" to "由 {hub}:{device}:{module} 提供",
             "ui.open" to "打开",
             "ui.configure" to "配置",
         ),

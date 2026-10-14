@@ -28,7 +28,6 @@ def test_the_0_4_shape_reads_as_that_one_on_and_the_others_off():
     assert enabled_providers(network) == [OVERLAY_EASYTIER]
 
 
-@pytest.mark.feature("netbird")
 def test_the_0_4_shape_is_written_back_in_the_new_one():
     network = config([{"provider": OVERLAY_NETBIRD}])
 
@@ -37,7 +36,6 @@ def test_the_0_4_shape_is_written_back_in_the_new_one():
     ]
 
 
-@pytest.mark.feature("netbird")
 def test_a_configuration_older_than_overlays_keeps_what_the_firewall_did():
     network = RouterNetworkConfig.from_dict({"mode": "router"})
 
@@ -45,7 +43,6 @@ def test_a_configuration_older_than_overlays_keeps_what_the_firewall_did():
     assert network.overlays[0].is_exposed
 
 
-@pytest.mark.feature("netbird")
 def test_both_engines_run_at_once_in_the_engine_order():
     network = config(
         [
@@ -65,7 +62,6 @@ def test_turning_an_engine_on_adds_an_open_row():
     assert network.overlays[0].is_exposed is True
 
 
-@pytest.mark.feature("netbird")
 def test_a_second_engine_joins_the_first_in_the_engine_order():
     network = config([{"provider": OVERLAY_EASYTIER}])
 
@@ -78,7 +74,6 @@ def test_a_second_engine_joins_the_first_in_the_engine_order():
     assert enabled_providers(network) == [OVERLAY_NETBIRD, OVERLAY_EASYTIER]
 
 
-@pytest.mark.feature("netbird")
 def test_turning_an_engine_off_keeps_its_row_and_its_exposure():
     network = config([{"provider": OVERLAY_NETBIRD, "is_exposed": False}])
 
@@ -103,7 +98,6 @@ def test_an_engine_that_is_off_takes_no_device():
     assert network.overlay(OVERLAY_NETBIRD) is None
 
 
-@pytest.mark.feature("netbird")
 def test_setting_what_is_already_stored_changes_nothing():
     network = config([{"provider": OVERLAY_NETBIRD}])
 

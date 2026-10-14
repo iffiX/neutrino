@@ -83,6 +83,7 @@ class StubRuntime:
         self.served_models = None
         self.link_sampler = StubLinkSampler()
         self.address_sampler = StubLinkSampler()
+        self.traffic_history = StubLinkSampler()
         self.proxy = StubExitController()
         self.relay_monitor = StubExitController()
 

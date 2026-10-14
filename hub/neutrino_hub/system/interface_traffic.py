@@ -1,12 +1,10 @@
 """Reading the live byte counters of this machine's own interfaces.
 
-The long-term view of the same traffic comes from vnstat
-(:mod:`neutrino_hub.system.vnstat_history`); this is the reading between two
-ticks. It is taken straight out of ``/proc`` rather than by running ``ip``,
-because the dashboard asks for it once a second for every open panel and a
-subprocess per frame is a cost this number does not carry. On macOS and
-Windows the counters come from psutil, and the default route from
-:func:`system_default_routes`.
+The live chart and the traffic history
+(:mod:`neutrino_hub.modules.router.traffic_history`) read them once a second.
+On Linux they come straight out of ``/proc`` rather than from ``ip``, so a
+reading costs no subprocess. On macOS and Windows the counters come from
+psutil, and the default route from :func:`system_default_routes`.
 """
 
 from pathlib import Path
@@ -49,30 +47,39 @@ def interface_counters(name: str) -> tuple[int, int] | None:
     """
     if not name:
         return None
+    return all_interface_counters().get(name)
+
+
+def all_interface_counters() -> dict[str, tuple[int, int]]:
+    """Total bytes every interface has received and sent since it came up.
+
+    Returns:
+        Interface name to ``(received_bytes, sent_bytes)``; a line that does
+        not parse is left out, and an unreadable table reads as empty.
+    """
     if not is_linux():
-        counters = psutil.net_io_counters(pernic=True).get(name)
-        if counters is None:
-            return None
-        return counters.bytes_recv, counters.bytes_sent
+        return {
+            name: (counters.bytes_recv, counters.bytes_sent)
+            for name, counters in psutil.net_io_counters(pernic=True).items()
+        }
     try:
         table = PROC_NET_DEV.read_text(encoding="utf-8")
     except OSError:
-        return None
+        return {}
+    found = {}
     for line in table.splitlines():
         label, separator, counters = line.partition(":")
-        if not separator or label.strip() != name:
-            continue
         fields = counters.split()
-        if len(fields) <= DEV_SENT_BYTES_FIELD:
-            return None
+        if not separator or len(fields) <= DEV_SENT_BYTES_FIELD:
+            continue
         try:
-            return (
+            found[label.strip()] = (
                 int(fields[DEV_RECEIVED_BYTES_FIELD]),
                 int(fields[DEV_SENT_BYTES_FIELD]),
             )
         except ValueError:
-            return None
-    return None
+            continue
+    return found
 
 
 def default_route_interface() -> str:

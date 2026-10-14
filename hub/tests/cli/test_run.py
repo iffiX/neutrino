@@ -45,10 +45,11 @@ class FakeServer:
 @pytest.fixture
 def served(monkeypatch):
     """Run ``_serve_panel`` with every effect recorded instead of made."""
-    recorded = {"servers": [], "watched": []}
+    recorded = {"servers": [], "watched": [], "steps": []}
 
     def serve_together(servers):
         recorded["servers"] = servers
+        recorded["steps"].append("served")
 
     def asyncio_run(awaited):
         return awaited
@@ -68,6 +69,9 @@ def served(monkeypatch):
     monkeypatch.setattr(run, "_configured_agent_port", lambda: 8443)
     monkeypatch.setattr(run, "watch_served_context", recorded["watched"].append)
     monkeypatch.setattr(run, "_agent_port_guard", lambda: "guard")
+    monkeypatch.setattr(
+        run, "_stop_samplers", lambda: recorded["steps"].append("samplers stopped")
+    )
     monkeypatch.setattr(
         run, "agent_port_context", lambda cert, key: f"context of {cert} {key}"
     )
@@ -90,6 +94,14 @@ def test_three_servers_each_on_its_own_port(served, monkeypatch):
         run.AGENT_APPLICATION_PATH,
     ]
     assert [config.keywords["port"] for config in configs] == [80, 443, 8443]
+
+
+def test_the_samplers_stop_once_the_servers_have(served, monkeypatch):
+    monkeypatch.setattr(run, "_panel_certificate", dict)
+
+    run._serve_panel(arguments())
+
+    assert served["steps"] == ["served", "samplers stopped"]
 
 
 def test_only_the_https_and_agent_ports_speak_tls(served, monkeypatch):
@@ -188,7 +200,7 @@ class _Controller:
 
 @pytest.fixture
 def service_roots(monkeypatch, tmp_path):
-    for name in ("UTILS_LOG_ROOT", "UTILS_RUNTIME_ROOT"):
+    for name in ("UTILS_LOG_ROOT", "UTILS_RUNTIME_ROOT", "NETBIRD_HUB_STATE_DIR"):
         monkeypatch.setattr(run, name, tmp_path / name.lower())
     monkeypatch.setattr(run, "CLIPROXYAPI_DIR", tmp_path / "state" / "cliproxyapi")
     monkeypatch.setattr(run, "reload_firewall", lambda: None)
@@ -230,6 +242,7 @@ def test_the_service_serves_the_panel_and_supervises_the_children(
         ("shutdown",),
     ]
     assert (service_roots / "utils_runtime_root").is_dir()
+    assert (service_roots / "netbird_hub_state_dir").is_dir()
 
 
 @pytest.mark.feature("proxy")
@@ -291,10 +304,12 @@ def test_the_ai_gateway_starts_in_its_own_directory():
     assert line.cwd == str(run.CLIPROXYAPI_DIR)
 
 
-@pytest.mark.feature("proxy")
-@pytest.mark.feature("netbird")
-def test_the_service_runs_the_proxy_core_and_netbird_where_the_tree_carries_them():
-    assert sorted(run.child_start_lines()) == ["cliproxyapi", "netbird", "xray"]
+def test_the_service_runs_netbird_and_the_proxy_core_where_the_tree_carries_it():
+    assert sorted(run.child_start_lines()) == [
+        "cliproxyapi",
+        "netbird",
+        *(["xray"] if edition.has_feature("proxy") else []),
+    ]
 
 
 @pytest.mark.feature("proxy")

@@ -8,6 +8,7 @@ printed, the exit status, the bodies posted, and that a share password
 reaches the resident through the terminal and never argv.
 """
 
+import functools
 import sys
 
 import pytest
@@ -113,13 +114,30 @@ MOUNTED_ROW = {
 }
 
 
+WEB_FORWARD_PORT = 21001
+
+
 class FakeServiceResident(FakeResident):
-    """The resident with every service type published by one hub and reacting."""
+    """The resident with every service type published by one hub and reacting.
+
+    A web open and an unmount run as the entry's job, as the resident runs
+    them: the job shows on two more reads of the state, and what it does is
+    true from the read after.
+
+    Attributes:
+        jobs: Service key to ``(job, reads_left, end)``: the job's word,
+            how many more reads show it, and what its end does.
+        errors: Service key to the failure its last job ended in.
+        os_name: The system the state's platform names.
+    """
 
     def __init__(self, *, platform=None):
         super().__init__(platform=platform)
         self.hubs_value = [dict(HUB_ROW)]
         self.forward_ports = {}
+        self.jobs = {}
+        self.errors = {}
+        self.os_name = "linux"
         self.states = {
             "mounts": [],
             "ai": {
@@ -141,10 +159,35 @@ class FakeServiceResident(FakeResident):
             entries += with_hub([OFFICE_AI_ENTRY], "h2")
         return entries
 
+    def platform_tuple(self) -> dict:
+        return dict(super().platform_tuple(), os=self.os_name)
+
+    def entry_rows(self) -> list:
+        for key, (job, reads_left, end) in list(self.jobs.items()):
+            if reads_left:
+                self.jobs[key] = (job, reads_left - 1, end)
+            else:
+                del self.jobs[key]
+                end()
+        rows = super().entry_rows()
+        for row in rows:
+            key = f"{row['hub_id']}/{row['id']}"
+            row["job"] = self.jobs[key][0] if key in self.jobs else ""
+            row["last_error"] = self.errors.get(key)
+        return rows
+
+    def run_job(self, key: str, job: str, end) -> None:
+        """Start one entry's job, its failure cleared as a press clears it."""
+        self.errors.pop(key, None)
+        self.jobs[key] = (job, 2, end)
+
     def service_action(self, service_type, body) -> dict:
         outcome = super().service_action(service_type, body)
         if outcome:
             return outcome
+        if service_type == "web":
+            key = f"{body.get('hub_id')}/{body.get('id')}"
+            self.run_job(key, "opening", functools.partial(self._forward_web, key))
         if service_type == "port":
             key = f"{body.get('hub_id')}/{body.get('id')}"
             if body.get("is_enabled"):
@@ -171,15 +214,33 @@ class FakeServiceResident(FakeResident):
                     }
                 )
         if service_type == "file" and body.get("action") == "unmount":
+            record_id = str(body.get("record_id"))
             for row in self.states["mounts"]:
-                if row.get("record_id") == body.get("record_id"):
-                    row["state"] = "detached"
-                    row["is_attached"] = False
+                if row.get("record_id") == record_id:
+                    key = f"{row['hub_id']}/{row['entry_id']}"
+                    self.run_job(
+                        key, "unmounting", functools.partial(self._detach, record_id)
+                    )
         if service_type == "ai":
             self.states["ai"]["is_enabled"] = bool(body.get("is_enabled"))
             self.states["ai"]["is_active"] = bool(body.get("is_enabled"))
             self.states["ai_tool_configs"] = dict(body.get("tool_configs") or {})
         return {}
+
+    def _forward_web(self, key: str) -> None:
+        self.forward_ports[key] = WEB_FORWARD_PORT
+
+    def _attach(self, record_id: str) -> None:
+        for row in self.states["mounts"]:
+            if row.get("record_id") == record_id:
+                row["state"] = "mounted"
+                row["is_attached"] = True
+
+    def _detach(self, record_id: str) -> None:
+        for row in self.states["mounts"]:
+            if row.get("record_id") == record_id:
+                row["state"] = "detached"
+                row["is_attached"] = False
 
 
 class FakeGetpass:
@@ -205,6 +266,7 @@ def stack(monkeypatch, config_path):
     )
     assert server.start()
     monkeypatch.setattr(wording, "detect_platform", lambda: platform)
+    monkeypatch.setattr(service_cli, "SERVICE_JOB_POLL_S", 0.01)
     bind(config_path)
     yield resident
     server.stop()
@@ -383,7 +445,39 @@ def test_web_open_resolves_by_number_and_by_id(stack, capsys):
     assert service_cli.main_web_open("svc_wiki") == 0
 
     assert stack.service_calls == [("web", {"hub_id": "h1", "id": "svc_wiki"})] * 2
-    assert "opening http://wiki/" in capsys.readouterr().out
+
+
+def test_web_open_prints_the_address_the_browser_opens_once_its_job_ends(stack, capsys):
+    assert service_cli.main_web_open("1") == 0
+
+    out = capsys.readouterr().out
+    assert out == f"opening http://svc-wiki.localhost:{WEB_FORWARD_PORT}/\n"
+    assert stack.jobs == {}
+
+
+def test_web_open_on_a_mac_prints_the_loopback(stack, capsys):
+    stack.os_name = "darwin"
+
+    assert service_cli.main_web_open("1") == 0
+
+    assert capsys.readouterr().out == f"opening http://127.0.0.1:{WEB_FORWARD_PORT}/\n"
+
+
+def test_web_open_that_failed_says_why(stack, capsys, monkeypatch):
+    real = stack.service_action
+
+    def refuse(service_type, body):
+        answer = real(service_type, body)
+        stack.errors["h1/svc_wiki"] = {"code": "port_taken", "params": {"port": 80}}
+        return answer
+
+    monkeypatch.setattr(stack, "service_action", refuse)
+
+    assert service_cli.main_web_open("1") == 1
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert wording.word_code("port_taken", {"port": 80}) in captured.err
 
 
 def test_web_open_refuses_an_unhealthy_entry(stack, capsys):
@@ -566,19 +660,53 @@ def test_file_unmount_detaches_and_words_the_record(stack, capsys):
 
 def test_an_unmount_the_system_refused_says_why(stack, capsys, monkeypatch):
     stack.states["mounts"].append(dict(MOUNTED_ROW))
+
+    def refuse(_record_id: str) -> None:
+        stack.errors["h1/share_media"] = {
+            "code": "unmount_failed",
+            "params": {"detail": "target is busy"},
+        }
+
+    monkeypatch.setattr(stack, "_detach", refuse)
+
+    assert service_cli.main_file_unmount("1") == 1
+
+    captured = capsys.readouterr()
+    assert "target is busy" in captured.err
+    assert wording.CLIENT_MOUNT_UNMOUNTED_WORD not in captured.out
+
+
+def test_an_unmount_asked_while_the_mount_starts_waits_for_it_then_unmounts(
+    stack, capsys, monkeypatch
+):
+    stack.states["mounts"].append(
+        dict(MOUNTED_ROW, is_attached=False, state="mounting")
+    )
+    stack.jobs["h1/share_media"] = (
+        "mounting",
+        3,
+        functools.partial(stack._attach, "r1"),
+    )
     real = stack.service_action
+    seen = []
 
-    def refuse(service_type, body):
-        answer = real(service_type, body)
-        for row in stack.states["mounts"]:
-            row.update(is_attached=True, code="unmount_failed", params={})
-        return answer
+    def press(service_type, body):
+        seen.append(stack.states["mounts"][0]["state"])
+        return real(service_type, body)
 
-    monkeypatch.setattr(stack, "service_action", refuse)
+    monkeypatch.setattr(stack, "service_action", press)
 
     assert service_cli.main_file_unmount("1") == 0
 
-    assert wording.CLIENT_MOUNT_UNMOUNTED_WORD not in capsys.readouterr().out
+    assert seen == ["mounted"]
+    assert stack.service_calls == [
+        ("file", {"hub_id": "h1", "action": "unmount", "record_id": "r1"})
+    ]
+    assert capsys.readouterr().out.splitlines() == [
+        "/home/alice/nas/media: mounting",
+        "/home/alice/nas/media: unmounted",
+    ]
+    assert stack.states["mounts"][0]["is_attached"] is False
 
 
 def test_a_failed_record_is_worded_from_its_code(stack, capsys):

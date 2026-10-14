@@ -11,7 +11,6 @@ NetBird's first.
 
 import pytest
 
-from neutrino_hub import edition
 from neutrino_hub.modules.easytier.config import EasyTierConfig
 from neutrino_hub.modules.easytier.ops import EASYTIER_CONFIG_NAME, EasyTierInstance
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
@@ -63,10 +62,9 @@ def box(monkeypatch, tmp_path):
     config_dir = tmp_path / "config"
     config_dir.mkdir()
     monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", config_dir)
-    if edition.has_feature("netbird"):
-        monkeypatch.setattr(
-            "neutrino_hub.modules.netbird.overlay_part.NetbirdStatusReader", FakeReader
-        )
+    monkeypatch.setattr(
+        "neutrino_hub.modules.netbird.overlay_part.NetbirdStatusReader", FakeReader
+    )
     monkeypatch.setattr(channel_overlay, "EasyTierStatusReader", FakeInstances)
     addresses = {"enp1s0": "192.168.100.1/24", "enp2s0": "203.0.113.7/24"}
     monkeypatch.setattr(channel_overlay, "device_addresses", lambda: dict(addresses))
@@ -118,7 +116,6 @@ def material_of(runtime) -> "dict | None":
     return materials[0] if materials else None
 
 
-@pytest.mark.feature("netbird")
 def test_two_overlays_hand_two_objects_netbird_first(box):
     keep_setup_key()
     store_network()
@@ -128,7 +125,6 @@ def test_two_overlays_hand_two_objects_netbird_first(box):
     assert [material["provider"] for material in materials] == ["netbird", "easytier"]
 
 
-@pytest.mark.feature("netbird")
 def test_an_overlay_with_nothing_to_join_is_left_out_of_two(box):
     store_network()
 
@@ -137,7 +133,6 @@ def test_an_overlay_with_nothing_to_join_is_left_out_of_two(box):
     assert [material["provider"] for material in materials] == ["easytier"]
 
 
-@pytest.mark.feature("netbird")
 def test_netbird_hands_its_key_its_plane_and_the_hubs_name(box):
     keep_setup_key("https://nb.example.org")
 
@@ -152,7 +147,6 @@ def test_netbird_hands_its_key_its_plane_and_the_hubs_name(box):
     }
 
 
-@pytest.mark.feature("netbird")
 def test_netbird_without_a_kept_key_is_none(box):
     assert material_of(FakeRuntime("netbird")) is None
 
@@ -222,7 +216,6 @@ def test_easytier_with_no_address_to_dial_is_none(box):
     assert material_of(FakeRuntime("easytier")) is None
 
 
-@pytest.mark.feature("netbird")
 def test_no_overlay_is_none_whatever_is_stored(box):
     keep_setup_key()
     store_network()
@@ -230,7 +223,6 @@ def test_no_overlay_is_none_whatever_is_stored(box):
     assert material_of(FakeRuntime("none")) is None
 
 
-@pytest.mark.feature("netbird")
 def test_a_locked_vault_is_none(box, monkeypatch, tmp_path):
     keep_setup_key()
     store_network()

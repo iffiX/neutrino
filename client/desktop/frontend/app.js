@@ -12,9 +12,6 @@ let theme = DEFAULT_THEME;
 // The desktop's own scheme, which 'system' resolves through.
 const DARK_SCHEME = window.matchMedia('(prefers-color-scheme: dark)');
 DARK_SCHEME.addEventListener('change', () => setTheme(theme));
-// What each left-out feature the tree holds adds to the page, from its own
-// file inlined before this one; none in a tree without them.
-const PARTS = window.NEUTRINO_PARTS || [];
 
 // Codes worded through their params' own detail text when they carry one.
 const DETAIL_CODES = [
@@ -40,7 +37,9 @@ const CLIENT_SOURCES = {
   intl: 'https://github.com/iffiX/neutrino',
   cn: 'https://gitee.com/iffiX/neutrino',
 };
-const CARRIED = PARTS.flatMap((part) => part.carried || []).concat([
+const CARRIED = [
+  { name: 'NetBird', key: 'netbird', licence: 'BSD-3-Clause',
+    repository: 'https://github.com/netbirdio/netbird', tag: 'v{version}' },
   { name: 'EasyTier', key: 'easytier', licence: 'LGPL-3.0',
     repository: 'https://github.com/EasyTier/EasyTier',
     mainland: 'https://gitee.com/easytier/EasyTier', tag: 'v{version}' },
@@ -52,7 +51,7 @@ const CARRIED = PARTS.flatMap((part) => part.carried || []).concat([
   { name: 'tun2socks', key: 'tun2socks', licence: 'MIT',
     repository: 'https://github.com/xjasonlyu/tun2socks', tag: 'v{version}',
     os: 'windows' },
-]);
+];
 
 function fill(template, params) {
   return template.replace(/\{(\w+)\}/g, (whole, key) =>
@@ -326,8 +325,7 @@ const LEAVE_ONLY_REASONS = ['unknown_device', 'join_refused'];
 // The three states of a hub's virtual network.
 const OVERLAY_STATES = ['off', 'on'];
 // The name each virtual network's engine goes by.
-const OVERLAY_TITLES = Object.assign(
-  {}, ...PARTS.map((part) => part.overlayTitles || {}), { easytier: 'EasyTier' });
+const OVERLAY_TITLES = { netbird: 'NetBird', easytier: 'EasyTier' };
 
 // A status mark: a dot in its tone; 'pulse' is the amber dot of work running.
 function marker(tone) {
@@ -646,8 +644,7 @@ function hubTone(hub) {
 
 // The ways the channel reaches a hub, as the hub's state names them. A
 // way not in the list reads as the plain connected word.
-const THROUGH_WAYS = ['lan', 'direct'].concat(
-  ...PARTS.map((part) => part.throughWays || []), ['easytier', 'relay']);
+const THROUGH_WAYS = ['lan', 'direct', 'netbird', 'easytier', 'relay'];
 
 // The hub's state line: the job running on it, else its connection's word
 // with the way in once the hub has named it, a waiting hub's reason with
@@ -948,21 +945,22 @@ function panelCard(title, isDirty) {
 // --- the entries of the service pages ---
 
 // Which hub, which of its machines and which module an entry comes from; a
-// hub that names no machine leaves the address the entry points at, and an
-// entry the hub's own machine serves names the hub once.
+// hub that names no machine leaves the address the entry points at.
 function providerLine(hub, entry) {
-  const name = hubName(hub);
   const device = entry.device_name || entryHost(entry);
-  if (device === name) {
-    return t('ui.machine_provided_by', { hub: name, device: entryModule(entry) });
-  }
-  return t('ui.provided_by', { hub: name, device: device, module: entryModule(entry) });
+  return t('ui.provided_by', { hub: hubName(hub), device: device, module: entryModule(entry) });
 }
 
-// The module names an origin code stands for; the AI gateway is worded in
-// the page's language.
+// The module titles an origin code stands for, as the hub's panel titles its
+// modules; the titles it translates are worded in the page's language.
 const ENTRY_MODULES = {
-  gitea_module: 'Gitea', samba_module: 'Samba', device_share: 'RustDesk',
+  gitea_module: 'Gitea', vscode_module: 'VS Code', code_server_module: 'code-server',
+  cloudcli_module: 'CloudCLI', codeg_module: 'Codeg',
+};
+const ENTRY_MODULE_KEYS = {
+  ai_gateway: 'ui.module_ai_gateway',
+  samba_module: 'ui.module_title.samba',
+  device_share: 'ui.module_title.remote_desktop',
 };
 
 // The module an entry comes from, by its origin code: a container by its
@@ -970,7 +968,7 @@ const ENTRY_MODULES = {
 // and an entry from a hub that sends no code, by its own title.
 function entryModule(entry) {
   const code = entry.description_code;
-  if (code === 'ai_gateway') return t('ui.module_ai_gateway');
+  if (ENTRY_MODULE_KEYS[code]) return t(ENTRY_MODULE_KEYS[code]);
   if (code === 'container') {
     const image = (entry.description_params || {}).image || '';
     return image.split('/').pop() || entry.title;

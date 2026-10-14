@@ -160,7 +160,6 @@ ROUTER_INPUT = [
 ]
 
 
-@pytest.mark.feature("netbird")
 def test_a_hub_port_answers_loopback_and_the_exposed_segments_and_no_one_else():
     """The served network's two segments and NetBird's network are exposed,
     the uplink's are not; every hub port is dropped from every other sender,
@@ -201,7 +200,6 @@ def chains_an_engine_edits(ruleset: str) -> list:
     ]
 
 
-@pytest.mark.feature("netbird")
 def test_no_engine_edits_the_chain_that_drops_the_hub_ports():
     """An accept NetBird inserts at the top of a chain would pass NetBird's
     senders through that chain's drop, so the drop lives where it inserts
@@ -332,7 +330,6 @@ def test_each_socks_port_is_a_hub_port_over_tcp_and_udp():
     assert "ct state new udp dport { 53, 1080, 1081 } drop" in chain
 
 
-@pytest.mark.feature("netbird")
 def test_nothing_drops_the_peer_ports_or_dhcp():
     """They open with no switch: the chain's accept policy passes them."""
     ruleset = without_comments(
@@ -347,7 +344,6 @@ def test_nothing_drops_the_peer_ports_or_dhcp():
         assert not re.search(rf"\b{port}\b", ruleset)
 
 
-@pytest.mark.feature("netbird")
 def test_the_overlay_answers_on_a_box_that_exposes_nothing():
     """Otherwise closing the last interface is a lockout with no way back."""
     chain = input_chain(
@@ -360,7 +356,6 @@ def test_the_overlay_answers_on_a_box_that_exposes_nothing():
     assert "ip saddr { 100.92.0.0/16 } accept" in chain
 
 
-@pytest.mark.feature("netbird")
 def test_a_configuration_with_no_overlays_block_still_answers_on_one():
     """The firewall accepted the overlay unconditionally before it was
     configurable, so a box upgrading into this must find nothing changed. Who
@@ -481,7 +476,6 @@ def render_both(*entries, routing=None, devices=None) -> str:
     )
 
 
-@pytest.mark.feature("netbird")
 def test_two_overlays_answer_and_are_forwarded_on_both_devices():
     ruleset = render_both(
         wan_entry("enp2s0"), lan_entry("enp1s0", address="192.168.100.1")
@@ -494,7 +488,6 @@ def test_two_overlays_answer_and_are_forwarded_on_both_devices():
     assert 'iifname { "enp1s0" } oifname { "wt0", "easytier" } accept' in ruleset
 
 
-@pytest.mark.feature("netbird")
 @pytest.mark.feature("proxy")
 def test_the_overlay_scope_diverts_both_overlays():
     ruleset = render_both(
@@ -506,7 +499,6 @@ def test_the_overlay_scope_diverts_both_overlays():
     assert 'iifname != { "enp1s0", "wt0", "easytier" } return' in ruleset
 
 
-@pytest.mark.feature("netbird")
 def test_nothing_is_forwarded_from_one_overlay_to_the_other():
     """A peer of one overlay is not a peer of the other, and the box between
     them is not a bridge. The drops sit in a chain ahead of forward, since
@@ -522,7 +514,6 @@ def test_nothing_is_forwarded_from_one_overlay_to_the_other():
     assert 'iifname { "easytier" } oifname { "wt0" } drop' in fence
 
 
-@pytest.mark.feature("netbird")
 @pytest.mark.feature("proxy")
 def test_the_fence_follows_a_console_device_found():
     ruleset = render_both(
@@ -535,7 +526,6 @@ def test_the_fence_follows_a_console_device_found():
     assert '"easytier"' not in ruleset
 
 
-@pytest.mark.feature("netbird")
 def test_a_box_that_routes_nothing_still_fences_two_overlays():
     ruleset = render_both()
 
@@ -598,7 +588,6 @@ def render_with_engines(routing: dict, cgroups=ENGINE_CGROUPS) -> str:
     )
 
 
-@pytest.mark.feature("netbird")
 @pytest.mark.feature("proxy")
 def test_the_hubs_own_engines_are_accepted_before_the_mark():
     """Through xray an engine's handshakes leave from the exit's address."""
@@ -629,7 +618,6 @@ LOCAL_PROXY_OUTPUT = [
 ]
 
 
-@pytest.mark.feature("netbird")
 @pytest.mark.feature("proxy")
 def test_what_an_overlay_s_wireguard_sends_is_never_marked():
     """A kernel WireGuard device sends from no socket, so no cgroup row
@@ -664,7 +652,6 @@ def test_nft_accepts_the_wireguard_returns():
     validate_nft(render_with_engines(ROUTING_LOCAL_PROXY, cgroups=[]))
 
 
-@pytest.mark.feature("netbird")
 @pytest.mark.feature("proxy")
 def test_an_engine_not_running_is_not_named():
     ruleset = render_with_engines(ROUTING_LOCAL_PROXY, cgroups=ENGINE_CGROUPS[:1])
@@ -704,7 +691,6 @@ def test_an_unconfigured_box_renders_no_empty_sets():
     assert "masquerade" not in body
 
 
-@pytest.mark.feature("netbird")
 def test_a_box_with_no_uplink_still_serves_and_firewalls_its_lan():
     ruleset = render(lan_entry("enp1s0", address="192.168.100.1"))
 
@@ -755,7 +741,6 @@ HUB_DIVERSION = (
 )
 
 
-@pytest.mark.feature("netbird")
 @pytest.mark.feature("proxy")
 def test_the_hub_s_own_diversion_needs_no_mark_another_table_can_replace():
     """A routing peer's daemon replaces the output chain's mark at mangle on
@@ -787,7 +772,6 @@ def test_the_hub_s_own_diversion_is_accepted_by_nft():
     )
 
 
-@pytest.mark.feature("netbird")
 @pytest.mark.feature("proxy")
 def test_fenced_lans_cannot_reach_each_other():
     """With the inter-LAN switch off, the drop policy holds between networks."""
@@ -888,7 +872,6 @@ def test_the_mark_is_not_accepted_while_nothing_diverts():
     assert f"meta mark {hex(ROUTER_FWMARK_TPROXY)} accept" not in ruleset
 
 
-@pytest.mark.feature("netbird")
 @pytest.mark.feature("proxy")
 def test_the_overlay_scope_diverts_the_exposed_overlay_beside_the_lan():
     """An overlay whose members use this box as their exit node is taken the
@@ -935,7 +918,6 @@ def test_a_server_diverts_its_exposed_overlay_and_nothing_else(is_proxy_enabled)
     assert "meta mark 0x1 accept" in ruleset
 
 
-@pytest.mark.feature("netbird")
 @pytest.mark.feature("proxy")
 def test_the_overlay_scope_alone_diverts_only_the_overlay():
     ruleset = render(

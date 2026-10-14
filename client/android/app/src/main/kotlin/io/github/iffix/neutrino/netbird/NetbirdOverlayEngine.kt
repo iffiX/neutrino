@@ -3,6 +3,7 @@ package io.github.iffix.neutrino.netbird
 import android.os.Build
 import android.util.Log
 import io.github.iffix.neutrino.CLIENT_LOG_TAG
+import io.github.iffix.neutrino.OVERLAY_NETBIRD_DEFAULT_MANAGEMENT_URL
 import io.github.iffix.neutrino.channel.ChannelOverlay
 import io.github.iffix.neutrino.channel.ChannelResult
 import io.github.iffix.neutrino.overlay.OverlayEngine

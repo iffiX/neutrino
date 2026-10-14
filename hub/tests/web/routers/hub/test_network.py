@@ -668,7 +668,6 @@ def test_an_interface_this_machine_does_not_have_cannot_be_opened(guest_box):
     assert response.json()["detail"]["code"] == "interface_not_on_machine"
 
 
-@pytest.mark.feature("netbird")
 def test_the_view_lists_every_overlay_this_box_is_a_member_of(box, monkeypatch):
     client, _, _ = box
     monkeypatch.setattr(
@@ -688,7 +687,6 @@ def test_the_view_lists_every_overlay_this_box_is_a_member_of(box, monkeypatch):
     ]
 
 
-@pytest.mark.feature("netbird")
 def test_an_overlay_that_is_not_up_is_listed_with_no_address(box, monkeypatch):
     """It is still configured, and hiding the row would leave the switch
     nowhere while the daemon is restarting."""
@@ -751,7 +749,6 @@ def test_a_console_overlay_with_no_device_found_is_not_up(box, monkeypatch):
     assert overlay["address"] == ""
 
 
-@pytest.mark.feature("netbird")
 def test_a_row_counts_the_devices_reaching_the_hub_across_it(box, monkeypatch):
     """What closing it would end, so the warning can say so before the press
     rather than after it."""
@@ -835,7 +832,6 @@ def test_a_write_naming_one_family_leaves_the_other_alone(box):
     assert network.exposed_device_names("ipv6") == []
 
 
-@pytest.mark.feature("netbird")
 def test_an_overlay_closes_and_reopens_through_the_same_write(box):
     client, runtime, _ = box
 
@@ -852,7 +848,6 @@ def test_an_overlay_closes_and_reopens_through_the_same_write(box):
     assert runtime.network().exposed_overlay_device_names == ["wt0"]
 
 
-@pytest.mark.feature("netbird")
 def test_a_write_that_says_nothing_about_overlays_leaves_them_alone(box):
     """A caller that has never heard of overlays must not be able to cut the
     way back into this box by not mentioning them."""
@@ -1510,7 +1505,6 @@ def windows_server(on_windows, monkeypatch):
         yield client, runtime
 
 
-@pytest.mark.feature("netbird")
 def test_a_windows_server_lists_its_interfaces_and_whether_each_answers(
     windows_server,
 ):
@@ -1536,7 +1530,6 @@ def test_a_windows_server_lists_its_interfaces_and_whether_each_answers(
     ]
 
 
-@pytest.mark.feature("netbird")
 def test_closing_an_interface_nobody_named_stores_it_closed(windows_server):
     client, runtime = windows_server
 

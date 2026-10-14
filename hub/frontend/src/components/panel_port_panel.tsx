@@ -9,23 +9,30 @@ import { interruptionWarning } from "../network_warnings";
 import { hubHost, isOffPanelPort } from "../origins";
 import { useApiResource } from "../use_api_resource";
 import { useDraft } from "../use_draft";
-import type { PanelSettings } from "../api_types";
+import {
+  HUB_EVENT_CLIENTS,
+  HUB_EVENT_CONFIG,
+  HUB_EVENT_DEVICES,
+} from "../use_hub_events";
+import type { DirectView, SettingsView } from "../api_types";
 
 import "./panel_port_panel.css";
 
 /**
- * The two ports the panel itself answers on, HTTP and HTTPS.
+ * The three ports the hub answers on: the panel's HTTP and HTTPS ports, and
+ * the port agents and clients connect to.
  *
- * Every other service settles its port in its own tab; the panel's belong on
- * this page because they are a question about how the box is reached, which
- * is what the rest of the page is.
+ * Every other service settles its port in its own tab; these belong on this
+ * page because they are a question about how the box is reached, which is
+ * what the rest of the page is.
  *
  * Applying restarts the panel. The answer is written before the socket
- * closes, and this waits for the port of the scheme this page is on to answer
- * and goes there; the host does not change, so where to look is known
- * exactly. A page that came through a client's forward names the hub by a
- * placeholder and comes back on its own address, which the client keeps
- * forwarding to the panel.
+ * closes, and after a panel port change this waits for the port of the scheme
+ * this page is on to answer and goes there; the host does not change, so
+ * where to look is known exactly. A page that came through a client's forward
+ * names the hub by a placeholder and comes back on its own address, which the
+ * client keeps forwarding to the panel. After an agent port change alone the
+ * page stays where it is and reloads when the restarted panel answers.
  */
 
 const PORT_MIN = 1;
@@ -36,14 +43,28 @@ const PORT_MAX = 65535;
 const MOVE_TIMEOUT_MS = 30000;
 const MOVE_POLL_MS = 500;
 const HTTPS_SCHEME_PORT = 443;
+// The offline counts move as agents and clients come and go.
+const SETTINGS_INVALIDATE_ON = [
+  { type: HUB_EVENT_DEVICES },
+  { type: HUB_EVENT_CLIENTS },
+];
+const DIRECT_INVALIDATE_ON = [
+  { type: HUB_EVENT_CONFIG, key: "overlay/direct.json" },
+];
 
 export function PanelPortPanel() {
   // Redrawn when the panel's language changes.
   useLanguage();
-  const resource = useApiResource<PanelSettings>("/hub/setting");
+  const resource = useApiResource<SettingsView>("/hub/setting", {
+    invalidateOn: SETTINGS_INVALIDATE_ON,
+  });
+  const direct = useApiResource<DirectView>("/hub/overlay/direct", {
+    invalidateOn: DIRECT_INVALIDATE_ON,
+  });
   const portsDraft = useDraft(resource.data, portsOf);
   const port = portsDraft.draft?.listen_port ?? null;
   const httpsPort = portsDraft.draft?.https_listen_port ?? null;
+  const agentPort = portsDraft.draft?.agent_listen_port ?? null;
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [movingTo, setMovingTo] = useState<string | null>(null);
@@ -52,28 +73,42 @@ export function PanelPortPanel() {
 
   const applied = resource.data?.listen_port ?? null;
   const appliedHttps = resource.data?.https_listen_port ?? null;
+  const appliedAgent = resource.data?.agent_listen_port ?? null;
+  const isPanelMoving = port !== applied || httpsPort !== appliedHttps;
+  const isAgentMoving = agentPort !== appliedAgent;
   const isDirty =
     port !== null &&
     httpsPort !== null &&
+    agentPort !== null &&
     applied !== null &&
-    (port !== applied || httpsPort !== appliedHttps);
-  const isPairValid = isValid(port) && isValid(httpsPort) && port !== httpsPort;
+    (isPanelMoving || isAgentMoving);
+  const isSetValid =
+    isValid(port) &&
+    isValid(httpsPort) &&
+    isValid(agentPort) &&
+    port !== httpsPort &&
+    agentPort !== port &&
+    agentPort !== httpsPort;
+  const isDirectOn = direct.data?.is_enabled ?? false;
 
   const apply = async () => {
-    if (port === null || httpsPort === null) {
+    if (port === null || httpsPort === null || agentPort === null) {
       return;
     }
     setIsBusy(true);
     setError(null);
     try {
-      const saved = await apiPost<PanelSettings>("/hub/setting/set", {
+      const saved = await apiPost<SettingsView>("/hub/setting/set", {
         listen_port: port,
         https_listen_port: httpsPort,
+        agent_listen_port: agentPort,
       });
       resource.setData(saved);
-      setMovingTo(
-        isForwarded ? window.location.origin : currentOrigin(saved, host),
-      );
+      if (isPanelMoving) {
+        setMovingTo(
+          isForwarded ? window.location.origin : currentOrigin(saved, host),
+        );
+      }
     } catch (cause: unknown) {
       setError(describeError(cause));
     } finally {
@@ -122,15 +157,45 @@ export function PanelPortPanel() {
               }));
             }}
           />
+          <label className="field">
+            <span className="field_label">
+              {t("ui.network.agent_port_field")}
+            </span>
+            <input
+              className="input"
+              value={agentPort === null ? "" : String(agentPort)}
+              inputMode="numeric"
+              onChange={(event) => {
+                setError(null);
+                const value = Number(event.target.value) || 0;
+                portsDraft.setDraft((current) => ({
+                  ...current,
+                  agent_listen_port: value,
+                }));
+              }}
+            />
+          </label>
         </div>
       )}
 
       <ApplyBar
-        isDirty={isDirty && isPairValid}
+        isDirty={isDirty}
+        isApplyDisabled={!isSetValid}
         isBusy={isBusy}
         label={t("ui.network.apply_panel_port")}
-        hint={applyHint(port, httpsPort)}
-        warning={interruptionWarning(t("ui.network.warning_panel_restart"))}
+        hint={applyHint(port, httpsPort, agentPort, isPanelMoving)}
+        warning={interruptionWarning(
+          t("ui.network.warning_panel_restart"),
+          isAgentMoving
+            ? t("ui.network.agent_port_offline_warning", {
+                clients: resource.data?.offline_client_count ?? 0,
+                agents: resource.data?.offline_agent_count ?? 0,
+              })
+            : null,
+          isAgentMoving && isDirectOn
+            ? t("ui.network.agent_port_direct_warning")
+            : null,
+        )}
         error={error}
         onReset={portsDraft.reset}
         onApply={() => void apply()}
@@ -141,17 +206,19 @@ export function PanelPortPanel() {
   );
 }
 
-/** The two ports as the form holds them; a cleared field holds null. */
+/** The three ports as the form holds them; a cleared field holds null. */
 interface PanelPortsDraft {
   listen_port: number | null;
   https_listen_port: number | null;
+  agent_listen_port: number | null;
 }
 
-/** What the form starts from: the two ports as saved. */
-function portsOf(settings: PanelSettings): PanelPortsDraft {
+/** What the form starts from: the three ports as saved. */
+function portsOf(settings: SettingsView): PanelPortsDraft {
   return {
     listen_port: settings.listen_port,
     https_listen_port: settings.https_listen_port,
+    agent_listen_port: settings.agent_listen_port,
   };
 }
 
@@ -258,14 +325,24 @@ function PortField({
   );
 }
 
-function applyHint(port: number | null, httpsPort: number | null): string {
-  if (!isValid(port) || !isValid(httpsPort)) {
+function applyHint(
+  port: number | null,
+  httpsPort: number | null,
+  agentPort: number | null,
+  isPanelMoving: boolean,
+): string {
+  if (!isValid(port) || !isValid(httpsPort) || !isValid(agentPort)) {
     return t("ui.network.port_range", { min: PORT_MIN, max: PORT_MAX });
   }
   if (port === httpsPort) {
     return t("ui.network.panel_ports_differ");
   }
-  return t("ui.network.apply_panel_port_hint");
+  if (agentPort === port || agentPort === httpsPort) {
+    return t("ui.network.agent_port_differs");
+  }
+  return isPanelMoving
+    ? t("ui.network.apply_panel_port_hint")
+    : t("ui.network.apply_agent_port_hint");
 }
 
 function isValid(port: number | null): boolean {
@@ -283,7 +360,7 @@ function originOf(
 }
 
 /** Where this page goes after a move: the port of the scheme it is on. */
-function currentOrigin(saved: PanelSettings, host: string): string {
+function currentOrigin(saved: SettingsView, host: string): string {
   return window.location.protocol === "https:"
     ? originOf("https", saved.https_listen_port, host)
     : originOf("http", saved.listen_port, host);

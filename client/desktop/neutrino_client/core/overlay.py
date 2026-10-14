@@ -4,7 +4,7 @@ A virtual network is not a service a hub publishes: it is a way to reach the
 hub, so it lives beside the sessions rather than among the handlers. Each
 hub's state names how to join each of its networks, preferred first: for
 EasyTier either a manual network's name, secret and peer or an EasyTier
-console's address, and what each engine the edition table adds takes. Per
+console's address, and for NetBird its setup key and management plane. Per
 hub the network is ``off`` or ``on``, on the one engine the person chose; a
 connect in progress is the job ``connecting``, and a failure is kept as the
 error while it is off. The daemons the packages register as
@@ -30,7 +30,6 @@ import threading
 import time
 import urllib.parse
 
-from neutrino_client import edition
 from neutrino_client.constants import (
     CLIENT_EASYTIER_RPC_PORTAL,
     CLIENT_OVERLAY_CONNECT_POLL_S,
@@ -42,6 +41,8 @@ from neutrino_client.control.easytier_socket import ask_easytier_daemon
 from neutrino_client.core.easytier_daemon import console_digest
 from neutrino_client.core.easytier_config import safe_hostname
 from neutrino_client.exceptions import OverlayControlError, PlatformUnsupportedError
+from neutrino_client.netbird.constants import NETBIRD_PROVIDER
+from neutrino_client.netbird.driver import OverlayNetbirdDriver
 
 # The two states of a hub's virtual network.
 OVERLAY_STATE_OFF = "off"
@@ -79,13 +80,13 @@ def is_console_material(material: dict) -> bool:
 
 
 def overlay_engines() -> dict:
-    """The driver classes the edition table adds beside EasyTier's.
+    """The driver classes beside EasyTier's: NetBird's.
 
     Returns:
         ``{provider: class}``, each class with ``key``, ``network``,
         ``hub_network`` and ``hub_name``.
     """
-    return {driver.provider: driver for driver in edition.hooks("overlay_drivers")}
+    return {NETBIRD_PROVIDER: OverlayNetbirdDriver}
 
 
 def overlay_key(material: dict) -> str:
@@ -499,7 +500,7 @@ class OverlayMemberships:
                 the network stands and the engine chosen onto the binding,
                 raising OSError when it cannot; None keeps nothing.
             drivers: ``{provider: driver}``; None builds EasyTier's driver
-                and those the edition table adds over the platform.
+                and NetBird's over the platform.
             start_thread: ``start_thread(target)`` runs a step; None uses a
                 daemon thread. Tests pass one that runs inline.
             clock: Returns the monotonic time; None uses ``time.monotonic``.

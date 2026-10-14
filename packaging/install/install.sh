@@ -233,11 +233,14 @@ main() {
     name=${found#* }
     if [ -z "${NEUTRINO_ASSET_DIR:-}" ]; then
         fetch "$base/$name" "$work/$name"
+        echo "Downloaded $name from $base"
     fi
     package="$source_dir/$name"
     [ -f "$package" ] || fail "There is no $name in $source_dir."
+    [ -z "${NEUTRINO_ASSET_DIR:-}" ] || echo "Found $name in $source_dir"
     [ "$(sha256_of "$package")" = "$expected" ] \
         || fail "$name does not match its SHA256SUMS line; nothing was installed."
+    echo "$name matches its SHA256SUMS line"
     case "$package" in
         /*) ;;
         *) package="$(pwd)/$package" ;;
@@ -250,6 +253,7 @@ main() {
         rpm) $as_root dnf install -y "$package" ;;
         arch) $as_root pacman -U --noconfirm "$package" ;;
     esac
+    echo "Installed $name"
 
     case "$component" in
         agent)

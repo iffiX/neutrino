@@ -27,9 +27,13 @@ SYSTEM_CORE_UNITS = {
 # Each is off until asked for, and enabling one is what makes its page appear
 # in the sidebar — so the panel stays as small as the appliance actually is.
 SYSTEM_OPTIONAL_UNITS = {
-    # Remote access: a LAN-shaped network over the wide one, NetBird's own
-    # and present where the tree carries it.
-    **dict(edition.hooks("optional_units")),
+    # Remote access: a LAN-shaped network over the wide one. A gateway routes,
+    # resolves and serves without it, so it is a capability rather than a
+    # premise. The client is BSD-3-Clause and travels in these packages, so
+    # this is the hub's own unit in front of the carried binary rather than
+    # the one the vendor's package generates. The name is spelled out because
+    # system/ names units and never imports a module to be told one.
+    "netbird": "neutrino_hub_netbird.service",
     # The other overlay: a network of your own machines with no management
     # plane at all, LGPL-3.0 and carried the same way.
     "easytier": "neutrino_hub_easytier.service",
@@ -46,6 +50,7 @@ SYSTEM_SUPERVISED_WEB = "web"
 SYSTEM_SUPERVISED_NAMES = (
     "web",
     *(name for names in edition.hooks("supervised_names") for name in names),
+    "netbird",
     "cliproxyapi",
     "easytier",
     "relay",
@@ -135,10 +140,8 @@ SYSTEM_RUNTIME_PACKAGES = (
     # Reports what a radio can actually do. The panel asks it whether a Wi-Fi
     # card supports access-point mode before offering to serve a network on it.
     "iw",
-    # The Devices page sweeps the LAN with it, and the traffic history reads
-    # from vnstat.
+    # The Devices page sweeps the LAN with it.
     "arp-scan",
-    "vnstat",
     # Provisioners that install from a vendor's own script fetch it with this.
     "curl",
     # Asks a file server what it exports, which is how a declared file

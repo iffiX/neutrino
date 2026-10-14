@@ -98,7 +98,7 @@ RESET_STATE_DIRS = (
     "agent_module_cache",
     "cliproxyapi",
     "hub_update",
-    *edition.hooks("reset_state_dirs"),
+    "netbird",
 )
 # Where every device's desired state lives, one directory per device. A
 # reset forgets them with the tokens: they describe machines the next owner

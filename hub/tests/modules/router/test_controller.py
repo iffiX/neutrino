@@ -376,7 +376,6 @@ def test_nothing_recorded_reads_as_no_devices_found(box):
     assert controller.rendered_overlay_devices() == {}
 
 
-@pytest.mark.feature("netbird")
 @pytest.mark.feature("proxy")
 def test_the_engine_cgroups_found_are_rendered_and_recorded(box, monkeypatch):
     """The hub's own engines leave directly; the ids loaded are kept to tell
@@ -469,7 +468,6 @@ def server_elsewhere(elsewhere, box, monkeypatch):
     return kernel, handed
 
 
-@pytest.mark.feature("netbird")
 @pytest.mark.feature("proxy")
 def test_elsewhere_the_pass_drives_the_firewall_and_the_session_alone(
     server_elsewhere, fake_controller, monkeypatch
@@ -499,7 +497,6 @@ def test_elsewhere_the_pass_drives_the_firewall_and_the_session_alone(
     assert fake_controller.calls == []
 
 
-@pytest.mark.feature("netbird")
 @pytest.mark.feature("proxy")
 def test_elsewhere_a_firewall_that_refuses_fails_its_step_alone(
     server_elsewhere, monkeypatch
@@ -517,7 +514,6 @@ def test_elsewhere_a_firewall_that_refuses_fails_its_step_alone(
     assert controller.rendered_overlay_devices() == {"netbird": ["utun4"]}
 
 
-@pytest.mark.feature("netbird")
 @pytest.mark.feature("proxy")
 def test_elsewhere_a_refused_rule_is_named_beside_the_firewall_that_applied(
     server_elsewhere, monkeypatch
@@ -545,7 +541,6 @@ def test_elsewhere_a_refused_rule_is_named_beside_the_firewall_that_applied(
     ]
 
 
-@pytest.mark.feature("netbird")
 @pytest.mark.feature("proxy")
 def test_elsewhere_a_tun_route_that_failed_is_named_by_its_own_code(
     server_elsewhere, monkeypatch

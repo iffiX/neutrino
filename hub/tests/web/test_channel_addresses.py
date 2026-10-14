@@ -100,7 +100,6 @@ def test_an_exposed_uplink_is_named_by_its_live_address_and_an_unexposed_lan_not
     assert channel_urls(runtime) == ["https://203.0.113.7:8443"]
 
 
-@pytest.mark.feature("netbird")
 def test_an_exposed_overlay_is_named_by_its_address_and_its_name(live):
     runtime = FakeRuntime(
         network_config(
@@ -116,7 +115,6 @@ def test_an_exposed_overlay_is_named_by_its_address_and_its_name(live):
     ]
 
 
-@pytest.mark.feature("netbird")
 def test_an_overlay_that_is_not_exposed_is_not_asked_for_its_name(live, monkeypatch):
     runtime = FakeRuntime(
         network_config(
@@ -133,7 +131,6 @@ def test_an_overlay_that_is_not_exposed_is_not_asked_for_its_name(live, monkeypa
     assert channel_urls(runtime) == ["https://192.168.8.1:8443"]
 
 
-@pytest.mark.feature("netbird")
 def test_a_daemon_with_no_name_adds_none(live, monkeypatch):
     monkeypatch.setattr(channel_addresses, "overlay_parts", _parts(NamelessOverlay))
     runtime = FakeRuntime(
@@ -162,7 +159,6 @@ def test_an_interface_with_no_address_yet_is_left_out(live, monkeypatch):
     assert channel_urls(runtime) == ["https://192.168.8.1:8443"]
 
 
-@pytest.mark.feature("netbird")
 def test_two_overlays_name_the_hub_in_each_network(live):
     """A client on either overlay reaches the hub at its address there, and
     one moving from one overlay to the other already holds both."""
@@ -184,7 +180,6 @@ def test_two_overlays_name_the_hub_in_each_network(live):
     ]
 
 
-@pytest.mark.feature("netbird")
 def test_an_overlay_turned_off_is_named_nowhere(live):
     runtime = FakeRuntime(
         network_config(
@@ -453,7 +448,6 @@ def test_without_direct_urls_hold_ipv4_alone_and_ipv6_is_not_read(live, monkeypa
     assert asked == []
 
 
-@pytest.mark.feature("netbird")
 def test_an_exposed_overlays_ipv6_address_is_not_direct_s(live, monkeypatch):
     runtime, _ = ipv6_box(monkeypatch, is_direct=True, is_relay=False)
     runtime._network = network_config(

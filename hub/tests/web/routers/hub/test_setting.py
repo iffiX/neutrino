@@ -2,6 +2,9 @@
 
 Moving the port: the process serving the request is the one being restarted,
 so the write happens first and the restart is queued behind the response.
+Moving the agent port hands every online agent and client its state first,
+then the converge step runs and the panel restarts; the settings count the
+peers with a binding and no live session, which a move loses.
 The port also names the session cookie, so a hub on another port of the
 same host cannot be signed in to with this one's. The hub's name is written
 with the rest of the settings and lands in the identity file. Restore runs as root, so an archive is hostile input: what
@@ -30,33 +33,66 @@ from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.testclient import TestClient
 
 import neutrino_hub.utils.json_file
+from neutrino_hub.exceptions import AgentOfflineError, NetworkApplyError
+from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub import edition
 from neutrino_hub.modules.cliproxyapi.constants import CLIPROXYAPI_VERSION
 from neutrino_hub.modules.credentials.vault import SecretVault
 from neutrino_hub.web import auth as web_auth
-from neutrino_hub.web import identity
+from neutrino_hub.web import channel_state, identity
 from neutrino_hub.web.auth import SessionStore, hash_password
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.identity import ensure_hub_identity
 from neutrino_hub.web.routers.hub import auth as auth_router
 from neutrino_hub.web.routers.hub import setting as settings_router
 from neutrino_hub.web.routers.hub.setting import _checked_member, _renamed_member
+from tests.conftest import FakeChannelSessions
 
 # --- the port: the write happens first and the restart is queued behind ---
 
 
-class PortRuntime:
-    """Just the settings dictionary the panel keeps in memory."""
+class RecordingSessions(FakeChannelSessions):
+    """Live sessions that write each push into the one list of what happened."""
 
-    def __init__(self):
+    def __init__(self, happened: list):
+        super().__init__()
+        self._happened = happened
+
+    def push_state_from_thread(self, key, document, timeout=5.0) -> None:
+        super().push_state_from_thread(key, document, timeout)
+        self._happened.append(("push", key, document["urls"]))
+
+
+class PortRuntime:
+    """The settings the panel keeps in memory, its live sessions, and a
+    converge step that writes when it ran into the list of what happened."""
+
+    def __init__(self, happened: list):
         self.settings = {"listen_port": 8080}
+        self.agent_sessions = RecordingSessions(happened)
+        self.client_sessions = RecordingSessions(happened)
+        self.converge_failure = None
+        self._happened = happened
+
+    def converge_network_blocking(self, only=None) -> list:
+        self._happened.append("converge")
+        if self.converge_failure is not None:
+            raise self.converge_failure
+        return []
+
+
+def composed_state(runtime, key) -> dict:
+    """A state naming the agent port the runtime holds at the push."""
+    port = runtime.settings.get("agent_listen_port", 8443)
+    return {"hash": key, "urls": [f"https://192.168.100.1:{port}"]}
 
 
 @pytest.fixture
 def port_client(monkeypatch, tmp_path):
     stored: dict = {"listen_port": 8080}
     restarts: list = []
+    monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
     monkeypatch.setattr(settings_router, "read_config", lambda name: dict(stored))
     monkeypatch.setattr(settings_router, "hub_name", lambda: "gateway")
     monkeypatch.setattr(
@@ -65,7 +101,9 @@ def port_client(monkeypatch, tmp_path):
     monkeypatch.setattr(
         settings_router, "_restart_panel", lambda: restarts.append("restarted")
     )
-    runtime = PortRuntime()
+    monkeypatch.setattr(channel_state, "agent_state", composed_state)
+    monkeypatch.setattr(channel_state, "client_state", composed_state)
+    runtime = PortRuntime(restarts)
     app = FastAPI()
     app.include_router(settings_router.router)
     app.dependency_overrides[require_session] = lambda: None
@@ -174,6 +212,159 @@ def test_an_https_port_no_listener_can_take_is_refused(port_client):
 
     assert response.json()["detail"]["code"] == "port_out_of_range"
     assert restarts == []
+
+
+# --- the agent port: every online peer is pushed its state before the move ---
+
+
+def test_the_agent_port_is_read_back_with_its_default(port_client):
+    opened, _, _, _ = port_client
+
+    assert opened.get("/api/hub/setting").json()["agent_listen_port"] == 8443
+
+
+def test_an_agent_port_change_pushes_every_online_peer_before_the_restart(
+    port_client,
+):
+    opened, runtime, stored, happened = port_client
+    runtime.agent_sessions.online = {"device-one"}
+    runtime.client_sessions.online = {"client-one"}
+
+    response = opened.post(
+        "/api/hub/setting/set", json={"listen_port": 8080, "agent_listen_port": 9443}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["agent_listen_port"] == 9443
+    assert stored["agent_listen_port"] == 9443
+    assert runtime.settings["agent_listen_port"] == 9443
+    new_urls = ["https://192.168.100.1:9443"]
+    assert happened == [
+        ("push", "device-one", new_urls),
+        ("push", "client-one", new_urls),
+        "converge",
+        "restarted",
+    ]
+
+
+def test_a_peer_that_cannot_take_its_state_holds_up_no_move(port_client):
+    opened, runtime, _, happened = port_client
+    runtime.agent_sessions.online = {"device-one"}
+    runtime.client_sessions.online = {"client-one"}
+
+    def gone(key, document, timeout=5.0):
+        raise AgentOfflineError(key)
+
+    runtime.agent_sessions.push_state_from_thread = gone
+
+    opened.post(
+        "/api/hub/setting/set", json={"listen_port": 8080, "agent_listen_port": 9443}
+    )
+
+    assert happened == [
+        ("push", "client-one", ["https://192.168.100.1:9443"]),
+        "converge",
+        "restarted",
+    ]
+
+
+def test_a_failed_converge_step_still_restarts_on_the_new_agent_port(port_client):
+    opened, runtime, stored, happened = port_client
+    runtime.converge_failure = NetworkApplyError("nft refused", [])
+
+    response = opened.post(
+        "/api/hub/setting/set", json={"listen_port": 8080, "agent_listen_port": 9443}
+    )
+
+    assert response.status_code == 200
+    assert stored["agent_listen_port"] == 9443
+    assert happened == ["converge", "restarted"]
+
+
+def test_the_agent_port_it_is_already_on_moves_nothing(port_client):
+    opened, runtime, _, happened = port_client
+    runtime.agent_sessions.online = {"device-one"}
+
+    opened.post(
+        "/api/hub/setting/set", json={"listen_port": 8080, "agent_listen_port": 8443}
+    )
+
+    assert happened == []
+
+
+def test_a_panel_port_change_pushes_no_peer(port_client):
+    opened, runtime, _, happened = port_client
+    runtime.agent_sessions.online = {"device-one"}
+
+    opened.post("/api/hub/setting/set", json={"listen_port": 9080})
+
+    assert happened == ["restarted"]
+
+
+@pytest.mark.parametrize(
+    "body, value",
+    [
+        ({"listen_port": 8080, "agent_listen_port": 8080}, 8080),
+        ({"listen_port": 8080, "agent_listen_port": 443}, 443),
+        (
+            {"listen_port": 8080, "https_listen_port": 8444, "agent_listen_port": 8444},
+            8444,
+        ),
+    ],
+)
+def test_an_agent_port_a_panel_port_holds_is_refused_by_code(port_client, body, value):
+    opened, runtime, stored, happened = port_client
+
+    response = opened.post("/api/hub/setting/set", json=body)
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == {
+        "code": "port_already_in_use",
+        "params": {"value": value},
+    }
+    assert stored == {"listen_port": 8080}
+    assert "agent_listen_port" not in runtime.settings
+    assert happened == []
+
+
+@pytest.mark.parametrize("port", [0, 65536])
+def test_an_agent_port_no_listener_can_take_is_refused_by_code(port_client, port):
+    opened, _, stored, happened = port_client
+
+    response = opened.post(
+        "/api/hub/setting/set", json={"listen_port": 8080, "agent_listen_port": port}
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == {
+        "code": "port_out_of_range",
+        "params": {"minimum": 1, "maximum": 65535, "value": port},
+    }
+    assert stored == {"listen_port": 8080}
+    assert happened == []
+
+
+def test_the_settings_count_the_peers_with_a_binding_and_no_session(port_client):
+    opened, runtime, _, _ = port_client
+    clients = ClientRegistry()
+    online_client = clients.create("online")
+    offline_client = clients.create("offline")
+    clients.create("never joined")
+    for client_id in (online_client, offline_client):
+        clients.issue_token(client_id)
+    devices = DeviceRegistry()
+    online_device = devices.create("online").id
+    offline_device = devices.create("offline").id
+    devices.create("no agent")
+    for device_id in (online_device, offline_device):
+        devices.issue_token(device_id)
+    runtime.client_sessions.online = {online_client}
+    runtime.agent_sessions.online = {online_device}
+
+    settings = opened.get("/api/hub/setting").json()
+
+    assert settings["offline_client_count"] == 1
+    assert settings["offline_agent_count"] == 1
 
 
 # --- the port names the session cookie, so two hubs on one host keep theirs ---
@@ -515,7 +706,6 @@ def test_the_release_names_the_package_family_the_build_stamped(
     assert body["package_family"] == family
 
 
-@pytest.mark.feature("netbird")
 @pytest.mark.feature("proxy")
 def test_the_hub_credits_every_component_it_carries(monkeypatch):
     """The binaries in the hub package, at the exact tag each was built from,
@@ -531,11 +721,11 @@ def test_the_hub_credits_every_component_it_carries(monkeypatch):
 
     assert [credit.name for credit in credits] == [
         "CLIProxyAPI",
+        "NetBird",
         "EasyTier",
         "Xray-core",
         "v2fly geoip",
         "v2fly domain-list-community",
-        "NetBird",
     ]
     assert by_name["Xray-core"].version == XRAY_VERSION
     assert by_name["Xray-core"].corresponding_source.endswith(f"/tree/v{XRAY_VERSION}")
@@ -572,13 +762,13 @@ def test_a_package_off_linux_credits_what_it_adds(monkeypatch, system, added):
     assert tun2socks.version == HUB_CARRIED_VERSIONS.get("tun2socks", "")
 
 
-def test_a_tree_without_the_proxy_or_netbird_credits_neither(monkeypatch):
+def test_a_tree_without_the_proxy_credits_netbird_and_no_proxy(monkeypatch):
     monkeypatch.setattr(settings_router, "hub_os", lambda: "windows")
     monkeypatch.setattr(edition, "has_feature", lambda name: False)
 
     names = [credit.name for credit in settings_router._acknowledgements()]
 
-    assert names == ["CLIProxyAPI", "EasyTier", "Wintun"]
+    assert names == ["CLIProxyAPI", "NetBird", "EasyTier", "Wintun"]
 
 
 def test_no_module_a_machine_installs_is_credited(monkeypatch):
@@ -871,12 +1061,10 @@ def test_a_backup_in_a_mode_this_hub_does_not_offer_writes_nothing(client, monke
 def test_a_backup_holding_a_left_out_features_files_restores_them_unread(
     client, monkeypatch
 ):
-    """The proxy's and NetBird's files land beside the rest, and a hub
-    without either reads none of them."""
+    """The proxy's files land beside the rest, and a hub without the proxy
+    reads none of them."""
     opened, config_dir = client
     seed_config(config_dir)
-    (config_dir / "netbird").mkdir()
-    (config_dir / "netbird" / "netbird.json").write_text(json.dumps({}))
     (config_dir / "router").mkdir()
     (config_dir / "router" / "network.json").write_text(
         json.dumps({"mode": "router", "interfaces": []})
@@ -887,7 +1075,6 @@ def test_a_backup_holding_a_left_out_features_files_restores_them_unread(
 
     assert upload_restore(opened, archive_bytes, PASSPHRASE).status_code == 200
     assert (config_dir / "xray" / "nodes.json").is_file()
-    assert (config_dir / "netbird" / "netbird.json").is_file()
 
 
 def test_a_restored_key_replaces_the_one_already_on_the_box(client):

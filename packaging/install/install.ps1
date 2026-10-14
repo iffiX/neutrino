@@ -188,14 +188,19 @@ function Install-Neutrino {
         $package = Join-Path $source $asset.Name
         if (-not $env:NEUTRINO_ASSET_DIR) {
             Invoke-WebRequest -UseBasicParsing -Uri "$base/$($asset.Name)" -OutFile $package
+            Write-Output "Downloaded $($asset.Name) from $base"
         }
         if (-not (Test-Path -LiteralPath $package)) {
             throw "There is no $($asset.Name) in $source."
+        }
+        if ($env:NEUTRINO_ASSET_DIR) {
+            Write-Output "Found $($asset.Name) in $source"
         }
         $digest = (Get-FileHash -Algorithm SHA256 -LiteralPath $package).Hash.ToLowerInvariant()
         if ($digest -ne $asset.Sha256) {
             throw "$($asset.Name) does not match its SHA256SUMS line; nothing was installed."
         }
+        Write-Output "$($asset.Name) matches its SHA256SUMS line"
 
         Write-Output "Installing $($asset.Name)"
         $msiexec = Start-Process -FilePath msiexec.exe -Wait -PassThru `
@@ -203,6 +208,7 @@ function Install-Neutrino {
         if ($msiexec.ExitCode -notin $NeutrinoInstalledCodes) {
             throw "msiexec exited $($msiexec.ExitCode) installing $($asset.Name)."
         }
+        Write-Output "Installed $($asset.Name)"
         if ($msiexec.ExitCode -eq 3010) {
             Write-Output "Windows needs a restart to finish installing $($asset.Name)."
         }

@@ -15,17 +15,6 @@ NETBIRD_DAEMON_DOWN_MARKS = (
 # The prefix every NetBird address sits in.
 NETBIRD_NETWORK = "100.64.0.0/10"
 
-# The fields a NetBird overlay object carries, which a binding keeps: it has
-# no mode, a management URL left empty is NetBird's own cloud, and a hub
-# whose daemon reports no name has no fqdn.
-NETBIRD_OVERLAY_OBJECT = {
-    "fields": {
-        (NETBIRD_PROVIDER, ""): ("setup_key", "management_url", "fqdn", "hub_address")
-    },
-    "default_modes": {NETBIRD_PROVIDER: ""},
-    "optional_fields": ("management_url", "fqdn"),
-}
-
 # Where the packages install NetBird's binary, as the client's own bundled
 # paths name each system's.
 NETBIRD_BUNDLED_PATHS = {

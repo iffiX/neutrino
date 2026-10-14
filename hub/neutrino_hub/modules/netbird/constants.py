@@ -133,39 +133,5 @@ NETBIRD_STATE_FILE_NAME = "state.json"
 NETBIRD_CONFIG_NAME = "netbird/netbird.json"
 NETBIRD_SETUP_KEY_AAD = b"netbird:setup_key"
 
-# The daemon's unit, among the units a module enables, and its child of
-# the hub's one service outside Linux.
-NETBIRD_OPTIONAL_UNIT = (NETBIRD_SUPERVISED_NAME, NETBIRD_UNIT)
-NETBIRD_SUPERVISED_NAMES = (NETBIRD_SUPERVISED_NAME,)
-# The overlay's domain a panel certificate may name, the directory a
-# reset clears, both reached through the edition table.
-NETBIRD_PANEL_TLS_DOMAIN = "netbird.cloud"
-NETBIRD_STATE_DIR_NAME = "netbird"
-# NetBird's row of the hub's overlay engines, reached through the edition
-# table as ``(key, fields)``.
-NETBIRD_OVERLAY_ENGINE = (
-    "netbird",
-    {
-        "title": "NetBird",
-        "device_name": "wt0",
-        "peer_port": 51820,
-        "unit": NETBIRD_UNIT,
-        "subnet": "100.64.0.0/10",
-        "is_integrated": True,
-    },
-)
-# The program the system firewall allows for the overlay on macOS.
-NETBIRD_FIREWALL_PROGRAM = ("netbird", str(NETBIRD_BINARY_PATH))
-# The About card's credit for the client the package carries.
-NETBIRD_ABOUT = (
-    (
-        "NetBird",
-        NETBIRD_VERSION,
-        "BSD-3-Clause",
-        "https://github.com/netbirdio/netbird/tree/v{}",
-        None,
-    ),
-)
-
 # The daemon's word, lower-cased, for a peer it reaches through a relay.
 NETBIRD_CONNECTION_RELAYED = "relayed"

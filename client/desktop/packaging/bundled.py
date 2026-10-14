@@ -3,8 +3,8 @@
 Three of them everywhere: the cc-switch CLI, which points a person's AI
 tools at the hub's gateway; the RustDesk viewer, which opens a desktop the
 fleet shares; and EasyTier, whose daemon the packages register as a service
-so the client can join a hub's virtual network. Each part of a left-out
-feature the tree holds adds its own (:func:`payload.parts`). Windows adds
+so the client can join a hub's virtual network, and NetBird, whose daemon
+they register the same way (:mod:`netbird_payload`). Windows adds
 tun2socks, which the files daemon runs on the files adapter, at the pin the
 hub's packages share. Each is fetched from its own upstream release and
 checked against a hash recorded here, so a build either produces the
@@ -28,6 +28,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "packaging"))
+import netbird_payload  # noqa: E402
 import payload  # noqa: E402
 from shared import cc_switch_assets  # noqa: E402
 from shared import hub_assets  # noqa: E402
@@ -114,8 +115,7 @@ def stage_linux_binaries(tree: Path, architecture: str) -> None:
     prefix = tree / str(payload.INSTALL_PREFIX).lstrip("/")
     _stage_cc_switch(prefix / CC_SWITCH_INSTALL_PATH, "linux", machine)
     _stage_rustdesk_host(prefix / RUSTDESK_INSTALL_DIR, machine)
-    for part in payload.parts():
-        part.stage_linux(prefix, machine)
+    netbird_payload.stage_linux(prefix, machine)
     _stage_easytier(prefix / EASYTIER_INSTALL_DIR, "linux", machine)
 
 
@@ -135,8 +135,7 @@ def stage_windows_binaries(installed: Path, architecture: str) -> None:
         installed / "bin" / cc_switch_assets.binary_name("windows"), "windows", machine
     )
     rustdesk_assets.stage_windows_exe(installed / "bin", machine=machine)
-    for part in payload.parts():
-        part.stage_windows(installed, machine)
+    netbird_payload.stage_windows(installed, machine)
     _stage_easytier(installed / "bin", "windows", machine)
     hub_assets.stage_program(
         installed / "bin",
@@ -162,8 +161,7 @@ def stage_darwin_binaries(app_contents: Path, architecture: str) -> None:
     resources = app_contents / DARWIN_RESOURCES_DIR
     _stage_cc_switch(resources / CC_SWITCH_INSTALL_PATH, "darwin", machine)
     rustdesk_assets.stage_darwin_app(resources / RUSTDESK_INSTALL_DIR, machine=machine)
-    for part in payload.parts():
-        part.stage_darwin(resources, machine)
+    netbird_payload.stage_darwin(resources, machine)
     _stage_easytier(resources / EASYTIER_INSTALL_DIR, "darwin", machine)
 
 
