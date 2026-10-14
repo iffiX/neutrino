@@ -306,9 +306,21 @@ Categories=Network;
 """
 DESKTOP_ICON_EDGES = (256, 48)
 
-# What a first install runs once the files are in place: the panel's unit
-# starts, serving the setup wizard, and its address is printed.
-FIRST_INSTALL = """systemctl enable --now neutrino_hub_web.service >/dev/null 2>&1 || true
+# Where the Linux hub keeps its panel settings, and the shell function the
+# maintainer scripts ask whether the hub was set up: the settings hold a
+# password hash that is not the example's placeholder.
+HUB_SETTINGS_LINUX = "/etc/neutrino/hub/web/settings.json"
+HUB_IS_SET_UP = f"""hub_is_set_up() {{
+    grep -Eq '"admin_password_hash"[[:space:]]*:[[:space:]]*"[^"]' {HUB_SETTINGS_LINUX} 2>/dev/null &&
+        ! grep -Eq '"admin_password_hash"[[:space:]]*:[[:space:]]*"PLACEHOLDER' {HUB_SETTINGS_LINUX} 2>/dev/null
+}}
+"""
+
+# What a first install runs once the files are in place, and an upgrade over
+# a hub nobody set up: the panel's unit serves the setup wizard on this
+# version, and its address is printed.
+FIRST_INSTALL = """systemctl try-restart neutrino_hub_web.service >/dev/null 2>&1 || true
+systemctl enable --now neutrino_hub_web.service >/dev/null 2>&1 || true
 address="$(nhub open --print 2>/dev/null)" || address=""
 echo ""
 if [ -n "$address" ]; then
