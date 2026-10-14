@@ -31,7 +31,10 @@ pushes every online client and agent its state, whose `urls` name the new
 port, and then restarts on it at once. A peer offline at that moment holds
 only the old addresses, cannot reach the hub, and joins again with a new
 link. Before the save the page says how many clients and how many agents are
-offline.
+offline: those with a binding row and no live session at that moment, which
+`SettingsView` carries as `offline_client_count` and `offline_agent_count`.
+While Direct is on, the page also says that the router's port forward and
+Direct's public port change with it.
 
 ### The panel ports
 
@@ -576,7 +579,7 @@ has is refused 400 `permission_device_unknown {device_id}`.
 
 | Route | Parameters | Does |
 | --- | --- | --- |
-| `GET /api/hub/setting` | | `SettingsView` |
+| `GET /api/hub/setting` | | `SettingsView`, with `offline_client_count` and `offline_agent_count`: the clients and the agents with a binding row and no live session at this moment |
 | `POST /api/hub/setting/set` | the settings, `listen_port`, `https_listen_port`, `agent_listen_port`, `hub_name`, `language` and `theme` among them; an absent port keeps it | `SettingsView`; a port change restarts the panel after answering, an agent port change after every online peer was pushed its new `urls` ("Three ports, two audiences"); 400 `port_out_of_range {minimum, maximum, value}`, `port_already_in_use {value}` |
 | `GET /api/hub/setting/https` | | `PanelHttpsView`: `is_https_enabled`, `listen_port`, `https_listen_port`, `has_authority`, the authority's `authority_fingerprint` and `authority_created_at`, `authority_file_name`, the served certificate's `leaf_names`, `leaf_issued_at` and `leaf_expires_at`, and `renewed_at`, the last time it was issued again since the panel started |
 | `GET /api/hub/setting/https/authority` | | no session, and served by the HTTP port while HTTPS is on: the authority's DER as `neutrino-<hub>-ca.crt`, `application/x-x509-ca-cert`; 404 `https_authority_missing` before there is one |

@@ -24,9 +24,12 @@ A page reads top-down in one order:
 `network_page.tsx` is the reference: the mode panel, then the topology diagram,
 then the per-interface form, then routing behavior, then exposure, then the
 panel's own ports and the agent port. Before an agent port change is
-saved, the panel's apply bar warns how many clients and how many agents are
-offline. Those lose the hub and join again with a new link
-([protocol.md](protocol.md), "Three ports, two audiences").
+saved, the panel's apply bar warns with `ui.network.agent_port_offline_warning
+{clients, agents}`, the counts `SettingsView` carries: those peers lose the
+hub and join again with a new link ([protocol.md](protocol.md), "Three
+ports, two audiences"). While Direct is on, the bar adds
+`ui.network.agent_port_direct_warning`: the router's port forward and
+Direct's public port change with the agent port.
 
 **A page carries no controls that belong to a panel** — no apply, no reset, no
 save. Its header may carry an action that belongs to no single panel and starts
