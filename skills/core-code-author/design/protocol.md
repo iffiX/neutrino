@@ -941,6 +941,7 @@ the three packages, named here so that changing one is a change to this table.
 | open `connect` streams on one client socket | `CHANNEL_CONNECT_STREAMS_MAX` 256 | | |
 | a hub thread's call onto the loop | `CHANNEL_CALL_TIMEOUT_S` 15 | | |
 | address rotation: the pause before the next address of the set | | `AGENT_ROTATE_DELAY_S` 1 | none: a client's round dials every address at once |
+| a client's redial of an address refused within a round, until `CLIENT_CONNECT_TIMEOUT_S` from the round's start | | | `CLIENT_REDIAL_INTERVAL_S` 1 |
 
 Every number is seconds except the two rows in bytes and the counts of
 streams, sources and datagrams. The client's credit and frame size hold on every stream that

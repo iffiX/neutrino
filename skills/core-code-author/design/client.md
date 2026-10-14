@@ -235,6 +235,7 @@ the port is reached").
 | No address is preferred for having worked last. A connected hub moves to another address only when a round a network change started wins on a better path ("A network change starts a round"). | The path that completes first is the fastest one at that moment, whatever it was at the last round. |
 | No prober runs between rounds, no round runs on a timer, and the client keeps no list of reachable addresses. | Every round already tries every address; a second mechanism that guesses reachability goes stale between rounds. |
 | One `hello` per round. | The hub keeps one admitted socket per binding and closes the earlier of two with 4010 `replaced`, so a second `hello` in one round closes the round's own winner. |
+| An address refused in a round, a host that is up with the port not open yet, is dialled again every `CLIENT_REDIAL_INTERVAL_S`, 1 s, until `CLIENT_CONNECT_TIMEOUT_S`, 10 s, has passed since the round started. An address that does not answer at all is not dialled again in that round. The desktop and the phone do the same. | A hub that restarts opens its port again within a second or two; without the redial the client waits out the round and the backoff before it dials again. |
 
 ### A network change starts a round
 
@@ -446,6 +447,14 @@ A `file` entry on Windows goes through the files adapter instead ("The
 files adapter on Windows"), and on a phone the in-app SMB client's sockets
 are `connect` streams themselves; neither holds a local port. A client that
 quits ends every forward.
+
+While a hub has no channel, each of its TCP forwards stops accepting new
+connections and stays bound to its port. The connections waiting in the
+listen queue are accepted and served once the channel is back. The desktop
+and the phone do the same. A forward that accepts with no channel can only
+close each connection at once, and a program such as the kernel's SMB
+client then reconnects at once, again and again, for as long as the hub is
+away.
 
 The local port is the client's to manage:
 
