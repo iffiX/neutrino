@@ -230,7 +230,7 @@ protocol number rose past it.
 
 `state.json` in that directory records where it stands: `installing`,
 `installed`, `rolling_back`, `rolled_back` or `failed`, with `reason` naming
-the first failure, `steps` the lines the update dialog shows, and `output` the
+the first failure, `steps` the lines the Settings page shows, and `output` the
 tail of `update.log`. The panel reads it
 back once it is up again. A box left on neither version, which only a
 rollback that failed too can leave, is put back by hand:

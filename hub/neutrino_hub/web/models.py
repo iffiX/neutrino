@@ -1415,14 +1415,12 @@ class PanelHttpsResetView(PanelHttpsView):
 class PanelDisplayUpdate(BaseModel):
     """An update of the hub itself, as a page with no session follows it.
 
-    ``steps`` holds the lines a person reads, versions and file names only;
     ``finished_at`` is empty while it runs.
     """
 
     stage: str
     from_version: str
     to_version: str
-    steps: list[str] = Field(default_factory=list)
     finished_at: str = ""
 
 

@@ -27,10 +27,11 @@ import "./update_dialog.css";
  * The dialog an update of the hub runs in, from the confirmation to its end.
  *
  * It asks, then streams the staging task. When the stream ends the install
- * restarts the panel, and the dialog reads the update's lines from the public
- * display route, signed in or not, until the update reaches a final stage.
- * It is drawn above the session gate, so the sign-out the restart brings
- * leaves it open, and a page loaded meanwhile opens it again.
+ * restarts the panel, and the dialog keeps the staging lines and reads the
+ * update's stage from the public display route, signed in or not, until the
+ * stage is final, then shows one line with the result. It is drawn above the
+ * session gate, so the sign-out the restart brings leaves it open, and a page
+ * loaded meanwhile opens it again.
  */
 
 /** How often the display route is read once the staging has handed over. */
@@ -199,7 +200,7 @@ function UpdateDialogModal({ dialog }: UpdateDialogModalProps) {
     if (element !== null) {
       element.scrollTop = element.scrollHeight;
     }
-  }, [streamLines, progress]);
+  }, [streamLines]);
 
   const finish = useCallback(() => {
     closeUpdateDialog();
@@ -236,10 +237,6 @@ function UpdateDialogModal({ dialog }: UpdateDialogModalProps) {
   };
 
   const version = target.version;
-  const lines =
-    progress !== null && progress.steps.length > 0
-      ? progress.steps
-      : streamLines;
   return (
     <div
       className="confirm_backdrop"
@@ -321,12 +318,12 @@ function UpdateDialogModal({ dialog }: UpdateDialogModalProps) {
 
         {phase !== "ask" && (
           <div className="update_modal_fields update_dialog_progress">
-            {lines.length > 0 && (
+            {streamLines.length > 0 && (
               <pre
                 className="device_drawer_log_output update_dialog_log"
                 ref={logRef}
               >
-                {stripAnsi(joinPercentLines(lines).join("\n"))}
+                {stripAnsi(joinPercentLines(streamLines).join("\n"))}
               </pre>
             )}
             {phase === "staging" && (
@@ -358,6 +355,15 @@ function UpdateDialogModal({ dialog }: UpdateDialogModalProps) {
                   }
                 />
               ))}
+            {phase === "finished" && progress !== null && (
+              <div className={`notice ${resultTone(progress.stage)}`}>
+                <Icon
+                  name={progress.stage === "installed" ? "check" : "alert"}
+                  size={15}
+                />
+                <div className="notice_body">{resultLine(progress)}</div>
+              </div>
+            )}
           </div>
         )}
 
@@ -387,7 +393,7 @@ function UpdateDialogModal({ dialog }: UpdateDialogModalProps) {
  * Lines as the box shows them: a run of percent lines on one row.
  *
  * Args:
- *   lines: The lines as streamed or stored.
+ *   lines: The lines as streamed.
  *
  * Returns:
  *   The same lines, each run of consecutive percent lines joined by two
@@ -409,15 +415,33 @@ function joinPercentLines(lines: readonly string[]): string[] {
   return joined;
 }
 
-/** The status line for an update the panel answers about. */
+/** The status line for an update the panel answers about, not yet final. */
 function stageLabel(progress: HubUpdateProgress | null): string {
   if (progress?.stage === "preparing") {
     return t("ui.settings.update_preparing");
   }
-  if (progress?.stage === "rolling_back") {
-    return t("ui.settings.update_rolling_back", {
-      from: progress.from_version,
-    });
+  return t("ui.settings.update_restarting");
+}
+
+/** The one line that ends the dialog, for an update in a final stage. */
+function resultLine(progress: HubUpdateProgress): string {
+  const values = { from: progress.from_version, to: progress.to_version };
+  if (progress.stage === "installed") {
+    return t("ui.settings.update_finished_installed", values);
   }
-  return t("ui.settings.update_installing");
+  if (progress.stage === "rolled_back") {
+    return t("ui.settings.update_finished_rolled_back", values);
+  }
+  return t("ui.settings.update_finished_failed", values);
+}
+
+/** The notice tone of a final stage. */
+function resultTone(stage: HubUpdateStage): string {
+  if (stage === "installed") {
+    return "notice--ok";
+  }
+  if (stage === "rolled_back") {
+    return "notice--warn";
+  }
+  return "notice--error";
 }

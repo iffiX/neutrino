@@ -6,7 +6,8 @@ settings. What is pinned here is that the read needs no session and answers
 both at once, that a write naming neither leaves the stored ones alone, and
 that a language or a palette nobody ships is refused by its code rather than
 silently stored. The same read carries the hub's update while it runs and
-for 30 minutes after, which the page follows across the panel's restart.
+for 30 minutes after, which the page follows across the panel's restart: its
+stage, versions and end, never its lines or its log.
 """
 
 import os
@@ -134,14 +135,13 @@ def update_record_of(stage: str, **overrides) -> HubUpdateRecord:
     return HubUpdateRecord(**values)
 
 
-def test_an_update_under_way_is_shown_with_its_steps_and_no_log(update_record):
+def test_an_update_under_way_is_shown_with_no_steps_and_no_log(update_record):
     update_record.save(update_record_of("installing"))
 
     assert display_of({})["update"] == {
         "stage": "installing",
         "from_version": "0.5.1",
         "to_version": "0.5.2",
-        "steps": STEPS,
         "finished_at": "",
     }
 
@@ -158,7 +158,7 @@ def test_an_update_that_ended_moments_ago_is_shown(update_record):
 
     assert shown["stage"] == "installed"
     assert shown["finished_at"] == finished
-    assert shown["steps"][-1] == "done"
+    assert "steps" not in shown
 
 
 def test_an_update_that_ended_long_ago_is_not_shown(update_record):
