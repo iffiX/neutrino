@@ -2,10 +2,9 @@
 
 A change on the Clients page holds for the next stream by itself, since every
 ``open`` is judged then. What is already open is closed here: the socket of a
-client switched off or deleted; otherwise the ``shell`` streams of machines it
-lost under ``terminal``, the ``exec`` streams of machines it lost under
-``exec``, the ``connect`` streams whose kind or machine it lost,
-the panel's forward among them, and its panel sessions once ``panel`` goes. A
+client switched off or deleted; otherwise the ``shell`` and ``exec`` streams
+of machines it lost under ``terminal``, the ``connect`` streams whose kind or
+machine it lost, the panel's forward among them, and its panel sessions once ``panel`` goes. A
 stream closed this way ends with the refusal its next ``open`` would get. A
 persistent or shared shell stays on its machine; only this client's stream to
 it closes.
@@ -21,7 +20,6 @@ from neutrino_hub.exceptions import StreamRefusedError
 from neutrino_hub.modules.clients.constants import (
     CLIENT_CODE_DISABLED,
     CLIENT_CODE_PERMISSION_DENIED,
-    CLIENT_PERMISSION_EXEC,
     CLIENT_PERMISSION_FILTERED_KINDS,
     CLIENT_PERMISSION_TERMINAL,
 )
@@ -97,10 +95,8 @@ def _lost_streams(registry, client, session) -> list:
     kinds = permitted_kinds(registry, client)
     devices = permitted_devices(registry, client)
     lost = []
-    for kind, bridges in (
-        (CLIENT_PERMISSION_TERMINAL, session.shells),
-        (CLIENT_PERMISSION_EXEC, session.execs),
-    ):
+    kind = CLIENT_PERMISSION_TERMINAL
+    for bridges in (session.shells, session.execs):
         for stream_id, bridged in dict(bridges).items():
             if kind not in kinds or not is_device_permitted(devices, kind, bridged[0]):
                 lost.append((stream_id, kind))

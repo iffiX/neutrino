@@ -1,7 +1,7 @@
 """A client runs one command on a managed machine through an ``exec`` stream.
 
 The Clients page makes a link; the check joins with it over the pinned agent
-port as a client, is given ``exec`` alone, and opens ``exec`` on the hub's
+port as a client, is given ``terminal`` alone, and opens ``exec`` on the hub's
 own agent, else on the first online machine the panel lists. The command
 writes ``out`` to stdout and ``err`` to stderr and exits 7: each arrives on
 its own ``fd`` and the close carries ``exit_code`` 7. Then ``cat`` is sent
@@ -35,7 +35,8 @@ EXEC_TIMEOUT_S = 30.0
 
 @pytest.fixture
 def exec_client(panel):
-    """A client allowed ``exec`` alone, its socket open, and its row gone after."""
+    """A client allowed ``terminal`` alone, its socket open, and its row gone
+    after."""
     status, made = panel.call(
         "POST", "/hub/client/enrollment/create", {"name": "integration-exec"}
     )
@@ -49,7 +50,7 @@ def exec_client(panel):
         status, answer = panel.call(
             "POST",
             "/hub/client/permission/set",
-            {"client_id": client_id, "kinds": ["exec"]},
+            {"client_id": client_id, "kinds": ["terminal"]},
         )
         assert status == 200, answer
         channel.open(client_id, token)

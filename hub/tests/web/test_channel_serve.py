@@ -1494,7 +1494,7 @@ def test_a_clients_exec_carries_stdin_and_eof_up_and_both_outputs_down(api):
     client, runtime = api
     device_id, device_token = bound_device()
     client_id, client_token = bound_client()
-    ClientRegistry().set_permission(client_id, ["exec"])
+    ClientRegistry().set_permission(client_id, ["terminal"])
     argv = ["sh", "-c", "cat; echo err >&2; exit 7"]
     agent = welcomed(client, device_id, device_token)
     person = welcomed(client, client_id, client_token, role="client")

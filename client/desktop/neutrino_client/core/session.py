@@ -302,8 +302,7 @@ def clean_terminals(value) -> dict:
         value: What the state carried.
 
     Returns:
-        ``{"machines": [{device_id, name, is_online, is_shell_allowed,
-        is_exec_allowed}], "sessions": [...]}``,
+        ``{"machines": [{device_id, name, is_online}], "sessions": [...]}``,
         each session as :func:`_clean_session` keeps it and stamped with
         its machine; a machine or a session without an id is dropped.
     """
@@ -325,8 +324,6 @@ def clean_terminals(value) -> dict:
                 "device_id": device_id,
                 "name": str(entry.get("name", "") or "") or device_id,
                 "is_online": bool(entry.get("is_online")),
-                "is_shell_allowed": entry.get("is_shell_allowed") is True,
-                "is_exec_allowed": entry.get("is_exec_allowed") is True,
             }
         )
         nested = entry.get("sessions")
@@ -708,8 +705,8 @@ class ClientHubSession:
         """The machines the hub offers a terminal on, while its socket is up.
 
         Returns:
-            ``[{device_id, name, is_online, is_shell_allowed,
-            is_exec_allowed}]``; empty while the socket is down.
+            ``[{device_id, name, is_online}]``; empty while the socket is
+            down.
         """
         with self._lock:
             if not self._is_welcomed:

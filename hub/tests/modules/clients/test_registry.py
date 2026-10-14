@@ -24,9 +24,7 @@ def stored(config_dir) -> dict:
     return data["clients"]
 
 
-def test_a_hub_set_up_from_the_examples_allows_every_kind_but_the_panel_and_exec(
-    config_dir,
-):
+def test_a_hub_set_up_from_the_examples_allows_every_kind_but_the_panel(config_dir):
     copy_example(
         UTILS_EXAMPLES_DIR / "clients" / "clients.example.json",
         config_dir / "clients" / "clients.json",
@@ -35,7 +33,7 @@ def test_a_hub_set_up_from_the_examples_allows_every_kind_but_the_panel_and_exec
     registry = ClientRegistry()
 
     assert registry.default_permission() == [
-        kind for kind in CLIENT_PERMISSION_KINDS if kind not in ("panel", "exec")
+        kind for kind in CLIENT_PERMISSION_KINDS if kind != "panel"
     ]
     assert registry.default_permission_devices() == {}
 

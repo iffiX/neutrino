@@ -100,8 +100,7 @@ fun TerminalScreen(hubs: List<HubView>, tabs: TerminalTabs) {
     val active by tabs.active.collectAsStateWithLifecycle()
     val pick by tabs.picked.collectAsStateWithLifecycle()
     var modifiers by remember { mutableStateOf(TerminalModifiers()) }
-    val machines =
-        hubs.filter { it.isConnected }.flatMap { hub -> hub.terminals.filter { it.isShellAllowed }.map { hub to it } }
+    val machines = hubs.filter { it.isConnected }.flatMap { hub -> hub.terminals.map { hub to it } }
     val picked = machines.firstOrNull { (hub, machine) -> pick == hub.binding.id to machine.deviceId }
     val tab = open.firstOrNull { it.sessionId == active }
     val newTerminal = PageAction(

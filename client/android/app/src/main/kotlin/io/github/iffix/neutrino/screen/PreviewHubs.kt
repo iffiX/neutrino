@@ -88,8 +88,8 @@ object PreviewHubs {
         ),
         terminals =
             listOf(
-                ChannelTerminal("d1", "Argon", isOnline = true, isShellAllowed = true),
-                ChannelTerminal("d2", "Neutrino", isOnline = true, isShellAllowed = true),
+                ChannelTerminal("d1", "Argon", isOnline = true),
+                ChannelTerminal("d2", "Neutrino", isOnline = true),
             ),
     )
 
