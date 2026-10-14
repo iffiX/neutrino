@@ -337,9 +337,9 @@ AI forward opens; the hub joins it to the gateway on the hub's loopback
 | --- | --- |
 | The forward listens on `127.0.0.1` alone, opens no port in any firewall, and closes when the section turns off. | The gateway serves the hub's own machine, its clients and its managed machines, and no other host on the LAN; a port on any other address opens it to the LAN. |
 | While the agent has no channel to the hub, the forward stops accepting new connections and stays bound; the connections waiting in its listen queue are served once the channel is back. | A client's forward does the same ([client.md](client.md), "The local port table"), for the same reason: a connection accepted with no channel can only be closed at once. |
-| The hub refuses the stream with `permission_denied {kind: ai}` while that machine's AI tools setting is off. | The setting is the machine's one permission for the gateway. |
+| The hub closes the stream `permission_denied {kind: ai}` while that machine's AI tools setting is off. | The setting is the machine's one permission for the gateway. |
 | The forward adds no key and reads none; each request holds the device's own key, which the switch wrote into the tool, and the gateway checks it. | The gateway's key check is the one gate on it, wherever a request comes from. |
-| The agent on the hub's own machine opens no forward. Its tools are pointed at the gateway's own loopback port, `listen_port`. | The gateway already listens on that machine's loopback, at 8317 by default, where a forward would collide with it. |
+| The agent on the hub's own machine opens no forward. Its tools are pointed at the gateway's own loopback port, `listen_port`. | The gateway already listens on that machine's loopback, at 8317 by default, the port a forward there takes. |
 | Bytes go both ways under the channel's credit, and either socket's end closes the stream. | It is a `connect` stream like any other, in the other direction. |
 
 ## The local control channel

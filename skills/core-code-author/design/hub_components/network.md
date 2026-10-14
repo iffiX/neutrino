@@ -363,7 +363,7 @@ image runs it already. The hub's `fail2ban` dependency stays as it is.
 | Rule | Reason |
 | --- | --- |
 | Each hub port is one rich rule in the zone of each interface whose segment is exposed, its source address the segment and its port the hub port. The peer ports, DHCP and Direct's agent-port rule are rich rules of the same kind, with no source address. | firewalld decides by zone, and a zone holds the interfaces the person put in it. |
-| Each rule is written to the runtime and to the permanent configuration, and carries a marker the hub finds its own rules by. | A rule in one alone is lost at firewalld's next reload or at the next boot, and the marker keeps the person's own rules out of every change. |
+| Each rule is written to the runtime and to the permanent configuration, and holds a marker the hub finds its own rules by. | A rule in one alone is lost at firewalld's next reload or at the next boot, and the marker keeps the person's own rules out of every change. |
 | The router unit starts after firewalld (`After=firewalld.service`). | The first pass of a boot finds firewalld running and writes into it. |
 | The half-minute check that compares the overlay devices also compares the hub's rules in firewalld with the ones the pass wrote, and runs the pass again when they differ. | firewalld started at a later boot, or reloaded, holds none of the hub's runtime rules. |
 | Removing the package and a reset take the hub's rules out of firewalld, with the hub's nftables table. | The machine's firewall is the person's again. |

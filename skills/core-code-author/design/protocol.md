@@ -32,7 +32,7 @@ port, and then restarts on it at once. A peer offline at that moment holds
 only the old addresses, cannot reach the hub, and joins again with a new
 link. Before the save the page says how many clients and how many agents are
 offline: those with a binding row and no live session at that moment, which
-`SettingsView` carries as `offline_client_count` and `offline_agent_count`.
+`SettingsView` holds as `offline_client_count` and `offline_agent_count`.
 While Direct is on, the page also says that the router's port forward and
 Direct's public port change with it.
 

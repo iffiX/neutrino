@@ -25,7 +25,7 @@ A page reads top-down in one order:
 then the per-interface form, then routing behavior, then exposure, then the
 panel's own ports and the agent port. Before an agent port change is
 saved, the panel's apply bar warns with `ui.network.agent_port_offline_warning
-{clients, agents}`, the counts `SettingsView` carries: those peers lose the
+{clients, agents}`, the counts `SettingsView` holds: those peers lose the
 hub and join again with a new link ([protocol.md](protocol.md), "Three
 ports, two audiences"). While Direct is on, the bar adds
 `ui.network.agent_port_direct_warning`: the router's port forward and
@@ -428,7 +428,7 @@ owner installs").
 
 ## Finding and adding a device
 
-The Devices page's header carries **Scan LAN** and **Add by address**
+The Devices page's header holds **Scan LAN** and **Add by address**
 (按地址添加). A
 scan covers the exposed IPv4 segments in every mode
 ([protocol.md](protocol.md), `POST /api/hub/device/scan`): a segment of at
