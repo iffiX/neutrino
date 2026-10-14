@@ -208,8 +208,12 @@ const val CLIENT_STREAM_CODE_KIND_UNKNOWN = "kind_unknown"
 /** The refusal of a binding the hub does not hold: the row waits for Leave. */
 const val CLIENT_REFUSAL_CODE_BINDING_UNKNOWN = "binding_unknown"
 
+/** The refusal of a client older than the hub's floor: the row says to update the client. */
+const val CLIENT_REFUSAL_CODE_PROTOCOL_TOO_OLD = "protocol_too_old"
+
 /** The refusals the hub answers a protocol number it does not speak with. */
-val CLIENT_PROTOCOL_REFUSAL_CODES: List<String> = listOf("protocol_too_old", "protocol_too_new")
+val CLIENT_PROTOCOL_REFUSAL_CODES: List<String> =
+    listOf(CLIENT_REFUSAL_CODE_PROTOCOL_TOO_OLD, "protocol_too_new")
 
 /** A stream for one published entry's material. */
 const val CLIENT_STREAM_KIND_SERVICE = "service"

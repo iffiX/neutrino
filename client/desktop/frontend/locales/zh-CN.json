@@ -114,6 +114,7 @@
   "ui.about_this_machine": "本机",
   "ui.about_version": "版本",
   "ui.action.retry_in": "{s} 秒后重试",
+  "ui.action.update_client": "更新客户端",
   "ui.add_hub": "加入中枢",
   "ui.ai_needs_client": "只有这个客户端开着时，工具才连得到网关。",
   "ui.ai_on": "工具已指向中枢",

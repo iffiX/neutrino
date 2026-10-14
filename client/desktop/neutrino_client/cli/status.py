@@ -16,13 +16,17 @@ import time
 
 from neutrino_client import CLIENT_VERSION, words
 from neutrino_client.cli import wording
-from neutrino_client.constants import CLIENT_DEFAULT_LANGUAGE
+from neutrino_client.constants import (
+    CLIENT_DEFAULT_LANGUAGE,
+    CLIENT_REFUSAL_CODE_PROTOCOL_TOO_OLD,
+)
 from neutrino_client.core import enrollment
 from neutrino_client.core.session import (
     CONNECTION_CONNECTED,
     CONNECTION_REPLACED,
     CONNECTION_WAITING,
     WAIT_JOIN_REFUSED,
+    WAIT_TOO_OLD,
 )
 
 RESIDENT_RUNNING = "running"
@@ -272,7 +276,8 @@ def _waiting_line(hub: dict) -> str:
 
     Returns:
         The reason's word, with the seconds left while a countdown runs,
-        the connecting word once it reached 0, or a refused join's reason.
+        the connecting word once it reached 0, a refused join's reason,
+        or the step that ends a wait on a client too old for the hub.
 
     Raises:
         FileNotFoundError: When the word catalogs are not on this machine.
@@ -286,6 +291,12 @@ def _waiting_line(hub: dict) -> str:
         params = code.get("params") or {}
         why = _word(f"code.{refusal}", wording.word_code(refusal, params), params)
         return f"{line} · {why}"
+    if (
+        reason == WAIT_TOO_OLD
+        and isinstance(code, dict)
+        and code.get("code") == CLIENT_REFUSAL_CODE_PROTOCOL_TOO_OLD
+    ):
+        return f"{line} · {_word('ui.action.update_client', '')}"
     next_round_at = hub.get("next_round_at")
     if isinstance(next_round_at, bool) or not isinstance(next_round_at, (int, float)):
         return line
