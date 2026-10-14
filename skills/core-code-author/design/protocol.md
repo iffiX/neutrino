@@ -474,7 +474,7 @@ moved. Its steps and their order are [network.md](hub_components/network.md),
 | Route | Parameters | Does |
 | --- | --- | --- |
 | `GET /api/hub/device` | | every device on record |
-| `POST /api/hub/device/scan` | | scans the LAN; the list |
+| `POST /api/hub/device/scan` | | scans the exposed IPv4 segments, in every mode: a segment of at most 256 addresses whole, and of a larger one only the /24 that holds the hub's own address; scans no IPv6 segment and reads the IPv4 neighbours alone; the list |
 | `GET /api/hub/device/online` | | the devices with a socket open |
 | `POST /api/hub/device/enrollment/create` | `{device_id?, name?, is_hub?}` | a link for that row, or for a new one; `is_hub` makes the link for the agent on the hub's own machine, which names loopback first and is not refused `no_reachable_address` |
 | `POST /api/hub/device/set` | `{device_id, name, icon, ssh, shown_module}`, each optional | the name, the icon, the stored SSH credential the hub reaches it with, and which module tabs its Modules page shows |
