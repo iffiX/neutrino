@@ -56,7 +56,7 @@ Inside the hub package the layers only reach downward:
   `windows`, and the panel's API uses the same word.
 
 The agent has no dependencies and listens on `127.0.0.1` alone, for the
-programs on its own machine: it keeps one socket open to the hub and reconnects when it drops, so it survives restarts, sleep
+programs on its own machine. It keeps one socket open to the hub and reconnects when it drops, so it survives restarts, sleep
 and NAT in between. It decides nothing: the hub says in `state` what each
 module is to be, and the agent observes, installs and configures until the
 machine matches ("The hub says what is wanted; the agent observes, installs

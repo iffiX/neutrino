@@ -11,11 +11,11 @@ live on 2026-09-04).
 
 One CLIProxyAPI process per hub, on `listen_port` (default 8317), driven
 entirely by the rendered YAML. It listens on `127.0.0.1` alone, so no
-exposure and no firewall rule names its port: the hub's own machine reaches
-it there, a client through its own forward and the `connect` streams the
-hub relays, and a managed machine through its agent's forward ("How a
-managed machine's tools are pointed at the gateway"). A machine on the LAN
-with neither a client nor an agent does not reach it. Two kinds of
+exposure and no firewall rule names its port. The hub's own machine reaches
+it there. A client reaches it through its own forward and the `connect`
+streams the hub relays, and a managed machine through its agent's forward
+("How a managed machine's tools are pointed at the gateway"). A machine on
+the LAN with neither a client nor an agent does not reach it. Two kinds of
 credential feed it:
 
 - **Providers** — API-key endpoints, stored in `config/ai/providers.json`,
@@ -182,7 +182,7 @@ sections").
 | Who runs the steps | the client | the agent |
 | As whom | the person, in their own session | each account the hub names, never root or SYSTEM: `runuser -u <account> --` on Linux, a process with the account's uid and groups on macOS, a one-shot scheduled task under the account's login on Windows ([../agent/ai_tools.md](../agent/ai_tools.md)) |
 | The accounts | the person's own | every account with an instance in the machine's VS Code, code-server, CloudCLI or Codeg configuration, worked out by the hub and sent in the state |
-| The endpoint | `http://127.0.0.1:<local-port><path>`, the client's forward | `http://127.0.0.1:<port>`, the agent's own forward, which carries each connection to the hub over the agent's channel ([../agent.md](../agent.md), "The AI gateway forward") |
+| The endpoint | `http://127.0.0.1:<local-port><path>`, the client's forward | `http://127.0.0.1:<port>`, the agent's own forward, which relays each connection to the hub over the agent's channel ([../agent.md](../agent.md), "The AI gateway forward") |
 | A tool works | while the client runs and its channel to the hub is up | while the agent runs and its channel to the hub is up |
 | The key | the client's own, from the `service` stream | the device's own, from the `ai_tools` section |
 | The unchosen models | the gateway's first model, from the `service` stream | the gateway's first served model, filled in by the hub before the state is sent |

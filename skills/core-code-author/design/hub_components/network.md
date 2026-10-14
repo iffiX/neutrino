@@ -116,8 +116,8 @@ puts them back, with nothing retyped on the Proxy page.
 The hub's firewall governs the hub's own ports and nothing else, in every
 mode, `router` included. SSH, a file share and every other service the hub
 does not run are the system firewall's matter: the hub opens none of them
-and closes none of them. Only the input rules follow this page; the forward
-chain and the masquerade follow the roles, as below.
+and closes none of them. The exposure renders the input rules alone; the
+forward chain and the masquerade follow the roles, as below.
 
 | The hub's port | Present |
 | --- | --- |

@@ -1720,7 +1720,7 @@ number; the hub meets peers from different releases and needs a range,
 | `protocol_too_new` | `protocol > PROTOCOL` | `{peer, hub, min}` |
 
 A client refused `protocol_too_old` keeps its binding, and its Hubs row reads
-`ui.state.too_old` ([client.md](client.md), "The Hubs page"); the person
+`ui.state.too_old` ([client.md](client.md), "The Hubs page"). The person
 installs the new client, since a client does not update itself.
 
 Package versions take no part in admission. An agent whose `welcome` names a

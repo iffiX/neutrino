@@ -3,8 +3,8 @@
 The agent is the hub's presence on a managed Linux, Windows or macOS
 machine: one root service with one socket open to the hub. It hosts the
 modules the hub's state names, reports what is true, and shares the
-machine's desktop when told. It draws no window, and every port it listens
-on is on `127.0.0.1`: the forwarders in front of the programs run as an
+machine's desktop when told. It draws no window. Every port it listens on
+is on `127.0.0.1`: the forwarders in front of the programs run as an
 account, CloudCLI, code-server and Codeg
 ([modules/template.md](agent/modules/template.md), "The run"), and the AI
 gateway forward while the machine's AI tools use the gateway ("The AI
@@ -335,8 +335,8 @@ its `ai` entry works the same way.
 
 | Rule | Reason |
 | --- | --- |
-| The forward listens on `127.0.0.1` alone, opens no port in any firewall, and closes when the section turns off. | The gateway is for the machine's own accounts, and a port on any other address reaches the LAN, which the gateway no longer answers. |
-| The forward adds no key and reads none; each request carries the device's own key, which the switch wrote into the tool, and the gateway checks it. | The gateway's key check is the one gate on it, wherever a request comes from. |
+| The forward listens on `127.0.0.1` alone, opens no port in any firewall, and closes when the section turns off. | The gateway serves the hub's own machine, its clients and its managed machines, and no other host on the LAN; a port on any other address opens it to the LAN. |
+| The forward adds no key and reads none; each request holds the device's own key, which the switch wrote into the tool, and the gateway checks it. | The gateway's key check is the one gate on it, wherever a request comes from. |
 | Bytes go both ways under the channel's credit, and either socket's end closes the stream. | It is a `connect` stream like any other, in the other direction. |
 
 ## The local control channel

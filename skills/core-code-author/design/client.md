@@ -452,9 +452,8 @@ While a hub has no channel, each of its TCP forwards stops accepting new
 connections and stays bound to its port. The connections waiting in the
 listen queue are accepted and served once the channel is back. The desktop
 and the phone do the same. A forward that accepts with no channel can only
-close each connection at once, and a program such as the kernel's SMB
-client then reconnects at once, again and again, for as long as the hub is
-away.
+close each connection at once. A program such as the kernel's SMB client
+then reconnects at once, again and again, for as long as the hub is away.
 
 The local port is the client's to manage:
 
@@ -755,7 +754,7 @@ names a hub with `--hub` when several are joined. It takes one verb:
 | `persist` and `share` change a session for its owner only; any other client gets the hub's `session_not_owned` and exits 1. | The person who opened a session decides whether it stays and who sees it. |
 | `exec` exits 125 and 126 for its own outcomes, never 1 or 2. | The remote command's own 1 and 2 stay apart from the client's, as ssh and docker keep them. |
 | `exec` without `--tty` puts neither stdin nor stdout in raw mode, whether each is a terminal or not. | A pipe has no terminal mode, and a script's stdin is usually a pipe. |
-| `exec` runs on the machines the **Terminals** permission gives this client, the kind `terminal`, which are the machines `terminals` lists. | A shell on a machine already runs any command there as the same account, so a command needs nothing a shell does not. |
+| `exec` runs on the machines the **Terminals** permission gives this client, the kind `terminal`, which are the machines `terminals` lists. | A shell on a machine already runs any command there as the same account, so the shell's permission covers the machine's commands. |
 
 ### The phone terminal
 

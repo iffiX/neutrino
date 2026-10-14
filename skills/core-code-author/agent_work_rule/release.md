@@ -15,8 +15,8 @@ one version; the iOS app is paused ("iOS app" below). Whether an agent or a clie
 package speaks; the hub accepts every number from `PROTOCOL_MIN` to its own
 ([../design/protocol.md](../design/protocol.md), "Versioning"). A peer outside
 that range is rejected at the door with `protocol_too_old` or
-`protocol_too_new` and keeps its binding, except an agent of 0.5 under a hub
-of 0.6, which is admitted to update itself.
+`protocol_too_new` and keeps its binding. An agent of 0.5 under a hub of 0.6
+is the one exception: the hub admits it to update itself.
 
 An agent whose hub names a newer `software` upgrades itself from the package
 the hub keeps, an agent one protocol number behind included
