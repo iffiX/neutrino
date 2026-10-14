@@ -370,7 +370,7 @@ the page's whole view.
 
 | Route | Parameters | Does |
 | --- | --- | --- |
-| `GET /api/hub/display` | | `{language, theme, update}`: `update` is null, or `{stage, from_version, to_version, steps, finished_at}` for an update under way or ended in the last 30 minutes, a run that died marked `failed`; `steps` holds the lines the update dialog shows, versions and file names only |
+| `GET /api/hub/display` | | `{language, theme, update}`: `update` is null, or `{stage, from_version, to_version, finished_at}` for an update under way or ended in the last 30 minutes, a run that died marked `failed` |
 
 #### `/api/hub/dashboard`
 

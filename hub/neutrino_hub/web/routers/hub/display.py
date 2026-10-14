@@ -4,7 +4,7 @@ is a session, and an update of the hub itself.
 The page asks for both before its first render, which is before anybody has
 signed in. Writing them is the Settings page's, through
 ``POST /api/hub/setting/set``. An update restarts the panel, which ends every
-session, so the page follows the update's steps here until it ends.
+session, so the page follows the update's stage here until it ends.
 """
 
 from fastapi import APIRouter, Depends
@@ -58,8 +58,8 @@ def _shown(record: HubUpdateRecord | None) -> PanelDisplayUpdate | None:
         record: The update's record, settled.
 
     Returns:
-        Its stage, versions, steps and end; None with no record, or one that
-        ended more than 30 minutes ago.
+        Its stage, versions and end; None with no record, or one that ended
+        more than 30 minutes ago.
     """
     if record is None:
         return None
@@ -71,7 +71,6 @@ def _shown(record: HubUpdateRecord | None) -> PanelDisplayUpdate | None:
         stage=record.stage,
         from_version=record.from_version,
         to_version=record.to_version,
-        steps=record.steps,
         finished_at=record.finished_at,
     )
 

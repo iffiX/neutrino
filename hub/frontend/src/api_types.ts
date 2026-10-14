@@ -1366,8 +1366,6 @@ export interface HubUpdateProgress {
   stage: HubUpdateStage;
   from_version: string;
   to_version: string;
-  /** The update's short lines, one stage each. */
-  steps: string[];
   finished_at: string;
 }
 
