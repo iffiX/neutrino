@@ -124,6 +124,7 @@ languages, and the English column is the wording the English catalog holds.
 | `ui.state.admission_paused` | The hub pauses new devices |
 | `ui.state.unknown_device` | The hub does not know this device |
 | `ui.state.too_old` | Version too old |
+| `ui.action.update_client` | update the client |
 | `ui.state.join_refused` | Join refused |
 | `ui.action.retry_in` | retrying in `<s>` s |
 | `ui.state.replaced` | Replaced by another client |
@@ -206,7 +207,8 @@ after the ` · ` is what ends the wait:
 | `ui.state.untrusted` · `ui.action.retry_in`, Certificate mismatch · retrying in 60 s | 证书不符 · 60 秒后重试 | `hub_untrusted` | the countdown, at `CLIENT_BACKOFF_MAX_S` each time |
 | `ui.state.admission_paused` · `ui.action.retry_in`, The hub pauses new devices · retrying in 60 s | 中枢暂停接纳 · 60 秒后重试 | `admission_paused {retry_after_s}` on the join | the countdown of `retry_after_s` |
 | `ui.state.unknown_device`, The hub does not know this device | 中枢不认识本机 | `binding_unknown` | nothing; **Leave** is the row's only action |
-| `ui.state.too_old`, Version too old | 版本太旧 | `protocol_too_old` or `protocol_too_new` | nothing automatic; a refresh after an upgrade |
+| `ui.state.too_old` · `ui.action.update_client`, Version too old · update the client | 版本太旧 · 更新客户端 | `protocol_too_old` | nothing automatic: the person installs the new client, which keeps this state and its bindings, and the next round connects |
+| `ui.state.too_old`, Version too old | 版本太旧 | `protocol_too_new` | nothing automatic; a refresh after an upgrade |
 | `ui.state.join_refused` · `<the code's wording>`, Join refused · `<reason>` | 加入被拒 · 原因 | the hub refused the ticket (`ticket_spent`, any refusal of the join) | nothing; **Leave** |
 | `ui.state.replaced` · **Reconnect**, Replaced by another client · Reconnect | 已被替换 · 重新连接 | `replaced` | the press on **Reconnect** |
 | `ui.state.disabled`, Disabled by the hub | 已停用 | the frame says the client is disabled | the frame says enabled |
@@ -235,6 +237,7 @@ the port is reached").
 | No address is preferred for having worked last. A connected hub moves to another address only when a round a network change started wins on a better path ("A network change starts a round"). | The path that completes first is the fastest one at that moment, whatever it was at the last round. |
 | No prober runs between rounds, no round runs on a timer, and the client keeps no list of reachable addresses. | Every round already tries every address; a second mechanism that guesses reachability goes stale between rounds. |
 | One `hello` per round. | The hub keeps one admitted socket per binding and closes the earlier of two with 4010 `replaced`, so a second `hello` in one round closes the round's own winner. |
+| An address refused in a round, a host that is up with the port not open yet, is dialled again every `CLIENT_REDIAL_INTERVAL_S`, 1 s, until `CLIENT_CONNECT_TIMEOUT_S`, 10 s, has passed since the round started. An address that does not answer at all is not dialled again in that round. The desktop and the phone do the same. | A hub that restarts opens its port again within a second or two; without the redial the client waits out the round and the backoff before it dials again. |
 
 ### A network change starts a round
 
@@ -446,6 +449,13 @@ A `file` entry on Windows goes through the files adapter instead ("The
 files adapter on Windows"), and on a phone the in-app SMB client's sockets
 are `connect` streams themselves; neither holds a local port. A client that
 quits ends every forward.
+
+While a hub has no channel, each of its TCP forwards stops accepting new
+connections and stays bound to its port. The connections waiting in the
+listen queue are accepted and served once the channel is back. The desktop
+and the phone do the same. A forward that accepts with no channel can only
+close each connection at once. A program such as the kernel's SMB client
+then reconnects at once, again and again, for as long as the hub is away.
 
 The local port is the client's to manage:
 
@@ -660,7 +670,7 @@ switches at the right and nothing else.
 | Rule | Reason |
 | --- | --- |
 | Tabs stay mounted while hidden; switching tabs loses no output. | A terminal redrawn from scratch loses its scrollback. |
-| The chips name every machine the hub offers a shell on, `is_shell_allowed` in its `terminals` entry, each with its provider line; the picked chip is the one a new terminal opens on. | The person opens a terminal on a machine, and the machine is the first choice to make. |
+| The chips name every machine in the state's `terminals`, each with its provider line; the picked chip is the one a new terminal opens on. | The person opens a terminal on a machine, and the machine is the first choice to make. |
 | **New terminal** is disabled with no chip picked or with the picked machine offline, with the reason under the chips. | Nothing opens on a machine that cannot answer. |
 | Keys reach the machine in the order they were pressed: a tab has one sender that writes its bytes in sequence, on every client. | A letter that overtakes the one before it types another word. |
 | **Clear**, wherever a client offers it, sends Ctrl+C, clears the screen, drops what had arrived and was not yet drawn, and goes on dropping what arrives until the stream has been quiet for half a second, for twenty seconds at most. While it drops, the terminal's own box shows `ui.job.clearing` ("Clearing…", 「清屏中…」) where the output would be, and the word goes when the dropping ends. The desktop and the phone behave the same. | A clear that is followed by the rest of the flood clears nothing, and how long the flood's tail takes to cross the hub is not a number a client can know. |
@@ -732,7 +742,7 @@ names a hub with `--hub` when several are joined. It takes one verb:
 | `list` | `--hub`; `--json` | prints every online machine the state's `terminals` holds and the sessions it keeps: the machine, the session id's first eight characters, the title, the account, the owner's name, whether this client owns it, whether it is persistent, whether it is shared, and how many windows are attached; `--json` prints one JSON object | 0; 1 when the running client does not answer |
 | `open <machine>` | `--persistent`; `--shared`; `--hub` | opens a new shell in this terminal; `--shared` is the `shell` open's `is_shared`, and `--persistent` a `persist` with `is_persistent` sent once the stream is open | 0 once the shell closed, 1 for a refusal, 2 for a machine that is not offered |
 | `attach <machine> <session-id>` | `--hub` | attaches this terminal to a session the machine keeps, one this client owns or a shared one, with `is_resumed`, its kept output first | as `open`, and 2 for a session the machine does not list |
-| `exec <machine> -- <command…>` | `--tty`; `--hub` | runs the command through an `exec` stream ([protocol.md](protocol.md), "The exec stream"): this process's stdin goes up as it is and ends with `eof`, the remote stdout comes out on stdout and the remote stderr on stderr, unchanged; with no pseudo-terminal, stdin and stdout may be files or pipes. `--tty` opens it with `is_tty` on a pseudo-terminal of this terminal's size, with raw mode and resizes as `open` has them, for programs such as `top` and `vim` | the remote command's exit code; 125 for a refusal, from the hub, the agent or the client itself; 126 for a machine that is not offered |
+| `exec <machine> -- <command…>` | `--tty`; `--hub` | runs the command through an `exec` stream ([protocol.md](protocol.md), "The exec stream"): this process's stdin goes up as it is and ends with `eof`, the remote stdout comes out on stdout and the remote stderr on stderr, unchanged; with no pseudo-terminal, stdin and stdout may be files or pipes. `--tty` opens it with `is_tty` on a pseudo-terminal of this terminal's size, with raw mode and resizes as `open` has them, for programs such as `top` and `vim` | the remote command's exit code; 125 for a refusal, from the hub, the agent or the client itself; 126 when no hub offers the machine |
 | `persist <machine> <session-id>` | `--on` or `--off`; `--hub` | a `persist` with `is_persistent` alone: the session stays after its last window closes, or stops staying | 0, 1 for a refusal, 2 for a session the machine does not list |
 | `share <machine> <session-id>` | `--on` or `--off`; `--hub` | a `persist` with `is_shared` alone: every other client with terminal rights on the machine can attach, or no longer can, and the hub closes their streams at once | as `persist` |
 | `stop <machine> <session-id>` | `--hub` | `stop_session`: ends the session, as ending it on the panel does | as `persist` |
@@ -746,7 +756,7 @@ names a hub with `--hub` when several are joined. It takes one verb:
 | `persist` and `share` change a session for its owner only; any other client gets the hub's `session_not_owned` and exits 1. | The person who opened a session decides whether it stays and who sees it. |
 | `exec` exits 125 and 126 for its own outcomes, never 1 or 2. | The remote command's own 1 and 2 stay apart from the client's, as ssh and docker keep them. |
 | `exec` without `--tty` puts neither stdin nor stdout in raw mode, whether each is a terminal or not. | A pipe has no terminal mode, and a script's stdin is usually a pipe. |
-| `exec` needs the **Remote commands** permission, the kind `exec`, which the hub's Clients page offers apart from **Terminals**, the kind `terminal`; a new hub's default has it off. The panel's label is `ui.clients.kind_exec`: "Remote commands", 「远程命令」. | A script that runs as root with nobody watching it is more dangerous than a person at a shell. |
+| `exec` runs on the machines the **Terminals** permission gives this client, the kind `terminal`, which are the machines `terminals` lists. | A shell on a machine already runs any command there as the same account, so the shell's permission covers the machine's commands. |
 
 ### The phone terminal
 

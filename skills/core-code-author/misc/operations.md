@@ -159,7 +159,7 @@ nftables, `ip rule` or dnsmasq are Linux's.
 | Start and stop | `sudo nhub start`, `sudo nhub stop` | `nhub start`, `nhub stop` in an administrator PowerShell |
 | The panel | the `Neutrino Hub` entry in Launchpad, or `nhub open` | the `Neutrino Hub` entry in the Start menu, or `nhub open` |
 | Logs | `/Library/Logs/Neutrino/hub/<name>.log` | `C:\ProgramData\Neutrino\hub\log\<name>.log` |
-| The firewall | `/usr/libexec/ApplicationFirewall/socketfilterfw --listapps` and `sudo pfctl -a com.apple/neutrino_hub -sr` | `Get-NetFirewallRule -Name 'neutrino_hub_*'`, each rule's `Get-NetFirewallInterfaceFilter` naming the exposed interfaces |
+| The firewall | `/usr/libexec/ApplicationFirewall/socketfilterfw --listapps`, `sudo pfctl -a com.apple/neutrino_hub -sr` and `-sT` for the exposed segments' tables | `Get-NetFirewallRule -Name 'neutrino_hub_*'`, each hub port's rule with a `Get-NetFirewallAddressFilter` naming the exposed segments |
 
 `nhub open` opens the panel in the default browser on every system, and
 the setup wizard while the box is not set up. `nhub start` and `nhub stop`

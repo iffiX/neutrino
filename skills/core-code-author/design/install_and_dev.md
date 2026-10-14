@@ -18,7 +18,7 @@ application entry named `Neutrino Hub`, which opens the wizard or the panel
 ## The package installs everything the hub cannot run without
 
 `nftables`, `dnsmasq`, `iproute2`, NetworkManager, `fail2ban`, `iw`,
-`arp-scan`, `vnstat` and `curl` are the hub's dependencies, declared in the
+`arp-scan` and `curl` are the hub's dependencies, declared in the
 `Depends:` of the `.deb`, the `Requires:` of the `.rpm` and the `depends=` of
 the Arch package. All three are generated from `SYSTEM_RUNTIME_PACKAGES` in
 [`system/constants.py`](../../../hub/neutrino_hub/system/constants.py), so a
@@ -89,8 +89,8 @@ The hub runs on macOS and Windows in `server` mode only. Its package, a
 
 - `nhub`, the hub compiled by Nuitka into one binary with
   `neutrino_hub/data/` inside it;
-- cli-proxy-api, easytier-core and easytier-cli, and in `intl` xray,
-  tun2socks and netbird, each pinned by version and sha256 for the system and
+- cli-proxy-api, netbird, easytier-core and easytier-cli, and in `intl`
+  xray and tun2socks, each pinned by version and sha256 for the system and
   the architecture, and on Windows `wintun.dll` and the `packet.dll`
   stand-in beside them;
 - in `intl`, the geodata;

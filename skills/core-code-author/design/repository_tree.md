@@ -55,7 +55,7 @@ hub/
                      site-packages can collide with anything else.
     modules/<name>/    One feature module each. See the shape below.
     system/            How this box's own OS is driven: systemd, a pty shell,
-                       the package manager, vnstat, listening sockets, and
+                       the package manager, listening sockets, and
                        windows_net.py, the network Windows reports through
                        iphlpapi.
     web/               The FastAPI panel over the modules: routers/, auth,
@@ -71,7 +71,7 @@ hub/
     exceptions.py      The package's one exception table; no kind is
                        declared anywhere else.
     edition.py         The edition table: the one way code outside the
-                       proxy and NetBird reaches them.
+                       proxy reaches it.
     data/              What ships inside the wheel: services/ the unit
                        templates, examples/ the committed *.example.json,
                        manifests/ the device software catalog, one file
@@ -98,7 +98,7 @@ password hash and device keys. What each file may contain is documented by the
 agent/
   neutrino_agent/    The agent: the channel to the hub, desired-state sync,
                      the modules it hosts, the streams the panel drives. No
-                     window; it listens on nothing.
+                     window; it listens on 127.0.0.1 alone.
     core/            The one WebSocket to the hub, enrollment, the desired
                      state store and engine, metrics, self-update.
     control/         The root-only local socket `nagent` talks to, and the
@@ -149,17 +149,13 @@ client/desktop/
                      Win32 helpers.
     bundled.py       Where the carried tools (cc-switch, the RustDesk
                      viewer) are found.
-    edition.py       The edition table: the one way the rest of the client
-                     reaches NetBird.
-    netbird/         NetBird's driver and constants, which the mainland tree
-                     leaves out.
+    edition.py       The edition the client was built as, `EDITION`,
+                     which chooses where it fetches from.
+    netbird/         NetBird's driver and constants.
     data/            Ships inside the package: desktop/ its .desktop entry,
                      polkit/ the policy for the mount helper.
   frontend/          The window's page: plain HTML, CSS and JavaScript, no
                      framework and no node toolchain.
-    parts/           One script per left-out feature the tree holds, inlined
-                     before app.js: NetBird's engine name, way in and About
-                     row.
   packaging/         The .deb and .rpm builders, the payload every package
                      stages, the .msi and .pkg included, and the icon
                      containers.
@@ -178,11 +174,8 @@ tests pin, so one commit changes the channel for all three clients.
 ```
 client/android/      Gradle project, Kotlin and Jetpack Compose, minSdk 26
                      (Android 8), applicationId `io.github.iffix.neutrino`.
-                     Style: ../coding_style/kotlin_style.md.
-  app/src/netbird/   NetBird's Kotlin, which the build adds only when the
-                     directory exists, and beside it NetBird's core.
-  app/src/test_netbird/
-                     NetBird's tests, added the same way.
+                     Style: ../coding_style/kotlin_style.md. NetBird's
+                     Kotlin is in the main source set, in every edition.
 client/ios/          Xcode project, Swift and SwiftUI, iOS 16. Three targets:
                      the app, the Packet Tunnel extension that runs the
                      overlay, the File Provider extension that shows the
@@ -213,7 +206,8 @@ packaging/
   ci/                What only the workflows run: check.py installs a
                      built package where it runs and checks it works;
                      publish_cn.py publishes the mainland release on
-                     Gitee; count_tests.py writes the test counts the
+                     Gitee, and no workflow runs it while Gitee releases
+                     are paused; count_tests.py writes the test counts the
                      docs build serves for the README's badge.
   install/           install.sh for macOS and Linux and install.ps1 for
                      Windows: the one-command installers a release

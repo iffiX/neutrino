@@ -21,9 +21,20 @@ per scheme; an agent or a client trusts a pinned certificate on any network.
 All three are uvicorn servers in the one `nhub run --only-web` process, with
 one shared runtime. That runtime is where a ticket generated on a panel port
 is spent on the agent port. The panel app does not include the channel
-routes, so the channel has no plaintext form. A panel port change through
-`POST /api/hub/setting/set` restarts the process; a port that is the other
-panel port or the agent port is refused 400 `port_already_in_use {value}`.
+routes, so the channel has no plaintext form. A change of any of the three
+ports through `POST /api/hub/setting/set` restarts the process; a port that
+is one of the other two is refused 400 `port_already_in_use {value}`. The
+**Network** page sets all three.
+
+An agent port change moves every peer. Before the process restarts, the hub
+pushes every online client and agent its state, whose `urls` name the new
+port, and then restarts on it at once. A peer offline at that moment holds
+only the old addresses, cannot reach the hub, and joins again with a new
+link. Before the save the page says how many clients and how many agents are
+offline: those with a binding row and no live session at that moment, which
+`SettingsView` holds as `offline_client_count` and `offline_agent_count`.
+While Direct is on, the page also says that the router's port forward and
+Direct's public port change with it.
 
 ### The panel ports
 
@@ -100,20 +111,22 @@ context, so the next connection gets it without a restart.
 
 ### The agent port
 
-The agent port listens on every exposed interface, whatever its role, WAN
-included, and on every exposed overlay. A served LAN that is not exposed keeps
-DHCP, DNS and forwarding only. The addresses in an enrolment link are this same
-set, `RouterNetworkConfig.exposed_interfaces` in `modules/router/interfaces.py`.
-It is a pure function equal to `exposed_device_names + exposed_overlay_device_names`;
-a LAN contributes its configured address, every other interface its live IPv4.
+The agent port answers a sender inside every exposed segment, whatever the
+interface's role, an uplink's included, and on every exposed overlay
+([network.md](hub_components/network.md), "What answers, and where"). A
+served LAN whose segment is not exposed keeps DHCP and forwarding only. The
+addresses in an enrolment link are the hub's own in that same set: its IPv4
+address in each exposed IPv4 segment (a LAN's configured address, every
+other interface's live IPv4) and its address on each exposed overlay.
 
 While Direct is on, every enabled interface's address follows the exposed
-ones: the firewall opens the agent port alone there
+ones: the firewall opens the agent port alone there, to every sender
 ([connection.md](connection.md), "Where the port is reached"). One test
-asserts that the link's address set equals the set the firewall opens the
-agent port on, with two extra members no local interface holds: the public
-address stated for Direct while Direct is on, and the relay's address while
-the relay is on and configured. Enrolling a device on a LAN begins with exposing that LAN.
+asserts that the link's address set equals the hub's addresses in the
+segments the firewall opens the agent port to, with two extra members no
+local interface holds: the public address stated for Direct while Direct is
+on, and the relay's address while the relay is on and configured. Enrolling
+a device on a LAN begins with exposing that LAN's segment.
 
 What the port does with a peer before it is admitted, and every limit on it,
 is in [connection.md](connection.md), "Before a peer is admitted".
@@ -256,7 +269,7 @@ A write answers with what a read answers.
 `GET /api/hub/network` returns, and applying is part of the request: the
 response means the interface is already doing this.
 
-A field is spelled once. `is_exposed` is the key in
+A field is spelled once. `is_ipv4_exposed` is the key in
 `config/router/network.json`, the attribute on the Pydantic model in
 `web/models.py`, and the property on the TypeScript interface in
 `frontend/src/api_types.ts`. A path segment is spelled the way the model that
@@ -265,11 +278,11 @@ returns it is, and booleans are questions in all three, `is_` and `has_`
 
 ### The principles behind every route
 
-Exposure is the only control plane for what the box serves.
-`exposed_interfaces` decides where the panel port, the agent port and every
-published service listen; no route switches a service on for one network. A
-hub on macOS or Windows has no exposure and answers on every interface
-([network.md](hub_components/network.md), "Outside Linux, the system firewall").
+Exposure is the only control plane for the hub's own ports. The exposed
+segments decide which senders reach the panel ports, the agent port, DNS and
+the SOCKS ports, on Linux, macOS and Windows alike; no route switches a port
+on for one network ([network.md](hub_components/network.md), "What answers,
+and where").
 
 An action that needs the agent online is rejected with 409 `agent_offline`
 while the machine is away. The path does not say which actions those are.
@@ -377,17 +390,17 @@ the page's whole view.
 | Route | Parameters | Does |
 | --- | --- | --- |
 | `GET /api/hub/dashboard/summary` | | the summary tiles |
-| `GET /api/hub/dashboard/history` | | the traffic history |
+| `GET /api/hub/dashboard/history` | | the traffic history the hub counts itself ([network.md](hub_components/network.md), "The traffic history") |
 | `GET /api/hub/dashboard/dns_log` | | the DNS log's last entries |
 
 #### `/api/hub/network`
 
 | Route | Parameters | Does |
 | --- | --- | --- |
-| `GET /api/hub/network` | | `NetworkView`, with `hub_os` (`linux`, `darwin` or `windows`) and `modes`, which holds `server` alone outside Linux; each interface's `link.lease_dns` lists the resolvers its DHCP lease names, empty for a static uplink and for an interface holding no lease; `is_unsaved` is true for an interface the configuration does not name and the hub does not use, which is every such interface on Linux and none on macOS and Windows |
-| `POST /api/hub/network/set` | the page's own settings, `{uplink_policy, is_inter_lan_allowed, exposed_interfaces, exposed_overlays, static_leases, interface_roles}`; absent lists leave the exposure as it is; `interface_roles` maps a port turned on to the role it takes with it, `wan` or `lan` | `NetworkView`; in router mode 400 `network_invalid {field: role, name}` when an exposed port would keep the role `disabled` |
+| `GET /api/hub/network` | | `NetworkView`, with `hub_os` (`linux`, `darwin` or `windows`) and `modes`, which holds `server` alone outside Linux; each interface's `link.lease_dns` lists the resolvers its DHCP lease names, empty for a static uplink and for an interface holding no lease; `is_unsaved` is true for an interface the configuration does not name and the hub does not use, which is every such interface on Linux and none on macOS and Windows; each interface's `is_ipv4_exposed` and `is_ipv6_exposed`, with the networks each segment holds now, and each overlay's `is_exposed` |
+| `POST /api/hub/network/set` | the page's own settings, `{uplink_policy, is_inter_lan_allowed, ipv4_exposed_interfaces, ipv6_exposed_interfaces, exposed_overlays, static_leases, interface_roles}`: the two interface lists name the interfaces whose IPv4 or IPv6 segment is exposed, and absent lists leave the exposure as it is; `interface_roles` maps a port with a segment turned on to the role it takes with it, `wan` or `lan` | `NetworkView`; in router mode 400 `network_invalid {field: role, name}` when a port with an exposed segment would keep the role `disabled` |
 | `POST /api/hub/network/mode/set` | `{mode, ...}` | replaces the whole shape; `NetworkView` |
-| `POST /api/hub/network/interface/set` | `{name, ...}`; a static uplink's `wan.dns` is its resolvers, `[{address, port}]`, `port` 53 when absent, in the order they are asked | one interface's role and settings; `NetworkView`; 400 `resolver_address_invalid {address}` for a row that is not an IP address, `port_out_of_range {minimum, maximum, value}`, in router mode `network_invalid {field: role, name}` for the role `disabled` on an exposed port, and `network_invalid {field: country_code, name}` for an access point on 5 GHz with no `ap_country_code` |
+| `POST /api/hub/network/interface/set` | `{name, ...}`; a static uplink's `wan.dns` is its resolvers, `[{address, port}]`, `port` 53 when absent, in the order they are asked | one interface's role and settings; `NetworkView`; 400 `resolver_address_invalid {address}` for a row that is not an IP address, `port_out_of_range {minimum, maximum, value}`, in router mode `network_invalid {field: role, name}` for the role `disabled` on a port with an exposed segment, and `network_invalid {field: country_code, name}` for an access point on 5 GHz with no `ap_country_code` |
 | `POST /api/hub/network/interface/remove` | `{name}` | `NetworkView` |
 | `GET /api/hub/network/wifi_network` | | the saved Wi-Fi networks |
 | `POST /api/hub/network/wifi_network/leave` | `{ssid}` | forgets one |
@@ -408,7 +421,7 @@ the page's whole view.
 | `POST /api/hub/overlay/easytier/set` | `{mode, config_server, is_secure_mode, network_name, network_secret, address, hostname, peers, exported_networks}`: `mode` is `manual` or `console`; `config_server` null keeps the stored console address and empty forgets it; an empty `network_secret` keeps the stored secret | stores every setting at once, the console address with its token and the secret sealed in `config/easytier/easytier.json`, and runs the converge step; the manual network's name is checked in manual mode, and in console mode only when one is given; manual mode with no peer is refused 400 `easytier_invalid {field: peers}`; while EasyTier runs, a manual address whose network overlaps is refused 400 `overlay_subnet_overlap {title, subnet, conflict}`; 502 `easytier_apply_failed {detail}` |
 | `POST /api/hub/overlay/easytier/suggestion/create` | | a suggested network for a member |
 | `GET /api/hub/overlay/easytier/secret` | | the network secret |
-| `GET /api/hub/overlay/direct` | | `DirectView`: `is_enabled`, `public_host`, `public_port`; `urls`, what Direct adds to `urls` while it is on, in the order `urls` holds them: the exposed interfaces' stable IPv6 addresses, every other enabled interface's IPv4 and stable IPv6 addresses, then the stated public address, each once; `interface_state`, `added` when Direct adds an interface's address, `exposed` when it adds none because every interface address the hub holds already answers on the agent port, `none` when no interface has an address |
+| `GET /api/hub/overlay/direct` | | `DirectView`: `is_enabled`, `public_host`, `public_port`; `urls`, what Direct adds to `urls` while it is on, in the order `urls` holds them: the hub's stable IPv6 addresses in the exposed IPv6 segments, every enabled interface's other IPv4 and stable IPv6 addresses, then the stated public address, each once; `interface_state`, `added` when Direct adds an interface's address, `exposed` when it adds none because every interface address the hub holds is already in `urls` from an exposed segment, `none` when no interface has an address |
 | `POST /api/hub/overlay/direct/set` | `{public_host, public_port}`, an empty host stating none, the port 1 to 65535 | stores them in `config/overlay/direct.json` and runs the converge step; `DirectView`; 400 `direct_host_invalid {host}` for a value that is neither an IP address nor a host name, `port_out_of_range {minimum, maximum, value}`; 502 `direct_apply_failed {detail}` |
 | `GET /api/hub/overlay/relay` | | `RelayView`: `is_enabled`, `host`, `ssh_port`, `account`, `key_id`, `login_id`, `public_port`, `key_id` or `login_id` empty as `relay.json` holds it; `url`, the address the relay adds to `urls`, empty while it is not configured; `state`, one of the relay's state codes ([network.md](hub_components/network.md), "The states"); `host_key_fingerprint`, the recorded host key as `SHA256:<base64>`, empty when none is recorded; `last_error`, the last line `ssh` wrote before it exited or the failed check's reason, empty while connected; `checked_at`, the last check's time in ISO 8601, empty before the first |
 | `POST /api/hub/overlay/relay/set` | `{host, ssh_port, account, key_id, login_id, public_port}`, the ports 1 to 65535, and exactly one of `key_id` and `login_id`, the other null or absent, as the agent install's request names its credential | stores them in `config/overlay/relay.json`, deletes the recorded host key when `host` or `ssh_port` changed, and runs the converge step; `RelayView`; 400 `relay_host_invalid {host}`, `relay_account_invalid {account}`, `unknown_credential {field: key_id}` for a key the vault does not hold or for a request naming both or neither, `unknown_credential {field: login_id}` for a login the vault does not hold, `port_out_of_range {minimum, maximum, value}`; 502 `relay_apply_failed {detail}` |
@@ -464,12 +477,13 @@ moved. Its steps and their order are [network.md](hub_components/network.md),
 | Route | Parameters | Does |
 | --- | --- | --- |
 | `GET /api/hub/device` | | every device on record |
-| `POST /api/hub/device/scan` | | scans the LAN; the list |
+| `POST /api/hub/device/scan` | | scans the exposed IPv4 segments, in every mode: a segment of at most 256 addresses whole, and of a larger one only the /24 that holds the hub's own address; scans no IPv6 segment and reads the IPv4 neighbours alone; the list |
 | `GET /api/hub/device/online` | | the devices with a socket open |
 | `POST /api/hub/device/enrollment/create` | `{device_id?, name?, is_hub?}` | a link for that row, or for a new one; `is_hub` makes the link for the agent on the hub's own machine, which names loopback first and is not refused `no_reachable_address` |
 | `POST /api/hub/device/set` | `{device_id, name, icon, ssh, shown_module}`, each optional | the name, the icon, the stored SSH credential the hub reaches it with, and which module tabs its Modules page shows |
+| `POST /api/hub/device/add` | `{host, ...}`, the host the person typed and the fields of `agent/install` except `device_id` | the **Add by address** press: creates the device's row, named by `host` until the machine reports, and starts the agent's install over SSH in the same request; `TaskStarted` |
 | `POST /api/hub/device/remove` | `{device_id}` | forgets the device; its socket is closed with `binding_unknown` |
-| `POST /api/hub/device/wake` | `{device_id}` | Wake-on-LAN to the last link MAC, broadcast on every network the hub serves, or in `server` mode on the network of every exposed interface that holds an IPv4 address, never on an overlay; `wol_no_mac` when none is stored, `no_reachable_address` when there is no such network |
+| `POST /api/hub/device/wake` | `{device_id}` | Wake-on-LAN to the last link MAC, broadcast on every network the hub serves, or in `server` mode on every exposed IPv4 segment, never on an overlay; `wol_no_mac` when none is stored, `no_reachable_address` when there is no such network |
 | `POST /api/hub/device/agent/install` | `{device_id, ...}` | installs the agent over SSH; `TaskStarted` |
 | `POST /api/hub/device/agent/reinstall` | `{device_id}` | the `reinstall` verb over the channel |
 | `POST /api/hub/device/reboot` | `{device_id}` | the `reboot` verb |
@@ -509,11 +523,10 @@ a ticket lives `ENROLLMENT_TTL_S` 30 minutes whether the hub restarted or not.
 | `POST /api/hub/client/permission/set` | `{client_id, kinds, devices}`, `kinds` null to follow the default, `devices` optional | that client's own permission; its `state` is pushed |
 
 A permission kind is a published service type (`web`, `port`, `ai`, `file`,
-`rdp`), `overlay`, `terminal`, `exec` or `panel`, `CLIENT_PERMISSION_KINDS` in
+`rdp`), `overlay`, `terminal` or `panel`, `CLIENT_PERMISSION_KINDS` in
 `modules/clients/constants.py`. `terminal` opens a `shell` on a managed
-machine and `exec` runs one command there through an `exec` stream ("The
-exec stream"); `exec` is off unless a permission names it, apart from
-`terminal`, since a script runs as root with nobody watching it. `panel` is the hub's own panel, opened from
+machine and runs one command there through an `exec` stream ("The exec
+stream"). `panel` is the hub's own panel, opened from
 a client through `connect {is_panel: true}` and signed in with the token of
 `service {is_panel: true}` ("The panel ports"); it is off unless a
 permission names it, since it manages the hub without the panel password. A permission may narrow each
@@ -522,18 +535,16 @@ of device ids, and a kind with no list, or an empty one, allows every device.
 `config/clients/clients.json` holds `default_permission: {kinds, devices}`
 beside `clients`, and each client a `permission` that is null or `{kinds,
 devices}`, `devices` written only when it names a list; a file with no
-default allows every kind but `panel` and `exec` on every device, and the
-default a fresh hub copies from `clients.example.json` names every kind but
-`panel` and `exec`.
+default allows every kind but `panel` on every device, and the default a
+fresh hub copies from `clients.example.json` names every kind but `panel`.
 The device providing an entry is
 the device that hosts it; the hub's own modules belong to the hub's own
 device when it has one; a declared record belongs to the device at its
 address, and one at no device's address passes only a kind with no list. A
 client's `services` section holds only the entries whose type and device it
-is allowed, its `terminals` only the machines its `terminal` or `exec` list
-allows, a `shell` on a machine outside the `terminal` list is refused
-`permission_denied {kind: terminal}`, and an `exec` on a machine outside the
-`exec` list `permission_denied {kind: exec}`. A `connect` is judged as the `service` stream is, and a panel
+is allowed, and its `terminals` only the machines its `terminal` list
+allows. A `shell` or an `exec` on a machine outside that list is refused
+`permission_denied {kind: terminal}`. A `connect` is judged as the `service` stream is, and a panel
 `connect` or `service` without `panel` is refused `permission_denied {kind:
 panel}`. Switching a client off, removing it, its leave, and taking `panel`
 from it, through its own permission or the default it follows, end the
@@ -569,8 +580,8 @@ has is refused 400 `permission_device_unknown {device_id}`.
 
 | Route | Parameters | Does |
 | --- | --- | --- |
-| `GET /api/hub/setting` | | `SettingsView` |
-| `POST /api/hub/setting/set` | the settings, `listen_port`, `https_listen_port`, `hub_name`, `language` and `theme` among them; an absent `https_listen_port` keeps it | `SettingsView`; a port change restarts the panel after answering; 400 `port_out_of_range {minimum, maximum, value}`, `port_already_in_use {value}` |
+| `GET /api/hub/setting` | | `SettingsView`, with `offline_client_count` and `offline_agent_count`: the clients and the agents with a binding row and no live session at this moment |
+| `POST /api/hub/setting/set` | the settings, `listen_port`, `https_listen_port`, `agent_listen_port`, `hub_name`, `language` and `theme` among them; an absent port keeps it | `SettingsView`; a port change restarts the panel after answering, an agent port change after every online peer was pushed its new `urls` ("Three ports, two audiences"); 400 `port_out_of_range {minimum, maximum, value}`, `port_already_in_use {value}` |
 | `GET /api/hub/setting/https` | | `PanelHttpsView`: `is_https_enabled`, `listen_port`, `https_listen_port`, `has_authority`, the authority's `authority_fingerprint` and `authority_created_at`, `authority_file_name`, the served certificate's `leaf_names`, `leaf_issued_at` and `leaf_expires_at`, and `renewed_at`, the last time it was issued again since the panel started |
 | `GET /api/hub/setting/https/authority` | | no session, and served by the HTTP port while HTTPS is on: the authority's DER as `neutrino-<hub>-ca.crt`, `application/x-x509-ca-cert`; 404 `https_authority_missing` before there is one |
 | `GET /api/hub/setting/https/probe` | | no session: 204 and an empty body; a page on HTTP fetches it from the HTTPS port, and a fetch that completes means the browser trusts the certificate |
@@ -776,13 +787,14 @@ when that permission does not allow `overlay` or there is nothing to join. A
 device link has no `overlays`. A peer that does not know the member ignores
 it.
 
-`urls` is every exposed address on the agent port, because one of them is on
-the joining machine's network and neither end knows which. The link for the
+`urls` is the hub's address in every exposed segment the agent port answers
+in, because one of them is on the joining machine's network and neither end
+knows which. The link for the
 hub's own agent, and every state the hub sends that agent, names
 `https://127.0.0.1:<agent-port>` first, so it reaches the hub over loopback
-whatever is exposed. While Direct is on, the exposed interfaces' stable
-IPv6 addresses follow the exposed set, every other enabled interface's
-IPv4 and then stable IPv6 addresses follow those, and the public address
+whatever is exposed. While Direct is on, the hub's stable IPv6 addresses
+in the exposed IPv6 segments follow the exposed set, every enabled
+interface's other IPv4 and then stable IPv6 addresses follow those, and the public address
 stated for Direct follows them; an IPv6 address is written in brackets
 ([network.md](hub_components/network.md), "Direct"). While Direct is off, every
 address in `urls` is IPv4. While the relay is on and configured, `https://<host>:<public-port>` is
@@ -933,6 +945,7 @@ the three packages, named here so that changing one is a change to this table.
 | open `connect` streams on one client socket | `CHANNEL_CONNECT_STREAMS_MAX` 256 | | |
 | a hub thread's call onto the loop | `CHANNEL_CALL_TIMEOUT_S` 15 | | |
 | address rotation: the pause before the next address of the set | | `AGENT_ROTATE_DELAY_S` 1 | none: a client's round dials every address at once |
+| a client's redial of an address refused within a round, until `CLIENT_CONNECT_TIMEOUT_S` from the round's start | | | `CLIENT_REDIAL_INTERVAL_S` 1 |
 
 Every number is seconds except the two rows in bytes and the counts of
 streams, sources and datagrams. The client's credit and frame size hold on every stream that
@@ -968,7 +981,7 @@ and platform, which change between releases.
 | `urls` | `["https://<address>:<port>", ...]` | | the same list | |
 | `relay_url` | | | the member of `urls` that is the relay's address, empty while the relay is off; a client ranks a candidate's path by it ([client.md](client.md), "A network change starts a round") | |
 | `overlays` | | | `[{provider, ...}]`: what the client joins each of the hub's overlays with, the preferred first | |
-| `terminals` | | | `[{device_id, name, is_online, is_shell_allowed, is_exec_allowed, sessions}]`: the managed machines it may open a `shell` or an `exec` on, each with the sessions this client sees there | |
+| `terminals` | | | `[{device_id, name, is_online, sessions}]`: the managed machines its `terminal` kind allows, where it opens a `shell` or an `exec`, each with the sessions this client sees there | |
 | `is_panel_allowed` | | | bool: the client is allowed to open the hub's panel through `connect {is_panel: true}` | |
 | `reached_through` | | | `lan`, `direct`, `netbird`, `easytier` or `relay`: the way this client's socket reached the hub | |
 | `error` | | `{code, params}` | | |
@@ -1037,13 +1050,11 @@ socket's peer address ("The address a caller is given") and names the word
 the client's Hubs row shows. Both are in the state's hash, so a client that
 reconnects another way is pushed its state.
 
-`terminals` lists every managed machine, the hub's own among them, online or
-not, with `is_online` read from its socket; it holds the machines the
-client's `terminal` kind allows and the ones its `exec` kind allows, each
-kind narrowed by its own device list, and is empty when the permission
-allows neither. `is_shell_allowed` is true on a machine the `terminal` kind
-allows and `is_exec_allowed` on one the `exec` kind allows. Both are added
-fields and keep `PROTOCOL`. The hub pushes every client its state when
+`terminals` lists every managed machine the client's `terminal` kind
+allows, narrowed by that kind's device list, the hub's own among them,
+online or not, with `is_online` read from its socket; it is empty when the
+permission does not allow `terminal`. A machine in it takes a `shell` and an
+`exec` alike. The hub pushes every client its state when
 an agent's channel opens or ends, when a report's `machine.sessions` differs
 from the one before it, and when a device is deleted; the same report move
 publishes `device_report` to the panel, whose session list reads it.
@@ -1072,8 +1083,10 @@ dropped with the device ([files.md](files.md)).
 `ai_tools` in the state is the machine's AI tools setting
 ([agent/ai_tools.md](agent/ai_tools.md)). `is_enabled` is true while
 the setting is on and the gateway serves a model. With it true, `base_url`
-is `http://<hub-address>:<listen-port>`, the gateway as the device reaches it
-on the LAN, `api_key` is the device's own gateway key, and `tool_configs` is
+is `http://127.0.0.1:8317`, the agent's own AI gateway forward
+([agent.md](agent.md), "The AI gateway forward"), and on the hub's own
+machine `http://127.0.0.1:<listen-port>`, the gateway itself; `api_key` is
+the device's own gateway key, and `tool_configs` is
 `{claude: {default, opus, sonnet, haiku}, codex: {model,
 model_reasoning_effort}, gemini: {model}}`, every Claude slot filled with the
 gateway's first served model where none was chosen, as the client's
@@ -1475,9 +1488,10 @@ is added without a change to the protocol; a kind is added by a row here.
 | agent, to the hub | `package` | `{module}` for a module's package bytes from the hub's cache, or `{module, component}` for one component of a module with several (`component` is an added field with a default, the module's one archive, and keeps `PROTOCOL`), `{module: cc_switch}` for cc-switch, `{}` for the agent's own package; the close's `params` has the `sha256` of the bytes sent and `name`, the file's own name as its release gave it, with no directory |
 | client, to the hub | `service` | `{id}`: one published entry, or `{is_panel: true}`: a sign-in to the hub's own panel. The close is the whole answer, its `params` the material that entry takes from the hub and its `code` the reason it takes none; a new service type adds no kind |
 | client, to the hub | `shell` | `{device_id, cols, rows, session_id, is_resumed, is_shared}`: a shell on a managed machine, which the hub opens as the agent's own `shell` with the same `session_id`, `is_resumed` and `is_shared`, stamped `owner: client:<id>`, and relays terminal bytes both ways, each side under the other's credit; closed with `params: {exit_code}`, or refused `binding_unknown`, `client_disabled`, `permission_denied {kind: terminal}` (no `terminal`, or a machine outside its device list), `session_not_owned {session_id}` (a session another viewer owns and has not shared) or `agent_offline {device}` before any agent stream opens; closed with the agent's refusal, `account_unknown {account}` or `shell_program_unusable {path}` among them; closed `session_not_owned {session_id}` when the owner stops sharing the session |
-| client, to the hub | `exec` | `{device_id, argv, is_tty, cols, rows}`: one command on a managed machine, which the hub opens as the agent's own `exec` with the same `argv`, `is_tty`, `cols` and `rows`, and relays bytes both ways, each side under the other's credit, and the client's `eof` up; no `session_id`, and no `owner` stamped; closed with the agent's `params: {exit_code}`, or refused `binding_unknown`, `client_disabled`, `permission_denied {kind: exec}` (no `exec`, or a machine outside its device list) or `agent_offline {device}` before any agent stream opens; closed with the agent's refusal |
+| client, to the hub | `exec` | `{device_id, argv, is_tty, cols, rows}`: one command on a managed machine, which the hub opens as the agent's own `exec` with the same `argv`, `is_tty`, `cols` and `rows`, and relays bytes both ways, each side under the other's credit, and the client's `eof` up; no `session_id`, and no `owner` stamped; closed with the agent's `params: {exit_code}`, or refused `binding_unknown`, `client_disabled`, `permission_denied {kind: terminal}` (no `terminal`, or a machine outside its device list) or `agent_offline {device}` before any agent stream opens; closed with the agent's refusal |
 | client, to the hub | `command` | `{module: agent, verb: resize, shell, cols, rows}`, `shell` being the client's own `shell` stream id, or its own `exec` stream id opened with `is_tty`, which the hub maps to the agent's; closed empty once sent on, `shell_unknown {shell}` when no such shell is open. `{module: agent, verb: persist, session_id, is_persistent, is_shared}` and `{module: agent, verb: stop_session, session_id}` go unchanged to the machine holding the session, the one this client's open `shell` names for the id or else the online machine whose report lists it, and close with the agent's close; `session_unknown {session_id}` when no machine holds it, `session_not_owned {session_id}` for a `persist` on a session the machine reports under another owner, and the `shell` stream's permission refusals for that machine. A `persist` names only the flags it carries. `verb_unknown` for any other module or verb. A hub before 0.4.0 closes both kinds `kind_unknown`, which a client reads as a refusal |
 | client, to the hub | `connect` | `{id}`, one published entry by the id a `service` stream takes, or `{is_panel: true}`, the hub's own panel: one TCP connection to that service, or every datagram of one UDP `port` entry. Bytes both ways under credit; closed empty when either end's socket ends, or with a refusal's code. "The connect stream" has the checks, the far ends and the codes |
+| agent, to the hub | `connect` | `{id}`, the `ai` entry's id, as a client's AI forward opens it: one TCP connection from the machine's AI tools, opened for each connection the agent's AI gateway forward accepts ([agent.md](agent.md), "The AI gateway forward"); the hub dials the gateway on `127.0.0.1` at its `listen_port` and relays bytes both ways under credit; refused `permission_denied {kind: ai}` while that machine's AI tools setting is off; closed empty when either socket ends, `connect_failed {reason}` when the dial fails |
 | hub, to an agent | `connect` | `{port, protocol}`, `protocol` being `tcp` or `udp` and `tcp` when absent: one TCP connection to `127.0.0.1:<port>` on the machine, or every datagram of one UDP entry to that port, a port the machine publishes now on that protocol; bytes both ways under credit; closed empty when either socket ends, `port_not_published {port}` for any other port or protocol, `connect_failed {reason}` when the dial fails |
 
 Installing and uninstalling are no kind and no verb: they follow from `want`.
@@ -1569,7 +1583,9 @@ page"), and never at the entry's address.
 A `connect` stream carries the bytes of one TCP connection between a client
 and one service the hub publishes, or the hub's own panel, or every datagram
 of one UDP `port` entry. With it a client reaches every service through the
-hub's agent port and dials nothing else. A client opens one stream per
+hub's agent port and dials nothing else. An agent opens one for each
+connection its AI gateway forward accepts, and the hub joins it to the
+gateway on `127.0.0.1` ([agent.md](agent.md), "The AI gateway forward"). A client opens one stream per
 connection its local listener accepts, and one stream for a UDP entry for as
 long as that entry is forwarded ([client.md](client.md), "The local port
 table").
@@ -1645,7 +1661,7 @@ order, and the first check that fails closes the stream with its code:
 | --- | --- |
 | `binding_unknown` | no client row has the id this socket is bound to |
 | `client_disabled` | that row is switched off on the Clients page |
-| `permission_denied {kind: exec}` | the client's kinds lack `exec`, or the machine is not in the `exec` kind's device list |
+| `permission_denied {kind: terminal}` | the client's kinds lack `terminal`, or the machine is not in the `terminal` kind's device list |
 | `agent_offline {device}` | the machine has no socket, and the same code when its socket ends under an open stream |
 
 The agent then judges what it runs, and the hub closes the client's stream
@@ -1688,22 +1704,62 @@ is what a successful `join` leaves on both sides.
 
 The agent's and the client's `constants.py`, and the hub's
 `modules/channel/constants.py`, have `PROTOCOL`, the integer this build speaks,
-which is 1 in every 0.3 package, 2 in every 0.4 package and 3 from 0.5.0. The agent and the client send theirs in
-`hello`, and the hub sends its own in `welcome`. The hub alone also has
-`PROTOCOL_MIN`, the oldest number it still accepts. An agent or a client
-speaks one number; the hub meets peers from different releases and needs a
-range, `PROTOCOL_MIN <= protocol <= PROTOCOL`.
+which is 1 in every 0.3 package, 2 in every 0.4 package, 3 in every 0.5
+package and 4 from 0.6.0. The agent and the client send theirs in `hello`,
+and the hub sends its own in `welcome`. The hub alone also has
+`PROTOCOL_MIN`, the oldest number it admits to the channel's whole use: 4
+from 0.6.0, for agents and clients alike. An agent or a client speaks one
+number; the hub meets peers from different releases and needs a range,
+`PROTOCOL_MIN <= protocol <= PROTOCOL`. Below the range the two roles part:
+
+| Peer | `protocol` | At `join` | At `hello` |
+| --- | --- | --- | --- |
+| an agent or a client | `PROTOCOL_MIN` to `PROTOCOL` | admitted | admitted |
+| an agent | 3, the number of 0.5 | refused `protocol_too_old` | admitted for its own update alone ("An agent of 0.5") |
+| an agent | below 3 | refused `protocol_too_old` | refused `protocol_too_old` |
+| a client | below `PROTOCOL_MIN` | refused `protocol_too_old` | refused `protocol_too_old` |
+| an agent or a client | above `PROTOCOL` | refused `protocol_too_new` | refused `protocol_too_new` |
 
 | Code | When | `params` |
 | --- | --- | --- |
-| `protocol_too_old` | `protocol < PROTOCOL_MIN` | `{peer, hub, min}` |
+| `protocol_too_old` | `protocol < PROTOCOL_MIN`, except for an agent's `hello` at 3; and every stream an agent at 3 opens, except its own package | `{peer, hub, min}` |
 | `protocol_too_new` | `protocol > PROTOCOL` | `{peer, hub, min}` |
+
+A client refused `protocol_too_old` keeps its binding, and its Hubs row
+reads that the client is too old and says to update it ([client.md](client.md),
+"The Hubs page"). The person installs the new client, since a client does
+not update itself. A new client keeps the old one's state, so the binding
+stays and the next round connects.
 
 Package versions take no part in admission. An agent whose `welcome` names a
 newer `software` than its own upgrades itself with the package the hub keeps.
-It stays as it is when the version does not parse or ends in `+dev`. The
-hub's `software` is always `neutrino_hub/{HUB_VERSION}`, and the client has no
-self-upgrade.
+The agent stays as it is when the hub's version does not parse or ends in
+`+dev`, so a hub of `+dev` offers no update. The hub's `software` is always
+`neutrino_hub/{HUB_VERSION}`, and the client has no self-upgrade.
+
+### An agent of 0.5
+
+An agent of 0.5 speaks 3, one below `PROTOCOL_MIN`. The hub admits its
+`hello` for one purpose, the agent's own update to the hub's version, and
+closes every other stream the agent opens:
+
+| The agent | The hub |
+| --- | --- |
+| sends `hello` | sends `welcome`, whose `software` names the hub's newer version |
+| sends a `report` | reads the platform from its `machine` section, which names the package, and records nothing else; it pushes no `state` |
+| opens `package {}`, its own package | streams it, as for any agent's upgrade |
+| opens any other stream | closes it `protocol_too_old {peer, hub, min}` |
+
+The hub opens no stream to it. The agent reads the newer `software` in
+`welcome`, installs the package and restarts, and the updated agent connects
+with 4 and is admitted as any agent. The hub's own agent is updated by the
+hub's own update, from the hub's cache.
+
+| Case | What follows |
+| --- | --- |
+| the update runs | the Devices page shows the machine updating, `ui.device_tile.agent_updating`, from the admitted `hello` until the agent connects with 4 |
+| the hub has no package for the machine's platform, the install fails and the agent comes back at 3, or the hub's version ends in `+dev` | the session stays update-only, and the Devices page shows the machine's version mismatch (`is_version_mismatched`), which asks for a reinstall |
+| an unbound agent of 0.5 joins | the `join` is refused `protocol_too_old`; the person installs a 0.6 agent with the install script and joins with it |
 
 ### What a leave does to the binding
 
@@ -1724,11 +1780,16 @@ it was.
 
 ### What a refusal does to the binding
 
-A refusal keeps the binding. The agent or the client records it as
-`last_error` and sends `hello` again a minute later. `protocol_too_old`,
-`protocol_too_new`, `ticket_spent`, `role_mismatch` and every transient
-refusal behave this way; `channel_full` and `admission_paused` are
-transient.
+A refusal of `hello` keeps the binding. The agent or the client records it
+as `last_error` and sends `hello` again a minute later. `protocol_too_old`,
+`protocol_too_new`, `channel_full` and every other refusal of `hello` except
+`binding_unknown` behave this way.
+
+A refused `join` leaves no binding to keep. `nagent join` exits with the
+code, and a client's row reads the join's refusal ([client.md](client.md),
+"Joining before the hub is reached"). `ticket_spent`, `role_mismatch` and
+`protocol_too_old` end a join this way; after `admission_paused` the client
+tries the join again once `retry_after_s` has passed.
 
 `binding_unknown` is the one refusal that unbinds: the hub says it has no such
 binding, because the row was removed on the panel. Only the hub holding the
@@ -1773,7 +1834,7 @@ shows and never dials, since its bytes go over `connect`:
    scopes the box serves: one per served LAN, named by its network CIDR, and
    one `overlay` scope per overlay interface holding an IPv4 address, told
    apart by the CIDR that address and its prefix name. The first scope whose
-   network holds the peer is the answer. Anything else (an exposed WAN, the
+   network holds the peer is the answer. Anything else (an uplink, the
    interface in server mode, a client behind NAT, a client that came
    through Direct) is `link`, with the address the client dialled as the
    hub's own. A peer on loopback came through the relay and dialled the
@@ -1836,7 +1897,7 @@ one; a package version changes on every release. One rule ties the two.
 | Adding a kind, a field or a code keeps `PROTOCOL`, and a patch release can add them. | A peer that reads tolerantly is unaffected. |
 | Removing anything, or changing its meaning, adds one to `PROTOCOL`; so does a change to the link, the ticket, the pin or the four words `hello`, `state`, `report`, `open`. | An old peer misreads it. |
 | The relation to the package version is one-way: a `PROTOCOL` change requires a new minor before 1.0 and a new major after it; a new minor or major can keep the number; a patch never changes `PROTOCOL`. | A person reads compatibility off the version and finds it true. |
-| `PROTOCOL_MIN` rises only when a new minor opens (a new major after 1.0). It rises at most to the number the previous minor spoke, except where the owner decides a change is too wide to carry the old peers, as 0.5.0 did by raising it to its own 3. | A hub one release ahead still accepts the fleet it had, unless its release notes say how that fleet is reinstalled. |
+| `PROTOCOL_MIN` rises only when a new minor opens (a new major after 1.0). It rises at most to the number the previous minor spoke, except where the owner decides a change is too wide to carry the old peers, as 0.5.0 raises it to its own 3 and 0.6.0 to its own 4. | A hub one release ahead still accepts the fleet it had, unless its release notes say how that fleet is updated or reinstalled. |
 
 Reading is tolerant and writing is strict. An unknown kind is closed
 `kind_unknown`, an unknown field is ignored, and a peer sends only what its own
@@ -1854,9 +1915,20 @@ more or one fewer fails. Changing a channel model fails that test until
 | 1 | 0.3.0 |
 | 2 | 0.4.0 |
 | 3 | 0.5.0 |
+| 4 | 0.6.0 |
 
 3 renamed the link's and the client state's `overlay`, one object or null,
-to `overlays`, a list. `PROTOCOL_MIN` is 3 from 0.5.0: a 0.3 or 0.4 agent or
-client is refused `protocol_too_old` and does not update itself from the hub.
-The hub's update reinstalls the box's own agent from the hub's cache; any
-other agent is reinstalled from the Devices page or by hand.
+to `overlays`, a list. A 0.3 or 0.4 agent or client is refused
+`protocol_too_old` and does not update itself from the hub; such an agent is
+reinstalled from the Devices page or by hand. A bound 0.5 agent updates
+itself from a 0.6 hub ("An agent of 0.5"); an unbound one is refused at
+`join`, and a 0.6 agent is installed in its place and joins.
+
+4 changes what a peer of 3 reads. A `terminals` entry lists a machine with
+no flag beside it, and an `exec` stream is judged by the `terminal` kind, as
+a `shell` is ("The exec stream"). The `ai_tools` section's `base_url` names
+the agent's own AI gateway forward on `127.0.0.1`, and the agent opens a
+`connect` stream to the hub for each connection made to it ("The connect
+stream"). `PROTOCOL_MIN` is 4: a client of 0.5 is refused
+`protocol_too_old`, and an agent of 0.5 is admitted for its own update alone
+and connects with 4 after it ("An agent of 0.5").

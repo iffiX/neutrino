@@ -10,7 +10,13 @@ live on 2026-09-04).
 ## What serves
 
 One CLIProxyAPI process per hub, on `listen_port` (default 8317), driven
-entirely by the rendered YAML. Two kinds of credential feed it:
+entirely by the rendered YAML. It listens on `127.0.0.1` alone, so no
+exposure and no firewall rule names its port. The hub's own machine reaches
+it there. A client reaches it through its own forward and the `connect`
+streams the hub relays, and a managed machine through its agent's forward
+("How a managed machine's tools are pointed at the gateway"). A machine on
+the LAN with neither a client nor an agent does not reach it. Two kinds of
+credential feed it:
 
 - **Providers** — API-key endpoints, stored in `config/ai/providers.json`,
   each keyed by a vault token. The kind names the protocol spoken
@@ -76,7 +82,7 @@ on a managed machine.
 | Activity | Status dots, today's counters, the probe line (`/v1/models` as served), journal, and the chip-switched usage tables |
 | Providers | API-key provider records, their aliases, their serving order, enable/disable — staged behind the panel's apply, with the gateway-behind signal |
 | Accounts | Subscription sign-in (redirect flows finish by pasting the dead callback page's address; device flows show a pairing code; a timeout keeps the dialog open, [../ui_behavior.md](../ui_behavior.md), "Account sign-in on the AI page"), status, revocation — immediate, never staged |
-| Access | Client keys for machines no agent manages, plus the endpoint line; a managed device is keyed when its AI tools setting goes on, on the Modules page, and its key reaches it over the agent channel. The hub holds a key of its own beside them, minted on the first apply and shown nowhere: it is what the hub probes `/v1/models` with, and it keeps the gateway's key list from ever being empty, since CLIProxyAPI with no key configured asks nobody for one |
+| Access | Client keys for machines no agent manages, plus the endpoint line, which names the gateway on the hub's loopback; a managed device is keyed when its AI tools setting goes on, on the Modules page, and its key reaches it over the agent channel. The hub holds a key of its own beside them, minted on the first apply and shown nowhere: it is what the hub probes `/v1/models` with, and it keeps the gateway's key list from ever being empty, since CLIProxyAPI with no key configured asks nobody for one |
 | Gateway port | `listen_port`, staged behind its own apply |
 
 ## How a client points its tools at the gateway
@@ -176,7 +182,8 @@ sections").
 | Who runs the steps | the client | the agent |
 | As whom | the person, in their own session | each account the hub names, never root or SYSTEM: `runuser -u <account> --` on Linux, a process with the account's uid and groups on macOS, a one-shot scheduled task under the account's login on Windows ([../agent/ai_tools.md](../agent/ai_tools.md)) |
 | The accounts | the person's own | every account with an instance in the machine's VS Code, code-server, CloudCLI or Codeg configuration, worked out by the hub and sent in the state |
-| The endpoint | `http://127.0.0.1:<local-port><path>`, the client's forward | `http://<hub-address>:<listen-port>`, the gateway as the machine reaches it on the LAN, from `device_gateway()` in `modules/clients/ai_keys.py` |
+| The endpoint | `http://127.0.0.1:<local-port><path>`, the client's forward | `http://127.0.0.1:8317`, the agent's own forward, which relays each connection to the hub over the agent's channel ([../agent.md](../agent.md), "The AI gateway forward"); on the hub's own machine `http://127.0.0.1:<listen-port>`, the gateway itself |
+| A tool works | while the client runs and its channel to the hub is up | while the agent runs and its channel to the hub is up |
 | The key | the client's own, from the `service` stream | the device's own, from the `ai_tools` section |
 | The unchosen models | the gateway's first model, from the `service` stream | the gateway's first served model, filled in by the hub before the state is sent |
 | The cc-switch | the copy the client's package carries | the copy the agent fetches from the hub into `ai_tools/bin/` under its state root, the same pinned version |

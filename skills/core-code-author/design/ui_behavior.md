@@ -23,7 +23,13 @@ A page reads top-down in one order:
 
 `network_page.tsx` is the reference: the mode panel, then the topology diagram,
 then the per-interface form, then routing behavior, then exposure, then the
-panel's own port.
+panel's own ports and the agent port. Before an agent port change is
+saved, the panel's apply bar warns with `ui.network.agent_port_offline_warning
+{clients, agents}`, the counts `SettingsView` holds: those peers lose the
+hub and join again with a new link ([protocol.md](protocol.md), "Three
+ports, two audiences"). While Direct is on, the bar adds
+`ui.network.agent_port_direct_warning`: the router's port forward and
+Direct's public port change with the agent port.
 
 **A page carries no controls that belong to a panel** — no apply, no reset, no
 save. Its header may carry an action that belongs to no single panel and starts
@@ -98,7 +104,7 @@ Badges say one word and report state; they are never pressed.
 
 An interface the hub detects and the configuration does not name
 carries `ui.network.unsaved_interface` as an accent badge on the
-**Network** page, on its exposure chip and in its summary, the way a
+**Network** page, on its exposure chips and in its summary, the way a
 VLAN the next apply creates carries `ui.network.vlan_new_on_apply`.
 The page reads it from the interface's `is_unsaved` and works out
 nothing itself ([hub_components/network.md](hub_components/network.md), "An
@@ -420,12 +426,42 @@ shows in place under the button, which stays live. CloudCLI, Codeg, Gitea
 and code-server tabs carry no notice ([ui_text.md](ui_text.md), "Software the
 owner installs").
 
+## Finding and adding a device
+
+The Devices page's header holds **Scan LAN** and **Add by address**
+(按地址添加). A
+scan covers the exposed IPv4 segments in every mode
+([protocol.md](protocol.md), `POST /api/hub/device/scan`): a segment of at
+most 256 addresses whole, and of a larger one only the /24 that holds the
+hub's own address. It scans no IPv6 segment and reads the IPv4 neighbours
+alone, so a row's address is always an IPv4 one. **Add by address** opens a
+dialog in the style of the **Install agent** dialog, with the same fields:
+**Host**, **Port**, **User name**, **Credential**, **SSH key** and **Sudo
+password**, the host typed by the person. The dialog's button installs:
+one press creates the machine's row, named by its host until it reports,
+and starts the install ([protocol.md](protocol.md), `POST
+/api/hub/device/add`). It reaches a machine no scan finds, such as one on a
+network the hub has no address in.
+
+## The Exposure section on the Network page
+
+The **Exposure** section (开放范围) draws one chip per segment
+([hub_components/network.md](hub_components/network.md), "What answers, and
+where"), each a switch, in the design it has for an interface. Each
+interface the page lists gives two chips, its IPv4 segment and its IPv6
+segment, and each names the segment's network and the interface it is on.
+Each overlay engine gives one chip. A chip's tag is its interface's role,
+`lan` or `wan`; in server mode an interface has no role and its chips carry
+no tag. The section has no **+** and takes no network typed by hand. The
+hint under it is `ui.network.exposure_hint` ([ui_text.md](ui_text.md), "The
+Network page's words"), and the apply bar is **Apply exposure**. Opening the
+agent port to every sender is Direct's switch on the **Access** page, below.
+
 ## The Direct and relay cards on the Access page
 
 The **Access** page draws the ways in as cards in the engine panel, in this
-order: Direct, Relay, NetBird, EasyTier; a tree without NetBird draws
-Direct, Relay, EasyTier. The cards sit two to a row, the third of a tree
-without NetBird in the left cell, and one to a row below 720 px. A page with
+order: Direct, Relay, NetBird, EasyTier. The cards sit two to a row, and
+one to a row below 720 px. A page with
 no card switched on says nothing about it. Every card is shaped alike: its switch stages into
 the engine panel's draft and that panel's apply bar turns it on or off, and
 pressing the card shows its section under the panel while the card is on as

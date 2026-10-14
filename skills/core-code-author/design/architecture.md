@@ -55,8 +55,8 @@ Inside the hub package the layers only reach downward:
   the packages share no code. `detect.hub_os()` returns `linux`, `darwin` or
   `windows`, and the panel's API uses the same word.
 
-The agent has no dependencies and listens on nothing: it keeps one socket
-open to the hub and reconnects when it drops, so it survives restarts, sleep
+The agent has no dependencies and listens on `127.0.0.1` alone, for the
+programs on its own machine. It keeps one socket open to the hub and reconnects when it drops, so it survives restarts, sleep
 and NAT in between. It decides nothing: the hub says in `state` what each
 module is to be, and the agent observes, installs and configures until the
 machine matches ("The hub says what is wanted; the agent observes, installs
@@ -185,11 +185,11 @@ The mechanical placement rules are in
 ## A left-out feature is reached through one table
 
 A left-out feature is a feature the mainland edition `cn` builds without,
-by deleting its files from the tree: the proxy and NetBird
-([../agent_work_rule/release.md](../agent_work_rule/release.md), "Two
-editions from one source"). The code that stays must import, start and pass
-its tests in a tree without those files, so it reaches a left-out feature
-through one table and through no other import.
+by deleting its files from the tree: the proxy, and with it the side
+gateway mode ([../agent_work_rule/release.md](../agent_work_rule/release.md),
+"Two editions from one source"). The code that stays must import, start and
+pass its tests in a tree without those files, so it reaches a left-out
+feature through one table and through no other import.
 
 | Rule | Reason |
 | --- | --- |
@@ -202,32 +202,29 @@ through one table and through no other import.
 | Feature | Its own files in the hub |
 | --- | --- |
 | `proxy` | `modules/xray/`, `modules/tun/`, `web/routers/hub/proxy.py`, `web/routers/hub/proxy_node.py`, the **Proxy** page and the panels only it shows |
-| `netbird` | `modules/netbird/`, `web/routers/hub/overlay_netbird.py`, its card on the **Access** page |
 
-| Client | NetBird's own files |
-| --- | --- |
-| desktop | `neutrino_client/netbird/`, the unit `data/services/neutrino_client_netbird.service`, the window's `frontend/parts/netbird.js`, the packaging part `packaging/netbird_payload.py` that `payload.parts()` takes when the tree holds it, and their tests |
-| Android | `app/src/netbird/` and `app/src/test_netbird/`, which the build adds only when they exist, `libs/netbird.aar` taken only beside them, and `packaging/build/build_core_netbird.py` |
-
-Each package that leaves something out has its one table: the hub's is
-`hub/neutrino_hub/edition.py`, the desktop client's
-`client/desktop/neutrino_client/edition.py`, and the Android app's
-`Edition.kt` in the app's root package. `has_feature(<name>)` answers whether
-a feature is present, by the names `proxy` and `netbird`.
+The hub is the one package that leaves something out, and its one table is
+`hub/neutrino_hub/edition.py`. `has_feature(<name>)` answers whether a
+feature is present, by the name `proxy`. The desktop client, the Android app
+and the agent leave nothing out: NetBird is in every edition of each, so the
+desktop client and the Android app keep no NetBird hook table in
+`edition.py` or `Edition.kt`, no source set added only when its directory
+exists, and no part script inlined only when the tree holds it. Their
+`EDITION` stamp stays for what reads it, such as where a package fetches
+from.
 
 Every place the hub registers something today takes a left-out feature's
 part from the table:
 
 | Where the hub registers | What it holds for every edition | What it adds from the table |
 | --- | --- | --- |
-| `web/app.py`, `API_ROUTERS` | the routers every edition has | the proxy's routers (`proxy.py`, `proxy_node.py`) and NetBird's (`overlay_netbird.py`) |
-| `modules/registry.py`, `MODULE_SPECS` | EasyTier and the AI gateway | NetBird's entry |
+| `web/app.py`, `API_ROUTERS` | the routers every edition has | the proxy's routers (`proxy.py`, `proxy_node.py`) |
 | `cli/run.py`, the processes `nhub run` starts | the panel and the AI gateway | xray and its `--only-xray` |
-| `cli/setup.py`, `CORE_STEPS`, and the wizard's questions | every other step | the proxy's steps and its question about the hub's own traffic, NetBird's steps |
+| `cli/setup.py`, `CORE_STEPS`, and the wizard's questions | every other step | the proxy's steps and its question about the hub's own traffic |
 | The network modes setup and the **Network** page offer | `router` and `server` | `side_gateway`, which the proxy adds |
-| `nhub apply`'s component list and the panel's converge steps | every other component | xray, the proxy TUN, NetBird |
-| The router's renderers (`nft_renderer.py`, `dnsmasq_renderer.py`) and the overlay's | the rules and the files with no proxy part | the proxy's chains, its marks and the forward to xray's DNS inbound, from a hook the proxy gives; NetBird's interface and routes |
-| `hub/frontend/src/nav_items.ts` and the routes in `authenticated_routes.tsx` | every other page | the **Proxy** page and the NetBird card, which `hub/frontend/src/edition.ts` finds with `import.meta.glob` over their files; a file the glob does not find adds nothing |
+| `nhub apply`'s component list and the panel's converge steps | every other component | xray, the proxy TUN |
+| The router's renderers (`nft_renderer.py`, `dnsmasq_renderer.py`) | the rules and the files with no proxy part | the proxy's chains, its marks and the forward to xray's DNS inbound, from a hook the proxy gives |
+| `hub/frontend/src/nav_items.ts` and the routes in `authenticated_routes.tsx` | every other page | the **Proxy** page, which `hub/frontend/src/edition.ts` finds with `import.meta.glob` over its files; a file the glob does not find adds nothing |
 
 The side gateway mode exists to divert through the proxy, so the proxy
 registers it, and `cn` offers `router` and `server` alone.
@@ -403,9 +400,10 @@ later — is somebody's own: locally administered, deliberately joined. The hub
 is not multi-tenant and does not defend one enrolled machine from another.
 
 The wire gets no such trust. A "LAN" can be a campus network with a thousand
-strangers on it, so the panel answers only where an interface was deliberately
-exposed and on the running overlays ([network.md](hub_components/network.md), "What answers, and
-where"), behind a password, and the agent channel carries its secrets under
+strangers on it, so the hub's ports answer only senders inside a segment
+deliberately exposed, a running overlay's among them
+([network.md](hub_components/network.md), "What answers, and where"), the
+panel behind a password, and the agent channel carries its secrets under
 pinned TLS. Trusting the machines and distrusting the wire is the whole
 model.
 

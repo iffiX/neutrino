@@ -165,6 +165,10 @@ overrides both, which is what makes a second instance testable. Details of the f
         xray_node_health.json
                             each exit node's recent measurements and the
                             exit the hub last pinned
+        traffic_history.json
+                            the traffic history's hourly, daily and monthly
+                            totals per interface, the last counters read
+                            and the boot time, written every 5 minutes
         panel_tls_certificate.pem, panel_tls_key.pem
                             the certificate the panel serves and its key,
                             mode 0600, signed by the authority in
@@ -247,6 +251,11 @@ put into the device's state, so a hub restart composes the same state and a
 press is not lost. It holds one mark per module and device, each press
 replacing the one before, and a device's marks go when the device is
 removed. Losing the file costs the next press.
+
+`hub/traffic_history.json` is the Dashboard's traffic history
+([network.md](hub_components/network.md), "The traffic history"). Losing it
+loses the history and nothing else; the hub starts counting again from the
+next reading.
 
 `hub/stood_down.json` is a note of what the hub did, not a copy of what
 anybody else had: router mode stops the manager that was running and writes

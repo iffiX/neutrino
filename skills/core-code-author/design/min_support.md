@@ -69,7 +69,6 @@ distribution provides.
 | dnsmasq | 2.73 | `min-cache-ttl`, the floor under every cached answer's TTL | `hub/neutrino_hub/modules/router/dnsmasq_renderer.py:63` |
 | systemd | 245 | `ProtectClock=` in the panel's unit, the newest directive any unit uses | `hub/neutrino_hub/data/services/neutrino_hub_web.service:28` |
 | iproute2 | 4.13 | `ip -json` for links, addresses and routes | `hub/neutrino_hub/modules/router/link_status.py:322` |
-| vnstat | 2.0 | `vnstat --json`, whose version 2 layout the traffic history parses | `hub/neutrino_hub/system/vnstat_history.py:79` |
 | fail2ban | 0.11 | the `nftables-multiport` ban action the SSH jail sets | `hub/neutrino_hub/system/constants.py:166` |
 | wpa_supplicant, hostapd | 2.9 | SAE with `ieee80211w` for a WPA3 network; the access point renders WPA2 only | `hub/neutrino_hub/modules/router/supplicant_renderer.py:101` |
 | dhcpcd | 7.1 | `nohook`, which keeps the client off resolv.conf and the hostname | `hub/neutrino_hub/modules/router/dhcp_renderer.py:58` |

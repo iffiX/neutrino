@@ -28,8 +28,7 @@ An example's records are placeholders: a step that writes a real file from
 an example copies its shape and none of its records, so no `_example_` id
 of `clients.example.json` is ever a client. Its default permission names
 every kind but `panel`, which signs a client into the panel without the
-password and is turned on for one client at a time, and `exec`, which runs
-commands from scripts on a managed machine.
+password and is turned on for one client at a time.
 
 | Real file (read at runtime) | Committed example | Secret? |
 | --- | --- | --- |
@@ -177,8 +176,10 @@ Each `*.example.json` is annotated field-by-field. The load-bearing ones:
   `[{address, port}]`, and with none listed the built-in fallbacks answer), `lan` (served network with its address and DHCP
   range — set `upstream_gateway` to an existing network's router to run as a
   side gateway, where that router is the box's way out over the same wire),
-  `split` (an 802.1Q trunk), or `disabled`. Each also carries `is_exposed`:
-  whether what this box listens on answers there. A VLAN is a further interface
+  `split` (an 802.1Q trunk), or `disabled`. Each also carries
+  `is_ipv4_exposed` and `is_ipv6_exposed`: whether the hub's own ports answer
+  the senders inside its IPv4 segment and inside its IPv6 segment. A row
+  stored with the earlier `is_exposed` reads as both set to its value. A VLAN is a further interface
   entry named `<trunk>.<id>` with a `vlan: {parent, id}` block and a role of
   its own; the trunk's untagged traffic is the `<trunk>.main` entry
   (`id: null`), created with the split and configured like any other interface.
