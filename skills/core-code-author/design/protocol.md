@@ -387,7 +387,7 @@ the page's whole view.
 | Route | Parameters | Does |
 | --- | --- | --- |
 | `GET /api/hub/dashboard/summary` | | the summary tiles |
-| `GET /api/hub/dashboard/history` | | the traffic history |
+| `GET /api/hub/dashboard/history` | | the traffic history the hub counts itself ([network.md](hub_components/network.md), "The traffic history") |
 | `GET /api/hub/dashboard/dns_log` | | the DNS log's last entries |
 
 #### `/api/hub/network`

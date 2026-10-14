@@ -55,7 +55,7 @@ hub/
                      site-packages can collide with anything else.
     modules/<name>/    One feature module each. See the shape below.
     system/            How this box's own OS is driven: systemd, a pty shell,
-                       the package manager, vnstat, listening sockets, and
+                       the package manager, listening sockets, and
                        windows_net.py, the network Windows reports through
                        iphlpapi.
     web/               The FastAPI panel over the modules: routers/, auth,

@@ -209,8 +209,8 @@ sudo pacman -U neutrino-hub-<version>-1-x86_64.pkg.tar.zst
 sudo nhub setup
 ```
 
-RHEL 9 and its rebuilds need EPEL enabled first, because `fail2ban`,
-`arp-scan` and `vnstat` are there rather than in the base repositories:
+RHEL 9 and its rebuilds need EPEL enabled first, because `fail2ban` and
+`arp-scan` are there rather than in the base repositories:
 
 ```bash
 sudo dnf install -y epel-release
@@ -218,7 +218,7 @@ sudo dnf install -y epel-release
 
 Enabling it in the same transaction does not work: the new repository's
 metadata is not read until the transaction that added it has finished, so it
-is its own line, and only on RHEL rebuilds. Fedora carries all three itself.
+is its own line, and only on RHEL rebuilds. Fedora carries both itself.
 
 ### Agent
 

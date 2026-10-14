@@ -340,8 +340,8 @@ memory from `virtual_memory()`. The default route is `route -n get default`
 on macOS and the IPv4 forward table on Windows, and the machine id is
 `IOPlatformUUID` and the registry's `MachineGuid`. An overlay's device is
 still found by its address, `utunN` on macOS and the adapter's name on
-Windows. The traffic history and the LAN scan return nothing, and the panel
-draws them empty. Linux keeps its `ip -json` path.
+Windows. The LAN scan returns nothing there, and the panel draws it empty.
+Linux keeps its `ip -json` path.
 
 Windows reads the forward table through iphlpapi and adds each route's
 metric to its interface's metric from the interface table. The IPv6
@@ -763,6 +763,22 @@ that is up but going nowhere keeps its share until its carrier drops, because
 measuring throughput means probing, and a ranking that follows a probe flaps.
 And a change that raises no link, address, route or rule event, such as
 another tool rewriting nftables, stays until the next event or apply.
+
+## The traffic history
+
+The Dashboard's traffic history is the hub's own count, by one mechanism on
+Linux, macOS and Windows. The hub reads the interface byte counters once a
+second for the live chart, and adds each reading's difference to totals it
+keeps in memory by hour, by day and by month, the windows
+`GET /api/hub/dashboard/history` serves. Every 5 minutes it writes the
+totals and the last counters it read to a file under the state root.
+
+| Rule | Reason |
+| --- | --- |
+| A power loss costs at most the 5 minutes since the last write. | A write every second wears the disk for the sake of a chart. |
+| After a hub restart without a reboot, the first reading adds its difference from the saved last counters. | The kernel kept counting while the hub was down, and those bytes are the person's traffic. |
+| After a reboot the counters start again from zero, and the hub counts from their first reading. | The counters before the reboot are gone, and the totals hold everything up to the last write. |
+| No other program counts for the hub, on any system. | One mechanism draws one chart everywhere. |
 
 ## What gets a role, and what does not
 

@@ -31,8 +31,7 @@ class DeviceSshOperator: ...     # Device -> Ssh -> Operator
     `RouterRulesetApplier`, `RouterWanStatus`.
   - `modules/samba/` — `SambaConfigRenderer`, `SambaConfigApplier`,
     `SambaUserManager`, `SambaStatusReader`.
-  - `neutrino_hub/system/` — `SystemdServiceController`, `LocalShellSession`,
-    `VnstatHistoryReader`.
+  - `neutrino_hub/system/` — `SystemdServiceController`, `LocalShellSession`.
   Do not introduce a parallel name for a concept that already has one in its
   family.
 - Roles are consistent across families: a pure config-to-artifact class is a

@@ -18,7 +18,7 @@ application entry named `Neutrino Hub`, which opens the wizard or the panel
 ## The package installs everything the hub cannot run without
 
 `nftables`, `dnsmasq`, `iproute2`, NetworkManager, `fail2ban`, `iw`,
-`arp-scan`, `vnstat` and `curl` are the hub's dependencies, declared in the
+`arp-scan` and `curl` are the hub's dependencies, declared in the
 `Depends:` of the `.deb`, the `Requires:` of the `.rpm` and the `depends=` of
 the Arch package. All three are generated from `SYSTEM_RUNTIME_PACKAGES` in
 [`system/constants.py`](../../../hub/neutrino_hub/system/constants.py), so a
