@@ -14,8 +14,21 @@ import io.github.iffix.neutrino.design.gap
 import io.github.iffix.neutrino.words.WordCatalog
 import kotlinx.serialization.json.JsonPrimitive
 
-/** The module names the desktop client words an entry's origin code with. */
-private val ENTRY_MODULES = mapOf("gitea_module" to "Gitea", "samba_module" to "Samba", "device_share" to "RustDesk")
+/** The module titles an origin code stands for, as the hub's panel titles its modules. */
+private val ENTRY_MODULES = mapOf(
+    "gitea_module" to "Gitea",
+    "vscode_module" to "VS Code",
+    "code_server_module" to "code-server",
+    "cloudcli_module" to "CloudCLI",
+    "codeg_module" to "Codeg",
+)
+
+/** The catalog keys of the module titles the panel translates, by origin code. */
+private val ENTRY_MODULE_KEYS = mapOf(
+    "ai_gateway" to "ui.module_ai_gateway",
+    "samba_module" to "ui.module_title.samba",
+    "device_share" to "ui.module_title.remote_desktop",
+)
 
 /**
  * A service screen's body: every connected hub's entries of one type in one card, a row for
@@ -76,7 +89,7 @@ fun entryTone(hub: HubView, entry: ChannelServiceEntry, isBusy: Boolean = false)
 }
 
 /**
- * Who provides an entry, as the desktop client words it: the hub, then the machine.
+ * Who provides an entry, as the desktop client words it: the hub, the machine, then the module.
  *
  * @param hub The hub that publishes it.
  * @param entry The entry.
@@ -88,9 +101,8 @@ fun providedBy(hub: HubView, entry: ChannelServiceEntry, fallbackHost: String): 
     providerLine(hub, entry, fallbackHost, NeutrinoTheme.words)
 
 /**
- * Who provides an entry: `<hub>:<machine>`, the machine being the address the entry points at when
- * the hub names none. An entry the hub's own machine serves, whose machine has the hub's name,
- * names the hub once and then what the entry is, as the desktop client does.
+ * Who provides an entry: `<hub>:<machine>:<module>`, the machine being the address the entry points
+ * at when the hub names none, as the desktop client does.
  *
  * @param hub The hub that publishes it.
  * @param entry The entry.
@@ -98,20 +110,23 @@ fun providedBy(hub: HubView, entry: ChannelServiceEntry, fallbackHost: String): 
  * @param words The catalog.
  * @return The line.
  */
-fun providerLine(hub: HubView, entry: ChannelServiceEntry, fallbackHost: String, words: WordCatalog): String {
-    val name = hub.binding.title
-    val device = entry.deviceName.ifEmpty { fallbackHost }
-    val second = if (device == name) entryModule(entry, words) else device
-    return words.word("ui.machine_provided_by", mapOf("hub" to name, "device" to second))
-}
+fun providerLine(hub: HubView, entry: ChannelServiceEntry, fallbackHost: String, words: WordCatalog): String =
+    words.word(
+        "ui.provided_by",
+        mapOf(
+            "hub" to hub.binding.title,
+            "device" to entry.deviceName.ifEmpty { fallbackHost },
+            "module" to entryModule(entry, words),
+        ),
+    )
 
-private fun entryModule(entry: ChannelServiceEntry, words: WordCatalog): String = when (entry.descriptionCode) {
-    "ai_gateway" -> words.word("ui.module_ai_gateway")
-
-    "container" -> (entry.descriptionParams["image"] as? JsonPrimitive)?.content.orEmpty()
-        .substringAfterLast('/').ifEmpty { entry.title }
-
-    else -> ENTRY_MODULES[entry.descriptionCode] ?: entry.title
+private fun entryModule(entry: ChannelServiceEntry, words: WordCatalog): String {
+    ENTRY_MODULE_KEYS[entry.descriptionCode]?.let { return words.word(it) }
+    if (entry.descriptionCode == "container") {
+        return (entry.descriptionParams["image"] as? JsonPrimitive)?.content.orEmpty()
+            .substringAfterLast('/').ifEmpty { entry.title }
+    }
+    return ENTRY_MODULES[entry.descriptionCode] ?: entry.title
 }
 
 private fun androidx.compose.foundation.lazy.LazyListScope.sentence(text: String) {

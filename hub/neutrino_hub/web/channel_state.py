@@ -19,7 +19,11 @@ import hashlib
 import json
 import socket
 
-from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_AGENT
+from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
+from neutrino_hub.modules.channel.constants import (
+    CHANNEL_ROLE_AGENT,
+    CHANNEL_ROLE_CLIENT,
+)
 from neutrino_hub.modules.clients.constants import (
     CLIENT_PERMISSION_OVERLAY,
     CLIENT_PERMISSION_PANEL,
@@ -214,6 +218,27 @@ def push_states(runtime, role: str) -> None:
             continue
         registry.send_json_from_thread(session.key, {"type": "state", **document})
         session.offered_hash = document["hash"]
+
+
+def push_every_state(runtime) -> list:
+    """Hand every live binding of both roles its state now, one at a time.
+
+    Each push waits until the socket took the frame, agents first.
+
+    Args:
+        runtime: The shared runtime.
+
+    Returns:
+        The bindings whose socket ended or did not take the state in time.
+    """
+    unpushed = []
+    for role in (CHANNEL_ROLE_AGENT, CHANNEL_ROLE_CLIENT):
+        for key in _registry(runtime, role).keys():
+            try:
+                push_state(runtime, role, key)
+            except (AgentOfflineError, StreamRefusedError):
+                unpushed.append(key)
+    return unpushed
 
 
 def _client_scope(runtime, peer_host: str, reached_host: str, served=None):

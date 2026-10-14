@@ -90,7 +90,7 @@ sudo pacman -U neutrino-hub-0.5.2-1-x86_64.pkg.tar.zst
 
 :::
 
-On ARM64 the files are `neutrino-hub_0.5.2_arm64.deb` and `neutrino-hub-0.5.2-1.aarch64.rpm`; the Arch package is for x86-64 only. The RHEL family needs EPEL for fail2ban, arp-scan and vnstat.
+On ARM64 the files are `neutrino-hub_0.5.2_arm64.deb` and `neutrino-hub-0.5.2-1.aarch64.rpm`; the Arch package is for x86-64 only. The RHEL family needs EPEL for fail2ban and arp-scan.
 
 ::: warning
 Install with `apt`, `dnf` or `pacman`. `dpkg -i` and `rpm -i` install none of the dependencies; after `dpkg -i`, run `sudo apt -f install` to finish.

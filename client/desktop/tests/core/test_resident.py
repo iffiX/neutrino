@@ -2322,6 +2322,21 @@ def test_open_connect_opens_a_connect_stream_on_the_hub_named(two_hubs_up):
         resident.open_connect("h9", "svc_tcp")
 
 
+def test_a_hubs_forwards_wait_on_that_hubs_channel(two_hubs_up):
+    resident, _scripts = two_hubs_up
+    office = resident._sessions["c2"]
+
+    assert resident._wait_channel("h1", 0.01) is True
+    assert resident._wait_channel("h2", 0.01) is True
+    assert resident._wait_channel("h9", 0.01) is False
+
+    office._end_socket(office._client)
+
+    assert resident._wait_channel("h1", 0.01) is True
+    assert resident._wait_channel("h2", 0.01) is False
+    assert resident._forwards._wait_channel == resident._wait_channel
+
+
 PANEL_TOKEN = "panel-token-once"  # scan: allow
 
 

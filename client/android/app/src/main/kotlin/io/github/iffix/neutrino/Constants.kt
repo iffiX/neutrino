@@ -154,6 +154,12 @@ const val CLIENT_LEAVE_TELL_TIMEOUT_S = 5L
 /** How long connecting and the handshake on top of it may take together. */
 const val CLIENT_CONNECT_TIMEOUT_S = 10L
 
+/** How often a round dials again an address that refused, until the round's connect time has passed. */
+const val CLIENT_REDIAL_INTERVAL_S = 1L
+
+/** What the message of a refused connect says, on the phone as on the JVM. */
+const val CLIENT_CONNECT_REFUSED_TEXT = "Connection refused"
+
 /** How often a report goes up while nothing changes. */
 const val CLIENT_REPORT_INTERVAL_S = 30L
 

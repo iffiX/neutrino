@@ -41,7 +41,8 @@ import kotlinx.serialization.json.JsonPrimitive
  * entry's own `.localhost` name; a shared desktop from its Connect until its viewer closes; the
  * hub's panel, keyed `<binding>/#panel`, from the first press of Panel until the hub is left, each
  * press reading a one-time sign-in token first. A forward stops when its hub is left, when its
- * entry leaves the hub's state, and on [stopAll] as the app core's service ends.
+ * entry leaves the hub's state, and on [stopAll] as the app core's service ends. While its hub has
+ * no channel, a TCP forward accepts nothing and stays bound.
  *
  * @param material What the hub hands this phone on a `service` stream, by binding id and the
  *   stream's arguments.
@@ -76,6 +77,7 @@ class PortForwards(
 ) {
     private val current = MutableStateFlow<Map<String, PortForwardRow>>(emptyMap())
     private val relays = mutableMapOf<String, PortForwardListener>()
+    private var channelless = emptySet<String>()
 
     /** Every row with a forward, a job or an error, by entry key. */
     val rows: StateFlow<Map<String, PortForwardRow>> = current.asStateFlow()
@@ -278,13 +280,15 @@ class PortForwards(
     /**
      * Take one round of the hubs' state: a forward stops when its hub is gone, or when its hub
      * serves this phone and no longer lists its entry; the panel's when its hub no longer lets
-     * this phone open the panel.
+     * this phone open the panel. A forward whose hub has no channel accepts nothing until it is back.
      *
      * @param hubs Every hub's view.
      */
     fun take(hubs: List<HubView>) {
         val byId = hubs.associateBy { it.binding.id }
         val gone = synchronized(relays) {
+            channelless = hubs.filter { it.connectedAddress.isEmpty() }.map { it.binding.id }.toSet()
+            for ((key, relay) in relays) relay.channelChanged(key.substringBefore('/') !in channelless)
             relays.keys.mapNotNull { key ->
                 val hub = byId[key.substringBefore('/')]
                 val entryId = key.substringAfter('/')
@@ -362,7 +366,10 @@ class PortForwards(
             } else {
                 relayOf(key, open, local)
             }
-            synchronized(relays) { relays.put(key, relay) }?.close()
+            synchronized(relays) {
+                relay.channelChanged(bindingId !in channelless)
+                relays.put(key, relay)
+            }?.close()
             val bound = try {
                 relay.start()
             } catch (error: IOException) {

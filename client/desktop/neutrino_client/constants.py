@@ -81,6 +81,9 @@ CLIENT_WS_SILENCE_TIMEOUT_S = 45
 # How long connecting to the hub and the handshake on top of it may take
 # together, before the socket is open and the silence window takes over.
 CLIENT_CONNECT_TIMEOUT_S = 10
+# How often a round dials again an address that refused, until the round's
+# connect time has passed since it started.
+CLIENT_REDIAL_INTERVAL_S = 1
 # How often a report goes up while nothing changes.
 CLIENT_REPORT_INTERVAL_S = 30
 # How long asking the system for this machine's networks may take.

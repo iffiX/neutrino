@@ -234,6 +234,7 @@ class ClientResident:
             on_change=self.notify,
             on_refused=self._forward_refused,
             on_answered=self._forward_answered,
+            wait_channel=self._wait_channel,
         )
         # The files adapter a Windows mount goes through.
         self._files_plan = FilesAddressPlan(
@@ -1924,6 +1925,14 @@ class ClientResident:
         if session is None:
             raise GatewayUnreachable("this person has not joined that hub")
         return session.open_connect(args)
+
+    def _wait_channel(self, hub_id: str, timeout_s: float) -> bool:
+        """Wait until a hub's socket carries its channel; a hub not joined has none."""
+        session = self._find_session(hub_id)
+        if session is None:
+            time.sleep(timeout_s)
+            return False
+        return session.wait_channel(timeout_s)
 
     def _forward_refused(self, hub_id: str, entry_id: str, refusal: dict) -> None:
         """A forward's stream was refused after its start: the row's error line."""

@@ -1094,20 +1094,25 @@ export interface DeviceWolResult {
 }
 
 /**
- * What installing the agent over SSH needs.
+ * What installing the agent over SSH needs, on a machine added by the host
+ * typed here.
  *
  * The credential is exactly one of the two the vault holds: a stored key or a
  * stored login. `sudo_login_id` is the stored login whose password sudo is
  * given on the device, and null where sudo asks for none.
  */
-export interface DeviceAgentInstallRequest {
-  device_id: string;
+export interface DeviceAddRequest {
   host: string;
   port: number;
   username: string;
   key_id: string | null;
   login_id: string | null;
   sudo_login_id: string | null;
+}
+
+/** The same install, on a device on record. */
+export interface DeviceAgentInstallRequest extends DeviceAddRequest {
+  device_id: string;
 }
 
 /** The job an action started, followed on `/ws/hub/task`. */
@@ -1302,12 +1307,22 @@ export interface PanelSettings {
   listen_port: number;
   /** The port the panel answers HTTPS on. Left out of a write, it stays. */
   https_listen_port: number;
+  /** The port agents and clients connect to. Left out of a write, it stays. */
+  agent_listen_port: number;
   /** The language the panel is drawn in. Left out of a write, it stays. */
   language: string;
   /** The palette the panel is drawn in. Left out of a write, it stays. */
   theme: string;
   /** The name clients show this hub as. Left out of a write, it stays. */
   hub_name: string;
+}
+
+/** The panel's own settings, with the peers an agent port change loses. */
+export interface SettingsView extends PanelSettings {
+  /** The clients with a binding row and no live session at this moment. */
+  offline_client_count: number;
+  /** The agents with a binding row and no live session at this moment. */
+  offline_agent_count: number;
 }
 
 /**

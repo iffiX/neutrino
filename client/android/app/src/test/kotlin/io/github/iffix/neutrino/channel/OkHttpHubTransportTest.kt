@@ -1,5 +1,7 @@
 package io.github.iffix.neutrino.channel
 
+import java.net.InetAddress
+import java.net.ServerSocket
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -14,6 +16,8 @@ import okhttp3.tls.HandshakeCertificates
 import okhttp3.tls.HeldCertificate
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class OkHttpHubTransportTest {
@@ -88,7 +92,18 @@ class OkHttpHubTransportTest {
     fun theSocketOnAnotherCertificateFailsUntrusted() = runBlocking {
         val events = Channel<ChannelSocketEvent>(Channel.UNLIMITED)
         transport.connect(baseUrl, "00".repeat(32), events)
-        val event = withTimeout(10_000) { events.receive() }
-        assertEquals("hub_untrusted", (event as ChannelSocketEvent.Failed).refusal.code)
+        val event = withTimeout(10_000) { events.receive() } as ChannelSocketEvent.Failed
+        assertEquals("hub_untrusted", event.refusal.code)
+        assertFalse(event.isPortClosed)
+    }
+
+    @Test
+    fun theSocketToAPortNothingListensOnFailsAsAClosedPort() = runBlocking {
+        val closed = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1")).use { it.localPort }
+        val events = Channel<ChannelSocketEvent>(Channel.UNLIMITED)
+        transport.connect("https://127.0.0.1:$closed", pinned, events)
+        val event = withTimeout(10_000) { events.receive() } as ChannelSocketEvent.Failed
+        assertEquals("hub_unreachable", event.refusal.code)
+        assertTrue(event.isPortClosed)
     }
 }

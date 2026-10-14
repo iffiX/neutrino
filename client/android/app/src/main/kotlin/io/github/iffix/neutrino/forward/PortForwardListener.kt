@@ -21,4 +21,12 @@ interface PortForwardListener : Closeable {
      * @throws IOException When the number cannot be bound, or the forward's stream cannot be opened.
      */
     fun start(): Int
+
+    /**
+     * The hub's channel opened or closed. A TCP forward accepts only while it is open and stays
+     * bound meanwhile; a UDP forward carries on as it is.
+     *
+     * @param isOpen Whether the hub has a channel now.
+     */
+    fun channelChanged(isOpen: Boolean) = Unit
 }

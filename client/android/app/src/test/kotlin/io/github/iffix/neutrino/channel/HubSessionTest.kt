@@ -2,6 +2,7 @@ package io.github.iffix.neutrino.channel
 
 import io.github.iffix.neutrino.CLIENT_CONNECT_TIMEOUT_S
 import io.github.iffix.neutrino.CLIENT_PING_INTERVAL_S
+import io.github.iffix.neutrino.CLIENT_REDIAL_INTERVAL_S
 import io.github.iffix.neutrino.CLIENT_WS_CLOSE_NORMAL
 import io.github.iffix.neutrino.GoldenSchema
 import io.github.iffix.neutrino.binding.BindingStore
@@ -164,6 +165,50 @@ class HubSessionTest {
         assertEquals("https://100.72.4.1:8443", session.view.value.connectedAddress)
         assertTrue(currentTime < CLIENT_CONNECT_TIMEOUT_S * 1000)
         assertEquals(CLIENT_WS_CLOSE_NORMAL, transport.dialled.first().second.closedWith)
+    }
+
+    @Test
+    fun aRefusedAddressIsDialledAgainEverySecondUntilItAnswers() = runTest {
+        var lanDials = 0
+        val transport = FakeHubTransport { url ->
+            when {
+                url != lanUrl -> FakeHubTransport.silent
+                ++lanDials < 3 -> FakeHubTransport.refused
+                else -> FakeHubTransport.welcoming
+            }
+        }
+        val (session, _) = session(transport)
+        backgroundScope.async { session.runOnce() }
+        runCurrent()
+        assertEquals(1, lanDials)
+        advanceTimeBy(CLIENT_REDIAL_INTERVAL_S * 1000)
+        runCurrent()
+        assertEquals(2, lanDials)
+        assertEquals(HubConnection.CONNECTING, session.view.value.connection)
+        advanceTimeBy(CLIENT_REDIAL_INTERVAL_S * 1000)
+        runCurrent()
+        assertEquals(HubConnection.CONNECTED, session.view.value.connection)
+        assertEquals(lanUrl, session.view.value.connectedAddress)
+        assertEquals(2 * CLIENT_REDIAL_INTERVAL_S * 1000, currentTime)
+        val lan = transport.dialled.filter { it.first == lanUrl }
+        assertEquals(3, lan.size)
+        assertTrue(lan.take(2).all { it.second.closedWith == CLIENT_WS_CLOSE_NORMAL })
+        assertEquals(1, transport.dialled.count { it.first == directUrl })
+    }
+
+    @Test
+    fun aRefusedAddressIsDialledUntilTheRoundsConnectTimeAndASilentOneOnce() = runTest {
+        val transport = FakeHubTransport { url ->
+            if (url == lanUrl) FakeHubTransport.refused else FakeHubTransport.silent
+        }
+        val (session, _) = session(transport)
+        assertEquals(5L, session.runOnce())
+        assertEquals(CLIENT_CONNECT_TIMEOUT_S * 1000, currentTime)
+        val lanDials = transport.dialled.count { it.first == lanUrl }.toLong()
+        assertEquals(CLIENT_CONNECT_TIMEOUT_S / CLIENT_REDIAL_INTERVAL_S, lanDials)
+        assertEquals(1, transport.dialled.count { it.first == directUrl })
+        assertEquals("hub_unreachable", session.view.value.waitRefusal?.code)
+        assertEquals(HubWaitReason.HUB_SILENT, session.view.value.waitReason)
     }
 
     @Test

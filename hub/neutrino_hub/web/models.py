@@ -7,6 +7,7 @@ so a rename here is a rename there.
 from pydantic import BaseModel, ConfigDict, Field
 
 from neutrino_hub.web.constants import (
+    WEB_DEFAULT_AGENT_LISTEN_PORT,
     WEB_DEFAULT_HTTPS_LISTEN_PORT,
     WEB_DEFAULT_LANGUAGE,
     WEB_DEFAULT_LISTEN_PORT,
@@ -1145,8 +1146,9 @@ class DeviceAnnotation(BaseModel):
     shown_module: list[str] | None = None
 
 
-class DeviceAgentInstallRequest(BaseModel):
-    """How to reach a machine over SSH to put the agent on it.
+class DeviceAddRequest(BaseModel):
+    """A machine by the host a person typed, and the SSH login the agent is
+    installed with.
 
     Exactly one of a stored key, a stored login, or a password typed now,
     which ``is_password_saved`` stores as a login. ``sudo_login_id`` names
@@ -1155,7 +1157,6 @@ class DeviceAgentInstallRequest(BaseModel):
     typed for one install.
     """
 
-    device_id: str
     host: str = ""
     port: int = 22
     username: str = ""
@@ -1165,6 +1166,12 @@ class DeviceAgentInstallRequest(BaseModel):
     is_password_saved: bool = False
     sudo_login_id: str | None = None
     sudo_password: str | None = None
+
+
+class DeviceAgentInstallRequest(DeviceAddRequest):
+    """The SSH login the agent is installed with, on a device on record."""
+
+    device_id: str
 
 
 class DeviceProcessKill(BaseModel):
@@ -1356,6 +1363,8 @@ class PanelSettings(BaseModel):
         listen_port: The TCP port the panel answers HTTP on.
         https_listen_port: The TCP port the panel answers HTTPS on. A write
             that leaves it out leaves it as it is.
+        agent_listen_port: The TCP port agents and clients connect to. A
+            write that leaves it out leaves it as it is.
         language: The language the panel is drawn in. A write that leaves it
             out leaves it as it is.
         theme: The palette the panel is drawn in. A write that leaves it out
@@ -1366,9 +1375,24 @@ class PanelSettings(BaseModel):
 
     listen_port: int
     https_listen_port: int = WEB_DEFAULT_HTTPS_LISTEN_PORT
+    agent_listen_port: int = WEB_DEFAULT_AGENT_LISTEN_PORT
     language: str = WEB_DEFAULT_LANGUAGE
     theme: str = WEB_DEFAULT_THEME
     hub_name: str = ""
+
+
+class SettingsView(PanelSettings):
+    """The panel's own settings, with the peers an agent port change loses.
+
+    Attributes:
+        offline_client_count: The clients with a binding row and no live
+            session at this moment.
+        offline_agent_count: The agents with a binding row and no live
+            session at this moment.
+    """
+
+    offline_client_count: int = 0
+    offline_agent_count: int = 0
 
 
 class PanelHttpsView(BaseModel):

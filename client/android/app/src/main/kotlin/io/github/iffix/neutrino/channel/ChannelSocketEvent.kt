@@ -32,6 +32,7 @@ sealed interface ChannelSocketEvent {
      *
      * @property refusal `hub_untrusted` for a certificate that is not the pinned one, a refusal
      *   the upgrade's answer carried, else `hub_unreachable`.
+     * @property isPortClosed Whether the connect was refused: the host is up and the port not open.
      */
-    data class Failed(val refusal: ChannelResult.Refused) : ChannelSocketEvent
+    data class Failed(val refusal: ChannelResult.Refused, val isPortClosed: Boolean = false) : ChannelSocketEvent
 }

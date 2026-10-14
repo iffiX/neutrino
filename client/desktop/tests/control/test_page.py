@@ -793,22 +793,35 @@ def test_an_entrys_module_is_named_from_its_origin_code_and_its_title_behind():
     the entry by its own title."""
     body = PAGE_JS.split("function entryModule(entry)")[1].split("\n}")[0]
     modules = PAGE_JS.split("const ENTRY_MODULES = {")[1].split("};")[0]
+    keys = PAGE_JS.split("const ENTRY_MODULE_KEYS = {")[1].split("};")[0]
 
-    assert dict(re.findall(r"([a-z_]+): '([A-Za-z]+)'", modules)) == {
+    assert dict(re.findall(r"([a-z_]+): '([A-Za-z -]+)'", modules)) == {
         "gitea_module": "Gitea",
-        "samba_module": "Samba",
-        "device_share": "RustDesk",
+        "vscode_module": "VS Code",
+        "code_server_module": "code-server",
+        "cloudcli_module": "CloudCLI",
+        "codeg_module": "Codeg",
     }
-    assert "if (code === 'ai_gateway') return t('ui.module_ai_gateway');" in body
+    assert dict(re.findall(r"([a-z_]+): '([a-z_.]+)'", keys)) == {
+        "ai_gateway": "ui.module_ai_gateway",
+        "samba_module": "ui.module_title.samba",
+        "device_share": "ui.module_title.remote_desktop",
+    }
+    assert "if (ENTRY_MODULE_KEYS[code]) return t(ENTRY_MODULE_KEYS[code]);" in body
     assert "(entry.description_params || {}).image" in body
     assert "return ENTRY_MODULES[code] || entry.title;" in body
-    assert (
-        EN_WORDS["ui.module_ai_gateway"],
-        CATALOGS["zh-CN"]["ui.module_ai_gateway"],
-    ) == (
-        "AI gateway",
-        "AI 网关",
-    )
+    assert [
+        (EN_WORDS[key], CATALOGS["zh-CN"][key])
+        for key in (
+            "ui.module_ai_gateway",
+            "ui.module_title.samba",
+            "ui.module_title.remote_desktop",
+        )
+    ] == [
+        ("AI gateway", "AI 网关"),
+        ("File share", "文件共享"),
+        ("Remote desktop", "远程桌面"),
+    ]
     assert catalog_keys("ui.description.") == set()
 
 
@@ -2112,7 +2125,13 @@ def test_the_managed_reason_is_one_text_with_its_code_in_both_languages():
     )
 
 
-def provider_lines(entries: list) -> list:
+def page_constant(name: str) -> str:
+    """One top-level constant of the page's script, as written there."""
+    body = PAGE_JS.split(f"const {name} = {{")[1].split("\n};")[0]
+    return f"const {name} = {{{body}\n}};"
+
+
+def provider_lines(entries: list, language: str = "en") -> list:
     """The page's own providerLine, run in node for each entry of hub nmxhub."""
     import json
     import shutil
@@ -2122,9 +2141,13 @@ def provider_lines(entries: list) -> list:
     if node is None:
         pytest.skip("no node to run the page's script")
     words = {
-        "ui.provided_by": EN_WORDS["ui.provided_by"],
-        "ui.machine_provided_by": EN_WORDS["ui.machine_provided_by"],
-        "ui.module_ai_gateway": EN_WORDS["ui.module_ai_gateway"],
+        key: CATALOGS[language][key]
+        for key in (
+            "ui.provided_by",
+            "ui.module_ai_gateway",
+            "ui.module_title.samba",
+            "ui.module_title.remote_desktop",
+        )
     }
     script = "\n".join(
         [
@@ -2133,7 +2156,8 @@ def provider_lines(entries: list) -> list:
             "  (_m, name) => String((values || {})[name]));",
             "function hubName(hub)" + function_body("function hubName(hub)") + "\n}",
             "function entryHost(entry) { return (entry.payload || {}).host || ''; }",
-            "const ENTRY_MODULES = {};",
+            page_constant("ENTRY_MODULES"),
+            page_constant("ENTRY_MODULE_KEYS"),
             "function entryModule(entry)"
             + function_body("function entryModule(entry)")
             + "\n}",
@@ -2152,22 +2176,44 @@ def provider_lines(entries: list) -> list:
     return json.loads(result.stdout)
 
 
-def test_an_entry_the_hubs_own_machine_serves_names_the_hub_once():
+def test_every_entry_names_its_hub_its_machine_and_its_modules_title():
     lines = provider_lines(
         [
             {"device_name": "nmxhub", "description_code": "ai_gateway"},
-            {"device_name": "nmxhub", "title": "Panel"},
-            {"device_name": "", "payload": {"host": "nmxhub"}, "title": "dns"},
-            {"device_name": "nmxclient", "title": "share", "description_code": ""},
+            {"device_name": "nmxhub", "description_code": "samba_module"},
+            {"device_name": "nmxdev", "description_code": "samba_module"},
+            {"device_name": "studio", "description_code": "device_share"},
+            {
+                "device_name": "nmxdev",
+                "description_code": "vscode_module",
+                "title": "VS Code (alice)",
+            },
+            {"device_name": "", "payload": {"host": "10.0.0.5"}, "title": "dns"},
+            {
+                "device_name": "nmxhub",
+                "description_code": "container",
+                "description_params": {"image": "docker.io/traefik/whoami:latest"},
+            },
         ]
     )
 
     assert lines == [
-        "from nmxhub:AI gateway",
-        "from nmxhub:Panel",
-        "from nmxhub:dns",
-        "from nmxhub:nmxclient:share",
+        "from nmxhub:nmxhub:AI gateway",
+        "from nmxhub:nmxhub:File share",
+        "from nmxhub:nmxdev:File share",
+        "from nmxhub:studio:Remote desktop",
+        "from nmxhub:nmxdev:VS Code",
+        "from nmxhub:10.0.0.5:dns",
+        "from nmxhub:nmxhub:whoami:latest",
     ]
+
+
+def test_the_modules_title_is_worded_in_the_pages_language():
+    lines = provider_lines(
+        [{"device_name": "nas", "description_code": "samba_module"}], "zh-CN"
+    )
+
+    assert lines == ["由 nmxhub:nas:文件共享 提供"]
 
 
 def test_every_forms_button_row_is_one_row_at_the_bottom_right():

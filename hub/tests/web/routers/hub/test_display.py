@@ -61,9 +61,10 @@ def update_record(monkeypatch, tmp_path):
 
 
 @pytest.fixture
-def client(monkeypatch):
+def client(monkeypatch, tmp_path):
     stored: dict = {"listen_port": 8080, "language": "en", "theme": "dark"}
     restarts: list = []
+    monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
     monkeypatch.setattr(settings_router, "read_config", lambda name: dict(stored))
     monkeypatch.setattr(settings_router, "hub_name", lambda: "gateway")
     monkeypatch.setattr(
