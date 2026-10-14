@@ -242,7 +242,7 @@ def test_the_state_carries_the_opened_secrets_and_never_a_seal(
     store = DesiredStateStore()
     store.set_want(DEVICE, "cloudcli", "running")
 
-    desired, _ = store.compose(DEVICE, platform, hub_address=HUB)
+    desired, _ = store.compose(DEVICE, platform)
 
     module = desired["modules"]["cloudcli"]
     (instance,) = module["config"]["instances"]

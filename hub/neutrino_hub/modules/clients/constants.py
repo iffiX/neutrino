@@ -7,8 +7,11 @@ CLIENT_TOKEN_BYTES = 24
 
 # The gateway key label every client's key carries: the prefix, then its name.
 CLIENT_AI_KEY_LABEL_PREFIX = "client/"
-# The gateway key of a device whose CloudCLI module is enabled.
+# The gateway key of a device whose AI tools setting is on.
 CLIENT_AI_DEVICE_KEY_LABEL_PREFIX = "device/"
+# Where a managed machine's AI tools reach the gateway: its agent's AI gateway
+# forward, on that machine's own loopback.
+CLIENT_AI_DEVICE_FORWARD_URL = "http://127.0.0.1:8317"
 
 # What an rdp entry's id starts with in the published list.
 CLIENT_RDP_SERVICE_PREFIX = "rdp_"

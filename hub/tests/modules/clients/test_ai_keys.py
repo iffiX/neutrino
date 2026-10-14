@@ -196,22 +196,27 @@ def test_a_locked_vault_mints_no_device_key(config_dir):
     assert load_config().device_keys == {}
 
 
-def test_a_devices_gateway_is_the_hubs_address_and_its_own_key(unlocked):
-    assert ai_keys.device_gateway("dev-1", "10.0.0.1") == {
-        "gateway_url": "",
-        "gateway_key": "",
-    }
+def test_a_devices_gateway_is_its_agents_forward_and_its_own_key(unlocked):
+    assert ai_keys.device_gateway("dev-1") == {"gateway_url": "", "gateway_key": ""}
     material = ai_keys.ensure_device_key("dev-1", "box")
 
-    assert ai_keys.device_gateway("dev-1", "10.0.0.1") == {
-        "gateway_url": "http://10.0.0.1:8317",
+    assert ai_keys.device_gateway("dev-1") == {
+        "gateway_url": "http://127.0.0.1:8317",
         "gateway_key": material,
     }
-    assert (
-        ai_keys.device_gateway("dev-1", "2001:db8::1")["gateway_url"]
-        == "http://[2001:db8::1]:8317"
-    )
-    assert ai_keys.device_gateway("dev-1", "")["gateway_url"] == ""
+
+
+def test_the_hubs_own_machine_reaches_the_gateway_at_its_own_port(unlocked):
+    material = ai_keys.ensure_device_key("dev-1", "box")
+    config = load_config()
+    config.listen_port = 9417
+    cliproxyapi_ops.save_config(config)
+
+    assert ai_keys.device_gateway("dev-1", is_hub_machine=True) == {
+        "gateway_url": "http://127.0.0.1:9417",
+        "gateway_key": material,
+    }
+    assert ai_keys.device_gateway("dev-1")["gateway_url"] == "http://127.0.0.1:8317"
 
 
 def test_a_key_no_setting_holds_on_is_revoked_and_the_others_kept(

@@ -9,6 +9,10 @@ the hub dials itself for a declared record, the gateway and the panel.
 Bytes go both ways, each side under the other's credit. End of file on
 either end closes the stream once what was read is sent, and the other end
 is closed after it; there is no half-close.
+
+An agent opens ``connect {id}`` for each connection its AI gateway forward
+accepts, naming the ``ai`` entry; the hub joins it to the gateway on its
+loopback the same way, while that machine's AI tools setting is on.
 """
 
 import asyncio
@@ -27,7 +31,7 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_STREAM_CONNECT,
 )
 from neutrino_hub.modules.channel.sessions import ChannelSession, ChannelStream
-from neutrino_hub.modules.clients.services import connect_target
+from neutrino_hub.modules.clients.services import agent_connect_target, connect_target
 from neutrino_hub.modules.services.constants import SERVICES_PROTOCOL_UDP
 from neutrino_hub.web.channel_udp import relay_to_agent, relay_to_socket
 from neutrino_hub.web.constants import WEB_DEFAULT_LISTEN_PORT
@@ -88,6 +92,45 @@ async def serve_connect_stream(
                     )
     finally:
         session.connects.pop(stream.id, None)
+
+
+async def serve_agent_connect_stream(
+    runtime, session: ChannelSession, stream: ChannelStream
+) -> None:
+    """Serve a ``connect`` stream an agent's AI gateway forward opened.
+
+    Args:
+        runtime: The shared runtime.
+        session: The agent's session.
+        stream: The agent's stream, closed here: refused by
+            :func:`agent_connect_target`'s code, ``connect_failed {reason}``
+            when the gateway cannot be dialled, and empty once either end
+            ended; whatever else the relay raises closes it
+            ``connect_failed {reason: unreachable}`` and is logged once.
+    """
+    code, params, target = await asyncio.to_thread(
+        agent_connect_target, runtime, session.key, stream.args
+    )
+    if code:
+        await stream.close(code, params)
+        return
+    try:
+        await _relay_to_socket(stream, target)
+    except AgentOfflineError:
+        raise
+    except Exception:  # noqa: BLE001 - any far end's fault is the agent's close
+        LOGGER.exception(
+            "connect stream %s of agent %s to %s failed",
+            stream.id,
+            session.key,
+            target,
+        )
+        if not stream.is_closed:
+            with contextlib.suppress(AgentOfflineError):
+                await stream.close(
+                    CHANNEL_CODE_CONNECT_FAILED,
+                    {"reason": CHANNEL_CONNECT_UNREACHABLE},
+                )
 
 
 async def _relay_datagrams(runtime, stream: ChannelStream, target) -> None:

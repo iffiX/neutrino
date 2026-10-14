@@ -305,7 +305,7 @@ def test_the_sweep_removes_a_directory_no_stored_id_names_and_keeps_the_rest(
 
 # --- the machine's AI tools ---
 
-AI_GATEWAY = {"gateway_url": "http://192.168.100.1:8317", "gateway_key": "dev-key"}
+AI_GATEWAY = {"gateway_url": "http://127.0.0.1:8317", "gateway_key": "dev-key"}
 WINDOWS = {"os": "windows", "family": "", "arch": "amd64", "version": "26100"}
 
 
@@ -313,7 +313,9 @@ def ai_tools_box(monkeypatch, *, models=("gw-model", "other")):
     """Three modules naming accounts, the gateway reachable with a key."""
     from neutrino_hub.modules.devices import desired_state
 
-    monkeypatch.setattr(desired_state, "device_gateway", lambda key, hub: AI_GATEWAY)
+    monkeypatch.setattr(
+        desired_state, "device_gateway", lambda key, is_hub_machine=False: AI_GATEWAY
+    )
     monkeypatch.setattr(
         desired_state, "_login_password", lambda login_id: f"pw-{login_id}"
     )
@@ -376,7 +378,7 @@ def test_a_setting_that_is_on_sends_the_gateway_the_key_and_the_accounts(
 
     assert desired["ai_tools"] == {
         "is_enabled": True,
-        "base_url": "http://192.168.100.1:8317",
+        "base_url": "http://127.0.0.1:8317",
         "api_key": "dev-key",
         "tool_configs": {
             "claude": {
@@ -391,6 +393,30 @@ def test_a_setting_that_is_on_sends_the_gateway_the_key_and_the_accounts(
         "accounts": [{"account": "alice"}, {"account": "bob"}],
         "cc_switch_version": "5.10.4",
     }
+
+
+def test_the_hubs_own_machine_is_composed_with_the_gateways_own_address(
+    config, monkeypatch
+):
+    from neutrino_hub.modules.devices import desired_state
+
+    store, models = ai_tools_box(monkeypatch)
+    store.set_ai_tools(DEVICE, is_enabled=True)
+    asked: list = []
+
+    def gateway(key, is_hub_machine=False):
+        asked.append(is_hub_machine)
+        port = 9417 if is_hub_machine else 8317
+        return {"gateway_url": f"http://127.0.0.1:{port}", "gateway_key": "k"}
+
+    monkeypatch.setattr(desired_state, "device_gateway", gateway)
+
+    managed, _ = store.compose(DEVICE, PLATFORM, ai_models=models)
+    own, _ = store.compose(DEVICE, PLATFORM, is_hub_machine=True, ai_models=models)
+
+    assert asked == [False, True]
+    assert managed["ai_tools"]["base_url"] == "http://127.0.0.1:8317"
+    assert own["ai_tools"]["base_url"] == "http://127.0.0.1:9417"
 
 
 def test_a_windows_machine_is_sent_each_accounts_login_password(config, monkeypatch):
@@ -419,7 +445,7 @@ def test_the_setting_is_sent_off_while_it_is_off_or_the_gateway_serves_nothing(
     monkeypatch.setattr(
         desired_state,
         "device_gateway",
-        lambda key, hub: {"gateway_url": "", "gateway_key": ""},
+        lambda key, is_hub_machine=False: {"gateway_url": "", "gateway_key": ""},
     )
     keyless, _ = store.compose(DEVICE, PLATFORM, ai_models=models)
 

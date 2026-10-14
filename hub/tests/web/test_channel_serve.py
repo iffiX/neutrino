@@ -11,7 +11,10 @@ the failure's code, a ``service`` stream closed with the entry's material,
 a client's ``exec`` relayed to the agent with its stdin and its ``eof`` up
 and both outputs and the ``exit_code`` down,
 an unknown kind closed ``kind_unknown``, a machine whose AI tools are on
-handed its state again when the gateway stops or starts serving, a client's ``is_refresh`` report
+handed its state again when the gateway stops or starts serving, an
+agent's ``connect`` to the gateway refused ``permission_denied {kind: ai}``
+while its AI tools are off and carried to the gateway on loopback while
+they are on, a client's ``is_refresh`` report
 answered with its whole state whatever the hash, a ``ping`` from either role
 answered with a ``pong`` carrying its nonce, and a socket ending taking the
 binding offline. An agent older than the hub that asked for its own
@@ -25,8 +28,11 @@ its own package is refused.
 """
 
 import hashlib
+import json
 import logging
 import os
+import socket as socket_module
+import threading
 import time
 from pathlib import Path
 
@@ -1738,6 +1744,69 @@ def test_a_machine_whose_ai_tools_are_on_follows_the_gateway_without_a_press(api
         {"is_enabled": False},
     )
     assert (served["hash"], served["ai_tools"]) == ("h-on", {"is_enabled": True})
+
+
+def frames_until_close(socket, stream_id: int) -> tuple:
+    """Every byte one stream carried down, and its close."""
+    received = b""
+    while True:
+        message = socket.receive()
+        if message.get("bytes") is not None:
+            assert message["bytes"][:4] == stream_id.to_bytes(4, "big")
+            received += message["bytes"][4:]
+            continue
+        frame = json.loads(message["text"])
+        if frame["type"] == "close":
+            return received, frame
+
+
+def test_an_agents_connect_is_refused_while_its_ai_tools_are_off(api):
+    client, runtime = api
+    device_id, token = bound_device()
+    socket = welcomed(client, device_id, token)
+    try:
+        socket.send_json({"type": "open", "stream": 1, "kind": "connect", "id": "ai"})
+        received, closed = frames_until_close(socket, 1)
+    finally:
+        socket.__exit__(None, None, None)
+
+    assert received == b""
+    assert (closed["code"], closed["params"]) == ("permission_denied", {"kind": "ai"})
+
+
+def test_an_agents_connect_reaches_the_gateway_on_loopback(api, monkeypatch):
+    """The gateway stands in as a loopback socket that answers in capitals."""
+    from types import SimpleNamespace
+
+    from neutrino_hub.modules.clients import services
+
+    client, runtime = api
+    runtime.desired_states = AiToolsOn()
+    gateway = socket_module.create_server(("127.0.0.1", 0))
+    port = gateway.getsockname()[1]
+    monkeypatch.setattr(
+        services, "load_config", lambda: SimpleNamespace(listen_port=port)
+    )
+
+    def answer():
+        connection, _ = gateway.accept()
+        with connection:
+            connection.sendall(connection.recv(4).upper())
+
+    threading.Thread(target=answer, daemon=True).start()
+    device_id, token = bound_device()
+    socket = welcomed(client, device_id, token)
+    try:
+        socket.send_json({"type": "open", "stream": 1, "kind": "connect", "id": "ai"})
+        socket.send_json({"type": "credit", "stream": 1, "bytes": 65536})
+        socket.send_bytes((1).to_bytes(4, "big") + b"ping")
+        received, closed = frames_until_close(socket, 1)
+    finally:
+        socket.__exit__(None, None, None)
+        gateway.close()
+
+    assert received == b"PING"
+    assert (closed["code"], closed["params"]) == ("", {})
 
 
 # --- the round trip ---

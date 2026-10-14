@@ -271,6 +271,48 @@ def test_the_hubs_own_device_is_handed_loopback_first(monkeypatch):
     assert panel._device_urls("gone") == []
 
 
+class ComposingStates:
+    """The desired-state store: what each compose was asked."""
+
+    def __init__(self):
+        self.composed: dict = {}
+
+    def is_ai_tools_enabled(self, key):
+        return False
+
+    def compose(self, key, platform, **kwargs):
+        self.composed[key] = kwargs
+        return {}, "h"
+
+
+class NoRetryMarks:
+    def marks(self, key):
+        return {}
+
+
+def test_the_hubs_own_device_is_composed_as_the_hub_machine(monkeypatch):
+    """Its AI tools reach the gateway itself, every other device's its agent's forward."""
+    panel = object.__new__(PanelRuntime)
+    panel.desired_states = ComposingStates()
+    panel.device_platform = {}
+    panel.device_address = {}
+    devices = OwnMachineDevices()
+    monkeypatch.setattr(runtime_module, "DeviceRegistry", lambda: devices)
+    monkeypatch.setattr(runtime_module, "DeviceRetryMarks", NoRetryMarks)
+    monkeypatch.setattr(runtime_module, "machine_id", lambda: "hub-machine")
+    monkeypatch.setattr(runtime_module, "channel_urls", lambda runtime: [])
+    monkeypatch.setattr(runtime_module, "own_agent_urls", lambda runtime: [])
+    monkeypatch.setattr(PanelRuntime, "share_subnets", lambda self: [])
+
+    for key in ("own", "other", "gone"):
+        panel.desired_state_for(key)
+
+    composed = panel.desired_states.composed
+    assert composed["own"]["is_hub_machine"] is True
+    assert composed["other"]["is_hub_machine"] is False
+    assert composed["gone"]["is_hub_machine"] is False
+
+
 class SlowEnginePart:
     """NetBird's part on a hub whose own daemon is not running: its status
     command takes ten seconds before it gives up."""

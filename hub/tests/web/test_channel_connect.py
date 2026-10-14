@@ -14,6 +14,9 @@ the client's credit allows; and a UDP entry opens its agent's ``connect
 {port, protocol: udp}`` with frames crossing unchanged, or has the hub
 answer for a declared record from a socket of its own; and whatever a far
 end raises closes the client's stream ``connect_failed`` and is logged once.
+An agent's ``connect`` from its AI gateway forward is closed with the
+judge's refusal before anything is dialled, or carried to the gateway's
+socket on loopback, and a gateway that does not answer is ``connect_failed``.
 """
 
 import asyncio
@@ -27,7 +30,11 @@ from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_CLIENT
 from neutrino_hub.modules.channel.sessions import ChannelSession, ChannelStream
 from neutrino_hub.modules.clients.services import ConnectTarget
 from neutrino_hub.web import channel_connect
-from neutrino_hub.web.channel_connect import dial_reason, serve_connect_stream
+from neutrino_hub.web.channel_connect import (
+    dial_reason,
+    serve_agent_connect_stream,
+    serve_connect_stream,
+)
 from neutrino_hub.web.channel_udp import frame_of, split_frame
 from tests.conftest import FakeChannelSessions, ScriptedChannelStream
 
@@ -60,6 +67,25 @@ class Judge:
     def __call__(self, runtime, client_id, args, *, open_count, panel_port):
         self.asks.append((client_id, dict(args), open_count, panel_port))
         return self.verdict
+
+
+class AgentJudge:
+    """The judge of an agent's ``connect``: the verdict a test sets, and the asks."""
+
+    def __init__(self):
+        self.asks: list = []
+        self.verdict = ("permission_denied", {"kind": "ai"}, None)
+
+    def __call__(self, runtime, device_id, args):
+        self.asks.append((device_id, dict(args)))
+        return self.verdict
+
+
+@pytest.fixture
+def agent_judged(monkeypatch) -> AgentJudge:
+    judge = AgentJudge()
+    monkeypatch.setattr(channel_connect, "agent_connect_target", judge)
+    return judge
 
 
 @pytest.fixture
@@ -251,6 +277,76 @@ def test_a_dial_that_outlasts_its_timeout_is_connect_failed_timeout(
     assert asyncio.run(scenario()).close_info == {
         "code": "connect_failed",
         "params": {"reason": "timeout"},
+    }
+
+
+def test_an_agents_refused_connect_closes_before_anything_is_dialled(
+    agent_judged, monkeypatch
+):
+    runtime = FakeRuntime()
+
+    async def never(host, port):
+        raise AssertionError("dialled")
+
+    monkeypatch.setattr(channel_connect.asyncio, "open_connection", never)
+
+    async def scenario():
+        stream = ScriptedChannelStream("connect", {"id": "ai"}, 1)
+        await serve_agent_connect_stream(runtime, FakeSession(DEVICE), stream)
+        return stream
+
+    stream = asyncio.run(scenario())
+
+    assert stream.close_info == {"code": "permission_denied", "params": {"kind": "ai"}}
+    assert agent_judged.asks == [(DEVICE, {"id": "ai"})]
+    assert runtime.agent_sessions.streams == []
+
+
+def test_an_agents_connect_reaches_the_gateway_and_bytes_cross(agent_judged):
+    runtime = FakeRuntime()
+
+    async def scenario():
+        async def gateway(reader, writer):
+            data = await reader.readexactly(4)
+            writer.write(data.upper())
+            await writer.drain()
+            writer.close()
+
+        server = await asyncio.start_server(gateway, "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
+        agent_judged.verdict = (
+            "",
+            {},
+            ConnectTarget("", "127.0.0.1", port, kind="ai", provider=DEVICE),
+        )
+        stream = ScriptedChannelStream("connect", {"id": "ai"}, 1)
+        serving = asyncio.create_task(
+            serve_agent_connect_stream(runtime, FakeSession(DEVICE), stream)
+        )
+        stream._deliver(("data", b"ping"))
+        await asyncio.wait_for(serving, 5)
+        server.close()
+        await server.wait_closed()
+        return stream
+
+    stream = asyncio.run(scenario())
+
+    assert stream.sent_bytes() == b"PING"
+    assert stream.close_info == {"code": "", "params": {}}
+
+
+def test_an_agents_connect_to_a_gateway_that_is_down_is_connect_failed(agent_judged):
+    runtime = FakeRuntime()
+    agent_judged.verdict = ("", {}, ConnectTarget("", "127.0.0.1", free_port()))
+
+    async def scenario():
+        stream = ScriptedChannelStream("connect", {"id": "ai"}, 1)
+        await serve_agent_connect_stream(runtime, FakeSession(DEVICE), stream)
+        return stream
+
+    assert asyncio.run(scenario()).close_info == {
+        "code": "connect_failed",
+        "params": {"reason": "refused"},
     }
 
 

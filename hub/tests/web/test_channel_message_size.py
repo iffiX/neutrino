@@ -204,7 +204,6 @@ def largest_agent_state(device, urls: list) -> dict:
         address="192.168.100.2",
         allowed_subnets=[f"192.168.{n}.0/24" for n in range(URLS)],
         urls=urls,
-        hub_address="192.168.100.1",
     )
     return {"type": "state", "hash": state_hash, **desired}
 
