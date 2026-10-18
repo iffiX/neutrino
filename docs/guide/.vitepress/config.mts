@@ -33,7 +33,12 @@ export default defineConfig({
   cleanUrls: false,
   lastUpdated: false,
   srcExclude: ["README.md"],
-  head: [["meta", { name: "theme-color", content: "#0891b2" }]],
+  sitemap: { hostname: "https://neutrino.beyond-infinity.top" },
+  head: [
+    ["meta", { name: "theme-color", content: "#0891b2" }],
+    ["link", { rel: "author", href: "https://www.beyond-infinity.top/" }],
+    ["meta", { name: "author", content: "Muhan Li (iffiX)" }],
+  ],
   locales: {
     root: {
       label: "English",
@@ -81,7 +86,8 @@ export default defineConfig({
         },
         footer: {
           message: "微子 · 个人开发基础设施",
-          copyright: "使用 MIT 许可证发布",
+          copyright:
+            '使用 MIT 许可证发布 · 作者：<a href="https://www.beyond-infinity.top/zh/" rel="author">Muhan Li (iffiX)</a>',
         },
       },
     },
@@ -118,7 +124,8 @@ export default defineConfig({
     },
     footer: {
       message: "Neutrino · personal developer infrastructure",
-      copyright: "Released under the MIT license",
+      copyright:
+        'Released under the MIT license · Author: <a href="https://www.beyond-infinity.top/" rel="author">Muhan Li (iffiX)</a>',
     },
   },
 });
