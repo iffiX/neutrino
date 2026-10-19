@@ -30,6 +30,8 @@ FRP_TOP_LEVEL_TABLES = ("auth", "metadatas", "transport")
 FRP_PROXY_KEYS = ("name", "type", "remotePort")
 FRP_PROXY_TABLES = ("metadatas", "transport")
 FRP_BARE_KEY = re.compile(r"^[A-Za-z0-9_-]+$")
+# The colour codes frpc writes around its console lines.
+FRP_COLOUR_CODE = re.compile(r"\x1b\[[0-9;]*m")
 
 
 def server_port(text: str) -> int:
@@ -93,6 +95,19 @@ def render_frpc(text: str, *, tunnel_name: str, loopback_port: int) -> str:
         if isinstance(proxy.get(table), dict):
             lines += _dotted(proxy[table], prefix=_key(table))
     return "\n".join(lines) + "\n"
+
+
+def plain_lines(lines: list) -> list:
+    """frpc's lines without their colour codes, empty ones left out.
+
+    Args:
+        lines: What frpc wrote, oldest first.
+
+    Returns:
+        Each line stripped of colour codes and surrounding space.
+    """
+    plain = (FRP_COLOUR_CODE.sub("", line).strip() for line in lines)
+    return [line for line in plain if line]
 
 
 def refused_line(lines: list) -> str:

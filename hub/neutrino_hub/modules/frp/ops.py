@@ -68,6 +68,7 @@ from neutrino_hub.modules.frp.constants import (
 from neutrino_hub.modules.frp.nacl_box import box_open
 from neutrino_hub.modules.frp.renderer import (
     judge_exit,
+    plain_lines,
     refused_line,
     render_frpc,
     server_port,
@@ -691,11 +692,13 @@ class FrpMonitor:
         return judge_exit(lines)
 
     def _output(self) -> list:
-        """frpc's last lines, of the run going on or the last one."""
+        """frpc's last lines, of the run going on or the last one, without
+        their colour codes."""
         try:
-            return self._controller.run_output(self._vendor, line_count=FRP_LOG_LINES)
+            lines = self._controller.run_output(self._vendor, line_count=FRP_LOG_LINES)
         except (KeyError, OSError):
             return []
+        return plain_lines(lines)
 
     def _run_check(self, config: FrpConfig) -> None:
         """Dial the public address and compare what answers with the hub."""

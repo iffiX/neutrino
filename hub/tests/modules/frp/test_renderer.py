@@ -12,6 +12,7 @@ import pytest
 
 from neutrino_hub.modules.frp.renderer import (
     judge_exit,
+    plain_lines,
     refused_line,
     render_frpc,
     server_port,
@@ -96,6 +97,51 @@ def test_a_string_with_quotes_and_a_line_break_stays_one_value():
 def test_the_server_port_is_read_and_defaults_to_frps_own():
     assert server_port(SAKURAFRP_CONFIG) == 7001
     assert server_port('serverAddr = "x"\n') == 7000
+
+
+# What frpc 0.71.1 wrote against a local frps, colour codes and all.
+RECORDED_REFUSED = [
+    "\x1b[1;34m2026-10-19 21:43:20.898 [I] [sub/root.go:194] start frpc service "
+    "for config file [frpc.toml] with aggregated configuration",
+    "\x1b[0m\x1b[1;34m2026-10-19 21:43:20.899 [I] [client/service.go:355] "
+    "[20f7dbaa3d10298d] login to server success, get run id [20f7dbaa3d10298d]",
+    "\x1b[0m\x1b[1;34m2026-10-19 21:43:20.899 [I] [proxy/proxy_manager.go:183] "
+    "[20f7dbaa3d10298d] proxy added: [neutrino]",
+    "\x1b[0m\x1b[1;33m2026-10-19 21:43:20.899 [W] [client/control.go:172] "
+    "[20f7dbaa3d10298d] [neutrino] start error: proxy [acct.neutrino] already "
+    "exists",
+    "\x1b[0m",
+]
+RECORDED_WRONG_TOKEN = [
+    "\x1b[1;34m2026-10-19 21:43:22.900 [I] [client/service.go:335] try to "
+    "connect to server...",
+    "\x1b[0m\x1b[1;33m2026-10-19 21:43:22.900 [W] [client/service.go:346] "
+    "connect to server error: token in login doesn't match token from "
+    "configuration",
+    "\x1b[0mlogin to the server failed: token in login doesn't match token "
+    "from configuration. With loginFailExit enabled, no additional retries will "
+    "be attempted",
+]
+RECORDED_NO_NODE = [
+    "\x1b[0m\x1b[1;33m2026-10-19 21:43:23.405 [W] [client/service.go:346] "
+    "connect to server error: dial tcp 127.0.0.1:17999: connect: connection "
+    "refused",
+    "\x1b[0mlogin to the server failed: dial tcp 127.0.0.1:17999: connect: "
+    "connection refused. With loginFailExit enabled, no additional retries will "
+    "be attempted",
+]
+
+
+def test_frpcs_recorded_lines_read_as_their_states():
+    refused = plain_lines(RECORDED_REFUSED)
+
+    assert refused_line(refused) == (
+        "2026-10-19 21:43:20.899 [W] [client/control.go:172] [20f7dbaa3d10298d] "
+        "[neutrino] start error: proxy [acct.neutrino] already exists"
+    )
+    assert judge_exit(plain_lines(RECORDED_WRONG_TOKEN))[0] == "login_failed"
+    assert judge_exit(plain_lines(RECORDED_NO_NODE))[0] == "unreachable"
+    assert not any("\x1b" in line for line in refused)
 
 
 def test_the_last_word_about_the_tunnel_decides_whether_it_was_refused():
