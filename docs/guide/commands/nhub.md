@@ -26,7 +26,7 @@ title: nhub commands
 | `nhub vault rekey`  | `--stdin` reads the new passphrase                                              | yes  | no   | Wraps the vault's data key under a new passphrase; nothing sealed is encrypted again.                                                       |
 | `nhub scan-secrets` | `--staged`, `--history`, `--no-entropy`, `--no-vendor`, `--quiet`               | no   | no   | Checks the working tree, the staged files or every commit for credentials. A development command.                                           |
 
-The `--only-` flags exist on Linux alone, one per systemd unit: `web`, `xray`, `cliproxyapi`, `dnsmasq`, `relay` for the SSH Relay, `router`, `supplicant` and `dhcpcd`; `--only-supplicant` and `--only-dhcpcd` need `--interface`. `--only <component>` of `nhub apply` takes `router`, `xray`, `dnsmasq`, `cliproxyapi` or `overlay`. `xray` exists in the full edition only. [Uninstall](../uninstall.md) uses `nhub reset network` and `nhub reset all`.
+The `--only-` flags exist on Linux alone, one per systemd unit: `web`, `xray`, `cliproxyapi`, `dnsmasq`, `relay` for the SSH relay, `sakurafrp` and `openfrp` for the frpc of each vendor, `router`, `supplicant` and `dhcpcd`; `--only-supplicant` and `--only-dhcpcd` need `--interface`. `--only <component>` of `nhub apply` takes `router`, `xray`, `dnsmasq`, `cliproxyapi` or `overlay`. `xray` exists in the full edition only. [Uninstall](../uninstall.md) uses `nhub reset network` and `nhub reset all`.
 
 ## Global flags
 

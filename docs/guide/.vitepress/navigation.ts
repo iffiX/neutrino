@@ -105,9 +105,10 @@ export const sidebarEn: DefaultTheme.SidebarItem[] = [
         link: "/hub/overlay",
         collapsed: false,
         items: [
-          { text: "SSH Relay", link: "/hub/relay" },
           { text: "NetBird", link: "/hub/netbird" },
           { text: "EasyTier", link: "/hub/easytier" },
+          { text: "SSH relay", link: "/hub/relay" },
+          { text: "SakuraFrp and OpenFrp", link: "/hub/frp" },
         ],
       },
       { text: "Proxy", link: "/hub/proxy" },
@@ -229,7 +230,7 @@ export const sidebarZh: DefaultTheme.SidebarItem[] = [
         link: "/zh-CN/scenarios/one_laptop_every_machine",
       },
       {
-        text: "用自己的 VPS 中继连回家",
+        text: "经自己的 VPS 连回家",
         link: "/zh-CN/scenarios/vps_relay",
       },
       {
@@ -270,9 +271,10 @@ export const sidebarZh: DefaultTheme.SidebarItem[] = [
         link: "/zh-CN/hub/overlay",
         collapsed: false,
         items: [
-          { text: "SSH 中继", link: "/zh-CN/hub/relay" },
           { text: "NetBird", link: "/zh-CN/hub/netbird" },
           { text: "EasyTier", link: "/zh-CN/hub/easytier" },
+          { text: "SSH 中继", link: "/zh-CN/hub/relay" },
+          { text: "SakuraFrp 和 OpenFrp", link: "/zh-CN/hub/frp" },
         ],
       },
       { text: "代理", link: "/zh-CN/hub/proxy" },

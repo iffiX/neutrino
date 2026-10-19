@@ -109,13 +109,13 @@ The exit status is 0 while the client runs and every hub is connected, and 1 oth
 }
 ```
 
-| Field             | Holds                                                          |
-| ----------------- | -------------------------------------------------------------- |
-| `connection`      | `connected`, `connecting`, `waiting`, `replaced` or `disabled` |
-| `wait_reason`     | while `waiting`, the reason, such as `hub_silent`              |
-| `wait_code`       | the `{code, params}` behind the wait, or `null`                |
-| `next_round_at`   | the Unix time a countdown ends, or `null`                      |
-| `reached_through` | the path: `lan`, `direct`, `netbird`, `easytier` or `relay`    |
-| `rtt_ms`          | the last round trip in whole milliseconds, or `null`           |
-| `is_exit`         | whether the AI tools point at this hub                         |
-| `last_error`      | the last `{code, params}` the channel returned, or `null`      |
+| Field             | Holds                                                                                   |
+| ----------------- | --------------------------------------------------------------------------------------- |
+| `connection`      | `connected`, `connecting`, `waiting`, `replaced` or `disabled`                          |
+| `wait_reason`     | while `waiting`, the reason, such as `hub_silent`                                       |
+| `wait_code`       | the `{code, params}` behind the wait, or `null`                                         |
+| `next_round_at`   | the Unix time a countdown ends, or `null`                                               |
+| `reached_through` | the path: `lan`, `netbird`, `easytier`, `ssh_relay`, `direct`, `sakurafrp` or `openfrp` |
+| `rtt_ms`          | the last round trip in whole milliseconds, or `null`                                    |
+| `is_exit`         | whether the AI tools point at this hub                                                  |
+| `last_error`      | the last `{code, params}` the channel returned, or `null`                               |

@@ -26,7 +26,7 @@ title: nhub 命令
 | `nhub vault rekey`  | `--stdin` 从标准输入读新口令                                                                | 是   | 否     | 用新口令重新封存保险库的数据密钥，内容不重新加密。                                                                                         |
 | `nhub scan-secrets` | `--staged`、`--history`、`--no-entropy`、`--no-vendor`、`--quiet`                           | 否   | 否     | 检查工作区、暂存区或提交历史里有没有凭据，开发用。                                                                                         |
 
-`--only-<unit>` 只作用于一个单元，取 `router`、`xray`、`dnsmasq`、`cliproxyapi`、`relay`、`web`、`supplicant` 或 `dhcpcd`；`relay` 是 SSH 中继，`nhub run` 没有它。`supplicant` 和 `dhcpcd` 要配 `--interface`。`xray` 只在完整版里有。macOS 和 Windows 上只有一个服务，`start` 和 `stop` 带 `--only-<unit>` 时返回 2。`nhub reset all` 和 `nhub reset network` 在卸载时怎么用，见[卸载](../uninstall.md)。
+`--only-<unit>` 只作用于一个单元，取 `router`、`xray`、`dnsmasq`、`cliproxyapi`、`relay`、`sakurafrp`、`openfrp`、`web`、`supplicant` 或 `dhcpcd`；`relay` 是 SSH 中继，`sakurafrp` 和 `openfrp` 是两家服务商各自的 frpc，`nhub run` 没有这三个。`supplicant` 和 `dhcpcd` 要配 `--interface`。`xray` 只在完整版里有。macOS 和 Windows 上只有一个服务，`start` 和 `stop` 带 `--only-<unit>` 时返回 2。`nhub reset all` 和 `nhub reset network` 在卸载时怎么用，见[卸载](../uninstall.md)。
 
 ## 全局参数
 

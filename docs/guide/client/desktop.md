@@ -22,7 +22,9 @@ Under the hub's name, one line shows the connection. While the channel to the hu
 | **Direct**    | one of the hub's own addresses, from outside the networks it serves |
 | **NetBird**   | the hub's NetBird address                                           |
 | **EasyTier**  | the hub's EasyTier address                                          |
-| **SSH Relay** | the public port of the hub's SSH Relay server                       |
+| **SSH relay** | the public port of the hub's SSH relay server                       |
+| **SakuraFrp** | the public port of the hub's SakuraFrp tunnel                       |
+| **OpenFrp**   | the public port of the hub's OpenFrp tunnel                         |
 
 ![The client window connected to a hub, with the path and the round trip](/guide/en/client_connected.webp)
 

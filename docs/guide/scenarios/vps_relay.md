@@ -67,15 +67,15 @@ The `GatewayPorts` setting applies to the whole server.
 ## Connect the hub
 
 1. If you use a password, open the **Credentials** page and add it under **Logins** with **Add login**.
-1. On the **Access** page, turn on **Enable** on the **SSH Relay** card.
-1. Select **Apply access**. The **SSH Relay** section appears under the cards.
+1. On the **Access** page, turn on **Enable** on the **SSH relay** card.
+1. Select **Apply access**. The **SSH relay** section appears under the cards.
 1. Under **Settings**, fill **Server**, **SSH port**, **Account** and **Public port**.
 1. Under **Credential**, choose **SSH key** and pick the key, or **Password** and pick the login.
-1. Select **Apply SSH Relay**.
+1. Select **Apply SSH relay**.
 
 **Status** reads **Connecting**, then **Connected** within a minute. **Address for clients** shows `https://<server>:<public-port>`, built from the **Server** and **Public port** you entered.
 
-![The SSH Relay settings with the status Connected and the address for clients](/guide/en/overlay_relay_settings.webp)
+![The SSH relay settings with the status Connected and the address for clients](/guide/en/overlay_relay_settings.webp)
 
 ## Give clients the address
 
@@ -86,6 +86,6 @@ To check it from a phone:
 1. Turn off the phone's Wi-Fi.
 1. Open the **Hubs** page in the app.
 
-The hub row reads **Connected · SSH Relay**. A connected virtual network comes first, so while NetBird or EasyTier is on, the row names it. To test the relay alone, or to use it in place of NetBird, turn the **NetBird** card off on **Access** and select **Apply access**.
+The hub row reads **Connected · SSH relay**. A connected virtual network comes first, so while NetBird or EasyTier is on, the row names it. To test the relay alone, or to use it in place of NetBird, turn the **NetBird** card off on **Access** and select **Apply access**.
 
-If **Status** reads anything other than **Connected**, read [SSH Relay](../hub/relay.md) for what each status means. The fixes are in [Troubleshooting](../reference/troubleshooting.md#access). To stop using the relay, turn the **SSH Relay** card off and select **Apply access**.
+If **Status** reads anything other than **Connected**, read [SSH relay](../hub/relay.md) for what each status means. The fixes are in [Troubleshooting](../reference/troubleshooting.md#access). To stop using the relay, turn the **SSH relay** card off and select **Apply access**.

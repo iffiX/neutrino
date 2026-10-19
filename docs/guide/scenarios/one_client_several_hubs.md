@@ -43,9 +43,9 @@ The link is valid for 30 minutes. After the join, this hub's **Clients** page al
 
 ## Read the Hubs page
 
-**Hubs** has one row per hub, titled with its name. Each row reads **Connected ·** with the way the client reached that hub, **LAN**, **Direct**, **NetBird**, **EasyTier** or **SSH Relay**, and the round trip in milliseconds.
+**Hubs** has one row per hub, titled with its name. Each row reads **Connected ·** with the way the client reached that hub, **LAN**, **Direct**, **NetBird**, **EasyTier**, **SSH relay**, **SakuraFrp** or **OpenFrp**, and the round trip in milliseconds.
 
-The client picks the way for each hub separately, so `hub` can read **Connected · LAN** while `office` reads **Connected · NetBird**. A hub reached over the LAN, through Direct or through the SSH Relay works while its virtual network is off.
+The client picks the way for each hub separately, so `hub` can read **Connected · LAN** while `office` reads **Connected · NetBird**. A hub reached over the LAN, through Direct, the SSH relay, SakuraFrp or OpenFrp works while its virtual network is off.
 
 ![The Hubs page with two hub rows, one reached over the LAN and one through NetBird](/guide/en/client_hubs_two.webp)
 
@@ -66,7 +66,7 @@ A device is on one hub's virtual network at a time, a computer as much as a phon
 1. On the first hub's row, select **Disconnect** on the **Virtual network** line.
 1. On the second hub's row, select **Connect**.
 
-The first hub stays connected through any other way in it has, such as Direct or the SSH Relay.
+The first hub stays connected through any other way in it has, such as Direct, the SSH relay or a SakuraFrp tunnel.
 
 ## Choose the AI gateway
 

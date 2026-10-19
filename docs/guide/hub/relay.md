@@ -1,16 +1,16 @@
 ---
-title: SSH Relay
+title: SSH relay
 ---
 
-# SSH Relay
+# SSH relay
 
-The SSH Relay opens a public port on a server you rent or own. The server forwards each connection on that port to the hub's port 8443. Clients and agents outside your network then reach the hub at that server's address.
+The SSH relay opens a public port on a server you rent or own. The server forwards each connection on that port to the hub's port 8443. Clients and agents outside your network then reach the hub at that server's address.
 
 This page describes the relay's settings and status. The steps that set up the server are in [Reach the hub through your own VPS](../scenarios/vps_relay.md).
 
 ## Settings
 
-After you turn on the **SSH Relay** card and select **Apply access** on the **Access** page, the **SSH Relay** section appears under the cards.
+After you turn on the **SSH relay** card and select **Apply access** on the **Access** page, the **SSH relay** section appears under the cards.
 
 | Field           | What it holds                                                                     |
 | --------------- | --------------------------------------------------------------------------------- |
@@ -20,7 +20,7 @@ After you turn on the **SSH Relay** card and select **Apply access** on the **Ac
 | **Public port** | the port on the server that clients connect to                                    |
 | **Credential**  | **SSH key** or **Password**, picked from the [Credentials](./credentials.md) page |
 
-**Apply SSH Relay** saves the settings and connects. **Address for clients** then shows `https://<server>:<public-port>`, built from **Server** and **Public port**. New client links, joined clients and agents receive it as the hub's last address. **Host key** shows the server's key as SSH recorded it on the first connection.
+**Apply SSH relay** saves the settings and connects. **Address for clients** then shows `https://<server>:<public-port>`, built from **Server** and **Public port**. New client links, joined clients and agents receive it as the hub's last address. **Host key** shows the server's key as SSH recorded it on the first connection.
 
 ## Read the status
 
@@ -44,4 +44,4 @@ What to do for each status is on [Troubleshooting](../reference/troubleshooting.
 
 Applying a different **Server** or **SSH port** deletes the recorded host key, and the next connection records the new server's key. After a reinstall at the same address, set up the server again, then select **Forget host key** beside **Host key** and confirm with **Forget**.
 
-Applying new settings disconnects the clients connected through the SSH Relay, and each one connects again on its own.
+Applying new settings disconnects the clients connected through the SSH relay, and each one connects again on its own.

@@ -4,13 +4,13 @@ title: Access
 
 # Access
 
-The **Access** page turns on and off each way into the hub from outside your network: Direct, SSH Relay, NetBird and EasyTier. Any set of them runs at once. [Choose a way in](../scenarios/choose_a_way_in.md) compares them.
+The **Access** page turns on and off each way into the hub from outside your network: NetBird, EasyTier, the SSH relay, Direct, SakuraFrp and OpenFrp. Any set of them runs at once. [Choose a way in](../scenarios/choose_a_way_in.md) compares them.
 
 ## Turn a way in on
 
-![The four cards, all switched on](/guide/en/overlay_switches.webp)
+![The cards on the Access page, all switched on](/guide/en/overlay_switches.webp)
 
-**Engine** holds four cards: **Direct**, **SSH Relay**, **NetBird** and **EasyTier**.
+**Engine** holds one card per way in, three to a row: **NetBird**, **EasyTier**, **SSH relay**, **Direct**, **SakuraFrp** and **OpenFrp**.
 
 1. On the card, turn on **Enable**.
 1. Select **Apply access**.
@@ -35,9 +35,10 @@ To add an address reachable from outside, such as a port your router forwards to
 
 Each of the other ways in has its own page:
 
-- SSH Relay: a server you rent or own forwards one public port to the hub, as in [Reach the hub through your own VPS](../scenarios/vps_relay.md). [SSH Relay](./relay.md) explains its status and settings.
 - NetBird: the hub joins a NetBird network with a setup key, as in [Join the hub to NetBird](./netbird.md).
 - EasyTier: the hub joins an EasyTier network from its console or by name and secret, as in [Put the hub on an EasyTier network](./easytier.md).
+- SSH relay: a server you rent or own forwards one public port to the hub, as in [Reach the hub through your own VPS](../scenarios/vps_relay.md). [SSH relay](./relay.md) explains its status and settings.
+- SakuraFrp and OpenFrp: a tunnel at one of these vendors gives the hub a public port on its node, as in [SakuraFrp and OpenFrp](./frp.md).
 
 ## Run several at once
 
