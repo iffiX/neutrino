@@ -30,6 +30,8 @@ const KIND_SUMMARY_KEYS: Record<string, string> = {
   easytier: "ui.overlay.summary_easytier",
   relay: "ui.overlay.summary_relay",
   direct: "ui.overlay.summary_direct",
+  sakurafrp: "ui.overlay.summary_sakurafrp",
+  openfrp: "ui.overlay.summary_openfrp",
 };
 
 const KIND_ICONS: Record<string, IconName> = {
@@ -37,6 +39,8 @@ const KIND_ICONS: Record<string, IconName> = {
   easytier: "nodes",
   relay: "server",
   direct: "globe",
+  sakurafrp: "link",
+  openfrp: "link",
 };
 
 /** The rows whose names are words rather than a product's, by their key. */
@@ -45,6 +49,8 @@ const KIND_TITLE_KEYS: Record<string, string> = {
   direct: "ui.overlay.direct_title",
 };
 const KIND_RELAY = "relay";
+/** The ways in that run the carried frpc. */
+const KIND_FRP = new Set(["sakurafrp", "openfrp"]);
 
 const KIND_ICON_OTHER: IconName = "mesh";
 
@@ -132,7 +138,7 @@ export function OverlayModePanel({
       </div>
       <p className="field_hint">{t("ui.overlay.engine_hint")}</p>
 
-      <div className="overlay_choices">
+      <div className="overlay_choices overlay_choices--ways">
         {choice.kinds.map((kind) => {
           const blocked = unavailableReason(kind);
           const summaryKey = KIND_SUMMARY_KEYS[kind.key];
@@ -207,6 +213,11 @@ function kindTitle(kind: OverlayKindView): string {
 function unavailableReason(kind: OverlayKindView): string | null {
   if (kind.key === KIND_RELAY) {
     return kind.is_installed ? null : t("code.relay_ssh_missing");
+  }
+  if (KIND_FRP.has(kind.key)) {
+    return kind.is_installed
+      ? null
+      : t("code.frpc_missing", { title: kind.title });
   }
   if (!kind.is_integrated) {
     return t("ui.overlay.not_integrated");

@@ -2,6 +2,7 @@ import { useEffect } from "react";
 
 import { EasyTierSection } from "../components/easytier_panels";
 import { ErrorPanel } from "../components/error_panel";
+import { FrpSection } from "../components/frp_panels";
 import { Icon } from "../components/icon";
 import { OverlayModePanel } from "../components/overlay_mode_panel";
 import { DirectSection } from "../components/direct_panels";
@@ -25,6 +26,8 @@ const PROVIDER_NETBIRD = "netbird";
 const PROVIDER_EASYTIER = "easytier";
 const PROVIDER_RELAY = "relay";
 const PROVIDER_DIRECT = "direct";
+const PROVIDER_SAKURAFRP = "sakurafrp";
+const PROVIDER_OPENFRP = "openfrp";
 
 // What moves the switches: any write to the hub's own configuration.
 const OVERLAY_INVALIDATE_ON = [{ type: HUB_EVENT_CONFIG }];
@@ -124,6 +127,14 @@ export function OverlayPage() {
 
       {selected === PROVIDER_RELAY && isEnabled(PROVIDER_RELAY) && (
         <RelaySection onStateChange={reload} />
+      )}
+
+      {selected === PROVIDER_SAKURAFRP && isEnabled(PROVIDER_SAKURAFRP) && (
+        <FrpSection vendor="sakurafrp" onStateChange={reload} />
+      )}
+
+      {selected === PROVIDER_OPENFRP && isEnabled(PROVIDER_OPENFRP) && (
+        <FrpSection vendor="openfrp" onStateChange={reload} />
       )}
     </div>
   );
