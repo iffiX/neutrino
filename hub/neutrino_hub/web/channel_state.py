@@ -256,9 +256,10 @@ def push_every_state(runtime) -> list:
 def _client_scope(runtime, peer_host: str, reached_host: str, served=None):
     """The scope a client's socket arrived from.
 
-    A client that came through the relay arrives from loopback and dialled
-    the relay's address, which is no address of this hub; its scope names
-    the hub by the hub's own name, so the hub's own entries show that name.
+    A client that came through the relay or a frp node arrives from
+    loopback and dialled that server's address, which is no address of this
+    hub; its scope names the hub by the hub's own name, so the hub's own
+    entries show that name.
 
     Args:
         runtime: The shared runtime.

@@ -328,6 +328,20 @@ def test_a_vault_that_cannot_open_the_credential_is_vault_locked(box):
     assert monitor.view()["state"] == "vault_locked"
 
 
+def test_a_way_in_off_reads_no_process(box):
+    config = read_frp(FRP_SAKURAFRP)
+    config.is_enabled = False
+    write_frp(config)
+    controller = FakeController()
+    asked = []
+    controller.process_id = lambda name: asked.append(name) or 0
+    _, monitor = applier(controller)
+
+    monitor.tick()
+
+    assert asked == []
+
+
 def test_a_listener_another_program_holds_is_loopback_port_taken(box):
     _, monitor = applier(FakeController(), is_listener_taken=lambda vendor: True)
 

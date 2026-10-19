@@ -613,8 +613,13 @@ class FrpMonitor:
             self._config_error = reason
 
     def tick(self) -> None:
-        """Read the process once, and check the public address when due."""
+        """Read the process once, and check the public address when due.
+
+        A way in that is off or has no tunnel reads nothing.
+        """
         config = read_frp(self._vendor)
+        if not (config.is_enabled and config.has_tunnel):
+            return
         process_id = self._read_process_id()
         now = self._clock()
         with self._lock:

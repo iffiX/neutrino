@@ -141,6 +141,19 @@ def test_reset_all_forgets_the_packages_the_hub_downloaded_for_itself(box):
     assert not (box.parent / "state" / "hub_update").exists()
 
 
+def test_reset_all_takes_each_frp_vendors_file_with_the_state_root(box):
+    """frpc.toml holds the account's token."""
+    for vendor in ("sakurafrp", "openfrp"):
+        directory = box.parent / "state" / vendor
+        directory.mkdir()
+        (directory / "frpc.toml").write_text('user = "token"\n')
+
+    reset._reset_all()
+
+    assert not (box.parent / "state" / "sakurafrp").exists()
+    assert not (box.parent / "state" / "openfrp").exists()
+
+
 def test_reset_all_clears_what_the_hub_wrote_to_var_log(box):
     """design/files.md says a reset clears /var/log of everything the hub
     wrote. The directory stays: the accounts that write into it do."""
