@@ -619,6 +619,24 @@ jobs:
           path: dist/*-android.apk
           if-no-files-found: error
 
+  # The iOS app, unsigned: each person signs their own copy.
+  client_ios:
+    name: client .ipa (iOS)
+    if: inputs.editions != 'cn'
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+
+      - run: brew install xcodegen
+
+      - run: python3 packaging/build/build_client_ios.py --output-dir dist
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: client_ios
+          path: dist/*-ios.ipa
+          if-no-files-found: error
+
   # One source archive: this tree at the commit, with the source of what the
   # packages carry under copyleft beside it, at the tags the binaries were
   # built from.
@@ -650,6 +668,7 @@ jobs:
         client_windows,
         client_macos,
         client_android,
+        client_ios,
         sources,
       ]
     runs-on: ubuntu-24.04
@@ -1330,6 +1349,31 @@ jobs:
           path: cn/dist/*-android.apk
           if-no-files-found: error
 
+  # The cn .ipa, built in the mainland tree as the intl one is.
+  client_ios_cn:
+    name: cn client .ipa (iOS)
+    needs: [sources_cn]
+    runs-on: macos-15
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: cn_sources
+          path: cn_sources
+
+      - name: Unpack the mainland source tree
+        run: mkdir cn && tar -xf cn_sources/*-cn-source.tar.xz -C cn --strip-components=1
+
+      - run: brew install xcodegen
+
+      - run: python3 packaging/build/build_client_ios.py --edition cn --output-dir dist
+        working-directory: cn
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cn_client_ios
+          path: cn/dist/*-ios.ipa
+          if-no-files-found: error
+
   # SHA256SUMS over the cn packages, the cn install scripts and the mainland
   # source tree, and the one artifact that holds them. Nothing of cn is
   # attached to the GitHub release.
@@ -1346,6 +1390,7 @@ jobs:
         client_windows_cn,
         client_macos_cn,
         client_android_cn,
+        client_ios_cn,
       ]
     runs-on: ubuntu-24.04
     steps:
