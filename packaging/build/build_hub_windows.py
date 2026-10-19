@@ -12,7 +12,7 @@ The installer carries the hub compiled: Nuitka turns the package and the
 interpreter it runs on into ``nhub.exe``, a console program, with the
 libraries and ``neutrino_hub/data`` beside it, under
 ``C:\\Program Files\\Neutrino\\hub``, which goes on PATH. Under its ``bin``
-are xray, cli-proxy-api, netbird, easytier-core, easytier-cli and
+are xray, cli-proxy-api, netbird, easytier-core, easytier-cli, frpc and
 tun2socks, with EasyTier's ``wintun.dll`` and the stand-in ``packet.dll``
 beside them. The
 geodata and the agent's ``.msi`` land under the state directory in

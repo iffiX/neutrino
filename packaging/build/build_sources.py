@@ -41,8 +41,8 @@ CN_LEFT_OUT_SOURCES = ("xray-core-",)
 
 # The source of everything the packages carry, pinned to the archive at the
 # tag the binaries were built from: RustDesk (AGPL-3.0) in the agent and the
-# client, EasyTier (LGPL-3.0), NetBird (BSD-3), xray (MPL-2.0) and
-# CLIProxyAPI (MIT) in the hub, cc-switch (MIT) in the client,
+# client, EasyTier (LGPL-3.0), NetBird (BSD-3), xray (MPL-2.0), CLIProxyAPI
+# (MIT) and frp (Apache-2.0) in the hub, cc-switch (MIT) in the client,
 # at the version of its pin in shared.constants. Each goes into
 # the release's source archive unmodified.
 SOURCE_ARCHIVES = (
@@ -70,6 +70,11 @@ SOURCE_ARCHIVES = (
         "cliproxyapi-7.2.146-source.tar.gz",
         "https://github.com/router-for-me/CLIProxyAPI/archive/refs/tags/v7.2.146.tar.gz",
         "10078716be34cc7ecf488c3b50b17d5675261a36eb78cbdfd768331b989f9fca",  # scan: allow
+    ),
+    (
+        "frp-0.71.1-source.tar.gz",
+        "https://github.com/fatedier/frp/archive/refs/tags/v0.71.1.tar.gz",
+        "079f5fdebfbf8b8fa42c8b03245d169a7b5298697d754d7345ea25f09e496722",  # scan: allow
     ),
     (
         "cc-switch-cli-5.10.4-source.tar.gz",

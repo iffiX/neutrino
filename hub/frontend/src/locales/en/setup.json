@@ -83,6 +83,7 @@
   "ui.setup.step_users_and_dirs": "Creating service user and directories",
   "ui.setup.step_python_env": "Preparing the Python environment",
   "ui.setup.step_xray_core": "Installing xray-core and geodata",
+  "ui.setup.step_frpc": "Installing frpc",
   "ui.setup.step_config_files": "Preparing configuration",
   "ui.setup.step_agent_tls": "Generating the agent channel certificate",
   "ui.setup.step_systemd_units": "Installing system services",

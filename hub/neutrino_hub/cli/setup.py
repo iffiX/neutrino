@@ -16,11 +16,11 @@ at the end, in every way of answering: the steps write what it runs into
 ``services.json``, then the password is stored, then the service starts,
 and then this machine's agent joins the panel it serves. The order is:
 
-    checking the carried programs, directories, the Python environment and
-    xray-core (both carried), config/ from examples, writing what you
-    chose, the agent channel and panel certificates, rendering, enabling
-    the core children, the overlay, the AI gateway, the panel password,
-    starting the hub's service, this machine's agent.
+    checking the carried programs, directories, the Python environment,
+    xray-core and frpc (all three carried), config/ from examples, writing
+    what you chose, the agent channel and panel certificates, rendering,
+    enabling the core children, the overlay, the AI gateway, the panel
+    password, starting the hub's service, this machine's agent.
 
 The hub's service serves the same questions in a browser from the install,
 through :func:`serve_until_set_up`. Whichever of it and this command starts
@@ -40,8 +40,11 @@ import socket
 import ssl
 import subprocess
 import sys
+import tarfile
+import tempfile
 import time
 import urllib.request
+import zipfile
 from functools import partial
 from pathlib import Path
 
@@ -72,6 +75,12 @@ from neutrino_hub.modules.devices.agent_package import (
 from neutrino_hub.modules.easytier.constants import (
     EASYTIER_CLI_PATH,
     EASYTIER_CORE_PATH,
+)
+from neutrino_hub.modules.frp.constants import (
+    FRP_ASSETS,
+    FRP_BINARY_PATH,
+    FRP_RELEASE_URL,
+    FRP_VERSION,
 )
 from neutrino_hub.modules.netbird.constants import NETBIRD_BINARY_PATH
 from neutrino_hub.modules.overlay.config import enabled_providers
@@ -198,6 +207,7 @@ SETUP_CARRIED_PROGRAMS = (
     CLIPROXYAPI_BINARY_PATH,
     EASYTIER_CORE_PATH,
     EASYTIER_CLI_PATH,
+    FRP_BINARY_PATH,
 )
 # What writing the answers names: the proxy's part where the tree carries it.
 SETUP_ANSWERS_WRITTEN = (
@@ -1251,6 +1261,66 @@ def _step_cliproxyapi(reporter: InstallReporter) -> str:
     return result.message
 
 
+def _step_frpc(reporter: InstallReporter) -> str:
+    """Setup's step that puts the pinned frpc in place.
+
+    Args:
+        reporter: Where progress lines go.
+
+    Returns:
+        What was installed, or the version already there.
+
+    Raises:
+        FileNotFoundError: When the package should carry frpc and does not.
+        ValueError: When the download is not the pinned file.
+        RuntimeError: On a system and machine frp publishes no build for.
+        subprocess.CalledProcessError: When the download fails.
+    """
+    if FRP_BINARY_PATH.is_file():
+        version = run([str(FRP_BINARY_PATH), "--version"], is_checked=False).stdout
+        return f"frpc {version.strip()}" if version.strip() else "present"
+    if is_packaged():
+        raise FileNotFoundError(
+            f"the package should carry frpc at {FRP_BINARY_PATH} and it is not "
+            "there; reinstall the package rather than fetching one"
+        )
+    reporter.note(f"downloading frpc {FRP_VERSION} (~14 MB)")
+    _fetch_frpc()
+    return f"frpc {FRP_VERSION}"
+
+
+def _fetch_frpc() -> None:
+    """Put the pinned frpc release where the package would have put it.
+
+    Raises:
+        ValueError: When the download is not the pinned file.
+        RuntimeError: On a system and machine frp publishes no build for.
+        subprocess.CalledProcessError: When the download fails.
+    """
+    system, machine = hub_os(), machine_architecture()
+    if (system, machine) not in FRP_ASSETS:
+        raise RuntimeError(f"frp publishes no frpc for {system} {machine}")
+    asset, digest = FRP_ASSETS[(system, machine)]
+    folder = asset.removesuffix(".zip").removesuffix(".tar.gz")
+    member = f"{folder}/{FRP_BINARY_PATH.name}"
+    url = FRP_RELEASE_URL.format(version=FRP_VERSION, asset=asset)
+    with tempfile.TemporaryDirectory() as workdir:
+        archive = Path(workdir) / asset
+        run(["curl", "-fL", "--retry", "2", "-o", str(archive), url], timeout_s=600)
+        arrived = hashlib.sha256(archive.read_bytes()).hexdigest()
+        if arrived != digest:
+            raise ValueError(f"{url} came back as {arrived}, not {digest}")
+        if asset.endswith(".zip"):
+            with zipfile.ZipFile(archive) as bundle:
+                content = bundle.read(member)
+        else:
+            with tarfile.open(archive) as bundle:
+                content = bundle.extractfile(member).read()
+    FRP_BINARY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    FRP_BINARY_PATH.write_bytes(content)
+    FRP_BINARY_PATH.chmod(0o755)
+
+
 def _step_required_packages(reporter: InstallReporter) -> str:
     """Check what the hub cannot run without is here, and install nothing.
 
@@ -1607,6 +1677,7 @@ CORE_STEPS = (
     ("users_and_dirs", "Creating service user and directories", _step_users_and_dirs),
     ("python_env", "Preparing the Python environment", _step_python_env),
     *(step for steps in edition.hooks("setup_steps") for step in steps),
+    ("frpc", "Installing frpc", _step_frpc),
     ("config_files", "Preparing config/ from examples", _step_config_files),
     ("agent_tls", "Generating the agent channel certificate", _step_agent_tls),
     ("panel_tls", "Generating the panel's certificates", _step_panel_tls),

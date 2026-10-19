@@ -6,6 +6,13 @@ place of system packages, make directories and no account, and start the
 hub's one service once, after the password and before this machine's agent.
 """
 
+import hashlib
+import io
+import tarfile
+import zipfile
+from pathlib import Path
+from types import SimpleNamespace
+
 import pytest
 
 from neutrino_hub import edition
@@ -20,6 +27,7 @@ EVERY_STEP = [
     "users_and_dirs",
     "python_env",
     *[f"{name}_core" for name in XRAY],
+    "frpc",
     "config_files",
     "agent_tls",
     "panel_tls",
@@ -126,6 +134,139 @@ def test_a_missing_carried_program_asks_for_a_reinstall(monkeypatch, tmp_path):
 
     with pytest.raises(FileNotFoundError, match="reinstall"):
         setup._step_required_packages(FakeReporter())
+
+
+def test_the_macos_and_windows_packages_are_checked_for_frpc():
+    from neutrino_hub.modules.frp.constants import FRP_BINARY_PATH
+
+    assert FRP_BINARY_PATH in setup.SETUP_CARRIED_PROGRAMS
+
+
+# --- frpc: carried by a package, fetched at its pin into a checkout ---
+
+
+def _frp_archive(asset: str, payload: bytes) -> bytes:
+    """An frp release archive shaped as upstream ships it."""
+    folder = asset.removesuffix(".zip").removesuffix(".tar.gz")
+    suffix = ".exe" if "windows" in asset else ""
+    names = {
+        f"{folder}/frpc{suffix}": payload,
+        f"{folder}/frps{suffix}": b"server",
+        f"{folder}/frpc.toml": b"serverAddr = '127.0.0.1'",
+        f"{folder}/LICENSE": b"Apache License",
+    }
+    buffer = io.BytesIO()
+    if asset.endswith(".zip"):
+        with zipfile.ZipFile(buffer, "w") as bundle:
+            for name, content in names.items():
+                bundle.writestr(name, content)
+    else:
+        with tarfile.open(fileobj=buffer, mode="w:gz") as bundle:
+            for name, content in names.items():
+                info = tarfile.TarInfo(name)
+                info.size = len(content)
+                bundle.addfile(info, io.BytesIO(content))
+    return buffer.getvalue()
+
+
+@pytest.fixture
+def checkout_frpc(monkeypatch, tmp_path):
+    """A checkout with no frpc yet, and a release the download is answered
+    from; the URLs asked for, in order."""
+    asked: list = []
+    archives: dict = {}
+
+    def pin(system, machine, asset, *, digest=""):
+        archive = _frp_archive(asset, b"frpc " + asset.encode())
+        archives[asset] = archive
+        digest = digest or hashlib.sha256(archive).hexdigest()
+        monkeypatch.setattr(setup, "FRP_ASSETS", {(system, machine): (asset, digest)})
+        monkeypatch.setattr(setup, "hub_os", lambda: system)
+        monkeypatch.setattr(setup, "machine_architecture", lambda: machine)
+        name = "frpc.exe" if system == "windows" else "frpc"
+        monkeypatch.setattr(setup, "FRP_BINARY_PATH", tmp_path / "bin" / name)
+
+    def run(command, **keywords):
+        assert command[0] == "curl", command
+        asked.append(command[-1])
+        target = Path(command[command.index("-o") + 1])
+        target.write_bytes(archives[command[-1].rsplit("/", 1)[-1]])
+        return SimpleNamespace(stdout="", is_success=True)
+
+    monkeypatch.setattr(setup, "is_packaged", lambda: False)
+    monkeypatch.setattr(setup, "run", run)
+    monkeypatch.setattr(setup, "FRP_VERSION", "9.9.9")
+    return SimpleNamespace(pin=pin, asked=asked, binaries=tmp_path / "bin")
+
+
+@pytest.mark.parametrize(
+    ("system", "machine", "asset", "name"),
+    [
+        ("linux", "amd64", "frp_9.9.9_linux_amd64.tar.gz", "frpc"),
+        ("linux", "arm64", "frp_9.9.9_linux_arm64.tar.gz", "frpc"),
+        ("darwin", "arm64", "frp_9.9.9_darwin_arm64.tar.gz", "frpc"),
+        ("windows", "amd64", "frp_9.9.9_windows_amd64.zip", "frpc.exe"),
+    ],
+)
+def test_a_checkout_fetches_the_pinned_frpc_alone(
+    checkout_frpc, system, machine, asset, name
+):
+    checkout_frpc.pin(system, machine, asset)
+    reporter = FakeReporter()
+
+    assert setup._step_frpc(reporter) == "frpc 9.9.9"
+    assert checkout_frpc.asked == [
+        f"https://github.com/fatedier/frp/releases/download/v9.9.9/{asset}"
+    ]
+    assert reporter.notes == ["downloading frpc 9.9.9 (~14 MB)"]
+    binary = checkout_frpc.binaries / name
+    assert binary.read_bytes() == b"frpc " + asset.encode()
+    assert binary.stat().st_mode & 0o777 == 0o755
+    assert [path.name for path in checkout_frpc.binaries.iterdir()] == [name]
+
+
+def test_a_download_that_is_not_the_pinned_frpc_is_refused(checkout_frpc):
+    checkout_frpc.pin("linux", "amd64", "frp_9.9.9_linux_amd64.tar.gz", digest="0" * 64)
+
+    with pytest.raises(ValueError, match="not 0000"):
+        setup._step_frpc(FakeReporter())
+    assert not checkout_frpc.binaries.exists()
+
+
+def test_a_machine_frp_publishes_nothing_for_fetches_nothing(
+    checkout_frpc, monkeypatch
+):
+    checkout_frpc.pin("linux", "amd64", "frp_9.9.9_linux_amd64.tar.gz")
+    monkeypatch.setattr(setup, "machine_architecture", lambda: "riscv64")
+
+    with pytest.raises(RuntimeError, match="linux riscv64"):
+        setup._step_frpc(FakeReporter())
+    assert checkout_frpc.asked == []
+
+
+def test_a_package_without_its_frpc_asks_for_a_reinstall(monkeypatch, tmp_path):
+    monkeypatch.setattr(setup, "FRP_BINARY_PATH", tmp_path / "frpc")
+    monkeypatch.setattr(setup, "is_packaged", lambda: True)
+    monkeypatch.setattr(setup, "run", lambda *a, **k: pytest.fail("no download"))
+
+    with pytest.raises(FileNotFoundError, match="reinstall the package"):
+        setup._step_frpc(FakeReporter())
+
+
+def test_an_frpc_in_place_is_reported_by_its_version(monkeypatch, tmp_path):
+    binary = tmp_path / "frpc"
+    binary.write_bytes(b"frpc")
+    asked = []
+
+    def run(command, **keywords):
+        asked.append(command)
+        return SimpleNamespace(stdout="0.71.1\n", is_success=True)
+
+    monkeypatch.setattr(setup, "FRP_BINARY_PATH", binary)
+    monkeypatch.setattr(setup, "run", run)
+
+    assert setup._step_frpc(FakeReporter()) == "frpc 0.71.1"
+    assert asked == [[str(binary), "--version"]]
 
 
 @pytest.mark.parametrize("system", ["darwin", "win32"])

@@ -135,6 +135,7 @@ from neutrino_hub.modules.easytier.constants import (
     EASYTIER_SOURCE_URLS,
     EASYTIER_VERSION,
 )
+from neutrino_hub.modules.frp.constants import FRP_VERSION
 from neutrino_hub.modules.netbird.constants import NETBIRD_VERSION
 
 LOGGER = logging.getLogger(__name__)
@@ -1511,6 +1512,13 @@ CARRIED_COMPONENTS = (
         EASYTIER_VERSION,
         "LGPL-3.0",
         EASYTIER_SOURCE_URLS,
+        None,
+    ),
+    (
+        "frp",
+        FRP_VERSION,
+        "Apache-2.0",
+        "https://github.com/fatedier/frp/tree/v{}",
         None,
     ),
     (

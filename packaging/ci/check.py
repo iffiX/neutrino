@@ -35,6 +35,7 @@ The targets:
   the screen, the app opened and the .pkg installed again leaves a new app
   running, and an install with the app quit opens none. macOS.
 - ``hub_windows``: the .msi installs, ``nhub --version`` answers, the
+  carried ``frpc --version`` answers the pinned version, the
   ``neutrino_hub`` service runs and serves the setup wizard on the panel's
   port, ``nhub setup --json`` sets a ``server`` hub up and installs its local
   agent, the service runs and the panel answers ``/api/hub/display``;
@@ -49,7 +50,8 @@ The targets:
   ``adb`` and one emulator attached.
 - ``linux``: a hub, agent or client .deb, .rpm or Arch package installs in a
   fresh container of its family and its command answers ``--version``; the
-  hub's install prints the setup wizard's address with its token, and its
+  hub's install prints the setup wizard's address with its token, its
+  carried ``frpc --version`` answers the pinned version, and its
   agent cache holds the agent package of its own family and machine alone,
   none for Arch; the agent's RustDesk is at
   ``/usr/lib/neutrino/agent/rustdesk/rustdesk``, and no RustDesk unit and
@@ -80,6 +82,7 @@ import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from shared import hub_assets  # noqa: E402
 from shared.constants import (  # noqa: E402
     PACKAGING_EARLIER_PACKAGES,
     PACKAGING_EARLIER_RELEASE_URL,
@@ -357,6 +360,14 @@ HUB_WIZARD_API_URL = "http://127.0.0.1:8080/api/hub/setup/context"
 HUB_WIZARD_REFUSAL = 403
 HUB_PANEL_WAIT_S = 180
 HUB_PANEL_POLL_S = 5
+# Where each system's hub package carries frpc, and the prefix its
+# ``--version`` answer is listed under from a Linux container.
+HUB_FRPC_PATHS = {
+    "linux": "/opt/neutrino/hub/bin/frpc",
+    "darwin": "/Library/Application Support/Neutrino/hub/app/bin/frpc",
+    "windows": str(HUB_WINDOWS_FOLDER / "bin" / "frpc.exe"),
+}
+HUB_FRPC_LINE = "frpc: "
 
 # --- Android ---
 ANDROID_ACTIVITY = "io.github.iffix.neutrino/.MainActivity"
@@ -1170,6 +1181,7 @@ def check_hub_windows(msi: Path) -> None:
         raise SystemExit("the hub did not install")
     _check_no_pending_rename()
     print(f"nhub {_answer([str(nhub), '--version'])}")
+    check_frpc(_answer([HUB_FRPC_PATHS["windows"], "--version"]))
     if not _service_exists(HUB_WINDOWS_SERVICE):
         raise SystemExit("the hub's service is not registered")
     if not _wait_for_service(HUB_WINDOWS_SERVICE, is_running=True):
@@ -1241,6 +1253,7 @@ def check_hub_macos(pkg: Path) -> None:
     _require_host("darwin", "macOS")
     _sudo(["installer", "-pkg", str(pkg), "-target", "/"])
     print(f"nhub {_answer([HUB_MACOS_COMMAND, '--version'])}")
+    check_frpc(_answer([HUB_FRPC_PATHS["darwin"], "--version"]))
     if not HUB_MACOS_PLIST.is_file():
         raise SystemExit("the hub's service is not registered")
     if not _is_job_loaded(HUB_MACOS_JOB):
@@ -1331,6 +1344,8 @@ def check_linux(package: Path) -> None:
         script += (
             f" && {{ ls -1 {HUB_AGENT_CACHE_DIR} 2>/dev/null || true; }}"
             f" | sed 's/^/{HUB_AGENT_CACHE_LINE}/'"
+            f" && frpc_version=$({HUB_FRPC_PATHS['linux']} --version)"
+            f' && echo "{HUB_FRPC_LINE}$frpc_version"'
         )
     if command == LINUX_COMMANDS["neutrino-agent"]:
         script += f" && {AGENT_LINUX_RUSTDESK_CHECK}"
@@ -1384,8 +1399,29 @@ def check_linux(package: Path) -> None:
                 f"not {expected or 'nothing'}"
             )
         print(f"agent cache: {', '.join(carried) or 'empty'}")
+        frpc = [
+            line[len(HUB_FRPC_LINE) :]
+            for line in result.stdout.splitlines()
+            if line.startswith(HUB_FRPC_LINE)
+        ]
+        check_frpc(frpc[0] if frpc else "")
     else:
         print(f"{command} {result.stdout.strip().splitlines()[-1]}")
+
+
+def check_frpc(answer: str) -> None:
+    """The hub package's frpc answers the version every hub package pins.
+
+    Args:
+        answer: What ``frpc --version`` printed.
+
+    Raises:
+        SystemExit: When it answers another version or nothing.
+    """
+    pinned = hub_assets.pinned_version("frp")
+    if answer.strip() != pinned:
+        raise SystemExit(f"the hub's frpc answers {answer or 'nothing'}, not {pinned}")
+    print(f"frpc {pinned}")
 
 
 def hub_agent_cache(name: str) -> list:

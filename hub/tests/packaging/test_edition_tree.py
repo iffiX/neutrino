@@ -162,6 +162,19 @@ def test_both_archives_carry_the_source_of_the_pinned_cc_switch():
     assert url.endswith(f"/v{PACKAGING_CC_SWITCH_VERSION}.tar.gz")
 
 
+def test_both_archives_carry_the_source_of_the_pinned_frp():
+    """Every hub package carries frpc in both editions."""
+    from neutrino_hub.modules.frp.constants import FRP_VERSION
+
+    name = f"frp-{FRP_VERSION}-source.tar.gz"
+    (url,) = [url for found, url, _ in build_sources.SOURCE_ARCHIVES if found == name]
+
+    assert not name.startswith(build_sources.CN_LEFT_OUT_SOURCES)
+    assert url == (
+        f"https://github.com/fatedier/frp/archive/refs/tags/v{FRP_VERSION}.tar.gz"
+    )
+
+
 def test_the_removal_scripts_stop_only_units_this_tree_carries():
     """The removal scripts' list comes from the code, so in the mainland
     tree it names no unit of the proxy."""
