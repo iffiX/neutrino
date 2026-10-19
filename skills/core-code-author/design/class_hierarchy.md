@@ -43,9 +43,10 @@ class DeviceSshOperator: ...     # Device -> Ssh -> Operator
 
 The Kotlin and Swift apps keep the same `<Domain><Thing><Role>` shape, with
 the domain a feature of the app: `ChannelSocketClient`, `OverlayNetbirdDriver`,
-`FilesSmbReader`. Where the platform requires a base class, its name is the
-role: `OverlayVpnService` and `FilesDocumentsProvider` on Android,
-`OverlayPacketTunnelProvider` and `FilesReplicatedExtension` on iOS. Each
+`FilesSmbReader`. Where the platform requires a base class or a role, its
+name is the role: `OverlayVpnService` and `FilesDocumentsProvider` on
+Android, `TerminalViewRepresentable` and `BrowserNavigationDelegate` on iOS.
+Each
 language's file rules are in
 [../coding_style/kotlin_style.md](../coding_style/kotlin_style.md) and
 [../coding_style/swift_style.md](../coding_style/swift_style.md).

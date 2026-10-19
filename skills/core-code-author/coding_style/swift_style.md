@@ -1,9 +1,9 @@
 # Swift style
 
-The iOS app (`client/ios/`) is an Xcode project in Swift with SwiftUI, built
-as three targets: the app, the Packet Tunnel extension and the File Provider
-extension. This file is its language surface. The shared intent is set by
-[naming_style.md](naming_style.md), [comment_style.md](comment_style.md) and
+The iOS app (`client/ios/`) is written in Swift with SwiftUI, in two
+targets: the app and its unit tests. This file is its language surface. The
+shared intent is set by [naming_style.md](naming_style.md),
+[comment_style.md](comment_style.md) and
 [exception_style.md](exception_style.md), and applies here as it does to
 Python.
 
@@ -42,6 +42,18 @@ final class ChannelSocketClient {
 - The build must finish with no warnings. Do not silence one with a pragma
   or an unused binding to hide a real problem.
 
+## Project and dependencies
+
+- `client/ios/project.yml`, the XcodeGen spec, is the project. The
+  `.xcodeproj` is generated from it by `xcodegen generate` and never
+  committed, so a target, a setting or a dependency changes in
+  `project.yml` alone.
+- A dependency is a Swift package declared in `project.yml` at an exact
+  version. The one dependency is SwiftTerm, the MIT-licensed terminal view.
+- The version and the edition reach the build as `xcodebuild` build
+  settings from `packaging/build/build_client_ios.py`, and are never
+  written into `project.yml`.
+
 ## Files and directories
 
 - A file holds one top-level type and is named after it in PascalCase, as
@@ -63,9 +75,9 @@ final class ChannelSocketClient {
   from a wire field is the camelCase form of that field (`is_token_required`
   becomes `isTokenRequired`), mapped once in its `CodingKeys`.
 - Classes follow the `<Domain><Thing><Role>` families of
-  [../design/class_hierarchy.md](../design/class_hierarchy.md). A system base
-  class names the role: `OverlayPacketTunnelProvider`,
-  `FilesReplicatedExtension`.
+  [../design/class_hierarchy.md](../design/class_hierarchy.md). A type that
+  fills a system role names the role: `TerminalViewRepresentable`,
+  `BrowserNavigationDelegate`.
 
 ## Comments
 
@@ -102,9 +114,9 @@ file holds one screen or one component, with its preview at the end.
 
 ## Tests
 
-- XCTest, run by `xcodebuild test`. A source file `<dir>/<Type>.swift` in a
-  target is tested by `<dir>/<Type>Tests.swift` in that target's test bundle;
-  the mirror rule of [../design/tests.md](../design/tests.md) applies
-  unchanged.
+- XCTest, run by `xcodebuild test` on the iOS Simulator. A source file
+  `Neutrino/<dir>/<Type>.swift` is tested by
+  `NeutrinoTests/<dir>/<Type>Tests.swift`; the mirror rule of
+  [../design/tests.md](../design/tests.md) applies unchanged.
 - The channel's frames are checked against
   `hub/tests/web/channel_schema.json`, the golden the hub's own tests pin.

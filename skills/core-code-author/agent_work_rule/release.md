@@ -10,8 +10,8 @@ commit and when is in [commit.md](commit.md).
 
 ## One tag, every package, compatibility by protocol number
 
-One tag builds the hub, the agent, the desktop client and the Android app at
-one version; the iOS app is paused ("iOS app" below). Whether an agent or a client works with a hub is decided by `PROTOCOL`, the number each
+One tag builds the hub, the agent, the desktop client and the two phone apps
+at one version. Whether an agent or a client works with a hub is decided by `PROTOCOL`, the number each
 package speaks; the hub accepts every number from `PROTOCOL_MIN` to its own
 ([../design/protocol.md](../design/protocol.md), "Versioning"). A peer outside
 that range is rejected at the door with `protocol_too_old` or
@@ -45,6 +45,7 @@ The mainland edition does not carry the proxy:
 | hub | the proxy: xray, the proxy TUN and its `tun2socks`, the geodata, the **Proxy** page, the proxy scopes of the network modes, and the `side_gateway` mode |
 | desktop client | nothing |
 | Android app | nothing |
+| iOS app | nothing |
 | agent | nothing |
 
 `cn` keeps NetBird in the hub, the desktop client and the Android app, and
@@ -53,10 +54,11 @@ code-server, CloudCLI, Codeg, Gitea, Samba, Podman, ZFS and the AI gateway.
 
 The build writes the edition into each package as `EDITION`, `intl` or `cn`,
 beside the version in `neutrino_hub/_version.py`,
-`neutrino_agent/_version.py` and `neutrino_client/_version.py`, and into the
-Android app as `BuildConfig.EDITION`. A checkout has no stamp and reads
+`neutrino_agent/_version.py` and `neutrino_client/_version.py`, into the
+Android app as `BuildConfig.EDITION`, and into the iOS app's `Info.plist` as
+`NeutrinoEdition`. A checkout has no stamp and reads
 the file `EDITION` at the repository's root, one line holding `intl` in the
-GitHub repository; the Android build reads the same file. The stamp, or
+GitHub repository; the two phone builds read the same file. The stamp, or
 that file, chooses where a package fetches from
 ([../design/install_and_dev.md](../design/install_and_dev.md), "Where each
 edition fetches from"). Which features a package has follows from the files
@@ -168,7 +170,7 @@ platform in words, not only in the filename.
 | macOS on Apple silicon | `.pkg`, `server` mode | `.pkg` | `.pkg` | `intl`, `cn` |
 | macOS on Intel | `.pkg`, `server` mode | `.pkg` | `.pkg` | `intl` |
 | Android 8 or newer | none | none | `.apk` | `intl`, `cn` |
-| iOS | none | none | paused since 2026-10-03 | none |
+| iOS 16 or newer | none | none | `.ipa`, unsigned | `intl`, `cn` |
 
 `install.sh` and `install.ps1` are published beside the packages and install
 any of the three by one command
@@ -316,10 +318,33 @@ The person installs the `.apk` on the phone, then scans the QR code on the
 
 ### iOS app
 
-The iOS app is paused since 2026-10-03: `client/ios/` is neither built nor
-released, and keeps its `LICENSE`. It is weighed again when the repository
-passes 300 stars, when several issues ask for an iOS app, or when somebody
-submits iOS code.
+The iOS app is the client on an iPhone, with the pages and the limits
+[../design/client.md](../design/client.md) gives it in "The iOS app". It
+contains SwiftTerm and no network core, and is licensed AGPL-3.0 by
+`client/ios/LICENSE`. The release attaches it unsigned, and each person
+signs their own copy. The release is the only place the app is published:
+the project holds no Apple developer account, so the app is in neither the
+App Store nor TestFlight.
+
+| File | For |
+| --- | --- |
+| `neutrino-client-<version>-ios.ipa` | iOS 16 or newer, unsigned |
+
+In the release workflow `build_client_ios.py` builds it on GitHub's
+`macos-15` runner: XcodeGen
+generates the project, `xcodebuild` builds the app for `generic/platform=iOS`
+with code signing off (`CODE_SIGNING_ALLOWED=NO`), and the `.app` is zipped
+under `Payload/`. The build passes the release's version to `xcodebuild`, as
+the Android build passes it to Gradle.
+
+The person signs the `.ipa` with their own Apple ID and installs it with
+Sideloadly (Windows, macOS), AltStore (Windows, macOS), or Impactor or its
+command line `plumesign` (Linux, macOS, Windows), turns on Developer Mode on the iPhone,
+then scans the QR code on the **Clients** page or pastes the client link. A
+free Apple ID's signature holds 7 days, for at most 3 such apps on the
+phone, and the person signs the app again before it ends; a paid Apple ID's
+signature holds a year. An upgrade is
+the next release's `.ipa`, signed and installed over the app.
 
 ### Install scripts
 
@@ -380,7 +405,7 @@ sentence when a tool it needs is missing.
 | `build_hub_windows.py` | the hub's `.msi`, compiled by Nuitka, with the programs it drives and the agent's `.msi` in its cache | Windows with Python 3.13 and WiX 6 |
 | `build_hub_macos.py` | the hub's `.pkg`, the same way | macOS with Python 3.13, of the architecture it builds |
 | `build_client_android.py` | the `.apk`, with its cores | Linux or macOS with JDK 17 and the Android SDK |
-| `build_client_ios.py` | nothing: it prints the `xcodebuild` steps; paused with the app | macOS with Xcode |
+| `build_client_ios.py` | the unsigned `.ipa` | macOS with Xcode and XcodeGen |
 | `build_core_netbird.py`, `build_core_easytier.py`, `build_core_rustdesk.py` | one core the phones carry | Linux |
 | `build_sources.py`, `build_checksums.py` | the source archive, or with `--edition cn` the mainland source tree; `SHA256SUMS` over a directory | anywhere |
 | `build_cc_switch.py` | the pinned cc-switch release files under upstream's names, each checked against its pin, and their licence | anywhere |
@@ -478,7 +503,7 @@ git push origin v0.4.0
 `.github/workflows/release.yml` builds the hub and the agent for both
 architectures in containers, the client's Linux packages on native runners of
 each architecture, the Windows installers, the macOS installers for both
-architectures, the apk and the source archive, generates `SHA256SUMS` over all
+architectures, the apk, the unsigned `.ipa` and the source archive, generates `SHA256SUMS` over all
 of it and the two install scripts, and opens a draft release. Each job runs one `packaging/build/` script and then
 `packaging/ci/check.py` on what it built, so a broken package fails the build
 rather than the person who downloads it: every Linux package is installed in
@@ -492,7 +517,9 @@ installs it on its own, checks that `neutrino_agent` runs and that
 RustDesk's files lie in the agent's folder with nothing of RustDesk's
 registered, and uninstalls again, and its macOS job
 installs the `.pkg`, checks the LaunchDaemon runs, and removes it; the apk is
-installed and launched once in an emulator; the hub's macOS and Windows jobs
+installed and launched once in an emulator; the `.ipa` is unpacked and its
+one `Payload/Neutrino.app` must name the release's version and the bundle
+id `io.github.iffix.neutrino` in its `Info.plist`; the hub's macOS and Windows jobs
 set a hub up from the package and from the install script
 ([../design/tests.md](../design/tests.md)). The hub jobs wait for the agent's.
 
@@ -540,6 +567,7 @@ lists them.
 | `neutrino-client_<version>_amd64.deb`, `neutrino-client_<version>_arm64.deb` | the client on Debian, Ubuntu |
 | `neutrino-client-<version>-windows-amd64.msi`, `neutrino-client-<version>-macos-arm64.pkg` | the client on Windows x64 and Apple silicon |
 | `neutrino-client-<version>-android.apk` | Android 8 or newer, arm64-v8a |
+| `neutrino-client-<version>-ios.ipa` | iOS 16 or newer, unsigned |
 | `install.sh`, `install.ps1` | the one-command installers, stamped `cn` |
 | `neutrino-<version>-cn-source.tar.xz` | the mainland source tree |
 | `cc-switch-cli-v<cc-switch version>-<asset>`, five files | cc-switch for the agents of a mainland hub, which fetches it from here: the files `PACKAGING_CC_SWITCH_ASSETS` in `packaging/shared/constants.py` pins, under the names upstream gives them, each checked against its pin before the upload |
