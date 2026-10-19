@@ -1,0 +1,19 @@
+{
+  "code": {
+    "disconnect_first": "Disconnect first to change the local port.",
+    "forward_failed": "The port could not be forwarded: {detail}",
+    "verb_unknown": "the hub does not know this command; update the hub"
+  },
+  "ui": {
+    "back": "Back",
+    "camera_allow": "Allow the camera",
+    "camera_refused": "The camera is not allowed; paste the link below.",
+    "join_hint": "Scan the QR code, or paste the link.",
+    "or": "or",
+    "paste": "Paste",
+    "scan": "Scan",
+    "scan_hint": "Point the camera at the QR code on the hub's Clients page",
+    "scan_press": "Press Scan to use the camera.",
+    "terminal_detached": "Detached; waiting for the hub"
+  }
+}
