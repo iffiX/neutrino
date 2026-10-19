@@ -14,7 +14,7 @@ import {
   HUB_EVENT_CONFIG,
   HUB_EVENT_DEVICES,
 } from "../use_hub_events";
-import type { DirectView, SettingsView } from "../api_types";
+import type { DirectView, FrpView, SettingsView } from "../api_types";
 
 import "./panel_port_panel.css";
 
@@ -51,6 +51,12 @@ const SETTINGS_INVALIDATE_ON = [
 const DIRECT_INVALIDATE_ON = [
   { type: HUB_EVENT_CONFIG, key: "overlay/direct.json" },
 ];
+const SAKURAFRP_INVALIDATE_ON = [
+  { type: HUB_EVENT_CONFIG, key: "overlay/sakurafrp.json" },
+];
+const OPENFRP_INVALIDATE_ON = [
+  { type: HUB_EVENT_CONFIG, key: "overlay/openfrp.json" },
+];
 
 export function PanelPortPanel() {
   // Redrawn when the panel's language changes.
@@ -60,6 +66,12 @@ export function PanelPortPanel() {
   });
   const direct = useApiResource<DirectView>("/hub/overlay/direct", {
     invalidateOn: DIRECT_INVALIDATE_ON,
+  });
+  const sakurafrp = useApiResource<FrpView>("/hub/overlay/sakurafrp", {
+    invalidateOn: SAKURAFRP_INVALIDATE_ON,
+  });
+  const openfrp = useApiResource<FrpView>("/hub/overlay/openfrp", {
+    invalidateOn: OPENFRP_INVALIDATE_ON,
   });
   const portsDraft = useDraft(resource.data, portsOf);
   const port = portsDraft.draft?.listen_port ?? null;
@@ -90,6 +102,8 @@ export function PanelPortPanel() {
     agentPort !== port &&
     agentPort !== httpsPort;
   const isDirectOn = direct.data?.is_enabled ?? false;
+  const hasSakurafrpTunnel = (sakurafrp.data?.tunnel_id ?? "") !== "";
+  const hasOpenfrpTunnel = (openfrp.data?.tunnel_id ?? "") !== "";
 
   const apply = async () => {
     if (port === null || httpsPort === null || agentPort === null) {
@@ -194,6 +208,16 @@ export function PanelPortPanel() {
             : null,
           isAgentMoving && isDirectOn
             ? t("ui.network.agent_port_direct_warning")
+            : null,
+          isAgentMoving && hasSakurafrpTunnel
+            ? t("ui.network.agent_port_frp_warning", {
+                vendor: t("ui.overlay.sakurafrp_title"),
+              })
+            : null,
+          isAgentMoving && hasOpenfrpTunnel
+            ? t("ui.network.agent_port_frp_warning", {
+                vendor: t("ui.overlay.openfrp_title"),
+              })
             : null,
         )}
         error={error}

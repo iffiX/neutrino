@@ -21,7 +21,7 @@ import "./confirm_modal.css";
 interface ConfirmModalProps {
   /** What is about to happen, as a title: "Delete the pool tank". */
   title: string;
-  /** What it costs. One or two sentences, mechanism first. */
+  /** What it costs. One or two sentences, mechanism first; empty for none. */
   body: string;
   /** The action's own verb, on the button that performs it. */
   confirmLabel: string;
@@ -65,7 +65,7 @@ export function ConfirmModal({
           <Icon name="alert" size={16} />
           <h2>{title}</h2>
         </div>
-        <p className="confirm_body">{body}</p>
+        {body !== "" && <p className="confirm_body">{body}</p>}
         <div className="confirm_foot">
           <button type="button" className="button" onClick={onCancel}>
             {t("ui.confirm.cancel")}

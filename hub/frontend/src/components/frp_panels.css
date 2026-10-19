@@ -1,0 +1,126 @@
+/* A panel-scope action in the panel's header, at its right edge. */
+.frp_header_action {
+  margin-left: auto;
+}
+
+.frp_login,
+.frp_login_wait {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.frp_login_wait {
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+/* OpenFrp's statement of its API and of its support, always in view. */
+.frp_terms {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  color: var(--color-text-faint);
+  font-size: 12px;
+}
+
+/* The tunnels, a list like a Wi-Fi scan: one row picked, latency at the
+   right edge. */
+.frp_tunnels {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+.frp_tunnel_head,
+.frp_tunnel_row {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) minmax(0, auto) 72px;
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+}
+
+.frp_tunnel_head {
+  color: var(--color-text-faint);
+  font-size: 12px;
+}
+
+.frp_tunnel_list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.frp_tunnel_row {
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast);
+}
+
+.frp_tunnel_row:hover:not(:disabled) {
+  border-color: var(--color-border-strong);
+  background: var(--color-elevated);
+}
+
+.frp_tunnel_row:disabled {
+  cursor: default;
+}
+
+/* The tunnel the hub runs now. */
+.frp_tunnel_row--applied {
+  border-color: color-mix(in srgb, var(--color-ok) 35%, transparent);
+  background: var(--color-ok-wash);
+}
+
+.frp_tunnel_node {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.frp_tunnel_region {
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.frp_tunnel_latency {
+  font-family: var(--font-mono);
+  text-align: right;
+}
+
+.frp_tunnel_head .frp_tunnel_latency {
+  font-family: inherit;
+}
+
+.frp_radio {
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 50%;
+}
+
+.frp_radio--on {
+  border-color: var(--color-accent);
+  background: radial-gradient(
+    circle,
+    var(--color-accent) 0 3px,
+    transparent 3.5px
+  );
+}

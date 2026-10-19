@@ -17,7 +17,7 @@ import type { RelaySetRequest, RelayState, RelayView } from "../api_types";
 import "./relay_panels.css";
 
 /**
- * The SSH Relay: a reverse SSH forward to a server the person owns. A status
+ * The SSH relay: a reverse SSH forward to a server the person owns. A status
  * panel reads where it stands, and a settings panel with its own apply bar
  * stores where it goes and how the hub signs in there: with an SSH key or a
  * login's password, chosen with the agent install's controls.

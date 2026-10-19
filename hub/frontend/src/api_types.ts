@@ -1773,6 +1773,8 @@ export interface OverlayChoiceRequest {
   easytier?: OverlayEngineSwitch;
   relay?: OverlayEngineSwitch;
   direct?: OverlayEngineSwitch;
+  sakurafrp?: OverlayEngineSwitch;
+  openfrp?: OverlayEngineSwitch;
 }
 
 // --- Direct ---
@@ -1839,6 +1841,85 @@ export interface RelaySetRequest {
   key_id: string | null;
   login_id: string | null;
   public_port: number;
+}
+
+// --- SakuraFrp and OpenFrp ---
+
+/** A frp way in's state codes, network.md "The frp states". */
+export type FrpState =
+  | "disabled"
+  | "not_signed_in"
+  | "vault_locked"
+  | "no_tunnel"
+  | "loopback_port_taken"
+  | "config_failed"
+  | "connecting"
+  | "connected"
+  | "proxy_refused"
+  | "port_closed"
+  | "login_failed"
+  | "unreachable";
+
+/** One frp vendor's way in, read with no call to the vendor. */
+export interface FrpView {
+  is_enabled: boolean;
+  is_signed_in: boolean;
+  /** The vendor's id of the picked tunnel; empty for none. */
+  tunnel_id: string;
+  node_name: string;
+  /** The picked tunnel's local port at the vendor. */
+  local_port: number;
+  /** The address the tunnel adds to `urls`; empty while none is picked. */
+  url: string;
+  state: FrpState;
+  /** frpc's last line before it exited, or the failed check's reason. */
+  last_error: string;
+  /** The last check's time in ISO 8601; empty before the first. */
+  checked_at: string;
+  /** The vendor's console. */
+  console_url: string;
+}
+
+/** Where OpenFrp's browser login stands. */
+export type OpenFrpLoginState = "idle" | "waiting" | "timed_out" | "failed";
+
+export interface OpenFrpLoginView {
+  state: OpenFrpLoginState;
+  /** The address the person confirms at while `waiting`; empty otherwise. */
+  authorization_url: string;
+}
+
+export interface OpenFrpView extends FrpView {
+  /** Whether OpenFrp answered 401 to the stored `Authorization`. */
+  is_login_expired: boolean;
+  login: OpenFrpLoginView;
+}
+
+/** A node's region, network.md "The tunnel list". */
+export type FrpRegion = "mainland" | "hk_mo_tw" | "abroad" | "outside_mainland";
+
+export interface FrpTunnelView {
+  tunnel_id: string;
+  name: string;
+  node_name: string;
+  region: FrpRegion;
+  /** The hub's TCP connect time to the node; null when none finished in
+   * time. */
+  latency_ms: number | null;
+  is_picked: boolean;
+}
+
+export interface FrpTunnelListView {
+  tunnels: FrpTunnelView[];
+}
+
+/** An empty key forgets the stored one. */
+export interface FrpAccessKeySetRequest {
+  access_key: string;
+}
+
+export interface FrpTunnelSetRequest {
+  tunnel_id: string;
 }
 
 // --- NetBird ---

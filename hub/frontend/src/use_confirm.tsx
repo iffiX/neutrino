@@ -17,7 +17,7 @@ import { ConfirmModal } from "./components/confirm_modal";
 export interface ConfirmRequest {
   /** What is about to happen: "Destroy tank/media". */
   title: string;
-  /** What it costs. One or two sentences, mechanism first. */
+  /** What it costs. One or two sentences, mechanism first; empty for none. */
   body: string;
   /** The action's own verb, on the button that performs it. */
   confirmLabel: string;

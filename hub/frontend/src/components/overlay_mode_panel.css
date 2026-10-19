@@ -8,8 +8,14 @@
   gap: var(--space-3);
 }
 
+/* The Access page's six ways in: three to a row, two rows. */
+.overlay_choices--ways {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 @media (max-width: 720px) {
-  .overlay_choices {
+  .overlay_choices,
+  .overlay_choices--ways {
     grid-template-columns: 1fr;
   }
 }
