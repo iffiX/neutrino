@@ -140,6 +140,22 @@ class AiAccountRefusedError(RuntimeError):
         self.params = params
 
 
+class FrpVendorError(RuntimeError):
+    """Raised when a frp vendor refuses, or does not answer as one.
+
+    Attributes:
+        code: ``frp_credential_refused``, ``frp_not_signed_in``,
+            ``frp_vendor_unreachable``, ``frp_config_unusable`` or
+            ``frp_tunnel_unknown``; the panel does the wording.
+        params: What the wording names, ``title`` always among them.
+    """
+
+    def __init__(self, code: str, **params):
+        super().__init__(code)
+        self.code = code
+        self.params = params
+
+
 class NetworkApplyError(RuntimeError):
     """Raised when a network apply ran every step and some of them failed.
 

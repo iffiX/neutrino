@@ -62,7 +62,9 @@ from neutrino_hub.web.routers.hub import (
     overlay_direct,
     overlay_easytier,
     overlay_netbird,
+    overlay_openfrp,
     overlay_relay,
+    overlay_sakurafrp,
     service,
     setting,
 )
@@ -79,6 +81,8 @@ API_ROUTERS = (
     overlay_direct.router,
     overlay_easytier.router,
     overlay_relay.router,
+    overlay_sakurafrp.router,
+    overlay_openfrp.router,
     overlay_netbird.router,
     *edition.hooks("api_routers"),
     ai.router,
@@ -293,6 +297,8 @@ def _start_samplers() -> None:
     if runtime.proxy is not None:
         runtime.proxy.start()
     runtime.relay_monitor.start()
+    for monitor in runtime.frp_monitors.values():
+        monitor.start()
 
 
 def stop_samplers() -> None:

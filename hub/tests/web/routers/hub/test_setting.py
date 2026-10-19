@@ -341,6 +341,31 @@ def test_an_agent_port_a_panel_port_holds_is_refused_by_code(port_client, body, 
     assert happened == []
 
 
+@pytest.mark.parametrize(
+    "body, value",
+    [
+        ({"listen_port": 8080, "agent_listen_port": 18443}, 18443),
+        ({"listen_port": 8080, "agent_listen_port": 18444}, 18444),
+        ({"listen_port": 18443}, 18443),
+        ({"listen_port": 8080, "https_listen_port": 18444}, 18444),
+    ],
+)
+def test_a_port_of_a_frp_loopback_listener_is_refused_open_or_not(
+    port_client, body, value
+):
+    opened, _, stored, happened = port_client
+
+    response = opened.post("/api/hub/setting/set", json=body)
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == {
+        "code": "port_already_in_use",
+        "params": {"value": value},
+    }
+    assert stored == {"listen_port": 8080}
+    assert happened == []
+
+
 @pytest.mark.parametrize("port", [0, 65536])
 def test_an_agent_port_no_listener_can_take_is_refused_by_code(port_client, port):
     opened, _, stored, happened = port_client

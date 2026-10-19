@@ -72,12 +72,12 @@ def agent_port_sockets(host: str, port: int) -> list:
     Raises:
         OSError: If the socket for ``host`` cannot be bound.
     """
-    first = _bound_socket(host, port)
+    first = bound_socket(host, port)
     sockets = [first]
     if host == AGENT_PORT_ANY_IPV4:
         shared = first.getsockname()[1]
         try:
-            sockets.append(_bound_socket(AGENT_PORT_ANY_IPV6, shared))
+            sockets.append(bound_socket(AGENT_PORT_ANY_IPV6, shared))
         except OSError as error:
             LOGGER.warning(
                 "the agent port serves IPv4 alone: no IPv6 socket on port %d (%s)",
@@ -87,7 +87,7 @@ def agent_port_sockets(host: str, port: int) -> list:
     return sockets
 
 
-def _bound_socket(host: str, port: int) -> socket.socket:
+def bound_socket(host: str, port: int) -> socket.socket:
     """One TCP socket bound to an address, an IPv6 one taking IPv6 alone.
 
     Args:

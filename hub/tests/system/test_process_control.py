@@ -247,6 +247,8 @@ def test_every_name_the_service_runs_has_a_status(controller):
         "cliproxyapi",
         "easytier",
         "relay",
+        "sakurafrp",
+        "openfrp",
     ]
 
 

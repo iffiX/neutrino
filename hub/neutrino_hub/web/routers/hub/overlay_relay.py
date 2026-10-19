@@ -1,4 +1,4 @@
-"""The SSH Relay section of the Access page.
+"""The SSH relay section of the Access page.
 
 The relay is a reverse SSH forward to a server the person owns, logged in to
 with an SSH key or a login's password from the vault. Its settings

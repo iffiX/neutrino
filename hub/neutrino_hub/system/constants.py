@@ -40,6 +40,10 @@ SYSTEM_OPTIONAL_UNITS = {
     # The third way in: the system's OpenSSH client holding a reverse forward
     # to a server the person owns, started from a drop-in the panel renders.
     "relay": "neutrino_hub_relay.service",
+    # The two frp ways in: the carried frpc holding a connection to a
+    # SakuraFrp or an OpenFrp node, from a file the panel writes.
+    "sakurafrp": "neutrino_hub_sakurafrp.service",
+    "openfrp": "neutrino_hub_openfrp.service",
 }
 
 SYSTEM_MANAGED_UNITS = {**SYSTEM_CORE_UNITS, **SYSTEM_OPTIONAL_UNITS}
@@ -54,6 +58,8 @@ SYSTEM_SUPERVISED_NAMES = (
     "cliproxyapi",
     "easytier",
     "relay",
+    "sakurafrp",
+    "openfrp",
 )
 # A child that runs only while another one runs: it starts once that one
 # runs and is stopped before that one stops, restarts or is found ended.

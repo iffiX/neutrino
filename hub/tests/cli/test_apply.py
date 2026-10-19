@@ -7,6 +7,7 @@ from neutrino_hub.cli import apply
 from neutrino_hub.modules.easytier.config import EasyTierConfig
 from neutrino_hub.modules.easytier.ops import EASYTIER_CONFIG_NAME
 from neutrino_hub.modules.overlay.config import set_enabled
+from neutrino_hub.modules.frp.config import FrpConfig
 from neutrino_hub.modules.overlay.relay_config import OverlayRelayConfig, write_relay
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.utils.json_file import write_config
@@ -237,6 +238,41 @@ def test_a_dry_run_prints_the_relays_start_line(tmp_path, monkeypatch, capsys):
     printed = capsys.readouterr().out
     assert "neutrino_hub_relay.service.d/arguments.conf ---" in printed
     assert '"0.0.0.0:18443:127.0.0.1:8443" "relay@vps"' in printed
+
+
+def test_a_dry_run_names_frpcs_file_and_prints_none_of_it(capsys):
+    picked = FrpConfig(
+        vendor="sakurafrp",
+        is_enabled=True,
+        credential_sealed={"nonce": "n", "data": "d"},
+        tunnel_id="114514",
+    )
+
+    apply._print_artifacts({"frp": [picked, FrpConfig(vendor="openfrp")]})
+
+    printed = capsys.readouterr().out
+    assert "--- sakurafrp: frpc runs from " in printed
+    assert "sakurafrp/frpc.toml ---" in printed
+    assert "--- openfrp: off or no tunnel picked ---" in printed
+
+
+def test_an_apply_makes_each_frp_vendor_true_after_the_relay(monkeypatch):
+    applied = []
+
+    class Applier:
+        def __init__(self, *, controller, monitor):
+            pass
+
+        def apply(self, config):
+            applied.append(config.vendor)
+            return ""
+
+    monkeypatch.setattr(apply, "process_controller", lambda: None)
+    monkeypatch.setattr(apply, "FrpApplier", Applier)
+
+    apply._apply({"frp": [FrpConfig(vendor="sakurafrp"), FrpConfig(vendor="openfrp")]})
+
+    assert applied == ["sakurafrp", "openfrp"]
 
 
 def test_an_apply_runs_the_relay_after_the_overlays_stop(monkeypatch):

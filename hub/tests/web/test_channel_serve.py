@@ -1844,3 +1844,18 @@ def test_an_agents_ping_is_answered_the_same_way(api):
         assert socket.receive_json() == {"type": "pong", "nonce": ""}
     finally:
         socket.__exit__(None, None, None)
+
+
+class _ScopedSocket:
+    def __init__(self, scope: dict):
+        self.scope = scope
+
+
+@pytest.mark.parametrize(
+    ("server", "port"),
+    [(("127.0.0.1", 18443), 18443), (("192.168.1.2", 8443), 8443), (None, 0)],
+)
+def test_the_listener_a_socket_arrived_on_is_read_from_its_scope(server, port):
+    from neutrino_hub.web.channel_serve import listener_port
+
+    assert listener_port(_ScopedSocket({"server": server})) == port

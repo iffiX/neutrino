@@ -10,6 +10,7 @@ settings, and one address appears once.
 import pytest
 
 from neutrino_hub.modules.overlay.direct_config import OverlayDirectConfig
+from neutrino_hub.modules.frp.config import FrpConfig
 from neutrino_hub.modules.overlay.relay_config import OverlayRelayConfig
 from neutrino_hub.modules.router import interfaces
 from neutrino_hub.web import channel_addresses
@@ -69,6 +70,7 @@ def live(monkeypatch):
     monkeypatch.setattr(channel_addresses, "device_addresses", lambda: dict(LIVE))
     monkeypatch.setattr(channel_addresses, "overlay_parts", _parts(NamedOverlay))
     monkeypatch.setattr(channel_addresses, "read_relay", OverlayRelayConfig)
+    monkeypatch.setattr(channel_addresses, "read_frp", lambda vendor: FrpConfig(vendor))
     monkeypatch.setattr(channel_addresses, "read_direct", OverlayDirectConfig)
     monkeypatch.setattr(channel_addresses, "device_ipv6_addresses", dict)
 
@@ -254,6 +256,71 @@ def test_a_relay_that_is_off_or_not_configured_adds_nothing(live, monkeypatch):
         is_key_stored=False,
     )
     assert channel_urls(unstored) == ["https://192.168.8.1:8443"]
+
+
+# --- the frp vendors ---
+
+
+def picked(vendor: str, host: str, port: int, *, is_enabled=True) -> FrpConfig:
+    return FrpConfig(
+        vendor=vendor,
+        is_enabled=is_enabled,
+        credential_sealed={"nonce": "n", "data": "d"},
+        tunnel_id="1",
+        public_host=host,
+        public_port=port,
+    )
+
+
+def test_urls_hold_sakurafrps_then_openfrps_then_the_relays_address(live, monkeypatch):
+    runtime = relay_box(
+        monkeypatch,
+        OverlayRelayConfig(
+            is_enabled=True, host="vps.example.org", account="r", key_id="k"
+        ),
+    )
+    direct = OverlayDirectConfig(
+        is_enabled=True, public_host="hub.example.org", public_port=443
+    )
+    vendors = {
+        "sakurafrp": picked("sakurafrp", "frp-a.natfrp.cloud", 41234),
+        "openfrp": picked("openfrp", "cn-cq-plc-1.of-7af93c01.shop", 51607),
+    }
+    monkeypatch.setattr(channel_addresses, "read_direct", lambda: direct)
+    monkeypatch.setattr(channel_addresses, "read_frp", vendors.__getitem__)
+
+    assert channel_urls(runtime) == [
+        "https://192.168.8.1:8443",
+        "https://203.0.113.7:8443",
+        "https://hub.example.org:443",
+        "https://frp-a.natfrp.cloud:41234",
+        "https://cn-cq-plc-1.of-7af93c01.shop:51607",
+        "https://vps.example.org:8443",
+    ]
+
+
+def test_a_frp_vendor_off_or_without_a_tunnel_adds_nothing(live, monkeypatch):
+    runtime = relay_box(monkeypatch, OverlayRelayConfig())
+    unpicked = picked("openfrp", "x.example", 1)
+    unpicked.clear_tunnel()
+    vendors = {
+        "sakurafrp": picked("sakurafrp", "frp-a.natfrp.cloud", 1, is_enabled=False),
+        "openfrp": unpicked,
+    }
+    monkeypatch.setattr(channel_addresses, "read_frp", vendors.__getitem__)
+
+    assert channel_urls(runtime) == ["https://192.168.8.1:8443"]
+
+
+def test_an_ipv6_frp_host_is_written_in_brackets(live, monkeypatch):
+    runtime = relay_box(monkeypatch, OverlayRelayConfig())
+    vendors = {
+        "sakurafrp": picked("sakurafrp", "2001:db8::7", 41234),
+        "openfrp": FrpConfig("openfrp"),
+    }
+    monkeypatch.setattr(channel_addresses, "read_frp", vendors.__getitem__)
+
+    assert channel_urls(runtime)[-1] == "https://[2001:db8::7]:41234"
 
 
 # --- Direct ---

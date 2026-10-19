@@ -99,7 +99,14 @@ RESET_STATE_DIRS = (
     "cliproxyapi",
     "hub_update",
     "netbird",
+    # Each frp vendor's frpc.toml, which holds the account's token.
+    "sakurafrp",
+    "openfrp",
 )
+# What `all` stops before it hands the network back and replaces `config/`:
+# the panel and the router unit, and the two frpc, whose files go with the
+# state root.
+RESET_FIRST_STOPPED = ("web", "sakurafrp", "openfrp", "router")
 # Where every device's desired state lives, one directory per device. A
 # reset forgets them with the tokens: they describe machines the next owner
 # has not enrolled.
@@ -201,7 +208,7 @@ def _reset_all() -> int:
     # the router unit again, and a running router unit applies the old
     # configuration on the next link event, taking back what is handed back.
     if is_linux():
-        stop(["web", "router"])
+        stop(list(RESET_FIRST_STOPPED))
     else:
         stop_service()
     with router_lock():

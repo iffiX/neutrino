@@ -190,8 +190,18 @@ ENGINE_NETWORKS = {"netbird": ["100.88.0.1/16"], "easytier": ["10.126.126.1/24"]
 
 
 def test_a_peer_on_loopback_came_through_the_relay():
-    assert reached_through("127.0.0.1", ENGINE_NETWORKS) == "relay"
-    assert reached_through("::1", ENGINE_NETWORKS) == "relay"
+    assert reached_through("127.0.0.1", ENGINE_NETWORKS) == "ssh_relay"
+    assert reached_through("::1", ENGINE_NETWORKS) == "ssh_relay"
+
+
+@pytest.mark.parametrize(
+    ("port", "way"),
+    [(18443, "sakurafrp"), (18444, "openfrp"), (8443, "ssh_relay"), (0, "ssh_relay")],
+)
+def test_a_loopback_peer_is_judged_by_the_listener_it_arrived_on(port, way):
+    """Through the relay and through a frp node every peer arrives from
+    loopback; the listener tells them apart."""
+    assert reached_through("127.0.0.1", ENGINE_NETWORKS, [], listener_port=port) == way
 
 
 def test_a_peer_inside_an_engines_network_came_through_that_engine():
@@ -223,7 +233,7 @@ def test_a_peer_from_outside_every_network_of_the_box_came_direct():
 
 
 def test_loopback_and_the_engines_come_before_direct():
-    assert reached_through("127.0.0.1", ENGINE_NETWORKS, []) == "relay"
+    assert reached_through("127.0.0.1", ENGINE_NETWORKS, []) == "ssh_relay"
     assert reached_through("100.88.4.2", ENGINE_NETWORKS, []) == "netbird"
 
 
@@ -240,7 +250,7 @@ IPV6_INTERFACES = ["fd00:8::1/64"]
         ("fe80::20", "lan"),
         ("fe80::20%eth0", "lan"),
         ("fd7a:115c::9", "netbird"),
-        ("::1", "relay"),
+        ("::1", "ssh_relay"),
         ("2001:db8::20", "direct"),
     ],
 )
@@ -251,7 +261,7 @@ def test_an_ipv6_peer_is_judged_like_an_ipv4_one(peer, way):
 @pytest.mark.parametrize(
     ("peer", "way"),
     [
-        ("::ffff:127.0.0.1", "relay"),
+        ("::ffff:127.0.0.1", "ssh_relay"),
         ("::ffff:100.88.4.2", "netbird"),
         ("::ffff:192.168.100.20", "lan"),
         ("::ffff:203.0.113.9", "direct"),
@@ -263,7 +273,7 @@ def test_a_mapped_peer_is_judged_by_its_ipv4_address(peer, way):
 
 def test_only_a_mapped_loopback_is_loopback():
     assert reached_through("::127.0.0.1", ENGINE_NETWORKS, []) == "direct"
-    assert reached_through("::ffff:127.0.0.1", ENGINE_NETWORKS, []) == "relay"
+    assert reached_through("::ffff:127.0.0.1", ENGINE_NETWORKS, []) == "ssh_relay"
 
 
 def test_a_mapped_peer_lands_in_its_served_scope():

@@ -1985,16 +1985,19 @@ class ChannelClientState(BaseModel):
     services: list[ChannelServiceEntry] = Field(default_factory=list)
     # Every address the hub answers the channel on.
     urls: list[str] = Field(default_factory=list)
-    # The member of ``urls`` that is the relay's address, empty while the
-    # relay is off: what a client ranks a candidate's path by.
-    relay_url: str = ""
+    # The members of ``urls`` that are the SSH relay's address, SakuraFrp's
+    # and OpenFrp's, each empty while its way in adds none: what a client
+    # ranks a candidate's path by.
+    ssh_relay_url: str = ""
+    sakurafrp_url: str = ""
+    openfrp_url: str = ""
     # One per running overlay with material, the preferred first.
     overlays: list[ChannelOverlay] = Field(default_factory=list)
     terminals: list[ChannelTerminal] = Field(default_factory=list)
     # Whether the client may open the hub's panel through ``connect``.
     is_panel_allowed: bool = False
     # How the client's socket reached the hub: ``lan``, ``netbird``,
-    # ``easytier`` or ``relay``.
+    # ``easytier``, ``ssh_relay``, ``direct``, ``sakurafrp`` or ``openfrp``.
     reached_through: str = ""
 
 
@@ -2558,6 +2561,8 @@ class OverlayChoiceRequest(BaseModel):
     easytier: OverlayEngineSwitch | None = None
     relay: OverlayEngineSwitch | None = None
     direct: OverlayEngineSwitch | None = None
+    sakurafrp: OverlayEngineSwitch | None = None
+    openfrp: OverlayEngineSwitch | None = None
 
 
 class DirectView(BaseModel):
@@ -2615,6 +2620,72 @@ class RelaySetRequest(BaseModel):
     key_id: str | None = None
     login_id: str | None = None
     public_port: int
+
+
+class FrpView(BaseModel):
+    """One frp vendor: the account, the picked tunnel and where it stands."""
+
+    is_enabled: bool
+    is_signed_in: bool
+    tunnel_id: str = ""
+    node_name: str = ""
+    local_port: int = 0
+    # The address the tunnel adds to ``urls``; empty while none is picked.
+    url: str = ""
+    state: str
+    last_error: str = ""
+    # The last check's time in ISO 8601; empty before the first.
+    checked_at: str = ""
+    # The vendor's console, where a tunnel is created.
+    console_url: str
+
+
+class OpenFrpLoginView(BaseModel):
+    """OpenFrp's browser login: ``idle``, ``waiting``, ``timed_out`` or
+    ``failed``, and the address the person confirms at while ``waiting``."""
+
+    state: str
+    authorization_url: str = ""
+
+
+class OpenFrpView(FrpView):
+    """OpenFrp's view: :class:`FrpView` with its login."""
+
+    # Whether OpenFrp answered 401 to the stored Authorization.
+    is_login_expired: bool = False
+    login: OpenFrpLoginView
+
+
+class FrpTunnelView(BaseModel):
+    """One listed tunnel of a frp account."""
+
+    tunnel_id: str
+    name: str
+    node_name: str
+    # ``mainland``, ``hk_mo_tw``, ``abroad`` or ``outside_mainland``.
+    region: str
+    # The TCP connect time from the hub to the node; null when none
+    # finished in time.
+    latency_ms: int | None = None
+    is_picked: bool = False
+
+
+class FrpTunnelListView(BaseModel):
+    """The tunnels of a frp account the hub lists."""
+
+    tunnels: list[FrpTunnelView] = Field(default_factory=list)
+
+
+class FrpAccessKeySetRequest(BaseModel):
+    """SakuraFrp's access key; empty forgets the stored one."""
+
+    access_key: str
+
+
+class FrpTunnelSetRequest(BaseModel):
+    """The tunnel to pick, by the vendor's id."""
+
+    tunnel_id: str
 
 
 class NetbirdPeerView(BaseModel):

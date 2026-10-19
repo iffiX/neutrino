@@ -308,14 +308,14 @@ def test_the_wildcard_is_served_on_an_ipv4_and_an_ipv6_only_socket():
 def test_a_machine_without_ipv6_serves_ipv4_and_says_so_once(monkeypatch, caplog):
     from neutrino_hub.web import agent_port
 
-    real = agent_port._bound_socket
+    real = agent_port.bound_socket
 
     def no_ipv6(host, port):
         if ":" in host:
             raise OSError(97, "Address family not supported by protocol")
         return real(host, port)
 
-    monkeypatch.setattr(agent_port, "_bound_socket", no_ipv6)
+    monkeypatch.setattr(agent_port, "bound_socket", no_ipv6)
 
     with caplog.at_level("WARNING", logger="neutrino_hub.web.agent_port"):
         listeners = agent_port_sockets("0.0.0.0", 0)

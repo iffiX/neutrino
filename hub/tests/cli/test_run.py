@@ -47,7 +47,7 @@ def served(monkeypatch):
     """Run ``_serve_panel`` with every effect recorded instead of made."""
     recorded = {"servers": [], "watched": [], "steps": []}
 
-    def serve_together(servers):
+    def serve_together(servers, **_):
         recorded["servers"] = servers
         recorded["steps"].append("served")
 

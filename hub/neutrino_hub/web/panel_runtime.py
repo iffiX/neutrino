@@ -57,6 +57,9 @@ from neutrino_hub.modules.overlay.ops import (
     overlay_parts,
     recorded_engine_devices,
 )
+from neutrino_hub.modules.frp.config import frp_switches, read_frp
+from neutrino_hub.modules.frp.constants import FRP_OPENFRP, FRP_VENDORS
+from neutrino_hub.modules.frp.ops import FrpApplier, FrpMonitor, OpenFrpLogin
 from neutrino_hub.modules.overlay.peer_latency import OverlayPeerLatencies
 from neutrino_hub.modules.overlay.relay_config import read_relay
 from neutrino_hub.modules.overlay.relay_ops import (
@@ -106,6 +109,7 @@ from neutrino_hub.web.address_sampler import PanelAddressSampler
 from neutrino_hub.web.agent_tls import certificate_fingerprint
 from neutrino_hub.web.channel_addresses import channel_urls, own_agent_urls
 from neutrino_hub.web.events import PanelEventBus
+from neutrino_hub.web.frp_listeners import FrpLoopbackListeners
 from neutrino_hub.web.link_sampler import PanelLinkSampler
 from neutrino_hub.modules.devices.agent_module_cache import AgentModuleCache
 from neutrino_hub.modules.devices.agent_package import AgentPackageCache
@@ -268,6 +272,23 @@ class PanelRuntime:
         self.relay_monitor = OverlayRelayMonitor(
             controller=self.services, fingerprint_of=certificate_fingerprint
         )
+        # The channel on each frp vendor's loopback listener, opened by the
+        # converge step while its way in is on; the serving loop attaches it.
+        self.frp_listeners = FrpLoopbackListeners()
+        # Where each frp vendor stands: its frpc and the check of its public
+        # address. The application starts them; a CLI run never wants them.
+        self.frp_monitors = {
+            vendor: FrpMonitor(
+                vendor=vendor,
+                controller=self.services,
+                fingerprint_of=certificate_fingerprint,
+                is_listener_taken=self.frp_listeners.is_taken,
+            )
+            for vendor in FRP_VENDORS
+        }
+        # OpenFrp's browser login, one at a time; a login that stores an
+        # Authorization runs the converge step.
+        self.openfrp_login = OpenFrpLogin(on_signed_in=self._converge_quietly)
         # A cable, a lease or a radio moving is a change nothing writes, so
         # it is sampled. The application starts it; a CLI run builds a runtime
         # and never wants the thread.
@@ -735,6 +756,20 @@ class PanelRuntime:
                         "params": {"detail": command_failure_text(error)},
                     }
                 )
+            self.frp_listeners.follow(frp_switches())
+            for vendor in FRP_VENDORS:
+                try:
+                    self.apply_frp(vendor)
+                except (subprocess.SubprocessError, OSError, ValueError) as error:
+                    failures.append(f"{vendor}: {command_failure_text(error)}")
+                    failed.append(
+                        {
+                            "code": "overlay_failed",
+                            "params": {
+                                "detail": f"{vendor}: {command_failure_text(error)}"
+                            },
+                        }
+                    )
             self.check_overlay_routes()
         router_failure = failure_text(results)
         if router_failure:
@@ -770,6 +805,41 @@ class PanelRuntime:
             LOGGER.info("relay: %s", note)
             self.relay_monitor.restart_checks()
         return note
+
+    def apply_frp(self, vendor: str, *, is_restarted: bool = False) -> str:
+        """Make one stored frp vendor the frpc that runs.
+
+        Args:
+            vendor: ``sakurafrp`` or ``openfrp``.
+            is_restarted: Whether a running frpc is started again anyway.
+
+        Returns:
+            ``frp_started`` or ``frp_stopped``, empty when nothing changed.
+
+        Raises:
+            OSError: If a file cannot be written.
+            subprocess.SubprocessError: If the system refuses the unit.
+        """
+        note = FrpApplier(
+            controller=self.services, monitor=self.frp_monitors[vendor]
+        ).apply(read_frp(vendor), is_restarted=is_restarted)
+        if note:
+            LOGGER.info("%s: %s", vendor, note)
+        return note
+
+    def _converge_quietly(self) -> None:
+        """Run the converge step from a thread of the hub's own, its failure
+        in the log."""
+        try:
+            self.converge_network_blocking()
+        except (
+            TimeoutError,
+            ValueError,
+            OSError,
+            RuntimeError,
+            subprocess.SubprocessError,
+        ) as error:
+            LOGGER.warning("converge after the %s login: %s", FRP_OPENFRP, error)
 
     def desired_state_for(self, device) -> tuple[str, dict]:
         """What a device should host, and the hash the agent compares against.

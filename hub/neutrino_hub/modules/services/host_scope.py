@@ -16,10 +16,11 @@ import ipaddress
 from dataclasses import dataclass
 
 from neutrino_hub import edition
+from neutrino_hub.modules.frp.constants import FRP_LOOPBACK_PORTS
 from neutrino_hub.modules.services.constants import (
     SERVICES_REACHED_DIRECT,
     SERVICES_REACHED_LAN,
-    SERVICES_REACHED_RELAY,
+    SERVICES_REACHED_SSH_RELAY,
     SERVICES_SCOPE_LINK,
     SERVICES_SCOPE_OVERLAY,
 )
@@ -98,7 +99,11 @@ def scope_of(
 
 
 def reached_through(
-    peer_address: str, overlay_networks: dict, interface_networks: "list | None" = None
+    peer_address: str,
+    overlay_networks: dict,
+    interface_networks: "list | None" = None,
+    *,
+    listener_port: int = 0,
 ) -> str:
     """The way a caller's socket reached the hub.
 
@@ -109,20 +114,26 @@ def reached_through(
         interface_networks: The addresses, each with its prefix length, that
             the box's other interfaces hold; None judges no peer as coming
             from outside.
+        listener_port: The hub's port the socket arrived on; 0 when unknown.
 
     Returns:
-        ``relay`` for a peer on loopback; the key of the first engine one of
-        whose networks holds the peer; ``lan`` for a peer inside a network of
-        ``interface_networks`` or on an IPv6 link-local address; ``direct``
-        for any other when ``interface_networks`` is given; else ``lan``. An
-        IPv4-mapped IPv6 peer is judged by its IPv4 address.
+        ``sakurafrp`` or ``openfrp`` for a socket on that vendor's loopback
+        listener; ``ssh_relay`` for another peer on loopback; the key of the
+        first engine one of whose networks holds the peer; ``lan`` for a
+        peer inside a network of ``interface_networks`` or on an IPv6
+        link-local address; ``direct`` for any other when
+        ``interface_networks`` is given; else ``lan``. An IPv4-mapped IPv6
+        peer is judged by its IPv4 address.
     """
+    for vendor, port in FRP_LOOPBACK_PORTS.items():
+        if listener_port == port:
+            return vendor
     try:
         address = ipaddress.ip_address(unmapped(peer_address).split("%", 1)[0])
     except ValueError:
         return SERVICES_REACHED_LAN
     if address.is_loopback:
-        return SERVICES_REACHED_RELAY
+        return SERVICES_REACHED_SSH_RELAY
     for provider, held in overlay_networks.items():
         for text in held:
             try:
