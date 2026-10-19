@@ -29,9 +29,10 @@ The hub's **Clients** page sets which machines and which kinds of service each c
 At home, a client reaches the hub over your network. From outside, it uses a way in:
 
 - **Direct** needs a public IPv4 or IPv6 address at home and a port forward to port 8443 on the home router.
-- **SSH Relay** needs a server with a public address that you run, such as a rented VPS. Its public port leads to port 8443.
+- **SSH relay** needs a server with a public address that you run, such as a rented VPS. Its public port leads to port 8443.
 - **NetBird** needs an account with a NetBird management server, such as netbird.io.
 - **EasyTier** needs an account on an EasyTier console, or the address of a machine already on your EasyTier network.
+- **SakuraFrp** and **OpenFrp** need an account at that vendor and a TCP tunnel there. The vendor's node gives port 8443 a public address.
 
 Several ways in can be on at once, and a client uses whichever one reaches the hub. [Choose a way in](./scenarios/choose_a_way_in.md) compares them for your home.
 
@@ -48,7 +49,7 @@ The hub itself has layers, and each one is set on its own panel page:
 | Layer      | What it does                                                                                                                                        |
 | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Mode       | Places the hub's computer in your network. **Server** runs on every system, **Router** on Linux, and **Side gateway** on Linux in the full edition. |
-| Access     | Turns on the ways in from outside: **Direct**, **SSH Relay**, **NetBird** and **EasyTier**.                                                         |
+| Access     | Turns on the ways in from outside: **NetBird**, **EasyTier**, **SSH relay**, **Direct**, **SakuraFrp** and **OpenFrp**.                             |
 | Proxy      | Sends chosen traffic through exit nodes: the hub's own, and in **Router** and **Side gateway** that of the devices behind it. Full edition only.    |
 | AI gateway | One address in front of your API keys and subscriptions, for the AI tools on every machine and client.                                              |
 

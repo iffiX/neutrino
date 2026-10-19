@@ -17,7 +17,7 @@ title: 第零步
 - 一个 EasyTier 控制台账号，在 `https://console.easytier.net` 注册。按 EasyTier 的规定，控制台的免费档每月有 1 GB 中转流量，最多接入 20 台设备。<!-- 待核: 免费档的 1 GB 和 20 台两个数字取自 iffi 的清单，仓库里没有出处。 -->
 - 手机和笔记本先连上电脑所在的 Wi-Fi。
 
-想用 NetBird、直连或自己的服务器时，先按 [NetBird](./hub/netbird.md) 页、[外部访问](./hub/overlay.md)页的直连一节或[用自己的 VPS 中继连回家](./scenarios/vps_relay.md)做好，再从“把手机和笔记本挂上”接着做。直连和 VPS 中继没有虚拟网，跳过那一节。
+想用 NetBird、直连或自己的服务器时，先按 [NetBird](./hub/netbird.md) 页、[外部访问](./hub/overlay.md)页的直连一节或[经自己的 VPS 连回家](./scenarios/vps_relay.md)做好，再从“把手机和笔记本挂上”接着做。直连和 SSH 中继没有虚拟网，跳过那一节。
 
 ## 安装中枢
 

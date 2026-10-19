@@ -117,7 +117,7 @@ resident   running
 | `wait_reason`     | `waiting` 时的原因：`hub_silent`、`hub_off_overlay`、`no_network`、`untrusted`、`admission_paused`、`unknown_device`、`too_old` 或 `join_refused` |
 | `wait_code`       | 原因背后的拒绝，`{code, params}`，没有时为 `null`                                                                                                 |
 | `next_round_at`   | 下一轮拨号的时刻，Unix 秒；没有倒计时时为 `null`                                                                                                  |
-| `reached_through` | `lan`、`direct`、`netbird`、`easytier` 或 `relay`                                                                                                 |
+| `reached_through` | `lan`、`netbird`、`easytier`、`ssh_relay`、`direct`、`sakurafrp` 或 `openfrp`                                                                     |
 | `rtt_ms`          | 最近一次往返的毫秒数，取整；没连着或还没量到时为 `null`                                                                                           |
 | `is_exit`         | AI 工具是否指向这台中枢                                                                                                                           |
 | `last_error`      | 通道最后一次的错误，`{code, params}`，没有时为 `null`                                                                                             |

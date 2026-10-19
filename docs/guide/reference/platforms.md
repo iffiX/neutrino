@@ -21,6 +21,8 @@ Each part of Neutrino 0.6.0 has a section here with the systems it installs on a
 
 The Linux hub package includes its own Python. It depends on systemd, nftables, dnsmasq, iproute2, wpa_supplicant, dhcpcd, fail2ban, iw, arp-scan, curl, smbclient, the OpenSSH client and pkexec. It recommends hostapd for a machine that serves Wi-Fi.
 
+Every hub package of both editions includes frpc 0.71.1, the client of the frp project, under the Apache-2.0 licence. SakuraFrp and OpenFrp run it, and **Acknowledgements** in the **About** card on the **Settings** page lists it.
+
 On the Debian family the dhcpcd dependency reads `dhcpcd-base | dhcpcd5`, because Ubuntu 22.04 has the daemon under the second name. The pkexec dependency reads `pkexec | policykit-1` there, and on the Fedora family and Arch it is `polkit`. The Windows and macOS packages include every program the hub drives and name no dependency. Server mode, the one mode the hub has there, is described on [Network](../hub/network.md).
 
 ## Agent

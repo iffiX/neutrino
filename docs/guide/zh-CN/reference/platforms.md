@@ -34,6 +34,8 @@ LocalSystem 是 Windows 自己的系统账户，面板和客户端上写作 SYST
 
 Linux 上的中枢包自带 Python 环境，不动系统装的任何东西，其余依赖都写在包里：systemd、nftables、dnsmasq、iproute2、wpa_supplicant、dhcpcd、fail2ban、iw、arp-scan、curl、smbclient、OpenSSH 客户端和 pkexec。要发 Wi-Fi 的机器还推荐装 hostapd。Debian 系上 dhcpcd 写作 `dhcpcd-base | dhcpcd5`，因为 Ubuntu 22.04 上这个程序叫后一个名字；pkexec 写作 `pkexec | policykit-1`。RHEL 9 系的 fail2ban 和 arp-scan 在 EPEL 里。
 
+两个版本的每个中枢包都带着 frp 项目的客户端 frpc 0.71.1，许可证是 Apache-2.0，SakuraFrp 和 OpenFrp 都用它。**设置** 页 **关于** 卡片的 **致谢** 里列着它。
+
 Windows 和 macOS 上的中枢只运行 **服务器** 模式：只在机器所连的网络上提供服务，不当路由器。这两种系统的中枢包里有编译好的中枢，以及中枢驱动的每个程序，不依赖系统的包。包里还有本机要装的被控端。
 
 ## 被控端

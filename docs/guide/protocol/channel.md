@@ -10,6 +10,8 @@ The channel is the one WebSocket a hub keeps with each machine it manages, at pr
 
 The channel is on the agent port, 8443 by default, which serves `/api/channel` over TLS and nothing else. The panel port is separate, and turning the panel's HTTPS on or off leaves the channel as it is.
 
+While SakuraFrp or OpenFrp is on, the hub serves the same channel on one more listener for that vendor, on `127.0.0.1` alone: 18443 for SakuraFrp and 18444 for OpenFrp. frpc on the hub forwards the vendor's node there.
+
 **Connection port** on the hub's **Network** page sets the agent port. A change reaches every online agent and client in its `urls` first, and the port moves right after. A program offline at that moment joins again with a new link.
 
 The certificate on the agent port is self-signed and valid for ten years, so its fingerprint is the hub's whole identity.
@@ -141,14 +143,14 @@ A network change starts a round at once for every hub not `replaced` or `disable
 
 For a hub that is not connected, the change ends the wait and closes any dial still open. For a connected hub, the round runs beside the live channel.
 
-Each candidate's path is set before `hello`. An address on a virtual network is that engine's, `relay_url` is the SSH Relay's, an address inside a network the device is on is `lan`, and any other is `direct`. The paths rank in this order, best first:
+Each candidate's path is set before `hello`. An address on a virtual network is that engine's. The addresses in `ssh_relay_url`, `sakurafrp_url` and `openfrp_url` are `ssh_relay`, `sakurafrp` and `openfrp`. An address inside a network the device is on is `lan`, and any other is `direct`. The paths rank in this order, best first:
 
-| Rank | Path                  |
-| ---- | --------------------- |
-| 1    | `lan`                 |
-| 2    | `direct`              |
-| 3    | `netbird`, `easytier` |
-| 4    | `relay`               |
+| Rank | Path                                |
+| ---- | ----------------------------------- |
+| 1    | `lan`                               |
+| 2    | `direct`                            |
+| 3    | `netbird`, `easytier`               |
+| 4    | `ssh_relay`, `sakurafrp`, `openfrp` |
 
 A round on a connected hub takes the channel only when its winner's path ranks higher, or ranks the same and its handshake was faster. A winner that is no better is closed before `hello`. A better winner sends `hello`, and the hub closes the old socket with 4010 `replaced`, which the client expects on the socket it left. Between rounds the client keeps no list of reachable addresses and runs no prober.
 
@@ -169,17 +171,17 @@ Every action is a stream: its `open` is the request, its `close` is the reply, a
 
 The hub sends a client its `state` after a report whose `state_hash` differs from the hub's or that has `is_refresh: true`. It also sends it whenever the hub's own changes.
 
-| Section            | Holds                                                                                                                                           |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `hash`             | an opaque string the client names back in every report                                                                                          |
-| `is_disabled`      | `true` after **Disable** on **Clients**: the lists are empty and every action is rejected with `client_disabled`                                |
-| `services`         | the published entries this client is allowed, resolved for the address its socket came from                                                     |
-| `urls`             | every address the hub serves the channel on, which the client keeps for its next connection round                                               |
-| `relay_url`        | the member of `urls` that is the SSH Relay's address, an empty string while the relay is off; the client ranks a candidate address's path by it |
-| `overlays`         | what the client joins each of the hub's overlays with, the preferred first                                                                      |
-| `terminals`        | the managed machines the client is allowed to open a shell on or run a command on, each `{device_id, name, is_online, sessions}`                |
-| `is_panel_allowed` | `true` while the client is switched on and its permission includes `panel`: it can open the hub's panel through `connect`                       |
-| `reached_through`  | the path this client's socket took to the hub: `lan`, `direct`, `netbird`, `easytier` or `relay`, the last being the SSH Relay                  |
+| Section                                         | Holds                                                                                                                                                                                     |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `hash`                                          | an opaque string the client names back in every report                                                                                                                                    |
+| `is_disabled`                                   | `true` after **Disable** on **Clients**: the lists are empty and every action is rejected with `client_disabled`                                                                          |
+| `services`                                      | the published entries this client is allowed, resolved for the address its socket came from                                                                                               |
+| `urls`                                          | every address the hub serves the channel on, which the client keeps for its next connection round                                                                                         |
+| `ssh_relay_url`, `sakurafrp_url`, `openfrp_url` | the members of `urls` that are the SSH relay's, SakuraFrp's and OpenFrp's addresses, each an empty string while its way in adds none; the client ranks a candidate address's path by them |
+| `overlays`                                      | what the client joins each of the hub's overlays with, the preferred first                                                                                                                |
+| `terminals`                                     | the managed machines the client is allowed to open a shell on or run a command on, each `{device_id, name, is_online, sessions}`                                                          |
+| `is_panel_allowed`                              | `true` while the client is switched on and its permission includes `panel`: it can open the hub's panel through `connect`                                                                 |
+| `reached_through`                               | the path this client's socket took to the hub: `lan`, `netbird`, `easytier`, `ssh_relay`, `direct`, `sakurafrp` or `openfrp`                                                              |
 
 ### Overlays
 

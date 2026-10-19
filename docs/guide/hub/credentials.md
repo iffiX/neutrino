@@ -26,14 +26,14 @@ After saving, the page shows where the entry is used, and the value is hidden. T
 | Where                                                      | Kind it picks                                 |
 | ---------------------------------------------------------- | --------------------------------------------- |
 | **Install agent** on the **Devices** page                  | an SSH key or a login, and a login for `sudo` |
-| **SSH Relay** on the **Access** page                       | an SSH key or a login                         |
+| **SSH relay** on the **Access** page                       | an SSH key or a login                         |
 | A VS Code, CloudCLI or Codeg instance on a Windows machine | the Windows login of the account it runs as   |
 | A provider on the **AI** page                              | a token, as the provider's API key            |
 | An exit node on the **Proxy** page                         | a token, where the node's link has one        |
 
 When a Windows account's password changes, add a login with the new password, pick it for the instance, and apply the module again.
 
-**Delete** opens a confirmation that counts the entry's users. An exit node that loses its token is disabled, and the SSH Relay stops.
+**Delete** opens a confirmation that counts the entry's users. An exit node that loses its token is disabled, and the SSH relay stops.
 
 ## The vault
 

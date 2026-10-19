@@ -12,7 +12,7 @@ In portrait, a bar at the bottom opens **Hubs**, **Web**, **Ports**, **AI**, **F
 
 The **Hubs** screen holds one row per hub: its name, its state line, its address and the package it runs. While the channel is open, the line names its path, such as **Connected · LAN**, with a tag such as **48 ms** for the last round trip.
 
-The path is **LAN** for an address on a network the phone is on, and **Direct** for one the hub exposes outside. The others are **NetBird**, **EasyTier** and **SSH Relay**. [Turn on Direct](../hub/overlay.md#turn-on-direct) and [SSH Relay](../hub/relay.md) describe the two paths a hub owner sets up.
+The path is **LAN** for an address on a network the phone is on, and **Direct** for one the hub exposes outside. The others are **NetBird**, **EasyTier**, **SSH relay**, **SakuraFrp** and **OpenFrp**. [Turn on Direct](../hub/overlay.md#turn-on-direct) and [SSH relay](../hub/relay.md) describe two paths a hub owner sets up, and [SakuraFrp and OpenFrp](../hub/frp.md) describes two more.
 
 While the channel is down, the line reads **Connecting…** as the app dials every address of the hub. An address that refuses the connection is dialled again every second until the round ends.
 

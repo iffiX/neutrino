@@ -27,7 +27,10 @@ Each row is one term the guide uses, with the name the Chinese panel and the Chi
 | **Connection port**                                 | 连接端口                       | the port agents and clients connect to, 8443 by default                                                             |
 | **Access**                                          | 外部访问                       | the ways to reach the hub from outside the home                                                                     |
 | **Direct**                                          | 直连                           | reaching the hub at a public address, through a port forward on the home router                                     |
-| **SSH Relay**                                       | SSH 中继                       | reaching the hub through a public port on a server of the user's own                                                |
+| **SSH relay**                                       | SSH 中继                       | reaching the hub through a public port on a server of the user's own                                                |
+| **SakuraFrp**, **OpenFrp**                          | SakuraFrp、OpenFrp             | two third-party services whose frp nodes give the hub's connection port a public address                            |
+| tunnel                                              | 隧道                           | an entry at SakuraFrp or OpenFrp that forwards a public port on one of its nodes to the hub                         |
+| **Access key**                                      | 访问密钥                       | the key of a SakuraFrp account, which the hub signs in with                                                         |
 | **Virtual network**                                 | 虚拟网                         | a private network laid over the internet: NetBird or EasyTier                                                       |
 | console                                             | 控制台                         | the web management page that NetBird or EasyTier runs                                                               |
 | **Setup key**                                       | setup key                      | the key a NetBird console issues for joining its network                                                            |

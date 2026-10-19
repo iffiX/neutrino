@@ -155,6 +155,6 @@ Before you start, bring online every client and agent you want to keep. The hub 
 1. Read the warning in the apply bar. It counts the clients and the agents offline now. Those lose this hub and join again with a new link from **Clients** or **Devices**.
 1. Select **Apply ports**.
 
-The hub sends the new address to every online client and agent, then restarts the panel's service, which takes agents and clients on the new port. The panel's own ports stay as they are; sign in again after the restart. With Direct on, the warning also says to change the router's port forward and Direct's **Public port** to match, on the [Access](./overlay.md#turn-on-direct) page.
+The hub sends the new address to every online client and agent, then restarts the panel's service, which takes agents and clients on the new port. The panel's own ports stay as they are; sign in again after the restart. With Direct on, the warning also says to change the router's port forward and Direct's **Public port** to match, on the [Access](./overlay.md#turn-on-direct) page. With a SakuraFrp or OpenFrp tunnel picked, it says to change the tunnel's local port at the vendor, as [SakuraFrp and OpenFrp](./frp.md#after-the-connection-port-changes) describes.
 
 A network setting the hub rejects shows a code; the codes are on [Troubleshooting](../reference/troubleshooting.md#network-settings-are-refused).
