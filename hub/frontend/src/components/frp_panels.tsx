@@ -191,8 +191,7 @@ interface FrpStatusPanelProps {
 function FrpStatusPanel({ vendor, view, port }: FrpStatusPanelProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
-  const isPortMismatched =
-    view.tunnel_id !== "" && port !== null && view.local_port !== port;
+  const isPortMismatched = isLocalPortStale(view, port);
 
   return (
     <section className="settings_group">
@@ -516,10 +515,17 @@ function FrpTunnelsPanel({
   };
 
   const tunnels = list.data?.tunnels ?? null;
+  // The running tunnel is listed again with the connection port as its
+  // local port, and its applied local port is still the old one.
+  const isReapplyDue =
+    isLocalPortStale(view, port) &&
+    draft.tunnelId === view.tunnel_id &&
+    (tunnels?.some((tunnel) => tunnel.tunnel_id === view.tunnel_id) ?? false);
+  const isPending = isDirty || isReapplyDue;
 
   return (
     <section
-      className={`settings_group ${isDirty ? "settings_group--dirty" : ""}`}
+      className={`settings_group ${isPending ? "settings_group--dirty" : ""}`}
     >
       <div className="settings_group_title">
         <h2>{t("ui.overlay.frp_tunnels")}</h2>
@@ -608,7 +614,7 @@ function FrpTunnelsPanel({
         </div>
       )}
       <ApplyBar
-        isDirty={isDirty}
+        isDirty={isPending}
         isBusy={isBusy}
         label={t("ui.overlay.frp_apply")}
         hint={t("ui.overlay.frp_apply_hint")}
@@ -626,6 +632,12 @@ function FrpTunnelsPanel({
       />
     </section>
   );
+}
+
+/** Whether a tunnel is picked whose local port, as the apply read it, is not
+ * the connection port. */
+function isLocalPortStale(view: FrpView, port: number | null): boolean {
+  return view.tunnel_id !== "" && port !== null && view.local_port !== port;
 }
 
 /** A node's connect time, empty where no connect finished in time. */
