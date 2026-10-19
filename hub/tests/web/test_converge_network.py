@@ -239,7 +239,22 @@ def applied(monkeypatch):
         written.append(("relay applied", is_restarted))
         return ""
 
+    def apply_frp(self, vendor, *, is_restarted=False):
+        written.append((f"{vendor} applied", is_restarted))
+        return ""
+
+    class Listeners:
+        def follow(self, wanted):
+            written.append(("frp listeners followed", dict(wanted)))
+
+    panel.frp_listeners = Listeners()
+    monkeypatch.setattr(
+        runtime_module,
+        "frp_switches",
+        lambda: {"sakurafrp": False, "openfrp": False},
+    )
     monkeypatch.setattr(runtime_module.PanelRuntime, "apply_relay", apply_relay)
+    monkeypatch.setattr(runtime_module.PanelRuntime, "apply_frp", apply_frp)
     return panel, written, results, files
 
 
@@ -265,10 +280,47 @@ def test_the_steps_run_in_their_order(applied, monkeypatch):
         "pushed states",
         "stopped",
         "relay applied",
+        "frp listeners followed",
+        "sakurafrp applied",
+        "openfrp applied",
         "routes checked",
     ]
     assert {"code": "xray_restarted", "params": {}} in changes
     assert {"code": "devices_pushed", "params": {"count": 1}} in changes
+
+
+def test_the_frp_listeners_follow_each_vendors_switch(applied, monkeypatch):
+    panel, written, _, _ = applied
+    xray_applier(monkeypatch, _AcceptingApplier)
+    switches = {"sakurafrp": False, "openfrp": True}
+    monkeypatch.setattr(runtime_module, "frp_switches", lambda: dict(switches))
+
+    panel.converge_network_blocking()
+
+    assert dict(written)["frp listeners followed"] == switches
+
+
+def test_a_frp_vendor_that_will_not_apply_stops_none_of_the_rest(applied, monkeypatch):
+    panel, written, _, _ = applied
+    xray_applier(monkeypatch, _AcceptingApplier)
+
+    def refuse(self, vendor, *, is_restarted=False):
+        if vendor == "sakurafrp":
+            raise OSError("no room for frpc.toml")
+        written.append((f"{vendor} applied", is_restarted))
+        return ""
+
+    monkeypatch.setattr(runtime_module.PanelRuntime, "apply_frp", refuse)
+
+    with pytest.raises(NetworkApplyError) as raised:
+        panel.converge_network_blocking()
+
+    assert {
+        "code": "overlay_failed",
+        "params": {"detail": "sakurafrp: no room for frpc.toml"},
+    } in raised.value.failures
+    assert "openfrp applied" in steps_of(written)
+    assert "routes checked" in steps_of(written)
 
 
 def test_a_relay_that_started_is_a_change(applied, monkeypatch):
@@ -415,6 +467,9 @@ def test_an_engine_that_will_not_start_stops_none_of_the_rest(applied, monkeypat
         "pushed states",
         "stopped",
         "relay applied",
+        "frp listeners followed",
+        "sakurafrp applied",
+        "openfrp applied",
         "routes checked",
     ]
 
@@ -717,6 +772,9 @@ def test_macos_and_windows_run_no_dnsmasq(applied, monkeypatch, system):
         "pushed states",
         "stopped",
         "relay applied",
+        "frp listeners followed",
+        "sakurafrp applied",
+        "openfrp applied",
         "routes checked",
     ]
 

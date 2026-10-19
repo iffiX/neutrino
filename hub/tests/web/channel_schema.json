@@ -856,9 +856,19 @@
           "title": "Urls",
           "type": "array"
         },
-        "relay_url": {
+        "ssh_relay_url": {
           "default": "",
-          "title": "Relay Url",
+          "title": "Ssh Relay Url",
+          "type": "string"
+        },
+        "sakurafrp_url": {
+          "default": "",
+          "title": "Sakurafrp Url",
+          "type": "string"
+        },
+        "openfrp_url": {
+          "default": "",
+          "title": "Openfrp Url",
           "type": "string"
         },
         "overlays": {

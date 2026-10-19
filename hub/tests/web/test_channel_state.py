@@ -128,6 +128,14 @@ def hub_relay(monkeypatch) -> list:
     return held
 
 
+@pytest.fixture(autouse=True)
+def hub_frp(monkeypatch) -> dict:
+    """Each frp vendor's address, empty while it adds none; a test may set it."""
+    held = {"sakurafrp": "", "openfrp": ""}
+    monkeypatch.setattr(channel_state, "frp_url", lambda vendor: held[vendor])
+    return held
+
+
 def test_an_agents_state_is_the_composed_document_under_its_hash():
     runtime = FakeRuntime()
 
@@ -256,11 +264,29 @@ def test_a_clients_state_names_the_relays_address_while_it_is_on(
     hub_relay[0] = relay
     on = channel_state.client_state(runtime, client_id)
 
-    assert off["relay_url"] == ""
+    assert off["ssh_relay_url"] == ""
     assert off["urls"] == ["https://192.168.100.1:8443"]
-    assert on["relay_url"] == relay
+    assert on["ssh_relay_url"] == relay
     assert on["urls"] == ["https://192.168.100.1:8443", relay]
     assert on["hash"] != off["hash"]
+
+
+def test_a_clients_state_names_each_frp_vendors_address(config_dir, hub_urls, hub_frp):
+    """A client ranks the frp nodes' paths with the relay's, by these."""
+    runtime = FakeRuntime()
+    client_id = ClientRegistry().create("alice")
+    runtime.client_scope[client_id] = LAN
+    sakura = "https://frp-a.natfrp.cloud:41234"
+    openfrp = "https://cn-hk.of-7af93c01.shop:51607"
+    hub_urls += [sakura, openfrp]
+    hub_frp.update(sakurafrp=sakura, openfrp=openfrp)
+
+    state = channel_state.client_state(runtime, client_id)
+
+    assert state["sakurafrp_url"] == sakura
+    assert state["openfrp_url"] == openfrp
+    assert state["ssh_relay_url"] == ""
+    assert "relay_url" not in state
 
 
 def test_a_relay_address_the_urls_do_not_hold_is_not_named(config_dir, hub_relay):
@@ -271,7 +297,7 @@ def test_a_relay_address_the_urls_do_not_hold_is_not_named(config_dir, hub_relay
 
     state = channel_state.client_state(runtime, client_id)
 
-    assert state["relay_url"] == ""
+    assert state["ssh_relay_url"] == ""
 
 
 def test_a_clients_list_holds_only_the_kinds_it_is_allowed(config_dir):
@@ -701,8 +727,30 @@ def test_the_way_a_socket_reached_the_hub_is_settled_at_hello_and_hashed(
         ways.append(state["reached_through"])
         hashes.append(state["hash"])
 
-    assert ways == ["lan", "netbird", "relay", "direct"]
+    assert ways == ["lan", "netbird", "ssh_relay", "direct"]
     assert len(set(hashes)) == 4
+
+
+@pytest.mark.parametrize(
+    ("port", "way"), [(18443, "sakurafrp"), (18444, "openfrp"), (8443, "ssh_relay")]
+)
+def test_a_loopback_socket_is_settled_by_the_listener_it_arrived_on(
+    config_dir, port, way
+):
+    runtime = FakeRuntime()
+    runtime.overlay_networks = lambda *, is_ipv6=False: {}
+    runtime.interface_networks = lambda *, is_ipv6=False: ["192.168.100.1/24"]
+    client_id = ClientRegistry().create("alice")
+
+    channel_state.note_client_scope(
+        runtime,
+        client_id,
+        peer_host="127.0.0.1",
+        reached_host="frp-a.natfrp.cloud",
+        listener_port=port,
+    )
+
+    assert channel_state.client_state(runtime, client_id)["reached_through"] == way
 
 
 @pytest.mark.parametrize(
@@ -711,10 +759,10 @@ def test_the_way_a_socket_reached_the_hub_is_settled_at_hello_and_hashed(
         ("fd00:8::20", "lan"),
         ("fe80::20", "lan"),
         ("fd7a:115c::9", "netbird"),
-        ("::1", "relay"),
+        ("::1", "ssh_relay"),
         ("2001:db8::20", "direct"),
         ("::ffff:192.168.100.9", "lan"),
-        ("::ffff:127.0.0.1", "relay"),
+        ("::ffff:127.0.0.1", "ssh_relay"),
         ("::ffff:203.0.113.9", "direct"),
     ],
 )

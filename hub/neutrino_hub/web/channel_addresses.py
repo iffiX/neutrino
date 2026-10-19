@@ -10,6 +10,8 @@ import ipaddress
 
 from fastapi import HTTPException, status
 
+from neutrino_hub.modules.frp.config import read_frp
+from neutrino_hub.modules.frp.constants import FRP_VENDORS
 from neutrino_hub.modules.overlay.constants import (
     OVERLAY_DIRECT_INTERFACES_ADDED,
     OVERLAY_DIRECT_INTERFACES_EXPOSED,
@@ -49,15 +51,17 @@ def channel_urls(runtime) -> list[str]:
         Base ``https`` URLs: one per host :func:`channel_hosts` returns, in
         its order, every enabled interface's and the stable IPv6 addresses
         among them while Direct is on; then the public address the person
-        stated for Direct, while it is on; and last the relay's address while
-        it is on and configured. An IPv6 address is written in brackets.
-        Each address is listed once, however it was spelled.
+        stated for Direct, while it is on; then SakuraFrp's and OpenFrp's
+        public addresses, each while it is on with a tunnel picked; and last
+        the relay's address while it is on and configured. An IPv6 address
+        is written in brackets. Each address is listed once, however it was
+        spelled.
     """
     direct = _stored_direct()
     urls = _own_urls(runtime, direct, is_direct=direct.is_enabled)
-    relay = relay_url()
-    if relay and relay not in urls:
-        urls.append(relay)
+    for url in [*(frp_url(vendor) for vendor in FRP_VENDORS), relay_url()]:
+        if url and url not in urls:
+            urls.append(url)
     return urls
 
 
@@ -122,7 +126,7 @@ def channel_url(host: str, port: int) -> str:
 
 
 def _own_urls(runtime, direct: OverlayDirectConfig, *, is_direct: bool) -> list:
-    """The hub's own addresses on the agent port, the relay aside.
+    """The hub's own addresses on the agent port, the servers' aside.
 
     Args:
         runtime: The shared runtime.
@@ -186,6 +190,20 @@ def relay_url() -> str:
     if not config.is_enabled or not is_relay_configured(config):
         return ""
     return config.url
+
+
+def frp_url(vendor: str) -> str:
+    """A frp vendor's address while it is on and has a tunnel picked.
+
+    Args:
+        vendor: ``sakurafrp`` or ``openfrp``.
+
+    Returns:
+        ``https://<public-host>:<public-port>``, an IPv6 host in brackets;
+        empty otherwise.
+    """
+    config = read_frp(vendor)
+    return config.url if config.is_enabled else ""
 
 
 def channel_hosts(network, *, is_direct: bool = False) -> list[str]:

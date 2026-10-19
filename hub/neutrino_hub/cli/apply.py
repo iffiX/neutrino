@@ -43,6 +43,9 @@ from neutrino_hub.system.constants import (
     SYSTEM_SYSTEMD_DIR,
 )
 from neutrino_hub.system.systemd_ctl import start_line_dropin
+from neutrino_hub.modules.frp.config import read_frp
+from neutrino_hub.modules.frp.constants import FRP_VENDORS
+from neutrino_hub.modules.frp.ops import FrpApplier, FrpMonitor, frp_file
 from neutrino_hub.modules.overlay.config import enabled_providers
 from neutrino_hub.modules.overlay.constants import OVERLAY_EASYTIER
 from neutrino_hub.modules.overlay.constants import OVERLAY_RELAY_UNIT
@@ -261,6 +264,7 @@ def _render(selected: tuple[str, ...]) -> dict:
         else:
             artifacts["easytier"] = easytier
         artifacts["relay"] = read_relay()
+        artifacts["frp"] = [read_frp(vendor) for vendor in FRP_VENDORS]
     return artifacts
 
 
@@ -325,6 +329,15 @@ def _print_artifacts(artifacts: dict) -> None:
             dropin = SYSTEM_SYSTEMD_DIR / f"{OVERLAY_RELAY_UNIT}.d"
             print(f"\n--- {dropin / SYSTEM_START_LINE_DROPIN_NAME} ---")
             print(start_line_dropin(argv, {}, None), end="")
+    # frpc's file holds the account's token, so a dry run names it and
+    # prints none of it.
+    for config in artifacts.get("frp", []):
+        if not config.is_enabled or not config.has_tunnel:
+            print(f"\n--- {config.vendor}: off or no tunnel picked ---")
+        else:
+            print(
+                f"\n--- {config.vendor}: frpc runs from {frp_file(config.vendor)} ---"
+            )
 
 
 def _write(artifacts: dict, *, is_apply_skipped: bool) -> None:
@@ -387,6 +400,13 @@ def _apply(artifacts: dict) -> None:
             controller=process_controller(), agent_port=_agent_port()
         ).apply(artifacts["relay"])
         print(change or "relay unchanged")
+    for config in artifacts.get("frp", []):
+        controller = process_controller()
+        monitor = FrpMonitor(
+            vendor=config.vendor, controller=controller, fingerprint_of=lambda: ""
+        )
+        change = FrpApplier(controller=controller, monitor=monitor).apply(config)
+        print(change or f"{config.vendor} unchanged")
     if router_failure:
         raise RuntimeError(router_failure)
 

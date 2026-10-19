@@ -86,6 +86,10 @@ class StubRuntime:
         self.traffic_history = StubLinkSampler()
         self.proxy = StubExitController()
         self.relay_monitor = StubExitController()
+        self.frp_monitors = {
+            "sakurafrp": StubExitController(),
+            "openfrp": StubExitController(),
+        }
 
     def publish_ai_usage(self) -> None:
         return None

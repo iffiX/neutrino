@@ -56,6 +56,8 @@ from neutrino_hub.modules.cliproxyapi.constants import (
     CLIPROXYAPI_DIR,
     CLIPROXYAPI_GENERATED_NAME,
 )
+from neutrino_hub.modules.frp.config import frp_switches
+from neutrino_hub.modules.frp.constants import FRP_LOOPBACK_HOST
 from neutrino_hub.modules.netbird.constants import NETBIRD_HUB_STATE_DIR
 from neutrino_hub.modules.netbird.run_part import (
     child_start_lines as netbird_start_lines,
@@ -515,13 +517,13 @@ def _serve_panel(arguments) -> int:
     if agent_key_path is not None:
         servers.append(AgentPortServer(_agent_config(arguments.host, agent_key_path)))
     _finish_first_run()
-    asyncio.run(_serve_together(servers))
+    asyncio.run(_serve_together(servers, agent_key_path=agent_key_path))
     _stop_samplers()
     return 0
 
 
-def _agent_config(host: str, key_path) -> uvicorn.Config:
-    """The agent port's listener.
+def _agent_config(host: str, key_path, *, port: "int | None" = None) -> uvicorn.Config:
+    """The agent port's listener, or a frp vendor's loopback listener.
 
     uvicorn listens over TCP and the port's own protocol runs each TLS
     handshake under the port's limits before uvicorn's HTTP protocol takes
@@ -530,6 +532,7 @@ def _agent_config(host: str, key_path) -> uvicorn.Config:
     Args:
         host: The address to bind.
         key_path: The agent certificate's unsealed key.
+        port: The port to bind; None binds the agent port.
 
     Returns:
         The server's configuration.
@@ -538,7 +541,7 @@ def _agent_config(host: str, key_path) -> uvicorn.Config:
         AGENT_APPLICATION_PATH,
         factory=True,
         host=host,
-        port=_configured_agent_port(),
+        port=_configured_agent_port() if port is None else port,
         log_level="info",
         access_log=False,
         http=agent_port_protocol(
@@ -668,11 +671,16 @@ def _agent_key():
         return None
 
 
-async def _serve_together(servers: list) -> None:
+async def _serve_together(servers: list, *, agent_key_path=None) -> None:
     """Run every server in one loop, and stop them all when one stops.
+
+    With the channel served, the frp vendors' loopback listeners are opened
+    on the same loop while their ways in are on, and closed with the rest.
 
     Args:
         servers: Configured uvicorn servers.
+        agent_key_path: The agent certificate's unsealed key; None while the
+            channel is not served.
     """
     quiet_connection_resets(asyncio.get_running_loop())
     _SERVING[:] = servers
@@ -680,13 +688,38 @@ async def _serve_together(servers: list) -> None:
         for server in servers:
             server.should_exit = True
     tasks = [asyncio.create_task(server.serve()) for server in servers]
+    listeners = None
+    if agent_key_path is not None and not _STOP_ASKED.is_set():
+        listeners = _open_frp_listeners(agent_key_path)
     try:
         await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
     finally:
         for server in servers:
             server.should_exit = True
+        if listeners is not None:
+            await listeners.close()
         await asyncio.gather(*tasks, return_exceptions=True)
         _SERVING.clear()
+
+
+def _open_frp_listeners(key_path):
+    """Serve the frp listeners on the running loop, those that are on at once.
+
+    Args:
+        key_path: The agent certificate's unsealed key.
+
+    Returns:
+        The runtime's :class:`FrpLoopbackListeners`.
+    """
+    from neutrino_hub.web.app import shared_runtime
+
+    listeners = shared_runtime().frp_listeners
+    listeners.attach(
+        asyncio.get_running_loop(),
+        lambda port: _agent_config(FRP_LOOPBACK_HOST, key_path, port=port),
+    )
+    listeners.follow(frp_switches())
+    return listeners
 
 
 def _supervise(arguments) -> int:

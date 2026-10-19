@@ -1,0 +1,18 @@
+[Unit]
+Description=Neutrino way in through an OpenFrp node (frpc)
+After=network-online.target
+Wants=network-online.target
+# The panel's apply writes the file while OpenFrp is on and a tunnel is
+# picked, and deletes it otherwise.
+ConditionPathExists=/var/lib/neutrino/hub/openfrp/frpc.toml
+
+[Service]
+Type=simple
+# Root: the file under the state root holds the account's token.
+User=root
+ExecStart=/opt/neutrino/hub/bin/frpc -c /var/lib/neutrino/hub/openfrp/frpc.toml
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

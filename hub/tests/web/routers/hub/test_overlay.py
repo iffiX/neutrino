@@ -12,6 +12,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from neutrino_hub.modules.frp.config import FrpConfig, read_frp, write_frp
+from neutrino_hub.modules.frp.constants import FRP_OPENFRP, FRP_SAKURAFRP
 from neutrino_hub.modules.overlay.constants import (
     OVERLAY_DIRECT,
     OVERLAY_EASYTIER,
@@ -68,6 +70,16 @@ class FakeRelayMonitor:
         }
 
 
+class FakeFrpMonitor:
+    """Where a frp vendor stands, as its monitor would say."""
+
+    def __init__(self):
+        self.state = "disabled"
+
+    def view(self) -> dict:
+        return {"state": self.state, "last_error": "", "checked_at": ""}
+
+
 class FakeSession:
     def __init__(self, address: str):
         self.address = address
@@ -95,6 +107,10 @@ class FakeRuntime:
         self.refusal: Exception | None = None
         self.overlay_route_conflicts: list = []
         self.relay_monitor = FakeRelayMonitor()
+        self.frp_monitors = {
+            FRP_SAKURAFRP: FakeFrpMonitor(),
+            FRP_OPENFRP: FakeFrpMonitor(),
+        }
         self.client_reached: dict = {}
 
     def network(self) -> RouterNetworkConfig:
@@ -117,6 +133,7 @@ def box(monkeypatch, tmp_path):
     """A gateway on NetBird, with the converge step replaced."""
     monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
     monkeypatch.setattr(overlay_router, "ssh_path", lambda: "/usr/bin/ssh")
+    monkeypatch.setattr(overlay_router, "is_frpc_present", lambda: True)
     runtime = FakeRuntime(
         RouterNetworkConfig.from_dict(
             {"mode": "router", "overlays": [{"provider": OVERLAY_NETBIRD}]}
@@ -156,18 +173,20 @@ def kinds_of(payload: dict) -> dict:
 # --- Reading ----------------------------------------------------------------
 
 
-def test_the_view_is_direct_the_relay_then_one_switch_per_engine(box):
-    """iffi's order for the Access page's cards: Direct, Relay, NetBird,
-    EasyTier."""
+def test_the_view_is_the_engines_the_relay_direct_then_the_frp_vendors(box):
+    """The order of the Access page's cards: NetBird, EasyTier, SSH relay,
+    Direct, SakuraFrp, OpenFrp."""
     client, _ = box
 
     payload = client.get("/api/hub/overlay").json()
 
     assert [entry["key"] for entry in payload["kinds"]] == [
-        OVERLAY_DIRECT,
-        OVERLAY_RELAY,
         OVERLAY_NETBIRD,
         OVERLAY_EASYTIER,
+        OVERLAY_RELAY,
+        OVERLAY_DIRECT,
+        FRP_SAKURAFRP,
+        FRP_OPENFRP,
     ]
     kinds = kinds_of(payload)
     assert kinds[OVERLAY_NETBIRD]["is_enabled"] is True
@@ -201,26 +220,100 @@ def test_the_relay_row_is_off_and_installed_where_ssh_is(box):
 
     relay = kinds_of(client.get("/api/hub/overlay").json())[OVERLAY_RELAY]
 
-    assert relay["title"] == "SSH Relay"
+    assert relay["title"] == "SSH relay"
     assert relay["is_enabled"] is False
     assert relay["is_installed"] is True
     assert relay["is_active"] is False
     assert relay["client_count"] == 0
 
 
-def test_a_connected_relay_is_active_and_counts_the_clients_from_loopback(box):
+def test_a_connected_relay_is_active_and_counts_the_clients_through_it(box):
+    """A client through a frp node arrives from loopback too; the relay
+    counts by ``reached_through`` alone."""
     client, runtime = box
     write_relay(OverlayRelayConfig(is_enabled=True, host="vps", account="r"))
     runtime.relay_monitor.state = "connected"
     runtime.client_sessions = FakeSessions(
-        ["127.0.0.1", "127.0.0.1", "192.168.100.20", "::1"]
+        ["127.0.0.1", "127.0.0.1", "192.168.100.20", "::1", "127.0.0.1"]
     )
+    runtime.client_reached = {
+        "client-0": "ssh_relay",
+        "client-1": "ssh_relay",
+        "client-2": "lan",
+        "client-3": "ssh_relay",
+        "client-4": "sakurafrp",
+        "client-gone": "ssh_relay",
+    }
 
     relay = kinds_of(client.get("/api/hub/overlay").json())[OVERLAY_RELAY]
 
     assert relay["is_enabled"] is True
     assert relay["is_active"] is True
     assert relay["client_count"] == 3
+
+
+def test_the_frp_rows_are_off_and_installed_where_frpc_is(box, monkeypatch):
+    client, _ = box
+
+    kinds = kinds_of(client.get("/api/hub/overlay").json())
+    monkeypatch.setattr(overlay_router, "is_frpc_present", lambda: False)
+    missing = kinds_of(client.get("/api/hub/overlay").json())
+
+    assert (kinds[FRP_SAKURAFRP]["title"], kinds[FRP_OPENFRP]["title"]) == (
+        "SakuraFrp",
+        "OpenFrp",
+    )
+    assert kinds[FRP_SAKURAFRP]["is_enabled"] is False
+    assert kinds[FRP_SAKURAFRP]["is_installed"] is True
+    assert missing[FRP_OPENFRP]["is_installed"] is False
+
+
+def test_a_connected_frp_vendor_is_active_and_counts_its_own_clients(box):
+    client, runtime = box
+    write_frp(FrpConfig(vendor=FRP_OPENFRP, is_enabled=True))
+    runtime.frp_monitors[FRP_OPENFRP].state = "connected"
+    runtime.client_sessions = FakeSessions(["127.0.0.1", "127.0.0.1", "127.0.0.1"])
+    runtime.client_reached = {
+        "client-0": "openfrp",
+        "client-1": "sakurafrp",
+        "client-2": "openfrp",
+    }
+
+    kinds = kinds_of(client.get("/api/hub/overlay").json())
+
+    assert kinds[FRP_OPENFRP]["is_active"] is True
+    assert kinds[FRP_OPENFRP]["client_count"] == 2
+    assert kinds[FRP_SAKURAFRP]["client_count"] == 0
+
+
+def test_turning_a_frp_vendor_on_writes_its_file_and_converges(box):
+    client, runtime = box
+
+    payload = client.post(
+        "/api/hub/overlay/set", json={"sakurafrp": {"is_enabled": True}}
+    ).json()
+
+    assert kinds_of(payload)[FRP_SAKURAFRP]["is_enabled"] is True
+    assert read_frp(FRP_SAKURAFRP).is_enabled is True
+    assert read_frp(FRP_OPENFRP).is_enabled is False
+    assert runtime.converged == [[OVERLAY_NETBIRD]]
+
+
+def test_turning_a_frp_vendor_on_without_frpc_is_refused(box, monkeypatch):
+    client, runtime = box
+    monkeypatch.setattr(overlay_router, "is_frpc_present", lambda: False)
+
+    response = client.post(
+        "/api/hub/overlay/set", json={"openfrp": {"is_enabled": True}}
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == {
+        "code": "frpc_missing",
+        "params": {"title": "OpenFrp"},
+    }
+    assert read_frp(FRP_OPENFRP).is_enabled is False
+    assert runtime.converged == []
 
 
 def test_the_relay_row_says_when_the_machine_has_no_ssh(box, monkeypatch):

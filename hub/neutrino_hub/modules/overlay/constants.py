@@ -96,7 +96,7 @@ OVERLAY_DIRECT_HOST_MAX = 253
 # It is a way in beside the engines, not an engine, so it is not a row of the
 # engine table.
 OVERLAY_RELAY = "relay"
-OVERLAY_RELAY_TITLE = "SSH Relay"
+OVERLAY_RELAY_TITLE = "SSH relay"
 OVERLAY_RELAY_CONFIG_NAME = "overlay/relay.json"
 OVERLAY_RELAY_DEFAULT_SSH_PORT = 22
 OVERLAY_RELAY_DEFAULT_PUBLIC_PORT = 8443

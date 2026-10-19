@@ -42,8 +42,9 @@ from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.clients.services import device_owners
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.services.collector import catalog_entries
+from neutrino_hub.modules.frp.constants import FRP_OPENFRP, FRP_SAKURAFRP
 from neutrino_hub.modules.services.constants import (
-    SERVICES_REACHED_RELAY,
+    SERVICES_REACHED_SSH_RELAY,
     SERVICES_SOURCE_DECLARED,
 )
 from neutrino_hub.system.machine import machine_id
@@ -55,7 +56,7 @@ from neutrino_hub.modules.services.host_scope import (
 )
 from neutrino_hub.utils.peer_address import unmapped
 from neutrino_hub.web import channel_overlay
-from neutrino_hub.web.channel_addresses import channel_urls, relay_url
+from neutrino_hub.web.channel_addresses import channel_urls, frp_url, relay_url
 from neutrino_hub.web.identity import hub_name
 from neutrino_hub.web.shell_bridge import client_owner, device_name, sessions_for
 
@@ -88,10 +89,10 @@ def client_state(runtime, client_id: str) -> dict:
             whether it may open the hub's panel.
 
     Returns:
-        ``{hash, is_disabled, services, urls, relay_url, overlays,
-        terminals, is_panel_allowed, reached_through}``, ``relay_url`` being
-        the member of ``urls`` that is the relay's address, empty while the
-        relay is off.
+        ``{hash, is_disabled, services, urls, ssh_relay_url, sakurafrp_url,
+        openfrp_url, overlays, terminals, is_panel_allowed,
+        reached_through}``, each of the three server addresses being the
+        member of ``urls`` its way in adds, empty while it adds none.
     """
     registry = ClientRegistry()
     client = registry.get(client_id)
@@ -142,12 +143,16 @@ def client_state(runtime, client_id: str) -> dict:
             ]
         is_panel_allowed = CLIENT_PERMISSION_PANEL in kinds
     urls = channel_urls(runtime)
-    relay = relay_url()
+    servers = {
+        "ssh_relay_url": relay_url(),
+        "sakurafrp_url": frp_url(FRP_SAKURAFRP),
+        "openfrp_url": frp_url(FRP_OPENFRP),
+    }
     body = {
         "is_disabled": is_disabled,
         "services": services,
         "urls": urls,
-        "relay_url": relay if relay in urls else "",
+        **{key: url if url in urls else "" for key, url in servers.items()},
         "overlays": overlays,
         "terminals": terminals,
         "is_panel_allowed": is_panel_allowed,
@@ -158,7 +163,12 @@ def client_state(runtime, client_id: str) -> dict:
 
 
 def note_client_scope(
-    runtime, client_id: str, *, peer_host: str, reached_host: str
+    runtime,
+    client_id: str,
+    *,
+    peer_host: str,
+    reached_host: str,
+    listener_port: int = 0,
 ) -> HostScope:
     """Settle and keep the scope a client's socket arrived from, and the
     way it reached the hub.
@@ -168,6 +178,7 @@ def note_client_scope(
         client_id: The client.
         peer_host: Where its socket comes from.
         reached_host: The address it connected to.
+        listener_port: The hub's port the socket arrived on; 0 when unknown.
 
     Returns:
         The scope.
@@ -179,6 +190,7 @@ def note_client_scope(
         peer_host,
         runtime.overlay_networks(is_ipv6=is_ipv6),
         runtime.interface_networks(is_ipv6=is_ipv6),
+        listener_port=listener_port,
     )
     return scope
 
@@ -258,7 +270,7 @@ def _client_scope(runtime, peer_host: str, reached_host: str, served=None):
         ``link`` with the hub's name for a peer on loopback; else
         :func:`scope_of`'s answer.
     """
-    if reached_through(peer_host, {}) == SERVICES_REACHED_RELAY:
+    if reached_through(peer_host, {}) == SERVICES_REACHED_SSH_RELAY:
         return link_scope(_hub_name())
     return scope_of(
         peer_host, reached_host, runtime.host_scopes() if served is None else served

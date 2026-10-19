@@ -187,6 +187,22 @@ async def serve_update_only_agent(
         runtime.events.publish(WEB_EVENT_DEVICES)
 
 
+def listener_port(websocket: WebSocket) -> int:
+    """The hub's port a socket arrived on.
+
+    Args:
+        websocket: The socket.
+
+    Returns:
+        The port of the listening socket that took it; 0 when unknown.
+    """
+    server = websocket.scope.get("server") or ()
+    try:
+        return int(server[1])
+    except (IndexError, TypeError, ValueError):
+        return 0
+
+
 async def serve_client(
     websocket: WebSocket, runtime, session: ChannelSession, client, welcome: dict
 ) -> None:
@@ -223,6 +239,7 @@ async def serve_client(
             client.id,
             peer_host=session.address,
             reached_host=websocket.url.hostname or "",
+            listener_port=listener_port(websocket),
         )
         await session.send_json(welcome)
         await asyncio.to_thread(

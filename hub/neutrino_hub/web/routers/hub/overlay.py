@@ -11,6 +11,14 @@ import subprocess
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from neutrino_hub.modules.frp.config import FrpConfig, read_frp, write_frp
+from neutrino_hub.modules.frp.constants import (
+    FRP_CODE_FRPC_MISSING,
+    FRP_STATE_CONNECTED,
+    FRP_TITLES,
+    FRP_VENDORS,
+)
+from neutrino_hub.modules.frp.ops import is_frpc_present
 from neutrino_hub.modules.overlay.config import enabled_providers, set_enabled
 from neutrino_hub.modules.overlay.constants import (
     OVERLAY_DIRECT,
@@ -34,7 +42,10 @@ from neutrino_hub.modules.overlay.relay_config import (
 from neutrino_hub.modules.overlay.relay_ops import ssh_path
 from neutrino_hub.modules.overlay.route_check import find_subnet_overlap
 from neutrino_hub.modules.registry import MODULE_SPECS
-from neutrino_hub.modules.services.constants import SERVICES_REACHED_DIRECT
+from neutrino_hub.modules.services.constants import (
+    SERVICES_REACHED_DIRECT,
+    SERVICES_REACHED_SSH_RELAY,
+)
 from neutrino_hub.modules.router.link_status import device_addresses
 from neutrino_hub.system.machine import ANY_ARCHITECTURE, machine_architecture
 from neutrino_hub.utils.subprocess_run import command_failure_text
@@ -82,9 +93,10 @@ async def update_choice(
     Raises:
         HTTPException: 400 for an engine this hub does not run yet, that has
             no build for this machine, or whose network overlaps one this box
-            is already on, and ``relay_ssh_missing`` for the relay on a
-            machine with no OpenSSH client; 502 when the converge step that
-            follows fails.
+            is already on, ``relay_ssh_missing`` for the relay on a machine
+            with no OpenSSH client, and ``frpc_missing {title}`` for a frp
+            vendor where the carried frpc is absent; 502 when the converge
+            step that follows fails.
     """
     network = runtime.network()
     is_changed = False
@@ -103,6 +115,7 @@ async def update_choice(
         _refuse_overlap(network)
     relay = _relay_switched(request)
     direct = _direct_switched(request)
+    frp = _frp_switched(request)
     # Written before the engines are touched: what the box is a member of is
     # the stored fact, and a daemon started against a configuration that was
     # never written is a machine on an overlay nothing records.
@@ -112,6 +125,8 @@ async def update_choice(
         write_relay(relay)
     if direct is not None:
         write_direct(direct)
+    for config in frp:
+        write_frp(config)
     try:
         await runtime.converge_network()
     except (
@@ -206,6 +221,35 @@ def _direct_switched(request: OverlayChoiceRequest) -> "OverlayDirectConfig | No
     return direct
 
 
+def _frp_switched(request: OverlayChoiceRequest) -> list:
+    """Each frp vendor's stored settings with the request's switch, where it
+    moves them.
+
+    Args:
+        request: The switches.
+
+    Returns:
+        The :class:`FrpConfig` of each vendor to store.
+
+    Raises:
+        HTTPException: 400 ``frpc_missing {title}`` when one is turned on and
+            the carried frpc is absent.
+    """
+    switched = []
+    for vendor in FRP_VENDORS:
+        switch = getattr(request, vendor)
+        if switch is None:
+            continue
+        config = read_frp(vendor)
+        if switch.is_enabled == config.is_enabled:
+            continue
+        if switch.is_enabled and not is_frpc_present():
+            raise _bad_request(FRP_CODE_FRPC_MISSING, title=FRP_TITLES[vendor])
+        config.is_enabled = switch.is_enabled
+        switched.append(config)
+    return switched
+
+
 def stored_direct() -> OverlayDirectConfig:
     """The stored Direct settings; a file that does not read is Direct off."""
     try:
@@ -235,14 +279,14 @@ def _view(runtime: PanelRuntime) -> OverlayChoiceView:
         runtime: The shared runtime.
 
     Returns:
-        Direct's row, the relay's, then a row per overlay engine in the engine
-        table's order.
+        A row per overlay engine in the engine table's order, then the
+        relay's, Direct's, SakuraFrp's and OpenFrp's, the order of the cards.
     """
     network = runtime.network()
     enabled = {overlay.provider for overlay in network.enabled_overlays}
     addresses = device_addresses()
     peers = [session.address for session in runtime.client_sessions.sessions()]
-    kinds = [_direct_kind(runtime), _relay_kind(runtime, peers)]
+    kinds = []
     for key, engine in OVERLAY_ENGINES.items():
         is_installed, is_active = _unit_status(runtime, key)
         kinds.append(
@@ -259,6 +303,11 @@ def _view(runtime: PanelRuntime) -> OverlayChoiceView:
                 ),
             )
         )
+    kinds += [
+        _relay_kind(runtime),
+        _direct_kind(runtime),
+        *(_frp_kind(runtime, vendor) for vendor in FRP_VENDORS),
+    ]
     return OverlayChoiceView(
         kinds=kinds,
         route_conflicts=[
@@ -281,7 +330,7 @@ def _view(runtime: PanelRuntime) -> OverlayChoiceView:
 
 
 def _direct_kind(runtime: PanelRuntime) -> OverlayKindView:
-    """Direct's row, the first.
+    """Direct's row, after the relay's.
 
     Args:
         runtime: The shared runtime, for how each client reached the hub.
@@ -291,7 +340,6 @@ def _direct_kind(runtime: PanelRuntime) -> OverlayKindView:
         online clients that reached the hub from outside its networks.
     """
     direct = stored_direct()
-    online = set(runtime.client_sessions.keys())
     return OverlayKindView(
         key=OVERLAY_DIRECT,
         title=OVERLAY_DIRECT_TITLE,
@@ -301,28 +349,21 @@ def _direct_kind(runtime: PanelRuntime) -> OverlayKindView:
         is_installed=True,
         is_active=direct.is_enabled,
         client_count=(
-            sum(
-                1
-                for key, reached in runtime.client_reached.items()
-                if reached == SERVICES_REACHED_DIRECT and key in online
-            )
-            if direct.is_enabled
-            else 0
+            _reached_count(runtime, SERVICES_REACHED_DIRECT) if direct.is_enabled else 0
         ),
     )
 
 
-def _relay_kind(runtime: PanelRuntime, peers: list) -> OverlayKindView:
-    """The relay's row, after Direct's.
+def _relay_kind(runtime: PanelRuntime) -> OverlayKindView:
+    """The relay's row, after the engines'.
 
     Args:
         runtime: The shared runtime, for where the relay stands.
-        peers: Where each online client's socket comes from.
 
     Returns:
         The row: installed when the system has an OpenSSH client, active
-        while it is ``connected``, and counting the clients whose socket
-        comes from loopback.
+        while it is ``connected``, and counting the online clients whose
+        ``reached_through`` is ``ssh_relay``.
     """
     relay = _stored_relay()
     return OverlayKindView(
@@ -335,17 +376,54 @@ def _relay_kind(runtime: PanelRuntime, peers: list) -> OverlayKindView:
         is_active=runtime.relay_monitor.view()["state"]
         == OVERLAY_RELAY_STATE_CONNECTED,
         client_count=(
-            sum(1 for peer in peers if _is_loopback(peer)) if relay.is_enabled else 0
+            _reached_count(runtime, SERVICES_REACHED_SSH_RELAY)
+            if relay.is_enabled
+            else 0
         ),
     )
 
 
-def _is_loopback(peer: str) -> bool:
-    """Whether a socket's address is a loopback one."""
-    try:
-        return ipaddress.ip_address(peer).is_loopback
-    except ValueError:
-        return False
+def _frp_kind(runtime: PanelRuntime, vendor: str) -> OverlayKindView:
+    """A frp vendor's row, after Direct's.
+
+    Args:
+        runtime: The shared runtime, for where the vendor stands.
+        vendor: ``sakurafrp`` or ``openfrp``.
+
+    Returns:
+        The row: installed when the carried frpc is present, active while
+        it is ``connected``, and counting the online clients whose
+        ``reached_through`` is the vendor's key.
+    """
+    config: FrpConfig = read_frp(vendor)
+    return OverlayKindView(
+        key=vendor,
+        title=FRP_TITLES[vendor],
+        is_enabled=config.is_enabled,
+        is_integrated=True,
+        is_supported=True,
+        is_installed=is_frpc_present(),
+        is_active=runtime.frp_monitors[vendor].view()["state"] == FRP_STATE_CONNECTED,
+        client_count=_reached_count(runtime, vendor) if config.is_enabled else 0,
+    )
+
+
+def _reached_count(runtime: PanelRuntime, way: str) -> int:
+    """How many online clients reached the hub one way.
+
+    Args:
+        runtime: The shared runtime, for how each client reached the hub.
+        way: A ``reached_through`` value.
+
+    Returns:
+        The online clients whose ``reached_through`` is that way.
+    """
+    online = set(runtime.client_sessions.keys())
+    return sum(
+        1
+        for key, reached in runtime.client_reached.items()
+        if reached == way and key in online
+    )
 
 
 def _client_count(provider: str, addresses: dict, peers: list) -> int:

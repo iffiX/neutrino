@@ -1,0 +1,22 @@
+{
+  "_comment": "SakuraFrp, a way in: frpc on this box holds a connection to a SakuraFrp node and forwards each connection made to the tunnel's public port to the agent port. The Access page writes this file.",
+
+  "_comment_is_enabled": "Whether the way in is on, written by the Access page's switch.",
+  "is_enabled": false,
+
+  "_comment_credential": "The account's access key, sealed under the vault's data key; empty for none. The Access page stores it once SakuraFrp accepts it.",
+  "credential": {},
+
+  "_comment_tunnel_id": "SakuraFrp's id of the picked tunnel, empty for none.",
+  "tunnel_id": "",
+
+  "_comment_node_name": "The picked tunnel's node name, as the apply read it.",
+  "node_name": "",
+
+  "_comment_local_port": "The picked tunnel's local port at SakuraFrp, as the apply read it; the connection port when the tunnel was picked.",
+  "local_port": 0,
+
+  "_comment_public_host": "The tunnel's public address: the node's host and the tunnel's remote port. Clients are given it after Direct's public address.",
+  "public_host": "",
+  "public_port": 0
+}

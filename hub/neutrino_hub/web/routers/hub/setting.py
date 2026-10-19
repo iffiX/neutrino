@@ -135,7 +135,7 @@ from neutrino_hub.modules.easytier.constants import (
     EASYTIER_SOURCE_URLS,
     EASYTIER_VERSION,
 )
-from neutrino_hub.modules.frp.constants import FRP_VERSION
+from neutrino_hub.modules.frp.constants import FRP_LOOPBACK_PORTS, FRP_VERSION
 from neutrino_hub.modules.netbird.constants import NETBIRD_VERSION
 
 LOGGER = logging.getLogger(__name__)
@@ -254,8 +254,9 @@ def update_settings(
     Raises:
         HTTPException: 400 with ``port_out_of_range`` when a port is not one
             a listener may take, 400 with ``port_already_in_use`` when two of
-            the three ports are one or a new port is one another program on
-            the box listens on, 400 with ``language_unknown`` for a language
+            the three ports are one, a port is one of the two frp loopback
+            ports, or a new port is one another program on the box listens
+            on, 400 with ``language_unknown`` for a language
             this panel does not ship, 400 with ``theme_unknown`` for a theme
             it does not have, and 400 with ``hub_name_required`` for a blank
             name.
@@ -278,6 +279,9 @@ def update_settings(
                 maximum=WEB_PORT_MAX,
                 value=port,
             )
+    for port in (request.listen_port, https_port, agent_port):
+        if port in FRP_LOOPBACK_PORTS.values():
+            raise _coded_bad_request(SETTINGS_ERROR_PORT_TAKEN, value=port)
     if https_port == request.listen_port:
         raise _coded_bad_request(SETTINGS_ERROR_PORT_TAKEN, value=https_port)
     if agent_port in (request.listen_port, https_port):

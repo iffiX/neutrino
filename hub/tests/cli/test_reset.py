@@ -273,7 +273,8 @@ def test_what_is_already_stopped_is_not_stopped_again(monkeypatch, box):
 def test_the_router_unit_stops_before_the_network_is_handed_back(monkeypatch, box):
     """A running router unit applies the old configuration on the next link
     event, taking back what the reset hands back; the panel's dnsmasq restart
-    starts it again, so the panel goes with it."""
+    starts it again, so the panel goes with it, and both frpc stop before
+    their files go with the state root."""
     order: list = []
     monkeypatch.setattr(
         reset, "stop", lambda names: order.append(("stop", tuple(names))) or 0
@@ -284,7 +285,10 @@ def test_the_router_unit_stops_before_the_network_is_handed_back(monkeypatch, bo
 
     reset._reset_all()
 
-    assert order == [("stop", ("web", "router")), ("hand_back",)]
+    assert order == [
+        ("stop", ("web", "sakurafrp", "openfrp", "router")),
+        ("hand_back",),
+    ]
 
 
 def test_reset_all_forgets_the_key_sealed_under_the_data_key_it_clears(box):

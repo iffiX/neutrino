@@ -3,6 +3,8 @@
     sudo nhub stop                              # everything it started
     sudo nhub stop --only-web                   # one of them
     sudo nhub stop --only-relay
+    sudo nhub stop --only-sakurafrp
+    sudo nhub stop --only-openfrp
     sudo nhub stop --only-xray                  # where the tree carries the proxy
     sudo nhub stop --only-cliproxyapi
     sudo nhub stop --only-dnsmasq
@@ -23,9 +25,9 @@ running, whatever the panel is doing.
 What it leaves alone is the optional modules and the overlay engines. Samba
 serves shares whether or not this box routes anything, and an overlay is how
 the box is reached from outside, so a plain ``nhub stop`` is the hub going
-quiet rather than the machine going down. The relay is stopped with the
-panel: it publishes the panel's port on a public server, and a hub that has
-gone quiet publishes nothing.
+quiet rather than the machine going down. The relay and the two frpc are
+stopped with the panel: each publishes the agent port on a public server,
+and a hub that has gone quiet publishes nothing.
 
 Nothing is disabled, so everything comes back at the next boot. Removing the
 hub is the package manager's business, and undoing a setup is ``nhub reset``.
@@ -55,11 +57,13 @@ from neutrino_hub.utils.subprocess_run import command_failure_text
 # The panel first because it is what a person is holding: stopping it while
 # the proxy underneath is already gone means a page that hangs rather than one
 # that closes. The routing state last, because it is what the rest ran on.
-# The relay right after the panel whose port it publishes. The proxy core's
-# unit is the proxy's, from the edition table.
+# The relay and the two frpc right after the panel whose port they publish.
+# The proxy core's unit is the proxy's, from the edition table.
 STOP_ORDER = (
     "web",
     "relay",
+    "sakurafrp",
+    "openfrp",
     "cliproxyapi",
     "dnsmasq",
     *edition.hooks("services"),
