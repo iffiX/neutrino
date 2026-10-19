@@ -776,6 +776,7 @@ def test_the_hub_credits_every_component_it_carries(monkeypatch):
     and the geodata it ships; nothing a module installs on a machine."""
     from neutrino_hub.modules.cliproxyapi.constants import CLIPROXYAPI_VERSION
     from neutrino_hub.modules.easytier.constants import EASYTIER_VERSION
+    from neutrino_hub.modules.frp.constants import FRP_VERSION
     from neutrino_hub.modules.netbird.constants import NETBIRD_VERSION
     from neutrino_hub.modules.xray.constants import XRAY_VERSION
 
@@ -787,6 +788,7 @@ def test_the_hub_credits_every_component_it_carries(monkeypatch):
         "CLIProxyAPI",
         "NetBird",
         "EasyTier",
+        "frp",
         "Xray-core",
         "v2fly geoip",
         "v2fly domain-list-community",
@@ -798,6 +800,11 @@ def test_the_hub_credits_every_component_it_carries(monkeypatch):
     assert by_name["NetBird"].license == "BSD-3-Clause"
     assert by_name["EasyTier"].version == EASYTIER_VERSION
     assert by_name["EasyTier"].license == "LGPL-3.0"
+    assert by_name["frp"].version == FRP_VERSION
+    assert by_name["frp"].license == "Apache-2.0"
+    assert by_name["frp"].corresponding_source == (
+        f"https://github.com/fatedier/frp/tree/v{FRP_VERSION}"
+    )
     assert by_name["v2fly geoip"].corresponding_source.endswith(
         f"/tree/{by_name['v2fly geoip'].version}"
     )
@@ -832,7 +839,7 @@ def test_a_tree_without_the_proxy_credits_netbird_and_no_proxy(monkeypatch):
 
     names = [credit.name for credit in settings_router._acknowledgements()]
 
-    assert names == ["CLIProxyAPI", "NetBird", "EasyTier", "Wintun"]
+    assert names == ["CLIProxyAPI", "NetBird", "EasyTier", "frp", "Wintun"]
 
 
 def test_no_module_a_machine_installs_is_credited(monkeypatch):

@@ -16,6 +16,7 @@ import pytest
 from types import SimpleNamespace
 
 from neutrino_hub.cli import wizard
+from neutrino_hub.modules.frp.constants import FRP_VERSION
 from neutrino_hub.utils.passwords import (
     PASSWORDS_MASTER_RULES,
     PASSWORDS_PANEL_RULES,
@@ -184,6 +185,7 @@ def test_the_linux_hub_check_reads_the_address_from_nhub_open(
         _fake_container_run(
             "\n  Neutrino Hub installed. Set it up in a browser at:\n\n"
             "agent cache: neutrino-agent-0.5.0-1.x86_64.rpm\n"
+            f"frpc: {FRP_VERSION}\n"
             "nhub 0.5.0\nhttp://10.0.0.2:8080/?token=abc\n",
             calls,
         ),
@@ -194,7 +196,58 @@ def test_the_linux_hub_check_reads_the_address_from_nhub_open(
     script = calls[0][-1]
     assert script.startswith("dnf -y install ")
     assert check.HUB_AGENT_CACHE_DIR in script
-    assert script.endswith(" && nhub --version && nhub open --print")
+    assert (
+        ' && frpc_version=$(/opt/neutrino/hub/bin/frpc --version) && echo "frpc: '
+        '$frpc_version" && nhub --version && nhub open --print'
+    ) in script
+
+
+def test_the_linux_hub_check_fails_when_its_frpc_is_not_the_pinned_one(
+    check, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(
+        check.shutil,
+        "which",
+        lambda name: "/usr/bin/docker" if name == "docker" else None,
+    )
+    monkeypatch.setattr(
+        check.subprocess,
+        "run",
+        _fake_container_run(
+            "  Neutrino Hub installed.\n"
+            "agent cache: neutrino-agent_0.5.0_amd64.deb\n"
+            "frpc: 0.52.0\n"
+            "nhub 0.5.0\nhttp://10.0.0.2:8080/?token=abc\n",
+            [],
+        ),
+    )
+    package = tmp_path / "neutrino-hub_0.5.0_amd64.deb"
+    package.write_bytes(b"deb")
+
+    with pytest.raises(SystemExit, match=f"frpc answers 0.52.0, not {FRP_VERSION}"):
+        check.check_linux(package)
+
+
+def test_the_carried_frpc_is_where_each_system_s_package_puts_it(check):
+    """The paths the packages stage frpc at, under each system's static root."""
+    from neutrino_hub.platforms.constants import PLATFORM_ROOT_STATIC, PLATFORM_ROOTS
+
+    for system, path in check.HUB_FRPC_PATHS.items():
+        root = PLATFORM_ROOTS[system][PLATFORM_ROOT_STATIC].replace("\\", "/")
+        name = "frpc.exe" if system == "windows" else "frpc"
+        assert path.replace("\\", "/").endswith(f"{root.split(':')[-1]}/bin/{name}")
+
+
+@pytest.mark.parametrize("answer", ["", "0.52.0", "frpc version 0.71.1"])
+def test_an_frpc_that_does_not_answer_the_pin_fails_the_check(check, answer):
+    with pytest.raises(SystemExit, match="the hub's frpc answers"):
+        check.check_frpc(answer)
+
+
+def test_an_frpc_answering_the_pin_passes(check, capsys):
+    check.check_frpc(f"{FRP_VERSION}\n")
+
+    assert capsys.readouterr().out == f"frpc {FRP_VERSION}\n"
 
 
 @pytest.mark.parametrize(
@@ -225,6 +278,7 @@ def test_the_linux_hub_check_fails_when_the_cache_holds_another_platform(
             "  Neutrino Hub installed.\n"
             "agent cache: neutrino-agent_0.5.0_amd64.deb\n"
             "agent cache: neutrino-agent-0.5.0-1.x86_64.rpm\n"
+            f"frpc: {FRP_VERSION}\n"
             "nhub 0.5.0\nhttp://10.0.0.2:8080/?token=abc\n",
             calls,
         ),
@@ -269,6 +323,7 @@ def test_the_linux_hub_check_reads_dnf_scriptlet_words_from_its_error_stream(
         "run",
         _fake_container_run(
             "agent cache: neutrino-agent-0.5.0-1.x86_64.rpm\n"
+            f"frpc: {FRP_VERSION}\n"
             "nhub 0.5.0\nhttp://10.0.0.2:8080/?token=abc\n",
             calls,
             stderr=">>> Scriptlet output:\n>>>   Neutrino Hub installed. Set it up in a browser at:\n",

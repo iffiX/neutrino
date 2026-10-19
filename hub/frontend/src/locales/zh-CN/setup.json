@@ -83,6 +83,7 @@
   "ui.setup.step_users_and_dirs": "创建服务账户和目录",
   "ui.setup.step_python_env": "准备 Python 环境",
   "ui.setup.step_xray_core": "安装 xray-core 和地理数据",
+  "ui.setup.step_frpc": "安装 frpc",
   "ui.setup.step_config_files": "准备配置",
   "ui.setup.step_agent_tls": "生成被控端通道证书",
   "ui.setup.step_systemd_units": "安装系统服务",

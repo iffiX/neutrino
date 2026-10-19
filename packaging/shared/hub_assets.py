@@ -1,7 +1,7 @@
 """The programs and databases a hub package carries beside the hub.
 
-xray, cli-proxy-api, netbird, easytier-core and easytier-cli, and on macOS
-and Windows tun2socks, each taken out of its own upstream release for one
+xray, cli-proxy-api, netbird, easytier-core, easytier-cli and frpc, and on
+macOS and Windows tun2socks, each taken out of its own upstream release for one
 system and machine and checked against the hash the hub's module states in
 its ``<MODULE>_ASSETS`` table, and the v2fly geodata. The Linux packages put
 the programs under ``/opt/neutrino/hub/bin``, the macOS and Windows packages
@@ -45,6 +45,7 @@ HUB_ASSET_PROGRAMS = {
         "EASYTIER",
         ("easytier-core", "easytier-cli"),
     ),
+    "frp": ("neutrino_hub.modules.frp.constants", "FRP", ("frpc",)),
     "tun2socks": ("shared.constants", "PACKAGING_TUN2SOCKS", ("tun2socks",)),
 }
 # The programs a system's package carries only there; every other program
@@ -69,6 +70,7 @@ HUB_ASSET_LICENSES = {
     "cliproxyapi": "cliproxyapi.txt",
     "netbird": "netbird.txt",
     "easytier": "easytier.txt",
+    "frp": "frp.txt",
     "tun2socks": PACKAGING_TUN2SOCKS_LICENSE,
 }
 HUB_ASSET_WINDOWS_EXTRA_LICENSES = {"wintun.dll": "wintun.txt"}

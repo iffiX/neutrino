@@ -358,6 +358,7 @@ def _expected_licenses(os_name, *, is_agent_carried):
     names = {
         "cliproxyapi.txt",
         "easytier.txt",
+        "frp.txt",
         "netbird.txt",
         "xterm.txt",
         "qrcode_generator.txt",

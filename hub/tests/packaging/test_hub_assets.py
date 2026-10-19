@@ -46,6 +46,15 @@ def _archive(url):
         return _zip(names) if url.endswith(".zip") else _tarball(names)
     if "netbird" in url:
         return _tarball({f"netbird{exe}": b"client", "LICENSE": b"l"})
+    if "fatedier/frp" in url:
+        top = url.rsplit("/", 1)[-1].removesuffix(".zip").removesuffix(".tar.gz")
+        names = {
+            f"{top}/frpc{exe}": b"frp client",
+            f"{top}/frps{exe}": b"frp server",
+            f"{top}/frpc.toml": b"t",
+            f"{top}/LICENSE": b"l",
+        }
+        return _zip(names) if url.endswith(".zip") else _tarball(names)
     if "tun2socks" in url:
         member = url.rsplit("/", 1)[-1].removesuffix(".zip")
         return _zip({f"{member}{exe}": b"tunnel", "README.md": b"r"})
@@ -153,7 +162,7 @@ def test_the_linux_rows_are_the_files_the_linux_constants_name():
 def test_every_asset_that_names_a_version_names_its_own():
     """xray's and tun2socks's assets name no version; every other release
     names its own."""
-    for program in ("cliproxyapi", "netbird", "easytier"):
+    for program in ("cliproxyapi", "netbird", "easytier", "frp"):
         module, prefix, _files = hub_assets.HUB_ASSET_PROGRAMS[program]
         version, assets = hub_assets._runtime(
             module, f"{prefix}_VERSION", f"{prefix}_ASSETS"
@@ -170,19 +179,23 @@ def test_a_system_nothing_is_pinned_for_stops_the_build():
 
 
 @pytest.mark.feature("proxy")
-def test_linux_takes_the_five_programs_and_nothing_beside_them(tmp_path, fetched):
+def test_linux_takes_the_six_programs_and_nothing_beside_them(tmp_path, fetched):
     written = hub_assets.stage_programs(tmp_path, "linux", "amd64")
 
     assert sorted(path.name for path in written) == [
         "cli-proxy-api",
         "easytier-cli",
         "easytier-core",
+        "frpc",
         "netbird",
         "xray",
     ]
     assert (tmp_path / "easytier-core").read_bytes() == b"engine"
+    assert (tmp_path / "frpc").read_bytes() == b"frp client"
     assert (tmp_path / "xray").stat().st_mode & 0o777 == 0o755
     assert not (tmp_path / "easytier-web").exists()
+    assert not (tmp_path / "frps").exists()
+    assert not (tmp_path / "frpc.toml").exists()
     assert not (tmp_path / "geoip.dat").exists()
     assert any("easytier-linux-x86_64" in url for url in fetched)
 
@@ -200,6 +213,8 @@ def test_an_intel_mac_takes_the_x86_64_builds(tmp_path, fetched):
         "v0.78.1/netbird_0.78.1_darwin_amd64.tar.gz",
         "https://github.com/EasyTier/EasyTier/releases/download/"
         "v2.6.4/easytier-macos-x86_64-v2.6.4.zip",
+        "https://github.com/fatedier/frp/releases/download/"
+        "v0.71.1/frp_0.71.1_darwin_amd64.tar.gz",
         "https://github.com/xjasonlyu/tun2socks/releases/download/"
         "v2.7.0/tun2socks-darwin-amd64.zip",
     ]
@@ -257,9 +272,12 @@ def test_windows_takes_the_executables_and_easytiers_tun_driver(tmp_path, fetche
         "easytier-core.exe",
         "easytier-cli.exe",
         "wintun.dll",
+        "frpc.exe",
         "tun2socks.exe",
     ]
     assert (tmp_path / "wintun.dll").read_bytes() == b"tun"
+    assert (tmp_path / "frpc.exe").read_bytes() == b"frp client"
+    assert not (tmp_path / "frps.exe").exists()
     assert (tmp_path / "tun2socks.exe").read_bytes() == b"tunnel"
     assert not (tmp_path / "Packet.dll").exists()
 
@@ -346,7 +364,7 @@ def test_fetch_tries_again_after_a_network_error_and_gives_up_after_the_last(
 def mainland_tree(tmp_path, monkeypatch):
     """A hub tree holding the modules the mainland edition keeps, and not
     xray, NetBird or the proxy TUN."""
-    for module in ("cliproxyapi", "easytier"):
+    for module in ("cliproxyapi", "easytier", "frp"):
         directory = tmp_path / "hub" / "neutrino_hub" / "modules" / module
         directory.mkdir(parents=True)
         (directory / "constants.py").write_text("")
@@ -363,7 +381,7 @@ def test_a_program_whose_module_the_tree_lacks_is_not_carried(
 
     names = sorted(path.name.removesuffix(".exe") for path in written)
     assert names == sorted(
-        ["cli-proxy-api", "easytier-cli", "easytier-core"]
+        ["cli-proxy-api", "easytier-cli", "easytier-core", "frpc"]
         + (["wintun.dll"] if os_name == "windows" else [])
     )
     assert not any(
@@ -372,6 +390,22 @@ def test_a_program_whose_module_the_tree_lacks_is_not_carried(
     assert sorted(hub_assets.carried_names(os_name)) == sorted(
         path.name for path in written
     )
+
+
+@pytest.mark.parametrize("os_name", ["linux", "darwin", "windows"])
+def test_every_hub_package_carries_frpc_and_its_licence(os_name):
+    exe = ".exe" if os_name == "windows" else ""
+
+    assert f"frpc{exe}" in hub_assets.carried_names(os_name)
+    assert "frp.txt" in hub_assets.carried_licenses(os_name)
+
+
+@pytest.mark.parametrize("os_name", ["linux", "darwin", "windows"])
+def test_the_mainland_tree_carries_frpc_and_its_licence_too(mainland_tree, os_name):
+    exe = ".exe" if os_name == "windows" else ""
+
+    assert f"frpc{exe}" in hub_assets.carried_names(os_name)
+    assert "frp.txt" in hub_assets.carried_licenses(os_name)
 
 
 def test_no_geodata_is_carried_without_the_xray_module(
