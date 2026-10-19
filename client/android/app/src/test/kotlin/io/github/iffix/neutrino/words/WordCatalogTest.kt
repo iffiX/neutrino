@@ -125,7 +125,16 @@ class WordCatalogTest {
         for (language in CLIENT_LANGUAGES) {
             val words = catalog(language)
             for (way in CLIENT_REACHED_THROUGH) assertTrue("ui.through.$way in $language", words.has("ui.through.$way"))
+            assertTrue("ui.through.relay in $language", !words.has("ui.through.relay"))
+            assertEquals("SakuraFrp", words.word("ui.through.sakurafrp"))
+            assertEquals("OpenFrp", words.word("ui.through.openfrp"))
         }
+        assertEquals(
+            listOf("lan", "netbird", "easytier", "ssh_relay", "direct", "sakurafrp", "openfrp"),
+            CLIENT_REACHED_THROUGH,
+        )
+        assertEquals("SSH relay", catalog("en").word("ui.through.ssh_relay"))
+        assertEquals("SSH 中继", catalog("zh-CN").word("ui.through.ssh_relay"))
         val way = mapOf("way" to catalog("en").word("ui.through.direct"))
         assertEquals("Connected · Direct", catalog("en").word("ui.state.connected_through", way))
         val chinese = mapOf("way" to catalog("zh-CN").word("ui.through.direct"))

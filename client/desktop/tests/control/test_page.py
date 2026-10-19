@@ -1563,7 +1563,8 @@ def test_the_hub_row_says_the_way_in_and_offers_the_panel():
     # Every way the hub names has its word; a way the list lacks reads as
     # the plain connected word.
     assert (
-        "const THROUGH_WAYS = ['lan', 'direct', 'netbird', 'easytier', 'relay'];"
+        "const THROUGH_WAYS = ["
+        "'lan', 'netbird', 'easytier', 'ssh_relay', 'direct', 'sakurafrp', 'openfrp'];"
         in PAGE_JS
     )
     assert (
@@ -1581,13 +1582,16 @@ def test_the_hub_row_says_the_way_in_and_offers_the_panel():
     assert "hub.connection !== 'connected'" in panel
     for way, english, chinese in (
         ("lan", "LAN", "局域网"),
-        ("direct", "Direct", "直连"),
         ("netbird", "NetBird", "NetBird"),
         ("easytier", "EasyTier", "EasyTier"),
-        ("relay", "SSH Relay", "SSH 中继"),
+        ("ssh_relay", "SSH relay", "SSH 中继"),
+        ("direct", "Direct", "直连"),
+        ("sakurafrp", "SakuraFrp", "SakuraFrp"),
+        ("openfrp", "OpenFrp", "OpenFrp"),
     ):
         assert EN_WORDS["ui.through." + way] == english
         assert CATALOGS["zh-CN"]["ui.through." + way] == chinese
+    assert "ui.through.relay" not in EN_WORDS
     assert EN_WORDS["ui.state.connected_through"] == "Connected · {way}"
     assert EN_WORDS["ui.hub_panel"] == "Panel"
     assert CATALOGS["zh-CN"]["ui.hub_panel"] == "面板"

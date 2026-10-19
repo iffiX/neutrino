@@ -225,7 +225,7 @@ def test_a_resident_of_another_account_reads_as_none(platform, config_path, caps
 
 
 def test_json_carries_every_hub_and_its_way_in(resident, capsys):
-    resident.hubs_value[0]["reached_through"] = "relay"
+    resident.hubs_value[0]["reached_through"] = "ssh_relay"
 
     assert status_cli.main(is_json=True) == 0
 
@@ -241,7 +241,7 @@ def test_json_carries_every_hub_and_its_way_in(resident, capsys):
         "wait_reason": "",
         "wait_code": None,
         "next_round_at": None,
-        "reached_through": "relay",
+        "reached_through": "ssh_relay",
         "rtt_ms": None,
         "is_exit": True,
         "last_error": None,
@@ -252,7 +252,7 @@ def test_json_carries_every_hub_and_its_way_in(resident, capsys):
 def test_a_connected_hub_shows_its_way_in_and_its_round_trip(resident, capsys):
     resident.hubs_value[0]["reached_through"] = "lan"
     resident.hubs_value[0]["rtt_ms"] = 12
-    resident.hubs_value[1]["reached_through"] = "relay"
+    resident.hubs_value[1]["reached_through"] = "ssh_relay"
 
     assert status_cli.main() == 0
 
@@ -261,7 +261,7 @@ def test_a_connected_hub_shows_its_way_in_and_its_round_trip(resident, capsys):
         f"hub home {GATEWAY_URL} Connected · LAN · 12 ms {status_cli.EXIT_MARK}"
         in lines
     )
-    assert "hub office https://office.lan:8443 Connected · SSH Relay" in lines
+    assert "hub office https://office.lan:8443 Connected · SSH relay" in lines
 
     assert status_cli.main(is_json=True) == 0
 
@@ -298,6 +298,20 @@ def test_on_windows_the_dot_and_the_ellipsis_print_in_ascii(
         in lines
     )
     assert "hub office https://office.lan:8443 Connecting..." in lines
+
+
+@pytest.mark.parametrize(
+    "way, word", [("sakurafrp", "SakuraFrp"), ("openfrp", "OpenFrp")]
+)
+def test_a_hub_reached_through_a_frp_node_names_the_vendor(resident, capsys, way, word):
+    resident.hubs_value[0]["reached_through"] = way
+
+    assert status_cli.main() == 0
+
+    assert (
+        f"hub home {GATEWAY_URL} Connected · {word} {status_cli.EXIT_MARK}"
+        in printed(capsys)
+    )
 
 
 @pytest.mark.parametrize("way", ["direct", "a_way_this_client_does_not_know"])

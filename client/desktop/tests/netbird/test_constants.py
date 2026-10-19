@@ -51,7 +51,8 @@ def test_the_page_names_netbird_itself():
         script
     )
     assert (
-        "const THROUGH_WAYS = ['lan', 'direct', 'netbird', 'easytier', 'relay'];"
+        "const THROUGH_WAYS = ["
+        "'lan', 'netbird', 'easytier', 'ssh_relay', 'direct', 'sakurafrp', 'openfrp'];"
         in script
     )
     assert "{ name: 'NetBird', key: 'netbird', licence: 'BSD-3-Clause'," in script
