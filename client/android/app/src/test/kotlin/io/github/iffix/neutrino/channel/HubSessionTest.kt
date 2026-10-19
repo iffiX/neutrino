@@ -1044,11 +1044,11 @@ class HubSessionTest {
         val (_, _, events) = transport.greeted()
         events.trySend(
             ChannelSocketEvent.Text(
-                """{"type":"state","hash":"h2","is_panel_allowed":true,"reached_through":"relay"}""",
+                """{"type":"state","hash":"h2","is_panel_allowed":true,"reached_through":"ssh_relay"}""",
             ),
         )
         runCurrent()
-        assertEquals("relay", session.view.value.reachedThrough)
+        assertEquals("ssh_relay", session.view.value.reachedThrough)
         assertEquals(true, session.view.value.isPanelAllowed)
     }
 

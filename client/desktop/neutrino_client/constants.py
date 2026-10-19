@@ -99,7 +99,18 @@ CLIENT_LOCAL_NETWORKS_TIMEOUT_S = 10
 CLIENT_PING_INTERVAL_S = 20
 # The paths a candidate address reaches the hub by, best first: a round a
 # network change starts takes a live channel only on a better path.
-CLIENT_PATH_RANKS = {"lan": 1, "direct": 2, "netbird": 3, "easytier": 3, "relay": 4}
+CLIENT_PATH_RANKS = {
+    "lan": 1,
+    "direct": 2,
+    "netbird": 3,
+    "easytier": 3,
+    "ssh_relay": 4,
+    "sakurafrp": 4,
+    "openfrp": 4,
+}
+# The paths through a server outside the box, each the path of the address
+# the hub's state names as ``<path>_url``.
+CLIENT_SERVER_PATHS = ("ssh_relay", "sakurafrp", "openfrp")
 # How long a stream this side opened waits for the hub's close.
 CLIENT_STREAM_TIMEOUT_S = 15
 # A byte stream's credit window: what this side grants the hub when it opens

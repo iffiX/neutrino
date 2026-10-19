@@ -718,7 +718,15 @@ def test_the_state_names_the_way_in_and_the_panel(bound, monkeypatch):
     made = connected(session, socket_of(monkeypatch, [WELCOME]))
     assert (session.reached_through(), session.is_panel_allowed()) == ("", False)
 
-    for way in ("lan", "netbird", "easytier", "relay"):
+    for way in (
+        "lan",
+        "netbird",
+        "easytier",
+        "ssh_relay",
+        "direct",
+        "sakurafrp",
+        "openfrp",
+    ):
         take(session, made, dict(STATE, reached_through=way, is_panel_allowed=True))
         assert (session.reached_through(), session.is_panel_allowed()) == (way, True)
 
@@ -2320,9 +2328,13 @@ def test_a_network_on_adds_its_address_to_every_round(bound_everywhere, monkeypa
     [
         ("lan", 0.5, "easytier", True),
         ("direct", 0.5, "netbird", True),
-        ("netbird", 0.5, "relay", True),
+        ("netbird", 0.5, "ssh_relay", True),
         ("easytier", 0.1, "lan", False),
-        ("relay", 0.1, "direct", False),
+        ("ssh_relay", 0.1, "direct", False),
+        ("easytier", 0.5, "sakurafrp", True),
+        ("openfrp", 0.1, "netbird", False),
+        ("sakurafrp", 0.1, "ssh_relay", True),
+        ("openfrp", 0.3, "sakurafrp", False),
         ("netbird", 0.1, "easytier", True),
         ("netbird", 0.3, "easytier", False),
         ("lan", 0.2, "lan", False),
@@ -2338,22 +2350,43 @@ def test_each_candidate_reads_as_its_path(bound_everywhere):
     session, _lines = bound_everywhere
     session._local_networks = functools.partial(list, ["192.0.2.0/24"])
     session.set_overlay_route("100.64.0.1", "easytier")
-    session._relay_url = "https://203.0.113.7:8443"
+    session._server_urls = {
+        "ssh_relay": "https://203.0.113.7:8443",
+        "sakurafrp": "https://frp-cat.example:30443",
+        "openfrp": "",
+    }
 
     assert session._path_of(LAN_URL) == "lan"
     assert session._path_of(WAN_URL) == "direct"
     assert session._path_of(OVERLAY_URL) == "easytier"
-    assert session._path_of("https://203.0.113.7:8443") == "relay"
+    assert session._path_of("https://203.0.113.7:8443") == "ssh_relay"
+    assert session._path_of("https://frp-cat.example:30443") == "sakurafrp"
+    assert session._path_of("https://frp-cat.example:30444") == "direct"
     assert session._path_of("https://hub.lan:8443") == "direct"
 
 
-def test_a_state_names_the_relays_address(bound, monkeypatch):
+def test_a_state_names_each_servers_address(bound, monkeypatch):
     session, _listener = bound
     made = connected(session, socket_of(monkeypatch, [WELCOME]))
 
+    take(
+        session,
+        made,
+        dict(
+            STATE,
+            ssh_relay_url="https://203.0.113.7:8443",
+            sakurafrp_url="https://frp-cat.example:30443",
+            openfrp_url="https://frp-dog.example:21443",
+        ),
+    )
+
+    assert session._path_of("https://203.0.113.7:8443") == "ssh_relay"
+    assert session._path_of("https://frp-cat.example:30443") == "sakurafrp"
+    assert session._path_of("https://frp-dog.example:21443") == "openfrp"
+
     take(session, made, dict(STATE, relay_url="https://203.0.113.7:8443"))
 
-    assert session._path_of("https://203.0.113.7:8443") == "relay"
+    assert session._path_of("https://203.0.113.7:8443") == "direct"
 
 
 def _wait_for(predicate, timeout_s=5) -> None:

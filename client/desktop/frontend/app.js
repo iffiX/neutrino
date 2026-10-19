@@ -644,7 +644,7 @@ function hubTone(hub) {
 
 // The ways the channel reaches a hub, as the hub's state names them. A
 // way not in the list reads as the plain connected word.
-const THROUGH_WAYS = ['lan', 'direct', 'netbird', 'easytier', 'relay'];
+const THROUGH_WAYS = ['lan', 'netbird', 'easytier', 'ssh_relay', 'direct', 'sakurafrp', 'openfrp'];
 
 // The hub's state line: the job running on it, else its connection's word
 // with the way in once the hub has named it, a waiting hub's reason with

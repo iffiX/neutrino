@@ -71,6 +71,7 @@ from neutrino_client.constants import (
     CLIENT_REFUSAL_CODE_BINDING_UNKNOWN,
     CLIENT_REPORT_INTERVAL_S,
     CLIENT_ROLE,
+    CLIENT_SERVER_PATHS,
     CLIENT_SHELL_PERSIST_VERB,
     CLIENT_SHELL_RESIZE_MODULE,
     CLIENT_SHELL_RESIZE_VERB,
@@ -536,8 +537,9 @@ class ClientHubSession:
         self._overlay_provider = ""
         # Whether this client's virtual network of the hub's is on.
         self._is_overlay_on = False
-        # The member of the state's ``urls`` that is the relay's address.
-        self._relay_url = ""
+        # The members of the state's ``urls`` that are a server's address,
+        # by the path each reaches the hub by.
+        self._server_urls: dict[str, str] = {}
 
     # --- what the resident reads ---
 
@@ -664,8 +666,8 @@ class ClientHubSession:
         """The way the channel reached the hub, as the hub's last state named it.
 
         Returns:
-            ``lan``, ``netbird``, ``easytier`` or ``relay``; empty before
-            the first state.
+            ``lan``, ``netbird``, ``easytier``, ``ssh_relay``, ``direct``,
+            ``sakurafrp`` or ``openfrp``; empty before the first state.
         """
         with self._lock:
             return self._reached_through
@@ -1300,21 +1302,23 @@ class ClientHubSession:
 
         Returns:
             The virtual network's engine for the hub's address on it,
-            ``relay`` for the state's ``relay_url``, ``lan`` for an address
-            inside a network this machine holds an address in, and
-            ``direct`` for any other.
+            ``ssh_relay``, ``sakurafrp`` or ``openfrp`` for the state's
+            ``ssh_relay_url``, ``sakurafrp_url`` or ``openfrp_url``, ``lan``
+            for an address inside a network this machine holds an address
+            in, and ``direct`` for any other.
         """
         parts = urllib.parse.urlsplit(url)
         with self._lock:
             overlay_host = self._overlay_host
             overlay_provider = self._overlay_provider
-            relay_url = self._relay_url
+            server_urls = self._server_urls
         if overlay_host and parts.hostname == overlay_host:
             return overlay_provider
-        if relay_url:
-            relay = urllib.parse.urlsplit(relay_url)
-            if (relay.hostname, relay.port) == (parts.hostname, parts.port):
-                return "relay"
+        where = (parts.hostname, parts.port)
+        for path, server_url in server_urls.items():
+            server = urllib.parse.urlsplit(server_url)
+            if server_url and (server.hostname, server.port) == where:
+                return path
         if is_on_local_network(parts.hostname or "", self._local_networks()):
             return "lan"
         return "direct"
@@ -1999,7 +2003,10 @@ class ClientHubSession:
                 entry for entry in services if isinstance(entry, dict)
             ]
             self._reached_through = str(message.get("reached_through", "") or "")
-            self._relay_url = str(message.get("relay_url", "") or "")
+            self._server_urls = {
+                path: str(message.get(f"{path}_url", "") or "")
+                for path in CLIENT_SERVER_PATHS
+            }
             self._is_panel_allowed = message.get("is_panel_allowed") is True
             self._terminals = clean_terminals(terminals)
             self._state_hash = str(message.get("hash", "") or "")

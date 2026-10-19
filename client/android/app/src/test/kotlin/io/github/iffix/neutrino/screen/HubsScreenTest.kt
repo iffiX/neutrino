@@ -124,12 +124,12 @@ class HubsScreenTest {
             mapOf(
                 "ui.state.connected" to "Connected",
                 "ui.state.connected_through" to "Connected · {way}",
-                "ui.through.relay" to "SSH Relay",
+                "ui.through.ssh_relay" to "SSH relay",
             ),
         )
         val before = HubView(Samples.binding, HubConnection.CONNECTED)
         assertEquals("Connected", hubStateWord(before, words, 0))
-        assertEquals("Connected · SSH Relay", hubStateWord(before.copy(reachedThrough = "relay"), words, 0))
+        assertEquals("Connected · SSH relay", hubStateWord(before.copy(reachedThrough = "ssh_relay"), words, 0))
         val down = before.copy(connection = HubConnection.WAITING, waitReason = HubWaitReason.HUB_SILENT)
         assertEquals("ui.state.hub_silent", hubStateKey(down.copy(reachedThrough = "lan"), 0))
     }
@@ -173,16 +173,22 @@ class HubsScreenTest {
     }
 
     @Test
-    fun aDirectWayInIsNamedAndAnUnknownWayReadsAsConnected() {
+    fun aDirectOrFrpWayInIsNamedAndAnUnknownWayReadsAsConnected() {
         val words = WordCatalog(
             mapOf(
                 "ui.state.connected" to "Connected",
                 "ui.state.connected_through" to "Connected · {way}",
                 "ui.through.direct" to "Direct",
+                "ui.through.sakurafrp" to "SakuraFrp",
+                "ui.through.openfrp" to "OpenFrp",
+                "ui.through.relay" to "SSH Relay",
             ),
         )
         val row = HubView(Samples.binding, HubConnection.CONNECTED)
         assertEquals("Connected · Direct", hubStateWord(row.copy(reachedThrough = "direct"), words, 0))
+        assertEquals("Connected · SakuraFrp", hubStateWord(row.copy(reachedThrough = "sakurafrp"), words, 0))
+        assertEquals("Connected · OpenFrp", hubStateWord(row.copy(reachedThrough = "openfrp"), words, 0))
+        assertEquals("Connected", hubStateWord(row.copy(reachedThrough = "relay"), words, 0))
         assertEquals("Connected", hubStateWord(row.copy(reachedThrough = "pigeon"), words, 0))
     }
 

@@ -84,6 +84,25 @@ class ChannelInboundTest {
     }
 
     @Test
+    fun aStateNamesTheAddressOfEachPathThroughAServer() {
+        val text = """
+            {"type":"state","hash":"h3","urls":["https://203.0.113.5:18443","https://frp-cat.example.org:30443"],
+             "ssh_relay_url":"https://203.0.113.5:18443","sakurafrp_url":"https://frp-cat.example.org:30443",
+             "reached_through":"sakurafrp"}
+        """.trimIndent()
+        val state = (ChannelInbound.decode(text) as ChannelInbound.State).state
+        assertEquals(
+            mapOf(
+                ChannelPath.SSH_RELAY to "https://203.0.113.5:18443",
+                ChannelPath.SAKURAFRP to "https://frp-cat.example.org:30443",
+                ChannelPath.OPENFRP to "",
+            ),
+            state.serverUrls,
+        )
+        assertEquals("sakurafrp", state.reachedThrough)
+    }
+
+    @Test
     fun streamFramesAreRead() {
         assertEquals(ChannelInbound.Credit(3, 99), ChannelInbound.decode("""{"type":"credit","stream":3,"bytes":99}"""))
         assertEquals(

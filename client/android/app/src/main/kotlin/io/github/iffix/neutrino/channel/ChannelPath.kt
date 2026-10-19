@@ -9,7 +9,8 @@ import java.net.UnknownHostException
 
 /**
  * The way a candidate address reaches a hub, known before its hello, with the rank a round on a
- * connected hub compares: `lan`, then `direct`, then the virtual networks, then the relay.
+ * connected hub compares: `lan`, then `direct`, then the virtual networks, then the servers outside
+ * the box.
  *
  * @property wireName The hub's word for the path, as `reached_through` names it.
  * @property rank The path's place, 1 the best.
@@ -27,8 +28,14 @@ enum class ChannelPath(val wireName: String, val rank: Int) {
     /** The hub's address on its EasyTier network. */
     EASYTIER("easytier", 3),
 
-    /** The relay's address the hub's state names. */
-    RELAY("relay", 4),
+    /** The SSH relay's address the hub's state names. */
+    SSH_RELAY("ssh_relay", 4),
+
+    /** The SakuraFrp tunnel's address the hub's state names. */
+    SAKURAFRP("sakurafrp", 4),
+
+    /** The OpenFrp tunnel's address the hub's state names. */
+    OPENFRP("openfrp", 4),
     ;
 
     companion object {
@@ -37,22 +44,23 @@ enum class ChannelPath(val wireName: String, val rank: Int) {
          *
          * @param url The address, `https://host:port`.
          * @param overlay The virtual network that is on, or null.
-         * @param relayUrl The relay's address from the hub's last state, empty when it names none.
+         * @param serverUrls The address of each path through a server, from the hub's last state,
+         *   empty when it names none.
          * @param localNetworks The networks this phone holds an address in.
          * @return The path: the network's engine for the hub's address on it or an address inside
-         *   it, the relay for the relay's address, `lan` inside a local network, else `direct`.
+         *   it, the server's path for a server's address, `lan` inside a local network, else `direct`.
          */
         fun of(
             url: String,
             overlay: ChannelOverlayRoute?,
-            relayUrl: String,
+            serverUrls: Map<ChannelPath, String>,
             localNetworks: List<ChannelLocalNetwork>,
         ): ChannelPath {
             val host = literalHostOf(url)
             if (overlay != null && (url == overlay.url || (host != null && overlay.network?.holds(host) == true))) {
                 return ofEngine(overlay.provider)
             }
-            if (relayUrl.isNotEmpty() && url == relayUrl) return RELAY
+            serverUrls.entries.firstOrNull { it.value.isNotEmpty() && it.value == url }?.let { return it.key }
             if (host != null && localNetworks.any { it.holds(host) }) return LAN
             return DIRECT
         }

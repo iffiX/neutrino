@@ -127,7 +127,7 @@ class HubSession(
     private var overlay: ChannelOverlayRoute? = null
 
     @Volatile
-    private var relayUrl = ""
+    private var serverUrls: Map<ChannelPath, String> = emptyMap()
 
     @Volatile
     private var movingFrom: ChannelSocket? = null
@@ -475,7 +475,7 @@ class HubSession(
         }
     }
 
-    private fun pathOf(url: String): ChannelPath = ChannelPath.of(url, overlay, relayUrl, localNetworks())
+    private fun pathOf(url: String): ChannelPath = ChannelPath.of(url, overlay, serverUrls, localNetworks())
 
     private suspend fun nameUrlOf(binding: HubBinding): String {
         val firstUrl = binding.storedUrls.firstOrNull() ?: return ""
@@ -721,7 +721,7 @@ class HubSession(
 
     private fun takeState(state: ChannelClientState) {
         stateHash = state.hash
-        relayUrl = state.relayUrl
+        serverUrls = state.serverUrls
         val isNewUrls = state.urls.isNotEmpty() && state.urls.toSet() != current.value.binding.gatewayUrls.toSet()
         note { binding ->
             binding.copy(

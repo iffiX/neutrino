@@ -2300,10 +2300,12 @@ def test_the_hub_row_says_the_way_in_and_whether_the_panel_is_allowed(two_hubs_u
     resident, _scripts = two_hubs_up
     home = resident._sessions["c1"]
 
-    home._take_state(dict(HOME_STATE, reached_through="relay", is_panel_allowed=True))
+    home._take_state(
+        dict(HOME_STATE, reached_through="ssh_relay", is_panel_allowed=True)
+    )
 
     row, office = resident.hubs()
-    assert (row["reached_through"], row["is_panel_allowed"]) == ("relay", True)
+    assert (row["reached_through"], row["is_panel_allowed"]) == ("ssh_relay", True)
     assert (office["reached_through"], office["is_panel_allowed"]) == ("", False)
 
 
