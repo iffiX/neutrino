@@ -10,7 +10,8 @@ machines.
 Ships as three packages and two apps: `neutrino_hub` (`hub/`),
 `neutrino_agent` (`agent/`) and `neutrino_client` (`client/desktop/`), and the
 Android app (`client/android/`, Kotlin) and the iOS app (`client/ios/`,
-Swift, paused since 2026-10-03). The two apps are AGPL-3.0; the rest is MIT.
+Swift, a client with fewer pages and no virtual network). The two apps are
+AGPL-3.0; the rest is MIT.
 
 Every agent working here — Claude Code, Codex, Cursor, or otherwise — follows
 the standard in [`skills/core-code-author/`](skills/core-code-author/SKILL.md). This file is the
@@ -76,7 +77,9 @@ cd hub && pytest -q                  # hub tests
 cd agent && pytest -q                # agent tests
 cd client/desktop && pytest -q       # desktop client tests
 cd client/android && ./gradlew test lint   # Android app tests and lint
-cd client/ios && xcodebuild test     # iOS app tests, on a Mac
+cd client/ios && xcodegen generate && xcodebuild test -scheme Neutrino \
+    -destination 'platform=iOS Simulator,name=iPhone 16'
+                                     # iOS app tests, on macOS
 
 cd hub/frontend && npx prettier --check src && npx eslint src --max-warnings 0
 cd hub/frontend && npm run build     # REQUIRED after frontend changes
@@ -135,7 +138,7 @@ client/
     tests/
   android/            The Android app: Gradle, Kotlin, Jetpack Compose.
                       AGPL-3.0.
-  ios/                The iOS app: Xcode, Swift, SwiftUI. AGPL-3.0. Paused.
+  ios/                The iOS app: XcodeGen, Swift, SwiftUI. AGPL-3.0.
 packaging/            build/ one script per release target, shared/ what
                       they share, ci/ the post-install checks, install/ the
                       one-command install scripts, lab/ the VM lab,

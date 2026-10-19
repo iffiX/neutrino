@@ -842,7 +842,7 @@ and each role reads them somewhere else:
 | Field | An agent sends | A client sends |
 | --- | --- | --- |
 | `machine_id` | `/etc/machine-id`, else `/var/lib/dbus/machine-id`, else empty | a uuid4 hex generated on the first read of its state file and kept there |
-| `platform` | `{os, family, arch, version}`: `linux`, `windows` or `darwin`, the distribution family `debian`, `rhel` or empty, the architecture normalized to `amd64`, `arm64` or `armhf`, and the system's version: the glibc version on Linux (`2.36`), the build number on Windows (`26100`), the product version on macOS (`15.3.1`), empty where it cannot be read | the same first three keys, `os` one of `linux`, `windows` and `darwin`, and `family` empty off Linux |
+| `platform` | `{os, family, arch, version}`: `linux`, `windows` or `darwin`, the distribution family `debian`, `rhel` or empty, the architecture normalized to `amd64`, `arm64` or `armhf`, and the system's version: the glibc version on Linux (`2.36`), the build number on Windows (`26100`), the product version on macOS (`15.3.1`), empty where it cannot be read | the same first three keys, `os` one of `linux`, `windows`, `darwin`, `android` and `ios`, and `family` empty off Linux |
 
 A client's report also carries, in its `machine` section, `os_machine_id`:
 the operating system's id for the machine, read where an agent reads its

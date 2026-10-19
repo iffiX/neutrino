@@ -120,7 +120,7 @@ the entry, and reads the secret a service needs from its own store.
 
 | Kind | The client opens on its own machine | On the connection | The hub checks | The service is reached by |
 | --- | --- | --- | --- | --- |
-| Files | Linux and macOS: a loopback port and a system mount. Windows: the file network card and a drive letter. Android: nothing, the app reads the share itself. | one `connect` for each SMB connection | the `file` kind and the machine | the agent, at the machine's loopback port 445; the hub itself for a declared host |
+| Files | Linux and macOS: a loopback port and a system mount. Windows: the file network card and a drive letter. Android and iOS: nothing, the app reads the share itself. | one `connect` for each SMB connection | the `file` kind and the machine | the agent, at the machine's loopback port 445; the hub itself for a declared host |
 | Web pages | a loopback port, and the browser | a `service` for the token where the page has one, then one `connect` for each connection | the `web` kind and the machine | the agent, at the page's loopback port; the hub itself for a declared page |
 | Ports | a loopback port, TCP or UDP as the entry states | one `connect` for each TCP connection, or one for a UDP entry | the `port` kind and the machine | the agent for a container's port; the hub itself for a declared one |
 | The panel | a loopback port, and the browser | a `service` for a sign-in token, then one `connect` for each connection | the `panel` kind | the hub, at the panel's loopback HTTP port |

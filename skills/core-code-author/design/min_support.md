@@ -25,7 +25,7 @@ new floor is written down.
 | client `.pkg` | none | the RustDesk app, built for macOS 12.3 (`packaging/shared/rustdesk_assets.py:41`) | macOS 12.3, arm64 and amd64 |
 | client `.msi` | none | the WebView2 Evergreen runtime and CPython 3.13 (`packaging/build/build_client_windows.py:41`, `packaging/build/build_client_windows.py:90`) | Windows 10 1809 |
 | client `.apk` | none | `openProxyFileDescriptor`, which the Files provider serves a share's file through, from API level 26 (`minSdk` in `client/android/`) | Android 8.0 |
-| client iOS app, paused | none | `NSFileProviderReplicatedExtension`, the File Provider extension's base class, from iOS 16 (the deployment target in `client/ios/`) | iOS 16 |
+| client `.ipa` | none | the deployment target 16.0 in `client/ios/project.yml`; iOS 16 is the last system of the iPhone X, the oldest phone the app is tested on | iOS 16 |
 
 Ubuntu 22.04 has glibc 2.35, above all four Linux floors, and the hub's `.deb`
 reaches it because the DHCP client is named `dhcpcd-base | dhcpcd5`
@@ -57,7 +57,7 @@ macOS Tahoe 26 is the last macOS for Intel Macs; whether the amd64 packages
 continue is decided then.
 
 The two phone rows are the floor each app's build declares: `minSdk 26` in
-the Gradle project and a deployment target of 16.0 in the Xcode project. The
+the Gradle project and a deployment target of 16.0 in `project.yml`. The
 phone's installer rejects the app on an older system, so the floor is
 enforced by the declaration itself.
 

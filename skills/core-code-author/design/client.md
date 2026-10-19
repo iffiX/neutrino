@@ -2,11 +2,11 @@
 
 The client is one person's window onto the hubs they joined: a tray and a
 window on Linux, Windows and macOS (`client/desktop`), an app on Android
-(`client/android`) and on iOS (`client/ios`, paused since 2026-10-03,
-[release.md](../agent_work_rule/release.md)). This page fixes the layout of
-every page and the behaviour of every button as one design, and the three
-implementations follow it line by line. A difference between two clients that
-this page does not name is a defect in one of them.
+(`client/android`) and on iOS (`client/ios`, with the fewer pages "The iOS
+app" names). This page fixes the layout of every page and the behaviour of
+every button as one design, and the three implementations follow it line by
+line. A difference between two clients that this page does not name is a
+defect in one of them.
 
 Colours, button tiers and the glow are [visual.md](visual.md); the panel
 idioms the client shares with the hub's panel are
@@ -869,7 +869,7 @@ else.
 Everything else is the same: the pages and their order, the words, the state
 machines, the badges, the dots and the reasons on disabled buttons.
 
-A phone keeps its connections when the person switches apps:
+The Android app keeps its connections when the person switches apps:
 
 | Rule | Reason |
 | --- | --- |
@@ -877,6 +877,82 @@ A phone keeps its connections when the person switches apps:
 | Returning to the foreground reconnects a dropped channel at once, with no backoff. | The person is looking; a wait they can see is a fault. |
 | A share's root stays listed in the system's Files app for 60 s after its hub's channel drops, marked as reconnecting. | A root that vanishes mid-copy fails the copy. |
 | There is no setting for this. | A connection that holds is the product, not an option. |
+
+## The iOS app
+
+The iOS app is the client on an iPhone, with fewer pages than the Android
+app. Every rule this page gives for a phone holds for the iOS app, except
+where this section says otherwise. Its floor is iOS 16
+([min_support.md](min_support.md)), and the person installs it by signing
+the release's unsigned `.ipa` with their own Apple ID
+([release.md](../agent_work_rule/release.md), "iOS app").
+
+| Feature | Android | iOS |
+| --- | --- | --- |
+| pages in the bar | all eight, in the order "The layout" gives | **Hubs**, **Web**, **Files**, **Terminals** and **Settings**, in that order |
+| join | scan the QR, or paste the link | the same |
+| virtual network | the line under the hub's body, with its picker and its button; the app runs NetBird or EasyTier | no line; the app runs no engine, and a person who wants a virtual network on the iPhone joins it with that network's own app |
+| port and AI entries | forwarded to the phone's loopback for any app on the phone | not shown: no **Ports** page and no **AI** page |
+| web entry and the hub's panel | the system browser, at the entry's forward | the in-app browser, at the entry's forward inside the app ("The in-app browser") |
+| file entry | a location in the system's Files app | the share page inside the app ("The share page") |
+| remote desktop | the viewer page | no **Remote desktops** page |
+| terminal | the key row and the long-press menu | the same, drawn by SwiftTerm |
+| background | a foreground service keeps every connection | the app closes every connection before iOS suspends it ("In the background") |
+
+The in-app browser and the share page are reached from another page, as
+**Join** is: a back arrow and the page's title in the top bar, and no bar
+entry.
+
+### Reaching the hub
+
+| Rule | Reason |
+| --- | --- |
+| The app speaks the channel at the same `PROTOCOL` as the other clients: one TLS WebSocket to the hub's agent port, the certificate checked against the binding's fingerprint before the first byte, and every service a stream on it. | One protocol for every client is one protocol to test, and the hub treats a client the same on every system. |
+| A round dials the hub's name, the binding's `urls`, and the hub's address on every virtual network the hub publishes (the `address` of each `overlays` entry), all at once. | The app cannot see whether another app's virtual network is up, so it dials the address, and the round keeps whichever socket completes first. |
+| A VPN that another app connects or disconnects is a change of the device's connectivity, and starts a round ("A network change starts a round"). | The hub's address on that network becomes reachable, or stops being reachable, at that moment. |
+| Away from the hub's LAN, the app reaches the hub at the agent port open to the internet: Direct, with IPv6 or a port forward on the router, SakuraFrp, OpenFrp, or the SSH relay. | Each of these is an address in `urls`, and the app dials it as it dials any other. |
+
+### The in-app browser
+
+| Rule | Reason |
+| --- | --- |
+| **Open** on a web entry and **Panel** on a hub row make the forward and read the token as on Android, then open the in-app browser at `<scheme>://127.0.0.1:<local-port><path>`, with `?tkn=<token>` where the entry has `is_token_required`, and `/?tkn=<token>` for the panel. | iOS suspends the app while another app is in front, and a suspended app's forward answers nothing, so the system browser cannot use it. WebKit resolves no `.localhost` name, so the host is the loopback address, as on macOS. |
+| The in-app browser is a WebKit web view under the top bar. Its back arrow closes the page; the forward listens until **Disconnect**, as on every client. | A page closed by mistake opens again at once, on the same port. |
+| Every page the in-app browser opens shares one cookie store and the host `127.0.0.1`, and a cookie belongs to its host whatever the port, so two instances whose cookies have the same name sign each other out, as on macOS. | iOS 16 gives an app one persistent web data store. |
+
+### The share page
+
+| Rule | Reason |
+| --- | --- |
+| The file entry's row shows **Open** and, while a password is kept, **Forget password**, which arms and removes it. **Open** shows a sheet for the password the first time, keeps the password in the Keychain, and opens the share page at the share's root. | The Android row's password rules, on a page of the app's own. |
+| The share page lists one folder: folders first, then files, each by name, a file with its size and its time. A tap on a folder opens it; the back arrow goes up one folder, and at the share's root back to the **Files** page. | One folder per screen is how a phone lists files. |
+| A tap on a file reads it into the app's temporary directory, with `ui.job.opening` and a spinner on its row, and then shows it in the system's preview (Quick Look), whose share button saves it to the Files app or sends it to another app. A failure writes the code on the row's error line. | The system's preview and share sheet open every kind of file the phone can open, and move it anywhere the person chooses. |
+| The app's SMB client reaches the share as on Android: each of its connections is a `connect` stream naming the file entry. | The share is reached through the hub, as on every client. |
+
+A File Provider extension, the way an app adds a location to the system's
+Files app, runs in a process of its own while the app is suspended, and so
+needs a socket of its own to the hub. A binding holds one socket: a second
+one replaces the first with 4010 `replaced`
+([connection.md](connection.md), "Where the port is reached"). The app
+therefore has no such extension, and a share is read on the share page
+alone.
+
+### In the background
+
+| Rule | Reason |
+| --- | --- |
+| While the app is on the screen, its channels, its forwards and its share connections run in the app. | iOS runs an app's code while the app is in front. |
+| When the app leaves the screen, it starts a background task (`beginBackgroundTask`) and keeps every connection for the time iOS gives the task, about 30 s on iOS 16. Before that time ends, the app closes every channel and every share connection, stops every forward's listener, and ends the task. | A frozen socket answers no ping, and the hub holds it until the ping times out, up to a minute; a closed one ends its streams at once. iOS takes back the listening sockets of a suspended app. |
+| A channel closed this way has the effect of any dropped channel: a plain terminal session ends, and a persistent or shared one stays, its tab attaching again on return ("The session list"). | The machine keeps the sessions the person asked it to keep. |
+| Returning to the foreground reconnects every hub at once, with no backoff, and every forward that listened before listens again on its port. An in-app browser whose page iOS ended in the background loads it again. | The person is looking; a wait they can see is a fault. |
+| There is no notification line and no setting for this. | iOS keeps an app running in the background only for a few kinds of work, such as playing audio, navigation and calls, and this app does none of them. |
+
+### The About card
+
+| Rule | Reason |
+| --- | --- |
+| **This machine** on the About card shows the device name iOS gives the app, which on iOS 16 and newer is the model, such as `iPhone`. | iOS gives the name the person set only to an app holding an entitlement Apple grants on request. |
+| The **Carried** group on the About card lists SwiftTerm, the MIT-licensed terminal view the Terminals page draws with, with its version and its **Source** link. | A library the app contains is credited where the app's own version is. |
 
 ## An interaction this page does not cover
 

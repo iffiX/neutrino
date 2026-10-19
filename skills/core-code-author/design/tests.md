@@ -15,7 +15,7 @@ fake.
 | client | `client/desktop/tests/` | `pytest -q`, seconds, every commit | Fakes and `tmp_path` only: fake platforms and toolkits, the compiled and fetched parts stood in for |
 | hub | `hub/tests/` | `pytest -q`, under a minute, every commit | FastAPI test clients and temporary config roots; never a unit, an interface, or `/etc` |
 | android | `client/android/app/src/test/` | `./gradlew test lint`, every commit | JUnit on the JVM; a fake socket, fake Keystore and fake VpnService; never an emulator or a device |
-| ios | `client/ios/<target>Tests/` | `xcodebuild test` on the simulator; paused with the app since 2026-10-03 | XCTest; a fake socket, fake Keychain and fake tunnel provider; never a device |
+| ios | `client/ios/NeutrinoTests/` | `swift-format lint --strict --recursive` and `xcodebuild test` on the iOS Simulator, in the `ios` job of `ci.yml` on GitHub's `macos-15` runner, every commit | XCTest; a fake socket and a fake Keychain; never a device |
 | integration | `packaging/integration/` | `run_on_box.sh` on the pipeline's VM pair; minutes | A whole machine: real installs, real systemd, real DHCP on a served wire, a real client VM |
 
 ## The mirror rule
@@ -87,13 +87,21 @@ compares two code files ([layout_style.md](../coding_style/layout_style.md)).
 What else each pins:
 enrollment from a scanned or pasted link with the fingerprint checked first,
 the binding stored in the Keystore or the Keychain, the overlay switch per
-hub, every refusal read as its `{code, params}`, the local listeners and
+hub on Android, every refusal read as its `{code, params}`, the local listeners and
 the in-app SMB client opening one `connect` stream per connection through a
 fake socket, the redial of a refused address within a round and a forward
-that accepts nothing while its hub has no channel, as on the desktop, and a
-UDP forward as on the desktop: two local programs through
+that accepts nothing while its hub has no channel, as on the desktop, and on
+Android a UDP forward as on the desktop: two local programs through
 one stream, the 16 held datagrams, an open refused at **Connect** and later,
-and one number held for a TCP and a UDP entry.
+and one number held for a TCP and a UDP entry. The iOS app's tests also pin
+a round that dials the hub's address on every published virtual network,
+and the close of every channel, share connection and listener when the
+background time ends, with each forward listening again on its port on the
+return to the foreground.
+
+The iOS app on a phone is checked by hand: the release's `.ipa`, signed with
+a free Apple ID, on an iPhone on iOS 16; the behaviour of iOS 17 and newer is
+checked in the Simulator.
 
 The Android app also pins the Hubs row's word for every `reached_through`,
 `ssh_relay`, `sakurafrp` and `openfrp` among them, and a candidate's path
