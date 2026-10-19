@@ -200,7 +200,7 @@ OPENFRP_PROXIES = [
 
 OPENFRP_NODE_CONFIG = """serverAddr = "cn-cq-plc-1.of-7af93c01.shop"
 serverPort = 8120
-user = "e900d8f2498202114ec2e9b0597dfb66"
+user = "e900d8f2498202114ec2e9b0597dfb66"  # scan: allow
 
 [metadatas]
 token = "e900d8f2498202114ec2e9b0597dfb66"  # scan: allow

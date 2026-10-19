@@ -17,26 +17,26 @@ from neutrino_hub.modules.frp.nacl_box import (
 )
 
 ALICE_SECRET = bytes.fromhex(
-    "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a"
+    "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a"  # scan: allow
 )
 ALICE_PUBLIC = bytes.fromhex(
-    "8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a"
+    "8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a"  # scan: allow
 )
 BOB_SECRET = bytes.fromhex(
-    "5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb"
+    "5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb"  # scan: allow
 )
 BOB_PUBLIC = bytes.fromhex(
-    "de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f"
+    "de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f"  # scan: allow
 )
 FIRSTKEY = bytes.fromhex(
-    "1b27556473e985d462cd51197a9a46c76009549eac6474f206c4ee0844f68389"
+    "1b27556473e985d462cd51197a9a46c76009549eac6474f206c4ee0844f68389"  # scan: allow
 )
 NONCE = bytes.fromhex("69696ee955b62b73cd62bda875fc73d68219e0036b7a0b37")
 MESSAGE = b"OPENFRPeyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.example"  # scan: allow
 SEALED = bytes.fromhex(
-    "69696ee955b62b73cd62bda875fc73d68219e0036b7a0b37b71c3934008db7c822c0bf9bd7"
-    "ba828b7fce211432bbb0c374c873c9815613fa7351a0db6b7e343c4f43543c12e63ed94c79"
-    "3286d134e52c3e2ae1ebd75cc9366d629b"
+    "69696ee955b62b73cd62bda875fc73d68219e0036b7a0b37b71c3934008db7c822c0bf9bd7"  # scan: allow
+    "ba828b7fce211432bbb0c374c873c9815613fa7351a0db6b7e343c4f43543c12e63ed94c79"  # scan: allow
+    "3286d134e52c3e2ae1ebd75cc9366d629b"  # scan: allow
 )
 
 
@@ -47,7 +47,7 @@ def test_the_box_key_is_the_firstkey_of_nacls_tests():
 
 def test_hsalsa20_of_zeros_under_the_shared_secret_is_the_box_key():
     shared = bytes.fromhex(
-        "4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742"
+        "4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742"  # scan: allow
     )
 
     assert hsalsa20(shared, bytes(16)) == FIRSTKEY
