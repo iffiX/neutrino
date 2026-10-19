@@ -89,9 +89,9 @@ The hub runs on macOS and Windows in `server` mode only. Its package, a
 
 - `nhub`, the hub compiled by Nuitka into one binary with
   `neutrino_hub/data/` inside it;
-- cli-proxy-api, netbird, easytier-core and easytier-cli, and in `intl`
-  xray and tun2socks, each pinned by version and sha256 for the system and
-  the architecture, and on Windows `wintun.dll` and the `packet.dll`
+- cli-proxy-api, netbird, easytier-core, easytier-cli and frpc, and in
+  `intl` xray and tun2socks, each pinned by version and sha256 for the
+  system and the architecture, and on Windows `wintun.dll` and the `packet.dll`
   stand-in beside them;
 - in `intl`, the geodata;
 - the agent's `.pkg` or `.msi` of the same architecture and edition, in the
@@ -315,7 +315,7 @@ hub_dev_root/
     var/lib/neutrino/       generated, geodata, the AI gateway's state
     var/log/neutrino/
     run/neutrino/           the login lockout
-    opt/neutrino/bin/       xray and the AI gateway
+    opt/neutrino/bin/       xray, frpc and the AI gateway
 ```
 
 **What `--dev` changes, and what it does not.** It is not a sandbox. A checkout
@@ -330,6 +330,7 @@ install does. The one thing it does not do is install the hub as a service:
 | Creating service user and directories | Creates them | Creates them, under the dev root |
 | Preparing the Python environment | Carried by the package | Builds `.venv` |
 | Installing xray-core and geodata | Carried by the package | Fetches the pinned pair into the dev root |
+| Installing frpc | Carried by the package | Fetches the pinned frpc into the dev root |
 | Preparing config from examples | Copies them | Copies them |
 | **Installing systemd units** | **Writes them** | **Skipped** |
 | Applying the interface roles | Takes the interfaces over | Takes the interfaces over |

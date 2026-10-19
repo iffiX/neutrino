@@ -27,7 +27,7 @@ The document has these parts:
 
 | Part | Holds |
 | --- | --- |
-| `hubs[]` | `hub_id`, `hub_name`, `gateway_url`, `software`, `connection`, `reached_through` (the hub's word for the way the channel reached it: `lan`, `direct`, `netbird`, `easytier`, `relay`, or empty before the first state), `rtt_ms` (the last round trip the client measured, from its own `ping` frame to the hub's `pong` with the same `nonce`, in milliseconds; null before the first pong and while the hub is not `connected`), `is_panel_allowed` (the hub's state says whether this client's permission holds `panel`), `panel_forward` (empty, or the loopback port the panel's forward listens on), `last_error`, `is_exit`, `overlay`, `jobs` |
+| `hubs[]` | `hub_id`, `hub_name`, `gateway_url`, `software`, `connection`, `reached_through` (the hub's word for the way the channel reached it: `lan`, `netbird`, `easytier`, `ssh_relay`, `direct`, `sakurafrp`, `openfrp`, or empty before the first state), `rtt_ms` (the last round trip the client measured, from its own `ping` frame to the hub's `pong` with the same `nonce`, in milliseconds; null before the first pong and while the hub is not `connected`), `is_panel_allowed` (the hub's state says whether this client's permission holds `panel`), `panel_forward` (empty, or the loopback port the panel's forward listens on), `last_error`, `is_exit`, `overlay`, `jobs` |
 | `hubs[].overlay` | `network` (the chosen engine), `networks[]` (what the hub publishes), `state` (`off` or `on`), `stage` (empty, or `login` while a connect runs), `address`, `error` |
 | `hubs[].jobs` | `is_refreshing`, `overlay_job` (empty, `connecting`, `disconnecting`), `is_leaving`, `is_opening_panel` |
 | `services[]` | one per published service, with the hub's wire fields (`hub_id`, `device_id`, `module`, `kind`, `payload`, `is_healthy`, `unhealthy_code`), plus `job`, `last_error` and, for every entry the client forwards ("The local port table"), `local_port` (the setting: `auto` or a number) and `forward` (empty, or the loopback port the forward listens on) |
@@ -111,10 +111,12 @@ languages, and the English column is the wording the English catalog holds.
 | `ui.state.connected` | Connected |
 | `ui.state.connected_through` | Connected · `<way>` |
 | `ui.through.lan` | LAN |
-| `ui.through.direct` | Direct |
 | `ui.through.netbird` | NetBird |
 | `ui.through.easytier` | EasyTier |
-| `ui.through.relay` | SSH Relay |
+| `ui.through.ssh_relay` | SSH relay |
+| `ui.through.direct` | Direct |
+| `ui.through.sakurafrp` | SakuraFrp |
+| `ui.through.openfrp` | OpenFrp |
 | `ui.state.rtt` | `<ms>` ms |
 | `ui.state.connecting` | Connecting… |
 | `ui.state.hub_silent` | The hub did not answer |
@@ -143,8 +145,10 @@ languages, and the English column is the wording the English catalog holds.
 | `ui.job.opening` | Opening… |
 | `ui.job.clearing` | Clearing… |
 
-The Chinese catalog's words for the ways in are 局域网, 直连, NetBird,
-EasyTier and SSH 中继, the relay's word being the one [ui_text.md](ui_text.md) fixes.
+The Chinese catalog's words for the ways in are 局域网, NetBird, EasyTier,
+SSH 中继, 直连, SakuraFrp and OpenFrp, the relay's word being the one
+[ui_text.md](ui_text.md) fixes. Each word is the title of an **Access** card,
+局域网 aside, so the row and the panel name a way in alike.
 
 The dot follows [visual.md](visual.md):
 
@@ -254,8 +258,9 @@ a dial still waiting out its connect time is closed, not waited for. For a
 measure follows on whichever socket carries the channel afterwards.
 
 The client knows each candidate's path before its `hello`: the hub's address
-on a virtual network is that engine's, the state's `relay_url` is the
-relay's, an address inside a network the device holds an address in is
+on a virtual network is that engine's, the state's `ssh_relay_url`,
+`sakurafrp_url` and `openfrp_url` are `ssh_relay`, `sakurafrp` and
+`openfrp`, an address inside a network the device holds an address in is
 `lan`, and any other is `direct`. The paths rank in one order, best first:
 
 | Rank | Path |
@@ -263,7 +268,7 @@ relay's, an address inside a network the device holds an address in is
 | 1 | `lan` |
 | 2 | `direct` |
 | 3 | `netbird`, `easytier` |
-| 4 | `relay` |
+| 4 | `ssh_relay`, `sakurafrp`, `openfrp` |
 
 | Rule | Reason |
 | --- | --- |
@@ -358,7 +363,7 @@ with a spinner:
 | The picker is disabled while a connect runs and in `on`, and shows the engine's name while disabled. | Changing the engine under a running one is the switch that hangs. |
 | The picker is absent when the hub publishes one network; the line then names that engine. | A choice of one is no choice. |
 | A machine is on one hub's virtual network at a time, on the desktop as on the phone: while any hub's line is not `off`, **Connect** on every other hub's line is disabled with the reason `overlay_other_network`, and the core refuses a connect for another hub with the same code. | Two hubs' networks on one machine would carry the same addresses two ways, and the machine's one NetBird daemon and one EasyTier console serve one network. |
-| A hub that publishes no virtual network has no virtual network line: no state word, no picker, no button and no reason. | A client reaches a hub over its LAN, through Direct or through the relay, so a hub with no virtual network is an ordinary hub, and a line that names only what is absent tells the person nothing. |
+| A hub that publishes no virtual network has no virtual network line: no state word, no picker, no button and no reason. | A client reaches a hub over its LAN, through Direct, a frp node or the relay, so a hub with no virtual network is an ordinary hub, and a line that names only what is absent tells the person nothing. |
 
 ## The Web page
 

@@ -23,10 +23,18 @@ one shared runtime. That runtime is where a ticket generated on a panel port
 is spent on the agent port. The panel app does not include the channel
 routes, so the channel has no plaintext form. A change of any of the three
 ports through `POST /api/hub/setting/set` restarts the process; a port that
-is one of the other two is refused 400 `port_already_in_use {value}`. A new
+is one of the other two, or one of the two frp loopback ports, is refused 400
+`port_already_in_use {value}`. A new
 port that another program on the box listens on, over IPv4 or IPv6, is
 refused with the same code before any setting changes. The **Network** page
 sets all three.
+
+The same process serves the channel on two more listeners, one per frp
+vendor, on `127.0.0.1` alone: `FRP_SAKURAFRP_LOOPBACK_PORT`, 18443, and
+`FRP_OPENFRP_LOOPBACK_PORT`, 18444, each open while its way in is on
+([network.md](hub_components/network.md), "The loopback listeners"). frpc
+on the hub forwards a vendor's node to its listener, and the listener a
+socket arrived on settles its `reached_through`.
 
 An agent port change moves every peer. Before the process restarts, the hub
 pushes every online client and agent its state, whose `urls` name the new
@@ -36,7 +44,8 @@ link. Before the save the page says how many clients and how many agents are
 offline: those with a binding row and no live session at that moment, which
 `SettingsView` holds as `offline_client_count` and `offline_agent_count`.
 While Direct is on, the page also says that the router's port forward and
-Direct's public port change with it.
+Direct's public port change with it, and while SakuraFrp or OpenFrp has a
+tunnel picked, that the tunnel's local port at the vendor changes with it.
 
 ### The panel ports
 
@@ -125,9 +134,10 @@ While Direct is on, every enabled interface's address follows the exposed
 ones: the firewall opens the agent port alone there, to every sender
 ([connection.md](connection.md), "Where the port is reached"). One test
 asserts that the link's address set equals the hub's addresses in the
-segments the firewall opens the agent port to, with two extra members no
+segments the firewall opens the agent port to, with the extra members no
 local interface holds: the public address stated for Direct while Direct is
-on, and the relay's address while the relay is on and configured. Enrolling
+on, each frp vendor's public address while it has a tunnel picked, and the
+relay's address while the relay is on and configured. Enrolling
 a device on a LAN begins with exposing that LAN's segment.
 
 What the port does with a peer before it is admitted, and every limit on it,
@@ -310,13 +320,13 @@ The HTTP status names the class of the refusal:
 
 | Status | Class | Codes |
 | --- | --- | --- |
-| 400 | a body, a query or a path that does not validate, or a value the route refuses | `body_invalid` for what the models refuse, then the route's own: `password_wrong`, `path_invalid`, `unknown_credential`, `login_refused`, `vault_locked`, `language_unknown`, `theme_unknown`, `hub_name_required`, `invalid_range`, `unsupported_kind`, `permission_kind_unknown {kind}`, `permission_device_unknown {device_id}`, `easytier_mode_unknown {mode}`, `easytier_config_server_invalid`, `overlay_subnet_overlap {title, subnet, conflict}`, `account_duplicate {account}`, `port_duplicate {port}`, `credential_missing {account}`, `proxy_scope_unsupported {switch}`, `relay_host_invalid {host}`, `relay_account_invalid {account}`, `relay_ssh_missing`, `direct_host_invalid {host}`, `resolver_required {field}`, `resolver_address_invalid {address}`, `network_invalid {field, name}`, `shell_program_unusable {path}` |
+| 400 | a body, a query or a path that does not validate, or a value the route refuses | `body_invalid` for what the models refuse, then the route's own: `password_wrong`, `path_invalid`, `unknown_credential`, `login_refused`, `vault_locked`, `language_unknown`, `theme_unknown`, `hub_name_required`, `invalid_range`, `unsupported_kind`, `permission_kind_unknown {kind}`, `permission_device_unknown {device_id}`, `easytier_mode_unknown {mode}`, `easytier_config_server_invalid`, `overlay_subnet_overlap {title, subnet, conflict}`, `account_duplicate {account}`, `port_duplicate {port}`, `credential_missing {account}`, `proxy_scope_unsupported {switch}`, `relay_host_invalid {host}`, `relay_account_invalid {account}`, `relay_ssh_missing`, `direct_host_invalid {host}`, `frpc_missing {title}`, `frp_credential_refused {title}`, `frp_tunnel_unknown {title, tunnel_id}`, `resolver_required {field}`, `resolver_address_invalid {address}`, `network_invalid {field, name}`, `shell_program_unusable {path}` |
 | 401 | a missing session, a dead ticket, or a token that names no binding | `ticket_spent`, `binding_unknown` |
 | 404 | an unknown member | `device_unknown`, `https_authority_missing`, `session_unknown {session_id}` |
 | 413 | a body past the agent port's limit | `request_too_large {limit}` |
-| 409 | a state the action cannot run in | `agent_offline`, `protocol_too_old`, `protocol_too_new`, `role_mismatch`, `update_in_progress`, `release_not_latest`, `no_platform_build {module}`, `admission_paused {retry_after_s}`, `terms_not_accepted {module}`, `gateway_not_serving` |
+| 409 | a state the action cannot run in | `agent_offline`, `protocol_too_old`, `protocol_too_new`, `role_mismatch`, `update_in_progress`, `release_not_latest`, `no_platform_build {module}`, `admission_paused {retry_after_s}`, `terms_not_accepted {module}`, `gateway_not_serving`, `frp_not_signed_in {title}` |
 | 500 | the hub could not write its own `config/` | `config_unwritable {detail}`, from the per-device module routes |
-| 502 | a service the hub asked did not answer as one | `gateway_unreachable`, `geodata_unreachable`, `release_dns_failed`, `release_timed_out`, `release_refused`, `release_http_error {status}`, `release_rate_limited {minutes, reset_at}`, `release_unreachable`, `relay_apply_failed {detail}`, `direct_apply_failed {detail}` |
+| 502 | a service the hub asked did not answer as one | `gateway_unreachable`, `geodata_unreachable`, `release_dns_failed`, `release_timed_out`, `release_refused`, `release_http_error {status}`, `release_rate_limited {minutes, reset_at}`, `release_unreachable`, `relay_apply_failed {detail}`, `direct_apply_failed {detail}`, `frp_vendor_unreachable {title, detail}`, `frp_config_unusable {title}` |
 
 Every surface words a code itself: the hub's catalogs are
 `hub/frontend/src/locales/<language>/codes.json` under `code.<code>`, the
@@ -339,7 +349,7 @@ TLS port.
 | `/api/hub/display` | The language and the palette the panel is drawn in, and the hub's own update, read before there is a session |
 | `/api/hub/dashboard` | The summary, the traffic history, the DNS log; `/ws/hub/dashboard/stat` and `/ws/hub/dashboard/dns_log` are its live readings |
 | `/api/hub/network` | The mode, the interfaces and their roles, Wi-Fi, what listens where |
-| `/api/hub/overlay` | The **Access** page: which ways in the box runs, and under it `direct` (the agent port on every enabled interface, and the public address the person states), `relay` (the reverse forward to a server the person owns), `netbird` (the network it joins) and `easytier` (the network it defines: peers, networks, secret) |
+| `/api/hub/overlay` | The **Access** page: which ways in the box runs, and under it `direct` (the agent port on every enabled interface, and the public address the person states), `relay` (the SSH relay, the reverse forward to a server the person owns), `sakurafrp` and `openfrp` (the account at each frp vendor and the tunnel picked there), `netbird` (the network it joins) and `easytier` (the network it defines: peers, networks, secret) |
 | `/api/hub/proxy` | Routing policy, and under it `node` (the exit nodes), `balancer`, and `geodata` (the databases the split runs on: which release is installed, and updating them to the latest) |
 | `/api/hub/ai` | The providers the gateway forwards to and their order, and under it `gateway` (the gateway itself: keys, accounts, usage, journal) |
 | `/api/hub/device` | Every machine on record on the LAN: the list, a scan, names and icons, the SSH credential the hub reaches a machine with, enrolment links, installing or reinstalling the agent over SSH, waking, rebooting, shutting down, its processes, its remote desktops, its seat password, its published services, which module tabs its Modules page shows |
@@ -413,8 +423,8 @@ the page's whole view.
 
 | Route | Parameters | Does |
 | --- | --- | --- |
-| `GET /api/hub/overlay` | | `OverlayChoiceView`: `kinds`, Direct's row, the relay's, then one row per engine in the engine table's order, `{key, title, is_enabled, is_integrated, is_supported, is_installed, is_active, client_count}`, `client_count` being the online clients whose socket comes from a network one of that engine's devices holds an address in; Direct's row is `key` `direct`, always installed, active while it is on, and `client_count` the online clients whose `reached_through` is `direct`; the relay's row is `key` `relay`, `is_installed` whether the system's OpenSSH client is present, `is_active` whether its state is `connected`, and `client_count` the online clients whose socket comes from a loopback address; and `route_conflicts`, one `{code, params, is_withdrawn}` per route a running overlay installed that the hub refused, `code` being `overlay_default_route_refused` or `overlay_route_overlap` and `params` `{title, route, conflict}` |
-| `POST /api/hub/overlay/set` | `{netbird: {is_enabled}, easytier: {is_enabled}, relay: {is_enabled}, direct: {is_enabled}}`, a way in left out keeping what it has | turns engines, the relay and Direct on or off, any number at once, writing the relay's into `config/overlay/relay.json` and Direct's into `config/overlay/direct.json`, and runs the converge step; 400 `overlay_not_integrated {title}`, `overlay_not_supported {title}` or `overlay_subnet_overlap {title, subnet, conflict}` when an engine is being turned on, 400 `relay_ssh_missing` when the relay is being turned on and the system has no OpenSSH client, 502 `overlay_switch_failed {detail}` |
+| `GET /api/hub/overlay` | | `OverlayChoiceView`: `kinds`, one row per engine in the engine table's order, then the relay's, Direct's, SakuraFrp's and OpenFrp's, the order of the cards, `{key, title, is_enabled, is_integrated, is_supported, is_installed, is_active, client_count}`, `client_count` being the online clients whose socket comes from a network one of that engine's devices holds an address in; Direct's row is `key` `direct`, always installed, active while it is on, and `client_count` the online clients whose `reached_through` is `direct`; the relay's row is `key` `relay`, `is_installed` whether the system's OpenSSH client is present, `is_active` whether its state is `connected`, and `client_count` the online clients whose `reached_through` is `ssh_relay`; SakuraFrp's and OpenFrp's rows are `key` `sakurafrp` and `openfrp`, `is_installed` whether the carried frpc is present, `is_active` whether the state is `connected`, and `client_count` the online clients whose `reached_through` is that key; and `route_conflicts`, one `{code, params, is_withdrawn}` per route a running overlay installed that the hub refused, `code` being `overlay_default_route_refused` or `overlay_route_overlap` and `params` `{title, route, conflict}` |
+| `POST /api/hub/overlay/set` | `{netbird: {is_enabled}, easytier: {is_enabled}, relay: {is_enabled}, direct: {is_enabled}, sakurafrp: {is_enabled}, openfrp: {is_enabled}}`, a way in left out keeping what it has | turns engines, the relay, Direct and the frp vendors on or off, any number at once, writing each of the last four into its own file under `config/overlay/`, and runs the converge step; 400 `overlay_not_integrated {title}`, `overlay_not_supported {title}` or `overlay_subnet_overlap {title, subnet, conflict}` when an engine is being turned on, 400 `relay_ssh_missing` when the relay is being turned on and the system has no OpenSSH client, 400 `frpc_missing {title}` when a frp vendor is being turned on and the carried frpc is absent, 502 `overlay_switch_failed {detail}` |
 | `GET /api/hub/overlay/netbird` | | the NetBird network the box joins, and its `peers`, each with `latency_ms`: the engine's own, or for a relayed peer the engine gives none for, the round trip the hub measured to the peer's NetBird address, null when that measure had no answer |
 | `POST /api/hub/overlay/netbird/join` | the setup key and management URL | joins it, keeps the key sealed in `config/netbird/netbird.json` once the join succeeds, and runs the converge step; 502 `overlay_join_failed {detail}` |
 | `POST /api/hub/overlay/netbird/leave` | | asks the plane to delete the peer and deletes the profile; the kept key stays; runs the converge step; 502 `overlay_leave_failed {detail}` |
@@ -428,6 +438,14 @@ the page's whole view.
 | `GET /api/hub/overlay/relay` | | `RelayView`: `is_enabled`, `host`, `ssh_port`, `account`, `key_id`, `login_id`, `public_port`, `key_id` or `login_id` empty as `relay.json` holds it; `url`, the address the relay adds to `urls`, empty while it is not configured; `state`, one of the relay's state codes ([network.md](hub_components/network.md), "The states"); `host_key_fingerprint`, the recorded host key as `SHA256:<base64>`, empty when none is recorded; `last_error`, the last line `ssh` wrote before it exited or the failed check's reason, empty while connected; `checked_at`, the last check's time in ISO 8601, empty before the first |
 | `POST /api/hub/overlay/relay/set` | `{host, ssh_port, account, key_id, login_id, public_port}`, the ports 1 to 65535, and exactly one of `key_id` and `login_id`, the other null or absent, as the agent install's request names its credential | stores them in `config/overlay/relay.json`, deletes the recorded host key when `host` or `ssh_port` changed, and runs the converge step; `RelayView`; 400 `relay_host_invalid {host}`, `relay_account_invalid {account}`, `unknown_credential {field: key_id}` for a key the vault does not hold or for a request naming both or neither, `unknown_credential {field: login_id}` for a login the vault does not hold, `port_out_of_range {minimum, maximum, value}`; 502 `relay_apply_failed {detail}` |
 | `POST /api/hub/overlay/relay/host_key/remove` | | deletes the recorded host key and starts the relay again, which records the key it meets next; `RelayView`. The key is recorded by the connection, so the path has no `add` |
+| `GET /api/hub/overlay/sakurafrp` | | `FrpView`, read from `config/overlay/sakurafrp.json` and the running frpc with no call to the vendor: `is_enabled`, `is_signed_in`, `tunnel_id`, `node_name`, `local_port`; `url`, the address the tunnel adds to `urls`, empty while none is picked; `state`, one of the frp state codes ([network.md](hub_components/network.md), "The frp states"); `last_error`, frpc's last line before it exited or the failed check's reason, empty while connected; `checked_at`, the last check's time in ISO 8601, empty before the first; `console_url`, the vendor's console |
+| `POST /api/hub/overlay/sakurafrp/access_key/set` | `{access_key}`, empty to forget | checks a key with SakuraFrp and stores it sealed in `config/overlay/sakurafrp.json`; forgetting also clears the picked tunnel; runs the converge step; `FrpView`; 400 `frp_credential_refused {title}`; 502 `frp_vendor_unreachable {title, detail}` |
+| `GET /api/hub/overlay/sakurafrp/tunnel` | | `FrpTunnelListView`: `tunnels`, the listed ones ([network.md](hub_components/network.md), "The tunnel list"), each `{tunnel_id, name, node_name, region, latency_ms, is_picked}`, `region` `mainland`, `hk_mo_tw`, `abroad` or `outside_mainland`, `latency_ms` null when no connect finished in time; 409 `frp_not_signed_in {title}`; 400 `frp_credential_refused {title}`; 502 `frp_vendor_unreachable {title, detail}` |
+| `POST /api/hub/overlay/sakurafrp/tunnel/set` | `{tunnel_id}` | fetches the tunnel's config, writes frpc's file, stores the tunnel in `config/overlay/sakurafrp.json` and runs the converge step; `FrpView`; 400 `frp_tunnel_unknown {title, tunnel_id}` for an id the list does not hold; 409 `frp_not_signed_in {title}`; 502 `frp_vendor_unreachable {title, detail}`, `frp_config_unusable {title}` when the config holds no proxy of the tunnel's name |
+| `GET /api/hub/overlay/openfrp` | | `OpenFrpView`: the fields of `FrpView`, with `is_login_expired`, whether OpenFrp answered 401 to the stored `Authorization`, and `login`, `{state, authorization_url}`: `state` `idle`, `waiting`, `timed_out` or `failed`, and `authorization_url` the address the person confirms at while `waiting`, empty otherwise |
+| `POST /api/hub/overlay/openfrp/login/start` | | asks OpenFrp for an authorization URL, replacing any login in progress, and polls for the person's confirmation in the background; on success stores the `Authorization` sealed in `config/overlay/openfrp.json` and runs the converge step; `OpenFrpView` with `login.state` `waiting`; 502 `frp_vendor_unreachable {title, detail}` |
+| `POST /api/hub/overlay/openfrp/logout` | | forgets the `Authorization` and the picked tunnel, and runs the converge step; `OpenFrpView`. OpenFrp is not called |
+| `GET /api/hub/overlay/openfrp/tunnel`, `POST /api/hub/overlay/openfrp/tunnel/set` | as SakuraFrp's | as SakuraFrp's, against OpenFrp and `config/overlay/openfrp.json` |
 
 Every write on this page, the relay's included, the Network page's writes and
 the Proxy page's `apply` run one converge step, `PanelRuntime.converge_network`, and so does
@@ -756,7 +774,7 @@ before it is parsed.
 
 | Directory | Files |
 | --- | --- |
-| `web/routers/hub/` | `setup.py`, `auth.py`, `display.py`, `dashboard.py`, `network.py`, `overlay.py` with `overlay_direct.py`, `overlay_netbird.py`, `overlay_easytier.py` and `overlay_relay.py`, `proxy.py` with `proxy_node.py`, `ai.py` with `ai_gateway.py`, `device.py`, `client.py`, `service.py`, `credential.py`, `setting.py` |
+| `web/routers/hub/` | `setup.py`, `auth.py`, `display.py`, `dashboard.py`, `network.py`, `overlay.py` with `overlay_direct.py`, `overlay_netbird.py`, `overlay_easytier.py`, `overlay_relay.py`, `overlay_sakurafrp.py` and `overlay_openfrp.py`, `proxy.py` with `proxy_node.py`, `ai.py` with `ai_gateway.py`, `device.py`, `client.py`, `service.py`, `credential.py`, `setting.py` |
 | `web/routers/agent/` | `file.py`, `module.py` with `module_samba.py`, `module_terminal.py`, `module_remote_desktop.py`, `module_gitea.py`, `module_podman.py`, `module_zfs.py`, `module_instances.py` (VS Code, code-server, CloudCLI and Codeg) with `module_vscode_terms.py`, and `module_ai_tool.py`, `terminal.py` |
 | `web/routers/` | `channel.py`, on the agent port's app |
 | `web/` | `ws.py`, both socket groups |
@@ -799,7 +817,8 @@ in the exposed IPv6 segments follow the exposed set, every enabled
 interface's other IPv4 and then stable IPv6 addresses follow those, and the public address
 stated for Direct follows them; an IPv6 address is written in brackets
 ([network.md](hub_components/network.md), "Direct"). While Direct is off, every
-address in `urls` is IPv4. While the relay is on and configured, `https://<host>:<public-port>` is
+address in `urls` is IPv4. Each frp vendor's public address follows while
+it has a tunnel picked, SakuraFrp's first ([network.md](hub_components/network.md), "The frp addresses"). While the relay is on and configured, `https://<host>:<public-port>` is
 its last member ([network.md](hub_components/network.md), "The relay's address"). `role` is `agent`
 or `client`, read on the pasting side before the first request. A client
 rejects a device link with `link_not_for_client` and an agent rejects a client
@@ -981,11 +1000,11 @@ and platform, which change between releases.
 | `services` | | | `[{id, type, title, payload, is_healthy, source, description, description_code, description_params, device_id, device_name, is_own_machine}]` | |
 | `is_disabled` | | | bool | |
 | `urls` | `["https://<address>:<port>", ...]` | | the same list | |
-| `relay_url` | | | the member of `urls` that is the relay's address, empty while the relay is off; a client ranks a candidate's path by it ([client.md](client.md), "A network change starts a round") | |
+| `ssh_relay_url`, `sakurafrp_url`, `openfrp_url` | | | the member of `urls` that is the SSH relay's address, SakuraFrp's and OpenFrp's, each empty while its way in adds none; a client ranks a candidate's path by them ([client.md](client.md), "A network change starts a round") | |
 | `overlays` | | | `[{provider, ...}]`: what the client joins each of the hub's overlays with, the preferred first | |
 | `terminals` | | | `[{device_id, name, is_online, sessions}]`: the managed machines its `terminal` kind allows, where it opens a `shell` or an `exec`, each with the sessions this client sees there | |
 | `is_panel_allowed` | | | bool: the client is allowed to open the hub's panel through `connect {is_panel: true}` | |
-| `reached_through` | | | `lan`, `direct`, `netbird`, `easytier` or `relay`: the way this client's socket reached the hub | |
+| `reached_through` | | | `lan`, `netbird`, `easytier`, `ssh_relay`, `direct`, `sakurafrp` or `openfrp`: the way this client's socket reached the hub | |
 | `error` | | `{code, params}` | | |
 
 The `error` section is the agent's most recent failure worth showing: the last
@@ -1008,8 +1027,9 @@ holds the hub's address on every running overlay it is exposed on, plus
 NetBird's name for the hub where its daemon reports one; while Direct is on,
 the stable IPv6 addresses and every enabled interface's addresses, in the
 order the link gives them, and then the public address stated for it;
-and last the relay's `https://<host>:<public-port>` while the relay is on and
-configured.
+then SakuraFrp's and OpenFrp's public addresses while each has a tunnel
+picked; and last the relay's `https://<host>:<public-port>` while the relay
+is on and configured.
 Both states carry it
 under their hash, and the hub pushes the state when the set changes: after a
 converge step, and when the address sampler reads a different set, which it
@@ -1842,8 +1862,8 @@ shows and never dials, since its bytes go over `connect`:
    network holds the peer is the answer. Anything else (an uplink, the
    interface in server mode, a client behind NAT, a client that came
    through Direct) is `link`, with the address the client dialled as the
-   hub's own. A peer on loopback came through the relay and dialled the
-   relay's address, which is no address of this hub: it is `link` with the
+   hub's own. A peer on loopback came through the relay or a frp node and
+   dialled that server's address, which is no address of this hub: it is `link` with the
    hub's own name as the hub's own, so the hub's own entries show that name
    and two hubs behind one server do not look like one host.
 1. `device_host_for(scope, interfaces, link_address)` takes the first of the
@@ -1860,12 +1880,15 @@ shows and never dials, since its bytes go over `connect`:
 
 A client behind NAT gets the link address, which it only shows.
 
-The same peer address settles the client's `reached_through`, an
-IPv4-mapped IPv6 address read as its IPv4 address:
+The same peer address, and the listener the socket arrived on, settle the
+client's `reached_through`, an IPv4-mapped IPv6 address read as its IPv4
+address:
 
 | The peer | `reached_through` |
 | --- | --- |
-| on loopback, `127.0.0.0/8`, `::1` or a mapped `127.0.0.1` | `relay` |
+| on SakuraFrp's loopback listener, `FRP_SAKURAFRP_LOOPBACK_PORT` | `sakurafrp` |
+| on OpenFrp's loopback listener, `FRP_OPENFRP_LOOPBACK_PORT` | `openfrp` |
+| on the agent port from loopback, `127.0.0.0/8`, `::1` or a mapped `127.0.0.1` | `ssh_relay` |
 | inside the network of a NetBird device the box holds an address on | `netbird` |
 | inside the network of an EasyTier device the box holds an address on | `easytier` |
 | inside the network of an address one of the box's other interfaces holds, IPv4 or IPv6: a served LAN, the interface in server mode, an exposed uplink's own network; or an IPv6 link-local address, `fe80::/10`, which reaches one link only | `lan` |

@@ -93,7 +93,7 @@ and the client with their own three directories.
     hub/
         python/     the interpreter and the hub installed into it
         bin/        xray, cli-proxy-api, netbird, easytier-core, easytier-cli,
-                    and on macOS and Windows tun2socks
+                    frpc, and on macOS and Windows tun2socks
     agent/
         python/     the interpreter, the agent, and the window's bindings
         rustdesk/   macOS and Windows: the agent's copy of RustDesk,
@@ -162,6 +162,9 @@ overrides both, which is what makes a second instance testable. Details of the f
                             and its expiry, mode 0600
         relay/              the relay's key file and known_hosts, mode 0700,
                             each file 0600
+        sakurafrp/, openfrp/
+                            each frp vendor's frpc.toml, mode 0700, the
+                            file 0600
         xray_node_health.json
                             each exit node's recent measurements and the
                             exit the hub last pinned
@@ -245,6 +248,12 @@ stops, and `known_hosts`, the VPS's host key as `ssh` recorded it on its first
 connection ([network.md](hub_components/network.md), "The relay, the third way in").
 Both are state: the key is in the vault, and a lost `known_hosts` is recorded
 again on the next connection.
+
+`hub/sakurafrp/` and `hub/openfrp/` hold `frpc.toml`, the file frpc runs
+from, which the hub writes from the vendor's config of the picked tunnel
+and which holds the account's token ([network.md](hub_components/network.md),
+"SakuraFrp and OpenFrp"). Each is state: a lost file is fetched from the
+vendor again by the next converge step while a tunnel is picked.
 
 `hub/device_retry_marks.json` keeps the mark a press on a failed module
 put into the device's state, so a hub restart composes the same state and a

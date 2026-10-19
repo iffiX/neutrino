@@ -115,7 +115,8 @@ leaked into the rendering layer.
 
 On Linux each daemon the hub runs is a systemd unit of its own, and that set
 of units does not change; the relay's `ssh` is the unit
-`neutrino_hub_relay.service` among them. On macOS and Windows the hub is one binary, `nhub`,
+`neutrino_hub_relay.service` among them, and the two frpc processes are
+`neutrino_hub_sakurafrp.service` and `neutrino_hub_openfrp.service`. On macOS and Windows the hub is one binary, `nhub`,
 compiled by Nuitka as the agent is, and its package registers one service:
 the LaunchDaemon `com.neutrino.hub`, run as root and starting `nhub run`, and
 the Windows service `neutrino_hub`, run as SYSTEM and starting
@@ -129,6 +130,7 @@ as its own child:
 | NetBird | `netbird service run --config <state>/netbird/config.json --log-file <log>/netbird.log --daemon-addr` the hub's own address: `unix:///var/run/neutrino/hub/netbird.sock` on macOS, a loopback TCP port of the hub's own on Windows |
 | EasyTier | `easytier-core` with its rendered file and `--rpc-portal 127.0.0.1:15888` |
 | the relay | the system's OpenSSH client with the start line rendered from `config/overlay/relay.json`, while the relay is on and configured; its output in `relay.log` ([network.md](hub_components/network.md), "The relay, the third way in") |
+| SakuraFrp, OpenFrp | `frpc -c <state>/<vendor>/frpc.toml`, while the vendor is on and a tunnel is picked; its output in `sakurafrp.log` or `openfrp.log` ([network.md](hub_components/network.md), "SakuraFrp and OpenFrp") |
 | tun2socks | `tun2socks` on the hub's TUN device, pointed at xray's `socks_local_in`, while the box's own scope or the overlay scope is on and xray runs; it requires xray, so it is ended before xray stops or restarts and started again once xray is back, and the routes follow it ([proxy.md](hub_components/proxy.md), "The TUN on macOS and Windows") |
 
 - Every `netbird` command the hub runs names the same `--daemon-addr`, so a
