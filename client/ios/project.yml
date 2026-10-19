@@ -1,0 +1,84 @@
+# The iOS app's project. `xcodegen generate` writes Neutrino.xcodeproj from
+# this file before every build; the version and the edition come in as the
+# build settings MARKETING_VERSION, CURRENT_PROJECT_VERSION and
+# NEUTRINO_EDITION, which packaging/build/build_client_ios.py passes.
+name: Neutrino
+options:
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+packages:
+  SwiftTerm:
+    url: https://github.com/migueldeicaza/SwiftTerm
+    exactVersion: 1.19.0
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    SWIFT_STRICT_CONCURRENCY: minimal
+    SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
+targets:
+  Neutrino:
+    type: application
+    platform: iOS
+    sources:
+      - path: Neutrino
+      - path: app_locales
+        type: folder
+        buildPhase: resources
+      - path: ../desktop/frontend/locales
+        type: folder
+        buildPhase: resources
+    dependencies:
+      - package: SwiftTerm
+    info:
+      path: Neutrino/Info.plist
+      properties:
+        CFBundleDisplayName: Neutrino
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NeutrinoEdition: $(NEUTRINO_EDITION)
+        LSRequiresIPhoneOS: true
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        CFBundleURLTypes:
+          - CFBundleURLName: io.github.iffix.neutrino.link
+            CFBundleURLSchemes: [neutrino]
+        NSCameraUsageDescription: The camera reads the QR code on the hub's Clients page.
+        NSLocalNetworkUsageDescription: The app reaches your hubs on this network.
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.iffix.neutrino
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: NO
+  NeutrinoTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: NeutrinoTests
+    dependencies:
+      - target: Neutrino
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.iffix.neutrino.tests
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  Neutrino:
+    build:
+      targets:
+        Neutrino: all
+        NeutrinoTests: [test]
+    test:
+      targets:
+        - NeutrinoTests
