@@ -404,17 +404,17 @@ assumed.
 ## The ways in from outside
 
 A way in is how a client or an agent away from the hub's LAN reaches the
-agent port. The hub offers Direct, the relay, NetBird and EasyTier. The
-panel draws them on one page, **Access** (外部访问 in Chinese), as one card
-each in that order, in both editions; the configuration, the routes and
-the protocol keep the word `overlay` ([ui_text.md](../ui_text.md), "Names
-that are fixed"). Where each way reaches the port is
+agent port. The hub offers NetBird, EasyTier, the SSH relay, Direct,
+SakuraFrp and OpenFrp. The panel draws them on one page, **Access** (外部访问
+in Chinese), as one card each in that order, three to a row, in both
+editions; the configuration, the routes and the protocol keep the word
+`overlay` ([ui_text.md](../ui_text.md), "Names that are fixed"). Where each way reaches the port is
 [../connection.md](../connection.md), "Where the port is reached".
 
 | Rule | Reason |
 | --- | --- |
 | The hub stands on the LAN of the machines it manages and is not placed on a public address. No way in needs an uplink exposed, and from outside a person opens the panel through a client's **Panel** entry. | The hub dials every machine's services on its own LAN for the clients; a hub on a public address is a panel and an agent port open to every scanner on the internet. |
-| Every way in reaches the one agent port, and the link's and the state's `urls` hold one address per way in. | A peer reaches the set as [connection.md](../connection.md), "Where the port is reached", says and pins one fingerprint, so a way in adds an address and nothing else. |
+| Every way in reaches the one channel: the agent port, or for SakuraFrp and OpenFrp a loopback listener of the same channel ("The loopback listeners" below). The link's and the state's `urls` hold one address per way in. | A peer reaches the set as [connection.md](../connection.md), "Where the port is reached", says and pins one fingerprint, so a way in adds an address and nothing else. |
 | The served networks stay offered as routes on both overlay engines: the NetBird page names them for the routing peer the person sets up in its console, and the EasyTier form lists them to export. The hub withdraws none. | A client reaches a published service as a stream through the hub and needs no route. A route reaches every port of a machine, which is the advanced use the person chooses. |
 
 ## Direct
@@ -437,7 +437,7 @@ page turns it on.
 | Direct opens the agent port alone, to every sender on an enabled interface, whatever the sender's address. On Linux the input chain gains `iifname { <enabled> } tcp dport <agent-port> accept`; on Windows a rule of its own takes any remote address on those interfaces, and the pf anchor passes the port from any address on them. Every other rule is left as it is. | The panel and the hub's other ports keep the exposure the **Network** page gives them. |
 | Turning Direct off renders the same rules without that addition. | The converge step takes exactly what Direct added. |
 | Direct exposes no segment. Wake-on-LAN and the LAN scan follow the exposed IPv4 segments, the proxy's scopes follow the roles, and Direct changes none of them. | An exposed segment opens every hub port to the senders inside it; Direct opens one port to every sender. |
-| While Direct is on, `urls` holds, in this order: the hub's IPv4 addresses in the exposed IPv4 segments and on the exposed overlays, then its IPv6 addresses in the exposed IPv6 segments, then every enabled interface's other IPv4 addresses, then its other IPv6 addresses, then NetBird's name for the hub, then `https://<public-host>:<public-port>`, then the relay's. An IPv6 address or host is written in brackets. While Direct is off, `urls` holds IPv4 addresses alone, as without it. | The hub's own addresses are tried first and the path through another server last. Within a group an IPv4 address comes first, because every network the hub is on carries IPv4. |
+| While Direct is on, `urls` holds, in this order: the hub's IPv4 addresses in the exposed IPv4 segments and on the exposed overlays, then its IPv6 addresses in the exposed IPv6 segments, then every enabled interface's other IPv4 addresses, then its other IPv6 addresses, then NetBird's name for the hub, then `https://<public-host>:<public-port>`, then SakuraFrp's address, OpenFrp's and the SSH relay's ("The frp addresses" below). An IPv6 address or host is written in brackets. While Direct is off, `urls` holds IPv4 addresses alone, as without it. | The hub's own addresses are tried first and the paths through another server last. Within a group an IPv4 address comes first, because every network the hub is on carries IPv4. |
 | A stated host name needs nothing of the certificate. | A peer pins the certificate's fingerprint and does not check its names. |
 | An IPv6 address joins `urls` only when a peer elsewhere can keep using it: global scope, so not loopback, link-local, site-local or multicast; and not temporary, deprecated, tentative or failed in duplicate detection. Linux reads it from `ip -json addr show`, an address's `scope` and its `temporary`, `deprecated`, `tentative` and `dadfailed` flags. macOS reads it from `ifconfig`, an `inet6` line's `temporary`, `deprecated`, `tentative`, `duplicated` and `detached` words. Windows reads it from the unicast address table through iphlpapi: a `DadState` of `IpDadStatePreferred`, and a `SuffixOrigin` other than `IpSuffixOriginRandom`, which is how Windows marks a temporary address. Where the reading fails, no IPv6 address joins. | A temporary address is replaced within a day and a link-local one reaches one link, so a peer that stored either loses the hub. |
 | The agent port listens on IPv4 and IPv6 on Linux, macOS and Windows: one socket for each family, the IPv6 one set to IPv6 alone (`IPV6_V6ONLY`). A machine where the IPv6 socket cannot be made serves IPv4, and the log has one line saying so. | Two sockets keep each peer's address in its own family on every system. Which senders reach the port stays the firewall's matter. |
@@ -454,9 +454,10 @@ password from the Credentials page and has the VPS's sshd listen on a public
 port; every connection to that port reaches the hub's agent port on loopback.
 TLS and the fingerprint pin run end to end, so the VPS forwards ciphertext.
 
-A person reads the method's name as **SSH Relay**, in Chinese **SSH 中继**:
-the card, the section, the clients' hub row and the guide. The configuration,
-the files, the routes, the protocol's `relay` and the codes keep `relay`.
+A person reads the method's name as **SSH relay**, in Chinese **SSH 中继**:
+the card, the section, the clients' hub row and the guide. The value a client
+reads, `reached_through` and the state's `ssh_relay_url`, is `ssh_relay`; the
+configuration, the files, the routes and the codes keep `relay`.
 
 `config/overlay/relay.json` holds the relay:
 
@@ -587,16 +588,217 @@ and saving its settings run the converge step, which pushes every peer its
 new `urls`.
 
 A socket through the relay arrives at the agent port from `127.0.0.1`, so its
-scope is `link` ([protocol.md](../protocol.md), "The address a caller is
-given"). The relay's `client_count` on the **Access** page is the number of
-online clients whose socket comes from a loopback address.
+scope is `link` and its `reached_through` is `ssh_relay`
+([protocol.md](../protocol.md), "The address a caller is given"). The relay's
+`client_count` on the **Access** page is the number of online clients whose
+`reached_through` is `ssh_relay`.
+
+## SakuraFrp and OpenFrp
+
+SakuraFrp (natfrp.com) and OpenFrp (openfrp.net) run frp nodes. A node
+listens on a public port, and frpc, the frp client on the hub, holds a
+connection to the node and forwards each connection made to that port to
+the hub. The person keeps an account at the vendor and creates the tunnel
+there; the hub lists the account's tunnels, runs frpc for the one the person
+picks, and adds the node's public address to `urls`. TLS and the fingerprint
+pin run end to end, so the node forwards ciphertext, as the relay's VPS does.
+
+Both vendors run upstream frpc (fatedier/frp, Apache-2.0) at one pinned
+version, `FRP_VERSION` in `modules/frp/constants.py`, with its sha256 for
+each system and architecture. Every hub package of both editions carries it
+([../install_and_dev.md](../install_and_dev.md)), and the hub fetches no
+program later. OpenFrp's own client is not used.
+
+`config/overlay/sakurafrp.json` and `config/overlay/openfrp.json` hold one
+vendor each, with the same keys:
+
+| Key | Holds |
+| --- | --- |
+| `is_enabled` | whether the way in is on; written by the **Access** page's switch together with the other ways in |
+| `credential` | sealed under the vault's data key: SakuraFrp's access key as the person pasted it, or OpenFrp's `Authorization` from the last login; empty for none |
+| `tunnel_id` | the vendor's id of the picked tunnel, empty for none |
+| `node_name` | the picked tunnel's node name, as the apply read it |
+| `local_port` | the picked tunnel's local port at the vendor, as the apply read it |
+| `public_host`, `public_port` | the tunnel's public address, as the apply read it: SakuraFrp's node `host` and the tunnel's `remote`; OpenFrp's `connectAddress`, split at its last colon |
+
+A way in is signed in when `credential` is set, and has a tunnel when
+`tunnel_id` is set as well. Forgetting the credential clears every key but
+`is_enabled`, stops frpc and takes the address out of `urls`.
+
+### Signing in
+
+| Vendor | What the person does | What the hub does and keeps |
+| --- | --- | --- |
+| SakuraFrp | pastes the account's access key into **Access key** and saves it | checks the key with `GET https://api.natfrp.com/v4/user/info` and stores it only when the vendor accepts it; sends it as `Authorization: Bearer <access-key>` |
+| OpenFrp | presses **Log in**, and confirms in the browser tab the panel opens | makes an X25519 key pair, asks `POST https://access.openfrp.net/argoAccess/requestLogin` for an authorization URL with its public key, polls every `FRP_OPENFRP_LOGIN_POLL_S`, 5 seconds, for at most `FRP_OPENFRP_LOGIN_TIMEOUT_S`, 300 seconds, opens the answer with its private key (a NaCl box), and stores the `Authorization` it holds; sends it as the header `Authorization` with no scheme |
+
+OpenFrp can return a new `Authorization` in the header of any response. The
+hub reseals it in `openfrp.json` whenever it differs from the stored one. A
+login lasts at most 30 days. Once OpenFrp answers 401 to the stored
+`Authorization`, the login is expired: frpc keeps running from its file, and
+listing or picking a tunnel is refused with `frp_not_signed_in` until the
+next login.
+
+### The tunnel list
+
+The section lists the account's tunnels, one row per tunnel. The hub reads
+them when the section opens and on **Refresh**, and never on the page's
+cadence:
+
+| Vendor | Read from | A tunnel is listed when |
+| --- | --- | --- |
+| SakuraFrp | `GET /v4/tunnels`, `GET /v4/nodes`, and `POST /v4/tunnel/config` for each tunnel that passes the other checks | its `type` is `tcp`, its `local_port` is the connection port, and its node's `flag` lacks bit `1<<8`, forced access authentication |
+| OpenFrp | `POST /frp/api/getUserProxies`, `POST /frp/api/getNodeList` | its `proxyType` is `tcp`, its `localPort` is the connection port, and its `autoTls` is off |
+
+Each row shows the node's name, its region and the latency from the hub to
+the node. OpenFrp's region is its node's `classify`: 1 mainland China, 2
+Hong Kong, Macao and Taiwan, 3 elsewhere. SakuraFrp gives no region, so its
+row reads mainland China when the node's `flag` holds bit `1<<3` and outside
+mainland China when it does not. The latency is the time a TCP connect from
+the hub takes: to SakuraFrp's node `host` at the `serverPort` of the
+tunnel's config, and to OpenFrp's node `hostname` at its `port`. Every node
+is dialled at once, and a node with no connect within
+`FRP_LATENCY_TIMEOUT_S`, 3 seconds, has an empty cell.
+
+An empty list carries one sentence: create a TCP tunnel at the vendor whose
+local port is the connection port, with auto TLS off at OpenFrp, and a link
+to the vendor's console, `FRP_SAKURAFRP_CONSOLE_URL` or
+`FRP_OPENFRP_CONSOLE_URL`.
+
+| Rule | Reason |
+| --- | --- |
+| A tunnel whose local port is not the connection port is not listed. | The local port is how the person marks a tunnel as the hub's at the vendor. frpc dials the hub's own loopback port whatever the vendor's tunnel says. |
+| An OpenFrp tunnel with auto TLS on is not listed. | The node then ends TLS with its own certificate, and a peer's fingerprint pin refuses it. |
+| A SakuraFrp node with forced access authentication is not listed. | Its visitor first authenticates in a browser at the node, which a client's TLS socket cannot do. |
+
+### Picking a tunnel
+
+Picking a row and pressing **Apply tunnel** runs these steps:
+
+1. The hub fetches the tunnel's config: SakuraFrp's from `POST
+   /v4/tunnel/config` with the tunnel's id and `frpc` set to
+   `FRP_VERSION`; OpenFrp's from `POST /frp/api/getNodeConf` with the
+   tunnel's node id, whose answer holds every tunnel of the account on that
+   node.
+1. It writes `<state>/<vendor>/frpc.toml` from that config, with the one
+   proxy whose `name` is the tunnel's.
+1. It stores `tunnel_id`, `node_name`, `local_port`, `public_host` and
+   `public_port`, and runs the converge step, which starts frpc and pushes
+   every peer its new `urls`.
+
+The file is written from named fields, never as the vendor's text:
+
+| Part | Taken from the vendor's config | Set by the hub |
+| --- | --- | --- |
+| the top level | `serverAddr`, `serverPort`, `user`, and the `auth`, `metadatas` and `transport` tables | `loginFailExit = true`, `log.to = "console"` |
+| the one proxy | `name`, `type`, `remotePort`, and its `metadatas` and `transport` tables | `localIP = "127.0.0.1"`, `localPort` the vendor's loopback port |
+
+| Rule | Reason |
+| --- | --- |
+| Every other key and table is left out: another tunnel's proxy, `visitors`, `plugin`, `webServer` and `includes` among them. | frpc runs as root with the file, and a plugin or an admin port in a vendor's text opens the hub's files or a port the person never chose. |
+| `<state>/<vendor>/` is mode 0700 and `frpc.toml` 0600. | The file holds the account's token. |
+| The converge step fetches the config again only when a tunnel is picked and the file is missing, as on a box restored from `config/`. Otherwise frpc starts from the file it has. | The vendor is called when the person acts, and a restart of the hub calls neither vendor. |
+
+### frpc on the hub
+
+| | Linux | macOS and Windows |
+| --- | --- | --- |
+| Runs as | the unit `neutrino_hub_sakurafrp.service` or `neutrino_hub_openfrp.service`, as root, the way the relay's `ssh` runs | a child of the supervising service, `sakurafrp` or `openfrp` |
+| Start line | `/opt/neutrino/hub/bin/frpc -c <state>/<vendor>/frpc.toml`, written in the unit template, so no drop-in exists | the carried `frpc` beside `nhub`, with the same `-c` |
+| Starts | while the way in is on, a tunnel is picked and the file exists; the unit carries `ConditionPathExists=` on the file | the same |
+| Restarts | `Restart=always`, `RestartSec=10` | the supervisor's backoff, `SYSTEM_CHILD_RESTART_MIN_S` 1 doubled up to `SYSTEM_CHILD_RESTART_MAX_S` 60 |
+| Log | the unit's journal | `sakurafrp.log` or `openfrp.log` under the log root |
+
+Turning the way in off and forgetting the credential stop frpc and delete
+`frpc.toml`; picking another tunnel stops frpc, writes the new file and
+starts it. Removing the package stops both units and removes them with the
+others. `nhub reset all` stops both before it replaces `config/`, as it
+stops every unit the hub started, and the state root's clearing takes
+`<state>/sakurafrp/` and `<state>/openfrp/`.
+
+### The loopback listeners
+
+The hub serves the channel on one more listener per vendor, on IPv4 loopback
+alone: `127.0.0.1:18443` for SakuraFrp (`FRP_SAKURAFRP_LOOPBACK_PORT`) and
+`127.0.0.1:18444` for OpenFrp (`FRP_OPENFRP_LOOPBACK_PORT`). Each is a
+uvicorn server of the channel app in the panel's one process, opened while
+its way in is on and closed when it is turned off, without a restart of the
+process. Neither is in the firewall's table, since only the hub itself
+reaches loopback. A connection port or a panel port set to either number is
+refused with `port_already_in_use {value}`, open or not. A listener another
+program's socket keeps from opening gives its way in the state
+`loopback_port_taken`.
+
+### The frp states
+
+The hub checks a picked tunnel from outside, on the relay's timing: 5
+seconds after frpc starts and every 60 seconds after that, it dials
+`<public-host>:<public-port>`, completes a TLS handshake within 10 seconds,
+and compares the certificate's SHA-256 with its own agent certificate's
+fingerprint. The three constants are `FRP_CHECK_FIRST_S`,
+`FRP_CHECK_INTERVAL_S` and `FRP_CHECK_TIMEOUT_S` in `modules/frp/constants.py`.
+
+| `state` | When |
+| --- | --- |
+| `disabled` | `is_enabled` is false |
+| `not_signed_in` | on, and `credential` is empty |
+| `vault_locked` | on, and the vault cannot open `credential` |
+| `no_tunnel` | on and signed in, and no tunnel is picked: the card reads **Enabled, not connected** |
+| `loopback_port_taken` | on, and the vendor's loopback listener could not open |
+| `config_failed` | a tunnel is picked, the file is missing, and the vendor did not return the tunnel's config: the tunnel is gone, the credential is refused, or the vendor did not answer |
+| `connecting` | frpc runs and no check has finished since it started |
+| `connected` | frpc runs and the last check met the hub's own certificate |
+| `proxy_refused` | frpc runs and the last line it wrote about the tunnel holds `start error`: the node refused the tunnel, as for a remote port in use or a tunnel turned off at the vendor |
+| `port_closed` | frpc runs, the last check got no answer or another certificate, and no `start error` follows frpc's last start |
+| `login_failed` | frpc exited after writing `login to the server failed`, and the line holds no connection error: the node refused the account's token |
+| `unreachable` | frpc exited for any other reason, a login that failed on `dial tcp`, `i/o timeout` or `connection refused` among them |
+
+An exit is judged by the last lines frpc wrote, read from the unit's journal
+on Linux and from the vendor's log on macOS and Windows. The state view
+carries the last of those lines, or the failed check's reason, as
+`last_error`.
+
+A tunnel whose `local_port` is not the connection port keeps running, since
+frpc dials the loopback listener. Its section shows the sentence
+`ui.overlay.frp_port_mismatch` until the person changes the tunnel's local
+port at the vendor and applies the tunnel again. A change of the connection
+port on the **Network** page is how this comes about
+([../protocol.md](../protocol.md), "Three ports, two audiences").
+
+### The frp addresses
+
+While a tunnel is picked, `https://<public-host>:<public-port>` is in
+`urls`, in every link and in every agent's and client's state, whatever the
+state; an IPv6 host is written in brackets. SakuraFrp's comes after Direct's
+public address, OpenFrp's after it, and the relay's stays last.
+
+| Rule | Reason |
+| --- | --- |
+| The frp addresses sit with the relay's, after every address of the hub's own. | Each is a path through another server, tried after the hub's own addresses. |
+| The relay's address stays the last member of `urls`. | Agents and clients already rank it last, and an agent that reached the hub only through the relay keeps the same order. |
+
+A socket through a frp node arrives at that vendor's loopback listener from
+`127.0.0.1`. Its scope is `link`, and its `reached_through` is `sakurafrp` or
+`openfrp`, by the listener it came in on ([../protocol.md](../protocol.md),
+"The address a caller is given"). A vendor's `client_count` on the
+**Access** page is the number of online clients whose `reached_through` is
+that vendor's.
+
+### OpenFrp's terms
+
+| Rule | Reason |
+| --- | --- |
+| OpenFrp's section shows `ui.overlay.openfrp_openapi` and `ui.overlay.openfrp_notice` where the person reads them without opening anything. | OpenFrp's terms ask a third-party client to state that it uses the OpenFrp OPENAPI and that OpenFrp supports only its nodes. |
+| Every request to either vendor carries `User-Agent: Neutrino/<version>`, `FRP_USER_AGENT`. | OpenFrp's terms ask a client to name itself, and the same header serves both. |
+| The hub calls a vendor only for the calls on this page: the key check or the login, the tunnel list, and a tunnel's config at the apply and when its file is missing. It makes no check-in and no call on a timer. | OpenFrp's terms forbid an automatic check-in, and a call nobody asked for is load on a free service. |
 
 ## The agent port's limits
 
 The agent port's limits, what counts as a failed admission and the pause on
 `join` are in [connection.md](../connection.md), "What an unadmitted peer can
-cost the hub". Each one counts the whole port and none is keyed by a peer's
-address, because through the relay every peer arrives from loopback.
+cost the hub". Each one counts the whole port, the two frp listeners included, and none is
+keyed by a peer's address, because through the relay and the frp nodes every
+peer arrives from loopback.
 
 ## The converge step
 

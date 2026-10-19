@@ -8,7 +8,8 @@ which limits hold.
 
 The frames, the stream layer and the timings are in
 [protocol.md](protocol.md), "The channel". The relay's operation is in
-[hub_components/network.md](hub_components/network.md), "The relay, the third way in".
+[hub_components/network.md](hub_components/network.md), "The relay, the third way in", and
+SakuraFrp's and OpenFrp's in its "SakuraFrp and OpenFrp".
 
 On this page an entry is one service the hub publishes, a kind is the
 permission an entry falls under, and a binding is the record of one enrolled
@@ -28,24 +29,26 @@ peer.
 ## Where the port is reached
 
 The port is one listener on two sockets, one for IPv4 and one for IPv6
-([hub_components/network.md](hub_components/network.md), "Direct"). A way in adds an
-address to the link's and the state's `urls` and changes nothing else about
-the port.
+([hub_components/network.md](hub_components/network.md), "Direct"). Two more listeners
+on `127.0.0.1`, one per frp vendor, serve the same channel to frpc on the hub
+alone ("The loopback listeners" there). A way in adds an address to the
+link's and the state's `urls` and changes nothing else about the port.
 
 | Way in | The peer reaches the port at | Who else reaches it there |
 | --- | --- | --- |
 | The LAN | the hub's address in an exposed segment | every host whose address is inside that segment |
 | NetBird, EasyTier | the hub's address on the overlay | every peer of that overlay |
-| The relay | the public port of the person's own server, which the hub forwards to its loopback | every host on the internet |
+| The SSH relay | the public port of the person's own server, which the hub forwards to its loopback | every host on the internet |
 | Direct | every enabled interface, at its IPv4 addresses and its stable IPv6 addresses, and the public address the person states for the hub. One switch on the **Access** page opens the port there to every sender. | every host that reaches such an interface or that address |
+| SakuraFrp, OpenFrp | the public port of the vendor's node, which frpc on the hub forwards to that vendor's loopback listener | every host on the internet |
 
 | Rule | Reason |
 | --- | --- |
 | Direct opens the agent port alone, to every sender on an enabled interface. The panel and the hub's other ports keep the exposure the **Network** page gives them ([hub_components/network.md](hub_components/network.md), "What answers, and where"). | The agent port admits a peer by a token and a pinned certificate. The panel admits a browser by a password, and a password on a public address is open to guessing. |
 | A change of the port's number reaches every online client and agent in `urls` first, and the port moves at once after. A peer offline at that moment joins again with a new link. | A peer reaches the hub only at an address it was given, so the new one is given before the old one closes. |
-| The port treats a peer the same on every way in. No rule on it depends on the address a peer arrives from. | Through the relay every peer arrives from loopback, so an address says nothing about the peer. |
+| The port treats a peer the same on every way in. No rule on it depends on the address a peer arrives from or the listener it arrives on; the listener names the way in and nothing else. | Through the relay and the frp nodes every peer arrives from loopback, so an address says nothing about the peer. |
 | A client dials every candidate address of the hub at once, at every round: the hub's address on each virtual network that is up, the hub's name, and `urls`. The first socket to complete TLS with the pinned fingerprint carries the round's one `hello`, and the client closes the others before any `hello` on them ([client.md](client.md), "The Hubs page"). No address is preferred for having worked last, no prober runs between rounds, and each address keeps its own connect time; an address that refuses is dialled again every second until the round's connect time ends. A network change (a virtual network turning on, the device's connectivity changing, or new `urls` in the state) starts one round at once, and its winner takes a live channel only on a better path. | Under an order, a client on a network the first addresses do not reach waits out each of their connect times before the address that works. Dialling at once costs the hub one unadmitted socket per address for a few seconds. |
-| An agent tries `urls` in a fixed order, at every reconnect as at its first connect: the hub's name on the current network, then `urls` in the hub's order, the relay last. The address that last worked is not tried earlier for having worked, and a connected channel is not moved because a nearer address answers again. | The nearest address is tried first, and the path through another server is the last resort; an address taken while a nearer one refused for a moment, as during a hub restart, would otherwise stay in use after the nearer one is back. |
+| An agent tries `urls` in a fixed order, at every reconnect as at its first connect: the hub's name on the current network, then `urls` in the hub's order, the frp nodes and the relay last. The address that last worked is not tried earlier for having worked, and a connected channel is not moved because a nearer address answers again. | The nearest address is tried first, and the path through another server is the last resort; an address taken while a nearer one refused for a moment, as during a hub restart, would otherwise stay in use after the nearer one is back. |
 | The hub treats each socket of a client's round as any socket: it counts among the unadmitted ones until it closes or its `hello` is admitted. A second admitted socket of one binding replaces the earlier one, which the hub closes with 4010 `replaced` ([protocol.md](protocol.md), "What a refusal does to the binding"). | A binding holds one socket. The client sends one `hello` per round, so its own round never replaces itself. |
 
 ## Before a peer is admitted
@@ -91,7 +94,7 @@ byte. The constants are in the hub's `modules/channel/constants.py`.
 | A failed admission is a wrong credential: a `join` refused `ticket_spent` or `role_mismatch`, or a `hello` refused `binding_unknown`. A timeout, a malformed frame and a socket closed to make room are not counted. | A port scan produces timeouts and malformed bytes. Counted, they pause every new enrolment for a peer that holds a valid link. |
 | The `welcome` follows a valid `hello` within a second. Between the two the hub runs no overlay engine's command: the network a client arrived from is read from the overlay devices the last converge recorded, which the address sampler keeps current every `WEB_ADDRESS_SAMPLE_INTERVAL_S`, and an engine the converge did not record is not asked. | A client gives up after its 10-second connect time, and on Windows a status command against NetBird's daemon that is not running takes 10 seconds and EasyTier's 2; asked twice each, they kept a hub's `welcome` 24 seconds away and no client connected. |
 | A pause holds back `join` alone. A `hello`, which every reconnecting peer sends, is judged as always. | Every bound peer with a valid token is admitted throughout a flood. |
-| The peer's address is the socket's own. The agent port and the panel ignore forwarded-address headers. | Through the relay, and through the panel entry, a request arrives from loopback, where a header a peer wrote is otherwise believed. |
+| The peer's address is the socket's own. The agent port and the panel ignore forwarded-address headers. | Through the relay, a frp node and the panel entry, a request arrives from loopback, where a header a peer wrote is otherwise believed. |
 | An IPv4-mapped IPv6 address, `::ffff:a.b.c.d`, is read as `a.b.c.d` wherever a peer's address is judged or recorded: the port's counts, a join's recorded address, the loopback check and `reached_through`. | A dual-stack socket reports an IPv4 peer that way, and a mapped `127.0.0.1` is loopback. |
 | On Windows the event loop cannot watch a socket for its first byte, so the handshake starts at the accept and the handshake time, 10 seconds, stands in for the first-byte time, on both sockets. | The bound on a silent socket holds, at the longer of the two times. |
 
@@ -159,5 +162,5 @@ what a home already has: its LAN and one reachable port.
 | --- | --- |
 | Every stream shares one TCP socket. A lost packet holds every stream on the socket until it is sent again. | A stall on one stream is a stall on all of them, for the length of one retransmission. |
 | A datagram in a stream keeps its boundary and loses its timing. It arrives late where plain UDP loses it. | UDP over the connection suits request and reply traffic: DNS, time, discovery, a small game server. Voice, video and fast games need a direct path. |
-| The hub's uplink and its one process bound the speed of every stream. Through the relay the server's bandwidth bounds it too. | Terminals, editors, a desktop and ordinary file copies fit inside that bound. A transfer that needs the line's full speed uses a direct path. |
+| The hub's uplink and its one process bound the speed of every stream. Through the relay or a frp node that server's bandwidth bounds it too. | Terminals, editors, a desktop and ordinary file copies fit inside that bound. A transfer that needs the line's full speed uses a direct path. |
 | A direct path is a subnet route the person sets up in the overlay's own console. The hub lists the served networks for it and manages no route there. | That path is outside the connection. It reaches a machine's own ports under each service's own login, with no kind and no entry in between. |

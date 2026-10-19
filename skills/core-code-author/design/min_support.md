@@ -37,6 +37,9 @@ checks read it (`hub/neutrino_hub/system/package_manager.py:420`), so a
 machine installs and is checked against whichever of the two names its
 repositories carry (`hub/neutrino_hub/system/package_manager.py:128`).
 
+The frpc every hub package carries moves no floor: upstream builds it with
+cgo off, so it is linked statically and names no glibc.
+
 The cc-switch the agent fetches from the hub (`data/manifests/cc_switch.json`)
 moves no floor. On Linux it is
 upstream's musl build, which is linked statically and names no glibc
@@ -72,6 +75,7 @@ distribution provides.
 | fail2ban | 0.11 | the `nftables-multiport` ban action the SSH jail sets | `hub/neutrino_hub/system/constants.py:166` |
 | wpa_supplicant, hostapd | 2.9 | SAE with `ieee80211w` for a WPA3 network; the access point renders WPA2 only | `hub/neutrino_hub/modules/router/supplicant_renderer.py:101` |
 | dhcpcd | 7.1 | `nohook`, which keeps the client off resolv.conf and the hostname | `hub/neutrino_hub/modules/router/dhcp_renderer.py:58` |
+| frpc | 0.52.0 | the TOML file the hub writes, which frpc reads from 0.52.0; SakuraFrp's and OpenFrp's config APIs return TOML for it | frpc's file ([hub_components/network.md](hub_components/network.md), "Picking a tunnel"); the carried `FRP_VERSION` is at or above it |
 | OpenSSH client | 7.6 | `StrictHostKeyChecking=accept-new` in the relay's `ssh` start line | the relay's start line ([hub_components/network.md](hub_components/network.md)) |
 | OpenSSH client, a relay with a password | 8.4, or `DISPLAY` set before it | `SSH_ASKPASS_REQUIRE=force`, which makes ssh ask the askpass program and never a terminal; an older client asks it when it has no terminal and `DISPLAY` is set, and the start line sets both | the relay's password start line ([hub_components/network.md](hub_components/network.md), "What the hub runs") |
 

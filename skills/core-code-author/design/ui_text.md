@@ -149,7 +149,8 @@ its own word, and a string in one language carries no word of the other.
 | the hub | hub, this hub | 中枢，这台中枢 | English never writes 中枢 and Chinese never writes `hub`. Neither calls the hub a gateway (网关): that word names the AI gateway, the side gateway mode and a network's router. |
 | the product | Neutrino | 微子 | Neutrino is described as remote access to a person's own machines (远程访问). No surface calls it a VPN or a proxy (代理, 翻墙); the proxy is one feature, named on its own page. |
 | the page of the ways in | **Access** | **外部访问** | The page, its sidebar entry and every link to it use this name. The configuration, the routes and the protocol keep `overlay`, and so do the catalog keys (`ui.nav.overlay`, `ui.overlay.*`). |
-| the third way in | SSH Relay | SSH 中继 | The card, the section, the client's hub row and the docs use it; a sentence that names it again may say "the relay" (中继). The server it reaches is "your server" (你的服务器) in a label and VPS in the guide. The configuration, routes, protocol values and codes keep `relay`. |
+| the way in through the person's own server | SSH relay | SSH 中继 | The card, the section, the client's hub row and the docs use it; a sentence that names it again may say "the relay" (中继). The server it reaches is "your server" (你的服务器) in a label and VPS in the guide. The client's word, `reached_through`, is `ssh_relay`; the configuration, routes and codes keep `relay`. |
+| the two frp vendors | SakuraFrp, OpenFrp | SakuraFrp，OpenFrp | Spelled as each vendor spells itself, in both languages; never 樱花 or a shortened name. The program both run is frpc, and a sentence about the tunnel says "tunnel" (隧道). |
 
 The sidebar's lines under the two renamed entries:
 
@@ -194,7 +195,7 @@ that:
 | A module page that names third-party software says that the owner installs it on that machine. | `You install VS Code Server on this machine under Microsoft's license terms.` |
 | A module page names the publisher's terms only where the publisher asks for acceptance; VS Code is the one such module ([ui_behavior.md](ui_behavior.md), "Terms before a module opens"). CloudCLI's and Codeg's pages carry no licence line. | |
 | No surface says the hub downloads, provides, bundles or distributes third-party software, in either language (代为下载, 提供, 自带). A sentence about the mechanism, in a standard page or a code comment, makes the module's installer its subject. | `The module's installer fetches the archive.`, never `The hub downloads VS Code.` |
-| The **About** card on the Settings page credits only the components the hub's own package carries on that system and in that edition, such as xray, CLIProxyAPI, NetBird, EasyTier and tun2socks. Gitea, VS Code, code-server, CloudCLI and Codeg are never on it. | |
+| The **About** card on the Settings page credits only the components the hub's own package carries on that system and in that edition, such as xray, CLIProxyAPI, NetBird, EasyTier, frp and tun2socks. Gitea, VS Code, code-server, CloudCLI and Codeg are never on it. | |
 
 The VS Code notice and its button:
 
@@ -308,7 +309,7 @@ A client's Hubs row names the way it reached the hub; `reached_through`
 
 | Key | English | Chinese |
 | --- | --- | --- |
-| `ui.overlay.relay_title` | SSH Relay | SSH 中继 |
+| `ui.overlay.relay_title` | SSH relay | SSH 中继 |
 | `ui.overlay.summary_relay` | Through a server you own, over SSH | 经你自己的服务器，用 SSH 转发 |
 | `ui.overlay.relay_host` | Server | 服务器 |
 | `ui.overlay.relay_ssh_port` | SSH port | SSH 端口 |
@@ -318,9 +319,9 @@ A client's Hubs row names the way it reached the hub; `reached_through`
 | `ui.overlay.relay_address` | Address for clients | 客户端连接地址 |
 | `ui.overlay.relay_host_key` | Host key | 主机密钥 |
 | `ui.overlay.relay_forget_host_key` | Forget host key | 忘记主机密钥 |
-| `ui.overlay.relay_apply` | Apply SSH Relay | 应用 SSH 中继 |
-| `ui.overlay.relay_apply_hint` | Saves the SSH Relay and connects it again. | 保存 SSH 中继设置并重新连接。 |
-| `ui.overlay.relay_apply_warning` | Clients connected through the SSH Relay disconnect and connect again. | 经 SSH 中继连着的客户端会断开再重连。 |
+| `ui.overlay.relay_apply` | Apply SSH relay | 应用 SSH 中继 |
+| `ui.overlay.relay_apply_hint` | Saves the SSH relay and connects it again. | 保存 SSH 中继设置并重新连接。 |
+| `ui.overlay.relay_apply_warning` | Clients connected through the SSH relay disconnect and connect again. | 经 SSH 中继连着的客户端会断开再重连。 |
 
 The credential's controls are the agent install's, with its words:
 `ui.install_agent.credential` (**Credential** / **凭据**) choosing
@@ -343,6 +344,74 @@ The state words, `state.relay_<code>`:
 | `host_key_changed` | Host key changed | 主机密钥已变 |
 | `forward_refused` | Forward refused | 服务器不让对外监听 |
 | `unreachable` | Server unreachable | 连不上服务器 |
+
+## The frp cards' words
+
+SakuraFrp's and OpenFrp's sections share the keys below; `{vendor}` is the
+card's title. [ui_behavior.md](ui_behavior.md), "The cards on the Access
+page", places them.
+
+| Key | English | Chinese |
+| --- | --- | --- |
+| `ui.overlay.sakurafrp_title` | SakuraFrp | SakuraFrp |
+| `ui.overlay.openfrp_title` | OpenFrp | OpenFrp |
+| `ui.overlay.summary_sakurafrp` | Through a SakuraFrp node | 经 SakuraFrp 的节点 |
+| `ui.overlay.summary_openfrp` | Through an OpenFrp node | 经 OpenFrp 的节点 |
+| `ui.overlay.frp_address` | Address for clients | 客户端连接地址 |
+| `ui.overlay.frp_node` | Node | 节点 |
+| `ui.overlay.frp_access_key` | Access key | 访问密钥 |
+| `ui.overlay.frp_access_key_hint` | The access key of your SakuraFrp account. | 你的 SakuraFrp 账户的访问密钥。 |
+| `ui.overlay.frp_access_key_save` | Save access key | 保存访问密钥 |
+| `ui.overlay.frp_access_key_forget` | Forget access key | 忘记访问密钥 |
+| `ui.overlay.openfrp_login` | Log in | 登录 |
+| `ui.overlay.openfrp_logout` | Log out | 退出登录 |
+| `ui.overlay.openfrp_login_waiting` | Confirm the login on the OpenFrp page. | 到 OpenFrp 的页面上确认登录。 |
+| `ui.overlay.openfrp_login_open` | Open the login page again | 重新打开登录页 |
+| `ui.overlay.openfrp_login_timed_out` | The login was not confirmed within 5 minutes. | 5 分钟内没有确认登录。 |
+| `ui.overlay.openfrp_login_failed` | The login failed. | 登录失败。 |
+| `ui.overlay.openfrp_login_expired` | The login has expired. The tunnel keeps running; log in again to pick another. | 登录已过期。隧道照常运行，要换隧道得重新登录。 |
+| `ui.overlay.openfrp_openapi` | Uses the OpenFrp OPENAPI | 使用 OpenFrp OPENAPI |
+| `ui.overlay.openfrp_notice` | This project is developed by its community. OpenFrp offers technical support for node problems only. | 此项目由社区开发，OpenFrp 官方不负责除节点问题以外的技术支持 |
+| `ui.overlay.frp_tunnels` | Tunnels | 隧道 |
+| `ui.overlay.frp_refresh` | Refresh | 刷新 |
+| `ui.overlay.frp_region` | Region | 地区 |
+| `ui.overlay.frp_latency` | Latency | 延迟 |
+| `ui.overlay.frp_region_mainland` | Mainland China | 中国大陆 |
+| `ui.overlay.frp_region_hk_mo_tw` | Hong Kong, Macao, Taiwan | 港澳台 |
+| `ui.overlay.frp_region_abroad` | Outside China | 海外 |
+| `ui.overlay.frp_region_outside_mainland` | Outside mainland China | 中国大陆以外 |
+| `ui.overlay.frp_empty` | No TCP tunnel has local port {port}. Create one at {vendor}. | 没有本地端口为 {port} 的 TCP 隧道。到 {vendor} 建一条。 |
+| `ui.overlay.openfrp_empty` | No TCP tunnel has local port {port} and auto TLS off. Create one at OpenFrp. | 没有本地端口为 {port}、关闭自动 TLS 的 TCP 隧道。到 OpenFrp 建一条。 |
+| `ui.overlay.frp_console` | Open the {vendor} console | 打开 {vendor} 控制台 |
+| `ui.overlay.frp_port_mismatch` | The connection port is {port}. At {vendor}, change this tunnel's local port to {port}, then apply the tunnel again. | 连接端口现在是 {port}。到 {vendor} 把这条隧道的本地端口改成 {port}，再重新应用隧道。 |
+| `ui.overlay.frp_apply` | Apply tunnel | 应用隧道 |
+| `ui.overlay.frp_apply_hint` | Connects through the picked tunnel and gives its address to clients and agents. | 经选中的隧道连接，并把它的地址发给客户端和被控端。 |
+| `ui.overlay.frp_apply_warning` | Clients connected through {vendor} disconnect and connect again. | 经 {vendor} 连着的客户端会断开再重连。 |
+| `ui.network.agent_port_frp_warning` | {vendor} has a tunnel: change its local port at {vendor} to match. | {vendor} 已选隧道：到 {vendor} 把隧道的本地端口也跟着改。 |
+
+`ui.overlay.openfrp_notice` in Chinese is OpenFrp's own sentence, word for
+word, which its terms ask for.
+
+The state words, `state.frp_<code>`:
+
+| `state` | English | Chinese |
+| --- | --- | --- |
+| `disabled` | Off | 已关闭 |
+| `not_signed_in` | Not signed in | 未登录 |
+| `vault_locked` | Vault locked | 保险库已锁定 |
+| `no_tunnel` | Enabled, not connected | 已启用，未连接 |
+| `loopback_port_taken` | Local port in use | 本机端口已有程序在用 |
+| `config_failed` | Tunnel config unavailable | 取不到隧道配置 |
+| `connecting` | Connecting | 连接中 |
+| `connected` | Connected | 已连上 |
+| `proxy_refused` | Tunnel refused by the node | 节点拒绝了隧道 |
+| `port_closed` | Public port closed | 对外端口不通 |
+| `login_failed` | Node login failed | 节点登录失败 |
+| `unreachable` | Node unreachable | 连不上节点 |
+
+A client's Hubs row words `reached_through` `sakurafrp` and `openfrp` as
+`ui.through.sakurafrp` and `ui.through.openfrp`, **SakuraFrp** and
+**OpenFrp** in both languages.
 
 ## The phone's AI addresses
 

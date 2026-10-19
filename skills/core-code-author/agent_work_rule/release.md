@@ -48,7 +48,8 @@ The mainland edition does not carry the proxy:
 | agent | nothing |
 
 `cn` keeps NetBird in the hub, the desktop client and the Android app, and
-keeps EasyTier, the relay, the client's files adapter, VS Code,
+keeps EasyTier, the SSH relay, SakuraFrp and OpenFrp with the frpc they
+run, the client's files adapter, VS Code,
 code-server, CloudCLI, Codeg, Gitea, Samba, Podman, ZFS and the AI gateway.
 
 The build writes the edition into each package as `EDITION`, `intl` or `cn`,
@@ -184,7 +185,12 @@ else it needs is named in the package's dependencies, so installing the file
 installs the appliance's prerequisites with it. On macOS and Windows the hub
 runs in `server` mode, and its package carries the hub compiled by Nuitka
 with every program it drives, `tun2socks` among them in `intl` for the
-proxy scopes that divert the machine's own packets there.
+proxy scopes that divert the machine's own packets there. Every hub package
+of both editions carries upstream frpc (fatedier/frp, Apache-2.0) at
+`FRP_VERSION`, taken from its release for the system and the architecture
+by `packaging/shared/hub_assets.py` and checked against the sha256
+`modules/frp/constants.py` pins, as it takes NetBird and EasyTier; its
+licence is `licenses/frp.txt`, and the **About** card credits it.
 
 There is no 32-bit ARM package. The boards that would need one have no
 prebuilt wheels for the hub's dependencies, so the environment would have to
@@ -345,7 +351,7 @@ Gitee has no fixed address for the latest release's files, which is why the
 `neutrino-<version>-source.tar.xz` is this tree at the tagged commit, with
 `third_party/` beside it holding the upstream archives of everything the
 packages carry, at the exact tags the binaries were built from: RustDesk,
-EasyTier, NetBird, Xray-core, CLIProxyAPI and cc-switch. It exists because
+EasyTier, NetBird, Xray-core, CLIProxyAPI, frp and cc-switch. It exists because
 some of those are copyleft and a binary release owes its source; it is not
 what anybody installs from. GitHub's own `Source code (zip)` and `(tar.gz)`
 carry the tree alone.

@@ -29,7 +29,9 @@ saved, the panel's apply bar warns with `ui.network.agent_port_offline_warning
 hub and join again with a new link ([protocol.md](protocol.md), "Three
 ports, two audiences"). While Direct is on, the bar adds
 `ui.network.agent_port_direct_warning`: the router's port forward and
-Direct's public port change with the agent port.
+Direct's public port change with the agent port. While SakuraFrp or OpenFrp
+has a tunnel picked, its `tunnel_id` not empty, the bar adds
+`ui.network.agent_port_frp_warning {vendor}` once for each.
 
 **A page carries no controls that belong to a panel** — no apply, no reset, no
 save. Its header may carry an action that belongs to no single panel and starts
@@ -457,16 +459,17 @@ hint under it is `ui.network.exposure_hint` ([ui_text.md](ui_text.md), "The
 Network page's words"), and the apply bar is **Apply exposure**. Opening the
 agent port to every sender is Direct's switch on the **Access** page, below.
 
-## The Direct and relay cards on the Access page
+## The cards on the Access page
 
 The **Access** page draws the ways in as cards in the engine panel, in this
-order: Direct, Relay, NetBird, EasyTier. The cards sit two to a row, and
-one to a row below 720 px. A page with
+order: NetBird, EasyTier, SSH relay, Direct, SakuraFrp, OpenFrp. The cards
+sit three to a row, two rows of three, in both editions, and one to a row
+below 720 px. A page with
 no card switched on says nothing about it. Every card is shaped alike: its switch stages into
 the engine panel's draft and that panel's apply bar turns it on or off, and
 pressing the card shows its section under the panel while the card is on as
 applied. A card that is off, or switched on and not yet applied, draws
-nothing under the panel, the same for all four; once the relay is applied on,
+nothing under the panel, the same for all six; once the relay is applied on,
 its section appears with the state it has then, `not_configured` until it is
 set up. The engine panel's bar reads **Apply access**
 (`ui.overlay.apply_engine`).
@@ -505,7 +508,7 @@ The relay's section holds two panels:
 | Panel | Kind | Holds |
 | --- | --- | --- |
 | Status | visualizing, read from `GET /api/hub/overlay/relay` on the page's 10 s cadence | the state as a `StatusDot` with its word; **Address for clients**, the `url` in mono; **Host key**, the `host_key_fingerprint` in mono with **Forget host key** beside it while one is recorded; `last_error` in mono under the state while it is not empty. No link: the guide page stays in the guide |
-| Settings | configurable, a `settings_group` with its own apply bar | **Server**, **SSH port**, **Account**, **Credential** and **Public port**, then the vault picker of the credential chosen. **Credential** is the Devices page's **Install agent** picker, with its words and the hint `ui.overlay.relay_credential_hint`: **SSH key** shows the picker of the vault's SSH keys, **Password** the picker of its logins, and the request names the one picked as `key_id` or `login_id`, as the install's does. No link to the Credentials page. The bar's label is **Apply SSH Relay**, its hint `ui.overlay.relay_apply_hint`, and its warning `ui.overlay.relay_apply_warning` while the relay is `connected` |
+| Settings | configurable, a `settings_group` with its own apply bar | **Server**, **SSH port**, **Account**, **Credential** and **Public port**, then the vault picker of the credential chosen. **Credential** is the Devices page's **Install agent** picker, with its words and the hint `ui.overlay.relay_credential_hint`: **SSH key** shows the picker of the vault's SSH keys, **Password** the picker of its logins, and the request names the one picked as `key_id` or `login_id`, as the install's does. No link to the Credentials page. The bar's label is **Apply SSH relay**, its hint `ui.overlay.relay_apply_hint`, and its warning `ui.overlay.relay_apply_warning` while the relay is `connected` |
 
 The state's tone follows "Status dots and badges": `connected` is `ok`,
 `connecting` is `warn`, `disabled` and `not_configured` are `idle`, and every
@@ -516,6 +519,23 @@ key` / 「忘记主机密钥」, the body `The next connection records the key t
 server presents.` / 「下次连接时记录服务器出示的密钥。」, and the button
 **Forget** / **忘记**. It acts at once, outside the settings draft, the
 way a revocation does ("When an effect happens").
+
+SakuraFrp's and OpenFrp's sections are shaped alike, from the words in
+[ui_text.md](ui_text.md), "The frp cards' words". Once the card is applied
+on, its section appears with the state it has then, `not_signed_in` until
+the person signs in. Each holds three panels, top to bottom:
+
+| Panel | Kind | Holds |
+| --- | --- | --- |
+| Status | visualizing, read from `GET /api/hub/overlay/<vendor>` on the page's 10 s cadence | the state as a `StatusDot` with its word; **Node**, `node_name`; **Address for clients**, the `url` in mono; `last_error` in mono under the state while it is not empty; `ui.overlay.frp_port_mismatch` while `local_port` is not the connection port |
+| Account | SakuraFrp: configurable, a `settings_group` with its own apply bar; OpenFrp: buttons that act at once | SakuraFrp: **Access key**, a password field with the hint `ui.overlay.frp_access_key_hint`, the bar **Save access key**, and **Forget access key** while one is stored. OpenFrp: **Log in** while signed out or expired, which opens `login.authorization_url` in a new tab; while `login.state` is `waiting`, `ui.overlay.openfrp_login_waiting` with **Open the login page again**, and the page reads the view every 5 s until the state changes; `timed_out` and `failed` worded under the button; **Log out** while signed in; `ui.overlay.openfrp_login_expired` while `is_login_expired`. Under OpenFrp's panel, always shown, `ui.overlay.openfrp_openapi` and `ui.overlay.openfrp_notice` in the panel's small text |
+| Tunnels | configurable, its own apply bar, shown while signed in | one row per tunnel of `GET /api/hub/overlay/<vendor>/tunnel`, read when the section opens and on **Refresh** in the panel's header: a radio mark, the node's name, the region's word and the latency in mono at the right edge, the picked tunnel's row marked; an empty list is `ui.overlay.frp_empty` (`ui.overlay.openfrp_empty` for OpenFrp) with **Open the {vendor} console**, a link to `console_url` in a new tab. The bar's label is **Apply tunnel**, its hint `ui.overlay.frp_apply_hint`, and its warning `ui.overlay.frp_apply_warning` while the state is `connected` |
+
+The state's tone follows "Status dots and badges": `connected` is `ok`,
+`connecting` is `warn`, `disabled`, `not_signed_in` and `no_tunnel` are
+`idle`, and every other state is `error`. **Log out** and **Forget access
+key** ask through `useConfirm`, with the apply warning's sentence as the body
+while the state is `connected`.
 
 ## The Modules page
 

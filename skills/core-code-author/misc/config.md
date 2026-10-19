@@ -49,6 +49,7 @@ password and is turned on for one client at a time.
 | `config/easytier/easytier.json` | `easytier.example.json` | yes: the mode, the network secret and the console address with its token, both sealed |
 | `config/overlay/direct.json` | `direct.example.json` | no: Direct's `is_enabled`, `public_host` and `public_port` |
 | `config/overlay/relay.json` | `relay.example.json` | no: the relay's `is_enabled`, `host`, `ssh_port`, `account`, `public_port`, and `key_id` or `login_id`, the id of the SSH key or of the login in the vault |
+| `config/overlay/sakurafrp.json`, `config/overlay/openfrp.json` | `sakurafrp.example.json`, `openfrp.example.json` | yes: each frp vendor's `credential`, SakuraFrp's access key or OpenFrp's `Authorization`, sealed, beside `is_enabled` and the picked tunnel's `tunnel_id`, `node_name`, `local_port`, `public_host` and `public_port` ([../design/hub_components/network.md](../design/hub_components/network.md), "SakuraFrp and OpenFrp") |
 | `config/credentials/vault.json` | `vault.example.json` | yes — every sealed secret |
 | `config/devices/packages/*` | — | no (build artifacts, just large) |
 
