@@ -17,6 +17,9 @@ final class ForwardRelay {
     /// The loopback number bound; 0 until started.
     private(set) var localPort = 0
 
+    /// Called when the hub refuses a connection's `connect` stream, at its open or by closing it with a code.
+    var onRefused: ((ClientError) -> Void)?
+
     /// Prepare a forward.
     ///
     /// - Parameters:
@@ -29,6 +32,9 @@ final class ForwardRelay {
 
     /// Whether the relay listens.
     var isActive: Bool { source != nil }
+
+    /// Whether a connection the relay accepted is still open.
+    var isCarrying: Bool { !pipes.isEmpty }
 
     /// Bind the loopback and start accepting.
     ///
@@ -83,11 +89,13 @@ final class ForwardRelay {
             switch open() {
             case .failure(let refusal):
                 ClientLog.info("a connection to \(name) was not opened: \(refusal.code)")
+                onRefused?(refusal)
                 ForwardSocket.closeDescriptor(accepted)
             case .success(let stream):
                 let pipe = ForwardPipe(descriptor: accepted, stream: stream) { [weak self] pipe in
                     self?.pipes[ObjectIdentifier(pipe)] = nil
                 }
+                pipe.onRefused = { [weak self] refusal in self?.onRefused?(refusal) }
                 pipes[ObjectIdentifier(pipe)] = pipe
                 pipe.start()
             }

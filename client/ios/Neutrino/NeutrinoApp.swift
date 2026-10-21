@@ -29,7 +29,8 @@ struct NeutrinoApp: App {
             edition: edition,
             hasNetwork: { network.hasNetwork },
             resolveHubName: HubNameResolver.resolve,
-            localNetworks: ChannelLocalNetwork.deviceNetworks)
+            localNetworks: ChannelLocalNetwork.deviceNetworks,
+            shareClient: { SmbShareClient() })
         network.onChange = { [weak core] in core?.networkChanged() }
         network.start()
         _core = StateObject(wrappedValue: core)

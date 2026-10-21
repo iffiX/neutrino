@@ -55,6 +55,12 @@ struct SettingsScreen: View {
             creditRow(
                 "\(Client.swiftTermName) \(Client.swiftTermVersion)", licence: Client.swiftTermLicence,
                 source: Client.swiftTermSourceUrl)
+            creditRow(
+                "\(Client.amsmb2Name) \(Client.amsmb2Version)", licence: Client.amsmb2Licence,
+                source: Client.amsmb2SourceUrl)
+            creditRow(
+                "\(Client.libsmb2Name) \(Client.libsmb2Version)", licence: Client.libsmb2Licence,
+                source: Client.libsmb2SourceUrl)
         }
         .padding(16)
     }
