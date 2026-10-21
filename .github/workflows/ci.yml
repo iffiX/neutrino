@@ -207,6 +207,16 @@ jobs:
       - name: Check the app links the core
         run: nm client/ios/build/derived/Build/Products/Release-iphoneos/Neutrino.app/Neutrino | grep -E ' [Tt] _nd_attach_frames$'
 
+      # The unsigned .ipa with the core, for the test on a phone.
+      - name: Build the unsigned .ipa
+        run: python3 packaging/build/build_client_ios.py --output-dir dist
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: client_ios_device_test
+          path: dist/*-ios.ipa
+          if-no-files-found: error
+
   # The two one-command installers, each held to its language's linter.
   install_scripts:
     name: shellcheck and PSScriptAnalyzer
