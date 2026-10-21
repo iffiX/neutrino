@@ -423,6 +423,51 @@ The forwarded AI row on the phone labels its two addresses
 | `ui.ai_address_plain` | For apps that add /v1 themselves | 应用自己会加 /v1 时用这个 |
 | `ui.ai_address_v1` | For apps that want /v1 in the address | 应用要求地址带 /v1 时用这个 |
 
+## The iOS share page's words
+
+The iOS app's share page ([client.md](client.md), "The share page") words
+its rows, its dialogs and its codes with these keys of the app's own
+catalog. The password keys are the Android app's.
+
+| Key | English | Chinese |
+| --- | --- | --- |
+| `ui.forget_password` | Forget password | 忘掉密码 |
+| `ui.forget_password_arm` | Press again to forget | 再按一次以忘掉 |
+| `ui.remember` | Remember | 记住 |
+| `ui.add` | Add | 添加 |
+| `ui.upload` | Upload | 上传 |
+| `ui.more` | More | 更多 |
+| `ui.rename` | Rename | 重命名 |
+| `ui.save_to_files` | Save to Files | 存储到“文件” |
+| `ui.delete` | Delete | 删除 |
+| `ui.delete_armed` | Press again to delete | 再按一次删除 |
+| `ui.retry` | Retry | 重试 |
+| `ui.create` | Create | 新建 |
+| `ui.name_hint` | Name | 名称 |
+| `ui.empty_folder` | This folder is empty | 这个文件夹是空的 |
+| `ui.share_progress` | {done} of {total} | {done} / {total} |
+| `ui.job.downloading` | Downloading… | 下载中… |
+| `ui.job.uploading` | Uploading… | 上传中… |
+| `ui.job.renaming` | Renaming… | 重命名中… |
+| `ui.job.deleting` | Deleting… | 删除中… |
+| `code.share_name_taken` | This folder already holds that name. | 这个文件夹里已经有这个名字。 |
+| `code.share_interrupted` | Interrupted when the app went to the background. | 应用转入后台时中断了。 |
+
+**New folder**, **Open**, **Connect**, **Cancel**, the user name and password
+fields and `ui.job.opening` are the desktop client's keys.
+
+## The iOS remote desktop's words
+
+The iOS app's **Remote desktops** page and its viewer ([client.md](client.md),
+"The remote desktop viewer") use the Android app's keys for the viewer's
+buttons, the Configure sheet and the codes `rdp_closed`, `rdp_core_missing`
+and `rdp_login_failed`, and the desktop client's keys for the page's rows.
+The bar adds one key of the app's own.
+
+| Key | English | Chinese |
+| --- | --- | --- |
+| `ui.bar_desktops` | Desktops | 桌面 |
+
 ## Localization
 
 The panel and the client page speak English and Simplified Chinese; the

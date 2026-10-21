@@ -40,6 +40,15 @@ final class ClientCore: ObservableObject {
     /// The page the in-app browser shows, nil while it is closed.
     @Published var browser: BrowserTarget?
 
+    /// The share page, nil while it is closed.
+    @Published private(set) var share: ShareView?
+
+    /// What each file entry's row shows of Open, by `<binding>/<entry>`.
+    @Published private(set) var shareRows: [String: ShareRow] = [:]
+
+    /// The shares with a login held, by `<binding>/<entry>`.
+    @Published private(set) var shareLogins: Set<String> = []
+
     /// The shared desktops whose Connect runs, by `<binding>/<entry>`.
     @Published private(set) var desktopsConnecting: Set<String> = []
 
@@ -54,6 +63,9 @@ final class ClientCore: ObservableObject {
 
     /// The terminal tabs, which the Terminals page's views read the output of.
     let tabs: TerminalTabs
+
+    /// The file entries' shares: Open, the logins, and the share the share page shows.
+    let shares: ShareSessions
 
     private let store: BindingStore
     private let connections: HubConnections
@@ -75,14 +87,15 @@ final class ClientCore: ObservableObject {
     ///   - hasNetwork: Whether the phone has a network at all.
     ///   - resolveHubName: Calls back with the address `hub.neutrino.internal` resolves to here, or nil.
     ///   - localNetworks: The networks this phone holds an address in.
+    ///   - shareClient: Makes the SMB client of one share's connection.
     ///   - remoteDesktop: What the remote desktop viewer draws and sends input with.
     ///   - bundle: Where the word catalogs are.
     init(
         secrets: SecretStore, transport: HubTransport, clock: ClientClock, defaults: UserDefaults,
         device: ClientDevice, edition: String, hasNetwork: @escaping () -> Bool,
         resolveHubName: @escaping (@escaping (String?) -> Void) -> Void,
-        localNetworks: @escaping () -> [ChannelLocalNetwork], remoteDesktop: RemoteDesktopCore,
-        bundle: Bundle = .main
+        localNetworks: @escaping () -> [ChannelLocalNetwork], shareClient: @escaping () -> ShareClient,
+        remoteDesktop: RemoteDesktopCore, bundle: Bundle = .main
     ) {
         let store = BindingStore(secrets: secrets)
         let machine = ClientMachine(
@@ -103,12 +116,13 @@ final class ClientCore: ObservableObject {
             store: store, transport: transport, machine: machine, clock: clock, resolveHubName: resolveHubName,
             localNetworks: localNetworks, hasNetwork: hasNetwork, onLeaving: { leaving?($0) })
         self.connections = connections
-        let forwards = WebForwards(
+        let openConnect: (String, [String: JSONValue]) -> Result<ChannelStream, ClientError> = { bindingId, args in
+            connections.session(bindingId)?.openStream(kind: Channel.kindConnect, args: args, hasBytes: true)
+                ?? .failure(.refusal(Channel.codeHubUnreachable, ["detail": "this hub is not connected"]))
+        }
+        forwards = WebForwards(
             table: LocalPortTable(defaults: defaults),
-            openConnect: { bindingId, args in
-                connections.session(bindingId)?.openStream(kind: Channel.kindConnect, args: args, hasBytes: true)
-                    ?? .failure(.refusal(Channel.codeHubUnreachable, ["detail": "this hub is not connected"]))
-            },
+            openConnect: openConnect,
             material: { bindingId, args, completion in
                 guard let session = connections.session(bindingId) else {
                     completion(.failure(.refusal(Channel.codeHubUnreachable, ["detail": "this hub is not connected"])))
@@ -116,7 +130,6 @@ final class ClientCore: ObservableObject {
                 }
                 session.openService(args: args, completion: completion)
             })
-        self.forwards = forwards
         let desktopChoices = RemoteDesktopChoiceStore(defaults: defaults)
         self.desktopChoices = desktopChoices
         desktops = RemoteDesktopSessions(
@@ -127,20 +140,21 @@ final class ClientCore: ObservableObject {
                 }
                 session.openService(args: ["id": .string(entryId)], completion: completion)
             },
-            forward: { bindingId, entryId, port in forwards.hold(bindingId: bindingId, entryId: entryId, port: port) },
-            release: { bindingId, entryId in forwards.release(bindingId: bindingId, entryId: entryId) },
-            choiceOf: { desktopChoices.choice(of: $0) })
+            openConnect: openConnect, choiceOf: { desktopChoices.choice(of: $0) })
         tabs = TerminalTabs(
             open: { bindingId, kind, args, hasBytes in
                 connections.session(bindingId)?.openStream(kind: kind, args: args, hasBytes: hasBytes)
                     ?? .failure(.refusal(Channel.codeHubUnreachable, ["detail": "this hub is not connected"]))
             },
             clock: clock)
+        shares = ShareSessions(secrets: secrets, makeClient: shareClient, openConnect: openConnect)
         leaving = { [weak self] bindingId in self?.leaving(bindingId) }
         connections.onChange = { [weak self] in self?.hubsChanged() }
         forwards.onChange = { [weak self] in self?.forwardsChanged() }
         desktops.onChange = { [weak self] in self?.desktopsChanged() }
         tabs.onChange = { [weak self] in self?.tabsChanged() }
+        shares.onChange = { [weak self] in self?.sharesChanged() }
+        shareLogins = shares.heldLogins
         connections.start()
     }
 
@@ -173,6 +187,7 @@ final class ClientCore: ObservableObject {
     /// Refresh every hub: every error line goes, and every hub is asked again.
     func refresh() {
         forwards.clearErrors()
+        shares.refresh()
         desktops.clearErrors()
         connections.refresh()
     }
@@ -244,7 +259,7 @@ final class ClientCore: ObservableObject {
         desktops.connect(
             bindingId: bindingId, entryId: entry.id,
             name: hubName + ":" + (entry.deviceName.isEmpty ? entry.title : entry.deviceName),
-            platformOs: entry.payload.text("platform_os"), port: entry.payload.number("port") ?? 0)
+            platformOs: entry.payload.text("platform_os"))
     }
 
     /// Close the viewer: its session and its forward end.
@@ -294,6 +309,7 @@ final class ClientCore: ObservableObject {
     func suspend() {
         closeDesktop()
         forwards.suspend()
+        shares.suspend()
         connections.suspend()
     }
 
@@ -302,6 +318,7 @@ final class ClientCore: ObservableObject {
     func foreground() {
         connections.foreground()
         forwards.foreground()
+        shares.foreground()
     }
 
     /// Pick the machine a new terminal opens on.
@@ -327,12 +344,15 @@ final class ClientCore: ObservableObject {
         desktops.forget(bindingId: bindingId)
         desktopChoices.forget(bindingId: bindingId)
         forwards.forget(bindingId: bindingId)
+        shares.forget(bindingId: bindingId)
         tabs.forget(bindingId: bindingId)
     }
 
     private func hubsChanged() {
         let views = connections.views
         forwards.take(views)
+        shares.take(views)
+        desktops.take(views)
         tabs.take(views)
         joining = connections.join
         hubs = merged(views)
@@ -341,6 +361,12 @@ final class ClientCore: ObservableObject {
     private func forwardsChanged() {
         forwardRows = forwards.rows
         hubs = merged(connections.views)
+    }
+
+    private func sharesChanged() {
+        share = shares.session?.view
+        shareRows = shares.rows
+        shareLogins = shares.heldLogins
     }
 
     private func desktopsChanged() {

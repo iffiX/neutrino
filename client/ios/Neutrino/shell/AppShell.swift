@@ -2,8 +2,8 @@ import SwiftUI
 
 /// The frame of every page: the sidebar when the window is wider than it is tall or at least 720 points wide,
 /// the bottom bar otherwise; the top bar above the page; and the page's own action at the right of the page
-/// header beside the sidebar, or as a floating button above the bottom bar. The remote desktop viewer covers the
-/// whole screen while it is open.
+/// header beside the sidebar, or as a floating button above the bottom bar. The Files page shows the share page
+/// while a share is open, and the remote desktop viewer covers the whole screen while it is open.
 struct AppShell: View {
     @ObservedObject var core: ClientCore
 
@@ -66,8 +66,11 @@ struct AppShell: View {
             if isSidebar, core.browser == nil, let action = pageAction {
                 HStack {
                     Spacer()
-                    NeutrinoButton(
-                        label: action.label, tier: .primary, isEnabled: action.isEnabled, action: action.action)
+                    ForEach(Array((action.items.isEmpty ? [action] : action.items).enumerated()), id: \.offset) {
+                        _, button in
+                        NeutrinoButton(
+                            label: button.label, tier: .primary, isEnabled: button.isEnabled, action: button.action)
+                    }
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
@@ -90,7 +93,12 @@ struct AppShell: View {
             switch screen {
             case .hubs: HubsScreen(core: core) { screen = .join }
             case .web: WebScreen(core: core)
-            case .files: FilesScreen(core: core)
+            case .files:
+                if let share = core.share {
+                    ShareScreen(core: core, share: share)
+                } else {
+                    FilesScreen(core: core)
+                }
             case .terminals: TerminalScreen(core: core, cache: cache)
             case .desktops: RemoteDesktopScreen(core: core)
             case .settings: SettingsScreen(core: core)
@@ -101,26 +109,47 @@ struct AppShell: View {
 
     private var title: String {
         if let browser = core.browser { return browser.title }
+        if screen == .files, let share = core.share {
+            return share.path.parts.isEmpty ? share.target.title : share.path.name
+        }
         return words.word(screen.titleKey)
     }
 
     private var onBack: (() -> Void)? {
         if core.browser != nil { return { core.browser = nil } }
+        if screen == .files, core.share != nil { return { core.shares.back() } }
         guard let parent = screen.parent else { return nil }
         return { screen = parent }
     }
 
+    @ViewBuilder
     private func floatingButton(_ action: PageAction) -> some View {
-        Button(action: action.action) {
-            Image(systemName: action.systemImage)
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundColor(action.isEnabled ? palette.bg : palette.textFaint)
-                .frame(width: 56, height: 56)
-                .background(Circle().fill(action.isEnabled ? palette.accent : palette.elevated))
+        if action.items.isEmpty {
+            Button(action: action.action) { floatingCircle(action) }
+                .buttonStyle(.plain)
+                .disabled(!action.isEnabled)
+                .accessibilityLabel(action.label)
+                .padding(16)
+        } else {
+            Menu {
+                ForEach(Array(action.items.enumerated()), id: \.offset) { _, item in
+                    Button(action: item.action) { Label(item.label, systemImage: item.systemImage) }
+                        .disabled(!item.isEnabled)
+                }
+            } label: {
+                floatingCircle(action)
+            }
+            .disabled(!action.isEnabled)
+            .accessibilityLabel(action.label)
+            .padding(16)
         }
-        .buttonStyle(.plain)
-        .disabled(!action.isEnabled)
-        .accessibilityLabel(action.label)
-        .padding(16)
+    }
+
+    private func floatingCircle(_ action: PageAction) -> some View {
+        Image(systemName: action.systemImage)
+            .font(.system(size: 20, weight: .semibold))
+            .foregroundColor(action.isEnabled ? palette.bg : palette.textFaint)
+            .frame(width: 56, height: 56)
+            .background(Circle().fill(action.isEnabled ? palette.accent : palette.elevated))
     }
 }

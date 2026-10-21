@@ -115,35 +115,6 @@ final class WebForwardsTests: XCTestCase {
         }
     }
 
-    func testAHeldForwardShowsOnNoRowCarriesItsEntrysStreamsAndEndsWithItsRelease() throws {
-        let forwards = try XCTUnwrap(self.forwards)
-        forwards.take([hub(isUp: true)])
-        let port = try forwards.hold(bindingId: "b1", entryId: "code", port: 0).get()
-        XCTAssertNil(forwards.rows["b1/code"])
-        let client = try XCTUnwrap(LoopbackClient(port: port))
-        turnMainQueue()
-        let open = try XCTUnwrap(socket.frames.first { $0.text("type") == "open" })
-        XCTAssertEqual(open.text("kind"), "connect")
-        XCTAssertEqual(open.text("id"), "code")
-        XCTAssertEqual(try forwards.hold(bindingId: "b1", entryId: "code", port: 0).get(), port)
-
-        forwards.release(bindingId: "b1", entryId: "code")
-        turnMainQueue()
-        XCTAssertNil(LoopbackClient(port: port))
-        _ = client
-    }
-
-    func testAHeldForwardEndsWhenItsHubWithdrawsTheEntry() throws {
-        let forwards = try XCTUnwrap(self.forwards)
-        forwards.take([hub(isUp: true)])
-        let port = try forwards.hold(bindingId: "b1", entryId: "code", port: 0).get()
-        var withdrawn = hub(isUp: true)
-        withdrawn.services = []
-        forwards.take([withdrawn])
-        turnMainQueue()
-        XCTAssertNil(LoopbackClient(port: port))
-    }
-
     func testThePanelOpensWithItsSignInToken() throws {
         let forwards = try XCTUnwrap(self.forwards)
         forwards.take([hub(isUp: true)])

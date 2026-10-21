@@ -30,6 +30,7 @@ struct NeutrinoApp: App {
             hasNetwork: { network.hasNetwork },
             resolveHubName: HubNameResolver.resolve,
             localNetworks: ChannelLocalNetwork.deviceNetworks,
+            shareClient: { SmbShareClient() },
             remoteDesktop: Self.remoteDesktopCore())
         network.onChange = { [weak core] in core?.networkChanged() }
         network.start()

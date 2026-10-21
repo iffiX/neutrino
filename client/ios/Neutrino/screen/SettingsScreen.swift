@@ -56,6 +56,12 @@ struct SettingsScreen: View {
                 "\(Client.swiftTermName) \(Client.swiftTermVersion)", licence: Client.swiftTermLicence,
                 source: Client.swiftTermSourceUrl)
             creditRow(
+                "\(Client.amsmb2Name) \(Client.amsmb2Version)", licence: Client.amsmb2Licence,
+                source: Client.amsmb2SourceUrl)
+            creditRow(
+                "\(Client.libsmb2Name) \(Client.libsmb2Version)", licence: Client.libsmb2Licence,
+                source: Client.libsmb2SourceUrl)
+            creditRow(
                 "\(Client.rustDeskName) \(Client.rustDeskVersion)", licence: Client.rustDeskLicence,
                 source: Client.rustDeskSourceUrls[core.edition] ?? Client.rustDeskSourceUrls[Client.editionIntl] ?? "",
                 patch: rustDeskPatch)

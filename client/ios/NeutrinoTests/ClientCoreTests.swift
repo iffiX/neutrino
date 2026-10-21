@@ -9,11 +9,13 @@ final class ClientCoreTests: XCTestCase {
     private var desktop = FakeRemoteDesktopCore()
     private var defaults = UserDefaults()
     private var suite = ""
+    private var share = FakeShareClient()
 
     override func setUp() {
         transport = FakeHubTransport()
         clock = FakeClientClock()
         desktop = FakeRemoteDesktopCore()
+        share = FakeShareClient()
         suite = "neutrino.tests.\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suite) ?? .standard
     }
@@ -26,7 +28,7 @@ final class ClientCoreTests: XCTestCase {
         ClientCore(
             secrets: FakeSecretStore(), transport: transport, clock: clock, defaults: defaults, device: Samples.device,
             edition: Client.editionIntl, hasNetwork: { true }, resolveHubName: { $0(nil) }, localNetworks: { [] },
-            remoteDesktop: desktop, bundle: Bundle(for: ClientCore.self))
+            shareClient: { self.share }, remoteDesktop: desktop, bundle: Bundle(for: ClientCore.self))
     }
 
     private func joinAndConnect(_ core: ClientCore) throws -> FakeChannelSocket {
@@ -54,6 +56,14 @@ final class ClientCoreTests: XCTestCase {
                             "host": .string("10.0.0.7"), "port": .int(21118), "platform_os": .string("linux"),
                         ]),
                         "source": .string("device"), "device_name": .string("argon"),
+                    ]),
+                    .object([
+                        "id": .string("music"), "type": .string("file"), "title": .string("music"),
+                        "payload": .object([
+                            "protocol": .string("smb"), "host": .string("10.0.0.5"), "share": .string("music"),
+                            "users": .array([.string("alice")]),
+                        ]),
+                        "source": .string("module"),
                     ]),
                 ])
             ]))
@@ -139,7 +149,7 @@ final class ClientCoreTests: XCTestCase {
         return try XCTUnwrap(core.viewing)
     }
 
-    func testConnectOnADesktopOpensTheViewerOnItsHeldForward() throws {
+    func testConnectOnADesktopOpensTheViewerOnAForwardOfItsOwn() throws {
         let core = self.core()
         let socket = try joinAndConnect(core)
         let target = try openDesktop(core, socket: socket)
@@ -172,6 +182,35 @@ final class ClientCoreTests: XCTestCase {
         turnMainQueue()
         XCTAssertNil(core.viewing)
         XCTAssertFalse(isListening(target.port))
+    }
+
+    func testTheEndOfTheBackgroundTimeCutsAShareTransferAndTheReturnLogsInAgain() throws {
+        let core = self.core()
+        _ = try joinAndConnect(core)
+        let hub = try XCTUnwrap(core.hubs.first)
+        let target = try XCTUnwrap(ShareTarget.of(hub, try XCTUnwrap(hub.services(of: "file").first)))
+        share.files = ["song.mp3": Data("la la".utf8)]
+        core.shares.logIn(target, login: ShareLogin(user: "alice", password: "pw"), isKept: true)
+        XCTAssertEqual(core.share?.items.map(\.name), ["song.mp3"])
+        share.isHolding = true
+        core.shares.session?.open(try XCTUnwrap(core.share?.items.first))
+        XCTAssertEqual(core.share?.transfers["song.mp3"]?.isRunning, true)
+
+        core.suspend()
+        XCTAssertTrue(share.isDisconnected)
+        share.finish(POSIXError(.ENOTCONN))
+        XCTAssertEqual(core.share?.transfers["song.mp3"]?.error?.code, "share_interrupted")
+
+        core.foreground()
+        XCTAssertFalse(share.isDisconnected)
+        XCTAssertEqual(core.share?.items.map(\.name), ["song.mp3"])
+        share.isHolding = false
+        core.shares.session?.retry("song.mp3")
+        XCTAssertNil(core.share?.transfers["song.mp3"])
+        XCTAssertNotNil(core.share?.preview)
+        core.shares.back()
+        XCTAssertNil(core.share)
+        turnMainQueue()
     }
 
     func testLeavingAHubForgetsItsBindingAtOnceAndTellsTheHub() throws {

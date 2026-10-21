@@ -5,14 +5,31 @@
     "rdp_closed": "The connection ended: {reason}",
     "rdp_core_missing": "This build has no remote desktop.",
     "rdp_login_failed": "The machine refused the access password.",
+    "share_interrupted": "Interrupted when the app went to the background.",
+    "share_name_taken": "This folder already holds that name.",
     "verb_unknown": "the hub does not know this command; update the hub"
   },
   "ui": {
+    "add": "Add",
     "back": "Back",
     "bar_desktops": "Desktops",
     "camera_allow": "Allow the camera",
     "camera_refused": "The camera is not allowed; paste the link below.",
+    "create": "Create",
+    "delete": "Delete",
+    "delete_armed": "Press again to delete",
+    "empty_folder": "This folder is empty",
+    "forget_password": "Forget password",
+    "forget_password_arm": "Press again to forget",
+    "job": {
+      "deleting": "Deleting…",
+      "downloading": "Downloading…",
+      "renaming": "Renaming…",
+      "uploading": "Uploading…"
+    },
     "join_hint": "Scan the QR code, or paste the link.",
+    "more": "More",
+    "name_hint": "Name",
     "or": "or",
     "paste": "Paste",
     "rdp_codec": "Codec",
@@ -26,9 +43,15 @@
     "rdp_quality_best": "Best",
     "rdp_quality_low": "Low bandwidth",
     "reason_viewer_open": "A viewer is open.",
+    "remember": "Remember",
+    "rename": "Rename",
+    "retry": "Retry",
+    "save_to_files": "Save to Files",
     "scan": "Scan",
     "scan_hint": "Point the camera at the QR code on the hub's Clients page",
     "scan_press": "Press Scan to use the camera.",
-    "terminal_detached": "Detached; waiting for the hub"
+    "share_progress": "{done} of {total}",
+    "terminal_detached": "Detached; waiting for the hub",
+    "upload": "Upload"
   }
 }
