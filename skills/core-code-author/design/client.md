@@ -448,10 +448,11 @@ one address a client dials.
 | `ai`, on a phone | from **Connect** until **Disconnect**, as a `port` entry |
 | `rdp` | from **Connect** until the viewer ends |
 | `file`, on Linux and macOS | from **Mount** until the share is unmounted |
+| `file`, on iOS | from **Open** until the share page closes, on a port the system picks ("The share page") |
 | the hub's panel | from the first press of **Panel** until the hub is left or the client quits |
 
 A `file` entry on Windows goes through the files adapter instead ("The
-files adapter on Windows"), and on a phone the in-app SMB client's sockets
+files adapter on Windows"), and on Android the in-app SMB client's sockets
 are `connect` streams themselves; neither holds a local port. A client that
 quits ends every forward.
 
@@ -922,12 +923,24 @@ entry.
 
 ### The share page
 
+The share page reads and writes one share with AMSMB2 4.0.3, the SMB2 and
+SMB3 client the app carries, which builds libsmb2 from its source. Both are
+LGPL-2.1, and the app carries them as one framework of their own, linked
+when the app starts.
+
 | Rule | Reason |
 | --- | --- |
-| The file entry's row shows **Open** and, while a password is kept, **Forget password**, which arms and removes it. **Open** shows a sheet for the password the first time, keeps the password in the Keychain, and opens the share page at the share's root. | The Android row's password rules, on a page of the app's own. |
-| The share page lists one folder: folders first, then files, each by name, a file with its size and its time. A tap on a folder opens it; the back arrow goes up one folder, and at the share's root back to the **Files** page. | One folder per screen is how a phone lists files. |
-| A tap on a file reads it into the app's temporary directory, with `ui.job.opening` and a spinner on its row, and then shows it in the system's preview (Quick Look), whose share button saves it to the Files app or sends it to another app. A failure writes the code on the row's error line. | The system's preview and share sheet open every kind of file the phone can open, and move it anywhere the person chooses. |
-| The app's SMB client reaches the share as on Android: each of its connections is a `connect` stream naming the file entry. | The share is reached through the hub, as on every client. |
+| The file entry's row shows **Open** and, while a login is held, **Forget password**, which arms and removes it. | The Android row's password rules, on a page of the app's own. |
+| The first **Open** shows a sheet: the user name (a picker over the entry's `users` when it names several, else a field holding the one it names), the password, **Remember** (on at first), **Cancel** and **Connect**. **Connect** logs in to the share, its button showing `ui.job.connecting`. A login the share takes is kept, in the Keychain with **Remember** on and until the app quits with it off, and the share page opens at the share's root. A refusal is worded in the sheet, and nothing is kept. | A login is kept only once the share has taken it, so a mistyped password is never kept. |
+| **Open** with a login held logs in under `ui.job.opening` and opens the share page; a failure writes its code on the row's error line. `share_login_rejected`, on **Open** or on any later login of the open share, forgets the held login, so the next **Open** shows the sheet. | A password the share rejects has changed, and keeping it would fail every **Open** after it. |
+| While the share page is open, AMSMB2 dials `127.0.0.1:<port>` and the share's name. The port is a forward of the app's own: a listener on `127.0.0.1` at a port the system picks, each accepted connection a `connect` stream naming the file entry, accepting nothing while the hub has no channel ("The local port table"). The port is in no local port table. | The share is reached through the hub, as on every client. Only the app's own SMB client dials the port, so no person needs its number to stay put. |
+| The page lists one folder: folders first, then files, each sorted by name; a file's row shows its size and the time it changed. A tap on a folder opens it. The back arrow goes up one folder, and at the share's root closes the page, its connection and its forward. A pull on the list or the refresh button reads the folder again, after logging in again when the share's connection ended, as when the hub's channel dropped under it. | One folder per screen is how a phone lists files. |
+| A tap on a file reads it into the app's temporary directory, its row showing `ui.job.opening`, the bytes read of the file's size, and **Cancel**. The system's preview (Quick Look) then shows the file, and its share button saves it to the Files app or sends it to another app. | The system's preview and share sheet open every kind of file the phone can open, and move it anywhere the person chooses. |
+| Each row has a menu: **Rename**, **Save to Files** on a file, and **Delete**. **Rename** opens a dialog with the name to change. **Save to Files** reads the file as a tap does, under `ui.job.downloading`, then opens the system's export picker. **Delete** arms the row: an armed button, `ui.delete_armed`, takes the menu's place, and a press on it within 5 s deletes the file, or the folder with everything in it, as on Android. | The button rule's arming, reached from a menu, the place a phone keeps a row's actions. |
+| The page has two actions, **Upload** and **New folder**: at the right of the page header beside the sidebar, and in the menu of the one floating **+** button above the bottom bar. **Upload** opens the system's document picker for one or more files, copies each into the app's temporary directory, and writes each into the folder on a row of its own above the folder's rows, showing `ui.job.uploading`, the bytes written of the file's size, and **Cancel**. **New folder** opens a dialog for the name. | A phone layout has one floating button, and both actions start from it. |
+| An upload or a new folder whose name the folder already holds takes the first free name of `<name> (1).<ext>`, `<name> (2).<ext>` and on, the number before a file's extension and at the end of a folder's name, as on Android. A rename to a name the folder holds is refused `share_name_taken`. | A copy never overwrites, and a rename does what the person typed or nothing. |
+| **Cancel** stops a transfer: a cancelled read leaves no file, and a cancelled write deletes the part it wrote. | A cancelled file is a file the person did not want. |
+| A failure writes its code on the row's error line, or on the page's error line for a listing, a new folder or the login on the return to the foreground: `share_login_rejected`, `share_access_denied`, `share_not_found`, `share_unreachable`, `share_name_taken`, or the hub's code when the hub refused the forward's `connect` stream. | The codes the desktop and Android word, and the hub's code where the hub is what failed. |
 
 A File Provider extension, the way an app adds a location to the system's
 Files app, runs in a process of its own while the app is suspended, and so
@@ -945,6 +958,7 @@ alone.
 | When the app leaves the screen, it starts a background task (`beginBackgroundTask`) and keeps every connection for the time iOS gives the task, about 30 s on iOS 16. Before that time ends, the app closes every channel and every share connection, stops every forward's listener, and ends the task. | A frozen socket answers no ping, and the hub holds it until the ping times out, up to a minute; a closed one ends its streams at once. iOS takes back the listening sockets of a suspended app. |
 | A channel closed this way has the effect of any dropped channel: a plain terminal session ends, and a persistent or shared one stays, its tab attaching again on return ("The session list"). | The machine keeps the sessions the person asked it to keep. |
 | Returning to the foreground reconnects every hub at once, with no backoff, and every forward that listened before listens again on its port. An in-app browser whose page iOS ended in the background loads it again. | The person is looking; a wait they can see is a fault. |
+| A transfer of the share page that the close cut shows `share_interrupted` on its row, with **Retry**. On the return the open share's forward listens again, the app logs in to the share again and reads the folder again. **Retry** on an upload deletes the part the cut write left, then writes the file again under the same name. | A transfer cannot outlive the connection iOS takes back, and the person decides whether it starts again. |
 | There is no notification line and no setting for this. | iOS keeps an app running in the background only for a few kinds of work, such as playing audio, navigation and calls, and this app does none of them. |
 
 ### The About card
@@ -952,7 +966,7 @@ alone.
 | Rule | Reason |
 | --- | --- |
 | **This machine** on the About card shows the device name iOS gives the app, which on iOS 16 and newer is the model, such as `iPhone`. | iOS gives the name the person set only to an app holding an entitlement Apple grants on request. |
-| The **Carried** group on the About card lists SwiftTerm, the MIT-licensed terminal view the Terminals page draws with, with its version and its **Source** link. | A library the app contains is credited where the app's own version is. |
+| The **Carried** group on the About card lists SwiftTerm, the MIT-licensed terminal view the Terminals page draws with, then AMSMB2 and libsmb2, the LGPL-2.1 SMB client of the share page, each with its version and its **Source** link. | A library the app contains is credited where the app's own version is. |
 
 ## An interaction this page does not cover
 

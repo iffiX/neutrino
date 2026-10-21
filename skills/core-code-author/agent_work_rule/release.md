@@ -326,8 +326,10 @@ The person installs the `.apk` on the phone, then scans the QR code on the
 
 The iOS app is the client on an iPhone, with the pages and the limits
 [../design/client.md](../design/client.md) gives it in "The iOS app". It
-contains SwiftTerm and no network core, and is licensed AGPL-3.0 by
-`client/ios/LICENSE`. The release attaches it unsigned, and each person
+contains SwiftTerm, AMSMB2 and the libsmb2 it builds, and no network core,
+and is licensed AGPL-3.0 by `client/ios/LICENSE`. AMSMB2 and libsmb2 are
+LGPL-2.1: the app carries them as one framework of their own, linked when
+the app starts, and the **About** card credits both with their source. The release attaches it unsigned, and each person
 signs their own copy. The release is the only place the app is published:
 the project holds no Apple developer account, so the app is in neither the
 App Store nor TestFlight.
