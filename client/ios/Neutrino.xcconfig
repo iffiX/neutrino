@@ -1,0 +1,3 @@
+// The app target's build settings beside project.yml. A device build links the RustDesk core
+// once packaging/build/build_core_rustdesk_ios.py has put it into cores/rustdesk/.
+#include? "cores/rustdesk/RustDesk.xcconfig"

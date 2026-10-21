@@ -1,7 +1,9 @@
 # The iOS app's project. `xcodegen generate` writes Neutrino.xcodeproj from
 # this file before every build; the version and the edition come in as the
 # build settings MARKETING_VERSION, CURRENT_PROJECT_VERSION and
-# NEUTRINO_EDITION, which packaging/build/build_client_ios.py passes.
+# NEUTRINO_EDITION, which packaging/build/build_client_ios.py passes. The app
+# target also reads Neutrino.xcconfig, which links the RustDesk core into a
+# device build when cores/rustdesk/ holds it.
 name: Neutrino
 options:
   deploymentTarget:
@@ -30,6 +32,9 @@ targets:
         buildPhase: resources
     dependencies:
       - package: SwiftTerm
+    configFiles:
+      Debug: Neutrino.xcconfig
+      Release: Neutrino.xcconfig
     info:
       path: Neutrino/Info.plist
       properties:
@@ -62,6 +67,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.iffix.neutrino
         TARGETED_DEVICE_FAMILY: "1,2"
         GENERATE_INFOPLIST_FILE: NO
+        SWIFT_INCLUDE_PATHS: $(SRCROOT)/rustdesk_core
   NeutrinoTests:
     type: bundle.unit-test
     platform: iOS

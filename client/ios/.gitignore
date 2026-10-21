@@ -6,3 +6,7 @@ Neutrino/Info.plist
 build/
 DerivedData/
 Payload/
+
+# The RustDesk core packaging/build/build_core_rustdesk_ios.py builds from its
+# pinned source; never committed.
+cores/

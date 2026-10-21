@@ -627,6 +627,33 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # The RustDesk core the app links, kept under the name the cores cache
+      # gives it: the core, its pinned commit, the machine, the recipe.
+      - name: Name the core
+        id: core_key
+        run: echo "key=$(python3 packaging/build/build_client_ios.py --cache-key)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the core
+        id: core
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.cache/neutrino/cores
+          key: ${{ steps.core_key.outputs.key }}
+
+      - name: Install what building the core needs
+        if: steps.core.outputs.cache-hit != 'true'
+        run: brew install nasm
+
+      - name: Put the core into the app
+        run: python3 packaging/build/build_core_rustdesk_ios.py
+
+      - name: Save the core
+        if: steps.core.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.cache/neutrino/cores
+          key: ${{ steps.core_key.outputs.key }}
+
       - run: brew install xcodegen
 
       - run: python3 packaging/build/build_client_ios.py --output-dir dist
@@ -1362,6 +1389,34 @@ jobs:
 
       - name: Unpack the mainland source tree
         run: mkdir cn && tar -xf cn_sources/*-cn-source.tar.xz -C cn --strip-components=1
+
+      - name: Name the core
+        id: core_key
+        working-directory: cn
+        run: echo "key=$(python3 packaging/build/build_client_ios.py --edition cn --cache-key)" >> "$GITHUB_OUTPUT"
+
+      # The core is the same in both editions, so the key is the intl one's.
+      - name: Restore the core
+        id: core
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.cache/neutrino/cores
+          key: ${{ steps.core_key.outputs.key }}
+
+      - name: Install what building the core needs
+        if: steps.core.outputs.cache-hit != 'true'
+        run: brew install nasm
+
+      - name: Put the core into the app
+        working-directory: cn
+        run: python3 packaging/build/build_core_rustdesk_ios.py
+
+      - name: Save the core
+        if: steps.core.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.cache/neutrino/cores
+          key: ${{ steps.core_key.outputs.key }}
 
       - run: brew install xcodegen
 

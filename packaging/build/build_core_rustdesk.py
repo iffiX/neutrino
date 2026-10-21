@@ -228,15 +228,11 @@ def fetch_ndk() -> Path:
     return root
 
 
-def build_vcpkg_ports(source: Path, ndk: Path) -> Path:
-    """Build the codec libraries for every machine, once per source commit.
-
-    Args:
-        source: The RustDesk tree, whose ``res/vcpkg`` overlay ports are used.
-        ndk: The NDK's root.
+def fetch_vcpkg() -> Path:
+    """vcpkg at the commit RustDesk pins, unpacked and bootstrapped once.
 
     Returns:
-        The vcpkg root, whose ``installed/<triplet>`` the crate links from.
+        The vcpkg root.
     """
     root = RUSTDESK_MOBILE_CACHE / f"vcpkg-{RUSTDESK_MOBILE_VCPKG_COMMIT[:12]}"
     if not (root / "vcpkg").exists():
@@ -247,6 +243,20 @@ def build_vcpkg_ports(source: Path, ndk: Path) -> Path:
         )
         unpack(archive, RUSTDESK_MOBILE_VCPKG_COMMIT, root)
         _run(["./bootstrap-vcpkg.sh", "-disableMetrics"], root)
+    return root
+
+
+def build_vcpkg_ports(source: Path, ndk: Path) -> Path:
+    """Build the codec libraries for every machine, once per source commit.
+
+    Args:
+        source: The RustDesk tree, whose ``res/vcpkg`` overlay ports are used.
+        ndk: The NDK's root.
+
+    Returns:
+        The vcpkg root, whose ``installed/<triplet>`` the crate links from.
+    """
+    root = fetch_vcpkg()
     environment = dict(os.environ, ANDROID_NDK_HOME=str(ndk), VCPKG_ROOT=str(root))
     for _, triplet, extra_ports, _ in RUSTDESK_MOBILE_ABIS.values():
         stamp = root / "installed" / f"{triplet}.{RUSTDESK_MOBILE_COMMIT[:12]}"
@@ -306,7 +316,9 @@ def _check_tools() -> None:
     """
     for tool in ("rustup", "cargo", "cargo-ndk", "nasm", "unzip", "patch"):
         if shutil.which(tool) is None:
-            raise SystemExit(f"{tool} is needed to build RustDesk and is not on the path")
+            raise SystemExit(
+                f"{tool} is needed to build RustDesk and is not on the path"
+            )
 
 
 def _run(command: list, cwd: Path, environment: "dict | None" = None) -> None:
