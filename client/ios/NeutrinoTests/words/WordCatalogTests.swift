@@ -9,7 +9,8 @@ final class WordCatalogTests: XCTestCase {
     private let appCodes = [
         "link_missing", "link_unreadable", "link_incomplete", "link_not_for_client", "hub_untrusted",
         "hub_unreachable", "hub_refused", "client_internal", "enroll_no_token", "port_taken", "forward_failed",
-        "web_token_missing", "unknown_request", "disconnect_first",
+        "web_token_missing", "unknown_request", "disconnect_first", "rdp_core_missing", "rdp_login_failed",
+        "rdp_closed", "rdp_launch_failed",
     ]
 
     func testEveryCodeIsWordedInBothLanguages() {
@@ -26,6 +27,16 @@ final class WordCatalogTests: XCTestCase {
             let words = WordCatalog.load(language: language, bundle: bundle)
             for way in Channel.reachedThrough {
                 XCTAssertTrue(words.has("ui.through.\(way)"), "\(language) words no ui.through.\(way)")
+            }
+        }
+    }
+
+    func testEveryPageOfTheBarIsWordedInBothLanguages() {
+        for language in Client.languages {
+            let words = WordCatalog.load(language: language, bundle: bundle)
+            for screen in AppScreen.tabs {
+                XCTAssertTrue(words.has(screen.barKey), "\(language) words no \(screen.barKey)")
+                XCTAssertTrue(words.has(screen.titleKey), "\(language) words no \(screen.titleKey)")
             }
         }
     }

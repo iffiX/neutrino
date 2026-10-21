@@ -143,6 +143,28 @@ final class WebForwards {
         rows[key] = nil
     }
 
+    /// Make an entry's forward for a job of another page, such as a shared desktop's Connect; it shows on no row,
+    /// and ends with `release`, with its hub, or when its hub withdraws the entry.
+    ///
+    /// - Parameters:
+    ///   - bindingId: The hub.
+    ///   - entryId: The entry.
+    ///   - port: The entry's own port, which the local port table tries first.
+    /// - Returns: The loopback number, or the refusal: `port_taken {port}` when another program listens on the
+    ///   entry's fixed number, `forward_failed` when the forward cannot listen.
+    func hold(bindingId: String, entryId: String, port: Int) -> Result<Int, ClientError> {
+        forward(Self.key(bindingId, entryId), bindingId: bindingId, args: ["id": .string(entryId)], port: port)
+    }
+
+    /// End a forward `hold` made.
+    ///
+    /// - Parameters:
+    ///   - bindingId: The hub.
+    ///   - entryId: The entry.
+    func release(bindingId: String, entryId: String) {
+        stop(Self.key(bindingId, entryId), why: "its viewer closed")
+    }
+
     /// One entry's local port, as the Configure dialog opens on it.
     ///
     /// - Parameters:

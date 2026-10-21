@@ -6,12 +6,14 @@ import XCTest
 final class ClientCoreTests: XCTestCase {
     private var transport = FakeHubTransport()
     private var clock = FakeClientClock()
+    private var desktop = FakeRemoteDesktopCore()
     private var defaults = UserDefaults()
     private var suite = ""
 
     override func setUp() {
         transport = FakeHubTransport()
         clock = FakeClientClock()
+        desktop = FakeRemoteDesktopCore()
         suite = "neutrino.tests.\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suite) ?? .standard
     }
@@ -24,7 +26,7 @@ final class ClientCoreTests: XCTestCase {
         ClientCore(
             secrets: FakeSecretStore(), transport: transport, clock: clock, defaults: defaults, device: Samples.device,
             edition: Client.editionIntl, hasNetwork: { true }, resolveHubName: { $0(nil) }, localNetworks: { [] },
-            bundle: Bundle(for: ClientCore.self))
+            remoteDesktop: desktop, bundle: Bundle(for: ClientCore.self))
     }
 
     private func joinAndConnect(_ core: ClientCore) throws -> FakeChannelSocket {
@@ -45,7 +47,14 @@ final class ClientCoreTests: XCTestCase {
                         "id": .string("gitea"), "type": .string("web"), "title": .string("Gitea"),
                         "payload": .object(["url": .string("http://10.0.0.5:3000/explore")]),
                         "source": .string("module"),
-                    ])
+                    ]),
+                    .object([
+                        "id": .string("desk"), "type": .string("rdp"), "title": .string("Desk"),
+                        "payload": .object([
+                            "host": .string("10.0.0.7"), "port": .int(21118), "platform_os": .string("linux"),
+                        ]),
+                        "source": .string("device"), "device_name": .string("argon"),
+                    ]),
                 ])
             ]))
         return socket
@@ -115,6 +124,54 @@ final class ClientCoreTests: XCTestCase {
         XCTAssertEqual(core.forwardRows[WebForwards.key(hub.binding.id, "gitea")]?.localPort, port)
         core.disconnectWeb(bindingId: hub.binding.id, entryId: "gitea")
         turnMainQueue()
+    }
+
+    private func openDesktop(_ core: ClientCore, socket: FakeChannelSocket) throws -> RemoteDesktopTarget {
+        let hub = try XCTUnwrap(core.hubs.first)
+        core.connectDesktop(bindingId: hub.binding.id, entry: try XCTUnwrap(hub.services(of: "rdp").first))
+        XCTAssertEqual(core.desktopsConnecting, ["\(hub.binding.id)/desk"])
+        let open = try XCTUnwrap(socket.frames.last { $0.text("type") == "open" })
+        XCTAssertEqual(open.text("kind"), Channel.kindService)
+        XCTAssertEqual(open.text("id"), "desk")
+        let stream = try XCTUnwrap(open.number("stream").map(UInt32.init))
+        socket.deliver(frame: ChannelFrames.close(stream: stream, params: ["password": .string("seat")]))
+        XCTAssertEqual(core.desktopsConnecting, [])
+        return try XCTUnwrap(core.viewing)
+    }
+
+    func testConnectOnADesktopOpensTheViewerOnItsHeldForward() throws {
+        let core = self.core()
+        let socket = try joinAndConnect(core)
+        let target = try openDesktop(core, socket: socket)
+        XCTAssertEqual(target.name, "Home:argon")
+        XCTAssertEqual(target.password, "seat")
+        XCTAssertEqual(target.platformOs, "linux")
+        XCTAssertEqual(target.host, "127.0.0.1")
+        XCTAssertTrue(isListening(target.port))
+        XCTAssertNil(core.forwardRows[target.key])
+
+        core.closeDesktop()
+        turnMainQueue()
+        XCTAssertNil(core.viewing)
+        XCTAssertEqual(desktop.disconnects, 1)
+        XCTAssertFalse(isListening(target.port))
+    }
+
+    func testTheEndOfTheBackgroundTimeClosesTheViewerForGood() throws {
+        let core = self.core()
+        let socket = try joinAndConnect(core)
+        let target = try openDesktop(core, socket: socket)
+
+        core.suspend()
+        turnMainQueue()
+        XCTAssertNil(core.viewing)
+        XCTAssertEqual(desktop.disconnects, 1)
+        XCTAssertFalse(isListening(target.port))
+
+        core.foreground()
+        turnMainQueue()
+        XCTAssertNil(core.viewing)
+        XCTAssertFalse(isListening(target.port))
     }
 
     func testLeavingAHubForgetsItsBindingAtOnceAndTellsTheHub() throws {

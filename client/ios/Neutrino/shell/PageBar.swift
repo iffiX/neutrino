@@ -44,7 +44,7 @@ struct PageBar: View {
                 if isWide {
                     HStack(spacing: 10) {
                         Image(systemName: screen.systemImage).frame(width: 22)
-                        Text(words.word(screen.titleKey)).font(.system(size: 14, weight: .medium))
+                        Text(words.word(screen.barKey)).font(.system(size: 14, weight: .medium))
                         Spacer()
                     }
                     .padding(.horizontal, 12)
@@ -52,7 +52,7 @@ struct PageBar: View {
                 } else {
                     VStack(spacing: 3) {
                         Image(systemName: screen.systemImage).font(.system(size: 18))
-                        Text(words.word(screen.titleKey)).font(.system(size: 10, weight: .medium)).lineLimit(1)
+                        Text(words.word(screen.barKey)).font(.system(size: 10, weight: .medium)).lineLimit(1)
                     }
                 }
             }

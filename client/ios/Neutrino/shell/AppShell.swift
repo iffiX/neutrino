@@ -2,7 +2,8 @@ import SwiftUI
 
 /// The frame of every page: the sidebar when the window is wider than it is tall or at least 720 points wide,
 /// the bottom bar otherwise; the top bar above the page; and the page's own action at the right of the page
-/// header beside the sidebar, or as a floating button above the bottom bar.
+/// header beside the sidebar, or as a floating button above the bottom bar. The remote desktop viewer covers the
+/// whole screen while it is open.
 struct AppShell: View {
     @ObservedObject var core: ClientCore
 
@@ -30,6 +31,11 @@ struct AppShell: View {
             }
         }
         .background(palette.bg.ignoresSafeArea())
+        .fullScreenCover(item: viewing) { target in
+            RemoteDesktopViewer(target: target, core: core.remoteDesktop) { core.closeDesktop() }
+                .environment(\.words, words)
+                .environment(\.palette, palette)
+        }
         .onOpenURL { url in
             core.browser = nil
             screen = .join
@@ -43,6 +49,14 @@ struct AppShell: View {
             set: { next in
                 core.browser = nil
                 screen = next
+            })
+    }
+
+    private var viewing: Binding<RemoteDesktopTarget?> {
+        Binding(
+            get: { core.viewing },
+            set: { next in
+                if next == nil { core.closeDesktop() }
             })
     }
 
@@ -78,6 +92,7 @@ struct AppShell: View {
             case .web: WebScreen(core: core)
             case .files: FilesScreen(core: core)
             case .terminals: TerminalScreen(core: core, cache: cache)
+            case .desktops: RemoteDesktopScreen(core: core)
             case .settings: SettingsScreen(core: core)
             case .join: JoinScreen(core: core) { screen = .hubs }
             }

@@ -55,6 +55,10 @@ struct SettingsScreen: View {
             creditRow(
                 "\(Client.swiftTermName) \(Client.swiftTermVersion)", licence: Client.swiftTermLicence,
                 source: Client.swiftTermSourceUrl)
+            creditRow(
+                "\(Client.rustDeskName) \(Client.rustDeskVersion)", licence: Client.rustDeskLicence,
+                source: Client.rustDeskSourceUrls[core.edition] ?? Client.rustDeskSourceUrls[Client.editionIntl] ?? "",
+                patch: rustDeskPatch)
         }
         .padding(16)
     }
@@ -74,17 +78,31 @@ struct SettingsScreen: View {
         }
     }
 
-    private func creditRow(_ name: String, licence: String, source: String) -> some View {
+    private var rustDeskPatch: String {
+        let source = Client.sourceUrls[core.edition] ?? Client.sourceUrls[Client.editionIntl] ?? ""
+        return Client.rustDeskPatchUrl.replacingOccurrences(of: "{source}", with: source)
+            .replacingOccurrences(of: "{version}", with: core.machine.version)
+    }
+
+    private func creditRow(_ name: String, licence: String, source: String, patch: String? = nil) -> some View {
         HStack {
             Text(name).font(.system(size: 13)).foregroundColor(palette.textMuted)
             Spacer()
             Text("\(licence) — ").font(.system(size: 13, design: .monospaced)).foregroundColor(palette.text)
-            Button(words.word("ui.about_source_link")) {
-                if let url = URL(string: source) { openURL(url) }
+            linkButton(words.word("ui.about_source_link"), source)
+            if let patch {
+                Text(" · ").font(.system(size: 13)).foregroundColor(palette.textMuted)
+                linkButton(words.word("ui.about_patch_link"), patch)
             }
-            .font(.system(size: 13))
-            .foregroundColor(palette.accent)
         }
+    }
+
+    private func linkButton(_ label: String, _ link: String) -> some View {
+        Button(label) {
+            if let url = URL(string: link) { openURL(url) }
+        }
+        .font(.system(size: 13))
+        .foregroundColor(palette.accent)
     }
 
     private func pickerRow<Options: View>(

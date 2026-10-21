@@ -59,6 +59,25 @@ enum Client {
     /// SwiftTerm's source at the pinned release.
     static let swiftTermSourceUrl = "https://github.com/migueldeicaza/SwiftTerm/tree/v1.19.0"
 
+    /// The remote desktop core the app carries, for the About card.
+    static let rustDeskName = "RustDesk"
+
+    /// The RustDesk release `packaging/build/build_core_rustdesk.py` pins.
+    static let rustDeskVersion = "1.4.9"
+
+    /// RustDesk's licence.
+    static let rustDeskLicence = "AGPL-3.0"
+
+    /// RustDesk's source at the pinned release, by edition: the mainland edition links Gitee's mirror, which holds
+    /// the same tag at the same commit.
+    static let rustDeskSourceUrls = [
+        editionIntl: "https://github.com/rustdesk/rustdesk/tree/1.4.9",
+        editionCn: "https://gitee.com/mirrors/rustdesk/tree/1.4.9",
+    ]
+
+    /// The patch the core is built with, under the app's source `{source}` at its release tag `v{version}`.
+    static let rustDeskPatchUrl = "{source}/blob/v{version}/packaging/build/build_core_rustdesk.patch"
+
     /// How long an armed destructive button waits for its second press.
     static let armSeconds = 5.0
 
@@ -76,6 +95,9 @@ enum Client {
 
     /// The settings key of the local port table.
     static let settingsKeyLocalPorts = "local_ports"
+
+    /// The settings key of each shared desktop's codec and quality.
+    static let settingsKeyDesktopChoices = "rdp_choices"
 
     /// Where the desktop client's word catalogs are in the app's bundle.
     static let desktopLocalesDirectory = "locales"
@@ -312,4 +334,65 @@ enum Background {
 
     /// The background time taken when iOS names none, about what iOS 16 gives.
     static let taskSecondsAssumed = 30.0
+}
+
+/// The remote desktop viewer and the RustDesk core it drives.
+enum RemoteDesktop {
+    /// RustDesk's peer option naming the codec a session asks for.
+    static let optionCodec = "codec-preference"
+
+    /// The core's session option naming the picture quality, kept in the peer's `image_quality`.
+    static let optionQuality = "image-quality"
+
+    /// RustDesk's mouse event type in the low three bits of a mask: the pointer moved.
+    static let mouseMove = 0
+
+    /// RustDesk's mouse event type: a button pressed.
+    static let mouseDown = 1
+
+    /// RustDesk's mouse event type: a button released.
+    static let mouseUp = 2
+
+    /// RustDesk's mouse event type: the wheel turned; the event's y carries the steps.
+    static let mouseWheel = 3
+
+    /// The left button, above the type bits of a mask.
+    static let mouseLeft = 1 << 3
+
+    /// The right button, above the type bits of a mask.
+    static let mouseRight = 2 << 3
+
+    /// The finger travel, in points, of one wheel step in a two-finger scroll.
+    static let scrollStepPoints = 9.0
+
+    /// The change in finger spread, or the move of the fingers' centre, in points, that decides what a two-finger
+    /// gesture is.
+    static let pinchSlopPoints = 9.0
+
+    /// The largest zoom a pinch reaches, over the picture fitted to the viewer.
+    static let zoomMax = 6.0
+
+    /// The RustDesk core's state: logged in, frames follow.
+    static let stateConnected = 1
+
+    /// The RustDesk core's state: the machine refused the password.
+    static let stateLoginFailed = 2
+
+    /// The RustDesk core's state: the connection ended.
+    static let stateClosed = 3
+
+    /// The pause between two typed characters, so a Linux desktop types one before the next arrives.
+    static let typePaceSeconds = 0.04
+
+    /// The last character of ASCII; text with any character above it goes to a Linux host as a paste.
+    static let asciiLast: UInt32 = 0x7F
+
+    /// The `platform_os` a desktop entry carries when the sharing machine runs Linux.
+    static let platformOsLinux = "linux"
+
+    /// The `platform_os` a desktop entry carries when the sharing machine is a Mac.
+    static let platformOsDarwin = "darwin"
+
+    /// The directory under the app's Application Support where the core keeps its configuration.
+    static let coreDirectory = "rustdesk"
 }
