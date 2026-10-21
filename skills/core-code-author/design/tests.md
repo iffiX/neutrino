@@ -15,7 +15,7 @@ fake.
 | client | `client/desktop/tests/` | `pytest -q`, seconds, every commit | Fakes and `tmp_path` only: fake platforms and toolkits, the compiled and fetched parts stood in for |
 | hub | `hub/tests/` | `pytest -q`, under a minute, every commit | FastAPI test clients and temporary config roots; never a unit, an interface, or `/etc` |
 | android | `client/android/app/src/test/` | `./gradlew test lint`, every commit | JUnit on the JVM; a fake socket, fake Keystore and fake VpnService; never an emulator or a device |
-| ios | `client/ios/NeutrinoTests/` | `swift-format lint --strict --recursive` and `xcodebuild test` on the iOS Simulator, in the `ios` job of `ci.yml` on GitHub's `macos-15` runner, every commit | XCTest; a fake socket and a fake Keychain; never a device |
+| ios | `client/ios/NeutrinoTests/` | `swift-format lint --strict --recursive` and `xcodebuild test` on the iOS Simulator, in the `ios` job of `ci.yml` on GitHub's `macos-15` runner, every commit; the job then builds the unsigned `.ipa`, kept as the run's artifact `client_ios` for a test on an iPhone | XCTest; a fake socket and a fake Keychain; never a device |
 | integration | `packaging/integration/` | `run_on_box.sh` on the pipeline's VM pair; minutes | A whole machine: real installs, real systemd, real DHCP on a served wire, a real client VM |
 
 ## The mirror rule
