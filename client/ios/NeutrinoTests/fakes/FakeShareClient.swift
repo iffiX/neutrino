@@ -21,6 +21,9 @@ final class FakeShareClient: ShareClient {
     /// The port, share and login of the last connect.
     private(set) var connected: (port: Int, share: String, login: ShareLogin)?
 
+    /// How many connects there were.
+    private(set) var connects = 0
+
     /// Whether the connection was closed.
     private(set) var isDisconnected = false
 
@@ -34,6 +37,7 @@ final class FakeShareClient: ShareClient {
 
     func connect(port: Int, share: String, login: ShareLogin, completion: @escaping (Error?) -> Void) {
         connected = (port, share, login)
+        connects += 1
         isDisconnected = false
         onConnect?(port)
         completion(connectFailure)

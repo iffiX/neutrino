@@ -67,7 +67,7 @@ final class ShareSessionsTests: XCTestCase {
         XCTAssertNil(sessions.rows[target.id])
     }
 
-    func testALoginWithRememberOffIsHeldOnlyUntilTheAppQuits() throws {
+    func testRememberOffHoldsTheLoginUntilTheAppQuits() throws {
         let sessions = try XCTUnwrap(self.sessions)
         sessions.logIn(target, login: ShareLogin(user: "bob", password: "pw"), isKept: false)
         XCTAssertEqual(sessions.heldLogins, [target.id])
@@ -127,6 +127,31 @@ final class ShareSessionsTests: XCTestCase {
         XCTAssertEqual(open.text("kind"), "connect")
         XCTAssertEqual(open.text("id"), "samba_dev_music")
         XCTAssertEqual(socket.frameTypes.filter { $0 == "open" }.count, 1)
+    }
+
+    func testAPullWhileTheConnectionIsCarriedReadsTheFolderAlone() throws {
+        let sessions = try XCTUnwrap(self.sessions)
+        var dialled: LoopbackClient?
+        client.onConnect = { port in dialled = LoopbackClient(port: port) }
+        sessions.logIn(target, login: ShareLogin(user: "alice", password: "pw"), isKept: true)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+        client.files = ["new.txt": Data()]
+        sessions.pull()
+        XCTAssertEqual(client.connects, 1)
+        XCTAssertEqual(sessions.session?.view.items.map(\.name), ["new.txt"])
+        XCTAssertNotNil(dialled)
+    }
+
+    func testAPullAfterTheConnectionEndedLogsInAgainAndForgetsALoginTheShareNowRejects() throws {
+        let sessions = try XCTUnwrap(self.sessions)
+        sessions.logIn(target, login: ShareLogin(user: "alice", password: "pw"), isKept: true)
+        sessions.pull()
+        XCTAssertEqual(client.connects, 2)
+        XCTAssertEqual(sessions.heldLogins, [target.id])
+        client.connectFailure = POSIXError(.ECONNREFUSED)
+        sessions.pull()
+        XCTAssertEqual(sessions.session?.view.error?.code, "share_login_rejected")
+        XCTAssertTrue(sessions.heldLogins.isEmpty)
     }
 
     func testTheForwardAcceptsNothingWhileTheHubHasNoChannel() throws {

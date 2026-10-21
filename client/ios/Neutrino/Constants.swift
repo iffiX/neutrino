@@ -80,8 +80,11 @@ enum Client {
     /// libsmb2's licence.
     static let libsmb2Licence = "LGPL-2.1"
 
-    /// libsmb2's source at the commit AMSMB2 4.0.3 builds.
-    static let libsmb2SourceUrl = "https://github.com/sahlberg/libsmb2/tree/aff9fa6ba9f41cfd3c15d184554601ec3f6d8d03"
+    /// The libsmb2 commit AMSMB2 4.0.3 builds.
+    static let libsmb2Commit = "aff9fa6ba9f41cfd3c15d184554601ec3f6d8d03"  // scan: allow
+
+    /// libsmb2's source at that commit.
+    static let libsmb2SourceUrl = "https://github.com/sahlberg/libsmb2/tree/\(libsmb2Commit)"
 
     /// How long an armed destructive button waits for its second press.
     static let armSeconds = 5.0

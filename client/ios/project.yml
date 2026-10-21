@@ -34,6 +34,7 @@ targets:
     dependencies:
       - package: SwiftTerm
       - package: AMSMB2
+        embed: true
     info:
       path: Neutrino/Info.plist
       properties:

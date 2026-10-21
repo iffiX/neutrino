@@ -120,6 +120,7 @@ final class ShareSession {
         start { [weak self] refusal in
             guard let self else { return }
             if let refusal {
+                self.view.isListing = false
                 self.view.error = refusal
             } else {
                 self.reload()
@@ -141,11 +142,20 @@ final class ShareSession {
         list(view.path)
     }
 
-    /// A refresh: every code on the page goes and the folder is read again.
-    func refresh() {
+    /// A pull on the list or a refresh: every code on the page goes and the folder is read again, after logging in
+    /// again when the share's connection ended.
+    ///
+    /// - Parameter completion: Called with nil once the folder is being read, or with the login's refusal.
+    func refresh(_ completion: @escaping (ClientError?) -> Void) {
         view.error = nil
         view.errors = [:]
-        reload()
+        guard relay?.isCarrying != true else {
+            reload()
+            completion(nil)
+            return
+        }
+        view.isListing = true
+        resume(completion)
     }
 
     /// Open a folder of the folder shown.

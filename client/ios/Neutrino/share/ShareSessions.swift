@@ -119,7 +119,16 @@ final class ShareSessions {
     /// A refresh: every row's code goes, and the open share reads its folder again.
     func refresh() {
         rows = rows.compactMapValues { $0.isOpening ? ShareRow(isOpening: true) : nil }
-        session?.refresh()
+        pull()
+    }
+
+    /// A pull on the share page's list: the folder is read again, after logging in again when the share's
+    /// connection ended.
+    func pull() {
+        guard let session else { return }
+        session.refresh { [weak self] refusal in
+            if refusal?.code == SharePage.codeLoginRejected { self?.forgetLogin(session.target.id) }
+        }
     }
 
     /// The time in the background is ending: a login being tried stops, and the open share's transfers are cut

@@ -68,7 +68,7 @@ struct ShareScreen: View {
             .padding(16)
         }
         .refreshable {
-            await MainActor.run { core.shares.session?.reload() }
+            await MainActor.run { core.shares.pull() }
             while await MainActor.run(body: { core.share?.isListing == true }) {
                 try? await Task.sleep(nanoseconds: SharePage.refreshPollNanoseconds)
             }
