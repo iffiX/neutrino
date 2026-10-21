@@ -18,6 +18,9 @@ final class ForwardPipe {
     private var isShut = false
     private var openSources = 0
 
+    /// Called when the hub ends the stream with a code.
+    var onRefused: ((ClientError) -> Void)?
+
     /// Join a connection to a stream.
     ///
     /// - Parameters:
@@ -32,7 +35,7 @@ final class ForwardPipe {
 
     /// Start copying.
     func start() {
-        stream.onEnd = { [weak self] _ in self?.hubEnded() }
+        stream.onEnd = { [weak self] ending in self?.hubEnded(ending) }
         stream.onBytes = { [weak self] data in self?.takeFromHub(data) }
         let source = DispatchSource.makeReadSource(fileDescriptor: descriptor, queue: .main)
         source.setEventHandler { [weak self] in self?.readLocal() }
@@ -122,7 +125,8 @@ final class ForwardPipe {
         }
     }
 
-    private func hubEnded() {
+    private func hubEnded(_ ending: ClientError?) {
+        if let ending { onRefused?(ending) }
         isHubEnded = true
         if pending.isEmpty { shutdown() }
     }

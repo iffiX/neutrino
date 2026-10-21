@@ -11,6 +11,9 @@ packages:
   SwiftTerm:
     url: https://github.com/migueldeicaza/SwiftTerm
     exactVersion: 1.19.0
+  AMSMB2:
+    url: https://github.com/amosavian/AMSMB2
+    exactVersion: 4.0.3
 settings:
   base:
     SWIFT_VERSION: "5.0"
@@ -30,6 +33,8 @@ targets:
         buildPhase: resources
     dependencies:
       - package: SwiftTerm
+      - package: AMSMB2
+        embed: true
     info:
       path: Neutrino/Info.plist
       properties:

@@ -49,7 +49,9 @@ final class ChannelSocketClient {
   committed, so a target, a setting or a dependency changes in
   `project.yml` alone.
 - A dependency is a Swift package declared in `project.yml` at an exact
-  version. The one dependency is SwiftTerm, the MIT-licensed terminal view.
+  version. The dependencies are SwiftTerm 1.19.0, the MIT-licensed terminal
+  view, and AMSMB2 4.0.3, the SMB client of the share page, which builds the
+  LGPL-2.1 libsmb2 from its source into a framework of its own.
 - The version and the edition reach the build as `xcodebuild` build
   settings from `packaging/build/build_client_ios.py`, and are never
   written into `project.yml`.

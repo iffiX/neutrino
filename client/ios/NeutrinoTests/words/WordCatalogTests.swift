@@ -5,11 +5,12 @@ import XCTest
 final class WordCatalogTests: XCTestCase {
     private let bundle = Bundle(for: ClientCore.self)
 
-    /// The codes this app words besides the hub's: the link's, the transport's and the forwards'.
+    /// The codes this app words besides the hub's: the link's, the transport's, the forwards' and the share page's.
     private let appCodes = [
         "link_missing", "link_unreadable", "link_incomplete", "link_not_for_client", "hub_untrusted",
         "hub_unreachable", "hub_refused", "client_internal", "enroll_no_token", "port_taken", "forward_failed",
-        "web_token_missing", "unknown_request", "disconnect_first",
+        "web_token_missing", "unknown_request", "disconnect_first", "share_login_rejected", "share_access_denied",
+        "share_not_found", "share_unreachable", "share_name_taken", "share_interrupted",
     ]
 
     func testEveryCodeIsWordedInBothLanguages() {

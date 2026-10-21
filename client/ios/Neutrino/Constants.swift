@@ -59,6 +59,33 @@ enum Client {
     /// SwiftTerm's source at the pinned release.
     static let swiftTermSourceUrl = "https://github.com/migueldeicaza/SwiftTerm/tree/v1.19.0"
 
+    /// The SMB client the app carries, for the About card.
+    static let amsmb2Name = "AMSMB2"
+
+    /// The AMSMB2 release `project.yml` pins.
+    static let amsmb2Version = "4.0.3"
+
+    /// AMSMB2's licence, which the libsmb2 it builds makes its own.
+    static let amsmb2Licence = "LGPL-2.1"
+
+    /// AMSMB2's source at the pinned release.
+    static let amsmb2SourceUrl = "https://github.com/amosavian/AMSMB2/tree/4.0.3"
+
+    /// The SMB library AMSMB2 builds from its source, for the About card.
+    static let libsmb2Name = "libsmb2"
+
+    /// The libsmb2 version AMSMB2 4.0.3 builds.
+    static let libsmb2Version = "6.1.0"
+
+    /// libsmb2's licence.
+    static let libsmb2Licence = "LGPL-2.1"
+
+    /// The libsmb2 commit AMSMB2 4.0.3 builds.
+    static let libsmb2Commit = "aff9fa6ba9f41cfd3c15d184554601ec3f6d8d03"  // scan: allow
+
+    /// libsmb2's source at that commit.
+    static let libsmb2SourceUrl = "https://github.com/sahlberg/libsmb2/tree/\(libsmb2Commit)"
+
     /// How long an armed destructive button waits for its second press.
     static let armSeconds = 5.0
 
@@ -300,6 +327,33 @@ enum TerminalPage {
 
     /// The point size of the terminal's font.
     static let fontSize: Double = 13
+}
+
+/// The share page and its SMB client.
+enum SharePage {
+    /// The Keychain item the kept share logins are in.
+    static let loginsAccount = "share_logins"
+
+    /// How many names an upload or a new folder tries: the name itself, then ` (1)` to ` (31)`.
+    static let nameAttempts = 32
+
+    /// How long one SMB request may take.
+    static let requestTimeoutSeconds = 60.0
+
+    /// The directory under the app's temporary directory that files are read into and picked files copied to.
+    static let temporaryDirectory = "share"
+
+    /// The characters no name in a share holds.
+    static let nameForbidden = "/\\:*?\"<>|"
+
+    /// How often a pull on the list looks whether the folder's reading ended.
+    static let refreshPollNanoseconds: UInt64 = 100_000_000
+
+    /// The code of a transfer the background's close cut.
+    static let codeInterrupted = "share_interrupted"
+
+    /// The code of a login the share rejected.
+    static let codeLoginRejected = "share_login_rejected"
 }
 
 /// The app's time in the background.

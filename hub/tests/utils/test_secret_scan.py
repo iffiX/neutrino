@@ -208,6 +208,7 @@ def test_a_long_unfamiliar_value_still_gets_through():
 def test_a_catalog_label_about_a_password_is_prose_not_a_value():
     line = '  "ui.login.password_label": "Panel password",'
     assert is_catalog_line("hub/frontend/src/locales/en/login.json", line)
+    assert is_catalog_line("client/ios/app_locales/en.json", line)
     assert (
         is_worth_reporting(line, path="hub/frontend/src/locales/en/login.json") is False
     )

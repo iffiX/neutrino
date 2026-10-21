@@ -150,6 +150,15 @@ jobs:
           -skipPackagePluginValidation
           $(python3 ../../packaging/build/build_client_ios.py --build-settings)
 
+      # The unsigned .ipa of this commit, for a test on an iPhone.
+      - run: python3 packaging/build/build_client_ios.py --output-dir dist
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: client_ios
+          path: dist/*-ios.ipa
+          if-no-files-found: error
+
   # The two one-command installers, each held to its language's linter.
   install_scripts:
     name: shellcheck and PSScriptAnalyzer

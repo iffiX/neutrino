@@ -1,0 +1,36 @@
+import Foundation
+
+/// One published share as the share page opens it.
+struct ShareTarget: Equatable, Identifiable {
+    /// The hub whose channel carries the share's connections.
+    let bindingId: String
+
+    /// The `file` entry each `connect` stream names.
+    let entryId: String
+
+    /// The share's title.
+    let title: String
+
+    /// The share's name on its server.
+    let share: String
+
+    /// The accounts the hub names for it; empty when it names none.
+    let users: [String]
+
+    /// `<binding>/<entry>`, the key of its row, its login and its page.
+    var id: String { "\(bindingId)/\(entryId)" }
+
+    /// The share a `file` entry names.
+    ///
+    /// - Parameters:
+    ///   - hub: The hub that publishes it.
+    ///   - entry: The entry.
+    /// - Returns: The share, or nil for an entry that names no share or another protocol than SMB.
+    static func of(_ hub: HubView, _ entry: ChannelServiceEntry) -> ShareTarget? {
+        let share = entry.payload.text("share")
+        guard entry.type == "file", entry.payload.text("protocol") == "smb", !share.isEmpty else { return nil }
+        return ShareTarget(
+            bindingId: hub.binding.id, entryId: entry.id, title: entry.title, share: share,
+            users: entry.payload["users"]?.arrayValue?.compactMap(\.stringValue) ?? [])
+    }
+}

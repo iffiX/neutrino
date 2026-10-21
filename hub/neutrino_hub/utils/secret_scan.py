@@ -323,7 +323,8 @@ class SecretScanner:
 
 # A word catalog line is ``"key": "sentence"``; the key names what the
 # sentence is about, so a key holding ``password`` is a label, never a value.
-CATALOG_DIRECTORY = "locales"
+# The iOS app keeps its own catalog in ``app_locales``.
+CATALOG_DIRECTORIES = ("locales", "app_locales")
 
 
 def is_catalog_line(path: str, line: str) -> bool:
@@ -334,12 +335,12 @@ def is_catalog_line(path: str, line: str) -> bool:
         line: The line another tool flagged.
 
     Returns:
-        True for a ``"key": "text"`` line in a ``locales/*.json`` file whose
-        text holds a space, a character outside ASCII, or is shorter than a
-        credential.
+        True for a ``"key": "text"`` line in a ``locales/*.json`` or an
+        ``app_locales/*.json`` file whose text holds a space, a character
+        outside ASCII, or is shorter than a credential.
     """
-    parts = path.split("/")
-    if CATALOG_DIRECTORY not in parts or not path.endswith(".json"):
+    is_in_catalog = any(part in CATALOG_DIRECTORIES for part in path.split("/"))
+    if not is_in_catalog or not path.endswith(".json"):
         return False
     values = _quoted_values(line)
     if len(values) != 2:
