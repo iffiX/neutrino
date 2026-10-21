@@ -50,6 +50,12 @@ final class ChannelSocketClient {
   `project.yml` alone.
 - A dependency is a Swift package declared in `project.yml` at an exact
   version. The one dependency is SwiftTerm, the MIT-licensed terminal view.
+- The one dependency that is not a Swift package is the RustDesk core, the
+  static library `packaging/build/build_core_rustdesk_ios.py` builds into
+  `client/ios/cores/rustdesk/`. Swift reaches it only through the module map
+  in `client/ios/rustdesk_core/`, and every call into it is under
+  `#if NEUTRINO_RUSTDESK`, which only a device build that links the library
+  sets.
 - The version and the edition reach the build as `xcodebuild` build
   settings from `packaging/build/build_client_ios.py`, and are never
   written into `project.yml`.

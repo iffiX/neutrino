@@ -326,7 +326,8 @@ The person installs the `.apk` on the phone, then scans the QR code on the
 
 The iOS app is the client on an iPhone, with the pages and the limits
 [../design/client.md](../design/client.md) gives it in "The iOS app". It
-contains SwiftTerm and no network core, and is licensed AGPL-3.0 by
+contains SwiftTerm and the RustDesk core compiled from its pinned source for
+a device (arm64) alone, and no network core, and is licensed AGPL-3.0 by
 `client/ios/LICENSE`. The release attaches it unsigned, and each person
 signs their own copy. The release is the only place the app is published:
 the project holds no Apple developer account, so the app is in neither the
@@ -334,12 +335,15 @@ App Store nor TestFlight.
 
 | File | For |
 | --- | --- |
-| `neutrino-client-<version>-ios.ipa` | iOS 16 or newer, unsigned |
+| `neutrino-client-<version>-ios.ipa` | iOS 16 or newer, arm64, unsigned |
 
 In the release workflow `build_client_ios.py` builds it on GitHub's
-`macos-15` runner: XcodeGen
+`macos-15` runner: `build_core_rustdesk_ios.py` puts the RustDesk core into
+`client/ios/cores/rustdesk/`, from the cores cache the job restores or built
+on a miss, XcodeGen
 generates the project, `xcodebuild` builds the app for `generic/platform=iOS`
-with code signing off (`CODE_SIGNING_ALLOWED=NO`), and the `.app` is zipped
+with code signing off (`CODE_SIGNING_ALLOWED=NO`), the build fails when the
+app does not define `_nd_start`, and the `.app` is zipped
 under `Payload/`. The build passes the release's version to `xcodebuild`, as
 the Android build passes it to Gradle.
 
@@ -413,6 +417,7 @@ sentence when a tool it needs is missing.
 | `build_client_android.py` | the `.apk`, with its cores | Linux or macOS with JDK 17 and the Android SDK |
 | `build_client_ios.py` | the unsigned `.ipa` | macOS with Xcode and XcodeGen |
 | `build_core_netbird.py`, `build_core_easytier.py`, `build_core_rustdesk.py` | one core the phones carry | Linux |
+| `build_core_rustdesk_ios.py` | the RustDesk core of the iOS app, a static library for a device | macOS with Xcode |
 | `build_sources.py`, `build_checksums.py` | the source archive, or with `--edition cn` the mainland source tree; `SHA256SUMS` over a directory | anywhere |
 | `build_cc_switch.py` | the pinned cc-switch release files under upstream's names, each checked against its pin, and their licence | anywhere |
 
@@ -573,7 +578,7 @@ lists them.
 | `neutrino-client_<version>_amd64.deb`, `neutrino-client_<version>_arm64.deb` | the client on Debian, Ubuntu |
 | `neutrino-client-<version>-windows-amd64.msi`, `neutrino-client-<version>-macos-arm64.pkg` | the client on Windows x64 and Apple silicon |
 | `neutrino-client-<version>-android.apk` | Android 8 or newer, arm64-v8a |
-| `neutrino-client-<version>-ios.ipa` | iOS 16 or newer, unsigned |
+| `neutrino-client-<version>-ios.ipa` | iOS 16 or newer, arm64, unsigned |
 | `install.sh`, `install.ps1` | the one-command installers, stamped `cn` |
 | `neutrino-<version>-cn-source.tar.xz` | the mainland source tree |
 | `cc-switch-cli-v<cc-switch version>-<asset>`, five files | cc-switch for the agents of a mainland hub, which fetches it from here: the files `PACKAGING_CC_SWITCH_ASSETS` in `packaging/shared/constants.py` pins, under the names upstream gives them, each checked against its pin before the upload |
