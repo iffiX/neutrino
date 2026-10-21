@@ -49,6 +49,18 @@ final class ClientCore: ObservableObject {
     /// The shares with a login held, by `<binding>/<entry>`.
     @Published private(set) var shareLogins: Set<String> = []
 
+    /// The shared desktops whose Connect runs, by `<binding>/<entry>`.
+    @Published private(set) var desktopsConnecting: Set<String> = []
+
+    /// The code each shared desktop's last Connect ended in, by `<binding>/<entry>`.
+    @Published private(set) var desktopErrors: [String: ClientError] = [:]
+
+    /// The desktop the open viewer shows, nil while no viewer is open.
+    @Published private(set) var viewing: RemoteDesktopTarget?
+
+    /// What the remote desktop viewer draws and sends input with.
+    let remoteDesktop: RemoteDesktopCore
+
     /// The terminal tabs, which the Terminals page's views read the output of.
     let tabs: TerminalTabs
 
@@ -58,6 +70,8 @@ final class ClientCore: ObservableObject {
     private let store: BindingStore
     private let connections: HubConnections
     private let forwards: WebForwards
+    private let desktops: RemoteDesktopSessions
+    private let desktopChoices: RemoteDesktopChoiceStore
     private let settingsStore: ClientSettingsStore
     private let bundle: Bundle
 
@@ -74,13 +88,14 @@ final class ClientCore: ObservableObject {
     ///   - resolveHubName: Calls back with the address `hub.neutrino.internal` resolves to here, or nil.
     ///   - localNetworks: The networks this phone holds an address in.
     ///   - shareClient: Makes the SMB client of one share's connection.
+    ///   - remoteDesktop: What the remote desktop viewer draws and sends input with.
     ///   - bundle: Where the word catalogs are.
     init(
         secrets: SecretStore, transport: HubTransport, clock: ClientClock, defaults: UserDefaults,
         device: ClientDevice, edition: String, hasNetwork: @escaping () -> Bool,
         resolveHubName: @escaping (@escaping (String?) -> Void) -> Void,
         localNetworks: @escaping () -> [ChannelLocalNetwork], shareClient: @escaping () -> ShareClient,
-        bundle: Bundle = .main
+        remoteDesktop: RemoteDesktopCore, bundle: Bundle = .main
     ) {
         let store = BindingStore(secrets: secrets)
         let machine = ClientMachine(
@@ -94,6 +109,7 @@ final class ClientCore: ObservableObject {
         self.settingsStore = settingsStore
         self.settings = settings
         self.bundle = bundle
+        self.remoteDesktop = remoteDesktop
         words = WordCatalog.load(language: settings.language, bundle: bundle)
         var leaving: ((String) -> Void)?
         let connections = HubConnections(
@@ -114,6 +130,17 @@ final class ClientCore: ObservableObject {
                 }
                 session.openService(args: args, completion: completion)
             })
+        let desktopChoices = RemoteDesktopChoiceStore(defaults: defaults)
+        self.desktopChoices = desktopChoices
+        desktops = RemoteDesktopSessions(
+            material: { bindingId, entryId, completion in
+                guard let session = connections.session(bindingId) else {
+                    completion(.failure(.refusal(Channel.codeHubUnreachable, ["detail": "this hub is not connected"])))
+                    return
+                }
+                session.openService(args: ["id": .string(entryId)], completion: completion)
+            },
+            openConnect: openConnect, choiceOf: { desktopChoices.choice(of: $0) })
         tabs = TerminalTabs(
             open: { bindingId, kind, args, hasBytes in
                 connections.session(bindingId)?.openStream(kind: kind, args: args, hasBytes: hasBytes)
@@ -124,6 +151,7 @@ final class ClientCore: ObservableObject {
         leaving = { [weak self] bindingId in self?.leaving(bindingId) }
         connections.onChange = { [weak self] in self?.hubsChanged() }
         forwards.onChange = { [weak self] in self?.forwardsChanged() }
+        desktops.onChange = { [weak self] in self?.desktopsChanged() }
         tabs.onChange = { [weak self] in self?.tabsChanged() }
         shares.onChange = { [weak self] in self?.sharesChanged() }
         shareLogins = shares.heldLogins
@@ -160,6 +188,7 @@ final class ClientCore: ObservableObject {
     func refresh() {
         forwards.clearErrors()
         shares.refresh()
+        desktops.clearErrors()
         connections.refresh()
     }
 
@@ -220,6 +249,45 @@ final class ClientCore: ObservableObject {
         }
     }
 
+    /// Press Connect on a shared desktop: its seat password, its forward, then the viewer on the forward.
+    ///
+    /// - Parameters:
+    ///   - bindingId: The hub.
+    ///   - entry: The entry.
+    func connectDesktop(bindingId: String, entry: ChannelServiceEntry) {
+        let hubName = hubs.first { $0.binding.id == bindingId }?.binding.title ?? ""
+        desktops.connect(
+            bindingId: bindingId, entryId: entry.id,
+            name: hubName + ":" + (entry.deviceName.isEmpty ? entry.title : entry.deviceName),
+            platformOs: entry.payload.text("platform_os"))
+    }
+
+    /// Close the viewer: its session and its forward end.
+    func closeDesktop() {
+        remoteDesktop.disconnect()
+        desktops.close()
+    }
+
+    /// One shared desktop's codec and quality, as its Configure sheet opens on them.
+    ///
+    /// - Parameters:
+    ///   - bindingId: The hub.
+    ///   - entryId: The entry.
+    /// - Returns: The kept choice.
+    func desktopChoice(bindingId: String, entryId: String) -> RemoteDesktopChoice {
+        desktopChoices.choice(of: RemoteDesktopSessions.key(bindingId, entryId))
+    }
+
+    /// Save a shared desktop's Configure sheet; the next Connect asks for the choice.
+    ///
+    /// - Parameters:
+    ///   - bindingId: The hub.
+    ///   - entryId: The entry.
+    ///   - choice: The codec and the quality.
+    func configureDesktop(bindingId: String, entryId: String, choice: RemoteDesktopChoice) {
+        desktopChoices.keep(RemoteDesktopSessions.key(bindingId, entryId), choice)
+    }
+
     /// Keep new settings and draw every page in them.
     ///
     /// - Parameter settings: The language and the palette.
@@ -236,9 +304,10 @@ final class ClientCore: ObservableObject {
         connections.networkChanged()
     }
 
-    /// The time iOS gives the app in the background is ending: every channel closes and every forward's
-    /// listener stops.
+    /// The time iOS gives the app in the background is ending: the viewer closes with its forward, every channel
+    /// closes and every forward's listener stops.
     func suspend() {
+        closeDesktop()
         forwards.suspend()
         shares.suspend()
         connections.suspend()
@@ -271,6 +340,9 @@ final class ClientCore: ObservableObject {
 
     private func leaving(_ bindingId: String) {
         if browser?.bindingId == bindingId { browser = nil }
+        if viewing?.key.hasPrefix("\(bindingId)/") == true { remoteDesktop.disconnect() }
+        desktops.forget(bindingId: bindingId)
+        desktopChoices.forget(bindingId: bindingId)
         forwards.forget(bindingId: bindingId)
         shares.forget(bindingId: bindingId)
         tabs.forget(bindingId: bindingId)
@@ -280,6 +352,7 @@ final class ClientCore: ObservableObject {
         let views = connections.views
         forwards.take(views)
         shares.take(views)
+        desktops.take(views)
         tabs.take(views)
         joining = connections.join
         hubs = merged(views)
@@ -294,6 +367,12 @@ final class ClientCore: ObservableObject {
         share = shares.session?.view
         shareRows = shares.rows
         shareLogins = shares.heldLogins
+    }
+
+    private func desktopsChanged() {
+        desktopsConnecting = desktops.connecting
+        desktopErrors = desktops.errors
+        viewing = desktops.viewing
     }
 
     private func tabsChanged() {

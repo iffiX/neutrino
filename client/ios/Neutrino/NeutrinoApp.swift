@@ -30,7 +30,8 @@ struct NeutrinoApp: App {
             hasNetwork: { network.hasNetwork },
             resolveHubName: HubNameResolver.resolve,
             localNetworks: ChannelLocalNetwork.deviceNetworks,
-            shareClient: { SmbShareClient() })
+            shareClient: { SmbShareClient() },
+            remoteDesktop: Self.remoteDesktopCore())
         network.onChange = { [weak core] in core?.networkChanged() }
         network.start()
         _core = StateObject(wrappedValue: core)
@@ -50,6 +51,15 @@ struct NeutrinoApp: App {
             default: break
             }
         }
+    }
+
+    private static func remoteDesktopCore() -> RemoteDesktopCore {
+        guard RustDeskNative.isLinked,
+            let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        else { return MissingRemoteDesktopCore() }
+        let directory = support.appendingPathComponent(RemoteDesktop.coreDirectory, isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return RustDeskRemoteDesktopCore(appDir: directory.path)
     }
 
     private static var architecture: String {

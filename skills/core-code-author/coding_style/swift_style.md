@@ -52,6 +52,12 @@ final class ChannelSocketClient {
   version. The dependencies are SwiftTerm 1.19.0, the MIT-licensed terminal
   view, and AMSMB2 4.0.3, the SMB client of the share page, which builds the
   LGPL-2.1 libsmb2 from its source into a framework of its own.
+- The one dependency that is not a Swift package is the RustDesk core, the
+  static library `packaging/build/build_core_rustdesk_ios.py` builds into
+  `client/ios/cores/rustdesk/`. Swift reaches it only through the module map
+  in `client/ios/rustdesk_core/`, and every call into it is under
+  `#if NEUTRINO_RUSTDESK`, which only a device build that links the library
+  sets.
 - The version and the edition reach the build as `xcodebuild` build
   settings from `packaging/build/build_client_ios.py`, and are never
   written into `project.yml`.

@@ -456,6 +456,18 @@ catalog. The password keys are the Android app's.
 **New folder**, **Open**, **Connect**, **Cancel**, the user name and password
 fields and `ui.job.opening` are the desktop client's keys.
 
+## The iOS remote desktop's words
+
+The iOS app's **Remote desktops** page and its viewer ([client.md](client.md),
+"The remote desktop viewer") use the Android app's keys for the viewer's
+buttons, the Configure sheet and the codes `rdp_closed`, `rdp_core_missing`
+and `rdp_login_failed`, and the desktop client's keys for the page's rows.
+The bar adds one key of the app's own.
+
+| Key | English | Chinese |
+| --- | --- | --- |
+| `ui.bar_desktops` | Desktops | 桌面 |
+
 ## Localization
 
 The panel and the client page speak English and Simplified Chinese; the

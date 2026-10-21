@@ -15,7 +15,7 @@ fake.
 | client | `client/desktop/tests/` | `pytest -q`, seconds, every commit | Fakes and `tmp_path` only: fake platforms and toolkits, the compiled and fetched parts stood in for |
 | hub | `hub/tests/` | `pytest -q`, under a minute, every commit | FastAPI test clients and temporary config roots; never a unit, an interface, or `/etc` |
 | android | `client/android/app/src/test/` | `./gradlew test lint`, every commit | JUnit on the JVM; a fake socket, fake Keystore and fake VpnService; never an emulator or a device |
-| ios | `client/ios/NeutrinoTests/` | `swift-format lint --strict --recursive` and `xcodebuild test` on the iOS Simulator, in the `ios` job of `ci.yml` on GitHub's `macos-15` runner, every commit; the job then builds the unsigned `.ipa`, kept as the run's artifact `client_ios` for a test on an iPhone | XCTest; a fake socket and a fake Keychain; never a device |
+| ios | `client/ios/NeutrinoTests/` | `swift-format lint --strict --recursive` and `xcodebuild test` on the iOS Simulator, in the `ios` job of `ci.yml` on GitHub's `macos-15` runner, every commit; the `ios_core` job builds the app for a device with the RustDesk core, checks the app defines `_nd_attach_frames`, and keeps the unsigned `.ipa` as the run's artifact `client_ios_device_test` for a test on an iPhone | XCTest; a fake socket, a fake Keychain, a fake SMB client and a fake RustDesk core; never a device |
 | integration | `packaging/integration/` | `run_on_box.sh` on the pipeline's VM pair; minutes | A whole machine: real installs, real systemd, real DHCP on a served wire, a real client VM |
 
 ## The mirror rule
@@ -104,12 +104,26 @@ login kept only once the share took it, in the fake Keychain or until the
 app quits, and forgotten on `share_login_rejected`; the share's forward
 opening one `connect {id}` stream per connection; a cancelled read and a
 cancelled write leaving no file; and a transfer the background cut showing
-`share_interrupted`, with its retry.
+`share_interrupted`, with its retry. Its remote desktop is pinned, as
+Android's is, against a fake core: a Connect reading the seat password and
+opening the viewer on a forward of its own, which opens one `connect {id}`
+stream per connection, accepts nothing while the hub has no channel and
+ends with the viewer; one viewer at a time; the viewer's state after each
+report of the core; `rdp_core_missing` without a core; the codecs and
+qualities offered and kept per entry; the viewport's zoom and pan; the mouse
+events of each gesture; the typing pace; marked text sent nowhere; a paste
+to a Linux host; and the viewer and its forward closed when the background
+time ends.
 
 The iOS app on a phone is checked by hand: the release's `.ipa`, signed with
 a free Apple ID, on an iPhone on iOS 16; the behaviour of iOS 17 and newer is
 checked in the Simulator. The share page is checked there against a Samba
-share and a Windows share that asks for SMB signing.
+share and a Windows share that asks for SMB signing. The remote desktop is
+checked on the phone alone, since the Simulator carries no core: the core
+starting, the picture's colours and row stride, VP8, VP9 and AV1 at 1080p
+and their frame rates, the gestures, Chinese typing, **Paste** and the
+clipboard both ways, a rotation, a return from the background, a refused
+password, the sound, and the app's size.
 
 The Android app also pins the Hubs row's word for every `reached_through`,
 `ssh_relay`, `sakurafrp` and `openfrp` among them, and a candidate's path

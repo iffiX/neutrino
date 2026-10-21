@@ -2,19 +2,24 @@
 
     python3 packaging/build/build_client_ios.py --output-dir dist/
 
-Runs on: macOS with Xcode and XcodeGen. ``xcodegen generate`` writes the
-project from ``client/ios/project.yml``, ``xcodebuild`` builds the app for
-``generic/platform=iOS`` with code signing off, and the ``.app`` is zipped
-under ``Payload/`` as ``neutrino-client-<version>-ios.ipa``. Before the zip,
+Runs on: macOS with Xcode and XcodeGen. ``build_core_rustdesk_ios.py`` puts
+the RustDesk core into ``client/ios/cores/rustdesk`` first, from the cores
+cache or built, which needs what that script names. ``xcodegen generate``
+writes the project from ``client/ios/project.yml``, ``xcodebuild`` builds the
+app for ``generic/platform=iOS`` with code signing off, the app's binary must
+define ``_nd_start``, and the ``.app`` is zipped under ``Payload/`` as
+``neutrino-client-<version>-ios.ipa``. Before the zip,
 the app's icon is drawn from ``images/icons/neutrino.png`` into an asset
 catalog under ``client/ios/build/icon`` and compiled into the ``.app`` by
 ``actool``, its keys merged into the app's ``Info.plist``. The version, read
 off the hub's pyproject, and the edition reach the app as the build settings
 ``MARKETING_VERSION``, ``CURRENT_PROJECT_VERSION`` and ``NEUTRINO_EDITION``.
 ``--build-settings`` prints those settings, one ``NAME=value`` per line, for
-the CI job's ``xcodebuild test``, and builds nothing.
+the CI jobs' ``xcodebuild``, and builds nothing; ``--cache-key`` prints the
+name the core is cached under in CI, and builds nothing.
 
-Not pure: runs xcodegen, xcodebuild, sips and actool, writes the .ipa.
+Not pure: runs the core build, xcodegen, xcodebuild, nm, sips and actool,
+writes the .ipa.
 """
 
 import argparse
@@ -32,6 +37,12 @@ sys.path.insert(0, str(REPO_ROOT / "packaging"))
 from shared import edition_build  # noqa: E402
 
 IOS_DIR = REPO_ROOT / "client" / "ios"
+BUILD_DIR = Path(__file__).resolve().parent
+
+# The script that puts the RustDesk core into the app, and the symbol the
+# built app must define to carry it.
+IOS_CORE_SCRIPT = "build_core_rustdesk_ios.py"
+IOS_CORE_SYMBOL = "_nd_start"
 
 # The scheme and the app's product name, as project.yml names them.
 IOS_SCHEME = "Neutrino"
@@ -66,13 +77,21 @@ def main() -> int:
         action="store_true",
         help="print the version and edition settings and stop",
     )
+    parser.add_argument(
+        "--cache-key", action="store_true", help="print the core's cache name and stop"
+    )
     arguments = parser.parse_args()
     edition_build.require_edition_tree(arguments.edition)
     settings = build_settings(_version(), arguments.edition)
     if arguments.build_settings:
         print("\n".join(settings))
         return 0
+    if arguments.cache_key:
+        print(_run_core("--cache-key"), end="")
+        return 0
     _check_tools()
+
+    _run_core()
 
     shutil.rmtree(IOS_BUILD_DIR, ignore_errors=True)
     subprocess.run(["xcodegen", "generate"], cwd=IOS_DIR, check=True)
@@ -103,6 +122,7 @@ def main() -> int:
     app = derived / "Build" / "Products" / "Release-iphoneos" / IOS_APP
     if not app.is_dir():
         raise SystemExit(f"xcodebuild wrote no {IOS_APP} under {app.parent}")
+    _check_core(app)
     _add_icon(app)
     output_dir = (REPO_ROOT / arguments.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -192,6 +212,50 @@ def _add_icon(app: Path) -> None:
         plistlib.dump(info, stream, fmt=plistlib.FMT_BINARY)
 
 
+def _run_core(*arguments: str) -> str:
+    """Run the core script, which puts the RustDesk core into the app.
+
+    The script takes no edition: the core is the same in both, and the
+    script's own bytes are what its cache name digests.
+
+    Args:
+        *arguments: What it is run with.
+
+    Returns:
+        What it printed, when it was asked a question.
+
+    Raises:
+        SystemExit: When it fails.
+    """
+    command = [sys.executable, str(BUILD_DIR / IOS_CORE_SCRIPT), *arguments]
+    result = subprocess.run(
+        command, capture_output=bool(arguments), text=True, check=False
+    )
+    if result.returncode != 0:
+        raise SystemExit(f"{IOS_CORE_SCRIPT} exited {result.returncode}")
+    return result.stdout or ""
+
+
+def _check_core(app: Path) -> None:
+    """Refuse an app whose binary does not define the core's entry point.
+
+    Args:
+        app: The built ``.app`` directory.
+
+    Raises:
+        SystemExit: When the symbol is missing.
+    """
+    result = subprocess.run(
+        ["nm", str(app / Path(IOS_APP).stem)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    defined = re.search(rf" [Tt] {IOS_CORE_SYMBOL}$", result.stdout, re.MULTILINE)
+    if defined is None:
+        raise SystemExit(f"{IOS_APP} does not define {IOS_CORE_SYMBOL}")
+
+
 def _zip_payload(app: Path, ipa: Path) -> None:
     """Zip an app under ``Payload/``, keeping its symbolic links and modes.
 
@@ -233,7 +297,7 @@ def _check_tools() -> None:
     """
     if sys.platform != "darwin":
         raise SystemExit(f"{Path(__file__).name} runs on macOS; this is {sys.platform}")
-    for tool in ("xcodebuild", "xcodegen", "sips", "xcrun"):
+    for tool in ("xcodebuild", "xcodegen", "nm", "sips", "xcrun"):
         if shutil.which(tool) is None:
             raise SystemExit(f"{tool} is needed and is not on the path")
 

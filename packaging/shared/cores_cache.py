@@ -2,9 +2,9 @@
 
 Each core lands in
 ``~/.cache/neutrino/cores/<core>-<commit>-<abi>-<recipe>/``: the core's name,
-the upstream commit its source archive names, the Android ABI the files are
-for, and eight hex digits of the SHA-256 over the script that builds it and
-its patch. The same names make the key the workflows give actions/cache, so
+the upstream commit its source archive names, the machine the files are
+for (an Android ABI, or ``ios-arm64``), and eight hex digits of the SHA-256
+over the scripts that build it and its patch. The same names make the key the workflows give actions/cache, so
 a machine and a runner hold the same thing under the same name, and a new
 pin or a changed recipe is a new directory.
 
@@ -46,7 +46,7 @@ def cache_key(core: str, commit: str, abi: str, recipe_digest: str) -> str:
     Args:
         core: The core, ``netbird``, ``easytier`` or ``rustdesk``.
         commit: The upstream commit the pinned source names.
-        abi: The Android ABI the files are for.
+        abi: The machine the files are for: an Android ABI, or ``ios-arm64``.
         recipe_digest: What :func:`recipe` returned for the core's script.
 
     Returns:
@@ -61,7 +61,7 @@ def cache_dir(core: str, commit: str, abi: str, recipe_digest: str) -> Path:
     Args:
         core: The core, ``netbird``, ``easytier`` or ``rustdesk``.
         commit: The upstream commit the pinned source names.
-        abi: The Android ABI the files are for.
+        abi: The machine the files are for: an Android ABI, or ``ios-arm64``.
         recipe_digest: What :func:`recipe` returned for the core's script.
 
     Returns:

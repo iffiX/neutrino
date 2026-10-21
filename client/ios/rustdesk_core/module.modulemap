@@ -1,0 +1,4 @@
+module RustDeskCore {
+    header "rustdesk_core.h"
+    export *
+}

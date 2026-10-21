@@ -890,13 +890,13 @@ the release's unsigned `.ipa` with their own Apple ID
 
 | Feature | Android | iOS |
 | --- | --- | --- |
-| pages in the bar | all eight, in the order "The layout" gives | **Hubs**, **Web**, **Files**, **Terminals** and **Settings**, in that order |
+| pages in the bar | all eight, in the order "The layout" gives | **Hubs**, **Web**, **Files**, **Terminals**, **Remote desktops** and **Settings**, in that order; the bar labels **Remote desktops** as **Desktops** (`ui.bar_desktops`), and the top bar shows the full title |
 | join | scan the QR, or paste the link | the same |
 | virtual network | the line under the hub's body, with its picker and its button; the app runs NetBird or EasyTier | no line; the app runs no engine, and a person who wants a virtual network on the iPhone joins it with that network's own app |
 | port and AI entries | forwarded to the phone's loopback for any app on the phone | not shown: no **Ports** page and no **AI** page |
 | web entry and the hub's panel | the system browser, at the entry's forward | the in-app browser, at the entry's forward inside the app ("The in-app browser") |
 | file entry | a location in the system's Files app | the share page inside the app ("The share page") |
-| remote desktop | the viewer page | no **Remote desktops** page |
+| remote desktop | the viewer page | the same, with the RustDesk core linked into a device build ("The remote desktop viewer") |
 | terminal | the key row and the long-press menu | the same, drawn by SwiftTerm |
 | background | a foreground service keeps every connection | the app closes every connection before iOS suspends it ("In the background") |
 
@@ -950,6 +950,16 @@ one replaces the first with 4010 `replaced`
 therefore has no such extension, and a share is read on the share page
 alone.
 
+### The remote desktop viewer
+
+| Rule | Reason |
+| --- | --- |
+| The RustDesk core, RustDesk 1.4.9 with the patch the Android core has, is a static library linked into a device build alone. A Simulator build carries no core, and its viewer stops at once with `rdp_core_missing`. | RustDesk publishes no library for an app without Flutter, and the unit tests on the Simulator need no core. |
+| **Connect** reads `{password}` on the `service` stream and makes the viewer's forward, a forward of the app's own as the share page's is: a listener on `127.0.0.1` at a port the system picks, each accepted connection a `connect` stream naming the entry, accepting nothing while the hub has no channel, in no local port table, and ended with the viewer. The core dials `127.0.0.1:<port>`. One viewer is open at a time. | Only the core dials the port, so no person needs its number to stay put, and the share page and the viewer hold a forward the one way. |
+| **Configure** offers Auto, VP8, VP9 and AV1, and no H264 or H265. | RustDesk decodes H264 and H265 in software on iOS, so they bring no hardware decoder to choose. |
+| The viewer's text input keeps what the keyboard marks, such as a pinyin composition, and sends only what the keyboard commits. | UIKit's marked text is the composition the phone rules send nowhere. |
+| **Paste** on the key bar is the system's paste control. | iOS 16 reads the clipboard for that control without asking the person, and asks on every read the app makes on its own. |
+
 ### In the background
 
 | Rule | Reason |
@@ -959,6 +969,8 @@ alone.
 | A channel closed this way has the effect of any dropped channel: a plain terminal session ends, and a persistent or shared one stays, its tab attaching again on return ("The session list"). | The machine keeps the sessions the person asked it to keep. |
 | Returning to the foreground reconnects every hub at once, with no backoff, and every forward that listened before listens again on its port. An in-app browser whose page iOS ended in the background loads it again. | The person is looking; a wait they can see is a fault. |
 | A transfer of the share page that the close cut shows `share_interrupted` on its row, with **Retry**. On the return the open share's forward listens again, the app logs in to the share again and reads the folder again. **Retry** on an upload deletes the part the cut write left, then writes the file again under the same name. | A transfer cannot outlive the connection iOS takes back, and the person decides whether it starts again. |
+| An open viewer stops drawing when the app leaves the screen and keeps its session; on the return the core asks the machine for a fresh keyframe. | iOS shows no picture of an app off the screen, and a fresh keyframe draws the whole picture at once instead of waiting for the next one. |
+| When the background time ends, the viewer closes and its forward ends with every other connection, and the return opens no viewer. | The channel the session runs through closes then, and a session opened again unasked takes the remote screen without a press of **Connect**. |
 | There is no notification line and no setting for this. | iOS keeps an app running in the background only for a few kinds of work, such as playing audio, navigation and calls, and this app does none of them. |
 
 ### The About card
@@ -966,7 +978,7 @@ alone.
 | Rule | Reason |
 | --- | --- |
 | **This machine** on the About card shows the device name iOS gives the app, which on iOS 16 and newer is the model, such as `iPhone`. | iOS gives the name the person set only to an app holding an entitlement Apple grants on request. |
-| The **Carried** group on the About card lists SwiftTerm, the MIT-licensed terminal view the Terminals page draws with, then AMSMB2 and libsmb2, the LGPL-2.1 SMB client of the share page, each with its version and its **Source** link. | A library the app contains is credited where the app's own version is. |
+| The **Carried** group on the About card lists SwiftTerm, the MIT-licensed terminal view the Terminals page draws with, then AMSMB2 and libsmb2, the LGPL-2.1 SMB client of the share page, each with its version and its **Source** link, then RustDesk 1.4.9, the AGPL-3.0 core of the remote desktop viewer, with its **Source** and **Patch** links as on Android. | A library the app contains is credited where the app's own version is. |
 
 ## An interaction this page does not cover
 

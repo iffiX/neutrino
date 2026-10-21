@@ -150,12 +150,70 @@ jobs:
           -skipPackagePluginValidation
           $(python3 ../../packaging/build/build_client_ios.py --build-settings)
 
-      # The unsigned .ipa of this commit, for a test on an iPhone.
-      - run: python3 packaging/build/build_client_ios.py --output-dir dist
+  # The iOS app built for a device with the RustDesk core linked in. The core
+  # comes from the cores cache; on a miss it is built, in about a quarter of an
+  # hour, and saved before the app is built.
+  ios_core:
+    name: ios device build with the RustDesk core
+    runs-on: macos-15
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Name the core
+        id: core_key
+        run: echo "key=$(python3 packaging/build/build_client_ios.py --cache-key)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the core
+        id: core
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.cache/neutrino/cores
+          key: ${{ steps.core_key.outputs.key }}
+
+      - name: Install what building the core needs
+        if: steps.core.outputs.cache-hit != 'true'
+        run: brew install nasm
+
+      - name: Put the core into the app
+        run: python3 packaging/build/build_core_rustdesk_ios.py
+
+      - name: Save the core
+        if: steps.core.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.cache/neutrino/cores
+          key: ${{ steps.core_key.outputs.key }}
+
+      - run: brew install xcodegen
+
+      - run: xcodegen generate
+        working-directory: client/ios
+
+      - name: Build for a device
+        working-directory: client/ios
+        run: >
+          xcodebuild build
+          -project Neutrino.xcodeproj
+          -scheme Neutrino
+          -configuration Release
+          -sdk iphoneos
+          -destination generic/platform=iOS
+          -derivedDataPath build/derived
+          -skipPackagePluginValidation
+          CODE_SIGNING_ALLOWED=NO
+          $(python3 ../../packaging/build/build_client_ios.py --build-settings)
+
+      - name: Check the app links the core
+        run: nm client/ios/build/derived/Build/Products/Release-iphoneos/Neutrino.app/Neutrino | grep -E ' [Tt] _nd_attach_frames$'
+
+      # The unsigned .ipa with the core, for the test on a phone.
+      - name: Build the unsigned .ipa
+        run: python3 packaging/build/build_client_ios.py --output-dir dist
 
       - uses: actions/upload-artifact@v7
         with:
-          name: client_ios
+          name: client_ios_device_test
           path: dist/*-ios.ipa
           if-no-files-found: error
 

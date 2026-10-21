@@ -1,6 +1,7 @@
-RustDesk 1.4.9 for the Neutrino Android app: a C interface to one remote
-desktop session, for a host with no Dart. Applied by build_core_rustdesk.py with
-`patch -p1` at the root of the source tree.
+RustDesk 1.4.9 for the Neutrino Android and iOS apps: a C interface to one
+remote desktop session, for a host with no Dart. Applied by
+build_core_rustdesk.py and build_core_rustdesk_ios.py with `patch -p1` at the
+root of the source tree.
 
 Cargo.toml: the `native` feature, which turns `flutter` on. The client,
 server and keyboard code call into src/flutter.rs and src/flutter_ffi.rs in
@@ -16,15 +17,18 @@ the session's `clipboard` callback, as on iOS, and not to the Java clipboard
 manager the Flutter app registers.
 
 src/native_ffi.rs: the interface. `NativeHandler` implements the session
-callbacks (`InvokeUiSession`); every frame is drawn into the window given by
-`nd_attach_window`, and the login, the end of the connection, each frame
-size and the remote clipboard's text go to the host's callbacks. `nd_start`
-turns the peer's clipboard option on and applies the options `nd_set_option`
-kept (the image quality, and peer options such as the codec preference), and
-`nd_clipboard` sends the host's clipboard text to the remote machine.
-`nd_init`, `nd_set_option`, `nd_start`, `nd_attach_window`, `nd_mouse`,
-`nd_key`, `nd_text`, `nd_clipboard` and `nd_close` are exported with C
-linkage.
+callbacks (`InvokeUiSession`); on Android every frame is drawn into the window
+given by `nd_attach_window`, and on iOS its BGRA bytes go to the callback
+given by `nd_attach_frames`, which asks the machine for a fresh keyframe when
+it is set. The login, the end of the connection, each frame size and the
+remote clipboard's text go to the host's callbacks. `nd_start` turns the
+peer's clipboard option on and applies the options `nd_set_option` kept (the
+image quality, and peer options such as the codec preference), and
+`nd_clipboard` sends the host's clipboard text to the remote machine. On iOS,
+`nd_set_log` sends the core's log lines to a host callback.
+`nd_init`, `nd_set_option`, `nd_start`, `nd_mouse`, `nd_key`, `nd_text`,
+`nd_clipboard` and `nd_close` are exported with C linkage, with
+`nd_attach_window` on Android and `nd_attach_frames` and `nd_set_log` on iOS.
 In a build with the `mediacodec` feature, `nd_init` starts RustDesk's check of
 the device's MediaCodec H264 and H265 decoders and logs what it found, and a
 session waits up to 2 s for that check before it connects.
@@ -381,11 +385,13 @@ build.
  }
 --- a/src/native_ffi.rs
 +++ b/src/native_ffi.rs
-@@ -0,0 +1,496 @@
+@@ -0,0 +1,615 @@
 +//! A C interface to one remote desktop session, for a host app with no Dart.
 +//!
 +//! The host calls `nd_init` once, `nd_start` per connection and `nd_close` to end it.
-+//! Frames are drawn straight into the window handed over by `nd_attach_window`.
++//! On Android, frames are drawn straight into the window handed over by `nd_attach_window`;
++//! on iOS, each frame's BGRA bytes go to the callback handed over by `nd_attach_frames`, and
++//! `nd_set_log` sends the core's log to the host.
 +//! The connection's progress and the remote clipboard's text come back through the callbacks
 +//! given to `nd_start`; `nd_clipboard` sends the host's clipboard text to the remote machine.
 +//! `nd_set_option` keeps a session option, such as the codec preference or the image quality,
@@ -416,6 +422,7 @@ build.
 +/// The connection ended; the text says why.
 +pub const ND_STATE_CLOSED: c_int = 3;
 +
++#[cfg(target_os = "android")]
 +const WINDOW_FORMAT_RGBA_8888: i32 = 1;
 +
 +/// What the host is told, with the context pointer it gave.
@@ -431,6 +438,7 @@ build.
 +unsafe impl Send for NdCallbacks {}
 +unsafe impl Sync for NdCallbacks {}
 +
++#[cfg(target_os = "android")]
 +#[repr(C)]
 +struct ANativeWindowBuffer {
 +    width: i32,
@@ -441,6 +449,7 @@ build.
 +    reserved: [u32; 6],
 +}
 +
++#[cfg(target_os = "android")]
 +#[link(name = "android")]
 +extern "C" {
 +    fn ANativeWindow_acquire(window: *mut c_void);
@@ -454,14 +463,66 @@ build.
 +    fn ANativeWindow_unlockAndPost(window: *mut c_void) -> i32;
 +}
 +
++#[cfg(target_os = "android")]
 +struct NativeWindow {
 +    window: usize,
 +    size: (usize, usize),
 +}
 +
++#[cfg(target_os = "android")]
++lazy_static::lazy_static! {
++    static ref WINDOW: Mutex<NativeWindow> = Mutex::new(NativeWindow { window: 0, size: (0, 0) });
++}
++
++/// Where the host takes each frame: its BGRA bytes, width, height and bytes per row.
++#[cfg(target_os = "ios")]
++type OnFrame = unsafe extern "C" fn(*mut c_void, *const u8, c_int, c_int, c_int);
++
++/// The host's frame callback with its context pointer.
++#[cfg(target_os = "ios")]
++struct FrameSink {
++    context: usize,
++    on_frame: Option<OnFrame>,
++}
++
++#[cfg(target_os = "ios")]
++static FRAMES: Mutex<FrameSink> = Mutex::new(FrameSink { context: 0, on_frame: None });
++
++/// Where the host takes each log line: its level, 1 for errors to 5 for traces, and its text.
++#[cfg(target_os = "ios")]
++type OnLog = unsafe extern "C" fn(*mut c_void, c_int, *const c_char);
++
++/// The `log` facade's logger, which hands each record to the host's log callback.
++#[cfg(target_os = "ios")]
++struct HostLog {
++    sink: RwLock<(usize, Option<OnLog>)>,
++}
++
++#[cfg(target_os = "ios")]
++static HOST_LOG: HostLog = HostLog { sink: RwLock::new((0, None)) };
++
++#[cfg(target_os = "ios")]
++impl log::Log for HostLog {
++    fn enabled(&self, metadata: &log::Metadata) -> bool {
++        metadata.level() <= log::Level::Info
++    }
++
++    fn log(&self, record: &log::Record) {
++        if !self.enabled(record.metadata()) {
++            return;
++        }
++        if let (context, Some(on_log)) = *self.sink.read().unwrap() {
++            let text = format!("{}: {}", record.target(), record.args()).replace('\0', "");
++            let text = CString::new(text).unwrap_or_default();
++            unsafe { on_log(context as *mut c_void, record.level() as c_int, text.as_ptr()) };
++        }
++    }
++
++    fn flush(&self) {}
++}
++
 +lazy_static::lazy_static! {
 +    static ref CALLBACKS: RwLock<Option<NdCallbacks>> = RwLock::new(None);
-+    static ref WINDOW: Mutex<NativeWindow> = Mutex::new(NativeWindow { window: 0, size: (0, 0) });
 +    static ref SESSION: RwLock<Option<Session<NativeHandler>>> = RwLock::new(None);
 +    static ref MODIFIERS: Mutex<[bool; 4]> = Mutex::new([false; 4]);
 +    static ref OPTIONS: Mutex<HashMap<String, String>> = Mutex::new(HashMap::new());
@@ -507,6 +568,7 @@ build.
 +    }
 +}
 +
++#[cfg(target_os = "android")]
 +fn draw(window: &mut NativeWindow, rgba: &scrap::ImageRgb) {
 +    if window.window == 0 || rgba.w == 0 || rgba.h == 0 {
 +        return;
@@ -552,6 +614,26 @@ build.
 +        }
 +    }
 +    unsafe { ANativeWindow_unlockAndPost(handle) };
++}
++
++#[cfg(target_os = "ios")]
++fn hand_over(sink: &FrameSink, rgba: &scrap::ImageRgb) {
++    let Some(on_frame) = sink.on_frame else {
++        return;
++    };
++    if rgba.w == 0 || rgba.h == 0 {
++        return;
++    }
++    let stride = rgba.raw.len() / rgba.h;
++    unsafe {
++        on_frame(
++            sink.context as *mut c_void,
++            rgba.raw.as_ptr(),
++            rgba.w as c_int,
++            rgba.h as c_int,
++            stride as c_int,
++        )
++    };
 +}
 +
 +fn is_password_box(msgtype: &str) -> bool {
@@ -629,7 +711,10 @@ build.
 +                self.tell_size(rgba.w, rgba.h);
 +            }
 +        }
++        #[cfg(target_os = "android")]
 +        draw(&mut WINDOW.lock().unwrap(), rgba);
++        #[cfg(target_os = "ios")]
++        hand_over(&FRAMES.lock().unwrap(), rgba);
 +    }
 +    fn msgbox(&self, msgtype: &str, title: &str, text: &str, _link: &str, _retry: bool) {
 +        log::info!("msgbox {msgtype}: {title}: {text}");
@@ -681,6 +766,20 @@ build.
 +        peer.options.remove(name);
 +    } else {
 +        peer.options.insert(name.to_owned(), value.to_owned());
++    }
++}
++
++/// Whether the machine takes clipboard text from this side; iOS's `Session` has no such check.
++fn is_text_clipboard_required(session: &Session<NativeHandler>) -> bool {
++    #[cfg(not(target_os = "ios"))]
++    return session.is_text_clipboard_required();
++    #[cfg(target_os = "ios")]
++    {
++        let lc = session.lc.read().unwrap();
++        *session.server_clipboard_enabled.read().unwrap()
++            && *session.server_keyboard_enabled.read().unwrap()
++            && !lc.disable_clipboard.v
++            && !lc.view_only.v
 +    }
 +}
 +
@@ -777,6 +876,7 @@ build.
 +}
 +
 +/// Draw frames into this `ANativeWindow*`, or into nothing when it is null.
++#[cfg(target_os = "android")]
 +#[no_mangle]
 +pub unsafe extern "C" fn nd_attach_window(window: *mut c_void) {
 +    let mut current = WINDOW.lock().unwrap();
@@ -791,6 +891,29 @@ build.
 +    drop(current);
 +    if !window.is_null() {
 +        with_session(|session| session.refresh_video(*session.ui_handler.display.read().unwrap()));
++    }
++}
++
++/// Hand every frame to `on_frame` with `context`, or to nothing when it is null; no frame is
++/// handed to the previous callback after this returns. A callback asks the machine for a
++/// fresh keyframe.
++#[cfg(target_os = "ios")]
++#[no_mangle]
++pub unsafe extern "C" fn nd_attach_frames(context: *mut c_void, on_frame: Option<OnFrame>) {
++    *FRAMES.lock().unwrap() = FrameSink { context: context as usize, on_frame };
++    if on_frame.is_some() {
++        with_session(|session| session.refresh_video(*session.ui_handler.display.read().unwrap()));
++    }
++}
++
++/// Send the core's log lines at info level and above to `on_log` with `context`, or to
++/// nothing when it is null.
++#[cfg(target_os = "ios")]
++#[no_mangle]
++pub unsafe extern "C" fn nd_set_log(context: *mut c_void, on_log: Option<OnLog>) {
++    *HOST_LOG.sink.write().unwrap() = (context as usize, on_log);
++    if log::set_logger(&HOST_LOG).is_ok() {
++        log::set_max_level(log::LevelFilter::Info);
 +    }
 +}
 +
@@ -844,7 +967,7 @@ build.
 +        return;
 +    }
 +    with_session(|session| {
-+        if !session.is_text_clipboard_required() {
++        if !is_text_clipboard_required(session) {
 +            return;
 +        }
 +        let mut msg = Message::new();
