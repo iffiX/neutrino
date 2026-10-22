@@ -9,6 +9,7 @@ options:
   deploymentTarget:
     iOS: "16.0"
   createIntermediateGroups: true
+  developmentLanguage: en
 packages:
   SwiftTerm:
     url: https://github.com/migueldeicaza/SwiftTerm
@@ -44,6 +45,8 @@ targets:
       path: Neutrino/Info.plist
       properties:
         CFBundleDisplayName: Neutrino
+        CFBundleDevelopmentRegion: en
+        CFBundleLocalizations: [en, zh-Hans]
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NeutrinoEdition: $(NEUTRINO_EDITION)
