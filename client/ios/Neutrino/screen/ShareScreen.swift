@@ -168,7 +168,7 @@ struct ShareScreen: View {
             if let line = stateLine(item, transfer: transfer, job: job) {
                 RowText(text: line, style: .note)
             }
-            if let transfer, transfer.isRunning {
+            if let transfer, transfer.isRunning, !transfer.isWaiting {
                 progress(transfer)
             }
             if let error = transfer?.error ?? share.errors[key] {
@@ -197,7 +197,7 @@ struct ShareScreen: View {
                 RowText(text: transfer.path.name, style: .title)
             }
             RowText(text: transferLine(transfer), style: .note)
-            if transfer.isRunning {
+            if transfer.isRunning, !transfer.isWaiting {
                 progress(transfer)
             }
             if let error = transfer.error {
@@ -263,6 +263,7 @@ struct ShareScreen: View {
     }
 
     private func transferLine(_ transfer: ShareTransfer) -> String {
+        if transfer.isWaiting { return words.word("ui.share_waiting") }
         let word = words.word(transfer.kind.rawValue)
         guard transfer.total > 0 else { return word }
         let amount = words.word(

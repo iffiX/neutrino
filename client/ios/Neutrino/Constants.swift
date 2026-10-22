@@ -377,6 +377,13 @@ enum SharePage {
     /// The code of a login the share rejected.
     static let codeLoginRejected = "share_login_rejected"
 
+    /// How often a running transfer's row is drawn again with the bytes the forward has carried.
+    static let progressIntervalSeconds = 0.25
+
+    /// The bytes an upload's forward carries up beyond which a part of the file is in the share: more than the
+    /// requests that open the file.
+    static let partWrittenBytes: Int64 = 65536
+
     /// The code of an item Upload from Photos picked that the picker did not hand over.
     static let codePhotoUnavailable = "share_photo_unavailable"
 }

@@ -52,6 +52,7 @@
     "scan_hint": "Point the camera at the QR code on the hub's Clients page",
     "scan_press": "Press Scan to use the camera.",
     "share_progress": "{done} of {total}",
+    "share_waiting": "Waiting",
     "terminal_detached": "Detached; waiting for the hub",
     "upload_from_files": "Upload from Files",
     "upload_from_photos": "Upload from Photos"

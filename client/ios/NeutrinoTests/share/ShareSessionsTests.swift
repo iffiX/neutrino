@@ -8,6 +8,7 @@ final class ShareSessionsTests: XCTestCase {
     private var secrets = FakeSecretStore()
     private var client = FakeShareClient()
     private var sessions: ShareSessions?
+    private var registry: ChannelStreamRegistry?
     private var directory = FileManager.default.temporaryDirectory
 
     private let target = ShareTarget(
@@ -18,6 +19,7 @@ final class ShareSessionsTests: XCTestCase {
         client = FakeShareClient()
         directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let registry = ChannelStreamRegistry(socket: socket, clock: clock)
+        self.registry = registry
         sessions = ShareSessions(
             secrets: secrets, makeClient: { self.client },
             openConnect: { _, args in registry.open(kind: Channel.kindConnect, args: args, hasBytes: true) },
@@ -152,6 +154,34 @@ final class ShareSessionsTests: XCTestCase {
         sessions.pull()
         XCTAssertEqual(sessions.session?.view.error?.code, "share_login_rejected")
         XCTAssertTrue(sessions.heldLogins.isEmpty)
+    }
+
+    func testAReadShowsWhatItsForwardCarriedBelowItsSize() throws {
+        let sessions = try XCTUnwrap(self.sessions)
+        let registry = try XCTUnwrap(self.registry)
+        var dialled: LoopbackClient?
+        client.onConnect = { port in dialled = LoopbackClient(port: port) }
+        client.files = ["big.bin": Data(count: 100)]
+        sessions.logIn(target, login: ShareLogin(user: "alice", password: "pw"), isKept: true)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+        let open = try XCTUnwrap(socket.frames.first { $0.text("type") == "open" })
+        let stream = try XCTUnwrap(open.number("stream").map(UInt32.init))
+        let session = try XCTUnwrap(sessions.session)
+        client.isHolding = true
+        session.open(try XCTUnwrap(session.view.items.first))
+        XCTAssertEqual(session.view.transfers["big.bin"]?.done, 50)
+
+        registry.takeBinary(ChannelFrames.binary(stream: stream, bytes: Data(count: 70)))
+        RunLoop.main.run(until: Date().addingTimeInterval(0.6))
+        XCTAssertEqual(session.view.transfers["big.bin"]?.done, 70)
+        registry.takeBinary(ChannelFrames.binary(stream: stream, bytes: Data(count: 70)))
+        RunLoop.main.run(until: Date().addingTimeInterval(0.6))
+        XCTAssertEqual(session.view.transfers["big.bin"]?.done, 99)
+
+        client.finish()
+        XCTAssertNil(session.view.transfers["big.bin"])
+        XCTAssertEqual(session.view.preview?.lastPathComponent, "big.bin")
+        XCTAssertNotNil(dialled)
     }
 
     func testTheForwardAcceptsNothingWhileTheHubHasNoChannel() throws {

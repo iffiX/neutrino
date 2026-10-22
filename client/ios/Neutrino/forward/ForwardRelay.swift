@@ -13,6 +13,8 @@ final class ForwardRelay {
     private var isSourceSuspended = false
     private var isChannelOpen = true
     private var pipes: [ObjectIdentifier: ForwardPipe] = [:]
+    private var endedUp: Int64 = 0
+    private var endedDown: Int64 = 0
 
     /// The loopback number bound; 0 until started.
     private(set) var localPort = 0
@@ -35,6 +37,12 @@ final class ForwardRelay {
 
     /// Whether a connection the relay accepted is still open.
     var isCarrying: Bool { !pipes.isEmpty }
+
+    /// The bytes every connection the relay accepted has carried up, from the connection to the hub, so far.
+    var bytesUp: Int64 { pipes.values.reduce(endedUp) { $0 + $1.bytesUp } }
+
+    /// The bytes every connection the relay accepted has carried down, from the hub to the connection, so far.
+    var bytesDown: Int64 { pipes.values.reduce(endedDown) { $0 + $1.bytesDown } }
 
     /// Bind the loopback and start accepting.
     ///
@@ -93,7 +101,9 @@ final class ForwardRelay {
                 ForwardSocket.closeDescriptor(accepted)
             case .success(let stream):
                 let pipe = ForwardPipe(descriptor: accepted, stream: stream) { [weak self] pipe in
-                    self?.pipes[ObjectIdentifier(pipe)] = nil
+                    guard let self, self.pipes.removeValue(forKey: ObjectIdentifier(pipe)) != nil else { return }
+                    self.endedUp += pipe.bytesUp
+                    self.endedDown += pipe.bytesDown
                 }
                 pipe.onRefused = { [weak self] refusal in self?.onRefused?(refusal) }
                 pipes[ObjectIdentifier(pipe)] = pipe

@@ -189,6 +189,70 @@ final class ShareSessionTests: XCTestCase {
         XCTAssertEqual(session.view.preview?.lastPathComponent, "song.mp3")
     }
 
+    func testTransfersRunOneAtATimeInTheOrderTheyWereAdded() throws {
+        client.files = ["a.txt": Data("aa".utf8), "b.txt": Data("bb".utf8), "c.txt": Data("cc".utf8)]
+        let session = try started()
+        client.isHolding = true
+        for item in session.view.items { session.open(item) }
+        XCTAssertEqual(client.started, ["a.txt"])
+        XCTAssertEqual(session.view.transfers["a.txt"]?.isWaiting, false)
+        XCTAssertEqual(session.view.transfers["b.txt"]?.isWaiting, true)
+        XCTAssertEqual(session.view.transfers["c.txt"]?.isWaiting, true)
+
+        client.finish()
+        XCTAssertEqual(session.view.preview?.lastPathComponent, "a.txt")
+        XCTAssertEqual(client.started, ["a.txt", "b.txt"])
+        XCTAssertEqual(session.view.transfers["b.txt"]?.isWaiting, false)
+        XCTAssertEqual(session.view.transfers["c.txt"]?.isWaiting, true)
+        client.finish()
+        XCTAssertEqual(client.started, ["a.txt", "b.txt", "c.txt"])
+    }
+
+    func testAnUploadWaitsForTheReadAddedBeforeIt() throws {
+        client.files = ["song.mp3": Data("la la".utf8)]
+        let session = try started()
+        client.isHolding = true
+        session.open(try XCTUnwrap(session.view.items.first))
+        session.upload([try picked("notes.txt", "hello")])
+        settle { session.view.transfers["notes.txt"]?.total == 5 }
+        XCTAssertEqual(session.view.transfers["notes.txt"]?.isWaiting, true)
+        XCTAssertEqual(client.started, ["song.mp3"])
+        client.isHolding = false
+        client.finish()
+        XCTAssertEqual(client.started, ["song.mp3", "notes.txt"])
+        XCTAssertEqual(client.files["notes.txt"], Data("hello".utf8))
+    }
+
+    func testCancelOnAWaitingRowRemovesItAtOnceAndItNeverStarts() throws {
+        client.files = ["a.txt": Data("aa".utf8), "b.txt": Data("bb".utf8)]
+        let session = try started()
+        client.isHolding = true
+        for item in session.view.items { session.open(item) }
+        session.cancel("b.txt")
+        XCTAssertNil(session.view.transfers["b.txt"])
+        client.finish()
+        XCTAssertEqual(client.started, ["a.txt"])
+        XCTAssertTrue(session.view.transfers.isEmpty)
+    }
+
+    func testTheBackgroundEndCutsTheWaitingTransfersAsWellAsTheRunningOne() throws {
+        client.files = ["a.txt": Data("aa".utf8), "b.txt": Data("bb".utf8)]
+        let session = try started()
+        client.isHolding = true
+        for item in session.view.items { session.open(item) }
+        session.suspend()
+        client.finish(POSIXError(.ENOTCONN))
+        for key in ["a.txt", "b.txt"] {
+            XCTAssertEqual(session.view.transfers[key]?.error?.code, "share_interrupted")
+            XCTAssertEqual(session.view.transfers[key]?.isWaiting, false)
+        }
+        session.resume { _ in }
+        client.isHolding = false
+        session.retry("b.txt")
+        XCTAssertEqual(client.started, ["a.txt", "b.txt"])
+        XCTAssertEqual(session.view.preview?.lastPathComponent, "b.txt")
+    }
+
     func testItemsFromPhotosAreWrittenAsUploadsAndOneNotHandedOverIsWordedOnThePageLine() throws {
         client.files = ["IMG_0001.heic": Data()]
         let session = try started()

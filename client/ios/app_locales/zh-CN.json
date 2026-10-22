@@ -52,6 +52,7 @@
     "scan_hint": "对准中枢客户端页面上的二维码",
     "scan_press": "按“扫码”使用相机。",
     "share_progress": "{done} / {total}",
+    "share_waiting": "等待中",
     "terminal_detached": "已断开，正在等待中枢",
     "upload_from_files": "从“文件”上传",
     "upload_from_photos": "从“照片”上传"

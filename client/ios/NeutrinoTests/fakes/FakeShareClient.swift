@@ -30,6 +30,9 @@ final class FakeShareClient: ShareClient {
     /// Every path removed, in order.
     private(set) var removed: [String] = []
 
+    /// Every path a read or a write started on, in order.
+    private(set) var started: [String] = []
+
     /// What connect does besides answering, such as dialling the forward.
     var onConnect: ((Int) -> Void)?
 
@@ -61,6 +64,7 @@ final class FakeShareClient: ShareClient {
         _ path: String, to url: URL, cancel: ShareCancel, progress: @escaping (Int64, Int64) -> Void,
         completion: @escaping (Error?) -> Void
     ) {
+        started.append(path)
         guard let data = files[path] else {
             completion(POSIXError(.ENOENT))
             return
@@ -83,6 +87,7 @@ final class FakeShareClient: ShareClient {
         _ url: URL, to path: String, cancel: ShareCancel, progress: @escaping (Int64) -> Void,
         completion: @escaping (Error?) -> Void
     ) {
+        started.append(path)
         guard files[path] == nil, !folders.contains(path) else {
             completion(POSIXError(.EEXIST))
             return

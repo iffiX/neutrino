@@ -21,6 +21,12 @@ final class ForwardPipe {
     /// Called when the hub ends the stream with a code.
     var onRefused: ((ClientError) -> Void)?
 
+    /// The bytes carried up so far: read from the connection and sent on the stream.
+    private(set) var bytesUp: Int64 = 0
+
+    /// The bytes carried down so far: taken from the stream and written to the connection.
+    private(set) var bytesDown: Int64 = 0
+
     /// Join a connection to a stream.
     ///
     /// - Parameters:
@@ -83,6 +89,7 @@ final class ForwardPipe {
         stream.send(data) { [weak self] isSent in
             guard let self, !self.isShut else { return }
             self.sendsInFlight -= 1
+            if isSent { self.bytesUp += Int64(data.count) }
             if !isSent || (self.isLocalEnded && self.sendsInFlight == 0) {
                 self.shutdown()
             } else if !self.isLocalEnded {
@@ -109,6 +116,7 @@ final class ForwardPipe {
             }
             if written == 0 { break }
             pending.removeFirst(written)
+            bytesDown += Int64(written)
             stream.consumed(written)
         }
         if pending.isEmpty {

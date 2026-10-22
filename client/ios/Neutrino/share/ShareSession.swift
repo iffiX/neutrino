@@ -2,7 +2,9 @@ import Foundation
 
 /// One open share: its forward, its SMB connection, the folder the page shows, and every transfer and job on the
 /// page. The forward listens on `127.0.0.1` at a port the system picks, each accepted connection one `connect`
-/// stream naming the file entry, and accepts nothing while the hub has no channel. Every call runs on the main
+/// stream naming the file entry, and accepts nothing while the hub has no channel. One transfer runs at a time,
+/// in the order the transfers were added, and the running one's row shows the bytes the forward has carried for
+/// it in its direction, below the file's size until the SMB client reports the end. Every call runs on the main
 /// queue.
 final class ShareSession {
     /// The share.
@@ -19,6 +21,12 @@ final class ShareSession {
     private var generation = 0
     private var listing = 0
     private var cancels: [String: ShareCancel] = [:]
+    private var running: ShareCancel?
+    private var waiting: [(cancel: ShareCancel, start: () -> Void)] = []
+    private var startUp: Int64 = 0
+    private var startDown: Int64 = 0
+    private var reported: Int64 = 0
+    private var ticker: Timer?
 
     /// Called after every change of the page.
     var onChange: (() -> Void)?
@@ -89,23 +97,31 @@ final class ShareSession {
         }
     }
 
-    /// Close the share: its connection, its forward and its files.
+    /// Close the share: its transfers, its connection, its forward and its files.
     func close() {
         generation += 1
         for cancel in cancels.values { cancel.cancel() }
         cancels = [:]
+        running = nil
+        waiting = []
+        stopTicker()
         stopConnection()
         try? FileManager.default.removeItem(at: directory)
     }
 
-    /// The time in the background is ending: every transfer that runs is cut and shows `share_interrupted`, and
-    /// the connection and the forward close.
+    /// The time in the background is ending: every transfer, running or waiting, is cut and shows
+    /// `share_interrupted`, and the connection and the forward close.
     func suspend() {
+        tick()
         generation += 1
         for (key, transfer) in view.transfers where transfer.isRunning {
             view.transfers[key]?.error = .refusal(SharePage.codeInterrupted)
+            view.transfers[key]?.isWaiting = false
         }
         cancels = [:]
+        running = nil
+        waiting = []
+        stopTicker()
         view.jobs = [:]
         view.isListing = false
         view.isMakingFolder = false
@@ -197,7 +213,7 @@ final class ShareSession {
     }
 
     /// Upload from Files: each picked file is copied into the temporary directory, then written into the folder
-    /// shown under the first free name.
+    /// shown under the first free name, in its turn.
     ///
     /// - Parameter urls: The picked files.
     func upload(_ urls: [URL]) {
@@ -214,6 +230,7 @@ final class ShareSession {
             view.transfers[key] = ShareTransfer(kind: .upload, path: folder.child(name), askedName: name)
             let place = directory.appendingPathComponent(UUID().uuidString, isDirectory: true)
             let mine = generation
+            enqueue(cancel, key: key) { [weak self] in self?.writeCopied(cancel) }
             DispatchQueue.global(qos: .userInitiated).async {
                 let copied = Result { try Self.copy(url, into: place) }
                 DispatchQueue.main.async { [weak self] in
@@ -247,23 +264,27 @@ final class ShareSession {
         }
     }
 
-    /// Cancel on a transfer's row: a running transfer stops, and one that ended in a code goes.
+    /// Cancel on a transfer's row: a running transfer stops after the piece the SMB client is moving, and a
+    /// waiting one, or one that ended in a code, goes at once.
     ///
     /// - Parameter key: The transfer's path in the share.
     func cancel(_ key: String) {
         guard let transfer = view.transfers.removeValue(forKey: key) else { return }
-        if let cancel = cancels.removeValue(forKey: key) { cancel.cancel() }
-        if !transfer.isRunning, let source = transfer.source {
+        if let cancel = cancels.removeValue(forKey: key) {
+            cancel.cancel()
+            waiting.removeAll { $0.cancel === cancel }
+        }
+        if !transfer.isRunning || transfer.isWaiting, let source = transfer.source {
             try? FileManager.default.removeItem(at: source.deletingLastPathComponent())
         }
     }
 
-    /// Retry on a transfer that ended in a code: a read runs again; a write whose cut left a part deletes it
-    /// and writes the same name again, and any other write starts again from the name asked for.
+    /// Retry on a transfer that ended in a code, in its turn: a read runs again; a write that had written a part
+    /// deletes it and writes the same name again, and any other write starts again from the name asked for.
     ///
     /// - Parameter key: The transfer's path in the share.
     func retry(_ key: String) {
-        guard let transfer = view.transfers[key], !transfer.isRunning, let client else { return }
+        guard let transfer = view.transfers[key], !transfer.isRunning, client != nil else { return }
         switch transfer.kind {
         case .open, .save:
             view.transfers[key] = nil
@@ -276,15 +297,7 @@ final class ShareSession {
             let cancel = ShareCancel()
             cancels[key] = cancel
             view.transfers[key]?.error = nil
-            guard transfer.done > 0 else {
-                write(transfer, from: key, name: transfer.askedName, attempt: 0, isNumbered: true, cancel: cancel)
-                return
-            }
-            let mine = generation
-            client.remove(key, isFolder: false) { [weak self] _ in
-                guard let self, self.generation == mine, self.cancels[key] === cancel else { return }
-                self.write(transfer, from: key, name: transfer.path.name, attempt: 0, isNumbered: false, cancel: cancel)
-            }
+            enqueue(cancel, key: key) { [weak self] in self?.rewrite(transfer, cancel: cancel) }
         }
     }
 
@@ -356,43 +369,56 @@ final class ShareSession {
 
     private func read(_ path: SharePath, kind: ShareTransferKind, total: Int64) {
         let key = path.text
-        guard let client, view.transfers[key]?.isRunning != true, view.jobs[key] == nil else {
+        guard client != nil, view.transfers[key]?.isRunning != true, view.jobs[key] == nil else {
             ClientLog.info("a job runs on \(key); the press is dropped")
             return
         }
         view.errors[key] = nil
-        let place = directory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        let local = place.appendingPathComponent(path.name)
-        do {
-            try FileManager.default.createDirectory(at: place, withIntermediateDirectories: true)
-        } catch {
-            view.errors[key] = .refusal(Channel.codeClientInternal, ["error": "\(error)"])
-            return
-        }
         let cancel = ShareCancel()
         cancels[key] = cancel
         view.transfers[key] = ShareTransfer(kind: kind, path: path, askedName: path.name, total: total)
+        enqueue(cancel, key: key) { [weak self] in self?.download(path, kind: kind, cancel: cancel) }
+    }
+
+    private func download(_ path: SharePath, kind: ShareTransferKind, cancel: ShareCancel) {
+        let key = path.text
+        let place = directory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let local = place.appendingPathComponent(path.name)
+        guard let client else {
+            finished(cancel)
+            return
+        }
+        do {
+            try FileManager.default.createDirectory(at: place, withIntermediateDirectories: true)
+        } catch {
+            cancels[key] = nil
+            view.transfers[key]?.error = .refusal(Channel.codeClientInternal, ["error": "\(error)"])
+            finished(cancel)
+            return
+        }
         let mine = generation
         client.download(
             key, to: local, cancel: cancel,
-            progress: { [weak self] done, size in self?.progressed(key, cancel, done: done, total: size) },
+            progress: { [weak self] done, size in self?.progressed(cancel, done: done, total: size) },
             completion: { [weak self] error in
                 guard let self, self.generation == mine, self.cancels[key] === cancel, !cancel.isCancelled else {
                     try? FileManager.default.removeItem(at: place)
+                    self?.finished(cancel)
                     return
                 }
                 self.cancels[key] = nil
                 if let error {
                     try? FileManager.default.removeItem(at: place)
                     self.view.transfers[key]?.error = self.refusal(error)
-                    return
+                } else {
+                    self.view.transfers[key] = nil
+                    switch kind {
+                    case .open: self.view.preview = local
+                    case .save: self.view.export = local
+                    case .upload: break
+                    }
                 }
-                self.view.transfers[key] = nil
-                switch kind {
-                case .open: self.view.preview = local
-                case .save: self.view.export = local
-                case .upload: break
-                }
+                self.finished(cancel)
             })
     }
 
@@ -413,18 +439,19 @@ final class ShareSession {
             try? FileManager.default.removeItem(at: file.deletingLastPathComponent())
             return
         }
-        let cancel = ShareCancel()
-        var transfer = ShareTransfer(kind: .upload, path: folder.child(name), askedName: name)
-        if generation == mine {
-            cancels[key] = cancel
-        } else {
-            transfer.error = .refusal(SharePage.codeInterrupted)
-        }
-        view.transfers[key] = transfer
         let attributes = try? FileManager.default.attributesOfItem(atPath: file.path)
-        copied(
-            .success((file, (attributes?[.size] as? NSNumber)?.int64Value ?? 0)), key: key, cancel: cancel,
-            generation: mine)
+        var transfer = ShareTransfer(
+            kind: .upload, path: folder.child(name), askedName: name, source: file,
+            total: (attributes?[.size] as? NSNumber)?.int64Value ?? 0)
+        guard generation == mine else {
+            transfer.error = .refusal(SharePage.codeInterrupted)
+            view.transfers[key] = transfer
+            return
+        }
+        let cancel = ShareCancel()
+        cancels[key] = cancel
+        view.transfers[key] = transfer
+        enqueue(cancel, key: key) { [weak self] in self?.writeCopied(cancel) }
     }
 
     private func copied(
@@ -435,16 +462,41 @@ final class ShareSession {
         case .failure(let error):
             guard isCurrent else { return }
             cancels[key] = nil
+            waiting.removeAll { $0.cancel === cancel }
+            view.transfers[key]?.isWaiting = false
             view.transfers[key]?.error = .refusal(Channel.codeClientInternal, ["error": "\(error)"])
+            finished(cancel)
         case .success(let (source, size)):
             guard view.transfers[key] != nil, isCurrent || generation != mine, !cancel.isCancelled else {
                 try? FileManager.default.removeItem(at: source.deletingLastPathComponent())
+                finished(cancel)
                 return
             }
             view.transfers[key]?.source = source
             view.transfers[key]?.total = size
-            guard generation == mine, let transfer = view.transfers[key] else { return }
+            if generation == mine, running === cancel { writeCopied(cancel) }
+        }
+    }
+
+    private func writeCopied(_ cancel: ShareCancel) {
+        guard let key = key(of: cancel), let transfer = view.transfers[key], transfer.source != nil else { return }
+        write(transfer, from: key, name: transfer.askedName, attempt: 0, isNumbered: true, cancel: cancel)
+    }
+
+    private func rewrite(_ transfer: ShareTransfer, cancel: ShareCancel) {
+        let key = transfer.path.text
+        guard transfer.hasWrittenPart, let client else {
             write(transfer, from: key, name: transfer.askedName, attempt: 0, isNumbered: true, cancel: cancel)
+            return
+        }
+        let mine = generation
+        client.remove(key, isFolder: false) { [weak self] _ in
+            guard let self, self.generation == mine else { return }
+            guard self.cancels[key] === cancel else {
+                self.finished(cancel)
+                return
+            }
+            self.write(transfer, from: key, name: transfer.path.name, attempt: 0, isNumbered: false, cancel: cancel)
         }
     }
 
@@ -454,7 +506,10 @@ final class ShareSession {
     ) {
         view.transfers[previous] = nil
         cancels[previous] = nil
-        guard let client, let source = transfer.source else { return }
+        guard let client, let source = transfer.source else {
+            finished(cancel)
+            return
+        }
         let folder = transfer.path.parent ?? SharePath()
         let target = folder.child(ShareName.numbered(name, isFolder: false, attempt: attempt))
         let key = target.text
@@ -468,7 +523,7 @@ final class ShareSession {
             source, to: key, cancel: cancel,
             progress: { [weak self] done in
                 written = done
-                self?.progressed(key, cancel, done: done, total: 0)
+                self?.progressed(cancel, done: done, total: 0)
             },
             completion: { [weak self] error in
                 guard let self else { return }
@@ -477,6 +532,7 @@ final class ShareSession {
                     if self.generation == mine, error == nil || written > 0 {
                         self.client?.remove(key, isFolder: false) { _ in }
                     }
+                    self.finished(cancel)
                     return
                 }
                 guard self.generation == mine, self.cancels[key] === cancel else { return }
@@ -485,6 +541,7 @@ final class ShareSession {
                     self.view.transfers[key] = nil
                     try? FileManager.default.removeItem(at: source.deletingLastPathComponent())
                     if folder == self.view.path { self.reload() }
+                    self.finished(cancel)
                     return
                 }
                 if isNumbered, (error as? POSIXError)?.code == .EEXIST, attempt + 1 < SharePage.nameAttempts {
@@ -493,6 +550,7 @@ final class ShareSession {
                 }
                 self.cancels[key] = nil
                 self.view.transfers[key]?.error = self.refusal(error)
+                self.finished(cancel)
             })
     }
 
@@ -536,10 +594,64 @@ final class ShareSession {
         }
     }
 
-    private func progressed(_ key: String, _ cancel: ShareCancel, done: Int64, total: Int64) {
-        guard cancels[key] === cancel else { return }
-        view.transfers[key]?.done = done
+    private func enqueue(_ cancel: ShareCancel, key: String, _ start: @escaping () -> Void) {
+        waiting.append((cancel, start))
+        view.transfers[key]?.isWaiting = running != nil
+        startNext()
+    }
+
+    private func startNext() {
+        while running == nil, !waiting.isEmpty {
+            let next = waiting.removeFirst()
+            guard let key = key(of: next.cancel) else { continue }
+            view.transfers[key]?.isWaiting = false
+            running = next.cancel
+            startUp = relay?.bytesUp ?? 0
+            startDown = relay?.bytesDown ?? 0
+            reported = 0
+            next.start()
+        }
+        if running == nil {
+            stopTicker()
+        } else if ticker == nil {
+            ticker = Timer.scheduledTimer(withTimeInterval: SharePage.progressIntervalSeconds, repeats: true) {
+                [weak self] _ in
+                self?.tick()
+            }
+        }
+    }
+
+    private func finished(_ cancel: ShareCancel) {
+        guard running === cancel else { return }
+        running = nil
+        startNext()
+    }
+
+    private func key(of cancel: ShareCancel) -> String? {
+        cancels.first { $0.value === cancel }?.key
+    }
+
+    private func progressed(_ cancel: ShareCancel, done: Int64, total: Int64) {
+        guard running === cancel, let key = key(of: cancel) else { return }
+        reported = done
         if total > 0 { view.transfers[key]?.total = total }
+        tick()
+    }
+
+    private func tick() {
+        guard let running, let key = key(of: running), let transfer = view.transfers[key] else { return }
+        let isUpload = transfer.kind == .upload
+        let carried = isUpload ? (relay?.bytesUp ?? startUp) - startUp : (relay?.bytesDown ?? startDown) - startDown
+        let ceiling = transfer.total > 0 ? transfer.total - 1 : carried
+        view.transfers[key]?.done = max(reported, min(carried, ceiling))
+        if isUpload, reported > 0 || carried > SharePage.partWrittenBytes {
+            view.transfers[key]?.hasWrittenPart = true
+        }
+    }
+
+    private func stopTicker() {
+        ticker?.invalidate()
+        ticker = nil
     }
 
     private func refusal(_ error: Error) -> ClientError {
