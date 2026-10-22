@@ -10,8 +10,11 @@ struct KeyboardClosingLayer: View {
             .onTapGesture { Self.close() }
     }
 
-    /// Close the keyboard, whatever has the typing.
+    /// Close the keyboard, whatever has the typing and in whichever of the app's windows.
     static func close() {
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        for scene in UIApplication.shared.connectedScenes {
+            for window in (scene as? UIWindowScene)?.windows ?? [] { window.endEditing(true) }
+        }
     }
 }
