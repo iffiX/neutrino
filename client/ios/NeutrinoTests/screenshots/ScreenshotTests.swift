@@ -27,6 +27,22 @@ final class ScreenshotTests: XCTestCase {
         return text
     }()
 
+    private static let services: [JSONValue] = [
+        web("gitea", "Gitea", "http://nmxrel:3000/"),
+        web("vscode", "VS Code (lab)", "http://nmxrel:3201/"),
+        web("cloudcli", "CloudCLI (demo)", "http://nmxrel:3002/"),
+        web("codeg", "Codeg (lab)", "http://nmxrel:3101/"),
+        web("antigravity", "Antigravity (direct)", "http://192.168.122.132:49723/", isHealthy: false),
+        file("share", "share", host: "192.168.122.46", machine: "nmxwin"),
+        file("music", "music, the long library share of the house", host: "nmxrel", machine: "nmxrel"),
+        desktop("nmxwin", "nmxwin", host: "192.168.122.46", platform: "windows"),
+        desktop("mac", "mac", host: "192.168.122.50", platform: "darwin"),
+    ]
+
+    private static let machines: [JSONValue] = [
+        machine("nmxrel", isOnline: true), machine("mac", isOnline: false), machine("nmxwin", isOnline: true),
+    ]
+
     private let words = WordCatalog.load(language: "en", bundle: Bundle(for: ClientCore.self))
     private var window: UIWindow?
 
@@ -103,12 +119,109 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
-    private func makeCore(_ defaults: UserDefaults) -> ClientCore {
+    func testTheWebFilesAndDesktopsListsPutEveryRowsButtonsUnderItsText() throws {
+        let directory = try directory()
+        let screen = try screenSize()
+        let suite = "neutrino.screens.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let core = try connectedCore(defaults)
+        let pages: [(String, AppScreen, AnyView)] = [
+            ("list_web", .web, AnyView(WebScreen(core: core))),
+            ("list_files", .files, AnyView(FilesScreen(core: core))),
+            ("list_desktops", .desktops, AnyView(RemoteDesktopScreen(core: core))),
+        ]
+        for (name, bar, page) in pages {
+            let shown = try show(UIHostingController(rootView: portrait(page, bar, core: core)), .light, size: screen)
+            try save(shown, name, in: directory)
+        }
+    }
+
+    func testTheTerminalsPageHasItsKeyRowAndNewTerminalWithNoKeyboard() throws {
+        let directory = try directory()
+        let screen = try screenSize()
+        let suite = "neutrino.screens.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let core = try connectedCore(defaults)
+        let cache = TerminalViewCache(tabs: core.tabs)
+        let bindingId = try XCTUnwrap(core.hubs.first?.binding.id)
+        core.pickMachine(TerminalMachine(bindingId: bindingId, deviceId: "nmxrel"))
+        core.newTerminal()
+        let page = portrait(TerminalScreen(core: core, cache: cache), .terminals, core: core)
+        let shown = try show(UIHostingController(rootView: page), .light, size: screen)
+        core.tabs.onOutput?(core.activeTab, Data(Self.sample.utf8))
+        settle()
+        try save(shown, "terminals_key_row", in: directory)
+    }
+
+    func testTheSidebarLayoutInLandscapeWithTheHousingOnEitherSide() throws {
+        let directory = try directory()
+        let suite = "neutrino.screens.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let core = try connectedCore(defaults)
+        let cache = TerminalViewCache(tabs: core.tabs)
+        defer { _ = try? turn(to: .portrait) }
+        let sides: [(String, UIInterfaceOrientation)] = [
+            ("landscape_housing_left", .landscapeRight), ("landscape_housing_right", .landscapeLeft),
+        ]
+        for (name, orientation) in sides {
+            guard try turn(to: orientation) else { throw XCTSkip("the Simulator did not turn for \(name)") }
+            let size = try screenSize()
+            let shell = AppShell(core: core, cache: cache)
+                .environment(\.palette, .light)
+                .environment(\.words, core.words)
+                .environmentObject(ArmState())
+            let shown = try show(UIHostingController(rootView: shell), .light, size: size)
+            try save(shown, name, in: directory)
+        }
+    }
+
+    private func makeCore(_ defaults: UserDefaults, transport: FakeHubTransport = FakeHubTransport()) -> ClientCore {
         ClientCore(
-            secrets: FakeSecretStore(), transport: FakeHubTransport(), clock: FakeClientClock(), defaults: defaults,
+            secrets: FakeSecretStore(), transport: transport, clock: FakeClientClock(), defaults: defaults,
             device: Samples.device, edition: Client.editionIntl, hasNetwork: { true }, resolveHubName: { $0(nil) },
             localNetworks: { [] }, shareClient: { FakeShareClient() }, remoteDesktop: FakeRemoteDesktopCore(),
             bundle: Bundle(for: ClientCore.self))
+    }
+
+    private func connectedCore(_ defaults: UserDefaults) throws -> ClientCore {
+        let transport = FakeHubTransport()
+        let core = makeCore(defaults, transport: transport)
+        core.join(
+            Samples.link([
+                "urls": .array([.string("https://192.168.1.1:8443")]), "token": .string("TICKET"),
+                "fp": .string(Samples.fingerprint), "role": .string("client"),
+            ]))
+        let socket = try XCTUnwrap(transport.sockets.first)
+        socket.deliver(.opened)
+        transport.posts.first?.completion(.success(["id": .string("hub-binding"), "token": .string("tok")]))
+        socket.deliver(frame: Samples.welcome)
+        socket.deliver(frame: Samples.state(["services": .array(Self.services), "terminals": .array(Self.machines)]))
+        return core
+    }
+
+    private func portrait<Page: View>(_ page: Page, _ bar: AppScreen, core: ClientCore) -> some View {
+        VStack(spacing: 0) {
+            TopBar(title: core.words.word(bar.titleKey), onBack: nil, isRefreshing: false) {}
+            page.frame(maxWidth: .infinity, maxHeight: .infinity)
+            PageBar(isSidebar: false, selected: .constant(bar))
+        }
+        .background(NeutrinoPalette.light.bg.ignoresSafeArea())
+        .environment(\.palette, .light)
+        .environment(\.words, core.words)
+        .environmentObject(ArmState())
+    }
+
+    private func turn(to orientation: UIInterfaceOrientation) throws -> Bool {
+        let scene = try scene()
+        let masks: [UIInterfaceOrientation: UIInterfaceOrientationMask] = [
+            .portrait: .portrait, .landscapeLeft: .landscapeLeft, .landscapeRight: .landscapeRight,
+        ]
+        scene.requestGeometryUpdate(.iOS(interfaceOrientations: masks[orientation] ?? .portrait))
+        RunLoop.main.run(until: Date().addingTimeInterval(2))
+        return scene.effectiveGeometry.interfaceOrientation == orientation
     }
 
     private func viewer(size: CGSize, keyboardHeight: Double, name: String, in directory: URL) throws {
@@ -179,6 +292,38 @@ final class ScreenshotTests: XCTestCase {
             _ = shown.drawHierarchy(in: shown.bounds, afterScreenUpdates: true)
         }
         try XCTUnwrap(image.pngData()).write(to: directory.appendingPathComponent("\(name).png"))
+    }
+
+    private static func web(_ id: String, _ title: String, _ url: String, isHealthy: Bool = true) -> JSONValue {
+        .object([
+            "id": .string(id), "type": .string("web"), "title": .string(title), "source": .string("module"),
+            "payload": .object(["url": .string(url)]), "device_name": .string("nmxrel"), "is_healthy": .bool(isHealthy),
+        ])
+    }
+
+    private static func file(_ id: String, _ title: String, host: String, machine: String) -> JSONValue {
+        .object([
+            "id": .string(id), "type": .string("file"), "title": .string(title), "source": .string("module"),
+            "payload": .object([
+                "protocol": .string("smb"), "host": .string(host), "share": .string(id),
+                "users": .array([.string("lab")]),
+            ]),
+            "device_name": .string(machine),
+        ])
+    }
+
+    private static func desktop(_ id: String, _ title: String, host: String, platform: String) -> JSONValue {
+        .object([
+            "id": .string(id), "type": .string("rdp"), "title": .string(title), "source": .string("device"),
+            "payload": .object([
+                "host": .string(host), "port": .int(21118), "platform_os": .string(platform),
+            ]),
+            "device_name": .string(title),
+        ])
+    }
+
+    private static func machine(_ name: String, isOnline: Bool) -> JSONValue {
+        .object(["device_id": .string(name), "name": .string(name), "is_online": .bool(isOnline)])
     }
 
     private func simulatedKeyboard(_ frame: CGRect) -> UIView {
