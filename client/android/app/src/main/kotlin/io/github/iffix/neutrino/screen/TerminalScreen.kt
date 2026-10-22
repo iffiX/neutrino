@@ -68,7 +68,6 @@ import io.github.iffix.neutrino.design.SelectedMark
 import io.github.iffix.neutrino.design.StatusDot
 import io.github.iffix.neutrino.design.SurfaceCard
 import io.github.iffix.neutrino.design.ToggleSwitch
-import io.github.iffix.neutrino.design.offerPageAction
 import io.github.iffix.neutrino.terminal.TerminalControl
 import io.github.iffix.neutrino.terminal.TerminalKey
 import io.github.iffix.neutrino.terminal.TerminalModifiers
@@ -82,8 +81,8 @@ import io.github.iffix.neutrino.terminal.TerminalView
  * strip, the terminal, the status line and the key row, in one scrolling column. The status line
  * holds Keyboard and Keys at its left, as the remote desktop viewer's round buttons, and the two
  * switches at its right. The key row starts shown; Keys hides it and the terminal takes its height.
- * Beside the sidebar New terminal is the header's action instead. The terminal's card is as tall as
- * the window under the top bar, the keyboard excluded, and never under its minimum, so one
+ * New terminal sits in the machines card after the chips, beside the sidebar as under the top bar.
+ * The terminal's card is as tall as the window under the top bar, the keyboard excluded, and never under its minimum, so one
  * screen holds it with its keys where the window allows and the page scrolls where it does not; nothing
  * collapses behind a tap. While the keyboard is shown the page stays scrolled to its end, so the key
  * row sits right above the keyboard and the terminal's last line right above the status line.
@@ -114,7 +113,6 @@ fun TerminalScreen(hubs: List<HubView>, tabs: TerminalTabs) {
         AppIcon.TERMINAL,
         isEnabled = picked != null && picked.second.isOnline,
     ) { picked?.let { (hub, machine) -> tabs.create(hub.binding.id, machine.deviceId, machine.name) } }
-    val isNewInHeader = offerPageAction(newTerminal)
     BoxWithConstraints(modifier = Modifier.fillMaxSize().imePadding()) {
         val cardHeight = terminalCardHeight(maxHeight, isImeShown)
         Column(
@@ -132,7 +130,7 @@ fun TerminalScreen(hubs: List<HubView>, tabs: TerminalTabs) {
                 machines,
                 picked,
                 onPick = { hub, machine -> tabs.pick(hub.binding.id, machine.deviceId) },
-                newTerminal = newTerminal.takeUnless { isNewInHeader },
+                newTerminal = newTerminal,
             )
             if (open.isEmpty()) {
                 SurfaceCard {
@@ -213,7 +211,7 @@ private fun MachinesCard(
     machines: List<Pair<HubView, ChannelTerminal>>,
     picked: Pair<HubView, ChannelTerminal>?,
     onPick: (HubView, ChannelTerminal) -> Unit,
-    newTerminal: PageAction?,
+    newTerminal: PageAction,
 ) {
     val words = NeutrinoTheme.words
     SurfaceCard {
@@ -232,16 +230,14 @@ private fun MachinesCard(
                         onPick(hub, machine)
                     }
                 }
-                if (newTerminal != null) {
-                    NeutrinoButton(
-                        newTerminal.label,
-                        newTerminal.onClick,
-                        tier = ButtonTier.PRIMARY,
-                        icon = newTerminal.icon,
-                        isSmall = true,
-                        isEnabled = newTerminal.isEnabled,
-                    )
-                }
+                NeutrinoButton(
+                    newTerminal.label,
+                    newTerminal.onClick,
+                    tier = ButtonTier.PRIMARY,
+                    icon = newTerminal.icon,
+                    isSmall = true,
+                    isEnabled = newTerminal.isEnabled,
+                )
             }
             if (picked != null) {
                 BasicText(
