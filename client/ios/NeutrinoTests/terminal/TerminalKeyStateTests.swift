@@ -13,6 +13,15 @@ final class TerminalKeyStateTests: XCTestCase {
         XCTAssertEqual(keys.spend(), TerminalModifiers())
     }
 
+    func testTheKeyRowStartsShownAndKeysHidesAndShowsIt() {
+        let keys = TerminalKeyState()
+        XCTAssertTrue(keys.isRowShown)
+        keys.toggleRow()
+        XCTAssertFalse(keys.isRowShown)
+        keys.toggleRow()
+        XCTAssertTrue(keys.isRowShown)
+    }
+
     func testASecondPressLetsTheModifierGo() {
         let keys = TerminalKeyState()
         keys.toggle(.shift)

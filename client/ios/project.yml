@@ -84,12 +84,25 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.iffix.neutrino.tests
         GENERATE_INFOPLIST_FILE: YES
+  NeutrinoUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: NeutrinoUITests
+    dependencies:
+      - target: Neutrino
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.iffix.neutrino.uitests
+        GENERATE_INFOPLIST_FILE: YES
 schemes:
   Neutrino:
     build:
       targets:
         Neutrino: all
         NeutrinoTests: [test]
+        NeutrinoUITests: [test]
     test:
       targets:
         - NeutrinoTests
+        - NeutrinoUITests

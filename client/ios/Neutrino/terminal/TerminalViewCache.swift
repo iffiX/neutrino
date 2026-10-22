@@ -2,14 +2,16 @@ import SwiftTerm
 import UIKit
 
 /// One terminal view per tab, kept while the tab lives so switching tabs loses no output; each view is fed its
-/// tab's kept output when made and every byte after, and is drawn in the colours of the palette in force. A
-/// downward swipe on a view closes the keyboard, and a tap opens it.
+/// tab's kept output when made and every byte after, and is drawn in the colours of the palette in force. A tap on
+/// a view opens the keyboard.
 final class TerminalViewCache {
-    /// The key row's held modifiers, one set for every tab.
+    /// The key row, one for every tab.
     let keys = TerminalKeyState()
 
+    /// The keyboard as the terminals follow it.
+    let focus = TerminalKeyboardFocus()
+
     private let tabs: TerminalTabs
-    private let focus = TerminalKeyboardFocus()
     private var views: [String: TerminalView] = [:]
     private var bridges: [String: TerminalViewBridge] = [:]
     private var colors = TerminalColors(palette: .dark)
@@ -46,7 +48,6 @@ final class TerminalViewCache {
             font: UIFont.monospacedSystemFont(ofSize: TerminalPage.fontSize, weight: .regular))
         let bridge = TerminalViewBridge(sessionId: sessionId, tabs: tabs, keys: keys)
         view.inputAccessoryView = nil
-        view.keyboardDismissMode = .interactive
         view.terminalDelegate = bridge
         view.optionAsMetaKey = false
         focus.watch(view)
@@ -56,6 +57,16 @@ final class TerminalViewCache {
         views[sessionId] = view
         bridges[sessionId] = bridge
         return view
+    }
+
+    /// Open the keyboard on one tab's terminal, as the status line's Keyboard does; a terminal that has the focus
+    /// with no keyboard shown takes it again.
+    ///
+    /// - Parameter sessionId: The tab shown.
+    func openKeyboard(on sessionId: String) {
+        guard let view = views[sessionId] else { return }
+        if view.isFirstResponder { _ = view.resignFirstResponder() }
+        _ = view.becomeFirstResponder()
     }
 
     /// Send a key of the key row to one tab, with the modifiers held; a modifier is held or let go instead.

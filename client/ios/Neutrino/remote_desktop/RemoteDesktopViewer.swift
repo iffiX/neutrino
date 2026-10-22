@@ -123,26 +123,11 @@ struct RemoteDesktopViewer: View {
     }
 
     private func roundButton(_ button: RemoteDesktopButton) -> some View {
-        let isActive = button.isActive(keyboard: model.keyboard, isKeyBarShown: model.isKeyBarShown)
-        let isEnabled = model.isShowing || button == .close
-        let tone = button.isDanger ? palette.error : isActive ? palette.accent : palette.text
-        return Button {
-            model.press(button, onClose: onClose)
-        } label: {
-            Image(systemName: button.systemImage)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundColor(tone)
-                .frame(width: 36, height: 36)
-                .background(Circle().fill(palette.surface.opacity(0.6)))
-                .background(Circle().fill(isActive ? palette.accentWash : .clear))
-                .overlay(
-                    Circle().stroke(
-                        isActive || button.isDanger ? tone : palette.borderStrong.opacity(0.6), lineWidth: 1))
-        }
-        .buttonStyle(.plain)
-        .disabled(!isEnabled)
-        .opacity(isEnabled ? 1 : 0.4)
-        .accessibilityLabel(words.word(button.wordKey))
+        RoundButton(
+            systemImage: button.systemImage, label: words.word(button.wordKey),
+            isActive: button.isActive(keyboard: model.keyboard, isKeyBarShown: model.isKeyBarShown),
+            isDanger: button.isDanger, isEnabled: model.isShowing || button == .close
+        ) { model.press(button, onClose: onClose) }
     }
 
     private var keyBar: some View {

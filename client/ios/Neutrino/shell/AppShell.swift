@@ -3,7 +3,8 @@ import SwiftUI
 /// The frame of every page: the sidebar when the window is wider than it is tall or at least 720 points wide,
 /// the bottom bar otherwise; the top bar above the page; and the page's own action at the right of the page
 /// header beside the sidebar. Above the bottom bar a page draws its action itself, and the share page's actions
-/// are the one floating button. In landscape the sidebar keeps the safe area only on the camera housing's side.
+/// are the one floating button. With the keyboard shown the bottom bar stays under it, and the page ends at the
+/// keyboard. In landscape the sidebar keeps the safe area only on the camera housing's side.
 /// The Files page shows the share page while a share is open, and the remote desktop viewer covers the whole
 /// screen while it is open.
 struct AppShell: View {
@@ -16,7 +17,20 @@ struct AppShell: View {
     @Environment(\.palette) private var palette
     @State private var screen = AppScreen.hubs
     @State private var pageAction: PageAction?
+    @State private var isKeyboardShown = false
     @StateObject private var orientation = ShellOrientation()
+
+    /// Draw the frame.
+    ///
+    /// - Parameters:
+    ///   - core: The app core.
+    ///   - cache: The views of every terminal tab.
+    ///   - screen: The page shown first.
+    init(core: ClientCore, cache: TerminalViewCache, screen: AppScreen = .hubs) {
+        _core = ObservedObject(wrappedValue: core)
+        self.cache = cache
+        _screen = State(initialValue: screen)
+    }
 
     var body: some View {
         GeometryReader { window in
@@ -33,13 +47,21 @@ struct AppShell: View {
             } else {
                 VStack(spacing: 0) {
                     main(isSidebar: false)
-                    PageBar(isSidebar: false, selected: selection)
+                    if !isKeyboardShown {
+                        PageBar(isSidebar: false, selected: selection)
+                    }
                 }
                 .environment(\.isSidebar, false)
             }
         }
         .background(palette.bg.ignoresSafeArea())
         .onAppear { orientation.follow() }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+            isKeyboardShown = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            isKeyboardShown = false
+        }
         .fullScreenCover(item: viewing) { target in
             RemoteDesktopViewer(target: target, core: core.remoteDesktop) { core.closeDesktop() }
                 .environment(\.words, words)

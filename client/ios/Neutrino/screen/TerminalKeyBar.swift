@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// The key row at the foot of the terminal's card, shown with the keyboard and without it: Esc, Tab, Ctrl, Shift,
-/// Alt and the four arrows; a modifier shows pressed while it is held for the next key.
+/// The key row at the foot of the terminal's card, shown with the keyboard and without it until the status line's
+/// Keys hides it: Esc, Tab, Ctrl, Shift, Alt and the four arrows; a modifier shows pressed while it is held for the
+/// next key.
 struct TerminalKeyBar: View {
     /// The modifiers held.
     @ObservedObject var keys: TerminalKeyState
@@ -12,15 +13,17 @@ struct TerminalKeyBar: View {
     @Environment(\.palette) private var palette
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                ForEach(TerminalKey.allCases, id: \.self) { key in
-                    keyButton(key, isHeld: keys.modifiers.isHeld(key))
+        if keys.isRowShown {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(TerminalKey.allCases, id: \.self) { key in
+                        keyButton(key, isHeld: keys.modifiers.isHeld(key))
+                    }
                 }
+                .padding(8)
             }
-            .padding(8)
+            .background(palette.elevated)
         }
-        .background(palette.elevated)
     }
 
     private func keyButton(_ key: TerminalKey, isHeld: Bool) -> some View {

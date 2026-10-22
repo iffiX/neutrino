@@ -44,6 +44,7 @@ struct LocalPortDialog: View {
             Spacer()
         }
         .padding(16)
+        .background(KeyboardClosingLayer())
         .background(palette.bg.ignoresSafeArea())
         .presentationDetents([.medium])
         .onAppear(perform: load)

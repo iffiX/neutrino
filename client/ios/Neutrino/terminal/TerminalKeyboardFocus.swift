@@ -1,10 +1,12 @@
+import Combine
 import UIKit
 
 /// What a tap on a terminal does to the keyboard: it opens it, and brings it back when iOS took it away while the
-/// terminal kept the focus, by taking the focus again. The phone's keyboard is followed through its notifications.
-final class TerminalKeyboardFocus: NSObject, UIGestureRecognizerDelegate {
+/// terminal kept the focus, by taking the focus again. The phone's keyboard is followed through its notifications,
+/// for the status line's Keyboard button too.
+final class TerminalKeyboardFocus: NSObject, ObservableObject, UIGestureRecognizerDelegate {
     /// Whether the system shows the keyboard.
-    private(set) var isKeyboardShown = false
+    @Published private(set) var isKeyboardShown = false
 
     private var isRefocusing = false
 

@@ -1,10 +1,10 @@
 import SwiftUI
 
 /// The Terminals page: a card of machine chips, with New terminal after them above the bottom bar, then the
-/// terminal's card with the tab strip, the terminal, the status line with the two switches and the key row, in one
-/// scrolling column. The terminal's card is as tall as the page, so the chips scroll away above it; while the
-/// keyboard is shown the page is scrolled to its end, so the key row sits right above the keyboard. Beside the
-/// sidebar New terminal is the page header's action.
+/// terminal's card with the tab strip, the terminal, the status line with Keyboard, Keys and the two switches, and
+/// the key row, in one scrolling column. The terminal's card is as tall as the page, so the chips scroll away above
+/// it; while the keyboard is shown the page is scrolled to its end, so the key row sits right above the keyboard.
+/// Beside the sidebar New terminal is the page header's action. A tap on empty space closes the keyboard.
 struct TerminalScreen: View {
     @ObservedObject var core: ClientCore
 
@@ -51,6 +51,8 @@ struct TerminalScreen: View {
                         }
                     }
                     .padding(12)
+                    .frame(minHeight: page.size.height, alignment: .top)
+                    .background(KeyboardClosingLayer())
                 }
                 .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { _ in
                     scroll.scrollTo(TerminalPage.cardAnchor, anchor: .bottom)
@@ -78,6 +80,14 @@ struct TerminalScreen: View {
         PageAction(
             label: words.word("ui.terminal_new"), systemImage: "terminal", isEnabled: picked?.machine.isOnline == true
         ) { core.newTerminal() }
+    }
+
+    private func pressKeyboard() {
+        if cache.focus.isKeyboardShown {
+            KeyboardClosingLayer.close()
+        } else if let tab = activeTab {
+            cache.openKeyboard(on: tab.sessionId)
+        }
     }
 
     private func reattach() {
@@ -137,6 +147,8 @@ struct TerminalScreen: View {
     private var terminalCard: some View {
         VStack(spacing: 0) {
             TerminalTabStrip(core: core)
+                .contentShape(Rectangle())
+                .onTapGesture { KeyboardClosingLayer.close() }
             ZStack {
                 palette.bg
                 if let tab = activeTab {
@@ -148,9 +160,10 @@ struct TerminalScreen: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: 6))
             .padding(8)
-            TerminalStatusLine(core: core, tab: activeTab)
+            TerminalStatusLine(core: core, tab: activeTab, focus: cache.focus, keys: cache.keys) { pressKeyboard() }
             TerminalKeyBar(keys: cache.keys) { key in cache.press(key, on: activeTab?.sessionId ?? "") }
         }
+        .background(KeyboardClosingLayer())
         .background(RoundedRectangle(cornerRadius: 12).fill(palette.surface))
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(palette.border, lineWidth: 1))
