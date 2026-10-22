@@ -7,6 +7,7 @@
     "rdp_login_failed": "The machine refused the access password.",
     "share_interrupted": "Interrupted when the app went to the background.",
     "share_name_taken": "This folder already holds that name.",
+    "share_photo_unavailable": "Photos did not hand over one of the picked items.",
     "verb_unknown": "the hub does not know this command; update the hub"
   },
   "ui": {
@@ -52,6 +53,7 @@
     "scan_press": "Press Scan to use the camera.",
     "share_progress": "{done} of {total}",
     "terminal_detached": "Detached; waiting for the hub",
-    "upload": "Upload"
+    "upload_from_files": "Upload from Files",
+    "upload_from_photos": "Upload from Photos"
   }
 }

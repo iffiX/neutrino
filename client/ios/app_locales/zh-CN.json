@@ -7,6 +7,7 @@
     "rdp_login_failed": "对方机器拒绝了访问密码。",
     "share_interrupted": "应用转入后台时中断了。",
     "share_name_taken": "这个文件夹里已经有这个名字。",
+    "share_photo_unavailable": "“照片”没有交出所选的其中一项。",
     "verb_unknown": "中枢不认识这个命令，请先更新中枢"
   },
   "ui": {
@@ -52,6 +53,7 @@
     "scan_press": "按“扫码”使用相机。",
     "share_progress": "{done} / {total}",
     "terminal_detached": "已断开，正在等待中枢",
-    "upload": "上传"
+    "upload_from_files": "从“文件”上传",
+    "upload_from_photos": "从“照片”上传"
   }
 }

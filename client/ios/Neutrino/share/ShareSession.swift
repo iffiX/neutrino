@@ -123,6 +123,7 @@ final class ShareSession {
                 self.view.isListing = false
                 self.view.error = refusal
             } else {
+                self.view.error = nil
                 self.reload()
             }
             completion(refusal)
@@ -165,6 +166,7 @@ final class ShareSession {
         guard item.isFolder else { return }
         view.path = view.path.child(item.name)
         view.items = []
+        view.error = nil
         reload()
     }
 
@@ -175,6 +177,7 @@ final class ShareSession {
         guard let parent = view.path.parent else { return false }
         view.path = parent
         view.items = []
+        view.error = nil
         reload()
         return true
     }
@@ -193,8 +196,8 @@ final class ShareSession {
         read(view.path.child(item.name), kind: .save, total: item.size)
     }
 
-    /// Upload: each picked file is copied into the temporary directory, then written into the folder shown under
-    /// the first free name.
+    /// Upload from Files: each picked file is copied into the temporary directory, then written into the folder
+    /// shown under the first free name.
     ///
     /// - Parameter urls: The picked files.
     func upload(_ urls: [URL]) {
@@ -215,6 +218,30 @@ final class ShareSession {
                 let copied = Result { try Self.copy(url, into: place) }
                 DispatchQueue.main.async { [weak self] in
                     self?.copied(copied, key: key, cancel: cancel, generation: mine)
+                }
+            }
+        }
+    }
+
+    /// Upload from Photos: each picked item puts its file into a folder of the share's own, and the file is then
+    /// written into the folder shown as a file Upload from Files picked is. An item not handed over writes
+    /// `share_photo_unavailable` on the page's error line, and the other items upload.
+    ///
+    /// - Parameter deliveries: The picked items.
+    func upload(deliveries: [ShareDelivery]) {
+        let folder = view.path
+        let mine = generation
+        for delivery in deliveries {
+            let place = directory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+            do {
+                try FileManager.default.createDirectory(at: place, withIntermediateDirectories: true)
+            } catch {
+                view.error = .refusal(Channel.codeClientInternal, ["error": "\(error)"])
+                continue
+            }
+            delivery.deliver(into: place) { result in
+                DispatchQueue.main.async { [weak self] in
+                    self?.delivered(result, into: folder, generation: mine)
                 }
             }
         }
@@ -317,7 +344,6 @@ final class ShareSession {
         let mine = listing
         let connection = generation
         view.isListing = true
-        view.error = nil
         client.list(path.text) { [weak self] result in
             guard let self, self.generation == connection, self.listing == mine else { return }
             self.view.isListing = false
@@ -368,6 +394,37 @@ final class ShareSession {
                 case .upload: break
                 }
             })
+    }
+
+    private func delivered(_ delivered: Result<URL, Error>, into folder: SharePath, generation mine: Int) {
+        let file: URL
+        switch delivered {
+        case .failure(let error):
+            ClientLog.info("an item from Photos for \(target.id) was not handed over: \(error)")
+            view.error = .refusal(SharePage.codePhotoUnavailable)
+            return
+        case .success(let url):
+            file = url
+        }
+        let name = file.lastPathComponent
+        let key = folder.child(name).text
+        guard view.transfers[key] == nil else {
+            ClientLog.info("an upload of \(key) runs; the item from Photos is dropped")
+            try? FileManager.default.removeItem(at: file.deletingLastPathComponent())
+            return
+        }
+        let cancel = ShareCancel()
+        var transfer = ShareTransfer(kind: .upload, path: folder.child(name), askedName: name)
+        if generation == mine {
+            cancels[key] = cancel
+        } else {
+            transfer.error = .refusal(SharePage.codeInterrupted)
+        }
+        view.transfers[key] = transfer
+        let attributes = try? FileManager.default.attributesOfItem(atPath: file.path)
+        copied(
+            .success((file, (attributes?[.size] as? NSNumber)?.int64Value ?? 0)), key: key, cancel: cancel,
+            generation: mine)
     }
 
     private func copied(

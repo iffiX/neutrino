@@ -189,6 +189,38 @@ final class ShareSessionTests: XCTestCase {
         XCTAssertEqual(session.view.preview?.lastPathComponent, "song.mp3")
     }
 
+    func testItemsFromPhotosAreWrittenAsUploadsAndOneNotHandedOverIsWordedOnThePageLine() throws {
+        client.files = ["IMG_0001.heic": Data()]
+        let session = try started()
+        session.upload(deliveries: [
+            FakeShareDelivery(name: "IMG_0001.heic", text: "photo"),
+            FakeShareDelivery(name: "IMG_0002.mov", text: nil),
+            FakeShareDelivery(name: "IMG_0003.mov", text: "video"),
+        ])
+        settle { client.files["IMG_0001 (1).heic"] != nil && client.files["IMG_0003.mov"] == Data("video".utf8) }
+        XCTAssertEqual(client.files["IMG_0001 (1).heic"], Data("photo".utf8))
+        XCTAssertEqual(client.files["IMG_0001.heic"], Data())
+        XCTAssertNil(client.files["IMG_0002.mov"])
+        XCTAssertEqual(session.view.error?.code, "share_photo_unavailable")
+        XCTAssertTrue(session.view.transfers.isEmpty)
+        XCTAssertEqual(Set(session.view.items.map(\.name)), ["IMG_0001 (1).heic", "IMG_0001.heic", "IMG_0003.mov"])
+    }
+
+    func testAnItemFromPhotosIsCancelledAndRetriedAsAnUploadFromFilesIs() throws {
+        let session = try started()
+        client.isHolding = true
+        session.upload(deliveries: [FakeShareDelivery(name: "IMG_0004.mov", text: "frames")])
+        settle { session.view.transfers["IMG_0004.mov"]?.done == 3 }
+        session.suspend()
+        client.finish(POSIXError(.ENOTCONN))
+        XCTAssertEqual(session.view.transfers["IMG_0004.mov"]?.error?.code, "share_interrupted")
+        session.resume { _ in }
+        client.isHolding = false
+        session.retry("IMG_0004.mov")
+        XCTAssertEqual(client.files["IMG_0004.mov"], Data("frames".utf8))
+        XCTAssertTrue(session.view.transfers.isEmpty)
+    }
+
     func testAFolderTheShareLacksIsWordedOnThePageLine() throws {
         let session = try started()
         session.enter(ShareItem(name: "gone", isFolder: true, size: 0, modified: nil))

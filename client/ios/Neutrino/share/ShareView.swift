@@ -20,7 +20,8 @@ struct ShareView: Equatable {
     /// Whether a new folder is being made.
     var isMakingFolder = false
 
-    /// The code of the last listing, new folder or login, until the next one or a refresh.
+    /// The code of the last failed listing, new folder, item from Photos or login, until a refresh, a change of
+    /// folder, a new folder or the next login.
     var error: ClientError?
 
     /// Every transfer that runs or ended in a code, by its path in the share.

@@ -376,6 +376,9 @@ enum SharePage {
 
     /// The code of a login the share rejected.
     static let codeLoginRejected = "share_login_rejected"
+
+    /// The code of an item Upload from Photos picked that the picker did not hand over.
+    static let codePhotoUnavailable = "share_photo_unavailable"
 }
 
 /// The app's time in the background.

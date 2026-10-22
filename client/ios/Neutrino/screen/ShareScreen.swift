@@ -19,8 +19,8 @@ private let byteCount: ByteCountFormatter = {
 
 /// The share page: one folder of the open share, its uploads above its folders and files. A tap on a folder
 /// opens it and a tap on a file reads it and shows it in the preview; each row's menu holds Rename, Save to
-/// Files and Delete, which arms the row; Upload and New folder are the page's actions; a pull reads the folder
-/// again.
+/// Files and Delete, which arms the row; Upload from Files, Upload from Photos and New folder are the page's
+/// actions; a pull reads the folder again.
 struct ShareScreen: View {
     @ObservedObject var core: ClientCore
 
@@ -30,7 +30,8 @@ struct ShareScreen: View {
     @Environment(\.words) private var words
     @Environment(\.palette) private var palette
     @EnvironmentObject private var arm: ArmState
-    @State private var isPicking = false
+    @State private var isPickingFiles = false
+    @State private var isPickingPhotos = false
     @State private var naming: Naming?
     @State private var name = ""
 
@@ -73,6 +74,14 @@ struct ShareScreen: View {
                 }
             }
             .padding(16)
+            .sheet(isPresented: $isPickingPhotos) {
+                PhotoPickerRepresentable { providers in
+                    isPickingPhotos = false
+                    guard !providers.isEmpty else { return }
+                    core.shares.session?.upload(deliveries: providers.map { SharePhotoDelivery(provider: $0) })
+                }
+                .ignoresSafeArea()
+            }
         }
         .refreshable {
             await MainActor.run { core.shares.pull() }
@@ -81,7 +90,8 @@ struct ShareScreen: View {
             }
         }
         .preference(key: PageActionKey.self, value: pageAction)
-        .fileImporter(isPresented: $isPicking, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
+        .fileImporter(isPresented: $isPickingFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) {
+            result in
             if case .success(let urls) = result { core.shares.session?.upload(urls) }
         }
         .quickLookPreview(
@@ -123,8 +133,15 @@ struct ShareScreen: View {
         PageAction(
             label: words.word("ui.add"), systemImage: "plus", isEnabled: share.isConnected, action: {},
             items: [
-                PageAction(label: words.word("ui.upload"), systemImage: "square.and.arrow.up", isEnabled: true) {
-                    isPicking = true
+                PageAction(
+                    label: words.word("ui.upload_from_files"), systemImage: "folder", isEnabled: true
+                ) {
+                    isPickingFiles = true
+                },
+                PageAction(
+                    label: words.word("ui.upload_from_photos"), systemImage: "photo.on.rectangle", isEnabled: true
+                ) {
+                    isPickingPhotos = true
                 },
                 PageAction(
                     label: words.word("ui.new_folder"), systemImage: "folder.badge.plus",
