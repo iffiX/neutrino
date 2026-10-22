@@ -29,11 +29,43 @@ final class RemoteDesktopViewportTests: XCTestCase {
         XCTAssertEqual(zoomed.panned(dx: -5000, dy: 0).left, -400, accuracy: 0.001)
     }
 
-    func testThePictureMovesUpOverTheKeyboardWithoutShrinking() {
-        let covered = fitted.covering(500)
+    func testAFittedPictureMovesAboveTheKeyBarWithoutShrinkingAndBack() {
+        let covered = fitted.covering(350)
         XCTAssertEqual(covered.drawnHeight, fitted.drawnHeight, accuracy: 0.001)
-        XCTAssertEqual(covered.top, fitted.top, accuracy: 0.001)
-        XCTAssertEqual(covered.panned(dx: 0, dy: -1000).top, 75, accuracy: 0.001)
+        XCTAssertEqual(covered.top, 112.5, accuracy: 0.001)
+        XCTAssertLessThanOrEqual(covered.top + covered.drawnHeight, 450)
+        XCTAssertEqual(covered.panned(dx: 0, dy: -1000).top, 112.5, accuracy: 0.001)
+        XCTAssertEqual(covered.covering(0), fitted)
+    }
+
+    func testAZoomedPictureMovesUpKeepsItsZoomAndPansEverywhere() {
+        let zoomed = fitted.zoomed(by: 4, focusX: 200, focusY: 400)
+        XCTAssertEqual(zoomed.top, -50, accuracy: 0.001)
+        let covered = zoomed.covering(350)
+        XCTAssertEqual(covered.zoom, 4, accuracy: 0.001)
+        XCTAssertEqual(covered.left, zoomed.left, accuracy: 0.001)
+        XCTAssertEqual(covered.top, -400, accuracy: 0.001)
+        XCTAssertEqual(covered.toFrame(x: 200, y: 449).y, zoomed.toFrame(x: 200, y: 799).y)
+        let bottom = covered.panned(dx: 0, dy: -1000)
+        XCTAssertEqual(bottom.top + bottom.drawnHeight, 450, accuracy: 0.001)
+        XCTAssertEqual(covered.panned(dx: 0, dy: 1000).top, 0, accuracy: 0.001)
+        XCTAssertEqual(covered.covering(0), zoomed)
+    }
+
+    func testATallPictureShowsItsBottomEdgeAboveTheKeyBar() {
+        let landscape = RemoteDesktopViewport().sized(
+            viewWidth: 844, viewHeight: 390, frameWidth: 1920, frameHeight: 1080)
+        let covered = landscape.covering(250)
+        XCTAssertEqual(covered.top + covered.drawnHeight, 140, accuracy: 0.001)
+        XCTAssertEqual(covered.panned(dx: 0, dy: 1000).top, 0, accuracy: 0.001)
+        XCTAssertEqual(covered.covering(0).top, landscape.top, accuracy: 0.001)
+    }
+
+    func testARotationWithTheKeyBarUpFitsThePictureAndKeepsItAboveTheKeyBar() {
+        let turned = fitted.covering(350).sized(viewWidth: 800, viewHeight: 400, frameWidth: 1920, frameHeight: 1080)
+        XCTAssertEqual(turned.covered, 350, accuracy: 0.001)
+        XCTAssertEqual(turned.zoom, 1, accuracy: 0.001)
+        XCTAssertEqual(turned.top + turned.drawnHeight, 50, accuracy: 0.001)
     }
 
     func testAPointMapsToThePixelUnderItKeptInsideThePicture() {

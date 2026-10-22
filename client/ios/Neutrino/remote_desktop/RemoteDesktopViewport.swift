@@ -1,8 +1,9 @@
 import Foundation
 
 /// Where the remote picture sits in the viewer: fitted whole at zoom 1, larger when pinched, and never moved so far
-/// that an edge leaves a gap it could fill. While the keyboard covers the viewer's lower part, the picture may move
-/// up until its bottom edge reaches the keyboard.
+/// that an edge leaves a gap it could fill. While the keyboard and the key bar cover the viewer's lower part, the
+/// picture sits in the part above them: it moves up by what they cover, is centred there while it fits, and pans
+/// to every part of it while it does not; it moves back down when they go, and the zoom stays.
 struct RemoteDesktopViewport: Equatable {
     /// The viewer's width, in points.
     var viewWidth = 0.0
@@ -25,7 +26,7 @@ struct RemoteDesktopViewport: Equatable {
     /// Where the picture's top edge is.
     var top = 0.0
 
-    /// How much of the viewer's lower part the keyboard covers, in the viewer's points.
+    /// How much of the viewer's lower part the keyboard and the key bar cover, in the viewer's points.
     var covered = 0.0
 
     /// Viewer points per picture pixel.
@@ -43,7 +44,8 @@ struct RemoteDesktopViewport: Equatable {
         hasFrame ? min(viewWidth / Double(frameWidth), viewHeight / Double(frameHeight)) : 1
     }
 
-    /// The same picture in a viewer or of a frame of another size, fitted whole again.
+    /// The same picture in a viewer or of a frame of another size, fitted whole again, then moved up by what stays
+    /// covered.
     ///
     /// - Parameters:
     ///   - viewWidth: The viewer's width.
@@ -57,9 +59,8 @@ struct RemoteDesktopViewport: Equatable {
             && frameHeight == self.frameHeight
         if isSame { return self }
         return RemoteDesktopViewport(
-            viewWidth: viewWidth, viewHeight: viewHeight, frameWidth: frameWidth, frameHeight: frameHeight,
-            covered: covered
-        ).clamped()
+            viewWidth: viewWidth, viewHeight: viewHeight, frameWidth: frameWidth, frameHeight: frameHeight
+        ).clamped().covering(covered)
     }
 
     /// Zoom by a factor around a point that stays under the fingers.
@@ -92,15 +93,17 @@ struct RemoteDesktopViewport: Equatable {
         return moved.clamped()
     }
 
-    /// The same picture with another part of the viewer covered by the keyboard; the picture keeps its size and
-    /// place while that place is still allowed.
+    /// The same picture with another part of the viewer's lower part covered: the picture moves up or down by the
+    /// change, then is held in the part above the cover as a pan holds it; the zoom stays.
     ///
-    /// - Parameter height: How much of the viewer's lower part the keyboard covers, 0 for none.
+    /// - Parameter height: How much of the viewer's lower part the keyboard and the key bar cover, 0 for none.
     /// - Returns: The viewport.
     func covering(_ height: Double) -> RemoteDesktopViewport {
-        if height == covered { return self }
+        let next = max(height, 0)
+        if next == covered { return self }
         var moved = self
-        moved.covered = max(height, 0)
+        moved.top -= next - covered
+        moved.covered = next
         return moved.clamped()
     }
 
@@ -119,14 +122,13 @@ struct RemoteDesktopViewport: Equatable {
 
     private func clamped() -> RemoteDesktopViewport {
         var moved = self
-        moved.left = Self.edge(left, view: viewWidth, drawn: drawnWidth, hidden: 0)
-        moved.top = Self.edge(top, view: viewHeight, drawn: drawnHeight, hidden: covered)
+        moved.left = Self.edge(left, view: viewWidth, drawn: drawnWidth)
+        moved.top = Self.edge(top, view: max(viewHeight - covered, 0), drawn: drawnHeight)
         return moved
     }
 
-    private static func edge(_ start: Double, view: Double, drawn: Double, hidden: Double) -> Double {
-        let highest = drawn <= view ? (view - drawn) / 2 : 0
-        let lowest = min(highest, view - hidden - drawn)
-        return min(max(start, lowest), highest)
+    private static func edge(_ start: Double, view: Double, drawn: Double) -> Double {
+        if drawn <= view { return (view - drawn) / 2 }
+        return min(max(start, view - drawn), 0)
     }
 }

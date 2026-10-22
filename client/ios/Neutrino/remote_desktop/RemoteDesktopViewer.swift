@@ -4,9 +4,9 @@ import UIKit
 /// The viewer over the whole screen, with the status bar and the home indicator hidden: the remote picture, and
 /// three round buttons at the top right that always stay. Keyboard raises or puts away the phone's keyboard, Keys
 /// shows or hides a row of keys a phone keyboard lacks with Paste beside them, Close ends the session; the
-/// keyboard and the key bar start off. The keyboard covers the picture's lower part without shrinking it, and the
-/// key bar sits right above the keyboard. Until the picture shows, its place holds a spinner or the reason it
-/// stopped.
+/// keyboard and the key bar start off. The key bar sits right above the keyboard, and the picture keeps its size
+/// and moves to the part of the screen above them. Until the picture shows, its place holds a spinner or the
+/// reason it stopped.
 struct RemoteDesktopViewer: View {
     /// What Close does.
     let onClose: () -> Void
@@ -23,9 +23,18 @@ struct RemoteDesktopViewer: View {
     ///   - core: What decodes the picture and sends the input.
     ///   - onClose: What Close does.
     init(target: RemoteDesktopTarget, core: RemoteDesktopCore, onClose: @escaping () -> Void) {
+        self.init(
+            model: RemoteDesktopViewerModel(target: target, core: core, clock: SystemClientClock()), onClose: onClose)
+    }
+
+    /// Open a viewer on a viewer's model.
+    ///
+    /// - Parameters:
+    ///   - model: What the viewer holds.
+    ///   - onClose: What Close does.
+    init(model: @autoclosure @escaping () -> RemoteDesktopViewerModel, onClose: @escaping () -> Void) {
         self.onClose = onClose
-        _model = StateObject(
-            wrappedValue: RemoteDesktopViewerModel(target: target, core: core, clock: SystemClientClock()))
+        _model = StateObject(wrappedValue: model())
     }
 
     var body: some View {
@@ -99,10 +108,18 @@ struct RemoteDesktopViewer: View {
                 .padding(.trailing, 12)
                 Spacer()
                 if model.isShowing && model.isKeyBarShown {
-                    keyBar.padding(.bottom, max(model.keyboard.height - geometry.safeAreaInsets.bottom, 0))
+                    keyBar
+                        .background {
+                            GeometryReader { bar in
+                                Color.clear.preference(
+                                    key: RemoteDesktopKeyBarTopKey.self, value: Double(bar.frame(in: .global).minY))
+                            }
+                        }
+                        .padding(.bottom, max(model.keyboard.height - geometry.safeAreaInsets.bottom, 0))
                 }
             }
         }
+        .onPreferenceChange(RemoteDesktopKeyBarTopKey.self) { top in model.keyBarPlaced(top: top) }
     }
 
     private func roundButton(_ button: RemoteDesktopButton) -> some View {

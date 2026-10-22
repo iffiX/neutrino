@@ -23,4 +23,15 @@ struct RemoteDesktopKeyboard: Equatable {
         let isDocked = Double(frame.maxY) >= viewHeight - 1
         return RemoteDesktopKeyboard(isShown: isShown, height: isShown && isDocked ? viewHeight - top : 0)
     }
+
+    /// How much of the viewer's lower part this keyboard and the key bar cover together.
+    ///
+    /// - Parameters:
+    ///   - keyBarTop: The key bar's top edge in the viewer, or nil while the key bar is hidden.
+    ///   - viewHeight: The viewer's height.
+    /// - Returns: From the key bar's top edge down while the key bar shows, else the keyboard's height.
+    func covered(keyBarTop: Double?, viewHeight: Double) -> Double {
+        guard let keyBarTop else { return height }
+        return max(viewHeight - keyBarTop, height)
+    }
 }

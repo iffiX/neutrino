@@ -37,6 +37,7 @@ final class RemoteDesktopViewerModel: ObservableObject {
     private let core: RemoteDesktopCore
     private let sender: RemoteDesktopInputSender
     private var twoFingers = RemoteDesktopTwoFingers()
+    private var keyBarTop: Double?
     private var isOnScreen = true
     private var isStarted = false
 
@@ -109,12 +110,20 @@ final class RemoteDesktopViewerModel: ObservableObject {
             frameHeight: viewport.frameHeight)
     }
 
-    /// The keyboard came, went or changed its height.
+    /// The keyboard came, went or changed its height: the picture moves to the part above it and the key bar.
     ///
     /// - Parameter keyboard: The keyboard.
     func keyboardChanged(_ keyboard: RemoteDesktopKeyboard) {
         self.keyboard = keyboard
-        viewport = viewport.covering(keyboard.height)
+        cover()
+    }
+
+    /// The key bar was laid out or went away: the picture moves to the part above it.
+    ///
+    /// - Parameter top: The key bar's top edge in the viewer, or nil when it is hidden.
+    func keyBarPlaced(top: Double?) {
+        keyBarTop = top
+        cover()
     }
 
     /// One of the three round buttons was pressed.
@@ -141,6 +150,10 @@ final class RemoteDesktopViewerModel: ObservableObject {
     /// - Parameter text: The phone's clipboard text.
     func paste(_ text: String) {
         sender.paste(text)
+    }
+
+    private func cover() {
+        viewport = viewport.covering(keyboard.covered(keyBarTop: keyBarTop, viewHeight: viewport.viewHeight))
     }
 
     private func frameSized(width: Int, height: Int) {

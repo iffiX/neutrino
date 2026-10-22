@@ -20,4 +20,19 @@ final class RemoteDesktopKeyboardTests: XCTestCase {
             frame: CGRect(x: 0, y: 800, width: 400, height: 300), viewHeight: 800)
         XCTAssertEqual(keyboard, RemoteDesktopKeyboard())
     }
+
+    func testTheKeyBarAboveTheKeyboardCoversFromItsTopEdgeDown() {
+        let keyboard = RemoteDesktopKeyboard(isShown: true, height: 300)
+        XCTAssertEqual(keyboard.covered(keyBarTop: 450, viewHeight: 800), 350, accuracy: 0.001)
+    }
+
+    func testTheKeyBarAloneCoversFromItsTopEdgeDown() {
+        XCTAssertEqual(RemoteDesktopKeyboard().covered(keyBarTop: 716, viewHeight: 800), 84, accuracy: 0.001)
+    }
+
+    func testWithTheKeyBarHiddenOnlyTheKeyboardCovers() {
+        let keyboard = RemoteDesktopKeyboard(isShown: true, height: 300)
+        XCTAssertEqual(keyboard.covered(keyBarTop: nil, viewHeight: 800), 300, accuracy: 0.001)
+        XCTAssertEqual(RemoteDesktopKeyboard().covered(keyBarTop: nil, viewHeight: 800), 0, accuracy: 0.001)
+    }
 }
