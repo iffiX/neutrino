@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// The Join page: a camera view that scans the hub's QR code, and under it the input for the link and Join.
-/// A scan and a paste are one path: the link is read and the binding kept at once.
+/// The Join page: a camera view that scans the hub's QR code, with Scan under it above the bottom bar and in the
+/// page header beside the sidebar, and under it the input for the link and Join. A scan and a paste are one path:
+/// the link is read and the binding kept at once.
 struct JoinScreen: View {
     @ObservedObject var core: ClientCore
 
@@ -10,6 +11,7 @@ struct JoinScreen: View {
 
     @Environment(\.words) private var words
     @Environment(\.palette) private var palette
+    @Environment(\.isSidebar) private var isSidebar
     @State private var link = ""
     @State private var access = CameraAccess.current
     @State private var scanCount = 0
@@ -22,6 +24,15 @@ struct JoinScreen: View {
                         .frame(height: 300)
                         .frame(maxWidth: .infinity)
                         .clipShape(RoundedRectangle(cornerRadius: 12))
+                    if !isSidebar {
+                        HStack {
+                            Spacer()
+                            NeutrinoButton(label: scanAction.label, tier: .primary, isEnabled: scanAction.isEnabled) {
+                                scanAction.action()
+                            }
+                        }
+                        .padding(12)
+                    }
                 }
                 SurfaceCard {
                     VStack(alignment: .leading, spacing: 10) {
@@ -51,7 +62,7 @@ struct JoinScreen: View {
             }
             .padding(16)
         }
-        .preference(key: PageActionKey.self, value: scanAction)
+        .preference(key: PageActionKey.self, value: isSidebar ? scanAction : nil)
         .onChange(of: core.joining.joinedId) { joined in
             guard joined != nil else { return }
             link = ""

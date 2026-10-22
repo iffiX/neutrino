@@ -1,6 +1,6 @@
 import Foundation
 
-/// A key of the row above the keyboard, in the row's order.
+/// A key of the key row, in the row's order.
 enum TerminalKey: CaseIterable {
     case escape
     case tab

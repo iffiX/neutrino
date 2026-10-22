@@ -2,13 +2,17 @@ import SwiftTerm
 import UIKit
 
 /// One terminal view per tab, kept while the tab lives so switching tabs loses no output; each view is fed its
-/// tab's kept output when made and every byte after, and is drawn in the colours of the palette in force.
+/// tab's kept output when made and every byte after, and is drawn in the colours of the palette in force. A
+/// downward swipe on a view closes the keyboard, and a tap opens it.
 final class TerminalViewCache {
+    /// The key row's held modifiers, one set for every tab.
+    let keys = TerminalKeyState()
+
     private let tabs: TerminalTabs
+    private let focus = TerminalKeyboardFocus()
     private var views: [String: TerminalView] = [:]
     private var bridges: [String: TerminalViewBridge] = [:]
     private var colors = TerminalColors(palette: .dark)
-    private var accent = UIColor(NeutrinoPalette.dark.accent)
 
     /// Keep the views of every tab.
     ///
@@ -28,7 +32,6 @@ final class TerminalViewCache {
     /// - Parameter palette: The palette.
     func paint(_ palette: NeutrinoPalette) {
         colors = TerminalColors(palette: palette)
-        accent = UIColor(palette.accent)
         for view in views.values { colors.paint(view) }
     }
 
@@ -41,21 +44,33 @@ final class TerminalViewCache {
         let view = TerminalView(
             frame: CGRect(x: 0, y: 0, width: 320, height: 240),
             font: UIFont.monospacedSystemFont(ofSize: TerminalPage.fontSize, weight: .regular))
-        let keyRow = TerminalKeyRow(accent: accent)
-        let bridge = TerminalViewBridge(sessionId: sessionId, tabs: tabs, keyRow: keyRow)
-        keyRow.onKey = { [weak bridge, weak view] key, modifiers in
-            guard let bridge, let view else { return }
-            bridge.press(key, modifiers: modifiers, on: view)
-        }
-        view.inputAccessoryView = keyRow
+        let bridge = TerminalViewBridge(sessionId: sessionId, tabs: tabs, keys: keys)
+        view.inputAccessoryView = nil
+        view.keyboardDismissMode = .interactive
         view.terminalDelegate = bridge
         view.optionAsMetaKey = false
+        focus.watch(view)
         colors.paint(view)
         let kept = tabs.keptOutput(sessionId)
         if !kept.isEmpty { view.feed(byteArray: ArraySlice([UInt8](kept))) }
         views[sessionId] = view
         bridges[sessionId] = bridge
         return view
+    }
+
+    /// Send a key of the key row to one tab, with the modifiers held; a modifier is held or let go instead.
+    ///
+    /// - Parameters:
+    ///   - key: The key.
+    ///   - sessionId: The tab shown.
+    func press(_ key: TerminalKey, on sessionId: String) {
+        if key.isModifier {
+            keys.toggle(key)
+            return
+        }
+        let modifiers = keys.spend()
+        guard let view = views[sessionId], let bridge = bridges[sessionId] else { return }
+        bridge.press(key, modifiers: modifiers, on: view)
     }
 
     /// Tell the tab the size its view has now, which opens its shell when it has none.

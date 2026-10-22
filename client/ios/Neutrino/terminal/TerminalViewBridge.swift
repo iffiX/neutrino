@@ -7,8 +7,8 @@ final class TerminalViewBridge: NSObject, TerminalViewDelegate {
     /// The tab.
     let sessionId: String
 
-    /// The row above the keyboard.
-    let keyRow: TerminalKeyRow
+    /// The key row's held modifiers.
+    let keys: TerminalKeyState
 
     private weak var tabs: TerminalTabs?
 
@@ -17,11 +17,11 @@ final class TerminalViewBridge: NSObject, TerminalViewDelegate {
     /// - Parameters:
     ///   - sessionId: The tab.
     ///   - tabs: The tabs.
-    ///   - keyRow: The view's key row.
-    init(sessionId: String, tabs: TerminalTabs, keyRow: TerminalKeyRow) {
+    ///   - keys: The key row's held modifiers.
+    init(sessionId: String, tabs: TerminalTabs, keys: TerminalKeyState) {
         self.sessionId = sessionId
         self.tabs = tabs
-        self.keyRow = keyRow
+        self.keys = keys
     }
 
     func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {
@@ -33,7 +33,7 @@ final class TerminalViewBridge: NSObject, TerminalViewDelegate {
     func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
 
     func send(source: TerminalView, data: ArraySlice<UInt8>) {
-        tabs?.input(sessionId, keyRow.spend().applied(to: Data(data)))
+        tabs?.input(sessionId, keys.spend().applied(to: Data(data)))
     }
 
     func scrolled(source: TerminalView, position: Double) {}
