@@ -10,6 +10,13 @@ private let changedTime: DateFormatter = {
     return formatter
 }()
 
+private let byteCount: ByteCountFormatter = {
+    let formatter = ByteCountFormatter()
+    formatter.countStyle = .file
+    formatter.allowsNonnumericFormatting = false
+    return formatter
+}()
+
 /// The share page: one folder of the open share, its uploads above its folders and files. A tap on a folder
 /// opens it and a tap on a file reads it and shows it in the preview; each row's menu holds Rename, Save to
 /// Files and Delete, which arms the row; Upload and New folder are the page's actions; a pull reads the folder
@@ -233,7 +240,7 @@ struct ShareScreen: View {
         if let transfer { return transferLine(transfer) }
         if let job { return words.word(job.rawValue) }
         guard !item.isFolder else { return nil }
-        let size = ByteCountFormatter.string(fromByteCount: item.size, countStyle: .file)
+        let size = byteCount.string(fromByteCount: item.size)
         guard let modified = item.modified else { return size }
         return size + " · " + changedTime.string(from: modified)
     }
@@ -244,8 +251,8 @@ struct ShareScreen: View {
         let amount = words.word(
             "ui.share_progress",
             [
-                "done": ByteCountFormatter.string(fromByteCount: transfer.done, countStyle: .file),
-                "total": ByteCountFormatter.string(fromByteCount: transfer.total, countStyle: .file),
+                "done": byteCount.string(fromByteCount: transfer.done),
+                "total": byteCount.string(fromByteCount: transfer.total),
             ])
         return word + " · " + amount
     }
