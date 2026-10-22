@@ -94,7 +94,9 @@ that accepts nothing while its hub has no channel, as on the desktop. The
 iOS app's tests also pin a round that dials the hub's address on every
 published virtual network, and the close of every channel, share connection
 and listener when the background time ends, with each forward listening
-again on its port on the return to the foreground. Its share page is pinned
+again on its port on the return to the foreground. Its terminal is pinned to
+the 16 colours of the shared palette in both themes and to each theme's
+background, text, cursor and selection. Its share page is pinned
 against a fake SMB
 client: folders before files, each by name; the numbered name an upload and
 a new folder take; the code of each failure, the hub's own among them; a

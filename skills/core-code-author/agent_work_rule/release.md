@@ -346,7 +346,9 @@ In the release workflow `build_client_ios.py` builds it on GitHub's
 on a miss, XcodeGen
 generates the project, `xcodebuild` builds the app for `generic/platform=iOS`
 with code signing off (`CODE_SIGNING_ALLOWED=NO`), the build fails when the
-app does not define `_nd_start`, and the `.app` is zipped
+app does not define `_nd_start`, the app takes its icon from
+`images/icons/neutrino_ios.png`, the mark on an opaque square with square
+corners, which iOS rounds, and the `.app` is zipped
 under `Payload/`. The build passes the release's version to `xcodebuild`, as
 the Android build passes it to Gradle.
 

@@ -953,6 +953,12 @@ one replaces the first with 4010 `replaced`
 therefore has no such extension, and a share is read on the share page
 alone.
 
+### The terminal
+
+| Rule | Reason |
+| --- | --- |
+| SwiftTerm draws the 16 colours and the theme's colours as "The colours" gives them, and the 256-colour cube and grey ramp as xterm draws them (`ansi256PaletteStrategy` `.xterm`), as xterm.js does on the desktop and on Android. | SwiftTerm's own default derives the cube and the ramp from the theme's background and foreground, so one colour code would draw differently in the two themes and in the other two clients. |
+
 ### The remote desktop viewer
 
 | Rule | Reason |
@@ -982,6 +988,12 @@ alone.
 | --- | --- |
 | **This machine** on the About card shows the device name iOS gives the app, which on iOS 16 and newer is the model, such as `iPhone`. | iOS gives the name the person set only to an app holding an entitlement Apple grants on request. |
 | The **Carried** group on the About card lists SwiftTerm, the MIT-licensed terminal view the Terminals page draws with, then AMSMB2 and libsmb2, the LGPL-2.1 SMB client of the share page, each with its version and its **Source** link, then RustDesk 1.4.9, the AGPL-3.0 core of the remote desktop viewer, with its **Source** and **Patch** links as on Android. | A library the app contains is credited where the app's own version is. |
+
+### The pickers
+
+| Rule | Reason |
+| --- | --- |
+| The **Language** and **Theme** pickers of the Settings page, and the **Codec** and **Quality** pickers of **Configure**, are rows: the picker's name at the left, and at the right the chosen value in the same text size, in the accent, with the system's up-and-down chevrons. A press opens the system's menu of the choices, the chosen one checked. | The system's menu is the dropdown iOS shows in its own settings, and a value drawn larger than its name reads as a heading. |
 
 ## An interaction this page does not cover
 
