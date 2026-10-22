@@ -53,14 +53,10 @@
 
   /* --- Terminal ---
    *
-   * xterm resolves no custom property and parses the string itself: these
-   * stay plain values, and an alpha needs the rgba() spelling.
+   * xterm resolves no custom property and parses the string itself: this
+   * stays a plain value, and an alpha needs the rgba() spelling.
    */
-  --color-terminal-black: #0e1013;
   --color-terminal-selection: rgba(34, 211, 238, 0.25);
-  --color-terminal-bright-accent: #67e8f9;
-  --color-terminal-bright-secondary: #c4b5fd;
-  --color-terminal-bright-text: #ffffff;
 
   /* Native controls, scrollbars and form widgets. */
   --color-scheme: dark;

@@ -114,6 +114,7 @@ export function ShellTerminal({
       // No convertEol: the far end allocates a pty, so its output already ends
       // lines with CRLF. Converting again would double-space everything.
       theme: terminalTheme(),
+      drawBoldTextInBrightColors: false,
       scrollback: TERMINAL_SCROLLBACK_LINES,
     });
     terminalRef.current = terminal;
