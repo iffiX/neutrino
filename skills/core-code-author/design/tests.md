@@ -98,7 +98,9 @@ again on its port on the return to the foreground. Its terminal is pinned to
 the 16 colours of the shared palette in both themes and to each theme's
 background, text, cursor and selection; a tab that attaches again keeps its
 output until the replay's first bytes, and keeps it when the session is
-gone. The lines a row's actions wrap into are pinned by their widths. Its
+gone. The lines a row's actions wrap into are pinned by their widths, the
+part of the safe area a keyboard covers by its frame, and the Terminals
+page stays at its end as the software keyboard comes and goes. Its
 share page is pinned
 against a fake SMB
 client: folders before files, each by name; the numbered name an upload and
@@ -135,9 +137,12 @@ page with its key row and **New terminal** and no keyboard, with its
 **Keyboard** and **Keys** buttons, with the key row hidden, with the
 software keyboard opened by **Keyboard** and closed again by a tap on empty
 space, and the sidebar layout of a phone with a camera housing, turned to
-each side. A shot with the keyboard is taken by the job from the Simulator's
-screen, which a test asks for by a file it writes. Without it the test is
-skipped.
+each side, on Terminals with **New terminal** in the machines card, on Join
+with **Scan** in the page header, and on a share with its **+**. It also
+records the Terminals page as **Keyboard** and **Keys** turn on and off.
+A shot with the keyboard and a recording are taken by the job from the
+Simulator's screen, which a test asks for by a file it writes. Without it
+the test is skipped.
 The `ios` job sets it through `TEST_RUNNER_NEUTRINO_SCREENS` on every run
 and keeps the files as the artifact `ios_screens`.
 
