@@ -435,7 +435,8 @@ catalog. The password keys are the Android app's.
 | `ui.forget_password_arm` | Press again to forget | 再按一次以忘掉 |
 | `ui.remember` | Remember | 记住 |
 | `ui.add` | Add | 添加 |
-| `ui.upload` | Upload | 上传 |
+| `ui.upload_from_files` | Upload from Files | 从“文件”上传 |
+| `ui.upload_from_photos` | Upload from Photos | 从“照片”上传 |
 | `ui.more` | More | 更多 |
 | `ui.rename` | Rename | 重命名 |
 | `ui.save_to_files` | Save to Files | 存储到“文件” |
@@ -452,6 +453,7 @@ catalog. The password keys are the Android app's.
 | `ui.job.deleting` | Deleting… | 删除中… |
 | `code.share_name_taken` | This folder already holds that name. | 这个文件夹里已经有这个名字。 |
 | `code.share_interrupted` | Interrupted when the app went to the background. | 应用转入后台时中断了。 |
+| `code.share_photo_unavailable` | Photos did not hand over one of the picked items. | “照片”没有交出所选的其中一项。 |
 
 **New folder**, **Open**, **Connect**, **Cancel**, the user name and password
 fields and `ui.job.opening` are the desktop client's keys.
