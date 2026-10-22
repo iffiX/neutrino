@@ -96,7 +96,10 @@ published virtual network, and the close of every channel, share connection
 and listener when the background time ends, with each forward listening
 again on its port on the return to the foreground. Its terminal is pinned to
 the 16 colours of the shared palette in both themes and to each theme's
-background, text, cursor and selection. Its share page is pinned
+background, text, cursor and selection; a tab that attaches again keeps its
+output until the replay's first bytes, and keeps it when the session is
+gone. The lines a row's actions wrap into are pinned by their widths. Its
+share page is pinned
 against a fake SMB
 client: folders before files, each by name; the numbered name an upload and
 a new folder take; the code of each failure, the hub's own among them; a
@@ -126,8 +129,11 @@ time ends.
 When `NEUTRINO_SCREENS` names a directory, `ScreenshotTests` writes PNG
 files of the changed screens there: the terminal in both themes, the remote
 desktop viewer before and after the key bar and a simulated keyboard come
-up, and the Settings page and a share's login sheet in both themes. Without
-it the test is skipped.
+up, the Settings page and a share's login sheet in both themes, the Web,
+Files and Desktops lists with rows of different text widths, the Terminals
+page with its key row and **New terminal** and no keyboard, and the sidebar
+layout of a phone with a camera housing, turned to each side. Without it
+the test is skipped.
 The `ios` job sets it through `TEST_RUNNER_NEUTRINO_SCREENS` on every run
 and keeps the files as the artifact `ios_screens`.
 

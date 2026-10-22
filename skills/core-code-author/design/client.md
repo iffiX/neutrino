@@ -65,8 +65,8 @@ are the same on Linux, Windows and macOS.
 | On a phone's bottom bar each page is its icon with its label under it, the open page's in the accent. The bar labels **Remote desktops** as **Desktops** (`ui.bar_desktops`), and the top bar shows the full title. | An icon alone has to be learnt, and six pages leave room for a short word under each. |
 | **Join** opens from the Hubs page and is the only page reached from another page; it has a back arrow and no bar entry. | A page reached from several places is lost from each of them. |
 | The top bar holds the page title at the left and the refresh button at the right, and nothing else. | The refresh button is the one control that acts on every page. |
-| The sidebar and the bottom bar carry only the pages; the machine's name, platform and version are on the Settings page's About card and nowhere else. | A foot that repeats on every page is noise; About is where a person looks for a version. |
-| In the sidebar layout a page's own action (**New terminal** on Terminals, **Scan** on Join, which asks for the camera or scans again after a refused code) sits at the right of the page header, as the panel's `page_actions` does; the floating button at the bottom right exists only in the bottom-bar layout. | A floating button beside a sidebar covers content and reads as a leftover. |
+| The sidebar layout has four parts: at the top left the client's name (`ui.window.title`: Neutrino client, 微子·客户端) in a box as tall as the page header beside it, at the top right the page header with the title and the refresh button, at the bottom left the page list, each page by its full name and Settings apart under a rule, at the bottom right the page. The bottom bar carries only the pages. The machine's name, platform and version are on the Settings page's About card and nowhere else. | The name's box and the header share one top line, as the desktop window draws them; a foot that repeats on every page is noise, and About is where a person looks for a version. |
+| In the sidebar layout a page's own action (**New terminal** on Terminals, **Scan** on Join, which asks for the camera or scans again after a refused code) sits at the right of the page header, as the panel's `page_actions` does. In the bottom-bar layout it sits in the page: **New terminal** after the machine chips in the machines card, **Scan** in the camera's card. The share page's **+** is the one floating button, and only in the bottom-bar layout. | A floating button beside a sidebar covers content and reads as a leftover, and over a terminal it covers the status line's switches. |
 | In the sidebar layout the page body starts to the right of the sidebar and never under it. | Content under the sidebar is unreadable and untouchable. |
 | Every page body scrolls, Terminals included: on a phone the chips and the tab bar are always drawn in full, the terminal's box is as tall as the window under the top bar less the key row, so one screen holds the terminal and its keys and the chips scroll away above it; nothing collapses behind a tap, neither in landscape nor with the keyboard shown. On a desktop the terminal takes the height left under its chips and tabs. | A page squeezed to fit is a page that cannot be read; a line that must be tapped to see the page is a trap. |
 | A page changes with no transition animation. | A fade adds time to every press and tells nothing. |
@@ -85,7 +85,9 @@ A row is the unit every page is made of:
 | Body, line 4 | the error line, when the row's last action has a code, removed the moment a new action starts; the faint reason line, when a button is disabled. A hub row's connection never writes this line: its codes are state words on line 2 |
 | Right | the row's actions, in one line; a red-outlined action, when the row has one, is the rightmost |
 
-On a phone the actions wrap under the body, right-aligned, in the same order.
+On a phone the actions sit under the body on every row of every page,
+right-aligned and in the same order, also where they would fit beside it,
+and wrap to a second line where one line is too narrow.
 A page with nothing to show has one row with one sentence
 (`ui.no_hubs`, `ui.services_wait_join`, `ui.empty_<page>`) and no picture.
 
@@ -700,7 +702,7 @@ Each has `session_id`, `device_id`, `owner`, `is_owned`, `is_persistent`,
 | the page opens with listed sessions | tabs for all; the first one is active and attaches as the page opens, with its kept output replayed |
 | a tab's session reports `attached_count` | the tab shows the count as a badge when above one |
 | a tab's stream is closed `session_not_owned`, as when the owner stops sharing the session | the tab keeps its output and writes the code's words below it, as for every stream the hub closes with a code; the next state frame no longer lists the session, and the tab's label becomes `ui.terminal_ended` |
-| the hub's channel drops and comes back | a tab whose session is in the new list attaches again by itself and replays the kept output; a tab whose session is gone reads `ui.terminal_ended`; nothing stays on "not connected" after the hub is back |
+| the hub's channel drops and comes back | a tab whose session is in the new list attaches again by itself and replays the kept output, its terminal keeping what it showed until the replay's first bytes arrive; a tab whose session is gone, as a plain session ends with its channel, reads `ui.terminal_ended` and keeps its last output; nothing stays on "not connected" after the hub is back |
 
 A tab shows these badges after its label: `kept` for a persistent session,
 `shared` for a shared one, the count of attached windows when above one.
@@ -770,7 +772,7 @@ names a hub with `--hub` when several are joined. It takes one verb:
 
 | Rule | Reason |
 | --- | --- |
-| A key row sits above the keyboard: Esc, Tab, Ctrl, Shift, Alt, the four arrows; a modifier is sticky for one key and shows pressed while held. | The system keyboard has none of them. |
+| A key row sits at the foot of the terminal's card, under the status line, whether the keyboard is shown or not: Esc, Tab, Ctrl, Shift, Alt, the four arrows; a modifier is sticky for one key and shows pressed while held. With the keyboard shown, the page is scrolled to its end, so the key row sits right above the keyboard. | The system keyboard has none of them, and a key row that comes only with the keyboard is gone whenever the keyboard is. |
 | With the keyboard shown, the terminal's box shrinks to the space left above the key row, which stays above the keyboard, and the terminal refits its rows; the prompt line stays in view and nothing collapses. The top bar is drawn in every orientation. A phone in landscape with the keyboard up has room for the key row and little else, which is accepted: a tablet is the device for a landscape terminal. | A key row under the keyboard cannot be pressed, and a prompt below the fold cannot be read. |
 | The font falls back to a face that has the box-drawing, geometric and powerline symbols for every glyph the monospace face lacks. | A prompt in boxes is unreadable. |
 | The terminal's viewport scrolls by touch and shows a thin bar; the view follows output only at the bottom. | History on a phone is reached by the finger, and a bar says there is some. |
@@ -960,6 +962,14 @@ alone.
 | --- | --- |
 | SwiftTerm draws the 16 colours and the theme's colours as "The colours" gives them, and the 256-colour cube and grey ramp as xterm draws them (`ansi256PaletteStrategy` `.xterm`), as xterm.js does on the desktop and on Android. | SwiftTerm's own default derives the cube and the ramp from the theme's background and foreground, so one colour code would draw differently in the two themes and in the other two clients. |
 | On iOS, SwiftTerm draws bold text in colours 0 to 6 in the bright colour, and `useBrightColors` stays on. This is the one place where the iOS terminal differs from "The colours". | With `useBrightColors` off, SwiftTerm draws every text colour above 7 eight places lower, the bright colours and the cube included. |
+| A downward swipe on the terminal closes the keyboard, the keyboard following the finger as in Messages. A tap on the terminal opens it, and also brings back a keyboard iOS took away while the terminal kept the focus, as after a switch of keyboards with the globe key. No button hides the keyboard. | The swipe is how iOS closes a keyboard over a scrolling view, and a terminal that holds the focus with no keyboard shown takes no typing. |
+| With the keyboard shown, a switch of tabs keeps it shown, and the typing goes to the tab now shown. | A tab switch is no request to stop typing, and a keyboard taken down and put up again moves the whole page twice. |
+
+### The frame in landscape
+
+| Rule | Reason |
+| --- | --- |
+| In the sidebar layout the sidebar's and the page header's backgrounds and dividers run to the screen's edges, under the camera housing and beside the home indicator. The sidebar's name box and entries start at the edge of the safe area iOS gives, with no space added to it; the page and the header keep the safe area on the right. | A strip of another colour beside the housing reads as a gap, and the safe area already clears the housing and the rounded corners. |
 
 ### The remote desktop viewer
 
