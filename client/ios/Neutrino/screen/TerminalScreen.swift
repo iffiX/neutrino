@@ -124,7 +124,7 @@ struct TerminalScreen: View {
         VStack(spacing: 0) {
             TerminalTabStrip(core: core)
             ZStack {
-                palette.termBg
+                palette.bg
                 if let tab = activeTab {
                     TerminalViewRepresentable(cache: cache, sessionId: tab.sessionId)
                     if core.clearingTabs.contains(tab.sessionId) {

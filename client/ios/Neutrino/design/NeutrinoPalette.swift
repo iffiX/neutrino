@@ -19,8 +19,6 @@ struct NeutrinoPalette {
     let signalOk: Color
     let signalWarn: Color
     let signalError: Color
-    let termBg: Color
-    let termFg: Color
     let isDark: Bool
 
     /// The accent at 12 %, behind a selected or primary control.
@@ -46,8 +44,6 @@ struct NeutrinoPalette {
         signalOk: Color(hex: 0x34D399),
         signalWarn: Color(hex: 0xFBBF24),
         signalError: Color(hex: 0xFB7185),
-        termBg: Color(hex: 0x070809),
-        termFg: Color(hex: 0xE6EDF3),
         isDark: true)
 
     /// The light palette.
@@ -67,7 +63,5 @@ struct NeutrinoPalette {
         signalOk: Color(hex: 0x10B981),
         signalWarn: Color(hex: 0xF59E0B),
         signalError: Color(hex: 0xEF4444),
-        termBg: Color(hex: 0x0F172A),
-        termFg: Color(hex: 0xE6EDF3),
         isDark: false)
 }

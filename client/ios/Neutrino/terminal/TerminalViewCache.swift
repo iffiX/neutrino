@@ -2,12 +2,12 @@ import SwiftTerm
 import UIKit
 
 /// One terminal view per tab, kept while the tab lives so switching tabs loses no output; each view is fed its
-/// tab's kept output when made and every byte after.
+/// tab's kept output when made and every byte after, and is drawn in the colours of the palette in force.
 final class TerminalViewCache {
     private let tabs: TerminalTabs
     private var views: [String: TerminalView] = [:]
     private var bridges: [String: TerminalViewBridge] = [:]
-    private var palette = NeutrinoPalette.dark
+    private var colors = TerminalColors(palette: .dark)
     private var accent = UIColor(NeutrinoPalette.dark.accent)
 
     /// Keep the views of every tab.
@@ -27,9 +27,9 @@ final class TerminalViewCache {
     ///
     /// - Parameter palette: The palette.
     func paint(_ palette: NeutrinoPalette) {
-        self.palette = palette
+        colors = TerminalColors(palette: palette)
         accent = UIColor(palette.accent)
-        for view in views.values { style(view) }
+        for view in views.values { colors.paint(view) }
     }
 
     /// The view of one tab, made with its kept output when it has none.
@@ -50,7 +50,7 @@ final class TerminalViewCache {
         view.inputAccessoryView = keyRow
         view.terminalDelegate = bridge
         view.optionAsMetaKey = false
-        style(view)
+        colors.paint(view)
         let kept = tabs.keptOutput(sessionId)
         if !kept.isEmpty { view.feed(byteArray: ArraySlice([UInt8](kept))) }
         views[sessionId] = view
@@ -75,10 +75,5 @@ final class TerminalViewCache {
             views[sessionId] = nil
             bridges[sessionId] = nil
         }
-    }
-
-    private func style(_ view: TerminalView) {
-        view.nativeBackgroundColor = UIColor(palette.termBg)
-        view.nativeForegroundColor = UIColor(palette.termFg)
     }
 }

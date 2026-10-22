@@ -349,6 +349,16 @@ enum TerminalPage {
 
     /// The point size of the terminal's font.
     static let fontSize: Double = 13
+
+    /// The sixteen ANSI colours, the same in both themes: black, red, green, yellow, blue, magenta, cyan and
+    /// white, then the bright eight in the same order. The Tango palette, xterm.js's own.
+    static let ansiColors: [UInt32] = [
+        0x2E3436, 0xCC0000, 0x4E9A06, 0xC4A000, 0x3465A4, 0x75507B, 0x06989A, 0xD3D7CF,
+        0x555753, 0xEF2929, 0x8AE234, 0xFCE94F, 0x729FCF, 0xAD7FA8, 0x34E2E2, 0xEEEEEC,
+    ]
+
+    /// The opacity of the accent the selection is drawn in.
+    static let selectionOpacity = 0.25
 }
 
 /// The share page and its SMB client.
