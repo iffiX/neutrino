@@ -158,6 +158,42 @@ final class ScreenshotTests: XCTestCase {
         try save(shown, "terminals_2_scrolled_key_row", in: directory)
     }
 
+    func testTheTerminalsStatusLineButtonsAndTheKeyboard() throws {
+        let directory = try directory()
+        let screen = try screenSize()
+        let suite = "neutrino.screens.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let core = try connectedCore(defaults)
+        let cache = TerminalViewCache(tabs: core.tabs)
+        let bindingId = try XCTUnwrap(core.hubs.first?.binding.id)
+        core.pickMachine(TerminalMachine(bindingId: bindingId, deviceId: "nmxrel"))
+        core.newTerminal()
+        let shell = AppShell(core: core, cache: cache, screen: .terminals)
+            .environment(\.palette, .light)
+            .environment(\.words, core.words)
+            .environmentObject(ArmState())
+        let shown = try show(UIHostingController(rootView: shell), .light, size: screen)
+        core.tabs.onOutput?(core.activeTab, Data(Self.sample.utf8))
+        NotificationCenter.default.post(name: UIResponder.keyboardDidShowNotification, object: nil)
+        settle()
+        try save(shown, "terminals_3_keyboard_and_keys_buttons", in: directory)
+
+        cache.keys.toggleRow()
+        settle()
+        try save(shown, "terminals_4_key_row_hidden", in: directory)
+        cache.keys.toggleRow()
+
+        cache.openKeyboard(on: core.activeTab)
+        XCTAssertTrue(isTrue { cache.focus.isKeyboardShown }, "no software keyboard came up")
+        settle()
+        try screenOfSimulator("terminals_5_keyboard_from_its_button", in: directory)
+        KeyboardClosingLayer.close()
+        XCTAssertTrue(isTrue { !cache.focus.isKeyboardShown }, "the keyboard stayed up")
+        settle()
+        try screenOfSimulator("terminals_6_keyboard_closed", in: directory)
+    }
+
     func testTheSidebarLayoutInLandscapeWithTheHousingOnEitherSide() throws {
         let directory = try directory()
         let suite = "neutrino.screens.\(UUID().uuidString)"
@@ -284,6 +320,23 @@ final class ScreenshotTests: XCTestCase {
         window = shown
         settle()
         return shown
+    }
+
+    private func isTrue(_ condition: () -> Bool) -> Bool {
+        let end = Date().addingTimeInterval(10)
+        while !condition() && Date() < end {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        }
+        return condition()
+    }
+
+    /// Ask the CI job for a screenshot of the whole Simulator screen, the keyboard's window with it: the job takes
+    /// one for every `<name>.shot` file in the directory, as `<name>.png`.
+    private func screenOfSimulator(_ name: String, in directory: URL) throws {
+        let asked = directory.appendingPathComponent("\(name).shot")
+        let taken = directory.appendingPathComponent("\(name).png")
+        try Data().write(to: asked)
+        XCTAssertTrue(isTrue { FileManager.default.fileExists(atPath: taken.path) }, "no screenshot came for \(name)")
     }
 
     private func settle() {

@@ -141,18 +141,36 @@ jobs:
           echo "id=${id}" >> "$GITHUB_OUTPUT"
 
       # TEST_RUNNER_NEUTRINO_SCREENS reaches the tests as NEUTRINO_SCREENS, where
-      # ScreenshotTests writes its PNG files.
-      - name: Run the unit tests
+      # ScreenshotTests and the UI tests write their PNG files. A test that needs
+      # the whole Simulator screen, the keyboard's window with it, writes
+      # <name>.shot there, and the loop below takes it as <name>.png. The
+      # Simulator gets no hardware keyboard, so the software one comes up.
+      - name: Run the unit and UI tests
         working-directory: client/ios
         env:
           TEST_RUNNER_NEUTRINO_SCREENS: ${{ github.workspace }}/screens
-        run: >
-          xcodebuild test
-          -project Neutrino.xcodeproj
-          -scheme Neutrino
-          -destination "id=${{ steps.simulator.outputs.id }}"
-          -skipPackagePluginValidation
-          $(python3 ../../packaging/build/build_client_ios.py --build-settings)
+          SIMULATOR: ${{ steps.simulator.outputs.id }}
+        run: |
+          screens="$TEST_RUNNER_NEUTRINO_SCREENS"
+          mkdir -p "$screens"
+          defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
+          (
+            while true; do
+              for asked in "$screens"/*.shot; do
+                [ -e "$asked" ] || continue
+                xcrun simctl io "$SIMULATOR" screenshot "${asked%.shot}.tmp.png" > /dev/null 2>&1
+                mv "${asked%.shot}.tmp.png" "${asked%.shot}.png"
+                rm -f "$asked"
+              done
+              sleep 0.5
+            done
+          ) &
+          xcodebuild test \
+            -project Neutrino.xcodeproj \
+            -scheme Neutrino \
+            -destination "id=$SIMULATOR" \
+            -skipPackagePluginValidation \
+            $(python3 ../../packaging/build/build_client_ios.py --build-settings)
 
       - uses: actions/upload-artifact@v7
         if: always()
