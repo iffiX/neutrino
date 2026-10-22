@@ -965,11 +965,11 @@ alone.
 | A downward swipe on the terminal closes the keyboard, the keyboard following the finger as in Messages. A tap on the terminal opens it, and also brings back a keyboard iOS took away while the terminal kept the focus, as after a switch of keyboards with the globe key. No button hides the keyboard. | The swipe is how iOS closes a keyboard over a scrolling view, and a terminal that holds the focus with no keyboard shown takes no typing. |
 | With the keyboard shown, a switch of tabs keeps it shown, and the typing goes to the tab now shown. | A tab switch is no request to stop typing, and a keyboard taken down and put up again moves the whole page twice. |
 
-### The frame in landscape
+### The frame
 
 | Rule | Reason |
 | --- | --- |
-| In the sidebar layout the sidebar's and the page header's backgrounds and dividers run to the screen's edges, under the camera housing and beside the home indicator. The sidebar's name box and entries start at the edge of the safe area iOS gives, with no space added to it; the page and the header keep the safe area on the right. | A strip of another colour beside the housing reads as a gap, and the safe area already clears the housing and the rounded corners. |
+| In the sidebar layout the sidebar's and the page header's backgrounds and dividers run to the screen's edges, under the camera housing and beside the home indicator. With the housing at the left, the sidebar's name box and entries start at the edge of the safe area iOS gives, with no space added to it; with the housing at the right, where iOS insets the left edge as much, they start 8 points from the screen's edge. The page and the header keep the safe area on the right. Remote desktops' icon in both bars is a monitor's outline with an empty screen, as the other icons are outlines. | A strip of another colour beside the housing reads as a gap, the safe area already clears the housing and the rounded corners, and a blank as wide as a housing that is not there is a gap too. |
 
 ### The remote desktop viewer
 
