@@ -13,6 +13,7 @@ final class TerminalTabs {
     private var sizes: [String: (cols: Int, rows: Int)] = [:]
     private var dismissed: Set<String> = []
     private var drops: [String: TerminalDrop] = [:]
+    private var replaying: Set<String> = []
 
     /// Called after every change of the tabs, the shown tab, the picked machine or the tabs that clear.
     var onChange: (() -> Void)?
@@ -20,7 +21,8 @@ final class TerminalTabs {
     /// Called with a tab and the bytes its shell wrote, as they arrive.
     var onOutput: ((String, Data) -> Void)?
 
-    /// Called with a tab whose shell attaches again: its kept output comes again, drawn from a clear screen.
+    /// Called with a tab whose shell attached again, as the first bytes of its kept output arrive: the output
+    /// comes again, drawn from a clear screen. A tab whose session is gone keeps its last output.
     var onReplay: ((String) -> Void)?
 
     /// Every tab, in the order made.
@@ -230,6 +232,7 @@ final class TerminalTabs {
             stream.close()
         }
         outputs[sessionId] = nil
+        replaying.remove(sessionId)
         stopDropping(sessionId)
         let before = tabs.firstIndex { $0.sessionId == sessionId } ?? 0
         tabs.removeAll { $0.sessionId == sessionId }
@@ -255,10 +258,7 @@ final class TerminalTabs {
                 tab.note = refusal
             }
         case .success(let stream):
-            if isResumed {
-                outputs[tab.sessionId] = nil
-                onReplay?(tab.sessionId)
-            }
+            if isResumed { replaying.insert(tab.sessionId) }
             streams[tab.sessionId] = stream
             change(tab.sessionId) { tab in
                 tab.phase = .open
@@ -276,6 +276,10 @@ final class TerminalTabs {
     }
 
     private func take(_ data: Data, for sessionId: String) {
+        if replaying.remove(sessionId) != nil {
+            outputs[sessionId] = nil
+            onReplay?(sessionId)
+        }
         if isDropped(sessionId) { return }
         var kept = (outputs[sessionId] ?? Data()) + data
         if kept.count > TerminalPage.keptBytes { kept = kept.suffix(TerminalPage.keptBytes) }
@@ -285,6 +289,7 @@ final class TerminalTabs {
 
     private func ended(_ sessionId: String, stream: ChannelStream, refusal: ClientError?) {
         if streams[sessionId] === stream { streams[sessionId] = nil }
+        replaying.remove(sessionId)
         if drops[sessionId] != nil { stopDropping(sessionId) }
         change(sessionId) { tab in
             if let refusal, refusal.code == "session_unknown" {
