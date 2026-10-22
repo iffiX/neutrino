@@ -117,7 +117,8 @@ opening the viewer on a forward of its own, which opens one `connect {id}`
 stream per connection, accepts nothing while the hub has no channel and
 ends with the viewer; one viewer at a time; the viewer's state after each
 report of the core; `rdp_core_missing` without a core; the codecs and
-qualities offered and kept per entry; the viewport's zoom and pan; the mouse
+qualities offered and kept per entry; the viewport's zoom and pan, and the
+picture moved above the keyboard and the key bar and back; the mouse
 events of each gesture; the typing pace; marked text sent nowhere; a paste
 to a Linux host; and the viewer and its forward closed when the background
 time ends.
