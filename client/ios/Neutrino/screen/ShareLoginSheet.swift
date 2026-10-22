@@ -22,14 +22,11 @@ struct ShareLoginSheet: View {
         let isReady = !user.isEmpty && !password.isEmpty && !row.isOpening
         VStack(alignment: .leading, spacing: 16) {
             RowText(text: target.title, style: .title)
-            RowText(text: words.word("ui.username_hint"), style: .note)
             if target.users.count > 1 {
-                Picker(words.word("ui.username_hint"), selection: $user) {
-                    ForEach(target.users, id: \.self) { Text($0).tag($0) }
-                }
-                .pickerStyle(.menu)
-                .tint(palette.accent)
+                MenuPickerRow(
+                    label: words.word("ui.username_hint"), options: target.users, name: { $0 }, selection: $user)
             } else {
+                RowText(text: words.word("ui.username_hint"), style: .note)
                 field(TextField(words.word("ui.username_hint"), text: $user))
             }
             RowText(text: words.word("ui.password_hint"), style: .note)

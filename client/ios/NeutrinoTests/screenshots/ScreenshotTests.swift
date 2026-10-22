@@ -4,8 +4,8 @@ import XCTest
 
 @testable import Neutrino
 
-/// Draws the terminal, the remote desktop viewer and the Settings page into PNG files in the directory
-/// `NEUTRINO_SCREENS` names, for a look by eye; skipped while it names none.
+/// Draws the terminal, the remote desktop viewer, the Settings page and a share's login sheet into PNG files in the
+/// directory `NEUTRINO_SCREENS` names, for a look by eye; skipped while it names none.
 final class ScreenshotTests: XCTestCase {
     private static let sample: String = {
         var text = "\u{1b}[0mbackgrounds 40-47, then 100-107\r\n"
@@ -71,11 +71,7 @@ final class ScreenshotTests: XCTestCase {
         let suite = "neutrino.screens.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        let core = ClientCore(
-            secrets: FakeSecretStore(), transport: FakeHubTransport(), clock: FakeClientClock(), defaults: defaults,
-            device: Samples.device, edition: Client.editionIntl, hasNetwork: { true }, resolveHubName: { $0(nil) },
-            localNetworks: { [] }, shareClient: { FakeShareClient() }, remoteDesktop: FakeRemoteDesktopCore(),
-            bundle: Bundle(for: ClientCore.self))
+        let core = makeCore(defaults)
         for (name, palette) in [("settings_light", NeutrinoPalette.light), ("settings_dark", NeutrinoPalette.dark)] {
             let page = VStack(spacing: 0) {
                 TopBar(title: core.words.word(AppScreen.settings.titleKey), onBack: nil, isRefreshing: false) {}
@@ -87,6 +83,32 @@ final class ScreenshotTests: XCTestCase {
             let shown = try show(UIHostingController(rootView: page), palette.isDark ? .dark : .light, size: screen)
             try save(shown, name, in: directory)
         }
+    }
+
+    func testTheShareLoginSheetWithSeveralUsersInBothThemes() throws {
+        let directory = try directory()
+        let screen = try screenSize()
+        let suite = "neutrino.screens.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let core = makeCore(defaults)
+        let target = ShareTarget(
+            bindingId: "hub", entryId: "music", title: "music", share: "music", users: ["iffi", "guest"])
+        for (name, palette) in [("login_light", NeutrinoPalette.light), ("login_dark", NeutrinoPalette.dark)] {
+            let sheet = ShareLoginSheet(core: core, target: target)
+                .environment(\.palette, palette)
+                .environment(\.words, core.words)
+            let shown = try show(UIHostingController(rootView: sheet), palette.isDark ? .dark : .light, size: screen)
+            try save(shown, name, in: directory)
+        }
+    }
+
+    private func makeCore(_ defaults: UserDefaults) -> ClientCore {
+        ClientCore(
+            secrets: FakeSecretStore(), transport: FakeHubTransport(), clock: FakeClientClock(), defaults: defaults,
+            device: Samples.device, edition: Client.editionIntl, hasNetwork: { true }, resolveHubName: { $0(nil) },
+            localNetworks: { [] }, shareClient: { FakeShareClient() }, remoteDesktop: FakeRemoteDesktopCore(),
+            bundle: Bundle(for: ClientCore.self))
     }
 
     private func viewer(size: CGSize, keyboardHeight: Double, name: String, in directory: URL) throws {
