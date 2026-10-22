@@ -1,6 +1,5 @@
 package io.github.iffix.neutrino.channel
 
-import io.github.iffix.neutrino.PORT_PROTOCOL_TCP
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
@@ -39,10 +38,6 @@ data class ChannelServiceEntry(
     @SerialName("device_id") val deviceId: String = "",
     @SerialName("is_own_machine") val isOwnMachine: Boolean = false,
 ) {
-    /** A `port` entry's protocol, `tcp` or `udp`, from the payload's `protocol`; `tcp` when it names none. */
-    val portProtocol: String
-        get() = text("protocol").ifEmpty { PORT_PROTOCOL_TCP }
-
     /**
      * One text field of the payload.
      *

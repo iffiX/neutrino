@@ -64,21 +64,6 @@ object PreviewHubs {
                 deviceName = "Argon",
             ),
             ChannelServiceEntry(
-                "p1",
-                "port",
-                "SSH",
-                payload("host" to "100.72.4.21", "port" to 22),
-                deviceName = "Argon",
-            ),
-            ChannelServiceEntry("p2", "port", "PostgreSQL", payload("host" to "100.72.4.1", "port" to 5432)),
-            ChannelServiceEntry(
-                "ai",
-                "ai",
-                "AI gateway",
-                payload("endpoint" to "http://100.72.4.1:8317", "protocol" to "openai"),
-                deviceName = "Neutrino",
-            ),
-            ChannelServiceEntry(
                 "f1",
                 "file",
                 "public",

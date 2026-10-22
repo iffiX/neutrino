@@ -5,9 +5,9 @@ import org.junit.Test
 
 class AppScreenTest {
     @Test
-    fun theBarsDrawTheEightTabsInTheDemosOrder() {
+    fun theBarsDrawTheSixTabsInTheDemosOrder() {
         assertEquals(
-            listOf("hubs", "web", "ports", "ai", "files", "terminals", "remote_desktop", "settings"),
+            listOf("hubs", "web", "files", "terminals", "remote_desktop", "settings"),
             AppScreen.tabs.map { it.route },
         )
     }
@@ -22,6 +22,7 @@ class AppScreenTest {
     fun anUnknownRouteOpensTheHubs() {
         assertEquals(AppScreen.HUBS, AppScreen.of(null))
         assertEquals(AppScreen.HUBS, AppScreen.of("nowhere"))
-        assertEquals(AppScreen.AI, AppScreen.of("ai"))
+        assertEquals(AppScreen.HUBS, AppScreen.of("ai"))
+        assertEquals(AppScreen.FILES, AppScreen.of("files"))
     }
 }

@@ -308,30 +308,6 @@ val FORWARD_FIXED_PORTS: IntRange = 1024..65535
 /** Where an automatic local port is looked for when the entry's own is taken; the panel starts here. */
 const val FORWARD_AUTO_FIRST_PORT = 20000
 
-/** The path an app that speaks the OpenAI interface puts before every request. */
-const val AI_VERSION_PATH = "/v1"
-
-/** A `port` entry's protocol when its payload names none, and a TCP entry's. */
-const val PORT_PROTOCOL_TCP = "tcp"
-
-/** A UDP `port` entry's protocol. */
-const val PORT_PROTOCOL_UDP = "udp"
-
-/** The sources one UDP forward remembers the address of; the one idle the longest gives way. */
-const val CLIENT_UDP_SOURCES_MAX = 64
-
-/** The datagrams a UDP forward holds while its stream waits for its first credit. */
-const val CLIENT_UDP_HELD_DATAGRAMS_MAX = 16
-
-/** How long a UDP forward waits after a refused open before a datagram tries again. */
-const val CLIENT_UDP_RETRY_MILLIS = 1000L
-
-/** The largest UDP datagram. */
-const val CLIENT_UDP_DATAGRAM_BYTES_MAX = 65507
-
-/** The bytes of a UDP frame's source port, after the stream id. */
-const val CLIENT_UDP_SOURCE_BYTES = 2
-
 /** The IPv4 wildcard address a free-port probe binds. */
 const val FORWARD_PROBE_HOST_V4 = "0.0.0.0"
 
@@ -374,14 +350,8 @@ const val SEAL_TAG_BITS = 128
 /** The sealing key's length. */
 const val SEAL_KEY_BITS = 256
 
-/** The clip extra that keeps a copied secret out of the clipboard's preview, read from Android 13. */
-const val CLIENT_CLIP_SENSITIVE_EXTRA = "android.content.extra.IS_SENSITIVE"
-
 /** How long a copy button shows that it copied. */
 const val CLIENT_COPIED_SHOWN_MILLIS = 1500L
-
-/** How many mask characters a hidden key field shows, whatever the key's length. */
-const val CLIENT_KEY_MASK_LENGTH = 16
 
 /** How long a connect's `login` stage may take: the engine's start, its login and its address. */
 const val OVERLAY_LOGIN_TIMEOUT_S = 90L

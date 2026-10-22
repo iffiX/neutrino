@@ -56,11 +56,9 @@ import io.github.iffix.neutrino.forward.PortForwards
 import io.github.iffix.neutrino.remotedesktop.RemoteDesktopCore
 import io.github.iffix.neutrino.remotedesktop.RemoteDesktopSessions
 import io.github.iffix.neutrino.remotedesktop.RemoteDesktopViewer
-import io.github.iffix.neutrino.screen.AiScreen
 import io.github.iffix.neutrino.screen.FilesScreen
 import io.github.iffix.neutrino.screen.HubsScreen
 import io.github.iffix.neutrino.screen.JoinScreen
-import io.github.iffix.neutrino.screen.PortsScreen
 import io.github.iffix.neutrino.screen.RemoteDesktopScreen
 import io.github.iffix.neutrino.screen.SettingsScreen
 import io.github.iffix.neutrino.screen.TerminalScreen
@@ -204,31 +202,6 @@ fun AppShell(
                                         askNotices()
                                         actions.openWeb(bindingId, entryId, url, isTokenRequired)
                                     },
-                                )
-                            }
-                            composable(AppScreen.PORTS.route) {
-                                PortsScreen(
-                                    hubs,
-                                    forwards = forwardRows,
-                                    onConnect = { bindingId, entryId, port, protocol ->
-                                        askNotices()
-                                        actions.connectPort(bindingId, entryId, port, protocol)
-                                    },
-                                    onDisconnect = actions::disconnectPort,
-                                    onCopy = { actions.copy(it) },
-                                )
-                            }
-                            composable(AppScreen.AI.route) {
-                                AiScreen(
-                                    hubs,
-                                    forwards = forwardRows,
-                                    material = actions::serviceMaterial,
-                                    onConnect = { bindingId, entryId, port ->
-                                        askNotices()
-                                        actions.connectPort(bindingId, entryId, port)
-                                    },
-                                    onDisconnect = actions::disconnectPort,
-                                    onCopy = actions::copy,
                                 )
                             }
                             composable(AppScreen.FILES.route) {

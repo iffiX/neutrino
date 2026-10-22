@@ -13,8 +13,6 @@ import io.github.iffix.neutrino.design.AppIcon
 enum class AppScreen(val route: String, val titleKey: String, val icon: AppIcon?, val parent: AppScreen? = null) {
     HUBS("hubs", "ui.section_hubs", AppIcon.SERVER),
     WEB("web", "ui.panel_web", AppIcon.GLOBE),
-    PORTS("ports", "ui.panel_ports", AppIcon.PLUG),
-    AI("ai", "ui.panel_ai", AppIcon.SPARKLES),
     FILES("files", "ui.panel_files", AppIcon.FOLDER),
     TERMINALS("terminals", "ui.panel_terminals", AppIcon.TERMINAL),
     REMOTE_DESKTOP("remote_desktop", "ui.panel_desktops", AppIcon.DESKTOP),

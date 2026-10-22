@@ -79,7 +79,7 @@ class PortForwardRelayTest {
 
     @Test
     fun aRefusedStreamClosesTheAcceptedConnection() {
-        val hub = FakeConnectHub(refusal = ChannelResult.refused("permission_denied", "kind" to "port"))
+        val hub = FakeConnectHub(refusal = ChannelResult.refused("permission_denied", "kind" to "web"))
         val client = Socket("127.0.0.1", relay(hub, preferred = 0).start()).also { opened += it }
         client.soTimeout = 5000
         assertEquals(-1, readOrEnd(client))

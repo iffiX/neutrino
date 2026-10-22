@@ -30,8 +30,7 @@ import java.net.URISyntaxException
  * through the hub when it has no forward, reads a fresh token for an entry with
  * `is_token_required`, and opens the browser on the entry's own `.localhost` name, the button
  * showing the job meanwhile. Configure, at the left, opens the local port dialog while the entry
- * is not forwarded; a forwarded row names its loopback address with Copy and Disconnect, as a
- * Ports row does.
+ * is not forwarded; a forwarded row names its loopback address with Copy and Disconnect.
  *
  * @param hubs Every hub joined.
  * @param forwards Each entry's forward and job, by entry key.

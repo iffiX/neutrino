@@ -6,12 +6,10 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.VpnService
-import android.os.PersistableBundle
 import android.provider.DocumentsContract
 import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
-import io.github.iffix.neutrino.CLIENT_CLIP_SENSITIVE_EXTRA
 import io.github.iffix.neutrino.CLIENT_FILES_AUTHORITY
 import io.github.iffix.neutrino.CLIENT_LOG_TAG
 import io.github.iffix.neutrino.ConnectRefusedException
@@ -33,7 +31,6 @@ import io.github.iffix.neutrino.remotedesktop.RemoteDesktopSessions
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.JsonObject
 
 /**
  * The actions over the app core and the phone's own browser and clipboard.
@@ -74,11 +71,6 @@ class ClientController(
         connections.refresh()
     }
 
-    override suspend fun serviceMaterial(bindingId: String, entryId: String): ChannelResult<JsonObject> {
-        val session = connections.session(bindingId) ?: return ChannelResult.refused("unknown_hub")
-        return session.openService(entryId)
-    }
-
     override fun openUrl(url: String) {
         try {
             context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri()))
@@ -87,12 +79,8 @@ class ClientController(
         }
     }
 
-    override fun copy(text: String, isSecret: Boolean) {
-        val clip = ClipData.newPlainText("", text)
-        if (isSecret) {
-            clip.description.extras = PersistableBundle().apply { putBoolean(CLIENT_CLIP_SENSITIVE_EXTRA, true) }
-        }
-        context.getSystemService(ClipboardManager::class.java).setPrimaryClip(clip)
+    override fun copy(text: String) {
+        context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("", text))
     }
 
     override fun overlayConsent(): Intent? = VpnService.prepare(context)
@@ -165,20 +153,13 @@ class ClientController(
 
     override fun closeDesktop() = desktops.close()
 
-    override fun connectPort(bindingId: String, entryId: String, port: Int, protocol: String) =
-        forwards.connect(bindingId, entryId, port, protocol)
-
     override fun disconnectPort(bindingId: String, entryId: String) = forwards.disconnect(bindingId, entryId)
 
     override fun localPortOf(bindingId: String, entryId: String): LocalPortChoice =
         forwards.localPortOf(bindingId, entryId)
 
-    override fun configurePort(
-        bindingId: String,
-        entryId: String,
-        choice: LocalPortChoice,
-        protocol: String,
-    ): ChannelResult<Unit> = forwards.configure(bindingId, entryId, choice, protocol)
+    override fun configurePort(bindingId: String, entryId: String, choice: LocalPortChoice): ChannelResult<Unit> =
+        forwards.configure(bindingId, entryId, choice)
 
     override fun openWeb(bindingId: String, entryId: String, url: String, isTokenRequired: Boolean) =
         forwards.open(bindingId, entryId, url, isTokenRequired, ::openOnMain)

@@ -1,13 +1,11 @@
 package io.github.iffix.neutrino.shell
 
 import android.content.Intent
-import io.github.iffix.neutrino.PORT_PROTOCOL_TCP
 import io.github.iffix.neutrino.channel.ChannelResult
 import io.github.iffix.neutrino.files.ShareLogin
 import io.github.iffix.neutrino.files.ShareRoot
 import io.github.iffix.neutrino.forward.LocalPortChoice
 import io.github.iffix.neutrino.remotedesktop.RemoteDesktopChoice
-import kotlinx.serialization.json.JsonObject
 
 /**
  * What a person can do from a screen. An action that starts a job writes the job into the app
@@ -42,15 +40,6 @@ interface ClientActions {
     fun refresh()
 
     /**
-     * The material one published entry takes from its hub.
-     *
-     * @param bindingId The hub's binding.
-     * @param entryId The entry's id.
-     * @return The material, or the refusal to word.
-     */
-    suspend fun serviceMaterial(bindingId: String, entryId: String): ChannelResult<JsonObject>
-
-    /**
      * Open an address in the phone's browser.
      *
      * @param url The address.
@@ -61,9 +50,8 @@ interface ClientActions {
      * Put text on the clipboard.
      *
      * @param text The text.
-     * @param isSecret Whether the phone should keep it out of its clipboard preview.
      */
-    fun copy(text: String, isSecret: Boolean = false)
+    fun copy(text: String)
 
     /**
      * What the phone asks before the app may run a VPN.
@@ -167,17 +155,7 @@ interface ClientActions {
     fun closeDesktop()
 
     /**
-     * Press Connect on a port entry or the AI gateway: the phone's loopback forwards to it through the hub.
-     *
-     * @param bindingId The hub.
-     * @param entryId The entry.
-     * @param port The entry's own port, which the forward tries first on the loopback.
-     * @param protocol `tcp` or `udp`.
-     */
-    fun connectPort(bindingId: String, entryId: String, port: Int, protocol: String = PORT_PROTOCOL_TCP)
-
-    /**
-     * Press Disconnect on a forwarded port entry.
+     * Press Disconnect on a forwarded web entry.
      *
      * @param bindingId The hub.
      * @param entryId The entry.
@@ -199,15 +177,9 @@ interface ClientActions {
      * @param bindingId The hub.
      * @param entryId The entry.
      * @param choice Automatic, or fixed with a number from 1024 to 65535.
-     * @param protocol The entry's protocol, `tcp` or `udp`.
      * @return Ok once kept, or the refusal the dialog words as `ui.reason.<code>`.
      */
-    fun configurePort(
-        bindingId: String,
-        entryId: String,
-        choice: LocalPortChoice,
-        protocol: String = PORT_PROTOCOL_TCP,
-    ): ChannelResult<Unit>
+    fun configurePort(bindingId: String, entryId: String, choice: LocalPortChoice): ChannelResult<Unit>
 
     /**
      * Press Open on a web entry: its forward, its token when it needs one, then the browser.

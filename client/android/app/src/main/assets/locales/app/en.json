@@ -9,12 +9,9 @@
     "verb_unknown": "the hub does not know this command; update the hub"
   },
   "ui": {
-    "ai_address_plain": "For apps that add /v1 themselves",
-    "ai_address_v1": "For apps that want /v1 in the address",
     "back": "Back",
     "camera_allow": "Allow the camera",
     "camera_refused": "The camera is not allowed; paste the link below.",
-    "client_key": "This client's key",
     "copied": "Copied",
     "copy": "Copy",
     "core_channel": "Connections",
@@ -22,8 +19,6 @@
     "forget_password": "Forget password",
     "forget_password_arm": "Press again to forget",
     "join_hint": "Scan the QR code, or paste the link.",
-    "key_hide": "Hide the key",
-    "key_show": "Show the key",
     "open_in_files": "Open in Files",
     "or": "or",
     "overlay_count": "This hub publishes {count} virtual networks",

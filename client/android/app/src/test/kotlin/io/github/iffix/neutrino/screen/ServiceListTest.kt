@@ -14,7 +14,6 @@ class ServiceListTest {
     private val words = WordCatalog(
         mapOf(
             "ui.provided_by" to "由 {hub}:{device}:{module} 提供",
-            "ui.module_ai_gateway" to "AI 网关",
             "ui.module_title.samba" to "文件共享",
             "ui.module_title.remote_desktop" to "远程桌面",
         ),
@@ -37,7 +36,6 @@ class ServiceListTest {
 
     @Test
     fun everyEntryNamesItsHubItsMachineAndItsModulesTitle() {
-        assertEquals("由 nmxhub:nmxhub:AI 网关 提供", providerLine(hub, entry("nmxhub", "ai_gateway"), "", words))
         assertEquals("由 nmxhub:nmxhub:文件共享 提供", providerLine(hub, entry("nmxhub", "samba_module"), "", words))
         assertEquals("由 nmxhub:Argon:文件共享 提供", providerLine(hub, entry("Argon", "samba_module"), "", words))
         assertEquals("由 nmxhub:studio:远程桌面 提供", providerLine(hub, entry("studio", "device_share"), "", words))

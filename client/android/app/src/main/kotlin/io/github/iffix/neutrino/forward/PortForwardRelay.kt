@@ -9,6 +9,7 @@ import io.github.iffix.neutrino.FORWARD_CLOSE_WAIT_MILLIS
 import io.github.iffix.neutrino.channel.ChannelConnectSocket
 import io.github.iffix.neutrino.channel.ChannelResult
 import io.github.iffix.neutrino.channel.ChannelStream
+import java.io.Closeable
 import java.io.IOException
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -30,10 +31,10 @@ import kotlin.concurrent.withLock
  * @param requestedPort The loopback number to listen on; 0 for any free one.
  */
 open class PortForwardRelay(
-    override val name: String,
+    val name: String,
     private val open: () -> ChannelResult<ChannelStream>,
     private val requestedPort: Int,
-) : PortForwardListener {
+) : Closeable {
     private val connections = mutableSetOf<Socket>()
     private var listener: ServerSocket? = null
     private var acceptor: Thread? = null
@@ -45,11 +46,11 @@ open class PortForwardRelay(
     private var isClosed = false
 
     /** The loopback number bound; 0 until started. */
-    final override var localPort: Int = 0
+    var localPort: Int = 0
         private set
 
     /** Whether the relay still listens. */
-    override val isActive: Boolean
+    val isActive: Boolean
         get() = listener != null && !isClosed
 
     /**
@@ -58,7 +59,7 @@ open class PortForwardRelay(
      * @return The loopback number bound.
      * @throws IOException When the number cannot be bound, or the forward was closed first.
      */
-    override fun start(): Int {
+    open fun start(): Int {
         val bound = bind(requestedPort)
         listener = bound
         if (isClosed) {
@@ -75,7 +76,7 @@ open class PortForwardRelay(
      *
      * @param isOpen Whether the hub has a channel now.
      */
-    override fun channelChanged(isOpen: Boolean) = gate.withLock {
+    fun channelChanged(isOpen: Boolean) = gate.withLock {
         isChannelOpen = isOpen
         channelOpened.signalAll()
     }

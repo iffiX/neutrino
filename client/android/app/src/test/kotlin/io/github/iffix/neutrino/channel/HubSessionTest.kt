@@ -8,13 +8,7 @@ import io.github.iffix.neutrino.GoldenSchema
 import io.github.iffix.neutrino.binding.BindingStore
 import io.github.iffix.neutrino.binding.FakeSecretSealer
 import io.github.iffix.neutrino.binding.HubBinding
-import io.github.iffix.neutrino.forward.PortForwardUdpRelay
-import java.net.DatagramPacket
-import java.net.DatagramSocket
 import java.net.InetAddress
-import java.net.InetSocketAddress
-import java.util.concurrent.LinkedBlockingQueue
-import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.SendChannel
@@ -502,13 +496,13 @@ class HubSessionTest {
         val (session, _) = session(transport)
         served(session)
         val (_, socket, events) = transport.greeted()
-        val material = backgroundScope.async { session.openService("ai-1") }
+        val material = backgroundScope.async { session.openService("rdp-1") }
         runCurrent()
         val open = socket.sent("open").single()
         assertEquals("service", open["kind"]!!.jsonPrimitive.content)
-        assertEquals("ai-1", open["id"]!!.jsonPrimitive.content)
-        events.trySend(ChannelSocketEvent.Text("""{"type":"close","stream":1,"code":"","params":{"api_key":"k"}}"""))
-        assertEquals("k", ((material.await() as ChannelResult.Ok).value["api_key"])!!.jsonPrimitive.content)
+        assertEquals("rdp-1", open["id"]!!.jsonPrimitive.content)
+        events.trySend(ChannelSocketEvent.Text("""{"type":"close","stream":1,"code":"","params":{"password":"k"}}"""))
+        assertEquals("k", ((material.await() as ChannelResult.Ok).value["password"])!!.jsonPrimitive.content)
     }
 
     @Test
@@ -1063,60 +1057,6 @@ class HubSessionTest {
         assertEquals("connect", open["kind"]!!.jsonPrimitive.content)
         assertEquals(true, open["is_panel"]!!.jsonPrimitive.boolean)
         assertEquals(stream.id, socket.sent("credit").single()["stream"]!!.jsonPrimitive.content.toInt())
-    }
-
-    @Test
-    fun aUdpStreamClosedWithACodeReachesItsForward() = runTest {
-        val transport = FakeHubTransport { FakeHubTransport.welcoming }
-        val (session, _) = session(transport)
-        served(session)
-        val (_, socket, events) = transport.greeted()
-        val refusals = LinkedBlockingQueue<String>()
-        var now = 0L
-        val relay = PortForwardUdpRelay(
-            "b1/dns_udp",
-            { session.openConnect(ChannelFrames.args("id" to "dns_udp")) },
-            0,
-            { refusal, isEnded -> refusals.put("${refusal.code} $isEnded") },
-        ) { now }
-        val port = relay.start()
-        DatagramSocket().use { program ->
-            val query = DatagramPacket(byteArrayOf(1, 2, 3), 3, InetSocketAddress("127.0.0.1", port))
-            val first = socket.sent("open").single()["stream"]!!.jsonPrimitive.int
-            events.trySend(ChannelSocketEvent.Text("""{"type":"credit","stream":$first,"bytes":65536}"""))
-            runCurrent()
-            program.send(query)
-            waitFor { synchronized(socket) { socket.binaries.isNotEmpty() } }
-            events.trySend(
-                ChannelSocketEvent.Text(
-                    """{"type":"close","stream":$first,"code":"port_not_published","params":{"port":5353}}""",
-                ),
-            )
-            runCurrent()
-            assertEquals("port_not_published false", refusals.poll(30, TimeUnit.SECONDS))
-            assertTrue(relay.isActive)
-            now += 1000
-            program.send(query)
-            waitFor { socket.sent("open").size == 2 }
-            val second = socket.sent("open")[1]["stream"]!!.jsonPrimitive.int
-            events.trySend(
-                ChannelSocketEvent.Text(
-                    """{"type":"close","stream":$second,"code":"service_unknown","params":{"service_id":"dns_udp"}}""",
-                ),
-            )
-            runCurrent()
-            assertEquals("service_unknown false", refusals.poll(30, TimeUnit.SECONDS))
-            assertTrue(relay.isActive)
-        }
-        relay.close()
-    }
-
-    private fun waitFor(condition: () -> Boolean) {
-        val deadline = System.currentTimeMillis() + 30_000
-        while (!condition()) {
-            assertTrue("the condition did not hold in 30 s", System.currentTimeMillis() < deadline)
-            Thread.sleep(10)
-        }
     }
 
     @Test

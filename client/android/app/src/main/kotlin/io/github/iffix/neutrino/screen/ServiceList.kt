@@ -25,7 +25,6 @@ private val ENTRY_MODULES = mapOf(
 
 /** The catalog keys of the module titles the panel translates, by origin code. */
 private val ENTRY_MODULE_KEYS = mapOf(
-    "ai_gateway" to "ui.module_ai_gateway",
     "samba_module" to "ui.module_title.samba",
     "device_share" to "ui.module_title.remote_desktop",
 )
