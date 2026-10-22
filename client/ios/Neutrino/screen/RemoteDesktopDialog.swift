@@ -19,20 +19,12 @@ struct RemoteDesktopDialog: View {
         VStack(alignment: .leading, spacing: 16) {
             RowText(text: words.word("ui.rdp_configure_title"), style: .title)
             RowText(text: item.entry.title, style: .note)
-            pickerRow(words.word("ui.rdp_codec")) {
-                Picker(words.word("ui.rdp_codec"), selection: $codec) {
-                    ForEach(RemoteDesktopCodec.allCases) { codec in
-                        Text(codec.title.isEmpty ? words.word("ui.rdp_codec_auto") : codec.title).tag(codec)
-                    }
-                }
-            }
-            pickerRow(words.word("ui.rdp_quality")) {
-                Picker(words.word("ui.rdp_quality"), selection: $quality) {
-                    ForEach(RemoteDesktopQuality.allCases) { quality in
-                        Text(words.word(quality.wordKey)).tag(quality)
-                    }
-                }
-            }
+            MenuPickerRow(
+                label: words.word("ui.rdp_codec"), options: RemoteDesktopCodec.allCases,
+                name: { $0.title.isEmpty ? words.word("ui.rdp_codec_auto") : $0.title }, selection: $codec)
+            MenuPickerRow(
+                label: words.word("ui.rdp_quality"), options: RemoteDesktopQuality.allCases,
+                name: { words.word($0.wordKey) }, selection: $quality)
             HStack(spacing: 8) {
                 Spacer()
                 NeutrinoButton(label: words.word("ui.cancel"), tier: .ghost) { dismiss() }
@@ -49,14 +41,6 @@ struct RemoteDesktopDialog: View {
         .background(palette.bg.ignoresSafeArea())
         .presentationDetents([.medium])
         .onAppear(perform: load)
-    }
-
-    private func pickerRow<Options: View>(_ label: String, @ViewBuilder picker: () -> Options) -> some View {
-        HStack {
-            Text(label).font(.system(size: 14)).foregroundColor(palette.text)
-            Spacer()
-            picker().pickerStyle(.menu).tint(palette.accent)
-        }
     }
 
     private func load() {

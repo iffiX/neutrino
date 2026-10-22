@@ -18,12 +18,12 @@ struct SettingsScreen: View {
                 SurfaceCard {
                     VStack(alignment: .leading, spacing: 14) {
                         RowText(text: words.word("ui.settings_title"), style: .title)
-                        pickerRow(words.word("ui.language"), selection: binding(\.language, current)) {
-                            ForEach(Client.languages, id: \.self) { Text(words.word("ui.language_name.\($0)")).tag($0) }
-                        }
-                        pickerRow(words.word("ui.theme"), selection: binding(\.theme, current)) {
-                            ForEach(Client.themes, id: \.self) { Text(words.word("ui.theme_name.\($0)")).tag($0) }
-                        }
+                        MenuPickerRow(
+                            label: words.word("ui.language"), options: Client.languages,
+                            name: { words.word("ui.language_name.\($0)") }, selection: binding(\.language, current))
+                        MenuPickerRow(
+                            label: words.word("ui.theme"), options: Client.themes,
+                            name: { words.word("ui.theme_name.\($0)") }, selection: binding(\.theme, current))
                         HStack(spacing: 8) {
                             Spacer()
                             NeutrinoButton(label: words.word("ui.cancel"), tier: .ghost, isEnabled: current != saved) {
@@ -109,16 +109,6 @@ struct SettingsScreen: View {
         }
         .font(.system(size: 13))
         .foregroundColor(palette.accent)
-    }
-
-    private func pickerRow<Options: View>(
-        _ label: String, selection: Binding<String>, @ViewBuilder options: () -> Options
-    ) -> some View {
-        HStack {
-            Text(label).font(.system(size: 14)).foregroundColor(palette.text)
-            Spacer()
-            Picker(label, selection: selection, content: options).pickerStyle(.menu).tint(palette.accent)
-        }
     }
 
     private func binding(_ field: WritableKeyPath<ClientSettings, String>, _ current: ClientSettings) -> Binding<String>
