@@ -72,7 +72,7 @@ The first hub stays connected through any other way in it has, such as Direct, t
 
 On a computer, **AI** has one entry for each hub with an AI gateway. Select **The AI tools use this gateway** on the hub you want; the switch on the other entry turns off.
 
-That hub's row on **Hubs** then reads **The AI tools point at this hub**. On a phone, each gateway has its own **Connect**, as [Android app](../client/android.md) describes.
+That hub's row on **Hubs** then reads **The AI tools point at this hub**. The phone apps have no **AI** page.
 
 ## Open each hub's panel
 

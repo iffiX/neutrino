@@ -86,7 +86,7 @@ Each device joins with a link of its own from the panel's **Clients** page, vali
 1. Select **Allow the camera**, then allow it in Android's prompt.
 1. Point the camera at the QR code in the panel.
 
-The app lists the hub, and its row reads **Connected · LAN**. On Android 13 and newer, the app's first **Open** or **Connect** on its **Web**, **Ports** or **AI** page later shows Android's notification prompt. Allow it, and the app keeps one line there with the number of hubs it is connected to.
+The app lists the hub, and its row reads **Connected · LAN**. On Android 13 and newer, the app's first **Open** on its **Web** page later shows Android's notification prompt. Allow it, and the app keeps one line there with the number of hubs it is connected to.
 
 ![The client link with its QR code on the Clients page](/guide/en/clients_link_qr.webp)
 

@@ -145,7 +145,7 @@ The hub's row appears at once and reads **Connecting…**, then **Connected · L
 
 To paste the link instead, put it into the field under **or** and select **Join**. The hub's row reads **Connecting…** until the phone reaches the hub.
 
-Android 13 and newer show a notification prompt at the first **Open** on **Web**, **Connect** on **Ports** or **AI**, or **Panel** on a hub row. With notifications allowed, the app shows one line there with the number of hubs it is connected to.
+Android 13 and newer show a notification prompt at the first **Open** on **Web** or **Panel** on a hub row. With notifications allowed, the app shows one line there with the number of hubs it is connected to.
 
 ## Join another hub
 

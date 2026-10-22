@@ -4,11 +4,11 @@ title: Android app
 
 # Android app
 
-The Android app opens a joined hub's web pages, ports, AI gateway, shares, terminals and remote desktops on a phone or a tablet, at home or from outside. The app connects only to the hub's port 8443. [Install a client](../install/client.md) covers installing the app and joining a hub.
+The Android app opens a joined hub's web pages, shares, terminals and remote desktops on a phone or a tablet, at home or from outside. The app connects only to the hub's port 8443. [Install a client](../install/client.md) covers installing the app and joining a hub.
 
 ## Hubs
 
-In portrait, a bar at the bottom opens **Hubs**, **Web**, **Ports**, **AI**, **Files**, **Terminals**, **Remote desktops** and **Settings**. Turned sideways, or on a tablet, a sidebar takes its place.
+In portrait, a bar at the bottom opens **Hubs**, **Web**, **Files**, **Terminals**, **Remote desktops** and **Settings**. Turned sideways, or on a tablet, a sidebar takes its place.
 
 The **Hubs** screen holds one row per hub: its name, its state line, its address and the package it runs. While the channel is open, the line names its path, such as **Connected · LAN**, with a tag such as **48 ms** for the last round trip.
 
@@ -53,9 +53,9 @@ The phone is on one hub's network at a time, so while one is on, **Connect** on 
 
 A forward is a port on the phone's `127.0.0.1` that the app opens for one entry. A foreground service of the app holds every forward and every hub connection, so they keep running behind other apps. A forwarded row shows `→ 127.0.0.1:` and the port.
 
-While a hub's channel is down, its TCP forwards keep their ports and stop accepting new connections. The connections waiting on a forward are served once the channel is back.
+While a hub's channel is down, its forwards keep their ports and stop accepting new connections. The connections waiting on a forward are served once the channel is back.
 
-On the **Web** and **Ports** screens, **Configure** on a row sets the **Local port**. **Auto** keeps the entry's own port when it is free and otherwise takes one from 20000 up. **Fixed** takes a number from 1024 to 65535. **Configure** is greyed while the entry is forwarded.
+On the **Web** screen, **Configure** on a row sets the **Local port**. **Auto** keeps the entry's own port when it is free and otherwise takes one from 20000 up. **Fixed** takes a number from 1024 to 65535. **Configure** is greyed while the entry is forwarded.
 
 A row whose forward cannot reach its service shows a code, listed under [A client page cannot reach its service](../reference/troubleshooting.md#a-client-page-cannot-reach-its-service).
 
@@ -66,26 +66,6 @@ The **Web** screen lists the web pages the joined hubs publish: Gitea, VS Code, 
 - Select **Open** on a row.
 
 The app makes the entry's forward and opens the page in the phone's browser on `127.0.0.1`. **Disconnect** ends the forward.
-
-## Ports
-
-The **Ports** screen lists each port the hubs publish.
-
-1. Select **Connect** on the entry. The row adds `→ 127.0.0.1:` and the local port.
-1. Select **Copy**, and paste the loopback address into the app on the phone that uses the port.
-
-A UDP entry reads `host:port/udp`, and **Copy** copies its address without `/udp`. [UDP ports](../hub/services.md#udp-ports) says what a UDP port through the hub suits.
-
-## AI
-
-The **AI** screen holds one row per hub that runs an AI gateway. Select **Connect** to forward the gateway to the phone. The forwarded row shows two loopback addresses, each with its own **Copy**:
-
-| Label                                     | Address                                |
-| ----------------------------------------- | -------------------------------------- |
-| **For apps that add /v1 themselves**      | the gateway's address on `127.0.0.1`   |
-| **For apps that want /v1 in the address** | the same address with `/v1` at the end |
-
-Under them, **This client's key** shows the key behind an eye button, with **Copy**. Paste one address and the key into an app on the phone that takes an OpenAI-compatible endpoint. The address works only while the app holds the forward.
 
 ## Files
 
@@ -122,7 +102,7 @@ The **Remote desktops** screen opens the desktop a managed machine shares throug
 
 ![The remote desktop viewer on a phone](/guide/en/app_rdp_viewer.webp)
 
-At the top right of the picture, **Keyboard** raises the phone's keyboard. **Keys** shows a key bar with Esc, Tab, Ctrl, Shift, Alt, Win, **Paste** and the arrows. **Disconnect** ends the session. Drag or pinch with two fingers to reach the part of the picture the keyboard covers.
+At the top right of the picture, **Keyboard** raises the phone's keyboard. **Keys** shows a key bar with Esc, Tab, Ctrl, Shift, Alt, Win, **Paste** and the arrows. **Disconnect** ends the session. While the keyboard or the key bar is up, the picture keeps its size and moves up above them. The bottom of the remote screen shows right above the key bar, and the picture moves back when they close. A pinch reaches every part of a zoomed picture.
 
 ## Settings
 
