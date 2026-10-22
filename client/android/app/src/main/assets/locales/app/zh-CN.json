@@ -10,6 +10,7 @@
   },
   "ui": {
     "back": "返回",
+    "bar_desktops": "桌面",
     "camera_allow": "允许使用相机",
     "camera_refused": "没有相机权限，请在下面粘贴链接。",
     "copied": "已复制",

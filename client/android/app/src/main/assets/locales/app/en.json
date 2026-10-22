@@ -10,6 +10,7 @@
   },
   "ui": {
     "back": "Back",
+    "bar_desktops": "Desktops",
     "camera_allow": "Allow the camera",
     "camera_refused": "The camera is not allowed; paste the link below.",
     "copied": "Copied",

@@ -13,6 +13,21 @@ class AppScreenTest {
     }
 
     @Test
+    fun theBottomBarLabelsRemoteDesktopsAsDesktops() {
+        assertEquals(
+            listOf(
+                "ui.section_hubs",
+                "ui.panel_web",
+                "ui.panel_files",
+                "ui.panel_terminals",
+                "ui.bar_desktops",
+                "ui.settings",
+            ),
+            AppScreen.tabs.map { it.barKey },
+        )
+    }
+
+    @Test
     fun aScreenReachedFromAnotherBelongsToItsTab() {
         assertEquals(AppScreen.HUBS, AppScreen.JOIN.parent)
         assertEquals(listOf(AppScreen.JOIN), AppScreen.entries.filter { it.icon == null })

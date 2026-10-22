@@ -2,12 +2,14 @@ package io.github.iffix.neutrino.shell
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -19,13 +21,17 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import io.github.iffix.neutrino.CLIENT_BOTTOM_BAR_HEIGHT_DP
 import io.github.iffix.neutrino.design.IconGlyph
 import io.github.iffix.neutrino.design.NeutrinoTheme
 
 /**
- * The portrait navigation: one icon per tab along the bottom, the open one lit.
+ * The portrait navigation: one icon per tab along the bottom with its label under it, the open
+ * one lit.
  *
  * @param current The tab the open screen belongs to.
  * @param onOpen What pressing a tab does.
@@ -45,8 +51,9 @@ fun BottomBar(current: AppScreen, onOpen: (AppScreen) -> Unit, modifier: Modifie
     ) {
         for (tab in AppScreen.tabs) {
             val isActive = tab == current
-            val title = words.word(tab.titleKey)
-            Box(
+            val title = words.word(tab.barKey)
+            val tone = if (isActive) palette.accent else palette.textMuted
+            Column(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
@@ -67,10 +74,21 @@ fun BottomBar(current: AppScreen, onOpen: (AppScreen) -> Unit, modifier: Modifie
                         selected = isActive
                     }
                     .clickable(role = Role.Tab) { onOpen(tab) },
-                contentAlignment = Alignment.Center,
+                verticalArrangement = Arrangement.spacedBy(3.dp, Alignment.CenterVertically),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                val icon = tab.icon ?: return@Box
-                IconGlyph(icon, if (isActive) palette.accent else palette.textMuted, size = 18.dp)
+                tab.icon?.let { IconGlyph(it, tone, size = 18.dp) }
+                BasicText(
+                    title,
+                    style = NeutrinoTheme.badge.copy(
+                        color = tone,
+                        fontFamily = FontFamily.SansSerif,
+                        fontWeight = FontWeight.Medium,
+                        textAlign = TextAlign.Center,
+                    ),
+                    maxLines = 1,
+                    softWrap = false,
+                )
             }
         }
     }

@@ -67,11 +67,12 @@ class WordCatalogTest {
     }
 
     @Test
-    fun everyScreenTitleIsWordedInEveryLanguage() {
+    fun everyScreenTitleAndBarLabelIsWordedInEveryLanguage() {
         for (language in CLIENT_LANGUAGES) {
             val words = catalog(language)
             for (screen in AppScreen.entries) {
                 assertTrue("${screen.titleKey} in $language", words.has(screen.titleKey))
+                assertTrue("${screen.barKey} in $language", words.has(screen.barKey))
             }
         }
     }

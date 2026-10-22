@@ -20,6 +20,10 @@ enum class AppScreen(val route: String, val titleKey: String, val icon: AppIcon?
     JOIN("join", "ui.add_hub", null, HUBS),
     ;
 
+    /** The catalog key of its label under its icon in the bottom bar: its title, Desktops for Remote desktops. */
+    val barKey: String
+        get() = if (this == REMOTE_DESKTOP) "ui.bar_desktops" else titleKey
+
     companion object {
         /** The screens that have a tab, in the order the bars draw them. */
         val tabs: List<AppScreen> = entries.filter { it.icon != null }
