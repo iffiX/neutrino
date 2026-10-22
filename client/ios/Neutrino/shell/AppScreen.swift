@@ -32,14 +32,14 @@ enum AppScreen: String, CaseIterable, Identifiable {
     /// The catalog key of its bar entry: the title, shortened where six entries share a phone's bar.
     var barKey: String { self == .desktops ? "ui.bar_desktops" : titleKey }
 
-    /// The SF Symbol of its bar entry.
+    /// The SF Symbol of its bar entry; the bars draw Remote desktops' monitor themselves.
     var systemImage: String {
         switch self {
         case .hubs: return "server.rack"
         case .web: return "globe"
         case .files: return "folder"
         case .terminals: return "terminal"
-        case .desktops: return "tv"
+        case .desktops: return "display"
         case .settings: return "gearshape"
         case .join: return "plus"
         }

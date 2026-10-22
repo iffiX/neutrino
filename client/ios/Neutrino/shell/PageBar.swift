@@ -73,7 +73,7 @@ struct PageBar: View {
             Group {
                 if isWide {
                     HStack(spacing: 10) {
-                        Image(systemName: screen.systemImage).frame(width: 22)
+                        icon(screen, size: 17).frame(width: 22)
                         Text(words.word(screen.titleKey)).font(.system(size: 14, weight: .medium))
                         Spacer()
                     }
@@ -81,7 +81,7 @@ struct PageBar: View {
                     .padding(.vertical, 9)
                 } else {
                     VStack(spacing: 3) {
-                        Image(systemName: screen.systemImage).font(.system(size: 18))
+                        icon(screen, size: 18)
                         Text(words.word(screen.barKey)).font(.system(size: 10, weight: .medium)).lineLimit(1)
                     }
                 }
@@ -91,5 +91,16 @@ struct PageBar: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func icon(_ screen: AppScreen, size: Double) -> some View {
+        if screen == .desktops {
+            MonitorShape()
+                .stroke(style: StrokeStyle(lineWidth: size / 12, lineCap: .round, lineJoin: .round))
+                .frame(width: size * 1.3, height: size * 1.3)
+        } else {
+            Image(systemName: screen.systemImage).font(.system(size: size))
+        }
     }
 }

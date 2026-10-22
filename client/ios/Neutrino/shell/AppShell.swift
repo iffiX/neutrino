@@ -3,8 +3,9 @@ import SwiftUI
 /// The frame of every page: the sidebar when the window is wider than it is tall or at least 720 points wide,
 /// the bottom bar otherwise; the top bar above the page; and the page's own action at the right of the page
 /// header beside the sidebar. Above the bottom bar a page draws its action itself, and the share page's actions
-/// are the one floating button. The Files page shows the share page while a share is open, and the remote
-/// desktop viewer covers the whole screen while it is open.
+/// are the one floating button. In landscape the sidebar keeps the safe area only on the camera housing's side.
+/// The Files page shows the share page while a share is open, and the remote desktop viewer covers the whole
+/// screen while it is open.
 struct AppShell: View {
     @ObservedObject var core: ClientCore
 
@@ -15,15 +16,19 @@ struct AppShell: View {
     @Environment(\.palette) private var palette
     @State private var screen = AppScreen.hubs
     @State private var pageAction: PageAction?
+    @StateObject private var orientation = ShellOrientation()
 
     var body: some View {
         GeometryReader { window in
             let isSidebar = window.size.width > window.size.height || window.size.width >= Client.sidebarMinWidth
             if isSidebar {
+                let isHousingRight = ShellOrientation.isHousingRight(orientation.orientation)
+                let isInset = window.safeAreaInsets.leading > 0 && !isHousingRight
                 HStack(spacing: 0) {
-                    PageBar(isSidebar: true, isInset: window.safeAreaInsets.leading > 0, selected: selection)
+                    PageBar(isSidebar: true, isInset: isInset, selected: selection)
                     main(isSidebar: true)
                 }
+                .ignoresSafeArea(.container, edges: isHousingRight ? .leading : [])
                 .environment(\.isSidebar, true)
             } else {
                 VStack(spacing: 0) {
@@ -34,6 +39,7 @@ struct AppShell: View {
             }
         }
         .background(palette.bg.ignoresSafeArea())
+        .onAppear { orientation.follow() }
         .fullScreenCover(item: viewing) { target in
             RemoteDesktopViewer(target: target, core: core.remoteDesktop) { core.closeDesktop() }
                 .environment(\.words, words)
