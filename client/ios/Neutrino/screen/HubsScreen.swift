@@ -9,7 +9,6 @@ struct HubsScreen: View {
     let onJoin: () -> Void
 
     @Environment(\.words) private var words
-    @Environment(\.palette) private var palette
 
     var body: some View {
         ScrollView {
@@ -29,11 +28,11 @@ struct HubsScreen: View {
                 }
                 SurfaceCard {
                     Button(action: onJoin) {
-                        FeatureRow {
+                        FeatureRow(hasChevron: true) {
                             RowText(text: words.word("ui.add_hub"), style: .title)
                             RowText(text: words.word("ui.join_hint"), style: .note)
                         } actions: {
-                            Image(systemName: "chevron.right").foregroundColor(palette.textMuted)
+                            EmptyView()
                         }
                         .contentShape(Rectangle())
                     }
