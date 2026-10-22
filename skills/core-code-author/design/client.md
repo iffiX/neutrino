@@ -2,7 +2,7 @@
 
 The client is one person's window onto the hubs they joined: a tray and a
 window on Linux, Windows and macOS (`client/desktop`), an app on Android
-(`client/android`) and on iOS (`client/ios`, with the fewer pages "The iOS
+(`client/android`) and on iOS (`client/ios`, with the differences "The iOS
 app" names). This page fixes the layout of every page and the behaviour of
 every button as one design, and the three implementations follow it line by
 line. A difference between two clients that this page does not name is a
@@ -61,7 +61,7 @@ are the same on Linux, Windows and macOS.
 | Rule | Reason |
 | --- | --- |
 | The frame is a sidebar on the left when the window is wider than it is tall, or at least 720 dp wide, and a bottom bar otherwise. | A phone in portrait has no room for a sidebar; a tablet, a laptop and a phone in landscape do, whatever the phone's display size setting makes of its width. |
-| The bar lists the pages in one order: **Hubs**, **Web**, **Ports**, **AI**, **Files**, **Terminals**, **Remote desktops**, **Settings**. | One order on every client is one order to learn. |
+| The bar lists the pages in one order: **Hubs**, **Web**, **Ports**, **AI**, **Files**, **Terminals**, **Remote desktops**, **Settings**. A phone has no **Ports** page and no **AI** page, and lists the others in the same order. | One order on every client is one order to learn. |
 | **Join** opens from the Hubs page and is the only page reached from another page; it has a back arrow and no bar entry. | A page reached from several places is lost from each of them. |
 | The top bar holds the page title at the left and the refresh button at the right, and nothing else. | The refresh button is the one control that acts on every page. |
 | The sidebar and the bottom bar carry only the pages; the machine's name, platform and version are on the Settings page's About card and nowhere else. | A foot that repeats on every page is noise; About is where a person looks for a version. |
@@ -415,10 +415,7 @@ forward is a state of the row:
 | forwarded | the entry turns unhealthy | forwarded | **Disconnect** stays enabled; the state word is `ui.unhealthy` |
 
 **Connect** is disabled while the entry is unhealthy or the hub is disabled,
-with the reason on the row. A phone has the same states; its forward lives in
-the app's foreground service, and the forwarded row adds **Copy** for the
-loopback address, `127.0.0.1:<local-port>` without the `/udp` suffix, since
-the phone has no shell to type it into.
+with the reason on the row. A phone has no Ports page.
 
 A UDP entry's forward is one UDP socket bound to `127.0.0.1:<local port>`
 from **Connect** until **Disconnect**, and one `connect` stream:
@@ -444,8 +441,7 @@ one address a client dials.
 | --- | --- |
 | `port` | from **Connect** until **Disconnect** |
 | `web` | from **Open** until **Disconnect** |
-| `ai`, on a desktop | while the client runs and the hub is the exit of any tool |
-| `ai`, on a phone | from **Connect** until **Disconnect**, as a `port` entry |
+| `ai` | while the client runs and the hub is the exit of any tool |
 | `rdp` | from **Connect** until the viewer ends |
 | `file`, on Linux and macOS | from **Mount** until the share is unmounted |
 | `file`, on iOS | from **Open** until the share page closes, on a port the system picks ("The share page") |
@@ -501,25 +497,8 @@ resident checks at its start and each time it takes a state from a hub.
 | With the agent installed, the chip and **Configure** are disabled, with the reason `ui.reason.ai_managed` under the controls; the row, its address and its forward line still show. | The agent and the client would both write the provider `neutrino` into the same account's cc-switch store, with different endpoints. |
 | A client whose chip is on when it first sees the agent turns the chip off and runs its deactivation once, as a press of the chip would; the chip stays off and disabled from then on. | The person's tools go back to what they had, and the agent's setting is the one that points them at the hub afterwards. |
 | `nclient service ai apply` exits with `ai_tools_managed`, the code worded as the reason is; `nclient service ai show` still answers. | The command line is the same switch as the chip. |
-| The Android app has no gate. | No agent runs on a phone. |
 
-A phone forwards the gateway as a Ports row: **Connect** and
-**Disconnect**, and the forwarded row shows two loopback addresses for an
-app on the same phone, each on a line of its own with its label above it
-and its own **Copy** at its right; on a narrow screen the address shrinks
-and the button keeps its size:
-
-| Line | Label | Address |
-| --- | --- | --- |
-| first | `ui.ai_address_plain` | `http://127.0.0.1:<local-port>` with the path of the entry's `endpoint` as the hub publishes it |
-| second | `ui.ai_address_v1` | the same with `/v1` after it, unless the path already ends in `/v1` |
-
-An app that speaks the OpenAI interface either adds `/v1` to the address
-itself or wants it in the address, and each line is the one address that
-kind of app answers on. Under them, this client's key on one
-row: the key in a mono field with the eye toggle inside the field at its
-right end (the panel's password field), then **Copy**; on a narrow screen
-the field shrinks and the button keeps its size.
+A phone has no AI page.
 
 ## The Files page
 
@@ -858,17 +837,18 @@ else.
 | Feature | Desktop | Phone |
 | --- | --- | --- |
 | join | paste the link | scan the QR, or paste the link; either adds the hub at once |
-| port entry | forward to the loopback | the same: a foreground service listens on `127.0.0.1:<local port>` and relays each connection as a `connect` stream, as the desktop does, and the forwarded row shows the loopback address with **Copy** |
+| port entry | forward to the loopback | none: no **Ports** page |
 | web entry | open through a forward, with the token for an entry with `is_token_required` | the same: the app forwards, reads the token and opens the system browser on the loopback URL |
 | file entry | mount the forward, or the files adapter's address on Windows | a location in the system's Files app, its sockets `connect` streams |
-| AI entry | point the tools at the forward, configure them | forward it as a port entry, copy the loopback address and the key |
+| AI entry | point the tools at the forward, configure them | none: no **AI** page |
 | remote desktop | the viewer process, at the forward | the viewer page, at the forward |
 | hub's panel | **Panel** on the hub row | the same |
 | terminal input | right-click menu, shortcuts, middle click | the key row, long press |
 | frame | sidebar, tray | bottom bar in portrait; a sidebar in landscape, and in portrait on a tablet at least 720 dp wide |
 
-Everything else is the same: the pages and their order, the words, the state
-machines, the badges, the dots and the reasons on disabled buttons.
+Everything else is the same: the order of the pages a phone has, the words,
+the state machines, the badges, the dots and the reasons on disabled
+buttons.
 
 The Android app keeps its connections when the person switches apps:
 
@@ -881,19 +861,17 @@ The Android app keeps its connections when the person switches apps:
 
 ## The iOS app
 
-The iOS app is the client on an iPhone, with fewer pages than the Android
-app. Every rule this page gives for a phone holds for the iOS app, except
-where this section says otherwise. Its floor is iOS 16
-([min_support.md](min_support.md)), and the person installs it by signing
+The iOS app is the client on an iPhone. Every rule this page gives for a
+phone holds for the iOS app, except where this section says otherwise. Its
+floor is iOS 16 ([min_support.md](min_support.md)), and the person installs it by signing
 the release's unsigned `.ipa` with their own Apple ID
 ([release.md](../agent_work_rule/release.md), "iOS app").
 
 | Feature | Android | iOS |
 | --- | --- | --- |
-| pages in the bar | all eight, in the order "The layout" gives | **Hubs**, **Web**, **Files**, **Terminals**, **Remote desktops** and **Settings**, in that order; the bar labels **Remote desktops** as **Desktops** (`ui.bar_desktops`), and the top bar shows the full title |
+| pages in the bar | **Hubs**, **Web**, **Files**, **Terminals**, **Remote desktops** and **Settings**, in that order | the same; the bar labels **Remote desktops** as **Desktops** (`ui.bar_desktops`), and the top bar shows the full title |
 | join | scan the QR, or paste the link | the same |
 | virtual network | the line under the hub's body, with its picker and its button; the app runs NetBird or EasyTier | no line; the app runs no engine, and a person who wants a virtual network on the iPhone joins it with that network's own app |
-| port and AI entries | forwarded to the phone's loopback for any app on the phone | not shown: no **Ports** page and no **AI** page |
 | web entry and the hub's panel | the system browser, at the entry's forward | the in-app browser, at the entry's forward inside the app ("The in-app browser") |
 | file entry | a location in the system's Files app | the share page inside the app ("The share page") |
 | remote desktop | the viewer page | the same, with the RustDesk core linked into a device build ("The remote desktop viewer") |

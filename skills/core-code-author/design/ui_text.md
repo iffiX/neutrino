@@ -413,16 +413,6 @@ A client's Hubs row words `reached_through` `sakurafrp` and `openfrp` as
 `ui.through.sakurafrp` and `ui.through.openfrp`, **SakuraFrp** and
 **OpenFrp** in both languages.
 
-## The phone's AI addresses
-
-The forwarded AI row on the phone labels its two addresses
-([client.md](client.md), "The AI page"):
-
-| Key | English | Chinese |
-| --- | --- | --- |
-| `ui.ai_address_plain` | For apps that add /v1 themselves | 应用自己会加 /v1 时用这个 |
-| `ui.ai_address_v1` | For apps that want /v1 in the address | 应用要求地址带 /v1 时用这个 |
-
 ## The iOS share page's words
 
 The iOS app's share page ([client.md](client.md), "The share page") words

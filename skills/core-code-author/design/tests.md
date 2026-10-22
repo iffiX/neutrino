@@ -90,14 +90,12 @@ the binding stored in the Keystore or the Keychain, the overlay switch per
 hub on Android, every refusal read as its `{code, params}`, the local listeners and
 the in-app SMB client opening one `connect` stream per connection through a
 fake socket, the redial of a refused address within a round and a forward
-that accepts nothing while its hub has no channel, as on the desktop, and on
-Android a UDP forward as on the desktop: two local programs through
-one stream, the 16 held datagrams, an open refused at **Connect** and later,
-and one number held for a TCP and a UDP entry. The iOS app's tests also pin
-a round that dials the hub's address on every published virtual network,
-and the close of every channel, share connection and listener when the
-background time ends, with each forward listening again on its port on the
-return to the foreground. Its share page is pinned against a fake SMB
+that accepts nothing while its hub has no channel, as on the desktop. The
+iOS app's tests also pin a round that dials the hub's address on every
+published virtual network, and the close of every channel, share connection
+and listener when the background time ends, with each forward listening
+again on its port on the return to the foreground. Its share page is pinned
+against a fake SMB
 client: folders before files, each by name; the numbered name an upload and
 a new folder take; the code of each failure, the hub's own among them; a
 login kept only once the share took it, in the fake Keychain or until the
