@@ -925,6 +925,51 @@ def test_xterm_and_its_fit_addon_are_vendored_and_inlined():
     assert ".xterm-viewport" in document
 
 
+# The 16 ANSI colours of client.md's terminal colours table, by xterm.js's key.
+TERMINAL_PALETTE = {
+    "black": "#2e3436",
+    "red": "#cc0000",
+    "green": "#4e9a06",
+    "yellow": "#c4a000",
+    "blue": "#3465a4",
+    "magenta": "#75507b",
+    "cyan": "#06989a",
+    "white": "#d3d7cf",
+    "brightBlack": "#555753",
+    "brightRed": "#ef2929",
+    "brightGreen": "#8ae234",
+    "brightYellow": "#fce94f",
+    "brightBlue": "#729fcf",
+    "brightMagenta": "#ad7fa8",
+    "brightCyan": "#34e2e2",
+    "brightWhite": "#eeeeec",
+}
+
+
+def test_the_shells_draw_the_16_colours_fixed_and_the_rest_from_the_theme():
+    palette = PAGE_JS.split("const TERMINAL_PALETTE = {")[1].split("};")[0]
+    theme = function_body("function terminalTheme()")
+
+    assert dict(re.findall(r"(\w+): '(#[0-9a-f]{6})'", palette)) == TERMINAL_PALETTE
+    assert "}, TERMINAL_PALETTE);" in theme
+    for token in ("--color-bg", "--color-text", "--color-terminal-selection"):
+        assert f"token('{token}')" in theme
+    assert theme.count("token('--color-accent')") == 1
+    for token in ("--color-error", "--color-ok", "--color-warn"):
+        assert token not in theme
+
+
+def test_every_open_shell_takes_a_new_theme_at_once():
+    paint = function_body("function paintShells()")
+
+    assert "paintShells();" in function_body("function setTheme(chosen)")
+    assert "DARK_SCHEME.addEventListener('change', () => setTheme(theme));" in PAGE_JS
+    assert (
+        "for (const tab of shellTabs) tab.term.options.theme = terminalTheme();"
+        in paint
+    )
+
+
 # --- the terminal's font and the paste ---
 
 # The two faces as romkatv/powerlevel10k-media v2.3.3 publishes them.

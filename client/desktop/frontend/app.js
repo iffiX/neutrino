@@ -86,6 +86,7 @@ function setTheme(chosen) {
   theme = THEMES.indexOf(chosen) >= 0 ? chosen : DEFAULT_THEME;
   document.documentElement.dataset.theme = theme === 'system'
     ? (DARK_SCHEME.matches ? 'dark' : 'light') : theme;
+  paintShells();
 }
 
 function wordCode(code, params) {
@@ -1327,6 +1328,14 @@ let shellSurface = null;
 let shouldFocusShell = false;
 // The palette the shells were last drawn in.
 let shellThemeKey = '';
+// The 16 ANSI colours, the Tango palette, the same in both themes.
+const TERMINAL_PALETTE = {
+  black: '#2e3436', red: '#cc0000', green: '#4e9a06', yellow: '#c4a000',
+  blue: '#3465a4', magenta: '#75507b', cyan: '#06989a', white: '#d3d7cf',
+  brightBlack: '#555753', brightRed: '#ef2929', brightGreen: '#8ae234',
+  brightYellow: '#fce94f', brightBlue: '#729fcf', brightMagenta: '#ad7fa8',
+  brightCyan: '#34e2e2', brightWhite: '#eeeeec',
+};
 // Output that arrived for a terminal before its open answered, by its id.
 const earlyOutput = {};
 // Lines a shell keeps above its window.
@@ -1429,11 +1438,6 @@ function tabFlags(tab) {
 function drawTerminals(state) {
   const hubs = state.hubs || [];
   if (hubs.length === 0) return waitCard();
-  const themeKey = document.documentElement.dataset.theme;
-  if (themeKey !== shellThemeKey) {
-    shellThemeKey = themeKey;
-    for (const tab of shellTabs) tab.term.options.theme = terminalTheme();
-  }
   for (const tab of shellTabs) {
     if (tab.term.options.fontSize !== terminalFontSize()) {
       tab.term.options.fontSize = terminalFontSize();
@@ -2132,22 +2136,26 @@ function fitActiveShell() {
   }
 }
 
-// The palette the shells draw in, read from the page's own tokens.
+// The palette the shells draw in: the default colours, the cursor and the
+// selection from the page's own tokens, the 16 ANSI colours fixed.
 function terminalTheme() {
   const style = window.getComputedStyle(document.documentElement);
   const token = (name) => style.getPropertyValue(name).trim();
-  return {
+  return Object.assign({
     background: token('--color-bg'),
     foreground: token('--color-text'),
     cursor: token('--color-accent'),
     cursorAccent: token('--color-bg'),
     selectionBackground: token('--color-terminal-selection'),
-    red: token('--color-error'),
-    green: token('--color-ok'),
-    yellow: token('--color-warn'),
-    blue: token('--color-accent'),
-    cyan: token('--color-accent'),
-  };
+  }, TERMINAL_PALETTE);
+}
+
+// Every open shell takes the page's palette at once when the theme changes.
+function paintShells() {
+  const themeKey = document.documentElement.dataset.theme;
+  if (themeKey === shellThemeKey) return;
+  shellThemeKey = themeKey;
+  for (const tab of shellTabs) tab.term.options.theme = terminalTheme();
 }
 
 function textBase64(text) {
