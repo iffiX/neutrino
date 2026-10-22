@@ -455,7 +455,8 @@ The iOS app's **Remote desktops** page and its viewer ([client.md](client.md),
 "The remote desktop viewer") use the Android app's keys for the viewer's
 buttons, the Configure sheet and the codes `rdp_closed`, `rdp_core_missing`
 and `rdp_login_failed`, and the desktop client's keys for the page's rows.
-The bar adds one key of the app's own.
+The bar adds one key of the app's own, which the Android app's catalog holds
+too ([client.md](client.md), "The layout").
 
 | Key | English | Chinese |
 | --- | --- | --- |

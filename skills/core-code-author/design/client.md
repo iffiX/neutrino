@@ -62,6 +62,7 @@ are the same on Linux, Windows and macOS.
 | --- | --- |
 | The frame is a sidebar on the left when the window is wider than it is tall, or at least 720 dp wide, and a bottom bar otherwise. | A phone in portrait has no room for a sidebar; a tablet, a laptop and a phone in landscape do, whatever the phone's display size setting makes of its width. |
 | The bar lists the pages in one order: **Hubs**, **Web**, **Ports**, **AI**, **Files**, **Terminals**, **Remote desktops**, **Settings**. A phone has no **Ports** page and no **AI** page, and lists the others in the same order. | One order on every client is one order to learn. |
+| On a phone's bottom bar each page is its icon with its label under it, the open page's in the accent. The bar labels **Remote desktops** as **Desktops** (`ui.bar_desktops`), and the top bar shows the full title. | An icon alone has to be learnt, and six pages leave room for a short word under each. |
 | **Join** opens from the Hubs page and is the only page reached from another page; it has a back arrow and no bar entry. | A page reached from several places is lost from each of them. |
 | The top bar holds the page title at the left and the refresh button at the right, and nothing else. | The refresh button is the one control that acts on every page. |
 | The sidebar and the bottom bar carry only the pages; the machine's name, platform and version are on the Settings page's About card and nowhere else. | A foot that repeats on every page is noise; About is where a person looks for a version. |
@@ -891,7 +892,7 @@ the release's unsigned `.ipa` with their own Apple ID
 
 | Feature | Android | iOS |
 | --- | --- | --- |
-| pages in the bar | **Hubs**, **Web**, **Files**, **Terminals**, **Remote desktops** and **Settings**, in that order | the same; the bar labels **Remote desktops** as **Desktops** (`ui.bar_desktops`), and the top bar shows the full title |
+| pages in the bar | **Hubs**, **Web**, **Files**, **Terminals**, **Remote desktops** and **Settings**, in that order | the same |
 | join | scan the QR, or paste the link | the same |
 | virtual network | the line under the hub's body, with its picker and its button; the app runs NetBird or EasyTier | no line; the app runs no engine, and a person who wants a virtual network on the iPhone joins it with that network's own app |
 | web entry and the hub's panel | the system browser, at the entry's forward | the in-app browser, at the entry's forward inside the app ("The in-app browser") |
