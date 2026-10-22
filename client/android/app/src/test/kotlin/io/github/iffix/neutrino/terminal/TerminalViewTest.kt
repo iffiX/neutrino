@@ -36,6 +36,11 @@ class TerminalViewTest {
     }
 
     @Test
+    fun boldTextKeepsItsOwnColour() {
+        assertTrue(script.contains("drawBoldTextInBrightColors: false,"))
+    }
+
+    @Test
     fun aPaneHasNoPaddingSoItsLastRowIsInsideIt() {
         val pane = page.substringAfter(".pane {").substringBefore("}")
         assertTrue(pane.contains("inset: 6px;"))

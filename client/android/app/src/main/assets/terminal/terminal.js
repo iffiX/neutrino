@@ -251,6 +251,7 @@
         fontSize: 13,
         lineHeight: 1.2,
         cursorBlink: true,
+        drawBoldTextInBrightColors: false,
         scrollback: SCROLLBACK_LINES,
         theme: theme.terminal || {},
       });
