@@ -7,7 +7,7 @@ import androidx.compose.ui.graphics.Color
  *
  * Accent is what a screen is for and what is selected; ok is on and healthy; warn is a step in
  * flight or unsaved; error is failed and the destructive action. The signal colours carry no
- * text and draw the status dots.
+ * text and draw the status dots. The camera's ground is the dark field behind the QR scanner.
  */
 data class NeutrinoPalette(
     val bg: Color,
@@ -26,8 +26,7 @@ data class NeutrinoPalette(
     val signalWarn: Color,
     val signalError: Color,
     val shadow: Color,
-    val termBg: Color,
-    val termFg: Color,
+    val cameraBg: Color,
     val isDark: Boolean,
 ) {
     /** The accent at 12 %, behind a selected or primary control. */
@@ -58,8 +57,7 @@ data class NeutrinoPalette(
             signalWarn = Color(0xFFFBBF24),
             signalError = Color(0xFFFB7185),
             shadow = Color(0xE6000000),
-            termBg = Color(0xFF070809),
-            termFg = Color(0xFFE6EDF3),
+            cameraBg = Color(0xFF070809),
             isDark = true,
         )
 
@@ -81,8 +79,7 @@ data class NeutrinoPalette(
             signalWarn = Color(0xFFF59E0B),
             signalError = Color(0xFFEF4444),
             shadow = Color(0x380F172A),
-            termBg = Color(0xFF0F172A),
-            termFg = Color(0xFFE6EDF3),
+            cameraBg = Color(0xFF0F172A),
             isDark = false,
         )
     }

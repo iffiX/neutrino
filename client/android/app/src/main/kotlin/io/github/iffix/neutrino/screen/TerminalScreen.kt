@@ -149,7 +149,7 @@ fun TerminalScreen(hubs: List<HubView>, tabs: TerminalTabs) {
                         .weight(1f)
                         .padding(8.dp)
                         .clip(RoundedCornerShape(6.dp))
-                        .background(palette.termBg),
+                        .background(palette.bg),
                 ) {
                     TerminalPane(
                         tabs,

@@ -79,33 +79,13 @@ class TerminalView(context: Context, private val tabs: TerminalTabs, private val
     }
 
     /**
-     * Draw the terminals in one palette.
+     * Draw the terminals and the page around them in one palette.
      *
      * @param palette The palette.
      */
     fun palette(palette: NeutrinoPalette) {
-        val terminal = JSONObject()
-            .put("background", hex(palette.termBg))
-            .put("foreground", hex(palette.termFg))
-            .put("cursor", hex(palette.accent))
-            .put("cursorAccent", hex(palette.termBg))
-            .put("selectionBackground", hex(palette.accent) + "40")
-            .put("red", hex(palette.signalError))
-            .put("green", hex(palette.signalOk))
-            .put("yellow", hex(palette.signalWarn))
-            .put("blue", hex(palette.accent))
-            .put("cyan", hex(palette.accent))
-        val chrome = JSONObject()
-            .put("bar", hex(palette.textMuted))
-            .put("note", hex(palette.textMuted))
-            .put("menu-ground", hex(palette.bg))
-            .put("menu-border", hex(palette.border))
-            .put("menu-text", hex(palette.text))
-            .put("menu-faint", hex(palette.textFaint))
-            .put("menu-lift", hex(palette.elevated))
-            .put("menu-accent", hex(palette.accent))
-            .put("menu-shadow", hex(palette.shadow))
-        val theme = JSONObject().put("terminal", terminal).put("chrome", chrome)
+        val colors = TerminalTheme.of(palette)
+        val theme = JSONObject().put("terminal", JSONObject(colors.terminal)).put("chrome", JSONObject(colors.chrome))
         run { call("neutrino.theme(${JSONObject.quote(theme.toString())})") }
     }
 
@@ -160,8 +140,6 @@ class TerminalView(context: Context, private val tabs: TerminalTabs, private val
     }
 
     private fun call(script: String) = evaluateJavascript(script, null)
-
-    private fun hex(color: Color): String = "#%06x".format(color.toArgb() and 0xffffff)
 
     private inner class Bridge {
         @JavascriptInterface

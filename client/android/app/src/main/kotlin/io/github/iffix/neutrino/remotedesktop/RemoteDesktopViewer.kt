@@ -40,6 +40,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -86,12 +87,12 @@ private enum class TwoFingerMode { UNDECIDED, PINCH, SCROLL }
  * The viewer over the whole screen, with the system's bars hidden until an edge swipe: the remote
  * picture, and three round buttons at the top right that always stay. Keyboard raises or puts
  * away the phone's keyboard, Keys shows or hides a row of keys a phone keyboard lacks with Paste
- * beside them, Close ends the session; the keyboard and the key bar start off. The keyboard covers
- * the picture's lower part without shrinking it, and the key bar sits at the bottom edge, right
- * above the keyboard while it is up. A tap clicks, a long press right-clicks, one finger drags, a
- * pinch zooms and moves the picture, two fingers scroll. Text copied on the remote machine lands
- * on the phone's clipboard; Paste puts the phone's clipboard on the remote machine's and presses
- * Ctrl+V there.
+ * beside them, Close ends the session; the keyboard and the key bar start off. The key bar sits at
+ * the bottom edge, right above the keyboard while it is up, and while either is up the picture
+ * keeps its size and moves up above them. A tap clicks, a long press right-clicks, one finger
+ * drags, a pinch zooms and moves the picture, two fingers scroll. Text copied on the remote machine
+ * lands on the phone's clipboard; Paste puts the phone's clipboard on the remote machine's and
+ * presses Ctrl+V there.
  *
  * @param target The desktop to show.
  * @param core What decodes the picture and sends the input.
@@ -120,6 +121,7 @@ fun RemoteDesktopViewer(
     val copied = rememberUpdatedState(onCopied)
     val isShowing = state == RemoteDesktopState.Showing
     var isKeyBarShown by remember { mutableStateOf(false) }
+    var keyBarHeight by remember { mutableIntStateOf(0) }
     val view = LocalView.current
     val keyboard = RemoteDesktopKeyboard(WindowInsets.isImeVisible, WindowInsets.ime.getBottom(LocalDensity.current))
     BackHandler(onBack = onClose)
@@ -131,7 +133,8 @@ fun RemoteDesktopViewer(
     }
     DisposableEffect(input) { onDispose { input.hideKeyboard() } }
     DisposableEffect(sender) { onDispose { sender.close() } }
-    LaunchedEffect(keyboard.height) { viewport = viewport.coveredBy(keyboard.height.toFloat()) }
+    val covered = keyboard.height + if (isShowing && isKeyBarShown) keyBarHeight else 0
+    LaunchedEffect(covered) { viewport = viewport.coveredBy(covered.toFloat()) }
     LaunchedEffect(keyboard.isFocusKept) { if (!keyboard.isFocusKept) input.releaseFocus() }
     SideEffect { input.holdFocus() }
     DisposableEffect(target, core) {
@@ -267,7 +270,14 @@ fun RemoteDesktopViewer(
             }
         }
         if (isShowing && isKeyBarShown) {
-            KeyBar(held, sender::barKey, modifier = Modifier.align(Alignment.BottomCenter).imePadding()) {
+            KeyBar(
+                held,
+                sender::barKey,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .imePadding()
+                    .onSizeChanged { size -> keyBarHeight = size.height },
+            ) {
                 sender.paste(
                     context.getSystemService(ClipboardManager::class.java).primaryClip
                         ?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context)?.toString().orEmpty(),

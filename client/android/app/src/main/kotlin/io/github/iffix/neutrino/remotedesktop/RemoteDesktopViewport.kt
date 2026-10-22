@@ -3,9 +3,10 @@ package io.github.iffix.neutrino.remotedesktop
 import io.github.iffix.neutrino.RDP_ZOOM_MAX
 
 /**
- * Where the remote picture sits in the viewer: fitted whole at zoom 1, larger when pinched, and
- * never moved so far that an edge leaves a gap it could fill. While the keyboard covers the
- * viewer's lower part, the picture may move up until its bottom edge reaches the keyboard.
+ * Where the remote picture sits in the viewer: fitted whole at zoom 1, larger when pinched, centred
+ * in its space when it fits and never moved so far that an edge leaves a gap it could fill. Its
+ * space is the viewer above what the keyboard and the key bar cover; as they come up the picture
+ * moves up by the height they take, and as they go it moves back down by that height.
  *
  * @property viewWidth The viewer's width, in pixels.
  * @property viewHeight The viewer's height, in pixels.
@@ -14,7 +15,8 @@ import io.github.iffix.neutrino.RDP_ZOOM_MAX
  * @property zoom The scale over the fitted one, from 1 to [RDP_ZOOM_MAX].
  * @property left Where the picture's left edge is, in the viewer's pixels.
  * @property top Where the picture's top edge is.
- * @property covered How much of the viewer's lower part the keyboard covers, in the viewer's pixels.
+ * @property covered How much of the viewer's lower part the keyboard and the key bar cover, in the
+ *     viewer's pixels.
  */
 data class RemoteDesktopViewport(
     val viewWidth: Float = 0f,
@@ -45,7 +47,8 @@ data class RemoteDesktopViewport(
         get() = if (hasFrame) minOf(viewWidth / frameWidth, viewHeight / frameHeight) else 1f
 
     /**
-     * The same picture in a viewer or of a frame of another size, fitted whole again.
+     * The same picture in a viewer or of a frame of another size, fitted whole again and moved up by
+     * what is covered.
      *
      * @param viewWidth The viewer's width.
      * @param viewHeight The viewer's height.
@@ -57,7 +60,7 @@ data class RemoteDesktopViewport(
         val isSame = viewWidth == this.viewWidth && viewHeight == this.viewHeight &&
             frameWidth == this.frameWidth && frameHeight == this.frameHeight
         if (isSame) return this
-        return RemoteDesktopViewport(viewWidth, viewHeight, frameWidth, frameHeight, covered = covered).clamped()
+        return RemoteDesktopViewport(viewWidth, viewHeight, frameWidth, frameHeight).clamped().coveredBy(covered)
     }
 
     /**
@@ -88,14 +91,17 @@ data class RemoteDesktopViewport(
     fun pannedBy(dx: Float, dy: Float): RemoteDesktopViewport = copy(left = left + dx, top = top + dy).clamped()
 
     /**
-     * The same picture with another part of the viewer covered by the keyboard; the picture keeps
-     * its size and place while that place is still allowed.
+     * The same picture with another part of the viewer covered by the keyboard and the key bar: it
+     * keeps its zoom and moves up by what the cover grew, or down by what it shrank.
      *
-     * @param height How much of the viewer's lower part the keyboard covers, 0 for none.
+     * @param height How much of the viewer's lower part they cover, 0 for none.
      * @return The viewport.
      */
-    fun coveredBy(height: Float): RemoteDesktopViewport =
-        if (height == covered) this else copy(covered = height.coerceAtLeast(0f)).clamped()
+    fun coveredBy(height: Float): RemoteDesktopViewport {
+        val next = height.coerceAtLeast(0f)
+        if (next == covered) return this
+        return copy(top = top - (next - covered), covered = next).clamped()
+    }
 
     /**
      * The picture pixel under a point of the viewer, kept inside the picture.
@@ -112,11 +118,8 @@ data class RemoteDesktopViewport(
     }
 
     private fun clamped(): RemoteDesktopViewport =
-        copy(left = edge(left, viewWidth, drawnWidth, 0f), top = edge(top, viewHeight, drawnHeight, covered))
+        copy(left = edge(left, viewWidth, drawnWidth), top = edge(top, viewHeight - covered, drawnHeight))
 
-    private fun edge(start: Float, view: Float, drawn: Float, hidden: Float): Float {
-        val highest = if (drawn <= view) (view - drawn) / 2f else 0f
-        val lowest = minOf(highest, view - hidden - drawn)
-        return start.coerceIn(lowest, highest)
-    }
+    private fun edge(start: Float, space: Float, drawn: Float): Float =
+        if (drawn <= space) (space - drawn) / 2f else start.coerceIn(space - drawn, 0f)
 }

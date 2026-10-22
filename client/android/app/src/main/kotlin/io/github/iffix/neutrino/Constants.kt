@@ -461,6 +461,26 @@ const val TERMINAL_ESCAPE = "\u001b"
 /** The name the terminal page reaches the app by. */
 const val CLIENT_TERMINAL_BRIDGE = "NeutrinoBridge"
 
+/** The sixteen ANSI colours of every terminal in every theme, the Tango palette, by xterm.js's theme keys. */
+val CLIENT_TERMINAL_ANSI_COLORS: Map<String, String> = linkedMapOf(
+    "black" to "#2e3436",
+    "red" to "#cc0000",
+    "green" to "#4e9a06",
+    "yellow" to "#c4a000",
+    "blue" to "#3465a4",
+    "magenta" to "#75507b",
+    "cyan" to "#06989a",
+    "white" to "#d3d7cf",
+    "brightBlack" to "#555753",
+    "brightRed" to "#ef2929",
+    "brightGreen" to "#8ae234",
+    "brightYellow" to "#fce94f",
+    "brightBlue" to "#729fcf",
+    "brightMagenta" to "#ad7fa8",
+    "brightCyan" to "#34e2e2",
+    "brightWhite" to "#eeeeec",
+)
+
 /** The analysis frame the QR scanner asks the camera for. */
 const val SCAN_ANALYSIS_WIDTH = 1920
 

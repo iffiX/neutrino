@@ -76,16 +76,46 @@ class RemoteDesktopViewportTest {
     }
 
     @Test
-    fun theKeyboardLeavesThePictureWhereItIs() {
+    fun aPictureThatFitsAboveTheKeyboardAndKeyBarIsCentredThere() {
         val covered = fitted.coveredBy(400f)
-        assertEquals(fitted.top, covered.top, 0.0001f)
+        assertEquals(50f, covered.top, 0.0001f)
         assertEquals(fitted.drawnHeight, covered.drawnHeight, 0.0001f)
+        assertEquals(250f, covered.coveredBy(0f).top, 0.0001f)
     }
 
     @Test
-    fun underTheKeyboardThePictureMovesUpUntilItsBottomMeetsIt() {
-        val covered = fitted.coveredBy(400f).zoomedBy(2f, 500f, 500f).pannedBy(0f, -5000f)
-        assertEquals(1000f - 400f - covered.drawnHeight, covered.top, 0.0001f)
-        assertEquals(1000f - covered.drawnHeight, covered.coveredBy(0f).top, 0.0001f)
+    fun whatWasAtTheBottomEdgeShowsRightAboveTheKeyBarAtTheSameZoom() {
+        val zoomed = fitted.zoomedBy(3f, 500f, 500f)
+        val covered = zoomed.coveredBy(400f)
+        assertEquals(zoomed.zoom, covered.zoom, 0.0001f)
+        assertEquals(zoomed.toFrame(500f, 999f), covered.toFrame(500f, 599f))
+        assertEquals(zoomed.top, covered.coveredBy(0f).top, 0.0001f)
+    }
+
+    @Test
+    fun aTallerPictureEndsRightAboveTheKeyBar() {
+        val covered = fitted.zoomedBy(1.5f, 500f, 500f).coveredBy(400f)
+        assertEquals(600f, covered.top + covered.drawnHeight, 0.0001f)
+    }
+
+    @Test
+    fun aPanAboveTheKeyBarReachesEveryEdgeOfThePicture() {
+        val covered = fitted.zoomedBy(3f, 500f, 500f).coveredBy(400f)
+        assertEquals(600f - covered.drawnHeight, covered.pannedBy(0f, -100000f).top, 0.0001f)
+        assertEquals(0f, covered.pannedBy(0f, 100000f).top, 0.0001f)
+    }
+
+    @Test
+    fun theCoverGrowingInStepsEndsWhereOneStepEnds() {
+        val zoomed = fitted.zoomedBy(3f, 500f, 500f)
+        val stepped = zoomed.coveredBy(100f).coveredBy(250f).coveredBy(400f)
+        assertEquals(zoomed.coveredBy(400f).top, stepped.top, 0.0001f)
+    }
+
+    @Test
+    fun aNewFrameUnderTheKeyBarShowsItsBottomEdgeAboveIt() {
+        val resized = fitted.coveredBy(400f).sized(1000f, 1000f, 1000, 1000)
+        assertEquals(400f, resized.covered, 0.0001f)
+        assertEquals(-400f, resized.top, 0.0001f)
     }
 }

@@ -150,7 +150,7 @@ private fun CameraFrame(
                 .fillMaxWidth()
                 .aspectRatio(1f)
                 .clip(shape)
-                .background(palette.termBg)
+                .background(palette.cameraBg)
                 .border(1.dp, palette.border, shape),
             contentAlignment = Alignment.Center,
         ) {
