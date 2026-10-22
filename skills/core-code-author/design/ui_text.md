@@ -447,6 +447,7 @@ catalog. The password keys are the Android app's.
 | `ui.name_hint` | Name | 名称 |
 | `ui.empty_folder` | This folder is empty | 这个文件夹是空的 |
 | `ui.share_progress` | {done} of {total} | {done} / {total} |
+| `ui.share_waiting` | Waiting | 等待中 |
 | `ui.job.downloading` | Downloading… | 下载中… |
 | `ui.job.uploading` | Uploading… | 上传中… |
 | `ui.job.renaming` | Renaming… | 重命名中… |

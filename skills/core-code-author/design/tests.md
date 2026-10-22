@@ -103,8 +103,12 @@ a new folder take; the code of each failure, the hub's own among them; a
 login kept only once the share took it, in the fake Keychain or until the
 app quits, and forgotten on `share_login_rejected`; the share's forward
 opening one `connect {id}` stream per connection; a cancelled read and a
-cancelled write leaving no file; a transfer the background cut showing
-`share_interrupted`, with its retry; and an item from Photos named by the
+cancelled write leaving no file; one transfer at a time in the order added,
+a waiting row going at its **Cancel**, and the shown bytes taken from the
+forward's count in the transfer's direction and kept below the size; a
+transfer the background cut, running or waiting, showing
+`share_interrupted`, with its retry; the bytes a forward's connection
+carries up and down; and an item from Photos named by the
 name Photos suggests with the extension of its file, written through the
 upload of a file from Files, with an item not handed over shown as
 `share_photo_unavailable` while the others upload. Its remote desktop is pinned, as
