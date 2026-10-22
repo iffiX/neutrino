@@ -140,8 +140,12 @@ jobs:
                      if "iOS" in runtime for d in found if d["name"].startswith("iPhone")))')"
           echo "id=${id}" >> "$GITHUB_OUTPUT"
 
+      # TEST_RUNNER_NEUTRINO_SCREENS reaches the tests as NEUTRINO_SCREENS, where
+      # ScreenshotTests writes its PNG files.
       - name: Run the unit tests
         working-directory: client/ios
+        env:
+          TEST_RUNNER_NEUTRINO_SCREENS: ${{ github.workspace }}/screens
         run: >
           xcodebuild test
           -project Neutrino.xcodeproj
@@ -149,6 +153,13 @@ jobs:
           -destination "id=${{ steps.simulator.outputs.id }}"
           -skipPackagePluginValidation
           $(python3 ../../packaging/build/build_client_ios.py --build-settings)
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ios_screens
+          path: screens/*.png
+          if-no-files-found: warn
 
   # The iOS app built for a device with the RustDesk core linked in. The core
   # comes from the cores cache; on a miss it is built, in about a quarter of an
