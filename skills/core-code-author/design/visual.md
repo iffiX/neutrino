@@ -52,9 +52,10 @@ token under it resolves from that file.
 
 - A derived colour is a `color-mix` of a token:
   `color-mix(in srgb, var(--color-accent) 45%, transparent)`. A colour literal
-  outside `themes/` is a bug, with two exceptions that are not token meanings:
-  the login lockout's alarm grid and the setup wizard's brand gradient, both on
-  surfaces pinned dark.
+  outside `themes/` is a bug, with three exceptions that are not token
+  meanings: the login lockout's alarm grid and the setup wizard's brand
+  gradient, both on surfaces pinned dark, and the terminal's 16 ANSI colours,
+  which are the same in both themes.
 - A token that references another token (the washes, the chart aliases) is
   declared on `[data-theme]`, not `:root`: a custom property resolves its
   `var()` where it is declared, and a pinned subtree mixes them from its own
@@ -69,9 +70,13 @@ token under it resolves from that file.
 - The committing button's glow is `--shadow-commit`, drawn by each theme: the
   accent lit on dark, a tinted drop shadow with a top-edge highlight on light,
   where a halo of a dark accent reads as a smudge.
-- Nothing outside CSS owns a colour. Recharts props take `var(--color-accent)`,
-  and `terminalTheme()` resolves the terminal tokens through `themeToken()`
-  when a terminal is created and again on a theme change.
+- Nothing outside CSS owns a theme colour. Recharts props take
+  `var(--color-accent)`.
+- The panel's terminal follows the clients' rule in [client.md](client.md),
+  "The colours". `terminalTheme()` resolves the default foreground, the default
+  background, the cursor and the selection through `themeToken()` when a
+  terminal is created and again on a theme change. The 16 ANSI colours are
+  that page's table in both themes, and bold text keeps its own colour.
 - Component stylesheets enter the page after `theme.css` and the theme files,
   and override a base rule by their order, never by a longer selector.
 - The client window's `style.css` uses the same token names and values, in two

@@ -681,6 +681,7 @@ Tango palette, which is also xterm.js's own default:
 | --- | --- |
 | The 16 colours are the same in the light and the dark theme. None is taken from the client's accent or status colours, and none is inverted. The 256-colour cube and truecolour are drawn as the terminal library draws them. | A prompt draws a segment as text in one of these colours on a fill in another. A theme's text shades put in their place lose the pair's contrast, and the person's own terminal draws the same prompt in these colours. |
 | The default foreground, the default background, the cursor and the selection follow the client's theme (System, Light or Dark), taken from the client's own theme colours. Every open terminal takes the new ones at once when the theme changes. | Plain text reads like the rest of the page in either theme. |
+| Bold text keeps its colour: a bold character in one of the eight normal colours is drawn bold in that colour, never in its bright twin. In xterm.js, `drawBoldTextInBrightColors` is `false`. | A program asks for a bright colour by its own code. Drawn bright, the bold green of a shell prompt and the bold blue of a directory turn pale on the light background. |
 
 ### The session list
 
