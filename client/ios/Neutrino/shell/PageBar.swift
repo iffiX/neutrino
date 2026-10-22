@@ -1,9 +1,16 @@
 import SwiftUI
 
-/// The bar of pages: the bottom bar in portrait on a phone, the sidebar otherwise; it carries only the pages.
+/// The bar of pages: the bottom bar in portrait on a phone, the sidebar otherwise. The sidebar has the client's
+/// name in a box at its top, as tall as the page header beside it, then each page by its full name with Settings
+/// apart under a rule; the bottom bar names Remote desktops Desktops. The sidebar's background and divider run to
+/// the screen's edges; its entries start at the safe area's edge, with no space added where the screen's edge
+/// insets it.
 struct PageBar: View {
     /// Whether it is drawn as the sidebar.
     let isSidebar: Bool
+
+    /// Whether the screen's edge beside the sidebar insets it, as a camera housing does in landscape.
+    var isInset = false
 
     /// The page shown.
     @Binding var selected: AppScreen
@@ -13,16 +20,39 @@ struct PageBar: View {
 
     var body: some View {
         if isSidebar {
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(AppScreen.tabs) { screen in
-                    entry(screen, isWide: true)
+            let leading = isInset ? 0.0 : 8.0
+            VStack(alignment: .leading, spacing: 0) {
+                Text(words.word("ui.window.title"))
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(palette.text)
+                    .lineLimit(1)
+                    .padding(.leading, leading + 12)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                    .frame(height: Client.headerHeight)
+                    .background(alignment: .bottom) {
+                        palette.border.frame(height: 1).ignoresSafeArea(edges: .horizontal)
+                    }
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(AppScreen.tabs) { screen in
+                        if screen == .settings {
+                            palette.border.frame(height: 1).padding(.vertical, 12)
+                        }
+                        entry(screen, isWide: true)
+                    }
+                    Spacer()
                 }
-                Spacer()
+                .padding(.vertical, 8)
+                .padding(.leading, leading)
+                .padding(.trailing, 8)
             }
-            .padding(8)
-            .frame(width: 200)
-            .background(palette.surface)
-            .overlay(Rectangle().fill(palette.border).frame(width: 1), alignment: .trailing)
+            .frame(width: Client.sidebarWidth)
+            .background {
+                HStack(spacing: 0) {
+                    palette.surface
+                    palette.border.frame(width: 1)
+                }
+                .ignoresSafeArea()
+            }
         } else {
             HStack(spacing: 0) {
                 ForEach(AppScreen.tabs) { screen in
@@ -44,7 +74,7 @@ struct PageBar: View {
                 if isWide {
                     HStack(spacing: 10) {
                         Image(systemName: screen.systemImage).frame(width: 22)
-                        Text(words.word(screen.barKey)).font(.system(size: 14, weight: .medium))
+                        Text(words.word(screen.titleKey)).font(.system(size: 14, weight: .medium))
                         Spacer()
                     }
                     .padding(.horizontal, 12)

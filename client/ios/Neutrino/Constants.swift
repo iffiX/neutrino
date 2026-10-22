@@ -29,6 +29,12 @@ enum Client {
     /// From this width, in points, a window taller than it is wide shows the sidebar instead of the bottom bar.
     static let sidebarMinWidth: Double = 720
 
+    /// The sidebar's width, in points.
+    static let sidebarWidth: Double = 200
+
+    /// The height of the page header, and of the sidebar's name box beside it, in points.
+    static let headerHeight: Double = 48
+
     /// The app's licence, for the About card.
     static let licence = "AGPL-3.0"
 
@@ -349,6 +355,12 @@ enum TerminalPage {
 
     /// The point size of the terminal's font.
     static let fontSize: Double = 13
+
+    /// The least height of the terminal's card, in points.
+    static let cardMinHeight: Double = 200
+
+    /// The id the page scrolls to, to show the terminal's card to its foot.
+    static let cardAnchor = "terminal_card"
 
     /// The sixteen ANSI colours, the same in both themes: black, red, green, yellow, blue, magenta, cyan and
     /// white, then the bright eight in the same order. The Tango palette, xterm.js's own.

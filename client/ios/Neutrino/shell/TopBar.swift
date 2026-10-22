@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The top bar: the page title at the left, after a back arrow on a page reached from another, and the refresh
-/// button at the right.
+/// button at the right. Its background and its bottom rule run to the screen's edges.
 struct TopBar: View {
     /// The page's title.
     let title: String
@@ -41,8 +41,13 @@ struct TopBar: View {
             .foregroundColor(palette.text)
         }
         .padding(.horizontal, 16)
-        .frame(height: 48)
-        .background(palette.surface)
-        .overlay(Rectangle().fill(palette.border).frame(height: 1), alignment: .bottom)
+        .frame(height: Client.headerHeight)
+        .background {
+            VStack(spacing: 0) {
+                palette.surface
+                palette.border.frame(height: 1)
+            }
+            .ignoresSafeArea(edges: [.top, .horizontal])
+        }
     }
 }

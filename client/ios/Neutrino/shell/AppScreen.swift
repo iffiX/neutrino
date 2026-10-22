@@ -39,7 +39,7 @@ enum AppScreen: String, CaseIterable, Identifiable {
         case .web: return "globe"
         case .files: return "folder"
         case .terminals: return "terminal"
-        case .desktops: return "display"
+        case .desktops: return "tv"
         case .settings: return "gearshape"
         case .join: return "plus"
         }

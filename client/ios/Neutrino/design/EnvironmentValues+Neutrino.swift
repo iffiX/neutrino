@@ -12,4 +12,10 @@ extension EnvironmentValues {
         get { self[WordCatalogKey.self] }
         set { self[WordCatalogKey.self] = newValue }
     }
+
+    /// Whether the shell draws the sidebar, so a page's own action is in the page header and not in the page.
+    var isSidebar: Bool {
+        get { self[SidebarLayoutKey.self] }
+        set { self[SidebarLayoutKey.self] = newValue }
+    }
 }

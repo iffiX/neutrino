@@ -2,8 +2,9 @@ import SwiftUI
 
 /// The frame of every page: the sidebar when the window is wider than it is tall or at least 720 points wide,
 /// the bottom bar otherwise; the top bar above the page; and the page's own action at the right of the page
-/// header beside the sidebar, or as a floating button above the bottom bar. The Files page shows the share page
-/// while a share is open, and the remote desktop viewer covers the whole screen while it is open.
+/// header beside the sidebar. Above the bottom bar a page draws its action itself, and the share page's actions
+/// are the one floating button. The Files page shows the share page while a share is open, and the remote
+/// desktop viewer covers the whole screen while it is open.
 struct AppShell: View {
     @ObservedObject var core: ClientCore
 
@@ -20,14 +21,16 @@ struct AppShell: View {
             let isSidebar = window.size.width > window.size.height || window.size.width >= Client.sidebarMinWidth
             if isSidebar {
                 HStack(spacing: 0) {
-                    PageBar(isSidebar: true, selected: selection)
+                    PageBar(isSidebar: true, isInset: window.safeAreaInsets.leading > 0, selected: selection)
                     main(isSidebar: true)
                 }
+                .environment(\.isSidebar, true)
             } else {
                 VStack(spacing: 0) {
                     main(isSidebar: false)
                     PageBar(isSidebar: false, selected: selection)
                 }
+                .environment(\.isSidebar, false)
             }
         }
         .background(palette.bg.ignoresSafeArea())
