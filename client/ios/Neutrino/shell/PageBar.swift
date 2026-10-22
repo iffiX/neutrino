@@ -74,7 +74,7 @@ struct PageBar: View {
                 if isWide {
                     HStack(spacing: 10) {
                         icon(screen, size: 17).frame(width: 22)
-                        Text(words.word(screen.titleKey)).font(.system(size: 14, weight: .medium))
+                        Text(words.word(screen.titleKey)).font(.system(size: 13, weight: .medium)).lineLimit(1)
                         Spacer()
                     }
                     .padding(.horizontal, 12)
