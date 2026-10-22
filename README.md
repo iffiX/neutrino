@@ -4,7 +4,7 @@
 
 # Your home machines. One scan. From anywhere.
 
-A small tool I made so I could travel.
+A hub panel that sets up your remote services in one step and gives you several ways in from outside (also my test bed for how far agents can automate a large project).
 
 **English** · [中文](README.zh-CN.md)
 
