@@ -5,6 +5,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.util.Base64
+import android.view.inputmethod.InputMethodManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import androidx.compose.ui.graphics.Color
@@ -116,6 +117,18 @@ class TerminalView(context: Context, private val tabs: TerminalTabs, private val
     fun clearing(sessionIds: Set<String>) {
         val ids = JSONArray(sessionIds.toList()).toString()
         run { call("neutrino.clearing(${JSONObject.quote(ids)})") }
+    }
+
+    /** Give the shown pane the focus and raise the phone's keyboard, as a tap on the pane does. */
+    fun showKeyboard() {
+        requestFocus()
+        run { call("neutrino.focus()") }
+        post { context.getSystemService(InputMethodManager::class.java)?.showSoftInput(this, 0) }
+    }
+
+    /** Put the phone's keyboard away. */
+    fun hideKeyboard() {
+        context.getSystemService(InputMethodManager::class.java)?.hideSoftInputFromWindow(windowToken, 0)
     }
 
     /** Stop drawing output; the tabs keep it for the next view. */

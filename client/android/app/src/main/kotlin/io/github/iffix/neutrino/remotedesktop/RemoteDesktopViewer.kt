@@ -31,7 +31,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
@@ -48,7 +47,6 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
@@ -62,8 +60,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
@@ -73,8 +69,8 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import io.github.iffix.neutrino.RDP_PINCH_SLOP_PX
 import io.github.iffix.neutrino.design.DotTone
-import io.github.iffix.neutrino.design.IconGlyph
 import io.github.iffix.neutrino.design.NeutrinoTheme
+import io.github.iffix.neutrino.design.RoundButton
 import io.github.iffix.neutrino.design.StatusDot
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -255,18 +251,21 @@ fun RemoteDesktopViewer(
         ) {
             for (button in RemoteDesktopButton.entries) {
                 RoundButton(
-                    button,
+                    button.icon,
+                    words.word(button.wordKey),
                     isActive = button.isActive(keyboard, isKeyBarShown),
+                    isDanger = button.isDanger,
                     isEnabled = isShowing || button == RemoteDesktopButton.CLOSE,
-                ) {
-                    button.press(
-                        keyboard,
-                        isKeyBarShown,
-                        onKeyboard = { isUp -> if (isUp) input.showKeyboard() else input.hideKeyboard() },
-                        onKeyBar = { isShown -> isKeyBarShown = isShown },
-                        onClose = onClose,
-                    )
-                }
+                    onPress = {
+                        button.press(
+                            keyboard,
+                            isKeyBarShown,
+                            onKeyboard = { isUp -> if (isUp) input.showKeyboard() else input.hideKeyboard() },
+                            onKeyBar = { isShown -> isKeyBarShown = isShown },
+                            onClose = onClose,
+                        )
+                    },
+                )
             }
         }
         if (isShowing && isKeyBarShown) {
@@ -284,41 +283,6 @@ fun RemoteDesktopViewer(
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun RoundButton(button: RemoteDesktopButton, isActive: Boolean, isEnabled: Boolean, onPress: () -> Unit) {
-    val palette = NeutrinoTheme.palette
-    val label = NeutrinoTheme.words.word(button.wordKey)
-    val tone = when {
-        button.isDanger -> palette.error
-        isActive -> palette.accent
-        else -> palette.text
-    }
-    Box(
-        modifier = Modifier
-            .size(36.dp)
-            .alpha(if (isEnabled) 1f else 0.4f)
-            .clip(CircleShape)
-            .background(palette.surface.copy(alpha = 0.6f))
-            .background(if (isActive) palette.accentWash else Color.Transparent)
-            .border(
-                1.dp,
-                if (isActive ||
-                    button.isDanger
-                ) {
-                    tone
-                } else {
-                    palette.borderStrong.copy(alpha = 0.6f)
-                },
-                CircleShape,
-            )
-            .semantics { contentDescription = label }
-            .clickable(enabled = isEnabled, role = Role.Button, onClick = onPress),
-        contentAlignment = Alignment.Center,
-    ) {
-        IconGlyph(button.icon, tone, size = 18.dp)
     }
 }
 

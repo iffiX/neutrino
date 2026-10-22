@@ -30,6 +30,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -62,11 +63,13 @@ import io.github.iffix.neutrino.design.NeutrinoButton
 import io.github.iffix.neutrino.design.NeutrinoTheme
 import io.github.iffix.neutrino.design.PageAction
 import io.github.iffix.neutrino.design.ReasonLine
+import io.github.iffix.neutrino.design.RoundButton
 import io.github.iffix.neutrino.design.SelectedMark
 import io.github.iffix.neutrino.design.StatusDot
 import io.github.iffix.neutrino.design.SurfaceCard
 import io.github.iffix.neutrino.design.ToggleSwitch
 import io.github.iffix.neutrino.design.offerPageAction
+import io.github.iffix.neutrino.terminal.TerminalControl
 import io.github.iffix.neutrino.terminal.TerminalKey
 import io.github.iffix.neutrino.terminal.TerminalModifiers
 import io.github.iffix.neutrino.terminal.TerminalPhase
@@ -76,9 +79,11 @@ import io.github.iffix.neutrino.terminal.TerminalView
 
 /**
  * The terminals: a card of machine chips with New terminal, then the terminal's card with the tab
- * strip, the terminal, the status line with the two switches and the key row, in one scrolling
- * column. Beside the sidebar New terminal is the header's action instead. The terminal's card is as
- * tall as the window under the top bar, the keyboard excluded, and never under its minimum, so one
+ * strip, the terminal, the status line and the key row, in one scrolling column. The status line
+ * holds Keyboard and Keys at its left, as the remote desktop viewer's round buttons, and the two
+ * switches at its right. The key row starts shown; Keys hides it and the terminal takes its height.
+ * Beside the sidebar New terminal is the header's action instead. The terminal's card is as tall as
+ * the window under the top bar, the keyboard excluded, and never under its minimum, so one
  * screen holds it with its keys where the window allows and the page scrolls where it does not; nothing
  * collapses behind a tap. While the keyboard is shown the page stays scrolled to its end, so the key
  * row sits right above the keyboard and the terminal's last line right above the status line.
@@ -100,6 +105,7 @@ fun TerminalScreen(hubs: List<HubView>, tabs: TerminalTabs) {
     val active by tabs.active.collectAsStateWithLifecycle()
     val pick by tabs.picked.collectAsStateWithLifecycle()
     var modifiers by remember { mutableStateOf(TerminalModifiers()) }
+    var isKeyRowShown by rememberSaveable { mutableStateOf(true) }
     val machines = hubs.filter { it.isConnected }.flatMap { hub -> hub.terminals.map { hub to it } }
     val picked = machines.firstOrNull { (hub, machine) -> pick == hub.binding.id to machine.deviceId }
     val tab = open.firstOrNull { it.sessionId == active }
@@ -135,6 +141,8 @@ fun TerminalScreen(hubs: List<HubView>, tabs: TerminalTabs) {
                 }
                 return@Column
             }
+            val context = LocalContext.current
+            val view = remember { TerminalView(context, tabs) { modifiers = TerminalModifiers() } }
             val shape = RoundedCornerShape(12.dp)
             Column(
                 modifier = Modifier
@@ -151,27 +159,29 @@ fun TerminalScreen(hubs: List<HubView>, tabs: TerminalTabs) {
                         .clip(RoundedCornerShape(6.dp))
                         .background(palette.bg),
                 ) {
-                    TerminalPane(
-                        tabs,
-                        open.map { it.sessionId }.toSet(),
-                        active,
-                        modifiers,
-                        onModifiersUsed = { modifiers = TerminalModifiers() },
-                    )
+                    TerminalPane(view, tabs, open.map { it.sessionId }.toSet(), active, modifiers)
                 }
                 val isHubUp = tab != null && hubs.any { it.binding.id == tab.bindingId && it.isConnected }
                 LaunchedEffect(active, tab?.phase, isHubUp) {
                     if (isHubUp && tab.phase == TerminalPhase.DETACHED) tabs.reattach(active)
                 }
-                StatusLine(tab) { current, isPersistent, isShared ->
+                StatusLine(
+                    tab,
+                    isKeyboardShown = isImeShown,
+                    isKeyRowShown = isKeyRowShown,
+                    onKeyboard = { isUp -> if (isUp) view.showKeyboard() else view.hideKeyboard() },
+                    onKeyRow = { isShown -> isKeyRowShown = isShown },
+                ) { current, isPersistent, isShared ->
                     tabs.persist(current.sessionId, isPersistent, isShared)
                 }
-                KeyRow(modifiers) { key ->
-                    if (key.isModifier) {
-                        modifiers = modifiers.toggled(key)
-                    } else {
-                        if (active.isNotEmpty()) tabs.input(active, key.sequence(modifiers).toByteArray())
-                        modifiers = TerminalModifiers()
+                if (isKeyRowShown) {
+                    KeyRow(modifiers) { key ->
+                        if (key.isModifier) {
+                            modifiers = modifiers.toggled(key)
+                        } else {
+                            if (active.isNotEmpty()) tabs.input(active, key.sequence(modifiers).toByteArray())
+                            modifiers = TerminalModifiers()
+                        }
                     }
                 }
             }
@@ -362,16 +372,14 @@ private fun TabStrip(open: List<TerminalTab>, active: String, onPick: (String) -
 
 @Composable
 private fun TerminalPane(
+    view: TerminalView,
     tabs: TerminalTabs,
     live: Set<String>,
     active: String,
     modifiers: TerminalModifiers,
-    onModifiersUsed: () -> Unit,
 ) {
     val palette = NeutrinoTheme.palette
     val words = NeutrinoTheme.words
-    val context = LocalContext.current
-    val view = remember { TerminalView(context, tabs, onModifiersUsed) }
     DisposableEffect(view) { onDispose { view.detach() } }
     LaunchedEffect(palette) { view.palette(palette) }
     LaunchedEffect(words) {
@@ -392,7 +400,14 @@ private fun TerminalPane(
 }
 
 @Composable
-private fun StatusLine(tab: TerminalTab?, onPersist: (TerminalTab, Boolean, Boolean) -> Unit) {
+private fun StatusLine(
+    tab: TerminalTab?,
+    isKeyboardShown: Boolean,
+    isKeyRowShown: Boolean,
+    onKeyboard: (Boolean) -> Unit,
+    onKeyRow: (Boolean) -> Unit,
+    onPersist: (TerminalTab, Boolean, Boolean) -> Unit,
+) {
     val words = NeutrinoTheme.words
     val palette = NeutrinoTheme.palette
     Column(
@@ -402,6 +417,17 @@ private fun StatusLine(tab: TerminalTab?, onPersist: (TerminalTab, Boolean, Bool
             .padding(horizontal = 12.dp, vertical = 6.dp),
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                for (control in TerminalControl.entries) {
+                    RoundButton(
+                        control.icon,
+                        words.word(control.wordKey),
+                        isActive = control.isActive(isKeyboardShown, isKeyRowShown),
+                        onPress = { control.press(isKeyboardShown, isKeyRowShown, onKeyboard, onKeyRow) },
+                        size = 30.dp,
+                    )
+                }
+            }
             val status =
                 when (tab?.phase) {
                     TerminalPhase.ENDED -> words.word("ui.terminal_ended")
