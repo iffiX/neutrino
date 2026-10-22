@@ -15,7 +15,7 @@ fake.
 | client | `client/desktop/tests/` | `pytest -q`, seconds, every commit | Fakes and `tmp_path` only: fake platforms and toolkits, the compiled and fetched parts stood in for |
 | hub | `hub/tests/` | `pytest -q`, under a minute, every commit | FastAPI test clients and temporary config roots; never a unit, an interface, or `/etc` |
 | android | `client/android/app/src/test/` | `./gradlew test lint`, every commit | JUnit on the JVM; a fake socket, fake Keystore and fake VpnService; never an emulator or a device |
-| ios | `client/ios/NeutrinoTests/` | `swift-format lint --strict --recursive` and `xcodebuild test` on the iOS Simulator, in the `ios` job of `ci.yml` on GitHub's `macos-15` runner, every commit; the `ios_core` job builds the app for a device with the RustDesk core, checks the app defines `_nd_attach_frames`, and keeps the unsigned `.ipa` as the run's artifact `client_ios_device_test` for a test on an iPhone | XCTest; a fake socket, a fake Keychain, a fake SMB client and a fake RustDesk core; never a device |
+| ios | `client/ios/NeutrinoTests/`, `client/ios/NeutrinoUITests/` | `swift-format lint --strict --recursive` and `xcodebuild test` on the iOS Simulator, in the `ios` job of `ci.yml` on GitHub's `macos-15` runner, every commit; the `ios_core` job builds the app for a device with the RustDesk core, checks the app defines `_nd_attach_frames`, and keeps the unsigned `.ipa` as the run's artifact `client_ios_device_test` for a test on an iPhone | XCTest; a fake socket, a fake Keychain, a fake SMB client and a fake RustDesk core; never a device |
 | integration | `packaging/integration/` | `run_on_box.sh` on the pipeline's VM pair; minutes | A whole machine: real installs, real systemd, real DHCP on a served wire, a real client VM |
 
 ## The mirror rule
@@ -131,11 +131,20 @@ files of the changed screens there: the terminal in both themes, the remote
 desktop viewer before and after the key bar and a simulated keyboard come
 up, the Settings page and a share's login sheet in both themes, the Web,
 Files and Desktops lists with rows of different text widths, the Terminals
-page with its key row and **New terminal** and no keyboard, and the sidebar
-layout of a phone with a camera housing, turned to each side. Without it
-the test is skipped.
+page with its key row and **New terminal** and no keyboard, with its
+**Keyboard** and **Keys** buttons, with the key row hidden, with the
+software keyboard opened by **Keyboard** and closed again by a tap on empty
+space, and the sidebar layout of a phone with a camera housing, turned to
+each side. A shot with the keyboard is taken by the job from the Simulator's
+screen, which a test asks for by a file it writes. Without it the test is
+skipped.
 The `ios` job sets it through `TEST_RUNNER_NEUTRINO_SCREENS` on every run
 and keeps the files as the artifact `ios_screens`.
+
+The UI tests in `client/ios/NeutrinoUITests/` drive the app with taps: on
+the Join page a tap on the paste field brings up the software keyboard and
+hides the bottom bar under it, a tap on a control leaves the keyboard up,
+and a tap on empty space closes it and brings the bar back.
 
 The iOS app on a phone is checked by hand: the release's `.ipa`, signed with
 a free Apple ID, on an iPhone on iOS 16; the behaviour of iOS 17 and newer is

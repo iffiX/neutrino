@@ -63,6 +63,7 @@ are the same on Linux, Windows and macOS.
 | The frame is a sidebar on the left when the window is wider than it is tall, or at least 720 dp wide, and a bottom bar otherwise. | A phone in portrait has no room for a sidebar; a tablet, a laptop and a phone in landscape do, whatever the phone's display size setting makes of its width. |
 | The bar lists the pages in one order: **Hubs**, **Web**, **Ports**, **AI**, **Files**, **Terminals**, **Remote desktops**, **Settings**. A phone has no **Ports** page and no **AI** page, and lists the others in the same order. | One order on every client is one order to learn. |
 | On a phone's bottom bar each page is its icon with its label under it, the open page's in the accent. The bar labels **Remote desktops** as **Desktops** (`ui.bar_desktops`), and the top bar shows the full title. | An icon alone has to be learnt, and six pages leave room for a short word under each. |
+| With the keyboard shown, a phone's bottom bar stays under the keyboard, and the page ends at the keyboard's top. | A bar above the keyboard takes room from the page, and no page is switched while typing. |
 | **Join** opens from the Hubs page and is the only page reached from another page; it has a back arrow and no bar entry. | A page reached from several places is lost from each of them. |
 | The top bar holds the page title at the left and the refresh button at the right, and nothing else. | The refresh button is the one control that acts on every page. |
 | The sidebar layout has four parts: at the top left the client's name (`ui.window.title`: Neutrino client, 微子·客户端) in a box as tall as the page header beside it, at the top right the page header with the title and the refresh button, at the bottom left the page list, each page by its full name and Settings apart under a rule, at the bottom right the page. The bottom bar carries only the pages. The machine's name, platform and version are on the Settings page's About card and nowhere else. | The name's box and the header share one top line, as the desktop window draws them; a foot that repeats on every page is noise, and About is where a person looks for a version. |
@@ -652,8 +653,9 @@ refuses, the mount record goes `failed` with `files_adapter_unavailable
 ## The Terminals page
 
 The page is, from top to bottom: a card with the machine chips, the tab
-strip, the terminal, and the status line. The status line holds the two
-switches at the right and nothing else.
+strip, the terminal, the status line, and on a phone the key row. The
+status line holds the two switches at the right, and on a phone the
+**Keyboard** and **Keys** buttons at its left end.
 
 | Rule | Reason |
 | --- | --- |
@@ -773,6 +775,7 @@ names a hub with `--hub` when several are joined. It takes one verb:
 | Rule | Reason |
 | --- | --- |
 | A key row sits at the foot of the terminal's card, under the status line, whether the keyboard is shown or not: Esc, Tab, Ctrl, Shift, Alt, the four arrows; a modifier is sticky for one key and shows pressed while held. With the keyboard shown, the page is scrolled to its end, so the key row sits right above the keyboard. | The system keyboard has none of them, and a key row that comes only with the keyboard is gone whenever the keyboard is. |
+| At the left end of the status line, left-aligned, sit two round buttons in the look of the remote desktop viewer's, with its icons, sized to the line: **Keyboard** opens and closes the keyboard and shows pressed while the keyboard is shown; **Keys** hides and shows the key row and shows pressed while the row is shown. **Persistent** and **Shared** stay at the right. The key row starts shown, and the terminal's box grows by the row's height while it is hidden. A tap on the terminal still opens the keyboard. | One press opens the keyboard where a tap on a small terminal can miss, and a person who types no special keys gives their row to the terminal. |
 | With the keyboard shown, the terminal's box shrinks to the space left above the key row, which stays above the keyboard, and the terminal refits its rows; the prompt line stays in view and nothing collapses. The top bar is drawn in every orientation. A phone in landscape with the keyboard up has room for the key row and little else, which is accepted: a tablet is the device for a landscape terminal. | A key row under the keyboard cannot be pressed, and a prompt below the fold cannot be read. |
 | The font falls back to a face that has the box-drawing, geometric and powerline symbols for every glyph the monospace face lacks. | A prompt in boxes is unreadable. |
 | The terminal's viewport scrolls by touch and shows a thin bar; the view follows output only at the bottom. | History on a phone is reached by the finger, and a bar says there is some. |
@@ -901,6 +904,7 @@ the release's unsigned `.ipa` with their own Apple ID
 | file entry | a location in the system's Files app | the share page inside the app ("The share page") |
 | remote desktop | the viewer page | the same, with the RustDesk core linked into a device build ("The remote desktop viewer") |
 | terminal | the key row and the long-press menu | the same, drawn by SwiftTerm |
+| the app's name under its icon | 微子 with the phone's language Chinese (`app_name` in `values-zh-rCN/strings.xml`), Neutrino otherwise | the same, from `CFBundleDisplayName` in `zh-Hans.lproj/InfoPlist.strings` and `en.lproj/InfoPlist.strings` |
 | background | a foreground service keeps every connection | the app closes every connection before iOS suspends it ("In the background") |
 
 The in-app browser and the share page are reached from another page, as
@@ -962,7 +966,7 @@ alone.
 | --- | --- |
 | SwiftTerm draws the 16 colours and the theme's colours as "The colours" gives them, and the 256-colour cube and grey ramp as xterm draws them (`ansi256PaletteStrategy` `.xterm`), as xterm.js does on the desktop and on Android. | SwiftTerm's own default derives the cube and the ramp from the theme's background and foreground, so one colour code would draw differently in the two themes and in the other two clients. |
 | On iOS, SwiftTerm draws bold text in colours 0 to 6 in the bright colour, and `useBrightColors` stays on. This is the one place where the iOS terminal differs from "The colours". | With `useBrightColors` off, SwiftTerm draws every text colour above 7 eight places lower, the bright colours and the cube included. |
-| A downward swipe on the terminal closes the keyboard, the keyboard following the finger as in Messages. A tap on the terminal opens it, and also brings back a keyboard iOS took away while the terminal kept the focus, as after a switch of keyboards with the globe key. No button hides the keyboard. | The swipe is how iOS closes a keyboard over a scrolling view, and a terminal that holds the focus with no keyboard shown takes no typing. |
+| A tap on the terminal opens the keyboard, and also brings back a keyboard iOS took away while the terminal kept the focus, as after a switch of keyboards with the globe key. One tap on empty space closes it: anywhere on the Terminals page outside the terminal and outside a control, such as the page's background, the cards' margins, the empty part of the tab strip and the status line's space beside its buttons. A tap on a control, a chip, a tab, a switch or a key, does what it does and leaves the keyboard as it is. Join's paste field, a share's login sheet and the local port dialog close the keyboard the same way; a system alert with a field, as for a new folder's name, keeps it until its buttons. | A tap beside what is being typed into is how a phone puts its keyboard away, and a terminal that holds the focus with no keyboard shown takes no typing. |
 | With the keyboard shown, a switch of tabs keeps it shown, and the typing goes to the tab now shown. | A tab switch is no request to stop typing, and a keyboard taken down and put up again moves the whole page twice. |
 
 ### The frame

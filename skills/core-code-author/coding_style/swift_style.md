@@ -1,7 +1,7 @@
 # Swift style
 
-The iOS app (`client/ios/`) is written in Swift with SwiftUI, in two
-targets: the app and its unit tests. This file is its language surface. The
+The iOS app (`client/ios/`) is written in Swift with SwiftUI, in three
+targets: the app, its unit tests and its UI tests. This file is its language surface. The
 shared intent is set by [naming_style.md](naming_style.md),
 [comment_style.md](comment_style.md) and
 [exception_style.md](exception_style.md), and applies here as it does to
