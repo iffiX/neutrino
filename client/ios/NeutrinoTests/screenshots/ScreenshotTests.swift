@@ -152,7 +152,10 @@ final class ScreenshotTests: XCTestCase {
         let shown = try show(UIHostingController(rootView: page), .light, size: screen)
         core.tabs.onOutput?(core.activeTab, Data(Self.sample.utf8))
         settle()
-        try save(shown, "terminals_key_row", in: directory)
+        try save(shown, "terminals_1_top_new_terminal", in: directory)
+        NotificationCenter.default.post(name: UIResponder.keyboardDidShowNotification, object: nil)
+        settle()
+        try save(shown, "terminals_2_scrolled_key_row", in: directory)
     }
 
     func testTheSidebarLayoutInLandscapeWithTheHousingOnEitherSide() throws {
