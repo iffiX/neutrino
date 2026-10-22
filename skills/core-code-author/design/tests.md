@@ -123,6 +123,14 @@ events of each gesture; the typing pace; marked text sent nowhere; a paste
 to a Linux host; and the viewer and its forward closed when the background
 time ends.
 
+When `NEUTRINO_SCREENS` names a directory, `ScreenshotTests` writes PNG
+files of the changed screens there: the terminal in both themes, the remote
+desktop viewer before and after the key bar and a simulated keyboard come
+up, and the Settings page and a share's login sheet in both themes. Without
+it the test is skipped.
+The `ios` job sets it through `TEST_RUNNER_NEUTRINO_SCREENS` on every run
+and keeps the files as the artifact `ios_screens`.
+
 The iOS app on a phone is checked by hand: the release's `.ipa`, signed with
 a free Apple ID, on an iPhone on iOS 16; the behaviour of iOS 17 and newer is
 checked in the Simulator. The share page is checked there against a Samba

@@ -958,6 +958,7 @@ alone.
 | Rule | Reason |
 | --- | --- |
 | SwiftTerm draws the 16 colours and the theme's colours as "The colours" gives them, and the 256-colour cube and grey ramp as xterm draws them (`ansi256PaletteStrategy` `.xterm`), as xterm.js does on the desktop and on Android. | SwiftTerm's own default derives the cube and the ramp from the theme's background and foreground, so one colour code would draw differently in the two themes and in the other two clients. |
+| On iOS, SwiftTerm draws bold text in colours 0 to 6 in the bright colour, and `useBrightColors` stays on. This is the one place where the iOS terminal differs from "The colours". | With `useBrightColors` off, SwiftTerm draws every text colour above 7 eight places lower, the bright colours and the cube included. |
 
 ### The remote desktop viewer
 
@@ -994,7 +995,7 @@ alone.
 
 | Rule | Reason |
 | --- | --- |
-| The **Language** and **Theme** pickers of the Settings page, and the **Codec** and **Quality** pickers of **Configure**, are rows: the picker's name at the left, and at the right the chosen value in the same text size, in the accent, with the system's up-and-down chevrons. A press opens the system's menu of the choices, the chosen one checked. | The system's menu is the dropdown iOS shows in its own settings, and a value drawn larger than its name reads as a heading. |
+| The **Language** and **Theme** pickers of the Settings page, the **Codec** and **Quality** pickers of **Configure**, and the user name picker of a share's login sheet are rows: the picker's name at the left, and at the right the chosen value in the same text size, in the accent, with the system's up-and-down chevrons. A press opens the system's menu of the choices, the chosen one checked. | The system's menu is the dropdown iOS shows in its own settings, and a value drawn larger than its name reads as a heading. |
 
 ## An interaction this page does not cover
 
