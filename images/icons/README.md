@@ -16,3 +16,9 @@ mark on its square, with the square's edge in the panel's accent and a
 glow around it, the way the panel's own brand box looks. The client's
 entry keeps the plain mark. `render_hub_icons.py` draws them from
 `neutrino.png` with Pillow.
+
+`neutrino_ios.png` is the iOS app's icon at 1024×1024: the same mark with
+`#0a0e14` filling the whole square, opaque and with square corners, since
+iOS fills transparent pixels and rounds the corners itself.
+`render_ios_icon.py` draws it from `neutrino.png` with Pillow, and
+`packaging/build/build_client_ios.py` puts it into the app.

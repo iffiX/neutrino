@@ -9,7 +9,7 @@ writes the project from ``client/ios/project.yml``, ``xcodebuild`` builds the
 app for ``generic/platform=iOS`` with code signing off, the app's binary must
 define ``_nd_start``, and the ``.app`` is zipped under ``Payload/`` as
 ``neutrino-client-<version>-ios.ipa``. Before the zip,
-the app's icon is drawn from ``images/icons/neutrino.png`` into an asset
+the app's icon, ``images/icons/neutrino_ios.png``, is put into an asset
 catalog under ``client/ios/build/icon`` and compiled into the ``.app`` by
 ``actool``, its keys merged into the app's ``Info.plist``. The version, read
 off the hub's pyproject, and the edition reach the app as the build settings
@@ -18,8 +18,8 @@ off the hub's pyproject, and the edition reach the app as the build settings
 the CI jobs' ``xcodebuild``, and builds nothing; ``--cache-key`` prints the
 name the core is cached under in CI, and builds nothing.
 
-Not pure: runs the core build, xcodegen, xcodebuild, nm, sips and actool,
-writes the .ipa.
+Not pure: runs the core build, xcodegen, xcodebuild, nm and actool, writes
+the .ipa.
 """
 
 import argparse
@@ -53,10 +53,9 @@ IOS_APP = "Neutrino.app"
 IOS_BUILD_DIR = IOS_DIR / "build"
 IOS_ICON_CATALOG = IOS_BUILD_DIR / "icon" / "Assets.xcassets"
 IOS_ICON_PLIST = IOS_BUILD_DIR / "icon" / "partial.plist"
-IOS_ICON_SOURCE = REPO_ROOT / "images" / "icons" / "neutrino.png"
+IOS_ICON_SOURCE = REPO_ROOT / "images" / "icons" / "neutrino_ios.png"
 
-# The one icon size iOS takes from Xcode 14 on, and the catalog naming it.
-IOS_ICON_EDGE = 1024
+# The catalog naming the one icon size iOS takes from Xcode 14 on.
 IOS_ICON_CONTENTS = (
     '{"images":[{"filename":"icon.png","idiom":"universal","platform":"ios",'
     '"size":"1024x1024"}],"info":{"author":"xcode","version":1}}'
@@ -152,14 +151,14 @@ def build_settings(version: str, edition: str) -> list:
 def _add_icon(app: Path) -> None:
     """Put the app's icon into the built app.
 
-    sips draws it into an asset catalog, actool compiles the catalog into the
+    The icon goes into an asset catalog, actool compiles the catalog into the
     app, and the keys actool names the icon under join the app's Info.plist.
 
     Args:
         app: The built ``.app`` directory.
 
     Raises:
-        subprocess.CalledProcessError: When sips or actool fails.
+        subprocess.CalledProcessError: When actool fails.
     """
     icon_set = IOS_ICON_CATALOG / "AppIcon.appiconset"
     icon_set.mkdir(parents=True)
@@ -167,19 +166,7 @@ def _add_icon(app: Path) -> None:
         '{"info":{"author":"xcode","version":1}}'
     )
     (icon_set / "Contents.json").write_text(IOS_ICON_CONTENTS)
-    subprocess.run(
-        [
-            "sips",
-            "-z",
-            str(IOS_ICON_EDGE),
-            str(IOS_ICON_EDGE),
-            str(IOS_ICON_SOURCE),
-            "--out",
-            str(icon_set / "icon.png"),
-        ],
-        check=True,
-        stdout=subprocess.DEVNULL,
-    )
+    shutil.copyfile(IOS_ICON_SOURCE, icon_set / "icon.png")
     subprocess.run(
         [
             "xcrun",
@@ -290,14 +277,14 @@ def _version() -> str:
 
 
 def _check_tools() -> None:
-    """Refuse to start off macOS or without Xcode, XcodeGen and sips.
+    """Refuse to start off macOS or without Xcode and XcodeGen.
 
     Raises:
         SystemExit: When either is missing.
     """
     if sys.platform != "darwin":
         raise SystemExit(f"{Path(__file__).name} runs on macOS; this is {sys.platform}")
-    for tool in ("xcodebuild", "xcodegen", "nm", "sips", "xcrun"):
+    for tool in ("xcodebuild", "xcodegen", "nm", "xcrun"):
         if shutil.which(tool) is None:
             raise SystemExit(f"{tool} is needed and is not on the path")
 
