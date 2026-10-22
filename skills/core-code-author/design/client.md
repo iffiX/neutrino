@@ -661,6 +661,27 @@ switches at the right and nothing else.
 | **Clear**, wherever a client offers it, sends Ctrl+C, clears the screen, drops what had arrived and was not yet drawn, and goes on dropping what arrives until the stream has been quiet for half a second, for twenty seconds at most. While it drops, the terminal's own box shows `ui.job.clearing` ("Clearing…", 「清屏中…」) where the output would be, and the word goes when the dropping ends. The desktop and the phone behave the same. | A clear that is followed by the rest of the flood clears nothing, and how long the flood's tail takes to cross the hub is not a number a client can know. |
 | A plain session ends when its tab closes; a persistent or shared session's **×** arms and the second press ends the session with `stop_session`. | Ending a session others can see takes two presses, like every destructive action. |
 
+### The colours
+
+Every client's terminal draws the 16 ANSI colours from one fixed palette, the
+Tango palette, which is also xterm.js's own default:
+
+| Colour | Normal | Bright |
+| --- | --- | --- |
+| black | `#2e3436` | `#555753` |
+| red | `#cc0000` | `#ef2929` |
+| green | `#4e9a06` | `#8ae234` |
+| yellow | `#c4a000` | `#fce94f` |
+| blue | `#3465a4` | `#729fcf` |
+| magenta | `#75507b` | `#ad7fa8` |
+| cyan | `#06989a` | `#34e2e2` |
+| white | `#d3d7cf` | `#eeeeec` |
+
+| Rule | Reason |
+| --- | --- |
+| The 16 colours are the same in the light and the dark theme. None is taken from the client's accent or status colours, and none is inverted. The 256-colour cube and truecolour are drawn as the terminal library draws them. | A prompt draws a segment as text in one of these colours on a fill in another. A theme's text shades put in their place lose the pair's contrast, and the person's own terminal draws the same prompt in these colours. |
+| The default foreground, the default background, the cursor and the selection follow the client's theme (System, Light or Dark), taken from the client's own theme colours. Every open terminal takes the new ones at once when the theme changes. | Plain text reads like the rest of the page in either theme. |
+
 ### The session list
 
 The hub sends `terminals.sessions`: every session this client is the owner of,
