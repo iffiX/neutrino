@@ -959,6 +959,12 @@ def test_the_shells_draw_the_16_colours_fixed_and_the_rest_from_the_theme():
         assert token not in theme
 
 
+def test_bold_text_keeps_its_own_colour():
+    tab = function_body("function newTab(hubId, machine, sessionId)")
+
+    assert "drawBoldTextInBrightColors: false," in tab
+
+
 def test_every_open_shell_takes_a_new_theme_at_once():
     paint = function_body("function paintShells()")
 

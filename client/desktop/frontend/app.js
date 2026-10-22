@@ -1743,6 +1743,7 @@ function newTab(hubId, machine, sessionId) {
     lineHeight: 1.2,
     cursorBlink: true,
     theme: terminalTheme(),
+    drawBoldTextInBrightColors: false,
     scrollback: TERMINAL_SCROLLBACK_LINES,
   });
   const fit = new FitAddon.FitAddon();
