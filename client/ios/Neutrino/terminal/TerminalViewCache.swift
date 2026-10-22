@@ -1,9 +1,11 @@
+import Combine
 import SwiftTerm
 import UIKit
 
 /// One terminal view per tab, kept while the tab lives so switching tabs loses no output; each view is fed its
 /// tab's kept output when made and every byte after, and is drawn in the colours of the palette in force. A tap on
-/// a view opens the keyboard.
+/// a view opens the keyboard. While the keyboard slides a view's size stays with the view, and each tab's last size
+/// goes to its shell once the slide ends.
 final class TerminalViewCache {
     /// The key row, one for every tab.
     let keys = TerminalKeyState()
@@ -11,10 +13,14 @@ final class TerminalViewCache {
     /// The keyboard as the terminals follow it.
     let focus = TerminalKeyboardFocus()
 
+    /// The keyboard's slide, which the pages follow frame by frame.
+    let keyboard = KeyboardMotion()
+
     private let tabs: TerminalTabs
     private var views: [String: TerminalView] = [:]
     private var bridges: [String: TerminalViewBridge] = [:]
     private var colors = TerminalColors(palette: .dark)
+    private var slideEnd: AnyCancellable?
 
     /// Keep the views of every tab.
     ///
@@ -26,6 +32,15 @@ final class TerminalViewCache {
         }
         tabs.onReplay = { [weak self] sessionId in
             self?.views[sessionId]?.getTerminal().resetToInitialState()
+        }
+        slideEnd = keyboard.$isMoving.removeDuplicates().filter { !$0 }.sink { [weak self] _ in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                for (sessionId, bridge) in self.bridges {
+                    guard let view = self.views[sessionId] else { continue }
+                    bridge.sendSize(of: view)
+                }
+            }
         }
     }
 
@@ -46,7 +61,7 @@ final class TerminalViewCache {
         let view = TerminalView(
             frame: CGRect(x: 0, y: 0, width: 320, height: 240),
             font: UIFont.monospacedSystemFont(ofSize: TerminalPage.fontSize, weight: .regular))
-        let bridge = TerminalViewBridge(sessionId: sessionId, tabs: tabs, keys: keys)
+        let bridge = TerminalViewBridge(sessionId: sessionId, tabs: tabs, keys: keys, keyboard: keyboard)
         view.inputAccessoryView = nil
         view.terminalDelegate = bridge
         view.optionAsMetaKey = false

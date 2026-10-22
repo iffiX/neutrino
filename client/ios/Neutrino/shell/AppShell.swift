@@ -3,8 +3,9 @@ import SwiftUI
 /// The frame of every page: the sidebar when the window is wider than it is tall or at least 720 points wide,
 /// the bottom bar otherwise; the top bar above the page; and the page's own action at the right of the page
 /// header beside the sidebar. Above the bottom bar a page draws its action itself, and the share page's actions
-/// are the one floating button. With the keyboard shown the bottom bar stays under it, and the page ends at the
-/// keyboard. In landscape the sidebar keeps the safe area only on the camera housing's side.
+/// are the one floating button in both layouts. With the keyboard shown the bottom bar stays under it, and the
+/// page ends at the keyboard, following its slide frame by frame. In landscape the sidebar keeps the safe area only
+/// on the camera housing's side.
 /// The Files page shows the share page while a share is open, and the remote desktop viewer covers the whole
 /// screen while it is open.
 struct AppShell: View {
@@ -17,8 +18,8 @@ struct AppShell: View {
     @Environment(\.palette) private var palette
     @State private var screen = AppScreen.hubs
     @State private var pageAction: PageAction?
-    @State private var isKeyboardShown = false
     @StateObject private var orientation = ShellOrientation()
+    @ObservedObject private var keyboard: KeyboardMotion
 
     /// Draw the frame.
     ///
@@ -30,6 +31,7 @@ struct AppShell: View {
         _core = ObservedObject(wrappedValue: core)
         self.cache = cache
         _screen = State(initialValue: screen)
+        _keyboard = ObservedObject(wrappedValue: cache.keyboard)
     }
 
     var body: some View {
@@ -40,28 +42,25 @@ struct AppShell: View {
                 let isInset = window.safeAreaInsets.leading > 0 && !isHousingRight
                 HStack(spacing: 0) {
                     PageBar(isSidebar: true, isInset: isInset, selected: selection)
-                    main(isSidebar: true)
+                    main(isSidebar: true).padding(.bottom, keyboard.overlap)
                 }
                 .ignoresSafeArea(.container, edges: isHousingRight ? .leading : [])
                 .environment(\.isSidebar, true)
             } else {
+                let isBarCovered = keyboard.overlap >= Client.barHeight
+                let below = isBarCovered ? keyboard.overlap : max(0, keyboard.overlap - Client.barHeight)
                 VStack(spacing: 0) {
-                    main(isSidebar: false)
-                    if !isKeyboardShown {
+                    main(isSidebar: false).padding(.bottom, below)
+                    if !isBarCovered {
                         PageBar(isSidebar: false, selected: selection)
                     }
                 }
                 .environment(\.isSidebar, false)
             }
         }
+        .ignoresSafeArea(.keyboard)
         .background(palette.bg.ignoresSafeArea())
         .onAppear { orientation.follow() }
-        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
-            isKeyboardShown = true
-        }
-        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
-            isKeyboardShown = false
-        }
         .fullScreenCover(item: viewing) { target in
             RemoteDesktopViewer(target: target, core: core.remoteDesktop) { core.closeDesktop() }
                 .environment(\.words, words)
@@ -93,23 +92,14 @@ struct AppShell: View {
 
     private func main(isSidebar: Bool) -> some View {
         VStack(spacing: 0) {
-            TopBar(title: title, onBack: onBack, isRefreshing: core.isRefreshing) { core.refresh() }
-            if isSidebar, core.browser == nil, let action = pageAction {
-                HStack {
-                    Spacer()
-                    ForEach(Array((action.items.isEmpty ? [action] : action.items).enumerated()), id: \.offset) {
-                        _, button in
-                        NeutrinoButton(
-                            label: button.label, tier: .primary, isEnabled: button.isEnabled, action: button.action)
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-            }
+            TopBar(
+                title: title, onBack: onBack, isRefreshing: core.isRefreshing,
+                action: isSidebar && core.browser == nil && pageAction?.items.isEmpty == true ? pageAction : nil
+            ) { core.refresh() }
             page
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .overlay(alignment: .bottomTrailing) {
-                    if !isSidebar, core.browser == nil, let action = pageAction {
+                    if core.browser == nil, let action = pageAction, !isSidebar || !action.items.isEmpty {
                         floatingButton(action)
                     }
                 }

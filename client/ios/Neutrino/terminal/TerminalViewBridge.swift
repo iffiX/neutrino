@@ -2,7 +2,8 @@ import SwiftTerm
 import UIKit
 
 /// What one tab's terminal view tells the app: its size, which opens or resizes the shell, and what the person
-/// typed, with the key row's held modifiers spent on it.
+/// typed, with the key row's held modifiers spent on it. A size the view takes while the keyboard slides waits for
+/// the slide's end.
 final class TerminalViewBridge: NSObject, TerminalViewDelegate {
     /// The tab.
     let sessionId: String
@@ -11,6 +12,8 @@ final class TerminalViewBridge: NSObject, TerminalViewDelegate {
     let keys: TerminalKeyState
 
     private weak var tabs: TerminalTabs?
+    private let keyboard: KeyboardMotion
+    private var sent: (cols: Int, rows: Int)?
 
     /// Join a tab's view to its tab.
     ///
@@ -18,14 +21,26 @@ final class TerminalViewBridge: NSObject, TerminalViewDelegate {
     ///   - sessionId: The tab.
     ///   - tabs: The tabs.
     ///   - keys: The key row's held modifiers.
-    init(sessionId: String, tabs: TerminalTabs, keys: TerminalKeyState) {
+    ///   - keyboard: The keyboard's slide.
+    init(sessionId: String, tabs: TerminalTabs, keys: TerminalKeyState, keyboard: KeyboardMotion) {
         self.sessionId = sessionId
         self.tabs = tabs
         self.keys = keys
+        self.keyboard = keyboard
     }
 
     func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {
-        tabs?.sized(sessionId, cols: newCols, rows: newRows)
+        guard !keyboard.isMoving else { return }
+        send(cols: newCols, rows: newRows)
+    }
+
+    /// Tell the tab the size its view has, when the tab was last told another.
+    ///
+    /// - Parameter view: The tab's view.
+    func sendSize(of view: TerminalView) {
+        let terminal = view.getTerminal()
+        guard sent?.cols != terminal.cols || sent?.rows != terminal.rows else { return }
+        send(cols: terminal.cols, rows: terminal.rows)
     }
 
     func setTerminalTitle(source: TerminalView, title: String) {}
@@ -63,5 +78,10 @@ final class TerminalViewBridge: NSObject, TerminalViewDelegate {
     func press(_ key: TerminalKey, modifiers: TerminalModifiers, on view: TerminalView) {
         let isApplicationCursor = view.getTerminal().applicationCursor
         tabs?.input(sessionId, key.sequence(modifiers, isApplicationCursor: isApplicationCursor))
+    }
+
+    private func send(cols: Int, rows: Int) {
+        sent = (cols, rows)
+        tabs?.sized(sessionId, cols: cols, rows: rows)
     }
 }

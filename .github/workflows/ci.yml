@@ -143,9 +143,12 @@ jobs:
       # TEST_RUNNER_NEUTRINO_SCREENS reaches the tests as NEUTRINO_SCREENS, where
       # ScreenshotTests and the UI tests write their PNG files. A test that needs
       # the whole Simulator screen, the keyboard's window with it, writes
-      # <name>.shot there, and the loop below takes it as <name>.png. The
-      # Simulator gets no hardware keyboard, so the software one comes up, and
-      # its slide-to-type introduction counts as seen.
+      # <name>.shot there, and the loop below takes it as <name>.png. A test
+      # that needs a recording of the screen writes <name>.rec, and the loop
+      # starts <name>.mp4 and answers with <name>.recording; <name>.stop stops
+      # it, at the latest 20 seconds on, answered with <name>.stopped. The
+      # Simulator gets no hardware keyboard, so the software one comes up,
+      # and its slide-to-type introduction counts as seen.
       - name: Run the unit and UI tests
         working-directory: client/ios
         env:
@@ -158,15 +161,41 @@ jobs:
           xcrun simctl boot "$SIMULATOR" || true
           xcrun simctl spawn "$SIMULATOR" defaults write com.apple.Preferences DidShowContinuousPathIntroduction -bool true
           xcrun simctl spawn "$SIMULATOR" defaults write com.apple.keyboard.preferences DidShowContinuousPathIntroduction -bool true
+          simctl="$(xcrun --find simctl)"
           (
             while true; do
               for asked in "$screens"/*.shot; do
                 [ -e "$asked" ] || continue
-                xcrun simctl io "$SIMULATOR" screenshot "${asked%.shot}.tmp.png" > /dev/null 2>&1
-                mv "${asked%.shot}.tmp.png" "${asked%.shot}.png"
+                xcrun simctl io "$SIMULATOR" screenshot "${asked%.shot}.tmp.png" > /dev/null 2>&1 || true
+                mv "${asked%.shot}.tmp.png" "${asked%.shot}.png" || true
                 rm -f "$asked"
               done
-              sleep 0.5
+              for asked in "$screens"/*.rec; do
+                [ -e "$asked" ] || continue
+                name="${asked%.rec}"
+                "$simctl" io "$SIMULATOR" recordVideo --codec=h264 --force "$name.mp4" > "$name.log" 2>&1 &
+                echo $! > "$name.pid"
+                for _ in $(seq 30); do
+                  grep -q "Recording started" "$name.log" && break
+                  sleep 0.1
+                done
+                rm -f "$asked"
+                touch "$name.recording"
+              done
+              for asked in "$screens"/*.stop; do
+                [ -e "$asked" ] || continue
+                name="${asked%.stop}"
+                pid="$(cat "$name.pid")"
+                kill -INT "$pid" || true
+                for _ in $(seq 200); do
+                  kill -0 "$pid" 2> /dev/null || break
+                  sleep 0.1
+                done
+                kill -KILL "$pid" 2> /dev/null || true
+                rm -f "$asked" "$name.pid" "$name.log"
+                touch "$name.stopped"
+              done
+              sleep 0.1
             done
           ) &
           xcodebuild test \
@@ -180,7 +209,9 @@ jobs:
         if: always()
         with:
           name: ios_screens
-          path: screens/*.png
+          path: |
+            screens/*.png
+            screens/*.mp4
           if-no-files-found: warn
 
   # The iOS app built for a device with the RustDesk core linked in. The core

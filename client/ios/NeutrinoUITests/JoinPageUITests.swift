@@ -16,9 +16,10 @@ final class JoinPageUITests: XCTestCase {
         field.tap()
         let keyboard = app.keyboards.firstMatch
         XCTAssertTrue(keyboard.waitForExistence(timeout: 10), "no software keyboard came up")
-        XCTAssertFalse(element(containing: "Settings").exists, "the bottom bar shows above the keyboard")
         field.typeText("not a link")
         try screen("join_1_keyboard_up")
+        XCTAssertTrue(
+            isGone(element(containing: "Settings")), "the bottom bar shows above the keyboard: \(app.debugDescription)")
 
         element(containing: "Join", type: .button).tap()
         XCTAssertTrue(keyboard.exists, "a tap on a control closed the keyboard")

@@ -59,7 +59,7 @@ struct PageBar: View {
                     entry(screen, isWide: false).frame(maxWidth: .infinity)
                 }
             }
-            .frame(height: 56)
+            .frame(height: Client.barHeight)
             .background(palette.surface)
             .overlay(Rectangle().fill(palette.border).frame(height: 1), alignment: .top)
         }

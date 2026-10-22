@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// The top bar: the page title at the left, after a back arrow on a page reached from another, and the refresh
-/// button at the right. Its background and its bottom rule run to the screen's edges.
+/// button at the right, with the page's own action before it beside the sidebar. Its background and its bottom
+/// rule run to the screen's edges.
 struct TopBar: View {
     /// The page's title.
     let title: String
@@ -11,6 +12,9 @@ struct TopBar: View {
 
     /// Whether any hub refreshes, which turns the button into a spinner.
     let isRefreshing: Bool
+
+    /// The page's own action in the bar, nil above the bottom bar.
+    var action: PageAction?
 
     /// What the refresh button does.
     let onRefresh: () -> Void
@@ -29,6 +33,11 @@ struct TopBar: View {
             }
             Text(title).font(.system(size: 18, weight: .semibold)).foregroundColor(palette.text).lineLimit(1)
             Spacer()
+            if let action {
+                NeutrinoButton(
+                    label: action.label, systemImage: action.systemImage, tier: .primary,
+                    isEnabled: action.isEnabled, action: action.action)
+            }
             Button(action: onRefresh) {
                 if isRefreshing {
                     ProgressView().controlSize(.small).tint(palette.signalWarn)

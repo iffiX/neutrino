@@ -1,10 +1,13 @@
 import SwiftUI
 
-/// A button in one of the panel's tiers: while its job runs it shows a spinner and the job's word, and it is
-/// disabled.
+/// A button in one of the panel's tiers, its icon before its label: while its job runs it shows a spinner and the
+/// job's word, and it is disabled.
 struct NeutrinoButton: View {
     /// The label, or the job's word while it runs.
     let label: String
+
+    /// The SF Symbol before the label, nil for none.
+    var systemImage: String?
 
     /// The tier.
     var tier = ButtonTier.plain
@@ -28,6 +31,9 @@ struct NeutrinoButton: View {
             HStack(spacing: 6) {
                 if isBusy {
                     ProgressView().controlSize(.mini).tint(palette.signalWarn)
+                }
+                if let systemImage {
+                    Image(systemName: systemImage).font(.system(size: 13, weight: .medium))
                 }
                 Text(label).font(.system(size: 13, weight: .medium)).lineLimit(1)
             }

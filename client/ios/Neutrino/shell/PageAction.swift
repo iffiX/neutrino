@@ -1,8 +1,8 @@
 import Foundation
 
-/// A page's own action, such as New terminal or Scan: at the right of the page header beside the sidebar, and a
+/// A page's own action, such as Scan: at the right of the page header beside the sidebar, and a
 /// floating button at the bottom right above the bottom bar. An action with items is the one floating button of
-/// several: a menu of its items above the bottom bar, and each item a button of the header beside the sidebar.
+/// several, a menu of its items, in both layouts.
 struct PageAction: Equatable {
     /// The label.
     let label: String

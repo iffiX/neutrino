@@ -4,8 +4,8 @@ import XCTest
 
 @testable import Neutrino
 
-/// Draws the terminal, the remote desktop viewer, the Settings page and a share's login sheet into PNG files in the
-/// directory `NEUTRINO_SCREENS` names, for a look by eye; skipped while it names none.
+/// Draws the terminal, the remote desktop viewer, the pages and the frame into PNG files, and records the Terminals
+/// page as it moves, in the directory `NEUTRINO_SCREENS` names, for a look by eye; skipped while it names none.
 final class ScreenshotTests: XCTestCase {
     private static let sample: String = {
         var text = "\u{1b}[0mbackgrounds 40-47, then 100-107\r\n"
@@ -153,7 +153,7 @@ final class ScreenshotTests: XCTestCase {
         core.tabs.onOutput?(core.activeTab, Data(Self.sample.utf8))
         settle()
         try save(shown, "terminals_1_top_new_terminal", in: directory)
-        NotificationCenter.default.post(name: UIResponder.keyboardDidShowNotification, object: nil)
+        scrollToEnd(shown)
         settle()
         try save(shown, "terminals_2_scrolled_key_row", in: directory)
     }
@@ -175,7 +175,8 @@ final class ScreenshotTests: XCTestCase {
             .environmentObject(ArmState())
         let shown = try show(UIHostingController(rootView: shell), .light, size: screen)
         core.tabs.onOutput?(core.activeTab, Data(Self.sample.utf8))
-        NotificationCenter.default.post(name: UIResponder.keyboardDidShowNotification, object: nil)
+        settle()
+        scrollToEnd(shown)
         settle()
         try save(shown, "terminals_3_keyboard_and_keys_buttons", in: directory)
 
@@ -214,6 +215,124 @@ final class ScreenshotTests: XCTestCase {
                 .environmentObject(ArmState())
             let shown = try show(UIHostingController(rootView: shell), .light, size: size)
             try save(shown, name, in: directory)
+        }
+    }
+
+    func testTheSidebarLayoutOnTerminalsJoinAndAShare() throws {
+        let directory = try directory()
+        let suite = "neutrino.screens.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let core = try connectedCore(defaults)
+        let cache = TerminalViewCache(tabs: core.tabs)
+        let bindingId = try XCTUnwrap(core.hubs.first?.binding.id)
+        core.pickMachine(TerminalMachine(bindingId: bindingId, deviceId: "nmxrel"))
+        core.newTerminal()
+        defer { _ = try? turn(to: .portrait) }
+        guard try turn(to: .landscapeRight) else { throw XCTSkip("the Simulator did not turn") }
+        let size = try screenSize()
+        for (name, screen) in [("landscape_terminals", AppScreen.terminals), ("landscape_join", .join)] {
+            let shell = AppShell(core: core, cache: cache, screen: screen)
+                .environment(\.palette, .light)
+                .environment(\.words, core.words)
+                .environmentObject(ArmState())
+            let shown = try show(UIHostingController(rootView: shell), .light, size: size)
+            if screen == .terminals {
+                core.tabs.onOutput?(core.activeTab, Data(Self.sample.utf8))
+                settle()
+            }
+            try save(shown, name, in: directory)
+        }
+
+        let hub = try XCTUnwrap(core.hubs.first)
+        let entry = try XCTUnwrap(hub.services.first { $0.id == "music" })
+        let target = try XCTUnwrap(ShareTarget.of(hub, entry))
+        core.shares.logIn(target, login: ShareLogin(user: "lab", password: "pw"), isKept: false)
+        XCTAssertNotNil(core.share, "the share did not open")
+        let shell = AppShell(core: core, cache: cache, screen: .files)
+            .environment(\.palette, .light)
+            .environment(\.words, core.words)
+            .environmentObject(ArmState())
+        let shown = try show(UIHostingController(rootView: shell), .light, size: size)
+        try save(shown, "landscape_share_plus", in: directory)
+    }
+
+    func testTheTerminalsPageStaysAtItsEndAsTheKeyboardComesAndGoes() throws {
+        let screen = try screenSize()
+        let suite = "neutrino.screens.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let core = try connectedCore(defaults)
+        let cache = TerminalViewCache(tabs: core.tabs)
+        let bindingId = try XCTUnwrap(core.hubs.first?.binding.id)
+        core.pickMachine(TerminalMachine(bindingId: bindingId, deviceId: "nmxrel"))
+        core.newTerminal()
+        let shell = AppShell(core: core, cache: cache, screen: .terminals)
+            .environment(\.palette, .light)
+            .environment(\.words, core.words)
+            .environmentObject(ArmState())
+        let shown = try show(UIHostingController(rootView: shell), .light, size: screen)
+        let scroll = try XCTUnwrap(pageScroll(in: shown))
+        XCTAssertLessThan(scroll.contentOffset.y, end(of: scroll), "the page has nothing above its end")
+
+        cache.openKeyboard(on: core.activeTab)
+        guard isTrue({ cache.focus.isKeyboardShown }) else { throw XCTSkip("no software keyboard came up") }
+        XCTAssertTrue(
+            isTrue { !cache.keyboard.isMoving && cache.keyboard.overlap > 100 },
+            "the slide did not end: \(cache.keyboard.overlap), \(cache.keyboard.isMoving)")
+        settle()
+        XCTAssertEqual(
+            scroll.contentOffset.y, end(of: scroll), accuracy: 1,
+            "with the keyboard covering \(cache.keyboard.overlap), the page is not at its end")
+
+        KeyboardClosingLayer.close()
+        XCTAssertTrue(
+            isTrue { !cache.keyboard.isMoving && cache.keyboard.overlap == 0 },
+            "the slide did not end: \(cache.keyboard.overlap), \(cache.keyboard.isMoving)")
+        settle()
+        XCTAssertEqual(
+            scroll.contentOffset.y, end(of: scroll), accuracy: 1, "with the keyboard gone, the page left its end")
+    }
+
+    func testTheTerminalCardMovesAsOneWithTheKeyboardAndTheKeyRow() throws {
+        let directory = try directory()
+        let screen = try screenSize()
+        let suite = "neutrino.screens.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let core = try connectedCore(defaults)
+        let cache = TerminalViewCache(tabs: core.tabs)
+        let bindingId = try XCTUnwrap(core.hubs.first?.binding.id)
+        core.pickMachine(TerminalMachine(bindingId: bindingId, deviceId: "nmxrel"))
+        core.newTerminal()
+        let shell = AppShell(core: core, cache: cache, screen: .terminals)
+            .environment(\.palette, .light)
+            .environment(\.words, core.words)
+            .environmentObject(ArmState())
+        let shown = try show(UIHostingController(rootView: shell), .light, size: screen)
+        core.tabs.onOutput?(core.activeTab, Data(Self.sample.utf8))
+        cache.openKeyboard(on: core.activeTab)
+        XCTAssertTrue(isTrue { cache.focus.isKeyboardShown }, "no software keyboard came up")
+        KeyboardClosingLayer.close()
+        XCTAssertTrue(isTrue { !cache.focus.isKeyboardShown }, "the keyboard stayed up")
+        settle()
+        scrollToEnd(shown)
+        settle()
+
+        let steps: [(String, () -> Void)] = [
+            ("terminals_motion_1_keyboard_on", { cache.openKeyboard(on: core.activeTab) }),
+            ("terminals_motion_2_keys_off", { cache.keys.toggleRow() }),
+            ("terminals_motion_3_keys_on", { cache.keys.toggleRow() }),
+            ("terminals_motion_4_keyboard_off", { KeyboardClosingLayer.close() }),
+            ("terminals_motion_5_keys_off_no_keyboard", { cache.keys.toggleRow() }),
+            ("terminals_motion_6_keys_on_no_keyboard", { cache.keys.toggleRow() }),
+        ]
+        for (name, step) in steps {
+            try recordingOfSimulator(name, in: directory) {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+                step()
+                RunLoop.main.run(until: Date().addingTimeInterval(1.5))
+            }
         }
     }
 
@@ -322,8 +441,8 @@ final class ScreenshotTests: XCTestCase {
         return shown
     }
 
-    private func isTrue(_ condition: () -> Bool) -> Bool {
-        let end = Date().addingTimeInterval(10)
+    private func isTrue(within seconds: Double = 10, _ condition: () -> Bool) -> Bool {
+        let end = Date().addingTimeInterval(seconds)
         while !condition() && Date() < end {
             RunLoop.main.run(until: Date().addingTimeInterval(0.1))
         }
@@ -337,6 +456,44 @@ final class ScreenshotTests: XCTestCase {
         let taken = directory.appendingPathComponent("\(name).png")
         try Data().write(to: asked)
         XCTAssertTrue(isTrue { FileManager.default.fileExists(atPath: taken.path) }, "no screenshot came for \(name)")
+    }
+
+    /// Ask the CI job to record the whole Simulator screen while `body` runs: the job starts a recording, as
+    /// `<name>.mp4`, for a `<name>.rec` file and answers with `<name>.recording`, and stops it for a `<name>.stop`
+    /// file and answers with `<name>.stopped`.
+    private func recordingOfSimulator(_ name: String, in directory: URL, _ body: () -> Void) throws {
+        let started = directory.appendingPathComponent("\(name).recording")
+        let stopped = directory.appendingPathComponent("\(name).stopped")
+        try Data().write(to: directory.appendingPathComponent("\(name).rec"))
+        let isStarted = isTrue(within: 30) { FileManager.default.fileExists(atPath: started.path) }
+        XCTAssertTrue(isStarted, "no recording for \(name)")
+        body()
+        try Data().write(to: directory.appendingPathComponent("\(name).stop"))
+        let isStopped = isTrue(within: 30) { FileManager.default.fileExists(atPath: stopped.path) }
+        XCTAssertTrue(isStopped, "\(name) did not stop")
+    }
+
+    /// Scroll the page's scroll view to its end, as a person does to reach the key row.
+    private func scrollToEnd(_ shown: UIWindow) {
+        guard let scroll = pageScroll(in: shown) else { return }
+        scroll.setContentOffset(CGPoint(x: 0, y: end(of: scroll)), animated: false)
+    }
+
+    /// The page's scroll view: the outermost that scrolls.
+    private func pageScroll(in shown: UIWindow) -> UIScrollView? {
+        var found: [UIView] = [shown]
+        while let view = found.first {
+            found.removeFirst()
+            if let scroll = view as? UIScrollView, scroll.contentSize.height > scroll.bounds.height {
+                return scroll
+            }
+            found += view.subviews
+        }
+        return nil
+    }
+
+    private func end(of scroll: UIScrollView) -> CGFloat {
+        scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom
     }
 
     private func settle() {
