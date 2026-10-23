@@ -133,6 +133,14 @@ runner. What this protects is not the broken commit itself but the signal —
 a `main` that is already red when the next change lands tells nobody which of
 the two broke it.
 
+An agent's branch stays on this machine. The agent finishes and tests the
+work on a local branch, and the branch is merged into `main` locally; an
+unfinished branch is not pushed. The one exception is a change that builds or
+tests only on a remote runner, such as an iOS or a macOS build: the agent
+pushes that branch and runs CI on it, and the remote branch is deleted once
+the work is merged. The Android app builds on this machine, so its branches
+stay local.
+
 Branching puts no merge commits in the history. A branch is merged
 fast-forward, which moves its commits onto the tip of `main` and leaves the
 line straight:
