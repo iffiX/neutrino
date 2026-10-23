@@ -19,7 +19,7 @@ Each row is one term the guide uses, with the name the Chinese panel and the Chi
 | **Credentials**                                     | 凭据                           | the SSH keys, logins and tokens stored in the vault                                                                 |
 | **Mode**                                            | 形态、模式                     | the role the hub's computer plays in its network                                                                    |
 | **Server**                                          | 服务器                         | the mode that forwards no traffic, on every system                                                                  |
-| **Side gateway**                                    | 旁路网关                       | the mode that forwards traffic for devices that name the hub as their gateway; Linux, full edition only             |
+| **Side gateway**                                    | 旁路网关                       | the mode that forwards traffic for devices that name the hub as their gateway; Linux only                           |
 | **Router**                                          | 路由器                         | the mode that takes over the network interfaces and serves a network of its own; Linux only                         |
 | **One-arm router**                                  | 单臂路由                       | the router mode on a single network cable                                                                           |
 | **Role**: **WAN**, **LAN**, **Split**, **Disabled** | 网口角色：WAN、LAN、拆分、停用 | what each network interface does in the router mode                                                                 |
@@ -36,7 +36,7 @@ Each row is one term the guide uses, with the name the Chinese panel and the Chi
 | **Setup key**                                       | setup key                      | the key a NetBird console issues for joining its network                                                            |
 | **Bootstrap peers**                                 | 碰头点                         | in EasyTier's manual mode, the addresses of machines already on the network                                         |
 | **LAN routes**                                      | 子网路由、局域网路由           | routes that let a client reach LAN devices without an agent over a virtual network                                  |
-| **Proxy**                                           | 代理                           | sends traffic to exit nodes by rules; full edition only                                                             |
+| **Proxy**                                           | 代理                           | sends traffic to exit nodes by rules                                                                                |
 | **Exit nodes**                                      | 出口节点                       | the servers the proxy sends traffic out through                                                                     |
 | **AI gateway**                                      | AI 网关                        | one address on the hub in front of the user's API keys and subscriptions                                            |
 | **Providers**                                       | 提供方                         | the API endpoints the AI gateway sends requests to                                                                  |
@@ -55,4 +55,3 @@ Each row is one term the guide uses, with the name the Chinese panel and the Chi
 | **Persistent**                                      | 持久                           | a terminal session that stays after its window closes                                                               |
 | **Shared**                                          | 共享                           | a terminal session that other clients with terminal permission also see                                             |
 | state line                                          | 状态行                         | the words on a client's hub row, for example **Connected · LAN**                                                    |
-| full edition, mainland edition                      | 完整版、国内版                 | two builds of one source; the mainland edition has no proxy and no side gateway                                     |

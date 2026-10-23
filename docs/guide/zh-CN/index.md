@@ -16,6 +16,9 @@ hero:
     - theme: alt
       text: 概述
       link: /zh-CN/overview
+    - theme: alt
+      text: 国内版
+      link: https://cnb.cool/iffi-X/neutrino/-/releases
 features:
   - title: 第一次用
     details: 把微子装到电脑上，手机和笔记本加入，在哪都能打开它的 AI 会话、编辑器、终端、桌面和文件。

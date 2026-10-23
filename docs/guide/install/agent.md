@@ -28,16 +28,10 @@ The install script checks the agent package against the release's `SHA256SUMS` a
 
 ### Linux and macOS
 
-For the full edition, run:
+Run:
 
 ```bash
 curl -fsSL https://github.com/iffiX/neutrino/releases/latest/download/install.sh | sh -s -- agent
-```
-
-For the mainland edition, run:
-
-```bash
-curl -fsSL https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.sh | sh -s -- agent
 ```
 
 Then join the hub, with the copied link in place of `<enroll-link>`:
@@ -48,16 +42,10 @@ sudo nagent join '<enroll-link>'
 
 ### Windows
 
-In PowerShell, run the command for your edition, then accept the administrator prompt. For the full edition:
+In PowerShell, run this command, then accept the administrator prompt:
 
 ```powershell
 & ([scriptblock]::Create((irm https://github.com/iffiX/neutrino/releases/latest/download/install.ps1))) agent
-```
-
-For the mainland edition:
-
-```powershell
-& ([scriptblock]::Create((irm https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.ps1))) agent
 ```
 
 In the administrator window, join the hub with the copied link:
@@ -68,7 +56,7 @@ nagent join '<enroll-link>'
 
 ## Install from the package file
 
-Download the agent's file for the machine from the [releases page](https://github.com/iffiX/neutrino/releases), or for the mainland edition from the [Gitee releases page](https://gitee.com/iffiX/neutrino/releases).
+Download the agent's file for the machine from the [releases page](https://github.com/iffiX/neutrino/releases).
 
 ### Linux
 

@@ -49,13 +49,12 @@ These rows apply to the HTTPS port. The hub's own certificate authority signs it
 
 With any of these codes, nothing is restored.
 
-| Symptom                         | Cause                                                                                          | Fix                                                                   |
-| ------------------------------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| `backup_wrong_extension`        | the file is not a backup this panel writes                                                     | pick the archive that **Download backup** saved                       |
-| `backup_corrupt`                | the archive is damaged                                                                         | download the backup again, or pick an older one                       |
-| `vault_passphrase_wrong`        | the passphrase does not open this backup                                                       | type the passphrase that was set when the backup was taken            |
-| `backup_mode_unavailable`       | the backup sets a mode this hub does not offer, such as a side gateway on the mainland edition | restore it on a hub of the full edition, on Linux                     |
-| the restore's apply stops short | the files are restored, and one step of the apply failed                                       | fix the cause the dialog names, then run `sudo nhub apply` on the hub |
+| Symptom                         | Cause                                                    | Fix                                                                   |
+| ------------------------------- | -------------------------------------------------------- | --------------------------------------------------------------------- |
+| `backup_wrong_extension`        | the file is not a backup this panel writes               | pick the archive that **Download backup** saved                       |
+| `backup_corrupt`                | the archive is damaged                                   | download the backup again, or pick an older one                       |
+| `vault_passphrase_wrong`        | the passphrase does not open this backup                 | type the passphrase that was set when the backup was taken            |
+| the restore's apply stops short | the files are restored, and one step of the apply failed | fix the cause the dialog names, then run `sudo nhub apply` on the hub |
 
 ## A device is offline
 

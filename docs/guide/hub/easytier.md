@@ -4,7 +4,7 @@ title: EasyTier
 
 # Put the hub on an EasyTier network
 
-An EasyTier network is a network name and a secret, and every machine holding both is on it. Both editions include EasyTier. Before you start, turn on the **EasyTier** card on the **Access** page, select **Apply access**, and select the card to open its **Settings**.
+An EasyTier network is a network name and a secret, and every machine holding both is on it. Before you start, turn on the **EasyTier** card on the **Access** page, select **Apply access**, and select the card to open its **Settings**.
 
 ## Pick where the network comes from
 

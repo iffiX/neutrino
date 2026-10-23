@@ -16,6 +16,9 @@ hero:
     - theme: alt
       text: Overview
       link: /overview
+    - theme: alt
+      text: Mainland edition
+      link: https://cnb.cool/iffi-X/neutrino/-/releases
 features:
   - title: First time
     details: Install Neutrino on the computer, join your phone and laptop, and open its AI sessions, editor, terminal, desktop and files from anywhere.

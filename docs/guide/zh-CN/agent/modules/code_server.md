@@ -12,8 +12,6 @@ Linux 或 Mac 受管机器上，**code-server** 模块给每个账户运行一�
 | macOS   | Apple 芯片和 Intel   |
 | Windows | 不支持，列表里是灰的 |
 
-国内版的安装程序改从中科大镜像 `mirrors.ustc.edu.cn` 取同一个发布包，用 SHA-256 核对。镜像上没有这一版时，改装镜像上的最新版，只靠 HTTPS 核对。
-
 ## 启用
 
 1. 在[模块](../modules.md)页的 **code-server** 标签上，选择 **安装**。

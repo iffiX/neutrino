@@ -37,7 +37,7 @@ The script prompts once for administrator rights. On Windows it goes on in a new
 
 After the install, the terminal prints where the package came from, that it matches its checksum, and that it is installed. It then prints the wizard's address on each network the computer is on. It then shows `Press Enter to begin:` and stays there until you finish the wizard in the browser. At that point it prints `The hub was set up in the browser; its panel is at` and the address, and the script exits.
 
-[Install the hub](./install/hub.md) has the mainland edition's command and the package files.
+To install from a package file instead, follow [Install the hub](./install/hub.md).
 
 ## Answer the wizard
 

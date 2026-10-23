@@ -22,7 +22,7 @@ title: 一台笔记本管所有机器
 1. 在 `server` 上安装被控端：
 
    ```bash
-   curl -fsSL https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.sh | sh -s -- agent
+   curl -fsSL https://github.com/iffiX/neutrino/releases/latest/download/install.sh | sh -s -- agent
    ```
 
 1. 用复制的链接加入中枢：
@@ -35,8 +35,6 @@ title: 一台笔记本管所有机器
 
 ![设备页上的加入链接和复制按钮](/guide/zh/devices_enroll_link.webp)
 
-中枢是完整版时，安装命令见[安装被控端](../install/agent.md)。
-
 ## 加入 `desktop`
 
 1. 在 **设备** 页再选一次 **用链接添加**。
@@ -45,7 +43,7 @@ title: 一台笔记本管所有机器
 1. 安装被控端：
 
    ```powershell
-   & ([scriptblock]::Create((irm https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.ps1))) agent
+   & ([scriptblock]::Create((irm https://github.com/iffiX/neutrino/releases/latest/download/install.ps1))) agent
    ```
 
 1. 在同一个窗口里加入中枢：

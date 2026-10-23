@@ -21,7 +21,7 @@ Each part of Neutrino 0.6.0 has a section here with the systems it installs on a
 
 The Linux hub package includes its own Python. It depends on systemd, nftables, dnsmasq, iproute2, wpa_supplicant, dhcpcd, fail2ban, iw, arp-scan, curl, smbclient, the OpenSSH client and pkexec. It recommends hostapd for a machine that serves Wi-Fi.
 
-Every hub package of both editions includes frpc 0.71.1, the client of the frp project, under the Apache-2.0 licence. SakuraFrp and OpenFrp run it, and **Acknowledgements** in the **About** card on the **Settings** page lists it.
+Every hub package includes frpc 0.71.1, the client of the frp project, under the Apache-2.0 licence. SakuraFrp and OpenFrp run it, and **Acknowledgements** in the **About** card on the **Settings** page lists it.
 
 On the Debian family the dhcpcd dependency reads `dhcpcd-base | dhcpcd5`, because Ubuntu 22.04 has the daemon under the second name. The pkexec dependency reads `pkexec | policykit-1` there, and on the Fedora family and Arch it is `polkit`. The Windows and macOS packages include every program the hub drives and name no dependency. Server mode, the one mode the hub has there, is described on [Network](../hub/network.md).
 
@@ -87,17 +87,6 @@ Every part of one release speaks the same protocol number, and every 0.6.0 build
 A rejected program keeps its binding.
 
 [The channel](../protocol/channel.md#protocol-numbers) lists the protocol numbers.
-
-## Editions
-
-Each release has two editions built from one source at the same version. The full edition is on GitHub, and the mainland edition is on [Gitee](https://gitee.com/iffiX/neutrino/releases), with file names of the same pattern. The release page a file comes from names its edition.
-
-| Edition  | Files                                                                                                                                                | Left out                                      |
-| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| full     | every file in the tables on this page                                                                                                                | nothing                                       |
-| mainland | for the hub, the agent and the desktop client: the `.deb` for x86-64 and ARM64, the Windows `.msi`, the Apple silicon `.pkg`; and the Android `.apk` | the hub has no proxy and no side gateway mode |
-
-The agent program is the same in both editions, and the desktop client and the Android app have the same features in both. The mainland release has fewer of their files. A package upgrades only to a package of its own edition.
 
 ## Modules by system
 

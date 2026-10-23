@@ -19,7 +19,7 @@ title: 术语表
 | 凭据                 | Credentials                  | 存进保险库的 SSH 密钥、登录信息和令牌                                  |
 | 形态、模式           | Shape、Mode                  | 中枢所在电脑在网络里的角色；向导里叫形态，网络页上叫模式               |
 | 服务器               | Server                       | 不转发流量的模式，三个系统都有                                         |
-| 旁路网关             | Side gateway                 | 给把它设成网关的设备转发流量，只在 Linux 完整版                        |
+| 旁路网关             | Side gateway                 | 给把它设成网关的设备转发流量，只在 Linux 上                            |
 | 路由器               | Router                       | 接管网口、自己提供一个网络，只在 Linux 上                              |
 | 单臂路由             | One-arm router               | 只用一根网线的路由器模式                                               |
 | 角色                 | Role                         | 路由器模式下每个网口做什么，可选 WAN、LAN、拆分、停用                  |
@@ -38,7 +38,7 @@ title: 术语表
 | setup key            | setup key                    | NetBird 控制台发的加入密钥                                             |
 | 碰头点               | Bootstrap peers              | EasyTier 手动模式下已在网里的机器的地址                                |
 | 子网路由、局域网路由 | Subnet routes、LAN routes    | 让客户端经虚拟网访问没装被控端的局域网设备                             |
-| 代理                 | Proxy                        | 按规则把流量交给出口节点，只在完整版                                   |
+| 代理                 | Proxy                        | 按规则把流量交给出口节点                                               |
 | 出口节点             | Exit nodes                   | 代理把流量交出去的那台服务器                                           |
 | AI 网关              | AI gateway                   | 中枢上的一个入口，背后是你的密钥和订阅                                 |
 | 提供方               | Providers                    | AI 网关转发请求的 API 端点                                             |
@@ -57,4 +57,3 @@ title: 术语表
 | 持久                 | Persistent                   | 终端会话在窗口关掉后还在                                               |
 | 共享（终端）         | Shared                       | 其他有终端权限的客户端也看得到这个会话                                 |
 | 状态行               | state line                   | 客户端中枢一行上的状态字，例如 已连接 · 局域网                         |
-| 完整版、国内版       | intl、cn                     | 同一份源码的两个版本，国内版没有代理和旁路网关                         |

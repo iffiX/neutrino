@@ -4,7 +4,7 @@ title: Install the hub
 
 # Install the hub
 
-Besides the one command of [Step zero](../quick-start.md), the hub installs from a package file or in the mainland edition. Each screen of the setup wizard follows the install.
+The hub installs with the one command of [Step zero](../quick-start.md) or from a package file. Each screen of the setup wizard follows the install.
 
 ## Before you start
 
@@ -16,17 +16,6 @@ Besides the one command of [Step zero](../quick-start.md), the hub installs from
 - You have root on it, or an administrator account on macOS and Windows.
 - It reaches the internet.
 
-## Pick an edition
-
-Every release comes in two editions:
-
-| Edition  | Published on                   | What it has                                          |
-| -------- | ------------------------------ | ---------------------------------------------------- |
-| full     | GitHub, every release kept     | every feature                                        |
-| mainland | Gitee, the latest release only | every feature except the proxy and side gateway mode |
-
-The mainland edition downloads from mirrors in mainland China. It publishes the hub for Debian, Ubuntu and Raspberry Pi OS on x86-64 and ARM64, Windows, and Apple silicon Macs.
-
 ## Install with one command
 
 The install script prints one line per step: where the package came from, that it matches the release's `SHA256SUMS`, and that it is installed. It then runs `nhub setup`. That command prints the wizard's address, then shows `Press Enter to begin:` and stays there. When you finish the wizard in a browser, it prints `The hub was set up in the browser; its panel is at` and the panel's address, then exits.
@@ -35,37 +24,25 @@ Over a hub already set up, the script runs no setup and prints `The hub was upgr
 
 ### Linux and macOS
 
-For the full edition, run:
+Run:
 
 ```bash
 curl -fsSL https://github.com/iffiX/neutrino/releases/latest/download/install.sh | sh
-```
-
-For the mainland edition, run:
-
-```bash
-curl -fsSL https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.sh | sh
 ```
 
 On Debian and Ubuntu, apt prints `N: Download is performed unsandboxed as root…` during the install. The line means apt read the package file as root, and the install goes on.
 
 ### Windows
 
-In PowerShell, run the command for your edition, then accept the administrator prompt. For the full edition:
+In PowerShell, run this command, then accept the administrator prompt:
 
 ```powershell
 irm https://github.com/iffiX/neutrino/releases/latest/download/install.ps1 | iex
 ```
 
-For the mainland edition:
-
-```powershell
-irm https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.ps1 | iex
-```
-
 ## Install from the package file
 
-Download the file for your system from the [releases page](https://github.com/iffiX/neutrino/releases), or for the mainland edition from the [Gitee releases page](https://gitee.com/iffiX/neutrino/releases). A package installed over a hub nobody has set up starts the new version's wizard and prints its address, as a first install does.
+Download the file for your system from the [releases page](https://github.com/iffiX/neutrino/releases). A package installed over a hub nobody has set up starts the new version's wizard and prints its address, as a first install does.
 
 ### Linux
 
@@ -147,7 +124,7 @@ The passphrase seals every credential the hub holds, and restoring a backup requ
 
 ![The shape screen with Server picked](/guide/en/setup_shape.webp)
 
-**What is this machine for?** lists the modes the machine has enough ports for: **Server**, **Side gateway**, **Router** and **One-arm router**. On macOS and Windows the screen lists **Server** only, and the mainland edition has no **Side gateway**. A router takes over the machine's interfaces. [Network](../hub/network.md#mode) describes each mode and changes it later.
+**What is this machine for?** lists the modes the machine has enough ports for: **Server**, **Side gateway**, **Router** and **One-arm router**. On macOS and Windows the screen lists **Server** only. A router takes over the machine's interfaces. [Network](../hub/network.md#mode) describes each mode and changes it later.
 
 ### Ports
 
@@ -162,7 +139,7 @@ The passphrase seals every credential the hub holds, and restoring a backup requ
 
 ### Proxy
 
-**Going out through a proxy** appears in the full edition and is optional; [Proxy](../hub/proxy.md) holds the same settings later. To set it up now, turn on **Set it up here** and paste each `ss://` or `vless://` link under **Exit node links**.
+**Going out through a proxy** is optional; [Proxy](../hub/proxy.md) holds the same settings later. To set it up now, turn on **Set it up here** and paste each `ss://` or `vless://` link under **Exit node links**.
 
 | Field                                                 | Shown for       |
 | ----------------------------------------------------- | --------------- |

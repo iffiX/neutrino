@@ -46,11 +46,11 @@ Several ways in can be on at once, and a client uses whichever one reaches the h
 
 The hub itself has layers, and each one is set on its own panel page:
 
-| Layer      | What it does                                                                                                                                        |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Mode       | Places the hub's computer in your network. **Server** runs on every system, **Router** on Linux, and **Side gateway** on Linux in the full edition. |
-| Access     | Turns on the ways in from outside: **NetBird**, **EasyTier**, **SSH relay**, **Direct**, **SakuraFrp** and **OpenFrp**.                             |
-| Proxy      | Sends chosen traffic through exit nodes: the hub's own, and in **Router** and **Side gateway** that of the devices behind it. Full edition only.    |
-| AI gateway | One address in front of your API keys and subscriptions, for the AI tools on every machine and client.                                              |
+| Layer      | What it does                                                                                                                  |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Mode       | Places the hub's computer in your network. **Server** runs on every system, **Router** and **Side gateway** on Linux.         |
+| Access     | Turns on the ways in from outside: **NetBird**, **EasyTier**, **SSH relay**, **Direct**, **SakuraFrp** and **OpenFrp**.       |
+| Proxy      | Sends chosen traffic through exit nodes: the hub's own, and in **Router** and **Side gateway** that of the devices behind it. |
+| AI gateway | One address in front of your API keys and subscriptions, for the AI tools on every machine and client.                        |
 
 [Network](./hub/network.md) describes each mode and how to change it. [Security](./security.md) explains why the hub runs as root, where it keeps your keys, and what Direct opens.

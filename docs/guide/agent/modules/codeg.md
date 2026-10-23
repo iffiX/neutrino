@@ -24,7 +24,7 @@ Codeg runs Claude Code, Codex, Gemini CLI and twelve more coding agents in one w
 
 ![The Codeg tab of server with one running instance](/guide/en/codeg_panel.webp)
 
-The module's installer fetches Codeg's server bundle from GitHub and Node.js from nodejs.org, about 110 MB together. The machine's agent unpacks both into its own directory, shared by every account. The mainland edition fetches Node.js from npmmirror and the server bundle from GitHub as well, which is slow there. Codeg's own **Software Update** screen cannot change this install; a newer Codeg comes with a newer hub.
+The module's installer fetches Codeg's server bundle from GitHub and Node.js from nodejs.org, about 110 MB together. The machine's agent unpacks both into its own directory, shared by every account. Codeg's own **Software Update** screen cannot change this install; a newer Codeg comes with a newer hub.
 
 Each instance runs as its account, and its row reads **running** or **not running**. On Windows, store the account's login under **Logins** on the **Credentials** page before you pick it. When an install or an apply fails, the row names the code, listed under [Errors on the Modules page](../../reference/troubleshooting.md#errors-on-the-modules-page) in troubleshooting.
 
@@ -48,7 +48,7 @@ Each running instance is a row under **Web** on the [Services](../../hub/service
 
 ## The first open
 
-The first session with a coding agent installs that agent's adapter; Codeg fetches it with npm from npmjs.org in both editions. The install takes one to two minutes. **Settings** > **Agents** lists every coding agent with the state of its adapter.
+The first session with a coding agent installs that agent's adapter; Codeg fetches it with npm from npmjs.org. The install takes one to two minutes. **Settings** > **Agents** lists every coding agent with the state of its adapter.
 
 ![Codeg's Agents settings with the Claude Code adapter installed](/guide/en/app_codeg_agents.webp)
 

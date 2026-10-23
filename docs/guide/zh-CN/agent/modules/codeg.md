@@ -24,7 +24,7 @@ Codeg 是一个网页，里面能用 Claude Code、Codex、Gemini CLI 和另外 
 
 ![server 的 Codeg 标签，一个实例在运行](/guide/zh/codeg_panel.webp)
 
-模块的安装程序从 GitHub 取 Codeg 的服务端包，从 nodejs.org 取 Node.js，两个包共约 110 MB。被控端把它们解包到自己的目录里，所有账户共用。国内版改从 npmmirror 取 Node.js，服务端包仍从 GitHub 取，在国内下载慢。Codeg 自己的 **Software Update** 页改不了这份安装，新版本的 Codeg 随新版本的中枢一起来。
+模块的安装程序从 GitHub 取 Codeg 的服务端包，从 nodejs.org 取 Node.js，两个包共约 110 MB。被控端把它们解包到自己的目录里，所有账户共用。Codeg 自己的 **Software Update** 页改不了这份安装，新版本的 Codeg 随新版本的中枢一起来。
 
 每个实例以它的账户身份运行，那一行读 **运行中** 或 **未运行**。Windows 的登录信息先存进 **凭据** 页，再在实例上选它。安装或应用失败时，那一行写出错误码，见故障排查的[模块页上的错误](../../reference/troubleshooting.md#模块页上的错误)。
 
@@ -50,7 +50,7 @@ Codeg 自己用 npm 从 registry.npmjs.org 装 AI 编程工具，装在它的数
 
 ## 第一次打开
 
-第一次用某个 AI 编程工具开会话时，Codeg 自己用 npm 从 npmjs.org 装这个工具的适配器，国内版也一样，要 1～2 分钟。每个工具的适配器装到哪一步，在 **Settings** 的 **Agents** 页里看。
+第一次用某个 AI 编程工具开会话时，Codeg 自己用 npm 从 npmjs.org 装这个工具的适配器，要 1～2 分钟。每个工具的适配器装到哪一步，在 **Settings** 的 **Agents** 页里看。
 
 ![Codeg 的 Agents 设置页，Claude Code 的适配器已装好](/guide/zh/app_codeg_agents.webp)
 

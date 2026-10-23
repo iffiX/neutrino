@@ -9,8 +9,8 @@ title: 第零步
 ## 开始之前
 
 - 一台电脑，系统是下面之一：
-  - 带桌面的 Debian 12、Ubuntu 22.04 或更新版本，或 64 位树莓派 OS。
-  - Apple 芯片的 Mac，macOS 12.3 或更新版本。
+  - 带桌面的 Linux：Debian 12、Ubuntu 22.04、Fedora 41 或更新版本，64 位树莓派 OS，或 RHEL 9 系。
+  - macOS 12.3 或更新版本，Apple 芯片或 Intel。
   - x86-64 上的 Windows 10 1809 或更新版本。
 - 你有这台电脑的管理员权限，它能上网。
 - 一部 Android 8.0 或更新版本的手机，64 位 ARM 处理器，开通了移动数据。或者另一台笔记本，系统同样是上面之一。只有其中一样时，跳过另一样的步骤。
@@ -24,18 +24,18 @@ title: 第零步
 Linux 上打开终端，macOS 上打开“终端”应用，运行：
 
 ```bash
-curl -fsSL https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.sh | sh
+curl -fsSL https://github.com/iffiX/neutrino/releases/latest/download/install.sh | sh
 ```
 
 Windows 上打开 PowerShell，运行：
 
 ```powershell
-irm https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.ps1 | iex
+irm https://github.com/iffiX/neutrino/releases/latest/download/install.ps1 | iex
 ```
 
 脚本要一次管理员权限：Linux 和 macOS 上输入登录密码，Windows 上在授权框里选 **是**。装好后，终端先写出安装包从哪里来、和 `SHA256SUMS` 核对通过、已经装好这三行，再打印设置向导的地址，末尾带一次性令牌，最后一行是 `Press Enter to begin:`。让终端开着，不按回车；在浏览器里做完下面的向导后，终端打印 `The hub was set up in the browser; its panel is at` 和面板地址，命令随即结束。
 
-这是国内版的命令。完整版的命令见[安装中枢](./install/hub.md)。
+要用包文件安装，见[安装中枢](./install/hub.md)。
 
 ## 回答向导
 
@@ -51,6 +51,7 @@ irm https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.ps1 | ie
 
 1. 在 **这台机器做什么？** 屏选择 **服务器**。macOS 和 Windows 上只有这一项。
 1. 在 **用哪些网口？** 屏，两个端口保持原值。
+1. 在 **通过代理出网** 屏，**在这里设置** 保持关闭。
 1. 在 **就绪** 屏选择 **开始配置这台机器**。
 
 页面标题先读 **正在配置**，再读 **这个中枢已配置好**，中枢和本机的被控端就装好了。
@@ -74,7 +75,7 @@ irm https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.ps1 | ie
 
 ### 在手机上加入
 
-1. 在手机浏览器里打开 `https://gitee.com/iffiX/neutrino/releases`，下载 `neutrino-client-0.6.0-android.apk`。
+1. 在手机浏览器里打开 `https://github.com/iffiX/neutrino/releases/download/v0.6.0/neutrino-client-0.6.0-android.apk`，下载安装包。
 1. 打开下载的文件。Android 提示时，允许浏览器安装应用。
 1. 选 **安装**，装好后打开 **微子**。
 1. 在电脑的面板侧栏打开 **客户端**，选择 **新建客户端链接**。
@@ -97,13 +98,13 @@ Android 13 及更新版本上，第一次在应用里选 **打开** 或 **面板
 用你自己的账户运行下面的命令，前面不加 `sudo`。Linux 和 macOS 上：
 
 ```bash
-curl -fsSL https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.sh | sh -s -- client
+curl -fsSL https://github.com/iffiX/neutrino/releases/latest/download/install.sh | sh -s -- client
 ```
 
 Windows 上，在 PowerShell 里：
 
 ```powershell
-& ([scriptblock]::Create((irm https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.ps1))) client
+& ([scriptblock]::Create((irm https://github.com/iffiX/neutrino/releases/latest/download/install.ps1))) client
 ```
 
 1. 在面板的 **客户端** 页再建一条链接，名字填笔记本的名字。

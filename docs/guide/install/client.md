@@ -4,7 +4,7 @@ title: Install a client
 
 # Install a client
 
-Install the client on your computer or Android phone from a package file or in the mainland edition, then join it to your hub.
+Install the client on your computer or Android phone, then join it to your hub.
 
 ## Before you start
 
@@ -22,35 +22,23 @@ The install script checks the client package against the release's `SHA256SUMS` 
 
 ### Linux and macOS
 
-For the full edition, run:
+Run:
 
 ```bash
 curl -fsSL https://github.com/iffiX/neutrino/releases/latest/download/install.sh | sh -s -- client
 ```
 
-For the mainland edition, run:
-
-```bash
-curl -fsSL https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.sh | sh -s -- client
-```
-
 ### Windows
 
-In PowerShell, run the command for your edition, then accept the administrator prompt. For the full edition:
+In PowerShell, run this command, then accept the administrator prompt:
 
 ```powershell
 & ([scriptblock]::Create((irm https://github.com/iffiX/neutrino/releases/latest/download/install.ps1))) client
 ```
 
-For the mainland edition:
-
-```powershell
-& ([scriptblock]::Create((irm https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.ps1))) client
-```
-
 ## Install the desktop client from the package file
 
-Download the client's file from the [releases page](https://github.com/iffiX/neutrino/releases), or for the mainland edition from the [Gitee releases page](https://gitee.com/iffiX/neutrino/releases), then install it:
+Download the client's file from the [releases page](https://github.com/iffiX/neutrino/releases), then install it:
 
 ::: code-group
 
@@ -84,16 +72,14 @@ On Windows, opening the `.msi` from File Explorer runs the same installer. Its *
 
 On macOS, Gatekeeper asks for a confirmation the first time **Neutrino Client** opens.
 
-Every package of either edition also installs the services for the virtual networks, NetBird and EasyTier.
+Every package also installs the services for the virtual networks, NetBird and EasyTier.
 
 ## Install the Android app
 
-1. On the phone, download `neutrino-client-0.6.0-android.apk` from the release.
+1. On the phone, download `neutrino-client-0.6.0-android.apk` from the [releases page](https://github.com/iffiX/neutrino/releases).
 1. Open the file. If Android shows a prompt, allow your browser or file manager to install apps.
 1. Select **Install**.
 1. Open **Neutrino**.
-
-The mainland edition's apk is on the [Gitee releases page](https://gitee.com/iffiX/neutrino/releases).
 
 Every release apk is signed with the project's key. To check a downloaded apk on a computer with the Android SDK build tools, run:
 

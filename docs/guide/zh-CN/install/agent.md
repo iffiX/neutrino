@@ -30,16 +30,10 @@ title: 安装被控端
 
 ### Linux 和 macOS
 
-完整版：
+运行：
 
 ```bash
 curl -fsSL https://github.com/iffiX/neutrino/releases/latest/download/install.sh | sh -s -- agent
-```
-
-国内版：
-
-```bash
-curl -fsSL https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.sh | sh -s -- agent
 ```
 
 在 `sudo` 的提示下输入一次密码。装好后加入中枢：
@@ -50,16 +44,10 @@ sudo nagent join '<enroll-link>'
 
 ### Windows
 
-打开 PowerShell。完整版：
+打开 PowerShell，运行：
 
 ```powershell
 & ([scriptblock]::Create((irm https://github.com/iffiX/neutrino/releases/latest/download/install.ps1))) agent
-```
-
-国内版：
-
-```powershell
-& ([scriptblock]::Create((irm https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.ps1))) agent
 ```
 
 Windows 弹出一次授权框，脚本在新开的管理员窗口里运行。装好后在这个窗口里加入中枢：
@@ -70,7 +58,7 @@ nagent join '<enroll-link>'
 
 ## 用包文件安装
 
-从发布页下载这台机器对应的文件。
+从 [GitHub 发布页](https://github.com/iffiX/neutrino/releases)下载这台机器对应的文件。
 
 ### Linux
 

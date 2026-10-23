@@ -4,7 +4,7 @@ title: Proxy
 
 # Proxy
 
-The **Proxy** page sends the devices and destinations you choose to the internet through an exit node, and everything else directly through the uplink. Every apply on the page restarts the proxy, and connections through it drop for a moment. The mainland edition has no proxy and no **Proxy** page.
+The **Proxy** page sends the devices and destinations you choose to the internet through an exit node, and everything else directly through the uplink. Every apply on the page restarts the proxy, and connections through it drop for a moment.
 
 ## Add exit nodes
 

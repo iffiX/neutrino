@@ -4,7 +4,7 @@ title: Make the hub a router or side gateway
 
 # Make the hub a router or side gateway
 
-To forward traffic for the devices at home, an installed hub changes from **Server** mode to **Router** or **Side gateway** mode. Both modes exist on Linux only, and the side gateway in the full edition only. [Network](../hub/network.md) describes every field the steps touch.
+To forward traffic for the devices at home, an installed hub changes from **Server** mode to **Router** or **Side gateway** mode. Both modes exist on Linux only. [Network](../hub/network.md) describes every field the steps touch.
 
 ## When to do this
 

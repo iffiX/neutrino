@@ -22,39 +22,27 @@ title: 安装客户端
 
 ### Linux 和 macOS
 
-完整版：
+在终端里运行：
 
 ```bash
 curl -fsSL https://github.com/iffiX/neutrino/releases/latest/download/install.sh | sh -s -- client
-```
-
-国内版：
-
-```bash
-curl -fsSL https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.sh | sh -s -- client
 ```
 
 脚本装包时调用 `sudo`，输入一次密码。
 
 ### Windows
 
-打开 PowerShell。完整版：
+打开 PowerShell，运行：
 
 ```powershell
 & ([scriptblock]::Create((irm https://github.com/iffiX/neutrino/releases/latest/download/install.ps1))) client
-```
-
-国内版：
-
-```powershell
-& ([scriptblock]::Create((irm https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.ps1))) client
 ```
 
 Windows 弹出一次授权框，安装在新开的管理员窗口里进行。加入中枢时，以你自己的账户新开一个 PowerShell。
 
 ## 用包文件装桌面客户端
 
-从发布页下载对应系统的包，然后安装：
+从 [GitHub 发布页](https://github.com/iffiX/neutrino/releases)下载对应系统的包，然后安装：
 
 ::: code-group
 
@@ -88,15 +76,13 @@ Windows 上双击 `.msi` 也行。保持勾选 **Add the Neutrino Client to PATH
 
 macOS 上，**Neutrino Client** 装进 `/Applications`。这个应用只有临时签名，第一次打开时在 Gatekeeper 的提示里确认一次。
 
-每个包都带虚拟网用的 NetBird 和 EasyTier 守护进程，两个版本一样。
+每个包都带虚拟网用的 NetBird 和 EasyTier 守护进程。
 
 ## 装安卓 App
 
-1. 在手机上从发布页下载 `neutrino-client-0.6.0-android.apk`。
+1. 在手机上从 [GitHub 发布页](https://github.com/iffiX/neutrino/releases)下载 `neutrino-client-0.6.0-android.apk`。
 1. 打开这个文件。Android 提示时，允许浏览器或文件管理器安装应用。
 1. 选 **安装**，装好后打开 **微子**。
-
-国内版的 apk 在 Gitee 的发布页上。
 
 要核对 apk 的签名，在装有 Android SDK 构建工具的电脑上运行：
 

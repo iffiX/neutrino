@@ -62,10 +62,10 @@ Linux 上，配置目录是 `/etc/neutrino/hub`，状态目录是 `/var/lib/neut
 
 | 什么时候                                                | 连到哪                                                                                                         |
 | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| 在 **设置** 页检查更新，或运行 `nhub update`            | 完整版连 GitHub，国内版连 Gitee                                                                                |
-| 装 CloudCLI                                             | Node.js 和 npm 包：完整版连 nodejs.org 和 npmjs.org，国内版连 npmmirror                                        |
-| 装 code-server                                          | 完整版连 GitHub，国内版连中国科学技术大学的镜像                                                                |
-| 机器的 AI 工具第一次用到 cc-switch                      | 完整版连 GitHub，国内版连微子自己在 Gitee 上的发布                                                             |
+| 在 **设置** 页检查更新，或运行 `nhub update`            | GitHub                                                                                                         |
+| 装 CloudCLI                                             | nodejs.org 和 npmjs.org，取 Node.js 和 npm 包                                                                  |
+| 装 code-server                                          | GitHub                                                                                                         |
+| 机器的 AI 工具第一次用到 cc-switch                      | GitHub 上 cc-switch 的发布                                                                                     |
 | 装其他模块                                              | 各模块的发布方                                                                                                 |
 | 开着 NetBird、EasyTier 或 SSH 中继                      | NetBird 的管理服务器、EasyTier 控制台或碰头点、你的中继服务器                                                  |
 | 保存 SakuraFrp 的访问密钥，打开或刷新隧道列表，应用隧道 | SakuraFrp 的接口 `api.natfrp.com`                                                                              |
