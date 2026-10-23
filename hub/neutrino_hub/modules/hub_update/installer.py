@@ -364,7 +364,7 @@ install_agent() {
 
 gate() {
     deadline=$(( $(date +%s) + GATE_TIMEOUT ))
-    while [ "$(date +%s)" -lt "$deadline" ]; do
+    while :; do
         ok=1
         report=''
         for unit in $UNITS; do
@@ -382,6 +382,7 @@ gate() {
         [ "$seen" = "$1" ] || { ok=0; report="$report version=$seen"; }
         [ "$ok" = 1 ] && return 0
         sleep "$POLL"
+        [ "$(date +%s)" -lt "$deadline" ] || break
     done
     echo "gate: timed out after ${GATE_TIMEOUT}s:$report" >> "$LOG"
     return 1
@@ -567,7 +568,7 @@ install_agent() {
 
 gate() {
     deadline=$(( $(date +%s) + GATE_TIMEOUT ))
-    while [ "$(date +%s)" -lt "$deadline" ]; do
+    while :; do
         ok=1
         report=''
         launchctl print "$SERVICE" 2>/dev/null | grep -q 'state = running' \
@@ -583,6 +584,7 @@ gate() {
         [ "$seen" = "$1" ] || { ok=0; report="$report version=$seen"; }
         [ "$ok" = 1 ] && return 0
         sleep "$POLL"
+        [ "$(date +%s)" -lt "$deadline" ] || break
     done
     echo "gate: timed out after ${GATE_TIMEOUT}s:$report" >> "$LOG"
     return 1
@@ -795,7 +797,7 @@ function Install-Agent {
 function Test-Gate($Version) {
     $deadline = (Get-Date).AddSeconds($GateTimeout)
     $report = ''
-    while ((Get-Date) -lt $deadline) {
+    do {
         $ok = $true
         $report = ''
         $running = Get-Service -Name $Service -ErrorAction SilentlyContinue
@@ -825,7 +827,7 @@ function Test-Gate($Version) {
         }
         if ($ok) { return $true }
         Start-Sleep -Seconds $Poll
-    }
+    } while ((Get-Date) -lt $deadline)
     Add-Content -LiteralPath $Log -Value "gate: timed out after $($GateTimeout)s:$report"
     return $false
 }
@@ -1141,7 +1143,8 @@ def render_script(
     Args:
         plan: What to install and what to hold for.
         directory: Where the state file and the log are written.
-        gate_timeout_s: How long the gate holds before it gives up.
+        gate_timeout_s: How long the gate holds before it gives up. The gate
+            looks at least once, however short this is.
         poll_s: How often the gate looks.
         output_limit_bytes: How much of the log's tail the state file keeps.
         meminfo_path: Where the kernel says how much memory is available.

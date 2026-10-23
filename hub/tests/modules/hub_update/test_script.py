@@ -99,6 +99,7 @@ def run_script(
     agent_start_s: int = 0,
     agent_wait_s: int = 120,
     family: str = "debian",
+    gate_timeout_s: int = 1,
 ) -> tuple[int, dict]:
     """Run the rendered script and read the record it left; what it wrote to
     its standard error is left beside the record."""
@@ -112,7 +113,7 @@ def run_script(
         render_script(
             plan_for(directory, rollback=rollback, python=python, family=family),
             directory=directory,
-            gate_timeout_s=1,
+            gate_timeout_s=gate_timeout_s,
             poll_s=0.2,
             meminfo_path=str(meminfo),
             agent_command=str(bin_dir / "nagent"),
@@ -182,6 +183,16 @@ def test_each_step_is_written_as_it_is_taken(box):
     assert mid["stage"] == "installing"
     assert mid["finished_at"] == ""
     assert mid["steps"] == [*HANDED_OVER, "installed 0.3.1"]
+
+
+def test_a_gate_with_no_time_left_probes_once_before_it_looks_at_the_clock(box):
+    _, directory = box
+
+    code, raw = run_script(box, gate_timeout_s=0)
+
+    assert code == 0
+    assert raw["stage"] == "installed"
+    assert len((directory / "probes").read_text().splitlines()) == 1
 
 
 def test_a_package_manager_that_changed_nothing_is_failed_at_once(box):

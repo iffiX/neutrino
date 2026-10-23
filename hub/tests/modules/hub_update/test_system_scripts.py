@@ -128,12 +128,12 @@ def mac(tmp_path):
     return bin_dir, directory, cache, log
 
 
-def run_mac(mac, *, rollback=True, agent_start_s=0, agent_wait_s=120):
+def run_mac(mac, *, rollback=True, agent_start_s=0, agent_wait_s=120, gate_timeout_s=1):
     bin_dir, directory, cache, log = mac
     text = render_script(
         plan_for(directory, "pkg", rollback=rollback),
         directory=directory,
-        gate_timeout_s=1,
+        gate_timeout_s=gate_timeout_s,
         poll_s=0.2,
         agent_start_s=agent_start_s,
         agent_wait_s=agent_wait_s,
@@ -256,6 +256,16 @@ def test_a_mac_gate_that_fails_puts_the_older_package_back(mac):
     )
     record = HubUpdateStateFile(path=directory / "state.json").load()
     assert record.stage == "rolled_back"
+
+
+def test_a_mac_gate_with_no_time_left_probes_once_before_it_looks_at_the_clock(mac):
+    bin_dir, directory, _cache, _log = mac
+    stub(bin_dir, "curl", body=f"echo probe >> {directory}/probes")
+
+    _code, raw, _asked = run_mac(mac, gate_timeout_s=0)
+
+    assert raw["stage"] == "installed"
+    assert len((directory / "probes").read_text().splitlines()) == 1
 
 
 def test_a_mac_gate_reports_a_stopped_service(mac):
@@ -430,12 +440,13 @@ def run_windows(
     is_agent_here=False,
     is_busy=False,
     leaves_agent="",
+    gate_timeout_s=1,
 ):
     directory, root, asked = windows
     text = render_script(
         plan_for(directory, "msi", rollback=rollback),
         directory=directory,
-        gate_timeout_s=1,
+        gate_timeout_s=gate_timeout_s,
         poll_s=1,
         agent_start_s=0,
     )
@@ -500,6 +511,15 @@ def test_a_windows_install_the_gate_passes_is_installed(windows):
     assert HubUpdateStateFile(path=directory / "state.json").load().stage == (
         "installed"
     )
+
+
+def test_a_windows_gate_with_no_time_left_probes_once_before_it_looks_at_the_clock(
+    windows,
+):
+    raw, _asked = run_windows(windows, gate_timeout_s=0)
+
+    assert raw["stage"] == "installed"
+    assert "panel answers" in raw["steps"]
 
 
 def test_a_windows_install_msiexec_refused_changed_nothing(windows):
