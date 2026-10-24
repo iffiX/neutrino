@@ -2057,15 +2057,18 @@ export interface NetbirdJoinRequest {
 
 // --- Containers ---
 
-/** The service type of one host port a container publishes. */
+export type PodmanServiceKind = "auto" | "web" | "port";
+export type PodmanServiceScheme = "http" | "https";
+export type PodmanServiceProtocol = "tcp" | "udp";
+
+/** The service type of one host port of a declared container. */
 export interface PodmanService {
   port: number;
-  /** auto, web or port. */
-  kind: string;
-  /** http or https, for web. */
-  scheme: string;
-  /** tcp and udp, for port. */
-  protocols: string[];
+  kind: PodmanServiceKind;
+  /** A web port's scheme. */
+  scheme: PodmanServiceScheme;
+  /** What a port port publishes, at least one. */
+  protocols: PodmanServiceProtocol[];
 }
 
 export interface PodmanContainer {
@@ -2084,6 +2087,16 @@ export interface PodmanContainer {
   services: PodmanService[];
 }
 
+/** One published host port of a container, as the machine reported it. */
+export interface PodmanHostBinding {
+  /** Empty for every address. */
+  address: string;
+  port: number;
+  protocol: PodmanServiceProtocol;
+  /** http, https or tcp once probed on a running container; empty before and on UDP. */
+  detected: string;
+}
+
 export interface PodmanContainerState {
   name: string;
   image: string;
@@ -2091,6 +2104,7 @@ export interface PodmanContainerState {
   is_running: boolean;
   /** Declared in config/, so it is systemd-supervised and reboots with the box. */
   is_declared: boolean;
+  host_bindings: PodmanHostBinding[];
 }
 
 /** The Run settings as stored: the account whose Podman machine runs the

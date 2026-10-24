@@ -5,6 +5,7 @@ import { ApplyBar } from "./apply_bar";
 import { JournalPanel } from "./journal_panel";
 import { ErrorPanel } from "./error_panel";
 import { Icon } from "./icon";
+import { Picker } from "./picker";
 import { ShellTerminal } from "./shell_terminal";
 import { StatusDot } from "./status_dot";
 import { StringListEditor } from "./string_list_editor";
@@ -25,6 +26,10 @@ import type {
   PodmanContainer,
   PodmanContainerState,
   PodmanDeviceView,
+  PodmanService,
+  PodmanServiceKind,
+  PodmanServiceProtocol,
+  PodmanServiceScheme,
 } from "../api_types";
 
 import "./containers_panels.css";
@@ -53,6 +58,30 @@ const EMPTY_CONTAINER: PodmanContainer = {
   is_autostart: true,
   services: [],
 };
+
+// One host port of a Ports row, `host:container` with an optional protocol.
+const PORT_MAPPING_PATTERN = /^(\d{1,5}):\d{1,5}(?:\/(tcp|udp))?$/;
+
+interface ServiceChoice<T> {
+  id: T;
+  labelKey: string;
+}
+
+const SERVICE_KINDS: ServiceChoice<PodmanServiceKind>[] = [
+  { id: "auto", labelKey: "ui.containers.service_auto" },
+  { id: "web", labelKey: "ui.containers.service_web" },
+  { id: "port", labelKey: "ui.containers.service_port" },
+];
+
+const SERVICE_SCHEMES: ServiceChoice<PodmanServiceScheme>[] = [
+  { id: "http", labelKey: "ui.containers.service_http" },
+  { id: "https", labelKey: "ui.containers.service_https" },
+];
+
+const SERVICE_PROTOCOLS: ServiceChoice<PodmanServiceProtocol>[] = [
+  { id: "tcp", labelKey: "ui.containers.service_tcp" },
+  { id: "udp", labelKey: "ui.containers.service_udp" },
+];
 
 interface ContainersPanelsProps {
   /** The machine this page's shells and journals reach. */
@@ -303,6 +332,7 @@ export function ContainersPanels({
             deviceId={deviceId}
             basePath={basePath}
             container={container}
+            state={saved.running.find((state) => state.name === container.name)}
             onChange={(patch) =>
               setContainers((current) =>
                 current.map((entry, at) =>
@@ -368,10 +398,72 @@ function imageBase(image: string): string {
   return colon > image.lastIndexOf("/") ? image.slice(0, colon) : image;
 }
 
+/** The host ports the Ports rows publish, each once, in their order. */
+function hostPorts(ports: string[]): number[] {
+  const found: number[] = [];
+  for (const mapping of ports) {
+    const match = PORT_MAPPING_PATTERN.exec(mapping);
+    const port = match === null ? 0 : Number(match[1]);
+    if (port > 0 && !found.includes(port)) {
+      found.push(port);
+    }
+  }
+  return found;
+}
+
+/** The protocols the Ports rows publish one host port on. */
+function publishedProtocols(
+  ports: string[],
+  port: number,
+): PodmanServiceProtocol[] {
+  const found = new Set<PodmanServiceProtocol>();
+  for (const mapping of ports) {
+    const match = PORT_MAPPING_PATTERN.exec(mapping);
+    if (match !== null && Number(match[1]) === port) {
+      found.add(match[2] === "udp" ? "udp" : "tcp");
+    }
+  }
+  return SERVICE_PROTOCOLS.map((choice) => choice.id).filter((id) =>
+    found.has(id),
+  );
+}
+
+/** One port's service, `auto` for a port the list does not name. */
+function serviceOf(container: PodmanContainer, port: number): PodmanService {
+  return (
+    container.services.find((service) => service.port === port) ?? {
+      port,
+      kind: "auto",
+      scheme: "http",
+      protocols: ["tcp"],
+    }
+  );
+}
+
+/** What Auto shows: the type the machine detected on the TCP port. */
+function detectedWords(
+  state: PodmanContainerState | undefined,
+  port: number,
+): string {
+  const binding = state?.is_running
+    ? state.host_bindings.find(
+        (entry) =>
+          entry.port === port &&
+          entry.protocol === "tcp" &&
+          entry.detected !== "",
+      )
+    : undefined;
+  return binding === undefined
+    ? t("ui.containers.service_pending")
+    : t("ui.containers.service_detected", { kind: binding.detected });
+}
+
 interface ContainerEditorProps {
   deviceId: string;
   basePath: string;
   container: PodmanContainer;
+  /** The container as the machine last reported it, by its saved name. */
+  state: PodmanContainerState | undefined;
   onChange: (patch: Partial<PodmanContainer>) => void;
   onRemove: () => void;
 }
@@ -380,6 +472,7 @@ function ContainerEditor({
   deviceId,
   basePath,
   container,
+  state,
   onChange,
   onRemove,
 }: ContainerEditorProps) {
@@ -387,6 +480,66 @@ function ContainerEditor({
   useLanguage();
   const [tags, setTags] = useState<string[] | null>(null);
   const [isLoadingTags, setIsLoadingTags] = useState(false);
+
+  const ports = hostPorts(container.ports);
+
+  const setPorts = (next: string[]) => {
+    const kept = hostPorts(next);
+    onChange({
+      ports: next,
+      services: container.services.filter((service) =>
+        kept.includes(service.port),
+      ),
+    });
+  };
+
+  // The list keeps the Ports order and names no auto port.
+  const setService = (service: PodmanService) => {
+    onChange({
+      services: ports
+        .map((port) =>
+          port === service.port ? service : serviceOf(container, port),
+        )
+        .filter((entry) => entry.kind !== "auto"),
+    });
+  };
+
+  const setKind = (port: number, id: string) => {
+    const kind = SERVICE_KINDS.find((choice) => choice.id === id)?.id;
+    if (kind === undefined) {
+      return;
+    }
+    const current = serviceOf(container, port);
+    setService({
+      ...current,
+      kind,
+      protocols:
+        kind === "port"
+          ? publishedProtocols(container.ports, port)
+          : current.protocols,
+    });
+  };
+
+  const setScheme = (port: number, id: string) => {
+    const scheme = SERVICE_SCHEMES.find((choice) => choice.id === id)?.id;
+    if (scheme !== undefined) {
+      setService({ ...serviceOf(container, port), scheme });
+    }
+  };
+
+  const setProtocol = (
+    port: number,
+    protocol: PodmanServiceProtocol,
+    isOn: boolean,
+  ) => {
+    const current = serviceOf(container, port);
+    setService({
+      ...current,
+      protocols: SERVICE_PROTOCOLS.map((choice) => choice.id).filter((id) =>
+        id === protocol ? isOn : current.protocols.includes(id),
+      ),
+    });
+  };
 
   const loadTags = async () => {
     setIsLoadingTags(true);
@@ -483,7 +636,7 @@ function ContainerEditor({
         <StringListEditor
           label={t("ui.containers.ports")}
           values={container.ports}
-          onChange={(ports) => onChange({ ports })}
+          onChange={setPorts}
           placeholder="8080:80"
           emptyText="host_port:container_port"
         />
@@ -502,6 +655,70 @@ function ContainerEditor({
           emptyText="KEY=value"
         />
       </div>
+      {ports.length > 0 && (
+        <div className="container_services">
+          <span className="field_label">{t("ui.containers.services")}</span>
+          {ports.map((port) => {
+            const service = serviceOf(container, port);
+            return (
+              <div key={port} className="container_service">
+                <span className="container_service_port">{port}</span>
+                <Picker
+                  className="container_service_choice"
+                  options={SERVICE_KINDS.map((choice) => ({
+                    id: choice.id,
+                    name: t(choice.labelKey),
+                  }))}
+                  value={service.kind}
+                  onChange={(id) => setKind(port, id)}
+                  label={t("ui.containers.services")}
+                  isLabelHidden
+                />
+                {service.kind === "auto" &&
+                  publishedProtocols(container.ports, port).includes("tcp") && (
+                    <span className="field_hint">
+                      {detectedWords(state, port)}
+                    </span>
+                  )}
+                {service.kind === "web" && (
+                  <Picker
+                    className="container_service_choice"
+                    options={SERVICE_SCHEMES.map((choice) => ({
+                      id: choice.id,
+                      name: t(choice.labelKey),
+                    }))}
+                    value={service.scheme}
+                    onChange={(id) => setScheme(port, id)}
+                    label={t("ui.containers.service_web")}
+                    isLabelHidden
+                  />
+                )}
+                {service.kind === "port" &&
+                  SERVICE_PROTOCOLS.map((choice) => {
+                    const isOn = service.protocols.includes(choice.id);
+                    return (
+                      <label
+                        key={choice.id}
+                        className="container_service_protocol"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isOn}
+                          disabled={isOn && service.protocols.length === 1}
+                          onChange={(event) =>
+                            setProtocol(port, choice.id, event.target.checked)
+                          }
+                        />
+                        {t(choice.labelKey)}
+                      </label>
+                    );
+                  })}
+              </div>
+            );
+          })}
+          <span className="field_hint">{t("ui.containers.services_hint")}</span>
+        </div>
+      )}
       <label className="field">
         <span className="field_label">{t("ui.containers.command")}</span>
         <input

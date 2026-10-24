@@ -38,6 +38,37 @@
   gap: var(--space-3);
 }
 
+/* The Services row: one line per host port the Ports rows publish. */
+.container_services {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.container_service {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.container_service_port {
+  min-width: 56px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.container_service_choice {
+  width: 140px;
+}
+
+.container_service_protocol {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  font-size: 13px;
+}
+
 .container_rows {
   display: flex;
   flex-direction: column;
