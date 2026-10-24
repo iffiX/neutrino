@@ -161,7 +161,31 @@ def test_a_port_service_with_no_protocol_is_refused_with_its_port():
     ],
 )
 def test_a_service_off_the_published_ports_or_garbled_is_refused(services):
-    assert refused_code(with_services(["8080:80"], services)) == "port_mapping_invalid"
+    assert refused_code(with_services(["8080:80"], services)) == "service_invalid"
+
+
+@pytest.mark.parametrize(
+    ("services", "port"),
+    [
+        ([{"port": 9090, "kind": "web"}], 9090),
+        ([{"port": 8080, "kind": "web", "scheme": "gopher"}], 8080),
+        ([{"port": 8080, "kind": "web"}, {"port": 8080, "kind": "port"}], 8080),
+    ],
+)
+def test_a_refused_service_names_its_container_and_port(services, port):
+    config = with_services(["8080:80"], services)
+
+    with pytest.raises(ModuleApplyError) as refused:
+        config.validate()
+
+    assert refused.value.code == "service_invalid"
+    assert refused.value.params == {"name": "x", "port": port}
+
+
+def test_a_garbled_port_mapping_is_refused_before_its_service():
+    config = with_services(["8080"], [{"port": 8080, "kind": "web"}])
+
+    assert refused_code(config) == "port_mapping_invalid"
 
 
 # --- Windows and macOS: the Podman machine ---

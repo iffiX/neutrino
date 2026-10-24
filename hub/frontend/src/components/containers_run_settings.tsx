@@ -240,12 +240,13 @@ function runWarning(
 ): string | undefined {
   const lines: string[] = [];
   const isResourceChanged =
-    draft.cpus !== stored.cpus || draft.memory_gib !== stored.memory_gib;
-  const isDiskChanged = draft.disk_gib !== stored.disk_gib;
+    draft.cpus !== stored.cpus ||
+    draft.memory_gib !== stored.memory_gib ||
+    draft.disk_gib !== stored.disk_gib;
   if (reported !== null && isResourceChanged) {
     lines.push(t("ui.containers.run_restart_warning"));
   }
-  if (reported !== null && isWindows && (isResourceChanged || isDiskChanged)) {
+  if (reported !== null && isWindows && isResourceChanged) {
     lines.push(t("ui.containers.run_wsl_warning"));
   }
   if (stored.account !== "" && draft.account !== stored.account) {

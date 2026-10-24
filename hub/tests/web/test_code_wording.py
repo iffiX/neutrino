@@ -142,6 +142,7 @@ def test_every_attention_an_agent_declares_is_worded_in_every_language(code):
 # the Run settings with, which the Containers tab words out of the same
 # catalogs.
 CONTAINERS_CODES = (
+    "service_invalid",
     "service_protocol_none",
     "reboot_required",
     "windows_feature_failed",

@@ -341,6 +341,7 @@
   "code.easytier_invalid": "Manual bootstrap peers needs at least one bootstrap peer.",
   "code.reboot_required": "Windows needs a restart to finish turning on WSL; the install goes on after it.",
   "code.service_protocol_none": "Port {port} needs TCP, UDP or both.",
+  "code.service_invalid": "The service on port {port} of {name} cannot be used: the port is not published, is listed twice, or has an unknown type or protocol.",
   "code.windows_feature_failed": "Windows could not turn on {feature} (exit code {exit_code}).",
   "code.podman_install_failed": "The {component} installer failed (exit code {exit_code}).",
   "code.machine_account_missing": "Choose the account that runs the containers.",

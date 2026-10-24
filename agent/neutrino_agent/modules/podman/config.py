@@ -382,8 +382,7 @@ class PodmanConfig:
             )
             if not is_sound:
                 raise ModuleApplyError(
-                    "port_mapping_invalid",
-                    {"name": container.name, "port": str(service.port)},
+                    "service_invalid", {"name": container.name, "port": service.port}
                 )
             seen.add(service.port)
             if service.kind == PODMAN_SERVICE_PORT and not service.protocols:

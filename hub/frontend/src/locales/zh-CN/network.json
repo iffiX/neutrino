@@ -1,7 +1,7 @@
 {
   "code.file_exists": "那里已经有同名的东西了。",
   "code.op_failed": "这台机器无法完成该操作。",
-  "code.path_invalid": "这台机器不会打开那个路径。",
+  "code.path_invalid": "非法路径：这台机器不会打开它。",
   "code.path_missing": "那个路径下已经什么都没有了。",
   "code.write_failed": "这台机器写不进去。",
   "state.active": "使用中",

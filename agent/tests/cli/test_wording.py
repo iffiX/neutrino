@@ -92,6 +92,7 @@ MODULE_CODES = (
     "container_unknown",
     "image_invalid",
     "port_mapping_invalid",
+    "service_invalid",
     "service_protocol_none",
     "volume_invalid",
     "environment_invalid",
