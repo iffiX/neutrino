@@ -310,6 +310,7 @@ the agent's `cli/wording.py` words the same codes in English.
 | `code.machine_memory_invalid` | Memory must be between 0 and {max} GiB. | 内存要在 0 到 {max} GiB 之间。 |
 | `code.machine_disk_shrink` | The disk is {current_gib} GiB and only grows; {disk_gib} GiB is smaller. | 磁盘现在是 {current_gib} GiB，只能改大，{disk_gib} GiB 比它小。 |
 | `code.volume_not_shared` | The volume {volume} of {name} is outside what the Podman machine shares: a fixed drive on Windows; /Users, /private or /var/folders on macOS. | 容器 {name} 的卷 {volume} 不在 Podman 虚拟机共享的范围内：Windows 上是本机的固定磁盘，macOS 上是 /Users、/private 或 /var/folders。 |
+| `code.udp_not_forwarded` | Port {port} of {name} is UDP, and WSL forwards TCP alone; on Windows publish it on TCP. | 容器 {name} 的端口 {port} 是 UDP，而 WSL 只转发 TCP；在 Windows 上请用 TCP 发布。 |
 | `code.machine_image_missing` | The Podman machine image is not on this machine; install the module again. | 这台机器上没有 Podman 虚拟机映像，重新安装这个模块。 |
 | `code.machine_init_failed` | Podman could not create the machine: {detail} | Podman 没能新建虚拟机：{detail} |
 | `code.machine_set_failed` | Podman could not change the machine: {detail} | Podman 没能修改虚拟机：{detail} |

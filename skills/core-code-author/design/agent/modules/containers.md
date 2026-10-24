@@ -173,8 +173,11 @@ on `127.0.0.1` alone, never on `::1` or a LAN address; on macOS through
 Podman's own forwarder. The agent's `connect` stream dials `127.0.0.1` for
 every container port on these systems ([agent.md](../../agent.md), "The
 connect stream"), and a machine on the LAN reaches a container through the
-hub. The lab proved a TCP port through WSL's forwarding; a UDP port through
-it is not proven.
+hub.
+
+| Rule | Reason |
+| --- | --- |
+| On Windows an apply refuses a port published on UDP, a `/udp` in `ports` or a `port` service with UDP checked, `udp_not_forwarded {name, port}`. | WSL's localhost forwarding carries TCP alone: on the lab machine a container's UDP port had no listener on `127.0.0.1`, and a datagram sent there by SYSTEM or by the account came back as port unreachable. |
 
 ### The journal
 
