@@ -1,6 +1,6 @@
 ---
 name: doc-author
-description: Writing standard for every Markdown document in this repository, in English and in Chinese. It covers README.md and README.zh-CN.md, the VitePress guide under docs/guide/ (quick start, overview, feature guides, CLI reference, troubleshooting), the design pages and coding rules under skills/core-code-author/, and the state notes in docs/memory.md. Load it before drafting, rewriting or reviewing any of these, whenever a request mentions a README, a guide page, a quick start, a reference, troubleshooting, a design page or state notes, and before any request to translate documentation, because the two languages are written independently from one outline and nothing is translated.
+description: Writing standard for every Markdown document in this repository, in English and in Chinese. It covers README.md and README.zh-CN.md, the VitePress guide under docs/guide/ (quick start, overview, feature guides, CLI reference, troubleshooting), the design pages and coding rules under skills/core-code-author/, and the state notes in tmp-docs/memory.md. Load it before drafting, rewriting or reviewing any of these, whenever a request mentions a README, a guide page, a quick start, a reference, troubleshooting, a design page or state notes, and before any request to translate documentation, because the two languages are written independently from one outline and nothing is translated.
 ---
 
 # Writing a document

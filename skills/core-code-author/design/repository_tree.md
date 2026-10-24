@@ -30,9 +30,10 @@ client/
                      by XcodeGen.
 packaging/           Building every package, and driving a built one on a
                      live box or a rented one.
-docs/                memory.md, the working copy's own notes (gitignored), and
-                     guide/, the VitePress documentation site. Generated site
+docs/                guide/, the VitePress documentation site. Generated site
                      output is ignored.
+tmp-docs/            The working copy's own notes, memory.md among them, and
+                     drafts; gitignored.
 skills/              core-code-author/, this standard: design/ the design
                      pages, design/hub_components/ the hub's AI gateway,
                      network and proxy, design/agent/ the agent's AI tools

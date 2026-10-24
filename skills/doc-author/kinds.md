@@ -96,7 +96,7 @@ directed at contributors.
 Checks: a reader can say afterwards why the thing is this way; every rule
 traces to a consequence stated on the page; nothing describes a planned state.
 
-## State notes (`docs/memory.md`)
+## State notes (`tmp-docs/memory.md`)
 
 Reader: the next agent, with no conversation history. Opens with the state of
 the product as of the note: versions, what ships, what is open.
