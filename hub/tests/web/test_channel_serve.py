@@ -1256,6 +1256,49 @@ def test_a_log_stream_closed_with_a_code_ends_the_task_with_it(api):
             '{"code": "install_failed", "params": {"detail": "apt refused"}}\n'
             "[failed]\n"
         )
+        assert task.exit_code == 1
+    finally:
+        socket.__exit__(None, None, None)
+
+
+@pytest.mark.parametrize(("named", "exit_code"), [(1603, 1603), (0, 1), ("x", 1)])
+def test_a_failed_install_s_task_ends_with_the_exit_code_its_close_names(
+    api, named, exit_code
+):
+    client, runtime = api
+    device_id, token = bound_device()
+    socket = welcomed(client, device_id, token)
+    try:
+        socket.send_json(report())
+        socket.receive_json()
+
+        socket.send_json(
+            {"type": "open", "stream": 3, "kind": "log", "module": "podman"}
+        )
+        socket.receive_json()
+        socket.send_json(
+            {
+                "type": "close",
+                "stream": 3,
+                "code": "podman_install_failed",
+                "params": {
+                    "state": "install_failed",
+                    "component": "installer",
+                    "exit_code": named,
+                },
+            }
+        )
+
+        label = channel_serve.module_task_label(device_id, "podman")
+        assert wait_until(
+            lambda: any(
+                stream.label == label and stream.is_finished
+                for stream in runtime.tasks.streams()
+            )
+        )
+        (task,) = [s for s in runtime.tasks.streams() if s.label == label]
+        assert task.exit_code == exit_code
+        assert "".join(task.buffer).endswith("[install_failed]\n")
     finally:
         socket.__exit__(None, None, None)
 

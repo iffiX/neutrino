@@ -29,7 +29,11 @@ import logging
 
 from fastapi import WebSocket, WebSocketDisconnect
 
-from neutrino_hub.exceptions import AgentArtifactFetchError, AgentOfflineError
+from neutrino_hub.exceptions import (
+    AgentArtifactFetchError,
+    AgentOfflineError,
+    TaskExitStatusError,
+)
 from neutrino_hub.modules.channel.admission import admit
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_CHUNK_BYTES,
@@ -397,6 +401,10 @@ async def _log_lines(stream: ChannelStream):
         Each line, then a JSON line ``{"code", "params"}`` when the close
         carries a code, then ``[<state>]`` for the module's state after
         the operation.
+
+    Raises:
+        TaskExitStatusError: When the close carries a code; the task ends
+            with the ``exit_code`` its params name, else 1.
     """
     decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
     while True:
@@ -413,6 +421,17 @@ async def _log_lines(stream: ChannelStream):
         yield json.dumps({"code": info["code"], "params": params}) + "\n"
     if state:
         yield f"[{state}]\n"
+    if info.get("code"):
+        raise TaskExitStatusError(_failed_exit_code(params))
+
+
+def _failed_exit_code(params: dict) -> int:
+    """The exit status a failed operation's params name, 1 when they name
+    none other than 0."""
+    try:
+        return int(params.get("exit_code", 1)) or 1
+    except (TypeError, ValueError):
+        return 1
 
 
 async def serve_service_stream(
