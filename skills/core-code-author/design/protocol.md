@@ -513,7 +513,7 @@ moved. Its steps and their order are [network.md](hub_components/network.md),
 | `POST /api/hub/device/remote_desktop/password/set` | `{device_id, product, password}` | its unattended password |
 | `POST /api/hub/device/desktop/seat_password/reset` | `{device_id}` | a new seat password, every viewer disconnected |
 | `GET /api/hub/device/service` | `?device_id=` | what the device publishes |
-| `GET /api/hub/device/install_output` | `?device_id=` | the last install's output |
+| `GET /api/hub/device/install_output` | `?device_id=` | the device's install tasks since the panel started, the agent's own and each module's install or uninstall, newest first, each with its output and its `exit_code`, which is not 0 for one that failed |
 
 A ticket, the secret a link carries to `join`, is on disk from the moment
 `enrollment/create` makes it, on this page and on the Clients page alike. The
@@ -693,12 +693,12 @@ module and the same shape in each.
 | Route | Parameters | Does |
 | --- | --- | --- |
 | `GET /api/agent/module` | `?device_id=` | each module's observed `state`, `is_active` and `details` |
-| `POST /api/agent/module/install` | `{device_id, module}` | writes `want: installed`; on a module whose last report is `failed` or `install_failed`, also a fresh `retry_mark` |
-| `POST /api/agent/module/start` | `{device_id, module}` | writes `want: running`; the same `retry_mark` on a failed module |
-| `POST /api/agent/module/stop` | `{device_id, module}` | writes `want: stopped`; the same `retry_mark` on a failed module |
-| `POST /api/agent/module/uninstall` | `{device_id, module}` | writes `want: absent`; the same `retry_mark` on a failed module |
+| `POST /api/agent/module/install` | `{device_id, module}` | writes `want: installed`; on a module whose last report is `failed` or `install_failed`, and on one reading `absent`, `stopped` or `running`, also a fresh `retry_mark` |
+| `POST /api/agent/module/start` | `{device_id, module}` | writes `want: running`; the same `retry_mark` on a failed module and on one reading `absent`, `installed` or `stopped` |
+| `POST /api/agent/module/stop` | `{device_id, module}` | writes `want: stopped`; the same `retry_mark` on a failed module and on one reading `absent`, `installed` or `running` |
+| `POST /api/agent/module/uninstall` | `{device_id, module}` | writes `want: absent`; the same `retry_mark` on a failed module and on one reading `installed`, `stopped` or `running` |
 | `GET /api/agent/module/journal` | `?device_id=&module=&lines=` | the tail of the module's log on the device: its units' journal on Linux, its own sources and the agent's lines naming it on Windows and macOS ([agent.md](agent.md), "Which modules each system runs") |
-| `POST /api/agent/module/<name>/apply` | `{device_id}` | pushes the device's state again, for `samba`, `terminal`, `remote_desktop`, `gitea`, `podman`, `zfs`, `vscode`, `code_server`, `cloudcli` and `codeg` alike, with a fresh `retry_mark` on a module whose last report is `failed` or `install_failed`; 409 `agent_offline` |
+| `POST /api/agent/module/<name>/apply` | `{device_id}` | pushes the device's state again, for `samba`, `terminal`, `remote_desktop`, `gitea`, `podman`, `zfs`, `vscode`, `code_server`, `cloudcli` and `codeg` alike, with a fresh `retry_mark` on a module whose last report is `failed` or `install_failed`, or `absent`, `installed`, `stopped` or `running` other than its `want`; 409 `agent_offline` |
 | `GET /api/agent/module/samba` | `?device_id=` | the hub's Samba configuration for the device |
 | `GET /api/agent/module/samba/status` | `?device_id=` | `SambaStatusView`: whether the unit is active, the sessions open and how full each share's disk is, as last reported |
 | `POST /api/agent/module/samba/import` | `{device_id}` | the machine's shares and users become the hub's configuration |
@@ -1095,8 +1095,8 @@ field and keeps `PROTOCOL`.
 
 `retry_mark`, in a module's entry and in the `ai_tools` section, is a
 short random token the hub writes when a person presses a failed module's
-own action again ([agent.md](agent.md), "A retry is the same press
-again"). It changes its entry's hash, and with it the state's, and means
+own action again, or presses a module whose state is not its `want`
+([agent.md](agent.md), "A retry is the same press again"). It changes its entry's hash, and with it the state's, and means
 nothing else; no configuration reads it, and an entry without one is the
 same entry. The hub
 keeps one mark per module and one for the AI tools per device in
@@ -1244,7 +1244,7 @@ from the same facts, whoever installed the software:
 
 | `state` | Meaning |
 | --- | --- |
-| `absent` | the software is missing |
+| `absent` | the software is missing; the row can hold `{code, params}` naming the part missing while the rest is there, `zfs_kernel_module_missing {kernel}` ([agent/modules/zfs.md](agent/modules/zfs.md)) |
 | `installed` | the software is present and the hub has never configured it; `is_active` says whether it runs |
 | `install_failed` | the last install failed with `{code, params}`, whatever it left on the machine |
 | `stopped` | the hub has configured it and the unit is stopped |
@@ -1571,7 +1571,7 @@ is added without a change to the protocol; a kind is added by a row here.
 | hub, to an agent | `shell` | `{cols, rows}`, the shell running as the Terminal module's account with its shell program, refused `account_unknown {account}` or `shell_program_unusable {path}` when the machine cannot; with `{module: podman, container}` added for a container's shell, which the module does not touch, and which on Windows and macOS the agent starts as `podman exec -it` through the Podman machine's read URL with the account's machine key, on the pseudo console or pseudo-terminal a shell takes ([agent/modules/containers.md](agent/modules/containers.md), "Reads and writes"), and whose every process in the container the agent ends once the shell exits or the stream closes ([agent/modules/containers.md](agent/modules/containers.md), "A container's shell"), or `{session_id, is_resumed, owner, is_shared}` for a shell the agent keeps: `session_id` names the session and is generated by whoever opened the shell; an id the machine holds attaches to that session beside every stream already attached to it, and its kept output is sent first; `is_resumed: true` asks only for a session the machine holds, refused `session_unknown {session_id}` otherwise; `owner` is the hub's stamp, which the agent keeps as given and reports; `is_shared`, false when absent, says whether a new session starts shared; a shell opened without an id ends with its stream. Terminal bytes both ways; closed with `params: {exit_code}` once the shell ends, or empty when the stream closed on a shell that runs on |
 | hub, to an agent | `exec` | `{argv, is_tty, cols, rows}`: one run of `argv`, a list of strings run as given with no shell between, as the Terminal module's account, else as the agent runs; never kept, and no `session_id`. Without `is_tty` the process's stdin, stdout and stderr are pipes, every binary frame down carries `fd`, the frames up are its stdin, and `eof` closes its stdin; with `is_tty` it runs on a pseudo-terminal of `cols` by `rows` as a shell does. Closed with `params: {exit_code}` once the process ended and its output is sent; refused `account_unknown {account}`, or `shell_program_unusable {path}` when `argv` is empty or its program cannot be found or run. "The exec stream" has the rest |
 | hub, to an agent | `file` | one file operation `{op, path, ...}`; `op` is `list`, `download`, `upload`, `rename`, `remove`, `directory_create` or `directory_download`, and every path is absolute in the machine's own form. `list` closes with `params: {path, separator, entries}`, `separator` being `\` on Windows and `/` elsewhere and each entry `{name, path, kind, size, modified_at, mode}`; on Windows a `list` of `/` or of no path closes with `path` `/` and one `dir` entry per drive, named `C:` with `path` `C:\`. `separator` and the drive list are added and keep `PROTOCOL`; an agent before 0.5.0 sends no `separator` |
-| agent, to the hub | `log` | `{module}`: opened for an install or an uninstall, output up as binary frames line by line, closed with `params: {state}` |
+| agent, to the hub | `log` | `{module}`: opened for an install or an uninstall, output up as binary frames line by line, closed with `params: {state}`, and with the failure's code and params when the operation failed; the hub's task for it then ends with the `exit_code` those params name, else 1 |
 | hub, to an agent | `command` | `{module, verb, ...args}`: `{agent, reboot}`, `{samba, reload}`, `{zfs, validate, config}`; an unknown kind is closed `kind_unknown` and an unknown verb `verb_unknown`, which the panel shows as `unsupported`; closed with `params: {exit_code, output, result}` |
 | agent, to the hub | `package` | `{module}` for a module's package bytes from the hub's cache, or `{module, component}` for one component of a module with several (`component` is an added field with a default, the module's one archive, and keeps `PROTOCOL`), `{module: cc_switch}` for cc-switch, `{}` for the agent's own package; the close's `params` has the `sha256` of the bytes sent and `name`, the file's own name as its release gave it, with no directory |
 | client, to the hub | `service` | `{id}`: one published entry, or `{is_panel: true}`: a sign-in to the hub's own panel. The close is the whole answer, its `params` the material that entry takes from the hub and its `code` the reason it takes none; a new service type adds no kind |

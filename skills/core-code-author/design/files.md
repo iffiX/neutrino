@@ -257,8 +257,8 @@ and which holds the account's token ([network.md](hub_components/network.md),
 "SakuraFrp and OpenFrp"). Each is state: a lost file is fetched from the
 vendor again by the next converge step while a tunnel is picked.
 
-`hub/device_retry_marks.json` keeps the mark a press on a failed module
-put into the device's state, so a hub restart composes the same state and a
+`hub/device_retry_marks.json` keeps the mark a press on a failed module,
+or on one whose state is not its `want`, put into the device's state, so a hub restart composes the same state and a
 press is not lost. It holds one mark per module and device, each press
 replacing the one before, and a device's marks go when the device is
 removed. Losing the file costs the next press.

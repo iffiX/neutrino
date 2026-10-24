@@ -376,7 +376,8 @@ a person presses a button on the Modules page
 `failed` with its code and is not retried while the state's hash is
 unchanged. A vendor refusing now refuses in a minute, and a machine that
 retries every minute spends the night doing it. Trying again is a change to
-the state, from a person's press or a new configuration, never from a timer.
+the state, from a person's press or a new configuration, or a new build of
+the agent, never from a timer.
 
 Software somebody installs or removes by hand is observed and shown, never
 fought. A hand-installed module reports `installed`; at a machine's first

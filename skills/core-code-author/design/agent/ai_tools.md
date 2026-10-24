@@ -191,4 +191,5 @@ while the state's hash is unchanged, as a failed module is not.
 
 After the agent restarts it reports each account whose records stand as
 `switched` until a new state arrives, and acts on no state whose hash it
-already tried, so a restart switches nothing and switches nothing back.
+already tried, so a restart of the same build switches nothing and
+switches nothing back.

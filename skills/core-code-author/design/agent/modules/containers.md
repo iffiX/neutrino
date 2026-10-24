@@ -27,6 +27,7 @@ the machine's package manager installs them.
 | --- | --- |
 | From Podman 4.4 a declared container is a Quadlet file, `/etc/containers/systemd/<name>.container`; below 4.4 it is a plain unit, `/etc/systemd/system/<name>.service`, that runs `podman run`. | A Podman older than 4.4 reads no `.container` file, and the supported distributions have 3.4 and later ([min_support.md](../../min_support.md)). |
 | Every apply runs `systemctl enable --no-reload` on the plain unit of each container that starts with the box, and `systemctl disable --no-reload` on each other one, before its `daemon-reload`; a removed plain unit is disabled before its file goes. | Quadlet's generator links a `.container` file that has `WantedBy=` into `multi-user.target` itself, and a plain unit's `[Install]` section starts nothing at boot until the unit is enabled. |
+| After its `daemon-reload` every apply restarts each container whose file changed when it starts with the box or its unit is active, and starts each other container that starts with the box and whose unit is not active. | An apply makes the declared containers true, and a container that starts with the box runs after it whether or not its file changed. |
 | Every rendered file starts with the generated marker, and an apply removes only marked files. | A file a person wrote beside them is theirs. |
 | The registry mirrors are one drop-in, `/etc/containers/registries.conf.d/99_neutrino_mirrors.conf`. | The distribution's own `registries.conf` stays as it is. |
 | The module's `is_active` is the state of `podman.socket`. | Podman has no daemon, and its API socket is the engine. |
@@ -146,7 +147,7 @@ when the account signs in or out; on macOS this is not proven.
 | A container a person started by hand starts, stops and restarts through the read's command, as SYSTEM or root. | Linux drives such a container through `podman` itself, and it has no unit in the machine. |
 | The read output goes through the Linux reader, given this command in place of `podman`. | One parser for `ps` and `inspect` on every system. |
 | The module's `is_active` is whether the machine answers the read. | The machine's Podman is the engine there, as `podman.socket` is on Linux. |
-| The script holds every file base64-encoded, compares each with the file in the machine, writes the changed ones, removes the stale marked files, runs `systemctl daemon-reload`, restarts the changed units and prints one `changed: <file>` line per change. | Each call costs about 3 seconds, so an apply is one call. |
+| The script holds every file base64-encoded, compares each with the file in the machine, writes the changed ones, removes the stale marked files, runs `systemctl daemon-reload`, restarts and starts the units as an apply on Linux does and prints one `changed: <file>` line per change. | Each call costs about 3 seconds, so an apply is one call. |
 
 ### Files in the machine
 

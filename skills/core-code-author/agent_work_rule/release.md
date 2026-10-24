@@ -57,7 +57,10 @@ The build writes the edition into each package as `EDITION`, `intl` or `cn`,
 beside the version in `neutrino_hub/_version.py`,
 `neutrino_agent/_version.py` and `neutrino_client/_version.py`, into the
 Android app as `BuildConfig.EDITION`, and into the iOS app's `Info.plist` as
-`NeutrinoEdition`. A checkout has no stamp and reads
+`NeutrinoEdition`. The agent's `_version.py` also holds `AGENT_BUILT_AT`,
+the UTC time the build staged the tree, which tells two builds of one
+version apart ([../design/agent.md](../design/agent.md), "A retry is the
+same press again"). A checkout has no stamp and reads
 the file `EDITION` at the repository's root, one line holding `intl` in the
 GitHub repository; the two phone builds read the same file. The stamp, or
 that file, chooses where a package fetches from

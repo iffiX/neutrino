@@ -85,8 +85,8 @@ unit has `OOMPolicy=continue`. When the kernel kills the
 install for want of memory, the install ends
 `cloudcli_install_out_of_memory {account}` and the agent keeps running. A
 failed install is tried again only with a state of another hash, and the
-hash last tried is kept on disk, so an agent that starts again does not try
-it again either.
+hash last tried is kept on disk, so an agent of the same build that starts
+again does not try it again either.
 
 **The install's state is `installing` until it ends.** On Linux and macOS
 npm runs inside the apply; on Windows the apply starts the install task and

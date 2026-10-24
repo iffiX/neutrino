@@ -589,8 +589,10 @@ A module reported `installing` with a code shows the code's words as a
 notice at the top of its tab, and its buttons stay disabled as for any
 module in transit. Its output box keeps the install's lines while the hub
 holds the task, with `ui.modules.task_running` beside them, until the
-machine reports another state. With `reboot_required` the notice has
-**Restart now** (`ui.modules.restart_now`), which asks through `useConfirm`
+machine reports another state. A module reported `absent` with a code shows
+the code's words as the same notice, and its buttons are those of any
+`absent` module. With `reboot_required` the notice has **Restart now**
+(`ui.modules.restart_now`), which asks through `useConfirm`
 (`ui.modules.restart_title`, `ui.modules.restart_body`) and sends `POST
 /api/hub/device/reboot`. The agent never restarts the machine itself, and
 the install goes on after the restart with no press ([agent.md](agent.md),
@@ -602,7 +604,10 @@ it is `running`, **Stop** while it is `stopped`, and **Uninstall** always.
 That press tries the same step again ([agent.md](agent.md), "A retry is the
 same press again"); there is no other retry button. A module panel's apply
 and **Configure** on a refused configuration try again the same way. A
-press on a module that did not fail asks for nothing new.
+press, or a module panel's apply, on a module whose state is not its `want`
+after the press asks the machine to apply it again, as **Start** on a module
+that reads `installed` while its `want` is `running` does. A press on a
+module that reads its `want` asks for nothing new.
 
 The rows of the module list, each a tab, come in one order, the modules
 every system runs first: File share, Terminal, Remote desktop, Gitea, VS

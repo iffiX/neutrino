@@ -111,8 +111,9 @@ module's actual state equal its `want`:
 
 A module the state does not mention is left alone, observed and reported all
 the same. The applied hash moves only once every mentioned module applied. A
-failed module is tried again only when its own entry in the state changes,
-and until then the report says why with a code. **An edit to a module of an
+failed module is tried again only when its own entry in the state changes
+or an agent of another build starts, and until then the report says why
+with a code. **An edit to a module of an
 offline device is rejected with `agent_offline`, never queued**: the person
 is told the machine is away, and asks again when it is back.
 
@@ -134,27 +135,37 @@ package, and the agent installs it over itself ([protocol.md](protocol.md),
 a button writes the value, the agent makes the machine match it, and what
 the machine reports afterwards is shown. The agent keeps no retry policy. A
 step that failed is reported with its code and is not repeated while its
-entry in the state is unchanged; trying again is a person's word, never a
-timer's. The agent keeps each module's last failure on disk, so a restart
+entry in the state and the agent's build are unchanged; trying again is a
+person's word, never a timer's. The agent keeps each module's last failure on disk, so a restart
 reports it unchanged ("A failure outlives a restart").
 
 **A retry is the same press again.** The agent tries each module's entry
 once and keeps, for each module and for the `ai_tools` section, the hash of
 the entry it tried on disk, so a restart does not try it again. The mark
-holds for one install and one binding: `nagent service uninstall`, which
-every package's removal runs, deletes it, and so do a join and a leave, so
-the next agent that holds the same state applies it again after a removal
-undid it. An upgrade replaces the package without either and applies
-nothing again. When a
+holds for one install, one build and one binding: `nagent service
+uninstall`, which every package's removal runs, deletes it, and so do a join
+and a leave, so the next agent that holds the same state applies it again
+after a removal undid it. The file keeps the build that wrote it, the
+agent's version and the time its package was built, which the packaging
+stamps into `_version.py` as `AGENT_BUILT_AT`; an agent of another build,
+after an upgrade or a reinstall of another package, uses none of the
+hashes, so every module the state names and the `ai_tools` section are
+applied once again, whatever their hashes. A reinstall of the same package
+is the same build and applies nothing again. When a
 person presses a module's own action again on a module whose last report is
 `failed` or `install_failed`, the hub writes a fresh `retry_mark` into that
-module's entry of the state. The mark means nothing to the agent; it changes
+module's entry of the state. A press of **Install**, **Start**, **Stop** or
+**Uninstall**, or a module panel's apply, on a module whose last report is
+`absent`, `installed`, `stopped` or `running` and is not its `want` after
+the press, such as `running` wanted while it reads `installed`, writes the
+same mark. The mark means nothing to the agent; it changes
 that entry's hash, so the hash the agent tried for that module no longer
 matches and that module alone is tried again. A change to one module's entry, or a mark on it,
 never runs another module's failed step again.
 The machine's AI tools take the same mark on the `ai_tools` section when a
 press asks again while an account's result is `failed`. A press on a module
-that did not fail writes no mark and asks for nothing new.
+that reads its `want`, or is in transit, writes no mark and asks for
+nothing new.
 
 Software somebody installs or removes by hand is displayed, never fought. A
 hand-installed Samba reports `installed`; its shares and users become the
@@ -201,7 +212,12 @@ row can hold `{code, params}` naming what holds up the install:
 features of Containers asked for. The agent never restarts the machine; a
 person does, from the module's tab or the device, and the same 30-second
 apply goes on with the install after it
-([modules/containers.md](agent/modules/containers.md)). `queued` is a
+([modules/containers.md](agent/modules/containers.md)). An `absent` row
+can hold `{code, params}` naming the part missing while the rest of the
+software is there: `zfs_kernel_module_missing {kernel}` while the ZFS tools
+are installed and the running kernel has no ZFS module
+([modules/zfs.md](agent/modules/zfs.md)); a kept failure's code takes its
+place ("A failure outlives a restart"). `queued` is a
 module the agent reaches after the one it is applying ("One module at a
 time").
 
