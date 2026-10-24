@@ -315,6 +315,42 @@ jobs:
       - run: pytest -q
         working-directory: agent
 
+  # Containers' install on macOS: the pinned Podman pkg and machine image of
+  # podman.json, driven through the agent's own code. No machine starts, since
+  # the runners have no nested virtualisation.
+  podman_macos:
+    name: podman on ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            platform: darwin-arm64
+          - runner: macos-15-intel
+            platform: darwin-amd64
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Name the pinned files
+        id: pins
+        run: echo "key=$(python3 packaging/ci/podman_macos.py key ${{ matrix.platform }})" >> "$GITHUB_OUTPUT"
+
+      - name: Cache the pinned files
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/neutrino/podman
+          key: ${{ steps.pins.outputs.key }}
+
+      - name: Fetch the pinned files and check their sha256
+        run: python3 packaging/ci/podman_macos.py fetch ${{ matrix.platform }} "$HOME/.cache/neutrino/podman"
+
+      # The installer and pkgutil need root; the machine's own commands run
+      # as the runner's account, as the agent runs them.
+      - name: Install Podman, make and size a machine, remove both
+        run: sudo "$(command -v python3)" -I packaging/ci/podman_macos.py check ${{ matrix.platform }} "$HOME/.cache/neutrino/podman" "$USER" "$TMPDIR"
+
   frontend:
     name: prettier, eslint, build
     runs-on: ubuntu-24.04
