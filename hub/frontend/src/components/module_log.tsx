@@ -13,10 +13,11 @@ import type { DeviceModuleView, ServiceJournal } from "../api_types";
  * The output box under a module's tab on the Modules page.
  *
  * The lines the agent sends up while the module installs or uninstalls,
- * after such a task fails, and over a module whose install failed; the tail
- * of the module's own journal on the machine the rest of the time, polled
- * while it shows. The page mounts one per device and module, so the box
- * never holds another module's text.
+ * after such a task fails, over a module whose install failed, and over one
+ * still installing, as while it waits on a restart; the tail of the module's
+ * own journal on the machine the rest of the time, polled while it shows.
+ * The page mounts one per device and module, so the box never holds another
+ * module's text.
  */
 
 /** How much of the module's journal the box shows. */
@@ -27,6 +28,10 @@ const JOURNAL_STATES = ["installed", "stopped", "running", "failed"];
 
 /** A module whose last install failed: its install's lines fill the box. */
 const INSTALL_FAILED_STATE = "install_failed";
+
+/** A module whose install goes on, as one waiting on a restart: its
+ * install's lines stay in the box. */
+const INSTALLING_STATE = "installing";
 
 interface ModuleLogProps {
   deviceId: string;
@@ -44,11 +49,17 @@ export function ModuleLog({ deviceId, row, isAgentOnline }: ModuleLogProps) {
     !task.isRunning &&
     (row.state === INSTALL_FAILED_STATE ||
       (task.exitCode !== null && task.exitCode !== 0));
+  // The install goes on while the module reads installing, after a task
+  // that ended with no failure.
+  const isInstallGoing =
+    task.isRunning || (!isTaskFailed && row.state === INSTALLING_STATE);
   // Over a module in a state with a journal, a task replaying takes the box
   // only once it ends in a failure; until then the journal shows.
   const isTaskShown =
     row.task_id !== "" &&
-    (task.isRunning ? !JOURNAL_STATES.includes(row.state) : isTaskFailed);
+    (task.isRunning
+      ? !JOURNAL_STATES.includes(row.state)
+      : isTaskFailed || isInstallGoing);
   const isJournalShown =
     !isTaskShown && isAgentOnline && JOURNAL_STATES.includes(row.state);
   const journal = usePolledResource<ServiceJournal>(
@@ -80,9 +91,9 @@ export function ModuleLog({ deviceId, row, isAgentOnline }: ModuleLogProps) {
         </span>
         {isTaskShown && (
           <StatusDot
-            tone={taskTone(task.isRunning, task.exitCode, isTaskFailed)}
-            isPulsing={task.isRunning}
-            label={t(taskKey(task.isRunning, task.exitCode, isTaskFailed))}
+            tone={taskTone(isInstallGoing, task.exitCode, isTaskFailed)}
+            isPulsing={isInstallGoing}
+            label={t(taskKey(isInstallGoing, task.exitCode, isTaskFailed))}
           />
         )}
         {isJournalShown && journalText !== null && (
