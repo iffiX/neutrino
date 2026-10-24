@@ -107,6 +107,7 @@ MODULE_CODES = (
     "machine_cpus_invalid",
     "machine_memory_invalid",
     "machine_disk_shrink",
+    "machine_disk_invalid",
     "machine_image_missing",
     "machine_init_failed",
     "machine_set_failed",

@@ -57,6 +57,7 @@ LOGIN_KIND = "login"
 CODE_UNSUPPORTED_PLATFORM = "unsupported_platform"
 CODE_UNKNOWN_CREDENTIAL = "unknown_credential"
 CODE_CREDENTIAL_MISSING = "credential_missing"
+CODE_MACHINE_DISK_INVALID = "machine_disk_invalid"
 
 
 def device_view(
@@ -187,8 +188,9 @@ def update_machine(
         HTTPException: 400 ``unsupported_platform`` for a machine that is
             not Windows or macOS, ``unknown_credential`` for a login the
             vault does not hold, ``credential_missing`` for an account of a
-            Windows machine with no login; 409 ``agent_offline``; 400 with
-            the agent's code when it refuses the settings.
+            Windows machine with no login, ``machine_disk_invalid`` for a
+            Windows machine with a disk limit of 0; 409 ``agent_offline``;
+            400 with the agent's code when it refuses the settings.
     """
     context = device_context(runtime, MODULE, update.device_id)
     os_name = runtime.device_platform.get(context.key, {}).get("os")
@@ -200,6 +202,8 @@ def update_machine(
             raise _refusal(CODE_UNKNOWN_CREDENTIAL, field=DEVICE_INSTANCE_LOGIN_KEY)
     elif os_name == OS_WINDOWS and update.account:
         raise _refusal(CODE_CREDENTIAL_MISSING, account=update.account)
+    if os_name == OS_WINDOWS and update.disk_gib < 1:
+        raise _refusal(CODE_MACHINE_DISK_INVALID, disk_gib=update.disk_gib)
     config = dict(context.config)
     config[DEVICE_PODMAN_MACHINE_KEY] = update.model_dump(exclude={"device_id"})
     store_config(runtime, context, config)

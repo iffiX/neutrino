@@ -319,7 +319,24 @@ def test_a_zero_takes_the_default_and_passes_every_size_check():
         machine={"account": "lab", "cpus": 0, "memory_gib": 0, "disk_gib": 0}
     )
 
-    config.validate(os_name="windows", host_cpus=4, host_memory_gib=8, disk_gib_now=130)
+    config.validate(os_name="darwin", host_cpus=4, host_memory_gib=8, disk_gib_now=130)
+    machine_config(
+        machine={"account": "lab", "cpus": 0, "memory_gib": 0, "disk_gib": 130}
+    ).validate(os_name="windows", host_cpus=4, host_memory_gib=8, disk_gib_now=130)
+
+
+@pytest.mark.parametrize("disk_gib", [0, -5])
+def test_a_windows_disk_limit_below_1_is_invalid(disk_gib):
+    config = machine_config(machine=dict(MACHINE, disk_gib=disk_gib))
+
+    refusal = refusal_on(config, "windows")
+
+    assert refusal.code == "machine_disk_invalid"
+    assert refusal.params == {"disk_gib": disk_gib}
+
+
+def test_a_windows_state_without_run_settings_checks_no_disk():
+    PodmanConfig.from_dict({"containers": []}).validate(os_name="windows")
 
 
 def test_sizes_within_the_computer_pass_and_an_unknown_size_checks_nothing():
@@ -333,7 +350,7 @@ def test_sizes_within_the_computer_pass_and_an_unknown_size_checks_nothing():
 
 def test_containers_with_no_account_are_refused():
     assert (
-        refusal_on(machine_config(machine={"cpus": 1}), "windows").code
+        refusal_on(machine_config(machine={"cpus": 1, "disk_gib": 100}), "windows").code
         == "machine_account_missing"
     )
     assert (

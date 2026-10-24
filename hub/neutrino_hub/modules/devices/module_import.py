@@ -7,6 +7,8 @@ and a module's ``import`` route runs the same one when a person presses
 with no import here, ZFS among them, is never taken over.
 """
 
+import math
+
 # The ``testparm -s`` parameters a share's fields are read from.
 SAMBA_PARAM_COMMENT = "comment"
 SAMBA_PARAM_READ_ONLY = "read only"
@@ -84,10 +86,11 @@ def podman_import_config(details: dict) -> dict:
 
     Returns:
         ``{"containers", "mirrors"}`` in the hub's shape, and ``machine``,
-        the Run settings naming the reported account with Podman's
-        defaults, where a machine is reported; a container comes up with
-        the machine where a unit already stands for it, and keeps its
-        ``services`` where they are reported.
+        the Run settings naming the reported account with its disk's size
+        now, rounded up to whole GiB, and Podman's default CPUs and memory,
+        where a machine is reported; a container comes up with the machine
+        where a unit already stands for it, and keeps its ``services``
+        where they are reported.
     """
     containers = []
     for container in details.get("containers") or []:
@@ -116,9 +119,17 @@ def podman_import_config(details: dict) -> dict:
             "login_id": "",
             "cpus": 0,
             "memory_gib": 0,
-            "disk_gib": 0,
+            "disk_gib": _whole_gib(machine.get("disk_gib")),
         }
     return config
+
+
+def _whole_gib(value) -> int:
+    """A reported size in GiB as a whole number, rounded up; 0 for none."""
+    try:
+        return max(0, math.ceil(float(value or 0)))
+    except (TypeError, ValueError, OverflowError):
+        return 0
 
 
 # The modules with an import, by name.

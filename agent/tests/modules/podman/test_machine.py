@@ -195,7 +195,7 @@ def test_the_machines_variables_go_with_every_command_and_the_provider_wins(
         }
 
 
-def test_rootful_resources_start_and_stop_are_podman_machine_verbs(tmp_path):
+def test_rootful_resources_start_stop_and_remove_are_podman_machine_verbs(tmp_path):
     platform = RecordingPlatform("darwin", str(tmp_path / "me"))
     machine = mac_machine(tmp_path, platform)
 
@@ -204,12 +204,14 @@ def test_rootful_resources_start_and_stop_are_podman_machine_verbs(tmp_path):
     machine.set_resources()
     machine.start()
     machine.stop()
+    machine.remove()
 
     assert [call["argv"][2:] for call in platform.calls] == [
         ["set", "--rootful", "podman-machine-default"],
         ["set", "--cpus", "2", "--disk-size", "150", "podman-machine-default"],
         ["start", "podman-machine-default"],
         ["stop", "podman-machine-default"],
+        ["rm", "-f", "podman-machine-default"],
     ]
 
 
@@ -221,6 +223,7 @@ def test_rootful_resources_start_and_stop_are_podman_machine_verbs(tmp_path):
             "machine_init_failed",
         ),
         (lambda machine: machine.set_rootful(), "machine_set_failed"),
+        (lambda machine: machine.remove(), "machine_set_failed"),
         (lambda machine: machine.start(), "machine_unreachable"),
         (lambda machine: machine.inspect(), "machine_unreachable"),
     ],

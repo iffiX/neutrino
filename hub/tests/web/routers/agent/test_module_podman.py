@@ -1,8 +1,8 @@
 """The Containers page's per-device API, with the agent underneath replaced.
 
 The Run settings: ``machine/set`` refuses a Linux machine, a login the vault
-does not hold and a Windows account with no login before the agent is
-asked; the agent checks the settings as the state carries them, with the
+does not hold, a Windows account with no login and a Windows disk limit of
+0 before the agent is asked, and takes a macOS disk of 0; the agent checks the settings as the state carries them, with the
 login's password on Windows alone and never the login's id; the view holds
 the stored settings on Windows and macOS, the reported machine and the
 accounts.
@@ -453,6 +453,37 @@ def test_a_login_the_vault_does_not_hold_and_a_windows_account_without_one_are_r
     }
     assert runtime.agent_sessions.validations == []
     assert "machine" not in runtime.desired_states.read(DEVICE, "podman")
+
+
+def test_a_windows_disk_limit_of_0_is_refused_before_the_agent_is_asked(box):
+    client, runtime = box
+    runtime.device_platform[DEVICE] = WINDOWS
+    login_id = login("lab")
+
+    response = client.post(
+        f"{BASE}/machine/set",
+        json={"device_id": DEVICE, **RUN_SETTINGS, "login_id": login_id, "disk_gib": 0},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == {
+        "code": "machine_disk_invalid",
+        "params": {"disk_gib": 0},
+    }
+    assert runtime.agent_sessions.validations == []
+    assert "machine" not in runtime.desired_states.read(DEVICE, "podman")
+
+
+def test_a_macos_disk_limit_of_0_is_podmans_default(box):
+    client, runtime = box
+    runtime.device_platform[DEVICE] = DARWIN
+
+    response = client.post(
+        f"{BASE}/machine/set", json={"device_id": DEVICE, **RUN_SETTINGS, "disk_gib": 0}
+    )
+
+    assert response.status_code == 200
+    assert runtime.agent_sessions.validations[0][2]["machine"]["disk_gib"] == 0
 
 
 def test_windows_run_settings_are_checked_with_the_password_and_stored_with_the_login(

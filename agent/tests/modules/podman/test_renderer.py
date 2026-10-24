@@ -259,7 +259,7 @@ def machine_config(containers=None, mirrors=()) -> PodmanConfig:
         {
             "containers": MACHINE_CONTAINERS if containers is None else containers,
             "mirrors": list(mirrors),
-            "machine": {"account": "lab", "password": "pw"},
+            "machine": {"account": "lab", "password": "pw", "disk_gib": 100},
         }
     )
     config.validate(os_name="windows")

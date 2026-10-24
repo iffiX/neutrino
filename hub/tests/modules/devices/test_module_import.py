@@ -3,10 +3,12 @@
 Each import is a pure function of ``details``: Samba's shares and users in
 the hub's shape, a share with no path left out and ``valid users`` kept to
 the names the user list carries; Podman's containers with a unit read as
-autostart, each container's services and the Podman machine's account taken
-where they are reported; Gitea's nothing; and a module with no import
-answering empty.
+autostart, each container's services and the Podman machine's account, with
+its disk's size now as the limit, taken where they are reported; Gitea's
+nothing; and a module with no import answering empty.
 """
+
+import pytest
 
 from neutrino_hub.modules.devices.module_import import (
     MODULE_IMPORTS,
@@ -136,8 +138,17 @@ def test_podman_takes_the_services_and_the_machines_account_where_reported():
         "login_id": "",
         "cpus": 0,
         "memory_gib": 0,
-        "disk_gib": 0,
+        "disk_gib": 100,
     }
+
+
+@pytest.mark.parametrize(
+    "reported, disk_gib", [(119.2, 120), (0, 0), (None, 0), ("many", 0)]
+)
+def test_podman_takes_the_machines_disk_now_as_its_limit(reported, disk_gib):
+    details = {"machine": {"account": "lab", "disk_gib": reported}}
+
+    assert podman_import_config(details)["machine"]["disk_gib"] == disk_gib
 
 
 def test_podman_takes_no_machine_without_a_reported_account():

@@ -234,6 +234,7 @@
   "ui.containers.run_apply_hint": "Starts this account's Podman machine, and creates it the first time.",
   "ui.containers.run_cpus": "CPUs",
   "ui.containers.run_default_hint": "0 uses Podman's default: half the CPUs, 2 GiB of memory, a 100 GiB disk.",
+  "ui.containers.run_default_hint_windows": "A 0 for CPUs or memory uses Podman's default: half the CPUs, 2 GiB of memory.",
   "ui.containers.run_disk": "Disk limit (GiB)",
   "ui.containers.run_disk_hint": "The disk only grows. It is {current} GiB now.",
   "ui.containers.run_login": "Windows login for {account}",

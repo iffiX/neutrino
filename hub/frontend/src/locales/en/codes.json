@@ -348,6 +348,7 @@
   "code.machine_cpus_invalid": "CPUs must be between 0 and {max}.",
   "code.machine_memory_invalid": "Memory must be between 0 and {max} GiB.",
   "code.machine_disk_shrink": "The disk is {current_gib} GiB and only grows; {disk_gib} GiB is smaller.",
+  "code.machine_disk_invalid": "The disk limit {disk_gib} GiB is not valid: on Windows it is 1 GiB or more.",
   "code.volume_not_shared": "The volume {volume} of {name} is outside what the Podman machine shares: a fixed drive on Windows; /Users, /private or /var/folders on macOS.",
   "code.udp_not_forwarded": "Port {port} of {name} is UDP, and WSL forwards TCP alone; on Windows publish it on TCP.",
   "code.machine_image_missing": "The Podman machine image is not on this machine; install the module again.",

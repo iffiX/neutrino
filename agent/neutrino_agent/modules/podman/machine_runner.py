@@ -680,8 +680,9 @@ class PodmanMachineModuleRunner(ModuleRunner):
                 self._image_path(), cpus=cpus, memory_gib=memory_gib, disk_gib=disk_gib
             )
             if not machine.is_sized_at_init:
-                self._system.write_resources(machine, cpus=cpus, memory_gib=memory_gib)
-                self._system.resize_disk(machine, disk_gib=disk_gib)
+                self._size_new_machine(
+                    machine, cpus=cpus, memory_gib=memory_gib, disk_gib=disk_gib
+                )
             notes.append(f"made the machine of {settings.account}")
         else:
             disk_gib = self._disk_now(machine, record)
@@ -710,6 +711,27 @@ class PodmanMachineModuleRunner(ModuleRunner):
         is_changed = account_service.write(keeper, self._service_machine)
         account_service.start(keeper, self._service_machine, is_restart=is_changed)
         return notes, disk_gib
+
+    def _size_new_machine(
+        self, machine: PodmanMachine, *, cpus: int, memory_gib: int, disk_gib: int
+    ) -> None:
+        """Size a machine the init just made, and remove it when the sizing fails.
+
+        Raises:
+            ModuleApplyError: The step's own code when the write or the
+                resize fails.
+        """
+        try:
+            self._system.write_resources(machine, cpus=cpus, memory_gib=memory_gib)
+            self._system.resize_disk(machine, disk_gib=disk_gib)
+        except ModuleApplyError:
+            try:
+                machine.remove()
+            except ModuleApplyError as error:
+                self._log(
+                    f"podman: the new machine of {machine.account} was not removed: {error}"
+                )
+            raise
 
     def _wait_for_machine(self, machine: PodmanMachine) -> None:
         """Wait until the machine answers the read, which the keeper's start brings.

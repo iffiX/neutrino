@@ -372,6 +372,19 @@ class PodmanMachine:
             timeout_s=PODMAN_MACHINE_COMMAND_TIMEOUT_S,
         )
 
+    def remove(self) -> None:
+        """Delete the machine with its disk, stopping it first when it runs.
+
+        Raises:
+            ModuleApplyError: ``machine_set_failed`` when Podman cannot;
+                ``credential_invalid`` when Windows refuses the login.
+        """
+        self._machine(
+            ["rm", "-f", PODMAN_MACHINE_NAME],
+            code="machine_set_failed",
+            timeout_s=PODMAN_MACHINE_COMMAND_TIMEOUT_S,
+        )
+
     def run_as_account(self, argv: list, *, stdin: str = "", timeout_s: int):
         """Run one command as the machine's account, with the provider and the machine's variables.
 

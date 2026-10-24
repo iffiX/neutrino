@@ -178,6 +178,9 @@ CLI_CODE_WORDS = {
         "the Podman machine's disk is {current_gib} GiB; it can grow but not "
         "shrink to {disk_gib} GiB"
     ),
+    "machine_disk_invalid": (
+        "the disk limit {disk_gib} GiB is not valid; on Windows it is 1 GiB or more"
+    ),
     "machine_image_missing": "the Podman machine image is missing; install Containers again",
     "machine_init_failed": "the Podman machine could not be made: {detail}",
     "machine_set_failed": "the Podman machine could not be changed: {detail}",

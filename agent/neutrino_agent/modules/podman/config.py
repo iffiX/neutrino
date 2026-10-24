@@ -188,8 +188,8 @@ class PodmanMachineSettings:
         account: The account whose default machine runs them.
         cpus: Its processors; 0 is half the computer's.
         memory_gib: Its memory in GiB; 0 is 2.
-        disk_gib: Its disk in GiB; 0 is 100 at an init and leaves a machine
-            taken over as it is.
+        disk_gib: Its disk in GiB, at least 1 on Windows; on macOS 0 is 100
+            at an init and leaves a machine taken over as it is.
         password: The account's login, which Windows runs the account's
             commands with; empty elsewhere.
     """
@@ -277,7 +277,8 @@ class PodmanConfig:
         Linux checks the containers and the mirrors alone. Windows and macOS
         also check each volume's folder against what the machine reaches,
         and the Run settings against the computer; Windows refuses a port
-        published on UDP, which WSL does not forward.
+        published on UDP, which WSL does not forward, and Run settings with
+        a disk of 0.
 
         Args:
             os_name: The computer's system.
@@ -327,13 +328,14 @@ class PodmanConfig:
                 raise ModuleApplyError("mirror_invalid", {"mirror": mirror})
         if is_machine:
             self._validate_machine(
+                os_name=os_name,
                 host_cpus=host_cpus,
                 host_memory_gib=host_memory_gib,
                 disk_gib_now=disk_gib_now,
             )
 
     def _validate_machine(
-        self, *, host_cpus: int, host_memory_gib: int, disk_gib_now: int
+        self, *, os_name: str, host_cpus: int, host_memory_gib: int, disk_gib_now: int
     ) -> None:
         settings = self.machine or PodmanMachineSettings()
         if settings.cpus < 0 or (host_cpus and settings.cpus > host_cpus):
@@ -346,6 +348,10 @@ class PodmanConfig:
             raise ModuleApplyError(
                 "machine_memory_invalid",
                 {"memory_gib": settings.memory_gib, "max": host_memory_gib},
+            )
+        if os_name == "windows" and self.machine is not None and settings.disk_gib < 1:
+            raise ModuleApplyError(
+                "machine_disk_invalid", {"disk_gib": settings.disk_gib}
             )
         if settings.disk_gib < 0 or (
             settings.disk_gib and settings.disk_gib < disk_gib_now

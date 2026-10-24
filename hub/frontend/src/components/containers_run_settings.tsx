@@ -20,7 +20,7 @@ import "./containers_run_settings.css";
  * The Run settings of Containers on a Windows or macOS machine: the account
  * whose Podman machine runs the containers, on Windows the login it starts
  * with, and the machine's CPUs, memory and disk limit, each 0 for Podman's
- * default.
+ * default except the disk limit on Windows, which is at least 1.
  *
  * The disk limit starts at the disk's size now, as the machine reported it,
  * the way Podman Desktop's edit form for a machine holds its disk size.
@@ -28,6 +28,9 @@ import "./containers_run_settings.css";
 
 /** What an agent older than the module reports for it. */
 const STATE_UNSUPPORTED = "unsupported";
+
+/** The disk limit a Windows machine with none stored starts at, in GiB. */
+const WINDOWS_NEW_DISK_GIB = 100;
 
 /** The Run settings while none are stored: no account, Podman's defaults. */
 const EMPTY_MACHINE: PodmanMachine = {
@@ -65,7 +68,9 @@ export function ContainersRunSettings({
 }: ContainersRunSettingsProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
-  const { draft, setDraft, isDirty, reset } = useDraft(saved, draftOf);
+  const { draft, setDraft, isDirty, reset } = useDraft(saved, (view) =>
+    draftOf(view, isWindows),
+  );
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -74,10 +79,12 @@ export function ContainersRunSettings({
     return null;
   }
 
-  const stored = saved.machine ?? EMPTY_MACHINE;
+  const stored = draftOf(saved, isWindows);
   const isUnsupported = saved.state === STATE_UNSUPPORTED;
   const currentDisk = currentDiskGib(saved.machine_state, draft.account);
+  const leastDisk = isWindows ? Math.max(1, currentDisk) : currentDisk;
   const isShrunk = draft.disk_gib !== 0 && draft.disk_gib < currentDisk;
+  const isDiskMissing = isWindows && draft.disk_gib < 1;
 
   const apply = async () => {
     setIsBusy(true);
@@ -170,7 +177,7 @@ export function ContainersRunSettings({
           <input
             className="input"
             type="number"
-            min={currentDisk}
+            min={leastDisk}
             value={draft.disk_gib}
             disabled={isUnsupported}
             onChange={(event) =>
@@ -184,7 +191,11 @@ export function ContainersRunSettings({
           )}
         </label>
       </div>
-      <p className="field_hint">{t("ui.containers.run_default_hint")}</p>
+      <p className="field_hint">
+        {isWindows
+          ? t("ui.containers.run_default_hint_windows")
+          : t("ui.containers.run_default_hint")}
+      </p>
       <ApplyBar
         isDirty={isDirty}
         isBusy={isBusy}
@@ -192,7 +203,7 @@ export function ContainersRunSettings({
         hint={t("ui.containers.run_apply_hint")}
         warning={runWarning(stored, draft, saved.machine_state, isWindows)}
         blockedHint={isEditable ? null : t("ui.modules.agent_offline")}
-        isApplyDisabled={isUnsupported || isShrunk}
+        isApplyDisabled={isUnsupported || isShrunk || isDiskMissing}
         error={error}
         notice={notice}
         onReset={() => {
@@ -206,15 +217,17 @@ export function ContainersRunSettings({
   );
 }
 
-/** What the form starts from: the Run settings as stored. */
-function draftOf(view: PodmanDeviceView): RunDraft {
+/** What the form starts from: the Run settings as stored; on Windows, while
+ * none name an account, a disk limit of 100 GiB. */
+function draftOf(view: PodmanDeviceView, isWindows: boolean): RunDraft {
   const machine = view.machine ?? EMPTY_MACHINE;
+  const isNewWindowsMachine = isWindows && machine.account === "";
   return {
     account: machine.account,
     login_id: machine.login_id,
     cpus: machine.cpus,
     memory_gib: machine.memory_gib,
-    disk_gib: machine.disk_gib,
+    disk_gib: isNewWindowsMachine ? WINDOWS_NEW_DISK_GIB : machine.disk_gib,
   };
 }
 
@@ -233,7 +246,7 @@ function currentDiskGib(
 /** What applying the draft interrupts, or nothing when it interrupts
  * nothing. */
 function runWarning(
-  stored: PodmanMachine,
+  stored: RunDraft,
   draft: RunDraft,
   reported: PodmanMachineState | null,
   isWindows: boolean,

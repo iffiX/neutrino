@@ -151,6 +151,7 @@ CONTAINERS_CODES = (
     "machine_cpus_invalid",
     "machine_memory_invalid",
     "machine_disk_shrink",
+    "machine_disk_invalid",
     "volume_not_shared",
     "udp_not_forwarded",
     "machine_image_missing",

@@ -3,10 +3,11 @@ machine and a recorded launchd.
 
 What these pin: the components kept as the publisher's files with an msi or
 a pkg handed to the system's installer; a restart owed holding the apply as
-``reboot_required``; each refusal before anything runs; a new machine made
-from the kept image and sized where the provider takes no size at init; a
-machine taken over made rootful and sized; a change of size against the last
-apply, the disk grown and never shrunk; a new account stopping the old
+``reboot_required``; each refusal before anything runs, a Windows disk of 0
+among them; a new machine made from the kept image and sized where the
+provider takes no size at init, and removed when that sizing fails; a
+machine taken over made rootful and sized, refused a smaller disk; a change
+of size against the last apply, the disk grown and never shrunk; a new account stopping the old
 machine and removing its keeper; the wait for the machine to answer; the one
 root script; the reads through the ssh URL with addresses blanked and
 folders back in the computer's form; the read's command a container's
@@ -121,6 +122,7 @@ class World:
         self.is_answering = True
         self.is_account_gone = False
         self.environments: list = []
+        self.remove_error = None
 
 
 def machine_class_for(world: World):
@@ -162,6 +164,13 @@ def machine_class_for(world: World):
         def stop(self):
             world.calls.append((self.account, "stop", self.password))
             world.running.discard(self.account)
+
+        def remove(self):
+            world.calls.append((self.account, "remove"))
+            if world.remove_error is not None:
+                raise world.remove_error
+            for held in (world.present, world.running, world.rootful):
+                held.discard(self.account)
 
         def read_command(self):
             if world.is_account_gone:
@@ -208,6 +217,7 @@ class FakeSystem(PodmanSystemApplier):
         self.calls: list = []
         self.is_pending = False
         self.disk = 0
+        self.disk_error = None
         self.facts = (8, 16)
 
     def install_component(self, component, path):
@@ -233,6 +243,8 @@ class FakeSystem(PodmanSystemApplier):
 
     def resize_disk(self, machine, *, disk_gib):
         self.calls.append(("disk", machine.account, disk_gib))
+        if self.disk_error is not None:
+            raise self.disk_error
 
     def machine_environment(self, account):
         return {"TMPDIR": f"/var/folders/{account}/T/"}
@@ -511,12 +523,57 @@ def test_containers_with_no_account_are_refused(rig):
 
 def test_windows_needs_the_accounts_login(tmp_path):
     rig = Rig(tmp_path, os_name="windows", provider="wsl")
-    config = dict(CONFIG, containers=[], machine=dict(MACHINE, account="ann"))
+    machine = dict(MACHINE, account="ann", disk_gib=100)
+    config = dict(CONFIG, containers=[], machine=machine)
 
     found = refusal(lambda: rig.runner.validate(config))
 
     assert (found.code, found.params) == ("credential_missing", {"account": "ann"})
-    rig.runner.validate(dict(config, machine=dict(MACHINE, password="pw")))
+    rig.runner.validate(dict(config, machine=dict(machine, password="pw")))
+
+
+def test_windows_refuses_a_disk_limit_of_0(tmp_path):
+    rig = Rig(tmp_path, os_name="windows", provider="wsl")
+    machine = dict(MACHINE, account="ann", password="pw")
+
+    found = refusal(
+        lambda: rig.runner.validate(dict(CONFIG, containers=[], machine=machine))
+    )
+
+    assert (found.code, found.params) == ("machine_disk_invalid", {"disk_gib": 0})
+
+
+def test_windows_refuses_to_shrink_a_machine_taken_over(tmp_path):
+    rig = Rig(tmp_path, os_name="windows", provider="wsl")
+    rig.world.present.add("ann")
+    rig.system.disk = 130
+    machine = dict(MACHINE, account="ann", password="pw")
+
+    found = refusal(
+        lambda: rig.runner.validate(
+            dict(CONFIG, containers=[], machine=dict(machine, disk_gib=100))
+        )
+    )
+
+    assert (found.code, found.params) == (
+        "machine_disk_shrink",
+        {"disk_gib": 100, "current_gib": 130},
+    )
+    rig.runner.validate(
+        dict(CONFIG, containers=[], machine=dict(machine, disk_gib=150))
+    )
+
+
+def test_a_wsl_machine_taken_over_below_the_limit_is_grown_and_kept(tmp_path):
+    rig = Rig(tmp_path, provider="wsl")
+    rig.world.present.add("me")
+    rig.world.rootful.add("me")
+    rig.system.disk = 130
+
+    rig.runner.apply(dict(CONFIG, machine=dict(MACHINE, disk_gib=150)))
+
+    assert ("disk", "me", 150) in rig.system.calls
+    assert not any(call[1] in ("init", "remove") for call in rig.world.calls)
 
 
 def test_validate_answers_through_the_verb(rig):
@@ -578,6 +635,39 @@ def test_a_wsl_machine_is_sized_after_the_init_and_before_its_first_start(tmp_pa
     assert rig.system.calls == [("resources", "me", 4, 2), ("disk", "me", 100)]
     assert rig.world.calls[0][1] == "init"
     assert ("me", "info") in rig.world.calls
+
+
+def test_a_failed_sizing_after_the_init_removes_the_new_machine(tmp_path):
+    rig = Rig(tmp_path, provider="wsl")
+    image = rig.keep_image("image.tar.zst")
+    rig.system.disk_error = ModuleApplyError("machine_set_failed", {"detail": "busy"})
+
+    found = refusal(lambda: rig.runner.apply(CONFIG))
+
+    assert (found.code, found.params) == ("machine_set_failed", {"detail": "busy"})
+    assert [call[1] for call in rig.world.calls[:2]] == ["init", "remove"]
+    assert "me" not in rig.world.present
+    assert rig.record() == []
+    rig.system.disk_error = None
+    rig.world.calls.clear()
+    rig.system.calls.clear()
+
+    rig.runner.apply(CONFIG)
+
+    assert rig.world.calls[0] == ("me", "init", image, 2, 4, 100)
+    assert rig.system.calls == [("resources", "me", 2, 4), ("disk", "me", 100)]
+
+
+def test_a_new_machine_that_cannot_be_removed_keeps_the_sizings_code(tmp_path):
+    rig = Rig(tmp_path, provider="wsl")
+    rig.keep_image("image.tar.zst")
+    rig.system.disk_error = ModuleApplyError("machine_set_failed", {"detail": "busy"})
+    rig.world.remove_error = ModuleApplyError("machine_set_failed", {"detail": "held"})
+
+    found = refusal(lambda: rig.runner.apply(CONFIG))
+
+    assert found.params == {"detail": "busy"}
+    assert "the new machine of me was not removed" in rig.lines[-1]
 
 
 def test_no_kept_image_is_machine_image_missing(rig):
