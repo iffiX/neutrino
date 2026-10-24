@@ -13,6 +13,7 @@ restart, every other exit an ``InstallError`` carrying the code, and the
 import os
 import shutil
 import subprocess
+import sys
 
 import pytest
 
@@ -214,6 +215,12 @@ def test_a_failed_pkg_is_an_install_error_with_the_code_and_the_installers_words
 
 pwsh = shutil.which("pwsh")
 
+# msiexec's busy code, 1618, is past 255: only Windows keeps a process's whole
+# exit code, and other systems keep its low byte.
+windows_exit_codes = pytest.mark.skipif(
+    sys.platform != "win32", reason="exit codes past 255 are Windows'"
+)
+
 # Stands in for msiexec: each call takes the next exit code of FAKE_CODES.
 STAND_INS = """
 function Start-Process {
@@ -256,6 +263,7 @@ def run_in_pwsh(tmp_path, monkeypatch, codes: str):
     return asked
 
 
+@windows_exit_codes
 def test_a_busy_windows_installer_is_tried_once_more(tmp_path, monkeypatch):
     asked = run_in_pwsh(tmp_path, monkeypatch, "1618,3010")
 
@@ -263,6 +271,7 @@ def test_a_busy_windows_installer_is_tried_once_more(tmp_path, monkeypatch):
     assert len(asked.read_text().splitlines()) == 2
 
 
+@windows_exit_codes
 def test_a_second_busy_answer_is_the_failure(tmp_path, monkeypatch):
     asked = run_in_pwsh(tmp_path, monkeypatch, "1618,1618,0")
 
