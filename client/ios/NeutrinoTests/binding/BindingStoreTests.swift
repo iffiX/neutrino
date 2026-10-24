@@ -27,6 +27,27 @@ final class BindingStoreTests: XCTestCase {
         XCTAssertEqual(told, [["b1"], []])
     }
 
+    func testOneBindingPerHubIdIsKeptTheOneJoinedLast() throws {
+        let secrets = FakeSecretStore()
+        let store = BindingStore(secrets: secrets)
+        try store.put(Samples.binding)
+        var pending = Samples.binding
+        pending.id = "p1"
+        pending.hubId = ""
+        pending.ticket = "TICKET"
+        try store.put(pending)
+        var other = Samples.binding
+        other.id = "b2"
+        other.hubId = "hub-2"
+        try store.put(other)
+        var later = Samples.binding
+        later.id = "b3"
+        try store.put(later)
+        XCTAssertEqual(try store.dropRepeatedHubs().map(\.id), ["b1"])
+        XCTAssertEqual(BindingStore(secrets: secrets).bindings.map(\.id), ["p1", "b2", "b3"])
+        XCTAssertEqual(try store.dropRepeatedHubs(), [])
+    }
+
     func testAnItemThatDoesNotReadIsNoBinding() throws {
         let secrets = FakeSecretStore()
         try secrets.write(account: Client.bindingsAccount, data: Data("not json".utf8))

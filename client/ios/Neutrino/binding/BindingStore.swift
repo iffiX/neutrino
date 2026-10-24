@@ -80,6 +80,28 @@ final class BindingStore {
         try write(next)
     }
 
+    /// Keep one binding per hub id, the one joined last.
+    ///
+    /// - Returns: The bindings dropped, in the order joined; empty when no hub id is held twice, and the item is then
+    ///   not written.
+    /// - Throws: `ClientError.refused` with `client_internal {error}` when the item cannot be written.
+    func dropRepeatedHubs() throws -> [HubBinding] {
+        var last: [String: Int] = [:]
+        for (index, binding) in held.bindings.enumerated() { last[binding.hubId] = index }
+        var next = held
+        next.bindings = []
+        var dropped: [HubBinding] = []
+        for (index, binding) in held.bindings.enumerated() {
+            if binding.hubId.isEmpty || last[binding.hubId] == index {
+                next.bindings.append(binding)
+            } else {
+                dropped.append(binding)
+            }
+        }
+        if !dropped.isEmpty { try write(next) }
+        return dropped
+    }
+
     private func write(_ next: BindingFile) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]

@@ -108,6 +108,21 @@ final class HubSessionTests: XCTestCase {
         XCTAssertEqual(session.view.connection, .connected)
     }
 
+    func testAWelcomeNamesItsHubBeforeTheBindingTakesIt() throws {
+        var binding = Samples.binding
+        binding.hubId = ""
+        try store.put(binding)
+        var seen: [[String]] = []
+        let session = HubSession(
+            bindingId: "b1", store: store, transport: transport, machine: Samples.machine, clock: clock,
+            resolveHubName: { $0(nil) }, localNetworks: { [] }, hasNetwork: { true }, onJoined: { _, _ in },
+            onWelcomed: { id, hubId in seen.append([id, hubId, self.store.get(id)?.hubId ?? "gone"]) })
+        session.start()
+        _ = connect(session, on: lan)
+        XCTAssertEqual(seen, [["b1", "hub-1", ""]])
+        XCTAssertEqual(store.get("b1")?.hubId, "hub-1")
+    }
+
     func testARefusedTicketHoldsTheRowOnJoinRefusedWithNoMoreRounds() throws {
         var binding = Samples.binding
         binding.ticket = "TICKET"

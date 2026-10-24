@@ -62,8 +62,10 @@ final class HubConnections {
         }
     }
 
-    /// Run one session per binding, following the store as bindings come and go.
+    /// Run one session per binding, following the store as bindings come and go. Of two or more bindings holding one
+    /// hub id, the one joined last is kept and each other one ends as at a leave, its hub told.
     func start() {
+        dropRepeatedHubs()
         store.onChange = { [weak self] bindings in self?.follow(bindings) }
         follow(store.bindings)
     }
@@ -221,10 +223,37 @@ final class HubConnections {
         }
     }
 
+    private func dropRepeatedHubs() {
+        let dropped: [HubBinding]
+        do {
+            dropped = try store.dropRepeatedHubs()
+        } catch {
+            ClientLog.info("could not forget the repeated bindings here: \(error)")
+            return
+        }
+        for held in dropped {
+            ClientLog.info("dropped the binding \(held.id): a later one holds its hub")
+            onLeaving(held.id)
+            if !held.isPending { tellLeft(held) }
+        }
+    }
+
     private func joined(_ bindingId: String, hubBindingId: String) {
-        for stale in store.bindings where stale.id != bindingId && stale.boundId == hubBindingId {
-            onLeaving(stale.id)
-            try? store.remove(stale.id)
+        replace(bindingId, isTold: false) { $0.boundId == hubBindingId }
+    }
+
+    private func welcomed(_ bindingId: String, hubId: String) {
+        guard !hubId.isEmpty else { return }
+        replace(bindingId, isTold: true) { $0.hubId == hubId }
+    }
+
+    private func replace(_ bindingId: String, isTold: Bool, isSameHub: (HubBinding) -> Bool) {
+        guard store.get(bindingId) != nil else { return }
+        for held in store.bindings where held.id != bindingId && isSameHub(held) {
+            ClientLog.info("the join replaced the binding \(held.id) held here")
+            onLeaving(held.id)
+            guard (try? store.remove(held.id)) != nil else { continue }
+            if isTold && !held.isPending { tellLeft(held) }
         }
     }
 
@@ -238,7 +267,8 @@ final class HubConnections {
             let session = HubSession(
                 bindingId: binding.id, store: store, transport: transport, machine: machine, clock: clock,
                 resolveHubName: resolveHubName, localNetworks: localNetworks, hasNetwork: hasNetwork,
-                onJoined: { [weak self] id, hubBindingId in self?.joined(id, hubBindingId: hubBindingId) })
+                onJoined: { [weak self] id, hubBindingId in self?.joined(id, hubBindingId: hubBindingId) },
+                onWelcomed: { [weak self] id, hubId in self?.welcomed(id, hubId: hubId) })
             session.onChange = { [weak self] _ in self?.onChange?() }
             sessions[binding.id] = session
             session.start()

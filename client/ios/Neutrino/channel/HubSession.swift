@@ -29,6 +29,7 @@ final class HubSession {
     private let localNetworks: () -> [ChannelLocalNetwork]
     private let hasNetwork: () -> Bool
     private let onJoined: (String, String) -> Void
+    private let onWelcomed: (String, String) -> Void
     private var isRunning = false
     private var isSuspended = false
     private var held: HubWaitReason?
@@ -67,11 +68,13 @@ final class HubSession {
     ///   - localNetworks: The networks this phone holds an address in, read at each comparison of paths.
     ///   - hasNetwork: Whether the phone has a network at all, read when every address of a round failed.
     ///   - onJoined: Called with the binding's id and the hub's id for it once its ticket is spent.
+    ///   - onWelcomed: Called with the binding's id and the hub id after each welcome that opens a channel, before
+    ///     the binding takes that id and before the socket's first state is read.
     init(
         bindingId: String, store: BindingStore, transport: HubTransport, machine: ClientMachine, clock: ClientClock,
         resolveHubName: @escaping (@escaping (String?) -> Void) -> Void,
         localNetworks: @escaping () -> [ChannelLocalNetwork], hasNetwork: @escaping () -> Bool,
-        onJoined: @escaping (String, String) -> Void
+        onJoined: @escaping (String, String) -> Void, onWelcomed: @escaping (String, String) -> Void = { _, _ in }
     ) {
         self.bindingId = bindingId
         self.store = store
@@ -82,6 +85,7 @@ final class HubSession {
         self.localNetworks = localNetworks
         self.hasNetwork = hasNetwork
         self.onJoined = onJoined
+        self.onWelcomed = onWelcomed
         view = HubView(
             binding: store.get(bindingId) ?? HubBinding(id: bindingId, gatewayUrl: "", fingerprint: "", token: ""))
     }
@@ -343,6 +347,7 @@ final class HubSession {
             self.greeting = nil
             switch outcome {
             case .welcomed(let welcome):
+                self.onWelcomed(self.bindingId, welcome.id)
                 self.serve(greeting, welcome: welcome)
             case .rejected(let refusal):
                 greeting.abandon()
