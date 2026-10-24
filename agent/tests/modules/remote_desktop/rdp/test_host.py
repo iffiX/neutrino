@@ -716,6 +716,84 @@ def test_the_seats_settings_folders_are_made_as_the_seats_own(host, monkeypatch)
     ]
 
 
+def _seat_folders_root_owns(host, monkeypatch):
+    """The seat's settings folders there, reported as root's, under a home
+    that reads as uid 4242; returns the ``chown`` calls."""
+    from neutrino_agent.modules.remote_desktop.rdp import rustdesk
+
+    home = host.root / "home" / "pat"
+    settings = home / ".config" / "rustdesk"
+    settings.mkdir(parents=True, exist_ok=True)
+    rooted = {str(home / ".config"), str(settings)}
+    real_stat = rustdesk._stat
+    real_lstat = rustdesk._lstat
+    chowned = []
+
+    class _Owned:
+        def __init__(self, uid, mode):
+            self.st_uid = uid
+            self.st_gid = uid + 101
+            self.st_mode = mode
+
+    def stat(target):
+        found = real_stat(target)
+        if target == str(home) and found is not None:
+            return _Owned(4242, found.st_mode)
+        return found
+
+    def lstat(target):
+        found = real_lstat(target)
+        if target in rooted and found is not None:
+            return _Owned(0, found.st_mode)
+        return found
+
+    def chown(target, uid, gid):
+        chowned.append((target, uid, gid))
+        rooted.discard(target)
+
+    monkeypatch.setattr(rustdesk, "_stat", stat)
+    monkeypatch.setattr(rustdesk, "_lstat", lstat)
+    monkeypatch.setattr(rustdesk.os, "chown", chown)
+    return chowned
+
+
+def test_a_standing_share_gives_the_seats_folders_root_owns_back(host, monkeypatch):
+    host.set_switch(True)
+    host.applier.calls.clear()
+    chowned = _seat_folders_root_owns(host, monkeypatch)
+
+    host.set_switch(True)
+
+    home = host.root / "home" / "pat"
+    assert _steps(host.applier) == []
+    assert chowned == [
+        (str(home / ".config"), 4242, 4343),
+        (str(home / ".config" / "rustdesk"), 4242, 4343),
+    ]
+
+
+def test_the_agent_at_start_gives_the_seats_folders_root_owns_back(host, monkeypatch):
+    """An unchanged state applies nothing after an upgrade, so the start
+    does it."""
+    host.set_switch(True)
+    chowned = _seat_folders_root_owns(host, monkeypatch)
+
+    host.settle_at_start()
+
+    assert [target for target, _, _ in chowned] == [
+        str(host.root / "home" / "pat" / ".config"),
+        str(host.root / "home" / "pat" / ".config" / "rustdesk"),
+    ]
+
+
+def test_with_the_switch_off_the_seats_folders_are_left_alone(host, monkeypatch):
+    chowned = _seat_folders_root_owns(host, monkeypatch)
+
+    host.settle_at_start()
+
+    assert chowned == []
+
+
 # --- RustDesk's own settings over root's ---
 
 # Sealed by libsodium as RustDesk 1.4.9 seals a password, keyed by

@@ -14,7 +14,8 @@ this root daemon but read and written by RustDesk running as that person;
 on Wayland it stores the screen-capture permission there, so a copy left
 owned by root costs that person the permission dialog on every connection.
 A file keeps the owner and mode it had, and a new one under a home is made
-as that home's owner, as is each folder made for it there.
+as that home's owner, as is each folder made for it there; a folder there
+that root owns is given to that owner.
 
 **RustDesk seals the password when it rewrites the file**: ``00``, then
 base64 of the format byte 1, a 24-byte nonce and the secretbox, keyed by the
@@ -32,6 +33,7 @@ import base64
 import os
 import posixpath
 import re
+import stat
 import sys
 
 from neutrino_agent.exceptions import InstallError
@@ -311,6 +313,24 @@ def stored_password(path: str, machine_id) -> "str | None":
     return open_sealed(stored, machine_id())
 
 
+def give_back_dirs(directory: str, home: str) -> list:
+    """Give each folder below a home down to a settings folder that root
+    owns to the home's owner.
+
+    Args:
+        directory: The settings folder.
+        home: The home of the account the folder is for.
+
+    Returns:
+        The folders given, top down; empty when ``directory`` is not under
+        ``home``, the home is root's, or this system sets no owners.
+
+    Raises:
+        OSError: If a folder's owner cannot be changed.
+    """
+    return _give_dirs(os.path.normpath(directory), home, ())
+
+
 def write_config(path: str, options: tuple) -> bool:
     """Write one ``RustDesk2.toml``, keeping what it said and whose it was.
 
@@ -414,8 +434,9 @@ def _unquoted(value: str) -> str:
 
 
 def _make_dirs(directory: str, home: str) -> None:
-    """Make a folder and each missing one above it; each made under
-    ``home`` is given the home's owner."""
+    """Make a folder and each missing one above it; each under ``home``
+    that was made here or that root owns is given the home's owner."""
+    directory = os.path.normpath(directory)
     missing = []
     current = directory
     while current and not os.path.isdir(current):
@@ -424,14 +445,49 @@ def _make_dirs(directory: str, home: str) -> None:
         if parent == current:
             break
         current = parent
-    owner = _stat(home) if home else None
+    made = []
     for level in reversed(missing):
         try:
             os.mkdir(level)
         except FileExistsError:
-            pass
-        if owner is not None and hasattr(os, "chown") and _is_under(level, home):
+            continue
+        made.append(level)
+    _give_dirs(directory, home, made)
+
+
+def _give_dirs(directory: str, home: str, made) -> list:
+    """Give each folder below ``home`` down to ``directory`` that is in
+    ``made`` or that root owns to the home's owner; symbolic links are
+    skipped."""
+    owner = _stat(home) if home else None
+    if owner is None or not hasattr(os, "chown"):
+        return []
+    given = []
+    for level in _levels_below(home, directory):
+        status = _lstat(level)
+        if status is None or not stat.S_ISDIR(status.st_mode):
+            continue
+        if level in made or (status.st_uid == 0 and owner.st_uid != 0):
             os.chown(level, owner.st_uid, owner.st_gid)
+            given.append(level)
+    return given
+
+
+def _levels_below(home: str, directory: str) -> list:
+    """Each folder from just below ``home`` down to ``directory``, empty
+    when ``directory`` is not under ``home``."""
+    if not _is_under(directory, home):
+        return []
+    top = os.path.normpath(home)
+    levels = []
+    current = os.path.normpath(directory)
+    while current != top:
+        levels.append(current)
+        parent = os.path.dirname(current)
+        if parent == current:
+            return []
+        current = parent
+    return list(reversed(levels))
 
 
 def _is_under(path: str, directory: str) -> bool:
@@ -465,5 +521,14 @@ def _stat(path: str):
     """One path's stat, or None when it cannot be read."""
     try:
         return os.stat(path)
+    except OSError:
+        return None
+
+
+def _lstat(path: str):
+    """One path's own stat, a symbolic link's not followed; None when it
+    cannot be read."""
+    try:
+        return os.lstat(path)
     except OSError:
         return None

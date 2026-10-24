@@ -237,12 +237,23 @@ class RdpShareHost:
     def settle_at_start(self) -> None:
         """What the agent does about RustDesk when it starts.
 
-        A share an earlier agent's command made is taken over; a host the
-        switch runs whose program the package has since replaced is
-        started again, so it runs the copy on disk.
+        A share an earlier agent's command made is taken over; the seat's
+        settings folders that root owns are given to the seat's owner; a
+        host the switch runs whose program the package has since replaced
+        is started again, so it runs the copy on disk.
         """
         self.resume_old_share()
+        self.give_back_seat_dirs()
         self.renew_if_replaced()
+
+    def give_back_seat_dirs(self) -> None:
+        """Give the seat's RustDesk settings folders that root owns to the
+        seat's owner, while the switch is on. A failure is logged."""
+        with self._held():
+            if not os.path.isfile(self._registered_path()):
+                return
+            _, home, _ = self._seat_of()
+            self._give_back_seat_dirs(home)
 
     def renew_if_replaced(self) -> None:
         """Start the host again when its running program is not the copy on
@@ -426,6 +437,7 @@ class RdpShareHost:
             for path in paths
             if not _is_password_file(path) or path == service_password
         ]
+        self._give_back_seat_dirs(home)
         registered = read_json(self._registered_path())
         is_changed = any(
             rustdesk.would_change(path, self._render(path, password))
@@ -495,6 +507,20 @@ class RdpShareHost:
             os.unlink(self._registered_path())
         shutil.rmtree(self._kept_dir, ignore_errors=True)
         self._log("remote_desktop: RustDesk is given back")
+
+    def _give_back_seat_dirs(self, home: str) -> None:
+        """Give the seat's settings folders that root owns to the seat's
+        owner; a failure is logged."""
+        if not home:
+            return
+        for directory in self._applier.settings_dirs(home)[1:]:
+            try:
+                given = rustdesk.give_back_dirs(directory, home)
+            except OSError as error:
+                self._log(f"remote_desktop: could not give {directory} back: {error}")
+                continue
+            if given:
+                self._log(f"remote_desktop: gave {', '.join(given)} to its owner")
 
     def _settle_password(self, password: str, uid) -> None:
         """Read root's ``RustDesk.toml`` until RustDesk wrote an id and a key

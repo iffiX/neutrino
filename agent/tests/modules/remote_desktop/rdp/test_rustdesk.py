@@ -318,6 +318,85 @@ def test_folders_outside_the_home_are_made_as_this_process(monkeypatch, tmp_path
     assert "seat-pass" in path.read_text()
 
 
+def _lstat_owners(monkeypatch, uids):
+    """Make ``_lstat`` report the given owner of each named folder."""
+    real_lstat = rustdesk._lstat
+
+    def lstat(target):
+        found = real_lstat(target)
+        if found is None or target not in uids:
+            return found
+        return _Owned(uids[target], uids[target], found.st_mode)
+
+    monkeypatch.setattr(rustdesk, "_lstat", lstat)
+
+
+def _seat_folders(tmp_path):
+    home = tmp_path / "pat"
+    settings = home / ".config" / "rustdesk"
+    settings.mkdir(parents=True)
+    return home, home / ".config", settings
+
+
+def test_folders_root_owns_under_a_home_are_given_to_its_owner(monkeypatch, tmp_path):
+    """A machine an earlier agent shared has the seat's folders made as
+    root."""
+    home, config, settings = _seat_folders(tmp_path)
+    chowned = _owners(monkeypatch, {str(home): (4242, 4343)})
+    _lstat_owners(monkeypatch, {str(config): 0, str(settings): 0})
+
+    given = rustdesk.give_back_dirs(str(settings), str(home))
+
+    assert given == [str(config), str(settings)]
+    assert chowned == [(str(config), 4242, 4343), (str(settings), 4242, 4343)]
+
+
+def test_writing_into_a_settings_folder_root_owns_gives_it_back(monkeypatch, tmp_path):
+    home, config, settings = _seat_folders(tmp_path)
+    chowned = _owners(monkeypatch, {str(home): (4242, 4343)})
+    _lstat_owners(monkeypatch, {str(settings): 0})
+
+    rustdesk.write_settings(
+        str(settings / "RustDesk2.toml"), lambda existing: "[options]\n", str(home)
+    )
+
+    assert chowned == [
+        (str(settings), 4242, 4343),
+        (str(settings / "RustDesk2.toml.tmp"), 4242, 4343),
+    ]
+
+
+def test_a_folder_another_person_owns_keeps_its_owner(monkeypatch, tmp_path):
+    home, config, settings = _seat_folders(tmp_path)
+    chowned = _owners(monkeypatch, {str(home): (4242, 4343)})
+    _lstat_owners(monkeypatch, {str(config): 1001, str(settings): 0})
+
+    assert rustdesk.give_back_dirs(str(settings), str(home)) == [str(settings)]
+    assert [target for target, _, _ in chowned] == [str(settings)]
+
+
+def test_under_roots_own_home_nothing_is_given(monkeypatch, tmp_path):
+    home, config, settings = _seat_folders(tmp_path)
+    chowned = _owners(monkeypatch, {str(home): (0, 0)})
+    _lstat_owners(monkeypatch, {str(config): 0, str(settings): 0})
+
+    assert rustdesk.give_back_dirs(str(settings), str(home)) == []
+    assert rustdesk.give_back_dirs(str(tmp_path / "elsewhere"), str(home)) == []
+    assert chowned == []
+
+
+def test_a_symbolic_link_on_the_way_is_not_given(monkeypatch, tmp_path):
+    home = tmp_path / "pat"
+    home.mkdir()
+    (tmp_path / "dotfiles" / "rustdesk").mkdir(parents=True)
+    (home / ".config").symlink_to(tmp_path / "dotfiles")
+    settings = home / ".config" / "rustdesk"
+    _owners(monkeypatch, {str(home): (4242, 4343)})
+    _lstat_owners(monkeypatch, {str(home / ".config"): 0, str(settings): 0})
+
+    assert rustdesk.give_back_dirs(str(settings), str(home)) == [str(settings)]
+
+
 # --- what RustDesk itself writes into RustDesk.toml ---
 
 # Sealed by libsodium's crypto_secretbox_easy as RustDesk 1.4.9 seals: the
