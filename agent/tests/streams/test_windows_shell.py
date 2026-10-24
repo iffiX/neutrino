@@ -12,8 +12,9 @@ the console account's profile directory or the system drive's root when
 nobody is signed in, and a Windows without a pseudo console is refused. A
 container's shell runs ``exec -it`` through the Podman machine's read
 command on the console, never kept, its frames sent with no ``fd`` head,
-and a container the machine does not list is refused before anything
-starts.
+with its own mark and the sweep run through the same command once it
+exits, and a container the machine does not list is refused before
+anything starts.
 """
 
 import ctypes
@@ -546,6 +547,14 @@ def test_a_containers_shell_runs_exec_on_the_console_with_its_frames_unheaded(
 ):
     kernel32 = FakeKernel32([b"/ # "])
     read, asked = containers_on_windows(monkeypatch, tmp_path, kernel32, ["probe"])
+    swept = threading.Event()
+    sweeps = []
+
+    def sweep(command, **options):
+        sweeps.append((command, options))
+        swept.set()
+
+    monkeypatch.setattr(shell_module, "run", sweep)
     registry = ShellSessionRegistry()
     channel = FakeChannel()
     channel.feed(("data", b"exit 0\r"))
@@ -567,13 +576,17 @@ def test_a_containers_shell_runs_exec_on_the_console_with_its_frames_unheaded(
     closed = stream.run()
 
     create = next(call for call in kernel32.calls if call[0] == "CreateProcessW")
+    mark = stream._argv[len(read) + 3]
     assert type(stream) is WindowsShellStream
     assert asked == [read]
+    assert mark.startswith(f"{shell_module.CONTAINER_SHELL_MARK}=")
     assert create[1] == subprocess.list2cmdline(
         [
             *read,
             "exec",
             "-it",
+            "-e",
+            mark,
             "probe",
             "sh",
             "-c",
@@ -585,6 +598,17 @@ def test_a_containers_shell_runs_exec_on_the_console_with_its_frames_unheaded(
     assert closed == {"code": "", "params": {"exit_code": 0}}
     assert stream._session.account == "SYSTEM"
     assert registry.describe() == []
+    assert swept.wait(timeout=5)
+    assert sweeps[0][0] == [
+        *read,
+        "exec",
+        "probe",
+        "sh",
+        "-c",
+        shell_module.CONTAINER_SHELL_SWEEP,
+        "sh",
+        mark,
+    ]
 
 
 def test_a_container_the_machine_does_not_list_is_refused_on_windows(

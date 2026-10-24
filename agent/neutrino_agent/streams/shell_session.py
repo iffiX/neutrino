@@ -541,7 +541,9 @@ class SessionShellStream:
     ``session_id``, ``is_resumed``, ``owner`` and ``is_shared`` from its open.
     """
 
-    def __init__(self, channel, args: dict, *, sessions=None, frame_head=b""):
+    def __init__(
+        self, channel, args: dict, *, sessions=None, frame_head=b"", on_end=None
+    ):
         """
         Args:
             channel: The stream's channel.
@@ -553,6 +555,8 @@ class SessionShellStream:
                 no shell past its stream.
             frame_head: What every frame of output carries before its
                 bytes: stdout's ``fd`` on an ``exec`` stream, else nothing.
+            on_end: Called with the session once a shell no registry holds
+                has ended; None calls nothing.
         """
         self._channel = channel
         self._frame_head = bytes(frame_head)
@@ -563,6 +567,7 @@ class SessionShellStream:
         self._owner = str(args.get("owner", "") or "")
         self._is_shared = bool(args.get("is_shared", False))
         self._sessions = sessions
+        self._on_end = on_end
         self._session: "ShellSession | None" = None
         self._is_held = False
         self._is_done = threading.Event()
@@ -576,7 +581,7 @@ class SessionShellStream:
         """
         self._check_platform()
         if self._sessions is None or not self._session_id:
-            self._session = self._make_session()
+            self._session = self._make_session(on_end=self._on_end)
             return
         self._session, self._is_held = self._sessions.take(
             self._session_id, is_resumed=self._is_resumed, make=self._make_kept_session

@@ -429,6 +429,7 @@ class WindowsShellStream(SessionShellStream):
         terminal=None,
         argv: "list | None" = None,
         is_exec: bool = True,
+        on_end=None,
     ):
         """
         Args:
@@ -448,6 +449,9 @@ class WindowsShellStream(SessionShellStream):
             is_exec: Whether ``argv`` is an ``exec`` stream's, whose output
                 is headed with stdout's ``fd``; a container's shell sends
                 its output as it is.
+            on_end: Called with the session once a shell no registry holds
+                has ended, a container's shell among them; None calls
+                nothing.
         """
         super().__init__(
             channel,
@@ -456,6 +460,7 @@ class WindowsShellStream(SessionShellStream):
             frame_head=(
                 bytes([AGENT_EXEC_FD_STDOUT]) if argv is not None and is_exec else b""
             ),
+            on_end=on_end,
         )
         self._argv = argv
         self._kernel32 = kernel32

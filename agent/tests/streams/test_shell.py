@@ -9,7 +9,10 @@ open's ``module``, a container shell is refused typed when podman does
 not list the container, a container's shell on a Podman machine runs
 ``exec -it`` through the machine's read command and is refused
 ``container_unknown`` with no machine and with the machine's own code
-when it cannot be reached, and a shell opened with a session id and made
+when it cannot be reached, a container's shell carries a mark of its own
+and is swept through the same podman command with it once it exits, its
+exit code kept, or its stream closes, the sweep's script kills the marked
+processes and their sessions and nothing else, and a shell opened with a session id and made
 persistent keeps running when its stream closes and is attached again with
 its output. The Terminal module: a shell for a named account starts as the
 platform steps down to it, with its login shell or the module's program as
@@ -20,11 +23,15 @@ be run refuse the open with no fallback; a session already open keeps what
 it runs when the settings change; a container's shell reads none of them.
 """
 
+import contextlib
 import getpass
 import os
 import pwd
+import re
+import subprocess
 import threading
 import time
+import uuid
 
 import pytest
 
@@ -156,8 +163,16 @@ def test_a_listed_container_is_opened_with_podman_exec(monkeypatch):
 
     stream.open()
 
-    assert stream._command[:4] == [shell_module.PODMAN_BINARY, "exec", "-it", "kuma"]
-    assert stream._command[4:6] == ["sh", "-c"]
+    assert stream._command[:4] == [shell_module.PODMAN_BINARY, "exec", "-it", "-e"]
+    assert MARK_PATTERN.fullmatch(stream._command[4])
+    assert stream._command[5:8] == ["kuma", "sh", "-c"]
+
+
+def test_each_container_shell_has_a_mark_of_its_own():
+    first = ContainerShellStream(FakeChannel(), {"container": "kuma"})
+    second = ContainerShellStream(FakeChannel(), {"container": "kuma"})
+
+    assert first._command[4] != second._command[4]
 
 
 def test_the_entry_picks_the_shell_by_the_opens_module():
@@ -178,13 +193,26 @@ def test_the_entry_picks_the_shell_by_the_opens_module():
 # What reaches root's Podman in a Windows or macOS machine.
 MACHINE_URL = "ssh://root@127.0.0.1:50743/run/podman/podman.sock"
 MACHINE_KEY = "/Users/me/.local/share/containers/podman/machine/machine"
-# Answers the listing with one container, and prints what an exec was given.
+# The environment entry that marks a container shell's processes.
+MARK_PATTERN = re.compile(r"NEUTRINO_SHELL_ID=[0-9a-f]{32}")
+# Answers the listing with one container; an exec on a terminal prints what
+# it was given and exits 7, or runs on with ``$FAKE_PODMAN_SLEEP``; every
+# exec appends its words to ``calls`` beside the program, one line each.
 FAKE_PODMAN = """#!/bin/sh
 for word in "$@"; do
   case "$word" in
     ps) echo '[{"Names": ["kuma"], "State": "running", "Image": "nginx"}]'; exit 0;;
     inspect) echo '[]'; exit 0;;
-    exec) echo "podman: $*"; exit 7;;
+    exec)
+      printf '%s\\n' "$*" | tr '\\n' ' ' >> "$(dirname "$0")/calls"
+      echo >> "$(dirname "$0")/calls"
+      case " $* " in
+        *" -it "*)
+          echo "podman: $*"
+          [ -n "$FAKE_PODMAN_SLEEP" ] && exec sleep "$FAKE_PODMAN_SLEEP"
+          exit 7;;
+      esac
+      exit 0;;
   esac
 done
 exit 1
@@ -196,6 +224,19 @@ def machine_read_command(tmp_path) -> tuple:
     program.write_text(FAKE_PODMAN)
     program.chmod(0o755)
     return (str(program), "--url", MACHINE_URL, "--identity", MACHINE_KEY)
+
+
+def wait_for_calls(tmp_path, count: int, timeout_s: float = 5.0) -> list:
+    """The exec calls the fake podman logged, once there are ``count``."""
+    deadline = time.monotonic() + timeout_s
+    calls = []
+    while time.monotonic() < deadline:
+        path = tmp_path / "calls"
+        calls = path.read_text().splitlines() if path.exists() else []
+        if len(calls) >= count:
+            return calls
+        time.sleep(0.02)
+    raise AssertionError(f"{count} exec calls never came: {calls!r}")
 
 
 def test_a_containers_shell_runs_exec_through_the_machines_read_command(tmp_path):
@@ -211,9 +252,145 @@ def test_a_containers_shell_runs_exec_through_the_machines_read_command(tmp_path
     closed = stream.run()
 
     assert type(stream) is ContainerShellStream
-    said = f"podman: --url {MACHINE_URL} --identity {MACHINE_KEY} exec -it kuma sh -c"
+    mark = stream._command[len(read) + 3]
+    said = (
+        f"podman: --url {MACHINE_URL} --identity {MACHINE_KEY} "
+        f"exec -it -e {mark} kuma sh -c"
+    )
     assert said.encode() in channel.output()
     assert closed == {"code": "", "params": {"exit_code": 7}}
+
+
+def test_a_containers_shell_that_exits_is_swept_with_its_mark(tmp_path):
+    read = machine_read_command(tmp_path)
+    stream = open_shell_stream(
+        FakeChannel(),
+        {"module": "podman", "container": "kuma", "cols": 80, "rows": 24},
+        container_podman=lambda: read,
+    )
+
+    stream.open()
+    closed = stream.run()
+    calls = wait_for_calls(tmp_path, 2)
+
+    mark = stream._command[len(read) + 3]
+    assert closed == {"code": "", "params": {"exit_code": 7}}
+    assert calls[1].startswith(
+        f"--url {MACHINE_URL} --identity {MACHINE_KEY} exec kuma sh -c "
+    )
+    assert calls[1].rstrip().endswith(f" sh {mark}")
+
+
+def test_closing_a_containers_shell_ends_its_exec_and_sweeps_the_container(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("FAKE_PODMAN_SLEEP", "30")
+    read = machine_read_command(tmp_path)
+    channel = FakeChannel()
+    stream = open_shell_stream(
+        channel,
+        {"module": "podman", "container": "kuma", "cols": 80, "rows": 24},
+        container_podman=lambda: read,
+    )
+    stream.open()
+    outcome: dict = {}
+
+    def serve():
+        outcome.update(stream.run())
+
+    thread = threading.Thread(target=serve)
+    thread.start()
+    wait_for_output(channel, b"podman: ")
+    channel.close_from_hub()
+    thread.join(timeout=10)
+    calls = wait_for_calls(tmp_path, 2)
+
+    mark = stream._command[len(read) + 3]
+    assert not thread.is_alive()
+    assert outcome["code"] == ""
+    assert " exec kuma sh -c " in calls[1]
+    assert calls[1].rstrip().endswith(f" sh {mark}")
+
+
+def test_a_containers_shell_that_does_not_start_sweeps_nothing(monkeypatch):
+    monkeypatch.setattr(shell_module, "listed_containers", lambda podman: ["kuma"])
+    swept = []
+    monkeypatch.setattr(shell_module, "run", lambda *args, **kwargs: swept.append(args))
+    stream = ContainerShellStream(
+        FakeChannel(), {"container": "kuma"}, podman=("/nonexistent/podman",)
+    )
+
+    stream.open()
+    closed = stream.run()
+
+    assert closed["code"] == "shell_failed"
+    assert swept == []
+
+
+def alive(pid: int) -> bool:
+    """Whether a process runs: it exists and is no zombie."""
+    try:
+        with open(f"/proc/{pid}/stat", encoding="utf-8") as stream:
+            return stream.read().rsplit(") ", 1)[1].split()[0] != "Z"
+    except (OSError, IndexError):
+        return False
+
+
+def wait_until_gone(pid: int, timeout_s: float = 5.0) -> bool:
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if not alive(pid):
+            return True
+        time.sleep(0.02)
+    return False
+
+
+@pytest.mark.skipif(not os.path.isdir("/proc/self"), reason="the sweep reads /proc")
+def test_the_sweep_kills_the_marked_processes_and_their_session_alone():
+    mark = f"{shell_module.CONTAINER_SHELL_MARK}={uuid.uuid4().hex}"
+    other = f"{shell_module.CONTAINER_SHELL_MARK}={uuid.uuid4().hex}"
+    # A shell of the mark: a job of its own, a job that dropped the mark,
+    # and a job that left the session with setsid.
+    marked = subprocess.Popen(
+        [
+            "/bin/sh",
+            "-c",
+            "sleep 60 & echo $!; "
+            "(unset NEUTRINO_SHELL_ID; exec sleep 61) & echo $!; "
+            "setsid sleep 62 & echo $!; wait",
+        ],
+        env={**os.environ, shell_module.CONTAINER_SHELL_MARK: mark.split("=")[1]},
+        stdout=subprocess.PIPE,
+        start_new_session=True,
+        text=True,
+    )
+    children = [int(marked.stdout.readline()) for _ in range(3)]
+    stranger = subprocess.Popen(
+        ["sleep", "60"],
+        env={**os.environ, shell_module.CONTAINER_SHELL_MARK: other.split("=")[1]},
+    )
+    bystander = subprocess.Popen(["sleep", "60"])
+    try:
+        done = subprocess.run(
+            ["/bin/sh", "-c", shell_module.CONTAINER_SHELL_SWEEP, "sh", mark],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        assert done.returncode == 0, done.stderr
+        assert marked.wait(timeout=5) == -9
+        assert all(wait_until_gone(pid) for pid in children)
+        assert stranger.poll() is None
+        assert bystander.poll() is None
+    finally:
+        for process in (marked, stranger, bystander):
+            with contextlib.suppress(OSError):
+                process.kill()
+            process.wait(timeout=5)
+        for pid in children:
+            with contextlib.suppress(OSError):
+                os.kill(pid, 9)
 
 
 def test_a_container_the_machine_does_not_list_is_refused(tmp_path):

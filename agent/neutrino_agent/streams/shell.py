@@ -11,9 +11,12 @@ of them. A ``shell`` opened with
 ``{module: podman, container}`` runs inside that container instead, as
 the agent, through ``podman exec -it``; on Windows and macOS through the
 Podman machine's read command, the machine's ``--url`` and the account's
-key. On Windows the shell is PowerShell on a pseudo console, served by
-:class:`~neutrino_agent.streams.windows_shell.WindowsShellStream`, which
-also serves a container's shell there.
+key. Every process a container's shell starts carries the shell's own mark
+in its environment, and once the shell has ended a second ``podman exec``
+kills every marked process in the container and every process in the
+session of one. On Windows the shell is PowerShell on a pseudo console,
+served by :class:`~neutrino_agent.streams.windows_shell.WindowsShellStream`,
+which also serves a container's shell there.
 
 A new shell runs as the Terminal module says: as the agent runs, which is
 root, with the shell picked here while its settings are empty; as the
@@ -36,6 +39,7 @@ Not pure: starts processes and owns file descriptors.
 from __future__ import annotations
 
 import contextlib
+import functools
 import os
 import select
 import shutil
@@ -44,6 +48,7 @@ import struct
 import subprocess
 import sys
 import threading
+import uuid
 
 from neutrino_agent.constants import (
     AGENT_EXEC_FD_STDOUT,
@@ -60,6 +65,7 @@ from neutrino_agent.exceptions import (
 )
 from neutrino_agent.modules.podman.applier import PodmanStatusReader
 from neutrino_agent.modules.podman.constants import PODMAN_BINARY
+from neutrino_agent.modules.shared.subprocess_run import run
 from neutrino_agent.modules.terminal.config import (
     TerminalConfig,
     account_entry,
@@ -83,6 +89,32 @@ except ImportError:  # Windows carries none of these.
 
 # What a container shell runs: its own bash where it has one, else sh.
 CONTAINER_SHELL_COMMAND = "command -v bash >/dev/null 2>&1 && exec bash || exec sh"
+# The variable whose value marks every process one container shell starts.
+CONTAINER_SHELL_MARK = "NEUTRINO_SHELL_ID"
+# Run in the container as ``sh -c <this> sh NEUTRINO_SHELL_ID=<mark>`` once
+# its shell has ended: kills every process whose environment holds that
+# entry, then every process in the session of one. It uses sh's builtins
+# alone, and ``read`` drops the NUL bytes ``environ`` is split by.
+CONTAINER_SHELL_SWEEP = """t=$1
+s=" "
+for d in /proc/[0-9]*; do
+    p=${d#/proc/}
+    [ "$p" = "$$" ] && continue
+    (exec <"$d/environ" && while IFS= read -r l || [ -n "$l" ]; do
+        case $l in *"$t"*) exit 0 ;; esac
+    done; exit 1) 2>/dev/null || continue
+    IFS= read -r st 2>/dev/null <"$d/stat" && set -- ${st##*) } && [ "$4" != 0 ] && s="$s$4 "
+    kill -9 "$p" 2>/dev/null
+done
+for d in /proc/[0-9]*; do
+    p=${d#/proc/}
+    IFS= read -r st 2>/dev/null <"$d/stat" || continue
+    set -- ${st##*) }
+    case $s in *" $4 "*) [ "$p" = "$$" ] || kill -9 "$p" 2>/dev/null ;; esac
+done
+"""
+# How long the sweep may take, through a Podman machine's ssh port too.
+CONTAINER_SHELL_SWEEP_TIMEOUT_S = 60
 # The one module whose shells are served: a container's own.
 CONTAINER_MODULE = "podman"
 
@@ -166,18 +198,56 @@ def listed_containers(podman: tuple = (PODMAN_BINARY,)) -> list:
     return [state.name for state in reader.survey(declared_names=[])]
 
 
-def container_shell_command(podman: tuple, name: str) -> list:
+def container_shell_command(podman: tuple, name: str, mark: str) -> list:
     """What a container's shell runs: ``exec -it`` through the podman command.
 
     Args:
         podman: The podman command: the program and the options before its
             verb.
         name: The container.
+        mark: The shell's own mark, which every process it starts carries
+            in its environment.
 
     Returns:
         The argument vector.
     """
-    return [*podman, "exec", "-it", name, "sh", "-c", CONTAINER_SHELL_COMMAND]
+    return [
+        *podman,
+        "exec",
+        "-it",
+        "-e",
+        f"{CONTAINER_SHELL_MARK}={mark}",
+        name,
+        "sh",
+        "-c",
+        CONTAINER_SHELL_COMMAND,
+    ]
+
+
+def end_container_shell(session, *, podman: tuple, name: str, mark: str) -> None:
+    """Kill what a container's shell left running in the container, once it ended.
+
+    A container that stopped, or a podman that cannot run, ends nothing.
+
+    Args:
+        session: The shell's session, which has ended.
+        podman: The podman command the shell ran through.
+        name: The container.
+        mark: The shell's own mark.
+    """
+    del session
+    command = [
+        *podman,
+        "exec",
+        name,
+        "sh",
+        "-c",
+        CONTAINER_SHELL_SWEEP,
+        "sh",
+        f"{CONTAINER_SHELL_MARK}={mark}",
+    ]
+    with contextlib.suppress(OSError, subprocess.SubprocessError):
+        run(command, is_checked=False, timeout_s=CONTAINER_SHELL_SWEEP_TIMEOUT_S)
 
 
 def check_container(podman: tuple, name: str) -> None:
@@ -259,12 +329,16 @@ def open_shell_stream(
 
         name = str(args.get("container", "") or "")
         check_container(podman, name)
+        mark = uuid.uuid4().hex
         return WindowsShellStream(
             channel,
             args,
             platform=platform,
-            argv=container_shell_command(podman, name),
+            argv=container_shell_command(podman, name, mark),
             is_exec=False,
+            on_end=functools.partial(
+                end_container_shell, podman=podman, name=name, mark=mark
+            ),
         )
     return ContainerShellStream(channel, args, podman=podman)
 
@@ -637,6 +711,7 @@ class ShellStream(SessionShellStream):
         sessions=None,
         terminal=None,
         platform=None,
+        on_end=None,
     ):
         """
         Args:
@@ -655,12 +730,15 @@ class ShellStream(SessionShellStream):
                 defaults.
             platform: The machine's platform, which steps down to an
                 account.
+            on_end: Called with the session once a shell no registry holds
+                has ended; None calls nothing.
         """
         super().__init__(
             channel,
             args,
             sessions=sessions,
             frame_head=bytes([AGENT_EXEC_FD_STDOUT]) if argv is not None else b"",
+            on_end=on_end,
         )
         self._command = list(command) if command else None
         self._argv = argv
@@ -706,7 +784,8 @@ class ShellStream(SessionShellStream):
 class ContainerShellStream(ShellStream):
     """A shell inside one podman container, on the same terminal.
 
-    It ends with its stream: a container's shell is never kept.
+    It ends with its stream: a container's shell is never kept. Once it has
+    ended, what it left running in the container is killed.
     """
 
     def __init__(self, channel, args: dict, *, podman: tuple = (PODMAN_BINARY,)):
@@ -720,10 +799,14 @@ class ContainerShellStream(ShellStream):
         """
         self._name = str(args.get("container", ""))
         self._podman = tuple(podman)
+        mark = uuid.uuid4().hex
         super().__init__(
             channel,
             args,
-            command=container_shell_command(self._podman, self._name),
+            command=container_shell_command(self._podman, self._name, mark),
+            on_end=functools.partial(
+                end_container_shell, podman=self._podman, name=self._name, mark=mark
+            ),
         )
 
     def open(self) -> None:
