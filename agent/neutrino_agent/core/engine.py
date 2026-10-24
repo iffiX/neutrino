@@ -12,11 +12,13 @@ shared pattern: a thread woken by news, a signature that skips unchanged
 inputs, an idle re-check so drift is still noticed, and per-name typed
 statuses.
 
-The engine keeps **no retry policy and no memory of past failures**: a
-step that failed is reported failed with its code and never repeated,
-because deciding to try again is the hub's. The recipes it works from are
-already resolved for this platform, so nothing here reads a manifest or
-searches a platform table either.
+The engine keeps **no retry policy**: a step that failed is reported with
+its code and never repeated, because deciding to try again is the hub's.
+Each module's last failed step is kept on disk, one root-only file per
+module beside the configured marks, so an agent that starts again reports
+it as it was: ``install_failed`` for an install, ``failed`` for any other
+step. The recipes it works from are already resolved for this platform, so
+nothing here reads a manifest or searches a platform table either.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -27,14 +29,17 @@ import contextlib
 import functools
 import json
 import os
+import tempfile
 import threading
 import time
 
 from neutrino_agent.constants import (
     AGENT_CONFIGURED_DIR,
+    AGENT_FAILURES_DIR_NAME,
     AGENT_MODULE_DETAILS_TTL_S,
     AGENT_MODULE_STATE_ABSENT,
     AGENT_MODULE_STATE_FAILED,
+    AGENT_MODULE_STATE_INSTALL_FAILED,
     AGENT_MODULE_STATE_INSTALLED,
     AGENT_MODULE_STATE_INSTALLING,
     AGENT_MODULE_STATE_QUEUED,
@@ -92,6 +97,11 @@ CodegModuleRunner = functools.partial(InstancesModuleRunner, hooks_class=CodegHo
 
 # The modules the agent's own package carries: no operation moves them.
 CARRIED_MODULES = (RemoteDesktopModuleRunner.name,)
+
+# The states a kept failure reads as: an install's, and every other step's.
+FAILURE_STATES = (AGENT_MODULE_STATE_INSTALL_FAILED, AGENT_MODULE_STATE_FAILED)
+# The suffix of the file one module's failure is kept in.
+FAILURE_SUFFIX = ".json"
 
 
 class ReconcileWorker:
@@ -173,7 +183,15 @@ class ReconcileWorker:
 class ModuleEngine(ReconcileWorker):
     """Observes every module this machine has a runner for, and moves software."""
 
-    def __init__(self, *, platform, log=print, on_change=None, configured_dir=""):
+    def __init__(
+        self,
+        *,
+        platform,
+        log=print,
+        on_change=None,
+        configured_dir="",
+        failures_dir="",
+    ):
         """
         Args:
             platform: The machine's platform, behind the contract.
@@ -181,11 +199,16 @@ class ModuleEngine(ReconcileWorker):
             on_change: Called whenever a module's state changes.
             configured_dir: Where the configured marks live; empty is the
                 machine's own directory.
+            failures_dir: Where each module's last failed step is kept;
+                empty is beside the configured marks.
         """
         # The state's modules section as the hub last sent it, by name:
         # ``{"want", "config", "install", "uninstall"}`` each.
         self._wanted: dict = {}
         self._configured_dir = configured_dir or AGENT_CONFIGURED_DIR
+        self._failures_dir = failures_dir or os.path.join(
+            os.path.dirname(self._configured_dir), AGENT_FAILURES_DIR_NAME
+        )
         self._platform_tuple = platform_tuple()
         self._on_line = None
         # A runner logs while it is made (the file share's fence that did not
@@ -196,7 +219,9 @@ class ModuleEngine(ReconcileWorker):
         self._in_transit: set = set()
         # The modules waiting behind the one the applier is on.
         self._queued: set = set()
-        self._apply_results: dict = {}
+        # Module name to its last failed step, ``{"state", "code",
+        # "params"}``, as kept on disk.
+        self._failures: dict = {}
         self._details_at = 0.0
         # A platform that installs no package has a runner only for what
         # the system itself carries: every other module the state names
@@ -241,6 +266,7 @@ class ModuleEngine(ReconcileWorker):
         for kind in kinds:
             runner = kind(platform=platform, log=self._collect, publish=self._publish)
             self._module_runners[runner.name] = runner
+        self._failures = self._read_failures()
         super().__init__(log=log, on_change=on_change)
 
     @property
@@ -266,6 +292,8 @@ class ModuleEngine(ReconcileWorker):
     def take_state(self, modules: dict) -> None:
         """Take the modules section of the hub's state, and observe against it.
 
+        The failure kept for a module the state no longer names is deleted.
+
         Args:
             modules: ``{name: {"want", "config", "install", "uninstall"}}``;
                 empty when the machine belongs to no hub.
@@ -276,6 +304,9 @@ class ModuleEngine(ReconcileWorker):
                 for name, entry in modules.items()
                 if isinstance(entry, dict)
             }
+            dropped = [name for name in self._failures if name not in self._wanted]
+        for name in dropped:
+            self.record_failure(name, None)
         self._wakeup.set()
 
     def is_installed(self, name: str) -> bool:
@@ -333,19 +364,40 @@ class ModuleEngine(ReconcileWorker):
         with contextlib.suppress(OSError):
             os.unlink(os.path.join(self._configured_dir, name))
 
-    def record_apply(self, name: str, code: str, params: dict) -> None:
-        """Keep how the last apply of one module went, for its row.
+    def record_failure(self, name: str, failure: "dict | None") -> None:
+        """Keep how one module's last step failed, on disk, or delete it.
+
+        A name that is not one plain file name keeps nothing.
 
         Args:
             name: The module name.
-            code: Why it failed; empty when it took.
-            params: What the wording names.
+            failure: ``{"state", "code", "params"}``, ``state`` being
+                ``install_failed`` or ``failed``; None when the step took.
+        """
+        if not _is_plain(name):
+            return
+        kept = _failure(failure) if failure else None
+        with self._lock:
+            if self._failures.get(name) == kept:
+                return
+            if kept is None:
+                self._failures.pop(name, None)
+            else:
+                self._failures[name] = kept
+        self._write_failure(name, kept)
+
+    def is_install_failed(self, name: str) -> bool:
+        """Whether one module's last install failed and nothing replaced it.
+
+        Args:
+            name: The module name.
+
+        Returns:
+            True while its kept failure reads ``install_failed``.
         """
         with self._lock:
-            if code:
-                self._apply_results[name] = (code, dict(params))
-            else:
-                self._apply_results.pop(name, None)
+            failure = self._failures.get(name) or {}
+        return failure.get("state") == AGENT_MODULE_STATE_INSTALL_FAILED
 
     def set_queued(self, names) -> None:
         """Report the modules waiting behind the one being applied as ``queued``.
@@ -389,11 +441,12 @@ class ModuleEngine(ReconcileWorker):
 
         Returns:
             Empty when the software is there afterwards, ``{"code",
-            "params"}`` when it is not.
+            "params"}`` when it is not; the module then reads
+            ``install_failed``.
         """
         return self._operate(
             name,
-            AGENT_MODULE_STATE_INSTALLING,
+            (AGENT_MODULE_STATE_INSTALLING, AGENT_MODULE_STATE_INSTALL_FAILED),
             "install_failed",
             on_line,
             self._install,
@@ -405,7 +458,9 @@ class ModuleEngine(ReconcileWorker):
 
         The configuration the hub wrote and the configured mark go with
         it; the module's data stays. The row reads ``uninstalling`` while
-        it runs.
+        it runs. On software the recipe's check does not find, what an
+        earlier install left, a step that fails is logged and the check
+        afterwards is the outcome.
 
         Args:
             name: The module name; its recipes are the ones the state names.
@@ -414,24 +469,28 @@ class ModuleEngine(ReconcileWorker):
 
         Returns:
             Empty when the software is gone afterwards, ``{"code",
-            "params"}`` when it is not.
+            "params"}`` when it is not; the module then reads ``failed``.
         """
         return self._operate(
             name,
-            AGENT_MODULE_STATE_UNINSTALLING,
+            (AGENT_MODULE_STATE_UNINSTALLING, AGENT_MODULE_STATE_FAILED),
             "uninstall_failed",
             on_line,
             self._uninstall,
         )
 
     def _operate(
-        self, name: str, transient: str, failure: str, on_line, step, *extra
+        self, name: str, states: tuple, failure: str, on_line, step, *extra
     ) -> dict:
         """Run one package operation under the machine's one lock.
 
+        Its outcome replaces the module's kept failure before the row is
+        read again.
+
         Args:
             name: The module name.
-            transient: The state the row shows while the operation runs.
+            states: The state the row shows while the operation runs, and
+                the state a failure of it is kept under.
             failure: The code a step that raised is reported under.
             on_line: Called with each output line.
             step: The operation itself, given the name, its state entry
@@ -441,6 +500,7 @@ class ModuleEngine(ReconcileWorker):
         Returns:
             Empty when the operation took, ``{"code", "params"}`` when not.
         """
+        transient, failed_state = states
         if name in CARRIED_MODULES:
             return {"code": "module_not_orderable", "params": {"module": name}}
         wanted = self._wanted_of(name)
@@ -465,6 +525,9 @@ class ModuleEngine(ReconcileWorker):
                 self._on_line = None
                 with self._lock:
                     self._in_transit.discard(name)
+            self.record_failure(
+                name, {"state": failed_state, **refusal} if refusal else None
+            )
             self._refresh(is_forced=True)
         return refusal
 
@@ -541,7 +604,28 @@ class ModuleEngine(ReconcileWorker):
         runner = self._runner_for(kind, name)
         if runner is None:
             return {"code": "unknown_kind", "params": {"kind": kind}}
+        is_leftover = not self.is_installed(name)
         self._collect(f"{name}: uninstalling")
+        try:
+            self._remove(name, runner, resolved, removal)
+        except Exception as error:  # noqa: BLE001 - logged; the check is the outcome
+            if not is_leftover:
+                raise
+            said = str(error)
+            if isinstance(error, ModuleApplyError):
+                said = " ".join(
+                    [error.code]
+                    + [f"{key}={value}" for key, value in error.params.items()]
+                )
+            self._collect(f"{name}: {said}"[:500])
+        self.clear_configured(name)
+        if self._verify(runner, recipe, runner.observe(resolved)):
+            return {"code": "uninstall_unconfirmed", "params": {}}
+        return {}
+
+    def _remove(self, name: str, runner, resolved: dict, removal: dict) -> None:
+        """The uninstall's steps: the hub's configuration, the package, the
+        recipe's own steps after it, and the data where the recipe says so."""
         if self.is_configured(name):
             with contextlib.suppress(Exception):
                 runner.stop()
@@ -555,10 +639,6 @@ class ModuleEngine(ReconcileWorker):
         if not bool(removal.get("is_data_kept", True)):
             self._collect(f"{name}: removing its data")
             runner.remove_data()
-        self.clear_configured(name)
-        if self._verify(runner, recipe, runner.observe(resolved)):
-            return {"code": "uninstall_unconfirmed", "params": {}}
-        return {}
 
     def _collect(self, message: str) -> None:
         """Log a line, handing it to the operation's stream as well."""
@@ -632,12 +712,23 @@ class ModuleEngine(ReconcileWorker):
         Returns:
             ``{"state", "is_active", "code", "params", "details"}``; an
             ``installing`` row carries the runner's install wait as its
-            code and params.
+            code and params, and a module whose last install failed reads
+            ``install_failed`` with that install's code and params,
+            whatever is on the machine.
         """
         recipe = _recipe_of(wanted)
         runner = self._runner_for(str(recipe.get("kind", "")), name)
         if runner is None:
             return _typed(AGENT_MODULE_STATE_UNSUPPORTED)
+        with self._lock:
+            failure = self._failures.get(name)
+        if (
+            failure is not None
+            and failure["state"] == AGENT_MODULE_STATE_INSTALL_FAILED
+        ):
+            status = _typed(AGENT_MODULE_STATE_INSTALL_FAILED, failure["code"])
+            status["params"] = dict(failure["params"])
+            return status
         try:
             observed = runner.observe(_row(recipe))
             if not self._verify(runner, recipe, observed):
@@ -669,14 +760,72 @@ class ModuleEngine(ReconcileWorker):
     def _with_failure(
         self, name: str, status: dict, *, is_present: bool = True
     ) -> dict:
-        """One row with the last apply's code, failed when the software is there."""
+        """One row with the last failed step's code, failed when the software
+        is there."""
         with self._lock:
-            failure = self._apply_results.get(name)
+            failure = self._failures.get(name)
         if failure is not None:
             if is_present:
                 status["state"] = AGENT_MODULE_STATE_FAILED
-            status["code"], status["params"] = failure[0], dict(failure[1])
+            status["code"] = failure["code"]
+            status["params"] = dict(failure["params"])
         return status
+
+    def _failure_path(self, name: str) -> str:
+        return os.path.join(self._failures_dir, name + FAILURE_SUFFIX)
+
+    def _read_failures(self) -> dict:
+        """The failures kept on disk.
+
+        Returns:
+            Module name to ``{"state", "code", "params"}``; a file that
+            cannot be read or holds another shape is left out.
+        """
+        try:
+            names = os.listdir(self._failures_dir)
+        except OSError:
+            return {}
+        kept = {}
+        for file_name in sorted(names):
+            name = file_name[: -len(FAILURE_SUFFIX)]
+            if not file_name.endswith(FAILURE_SUFFIX) or not _is_plain(name):
+                continue
+            try:
+                with open(self._failure_path(name), "r", encoding="utf-8") as stream:
+                    failure = _failure(json.load(stream))
+            except (OSError, ValueError):
+                continue
+            if failure is not None:
+                kept[name] = failure
+        return kept
+
+    def _write_failure(self, name: str, failure: "dict | None") -> None:
+        """Keep one module's failure root-only, whole or not at all, or delete it.
+
+        A file that cannot be written is a line in the log, and the row
+        reads the failure all the same until the agent starts again.
+        """
+        path = self._failure_path(name)
+        try:
+            if failure is None:
+                with contextlib.suppress(FileNotFoundError):
+                    os.unlink(path)
+                return
+            os.makedirs(self._failures_dir, mode=0o700, exist_ok=True)
+            handle, temporary = tempfile.mkstemp(
+                dir=self._failures_dir, prefix=".failure_"
+            )
+            try:
+                with os.fdopen(handle, "w", encoding="utf-8") as stream:
+                    json.dump(failure, stream, sort_keys=True)
+                os.chmod(temporary, 0o600)
+                os.replace(temporary, path)
+            except BaseException:
+                with contextlib.suppress(OSError):
+                    os.unlink(temporary)
+                raise
+        except OSError as error:
+            self._log(f"{name}: could not keep its failure: {error}")
 
     @staticmethod
     def _verify(runner, recipe: dict, observed: dict) -> bool:
@@ -706,6 +855,39 @@ class ModuleEngine(ReconcileWorker):
         if runner is not None and (not kind or runner.kind == kind):
             return runner
         return {"package": self._package, "system_package": self._system}.get(kind)
+
+
+def _is_plain(name: str) -> bool:
+    """Whether a module name is one plain file name, safe to keep a file under."""
+    return (
+        bool(name)
+        and not name.startswith(".")
+        and not any(separator in name for separator in ("/", "\\"))
+    )
+
+
+def _failure(held) -> "dict | None":
+    """One kept failure in its one shape, or None for anything else.
+
+    Args:
+        held: ``{"state", "code", "params"}`` as recorded or read back.
+
+    Returns:
+        The failure, ``state`` one of the two failure states and a code
+        beside it; None when it is not one.
+    """
+    if not isinstance(held, dict):
+        return None
+    state = str(held.get("state", "") or "")
+    code = str(held.get("code", "") or "")
+    params = held.get("params")
+    if state not in FAILURE_STATES or not code:
+        return None
+    return {
+        "state": state,
+        "code": code,
+        "params": dict(params) if isinstance(params, dict) else {},
+    }
 
 
 def _download_refusal(runner, received: dict) -> dict:

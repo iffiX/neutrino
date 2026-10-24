@@ -854,6 +854,28 @@ def test_a_leave_forgets_the_state_last_tried(config_path, monkeypatch):
     assert agent._desired._store.read_tried() == {}
 
 
+@pytest.mark.parametrize("step", ["join", "leave"])
+def test_a_join_and_a_leave_delete_the_kept_failures(config_path, monkeypatch, step):
+    """A failure kept under one binding is not reported to the next hub."""
+    agent, _ = scripted_agent(config_path, monkeypatch)
+    agent._engine.record_failure(
+        "samba", {"state": "install_failed", "code": "install_failed", "params": {}}
+    )
+    kept = config_path.parent / "failures" / "samba.json"
+    assert kept.is_file()
+    monkeypatch.setattr(
+        enrollment_module, "enroll", lambda link, platform=None: bind(config_path)
+    )
+
+    if step == "join":
+        agent.join("neutrino://enroll/x")
+    else:
+        agent.leave()
+
+    assert agent._engine.is_install_failed("samba") is False
+    assert not kept.exists()
+
+
 def test_a_binding_another_process_wrote_reads_the_mark_again(config_path):
     agent = Agent(log=lambda message: None)
     _tried(agent, "h1")

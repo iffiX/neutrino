@@ -56,6 +56,8 @@ class FakeEngine:
         self.configured: set = set()
         self.states: list = []
         self.results: dict = {}
+        # Module name to the state its kept failure reads as.
+        self.failed_states: dict = {}
         self.refreshes = 0
         self.installs: list = []
         self.uninstalls: list = []
@@ -77,8 +79,16 @@ class FakeEngine:
     def clear_configured(self, name):
         self.configured.discard(name)
 
-    def record_apply(self, name, code, params):
-        self.results[name] = (code, dict(params))
+    def record_failure(self, name, failure):
+        if failure:
+            self.results[name] = (failure["code"], dict(failure["params"]))
+            self.failed_states[name] = failure["state"]
+        else:
+            self.results[name] = ("", {})
+            self.failed_states.pop(name, None)
+
+    def is_install_failed(self, name):
+        return self.failed_states.get(name) == "install_failed"
 
     def refresh_now(self):
         self.refreshes += 1
@@ -416,7 +426,7 @@ def test_an_installs_output_goes_up_a_log_stream_closed_with_the_state(tmp_path)
     assert log.closed == {"code": "", "params": {"state": "installed"}}
 
 
-def test_a_failed_install_closes_the_log_absent_with_its_code_and_fails_the_state(
+def test_a_failed_install_closes_the_log_install_failed_and_fails_the_state(
     tmp_path,
 ):
     runners = {"samba": FakeRunner()}
@@ -433,7 +443,7 @@ def test_a_failed_install_closes_the_log_absent_with_its_code_and_fails_the_stat
     (log,) = socket.channels
     assert log.closed == {
         "code": "install_unconfirmed",
-        "params": {"state": "absent"},
+        "params": {"state": "install_failed"},
     }
     assert runners["samba"].applied == []
     assert held.applied_hash == ""
@@ -442,6 +452,7 @@ def test_a_failed_install_closes_the_log_absent_with_its_code_and_fails_the_stat
         "params": {"module": "samba"},
     }
     assert engine.results["samba"] == ("install_unconfirmed", {})
+    assert engine.failed_states == {"samba": "install_failed"}
 
 
 def test_an_uninstalls_output_goes_up_a_log_stream_too(tmp_path):
@@ -693,9 +704,11 @@ def test_a_failed_state_keeps_the_old_hash_and_is_not_tried_again_under_it(
     assert "samba" in held._tried
 
 
-def test_a_failed_install_that_left_nothing_keeps_no_hash_and_installs_again(
+def test_a_failed_install_keeps_its_hash_and_installs_again_on_a_retry_mark(
     tmp_path,
 ):
+    """Nothing left on the machine: the same entry is not tried again, and
+    the hub's retry mark is a fresh install."""
     runners = {"samba": FakeRunner()}
     engine = FakeEngine(
         runners,
@@ -705,26 +718,41 @@ def test_a_failed_install_that_left_nothing_keeps_no_hash_and_installs_again(
     held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
     held.apply(state("h1", samba="installed"))
 
-    assert held._tried == {}
-    assert held._store.read_tried() == {}
+    assert "samba" in held._tried
+    assert held._store.read_tried() == held._tried
     assert held.state_error["params"] == {"module": "samba", "detail": "dpkg"}
     assert engine.results["samba"] == ("install_failed", {"detail": "dpkg"})
+    assert engine.failed_states == {"samba": "install_failed"}
 
     engine.install_refusal = None
     held.take(state("h1", samba="installed"))
     drive_once(held)
+    assert len(engine.installs) == 1
+
+    retried = state("h2", samba="installed")
+    retried["modules"]["samba"]["retry_mark"] = "m1"
+    held.take(retried)
+    drive_once(held)
 
     assert len(engine.installs) == 2
-    assert held.applied_hash == "h1"
+    assert held.applied_hash == "h2"
     assert engine.results["samba"] == ("", {})
+    assert engine.failed_states == {}
 
 
-def test_a_failed_install_that_left_the_software_is_not_tried_again(tmp_path):
+def test_a_failed_install_that_left_the_software_installs_again_on_a_retry_mark(
+    tmp_path,
+):
+    """The check passes over what the failed install left, and the retry
+    runs the install all the same."""
+
     class PartialEngine(FakeEngine):
         def install(self, name, *, receive, on_line=None):
             self.installs.append((name, {}))
             self.installed.add(name)
-            return {"code": "install_failed", "params": {"detail": "postinst"}}
+            if len(self.installs) == 1:
+                return {"code": "install_failed", "params": {"detail": "postinst"}}
+            return {}
 
     runners = {"samba": FakeRunner()}
     engine = PartialEngine(runners, absent=("samba",))
@@ -739,8 +767,44 @@ def test_a_failed_install_that_left_the_software_is_not_tried_again(tmp_path):
     assert "samba" in held._tried
     assert socket.channels[0].closed == {
         "code": "install_failed",
-        "params": {"state": "failed", "detail": "postinst"},
+        "params": {"state": "install_failed", "detail": "postinst"},
     }
+    assert engine.failed_states == {"samba": "install_failed"}
+
+    retried = state("h2", samba="installed")
+    retried["modules"]["samba"]["retry_mark"] = "m1"
+    held.take(retried)
+    drive_once(held)
+
+    assert len(engine.installs) == 2
+    assert engine.failed_states == {}
+    assert held.applied_hash == "h2"
+
+
+def test_an_uninstall_of_a_failed_install_runs_whatever_the_check_finds(tmp_path):
+    runners = {"samba": FakeRunner()}
+    engine = FakeEngine(runners, absent=("samba",))
+    engine.failed_states["samba"] = "install_failed"
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+
+    held.apply(state(samba="absent"))
+
+    assert engine.uninstalls == ["samba"]
+    assert engine.failed_states == {}
+    assert held.state_error is None
+
+
+def test_a_failed_configure_keeps_failed_and_its_hash(tmp_path):
+    runners = {"samba": FakeRunner(failure=ModuleApplyError("samba_missing"))}
+    engine = FakeEngine(runners)
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+
+    held.apply(state("h1", samba="running"))
+
+    assert engine.failed_states == {"samba": "failed"}
+    assert engine.results["samba"] == ("samba_missing", {})
+    assert "samba" in held._tried
+    assert engine.installs == []
 
 
 def test_a_changed_entry_is_tried_after_a_failure(tmp_path):

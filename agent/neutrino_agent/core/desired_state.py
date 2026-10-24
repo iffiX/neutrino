@@ -23,10 +23,13 @@ hash once no mentioned module's last step failed or waits. Each module's
 entry, and the ``ai_tools`` section, is tried once: the hash of the entry
 last tried is kept per section beside the state on disk, so a change to one
 entry, or a retry mark on it, runs that module's step alone, and an agent
-that starts again tries nothing again. A failure the socket caused, and a
-failed step that leaves the module not installed, keep no hash, so the next
-state with that entry tries it again. The marks hold for one install and
-one binding: the agent's removal, a join and a leave delete them. Modules
+that starts again tries nothing again. A failure the socket caused keeps no
+hash, so the next state with that entry tries it again. Each step's outcome
+replaces the module's kept failure: ``install_failed`` for an install,
+``failed`` for any other step, nothing for a step that took. A module whose
+last install failed is installed again by its next attempt, and uninstalled
+by an ``absent`` whatever the check finds. The marks hold for one install
+and one binding: the agent's removal, a join and a leave delete them. Modules
 apply one at a time; while one applies, each other module the apply will
 reach whose ``want`` differs from its reported state reads ``queued``. A
 module whose apply waits on an install that still runs is no failure: the
@@ -49,8 +52,8 @@ import threading
 from neutrino_agent.constants import (
     AGENT_DESIRED_STATE_PATH,
     AGENT_MODULE_INSTALL_RECHECK_S,
-    AGENT_MODULE_STATE_ABSENT,
     AGENT_MODULE_STATE_FAILED,
+    AGENT_MODULE_STATE_INSTALL_FAILED,
     AGENT_WANT_ABSENT,
     AGENT_WANT_INSTALLED,
     AGENT_WANT_RUNNING,
@@ -386,13 +389,10 @@ class DesiredStateApplier:
             waiting = [other for other in waiting if other != name]
             self._engine.set_queued(waiting)
             failure = self._reconcile_one(name, self._runners[name], modules[name])
-            is_absent = bool(failure and failure.pop("is_absent", False))
             code = failure["code"] if failure else ""
             is_failed = bool(code) and code != PENDING_CODE
-            self._engine.record_apply(
-                name, code if is_failed else "", failure["params"] if is_failed else {}
-            )
-            is_kept = code not in (PENDING_CODE, RETRIED_CODE) and not is_absent
+            self._engine.record_failure(name, failure if is_failed else None)
+            is_kept = code not in (PENDING_CODE, RETRIED_CODE)
             self._keep_tried(name, hashes[name] if is_kept else "")
             with self._lock:
                 self._outcomes[name] = failure
@@ -467,26 +467,35 @@ class DesiredStateApplier:
     def _reconcile_one(self, name: str, runner, wanted: dict) -> "dict | None":
         """Make one module's actual state equal its ``want``.
 
+        A module whose last install failed is installed again under a
+        present ``want`` and uninstalled under ``absent``, whatever its
+        check finds.
+
         Args:
             name: The module name.
             runner: Its runner.
             wanted: The state's entry for it.
 
         Returns:
-            None when it took, ``{"code", "params", "is_absent"}`` when it
-            did not.
+            None when it took, ``{"state", "code", "params"}`` when it did
+            not, ``state`` being the one the module reads afterwards.
         """
         want = str(wanted.get("want", "") or "")
+        is_install_failed = self._engine.is_install_failed(name)
         if want == AGENT_WANT_ABSENT:
-            if self._engine.is_installed(name):
-                return self._package_operation(name, self._uninstall)
+            if is_install_failed or self._engine.is_installed(name):
+                return self._package_operation(
+                    name, self._uninstall, AGENT_MODULE_STATE_FAILED
+                )
             self._engine.clear_configured(name)
             return None
         if want not in PRESENT_WANTS:
             self._log(f"{name}: want {want!r} is not one this agent knows")
             return None
-        if not self._engine.is_installed(name):
-            failure = self._package_operation(name, self._install)
+        if is_install_failed or not self._engine.is_installed(name):
+            failure = self._package_operation(
+                name, self._install, AGENT_MODULE_STATE_INSTALL_FAILED
+            )
             if failure:
                 return failure
         if want not in CONFIGURING_WANTS:
@@ -494,7 +503,8 @@ class DesiredStateApplier:
         failure = self._apply_one(name, runner, want, wanted.get("config"))
         if failure is None:
             self._engine.mark_configured(name)
-        return failure
+            return None
+        return {"state": AGENT_MODULE_STATE_FAILED, **failure}
 
     def _install(self, name: str, on_line) -> dict:
         return self._engine.install(name, receive=self._receive, on_line=on_line)
@@ -502,28 +512,29 @@ class DesiredStateApplier:
     def _uninstall(self, name: str, on_line) -> dict:
         return self._engine.uninstall(name, on_line=on_line)
 
-    def _package_operation(self, name: str, operation) -> "dict | None":
+    def _package_operation(
+        self, name: str, operation, failed_state: str
+    ) -> "dict | None":
         """Run one package operation with its output up a log stream.
 
         Args:
             name: The module name.
             operation: Called with ``(name, on_line)``; returns empty or
                 ``{"code", "params"}``.
+            failed_state: The state the module reads when the operation
+                fails, ``install_failed`` or ``failed``.
 
         Returns:
-            None when it took, ``{"code", "params", "is_absent"}`` when it
-            did not, ``is_absent`` saying the module is not installed after.
+            None when it took, ``{"state", "code", "params"}`` when it did
+            not.
         """
         log = self._open_log(name)
         refusal = operation(name, log.send if log is not None else None)
-        is_absent = bool(refusal) and not self._engine.is_installed(name)
         if log is not None:
-            if not refusal:
-                state = str((self._engine.report().get(name) or {}).get("state", ""))
-            elif is_absent:
-                state = AGENT_MODULE_STATE_ABSENT
+            if refusal:
+                state = failed_state
             else:
-                state = AGENT_MODULE_STATE_FAILED
+                state = str((self._engine.report().get(name) or {}).get("state", ""))
             log.close(
                 state,
                 str(refusal.get("code", "") or "") if refusal else "",
@@ -532,9 +543,9 @@ class DesiredStateApplier:
         if refusal:
             self._log(f"{name}: {refusal['code']}")
             return {
+                "state": failed_state,
                 "code": refusal["code"],
                 "params": dict(refusal.get("params", {})),
-                "is_absent": is_absent,
             }
         return None
 

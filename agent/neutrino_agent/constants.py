@@ -125,11 +125,12 @@ AGENT_WANT_INSTALLED = "installed"
 AGENT_WANT_STOPPED = "stopped"
 AGENT_WANT_RUNNING = "running"
 # What the agent reports a module to be, one closed table on every surface:
-# four steady states, three in transit, and two shared by every failure.
+# five steady states, three in transit, and two shared by every failure.
 AGENT_MODULE_STATE_ABSENT = "absent"
 AGENT_MODULE_STATE_INSTALLED = "installed"
 AGENT_MODULE_STATE_STOPPED = "stopped"
 AGENT_MODULE_STATE_RUNNING = "running"
+AGENT_MODULE_STATE_INSTALL_FAILED = "install_failed"
 AGENT_MODULE_STATE_INSTALLING = "installing"
 AGENT_MODULE_STATE_UNINSTALLING = "uninstalling"
 AGENT_MODULE_STATE_QUEUED = "queued"
@@ -314,6 +315,9 @@ AGENT_VAR_DIR_DARWIN = "/Library/Application Support/Neutrino/agent/state"
 # ``stopped`` and ``running``.
 AGENT_CONFIGURED_DIR_NAME = "configured"
 AGENT_CONFIGURED_DIR = AGENT_VAR_DIR + "/" + AGENT_CONFIGURED_DIR_NAME
+# Where each module's last failed step is kept, one root-only file per
+# module, so a restart reports it as it was; beside the configured marks.
+AGENT_FAILURES_DIR_NAME = "failures"
 # Where a package coming down a stream lands until its digest is checked.
 # A module's package is deleted once its install ran; the agent's own
 # outlives the process that received it, and the agent the install put

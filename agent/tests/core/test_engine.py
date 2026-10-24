@@ -12,9 +12,13 @@ the file deleted afterwards, the uninstall recipe's own packages and
 steps, results judged by the machine's own state, one package operation
 at a time, a module whose own install runs reading installing with the
 code its runner names for what holds it up, the modules
-waiting behind the one being applied reading queued, an install that failed
-and left nothing reading absent with its code, and that nothing in it ever
-retries anything.
+waiting behind the one being applied reading queued, a failed install
+reading install_failed with its code whatever the machine has, any other
+failed step reading failed while the software is there, both kept
+root-only on disk and read the same by an engine that starts again, until
+the next attempt replaces them or a state stops naming the module, an
+uninstall of what a failed install left judged by the check afterwards,
+and that nothing in it ever retries anything.
 """
 
 import os
@@ -89,6 +93,9 @@ def bare_engine(*, platform=None, verified=None, tmp_path=None):
     engine = ModuleEngine.__new__(ModuleEngine)
     engine._wanted = {name: dict(entry) for name, entry in WANTED.items()}
     engine._configured_dir = str(tmp_path / "configured") if tmp_path else "/nowhere"
+    engine._failures_dir = (
+        str(tmp_path / "failures") if tmp_path else "/nowhere/failures"
+    )
     engine._platform_tuple = {"os": "linux", "family": "debian", "arch": "amd64"}
     engine._on_line = None
     engine._operation_lock = threading.Lock()
@@ -101,7 +108,7 @@ def bare_engine(*, platform=None, verified=None, tmp_path=None):
     engine._on_change = None
     engine._lock = threading.Lock()
     engine._wakeup = threading.Event()
-    engine._apply_results = {}
+    engine._failures = {}
     engine._details_at = 0.0
     engine._module_runners = {}
 
@@ -179,7 +186,7 @@ def test_each_output_line_is_handed_on_as_it_comes(tmp_path):
 def test_the_row_is_installing_while_the_install_runs_and_read_again_after(
     tmp_path,
 ):
-    engine = bare_engine(verified=[False, True], tmp_path=tmp_path)
+    engine = bare_engine(verified=[True], tmp_path=tmp_path)
     seen: list = []
 
     def receive(name):
@@ -189,7 +196,7 @@ def test_the_row_is_installing_while_the_install_runs_and_read_again_after(
         seen.append(engine.report()["fakedesk"]["state"])
         return landing_receive([], tmp_path)(name)
 
-    engine.install("fakedesk", receive=receive)
+    assert engine.install("fakedesk", receive=receive) == {}
 
     assert seen == ["installing", "installing"]
     assert engine.report()["fakedesk"]["state"] == "installed"
@@ -405,17 +412,19 @@ def test_a_second_package_operation_waits_for_the_first(tmp_path):
     assert platform.journal == ["install", "remove"]
 
 
-def test_the_engine_holds_no_failure_memory(tmp_path):
-    engine = bare_engine(verified=[False], tmp_path=tmp_path)
+def test_the_engine_runs_a_failed_install_again_never_by_itself(tmp_path):
+    platform = FakePlatform()
+    engine = bare_engine(platform=platform, verified=[False], tmp_path=tmp_path)
 
     engine.install("fakedesk", receive=landing_receive([], tmp_path))
+    engine._refresh(is_forced=True)
+    engine._refresh(is_forced=True)
 
-    # A result is the applier's answer, not a record of what failed: there
-    # is no latch, no failure map and no attempt count here.
-    assert not hasattr(engine, "_install_failed")
-    assert not hasattr(engine, "_install_unconfirmed")
-    assert not hasattr(engine, "_remove_unconfirmed")
-    assert not hasattr(engine, "_results")
+    # The failure is kept for the row; there is no attempt count and no
+    # second install here.
+    assert len(platform.installs) == 1
+    assert engine.report()["fakedesk"]["state"] == "install_failed"
+    assert not hasattr(engine, "_attempts")
 
 
 # --- the by-name kind installs with the platform's own tooling ---
@@ -805,10 +814,16 @@ def test_report_wakes_the_worker_for_stale_details_and_never_waits():
     assert engine._wakeup.is_set()
 
 
+def failure(state: str, code: str, **params) -> dict:
+    return {"state": state, "code": code, "params": params}
+
+
 def test_an_apply_failure_makes_the_row_failed_with_its_code(tmp_path):
     engine = module_engine(ConfigurableRunner(is_active_now=True), tmp_path=tmp_path)
     engine.mark_configured("samba")
-    engine.record_apply("samba", "samba_config_rejected", {"detail": "bad"})
+    engine.record_failure(
+        "samba", failure("failed", "samba_config_rejected", detail="bad")
+    )
 
     engine._refresh(is_forced=True)
 
@@ -817,43 +832,222 @@ def test_an_apply_failure_makes_the_row_failed_with_its_code(tmp_path):
     assert row["is_active"] is True
     assert (row["code"], row["params"]) == ("samba_config_rejected", {"detail": "bad"})
 
-    engine.record_apply("samba", "", {})
+    engine.record_failure("samba", None)
     engine._refresh(is_forced=True)
     assert engine.report()["samba"]["state"] == "running"
     assert engine.report()["samba"]["code"] == ""
 
 
-def test_an_install_that_failed_and_left_nothing_reads_absent_with_its_code(
-    tmp_path,
+@pytest.mark.parametrize("is_installed", [False, True])
+def test_a_failed_install_reads_install_failed_whatever_the_machine_has(
+    tmp_path, is_installed
 ):
-    engine = module_engine(ConfigurableRunner(is_installed=False), tmp_path=tmp_path)
-    engine.record_apply(
-        "samba", "code_server_download_failed", {"detail": "download_failed"}
+    """Nothing left behind, or software the check finds: the row is the
+    install's failure, never ``absent`` or ``installed``."""
+    engine = module_engine(
+        ConfigurableRunner(is_installed=is_installed), tmp_path=tmp_path
+    )
+    engine.record_failure(
+        "samba",
+        failure("install_failed", "code_server_download_failed", detail="refused"),
     )
 
     engine._refresh(is_forced=True)
 
     row = engine.report()["samba"]
-    assert row["state"] == "absent"
-    assert (row["code"], row["params"]) == (
+    assert (row["state"], row["code"], row["params"]) == (
+        "install_failed",
         "code_server_download_failed",
-        {"detail": "download_failed"},
+        {"detail": "refused"},
     )
+    assert engine.is_install_failed("samba") is True
 
-    engine.record_apply("samba", "", {})
+    engine.record_failure("samba", None)
     engine._refresh(is_forced=True)
-    assert engine.report()["samba"]["state"] == "absent"
+    assert engine.report()["samba"]["state"] == (
+        "installed" if is_installed else "absent"
+    )
     assert engine.report()["samba"]["code"] == ""
+    assert engine.is_install_failed("samba") is False
 
 
 def test_a_failed_step_on_software_that_is_there_reads_failed(tmp_path):
     engine = module_engine(ConfigurableRunner(is_installed=True), tmp_path=tmp_path)
-    engine.record_apply("samba", "uninstall_unconfirmed", {})
+    engine.record_failure("samba", failure("failed", "uninstall_unconfirmed"))
 
     engine._refresh(is_forced=True)
 
     assert engine.report()["samba"]["state"] == "failed"
     assert engine.report()["samba"]["code"] == "uninstall_unconfirmed"
+    assert engine.is_install_failed("samba") is False
+
+
+class InstallingRunner(ConfigurableRunner):
+    """A runner whose install by name succeeds or raises, as a test scripts."""
+
+    def __init__(self, *, is_installed=False, install_error=None):
+        super().__init__(is_installed=is_installed)
+        self.install_error = install_error
+        self.installs = 0
+
+    def install(self, resolved):
+        self.installs += 1
+        if self.install_error is not None:
+            raise self.install_error
+        self.is_installed = True
+
+
+@pytest.mark.parametrize("is_installed", [False, True])
+def test_an_install_that_fails_reads_install_failed_and_one_that_takes_clears_it(
+    tmp_path, is_installed
+):
+    runner = InstallingRunner(
+        is_installed=is_installed,
+        install_error=ModuleApplyError("podman_install_failed", {"exit_code": 1603}),
+    )
+    engine = module_engine(runner, module_wanted("installed"), tmp_path)
+
+    refusal = engine.install("samba", receive=lambda *names: {})
+
+    assert refusal == {"code": "podman_install_failed", "params": {"exit_code": 1603}}
+    row = engine.report()["samba"]
+    assert (row["state"], row["code"], row["params"]) == (
+        "install_failed",
+        "podman_install_failed",
+        {"exit_code": 1603},
+    )
+
+    runner.install_error = None
+    assert engine.install("samba", receive=lambda *names: {}) == {}
+    assert engine.report()["samba"]["state"] == "installed"
+    assert not (tmp_path / "failures" / "samba.json").exists()
+
+
+def test_a_kept_failure_reads_the_same_after_the_agent_starts_again(tmp_path):
+    """The record is a root-only file under the state root; a new engine on
+    the same directory reports it before any state arrives."""
+    configured_dir = str(tmp_path / "configured")
+    first = ModuleEngine(platform=NoPackagesPlatform(), configured_dir=configured_dir)
+    first.record_failure(
+        "terminal", failure("install_failed", "install_failed", detail="dpkg")
+    )
+
+    path = tmp_path / "failures" / "terminal.json"
+    assert (os.stat(path).st_mode & 0o777) == 0o600
+    assert (os.stat(path.parent).st_mode & 0o777) == 0o700
+
+    second = ModuleEngine(platform=NoPackagesPlatform(), configured_dir=configured_dir)
+    second.refresh_now()
+
+    row = second.report()["terminal"]
+    assert (row["state"], row["code"], row["params"]) == (
+        "install_failed",
+        "install_failed",
+        {"detail": "dpkg"},
+    )
+
+
+def test_a_kept_apply_failure_reads_failed_after_the_agent_starts_again(tmp_path):
+    configured_dir = str(tmp_path / "configured")
+    first = ModuleEngine(platform=NoPackagesPlatform(), configured_dir=configured_dir)
+    first.record_failure(
+        "terminal", failure("failed", "shell_program_unusable", path="/bin/nope")
+    )
+
+    second = ModuleEngine(platform=NoPackagesPlatform(), configured_dir=configured_dir)
+    second.refresh_now()
+
+    row = second.report()["terminal"]
+    assert (row["state"], row["code"], row["params"]) == (
+        "failed",
+        "shell_program_unusable",
+        {"path": "/bin/nope"},
+    )
+
+
+def test_a_state_that_no_longer_names_the_module_deletes_its_failure(tmp_path):
+    engine = module_engine(ConfigurableRunner(is_installed=False), tmp_path=tmp_path)
+    engine.record_failure("samba", failure("install_failed", "install_failed"))
+    path = tmp_path / "failures" / "samba.json"
+    assert path.is_file()
+
+    engine.take_state(module_wanted("installed"))
+    assert path.is_file()
+
+    engine.take_state({})
+
+    assert not path.exists()
+    assert engine.is_install_failed("samba") is False
+
+
+@pytest.mark.parametrize(
+    "held",
+    [
+        "not json",
+        '{"state": "running", "code": "x", "params": {}}',
+        '{"state": "failed", "code": "", "params": {}}',
+        "[]",
+    ],
+)
+def test_a_kept_failure_of_another_shape_is_read_as_none(tmp_path, held):
+    (tmp_path / "failures").mkdir()
+    (tmp_path / "failures" / "terminal.json").write_text(held)
+
+    engine = ModuleEngine(
+        platform=NoPackagesPlatform(), configured_dir=str(tmp_path / "configured")
+    )
+
+    assert engine._failures == {}
+
+
+def test_a_module_name_that_is_not_a_plain_file_name_keeps_nothing(tmp_path):
+    engine = module_engine(ConfigurableRunner(), tmp_path=tmp_path)
+
+    for name in ("../samba", ".samba", "a/b", "a\\b", ""):
+        engine.record_failure(name, failure("failed", "apply_failed"))
+
+    assert engine._failures == {}
+    assert not (tmp_path / "failures").exists()
+
+
+def test_an_uninstall_cleans_up_what_a_failed_install_left(tmp_path):
+    """On software the check does not find, a step that fails is a line in
+    the log, and the check afterwards is the outcome."""
+
+    class LeftoverRunner(ConfigurableRunner):
+        def uninstall(self, resolved):
+            raise ModuleApplyError("uninstall_failed", {"detail": "not installed"})
+
+    engine = module_engine(
+        LeftoverRunner(is_installed=False), module_wanted("absent"), tmp_path
+    )
+    engine.record_failure("samba", failure("install_failed", "install_failed"))
+    lines: list = []
+
+    refusal = engine.uninstall("samba", on_line=lines.append)
+
+    assert refusal == {}
+    assert any("not installed" in line for line in lines)
+    assert engine.report()["samba"]["state"] == "absent"
+    assert engine.is_install_failed("samba") is False
+
+
+def test_an_uninstall_step_that_fails_on_software_that_is_there_reads_failed(
+    tmp_path,
+):
+    class StuckRunner(ConfigurableRunner):
+        def uninstall(self, resolved):
+            raise ModuleApplyError("uninstall_failed", {"detail": "held"})
+
+    engine = module_engine(
+        StuckRunner(is_installed=True), module_wanted("absent"), tmp_path
+    )
+
+    refusal = engine.uninstall("samba")
+
+    assert refusal == {"code": "uninstall_failed", "params": {"detail": "held"}}
+    row = engine.report()["samba"]
+    assert (row["state"], row["code"]) == ("failed", "uninstall_failed")
 
 
 def test_a_queued_module_reads_queued_until_it_leaves_the_set(tmp_path):

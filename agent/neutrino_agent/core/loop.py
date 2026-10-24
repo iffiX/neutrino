@@ -43,6 +43,7 @@ from neutrino_agent.constants import (
     AGENT_CONNECT_TCP,
     AGENT_CREDENTIALS_DIR_NAME,
     AGENT_DESIRED_STATE_NAME,
+    AGENT_FAILURES_DIR_NAME,
     AGENT_REINSTALL_WAIT_S,
     AGENT_REPORT_INTERVAL_S,
     AGENT_HUB_SOFTWARE_PREFIX,
@@ -167,6 +168,7 @@ class Agent:
             log=log,
             on_change=self._news.set,
             configured_dir=os.path.join(var_dir, AGENT_CONFIGURED_DIR_NAME),
+            failures_dir=os.path.join(var_dir, AGENT_FAILURES_DIR_NAME),
         )
         # The store and the seat password live under the platform's own
         # data root, and so does the last desired state taken from the hub.
@@ -284,6 +286,7 @@ class Agent:
         """
         enrollment.enroll(link, platform=self._platform)
         self._desired.forget_tried()
+        self._engine.take_state({})
         self._drop_session()
         self._ai_forward.stop()
         self._reset_binding_state()
