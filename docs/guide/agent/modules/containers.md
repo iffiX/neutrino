@@ -52,7 +52,7 @@ A 0 keeps Podman's default: half the computer's processors, 2 GiB of memory and 
 The computer starts the Podman machine at boot, before anyone signs in, and the container ports answer about 30 seconds later. After you choose another account, the declared containers run in that account's Podman machine. The old account's machine stops, and its images and named volumes stay in that account's profile.
 
 ::: warning
-On Windows, **CPUs** and **Memory (GiB)** are written to the account's `.wslconfig` file, and every WSL system of that account uses them. A change of CPUs, memory or disk restarts all those WSL systems. The file's other lines stay as they are.
+On Windows, **CPUs** and **Memory (GiB)** are written to the account's `.wslconfig` file, and every WSL system of that account uses them. A change of CPUs, memory or disk restarts all those WSL systems, and the apply that creates the Podman machine stops them too. The file's other lines stay as they are.
 :::
 
 On macOS, a change restarts the Podman machine alone, and its containers stop for a moment.

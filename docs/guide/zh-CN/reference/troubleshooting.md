@@ -249,21 +249,22 @@ VS Code、code-server、CloudCLI、Codeg 的实例，终端模块，AI 工具的
 
 运行设置里出现的 `account_unknown`、`credential_missing` 和 `credential_invalid`，见[几个模块共用的码](#几个模块共用的码)。
 
-| 症状                                                                       | 原因                                                           | 处理                                                                           |
-| -------------------------------------------------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| **Windows 需要重启才能装好 WSL，重启后会接着安装。**，即 `reboot_required` | 安装打开了 WSL 要用的 Windows 功能，重启后才生效               | 选择 **立即重启**，再选择 **重启**；重启后安装自动继续                         |
-| `windows_feature_failed`                                                   | Windows 没能打开“虚拟机平台”或“适用于 Linux 的 Windows 子系统” | 确认机器是 Windows 10 内部版本 19041 及以上，再选择 **安装**                   |
-| `podman_install_failed`                                                    | WSL 或 Podman 的安装包以错误码退出                             | 按安装包自己的文档查这个退出码，处理后再选择 **安装**                          |
-| `machine_image_missing`                                                    | 电脑上找不到 Podman 虚拟机映像                                 | 选择 **卸载**，再选择 **安装**                                                 |
-| `machine_account_missing`                                                  | 运行设置里没选账户                                             | 选好 **账户**，再选择 **应用运行设置**                                         |
-| `machine_cpus_invalid`、`machine_memory_invalid`                           | 填的数超过电脑实有的处理器或内存                               | 填提示里的上限以内的数，或者填 0                                               |
-| `machine_disk_shrink`                                                      | 磁盘上限比虚拟机现在的磁盘小                                   | 填提示里的大小或更大，或者填 0                                                 |
-| `machine_init_failed`，后面带 Podman 的输出                                | Podman 没能新建虚拟机                                          | 确认电脑固件里开着虚拟化，再选择 **应用运行设置**                              |
-| `machine_set_failed`，后面带 Podman 的输出                                 | Podman 或 WSL 没能改虚拟机的处理器、内存或磁盘                 | 按 Podman 的输出处理，再选择 **应用运行设置**                                  |
-| `machine_unreachable`                                                      | 被控端连不上 Podman 虚拟机                                     | 刚开机时等 30 秒再看；一直这样就在标签上选择 **启动**                          |
-| `volume_not_shared`                                                        | 卷的文件夹不在 Podman 虚拟机能看到的范围内                     | Windows 上用固定磁盘上的文件夹，macOS 上用 `/Users` 下的文件夹，或者改用命名卷 |
-| `udp_not_forwarded`                                                        | Windows 上的容器在 UDP 上发布端口，而 WSL 只转发 TCP           | 改用 TCP 发布，或者把容器放到 Linux 机器上                                     |
-| `service_protocol_none`                                                    | **服务** 里选了 **端口** 的那一行，**TCP** 和 **UDP** 都没勾   | 勾上 **TCP**、**UDP** 或两个都勾                                               |
+| 症状                                                                       | 原因                                                                                      | 处理                                                                           |
+| -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| **Windows 需要重启才能装好 WSL，重启后会接着安装。**，即 `reboot_required` | 安装打开了 WSL 要用的 Windows 功能，重启后才生效                                          | 选择 **立即重启**，再选择 **重启**；重启后安装自动继续                         |
+| `windows_feature_failed`                                                   | Windows 没能打开“虚拟机平台”或“适用于 Linux 的 Windows 子系统”                            | 确认机器是 Windows 10 内部版本 19041 及以上，再选择 **安装**                   |
+| `podman_install_failed`                                                    | WSL 或 Podman 的安装包以错误码退出                                                        | 按安装包自己的文档查这个退出码，处理后再选择 **安装**                          |
+| `machine_image_missing`                                                    | 电脑上找不到 Podman 虚拟机映像                                                            | 选择 **卸载**，再选择 **安装**                                                 |
+| `machine_account_missing`                                                  | 运行设置里没选账户                                                                        | 选好 **账户**，再选择 **应用运行设置**                                         |
+| `machine_cpus_invalid`、`machine_memory_invalid`                           | 填的数超过电脑实有的处理器或内存                                                          | 填提示里的上限以内的数，或者填 0                                               |
+| `machine_disk_shrink`                                                      | 磁盘上限比虚拟机现在的磁盘小                                                              | 填提示里的大小或更大，或者填 0                                                 |
+| `machine_init_failed`，后面带 Podman 的输出                                | Podman 没能新建虚拟机                                                                     | 确认电脑固件里开着虚拟化，再选择 **应用运行设置**                              |
+| `machine_set_failed`，后面带 Podman 的输出                                 | Podman 或 WSL 没能改虚拟机的处理器、内存或磁盘                                            | 按 Podman 的输出处理，再选择 **应用运行设置**                                  |
+| `machine_unreachable`                                                      | 被控端连不上 Podman 虚拟机                                                                | 刚开机时等 30 秒再看；一直这样就在标签上选择 **启动**                          |
+| `volume_not_shared`                                                        | 卷的文件夹不在 Podman 虚拟机能看到的范围内                                                | Windows 上用固定磁盘上的文件夹，macOS 上用 `/Users` 下的文件夹，或者改用命名卷 |
+| `udp_not_forwarded`                                                        | Windows 上的容器在 UDP 上发布端口，而 WSL 只转发 TCP                                      | 改用 TCP 发布，或者把容器放到 Linux 机器上                                     |
+| `service_protocol_none`                                                    | **服务** 里选了 **端口** 的那一行，**TCP** 和 **UDP** 都没勾                              | 勾上 **TCP**、**UDP** 或两个都勾                                               |
+| `service_invalid`                                                          | **服务** 里有一行的端口不在 **端口** 里，或同一个端口出现两次，或类型、协议不在可选范围内 | **端口** 里的每个端口在 **服务** 里只留一行，再应用一次                        |
 
 ### 远程桌面
 
