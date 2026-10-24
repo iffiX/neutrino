@@ -98,7 +98,7 @@ leaves the disk of a machine taken over as it is.
 | Every `podman machine` and `wsl` command runs as the account, through the platform's `run_as_account`: the one-shot task under the account's login on Windows, a child with the account's uid on macOS. The agent writes `.wslconfig` as the account too. | WSL refuses SYSTEM with `WSL_E_LOCAL_SYSTEM_NOT_SUPPORTED`, `podman machine` refuses root on macOS, and the account keeps owning its own files. |
 | On macOS every `podman machine` command has `TMPDIR` set to the account's own temporary directory, which `getconf DARWIN_USER_TEMP_DIR` prints when run as the account, read once per account. | Podman keeps a running machine's sockets and helper files under `$TMPDIR/podman` and uses `/tmp` when `TMPDIR` is not set, as in a child the agent starts; the account's sessions have that directory. |
 | The init reads the image the hub sent, and runs inside the apply, about 40 seconds on Windows. | The hub's cache is the one source of the machine's bytes, on a `cn` hub too. |
-| On WSL the agent resizes the disk right after the init and before the first start, with `wsl --manage podman-machine-default --resize <size>GB`. | WSL creates a 1 TB disk whatever size Podman asks for. |
+| On WSL the agent resizes the disk right after the init and before the first start, with `wsl --manage podman-machine-default --resize <size>GB`. This first resize also runs `wsl --shutdown` as the account, which stops the account's other WSL systems. | WSL creates a 1 TB disk whatever size Podman asks for. |
 | On WSL the CPUs and the memory are `processors=<n>` and `memory=<n>GB` under `[wsl2]` in the account's `%USERPROFILE%\.wslconfig`, a 0 written as the default's number; the agent makes the file or the section when it is missing, changes these two keys and keeps every other line. | WSL ignores Podman's numbers and reads this file, which is the person's own and applies to every WSL system of the account. |
 | A change of CPUs, memory or disk in the configuration, against the last one applied, runs `wsl --shutdown` as the account on WSL, which stops every WSL system of that account, then resizes the disk when it grew, and starts the machine before the apply writes into it. The panel warns before the apply. | WSL reads `.wslconfig`, and resizes a disk, only while none of the account's WSL systems runs; a person's own edit of the file is theirs and restarts nothing. |
 | On macOS a change runs `podman machine set --cpus --memory --disk-size` on the stopped machine, then starts it. | Podman sets an applehv machine's resources itself. |
@@ -284,13 +284,14 @@ container, at `127.0.0.1`, once per container start:
 | Step | The agent | The result |
 | --- | --- | --- |
 | Read | reads for about 300 ms before it sends anything | bytes from the service: `tcp` |
-| HTTP | sends `HEAD / HTTP/1.0` | a reply that starts `HTTP/`: `http` |
-| TLS | makes a TLS handshake with no certificate check and sends the same request | a reply that starts `HTTP/`: `https` |
+| HTTP | sends `HEAD / HTTP/1.0` | a reply that starts `HTTP/` with a status other than 400: `http` |
+| TLS | makes a TLS handshake with no certificate check and sends the same request | a reply that starts `HTTP/`: `https`; no such reply after a plain one of 400: `http` |
 | None | | `tcp` |
 
 | Rule | Reason |
 | --- | --- |
 | The read comes first. | SSH, a database and other services that send first take an HTTP request as a protocol error. |
+| A plain reply with the status 400 goes on to the TLS step, and `https` wins when TLS answers. | A web server with TLS on the port, nginx among them, answers a plain request with 400. |
 | Each step opens a connection of its own. A result is kept per container id, start time and port, and a container that starts again is detected again. A port that does not accept the connection yet keeps `detected` empty and is tried again at the next report. | A probe opens connections to the service, and its type changes only with a new start; the service of a container that started a moment ago can still be opening its port. |
 | A UDP port is never probed, and its `detected` is empty. | A UDP service sends nothing back to a datagram it does not understand. |
 | The result is `host_bindings[i].detected`, `http`, `https` or `tcp`, and empty before the probe. | The panel shows it beside **Auto**, and the hub lists the port by it. |

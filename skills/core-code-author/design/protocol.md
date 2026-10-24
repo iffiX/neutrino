@@ -729,7 +729,7 @@ module and the same shape in each.
 | `POST /api/agent/module/codeg/set` | `{device_id, instances: [{account, port, login_id}]}`, `port` 1024 to 65535, `login_id` for a Windows machine | replaces the instances, generating each instance's token secret the first time as `code_server/set` does; the refusals of `vscode/set` |
 | `GET /api/agent/module/podman` | `?device_id=` | `PodmanDeviceView`: the declared `containers`, each with its `services`; the `mirrors`; `running`, each container as last reported with its `host_bindings` and their `detected`; and on Windows and macOS `machine`, the stored Run settings with `login_id` and without the password, the machine as last reported (`details.machine`), and the `accounts` the machine reported |
 | `POST /api/agent/module/podman/import` | `{device_id}` | |
-| `POST /api/agent/module/podman/container/set` | `{device_id, containers}` | replaces the declared containers, each with its `services`; the agent's own refusals as 400, `service_protocol_none {port}`, on Windows and macOS `volume_not_shared {name, volume}` and on Windows `udp_not_forwarded {name, port}` among them |
+| `POST /api/agent/module/podman/container/set` | `{device_id, containers}` | replaces the declared containers, each with its `services`; the agent's own refusals as 400, `service_invalid {name, port}`, `service_protocol_none {port}`, on Windows and macOS `volume_not_shared {name, volume}` and on Windows `udp_not_forwarded {name, port}` among them |
 | `POST /api/agent/module/podman/machine/set` | `{device_id, account, login_id, cpus, memory_gib, disk_gib}`, `login_id` for a Windows machine | stores the Run settings as `machine` in `config/devices/<id>/podman.json` and pushes the state; `PodmanDeviceView`; 400 `unsupported_platform` for a Linux machine, `unknown_credential {field}` for a login the vault does not hold, `credential_missing {account}` for a Windows machine with no login, then the agent's own refusals (`machine_account_missing`, `machine_cpus_invalid {cpus, max}`, `machine_memory_invalid {memory_gib, max}`, `machine_disk_shrink {disk_gib, current_gib}`, `account_unknown {account}`); 409 `agent_offline` |
 | `POST /api/agent/module/podman/mirror/set` | `{device_id, ...}` | |
 | `GET /api/agent/module/podman/tag` | `?device_id=` | the tags an image has |
@@ -1449,8 +1449,10 @@ podman, component}` for each. On Windows and macOS `details` adds
 machine reports through the agent's read (`podman info`), `disk_gib` the
 size of its disk now.
 
-An apply refuses `service_protocol_none {port}` for a `port` service with
-no protocol checked. On Windows and macOS it also refuses
+An apply refuses `service_invalid {name, port}` for a service whose port
+the container does not publish, whose `kind`, `scheme` or protocol is
+unknown, or whose port appears twice, and `service_protocol_none {port}`
+for a `port` service with no protocol checked. On Windows and macOS it also refuses
 `machine_account_missing`, `machine_cpus_invalid {cpus, max}`,
 `machine_memory_invalid {memory_gib, max}`, `machine_disk_shrink {disk_gib,
 current_gib}`, `volume_not_shared {name, volume}` and `account_unknown

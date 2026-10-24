@@ -303,11 +303,14 @@ the agent's `cli/wording.py` words the same codes in English.
 | `ui.modules.restart_confirm` | Restart | 重启 |
 | `code.reboot_required` | Windows needs a restart to finish turning on WSL; the install goes on after it. | Windows 需要重启才能装好 WSL，重启后会接着安装。 |
 | `code.service_protocol_none` | Port {port} needs TCP, UDP or both. | 端口 {port} 至少要勾选 TCP 或 UDP。 |
+| `code.service_invalid` | The service on port {port} of {name} cannot be used: the port is not published, is listed twice, or has an unknown type or protocol. | 非法服务设置：容器 {name} 的端口 {port} 没有发布、重复列出，或类型、协议不在可选范围内。 |
+| `code.volume_invalid` | The volume {volume} of {name} needs a folder or a volume name, a colon, and a path in the container. | 非法卷：容器 {name} 的卷 {volume} 要写成文件夹或卷名、冒号、容器里的路径。 |
+| `code.container_unknown` | Podman has no container called {name}. | Podman 里没有叫 {name} 的容器。 |
 | `code.windows_feature_failed` | Windows could not turn on {feature} (exit code {exit_code}). | Windows 没能打开 {feature}（退出码 {exit_code}）。 |
 | `code.podman_install_failed` | The {component} installer failed (exit code {exit_code}). | {component} 安装包没能装上（退出码 {exit_code}）。 |
 | `code.machine_account_missing` | Choose the account that runs the containers. | 选一个运行容器的账户。 |
-| `code.machine_cpus_invalid` | CPUs must be between 0 and {max}. | CPU 数要在 0 到 {max} 之间。 |
-| `code.machine_memory_invalid` | Memory must be between 0 and {max} GiB. | 内存要在 0 到 {max} GiB 之间。 |
+| `code.machine_cpus_invalid` | CPUs must be between 0 and {max}. | 非法 CPU 数：要在 0 到 {max} 之间。 |
+| `code.machine_memory_invalid` | Memory must be between 0 and {max} GiB. | 非法内存大小：要在 0 到 {max} GiB 之间。 |
 | `code.machine_disk_shrink` | The disk is {current_gib} GiB and only grows; {disk_gib} GiB is smaller. | 磁盘现在是 {current_gib} GiB，只能改大，{disk_gib} GiB 比它小。 |
 | `code.volume_not_shared` | The volume {volume} of {name} is outside what the Podman machine shares: a fixed drive on Windows; /Users, /private or /var/folders on macOS. | 容器 {name} 的卷 {volume} 不在 Podman 虚拟机共享的范围内：Windows 上是本机的固定磁盘，macOS 上是 /Users、/private 或 /var/folders。 |
 | `code.udp_not_forwarded` | Port {port} of {name} is UDP, and WSL forwards TCP alone; on Windows publish it on TCP. | 容器 {name} 的端口 {port} 是 UDP，而 WSL 只转发 TCP；在 Windows 上请用 TCP 发布。 |
@@ -547,6 +550,13 @@ success is a code as well: an apply answers with the codes of what it did
 (`xray_restarted`, `devices_pushed` with a count) and the frontend words
 them, so `applied (xray restarted; desired state pushed to 1 devices)` never
 reaches a Chinese page.
+
+**A Chinese `*_invalid` code opens with 非法<名词>.** Every code whose name
+ends in `_invalid` reads `非法<名词>：…` in each Chinese catalog, the noun
+naming the value refused, and the rest of the sentence keeps its
+placeholders and what to write instead: `volume_invalid` is `非法卷：容器
+{name} 的卷 {volume} 要写成文件夹或卷名、冒号、容器里的路径。`. English
+keeps its own shape.
 
 **A translation is not a port of the structure.** Each language follows its own
 typographic authority, exactly as `docs/` does: Google's developer

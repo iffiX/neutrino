@@ -641,12 +641,12 @@ On Linux the tab has no Run settings, since root runs Podman there
 
 The group is one `settings_group` with its own apply bar,
 `ui.containers.run_apply`. While it is dirty, the bar's warning is
-`ui.containers.run_restart_warning` when the CPUs or the memory changed,
-followed on Windows by `ui.containers.run_wsl_warning`, which a changed
-disk also shows there; and `ui.containers.run_account_warning` when the
-account changed. Until the stored Run settings name an account, the three
-panels under it draw `ui.containers.run_needed` in place of their content,
-and their apply bars are disabled.
+`ui.containers.run_restart_warning` when the CPUs, the memory or the disk
+changed on a machine that exists, followed on Windows by
+`ui.containers.run_wsl_warning`; and `ui.containers.run_account_warning`
+when the account changed. Until the stored Run settings name an account,
+the three panels under it draw `ui.containers.run_needed` in place of their
+content, and their apply bars are disabled.
 
 The container editor has a **Services** row under its three lists,
 **Ports**, **Volumes** and **Environment**, on every system: one line per

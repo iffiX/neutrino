@@ -74,7 +74,8 @@ one owner:
    `package {module}` for a module with one archive, and the hub streams the
    cached file down with its digest in the close
    ([protocol.md](../../protocol.md), "The stream layer"), writing `hub:
-   sending <file> <sent> / <total> MB` into the module's output as it goes.
+   sending <title>, <sent> / <total> MB to <device>` into the module's
+   output as it goes.
 1. The agent unpacks each archive under `agent/<module>/<directory>/` in
    the state root, `<directory>` being the component's `directory`; an
    archive whose members all sit under one top directory is unpacked
