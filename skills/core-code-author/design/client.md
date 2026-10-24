@@ -400,7 +400,7 @@ the forward listens on the phone's loopback, and the browser opens there.
 VS Code reads its token from a cookie in the page to authenticate its own
 connection, so the token must reach the browser in the URL. The forwarders
 in front of code-server, CloudCLI and Codeg trade a token for a login of
-their own ([agent/modules/template.md](agent/modules/template.md), "The
+their own ([agent/module_template.md](agent/module_template.md), "The
 run"). Their token is spent
 once and dies after 60 seconds, so every press of **Open** reads a new one.
 

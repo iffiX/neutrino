@@ -3,12 +3,12 @@
 The `cloudcli` module runs CloudCLI, the npm package `@cloudcli-ai/cloudcli`
 pinned at 1.37.3 (AGPL-3.0), once per account: a web page for AI coding
 sessions. It is a program run as a person's account
-([template.md](template.md)): `agent/neutrino_agent/modules/cloudcli/`
+([module_template.md](../module_template.md)): `agent/neutrino_agent/modules/cloudcli/`
 holds `config.py`, `constants.py` and `hooks.py`, and `modules/shared/` does
 the rest. Its configuration is `{instances: [{account, port}]}`.
 
 **The account service layer runs it as the account, never as root**
-([template.md](template.md), "The run"): a unit
+([module_template.md](../module_template.md), "The run"): a unit
 `neutrino_cloudcli@<account>.service` with `User=<account>` on Linux, a
 LaunchDaemon with `UserName` on macOS, and on Windows a scheduled task
 registered with a login the Credentials page holds, chosen per instance as
@@ -29,7 +29,7 @@ fetches it into its module cache and serves it on the `package` stream as
 on Linux, `%ProgramData%\Neutrino\agent\state\cloudcli\node` on Windows and
 `/Library/Application Support/Neutrino/agent/state/cloudcli/node` on macOS,
 without the archive's own top directory, so `bin/node` sits directly under
-it ([template.md](template.md), "The install"); the directory is opened to
+it ([module_install.md](../module_install.md), "From the hub's cache"); the directory is opened to
 every account: owned by root, read-only, one copy per machine. An install,
 and every apply after it, removes a `node-v<version>-<os>-<arch>/`
 directory it finds directly under `cloudcli/`; one whose files are still

@@ -300,6 +300,10 @@ the agent's `cli/wording.py` words the same codes in English.
 | `ui.containers.service_detected` | Auto: {kind} detected | 自动：检测到 {kind} |
 | `ui.containers.service_pending` | Auto: detected after the container starts | 自动：容器运行后检测 |
 | `ui.containers.services_hint` | Web shows on the clients' Web page, Port on their Ports page. | 网页显示在客户端的“网页”页，端口显示在“端口”页。 |
+| `ui.containers.hub_title` | Hub containers | 中枢的容器 |
+| `ui.containers.hub_hint` | The hub's modules run these. Change them in their module's tab. | 这些由中枢的模块运行，要改就到对应模块的标签页里改。 |
+| `ui.containers.hub_empty` | No module runs a container on this machine. | 这台机器上还没有模块运行容器。 |
+| `ui.containers.source_hub`, `ui.containers.source_user` | hub, user | 中枢、用户 |
 | `ui.modules.restart_now` | Restart now | 立即重启 |
 | `ui.modules.restart_title` | Restart {device} | 重启 {device} |
 | `ui.modules.restart_body` | The machine restarts now, and every program open on it closes. | 这台机器会立即重启，上面打开的程序都会关闭。 |
@@ -329,6 +333,10 @@ the agent's `cli/wording.py` words the same codes in English.
 | `code.machine_init_failed` | Podman could not create the machine: {detail} | Podman 没能新建虚拟机：{detail} |
 | `code.machine_set_failed` | Podman could not change the machine: {detail} | Podman 没能修改虚拟机：{detail} |
 | `code.machine_unreachable` | The Podman machine does not answer: {detail} | Podman 虚拟机没有响应：{detail} |
+| `code.container_name_reserved` | The name {name} starts with neutrino_, which the hub keeps for the containers of its modules. | 容器名 {name} 以 neutrino_ 开头，这个前缀留给中枢模块的容器。 |
+| `code.module_in_use` | {modules} run on Containers; uninstall them first. | {modules} 运行在容器模块上，先卸载它们。 |
+| `code.image_pull_failed` | Podman could not pull {image}: {detail} | Podman 没能拉取 {image}：{detail} |
+| `code.container_hub_owned` | {name} is run by a module of the hub; change it in that module's tab. | {name} 由中枢的模块运行，要改就到那个模块的标签页里改。 |
 
 ## The Services page's health words
 

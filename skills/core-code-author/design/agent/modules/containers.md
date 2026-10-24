@@ -20,8 +20,9 @@ module".
 ## Linux
 
 `PodmanModuleRunner`, under `agent/neutrino_agent/modules/podman/`, is a
-`system_package` module: its recipe names `podman` and `podman-docker`, and
-the machine's package manager installs them.
+`system_package` module: its recipe names `podman`, and the machine's
+package manager installs it ([module_install.md](../module_install.md),
+"From the system's sources").
 
 | Rule | Reason |
 | --- | --- |
@@ -31,6 +32,8 @@ the machine's package manager installs them.
 | Every rendered file starts with the generated marker, and an apply removes only marked files. | A file a person wrote beside them is theirs. |
 | The registry mirrors are one drop-in, `/etc/containers/registries.conf.d/99_neutrino_mirrors.conf`. | The distribution's own `registries.conf` stays as it is. |
 | The module's `is_active` is the state of `podman.socket`. | Podman has no daemon, and its API socket is the engine. |
+| The install, and every apply while the module's `want` is `running`, run `systemctl enable --now podman.socket`. | Podman starts with the machine from its install on, on a distribution that ships the socket disabled too. |
+| **Stop** stops every declared container and every hub container, then runs `systemctl disable --now podman.socket`; a container a person started by hand keeps running. | A stopped module reads `stopped` and stays so across a restart, and a hand-started container is the person's. |
 | A declared container starts and stops through `systemctl`, and one a person started by hand through `podman` itself. | systemd supervises a declared container; a hand-started one has no unit. |
 
 The report reads `podman ps -a --format json` and `podman inspect`, and a
@@ -58,7 +61,7 @@ platform layer resolves from `ProfileList`.
 ### What the install puts on the computer
 
 The manifest's Windows and macOS branches are `installer` `hub`, each with
-its own identity fields ([template.md](template.md), "The manifest"). The
+its own identity fields ([module_install.md](../module_install.md), "One source per platform"). The
 hub's cache fetches each component and sends it down `package {module:
 podman, component}`. The agent keeps each file as the publisher's bytes
 under `podman/<component>/` in the state root and unpacks none.
@@ -114,7 +117,7 @@ it is.
 
 The keeper starts the machine at boot, with nobody signed in, and starts it
 again when it stops. It is an account service
-([template.md](template.md), "The run"): the scheduled task
+([module_template.md](../module_template.md), "The run"): the scheduled task
 `neutrino_podman_<account>` at startup under the account's login on Windows,
 and the LaunchDaemon `com.neutrino.podman.<account>` with `UserName` on
 macOS.
@@ -259,6 +262,30 @@ a feature off owes another restart.
 | The Quadlet files | `/usr/share/containers/systemd/` in the machine | `/etc/containers/systemd/` in the machine, which is `~/.config/containers/systemd/` with Podman 6 |
 | The boot unit | none | `/etc/systemd/system/neutrino_containers.service` in the machine, with Podman 6 |
 | The mirrors drop-in | `/etc/containers/registries.conf.d/` in the machine, which is `C:\Users\<account>\AppData\Roaming\containers\registries.conf.d\` | `/etc/containers/registries.conf.d/` in the machine, which is `~/.config/containers/registries.conf.d/` with Podman 6 |
+
+## Hub containers
+
+A hub container is one a module from a container registry runs on
+Containers ([module_install.md](../module_install.md), "From a container
+registry"). The hub composes them into the `podman` state as
+`hub_containers`, one list beside `containers`, and the agent renders each
+as it renders a declared container on the same system.
+
+| Rule | Reason |
+| --- | --- |
+| A hub container is `{module, name, image, ports, volumes, environment, command, is_autostart, services}`, `image` as `reference@digest`; the agent adds the label `neutrino.module=<module>` and joins it to the network `neutrino_<module>`, which an apply makes when it is missing. | The label names the container's module on the machine, and the containers of one module reach each other by name. |
+| A container's owner is read in this order: the label `neutrino.module` makes it a hub container of that module, a name among the declared ones makes it declared, and any other container is one a person started by hand. | Each container has one owner, and the label outlasts every record. |
+| `neutrino_` starts no declared container's name: `container/set` refuses a new name with it `container_name_reserved {name}`. A declared container that came from an import keeps its name. | A person's container never takes the name of a hub container. |
+| A container with the label `neutrino.module` whose module `config/devices/<id>/modules.json` does not name is imported into the declared containers with its name, image, ports, volumes and environment, at the report that shows it. | A hub that lost its configuration, from an older backup or a machine that joined again, keeps the containers as the person's. |
+| A hub container's row in **Running** has the module's title and **Journal** as its one button. The hub refuses `container/start`, `/stop`, `/restart` and a container's shell on it with `container_hub_owned {name}`. | The module runs its containers as its configuration says, and a press or a shell beside it changes them behind the module. |
+
+## The last apply's record
+
+| Rule | Reason |
+| --- | --- |
+| Every apply writes the names of the declared containers, and of the hub containers by module, into the module's record under `platform.agent_data_dir()`, root-only. | The report, a container's buttons and its journal tell a declared container from a hand-started one. |
+| Until its first apply after a start, the runner reads the names from the record. | An agent that starts on a state it already tried applies nothing ([agent.md](../../agent.md), "A retry is the same press again"), and its declared containers still run through systemd. |
+| On Windows and macOS the names are in the record the runner keeps of its last apply, beside the Run settings. | One record per runner. |
 
 ## A container's shell
 

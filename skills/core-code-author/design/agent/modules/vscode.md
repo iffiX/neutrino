@@ -7,7 +7,7 @@ per account on Linux, Windows and macOS ([protocol.md](../../protocol.md),
 stream ([agent.md](../../agent.md), "The connect stream"), and its token is
 what admits a browser.
 
-It is a program run as a person's account ([template.md](template.md)):
+It is a program run as a person's account ([module_template.md](../module_template.md)):
 `agent/neutrino_agent/modules/vscode/` holds `config.py`, `constants.py`
 and `hooks.py`, and `modules/shared/` does the rest. The account service
 layer, `modules/shared/account_service/`, runs each instance as its account:

@@ -37,8 +37,10 @@ tmp-docs/            The working copy's own notes, memory.md among them, and
 skills/              core-code-author/, this standard: design/ the design
                      pages, design/hub_components/ the hub's AI gateway,
                      network and proxy, design/agent/ the agent's AI tools
-                     setting and design/agent/modules/ one page per device
-                     module with template.md the flow they share;
+                     setting, module_template.md the flow every device
+                     module shares, module_install.md the sources a
+                     module's software comes from, and modules/ one page
+                     per device module;
                      doc-author/, how every .md is written.
 images/              Source artwork: icons/ the one icon source the packaging
                      builds copy from, original/ the raw artwork, web/ and

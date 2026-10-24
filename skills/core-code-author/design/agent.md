@@ -6,7 +6,7 @@ modules the hub's state names, reports what is true, and shares the
 machine's desktop when told. It draws no window. Every port it listens on
 is on `127.0.0.1`: the forwarders in front of the programs run as an
 account, CloudCLI, code-server and Codeg
-([modules/template.md](agent/modules/template.md), "The run"), and the AI
+([module_template.md](agent/module_template.md), "The run"), and the AI
 gateway forward, 8317, while the machine's AI tools use the gateway, on
 every machine but the hub's own ("The AI gateway forward"). Its own
 code is pure standard library. The
@@ -39,8 +39,8 @@ hub's pages, in the agent, and in the client:
 
 - **Modules** are software the hub administers on a machine: Samba, Gitea,
   Podman, ZFS, VS Code, code-server, CloudCLI, Codeg, and the two the
-  agent's own package carries, Terminal and Remote desktop, of four kinds
-  ("The four kinds of module"). The hub says what is wanted and sends
+  agent's own package carries, Terminal and Remote desktop, of the kinds
+  in "The kinds of module". The hub says what is wanted and sends
   the bytes; the agent observes, installs and configures. A device's Modules
   page writes one `want` per module into `config/devices/<id>/modules.json`.
   The state the agent receives names, per module, that `want`, the
@@ -257,38 +257,30 @@ drawn:
 - A new `code` arrives with its wording in the same change, which the
   catalog completeness test enforces.
 
-## The four kinds of module
+## The kinds of module
 
-Every module is of one of four kinds, and the kind decides what the
-machinery does for it and what the module itself supplies. The whole flow,
-from the manifest to the published entry, is
-[modules/template.md](agent/modules/template.md); each module's own page
-is linked from the table.
+Every module is of one kind by how it runs, and each platform entry of its
+manifest has one install source. The flow every module shares, from the
+manifest to the published entry, is
+[module_template.md](agent/module_template.md); the sources, the presence
+check and what an uninstall removes are
+[module_install.md](agent/module_install.md); each module's own page is
+linked from the table.
 
-| Kind | Modules | Install | Run |
+| Kind | Modules | Install source | Run |
 | --- | --- | --- | --- |
-| carried by the agent | [Terminal](agent/modules/terminal.md), [Remote desktop](agent/modules/remote_desktop.md), which also detects a person's own AnyDesk and TeamViewer | nothing: the agent's package holds what each needs, on every system | the module's own applier per system |
-| installed from the system's own sources | [File share](agent/modules/file_share.md), [Containers](agent/modules/containers.md), [ZFS storage](agent/modules/zfs.md) | the system's package manager, by the `system_package` recipe; on Windows and macOS the file share drives the system's SMB server and installs nothing, and Containers installs Podman from the hub's cache, by the `podman_machine` recipe | the module's own applier; for Containers on Windows and macOS, inside a Podman machine of one account |
-| a service with a system account of its own | [Gitea](agent/modules/gitea.md) | the release binary from the hub's cache, down `package {module}` | the account and the service the module makes, in the publisher's layout on every system |
-| a program run as a person's account | [VS Code](agent/modules/vscode.md), [code-server](agent/modules/code_server.md), [CloudCLI](agent/modules/cloudcli.md), [Codeg](agent/modules/codeg.md) | each component from the hub's cache, down `package {module, component}`, unpacked and sealed under `agent/<module>/<component>/` | one account service per instance, the forwarder in front of it, one `web` entry per running instance |
+| carried by the agent | [Terminal](agent/modules/terminal.md), [Remote desktop](agent/modules/remote_desktop.md), which also detects a person's own AnyDesk and TeamViewer | the agent's package, on every system | the module's own applier per system |
+| software the module configures | [File share](agent/modules/file_share.md), [Containers](agent/modules/containers.md), [ZFS storage](agent/modules/zfs.md) | the system's sources; on Windows and macOS the file share's system SMB server is `builtin`, and Containers comes from the hub's cache | the module's own applier; for Containers on Windows and macOS, inside a Podman machine of one account |
+| a service with a system account of its own | [Gitea](agent/modules/gitea.md) | the hub's cache | the account and the service the module makes, in the publisher's layout on every system |
+| a program run as a person's account | [VS Code](agent/modules/vscode.md), [code-server](agent/modules/code_server.md), [CloudCLI](agent/modules/cloudcli.md), [Codeg](agent/modules/codeg.md) | the hub's cache, each component unpacked and sealed under `agent/<module>/<component>/` | one account service per instance, the forwarder in front of it, one `web` entry per running instance |
+| container images | every module whose software is container images | a container registry, pulled by the Containers module's Podman | hub containers on the Containers module, which the module needs |
 
-An install is the hub's cache and the agent's unpack. For the two kinds the
-hub fetches, the cache fetches each archive the manifest names, checks it
-against the pinned sha256 and streams it down `package`; the agent unpacks
-it under the state root into a directory of the module's own name, one
-subdirectory per component, sealed read-only to every account and on no
-`PATH`, and runs the manifest's `verify` command. A module from the
-system's own sources asks the hub for no bytes on Linux: the platform
-installs the named packages with its own tooling. Containers on Windows and
-macOS asks the hub for its components and unpacks none of them: its msi or
-pkg goes to the system's installer, and its machine image stays one file
-for `podman machine init`
-([modules/containers.md](agent/modules/containers.md)). Terminal and Remote desktop install
-nothing: their manifests name the tier `agent`, their state entries name no
-recipe, they are never in the Modules page's picker, always a tab, and take
-none of the four presses ([protocol.md](protocol.md), "The modules section,
-one entry per module"); the hub composes both from their own files under
-`config/devices/<id>/`, not from `modules.json`.
+Terminal and Remote desktop install nothing: their manifests name the tier
+`agent`, their state entries name no recipe, they are never in the Modules
+page's picker, always a tab, and take none of the four presses
+([protocol.md](protocol.md), "The modules section, one entry per module");
+the hub composes both from their own files under `config/devices/<id>/`,
+not from `modules.json`.
 
 A run is the module's own applier for the first three kinds, one per system
 where the systems differ, under `modules/<module>/`: the agent's code for
@@ -430,7 +422,7 @@ account's login, because LocalSystem cannot start a process as another
 account without its password. Every instance listens on `127.0.0.1` alone
 and the module opens no port in any firewall, since the hub reaches it
 through the agent's `connect` stream
-([modules/template.md](agent/modules/template.md), "The run"). The third is the
+([module_template.md](agent/module_template.md), "The run"). The third is the
 machine's AI tools, pointed at the gateway by cc-switch run as each account
 ([ai_tools.md](agent/ai_tools.md)). The fourth is a terminal or a command for
 the account the Terminal module names, on Linux and macOS: the shell, or the
@@ -606,8 +598,9 @@ The hub's own machine on macOS and Windows runs the local agent
 shares and VS Code are that agent's modules, as on any device.
 
 Each module's own page is under `agent/modules/`, linked from the table of
-"The four kinds of module", and the flow they share is
-[modules/template.md](agent/modules/template.md).
+"The kinds of module", the flow they share is
+[module_template.md](agent/module_template.md), and where their software
+comes from is [module_install.md](agent/module_install.md).
 
 ### The PowerShell host on Windows
 

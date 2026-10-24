@@ -4,7 +4,7 @@ The `codeg` module runs Codeg's `codeg-server` 0.35.1 (Apache-2.0), a web
 page for AI coding sessions beside CloudCLI, once per account on Linux
 (amd64 and arm64), macOS (arm64 and amd64) and Windows (x64; the publisher
 builds no Windows arm64 server). It is a program run as a person's account
-([template.md](template.md)): `agent/neutrino_agent/modules/codeg/` holds
+([module_template.md](../module_template.md)): `agent/neutrino_agent/modules/codeg/` holds
 `config.py`, `constants.py` and `hooks.py`, and `modules/shared/` does the
 rest. Its configuration is `{instances: [{account, port, secret}]}`, as
 code-server's, and the first instance's default port is 3101.
@@ -31,7 +31,7 @@ installed skills, is the account's, and the module reads and writes nothing
 there.
 
 **The service's environment is written from scratch** by the account service
-layer ([template.md](template.md), "The run"):
+layer ([module_template.md](../module_template.md), "The run"):
 
 | Variable | Value |
 | --- | --- |
@@ -66,7 +66,7 @@ stream reaches it, and passes what it admits to `127.0.0.1:<CODEG_PORT>`:
 
 Every endpoint behind the check is passed on, Codeg's `/api/health` among
 them. The token is the one every program run as an account takes
-([template.md](template.md), "The run"): the hub generates it from the
+([module_template.md](../module_template.md), "The run"): the hub generates it from the
 instance's secret on every `service` ask, it expires 60 seconds later, and
 it works once. Codeg's web UI keeps the instance token in
 `localStorage['codeg_token']` itself, as the publisher's own pages do, sends

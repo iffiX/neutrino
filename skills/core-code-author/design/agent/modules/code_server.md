@@ -3,14 +3,14 @@
 The `code_server` module runs code-server, the browser build of VS Code
 that Coder publishes (MIT), once per account on Linux and macOS. Its
 extensions come from Open VSX, code-server's own default gallery. It is
-a program run as a person's account ([template.md](template.md)):
+a program run as a person's account ([module_template.md](../module_template.md)):
 `agent/neutrino_agent/modules/code_server/` holds `config.py`,
 `constants.py` and `hooks.py`, and `modules/shared/` does the rest. Its
 configuration is `{instances: [{account, port, secret}]}`. Its manifest has
 no Windows branch, so the Modules page greys it out on Windows.
 
 **The account service layer runs it as the account, never as root**
-([template.md](template.md), "The run"): a unit
+([module_template.md](../module_template.md), "The run"): a unit
 `neutrino_code_server@<account>.service` with `User=<account>` on Linux, and
 a LaunchDaemon `com.neutrino.code_server.<account>` with `UserName` on
 macOS, whose `StandardOutPath` and `StandardErrorPath` name

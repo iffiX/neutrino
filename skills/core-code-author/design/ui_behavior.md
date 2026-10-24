@@ -668,6 +668,22 @@ at most two minutes, as `instances_panel.tsx` waits. Under `running` that is
 stored account's machine running; under `stopped` it is `stopped`.
 `ui.api.applied` shows only then, and a failure shows as the tab's notice.
 
+On every system the tab has **Hub containers** (`ui.containers.hub_title`)
+between **Running now** and **Registry mirrors**: one read-only row per hub
+container, with its module's title, its image, its ports and its volumes,
+`ui.containers.hub_hint` under the title, and no editor or apply bar. While
+no module runs a hub container the panel shows `ui.containers.hub_empty`.
+A row of **Running now** names its owner beside its state: the module's
+title for a hub container, `state.declared` for a declared one and
+`state.ad_hoc` for one a person started by hand. A hub container's row has
+**Journal** alone, with no **Shell**, **Restart**, **Stop** or **Start**
+([agent/modules/containers.md](agent/modules/containers.md), "Hub
+containers"). Every row ends at its right edge with one small chip of where
+the container comes from, as the Services page ends a row with its source:
+`ui.containers.source_hub` in the accent tone for a hub container, and
+`ui.containers.source_user` in the secondary tone for a declared or a
+hand-started one.
+
 The container editor has a **Services** row under its three lists,
 **Ports**, **Volumes** and **Environment**, on every system: one line per
 host port the draft's **Ports** publishes, in that list's order. A line
