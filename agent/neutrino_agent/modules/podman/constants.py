@@ -22,6 +22,102 @@ PODMAN_REGISTRIES_CONF_PATH = (
     "/etc/containers/registries.conf.d/99_neutrino_mirrors.conf"
 )
 
+# The module's name on the wire, which also names its keeper's task, plist
+# and log on Windows and macOS.
+PODMAN_MODULE_NAME = "podman"
+
+# The recipe kind of the runner that runs Podman inside a Podman machine.
+PODMAN_MACHINE_KIND = "podman_machine"
+
+# The account's default machine, the one its own ``podman`` reaches.
+PODMAN_MACHINE_NAME = "podman-machine-default"
+
+# Where Quadlet reads declared containers from inside a machine: the
+# machine's own disk, read before systemd's generators run.
+PODMAN_MACHINE_QUADLET_DIR = "/usr/share/containers/systemd"
+
+# What every .container file rendered for a machine carries under
+# [Container]: the machine runs systemd under cgroupfs, where Quadlet's
+# default split mode finds no controllers.
+PODMAN_MACHINE_CGROUPS_LINE = "CgroupsMode=enabled"
+
+# The machine providers, and the variable that names one to ``podman``.
+PODMAN_MACHINE_PROVIDER_WSL = "wsl"
+PODMAN_MACHINE_PROVIDER_APPLEHV = "applehv"
+PODMAN_MACHINE_PROVIDER_VARIABLE = "CONTAINERS_MACHINE_PROVIDER"
+
+# Under the account's home: the machine's settings file sits in
+# ``<provider>/`` under the first, and its key is the second.
+PODMAN_MACHINE_SETTINGS_DIR = (".config", "containers", "podman", "machine")
+PODMAN_MACHINE_KEY_PATH = (
+    ".local",
+    "share",
+    "containers",
+    "podman",
+    "machine",
+    "machine",
+)
+
+# How the agent reads the machine itself: root's API socket in the machine
+# through the ssh port the machine forwards to the computer's loopback.
+PODMAN_MACHINE_READ_HOST = "127.0.0.1"
+PODMAN_MACHINE_SOCKET_PATH = "/run/podman/podman.sock"
+
+# Podman's own defaults for a 0 in the Run settings.
+PODMAN_MACHINE_DEFAULT_MEMORY_GIB = 2
+PODMAN_MACHINE_DEFAULT_DISK_GIB = 100
+
+# The component that holds the machine image, as the manifest names it.
+PODMAN_MACHINE_IMAGE_COMPONENT = "image"
+
+# What a kept component's file ends in, by its package kind. Podman reads an
+# image's compression from the end of its name.
+PODMAN_MACHINE_KEPT_SUFFIXES = {
+    "msi": ".msi",
+    "pkg": ".pkg",
+    "tar_zst": ".tar.zst",
+    "raw_zst": ".raw.zst",
+}
+# The package kinds the system's installer installs; the rest stay files.
+PODMAN_MACHINE_INSTALLED_KINDS = ("msi", "pkg")
+
+# How long the machine's own commands may take: an init unpacks the image,
+# about 40 seconds on the lab machine.
+PODMAN_MACHINE_INIT_TIMEOUT_S = 900
+PODMAN_MACHINE_COMMAND_TIMEOUT_S = 300
+# The root script waits for each restart it asks for, a first image pull
+# among them.
+PODMAN_MACHINE_SCRIPT_TIMEOUT_S = 1800
+# How long an apply waits for the machine to answer the read once the keeper
+# runs, and how often it asks.
+PODMAN_MACHINE_API_WAIT_S = 180
+PODMAN_MACHINE_API_POLL_S = 2.0
+# How long one reading of the machine is believed within one report.
+PODMAN_MACHINE_INFO_TTL_S = 5.0
+# How much of a failed command's output a refusal carries.
+PODMAN_MACHINE_DETAIL_CHARS = 500
+# What the root script prints before each file it changed.
+PODMAN_MACHINE_CHANGED_PREFIX = "changed: "
+# Bytes in a GiB, for the memory ``podman info`` reports.
+PODMAN_GIB = 1024**3
+
+# The keeper: how often it checks the machine, the file it runs, and on
+# Windows the socket file a restart can leave behind.
+PODMAN_MACHINE_KEEPER_INTERVAL_S = 30
+PODMAN_MACHINE_KEEPER_NAMES = {"windows": "keeper.cmd", "darwin": "keeper.sh"}
+PODMAN_MACHINE_KEEPER_TITLE = "Podman machine keeper"
+PODMAN_MACHINE_WINDOWS_SOCKET = r"%TEMP%\podman\podman-machine-default-api.sock"
+
+# The fields the runner keeps of the last apply, root-only.
+PODMAN_MACHINE_RECORD_FIELDS = (
+    "account",
+    "password",
+    "cpus",
+    "memory_gib",
+    "disk_gib",
+    "names",
+)
+
 # Every rendered file starts with this, which is how apply tells its own
 # files from any a person drops beside them.
 PODMAN_GENERATED_MARKER = (

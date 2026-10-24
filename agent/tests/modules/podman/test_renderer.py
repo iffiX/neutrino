@@ -1,11 +1,25 @@
-"""The rendered container files, checked for what systemd will read."""
+"""The rendered container files, checked for what systemd will read, and the
+root script that carries them into a Podman machine, run with ``sh`` against
+a temporary root."""
+
+import base64
+import os
+import re
+import subprocess
+from pathlib import Path
+
+import pytest
 
 from neutrino_agent.modules.podman.config import PodmanConfig, PodmanContainer
 from neutrino_agent.modules.podman.constants import PODMAN_GENERATED_MARKER
 from neutrino_agent.modules.podman.renderer import (
+    PodmanMachineScriptRenderer,
     PodmanQuadletRenderer,
     PodmanRegistriesRenderer,
     PodmanUnitRenderer,
+    machine_control_script,
+    machine_journal_script,
+    machine_stop_script,
     qualified_image,
 )
 
@@ -217,3 +231,292 @@ def test_a_checked_udp_reaches_the_command_line_of_an_old_podman():
     )
 
     assert "-p 53:53 -p 53:53/udp" in line
+
+
+# --- the Podman machine on Windows and macOS ---
+
+GOLDEN = Path(__file__).parent / "golden"
+
+# One file's text as the root script carries it; the golden holds a
+# placeholder in its place.
+ENCODED_PATTERN = re.compile(r"'([A-Za-z0-9+/]{40,}={0,2})'")
+
+MACHINE_CONTAINERS = [
+    {
+        "name": "web",
+        "image": "nginx",
+        "ports": ["8080:80", "5353:53"],
+        "volumes": ["C:\\www:/usr/share/nginx/html:ro", "webdata:/data"],
+        "services": [{"port": 5353, "kind": "port", "protocols": ["tcp", "udp"]}],
+    },
+    {"name": "batch", "image": "alpine", "command": "sleep 60", "is_autostart": False},
+]
+
+
+def machine_config(containers=None, mirrors=()) -> PodmanConfig:
+    config = PodmanConfig.from_dict(
+        {
+            "containers": MACHINE_CONTAINERS if containers is None else containers,
+            "mirrors": list(mirrors),
+            "machine": {"account": "lab", "password": "pw"},
+        }
+    )
+    config.validate(os_name="windows")
+    return config
+
+
+def test_a_machine_file_has_the_cgroups_line_and_the_folder_as_wsl_mounts_it():
+    config = machine_config()
+
+    text = PodmanQuadletRenderer(config=config, machine_os_name="windows").render()[
+        "web.container"
+    ]
+
+    assert text.splitlines()[6:15] == [
+        "[Container]",
+        "ContainerName=web",
+        "Image=docker.io/library/nginx",
+        "PublishPort=8080:80",
+        "PublishPort=5353:53",
+        "PublishPort=5353:53/udp",
+        "Volume=/mnt/c/www:/usr/share/nginx/html:ro",
+        "Volume=webdata:/data",
+        "CgroupsMode=enabled",
+    ]
+
+
+def test_a_mac_machine_file_keeps_the_folder_and_adds_the_cgroups_line():
+    config = PodmanConfig.from_dict(
+        {
+            "containers": [
+                {"name": "site", "image": "nginx", "volumes": ["/Users/me:/s"]}
+            ]
+        }
+    )
+
+    text = PodmanQuadletRenderer(config=config, machine_os_name="darwin").render()[
+        "site.container"
+    ]
+
+    assert "Volume=/Users/me:/s\nCgroupsMode=enabled\n" in text
+
+
+def test_the_linux_file_has_no_cgroups_line_and_is_byte_for_byte_as_before():
+    linux = PodmanQuadletRenderer(config=machine_config()).render()
+
+    assert "CgroupsMode" not in "".join(linux.values())
+    assert linux["batch.container"] == (
+        f"{PODMAN_GENERATED_MARKER}\n"
+        "\n"
+        "[Unit]\n"
+        "Description=batch container\n"
+        "After=network-online.target\n"
+        "\n"
+        "[Container]\n"
+        "ContainerName=batch\n"
+        "Image=docker.io/library/alpine\n"
+        "Exec=sleep 60\n"
+        "\n"
+        "[Service]\n"
+        "TimeoutStartSec=900\n"
+        "Restart=on-failure\n"
+    )
+
+
+def test_the_root_script_renders_the_golden_text_around_each_files_base64():
+    config = machine_config(mirrors=["mirror.example"])
+    script = PodmanMachineScriptRenderer(config=config, os_name="windows").render()
+    payloads = ENCODED_PATTERN.findall(script)
+
+    assert ENCODED_PATTERN.sub("'BASE64'", script) == (
+        GOLDEN / "machine_script.sh"
+    ).read_text(encoding="utf-8")
+    rendered = PodmanQuadletRenderer(config=config, machine_os_name="windows").render()
+    assert [base64.b64decode(payload).decode() for payload in payloads] == [
+        rendered["web.container"],
+        rendered["batch.container"],
+        PodmanRegistriesRenderer(config=config).render(),
+    ]
+
+
+# A systemctl that records each call, reads a unit active when ACTIVE names
+# it, and refuses a restart of a unit REFUSED names.
+SYSTEMCTL_STUB = """#!/bin/sh
+echo "$*" >> "$SYSTEMCTL_LOG"
+if [ "$1" = is-active ]; then
+    case " $ACTIVE " in *" $3 "*) exit 0 ;; esac
+    exit 3
+fi
+if [ "$1" = restart ]; then
+    case " $REFUSED " in *" $2 "*) echo "Job for $2 failed." >&2; exit 1 ;; esac
+fi
+exit 0
+"""
+
+
+class MachineShell:
+    """The root script run with ``sh`` against a temporary root, systemctl stubbed."""
+
+    def __init__(self, tmp_path):
+        self.root = tmp_path / "machine"
+        self.quadlet = self.root / "usr/share/containers/systemd"
+        self.mirrors = (
+            self.root / "etc/containers/registries.conf.d/99_neutrino_mirrors.conf"
+        )
+        self.log = tmp_path / "systemctl.log"
+        stubs = tmp_path / "bin"
+        stubs.mkdir()
+        stub = stubs / "systemctl"
+        stub.write_text(SYSTEMCTL_STUB)
+        stub.chmod(0o755)
+        self.path = f"{stubs}{os.pathsep}{os.environ.get('PATH', '')}"
+
+    def run(self, config: PodmanConfig, *, active="", refused="") -> tuple:
+        self.log.write_text("")
+        script = PodmanMachineScriptRenderer(
+            config=config, os_name="windows", root=str(self.root)
+        ).render()
+        done = subprocess.run(
+            ["sh", "-s"],
+            input=script,
+            capture_output=True,
+            text=True,
+            env={
+                "PATH": self.path,
+                "SYSTEMCTL_LOG": str(self.log),
+                "ACTIVE": active,
+                "REFUSED": refused,
+            },
+            timeout=60,
+        )
+        return done, self.log.read_text().splitlines()
+
+
+def changed_lines(done) -> list:
+    return [line for line in done.stdout.splitlines() if line.startswith("changed: ")]
+
+
+def test_the_script_writes_every_file_and_restarts_what_starts_at_boot(tmp_path):
+    shell = MachineShell(tmp_path)
+    config = machine_config(mirrors=["mirror.example"])
+
+    done, calls = shell.run(config)
+
+    assert done.returncode == 0, done.stderr
+    rendered = PodmanQuadletRenderer(config=config, machine_os_name="windows").render()
+    assert (shell.quadlet / "web.container").read_text() == rendered["web.container"]
+    assert (shell.quadlet / "batch.container").read_text() == rendered[
+        "batch.container"
+    ]
+    assert shell.mirrors.read_text() == PodmanRegistriesRenderer(config=config).render()
+    assert changed_lines(done) == [
+        f"changed: {shell.quadlet}/web.container",
+        f"changed: {shell.quadlet}/batch.container",
+        f"changed: {shell.mirrors}",
+    ]
+    assert calls == [
+        "daemon-reload",
+        "is-active --quiet batch.service",
+        "restart web.service",
+    ]
+    assert not list(shell.quadlet.glob("*.new"))
+
+
+def test_an_unchanged_configuration_changes_nothing_and_restarts_nothing(tmp_path):
+    shell = MachineShell(tmp_path)
+    config = machine_config(mirrors=["mirror.example"])
+    shell.run(config)
+
+    done, calls = shell.run(config, active="web.service batch.service")
+
+    assert done.returncode == 0, done.stderr
+    assert changed_lines(done) == []
+    assert calls == ["daemon-reload"]
+
+
+def test_a_changed_container_that_runs_restarts_though_not_started_at_boot(tmp_path):
+    shell = MachineShell(tmp_path)
+    shell.run(machine_config())
+    changed = [MACHINE_CONTAINERS[0], dict(MACHINE_CONTAINERS[1], command="sleep 9")]
+
+    done, calls = shell.run(machine_config(changed), active="batch.service")
+
+    assert changed_lines(done) == [f"changed: {shell.quadlet}/batch.container"]
+    assert calls == [
+        "daemon-reload",
+        "is-active --quiet batch.service",
+        "restart batch.service",
+    ]
+
+
+def test_stale_generated_files_go_and_a_persons_own_file_stays(tmp_path):
+    shell = MachineShell(tmp_path)
+    shell.quadlet.mkdir(parents=True)
+    (shell.quadlet / "old.container").write_text(
+        f"{PODMAN_GENERATED_MARKER}\n[Container]\n"
+    )
+    (shell.quadlet / "mine.container").write_text("[Container]\nImage=mine\n")
+    shell.mirrors.parent.mkdir(parents=True)
+    shell.mirrors.write_text(f"{PODMAN_GENERATED_MARKER}\n")
+
+    done, calls = shell.run(machine_config())
+
+    assert not (shell.quadlet / "old.container").exists()
+    assert (shell.quadlet / "mine.container").read_text() == "[Container]\nImage=mine\n"
+    assert not shell.mirrors.exists()
+    assert f"changed: -{shell.quadlet}/old.container" in changed_lines(done)
+    assert f"changed: -{shell.mirrors}" in changed_lines(done)
+    assert "stop old.service" in calls
+    assert "stop mine.service" not in calls
+
+
+def test_an_empty_configuration_takes_every_generated_file_away(tmp_path):
+    shell = MachineShell(tmp_path)
+    shell.run(machine_config(mirrors=["mirror.example"]))
+
+    done, calls = shell.run(PodmanConfig())
+
+    assert done.returncode == 0, done.stderr
+    assert list(shell.quadlet.iterdir()) == []
+    assert not shell.mirrors.exists()
+    assert calls == ["stop batch.service", "stop web.service", "daemon-reload"]
+
+
+def test_a_refused_restart_fails_the_script_with_systemds_words(tmp_path):
+    shell = MachineShell(tmp_path)
+
+    done, _calls = shell.run(machine_config(), refused="web.service")
+
+    assert done.returncode == 1
+    assert "Job for web.service failed." in done.stderr
+
+
+def test_the_verbs_scripts_name_the_containers_unit():
+    assert machine_control_script("web", "restart") == "systemctl restart web.service\n"
+    assert machine_journal_script("web", 200) == (
+        "journalctl -u web.service -n 200 --no-pager --output short-iso\n"
+    )
+    with pytest.raises(ValueError):
+        machine_control_script("web", "kill")
+
+
+def test_the_stop_script_stops_each_generated_container_and_keeps_its_file(tmp_path):
+    shell = MachineShell(tmp_path)
+    shell.run(machine_config())
+    (shell.quadlet / "mine.container").write_text("[Container]\n")
+    shell.log.write_text("")
+
+    subprocess.run(
+        ["sh", "-s"],
+        input=machine_stop_script(root=str(shell.root)),
+        text=True,
+        env={"PATH": shell.path, "SYSTEMCTL_LOG": str(shell.log)},
+        check=True,
+        timeout=60,
+    )
+
+    assert shell.log.read_text().splitlines() == [
+        "stop batch.service",
+        "stop web.service",
+    ]
+    assert (shell.quadlet / "web.container").exists()

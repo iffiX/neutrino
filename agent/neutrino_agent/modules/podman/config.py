@@ -3,7 +3,8 @@
 A container declared here becomes a systemd unit, so it survives reboots
 and appears to systemd like any other service. The knobs are few: image,
 ports, volumes, environment, a command, whether it starts at boot, and the
-service type of each host port.
+service type of each host port. On Windows and macOS the containers run in
+one account's Podman machine, which the Run settings, ``machine``, name.
 
 Pure: parsing and validation only.
 """
@@ -26,6 +27,7 @@ from neutrino_agent.modules.podman.constants import (
     PODMAN_SERVICE_SCHEMES,
     PODMAN_SERVICE_WEB,
 )
+from neutrino_agent.modules.podman.machine_paths import is_shared_source, split_volume
 
 # A container's name becomes a systemd unit name and a shell argument.
 CONTAINER_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}\Z")
@@ -43,6 +45,14 @@ MIRROR_PATTERN = re.compile(r"^[A-Za-z0-9.-]+(:[0-9]+)?(/[A-Za-z0-9._/-]*)?\Z")
 def _tcp_only() -> list:
     """The protocols of a ``port`` service that names none."""
     return [PODMAN_PROTOCOL_TCP]
+
+
+def _count(value) -> int:
+    """A whole number from the configuration; -1 for one that is not."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return -1
 
 
 @dataclass
@@ -171,43 +181,114 @@ class PodmanContainer:
 
 
 @dataclass
+class PodmanMachineSettings:
+    """The Run settings: whose Podman machine runs the containers, and its size.
+
+    Attributes:
+        account: The account whose default machine runs them.
+        cpus: Its processors; 0 is half the computer's.
+        memory_gib: Its memory in GiB; 0 is 2.
+        disk_gib: Its disk in GiB; 0 is 100 at an init and leaves a machine
+            taken over as it is.
+        password: The account's login, which Windows runs the account's
+            commands with; empty elsewhere.
+    """
+
+    account: str = ""
+    cpus: int = 0
+    memory_gib: int = 0
+    disk_gib: int = 0
+    password: str = ""
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "PodmanMachineSettings":
+        return cls(
+            account=str(data.get("account", "") or ""),
+            cpus=_count(data.get("cpus", 0)),
+            memory_gib=_count(data.get("memory_gib", 0)),
+            disk_gib=_count(data.get("disk_gib", 0)),
+            password=str(data.get("password", "") or ""),
+        )
+
+    def to_dict(self) -> dict:
+        return {
+            "account": self.account,
+            "cpus": self.cpus,
+            "memory_gib": self.memory_gib,
+            "disk_gib": self.disk_gib,
+            "password": self.password,
+        }
+
+
+@dataclass
 class PodmanConfig:
     """Everything the module's desired configuration holds.
 
     Attributes:
         containers: The declared containers.
         mirrors: Registry mirrors for docker.io, tried in order.
+        machine: The Run settings on Windows and macOS; None where the
+            state names none, which a Linux state never does.
     """
 
     containers: list = field(default_factory=list)
     mirrors: list = field(default_factory=list)
+    machine: "PodmanMachineSettings | None" = None
 
     @classmethod
     def from_dict(cls, data: dict) -> "PodmanConfig":
+        machine = data.get("machine")
         return cls(
             containers=[
                 PodmanContainer.from_dict(entry) for entry in data.get("containers", [])
             ],
             mirrors=[str(mirror) for mirror in data.get("mirrors", [])],
+            machine=(
+                PodmanMachineSettings.from_dict(machine)
+                if isinstance(machine, dict)
+                else None
+            ),
         )
 
     def to_dict(self) -> dict:
-        return {
+        data = {
             "containers": [container.to_dict() for container in self.containers],
             "mirrors": list(self.mirrors),
         }
+        if self.machine is not None:
+            data["machine"] = self.machine.to_dict()
+        return data
 
     @property
     def declared_names(self) -> list:
         """The declared containers' names, in order."""
         return [container.name for container in self.containers]
 
-    def validate(self) -> None:
-        """Check the configuration holds together.
+    def validate(
+        self,
+        *,
+        os_name: str = "linux",
+        host_cpus: int = 0,
+        host_memory_gib: int = 0,
+        disk_gib_now: int = 0,
+    ) -> None:
+        """Check the configuration holds together on one system.
+
+        Linux checks the containers and the mirrors alone. Windows and macOS
+        also check each volume's folder against what the machine reaches,
+        and the Run settings against the computer.
+
+        Args:
+            os_name: The computer's system.
+            host_cpus: The computer's logical processors; 0 checks none.
+            host_memory_gib: Its memory in GiB; 0 checks none.
+            disk_gib_now: The size of the machine's disk now in GiB; 0
+                checks none.
 
         Raises:
             ModuleApplyError: Naming the first problem found.
         """
+        is_machine = os_name in ("windows", "darwin")
         seen: set = set()
         for container in self.containers:
             name = container.name
@@ -226,7 +307,10 @@ class PodmanConfig:
                         "port_mapping_invalid", {"name": name, "port": port}
                     )
             for volume in container.volumes:
-                self._validate_volume(name, volume)
+                if is_machine:
+                    self._validate_machine_volume(name, volume, os_name)
+                else:
+                    self._validate_volume(name, volume)
             for line in container.environment:
                 if not ENVIRONMENT_PATTERN.match(line):
                     raise ModuleApplyError(
@@ -238,6 +322,49 @@ class PodmanConfig:
         for mirror in self.mirrors:
             if not MIRROR_PATTERN.match(mirror):
                 raise ModuleApplyError("mirror_invalid", {"mirror": mirror})
+        if is_machine:
+            self._validate_machine(
+                host_cpus=host_cpus,
+                host_memory_gib=host_memory_gib,
+                disk_gib_now=disk_gib_now,
+            )
+
+    def _validate_machine(
+        self, *, host_cpus: int, host_memory_gib: int, disk_gib_now: int
+    ) -> None:
+        settings = self.machine or PodmanMachineSettings()
+        if settings.cpus < 0 or (host_cpus and settings.cpus > host_cpus):
+            raise ModuleApplyError(
+                "machine_cpus_invalid", {"cpus": settings.cpus, "max": host_cpus}
+            )
+        if settings.memory_gib < 0 or (
+            host_memory_gib and settings.memory_gib > host_memory_gib
+        ):
+            raise ModuleApplyError(
+                "machine_memory_invalid",
+                {"memory_gib": settings.memory_gib, "max": host_memory_gib},
+            )
+        if settings.disk_gib < 0 or (
+            settings.disk_gib and settings.disk_gib < disk_gib_now
+        ):
+            raise ModuleApplyError(
+                "machine_disk_shrink",
+                {"disk_gib": settings.disk_gib, "current_gib": disk_gib_now},
+            )
+        if self.containers and not settings.account:
+            raise ModuleApplyError("machine_account_missing", {})
+
+    def _validate_machine_volume(self, name: str, volume: str, os_name: str) -> None:
+        if "\n" in volume:
+            raise ModuleApplyError("volume_invalid", {"name": name, "volume": volume})
+        source, destination = split_volume(volume, os_name=os_name)
+        if not source or not destination.startswith("/"):
+            raise ModuleApplyError("volume_invalid", {"name": name, "volume": volume})
+        is_named = CONTAINER_NAME_PATTERN.match(source) is not None
+        if not is_named and not is_shared_source(source, os_name=os_name):
+            raise ModuleApplyError(
+                "volume_not_shared", {"name": name, "volume": volume}
+            )
 
     def _validate_services(self, container: PodmanContainer) -> None:
         host_ports = {int(port.partition(":")[0]) for port in container.ports}

@@ -162,3 +162,166 @@ def test_a_port_service_with_no_protocol_is_refused_with_its_port():
 )
 def test_a_service_off_the_published_ports_or_garbled_is_refused(services):
     assert refused_code(with_services(["8080:80"], services)) == "port_mapping_invalid"
+
+
+# --- Windows and macOS: the Podman machine ---
+
+MACHINE = {"account": "lab", "cpus": 2, "memory_gib": 4, "disk_gib": 120}
+
+
+def machine_config(volumes=(), machine=None, containers=None) -> PodmanConfig:
+    if containers is None:
+        containers = [{"name": "web", "image": "nginx", "volumes": list(volumes)}]
+    return PodmanConfig.from_dict(
+        {
+            "containers": containers,
+            "machine": dict(MACHINE) if machine is None else machine,
+        }
+    )
+
+
+def refusal_on(config: PodmanConfig, os_name: str, **facts) -> ModuleApplyError:
+    with pytest.raises(ModuleApplyError) as refused:
+        config.validate(os_name=os_name, **facts)
+    return refused.value
+
+
+def test_the_run_settings_survive_a_round_trip_and_a_linux_state_names_none():
+    config = machine_config(machine=dict(MACHINE, password="pw"))
+
+    assert config.machine.account == "lab"
+    assert config.machine.password == "pw"
+    assert PodmanConfig.from_dict(config.to_dict()).to_dict() == config.to_dict()
+    assert config_with().machine is None
+    assert "machine" not in config_with().to_dict()
+
+
+@pytest.mark.parametrize(
+    "volume",
+    ["C:\\data:/data", "d:\\a b\\c:/srv:ro", "C:/data:/data", "webdata:/data"],
+)
+def test_windows_takes_a_folder_on_a_drive_or_a_named_volume(volume):
+    machine_config([volume]).validate(os_name="windows")
+
+
+@pytest.mark.parametrize(
+    "volume",
+    [
+        "/Users/me/site:/usr/share/nginx/html",
+        "/private/tmp/x:/x",
+        "/var/folders/ab/T/x:/x",
+        "/Users:/home",
+        "webdata:/data",
+    ],
+)
+def test_macos_takes_a_folder_podman_shares_or_a_named_volume(volume):
+    machine_config([volume]).validate(os_name="darwin")
+
+
+@pytest.mark.parametrize(
+    "os_name, volume",
+    [
+        ("windows", "\\\\server\\share:/data"),
+        ("windows", "/srv/data:/data"),
+        ("darwin", "/opt/data:/data"),
+        ("darwin", "/Usersx/me:/data"),
+        ("darwin", "relative/dir:/data"),
+    ],
+)
+def test_a_folder_the_machine_cannot_reach_is_not_shared(os_name, volume):
+    refusal = refusal_on(machine_config([volume]), os_name)
+
+    assert refusal.code == "volume_not_shared"
+    assert refusal.params == {"name": "web", "volume": volume}
+
+
+@pytest.mark.parametrize("volume", ["C:\\data", "C:\\data:data", "C:\\a\nb:/x"])
+def test_a_windows_volume_without_a_destination_is_invalid(volume):
+    assert refusal_on(machine_config([volume]), "windows").code == "volume_invalid"
+
+
+def test_a_drive_letter_means_nothing_on_a_mac():
+    config = machine_config(["C:\\data:/data"])
+
+    assert refusal_on(config, "darwin").code == "volume_invalid"
+
+
+def test_linux_keeps_its_own_volume_rules_and_ignores_the_run_settings():
+    config = machine_config(["C:\\data:/data"], machine={"cpus": 999})
+
+    assert refusal_on(config, "linux").code == "volume_invalid"
+    machine_config(["/srv:/srv"], machine={"cpus": 999}).validate(
+        host_cpus=4, host_memory_gib=8, disk_gib_now=500
+    )
+
+
+@pytest.mark.parametrize("cpus", [-1, 9])
+def test_cpus_past_the_computer_are_refused_with_the_maximum(cpus):
+    config = machine_config(machine=dict(MACHINE, cpus=cpus))
+
+    refusal = refusal_on(config, "windows", host_cpus=8)
+
+    assert refusal.code == "machine_cpus_invalid"
+    assert refusal.params == {"cpus": cpus, "max": 8}
+
+
+def test_unreadable_cpus_are_refused():
+    config = machine_config(machine=dict(MACHINE, cpus="many"))
+
+    assert refusal_on(config, "darwin").code == "machine_cpus_invalid"
+
+
+@pytest.mark.parametrize("memory_gib", [-2, 17])
+def test_memory_past_the_computer_is_refused_with_the_maximum(memory_gib):
+    config = machine_config(machine=dict(MACHINE, memory_gib=memory_gib))
+
+    refusal = refusal_on(config, "darwin", host_cpus=8, host_memory_gib=16)
+
+    assert refusal.code == "machine_memory_invalid"
+    assert refusal.params == {"memory_gib": memory_gib, "max": 16}
+
+
+def test_a_disk_smaller_than_the_machines_is_a_shrink():
+    config = machine_config(machine=dict(MACHINE, disk_gib=100))
+
+    refusal = refusal_on(config, "windows", disk_gib_now=120)
+
+    assert refusal.code == "machine_disk_shrink"
+    assert refusal.params == {"disk_gib": 100, "current_gib": 120}
+
+
+def test_a_zero_takes_the_default_and_passes_every_size_check():
+    config = machine_config(
+        machine={"account": "lab", "cpus": 0, "memory_gib": 0, "disk_gib": 0}
+    )
+
+    config.validate(os_name="windows", host_cpus=4, host_memory_gib=8, disk_gib_now=130)
+
+
+def test_sizes_within_the_computer_pass_and_an_unknown_size_checks_nothing():
+    machine_config().validate(
+        os_name="windows", host_cpus=2, host_memory_gib=4, disk_gib_now=120
+    )
+    machine_config(machine=dict(MACHINE, cpus=64, memory_gib=512)).validate(
+        os_name="darwin"
+    )
+
+
+def test_containers_with_no_account_are_refused():
+    assert (
+        refusal_on(machine_config(machine={"cpus": 1}), "windows").code
+        == "machine_account_missing"
+    )
+    assert (
+        refusal_on(
+            PodmanConfig.from_dict({"containers": [FULL_CONTAINER]}), "darwin"
+        ).code
+        == "machine_account_missing"
+    )
+
+
+def test_no_containers_and_no_account_pass():
+    PodmanConfig.from_dict({"containers": []}).validate(os_name="windows")
+
+
+FULL_CONTAINER = {"name": "redis", "image": "docker.io/library/redis:7"}

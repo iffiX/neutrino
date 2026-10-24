@@ -148,6 +148,32 @@ CLI_CODE_WORDS = {
     "environment_invalid": "environment entry {entry} on {name} is not KEY=value",
     "command_invalid": "the command on {name} cannot span lines",
     "mirror_invalid": "mirror {mirror} is not a registry host",
+    "volume_not_shared": (
+        "volume {volume} on {name} names a folder the Podman machine cannot "
+        "reach; use a folder on a drive on Windows, or under /Users, /private "
+        "or /var/folders on a Mac"
+    ),
+    "reboot_required": (
+        "restart this computer to finish turning on WSL; the install goes on "
+        "after it"
+    ),
+    "windows_feature_failed": (
+        "Windows could not turn on {feature}; dism exited {exit_code}"
+    ),
+    "podman_install_failed": "the {component} installer exited {exit_code}",
+    "machine_account_missing": "choose the account whose Podman machine runs the containers",
+    "machine_cpus_invalid": "CPUs must be between 0 and {max}, not {cpus}",
+    "machine_memory_invalid": (
+        "memory must be between 0 and {max} GiB, not {memory_gib} GiB"
+    ),
+    "machine_disk_shrink": (
+        "the Podman machine's disk is {current_gib} GiB; it can grow but not "
+        "shrink to {disk_gib} GiB"
+    ),
+    "machine_image_missing": "the Podman machine image is missing; install Containers again",
+    "machine_init_failed": "the Podman machine could not be made: {detail}",
+    "machine_set_failed": "the Podman machine could not be changed: {detail}",
+    "machine_unreachable": "the Podman machine does not answer: {detail}",
     "pool_name_invalid": "pool name {name} is not usable",
     "pool_name_reserved": "{name} means something to zpool itself",
     "layout_unknown": "unknown vdev layout {layout}",

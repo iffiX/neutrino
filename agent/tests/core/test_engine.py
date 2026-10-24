@@ -31,6 +31,8 @@ from neutrino_agent.exceptions import (
     ModuleApplyError,
     PlatformUnsupportedError,
 )
+from neutrino_agent.modules.podman.machine_runner import PodmanMachineModuleRunner
+from neutrino_agent.modules.podman.runner import PodmanModuleRunner
 from neutrino_agent.modules.shared.base import ModuleRunner
 from neutrino_agent.platforms.base import AgentPlatform
 
@@ -1109,12 +1111,14 @@ def test_a_system_that_unpacks_the_hub_s_software_runs_vs_code_from_its_bytes(
     assert set(engine.module_runners) == {
         "samba",
         "gitea",
+        "podman",
         "vscode",
         "cloudcli",
         "codeg",
         "terminal",
         "remote_desktop",
     }
+    assert engine.module_runners["podman"].kind == "podman_machine"
     assert engine.report()["vscode"]["state"] == "absent"
     assert engine.install("vscode", receive=receive) == {
         "code": "hub_unreachable",
@@ -1142,6 +1146,28 @@ def test_code_server_runs_on_a_mac_beside_vs_code_and_not_on_windows(tmp_path):
     assert "codeg" in windows.module_runners
 
 
+def test_containers_run_in_a_podman_machine_on_windows_and_macos_alone(tmp_path):
+    class MacHubPackagesPlatform(HubPackagesPlatform):
+        os_name = "darwin"
+
+    class LinuxHubPackagesPlatform(HubPackagesPlatform):
+        os_name = "linux"
+
+    for platform_class in (HubPackagesPlatform, MacHubPackagesPlatform):
+        engine = ModuleEngine(
+            platform=platform_class(str(tmp_path / "Neutrino")),
+            configured_dir=str(tmp_path / "configured"),
+        )
+        runner = engine.module_runners["podman"]
+        assert isinstance(runner, PodmanMachineModuleRunner)
+        assert runner.kind == "podman_machine"
+    linux = ModuleEngine(
+        platform=LinuxHubPackagesPlatform(str(tmp_path / "Neutrino")),
+        configured_dir=str(tmp_path / "configured"),
+    )
+    assert "podman" not in linux.module_runners
+
+
 def test_a_platform_with_packages_builds_the_vs_code_runner(tmp_path):
     class PackagesPlatform(FakePlatform):
         capabilities = frozenset({"packages"})
@@ -1162,6 +1188,7 @@ def test_a_platform_with_packages_builds_the_vs_code_runner(tmp_path):
         "terminal",
         "remote_desktop",
     }
+    assert type(engine.module_runners["podman"]) is PodmanModuleRunner
 
 
 # --- components ---

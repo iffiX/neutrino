@@ -48,6 +48,7 @@ from neutrino_agent.modules.cloudcli.hooks import CloudcliHooks
 from neutrino_agent.modules.code_server.hooks import CodeServerHooks
 from neutrino_agent.modules.codeg.hooks import CodegHooks
 from neutrino_agent.modules.gitea.runner import GiteaModuleRunner
+from neutrino_agent.modules.podman.machine_runner import PodmanMachineModuleRunner
 from neutrino_agent.modules.podman.runner import PodmanModuleRunner
 from neutrino_agent.modules.remote_desktop.runner import RemoteDesktopModuleRunner
 from neutrino_agent.modules.samba.runner import (
@@ -232,6 +233,8 @@ class ModuleEngine(ReconcileWorker):
                     kinds.append(CodeServerModuleRunner)
                 kinds.append(CloudcliModuleRunner)
                 kinds.append(CodegModuleRunner)
+                if platform.os_name in ("windows", "darwin"):
+                    kinds.append(PodmanMachineModuleRunner)
         kinds.append(TerminalModuleRunner)
         kinds.append(RemoteDesktopModuleRunner)
         self._module_runners = {}
