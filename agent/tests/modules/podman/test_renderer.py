@@ -456,7 +456,23 @@ def test_an_unchanged_configuration_changes_nothing_and_restarts_nothing(tmp_pat
 
     assert done.returncode == 0, done.stderr
     assert changed_lines(done) == []
-    assert calls == ["daemon-reload"]
+    assert calls == ["daemon-reload", "is-active --quiet web.service"]
+
+
+def test_an_unchanged_container_started_at_boot_is_started_when_down(tmp_path):
+    shell = MachineShell(tmp_path)
+    config = machine_config()
+    shell.run(config)
+
+    done, calls = shell.run(config)
+
+    assert done.returncode == 0, done.stderr
+    assert changed_lines(done) == []
+    assert calls == [
+        "daemon-reload",
+        "is-active --quiet web.service",
+        "start web.service",
+    ]
 
 
 def test_a_changed_container_that_runs_restarts_though_not_started_at_boot(tmp_path):
@@ -471,6 +487,8 @@ def test_a_changed_container_that_runs_restarts_though_not_started_at_boot(tmp_p
         "daemon-reload",
         "is-active --quiet batch.service",
         "restart batch.service",
+        "is-active --quiet web.service",
+        "start web.service",
     ]
 
 

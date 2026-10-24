@@ -118,6 +118,33 @@ def test_a_changed_non_autostart_container_restarts_only_if_running(
     assert ["systemctl", "restart", "web.service"] in commands.calls
 
 
+def test_an_unchanged_container_that_starts_with_the_box_is_started_when_down(
+    commands, tmp_path, monkeypatch
+):
+    """The upgrade case: the file is as the last apply wrote it, the unit is
+    enabled and not running, and the apply starts it."""
+    directory = tmp_path / "system"
+    applier = PodmanUnitApplier(
+        directory=str(directory), suffix=".service", is_enabled_by_systemctl=True
+    )
+    files = {"web.service": rendered("web"), "tool.service": rendered("tool")}
+    applier.apply(files, autostart_names=["web"])
+    commands.calls.clear()
+
+    applier.apply(files, autostart_names=["web"])
+
+    reload_at = commands.calls.index(["systemctl", "daemon-reload"])
+    assert commands.calls.index(["systemctl", "start", "web.service"]) > reload_at
+    assert ["systemctl", "start", "tool.service"] not in commands.calls
+    assert not any(call[1] == "restart" for call in commands.calls)
+    commands.calls.clear()
+    monkeypatch.setattr(applier_module, "unit_state", lambda unit: "active")
+
+    applier.apply(files, autostart_names=["web"])
+
+    assert not any(call[1] in ("start", "restart") for call in commands.calls)
+
+
 def test_a_plain_unit_is_enabled_with_the_box_and_disabled_without_at_each_apply(
     commands, tmp_path
 ):

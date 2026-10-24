@@ -173,7 +173,8 @@ class PodmanUnitApplier:
         return self._directory
 
     def apply(self, rendered: dict, *, autostart_names: list) -> str:
-        """Write the rendered files, drop stale ones, and recreate what changed.
+        """Write the rendered files, drop stale ones, recreate what changed,
+        and start what starts with the box.
 
         Only files carrying the generated marker are ever removed: a file a
         person wrote by hand beside these is theirs. A plain unit is
@@ -183,7 +184,8 @@ class PodmanUnitApplier:
         Args:
             rendered: File contents keyed by file name.
             autostart_names: Containers that should be running; a changed
-                one of these is restarted even if it was stopped.
+                one of these is restarted even if it was stopped, and an
+                unchanged one that is not active is started.
 
         Returns:
             A short summary of what changed.
@@ -213,12 +215,13 @@ class PodmanUnitApplier:
                 run(["systemctl", verb, "--no-reload", f"{name}.service"])
         run(["systemctl", "daemon-reload"])
         for file_name in rendered:
-            if file_name not in changed:
-                continue
             name = file_name[: -len(self._suffix)]
             unit = f"{name}.service"
-            if name in autostart_names or unit_state(unit) == "active":
-                run(["systemctl", "restart", unit], timeout_s=900)
+            if file_name in changed:
+                if name in autostart_names or unit_state(unit) == "active":
+                    run(["systemctl", "restart", unit], timeout_s=900)
+            elif name in autostart_names and unit_state(unit) != "active":
+                run(["systemctl", "start", unit], timeout_s=900)
         if not changed:
             return "containers unchanged"
         return f"containers: {', '.join(sorted(changed))}"

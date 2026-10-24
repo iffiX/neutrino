@@ -43,6 +43,7 @@ mirrors={mirrors}
 marker={marker}
 restart=''
 changed=''
+start=''
 status=0
 put() {{
     printf '%s' "$2" | base64 -d > "$1.new" || exit 1
@@ -119,7 +120,8 @@ WantedBy=multi-user.target
 """
 
 # A changed container that is not started at boot is restarted only while
-# it runs, as on Linux.
+# it runs, and an unchanged one started at boot is started when it does not
+# run, as on Linux.
 _MACHINE_SCRIPT_TAIL = """systemctl daemon-reload || exit 1
 for name in $changed; do
     if systemctl is-active --quiet "$name.service"; then
@@ -128,6 +130,11 @@ for name in $changed; do
 done
 for name in $restart; do
     systemctl restart "$name.service" || status=1
+done
+for name in $start; do
+    if ! systemctl is-active --quiet "$name.service"; then
+        systemctl start "$name.service" || status=1
+    fi
 done
 exit "$status"
 """
@@ -394,8 +401,9 @@ class PodmanMachineScriptRenderer:
 
     The script carries every Quadlet file and the mirrors drop-in
     base64-encoded, writes the ones that differ, removes the generated files
-    the configuration no longer names, reloads systemd and restarts each
-    changed container that starts at boot or runs. Where the Quadlet folder
+    the configuration no longer names, reloads systemd, restarts each
+    changed container that starts at boot or runs, and starts each unchanged
+    one that starts at boot and does not run. Where the Quadlet folder
     is under ``/etc/containers``, it also writes the boot unit while the
     machine mounts that folder. It prints one ``changed: <file>`` line per
     change, ``-<file>`` for a removal, and exits non-zero when systemd
@@ -441,8 +449,10 @@ class PodmanMachineScriptRenderer:
             parts.append(
                 f'if put "$quadlet/{container.name}.container" {_encoded(text)}; then\n'
                 f'    {variable}="${variable} {container.name}"\n'
-                "fi\n"
             )
+            if container.is_autostart:
+                parts.append(f'else\n    start="$start {container.name}"\n')
+            parts.append("fi\n")
         declared = " ".join(["", *self._config.declared_names, ""])
         parts.append(_MACHINE_SCRIPT_STALE.format(declared=_shell_quoted(declared)))
         mirrors = PodmanRegistriesRenderer(config=self._config).render()
