@@ -355,5 +355,12 @@
   "code.machine_set_failed": "Podman 没能修改虚拟机：{detail}",
   "code.machine_unreachable": "Podman 虚拟机没有响应：{detail}",
   "code.volume_invalid": "非法卷：容器 {name} 的卷 {volume} 要写成文件夹或卷名、冒号、容器里的路径。",
-  "code.container_unknown": "Podman 里没有叫 {name} 的容器。"
+  "code.container_unknown": "Podman 里没有叫 {name} 的容器。",
+  "code.container_name_invalid": "非法容器名：{name}，只能用小写字母、数字、连字符和下划线，以字母或数字开头，最多 64 个字符。",
+  "code.container_name_duplicate": "有两个容器都叫 {name}。",
+  "code.image_invalid": "非法镜像：容器 {name} 的镜像标签为空或含空格。",
+  "code.port_mapping_invalid": "非法端口映射：容器 {name} 的端口 {port} 要写成主机端口、冒号、容器端口，例如 8080:80，UDP 在后面加 /udp。",
+  "code.environment_invalid": "非法环境变量：容器 {name} 的 {entry} 要写成变量名、等号、值，例如 KEY=value。",
+  "code.command_invalid": "非法命令：容器 {name} 的命令只能写在一行里。",
+  "code.mirror_invalid": "非法镜像源：{mirror} 要写成镜像仓库的主机名，可带端口和路径，不带 http://，例如 mirror.ccs.tencentyun.com。"
 }

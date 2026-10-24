@@ -355,5 +355,12 @@
   "code.machine_set_failed": "Podman could not change the machine: {detail}",
   "code.machine_unreachable": "The Podman machine does not answer: {detail}",
   "code.volume_invalid": "The volume {volume} of {name} needs a folder or a volume name, a colon, and a path in the container.",
-  "code.container_unknown": "Podman has no container called {name}."
+  "code.container_unknown": "Podman has no container called {name}.",
+  "code.container_name_invalid": "The container name {name} cannot be used; use up to 64 lowercase letters, digits, dashes and underscores, starting with a letter or a digit.",
+  "code.container_name_duplicate": "Two containers are both named {name}.",
+  "code.image_invalid": "The image tag of {name} is empty or holds a space.",
+  "code.port_mapping_invalid": "The port {port} of {name} needs a host port, a colon and a container port, such as 8080:80, with /udp after it for UDP.",
+  "code.environment_invalid": "The environment entry {entry} of {name} needs a name, an equals sign and a value, such as KEY=value.",
+  "code.command_invalid": "The command of {name} needs to fit on one line.",
+  "code.mirror_invalid": "The mirror {mirror} needs a registry host, with an optional port and path and no http://, such as mirror.ccs.tencentyun.com."
 }

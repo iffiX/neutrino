@@ -166,6 +166,13 @@ CONTAINERS_CODES = (
     "apply_failed",
     "command_failed",
     "container_unknown",
+    "container_name_invalid",
+    "container_name_duplicate",
+    "image_invalid",
+    "port_mapping_invalid",
+    "environment_invalid",
+    "command_invalid",
+    "mirror_invalid",
 )
 
 
