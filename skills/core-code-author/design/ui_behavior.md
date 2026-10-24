@@ -396,6 +396,7 @@ same component is every such list; none gets a table or a second idiom.
 | A row keeps the order it was added in, and that order is the order the backend uses. Reordering is removing a row and adding it again. | The chips have no drag handle, and the order is rarely changed. |
 | A blank row or a duplicate is dropped at the add; what the value means is checked by the backend, and its refusal shows on the apply bar. | The editor keeps the list tidy and the backend owns the rules. |
 | An editor can have **Browse…** after its **Add**: it opens the path window (`directory_picker_modal.tsx`) on the device, at the folder the input names or at the machine's root, and writes the folder chosen into the input with `:` after it, for the person to finish the row and add it. | A volume is `<folder>:<path in the container>`, and only the first half is a folder of the machine. |
+| With **Browse…** the input is at least 16rem wide, and **Add** and **Browse…** move under it together where the row has no room for the three; an editor without **Browse…** keeps one line. | A folder path does not fit in the room two buttons leave in one column of the container editor. |
 
 The container editor's **Volumes** has **Browse…** on every system, and its
 placeholder is a volume in the machine's own form,
@@ -586,8 +587,10 @@ hub holds its task, and never the module's journal. No module has a
 
 A module reported `installing` with a code shows the code's words as a
 notice at the top of its tab, and its buttons stay disabled as for any
-module in transit. With `reboot_required` the notice has **Restart now**
-(`ui.modules.restart_now`), which asks through `useConfirm`
+module in transit. Its output box keeps the install's lines while the hub
+holds the task, with `ui.modules.task_running` beside them, until the
+machine reports another state. With `reboot_required` the notice has
+**Restart now** (`ui.modules.restart_now`), which asks through `useConfirm`
 (`ui.modules.restart_title`, `ui.modules.restart_body`) and sends `POST
 /api/hub/device/reboot`. The agent never restarts the machine itself, and
 the install goes on after the restart with no press ([agent.md](agent.md),
@@ -641,16 +644,24 @@ On Linux the tab has no Run settings, since root runs Podman there
 | **Account** | a picker over the human accounts the machine reported, as `instances_panel.tsx` draws one |
 | **Windows login for {account}** | on Windows alone, a `VaultPicker` that adds a login in place, with no link to the Credentials page |
 | **CPUs**, **Memory (GiB)** | number fields, 0 for Podman's default, `ui.containers.run_default_hint` under them on macOS and `ui.containers.run_default_hint_windows` on Windows |
-| **Disk limit (GiB)** | a number field whose least value is the disk's size now, as the machine reported it, and on Windows at least 1, with `ui.containers.run_disk_hint` under it; it follows Podman Desktop's **Edit** form for a machine, where the disk size only grows. On Windows the field starts at 100 while the stored Run settings name no account, and the apply bar is disabled while it is below 1 |
+| **Disk limit (GiB)** | a number field whose least value is the disk's size now, as the machine reported it, and on Windows at least 1, with `ui.containers.run_disk_hint` under it; it follows Podman Desktop's **Edit** form for a machine, where the disk size only grows. On Windows the field starts at 100 while the stored Run settings name no account. The apply bar is disabled, and the field shows the code's words in place of the hint, while the value is below 1 on Windows, `code.machine_disk_invalid`, or above 0 and below the disk's size now, `code.machine_disk_shrink` |
 
 The group is one `settings_group` with its own apply bar,
 `ui.containers.run_apply`. While it is dirty, the bar's warning is
 `ui.containers.run_restart_warning` when the CPUs, the memory or the disk
-changed on a machine that exists, followed on Windows by
+changed on a machine that exists, one the report names for the draft's
+account (`machine_state.account`), followed on Windows by
 `ui.containers.run_wsl_warning`; and `ui.containers.run_account_warning`
 when the account changed. Until the stored Run settings name an account,
 the three panels under it draw `ui.containers.run_needed` in place of their
 content, and their apply bars are disabled.
+
+Each apply bar of the tab, Run settings, mirrors and containers, stays busy
+after its press until the machine reports the module where its `want` asks,
+at most two minutes, as `instances_panel.tsx` waits. Under `running` that is
+`running` or `stopped` on Linux, and on Windows and macOS `running` with the
+stored account's machine running; under `stopped` it is `stopped`.
+`ui.api.applied` shows only then, and a failure shows as the tab's notice.
 
 The container editor has a **Services** row under its three lists,
 **Ports**, **Volumes** and **Environment**, on every system: one line per
