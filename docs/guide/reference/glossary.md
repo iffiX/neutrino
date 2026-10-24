@@ -48,7 +48,9 @@ Each row is one term the guide uses, with the name the Chinese panel and the Chi
 | **File share**                                      | 文件共享                       | the module that shares folders over SMB                                                                             |
 | **Terminal** (module)                               | 终端（模块）                   | the module that sets the account and the shell of the machine's terminals                                           |
 | **Remote desktop**                                  | 远程桌面                       | the module that shares a machine's desktop, and the client page that shows it                                       |
-| **Containers**                                      | 容器                           | the module that runs containers with podman; Linux only                                                             |
+| **Containers**                                      | 容器                           | the module that runs containers with Podman, on Windows and macOS inside a Podman machine                           |
+| **Run settings**                                    | 运行设置                       | the account, processors, memory and disk of the Podman machine that runs a Windows or macOS machine's containers    |
+| Podman machine                                      | Podman 虚拟机                  | the Linux virtual machine of one account in which Podman runs containers on Windows and macOS                       |
 | **ZFS storage**                                     | ZFS 存储                       | the module that manages ZFS pools; Linux only                                                                       |
 | **Services**                                        | 服务                           | what the hub publishes to clients: web pages, ports, the AI gateway, files and desktops                             |
 | forward                                             | 转发                           | a port a client opens on its own device that leads to one published service                                         |

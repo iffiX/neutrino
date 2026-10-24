@@ -194,7 +194,7 @@ A tab of the **Modules** page shows these codes under its state word or on a row
 
 ### Instances of VS Code, code-server, CloudCLI and Codeg
 
-These codes also come from the **Terminal** tab and from the accounts under **Global configuration**.
+These codes also come from the **Terminal** tab, from the accounts under **Global configuration**, and from the **Run settings** of **Containers**.
 
 | Symptom              | Cause                                                                      | Fix                                                                            |
 | -------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
@@ -238,6 +238,26 @@ These codes also come from the **Terminal** tab and from the accounts under **Gl
 | ----------------------------- | -------------------------------------------------------- | --------------------------------------------------------------------- |
 | `code_server_download_failed` | the release could not be fetched or unpacked             | check that the machine reaches the internet, then apply again         |
 | `code_server_port_taken`      | another program on the machine holds the instance's port | change the instance's **Port** and select **Apply code-server** again |
+
+### Containers
+
+The rows for `account_unknown`, `credential_missing` and `credential_invalid` from the **Run settings** are under [Instances of VS Code, code-server, CloudCLI and Codeg](#instances-of-vs-code-code-server-cloudcli-and-codeg).
+
+| Symptom                                                                                                         | Cause                                                                                 | Fix                                                                                                   |
+| --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| **Windows needs a restart to finish turning on WSL; the install goes on after it.**, the code `reboot_required` | the install turned on WSL's Windows features, and they work after a restart           | select **Restart now**, then **Restart**; the install resumes after the restart                       |
+| `windows_feature_failed`                                                                                        | Windows could not turn on Virtual Machine Platform or the Windows Subsystem for Linux | check that the machine runs Windows 10 build 19041 or newer, then select **Install** again            |
+| `podman_install_failed`                                                                                         | the WSL or Podman installer exited with the code shown                                | read the exit code in the installer's own documentation, fix the cause, then select **Install** again |
+| `machine_image_missing`                                                                                         | the Podman machine image is gone from the computer                                    | select **Uninstall**, then **Install**                                                                |
+| `machine_account_missing`                                                                                       | the **Run settings** name no account                                                  | pick the **Account**, then select **Apply run settings**                                              |
+| `machine_cpus_invalid`, `machine_memory_invalid`                                                                | the number is more than the computer has                                              | type a number up to the maximum the message gives, or 0                                               |
+| `machine_disk_shrink`                                                                                           | the disk limit is smaller than the machine's disk now                                 | type the size the message gives or more, or 0                                                         |
+| `machine_init_failed`, with Podman's words                                                                      | Podman could not create the machine                                                   | check that virtualisation is on in the computer's firmware, then select **Apply run settings** again  |
+| `machine_set_failed`, with Podman's words                                                                       | Podman or WSL could not change the machine's processors, memory or disk               | fix what Podman's words name, then select **Apply run settings** again                                |
+| `machine_unreachable`                                                                                           | the agent got no answer from the Podman machine                                       | after a boot, wait 30 seconds and look again; if the code stays, select **Start** on the tab          |
+| `volume_not_shared`                                                                                             | a volume's folder is outside the folders the Podman machine sees                      | use a folder on a fixed drive on Windows, or under `/Users` on macOS, or a named volume               |
+| `udp_not_forwarded`                                                                                             | a port of a container on Windows is published on UDP, and WSL forwards TCP alone      | publish the port on TCP, or run the container on a Linux machine                                      |
+| `service_protocol_none`                                                                                         | a port set to **Port** under **Services** has neither **TCP** nor **UDP** checked     | check **TCP**, **UDP** or both                                                                        |
 
 ### Remote desktop
 

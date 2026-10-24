@@ -92,27 +92,28 @@ A rejected program keeps its binding.
 
 A module the machine's system cannot run is greyed in the **Modules** page's picker with **This machine's system cannot run it**. The table follows the module manifests the hub includes. A **yes** under Windows means x86-64, the one Windows agent build.
 
-| Module                                                 | Linux                                                                         | Windows                                                | macOS                       |
-| ------------------------------------------------------ | ----------------------------------------------------------------------------- | ------------------------------------------------------ | --------------------------- |
-| File share                                             | Samba from the distribution's packages                                        | the system's own SMB server                            | the system's own SMB server |
-| Terminal                                               | x86-64 and ARM64; the module sets the account and the shell program           | yes; the module sets the shell program, and no account | Apple silicon and Intel     |
-| Remote desktop                                         | x86-64 and ARM64                                                              | yes                                                    | Apple silicon and Intel     |
-| Gitea                                                  | x86-64 and ARM64                                                              | yes                                                    | Apple silicon and Intel     |
-| Containers                                             | Podman from the distribution's packages                                       | none                                                   | none                        |
-| ZFS storage                                            | OpenZFS from the repository each family keeps it in                           | none                                                   | none                        |
-| VS Code                                                | x86-64 and ARM64                                                              | yes                                                    | Apple silicon and Intel     |
-| code-server                                            | x86-64 and ARM64                                                              | none                                                   | Apple silicon and Intel     |
-| CloudCLI                                               | x86-64 and ARM64                                                              | yes                                                    | Apple silicon and Intel     |
-| Codeg                                                  | x86-64 and ARM64, glibc 2.34 and newer, which the agent package needs as well | yes                                                    | Apple silicon and Intel     |
-| AnyDesk, TeamViewer, as remote desktops on **Devices** | detected when a person installed it                                           | the same                                               | the same                    |
+| Module                                                 | Linux                                                                         | Windows                                                                                    | macOS                                                              |
+| ------------------------------------------------------ | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| File share                                             | Samba from the distribution's packages                                        | the system's own SMB server                                                                | the system's own SMB server                                        |
+| Terminal                                               | x86-64 and ARM64; the module sets the account and the shell program           | yes; the module sets the shell program, and no account                                     | Apple silicon and Intel                                            |
+| Remote desktop                                         | x86-64 and ARM64                                                              | yes                                                                                        | Apple silicon and Intel                                            |
+| Gitea                                                  | x86-64 and ARM64                                                              | yes                                                                                        | Apple silicon and Intel                                            |
+| Containers                                             | Podman from the distribution's packages                                       | Windows 10 build 19041 and newer, or Windows 11, with virtualisation on; Podman 6 on WSL 2 | macOS 13 and newer; Podman 6 on Apple silicon, Podman 5.8 on Intel |
+| ZFS storage                                            | OpenZFS from the repository each family keeps it in                           | none                                                                                       | none                                                               |
+| VS Code                                                | x86-64 and ARM64                                                              | yes                                                                                        | Apple silicon and Intel                                            |
+| code-server                                            | x86-64 and ARM64                                                              | none                                                                                       | Apple silicon and Intel                                            |
+| CloudCLI                                               | x86-64 and ARM64                                                              | yes                                                                                        | Apple silicon and Intel                                            |
+| Codeg                                                  | x86-64 and ARM64, glibc 2.34 and newer, which the agent package needs as well | yes                                                                                        | Apple silicon and Intel                                            |
+| AnyDesk, TeamViewer, as remote desktops on **Devices** | detected when a person installed it                                           | the same                                                                                   | the same                                                           |
 
 The agent drives these programs at these versions or newer:
 
 | Program            | Oldest version                                         |
 | ------------------ | ------------------------------------------------------ |
-| Podman             | 3.4; from 4.4 a container is a Quadlet file            |
+| Podman             | 3.4 on Linux; from 4.4 a container is a Quadlet file   |
 | Samba              | 4.15                                                   |
 | ZFS                | 2.1                                                    |
 | git                | 2.0, for Gitea; on Windows and macOS the machine's own |
 | Windows PowerShell | 5.1, for the file share on Windows                     |
-| macOS              | 12, for the file share on macOS                        |
+| macOS              | 12, for the file share on macOS; 13, for Containers    |
+| Windows            | 10 build 19041, for Containers on Windows              |

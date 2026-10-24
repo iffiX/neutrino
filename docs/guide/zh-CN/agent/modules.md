@@ -27,9 +27,9 @@ AI 工具这一块的用法，见[把一台机器的 AI 工具指向网关](./mo
 
 列表末尾的 **+** 打开模块选择器。勾选一项，这台机器就多一个标签；取消勾选，标签就去掉。
 
-![desktop 的模块选择器，容器、ZFS 存储和 code-server 是灰的](/guide/zh/modules_picker_greyed.webp)
+![desktop 的模块选择器，ZFS 存储和 code-server 是灰的](/guide/zh/modules_picker_greyed.webp)
 
-机器的系统跑不了的模块，在选择器里是灰的，写着 **这台机器的系统不支持**。比如 Windows 机器上，容器、ZFS 存储和 code-server 是灰的。各系统能跑哪些模块，见[支持的平台](../reference/platforms.md#各系统能用的模块)。
+机器的系统跑不了的模块，在选择器里是灰的，写着 **这台机器的系统不支持**。比如 Windows 机器上，ZFS 存储和 code-server 是灰的。各系统能跑哪些模块，见[支持的平台](../reference/platforms.md#各系统能用的模块)。
 
 **终端** 和 **远程桌面** 用到的程序在被控端的安装包里，所以每台受管机器都有这两个标签，**+** 选择器里没有它们。这两个标签只有状态和设置，没有安装、启动、停止、卸载、配置按钮。
 

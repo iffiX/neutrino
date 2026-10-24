@@ -65,6 +65,7 @@ Linux 上，配置目录是 `/etc/neutrino/hub`，状态目录是 `/var/lib/neut
 | 在 **设置** 页检查更新，或运行 `nhub update`            | GitHub                                                                                                         |
 | 装 CloudCLI                                             | nodejs.org 和 npmjs.org，取 Node.js 和 npm 包                                                                  |
 | 装 code-server                                          | GitHub                                                                                                         |
+| 在 Windows 或 macOS 上装容器模块                        | GitHub 上 WSL、Podman 和 Podman 虚拟机映像的发布                                                               |
 | 机器的 AI 工具第一次用到 cc-switch                      | GitHub 上 cc-switch 的发布                                                                                     |
 | 装其他模块                                              | 各模块的发布方                                                                                                 |
 | 开着 NetBird、EasyTier 或 SSH 中继                      | NetBird 的管理服务器、EasyTier 控制台或碰头点、你的中继服务器                                                  |

@@ -97,7 +97,7 @@ On the **Web** and **Ports** pages, **Configure** on a row opens the **Local por
 
 ## Web
 
-The **Web** page lists every web address the joined hubs publish: Gitea, VS Code, code-server, CloudCLI, Codeg, and addresses declared on a hub's **Services** page. The line under each address names the hub, the machine and the module, such as **from hub:server:Gitea**.
+The **Web** page lists every web address the joined hubs publish: Gitea, VS Code, code-server, CloudCLI, Codeg, containers' web ports, and addresses declared on a hub's **Services** page. The line under each address names the hub, the machine and the module, such as **from hub:server:Gitea**.
 
 - Select **Open** on the entry. The button reads **Opening…**, the client makes the entry's forward, and the page opens in your browser.
 
@@ -105,7 +105,7 @@ The **Web** page lists every web address the joined hubs publish: Gitea, VS Code
 
 ## Ports
 
-The **Ports** page relays a port a hub publishes to this computer's loopback address. An entry is a container's host port, or a TCP or UDP port declared on the hub's **Services** page.
+The **Ports** page relays a port a hub publishes to this computer's loopback address. An entry is a container's host port that the hub lists as a port, or a TCP or UDP port declared on the hub's **Services** page.
 
 - Select **Connect** on the entry.
 

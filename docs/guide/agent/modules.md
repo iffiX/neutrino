@@ -23,7 +23,7 @@ The list comes in one order: **File share**, **Terminal**, **Remote desktop**, *
 
 The **+** at the end of the list opens the module picker, where a check adds a module's tab for this machine. A module the machine's system cannot run is greyed there and reads **This machine's system cannot run it**.
 
-![The module picker of a Windows machine, with Containers, ZFS storage and code-server greyed out](/guide/en/modules_picker_greyed.webp)
+![The module picker of a Windows machine, with ZFS storage and code-server greyed out](/guide/en/modules_picker_greyed.webp)
 
 The agent's own package includes [Terminal](./modules/terminal.md) and [Remote desktop](./modules/remote_desktop.md), so every machine has those two tabs and the **+** picker leaves them out. Their tabs have no **Install**, **Start**, **Stop**, **Uninstall**, **Configure** or output box.
 
