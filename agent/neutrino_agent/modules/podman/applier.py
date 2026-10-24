@@ -11,6 +11,7 @@ Not pure: writes unit files, runs podman and drives systemd.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
+import contextlib
 import ipaddress
 import json
 import os
@@ -142,21 +143,29 @@ def container_applier() -> "PodmanUnitApplier":
     """The applier for whichever files :func:`container_renderer` produced."""
     if is_quadlet_supported():
         return PodmanUnitApplier(directory=PODMAN_QUADLET_DIR, suffix=".container")
-    return PodmanUnitApplier(directory=PODMAN_UNIT_DIR, suffix=".service")
+    return PodmanUnitApplier(
+        directory=PODMAN_UNIT_DIR, suffix=".service", is_enabled_by_systemctl=True
+    )
 
 
 class PodmanUnitApplier:
     """Installs rendered container units and reconciles systemd with them."""
 
-    def __init__(self, *, directory: str, suffix: str):
+    def __init__(
+        self, *, directory: str, suffix: str, is_enabled_by_systemctl: bool = False
+    ):
         """
         Args:
             directory: Where the files are written.
             suffix: What the rendered files are called, ``.container`` for
                 Quadlet and ``.service`` without it.
+            is_enabled_by_systemctl: Whether a unit that starts with the
+                box is turned on with ``systemctl enable``: a plain unit;
+                Quadlet's generator links a ``.container`` file itself.
         """
         self._directory = directory
         self._suffix = suffix
+        self._is_enabled_by_systemctl = is_enabled_by_systemctl
 
     @property
     def directory(self) -> str:
@@ -167,7 +176,9 @@ class PodmanUnitApplier:
         """Write the rendered files, drop stale ones, and recreate what changed.
 
         Only files carrying the generated marker are ever removed: a file a
-        person wrote by hand beside these is theirs.
+        person wrote by hand beside these is theirs. A plain unit is
+        enabled when its container starts with the box and disabled when
+        it does not.
 
         Args:
             rendered: File contents keyed by file name.
@@ -195,6 +206,11 @@ class PodmanUnitApplier:
             run(["systemctl", "disable", "--now", unit], is_checked=False)
             os.unlink(os.path.join(self._directory, file_name))
             changed.append(f"-{file_name}")
+        if self._is_enabled_by_systemctl:
+            for file_name in rendered:
+                name = file_name[: -len(self._suffix)]
+                verb = "enable" if name in autostart_names else "disable"
+                run(["systemctl", verb, "--no-reload", f"{name}.service"])
         run(["systemctl", "daemon-reload"])
         for file_name in rendered:
             if file_name not in changed:
@@ -212,6 +228,16 @@ class PodmanUnitApplier:
         for file_name in self.generated_names():
             unit = f"{file_name[: -len(self._suffix)]}.service"
             run(["systemctl", "stop", unit], is_checked=False)
+
+    def remove_all(self) -> None:
+        """Stop every generated unit, disable a plain one, and delete its file."""
+        self.stop_all()
+        for file_name in self.generated_names():
+            if self._is_enabled_by_systemctl:
+                unit = f"{file_name[: -len(self._suffix)]}.service"
+                run(["systemctl", "disable", "--no-reload", unit], is_checked=False)
+            with contextlib.suppress(OSError):
+                os.unlink(os.path.join(self._directory, file_name))
 
     def generated_names(self) -> list:
         """The rendered files this applier owns in its directory."""

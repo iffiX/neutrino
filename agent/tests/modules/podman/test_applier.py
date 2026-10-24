@@ -118,6 +118,64 @@ def test_a_changed_non_autostart_container_restarts_only_if_running(
     assert ["systemctl", "restart", "web.service"] in commands.calls
 
 
+def test_a_plain_unit_is_enabled_with_the_box_and_disabled_without_at_each_apply(
+    commands, tmp_path
+):
+    directory = tmp_path / "system"
+    applier = PodmanUnitApplier(
+        directory=str(directory), suffix=".service", is_enabled_by_systemctl=True
+    )
+    files = {"web.service": rendered("web"), "tool.service": rendered("tool")}
+
+    applier.apply(files, autostart_names=["web"])
+    first = list(commands.calls)
+    commands.calls.clear()
+    applier.apply(files, autostart_names=["web"])
+
+    reload_at = first.index(["systemctl", "daemon-reload"])
+    assert (
+        first.index(["systemctl", "enable", "--no-reload", "web.service"]) < reload_at
+    )
+    assert (
+        first.index(["systemctl", "disable", "--no-reload", "tool.service"]) < reload_at
+    )
+    assert ["systemctl", "enable", "--no-reload", "web.service"] in commands.calls
+    assert ["systemctl", "disable", "--no-reload", "tool.service"] in commands.calls
+
+
+def test_a_quadlet_file_is_neither_enabled_nor_disabled(commands, tmp_path):
+    applier = PodmanUnitApplier(directory=str(tmp_path), suffix=".container")
+
+    applier.apply({"web.container": rendered("web")}, autostart_names=["web"])
+
+    assert not any(call[1] in ("enable", "disable") for call in commands.calls)
+
+
+def test_only_the_plain_unit_applier_enables(commands):
+    commands.answers[("/usr/bin/podman", "--version")] = (0, "podman version 4.3.1\n")
+    assert container_applier()._is_enabled_by_systemctl is True
+
+    commands.answers[("/usr/bin/podman", "--version")] = (0, "podman version 4.4.0\n")
+    assert container_applier()._is_enabled_by_systemctl is False
+
+
+def test_remove_all_stops_disables_and_deletes_a_plain_unit(commands, tmp_path):
+    directory = tmp_path / "system"
+    directory.mkdir()
+    (directory / "web.service").write_text(rendered("web"))
+    (directory / "hand.service").write_text("[Service]\nmine\n")
+
+    PodmanUnitApplier(
+        directory=str(directory), suffix=".service", is_enabled_by_systemctl=True
+    ).remove_all()
+
+    assert commands.calls == [
+        ["systemctl", "stop", "web.service"],
+        ["systemctl", "disable", "--no-reload", "web.service"],
+    ]
+    assert sorted(path.name for path in directory.iterdir()) == ["hand.service"]
+
+
 def test_stop_all_takes_down_every_generated_unit_and_keeps_the_files(
     commands, tmp_path
 ):

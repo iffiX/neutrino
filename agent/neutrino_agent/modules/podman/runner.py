@@ -15,7 +15,6 @@ Not pure: drives podman and systemd through the applier.
 from __future__ import annotations
 
 import contextlib
-import os
 import subprocess
 
 from neutrino_agent.exceptions import ModuleApplyError
@@ -112,15 +111,12 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
     def remove_configuration(self) -> None:
         """Take the rendered units and the mirror drop-in away; keep the data.
 
-        Every declared container is stopped and its unit file removed;
-        images, volumes and containers somebody started by hand stay.
+        Every declared container is stopped, its plain unit disabled and
+        its unit file removed; images, volumes and containers somebody
+        started by hand stay.
         """
         self._config = None
-        applier = container_applier()
-        applier.stop_all()
-        for file_name in applier.generated_names():
-            with contextlib.suppress(OSError):
-                os.unlink(os.path.join(applier.directory, file_name))
+        container_applier().remove_all()
         with contextlib.suppress(OSError, subprocess.SubprocessError):
             run(["systemctl", "daemon-reload"], is_checked=False)
         PodmanRegistriesApplier().apply("")
