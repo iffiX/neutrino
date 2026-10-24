@@ -395,6 +395,12 @@ same component is every such list; none gets a table or a second idiom.
 | The list is part of its panel's draft: an added or removed row lights the frame, and the apply bar writes the whole list. | A list inside a frame stages, as "Inline forms" states. |
 | A row keeps the order it was added in, and that order is the order the backend uses. Reordering is removing a row and adding it again. | The chips have no drag handle, and the order is rarely changed. |
 | A blank row or a duplicate is dropped at the add; what the value means is checked by the backend, and its refusal shows on the apply bar. | The editor keeps the list tidy and the backend owns the rules. |
+| An editor can have **Browse…** after its **Add**: it opens the path window (`directory_picker_modal.tsx`) on the device, at the folder the input names or at the machine's root, and writes the folder chosen into the input with `:` after it, for the person to finish the row and add it. | A volume is `<folder>:<path in the container>`, and only the first half is a folder of the machine. |
+
+The container editor's **Volumes** has **Browse…** on every system, and its
+placeholder is a volume in the machine's own form,
+`ui.containers.volume_placeholder_linux`, `_windows` or `_darwin`
+([ui_text.md](ui_text.md), "The Containers tab's words").
 
 Three lists of resolvers use it, each row one address or `<address>:<port>`,
 an IPv6 address in brackets when it has a port; the page sends each row as
@@ -574,6 +580,15 @@ press, and **Install** is live as for any absent module
 ([agent.md](agent.md), "An install that leaves nothing behind"). No module
 has a **Cancel** button.
 
+A module reported `installing` with a code shows the code's words as a
+notice at the top of its tab, and its buttons stay disabled as for any
+module in transit. With `reboot_required` the notice has **Restart now**
+(`ui.modules.restart_now`), which asks through `useConfirm`
+(`ui.modules.restart_title`, `ui.modules.restart_body`) and sends `POST
+/api/hub/device/reboot`. The agent never restarts the machine itself, and
+the install goes on after the restart with no press ([agent.md](agent.md),
+"Status is typed").
+
 A module whose last report is `failed` keeps the button of what it was
 asked for live: **Install** while its `want` is `installed`, **Start** while
 it is `running`, **Stop** while it is `stopped`, and **Uninstall** always.
@@ -609,6 +624,41 @@ and links to this tab instead of offering a way to share.
 A tab whose module the machine reports `unsupported`, an agent older than the
 module, keeps its state word `unsupported` and draws its panel with every
 field, the switch and the apply bar disabled, and no sentence added.
+
+The Containers tab on Windows and macOS opens with **Run settings**
+(`components/containers_run_settings.tsx`), above **Running now**,
+**Registry mirrors** and **Declared containers**, as the mode panel opens
+the Network page: nothing under it works before the Podman machine runs.
+On Linux the tab has no Run settings, since root runs Podman there
+([agent/modules/containers.md](agent/modules/containers.md)).
+
+| Control | Idiom |
+| --- | --- |
+| **Account** | a picker over the human accounts the machine reported, as `instances_panel.tsx` draws one |
+| **Windows login for {account}** | on Windows alone, a `VaultPicker` that adds a login in place, with no link to the Credentials page |
+| **CPUs**, **Memory (GiB)** | number fields, 0 for Podman's default, `ui.containers.run_default_hint` under them |
+| **Disk limit (GiB)** | a number field whose least value is the disk's size now, as the machine reported it, with `ui.containers.run_disk_hint` under it; it follows Podman Desktop's **Edit** form for a machine, where the disk size only grows |
+
+The group is one `settings_group` with its own apply bar,
+`ui.containers.run_apply`. While it is dirty, the bar's warning is
+`ui.containers.run_restart_warning` when the CPUs or the memory changed,
+followed on Windows by `ui.containers.run_wsl_warning`, which a changed
+disk also shows there; and `ui.containers.run_account_warning` when the
+account changed. Until the stored Run settings name an account, the three
+panels under it draw `ui.containers.run_needed` in place of their content,
+and their apply bars are disabled.
+
+The container editor has a **Services** row under its three lists,
+**Ports**, **Volumes** and **Environment**, on every system: one line per
+host port the draft's **Ports** publishes, in that list's order. A line
+holds the port, a picker of **Auto**, **Web** and **Port**, and with **Web**
+a choice of **http** or **https**, with **Port** two checkboxes, **TCP** and
+**UDP**, at least one checked. **Auto** shows what the machine detected,
+`ui.containers.service_detected` with the scheme or `tcp`, or
+`ui.containers.service_pending` before the container runs. A line appears
+with a port added to **Ports** and goes with a port removed; the row is part
+of the editor's draft, and the apply bar writes it with the container
+([protocol.md](protocol.md), "The modules section, one entry per module").
 
 The AI tools part follows the client's AI page ([client.md](client.md), "The
 AI page") and adds nothing to it:

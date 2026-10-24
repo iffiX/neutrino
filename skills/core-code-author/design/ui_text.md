@@ -263,6 +263,58 @@ Chinese.
 | `code.rdp_takeover_failed` | Remote desktop could not start at {step}: {detail} | 远程桌面在 {step} 这一步没能启动：{detail} |
 | `code.rdp_restore_failed` | Remote desktop could not put back the machine's RustDesk at {step}: {detail} | 远程桌面在 {step} 这一步没能还原机器原来的 RustDesk：{detail} |
 
+## The Containers tab's words
+
+The Run settings, the container editor's **Services** row, the restart
+notice and the codes Containers adds. [ui_behavior.md](ui_behavior.md),
+"The Modules page", places them. The `ui.*` keys are in
+`locales/<language>/modules.json` and the `code.*` keys in `codes.json`;
+the agent's `cli/wording.py` words the same codes in English.
+
+| Key | English | Chinese |
+| --- | --- | --- |
+| `ui.containers.run_title` | Run settings | 运行设置 |
+| `ui.containers.run_account` | Account | 账户 |
+| `ui.containers.run_account_hint` | The account whose Podman machine runs the containers. | 用这个账户的 Podman 虚拟机运行容器。 |
+| `ui.containers.run_login` | Windows login for {account} | {account} 的 Windows 登录 |
+| `ui.containers.run_login_hint` | Windows uses this login to start the machine at boot. | Windows 用这个登录在开机时启动虚拟机。 |
+| `ui.containers.run_cpus` | CPUs | CPU 数 |
+| `ui.containers.run_memory` | Memory (GiB) | 内存（GiB） |
+| `ui.containers.run_disk` | Disk limit (GiB) | 磁盘上限（GiB） |
+| `ui.containers.run_default_hint` | 0 uses Podman's default: half the CPUs, 2 GiB of memory, a 100 GiB disk. | 填 0 用 Podman 的默认值：一半的 CPU、2 GiB 内存、100 GiB 磁盘。 |
+| `ui.containers.run_disk_hint` | The disk only grows. It is {current} GiB now. | 磁盘只能改大，现在是 {current} GiB。 |
+| `ui.containers.run_apply` | Apply run settings | 应用运行设置 |
+| `ui.containers.run_apply_hint` | Starts this account's Podman machine, and creates it the first time. | 启动这个账户的 Podman 虚拟机，第一次会先新建。 |
+| `ui.containers.run_restart_warning` | The machine restarts, and its containers stop for a moment. | 虚拟机会重启，容器会停一会儿。 |
+| `ui.containers.run_wsl_warning` | Every WSL system of this account restarts with the new settings. | 这个账户下的所有 WSL 系统都会重启并使用新设置。 |
+| `ui.containers.run_account_warning` | The old account's machine stops; its images and named volumes stay there. | 旧账户的虚拟机会停下，里面的镜像和命名卷留在原处。 |
+| `ui.containers.run_needed` | Choose an account under Run settings first. | 先在“运行设置”里选一个账户。 |
+| `ui.containers.browse` | Browse… | 浏览… |
+| `ui.containers.volume_placeholder_linux`, `ui.containers.volume_placeholder_windows`, `ui.containers.volume_placeholder_darwin` | `/srv/share:/data`, `C:\data:/data`, `/Users/me/data:/data` | `/srv/share:/data`、`C:\data:/data`、`/Users/me/data:/data` |
+| `ui.containers.services` | Services | 服务 |
+| `ui.containers.service_auto`, `ui.containers.service_web`, `ui.containers.service_port` | Auto, Web, Port | 自动、网页、端口 |
+| `ui.containers.service_http`, `ui.containers.service_https`, `ui.containers.service_tcp`, `ui.containers.service_udp` | http, https, TCP, UDP | http、https、TCP、UDP |
+| `ui.containers.service_detected` | Auto: {kind} detected | 自动：检测到 {kind} |
+| `ui.containers.service_pending` | Auto: detected after the container starts | 自动：容器运行后检测 |
+| `ui.containers.services_hint` | Web shows on the clients' Web page, Port on their Ports page. | 网页显示在客户端的“网页”页，端口显示在“端口”页。 |
+| `ui.modules.restart_now` | Restart now | 立即重启 |
+| `ui.modules.restart_title` | Restart {device} | 重启 {device} |
+| `ui.modules.restart_body` | The machine restarts now, and every program open on it closes. | 这台机器会立即重启，上面打开的程序都会关闭。 |
+| `ui.modules.restart_confirm` | Restart | 重启 |
+| `code.reboot_required` | Windows needs a restart to finish turning on WSL; the install goes on after it. | Windows 需要重启才能装好 WSL，重启后会接着安装。 |
+| `code.service_protocol_none` | Port {port} needs TCP, UDP or both. | 端口 {port} 至少要勾选 TCP 或 UDP。 |
+| `code.windows_feature_failed` | Windows could not turn on {feature} (exit code {exit_code}). | Windows 没能打开 {feature}（退出码 {exit_code}）。 |
+| `code.podman_install_failed` | The {component} installer failed (exit code {exit_code}). | {component} 安装包没能装上（退出码 {exit_code}）。 |
+| `code.machine_account_missing` | Choose the account that runs the containers. | 选一个运行容器的账户。 |
+| `code.machine_cpus_invalid` | CPUs must be between 0 and {max}. | CPU 数要在 0 到 {max} 之间。 |
+| `code.machine_memory_invalid` | Memory must be between 0 and {max} GiB. | 内存要在 0 到 {max} GiB 之间。 |
+| `code.machine_disk_shrink` | The disk is {current_gib} GiB and only grows; {disk_gib} GiB is smaller. | 磁盘现在是 {current_gib} GiB，只能改大，{disk_gib} GiB 比它小。 |
+| `code.volume_not_shared` | The volume {volume} of {name} is outside what the Podman machine shares: a fixed drive on Windows; /Users, /private or /var/folders on macOS. | 容器 {name} 的卷 {volume} 不在 Podman 虚拟机共享的范围内：Windows 上是本机的固定磁盘，macOS 上是 /Users、/private 或 /var/folders。 |
+| `code.machine_image_missing` | The Podman machine image is not on this machine; install the module again. | 这台机器上没有 Podman 虚拟机映像，重新安装这个模块。 |
+| `code.machine_init_failed` | Podman could not create the machine: {detail} | Podman 没能新建虚拟机：{detail} |
+| `code.machine_set_failed` | Podman could not change the machine: {detail} | Podman 没能修改虚拟机：{detail} |
+| `code.machine_unreachable` | The Podman machine does not answer: {detail} | Podman 虚拟机没有响应：{detail} |
+
 ## The Services page's health words
 
 A declared row's state word, beside the still dot the page uses for no
