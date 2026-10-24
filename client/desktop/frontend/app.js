@@ -2681,6 +2681,11 @@ function carriedSource(core, version, edition) {
 // Which picker is open, by the id the caller gave it. Kept outside the
 // element so a redraw finds it again.
 let openPicker = '';
+// The gap between the field and its list, the margin the list keeps from
+// the edge of the room it opens in, and the least height it takes: two rows.
+const PICKER_GAP_PX = 4;
+const PICKER_EDGE_PX = 12;
+const PICKER_LIST_LEAST_PX = 72;
 
 // The page's one dropdown: a field that opens a list of at most five rows
 // and scrolls past that, after the hub's own credential picker. The list
@@ -2731,6 +2736,8 @@ function picker(id, options, chosen, onPick, isDisabled) {
       list.appendChild(row);
     }
     wrap.appendChild(list);
+    if (wrap.isConnected) placeList(wrap, list);
+    else requestAnimationFrame(() => placeList(wrap, list));
   }
   field.onclick = (event) => {
     event.stopPropagation();
@@ -2738,6 +2745,32 @@ function picker(id, options, chosen, onPick, isDisabled) {
   };
   if (openPicker === id && !isDisabled) open();
   return wrap;
+}
+
+// The list opens under its field, and above it when less room is free under
+// the field than the list needs and more is free above; the room is the
+// window's and every scrolling box's around the field. The list is no
+// taller than the room on its side, and two rows at least.
+function placeList(wrap, list) {
+  if (!wrap.isConnected) return;
+  let top = 0;
+  let bottom = window.innerHeight;
+  for (let box = wrap.parentElement; box; box = box.parentElement) {
+    if (getComputedStyle(box).overflowY === 'visible') continue;
+    const rect = box.getBoundingClientRect();
+    top = Math.max(top, rect.top);
+    bottom = Math.min(bottom, rect.bottom);
+  }
+  const field = wrap.getBoundingClientRect();
+  const below = bottom - field.bottom - PICKER_GAP_PX - PICKER_EDGE_PX;
+  const above = field.top - top - PICKER_GAP_PX - PICKER_EDGE_PX;
+  const height = list.offsetHeight;
+  const isAbove = below < height && above > below;
+  const room = isAbove ? above : below;
+  list.classList.toggle('above', isAbove);
+  if (room < height) {
+    list.style.maxHeight = Math.max(PICKER_LIST_LEAST_PX, room) + 'px';
+  }
 }
 
 // A click anywhere else closes whichever list is open.

@@ -680,6 +680,23 @@ def test_the_pickers_list_stops_at_five_rows_and_scrolls():
     assert "max-height: 163px" in PAGE_CSS
 
 
+def test_a_pickers_list_opens_above_its_field_when_there_is_no_room_under_it():
+    """The theme picker at the foot of Settings: every choice stays in the window."""
+    picker_body = PAGE_JS[
+        PAGE_JS.index("function picker(") : PAGE_JS.index("function placeList(")
+    ]
+    place = PAGE_JS.split("function placeList(wrap, list) {")[1].split("\n}\n")[0]
+    above = PAGE_CSS.split(".picker_list.above {")[1].split("}")[0]
+
+    assert "placeList(wrap, list)" in picker_body
+    assert "window.innerHeight" in place
+    assert "overflowY === 'visible'" in place
+    assert "below < height && above > below" in place
+    assert "list.classList.toggle('above', isAbove);" in place
+    assert "Math.max(PICKER_LIST_LEAST_PX, room)" in place
+    assert "top: auto" in above and "bottom: calc(100% + 4px)" in above
+
+
 # --- busy states spin ---
 
 

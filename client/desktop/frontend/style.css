@@ -329,6 +329,9 @@ a.about_link { color: var(--color-accent); text-decoration: none; cursor: pointe
         border: 1px solid var(--color-border); border-radius: 8px;
         background: var(--color-bg);
         box-shadow: 0 12px 28px -12px var(--color-shadow); }
+/* The list above its field, when there is no room under it. */
+.picker_list.above { top: auto; bottom: calc(100% + 4px);
+        box-shadow: 0 -12px 28px -12px var(--color-shadow); }
 .picker_row { display: block; width: 100%; padding: 8px 10px; border: none;
         border-radius: 6px; background: none; color: var(--color-text);
         cursor: pointer;
