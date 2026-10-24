@@ -31,14 +31,34 @@ service names:
    machine's own loopback, `127.0.0.1`, because an empty value means
    upstream's public server; and the seat password as `password = '<p>'` in
    the service's own `RustDesk.toml`, since `--password` from a copy outside
-   the standard place sets nothing. The seat's host takes the password from
-   the service and keeps it in the seat's `RustDesk.toml` in its own
-   encrypted form, so the agent writes no password there. Every file it
-   writes is copied to `kept/` before its first write and put back when the
-   switch goes off.
+   the standard place sets nothing. The agent writes no password into the
+   seat's `RustDesk.toml`. Every file it writes is copied to `kept/` before
+   its first write and put back when the switch goes off.
 1. It registers and starts its copy under RustDesk's names, as the
    platform table's "RustDesk" row says for each system, so the system's own
    service manager brings the host back after a restart and at each login.
+1. On Linux and macOS, with somebody at the screen, it reads the service's
+   `RustDesk.toml` until RustDesk has written an id and a key pair there.
+   It reads every half second, for at most 30 seconds. When that file then
+   holds an empty password or another one, the agent stops the host, writes
+   the seat password again and starts the host.
+
+**RustDesk writes the seat's settings over the service's.** On Linux and
+macOS the seat's host copies the service's settings, password included,
+only when the service's `RustDesk.toml` holds an id and a key pair. Before
+that, the seat's host makes its own key pair and sends its settings to the
+service, which writes them over that file. Those settings hold the seat's
+own password, empty on a machine where RustDesk never ran.
+
+While the switch is on, the agent reads the service's `RustDesk.toml` again
+at each report. When that file holds an id and a key pair but not the seat
+password, the agent rewrites the password the same way. While the password
+is the seat password, the check is one file read.
+
+RustDesk stores the password sealed: `00`, then base64 of the format byte 1,
+a 24-byte nonce and the secretbox ciphertext. The key is the machine id, cut
+or padded with zeros to 32 bytes, and the agent opens the value with it to
+compare.
 
 With the switch off, the agent's copy does not run: it stops and removes what
 `registered.json` names, kills every host of its copy, puts back what `kept/`
