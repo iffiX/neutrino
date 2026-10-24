@@ -191,6 +191,24 @@ one table"). The edition table's own test, `hub/tests/test_edition.py`, reads
 every Python file of the hub and fails on an import of a left-out package
 from outside that feature's files and the table.
 
+## Coverage
+
+The `python` job of `ci.yml` runs the hub's and the agent's suites, and the
+`client` job runs the client's. Each suite runs with `--cov` over its own
+package (`neutrino_hub`, `neutrino_agent`, `neutrino_client`) and writes
+`coverage.xml` in its block's directory. The `agent_oldest_python` job and the
+mainland jobs run their suites without coverage.
+
+`codecov/codecov-action` uploads each file to Codecov under the flag `hub`,
+`agent` or `client`. It signs in with the job's GitHub OIDC token, which needs
+`id-token: write` on the job. Each upload's `network_filter` names its
+package's directory, because the three packages share file names such as
+`cli/entry.py`.
+
+A job passes or fails on its tests alone, whatever its coverage. pytest-cov
+comes with the hub's dev extra, and the `client` job installs it by name
+beside pytest.
+
 ## The integration block
 
 Flat, one file per concern, because these mirror machine states rather than

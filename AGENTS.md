@@ -67,7 +67,7 @@ and leave this pointing at it.**
 ## Commands
 
 ```bash
-pip install -e "hub[dev]"            # nhub, black, pytest, detect-secrets
+pip install -e "hub[dev]"            # nhub, black, pytest, pytest-cov, detect-secrets
 pip install -e agent                 # nagent
 pip install -e client/desktop        # nclient
 
