@@ -235,6 +235,8 @@ AGENT_ANSWER_VERB = "answer"
 AGENT_WINDOWS_PROGRAM_SUBDIR = ("Neutrino", "agent")
 AGENT_WINDOWS_PROGRAM_FILES_DEFAULT = "C:\\Program Files"
 AGENT_WINDOWS_BINARY_NAME = "nagent.exe"
+# Where Windows is installed when ``SystemRoot`` is unset.
+AGENT_WINDOWS_SYSTEM_ROOT_DEFAULT = "C:\\Windows"
 
 # The local control channel: a socket the agent serves as root. Its file is
 # 0600 under a 0700 directory, so only root reaches it.

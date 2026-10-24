@@ -76,16 +76,23 @@ from neutrino_agent.modules.shared.subprocess_run import command_detail
 from neutrino_agent.modules.shared.unpacked_tree import remove_tree
 
 
-def podman_system_applier_for(platform) -> PodmanSystemApplier:
+def podman_system_applier_for(platform, *, log=print) -> PodmanSystemApplier:
     """The applier that does this system's part around a Podman machine.
 
     Args:
         platform: The computer's platform.
+        log: Called with each progress line.
 
     Returns:
-        The system's applier; the base, which refuses every step, until one
-        is written for the system.
+        The system's applier; the base, which refuses every step, on a
+        system with none.
     """
+    if platform.os_name == "windows":
+        from neutrino_agent.modules.podman.windows_applier import (
+            PodmanWindowsApplier,
+        )
+
+        return PodmanWindowsApplier(platform=platform, log=log)
     return PodmanSystemApplier()
 
 
@@ -248,7 +255,9 @@ class PodmanMachineModuleRunner(ModuleRunner):
         """
         super().__init__(platform=platform, log=log, publish=publish)
         self._system = (
-            system if system is not None else podman_system_applier_for(platform)
+            system
+            if system is not None
+            else podman_system_applier_for(platform, log=self._log)
         )
         self._service_machine = (
             service_machine

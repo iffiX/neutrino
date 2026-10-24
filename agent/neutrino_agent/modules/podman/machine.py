@@ -393,6 +393,28 @@ class PodmanMachine:
             environment={PODMAN_MACHINE_PROVIDER_VARIABLE: self.provider},
         )
 
+    def as_account(self, step, *arguments):
+        """Run one step of the agent's own code as the machine's account.
+
+        Args:
+            step: Called with ``arguments``; what it reaches, it reaches
+                with the account's rights.
+            *arguments: What the step is called with.
+
+        Returns:
+            What the step returned.
+
+        Raises:
+            ModuleApplyError: ``credential_invalid`` when Windows refuses the
+                login.
+            OSError: When the platform cannot act as the account.
+            PlatformUnsupportedError: When the platform cannot act as an
+                account inside the agent's own process.
+        """
+        return self._platform.as_account(
+            self.account, step, *arguments, password=self._password
+        )
+
     def shell(self, script: str) -> "subprocess.CompletedProcess":
         """Run one root script in the machine, read by ``sh -s`` on standard input.
 

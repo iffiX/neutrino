@@ -116,6 +116,7 @@ SURVIVING_MODULES = {
     "neutrino_agent.modules.podman.renderer",
     "neutrino_agent.modules.podman.runner",
     "neutrino_agent.modules.podman.service_probe",
+    "neutrino_agent.modules.podman.windows_applier",
     "neutrino_agent.modules.remote_desktop",
     "neutrino_agent.modules.remote_desktop.config",
     "neutrino_agent.modules.remote_desktop.constants",

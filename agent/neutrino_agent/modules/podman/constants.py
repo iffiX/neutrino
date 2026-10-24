@@ -108,6 +108,54 @@ PODMAN_MACHINE_KEEPER_NAMES = {"windows": "keeper.cmd", "darwin": "keeper.sh"}
 PODMAN_MACHINE_KEEPER_TITLE = "Podman machine keeper"
 PODMAN_MACHINE_WINDOWS_SOCKET = r"%TEMP%\podman\podman-machine-default-api.sock"
 
+# Podman on Windows: its program under ``%ProgramFiles%``, the Windows
+# features WSL 2 needs, and the properties Podman's msi is installed with,
+# for every account and on WSL.
+PODMAN_WINDOWS_BINARY_PARTS = ("Podman", "podman.exe")
+PODMAN_WINDOWS_FEATURES = (
+    "VirtualMachinePlatform",
+    "Microsoft-Windows-Subsystem-Linux",
+)
+PODMAN_WINDOWS_PODMAN_PROPERTIES = ("ALLUSERS=1", "MACHINE_PROVIDER=wsl")
+# The component that holds the WSL msi, and the WSL the manifest's ``wsl``
+# component pins: a WSL installed at this version or newer is kept.
+PODMAN_WINDOWS_WSL_COMPONENT = "wsl"
+PODMAN_WINDOWS_WSL_VERSION = "3.0.3"
+# The products as Windows Installer lists them under the Uninstall key.
+PODMAN_WINDOWS_UNINSTALL_KEY = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall"
+PODMAN_WINDOWS_WSL_PRODUCT = "Windows Subsystem for Linux"
+PODMAN_WINDOWS_PODMAN_PRODUCT = "Podman CLI"
+# What msiexec exits with for another version of a product already
+# installed, and for a product that is not installed.
+PODMAN_WINDOWS_OTHER_VERSION_CODE = 1638
+PODMAN_WINDOWS_UNKNOWN_PRODUCT_CODE = 1605
+# The key Windows holds while servicing waits for a restart.
+PODMAN_WINDOWS_RESTART_KEY = (
+    "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Component Based Servicing"
+    "\\RebootPending"
+)
+# The reboot mark in the module's directory, holding the boot time of the
+# boot that owes the restart; two boot times this close are one boot.
+PODMAN_WINDOWS_REBOOT_MARK = "reboot_mark"
+PODMAN_WINDOWS_BOOT_SLACK_S = 30
+PODMAN_WINDOWS_DISM_TIMEOUT_S = 900
+PODMAN_WINDOWS_WSL_TIMEOUT_S = 300
+# Under the account's home: its WSL settings, the section and the keys the
+# agent writes there, and the WSL disk of its default machine.
+PODMAN_WINDOWS_WSLCONFIG = ".wslconfig"
+PODMAN_WINDOWS_WSLCONFIG_SECTION = "wsl2"
+PODMAN_WINDOWS_DISK_PARTS = (
+    ".local",
+    "share",
+    "containers",
+    "podman",
+    "machine",
+    "wsl",
+    "wsldist",
+    PODMAN_MACHINE_NAME,
+    "ext4.vhdx",
+)
+
 # The fields the runner keeps of the last apply, root-only.
 PODMAN_MACHINE_RECORD_FIELDS = (
     "account",
