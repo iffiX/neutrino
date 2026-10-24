@@ -7,6 +7,7 @@ are published for.
 """
 
 import os
+import re
 import subprocess
 import sys
 
@@ -95,6 +96,17 @@ def test_the_agent_tree_is_staged_with_its_version_stamped_in(tmp_path):
     assert (staged / "cli" / "entry.py").is_file()
     assert (staged / "data" / "systemd" / "neutrino_agent.service").is_file()
     assert not list(staged.rglob("__pycache__"))
+
+
+def test_the_time_of_the_build_is_stamped_beside_the_version(tmp_path):
+    """Two builds of one version tell apart by it, so an agent of another
+    build applies every module once again."""
+    namespace = {}
+
+    staged = payload.stage_agent_tree(tmp_path / "site-packages", "9.9.9")
+
+    exec((staged / "_version.py").read_text(), namespace)  # noqa: S102
+    assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", namespace["AGENT_BUILT_AT"])
 
 
 @pytest.mark.parametrize("edition", ["intl", "cn"])

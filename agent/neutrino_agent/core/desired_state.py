@@ -21,17 +21,20 @@ install's or an uninstall's output goes up a ``log {module}`` stream.
 The applied hash is what the hub compares against: it moves to the state's
 hash once no mentioned module's last step failed or waits. Each module's
 entry, and the ``ai_tools`` section, is tried once: the hash of the entry
-last tried is kept per section beside the state on disk, so a change to one
-entry, or a retry mark on it, runs that module's step alone, and an agent
-that starts again tries nothing again. A failure the socket caused keeps no
-hash, so the next state with that entry tries it again. Each step's outcome
-replaces the module's kept failure: ``install_failed`` for an install,
-``failed`` for any other step, nothing for a step that took. A module whose
-last install failed is installed again by its next attempt, and uninstalled
-by an ``absent`` whatever the check finds. The marks hold for one install
-and one binding: the agent's removal, a join and a leave delete them. Modules
-apply one at a time; while one applies, each other module the apply will
-reach whose ``want`` differs from its reported state reads ``queued``. A
+last tried is kept per section beside the state on disk, under the build of
+the agent that tried it, so a change to one entry, or a retry mark on it,
+runs that module's step alone, an agent that starts again tries nothing
+again, and an agent of another build tries every entry once again. A
+failure the socket caused keeps no hash, so the next state with that entry
+tries it again. Each step's outcome replaces the module's kept failure:
+``install_failed`` for an install, ``failed`` for any other step, nothing
+for a step that took. A module whose last install failed is installed again
+by its next attempt, and uninstalled by an ``absent`` whatever the check
+finds. The marks hold for one install, one build and one binding: the
+agent's removal, a join and a leave delete them, and another build reads
+none of them. Modules apply one at a time; while one applies, each other
+module the apply will reach whose ``want`` differs from its reported state
+reads ``queued``. A
 module whose apply waits on an install that still runs is no failure: the
 state is applied again every recheck interval until the install has ended.
 
@@ -49,6 +52,7 @@ import os
 import tempfile
 import threading
 
+from neutrino_agent import AGENT_BUILT_AT, AGENT_VERSION
 from neutrino_agent.constants import (
     AGENT_DESIRED_STATE_PATH,
     AGENT_MODULE_INSTALL_RECHECK_S,
@@ -97,6 +101,9 @@ RETRIED_CODE = "hub_unreachable"
 PENDING_CODE = "install_pending"
 # The file beside the state that keeps the hash last tried, per section.
 TRIED_SUFFIX = ".tried"
+# This agent's build, which the hashes last tried are kept under: its
+# version and the time its package was built.
+AGENT_BUILD = f"{AGENT_VERSION} {AGENT_BUILT_AT}".strip()
 # The state's section for the machine's AI tools, tried like a module.
 AI_TOOLS_SECTION = "ai_tools"
 
@@ -110,12 +117,16 @@ def _section_hash(section) -> str:
 class DesiredStateStore:
     """The last state taken from the hub, on disk."""
 
-    def __init__(self, *, path: str = AGENT_DESIRED_STATE_PATH):
+    def __init__(
+        self, *, path: str = AGENT_DESIRED_STATE_PATH, build: str = AGENT_BUILD
+    ):
         """
         Args:
             path: Where the file lives.
+            build: The agent's build the hashes last tried are kept under.
         """
         self._path = path
+        self._build = build
 
     def read(self) -> dict:
         """The stored state.
@@ -155,22 +166,26 @@ class DesiredStateStore:
             raise
 
     def read_tried(self) -> dict:
-        """The hash of the entry last tried, per section.
+        """The hash of the entry last tried, per section, by this build.
 
         Returns:
             Module name, or ``ai_tools``, to the hash; empty when none is
-            kept, the file cannot be read, or it holds another shape.
+            kept, the file cannot be read, it holds another shape, or
+            another build of the agent kept it.
         """
         try:
             with open(self._path + TRIED_SUFFIX, "r", encoding="utf-8") as stream:
                 held = json.load(stream)
         except (OSError, ValueError):
             return {}
-        if not isinstance(held, dict):
+        if not isinstance(held, dict) or held.get("build") != self._build:
+            return {}
+        hashes = held.get("hashes")
+        if not isinstance(hashes, dict):
             return {}
         return {
             str(name): value
-            for name, value in held.items()
+            for name, value in hashes.items()
             if isinstance(value, str) and value
         }
 
@@ -187,7 +202,8 @@ class DesiredStateStore:
             pass
 
     def write_tried(self, tried: dict) -> None:
-        """Keep the hash of the entry last tried, per section, root-only.
+        """Keep the hash of the entry last tried, per section, root-only,
+        under this build.
 
         Args:
             tried: Module name, or ``ai_tools``, to the hash.
@@ -200,7 +216,11 @@ class DesiredStateStore:
         handle, temporary = tempfile.mkstemp(dir=directory, prefix=".tried_")
         try:
             with os.fdopen(handle, "w", encoding="utf-8") as stream:
-                json.dump(dict(tried), stream, sort_keys=True)
+                json.dump(
+                    {"build": self._build, "hashes": dict(tried)},
+                    stream,
+                    sort_keys=True,
+                )
             os.chmod(temporary, 0o600)
             os.replace(temporary, self._path + TRIED_SUFFIX)
         except BaseException:

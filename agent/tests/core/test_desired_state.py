@@ -13,7 +13,8 @@ unless the socket caused it, the hub's retry mark being such a change with
 the configuration unchanged and never running another module's failed step,
 the modules waiting behind a long step reported ``queued``, a failed install
 that left nothing keeping no hash, the first failure naming the state error,
-the file's mode and its older one-hash shape read as nothing tried, the
+the file's mode and its older shapes read as nothing tried, the hashes kept
+under the agent's build so another build applies every module once again, the
 latest state winning when several arrive, and a state whose apply waits on a
 running install neither applied nor failed and applied again until the
 install has ended.
@@ -913,12 +914,12 @@ def test_the_tried_hash_outlives_a_restart_and_the_same_state_is_not_tried_again
     assert oct(os.stat(str(tmp_path / "desired.json.tried")).st_mode & 0o777) == "0o600"
 
 
-def _agent(runners, tmp_path):
+def _agent(runners, tmp_path, build=desired_state_module.AGENT_BUILD):
     """A fresh agent's applier over the state files under ``tmp_path``."""
     return DesiredStateApplier(
         engine=FakeEngine(runners),
         runners=runners,
-        store=DesiredStateStore(path=str(tmp_path / "desired.json")),
+        store=DesiredStateStore(path=str(tmp_path / "desired.json"), build=build),
         log=lambda message: None,
     )
 
@@ -964,18 +965,55 @@ def test_a_failed_state_still_does_not_loop_after_a_plain_restart(tmp_path):
     assert runner.tries == 1
 
 
-def test_an_upgrade_applies_nothing_again(tmp_path):
-    """An upgrade replaces the package and restarts the agent; it neither
-    removes nor joins, so the mark stands."""
+def test_a_restart_of_the_same_build_applies_nothing_again(tmp_path):
+    """A reinstall of the same package restarts the agent; it neither
+    removes nor joins, and the build is the one that kept the mark."""
     runner = _CountingRunner()
     runners = {"samba": runner}
-    _agent(runners, tmp_path).apply(state(samba="running"))
+    _agent(runners, tmp_path, build="0.6.0 2026-10-24T10:00:00Z").apply(
+        state(samba="running")
+    )
 
-    upgraded = _agent(runners, tmp_path)
-    upgraded.take(state(samba="running"))
-    assert upgraded.settle(5.0)
+    restarted = _agent(runners, tmp_path, build="0.6.0 2026-10-24T10:00:00Z")
+    restarted.take(state(samba="running"))
+    assert restarted.settle(5.0)
 
     assert runner.tries == 1
+
+
+def test_an_agent_of_another_build_applies_every_module_once_again(tmp_path):
+    """An upgrade, or a reinstall of another build of one version, applies
+    each module the state names once, a failed one included, whatever its
+    hash; the build after it keeps the marks again."""
+    samba = _CountingRunner()
+    cloudcli = _CountingRunner(failure=ModuleApplyError("cloudcli_install_failed"))
+    runners = {"samba": samba, "cloudcli": cloudcli}
+    _agent(runners, tmp_path, build="0.6.0 2026-10-24T10:00:00Z").apply(
+        state(samba="running", cloudcli="running")
+    )
+
+    upgraded = _agent(runners, tmp_path, build="0.6.0 2026-10-24T15:00:00Z")
+    assert upgraded._tried == {}
+    upgraded.take(state(samba="running", cloudcli="running"))
+    assert upgraded.settle(5.0)
+
+    assert (samba.tries, cloudcli.tries) == (2, 2)
+    again = _agent(runners, tmp_path, build="0.6.0 2026-10-24T15:00:00Z")
+    again.take(state(samba="running", cloudcli="running"))
+    assert again.settle(5.0)
+    assert (samba.tries, cloudcli.tries) == (2, 2)
+
+
+def test_the_tried_file_names_the_build_that_kept_it(tmp_path):
+    store = DesiredStateStore(path=str(tmp_path / "desired.json"), build="0.6.1 t1")
+    store.write_tried({"samba": "a1"})
+
+    kept = json.loads((tmp_path / "desired.json.tried").read_text())
+
+    assert kept == {"build": "0.6.1 t1", "hashes": {"samba": "a1"}}
+    assert store.read_tried() == {"samba": "a1"}
+    other = DesiredStateStore(path=str(tmp_path / "desired.json"), build="0.6.1 t2")
+    assert other.read_tried() == {}
 
 
 def test_forgetting_the_mark_applies_a_state_already_held(tmp_path):
@@ -1218,7 +1256,7 @@ def test_the_modules_behind_a_long_install_are_queued_until_reached(tmp_path):
     assert held.applied_hash == "h1"
 
 
-def test_a_tried_file_of_the_older_one_hash_shape_reads_as_nothing_tried(tmp_path):
+def test_a_tried_file_of_an_older_shape_reads_as_nothing_tried(tmp_path):
     (tmp_path / "desired.json.tried").write_text("1234")
     runner = _CountingRunner()
     runners = {"samba": runner}
@@ -1230,7 +1268,9 @@ def test_a_tried_file_of_the_older_one_hash_shape_reads_as_nothing_tried(tmp_pat
 
     assert runner.tries == 1
     kept = json.loads((tmp_path / "desired.json.tried").read_text())
-    assert sorted(kept) == ["samba"]
+    assert sorted(kept["hashes"]) == ["samba"]
+    (tmp_path / "desired.json.tried").write_text(json.dumps({"samba": "ab12cd"}))
+    assert DesiredStateStore(path=str(tmp_path / "desired.json")).read_tried() == {}
     (tmp_path / "desired.json.tried").write_text("ab12cd")
     assert DesiredStateStore(path=str(tmp_path / "desired.json")).read_tried() == {}
 

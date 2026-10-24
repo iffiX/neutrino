@@ -22,6 +22,7 @@ import sys
 import tarfile
 import tempfile
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 
 from constants import PACKAGING_GLIBC_FLOOR
@@ -35,6 +36,8 @@ from shared import edition_build  # noqa: E402
 AGENT_ROOT = Path(__file__).resolve().parent.parent
 REPO_ROOT = AGENT_ROOT.parent
 PACKAGE_NAME = "neutrino-agent"
+# How the build time is written into the agent's ``_version.py``.
+BUILT_AT_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 
 # A glibc version as readelf's version sections name it.
 GLIBC_VERSION = re.compile(r"GLIBC_(\d+)\.(\d+)")
@@ -224,7 +227,8 @@ def stage_agent_tree(parent: Path, package_version: str) -> Path:
     No packaging format installs a ``.dist-info`` for the agent, so
     ``importlib.metadata`` cannot answer for a packaged one; the hub compares
     the stamped value against its own. The edition the build was asked for
-    is stamped beside it.
+    is stamped beside it, and the UTC time of this staging, which tells two
+    builds of one version apart.
 
     Args:
         parent: The directory the ``neutrino_agent`` package belongs in.
@@ -243,9 +247,11 @@ def stage_agent_tree(parent: Path, package_version: str) -> Path:
         package_dir,
         ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
     )
+    built_at = datetime.now(timezone.utc).strftime(BUILT_AT_FORMAT)
     (package_dir / "_version.py").write_text(
         '"""Written by the packaging build. Do not edit."""\n\n'
         f'AGENT_VERSION = "{package_version}"\n'
+        f'AGENT_BUILT_AT = "{built_at}"\n'
         f'EDITION = "{edition_build.build_edition()}"\n',
         encoding="utf-8",
     )

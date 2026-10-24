@@ -30,3 +30,8 @@ except ImportError:
         AGENT_VERSION = version("neutrino-agent")
     except PackageNotFoundError:
         AGENT_VERSION = _checkout_version()
+
+try:  # When the package was built, which tells two builds of one version apart.
+    from neutrino_agent._version import AGENT_BUILT_AT
+except ImportError:
+    AGENT_BUILT_AT = ""
