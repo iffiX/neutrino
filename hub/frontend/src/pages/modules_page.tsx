@@ -114,6 +114,7 @@ const MODULE_PANELS: Record<string, (target: PanelTarget) => ReactNode> = {
       basePath={target.basePath}
       isEditable={target.isEditable}
       platformOs={target.platformOs}
+      want={target.want}
     />
   ),
   ...Object.fromEntries(

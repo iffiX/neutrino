@@ -6,6 +6,8 @@ import { VaultPicker } from "./vault_picker";
 import { apiPost, describeApplyFailure, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
 import { useDraft } from "../use_draft";
+import { isFailing, useSettledApply } from "../use_settled_apply";
+import type { ReportedModule } from "../use_settled_apply";
 import type {
   ApplyResult,
   PodmanDeviceView,
@@ -23,7 +25,8 @@ import "./containers_run_settings.css";
  * default except the disk limit on Windows, which is at least 1.
  *
  * The disk limit starts at the disk's size now, as the machine reported it,
- * the way Podman Desktop's edit form for a machine holds its disk size.
+ * the way Podman Desktop's edit form for a machine holds its disk size. An
+ * apply holds until the machine reports the module where the hub asks it.
  */
 
 /** What an agent older than the module reports for it. */
@@ -51,8 +54,12 @@ interface ContainersRunSettingsProps {
   isEditable: boolean;
   /** Whether the machine is Windows, whose machine starts with a login. */
   isWindows: boolean;
-  /** Reads the view again once an apply has run. */
-  onApplied: () => void;
+  /** What the hub asks of the module: `running`, `stopped`, or empty. */
+  want: string;
+  /** The module as the machine reports it, for an apply to wait on. */
+  report: ReportedModule | null;
+  /** Takes the view the stored Run settings give. */
+  onSaved: (view: PodmanDeviceView) => void;
 }
 
 /** The form's own fields; the machine they are written to is the page's. */
@@ -64,7 +71,9 @@ export function ContainersRunSettings({
   saved,
   isEditable,
   isWindows,
-  onApplied,
+  want,
+  report,
+  onSaved,
 }: ContainersRunSettingsProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
@@ -73,7 +82,7 @@ export function ContainersRunSettings({
   );
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const settle = useSettledApply(report, want);
 
   if (draft === null) {
     return null;
@@ -85,23 +94,32 @@ export function ContainersRunSettings({
   const leastDisk = isWindows ? Math.max(1, currentDisk) : currentDisk;
   const isShrunk = draft.disk_gib !== 0 && draft.disk_gib < currentDisk;
   const isDiskMissing = isWindows && draft.disk_gib < 1;
+  const diskError = isDiskMissing
+    ? t("code.machine_disk_invalid", { disk_gib: draft.disk_gib })
+    : isShrunk
+      ? t("code.machine_disk_shrink", {
+          disk_gib: draft.disk_gib,
+          current_gib: currentDisk,
+        })
+      : null;
 
   const apply = async () => {
     setIsBusy(true);
     setError(null);
-    setNotice(null);
+    settle.clear();
     const request: PodmanMachineUpdate = { device_id: deviceId, ...draft };
     try {
-      await apiPost<PodmanDeviceView>(`${basePath}/machine/set`, request);
+      onSaved(
+        await apiPost<PodmanDeviceView>(`${basePath}/machine/set`, request),
+      );
       const result = await apiPost<ApplyResult>(`${basePath}/apply`, {
         device_id: deviceId,
       });
-      onApplied();
       if (!result.is_applied) {
         setError(describeApplyFailure(result));
         return;
       }
-      setNotice(t("ui.api.applied"));
+      settle.begin();
     } catch (cause: unknown) {
       setError(describeError(cause));
     } finally {
@@ -184,10 +202,14 @@ export function ContainersRunSettings({
               setDraft({ ...draft, disk_gib: wholeNumber(event.target.value) })
             }
           />
-          {currentDisk > 0 && (
-            <span className="field_hint">
-              {t("ui.containers.run_disk_hint", { current: currentDisk })}
-            </span>
+          {diskError !== null ? (
+            <span className="field_error">{diskError}</span>
+          ) : (
+            currentDisk > 0 && (
+              <span className="field_hint">
+                {t("ui.containers.run_disk_hint", { current: currentDisk })}
+              </span>
+            )
           )}
         </label>
       </div>
@@ -198,18 +220,22 @@ export function ContainersRunSettings({
       </p>
       <ApplyBar
         isDirty={isDirty}
-        isBusy={isBusy}
+        isBusy={isBusy || settle.isSettling}
         label={t("ui.containers.run_apply")}
         hint={t("ui.containers.run_apply_hint")}
         warning={runWarning(stored, draft, saved.machine_state, isWindows)}
         blockedHint={isEditable ? null : t("ui.modules.agent_offline")}
-        isApplyDisabled={isUnsupported || isShrunk || isDiskMissing}
+        isApplyDisabled={isUnsupported || diskError !== null}
         error={error}
-        notice={notice}
+        notice={
+          settle.isApplied && report !== null && !isFailing(report)
+            ? t("ui.api.applied")
+            : null
+        }
         onReset={() => {
           reset();
           setError(null);
-          setNotice(null);
+          settle.clear();
         }}
         onApply={() => void apply()}
       />
@@ -231,16 +257,22 @@ function draftOf(view: PodmanDeviceView, isWindows: boolean): RunDraft {
   };
 }
 
+/** Whether the account's machine exists: the report names it for the
+ * account. */
+function isMachineMade(
+  reported: PodmanMachineState | null,
+  account: string,
+): reported is PodmanMachineState {
+  return reported !== null && account !== "" && reported.account === account;
+}
+
 /** The least disk limit for the account's machine: its disk's size now, in
  * whole GiB; 0 while the account has no machine reported. */
 function currentDiskGib(
   reported: PodmanMachineState | null,
   account: string,
 ): number {
-  if (reported === null || reported.account !== account) {
-    return 0;
-  }
-  return Math.ceil(reported.disk_gib);
+  return isMachineMade(reported, account) ? Math.ceil(reported.disk_gib) : 0;
 }
 
 /** What applying the draft interrupts, or nothing when it interrupts
@@ -256,10 +288,12 @@ function runWarning(
     draft.cpus !== stored.cpus ||
     draft.memory_gib !== stored.memory_gib ||
     draft.disk_gib !== stored.disk_gib;
-  if (reported !== null && isResourceChanged) {
+  const isRestarted =
+    isResourceChanged && isMachineMade(reported, draft.account);
+  if (isRestarted) {
     lines.push(t("ui.containers.run_restart_warning"));
   }
-  if (reported !== null && isWindows && isResourceChanged) {
+  if (isRestarted && isWindows) {
     lines.push(t("ui.containers.run_wsl_warning"));
   }
   if (stored.account !== "" && draft.account !== stored.account) {

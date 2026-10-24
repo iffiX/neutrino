@@ -23,6 +23,8 @@ import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import { useDraft } from "../use_draft";
 import { HUB_EVENT_CONFIG, HUB_EVENT_DEVICE_REPORT } from "../use_hub_events";
+import { isFailing, useSettledApply } from "../use_settled_apply";
+import type { ReportedModule, SettledApply } from "../use_settled_apply";
 import type {
   ApplyResult,
   PodmanContainer,
@@ -51,7 +53,9 @@ import "./containers_panels.css";
  *
  * On Windows and macOS the containers run in one account's Podman machine,
  * and the Run settings that name it come first; until they name an account
- * the panels under them hold nothing to apply.
+ * the panels under them hold nothing to apply. An apply holds until the
+ * machine reports the module where the hub asks it, on Windows and macOS
+ * with the account's machine running.
  */
 
 const EMPTY_CONTAINER: PodmanContainer = {
@@ -111,6 +115,8 @@ interface ContainersPanelsProps {
   isEditable: boolean;
   /** The system the machine's agent reports: `linux`, `windows`, `darwin`. */
   platformOs: string;
+  /** What the hub asks of the module: `running`, `stopped`, or empty. */
+  want: string;
 }
 
 export function ContainersPanels({
@@ -118,6 +124,7 @@ export function ContainersPanels({
   basePath,
   isEditable,
   platformOs,
+  want,
 }: ContainersPanelsProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
@@ -141,14 +148,16 @@ export function ContainersPanels({
   const mirrors = mirrorsDraft.draft ?? [];
   const setMirrors = mirrorsDraft.setDraft;
   const [isMirrorsBusy, setIsMirrorsBusy] = useState(false);
-  const [mirrorsNotice, setMirrorsNotice] = useState<string | null>(null);
   const [mirrorsError, setMirrorsError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [liveError, setLiveError] = useState<string | null>(null);
   const [shellTarget, setShellTarget] = useState<string | null>(null);
   const [journalTarget, setJournalTarget] = useState<string | null>(null);
+  const isMachineRun = MACHINE_RUN_OS.includes(platformOs);
+  const report = saved === null ? null : podmanReport(saved, isMachineRun);
+  const mirrorsSettle = useSettledApply(report, want);
+  const containersSettle = useSettledApply(report, want);
 
   const isDirty = containersDraft.isDirty;
   const filledMirrors = mirrors.filter((mirror) => mirror !== "");
@@ -159,21 +168,22 @@ export function ContainersPanels({
   const applyMirrors = async () => {
     setIsMirrorsBusy(true);
     setMirrorsError(null);
-    setMirrorsNotice(null);
+    mirrorsSettle.clear();
     try {
-      await apiPost<PodmanDeviceView>(`${basePath}/mirror/set`, {
-        device_id: deviceId,
-        mirrors: filledMirrors,
-      });
+      resource.setData(
+        await apiPost<PodmanDeviceView>(`${basePath}/mirror/set`, {
+          device_id: deviceId,
+          mirrors: filledMirrors,
+        }),
+      );
       const result = await apiPost<ApplyResult>(`${basePath}/apply`, {
         device_id: deviceId,
       });
-      resource.reload();
       if (!result.is_applied) {
         setMirrorsError(describeApplyFailure(result));
         return;
       }
-      setMirrorsNotice(t("ui.api.applied"));
+      mirrorsSettle.begin();
     } catch (cause: unknown) {
       setMirrorsError(describeError(cause));
     } finally {
@@ -184,21 +194,22 @@ export function ContainersPanels({
   const applyContainers = async () => {
     setIsBusy(true);
     setError(null);
-    setNotice(null);
+    containersSettle.clear();
     try {
-      await apiPost<PodmanDeviceView>(`${basePath}/container/set`, {
-        device_id: deviceId,
-        containers,
-      });
+      resource.setData(
+        await apiPost<PodmanDeviceView>(`${basePath}/container/set`, {
+          device_id: deviceId,
+          containers,
+        }),
+      );
       const result = await apiPost<ApplyResult>(`${basePath}/apply`, {
         device_id: deviceId,
       });
-      resource.reload();
       if (!result.is_applied) {
         setError(describeApplyFailure(result));
         return;
       }
-      setNotice(t("ui.api.applied"));
+      containersSettle.begin();
     } catch (cause: unknown) {
       setError(describeError(cause));
     } finally {
@@ -227,7 +238,6 @@ export function ContainersPanels({
     return <div className="skeleton" style={{ height: 360 }} />;
   }
 
-  const isMachineRun = MACHINE_RUN_OS.includes(platformOs);
   const isRunNeeded = isMachineRun && (saved.machine?.account ?? "") === "";
 
   return (
@@ -246,7 +256,9 @@ export function ContainersPanels({
           saved={saved}
           isEditable={isEditable}
           isWindows={platformOs === WINDOWS_OS}
-          onApplied={resource.reload}
+          want={want}
+          report={report}
+          onSaved={resource.setData}
         />
       )}
 
@@ -356,14 +368,17 @@ export function ContainersPanels({
         )}
         <ApplyBar
           isDirty={isMirrorsDirty}
-          isBusy={isMirrorsBusy}
+          isBusy={isMirrorsBusy || mirrorsSettle.isSettling}
           label={t("ui.containers.mirrors_apply")}
           hint={t("ui.containers.mirrors_apply_hint")}
           blockedHint={isEditable ? null : t("ui.modules.agent_offline")}
           isApplyDisabled={isRunNeeded}
           error={mirrorsError}
-          notice={mirrorsNotice}
-          onReset={mirrorsDraft.reset}
+          notice={appliedNotice(mirrorsSettle, report)}
+          onReset={() => {
+            mirrorsDraft.reset();
+            mirrorsSettle.clear();
+          }}
           onApply={() => void applyMirrors()}
         />
       </section>
@@ -418,15 +433,18 @@ export function ContainersPanels({
         )}
         <ApplyBar
           isDirty={isDirty}
-          isBusy={isBusy}
+          isBusy={isBusy || containersSettle.isSettling}
           label={t("ui.containers.containers_apply")}
           hint={t("ui.containers.containers_apply_hint")}
           warning={t("ui.containers.containers_apply_warning")}
           blockedHint={isEditable ? null : t("ui.modules.agent_offline")}
           isApplyDisabled={isRunNeeded}
           error={error}
-          notice={notice}
-          onReset={containersDraft.reset}
+          notice={appliedNotice(containersSettle, report)}
+          onReset={() => {
+            containersDraft.reset();
+            containersSettle.clear();
+          }}
           onApply={() => void applyContainers()}
         />
       </section>
@@ -442,7 +460,6 @@ export function ContainersPanels({
   );
 }
 
-/** The image without its tag; the tag chips swap what follows the colon. */
 function containersOf(view: PodmanDeviceView): PodmanContainer[] {
   return view.containers;
 }
@@ -451,6 +468,36 @@ function mirrorsOf(view: PodmanDeviceView): string[] {
   return view.mirrors;
 }
 
+/** The module as the machine reports it, for an apply to wait on; on
+ * Windows and macOS the stored account's machine is its one instance. */
+function podmanReport(
+  view: PodmanDeviceView,
+  isMachineRun: boolean,
+): ReportedModule {
+  const account = view.machine?.account ?? "";
+  const reported = view.machine_state;
+  const isMachineUp =
+    reported !== null && reported.account === account && reported.is_running;
+  return {
+    state: view.state,
+    instances:
+      isMachineRun && account !== ""
+        ? [{ is_running: isMachineUp, code: "" }]
+        : [],
+  };
+}
+
+/** `Applied.` once an apply settled on a module that does not fail. */
+function appliedNotice(
+  settle: SettledApply,
+  report: ReportedModule | null,
+): string | null {
+  return settle.isApplied && report !== null && !isFailing(report)
+    ? t("ui.api.applied")
+    : null;
+}
+
+/** The image without its tag; the tag chips swap what follows the colon. */
 function imageBase(image: string): string {
   const colon = image.lastIndexOf(":");
   return colon > image.lastIndexOf("/") ? image.slice(0, colon) : image;
