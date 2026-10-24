@@ -108,10 +108,18 @@ def is_quadlet_supported() -> bool:
     return is_version_at_least(words[-1] if words else "", PODMAN_QUADLET_VERSION)
 
 
-def podman_version() -> str:
-    """The version podman prints, empty when it cannot run."""
+def podman_version(*, podman: tuple = (PODMAN_BINARY,)) -> str:
+    """The version podman prints, empty when it cannot run.
+
+    Args:
+        podman: The podman command: the program and the options before
+            its verb.
+
+    Returns:
+        The last word of ``--version``'s answer.
+    """
     try:
-        result = run([PODMAN_BINARY, "--version"], is_checked=False, timeout_s=30)
+        result = run([*podman, "--version"], is_checked=False, timeout_s=30)
     except (OSError, subprocess.SubprocessError):
         return ""
     words = result.stdout.split()
@@ -243,6 +251,32 @@ class PodmanRegistriesApplier:
 class PodmanStatusReader:
     """Reads what podman is running right now."""
 
+    def __init__(
+        self,
+        *,
+        podman: tuple = (PODMAN_BINARY,),
+        has_unit=None,
+        is_address_kept: bool = True,
+        host_volume=None,
+    ):
+        """
+        Args:
+            podman: The podman command: the program and the options before
+                its verb, such as ``--url`` and ``--identity`` reaching a
+                Podman machine.
+            has_unit: Called with a container's name, whether a unit file
+                stands for it; None reads this machine's unit directories.
+            is_address_kept: Whether a host binding keeps the address podman
+                publishes the port on; False reads every binding as on every
+                address.
+            host_volume: Called with a mount's source as podman names it,
+                the source as the configuration writes it; None keeps it.
+        """
+        self._podman = tuple(podman)
+        self._has_unit = has_unit
+        self._is_address_kept = is_address_kept
+        self._host_volume = host_volume
+
     def survey(self, *, declared_names: list) -> list:
         """List every container, running or not.
 
@@ -255,7 +289,7 @@ class PodmanStatusReader:
         """
         try:
             result = run(
-                [PODMAN_BINARY, "ps", "-a", "--format", "json"],
+                [*self._podman, "ps", "-a", "--format", "json"],
                 is_checked=False,
                 timeout_s=30,
             )
@@ -267,6 +301,7 @@ class PodmanStatusReader:
             entries = json.loads(result.stdout or "[]")
         except ValueError:
             return []
+        has_unit = self._has_unit if self._has_unit is not None else has_unit_file
         states = []
         inspected = self._inspect(
             [str((entry.get("Names") or ["?"])[0]) for entry in entries]
@@ -282,11 +317,14 @@ class PodmanStatusReader:
                     is_running=entry.get("State", "") == "running",
                     is_declared=names[0] in declared_names,
                     host_ports=_host_ports(entry.get("Ports") or []),
-                    host_bindings=_host_bindings(entry.get("Ports") or []),
+                    host_bindings=_host_bindings(
+                        entry.get("Ports") or [],
+                        is_address_kept=self._is_address_kept,
+                    ),
                     ports=_inspected_ports(detail),
-                    volumes=_inspected_volumes(detail),
+                    volumes=_inspected_volumes(detail, host_volume=self._host_volume),
                     environment=_inspected_environment(detail),
-                    has_unit=has_unit_file(names[0]),
+                    has_unit=has_unit(names[0]),
                 )
             )
         # A declared container with autostart off exists only as a unit
@@ -306,8 +344,7 @@ class PodmanStatusReader:
         states.sort(key=_declared_first)
         return states
 
-    @staticmethod
-    def _inspect(names: list) -> dict:
+    def _inspect(self, names: list) -> dict:
         """What ``podman inspect`` says of each container, by name.
 
         Returns:
@@ -317,7 +354,7 @@ class PodmanStatusReader:
             return {}
         try:
             result = run(
-                [PODMAN_BINARY, "inspect", "--type", "container"] + names,
+                [*self._podman, "inspect", "--type", "container"] + names,
                 is_checked=False,
                 timeout_s=30,
             )
@@ -436,13 +473,16 @@ def _inspected_ports(detail: dict) -> list:
     return ports
 
 
-def _inspected_volumes(detail: dict) -> list:
-    """Every mount of one inspect object as ``source:destination``."""
+def _inspected_volumes(detail: dict, *, host_volume=None) -> list:
+    """Every mount of one inspect object as ``source:destination``, the
+    source passed through ``host_volume`` when one is given."""
     volumes = []
     for mount in detail.get("Mounts") or []:
         if not isinstance(mount, dict):
             continue
         source = str(mount.get("Source", "") or mount.get("Name", "") or "")
+        if source and host_volume is not None:
+            source = host_volume(source)
         destination = str(mount.get("Destination", "") or "")
         if source and destination:
             volumes.append(f"{source}:{destination}")
@@ -466,7 +506,7 @@ def _host_ports(entries: list) -> list:
     return sorted(ports)
 
 
-def _host_bindings(entries: list) -> list:
+def _host_bindings(entries: list, *, is_address_kept: bool = True) -> list:
     bindings = []
     for entry in entries:
         if not isinstance(entry, dict):
@@ -475,8 +515,9 @@ def _host_bindings(entries: list) -> list:
         protocol = str(entry.get("protocol", "") or "tcp").lower()
         if not isinstance(port, int) or port <= 0 or protocol not in ("tcp", "udp"):
             continue
+        address = str(entry.get("host_ip", "") or "") if is_address_kept else ""
         binding = {
-            "address": str(entry.get("host_ip", "") or ""),
+            "address": address,
             "port": port,
             "protocol": protocol,
         }

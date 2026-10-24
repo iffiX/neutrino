@@ -187,6 +187,105 @@ def test_each_host_port_is_bound_with_its_address_and_protocol(commands):
     assert state.host_ports == [53, 5353, 5432, 8080, 9899]
 
 
+SURVEYED = (
+    '[{"Names": ["web"], "Image": "nginx", "Status": "Up", "State": "running", '
+    '"Ports": [{"host_ip": "127.0.0.1", "host_port": 8080, "protocol": "tcp"}, '
+    '{"host_ip": "::", "host_port": 8080, "protocol": "tcp"}]}]'
+)
+INSPECTED = (
+    '[{"Name": "web", "Mounts": [{"Source": "/mnt/c/data", "Destination": "/data"}, '
+    '{"Name": "cache", "Destination": "/cache"}]}]'
+)
+
+
+def test_the_reader_by_default_asks_this_machines_podman_as_before(
+    commands, monkeypatch
+):
+    """The machine's own podman for both reads, its unit directories for the
+    unit, and every binding's address and mount's source as podman names
+    them."""
+    commands.answers[("/usr/bin/podman", "ps")] = (0, SURVEYED)
+    commands.answers[("/usr/bin/podman", "inspect")] = (0, INSPECTED)
+
+    def has_unit_file(name):
+        return name == "web"
+
+    monkeypatch.setattr(applier_module, "has_unit_file", has_unit_file)
+
+    (state,) = PodmanStatusReader().survey(declared_names=["web"])
+
+    assert commands.calls == [
+        ["/usr/bin/podman", "ps", "-a", "--format", "json"],
+        ["/usr/bin/podman", "inspect", "--type", "container", "web"],
+    ]
+    assert state.has_unit is True
+    assert state.host_bindings == [
+        {"address": "127.0.0.1", "port": 8080, "protocol": "tcp"},
+        {"address": "::", "port": 8080, "protocol": "tcp"},
+    ]
+    assert state.volumes == ["/mnt/c/data:/data", "cache:/cache"]
+
+
+PODMAN_MACHINE = (
+    "podman.exe",
+    "--url",
+    "ssh://root@127.0.0.1:50123/run/podman/podman.sock",
+)
+
+
+def test_a_reader_given_its_podman_command_reads_a_podman_machine(monkeypatch):
+    """Both reads through the command given, the unit by the check given,
+    every binding on every address, and each mount's source turned back
+    into the computer's own form."""
+    calls = []
+    asked_units = []
+
+    def run(command, *, is_checked=True, input_text=None, timeout_s=120):
+        calls.append(list(command))
+        stdout = SURVEYED if command[len(PODMAN_MACHINE)] == "ps" else INSPECTED
+        return CommandResult(list(command), 0, stdout, "")
+
+    def has_unit(name):
+        asked_units.append(name)
+        return False
+
+    def host_volume(source):
+        return "C:\\data" if source == "/mnt/c/data" else source
+
+    monkeypatch.setattr(applier_module, "run", run)
+    reader = PodmanStatusReader(
+        podman=PODMAN_MACHINE,
+        has_unit=has_unit,
+        is_address_kept=False,
+        host_volume=host_volume,
+    )
+
+    (state,) = reader.survey(declared_names=[])
+
+    assert calls == [
+        [*PODMAN_MACHINE, "ps", "-a", "--format", "json"],
+        [*PODMAN_MACHINE, "inspect", "--type", "container", "web"],
+    ]
+    assert asked_units == ["web"]
+    assert state.has_unit is False
+    assert state.host_bindings == [{"address": "", "port": 8080, "protocol": "tcp"}]
+    assert state.volumes == ["C:\\data:/data", "cache:/cache"]
+
+
+def test_the_version_is_asked_of_the_podman_command_given(commands):
+    commands.answers[("/usr/bin/podman", "--version")] = (0, "podman version 4.9.3\n")
+    commands.answers[("podman.exe", "--url")] = (0, "podman.exe version 6.1.4\n")
+
+    assert applier_module.podman_version() == "4.9.3"
+    assert applier_module.podman_version(podman=("podman.exe", "--url", "u")) == (
+        "6.1.4"
+    )
+    assert commands.calls == [
+        ["/usr/bin/podman", "--version"],
+        ["podman.exe", "--url", "u", "--version"],
+    ]
+
+
 def test_no_podman_surveys_as_nothing(commands):
     commands.answers[("/usr/bin/podman", "ps")] = subprocess.CalledProcessError(
         1, ["podman"], stderr="gone"
