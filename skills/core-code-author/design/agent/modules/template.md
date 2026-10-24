@@ -115,7 +115,7 @@ the service definition, starts, stops, removes and queries it:
 | System | The service |
 | --- | --- |
 | Linux | the unit `neutrino_<module>@<account>.service` with `User=<account>`, its output in the unit's journal |
-| macOS | the LaunchDaemon `com.neutrino.<module>.<account>` with `UserName`, its output where the module says |
+| macOS | the LaunchDaemon `com.neutrino.<module>.<account>` with `UserName`, its output where the module says, and `AbandonProcessGroup` where the module asks for it, so the processes the program started keep running when the job stops |
 | Windows | a scheduled task under the account's login, the one the Credentials page holds for the instance, started at boot with no time limit and a limited token; a stop ends the task's whole process tree |
 
 The service's environment is written from scratch, with nothing inherited

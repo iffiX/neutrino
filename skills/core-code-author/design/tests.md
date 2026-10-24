@@ -224,11 +224,16 @@ package before 0.5.0, so `hub_windows` installs on a clean machine.
 
 The `podman_macos` job of `ci.yml` runs Containers' install on macOS: on
 `macos-15` with the pinned Podman 6.x for arm64, and on `macos-15-intel`
-with the pinned 5.8.x for amd64. It installs the pinned pkg through the
-agent's `install_pkg`, runs `podman --version`, `podman machine init
---image` with the pinned image and `podman machine inspect`, grows the disk
-and has a smaller size refused, removes the machine and uninstalls Podman.
-It starts no machine.
+with the pinned 5.8.x for amd64. It fetches the branch's pkg and image into
+a cache keyed by their sha256 and checks each digest. Then
+`packaging/ci/podman_macos.py`, as root, drives the agent's
+`PodmanDarwinApplier` and `PodmanMachine` as the runner's account. It
+installs the pkg through `install_pkg` and runs `podman --version`, `podman
+machine init --image` and `podman machine inspect`. It checks the settings
+file's ssh port, the key and the API socket under the account's `TMPDIR`,
+sets the CPUs and the memory, and grows the disk. A smaller or equal size
+is refused, and the run removes the machine and uninstalls Podman with its
+receipt. It starts no machine.
 
 The VM lab under `packaging/lab/` adds machines for what no single box can
 show:

@@ -82,6 +82,7 @@ exit_code}`.
 | A dism exit of 3010 is a restart owed: the agent writes the reboot mark, holding the computer's boot time, and while the boot time is the mark's, or the key `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending` exists, the module reports `installing` with `{code: reboot_required}`. | dism reports a feature `Enabled` before the restart, so the feature's state cannot show that a restart is owed. |
 | The agent never restarts the computer. A person does, with the tab's **Restart now** or the device's **Reboot**. | A restart closes every program open on the computer. |
 | While the restart is owed, an apply raises `ModuleInstallPending`, the agent keeps no tried hash for it, and the state is applied again every 30 seconds under the same hash ([agent.md](../../agent.md), "Status is typed"). | The install goes on after the restart with no press. |
+| On macOS the pkg's receipt is `com.redhat.podman`. Its scripts write `/etc/paths.d/podman-pkg` and `/usr/local/etc/man.d/podman.man.conf`, and run `podman-mac-helper install`, which installs nothing when the agent runs the installer. | The helper installs for the account `SUDO_USER` or `USER` names and refuses root, and the agent runs as root with no `SUDO_USER`. |
 
 ### The account and its machine
 
@@ -95,6 +96,7 @@ leaves the disk of a machine taken over as it is.
 | --- | --- |
 | The machine is the account's default one, `podman-machine-default`. The agent creates it when the account has none, with `podman machine init --rootful --image <kept image>`, and takes over one that exists, with `podman machine set --rootful` on the stopped machine when it is not rootful. | The person's own `podman ps` as that account shows the containers the panel declares. |
 | Every `podman machine` and `wsl` command runs as the account, through the platform's `run_as_account`: the one-shot task under the account's login on Windows, a child with the account's uid on macOS. The agent writes `.wslconfig` as the account too. | WSL refuses SYSTEM with `WSL_E_LOCAL_SYSTEM_NOT_SUPPORTED`, `podman machine` refuses root on macOS, and the account keeps owning its own files. |
+| On macOS every `podman machine` command has `TMPDIR` set to the account's own temporary directory, which `getconf DARWIN_USER_TEMP_DIR` prints when run as the account, read once per account. | Podman keeps a running machine's sockets and helper files under `$TMPDIR/podman` and uses `/tmp` when `TMPDIR` is not set, as in a child the agent starts; the account's sessions have that directory. |
 | The init reads the image the hub sent, and runs inside the apply, about 40 seconds on Windows. | The hub's cache is the one source of the machine's bytes, on a `cn` hub too. |
 | On WSL the agent resizes the disk right after the init and before the first start, with `wsl --manage podman-machine-default --resize <size>GB`. | WSL creates a 1 TB disk whatever size Podman asks for. |
 | On WSL the CPUs and the memory are `processors=<n>` and `memory=<n>GB` under `[wsl2]` in the account's `%USERPROFILE%\.wslconfig`, a 0 written as the default's number; the agent makes the file or the section when it is missing, changes these two keys and keeps every other line. | WSL ignores Podman's numbers and reads this file, which is the person's own and applies to every WSL system of the account. |
@@ -117,10 +119,12 @@ macOS.
 | The keeper's script loops by itself: every 30 seconds it checks the machine's state and starts the machine when it is not running. | Task Scheduler did not start the task again after its program exited, whatever its restart settings. |
 | Before each start on Windows it deletes `%TEMP%\podman\podman-machine-default-api.sock`. | A file left by a restart with the machine running keeps `win-sshproxy.exe` from binding at the next start. |
 | A start that fails is followed by `podman machine stop`, the same deletion, and one more start. | Windows reserves a port range at boot that can hold the machine's ssh port; Podman finds the conflict at the next start and moves the port. |
+| On macOS the script sets `TMPDIR` from `getconf DARWIN_USER_TEMP_DIR` before its first command. | The keeper, the agent's machine commands and the account's sessions then reach the same machine files. |
+| On macOS the keeper's LaunchDaemon has `AbandonProcessGroup`. | The machine's processes are children of the keeper's `podman machine start`, and launchd ends the job's whole process group when the job stops. |
 
 A published port answers about 30 seconds after a boot with nobody signed
-in. The machine keeps running when the keeper's task stops and when the
-account signs in or out.
+in. On Windows the machine keeps running when the keeper's task stops and
+when the account signs in or out; on macOS this is not proven.
 
 ### Reads and writes
 
@@ -134,7 +138,7 @@ account signs in or out.
 | --- | --- |
 | `<port>` is read once per report, before its first command, from `SSH.Port` in the machine's settings file, `C:\Users\<account>\.config\containers\podman\machine\wsl\podman-machine-default.json` on Windows and `~/.config/containers/podman/machine/applehv/podman-machine-default.json` on macOS. | A start can move the port. |
 | `<key>` is the account's machine key, `C:\Users\<account>\.local\share\containers\podman\machine\machine` on Windows and `~/.local/share/containers/podman/machine/machine` on macOS, read where it is. | SYSTEM and root read the account's profile, and a copy is a second secret to keep. |
-| The read uses the ssh URL on both systems. | As SYSTEM, Podman's Windows client rejects both an `npipe:` URL and the machine's `unix://` path. |
+| The read uses the ssh URL on both systems. | As SYSTEM, Podman's Windows client rejects both an `npipe:` URL and the machine's `unix://` path; on macOS the machine's API socket is under the account's temporary directory, and the ssh URL reads only the settings file and the key. |
 | A container a person started by hand starts, stops and restarts through the read's command, as SYSTEM or root. | Linux drives such a container through `podman` itself, and it has no unit in the machine. |
 | The read output goes through the Linux reader, given this command in place of `podman`. | One parser for `ps` and `inspect` on every system. |
 | The module's `is_active` is whether the machine answers the read. | The machine's Podman is the engine there, as `podman.socket` is on Linux. |
@@ -144,10 +148,33 @@ account signs in or out.
 
 | Rule | Reason |
 | --- | --- |
-| The Quadlet files are in `/usr/share/containers/systemd/` in the machine. | In the WSL machine `/etc/containers` is the account's `%APPDATA%\containers` on Windows, mounted after systemd's generators run, so a file in `/etc/containers/systemd/` starts nothing at boot. |
-| Every `.container` file the module renders for the machine has `CgroupsMode=enabled` under `[Container]`, added by the renderer when it renders for a machine, and a Linux file has no such line. | The machine runs systemd under cgroupfs, where Quadlet's default split mode fails with "controller pids is not available", and the Linux files keep their bytes. |
-| The mirrors drop-in is `/etc/containers/registries.conf.d/99_neutrino_mirrors.conf` in the machine. | Podman reads it at a pull, after the mount, so the account's Windows folder under that path serves. |
-| macOS uses the same Quadlet directory, the same drop-in path and the same cgroups line. | One code path writes into every Podman machine. |
+| On Windows the Quadlet files are in `/usr/share/containers/systemd/` in the machine. | In the WSL machine `/etc/containers` is the account's `%APPDATA%\containers` on Windows, mounted after systemd's generators run, so a file in `/etc/containers/systemd/` starts nothing at boot. |
+| On macOS the Quadlet files are in `/etc/containers/systemd/` in the machine, the Linux directory. | The applehv machine is Fedora CoreOS, whose `/usr` is read-only, so a file under `/usr/share` is refused with "Read-only file system". |
+| Every `.container` file the module renders for the machine has `CgroupsMode=enabled` under `[Container]`, added by the renderer when it renders for a machine, and a Linux file has no such line. | The WSL machine runs systemd under cgroupfs, where Quadlet's default split mode fails with "controller pids is not available"; the applehv machine runs systemd's own cgroups v2, where the line works too, and the Linux files keep their bytes. |
+| The mirrors drop-in is `/etc/containers/registries.conf.d/99_neutrino_mirrors.conf` in the machine. | Podman reads it at a pull, after the mount, so the account's folder under that path serves. |
+| macOS uses the same drop-in path and the same cgroups line. | One code path writes into every Podman machine, the Quadlet directory apart. |
+| Where the Quadlet folder is under `/etc/containers` and the machine's own unit `/etc/systemd/system/etc-containers.mount` exists, the root script writes the boot unit `/etc/systemd/system/neutrino_containers.service` and turns it on. After the mount it runs `systemctl daemon-reload`, then `systemctl start --no-block multi-user.target`. | systemd's generators read the Quadlet folder before that mount, and a reload alone starts nothing `multi-user.target` wants. |
+| The script removes its boot unit from a machine without that mount unit, and when no container is declared; a unit of that name without the generated marker stays. | The unit is the module's file, and a person's file is theirs. |
+
+Podman 5.8 leaves `/etc/containers` on the macOS machine's own disk, where
+systemd's generators read it at boot. Podman 6 mounts the account's
+`~/.config/containers` there with `etc-containers.mount`, as it mounts
+`%APPDATA%\containers` on WSL. On arm64 a Quadlet file is then the account's
+file on the Mac, and the boot unit starts it. Windows writes into
+`/usr/share/containers/systemd/`, outside the mount, and has no boot unit.
+
+The qemu build of the pinned image's release, Fedora CoreOS 44 with Podman
+6.1.4 inside, booted on Linux, refused a file under
+`/usr/share/containers/systemd/`. Two files in `/etc/containers/systemd/`,
+one with the cgroups line and one without, served and came back after a
+reboot. With a folder mounted on `/etc/containers` by a unit of Podman's
+name after the generators, the agent's root script wrote the boot unit. The
+container started at boot came back after a reboot, the one not started at
+boot stayed stopped, and the script for no containers removed the unit. The
+`podman_macos` job read each branch's machine settings: Podman 6.1.4 lists
+the mount on `/etc/containers`, and Podman 5.8.9 does not. No applehv
+machine has started under the agent, and the boot on a real Apple silicon
+Mac is not proven.
 
 ### Volumes
 
@@ -197,10 +224,10 @@ the machine while it still runs:
 
 | What | After the uninstall |
 | --- | --- |
-| The declared containers, their files in the machine and the mirrors drop-in | stopped and removed, by one root script |
+| The declared containers, their files in the machine, the mirrors drop-in and the boot unit | stopped and removed, by one root script |
 | The keeper, its script and its log | removed, so nothing starts the machine again |
 | The machine | stopped, and kept with its disk, images and named volumes in the account's profile; on Windows its WSL system stays registered |
-| Podman | uninstalled: the msi by `installers.uninstall_msi`, the pkg's files and its receipt on macOS |
+| Podman | uninstalled: on Windows the msi by `installers.uninstall_msi`; on macOS `/opt/podman/` and the two files the pkg's scripts write deleted, and the receipt forgotten with `pkgutil --forget com.redhat.podman` |
 | The kept components and the reboot mark | removed from the state root |
 | The account's `.wslconfig`, WSL and both Windows features | kept |
 
@@ -222,9 +249,11 @@ a feature off owes another restart.
 | The machine | `C:\Users\<account>\.local\share\containers\podman\machine\wsl\`, its disk `ext4.vhdx` there | `~/.local/share/containers/podman/machine/applehv/` |
 | The machine's settings | `C:\Users\<account>\.config\containers\podman\machine\wsl\podman-machine-default.json` | `~/.config/containers/podman/machine/applehv/podman-machine-default.json` |
 | The machine key | `C:\Users\<account>\.local\share\containers\podman\machine\machine` | `~/.local/share/containers/podman/machine/machine` |
+| The running machine's sockets | `%TEMP%\podman\` of the account | `podman/` under the account's own temporary directory |
 | The WSL resources | `C:\Users\<account>\.wslconfig` | none |
-| The Quadlet files | `/usr/share/containers/systemd/` in the machine | `/usr/share/containers/systemd/` in the machine |
-| The mirrors drop-in | `/etc/containers/registries.conf.d/` in the machine, which is `C:\Users\<account>\AppData\Roaming\containers\registries.conf.d\` | `/etc/containers/registries.conf.d/` in the machine |
+| The Quadlet files | `/usr/share/containers/systemd/` in the machine | `/etc/containers/systemd/` in the machine, which is `~/.config/containers/systemd/` with Podman 6 |
+| The boot unit | none | `/etc/systemd/system/neutrino_containers.service` in the machine, with Podman 6 |
+| The mirrors drop-in | `/etc/containers/registries.conf.d/` in the machine, which is `C:\Users\<account>\AppData\Roaming\containers\registries.conf.d\` | `/etc/containers/registries.conf.d/` in the machine, which is `~/.config/containers/registries.conf.d/` with Podman 6 |
 
 ## Services of a container
 
