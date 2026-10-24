@@ -7,7 +7,7 @@ a program run as a person's account ([module_template.md](../module_template.md)
 `agent/neutrino_agent/modules/code_server/` holds `config.py`,
 `constants.py` and `hooks.py`, and `modules/shared/` does the rest. Its
 configuration is `{instances: [{account, port, secret}]}`. Its manifest has
-no Windows branch, so the Modules page greys it out on Windows.
+no Windows entry, so the Modules page greys it out on Windows.
 
 **The account service layer runs it as the account, never as root**
 ([module_template.md](../module_template.md), "The run"): a unit
@@ -19,14 +19,13 @@ journal reads there. Its settings and extensions are in code-server's own
 directories under the account's home.
 
 **The release comes from its publisher.** `data/manifests/code_server.json`
-pins the standalone release for Linux and macOS on amd64 and arm64, each with
-its url and sha256, at the source the edition names. In `cn` the installer
-tries the pinned version at the mirror and checks its sha256; when the mirror
-no longer carries it, the installer takes the mirror's current release,
-checked by HTTPS alone, and `details` name the version installed
-([install_and_dev.md](../../install_and_dev.md), "Where each edition fetches
-from"). The module's installer fetches the archive into the module cache and
-sends it down `package {module: code_server}`. The agent unpacks it under its
+names the standalone release for Linux and macOS on amd64 and arm64 at the
+tested version. Its versions and digests come from Coder's GitHub releases,
+and its sources are the GitHub release, then the USTC mirror that serves the
+same files ([module_install.md](../module_install.md), "Sources"). The
+module's installer fetches the archive into the module cache, checks its
+digest whatever source served it, and sends it down `package {module:
+code_server, artifact, digest}`. The agent unpacks it under its
 state root, `/var/lib/neutrino/agent/code_server/` on Linux and
 `/Library/Application Support/Neutrino/agent/state/code_server` on macOS:
 owned by root, read-only to every account, one copy per machine, never on

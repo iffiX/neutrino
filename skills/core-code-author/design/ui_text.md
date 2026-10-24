@@ -207,8 +207,9 @@ The VS Code notice and its button:
 
 ## The Modules page's words
 
-The panel titles and the AI tools part of **Global configuration**
-([ui_behavior.md](ui_behavior.md), "The Modules page"). The chip, the
+The panel titles, a module's version line and the AI tools part of
+**Global configuration** ([ui_behavior.md](ui_behavior.md), "The Modules
+page"). The chip, the
 dialog and the reason follow the desktop client's words for its AI page
 where they fit, and a managed machine is a managed device, as the
 **Devices** page calls it.
@@ -231,6 +232,19 @@ where they fit, and a managed machine is a managed device, as the
 | `ui.ai_tools.switch_back_failed`, an account `failed` with `switch_failed` while the setting is off | cc-switch did not put the tools back to their own settings: {detail} | cc-switch 没能把工具改回原来的设置：{detail} |
 | `code.gateway_not_serving` | The hub's AI gateway serves no model yet; set it up on the AI page first. | 中枢的 AI 网关还没有可用的模型，先到 AI 页设置好。 |
 | `code.zfs_kernel_module_missing`, on an `absent` ZFS storage tab | The running kernel {kernel} has no ZFS module; install the module again. | 正在运行的内核 {kernel} 没有 ZFS 模块，重新安装这个模块。 |
+| `ui.modules.version_installed` | Version {version} | 版本 {version} |
+| `ui.modules.version_newest` | newest {version} | 最新 {version} |
+| `ui.modules.update` | Update | 更新 |
+| `ui.modules.install_version` | Install another version… | 安装其他版本… |
+| `ui.modules.version_tested` | tested | 已测试 |
+| `ui.modules.version_untested` | untested | 未测试 |
+| `ui.modules.version_follow_tested` | Follow the tested version | 跟随已测试版本 |
+| `ui.modules.downgrade_title` | Install {module} {version}? | 安装 {module} {version}？ |
+| `ui.modules.downgrade_body` | {module} moves its data forward when it starts on a newer version, and {version} is older than the one installed, so it can fail to read that data. | {module} 换到新版本启动时会把数据往前迁移，{version} 比装着的版本旧，可能读不了这些数据。 |
+| `code.download_failed` | No source served {file}: {sources} | 没有来源能提供 {file}：{sources} |
+| `code.version_switch_failed` | Version {version} did not start, so the previous version runs again: {detail} | 版本 {version} 没能启动，已换回原来的版本：{detail} |
+| `code.version_unknown` | Version {version} is not listed for this machine. | 这台机器没有版本 {version}。 |
+| `code.version_locked` | The version of {module} follows the system or the agent and cannot be chosen. | {module} 的版本跟随系统或被控端，不能选择。 |
 
 **Configure** is `ui.modules.configure`, the page's existing word. The
 desktop client's reason for its disabled AI page and the code its command
@@ -303,7 +317,7 @@ the agent's `cli/wording.py` words the same codes in English.
 | `ui.containers.hub_title` | Hub containers | 中枢的容器 |
 | `ui.containers.hub_hint` | The hub's modules run these. Change them in their module's tab. | 这些由中枢的模块运行，要改就到对应模块的标签页里改。 |
 | `ui.containers.hub_empty` | No module runs a container on this machine. | 这台机器上还没有模块运行容器。 |
-| `ui.containers.source_hub`, `ui.containers.source_user` | hub, user | 中枢、用户 |
+| `ui.containers.source_hub`, `ui.containers.source_declared`, `ui.containers.source_manual` | hub, declared, manual | 中枢、声明、手动 |
 | `ui.modules.restart_now` | Restart now | 立即重启 |
 | `ui.modules.restart_title` | Restart {device} | 重启 {device} |
 | `ui.modules.restart_body` | The machine restarts now, and every program open on it closes. | 这台机器会立即重启，上面打开的程序都会关闭。 |
@@ -321,7 +335,7 @@ the agent's `cli/wording.py` words the same codes in English.
 | `code.command_invalid` | The command of {name} needs to fit on one line. | 非法命令：容器 {name} 的命令只能写在一行里。 |
 | `code.mirror_invalid` | The mirror {mirror} needs a registry host, with an optional port and path and no http://, such as mirror.ccs.tencentyun.com. | 非法镜像源：{mirror} 要写成镜像仓库的主机名，可带端口和路径，不带 http://，例如 mirror.ccs.tencentyun.com。 |
 | `code.windows_feature_failed` | Windows could not turn on {feature} (exit code {exit_code}). | Windows 没能打开 {feature}（退出码 {exit_code}）。 |
-| `code.podman_install_failed` | The {component} installer failed (exit code {exit_code}). | {component} 安装包没能装上（退出码 {exit_code}）。 |
+| `code.podman_install_failed` | The {artifact} installer failed (exit code {exit_code}). | {artifact} 安装包没能装上（退出码 {exit_code}）。 |
 | `code.machine_account_missing` | Choose the account that runs the containers. | 选一个运行容器的账户。 |
 | `code.machine_cpus_invalid` | CPUs must be between 0 and {max}. | 非法 CPU 数：要在 0 到 {max} 之间。 |
 | `code.machine_memory_invalid` | Memory must be between 0 and {max} GiB. | 非法内存大小：要在 0 到 {max} GiB 之间。 |
@@ -335,7 +349,6 @@ the agent's `cli/wording.py` words the same codes in English.
 | `code.machine_unreachable` | The Podman machine does not answer: {detail} | Podman 虚拟机没有响应：{detail} |
 | `code.container_name_reserved` | The name {name} starts with neutrino_, which the hub keeps for the containers of its modules. | 容器名 {name} 以 neutrino_ 开头，这个前缀留给中枢模块的容器。 |
 | `code.module_in_use` | {modules} run on Containers; uninstall them first. | {modules} 运行在容器模块上，先卸载它们。 |
-| `code.image_pull_failed` | Podman could not pull {image}: {detail} | Podman 没能拉取 {image}：{detail} |
 | `code.container_hub_owned` | {name} is run by a module of the hub; change it in that module's tab. | {name} 由中枢的模块运行，要改就到那个模块的标签页里改。 |
 
 ## The Services page's health words

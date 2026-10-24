@@ -55,8 +55,10 @@ Inside the hub package the layers only reach downward:
   the packages share no code. `detect.hub_os()` returns `linux`, `darwin` or
   `windows`, and the panel's API uses the same word.
 
-The agent has no dependencies and listens on `127.0.0.1` alone, for the
-programs on its own machine. It keeps one socket open to the hub and reconnects when it drops, so it survives restarts, sleep
+The agent has no dependencies and listens on `127.0.0.1`, for the programs on
+its own machine, and on Linux also on the gateway of each Podman bridge, for
+the containers there ([agent.md](agent.md), "The listeners a container
+reaches"). It keeps one socket open to the hub and reconnects when it drops, so it survives restarts, sleep
 and NAT in between. It decides nothing: the hub says in `state` what each
 module is to be, and the agent observes, installs and configures until the
 machine matches ("The hub says what is wanted; the agent observes, installs
@@ -161,8 +163,120 @@ as its own child:
   steps finish, the process exits and the service manager starts it again as
   the panel. On Linux the package starts `neutrino_hub_web` the same way, and
   that unit serves the wizard until setup is done
-  ([install_and_dev.md](install_and_dev.md), "The application entry opens
-  the panel").
+  ([privilege.md](privilege.md), "The application entry elevates once").
+
+## `nhub setup` configures and starts, and installs nothing
+
+Three stages act on a machine that becomes a hub, and none of them does
+another's work:
+
+| Stage | Does | Never does |
+| --- | --- | --- |
+| The package | Installs everything the hub cannot run without, lays the payload down, and starts the hub's service, which serves the setup wizard until the box is set up | Configures anything |
+| `nhub setup` | Asks what this machine is for, writes `config/`, renders, installs the units and starts the services | Installs a system package |
+| The panel | Installs the modules somebody chose on managed machines, through their agents, and updates the hub itself | Runs before a hub is set up |
+
+What a package holds and depends on is [min_support.md](min_support.md),
+"What each package holds and depends on", and where it puts each file is
+[files.md](files.md). On every system the package installs an application
+entry named `Neutrino Hub`, which opens the wizard or the panel
+([privilege.md](privilege.md), "The application entry elevates once").
+
+`nhub setup` writes files under the five roots in [files.md](files.md), takes
+the interfaces over, renders every daemon's configuration from `config/`,
+installs the units and starts them. It checks that the dependencies are
+present, and refuses with the command that installs them when they are not,
+printed for the package manager this machine runs. It installs nothing
+itself, on any path.
+
+`setup` runs once. A box with a panel password is a box somebody configured,
+and `nhub reset all` is how one goes back to fresh.
+
+Every `nhub` command that changes the box, `start`, `stop`, `update` and
+each form of `reset`, asks `[y/N]` before it acts and takes `--yes` to go
+ahead without asking. With no terminal on stdin and no `--yes` it asks
+nothing, prints one line naming `--yes` and exits 1, so every script that
+runs one passes `--yes`: the deb's and the rpm's removal script and the
+Windows installer's removal run `nhub reset network --yes`. The agent's
+commands that change the machine do the same: `nagent start`, `stop`,
+`leave`, `join` over an existing binding and `service uninstall`, and the
+agent's deb removal script runs `nagent leave --yes`. A machine with no
+binding is told so by `nagent leave` without a question.
+
+The questions are answered in the terminal or in a browser. The hub's
+service serves the browser's questions from the install on the panel's HTTP
+port, the port that is in somebody's address bar afterwards, behind a
+one-time token kept under the state root and readable by root alone; the
+application entry and `nhub open` hold the token, and the package's
+post-install and the install script print the address with it for a box
+nobody sits at. The terminal path is `nhub setup`. Whichever path starts the
+steps first holds the setup lock, and the other is refused with
+`setup_in_progress`. When the steps finish, the service process exits and
+comes back as the panel on the same port. A terminal that printed the
+service's address and waits at its welcome checks every two seconds whether
+the box became set up; when the browser's run finishes first it prints one
+line with the panel's address and `nhub setup` exits 0, so the install script
+that ran it ends there too. A terminal past its welcome that reaches the
+steps after the browser's run finished is refused with the "already set up"
+line, before any step runs. A browser that ran the wizard is sent to the
+panel at the address it used, its own origin, never at an address the hub
+picked from an interface.
+
+Neither way is the source of truth for the questions: both build the same
+answers document `nhub setup --stdin` reads, and `wizard.from_document`
+says whether it can be used. A browser that posts one it refuses is told,
+and asked again.
+
+On macOS and Windows the package registers the one service and starts it
+("One service supervises the daemons on macOS and Windows"), and
+`nhub setup` does less than on Linux:
+
+| Step | Linux | macOS and Windows |
+| --- | --- | --- |
+| Checking what the hub needs | the system packages | the programs the package includes are present |
+| Guarding SSH with fail2ban | writes the jail | skipped |
+| Creating service users and directories | both | directories only, no account |
+| Installing units | writes them | skipped: the installer registered the one service |
+| Applying interface roles | by the mode | skipped |
+| The network mode | asks for one of three; `cn` offers `router` and `server` | `server`, with no question |
+| The hub's own traffic through the proxy | asked in `intl` | asked in `intl`; it diverts through the TUN there ([hub_components/proxy.md](hub_components/proxy.md), "The TUN on macOS and Windows") |
+| Starting services | each unit | the service is already running; the steps before this one write `services.json`, and the service starts each child as the file names it. From the terminal path this step is a restart of the service into the panel, after the panel password and before the local agent; from the browser path the service restarts itself; on macOS and Windows this step also writes the system firewall once, so the panel is reachable through it from the first minute |
+| The local agent | from the cache by `AGENT_PACKAGE_FAMILY_OF_PLATFORM` | from the cache by `AGENT_PACKAGE_FAMILY_OF_OS`: `installer -pkg <file> -target /` or `msiexec /i <file> /qn /norestart`, then `nagent join <link> --yes` |
+
+`nhub start`, `nhub stop` and `nhub status` drive that one service. The
+machine's shares and VS Code come from its local agent, as on any device
+([agent.md](agent.md)).
+
+## The hub updates itself outside its own process
+
+The one package the panel installs for itself is its own. Settings has an
+Update panel, and `nhub update` is the same from a terminal:
+
+1. The hub reads `latest.json` from the release sites, the newest release's
+   tag ([../agent_work_rule/release.md](../agent_work_rule/release.md),
+   "Release sites").
+1. It takes that release's `SHA256SUMS` and its own edition's package from
+   the release sites, with the method every download uses
+   ([agent/module_install.md](agent/module_install.md), "Choosing a
+   source").
+1. It checks the package against `SHA256SUMS` and hands the install to a
+   transient unit, `neutrino_hub_update`.
+
+The unit exists because the package's maintainer script restarts the panel,
+which then cannot finish an install it runs itself. The unit holds a health
+gate and installs the previous version's package when the new one does not
+answer.
+A hub updates to its own edition's package alone, which the file's name
+tells apart. [files.md](files.md) names what the directory keeps.
+
+On macOS and Windows the install runs as the agent's self-update does: a
+PowerShell started with `CREATE_NO_WINDOW | CREATE_BREAKAWAY_FROM_JOB` on
+Windows, whose process id the hub writes beside `state.json`, and a job given
+to `launchctl submit` on macOS, which removes itself when it ends. It installs
+the `.msi` or the `.pkg`, holds the same gate (the service running,
+`/api/hub/display` answering 200 on 127.0.0.1, `nhub --version` printing the
+target), installs the kept previous package when the gate fails, reinstalls
+the local agent, and writes each turn into `state.json`.
 
 ## Libraries carry the logic; `nhub` carries the execution
 
@@ -212,8 +326,10 @@ and the agent leave nothing out: NetBird is in every edition of each, so the
 desktop client and the Android app keep no NetBird hook table in
 `edition.py` or `Edition.kt`, no source set added only when its directory
 exists, and no part script inlined only when the tree holds it. Their
-`EDITION` stamp stays for what reads it, such as where a package fetches
-from.
+`EDITION` stamp stays for what reads it, the repository a client's
+**Source** links open ([client.md](client.md), "The Settings page"); no
+download reads it ([agent/module_install.md](agent/module_install.md),
+"Sources").
 
 Every place the hub registers something today takes a left-out feature's
 part from the table:
@@ -345,11 +461,14 @@ the hub's configuration has ever been applied. From those facts it reports
 one of the closed states, and it makes each module the state mentions match
 its `want`.
 
-The bytes come from the hub. The agent opens a `package` stream for a
-module's package, and the hub serves it from its own cache,
-`/var/lib/neutrino/hub/agent_module_cache/`. The cache fetches a package once for
-every device of that platform, presenting a browser's TLS fingerprint where a
-vendor gates on one. Losing it costs a download and nothing else.
+The bytes of a `hub` module come from the hub. The agent opens a `package`
+stream for each artifact, and the hub serves it from its own cache,
+`/var/lib/neutrino/hub/agent_module_cache/`. The cache fetches a file once for
+every device of that platform and version, presenting a browser's TLS
+fingerprint where a vendor gates on one. Losing it costs a download and
+nothing else. A container image and an npm package are fetched by the
+machine itself, from the source the agent chose among the ones the state
+names ([agent/module_install.md](agent/module_install.md), "Sources").
 
 Every way software moves on a managed machine is one serialized stream, and
 its output is one stream too. Package operations on one machine run one at a

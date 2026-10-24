@@ -42,6 +42,8 @@ password and is turned on for one client at a time.
 | `config/devices/devices.json` | `devices.example.json` | yes — device SSH creds |
 | `config/devices/<id>/terminal.json` | none | no: the Terminal module's `{account, shell_path}`, both empty for the shell the agent runs by default |
 | `config/devices/<id>/remote_desktop.json` | none | no: the Remote desktop module's `{is_enabled}`; absent is off |
+| `config/devices/<id>/modules.json` | none | no: each module's `want`, `is_settled` and chosen `version`, an empty `version` following the tested one |
+| `config/devices/<id>/<module>.json` of a container module that uses the AI gateway | none | yes: the module's gateway key on that device, sealed under the vault's data key |
 | `config/devices/<id>/vscode.json` | none | yes: each VS Code instance's connection token, sealed under the vault's data key, beside its account, its port and the vault login a Windows machine starts it with |
 | `config/ai/providers.json` | `providers.example.json` | no — keys live in the vault |
 | `config/cliproxyapi/cliproxyapi.json` | `cliproxyapi.example.json` | yes: the AI gateway's client keys, device keys and the hub's own key, sealed |

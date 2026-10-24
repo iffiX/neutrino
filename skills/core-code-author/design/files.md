@@ -106,9 +106,29 @@ and the client with their own three directories.
 
 Static. Nothing writes here after the install, and an upgrade replaces the
 directory whole. Removing a package removes its directory entirely, which is
-the property that makes it the right place for everything carried rather
-than configured. On macOS and Windows the hub is one compiled `nhub` beside
-its programs, and the agent and the client are compiled the same way.
+the property that makes it the right place for everything a package holds
+and nobody configures. On macOS and Windows the hub is one compiled `nhub`
+beside its programs, and the agent and the client are compiled the same way.
+
+The hub runs on macOS and Windows in `server` mode only. Its package, a
+`.pkg` or an `.msi`, depends on nothing the system lacks and holds:
+
+- `nhub`, the hub compiled by Nuitka into one binary with
+  `neutrino_hub/data/` inside it;
+- cli-proxy-api, netbird, easytier-core, easytier-cli and frpc, and in
+  `intl` xray and tun2socks, each pinned by version and digest for the
+  system and the architecture, and on Windows `wintun.dll` and the
+  `packet.dll` stand-in beside them;
+- in `intl`, the geodata;
+- the agent's `.pkg` or `.msi` of the same architecture and edition, in the
+  agent cache.
+
+The installer registers the service and starts it. The `.pkg`'s
+postinstall creates the directories, links `/usr/local/bin/nhub`, installs
+the plist and bootstraps it; the `.msi` registers `neutrino_hub` and starts
+it. Until the box is set up that service serves the wizard
+([architecture.md](architecture.md), "One service supervises the daemons on
+macOS and Windows").
 
 Why the hub carries an interpreter at all, and what that costs, is in
 [../agent_work_rule/release.md](../agent_work_rule/release.md).
@@ -142,8 +162,12 @@ overrides both, which is what makes a second instance testable. Details of the f
         geodata/            geoip.dat and geosite.dat
         cliproxyapi/        the AI gateway's accounts and tokens
         netbird/            the hub's own NetBird configuration and profile
-        agent_module_cache/ the third-party packages a module's installer
-                            fetched for managed machines
+        agent_module_cache/ the files a module's installer fetched for
+                            managed machines, each named by its digest
+        module_releases.json
+                            each module's versions as its publisher's feeds
+                            listed them at the last daily read, with each
+                            version's digests
         agent_cache/        the agent packages this hub hands out
         services.json       which daemons the supervising service runs,
                             macOS and Windows only
@@ -187,9 +211,9 @@ overrides both, which is what makes a second instance testable. Details of the f
         vscode/             the VS Code CLI, read and run by every account
         code_server/        code-server's release, its own Node.js inside
                             it, read and run by every account
-        cloudcli/           CloudCLI's Node.js, its one component, read
+        cloudcli/           CloudCLI's Node.js, its one artifact, read
                             and run by every account
-        codeg/              Codeg's two components, one subdirectory each:
+        codeg/              Codeg's two artifacts, one subdirectory each:
                             server/ the server bundle and node/ its
                             Node.js, read and run by every account
         ai_tools/           per account, the record of each AI tool the
@@ -224,17 +248,26 @@ package lays the agent builds it was made from straight into it, so enrolling
 a device and letting an agent update itself need no network at all; an
 upgrade replaces those files the way it replaces `/opt/neutrino/hub`, because
 the package manager owns them. A platform the package seeded none for is
-fetched once from the release its manifest names, checked against the hash
-pinned there, and kept beside them. A file already here is served only while
-it still hashes to what the manifest pins; one that does not is fetched
-again. `nhub reset all` clears `agent_module_cache/` and leaves
-`agent_cache/` alone: one is a cache the hub filled, the other is largely what
-dpkg put there.
+fetched once from the release sites, checked against the digest its manifest
+pins, and kept beside them ([agent.md](agent.md), "The agent's packages come
+from the hub"). A file already here is served only while it still hashes to
+what the manifest pins; one that does not is fetched again. `nhub reset all`
+clears `agent_module_cache/` and leaves `agent_cache/` alone: one is a cache
+the hub filled, the other is largely what dpkg put there.
+
+`hub/agent_module_cache/` keeps every file of a module version some machine
+names, and deletes the rest after it places a new file
+([agent/module_install.md](agent/module_install.md), "From the hub's
+cache"). `hub/module_releases.json` is the last daily read of the
+publishers' feeds; losing it costs a read, and until then the Modules page
+offers the tested versions alone.
 
 `hub/hub_update/` is where the hub updates itself from. The panel, or `nhub
-update`, downloads the newest release's package into it beside the running
-version's own package, writes the install script, and starts it outside the
-panel's own process; the script installs, holds a health gate, and installs
+update`, fetches the newest release's package from the release sites into it
+beside the running version's own package, writes the install script, and
+starts it outside the panel's own process
+([architecture.md](architecture.md), "The hub updates itself outside its own
+process"); the script installs, holds a health gate, and installs
 the previous package when the gate fails, writing each turn into
 `state.json`. Two packages stay: the one running and the one before it.
 

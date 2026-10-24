@@ -38,9 +38,9 @@ skills/              core-code-author/, this standard: design/ the design
                      pages, design/hub_components/ the hub's AI gateway,
                      network and proxy, design/agent/ the agent's AI tools
                      setting, module_template.md the flow every device
-                     module shares, module_install.md the sources a
-                     module's software comes from, and modules/ one page
-                     per device module;
+                     module shares, module_install.md the install methods,
+                     artifacts, sources and versions of a module's
+                     software, and modules/ one page per device module;
                      doc-author/, how every .md is written.
 images/              Source artwork: icons/ the one icon source the packaging
                      builds copy from, original/ the raw artwork, web/ and
@@ -101,7 +101,8 @@ password hash and device keys. What each file may contain is documented by the
 agent/
   neutrino_agent/    The agent: the channel to the hub, desired-state sync,
                      the modules it hosts, the streams the panel drives. No
-                     window; it listens on 127.0.0.1 alone.
+                     window; it listens on 127.0.0.1, and on Linux on the
+                     Podman bridges for the machine's containers.
     core/            The one WebSocket to the hub, enrollment, the desired
                      state store and engine, metrics, self-update.
     control/         The root-only local socket `nagent` talks to, and the
@@ -153,7 +154,7 @@ client/desktop/
     bundled.py       Where the carried tools (cc-switch, the RustDesk
                      viewer) are found.
     edition.py       The edition the client was built as, `EDITION`,
-                     which chooses where it fetches from.
+                     which chooses where its Source links open.
     netbird/         NetBird's driver and constants.
     data/            Ships inside the package: desktop/ its .desktop entry,
                      polkit/ the policy for the mount helper.
@@ -224,9 +225,8 @@ packaging/
                      build_docs.py.
   ci/                What only the workflows run: check.py installs a
                      built package where it runs and checks it works;
-                     publish_cn.py publishes the mainland release on
-                     Gitee, and no workflow runs it while Gitee releases
-                     are paused; count_tests.py writes the test counts the
+                     publish_cn.py publishes a release and the mainland
+                     tree to CNB, the second release site; count_tests.py writes the test counts the
                      docs build serves for the README's badge.
   install/           install.sh for macOS and Linux and install.ps1 for
                      Windows: the one-command installers a release
@@ -266,9 +266,8 @@ consumes (pure), `ops.py` makes it true on the box (effects: writing,
 validating with the real tool, reloading), `constants.py` holds the
 module-prefixed constants, `provisioner.py` installs the software itself where
 the distribution's archive cannot. Knowing one module is knowing all of them.
-A module that needs none of a file simply does not have it: `modules/zfs` is
-`constants.py`, `ops.py` and `provisioner.py`, because a pool is not rendered
-from `config/`.
+A module has only the files it uses: `modules/hub_update` has no renderer,
+because the hub's own update renders nothing from `config/`.
 
 **`modules/router` is bigger than that shape, and organised by engine.** It
 drives several pieces of software rather than one, so instead of a single

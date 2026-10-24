@@ -129,7 +129,10 @@ the roles, as below.
 | each SOCKS port | while the proxy has one |
 
 The AI gateway's port is not among them: the gateway listens on the hub's
-loopback alone ([ai.md](ai.md), "What serves").
+loopback alone ([ai.md](ai.md), "What serves"). Neither are the ports the
+hub's own agent relays on the Podman bridges, the gateway's among them, so
+the chain's accept policy admits a container's connection to them
+([../agent.md](../agent.md), "The listeners a container reaches").
 
 A hub port answers a sender whose address is inside an exposed segment, and
 no other sender. A segment is a set of networks the hub holds addresses in.
@@ -605,9 +608,9 @@ pin run end to end, so the node forwards ciphertext, as the relay's VPS does.
 
 Both vendors run upstream frpc (fatedier/frp, Apache-2.0) at one pinned
 version, `FRP_VERSION` in `modules/frp/constants.py`, with its sha256 for
-each system and architecture. Every hub package of both editions carries it
-([../install_and_dev.md](../install_and_dev.md)), and the hub fetches no
-program later. OpenFrp's own client is not used.
+each system and architecture. Every hub package of both editions holds it
+([../files.md](../files.md), "/opt/neutrino: what the packages put here"),
+and the hub fetches no program later. OpenFrp's own client is not used.
 
 `config/overlay/sakurafrp.json` and `config/overlay/openfrp.json` hold one
 vendor each, with the same keys:

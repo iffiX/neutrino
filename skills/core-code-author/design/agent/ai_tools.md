@@ -32,7 +32,8 @@ the same steps as the client's deactivation:
 the hub's loopback alone, so while the section is on the agent listens on
 `127.0.0.1:8317`, the AI gateway forward, and relays each connection made
 there to the hub over its channel ([agent.md](../agent.md), "The AI gateway
-forward"). The endpoint the switch writes into each tool is that port. A
+forward"). The forward is also open while a container module that uses the
+gateway is installed, for that module's own key. The endpoint the switch writes into each tool is that port. A
 tool reaches the gateway while the agent runs and its channel to the hub is
 up. On the hub's own machine the agent opens no forward, and the endpoint is
 the gateway's own loopback port.
@@ -44,19 +45,23 @@ package's removal on Linux shows what both print.
 **cc-switch comes from the hub when it is needed.** The agent's package
 does not carry it. While the section is on and names an account, the agent
 needs a copy of the version the section's `cc_switch_version` names. When it
-has none, or one of another version, it opens `package {module: cc_switch}`
-([protocol.md](../protocol.md), "The stream layer"), checks the bytes against
-the `sha256` the close names, unpacks the `cc-switch` at the archive's top
+has none, or one of another version, it opens `package {module: cc_switch,
+artifact, digest}` ([protocol.md](../protocol.md), "The stream layer"),
+checks the bytes against the digest, unpacks the `cc-switch` at the
+archive's top
 (`cc-switch.exe` on Windows) into `ai_tools/bin/` under the state root, and
 writes the version beside it in `version`, replacing a copy of another
 version whole. The directory is root's own: every account may read and run
 what is in it and none may write it, as with any software the hub sends
 ([agent.md](../agent.md), "The platform layer"). A switch back while the
 section is off runs whatever copy is there, and fetches the version the
-section names when none is. A download or an unpack that fails gives every
-account the section names, and every account it would switch back, `failed`
-with `cc_switch_download_failed {detail}`, runs nothing, and leaves the state
-to be tried again at the next state or the next retry.
+section names when none is. The hub's cache fetches cc-switch from its
+publisher's GitHub release and from the release sites, which hold the same
+files ([module_install.md](module_install.md), "Sources"). A download or an
+unpack that fails gives every account the section names, and every account
+it is to switch back, `failed` with `download_failed {file, sources}`, runs
+nothing, and leaves the state to be tried again at the next state or the
+next retry.
 
 The records are the client's, one per tool, `{is_present, previous, added}`,
 kept under the state root in `ai_tools/<account>/<tool>.json`, root's own,
@@ -183,7 +188,7 @@ has_records}`, `state` being `switched`, `switched_back` or `failed`, and
 of the report: a tool of it still pointed at the hub, whose original files
 wait to be written back. A failure carries the client's
 code where it fits, `switch_failed {account, detail}`, the download's
-`cc_switch_download_failed {detail}`, and the module codes for an account it
+`download_failed {file, sources}`, and the module codes for an account it
 cannot run as:
 `account_unknown {account}`, and on Windows `credential_missing {account}`
 and `credential_invalid {account}`. A failed account is not tried again

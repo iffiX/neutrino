@@ -15,7 +15,7 @@ system.
 | `app.ini` | `/etc/gitea/app.ini`, root and the group `git`, mode 640 | `gitea_data/custom/conf/app.ini`, the account's, mode 600 | `gitea_data\custom\conf\app.ini` |
 | Runs as | the system account `git` the module makes | the hidden account `neutrino_gitea`, made with `sysadminctl` the way the file share makes its accounts, with the full name `Neutrino Gitea`, the shell `/usr/bin/false` and the data directory as its home, and read back before it counts | LocalSystem, `RUN_USER` being `<computer name>$` as Gitea's page prescribes |
 | Service | `neutrino_gitea.service` | the LaunchDaemon `com.neutrino.gitea` with `UserName`, its output in `/Library/Logs/Neutrino/agent/gitea.log` | the service `neutrino_gitea`, made with `sc.exe`, started at boot and again after a failure |
-| Git | the distribution's `git`, installed with the binary | the command line tools' or Xcode's own `git`, else Homebrew's, never `/usr/bin/git` | Git for Windows, found on the machine's `Path` as the service reads it, else under `%ProgramFiles%\Git\cmd` |
+| Git | the distribution's `git`, which the entry's `packages` names and the system's package manager installs before the binary | the command line tools' or Xcode's own `git`, else Homebrew's, never `/usr/bin/git` | Git for Windows, found on the machine's `Path` as the service reads it, else under `%ProgramFiles%\Git\cmd` |
 | SSH | the system's `sshd` as `git` | none; clones and pushes over HTTP | none; clones and pushes over HTTP |
 
 **Git is the machine's.** The module installs none on macOS and Windows: an
@@ -24,12 +24,20 @@ install or an apply there that finds no usable `git` is refused
 Mac without the developer tools `/usr/bin/git` is a stub that opens a dialog
 on the screen, so it is never run and never named.
 
-**The binary comes from its publisher.** `data/manifests/gitea.json` pins
-the release at one version for every system: `linux-amd64`, `linux-arm64`,
-`darwin-10.12-amd64`, `darwin-10.12-arm64` and `windows-4.0-amd64`, each with
-the sha256 dl.gitea.com publishes beside it. The Windows build is the one
-that runs `git`, as on Linux; the `gogit` build is not used. The hub's cache
-fetches it and sends it down `package {module: gitea}`.
+**The binary comes from its publisher.** `data/manifests/gitea.json` names
+the release binary, kind `binary`, at one tested version for every system:
+`linux-amd64`, `linux-arm64`, `darwin-10.12-amd64`, `darwin-10.12-arm64` and
+`windows-4.0-amd64`. Its versions and digests come from Gitea's GitHub
+releases, and its sources are dl.gitea.com and the GitHub release, which
+serve the same files. The Windows build is the one that runs `git`, as on
+Linux; the `gogit` build is not used. The hub's cache fetches it and sends
+it down `package {module: gitea, artifact, digest}`.
+
+**An older version asks first.** Gitea migrates its database forward at its
+first start on a new version, and an older Gitea cannot read it. The
+manifest therefore names `is_data_forward_only`, and the Modules page asks
+before it installs a version older than the one installed
+([module_install.md](../module_install.md), "Module versions").
 
 **The accounts are made through the gitea CLI as the server's own account**:
 `runuser -u git` on Linux, a process with the account's uid, gid, home and

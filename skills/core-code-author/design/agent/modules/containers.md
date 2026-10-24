@@ -12,17 +12,18 @@ module".
 
 | | Linux | Windows | macOS |
 | --- | --- | --- | --- |
-| The runner | `PodmanModuleRunner`, kind `system_package` | `PodmanMachineModuleRunner`, kind `podman_machine` | `PodmanMachineModuleRunner`, kind `podman_machine` |
-| Podman | the distribution's, 3.4 or later | 6.1.4 for amd64, pinned in `podman.json`, from the hub's cache, on WSL 2 | the release `podman.json` pins, a 6.x for arm64 and a 5.8.x for amd64, from the hub's cache |
+| The runner | `PodmanModuleRunner`, runner `podman` | `PodmanMachineModuleRunner`, runner `podman_machine` | `PodmanMachineModuleRunner`, runner `podman_machine` |
+| Podman | the distribution's, 3.4 or later | the tested 6.1.4 for amd64, or the version the machine chose, from the hub's cache, on WSL 2 | the tested version of `podman.json`, a 6.x for arm64 and a 5.8.x for amd64, or the version the machine chose, from the hub's cache |
 | The systemd that runs the units | the machine's own | the Podman machine's | the Podman machine's |
 | Who runs Podman | root | root inside the machine; the machine's own commands run as the account | as on Windows |
 
 ## Linux
 
-`PodmanModuleRunner`, under `agent/neutrino_agent/modules/podman/`, is a
-`system_package` module: its recipe names `podman`, and the machine's
-package manager installs it ([module_install.md](../module_install.md),
-"From the system's sources").
+`PodmanModuleRunner`, under `agent/neutrino_agent/modules/podman/`, is the
+runner `podman`. Its Linux entries name the method `system` with the package
+`podman`, and the machine's package manager installs it
+([module_install.md](../module_install.md), "From the system's
+packages").
 
 | Rule | Reason |
 | --- | --- |
@@ -47,7 +48,7 @@ per protocol, from it ([agent.md](../../agent.md), "The connect stream").
 
 ## Windows and macOS
 
-`PodmanMachineModuleRunner`, `name` `podman` and kind `podman_machine`, is
+`PodmanMachineModuleRunner`, `name` `podman` and runner `podman_machine`, is
 the second runner in the same directory, and the engine builds it under
 `hub_packages` on Windows and macOS. It renders the Linux files with the
 Linux renderers, `PodmanQuadletRenderer` and `PodmanRegistriesRenderer`, and
@@ -60,17 +61,18 @@ platform layer resolves from `ProfileList`.
 
 ### What the install puts on the computer
 
-The manifest's Windows and macOS branches are `installer` `hub`, each with
-its own identity fields ([module_install.md](../module_install.md), "One source per platform"). The
-hub's cache fetches each component and sends it down `package {module:
-podman, component}`. The agent keeps each file as the publisher's bytes
-under `podman/<component>/` in the state root and unpacks none.
+The manifest's Windows and macOS entries name the method `hub`, each with
+its own tested version ([module_install.md](../module_install.md), "The
+manifest"). The hub's cache fetches each artifact and sends it down
+`package {module: podman, artifact, digest}`. The agent keeps each file as
+the publisher's bytes under `podman/<directory>/` in the state root and
+unpacks none.
 
-| Component | Windows amd64 | macOS |
+| Artifact | Windows amd64 | macOS |
 | --- | --- | --- |
-| `wsl` | the WSL msi, pinned at 3.0.3, `package_kind` `msi` | none |
-| `installer` | Podman's msi, pinned at 6.1.4, `package_kind` `msi` | Podman's pkg at the branch's version, `package_kind` `pkg` |
-| `image` | the machine image for WSL, `podman-machine.x86_64.wsl.tar.zst`, `package_kind` `tar_zst` | the machine image for applehv, `package_kind` `raw_zst` |
+| `wsl` | the WSL msi, pinned at 3.0.3 for every version, kind `msi` | none |
+| `podman` | Podman's msi at the entry's version, kind `msi` | Podman's pkg at the entry's version, kind `pkg` |
+| `image` | the machine image for WSL, `podman-machine.x86_64.wsl.tar.zst`, kind `tar_zst` | the machine image for applehv, kind `raw_zst` |
 
 | Step | What the agent runs, as SYSTEM or root | Reason |
 | --- | --- | --- |
@@ -79,7 +81,7 @@ under `podman/<component>/` in the state root and unpacks none.
 | Podman on Windows | `msiexec /i <msi> /qn /norestart /l*v <log> ALLUSERS=1 MACHINE_PROVIDER=wsl` through `installers.install_msi` | `ALLUSERS=1` puts Podman in `C:\Program Files\Podman` and on the computer's `PATH`, where SYSTEM and every account find it |
 | Podman on macOS | `installer -pkg <file> -target /` through `installers.install_pkg` | the system's installer is the one that installs a pkg |
 
-A failed msi or pkg ends the install `podman_install_failed {component,
+A failed msi or pkg ends the install `podman_install_failed {artifact,
 exit_code}`.
 
 | Rule | Reason |
@@ -104,7 +106,7 @@ it is.
 | The machine is the account's default one, `podman-machine-default`. The agent creates it when the account has none, with `podman machine init --rootful --image <kept image>`, and takes over one that exists, with `podman machine set --rootful` on the stopped machine when it is not rootful. | The person's own `podman ps` as that account shows the containers the panel declares. |
 | Every `podman machine` and `wsl` command runs as the account, through the platform's `run_as_account`: the one-shot task under the account's login on Windows, a child with the account's uid on macOS. The agent writes `.wslconfig` as the account too. | WSL refuses SYSTEM with `WSL_E_LOCAL_SYSTEM_NOT_SUPPORTED`, `podman machine` refuses root on macOS, and the account keeps owning its own files. |
 | On macOS every `podman machine` command has `TMPDIR` set to the account's own temporary directory, which `getconf DARWIN_USER_TEMP_DIR` prints when run as the account, read once per account. | Podman keeps a running machine's sockets and helper files under `$TMPDIR/podman` and uses `/tmp` when `TMPDIR` is not set, as in a child the agent starts; the account's sessions have that directory. |
-| The init reads the image the hub sent, and runs inside the apply, about 40 seconds on Windows. | The hub's cache is the one source of the machine's bytes, on a `cn` hub too. |
+| The init reads the image the hub sent, and runs inside the apply, about 40 seconds on Windows. | The hub's cache is the one source of the machine's bytes. |
 | On WSL the agent resizes the disk right after the init and before the first start, with `wsl --manage podman-machine-default --resize <size>GB`. This first resize also runs `wsl --shutdown` as the account, which stops the account's other WSL systems. | WSL creates a 1 TB disk whatever size Podman asks for. |
 | On WSL the CPUs and the memory are `processors=<n>` and `memory=<n>GB` under `[wsl2]` in the account's `%USERPROFILE%\.wslconfig`, a 0 written as the default's number; the agent makes the file or the section when it is missing, changes these two keys and keeps every other line. | WSL ignores Podman's numbers and reads this file, which is the person's own and applies to every WSL system of the account. |
 | A change of CPUs, memory or disk in the configuration, against the last one applied, runs `wsl --shutdown` as the account on WSL, which stops every WSL system of that account, then resizes the disk when it grew, and starts the machine before the apply writes into it. The panel warns before the apply. | WSL reads `.wslconfig`, and resizes a disk, only while none of the account's WSL systems runs; a person's own edit of the file is theirs and restarts nothing. |
@@ -179,7 +181,7 @@ reboot. With a folder mounted on `/etc/containers` by a unit of Podman's
 name after the generators, the agent's root script wrote the boot unit. The
 container started at boot came back after a reboot, the one not started at
 boot stayed stopped, and the script for no containers removed the unit. The
-`podman_macos` job read each branch's machine settings: Podman 6.1.4 lists
+`podman_macos` job read each entry's machine settings: Podman 6.1.4 lists
 the mount on `/etc/containers`, and Podman 5.8.9 does not. No applehv
 machine has started under the agent, and the boot on a real Apple silicon
 Mac is not proven.
@@ -236,7 +238,7 @@ the machine while it still runs:
 | The keeper, its script and its log | removed, so nothing starts the machine again |
 | The machine | stopped, and kept with its disk, images and named volumes in the account's profile; on Windows its WSL system stays registered |
 | Podman | uninstalled: on Windows the msi by `installers.uninstall_msi`; on macOS `/opt/podman/` and the two files the pkg's scripts write deleted, and the receipt forgotten with `pkgutil --forget com.redhat.podman` |
-| The kept components and the reboot mark | removed from the state root |
+| The kept artifacts and the reboot mark | removed from the state root |
 | The account's `.wslconfig`, WSL and both Windows features | kept |
 
 A reinstall finds the account's default machine and takes it over, and the
@@ -249,7 +251,7 @@ a feature off owes another restart.
 | | Windows | macOS |
 | --- | --- | --- |
 | Podman | `C:\Program Files\Podman\` | `/opt/podman/` |
-| The kept components | `%ProgramData%\Neutrino\agent\state\podman\<component>\` | `/Library/Application Support/Neutrino/agent/state/podman/<component>/` |
+| The kept artifacts | `%ProgramData%\Neutrino\agent\state\podman\<directory>\` | `/Library/Application Support/Neutrino/agent/state/podman/<directory>/` |
 | The reboot mark | `%ProgramData%\Neutrino\agent\state\podman\reboot_mark` | none |
 | The keeper's script | `%ProgramData%\Neutrino\agent\state\podman\keeper.cmd` | `/Library/Application Support/Neutrino/agent/state/podman/keeper.sh` |
 | The keeper | the scheduled task `neutrino_podman_<account>` | `/Library/LaunchDaemons/com.neutrino.podman.<account>.plist` |
@@ -265,19 +267,38 @@ a feature off owes another restart.
 
 ## Hub containers
 
-A hub container is one a module from a container registry runs on
-Containers ([module_install.md](../module_install.md), "From a container
-registry"). The hub composes them into the `podman` state as
-`hub_containers`, one list beside `containers`, and the agent renders each
-as it renders a declared container on the same system.
+A hub container is one a `container` module runs on Containers
+([module_install.md](../module_install.md), "From container images"). The
+hub composes them into the `podman` state as `hub_containers`, one list
+beside `containers`, and the agent renders each as it renders a declared
+container on the same system.
 
 | Rule | Reason |
 | --- | --- |
-| A hub container is `{module, name, image, ports, volumes, environment, command, is_autostart, services}`, `image` as `reference@digest`; the agent adds the label `neutrino.module=<module>` and joins it to the network `neutrino_<module>`, which an apply makes when it is missing. | The label names the container's module on the machine, and the containers of one module reach each other by name. |
+| A hub container is `{module, name, image, ports, volumes, environment, command, is_autostart, services}`, `image` as `{digest, sources}`; the agent adds the label `neutrino.module=<module>` and joins it to the network `neutrino_<module>`, which an apply makes when it is missing. | The label names the container's module on the machine, and the containers of one module reach each other by name. |
+| The agent renders a hub container's image as the reference it finds in Podman's store with the image's digest, under one of its `sources`. | Podman stores an image pulled from a mirror under the mirror's name. |
 | A container's owner is read in this order: the label `neutrino.module` makes it a hub container of that module, a name among the declared ones makes it declared, and any other container is one a person started by hand. | Each container has one owner, and the label outlasts every record. |
 | `neutrino_` starts no declared container's name: `container/set` refuses a new name with it `container_name_reserved {name}`. A declared container that came from an import keeps its name. | A person's container never takes the name of a hub container. |
 | A container with the label `neutrino.module` whose module `config/devices/<id>/modules.json` does not name is imported into the declared containers with its name, image, ports, volumes and environment, at the report that shows it. | A hub that lost its configuration, from an older backup or a machine that joined again, keeps the containers as the person's. |
 | A hub container's row in **Running** has the module's title and **Journal** as its one button. The hub refuses `container/start`, `/stop`, `/restart` and a container's shell on it with `container_hub_owned {name}`. | The module runs its containers as its configuration says, and a press or a shell beside it changes them behind the module. |
+
+## Reaching the machine
+
+Every container reaches the agent's `127.0.0.1` listeners at
+`host.containers.internal`, on the same port ([agent.md](../../agent.md),
+"The listeners a container reaches").
+
+| System | How `host.containers.internal` reaches the listeners |
+| --- | --- |
+| Linux | the renderer writes `AddHost=host.containers.internal:<gateway>` into every declared and hub container, `<gateway>` being the gateway address of the container's network, and `--add-host` into a plain unit below Podman 4.4. The agent relays its listeners on that address. |
+| macOS | the Podman machine's gvproxy maps `host.containers.internal` to the Mac's loopback |
+
+| Rule | Reason |
+| --- | --- |
+| An apply on Linux makes the networks first, reads each network's gateway with `podman network inspect`, and hands the addresses to the renderer. | The renderer stays pure, and a module's network has its address once the apply makes it. |
+| A container module that uses the AI gateway, as its line in the description table says, has a gateway key of its own. The hub generates it, seals it in `config/devices/<id>/<module>.json`, registers it under the device and the module, and voids it at the module's uninstall. | The module's containers call the gateway on their own, and a key per module shows its use as a row of its own ([hub_components/ai.md](../../hub_components/ai.md), "A key per device as well as per client"). |
+| The hub composes the gateway's address and the key into the environment of the module's containers: `http://host.containers.internal:8317` on a managed machine, and the gateway's `listen_port` in place of 8317 on the hub's own machine. | The address is the agent's forward, or on the hub's machine the gateway's own port, each relayed to the container. |
+| The key does not follow the machine's AI tools setting. | The setting points a person's tools at the gateway; the module's containers need the gateway whatever the setting says. |
 
 ## The last apply's record
 

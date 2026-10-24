@@ -1,9 +1,9 @@
 # A device module
 
 A device module is software the hub administers on a managed machine. One
-manifest in the hub names where the software comes from, one runner in the
-agent makes the machine match the hub's `want`, and one flow takes every
-module from the manifest to a published entry: the install on
+manifest in the hub names where the software comes from, the runner named in
+its platform entry makes the machine match the hub's `want`, and one flow
+takes every module from the manifest to a published entry: the install on
 [module_install.md](module_install.md), the run and the publish on this
 page. Each module's own page under `modules/` holds what differs for it;
 the agent around the modules, its states and `want`, is
@@ -12,18 +12,20 @@ a module the agent has no runner for reads `unsupported`.
 
 ## How a module runs
 
-| Kind | Modules | What the machinery does for it | What the module supplies |
+| Kind | Modules and their `runner` | What the machinery does for it | What the module supplies |
 | --- | --- | --- | --- |
-| Carried by the agent | Terminal; Remote desktop, which also detects a person's own AnyDesk and TeamViewer | runs the module's applier; the four presses are refused `module_not_optional` | its configuration file, its runner, one applier per system where the systems differ ([modules/terminal.md](modules/terminal.md), [modules/remote_desktop.md](modules/remote_desktop.md)) |
-| Software the module configures | File share, Containers, ZFS storage | renders the module's files and drives the system's own service; on Windows and macOS the file share drives the system's SMB server, and Containers runs a Podman machine of one account | its configuration, its renderer and its applier ([modules/file_share.md](modules/file_share.md), [modules/containers.md](modules/containers.md), [modules/zfs.md](modules/zfs.md)) |
-| A service with a system account of its own | Gitea | makes the account and the service, and the publisher's layout holds on every system | its configuration, one applier per system, the rendered `app.ini` ([modules/gitea.md](modules/gitea.md)) |
-| A program run as a person's account | VS Code, code-server, CloudCLI, Codeg | the whole flow of this page: one account service per instance, the forwarder, the `web` entry, the shared router and the shared panel | `config.py`, `constants.py` and `hooks.py` ([modules/vscode.md](modules/vscode.md), [modules/code_server.md](modules/code_server.md), [modules/cloudcli.md](modules/cloudcli.md), [modules/codeg.md](modules/codeg.md)) |
-| Container images | every module whose software is container images | runs the images as hub containers on the Containers module, one network per module | its images in the manifest and the containers it composes on the hub ([module_install.md](module_install.md), "From a container registry") |
+| Carried by the agent | Terminal, `terminal`; Remote desktop, `remote_desktop`, which also detects a person's own AnyDesk and TeamViewer | runs the module's applier; the four presses are refused `module_not_optional` | its configuration file, its runner, one applier per system where the systems differ ([modules/terminal.md](modules/terminal.md), [modules/remote_desktop.md](modules/remote_desktop.md)) |
+| Software the module configures | File share, `samba` on Linux and `samba_native` on Windows and macOS; Containers, `podman` on Linux and `podman_machine` on Windows and macOS; ZFS storage, `zfs` | renders the module's files and drives the system's own service; on Windows and macOS the file share drives the system's SMB server, and Containers runs a Podman machine of one account | its configuration, its renderer and its applier ([modules/file_share.md](modules/file_share.md), [modules/containers.md](modules/containers.md), [modules/zfs.md](modules/zfs.md)) |
+| A service with a system account of its own | Gitea, `gitea` | makes the account and the service, and the publisher's layout holds on every system | its configuration, one applier per system, the rendered `app.ini` ([modules/gitea.md](modules/gitea.md)) |
+| A program run as a person's account | VS Code, `vscode`; code-server, `code_server`; CloudCLI, `cloudcli`; Codeg, `codeg` | the whole flow of this page: one account service per instance, the forwarder, the `web` entry, the shared router and the shared panel | `config.py`, `constants.py` and `hooks.py` ([modules/vscode.md](modules/vscode.md), [modules/code_server.md](modules/code_server.md), [modules/cloudcli.md](modules/cloudcli.md), [modules/codeg.md](modules/codeg.md)) |
+| Container images | every module whose software is container images, `container` | runs the images as hub containers on the Containers module, one network per module | its images in the manifest and the containers it composes on the hub ([module_install.md](module_install.md), "From container images") |
 
-Where a module's software comes from, its manifest, its install and what
-its uninstall removes are [module_install.md](module_install.md); a kind of
-this table and a source of that page are independent, as Containers runs
-one way on every system and installs from two sources.
+`runner` names the agent runner, and an agent that has no runner of that
+name reports the module `unsupported`. Where a module's software comes
+from, its manifest, its install and what its uninstall removes are
+[module_install.md](module_install.md). A runner and an install method are
+independent: Containers runs one way on every system and installs by two
+methods.
 
 ## The run
 
@@ -108,10 +110,11 @@ carries them opened. The panel draws the four with one `instances_panel.tsx`
 | File | One concept |
 | --- | --- |
 | `base.py` | what a module runner is: the contract every module's runner meets |
-| `package.py` | installing, removing and verifying one downloaded-package module |
-| `unpacked_tree.py` | a module's archive from the hub, unpacked under the module's own directory and sealed |
-| `system_package.py` | installing and uninstalling modules the machine's package manager carries |
-| `installers.py` | installing a downloaded package the way this machine installs things, one function per package kind: `install_msi` and `uninstall_msi` run `msiexec`, waiting for the Windows Installer mutex, trying once more on 1618 and taking 0 and 3010 as success; `install_pkg` runs `installer -pkg <file> -target /`; the agent's self-update uses the same functions, and the scripts it renders stay as they are |
+| `package.py` | installing, removing and verifying one `hub` module, and switching it to another version |
+| `unpacked_tree.py` | an archive from the hub, unpacked under the module's own directory and sealed |
+| `system_package.py` | installing and uninstalling the packages of a `system` entry with the machine's package manager |
+| `installers.py` | installing a downloaded package the way this machine installs things, one function per artifact kind: `install_msi` and `uninstall_msi` run `msiexec`, waiting for the Windows Installer mutex, trying once more on 1618 and taking 0 and 3010 as success; `install_pkg` runs `installer -pkg <file> -target /`; the agent's self-update uses the same functions, and the scripts it renders stay as they are |
+| `source_fetch.py` | probing and ranking the sources of an image, an npm registry or a host an npm setting names ([module_install.md](module_install.md), "Choosing a source") |
 | `http_forward.py` | what every forwarder in front of a module's page shares: the listener, the token check, the pass-through |
 | `log_tail.py` | the last lines of a log file, and the mask every journal passes through |
 | `subprocess_run.py` | running one command for a module applier, with its output kept |
@@ -134,7 +137,7 @@ drawn with `generic.svg` in the same directory.
 
 | | Linux | macOS | Windows |
 | --- | --- | --- | --- |
-| The unpack | `/var/lib/neutrino/agent/<module>/<component>/` | `/Library/Application Support/Neutrino/agent/state/<module>/<component>/` | `%ProgramData%\Neutrino\agent\state\<module>\<component>\` |
+| The unpack | `/var/lib/neutrino/agent/<module>/<directory>/` | `/Library/Application Support/Neutrino/agent/state/<module>/<directory>/` | `%ProgramData%\Neutrino\agent\state\<module>\<directory>\` |
 | The per-account data | `~/.local/share/neutrino/agent/<module>/` | `~/Library/Application Support/Neutrino/agent/<module>/` | `%LOCALAPPDATA%\Neutrino\agent\<module>\` |
 | The service definition | the unit `neutrino_<module>@<account>.service` | `/Library/LaunchDaemons/com.neutrino.<module>.<account>.plist` | the scheduled task `neutrino_<module>_<account>` |
 | The log | the unit's journal | `/Library/Logs/Neutrino/agent/<module>_<account>.log`, or the file the module names | `<account>.log` beside the program, or the file the module names |

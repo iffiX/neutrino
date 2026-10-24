@@ -31,14 +31,17 @@ into the source twice.
 
 An edition is the set of features a package is built with. One tag builds
 every package in two editions from the one source on GitHub, at the same
-version and the same `PROTOCOL`:
+version and the same `PROTOCOL`, and one release on every release site holds
+both ("Release sites"):
 
-| Edition | Features | Released on |
-| --- | --- | --- |
-| `intl` | every feature | GitHub, `https://github.com/iffiX/neutrino/releases`, every release kept |
-| `cn` | every feature except the proxy and the side gateway mode | Gitee, `https://gitee.com/iffiX/neutrino/releases`, the latest release only |
+| Edition | Features |
+| --- | --- |
+| `intl` | every feature |
+| `cn` | every feature except the proxy and the side gateway mode |
 
-The mainland edition does not carry the proxy:
+`cn` differs from `intl` in the proxy and the side gateway mode alone, and is
+the same in everything else, downloads included. The mainland edition leaves
+the proxy out:
 
 | Package | What `cn` leaves out |
 | --- | --- |
@@ -63,9 +66,10 @@ version apart ([../design/agent.md](../design/agent.md), "A retry is the
 same press again"). A checkout has no stamp and reads
 the file `EDITION` at the repository's root, one line holding `intl` in the
 GitHub repository; the two phone builds read the same file. The stamp, or
-that file, chooses where a package fetches from
-([../design/install_and_dev.md](../design/install_and_dev.md), "Where each
-edition fetches from"). Which features a package has follows from the files
+that file, names which edition's package an update or an install script
+takes, and no download address follows it
+([../design/agent/module_install.md](../design/agent/module_install.md),
+"Sources"). Which features a package has follows from the files
 its tree holds ([../design/architecture.md](../design/architecture.md), "A
 left-out feature is reached through one table").
 
@@ -76,8 +80,8 @@ it in as `NEUTRINO_EDITION`. The three phone core scripts,
 `build_core_rustdesk.py`, take none: a core is the same in both editions,
 and its cache is named by the digest of the script's own bytes, so an
 option added to them would rebuild every core. A package of an edition upgrades only to a
-package of the same edition, because each edition's release is the only one
-its update check and its install scripts read.
+package of the same edition, which the update check and the install scripts
+tell apart by the file's name.
 
 ## The mainland source tree
 
@@ -91,11 +95,11 @@ no other file repeats it.
 `neutrino-<version>-cn-source.tar.xz`. It holds the tree at the tagged
 commit without the listed paths, with the root `EDITION` file holding
 `cn` and `EDITION` stamped `cn` in `install.sh` and `install.ps1`, so a clone
-of the Gitee repository, a development run from it and its install scripts
+of the CNB repository, a development run from it and its install scripts
 all read `cn`, and `third_party/` holding the upstream
-source of what the `cn` packages carry. Its `README.md` is the
-repository's `README.zh-CN-Gitee.md`, the page Gitee shows, and its root
-holds no other README, so a tree holding `README.zh-CN-Gitee.md` is a full
+source of what the `cn` packages hold. Its `README.md` is the
+repository's `README.zh-CN-CNB.md`, the page CNB shows, and its root
+holds no other README, so a tree holding `README.zh-CN-CNB.md` is a full
 tree. Every `cn` package is built from
 this tree, unpacked, and never from the full checkout.
 
@@ -165,22 +169,26 @@ A release with nothing under a heading omits the heading.
 One section per package, so nobody downloads the wrong thing. Name the
 platform in words, not only in the filename.
 
-| Platform | Hub | Agent | Client | Editions |
-| --- | --- | --- | --- | --- |
-| Debian, Ubuntu, Raspberry Pi OS, amd64 and arm64 | `.deb` | `.deb` | `.deb` | `intl`, `cn` |
-| Fedora, RHEL, AlmaLinux, Rocky | `.rpm` | `.rpm` | `.rpm` | `intl` |
-| Arch, EndeavourOS, Manjaro | `.pkg.tar.zst` | none | none | `intl` |
-| Windows 10 and 11, x64 | `.msi`, `server` mode | `.msi` | `.msi` | `intl`, `cn` |
-| macOS on Apple silicon | `.pkg`, `server` mode | `.pkg` | `.pkg` | `intl`, `cn` |
-| macOS on Intel | `.pkg`, `server` mode | `.pkg` | `.pkg` | `intl` |
-| Android 8 or newer | none | none | `.apk` | `intl`, `cn` |
-| iOS 16 or newer | none | none | `.ipa`, unsigned | `intl`, `cn` |
+| Platform | Hub | Agent | Client |
+| --- | --- | --- | --- |
+| Debian, Ubuntu, Raspberry Pi OS, amd64 and arm64 | `.deb` | `.deb` | `.deb` |
+| Fedora, RHEL, AlmaLinux, Rocky | `.rpm` | `.rpm` | `.rpm` |
+| Arch, EndeavourOS, Manjaro | `.pkg.tar.zst` | none | none |
+| Windows 10 and 11, x64 | `.msi`, `server` mode | `.msi` | `.msi` |
+| macOS on Apple silicon | `.pkg`, `server` mode | `.pkg` | `.pkg` |
+| macOS on Intel | `.pkg`, `server` mode | `.pkg` | `.pkg` |
+| Android 8 or newer | none | none | `.apk` |
+| iOS 16 or newer | none | none | `.ipa`, unsigned |
 
-`install.sh` and `install.ps1` are published beside the packages and install
-any of the three by one command
-([../design/install_and_dev.md](../design/install_and_dev.md)). Both
-editions name their files by the same patterns; the release a file comes
-from says its edition.
+Every platform is built in both editions.
+
+`install.sh` and `install.ps1`, and `install-cn.sh` and `install-cn.ps1` for
+`cn`, are published beside the packages and install any of the three by one
+command ("Install scripts"). A `cn` file's name holds `-cn`: before the
+extension of a package or a script, such as
+`neutrino-hub_<version>_amd64-cn.deb` and `install-cn.sh`, and as
+`neutrino-<version>-cn-source.tar.xz` for the source tree. One release
+therefore holds both editions.
 
 ### Hub
 
@@ -267,7 +275,7 @@ sudo nagent join '<enrollment link from the Devices page>'
 
 Most people never download a Linux agent package: the hub installs the
 right one over SSH from the Devices page, from the one its own package
-carries or from its edition's release. The two installers are downloaded and
+holds or from the release sites. The two installers are downloaded and
 run on the machine, then `nagent join` runs in a terminal opened as
 administrator on Windows and under `sudo` on macOS.
 
@@ -294,10 +302,9 @@ window and the tray.
 | `neutrino-client-<version>-macos-amd64.pkg` | macOS 12.3 or newer on Intel |
 
 Windows is x86-64 only: cc-switch publishes no Windows ARM64 build, so there
-is nothing to carry for that machine. Every macOS package of `intl` is
-published for both architectures, `arm64` built on GitHub's `macos-15`
-runner and `amd64` on `macos-15-intel`, and `cn` publishes `arm64`
-alone; how long the Intel one lasts is in
+is nothing to include for that machine. Every macOS package is published for
+both architectures in both editions, `arm64` built on GitHub's `macos-15`
+runner and `amd64` on `macos-15-intel`; how long the Intel one lasts is in
 [../design/min_support.md](../design/min_support.md).
 
 ```bash
@@ -368,20 +375,55 @@ the next release's `.ipa`, signed and installed over the app.
 
 | File | For |
 | --- | --- |
-| `install.sh` | macOS and Linux: `curl -fsSL <url> \| sh -s -- hub\|agent\|client` |
-| `install.ps1` | Windows: `irm <url> \| iex` in an administrator PowerShell |
+| `install.sh`, `install-cn.sh` | macOS and Linux: `curl -fsSL <url> \| sh -s -- hub\|agent\|client` |
+| `install.ps1`, `install-cn.ps1` | Windows: `irm <url> \| iex` in an administrator PowerShell |
 
-Each script holds its edition as `EDITION` near its top, `intl` in the
-committed file and `cn` in the mainland tree. Both check every package
-against their release's `SHA256SUMS`.
+`packaging/install/install.sh` and `packaging/install/install.ps1` hold
+their edition as `EDITION` near their top, `intl` in the committed files,
+and the release sites the build stamped; the build writes the two `cn`
+scripts with `cn`. A person fetches a script from GitHub's address of the
+latest release, or the mainland one from the CNB repository, under
+`packaging/install/` of the mainland tree ("The mainland site on CNB"):
 
-| Edition | Where a script is fetched from | Where it fetches packages from |
-| --- | --- | --- |
-| `intl` | `https://github.com/iffiX/neutrino/releases/latest/download/` | the same address, or `releases/download/<tag>/` for a named version |
-| `cn` | `https://gitee.com/iffiX/neutrino/raw/main/packaging/install/` | `https://gitee.com/iffiX/neutrino/releases/download/<tag>/`, the tag read first from `https://gitee.com/api/v5/repos/iffiX/neutrino/releases/latest` |
+```bash
+curl -fsSL https://github.com/iffiX/neutrino/releases/latest/download/install.sh | sh
+curl -fsSL https://github.com/iffiX/neutrino/releases/latest/download/install.sh | sh -s -- agent
+```
 
-Gitee has no fixed address for the latest release's files, which is why the
-`cn` script reads the tag from the API before it downloads.
+```powershell
+irm https://github.com/iffiX/neutrino/releases/latest/download/install.ps1 | iex
+```
+
+| Input | Effect |
+| --- | --- |
+| `hub`, `agent` or `client` | the package to install; `hub` when none is given |
+| `NEUTRINO_VERSION` | the release to install, such as `v0.5.0`; the latest when unset |
+| `NEUTRINO_ASSET_DIR` | a directory holding `SHA256SUMS` and the packages; nothing is downloaded, which is how `packaging/ci/check.py` runs the scripts |
+
+A script reads the system and the architecture (`uname -s` and `uname -m`,
+`x86_64` naming `amd64`; on Linux `/etc/os-release` picks the deb, the rpm or
+the Arch package). It reads the latest tag from `latest.json` on the release
+sites unless `NEUTRINO_VERSION` names one, then fetches `SHA256SUMS` and its
+edition's package into a temporary directory and checks the package against
+it. It probes every site, starts on the fastest and moves to the next on a
+stall, with no measures while a file downloads
+([../design/agent/module_install.md](../design/agent/module_install.md),
+"Choosing a source"). A mismatch, a system and architecture no package is
+published for, or no site serving the file stops the script with one
+sentence, which names each site and why it failed.
+
+Run as a person, `install.sh` asks sudo for the password once before it
+downloads anything, and asks nothing when `sudo -n true` already succeeds.
+It then installs with `sudo installer -pkg`, `sudo apt install ./`,
+`sudo dnf install`, `sudo pacman -U` or `msiexec /i <file> /qn /norestart`.
+For the hub it ends by printing the wizard's address with its token, and
+runs `nhub setup` in its place when its standard input is a terminal. Over a
+hub already set up, one whose panel settings hold a password hash, it runs
+neither and prints one line naming the panel's address. It runs `nhub` where
+its package put it, `/usr/bin/nhub`, `/usr/local/bin/nhub` or
+`C:\Program Files\Neutrino\hub\nhub.exe`, since a root shell's PATH can
+name none of them. `install.ps1` checks for an administrator first and exits
+with one sentence when it is not one.
 
 ### Source archive
 
@@ -395,16 +437,38 @@ carry the tree alone.
 
 `neutrino-<version>-cn-source.tar.xz` is the same for `cn`: the mainland tree
 of "The mainland source tree", with the upstream source of what the `cn`
-packages carry. It is attached to the Gitee release and to no GitHub release,
-and every `cn` package is built from it.
+packages hold. It is attached to the release beside the full tree's, and
+every `cn` package is built from it.
 
 ## Every asset carries a checksum
 
-`SHA256SUMS` is attached alongside the packages and covers every one of them,
-and the two install scripts. Each edition's release has its own, covering
-its own files.
-The hub verifies an agent package before installing it on a device, so a
-truncated or tampered download fails loudly rather than half-installing.
+`SHA256SUMS` is attached beside the packages and covers every file of the
+release: both editions' packages, the four install scripts, the two source
+archives and the cc-switch files. The hub checks an agent package before it
+installs it on a device, so a cut or changed download fails with its code
+and installs nothing.
+
+## Release sites
+
+A release site is an address that holds every file of every release, under
+the names the release gives them. GitHub is the first site and CNB the
+second, the mainland one. `PACKAGING_RELEASE_SITES` in
+`packaging/shared/constants.py` lists them, each as two addresses:
+
+| Site | A tag's files | `latest.json` |
+| --- | --- | --- |
+| GitHub | `https://github.com/iffiX/neutrino/releases/download/{tag}/` | `https://github.com/iffiX/neutrino/releases/latest/download/latest.json` |
+| CNB | `https://cnb.cool/iffi-X/neutrino/-/releases/download/{tag}/` | `https://cnb.cool/iffi-X/neutrino/-/git/raw/main/latest.json` |
+
+| Rule | Reason |
+| --- | --- |
+| One list names every site, GitHub first, and a site joins it by one line. | A mirror holding the same files is one more source of each of them. |
+| The build stamps the list into the hub's `_version.py` as `HUB_RELEASE_SITES`, and into each install script. A checkout has no stamp and names no site. | The hub and the scripts learn the sites from the build alone ([../design/agent/module_install.md](../design/agent/module_install.md), "Sources"). |
+| Every site holds the same files under the same names, both editions in one release, and one `SHA256SUMS` over all of them. | The digest makes every site equal, so the fastest one serves. |
+| `latest.json` at a site's fixed address names the latest release as `{tag, version}`. On CNB it is a file of the repository. | CNB answers no API read without a login, and a file of its repository reads with no login. |
+| Every release holds the cc-switch files `PACKAGING_CC_SWITCH_ASSETS` pins, under the names upstream gives them, and their licence. | The hub's cache fetches cc-switch from upstream and from the release sites. |
+| A site that has lost a file is one failed source among the others. | The fetch goes on to the next site, and the failure names each site only when every one fails. |
+
 
 ## Building the packages
 
@@ -486,17 +550,15 @@ rule.
 | Arch `.pkg.tar.zst` | none, because no agent package is published for Arch |
 
 The build reads every agent package of its edition and writes
-`agent_packages.json` beside the cache. The manifest names every platform its
-edition's release publishes an agent for, the file name each is published
-under, and its sha256, which is the line the same release's `SHA256SUMS`
-lists for that file. `--agent-package-url-base` stamps where the release
-publishes them: `https://github.com/iffiX/neutrino/releases/download/<tag>`
-for `intl`, `https://gitee.com/iffiX/neutrino/releases/download/<tag>` for
-`cn`. A hub fetches another platform's package from there the first time a
-device of that platform needs it
-([../design/install_and_dev.md](../design/install_and_dev.md)). A build given
-no URL base carries the entry it seeded and refuses the rest by name. A
-package dropped under `config/devices/packages` still wins over both.
+`agent_packages.json` beside the cache. The manifest names every platform the
+release publishes an agent of that edition for, the file name each is
+published under, and its sha256, which is the line the release's
+`SHA256SUMS` lists for that file. A hub fetches another platform's package
+from the release sites the first time a device of that platform needs it
+([../design/agent.md](../design/agent.md), "The agent's packages come from
+the hub"). A build with no release sites holds the entry it seeded and
+refuses the rest by name. A package dropped under `config/devices/packages`
+still wins over both.
 
 What binds a hub package to the machines it installs on is glibc, which only
 works forwards. Nothing is compiled during the build: the pip install passes
@@ -543,20 +605,18 @@ set a hub up from the package and from the install script
 ([../design/tests.md](../design/tests.md)). The hub jobs wait for the agent's.
 
 The same workflow builds `cn`. The `sources` job also writes the mainland
-source tree, and each build job runs a second time for `cn`, only for the
-platforms the `cn` release carries: it downloads that tree, unpacks it, and
-runs its `packaging/build/` script inside it with `--edition cn`, then
-`packaging/ci/check.py`. The `draft_cn` job fetches the pinned cc-switch
-release files with `build_cc_switch.py`, writes `SHA256SUMS` over the `cn`
-packages, the `cn` install scripts, the mainland source tree and those
-files, and uploads them as the workflow artifact `release_dist_cn`. Nothing of `cn` is attached to the
-GitHub release.
+source tree, and each build job runs a second time for `cn`, for every
+platform: it downloads that tree, unpacks it, and runs its
+`packaging/build/` script inside it with `--edition cn`, then
+`packaging/ci/check.py`. The `cn` files, the cc-switch files
+`build_cc_switch.py` fetches at their pin, and `latest.json` join the same
+draft, and `SHA256SUMS` covers every file of it.
 
 Fill in the changelog, check the section headings still match what shipped,
 and publish with `.github/workflows/publish.yml`, which takes the tag and the
-notes. Its `publish` job publishes the GitHub draft. Gitee releases are
-paused, so it has no other job and no workflow runs `publish_cn.py` ("The
-mainland release on Gitee").
+notes. Its `publish` job publishes the GitHub draft, and then runs
+`packaging/ci/publish_cn.py`, which publishes the same release to CNB ("The
+mainland site on CNB").
 
 Running the same workflow from the Actions tab builds the packages and attaches
 them as artifacts without creating a release, which is how a change to the
@@ -565,85 +625,22 @@ pipeline is tried before a tag depends on it.
 Draft, not published, is deliberate: the notes are written by a person who knows
 what the release is for.
 
-## The mainland release on Gitee
+## The mainland site on CNB
 
-Gitee releases are paused: no workflow runs the script this section
-describes.
+`https://cnb.cool/iffi-X/neutrino` is the second release site. Its `main`
+holds the mainland source tree of the latest release, with `latest.json` at
+its root, and its release of each tag holds every file GitHub's release
+holds.
 
-`https://gitee.com/iffiX/neutrino` holds the mainland tree and the files of
-the latest `cn` release. GitHub is the one source; nothing is built on Gitee
-and nothing is committed there by hand. The install scripts on its `main`
-branch are the same files as the release's attachments, and `SHA256SUMS`
-lists them.
+`packaging/ci/publish_cn.py` publishes a tag there, for a tag with no
+suffix; a pre-release is published on GitHub alone. The script:
 
-| `cn` release file | For |
-| --- | --- |
-| `neutrino-hub_<version>_amd64.deb`, `neutrino-hub_<version>_arm64.deb` | the hub on Debian, Ubuntu, Raspberry Pi OS |
-| `neutrino-hub-<version>-windows-amd64.msi` | the hub on Windows 10 1809 or newer, x64 |
-| `neutrino-hub-<version>-macos-arm64.pkg` | the hub on macOS 12.3 or newer, Apple silicon |
-| `neutrino-agent_<version>_amd64.deb`, `neutrino-agent_<version>_arm64.deb` | the agent on the same Linux systems |
-| `neutrino-agent-<version>-windows-amd64.msi`, `neutrino-agent-<version>-macos-arm64.pkg` | the agent on Windows x64 and Apple silicon |
-| `neutrino-client_<version>_amd64.deb`, `neutrino-client_<version>_arm64.deb` | the client on Debian, Ubuntu |
-| `neutrino-client-<version>-windows-amd64.msi`, `neutrino-client-<version>-macos-arm64.pkg` | the client on Windows x64 and Apple silicon |
-| `neutrino-client-<version>-android.apk` | Android 8 or newer, arm64-v8a |
-| `neutrino-client-<version>-ios.ipa` | iOS 16 or newer, arm64, unsigned |
-| `install.sh`, `install.ps1` | the one-command installers, stamped `cn` |
-| `neutrino-<version>-cn-source.tar.xz` | the mainland source tree |
-| `cc-switch-cli-v<cc-switch version>-<asset>`, five files | cc-switch for the agents of a mainland hub, which fetches it from here: the files `PACKAGING_CC_SWITCH_ASSETS` in `packaging/shared/constants.py` pins, under the names upstream gives them, each checked against its pin before the upload |
-| `cc-switch-cli-v<cc-switch version>-LICENSE.txt` | cc-switch's MIT licence, beside the files it covers |
-| `SHA256SUMS` | every file above |
-
-Codeg's archives are not among these files: a `cn` hub fetches them from the
-manifest's `url` on GitHub
-([../design/install_and_dev.md](../design/install_and_dev.md), "Where each
-edition fetches from").
-
-The script checks Gitee's limits over every file before it changes anything
-on Gitee:
-
-| Limit | Value | Checked over |
-| --- | --- | --- |
-| one release attachment | 100 MB, counted as 100,000,000 bytes | each file above |
-| all attachments of the repository | 1 GB, counted as 1,000,000,000 bytes | the sum of the files above |
-| one file in the repository | 50 MB | each file of the mainland tree, unpacked before the commit |
-| the repository's git data | 500 MB | the unpacked mainland tree |
-
-A file over a limit fails the job before the first upload, with the file's
-name, its size and the limit in the message. The build's first answer to a
-package over 100 MB is stronger compression in that package's build.
-
-`packaging/ci/publish_cn.py` runs on Linux for a tag with no suffix; a
-pre-release is published on GitHub alone. The script:
-
-1. Downloads `release_dist_cn` from the latest successful run of
-   `release.yml` for the tag, and writes the notes `publish.yml` was given
-   to a file.
-1. Runs the size checks.
-1. Unpacks the mainland source tree without `third_party/`, commits it as one
-   commit with no parent, force-pushes it to `main` of
-   `git@gitee.com:iffiX/neutrino.git` and pushes the tag `v<version>` on it.
-1. Deletes the attachments of every earlier release through
-   `DELETE /api/v5/repos/iffiX/neutrino/releases/<release-id>/attach_files/<file-id>`.
-1. Creates the release for the tag with the same notes through
-   `POST /api/v5/repos/iffiX/neutrino/releases`, or reuses the one the tag
-   already has.
+1. Takes the release's files from the workflow run that built the tag.
+1. Commits the mainland source tree, without `third_party/`, and
+   `latest.json` as one commit on `main`, and pushes the tag on it.
+1. Creates the tag's release, or reuses the one the tag already has.
 1. Uploads each file the release does not already hold under the same name
-   and size, through
-   `POST /api/v5/repos/iffiX/neutrino/releases/<release-id>/attach_files`.
+   and size.
 
-The earlier attachments go first because the earlier set and the new set
-together exceed 1 GB. Earlier tags and release entries stay, without files.
-Between the delete and the last upload the mainland release has no packages,
-and a `cn` install started then stops with the script's own sentence.
-Running the job again for the same tag completes what an interrupted run
-left and uploads nothing twice.
-
-The job reads two repository secrets:
-
-| Secret | Holds | Used for |
-| --- | --- | --- |
-| `GITEE_TOKEN` | a Gitee personal access token with the `projects` scope, of an account with write access to `iffiX/neutrino` | every API call |
-| `GITEE_SSH_KEY` | the private SSH key whose public key is in that account's own SSH keys | the push; a Gitee deploy key is read-only |
-
-Before it pushes, the script checks `gitee.com`'s SSH host key against
-`PACKAGING_GITEE_SSH_HOST_KEY` in `packaging/shared/constants.py`.
+Running it again for the same tag completes what an interrupted run left and
+uploads nothing twice.

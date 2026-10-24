@@ -692,11 +692,13 @@ module and the same shape in each.
 
 | Route | Parameters | Does |
 | --- | --- | --- |
-| `GET /api/agent/module` | `?device_id=` | each module's observed `state`, `is_active` and `details` |
-| `POST /api/agent/module/install` | `{device_id, module}` | writes `want: installed`; on a module whose last report is `failed` or `install_failed`, and on one reading `absent`, `stopped` or `running`, also a fresh `retry_mark`; for a module from a container registry, first `want: running` on `podman` when its `want` is another ([agent/module_install.md](agent/module_install.md), "From a container registry") |
-| `POST /api/agent/module/start` | `{device_id, module}` | writes `want: running`; the same `retry_mark` on a failed module and on one reading `absent`, `installed` or `stopped`; for a module from a container registry, first `want: running` on `podman` as **Install** does |
+| `GET /api/agent/module` | `?device_id=` | each module's observed `state`, `is_active`, `version` and `details`, `version` being the version installed as the machine reports it |
+| `POST /api/agent/module/install` | `{device_id, module}` | writes `want: installed`; on a module whose last report is `failed` or `install_failed`, and on one reading `absent`, `stopped` or `running`, also a fresh `retry_mark`; for a `container` module, first `want: running` on `podman` when its `want` is another ([agent/module_install.md](agent/module_install.md), "From container images") |
+| `POST /api/agent/module/start` | `{device_id, module}` | writes `want: running`; the same `retry_mark` on a failed module and on one reading `absent`, `installed` or `stopped`; for a `container` module, first `want: running` on `podman` as **Install** does |
 | `POST /api/agent/module/stop` | `{device_id, module}` | writes `want: stopped`; the same `retry_mark` on a failed module and on one reading `absent`, `installed` or `running` |
-| `POST /api/agent/module/uninstall` | `{device_id, module}` | writes `want: absent`; the same `retry_mark` on a failed module and on one reading `installed`, `stopped` or `running`; 409 `module_in_use {modules}` on `podman` while a module from a container registry has a `want` other than `absent` |
+| `POST /api/agent/module/uninstall` | `{device_id, module}` | writes `want: absent`; the same `retry_mark` on a failed module and on one reading `installed`, `stopped` or `running`; 409 `module_in_use {modules}` on `podman` while a `container` module has a `want` other than `absent` |
+| `GET /api/agent/module/version` | `?device_id=&module=` | `ModuleVersionView`: `installed`, the version the machine reports; `chosen`, the machine's choice in `modules.json`, empty while it follows the tested one; `tested`; `newest`; `is_locked`, true for a module of the `agent`, `builtin` or `system` method; `versions`, newest first, each `{version, is_tested, is_untested}`, `is_untested` for a version newer than the tested one; and `read_at`, when the feeds were last read ([agent/module_install.md](agent/module_install.md), "Module versions") |
+| `POST /api/agent/module/version/set` | `{device_id, module, version}`, `version` empty to follow the tested one | writes `version` into the module's entry in `modules.json` and pushes the state; `ModuleVersionView`; 400 `version_unknown {version}` for a version the feeds did not list for the machine's platform, 409 `version_locked {module}` for a module whose version is locked, 409 `agent_offline` |
 | `GET /api/agent/module/journal` | `?device_id=&module=&lines=` | the tail of the module's log on the device: its units' journal on Linux, its own sources and the agent's lines naming it on Windows and macOS ([agent.md](agent.md), "Which modules each system runs") |
 | `POST /api/agent/module/<name>/apply` | `{device_id}` | pushes the device's state again, for `samba`, `terminal`, `remote_desktop`, `gitea`, `podman`, `zfs`, `vscode`, `code_server`, `cloudcli` and `codeg` alike, with a fresh `retry_mark` on a module whose last report is `failed` or `install_failed`, or `absent`, `installed`, `stopped` or `running` other than its `want`; 409 `agent_offline` |
 | `GET /api/agent/module/samba` | `?device_id=` | the hub's Samba configuration for the device |
@@ -727,7 +729,7 @@ module and the same shape in each.
 | `POST /api/agent/module/code_server/set` | `{device_id, instances: [{account, port}]}`, `port` 1024 to 65535 | replaces the instances, generating each instance's token secret the first time; 400 `account_duplicate {account}`, `port_duplicate {port}`; the agent's own refusals as 400 |
 | `GET /api/agent/module/codeg` | `?device_id=` | the instances as `GET /api/agent/module/code_server` gives them, with `login_id` on each, and the `accounts` the machine reported |
 | `POST /api/agent/module/codeg/set` | `{device_id, instances: [{account, port, login_id}]}`, `port` 1024 to 65535, `login_id` for a Windows machine | replaces the instances, generating each instance's token secret the first time as `code_server/set` does; the refusals of `vscode/set` |
-| `GET /api/agent/module/podman` | `?device_id=` | `PodmanDeviceView`: the declared `containers`, each with its `services`; `hub_containers`, the hub containers the modules compose, read only; the `mirrors`; `running`, each container as last reported with its `module`, its `host_bindings` and their `detected`; and on Windows and macOS `machine`, the stored Run settings with `login_id` and without the password, the machine as last reported (`details.machine`), and the `accounts` the machine reported |
+| `GET /api/agent/module/podman` | `?device_id=` | `PodmanDeviceView`: the declared `containers`, each with its `services`; `hub_containers`, the hub containers the modules compose, read only; the `mirrors`; `running`, each container as last reported with its `module`, its `source`, its `host_bindings` and their `detected`, `source` being `hub`, `declared` or `manual` by the owner rule of [agent/modules/containers.md](agent/modules/containers.md), "Hub containers"; and on Windows and macOS `machine`, the stored Run settings with `login_id` and without the password, the machine as last reported (`details.machine`), and the `accounts` the machine reported |
 | `POST /api/agent/module/podman/import` | `{device_id}` | |
 | `POST /api/agent/module/podman/container/set` | `{device_id, containers}` | replaces the declared containers, each with its `services`; 400 `container_name_reserved {name}` for a new name that starts with `neutrino_`; the agent's own refusals as 400, `service_invalid {name, port}`, `service_protocol_none {port}`, on Windows and macOS `volume_not_shared {name, volume}` and on Windows `udp_not_forwarded {name, port}` among them |
 | `POST /api/agent/module/podman/machine/set` | `{device_id, account, login_id, cpus, memory_gib, disk_gib}`, `login_id` for a Windows machine | stores the Run settings as `machine` in `config/devices/<id>/podman.json` and pushes the state; `PodmanDeviceView`; 400 `unsupported_platform` for a Linux machine, `unknown_credential {field}` for a login the vault does not hold, `credential_missing {account}` for a Windows machine with no login, `machine_disk_invalid {disk_gib}` for a Windows machine with a disk limit of 0, then the agent's own refusals (`machine_account_missing`, `machine_cpus_invalid {cpus, max}`, `machine_memory_invalid {memory_gib, max}`, `machine_disk_shrink {disk_gib, current_gib}`, `account_unknown {account}`); 409 `agent_offline` |
@@ -861,7 +863,8 @@ from an installation the hub has a row for lands back on that row: the link's
 fresh row goes, and the old row takes the link's name and keeps its key, its
 switch and everything it last reported. The hub reads `family` to pick a
 package family and `arch` to pick the package itself, and an architecture
-outside the normalized set is the machine's own word and matches no branch.
+outside the normalized set is the machine's own word and matches no platform
+entry.
 An agent's `version` is an added field and keeps `PROTOCOL` as it is; the hub
 compares a manifest entry's floor with it, and an agent that predates it sends
 none.
@@ -995,9 +998,9 @@ and platform, which change between releases.
 | `machine` | | `{hostname, platform, accounts, metrics, sessions}` | | `{hostname, platform, os_machine_id}` |
 | `is_refresh` | | | | bool: a refresh the person asked for, answered with the whole state |
 | `network` | | `{link: {interface, mac, address}, interfaces: [{name, mac, addresses[]}]}` | | |
-| `modules` | `{name: {want, config, install, uninstall, retry_mark}}` | `{name: {state, is_active, code, params, details}}` | | |
+| `modules` | `{name: {want, config, install, retry_mark}}` | `{name: {state, is_active, version, code, params, details}}` | | |
 | `desktop` | `{seat_password}` | `{is_shared, origin, account, share_id, port, attention, connected_count}`, `origin` `switch` or `command` (a share an old `nagent rdp start` record keeps running), empty while nothing is shared | | |
-| `ai_tools` | `{is_enabled, is_forwarded, base_url, api_key, tool_configs, accounts: [{account, password}], cc_switch_version, retry_mark}` | `{accounts: [{account, state, code, params, has_records}]}` | | |
+| `ai_tools` | `{is_enabled, is_forwarded, gateway_port, base_url, api_key, tool_configs, accounts: [{account, password}], cc_switch_version, retry_mark}` | `{accounts: [{account, state, code, params, has_records}]}` | | |
 | `services` | | | `[{id, type, title, payload, is_healthy, source, description, description_code, description_params, device_id, device_name, is_own_machine}]` | |
 | `is_disabled` | | | bool | |
 | `urls` | `["https://<address>:<port>", ...]` | | the same list | |
@@ -1105,13 +1108,17 @@ dropped with the device ([files.md](files.md)).
 
 `ai_tools` in the state is the machine's AI tools setting
 ([agent/ai_tools.md](agent/ai_tools.md)). `is_enabled` is true while
-the setting is on and the gateway serves a model. With it true,
-`is_forwarded` says whether the agent opens its AI gateway forward
-([agent.md](agent.md), "The AI gateway forward"): true on a managed
-machine, where `base_url` is `http://127.0.0.1:8317`, that forward, and
-false on the hub's own machine, where `base_url` is
-`http://127.0.0.1:<listen-port>`, the gateway itself. The hub sets both, and
-the agent infers neither from anything else in the state; `api_key` is
+the setting is on and the gateway serves a model. `is_forwarded` says
+whether the agent opens its AI gateway forward ([agent.md](agent.md), "The
+AI gateway forward"): true on a managed machine while `is_enabled` is true
+or a container module that uses the gateway is installed, and false on the
+hub's own machine. `gateway_port` is the gateway's `listen_port` on the
+hub's own machine while such a module is installed there, the port the
+agent relays on the Podman bridges, and 0 otherwise. With `is_enabled` true,
+`base_url` is `http://127.0.0.1:8317` on a managed machine, the forward, and
+`http://127.0.0.1:<listen-port>` on the hub's own machine, the gateway
+itself. The hub sets all three, and the agent infers none from anything
+else in the state; `api_key` is
 the device's own gateway key, and `tool_configs` is
 `{claude: {default, opus, sonnet, haiku}, codex: {model,
 model_reasoning_effort}, gemini: {model}}`, every Claude slot filled with the
@@ -1122,7 +1129,8 @@ in the machine's VS Code, code-server, CloudCLI or Codeg configuration;
 is the login's own for the account's first instance in that order, sent only
 to a Windows machine. `cc_switch_version` is the version
 `data/manifests/cc_switch.json` pins, the copy of cc-switch the agent runs.
-With it false the section is `{is_enabled: false, cc_switch_version}`, the
+With it false the section is `{is_enabled: false, is_forwarded, gateway_port,
+cc_switch_version}`, the
 version there so that a copy fetched for a switch back is the one the next
 switch runs. The section carries the device's `retry_mark` on and off alike,
 so a press of off after a switch back that could not run tries it again. The report's
@@ -1130,9 +1138,8 @@ so a press of off after a switch back that could not run tries it again. The rep
 under the current hash, `state` being `switched`, `switched_back` or
 `failed`, with `{code, params}` on a failure, and `has_records` whether
 the agent keeps the account's records, so whether a tool of it still points
-at the hub; `cc_switch_download_failed
-{detail}` is every account's when the agent could not get its copy of
-cc-switch. An agent
+at the hub; `download_failed {file, sources}` is every account's when the
+agent could not get its copy of cc-switch. An agent
 that restarted reports each account whose records stand as `switched` until
 the next state arrives, and does not act on a state whose hash it already
 tried. Both are added fields and keep `PROTOCOL`; an agent that predates them ignores the
@@ -1170,17 +1177,16 @@ owner.
 "samba": {
   "want": "running",
   "config": {"shares": ["..."], "users": ["..."]},
-  "install": {"kind": "system_package", "packages": ["samba"], "pre_install": ["..."], "verify": "smbd -V"},
-  "uninstall": {"packages": ["samba"], "post_uninstall": ["rm -f /etc/samba/smb.conf.neutrino"], "is_data_kept": true}
+  "install": {"runner": "samba", "method": "system", "params": {"version": "system", "packages": ["samba"], "pre_install": ["..."], "verify": "smbd -V", "uninstall": {"packages": ["samba"], "post_uninstall": ["rm -f /etc/samba/smb.conf.neutrino"]}}}
 }
 ```
 
 Terminal and Remote desktop are composed from their own files, not from
-`modules.json`, and sent to every managed device, recipes left out:
+`modules.json`, and sent to every managed device:
 
 ```json
-"terminal": {"want": "running", "config": {"account": "", "shell_path": ""}},
-"remote_desktop": {"want": "stopped", "config": {"is_enabled": false}}
+"terminal": {"want": "running", "config": {"account": "", "shell_path": ""}, "install": {"runner": "terminal", "method": "agent", "params": {}}},
+"remote_desktop": {"want": "stopped", "config": {"is_enabled": false}, "install": {"runner": "remote_desktop", "method": "agent", "params": {}}}
 ```
 
 `terminal`'s `want` is always `running`; its `config` is
@@ -1189,9 +1195,9 @@ when the file is absent, and `account` is always empty for a Windows
 machine. `remote_desktop`'s `want` is `running` while `is_enabled` is true
 and `stopped` otherwise; its `config` is `remote_desktop.json`,
 `{is_enabled}`, false when the file is absent. Their manifests,
-`terminal.json` and `remote_desktop.json`, name the tier `agent`: the agent's
-own package carries the module, no branch names a platform, and the loader
-refuses one that names `url`, `packages` or a recipe. `GET /api/agent/module`
+`terminal.json` and `remote_desktop.json`, name the method `agent` with
+empty `params` in every platform entry: the agent's own package holds the
+module. `GET /api/agent/module`
 answers both `is_supported: true` on every platform, and the four presses
 refuse both 400 `module_not_optional {name}`, as every module the agent
 carries.
@@ -1205,43 +1211,30 @@ while the switch is off and none of its RustDesk processes runs, and
 `shell` stream refused for the Terminal module's sake closes
 `account_unknown {account}` or `shell_program_unusable {path}`.
 
-`install` and `uninstall` come from `data/manifests/<module>.json`, one branch
-per platform, each with a `verify` command and, for a module the hub installs,
-an `uninstall` block; the loader refuses a manifest that lacks either. A branch
-whose `installer` is `builtin` names software the system itself carries, as
-Samba's `windows` and `darwin` branches name the system's own SMB server: it
-names nothing to download or install, needs neither `verify` nor `uninstall`,
-and the agent's runner checks for the software itself. A branch whose
-`installer` is `container` names `images` and neither `verify` nor
-`uninstall` ([agent/module_install.md](agent/module_install.md), "From a
-container registry"). The loader refuses any other branch `installer` but
-`hub`, and a builtin branch naming `url`, `packages` or any other download
-field. A branch can name its own `kind`,
-`installer`, `version`, `source`, `license` and `corresponding_source`,
-which take the place of the manifest's for that platform alone; the hub
-resolves them in one function, `branch_identity`, before it composes the
-catalog's row and the recipe, so a recipe's `kind` is the resolved branch's
-and the identity fields stay out of the recipe. Podman's Linux branches name
-none, so their recipes carry no identity field. The hub
-resolves the branch for the machine's platform and sends it with the state;
-the agent has no manifest logic of its own. A branch may name `min_version`,
-a dotted number the loader checks: a machine whose platform `version` is
-below it resolves no branch, the same as a platform the manifest does not
-name, and one that reports no `version` is not ruled out. `GET
-/api/agent/module` answers such a module `is_supported: false`, the Modules
-page greys it out in its picker and never shows it as a tab, and a press on
-it is refused 409 `no_platform_build {module}`. A branch of a module the hub
-fetches names one `url` with its `sha256` and `package_kind`, or
-`components`, a list of `{name, url, sha256, package_kind, directory}` with
-`cn_url` optional on each, one per archive the agent unpacks
-([agent/module_install.md](agent/module_install.md), "One source per platform").
+`install` is the recipe the hub resolves from `data/manifests/<module>.json`
+for the machine's platform and the version the machine chose: `{runner,
+method, params}` ([agent/module_install.md](agent/module_install.md), "The
+manifest"). The hub sends it with the state, and the agent has no manifest
+logic of its own. `params` is the method's: a `system` entry's `packages`,
+`pre_install`, `verify` and `uninstall`; a `hub` entry's `version`, its
+`artifacts` without their `sources`, `packages`, `verify` and `uninstall`; a
+`container` entry's `version` and its `artifacts` with their `sources`; and
+nothing for `agent` and `builtin` ([agent/module_install.md](agent/module_install.md),
+"Install methods"). The recipe holds no `releases` and no identity field.
+A platform entry can name `min_version`, a dotted number the loader checks:
+a machine whose platform `version` is below it resolves no entry, the same
+as a platform the manifest does not name, and one that reports no `version`
+is not ruled out. `GET /api/agent/module` answers such a module
+`is_supported: false`, the Modules page greys it out in its picker and never
+shows it as a tab, and a press on it is refused 409 `no_platform_build
+{module}`.
 
 The agent observes each module it has a runner for and reports a state derived
 from the same facts, whoever installed the software:
 
 | Fact | Read from |
 | --- | --- |
-| installed | the source's presence check: `install.verify` succeeds, or for a module from a container registry every pinned image is in Containers' Podman; for a module the state does not name, which comes with no recipe, and for a `builtin` branch, the runner's own check ([agent/module_install.md](agent/module_install.md), "One presence check") |
+| installed | the method's presence check: `verify` succeeds for `system` and `hub`, and every image's digest is in Containers' Podman for `container`; for a module the state does not name, which comes with no recipe, and for a `builtin` entry, the runner's own check ([agent/module_install.md](agent/module_install.md), "One presence check") |
 | active | the unit is active, read whenever the row before reads installed |
 | configured | the root-only mark `/var/lib/neutrino/agent/configured/<module>` exists; written on the first successful apply of the hub's configuration, deleted on uninstall |
 
@@ -1276,7 +1269,7 @@ writes it directly:
 | **Install** | `installed` | installs the package only; writes no configuration, and starts nothing but Containers' `podman.socket`, which a Linux install enables |
 | **Configure** or **Start** | `running` | ensures the package, applies the configuration, starts the unit |
 | **Stop** | `stopped` | ensures the package, applies the configuration, stops the unit |
-| **Uninstall** | `absent` | uninstalls by `uninstall`, deletes the configuration the hub wrote and the configured mark, and calls the runner's `remove_data` when `is_data_kept` is false; the confirmation says which from `is_data_kept`; every shipped manifest keeps the data, so pools, share directories, repositories and declared containers' volumes stay, and a module from a container registry is removed with its volumes ([agent/module_install.md](agent/module_install.md), "From a container registry") |
+| **Uninstall** | `absent` | uninstalls by `uninstall`, deletes the configuration the hub wrote and the configured mark, and calls the runner's `remove_data` when `is_data_kept` is false; the confirmation says which from `is_data_kept`; every shipped manifest keeps the data, so pools, share directories, repositories and declared containers' volumes stay, and a `container` module is removed with its volumes ([agent/module_install.md](agent/module_install.md), "From container images") |
 
 Once the machine reports a module wanted `absent` as `absent`, that want is
 settled (`is_settled` in `modules.json`): the row keeps `absent`, the state
@@ -1334,9 +1327,10 @@ the whole file back.
 | Samba on Windows and macOS | only the shares the module made, in the Linux shape with `params` `comment`, `read only` and `valid users`; the accounts it made; the sessions; and `fence {is_present, is_enabled, blocked}` |
 
 On Windows and macOS an agent with the `smb_server` capability runs the
-`samba` module against the SMB server the system carries. Its branch names
-no packages: the recipe the state carries is `{kind: system_package}`, the
-agent's own check says whether the server is there, an install installs
+`samba` module against the SMB server the system holds. Its entry is
+`builtin`: the recipe the state holds is `{runner: samba_native, method:
+builtin, params: {}}`, the agent's own check says whether the server is
+there, an install installs
 nothing, and the module reports `installed`, `stopped` or `running` like any
 other. The configuration is the Linux one; `validate` wants a share path
 absolute from a drive on Windows and from `/` on macOS, and an account name
@@ -1358,11 +1352,11 @@ token, password}]}`: `address` is empty, and every server listens on
 ("The connect stream"); `token` is the instance's connection token,
 which the hub keeps sealed and sends in the clear inside the state; and
 `password` is the account's login, sent only to a Windows machine, where a
-task that runs as an account signs in with it. Its recipe is `{kind:
-vscode, package_kind, verify}`, `package_kind` being `tar` for the Linux
-tarball and `zip` for the Windows and macOS archives, and the agent opens
-`package {module: vscode}` for the archive and unpacks the one `code` or
-`code.exe` inside it: to `/var/lib/neutrino/agent/vscode` on Linux, and to
+task that runs as an account signs in with it. Its recipe's runner is
+`vscode` and its method `hub`, with one artifact of kind `tar_gz` for the
+Linux tarball and `zip` for the Windows and macOS archives, and the agent
+opens `package {module: vscode, artifact, digest}` for it and unpacks the
+one `code` or `code.exe` inside it: to `/var/lib/neutrino/agent/vscode` on Linux, and to
 `vscode` under the root the `hub_packages` capability names on Windows
 (`%ProgramData%\Neutrino`) and macOS (`/Library/Application
 Support/Neutrino`). `details` is `{instances: [{account, port, url,
@@ -1376,15 +1370,14 @@ account a Linux machine or a Mac does not have; and `credential_invalid
 
 The `cloudcli` module runs CloudCLI once per account
 ([agent/modules/cloudcli.md](agent/modules/cloudcli.md)). Its recipe names
-the Node.js archive
-`data/manifests/cloudcli.json` pins for the platform, which the agent opens
-`package {module: cloudcli}` for (the module's one component), and its
-configuration carries the
-edition's `npm_registry` and `npm_environment`, the `npm_config_*` settings
-the manifest names for that edition. An install that fails reports the
-step: `cloudcli_node_download_failed`, `cloudcli_npm_install_failed
-{account, detail}`, `cloudcli_native_module_failed {account, module,
-detail}` or `cloudcli_install_out_of_memory {account}`.
+two artifacts: the Node.js archive `data/manifests/cloudcli.json` pins for
+the platform, which the agent opens `package {module: cloudcli, artifact,
+digest}` for, and the npm package, of kind `npm`, with its registries as
+`sources` and the host lists of its npm settings as `hosts`. An install that
+fails reports the step: `download_failed {file, sources}`,
+`cloudcli_npm_install_failed {account, detail}`,
+`cloudcli_native_module_failed {account, module, detail}` or
+`cloudcli_install_out_of_memory {account}`.
 
 The `codeg` module runs Codeg once per account, on Linux, macOS and Windows
 ([agent/modules/codeg.md](agent/modules/codeg.md)). Its configuration is
@@ -1392,9 +1385,8 @@ The `codeg` module runs Codeg once per account, on Linux, macOS and Windows
 secret, generated the first time, kept sealed in
 `config/devices/<id>/codeg.json` and sent opened inside the state as
 code-server's is, with the login's password for a Windows machine as VS
-Code's. Its recipe names two components, the server bundle and Node.js,
-which the agent opens `package {module: codeg, component: server}` and
-`package {module: codeg, component: node}` for. `details` is `{version,
+Code's. Its recipe names two artifacts, the server bundle and Node.js,
+which the agent opens `package {module: codeg, artifact, digest}` for. `details` is `{version,
 instances: [{account, port, is_running, code}]}`. An apply refuses what
 code-server's refuses, and on Windows `credential_missing {account}` and
 `credential_invalid {account}` as VS Code's does.
@@ -1405,9 +1397,9 @@ configuration is
 `{instances: [{account, port, secret}]}`, `secret` the instance's token
 secret, which the hub generates the first time, keeps sealed in
 `config/devices/<id>/code_server.json` and sends opened inside the state,
-as it sends CloudCLI's. Its recipe names the release
-`data/manifests/code_server.json` pins for the platform, which the agent
-opens `package {module: code_server}` for. `details` is `{version,
+as it sends CloudCLI's. Its recipe names the release of the version the
+machine runs, which the agent opens `package {module: code_server,
+artifact, digest}` for. `details` is `{version,
 instances: [{account, port, is_running, code}]}`, `version` being the
 release installed. An apply refuses `account_invalid`,
 `account_duplicate`, `port_invalid`, `port_duplicate` and `secret_missing`,
@@ -1416,9 +1408,10 @@ for an account the machine does not have.
 
 The `gitea` module runs Gitea on Linux, macOS and Windows ([agent/modules/gitea.md](agent/modules/gitea.md)). Its configuration is `{listen_port, root_url,
 is_registration_enabled, address, secrets}` on every system. Its recipe names
-the release binary `data/manifests/gitea.json` pins for the platform,
-`package_kind` `binary`, which the cache recognises by the ELF, Mach-O or PE
-header and the agent opens `package {module: gitea}` for. `details` is
+the release binary of the version the machine runs, of kind `binary`, which
+the cache recognises by the ELF, Mach-O or PE header and the agent opens
+`package {module: gitea, artifact, digest}` for, and on Linux the package
+`git` in `packages`. `details` is
 `{is_running, port, url, version, admins}`. On macOS and Windows an install
 and an apply refuse `gitea_git_missing` while the machine has no usable
 `git`, and an install on macOS refuses `user_create_failed {user, detail}`
@@ -1427,10 +1420,10 @@ when the system will not make the server's account.
 The `podman` module runs the declared containers on Linux, Windows and
 macOS ([agent/modules/containers.md](agent/modules/containers.md)). Its
 configuration is `{containers, hub_containers, mirrors, machine}`.
-`hub_containers` is the list the hub composes from the modules from a
-container registry, each `{module, name, image, ports, volumes,
-environment, command, is_autostart, services}` with `image` as
-`reference@digest`, and empty while no such module is installed. Each container is
+`hub_containers` is the list the hub composes from the `container` modules,
+each `{module, name, image, ports, volumes, environment, command,
+is_autostart, services}` with `image` as `{digest, sources}`, and empty
+while no such module is installed. Each container is
 `{name, image, ports, volumes, environment, command, is_autostart,
 services}`, and `services` is a list of `{port, kind, scheme, protocols}`
 per host port: `kind` `auto`, `web` or `port`, `scheme` `http` or `https`
@@ -1440,23 +1433,22 @@ port the list does not name is `auto`. `machine` is the Run settings,
 a Windows `disk_gib`, which is 1 or more, with
 `password`, the vault login's, added for a Windows machine while `login_id`
 stays on the hub. The hub sends `machine` to a Windows or macOS machine
-alone, and a Linux state never names it. The Linux recipe is
-`system_package`, as before; the Windows and macOS recipe is
-`podman_machine`:
+alone, and a Linux state never names it. The Linux recipe's runner is
+`podman` and its method `system`; the Windows and macOS recipe's runner is
+`podman_machine` and its method `hub`:
 
 ```json
 "podman": {
   "want": "running",
-  "config": {"containers": ["..."], "mirrors": [], "machine": {"account": "lab", "cpus": 0, "memory_gib": 0, "disk_gib": 0, "password": "..."}},
-  "install": {"kind": "podman_machine", "min_version": "19041", "verify": "\"C:\\Program Files\\Podman\\podman.exe\" --version", "components": [{"name": "wsl", "package_kind": "msi", "directory": "wsl", "sha256": "..."}, {"name": "installer", "package_kind": "msi", "directory": "installer", "sha256": "..."}, {"name": "image", "package_kind": "tar_zst", "directory": "image", "sha256": "..."}]},
-  "uninstall": {"packages": [], "post_uninstall": [], "is_data_kept": true}
+  "config": {"containers": ["..."], "hub_containers": [], "mirrors": [], "machine": {"account": "lab", "cpus": 0, "memory_gib": 0, "disk_gib": 0, "password": "..."}},
+  "install": {"runner": "podman_machine", "method": "hub", "params": {"version": "6.1.4", "artifacts": [{"name": "wsl", "kind": "msi", "directory": "wsl", "digest": "sha256:..."}, {"name": "podman", "kind": "msi", "directory": "podman", "digest": "sha256:..."}, {"name": "image", "kind": "tar_zst", "directory": "image", "digest": "sha256:..."}], "packages": [], "verify": "\"C:\\Program Files\\Podman\\podman.exe\" --version", "uninstall": {"post_uninstall": [], "is_data_kept": true}}}
 }
 ```
 
-The macOS recipe names two components, `installer` with `package_kind`
-`pkg` and `image` with `raw_zst`, `min_version` `13` and `verify`
-`/opt/podman/bin/podman --version`. The agent opens `package {module:
-podman, component}` for each. On Windows and macOS `details` adds
+The macOS recipe names two artifacts, `podman` of kind `pkg` and `image` of
+kind `raw_zst`, and the `verify` `/opt/podman/bin/podman --version`; its
+entry's `min_version` is `13`, and the Windows entry's `19041`. The agent
+opens `package {module: podman, artifact, digest}` for each. On Windows and macOS `details` adds
 `machine`, `{account, is_running, cpus, memory_gib, disk_gib}`, what the
 machine reports through the agent's read (`podman info`), `disk_gib` the
 size of its disk now.
@@ -1473,26 +1465,29 @@ limit of 0, `credential_missing {account}`, `credential_invalid {account}`
 as VS Code's does, and `udp_not_forwarded {name, port}` for a port
 published on UDP. An install ends
 `windows_feature_failed {feature, exit_code}` or `podman_install_failed
-{component, exit_code}`; the machine's own steps fail with
+{artifact, exit_code}`; the machine's own steps fail with
 `machine_image_missing`, `machine_init_failed {detail}`,
 `machine_set_failed {detail}` and `machine_unreachable {detail}`. `machine`,
 `services`, `detected`, `hub_containers`, each reported container's
 `module` and the code on an `installing` row are added fields and keep
-`PROTOCOL`.
+`PROTOCOL`. The recipe's shape, `{runner, method, params}`, and each
+module's `version` in the report come with 0.6.0, which no released agent
+read before, and keep `PROTOCOL` 4 ("Versioning").
 
-A module from a container registry has the recipe `{kind: "container",
-images}`, `images` a list of `{name, reference, digest}`, and no `verify`
-([agent/module_install.md](agent/module_install.md), "From a container
-registry"). The agent installs it by pulling each image as
-`reference@digest` with Containers' Podman and ends a failed pull
-`image_pull_failed {image, detail}`; it reads the module `running` while
-every hub container with its label runs. Its uninstall removes those
-containers, their units, the network `neutrino_<module>`, the images and
-the named volumes `neutrino_<module>_<volume>`.
+A `container` module's recipe is `{runner: container, method: container,
+params: {version, artifacts}}`, each artifact of kind `image` with its
+`digest` and `sources`, and no `verify`
+([agent/module_install.md](agent/module_install.md), "From container
+images"). The agent installs it by choosing a source for each image and
+pulling `<source>@<digest>` with Containers' Podman, and ends an install no
+source serves `download_failed {file, sources}`; it reads the module
+`running` while every hub container with its label runs. Its uninstall
+removes those containers, their units, the network `neutrino_<module>`, the
+images and the named volumes `neutrino_<module>_<volume>`.
 
-Package bytes come to the agent down a `package {module, component}` stream it
-opens, `component` naming the component wanted and absent for a module with
-one archive, the same stream that serves its own upgrade. A package asked
+Package bytes come to the agent down a `package {module, artifact, digest}`
+stream it opens, `artifact` naming the artifact and `digest` the bytes
+wanted, the same stream that serves its own upgrade. A package asked
 for before the device's first report of the connection waits for that
 report, up to 15 seconds, since the report carries the platform that names
 the file; only then is it refused. An agent older than the hub whose own
@@ -1501,11 +1496,11 @@ when the report naming its platform lands; the agent on the hub's own
 machine is left to the hub's update, which installs it. cc-switch, which
 the machine's AI tools run and no module installs, comes down the same
 stream as `package
-{module: cc_switch}`: `data/manifests/cc_switch.json` pins it, says
-`is_module: false`, and so stays out of the catalog's modules. A `cn` hub
-fetches it from its own release and closes the stream
-`hub_release_file_gone {file}` once that release no longer carries the file
-([install_and_dev.md](install_and_dev.md), "Where each edition fetches from"). An install's or an uninstall's output
+{module: cc_switch, artifact, digest}`: `data/manifests/cc_switch.json` pins
+it, says `is_module: false`, and so stays out of the catalog's modules. When
+no source serves a file, the hub closes the stream `download_failed {file,
+sources}` ([agent/module_install.md](agent/module_install.md), "Choosing a
+source"). An install's or an uninstall's output
 goes up a `log {module}` stream line by line, and the Modules page shows it
 under the module's tab as it arrives.
 
@@ -1594,13 +1589,13 @@ is added without a change to the protocol; a kind is added by a row here.
 | hub, to an agent | `file` | one file operation `{op, path, ...}`; `op` is `list`, `download`, `upload`, `rename`, `remove`, `directory_create` or `directory_download`, and every path is absolute in the machine's own form. `list` closes with `params: {path, separator, entries}`, `separator` being `\` on Windows and `/` elsewhere and each entry `{name, path, kind, size, modified_at, mode}`; on Windows a `list` of `/` or of no path closes with `path` `/` and one `dir` entry per drive, named `C:` with `path` `C:\`. `separator` and the drive list are added and keep `PROTOCOL`; an agent before 0.5.0 sends no `separator` |
 | agent, to the hub | `log` | `{module}`: opened for an install or an uninstall, output up as binary frames line by line, closed with `params: {state}`, and with the failure's code and params when the operation failed; the hub's task for it then ends with the `exit_code` those params name, else 1 |
 | hub, to an agent | `command` | `{module, verb, ...args}`: `{agent, reboot}`, `{samba, reload}`, `{zfs, validate, config}`; an unknown kind is closed `kind_unknown` and an unknown verb `verb_unknown`, which the panel shows as `unsupported`; closed with `params: {exit_code, output, result}` |
-| agent, to the hub | `package` | `{module}` for a module's package bytes from the hub's cache, or `{module, component}` for one component of a module with several (`component` is an added field with a default, the module's one archive, and keeps `PROTOCOL`), `{module: cc_switch}` for cc-switch, `{}` for the agent's own package; the close's `params` has the `sha256` of the bytes sent and `name`, the file's own name as its release gave it, with no directory |
+| agent, to the hub | `package` | `{module, artifact, digest}` for one artifact of a module, or of cc-switch, from the hub's cache, `{}` for the agent's own package; the close's `params` has the `sha256` of the bytes sent and `name`, the file's own name as its release gave it, with no directory |
 | client, to the hub | `service` | `{id}`: one published entry, or `{is_panel: true}`: a sign-in to the hub's own panel. The close is the whole answer, its `params` the material that entry takes from the hub and its `code` the reason it takes none; a new service type adds no kind |
 | client, to the hub | `shell` | `{device_id, cols, rows, session_id, is_resumed, is_shared}`: a shell on a managed machine, which the hub opens as the agent's own `shell` with the same `session_id`, `is_resumed` and `is_shared`, stamped `owner: client:<id>`, and relays terminal bytes both ways, each side under the other's credit; closed with `params: {exit_code}`, or refused `binding_unknown`, `client_disabled`, `permission_denied {kind: terminal}` (no `terminal`, or a machine outside its device list), `session_not_owned {session_id}` (a session another viewer owns and has not shared) or `agent_offline {device}` before any agent stream opens; closed with the agent's refusal, `account_unknown {account}` or `shell_program_unusable {path}` among them; closed `session_not_owned {session_id}` when the owner stops sharing the session |
 | client, to the hub | `exec` | `{device_id, argv, is_tty, cols, rows}`: one command on a managed machine, which the hub opens as the agent's own `exec` with the same `argv`, `is_tty`, `cols` and `rows`, and relays bytes both ways, each side under the other's credit, and the client's `eof` up; no `session_id`, and no `owner` stamped; closed with the agent's `params: {exit_code}`, or refused `binding_unknown`, `client_disabled`, `permission_denied {kind: terminal}` (no `terminal`, or a machine outside its device list) or `agent_offline {device}` before any agent stream opens; closed with the agent's refusal |
 | client, to the hub | `command` | `{module: agent, verb: resize, shell, cols, rows}`, `shell` being the client's own `shell` stream id, or its own `exec` stream id opened with `is_tty`, which the hub maps to the agent's; closed empty once sent on, `shell_unknown {shell}` when no such shell is open. `{module: agent, verb: persist, session_id, is_persistent, is_shared}` and `{module: agent, verb: stop_session, session_id}` go unchanged to the machine holding the session, the one this client's open `shell` names for the id or else the online machine whose report lists it, and close with the agent's close; `session_unknown {session_id}` when no machine holds it, `session_not_owned {session_id}` for a `persist` on a session the machine reports under another owner, and the `shell` stream's permission refusals for that machine. A `persist` names only the flags it carries. `verb_unknown` for any other module or verb. A hub before 0.4.0 closes both kinds `kind_unknown`, which a client reads as a refusal |
 | client, to the hub | `connect` | `{id}`, one published entry by the id a `service` stream takes, or `{is_panel: true}`, the hub's own panel: one TCP connection to that service, or every datagram of one UDP `port` entry. Bytes both ways under credit; closed empty when either end's socket ends, or with a refusal's code. "The connect stream" has the checks, the far ends and the codes |
-| agent, to the hub | `connect` | `{id}`, the `ai` entry's id, as a client's AI forward opens it: one TCP connection from the machine's AI tools, opened for each connection the agent's AI gateway forward accepts ([agent.md](agent.md), "The AI gateway forward"); the hub dials the gateway on `127.0.0.1` at its `listen_port` and relays bytes both ways under credit; refused `service_unknown {service_id}` for any other `id`, and `permission_denied {kind: ai}` while that machine's AI tools setting is off; no `connect_limit` holds on an agent's socket; closed empty when either socket ends, `connect_failed {reason}` when the dial fails |
+| agent, to the hub | `connect` | `{id}`, the `ai` entry's id, as a client's AI forward opens it: one TCP connection from the machine's AI tools, opened for each connection the agent's AI gateway forward accepts ([agent.md](agent.md), "The AI gateway forward"); the hub dials the gateway on `127.0.0.1` at its `listen_port` and relays bytes both ways under credit; refused `service_unknown {service_id}` for any other `id`, and `permission_denied {kind: ai}` while that machine's AI tools setting is off and no container module that uses the gateway is installed there; no `connect_limit` holds on an agent's socket; closed empty when either socket ends, `connect_failed {reason}` when the dial fails |
 | hub, to an agent | `connect` | `{port, protocol}`, `protocol` being `tcp` or `udp` and `tcp` when absent: one TCP connection to `127.0.0.1:<port>` on the machine, or every datagram of one UDP entry to that port, a port the machine publishes now on that protocol; bytes both ways under credit; closed empty when either socket ends, `port_not_published {port}` for any other port or protocol, `connect_failed {reason}` when the dial fails |
 
 Installing and uninstalling are no kind and no verb: they follow from `want`.
@@ -2041,6 +2036,8 @@ no flag beside it, and an `exec` stream is judged by the `terminal` kind, as
 a `shell` is ("The exec stream"). The `ai_tools` section's `base_url` names
 the agent's own AI gateway forward on `127.0.0.1`, and the agent opens a
 `connect` stream to the hub for each connection made to it ("The connect
-stream"). `PROTOCOL_MIN` is 4: a client of 0.5 is refused
+stream"). A module's recipe is `{runner, method, params}`, and a `package`
+stream names `{module, artifact, digest}` ("The modules section, one entry
+per module"). `PROTOCOL_MIN` is 4: a client of 0.5 is refused
 `protocol_too_old`, and an agent of 0.5 is admitted for its own update alone
 and connects with 4 after it ("An agent of 0.5").

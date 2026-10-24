@@ -91,9 +91,9 @@ conventions explicit so nobody drifts.
      way.
    - [design/files.md](design/files.md) — where an installed hub puts things:
      five roots, and the one question each of them answers.
-   - [design/install_and_dev.md](design/install_and_dev.md) — who installs what:
-     the package, `nhub setup`, and the panel; and what `--dev` does
-     differently against a root of its own.
+   - [design/development.md](design/development.md): running the hub from
+     a checkout, what `--dev` does against a root of its own, and why a
+     checkout installs nothing.
    - [design/protocol.md](design/protocol.md) — everything the hub speaks:
      the three ports, how a path is grouped and named, refusals as
      `{code, params}`, every route, the channel's frames, sections and

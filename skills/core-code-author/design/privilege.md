@@ -147,13 +147,30 @@ about the unit is Linux's:
 
 ## The application entry elevates once
 
-The `Neutrino Hub` entry ([install_and_dev.md](install_and_dev.md), "The
-application entry opens the panel") runs one elevated step, which starts the
-hub's service when it is stopped and hands back the address to open, the
-setup token included while the box is not set up, and does nothing else;
-UAC, macOS's administrator prompt and `pkexec` are what ask. The browser opens as the
-person who clicked, never as root, and everything the page then does goes
-through the service's own authentication.
+Every hub package installs one entry named `Neutrino Hub`: the Start menu
+shortcut on Windows, `/Applications/Neutrino Hub.app` on macOS, a bundle
+holding a script and nothing else, and the desktop entry
+`neutrino-hub.desktop` on Linux. Opening it runs these steps:
+
+1. When the panel of a set-up box already answers on loopback, its session
+   route `GET /api/hub/auth/session` answering on the HTTP port, nothing is
+   asked. Otherwise one elevated step starts the hub's service when it is
+   not running and hands back the address to open, with the setup token
+   while the box is not set up; it does nothing else. Windows asks through
+   UAC, macOS through the administrator prompt of `do shell script`, Linux
+   through `pkexec`. A declined prompt opens nothing and says the service
+   was not started.
+1. The person's own session opens the default browser on
+   `http://127.0.0.1:<http-port>/`, with the setup token while the box is
+   not set up.
+
+The browser opens as the person who clicked, never as root, and everything
+the page then does goes through the service's own authentication.
+
+`nhub open` runs the same steps from a terminal, and skips the first when
+it has no privilege to start the service. Before setup the address shows
+the wizard; after it, the panel. The service's reply to `/` follows the
+box's state, so there is one address to remember.
 
 ## The panel never stores this machine's sudo password
 

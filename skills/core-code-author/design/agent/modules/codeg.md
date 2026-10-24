@@ -1,6 +1,6 @@
 # The Codeg module
 
-The `codeg` module runs Codeg's `codeg-server` 0.35.1 (Apache-2.0), a web
+The `codeg` module runs Codeg's `codeg-server`, tested at 0.35.1 (Apache-2.0), a web
 page for AI coding sessions beside CloudCLI, once per account on Linux
 (amd64 and arm64), macOS (arm64 and amd64) and Windows (x64; the publisher
 builds no Windows arm64 server). It is a program run as a person's account
@@ -9,17 +9,16 @@ builds no Windows arm64 server). It is a program run as a person's account
 rest. Its configuration is `{instances: [{account, port, secret}]}`, as
 code-server's, and the first instance's default port is 3101.
 
-**Two components, each its own archive.** `data/manifests/codeg.json` lists,
-per platform, the server bundle (`codeg-server`, `codeg-mcp`,
-`codeg-computer-helper` and `web/`, the web UI) and Node.js 22, the same
-build CloudCLI's manifest pins, carried again under this module, each with
-its url and sha256 from the publisher's own sidecar. The agent opens `package
-{module: codeg, component: server}` and `package {module: codeg, component:
-node}` and unpacks each under `codeg/<component>/` in the state root,
-read-only to every account and on no `PATH`. Codeg's binaries need glibc
-2.34, the agent's own floor, so the Linux entries name no `min_version`. The
-archives are not among the mainland release's files, so a `cn` hub fetches
-them from the manifest's `url` on GitHub, which is slower there.
+**Two artifacts, each its own archive.** `data/manifests/codeg.json` names,
+per platform, the server bundle at the module's version: `codeg-server`,
+`codeg-mcp`, `codeg-computer-helper` and `web/`, the web UI. Beside it is
+Node.js 22, the same build CloudCLI's manifest pins, held again under this
+module and pinned for every version. The server's versions and digests come
+from Codeg's GitHub releases, its one source. The agent opens `package
+{module: codeg, artifact, digest}` for each and unpacks it under
+`codeg/<directory>/` in the state root, `server/` and `node/`, read-only to
+every account and on no `PATH`. Codeg's binaries need glibc 2.34, the
+agent's own floor, so the Linux entries name no `min_version`.
 
 **The data directory is the account's.** `CODEG_DATA_DIR` is
 `~/.local/share/neutrino/agent/codeg/` on Linux, `~/Library/Application
@@ -39,7 +38,7 @@ layer ([module_template.md](../module_template.md), "The run"):
 | `CODEG_PORT` | an internal loopback port the agent picks and records in the instance's record; the configured port is the forwarder's |
 | `CODEG_TOKEN` | derived from the instance's secret, `base64url(HMAC-SHA256(secret, label))`, `label` a fixed string in the module's `constants.py` |
 | `CODEG_DATA_DIR` | the data directory |
-| `CODEG_STATIC_DIR` | `web/` inside the server component |
+| `CODEG_STATIC_DIR` | `web/` inside the server artifact's directory |
 | `CODEG_BRIDGE_PORTS` | `off` |
 | `NPM_CONFIG_PREFIX`, `npm_config_cache` | two directories under the data directory |
 | `PATH` | the module's Node first, then the account's `~/.local/bin` and `~/bin`, then the system's directories as CloudCLI lists them ([cloudcli.md](cloudcli.md)) |
@@ -88,14 +87,17 @@ refuses `account_invalid`, `account_duplicate`, `port_invalid`,
 have ([protocol.md](../../protocol.md), "The modules section, one entry per
 module").
 
-**The pin moves in the hub.** Codeg's **Software Update** screen cannot write
-a root-owned unpack, says so, and offers the release page; a new release is
-a new pin in `codeg.json`, which the next apply installs.
+**The version moves in the hub.** Codeg's **Software Update** screen cannot
+write a root-owned unpack, says so, and offers the release page. Another
+version is installed from the module's tab, and a new tested version in
+`codeg.json` reaches every machine that chose none at the next apply
+([module_install.md](../module_install.md), "Module versions").
 
 **Its agents are ACP adapters.** Codeg installs each coding agent itself,
 with `npm install --global` and `--registry https://registry.npmjs.org` on
-its own command line, so no setting of the hub changes the registry and a
-`cn` machine reaches `registry.npmjs.org` directly. Its Claude Code and Codex
+its own command line, which npm reads before any setting. That registry is
+the one download whose source the hub does not choose
+([module_install.md](../module_install.md), "Sources"). Its Claude Code and Codex
 entries are the adapters `claude-agent-acp` and `codex-acp`, which read the
 account's `~/.claude/settings.json` and `~/.codex/config.toml`, the files
 cc-switch writes, so the machine's AI tools setting points them at the

@@ -1,8 +1,10 @@
 # The CloudCLI module
 
 The `cloudcli` module runs CloudCLI, the npm package `@cloudcli-ai/cloudcli`
-pinned at 1.37.3 (AGPL-3.0), once per account: a web page for AI coding
-sessions. It is a program run as a person's account
+tested at 1.37.3 (AGPL-3.0), once per account: a web page for AI coding
+sessions. The module's version is the package's version, which the `npm`
+feed lists ([module_install.md](../module_install.md), "Module
+versions"). It is a program run as a person's account
 ([module_template.md](../module_template.md)): `agent/neutrino_agent/modules/cloudcli/`
 holds `config.py`, `constants.py` and `hooks.py`, and `modules/shared/` does
 the rest. Its configuration is `{instances: [{account, port}]}`.
@@ -19,12 +21,13 @@ shows `run\install_<account>.log`; on macOS the LaunchDaemon's
 `/Library/Logs/Neutrino/agent/cloudcli_<account>.log`.
 
 **Node.js comes from the hub and stays out of the system.** It is CloudCLI's
-own `node` component, and no other module reads it.
-`data/manifests/cloudcli.json`, written like `vscode.json`, pins the
-nodejs.org standalone build of Node 22 LTS for Linux, macOS and Windows on
-x64 and arm64, each with its url and the sha256 of `SHASUMS256.txt`. The hub
-fetches it into its module cache and serves it on the `package` stream as
-`package {module: cloudcli, component: node}`. The agent unpacks it under
+own `node` artifact, and no other module reads it.
+`data/manifests/cloudcli.json` pins the nodejs.org standalone build of Node
+22 LTS for Linux, macOS and Windows on x64 and arm64, the same for every
+version. Each has the digest of `SHASUMS256.txt` and two sources, nodejs.org
+and then npmmirror's copy. The module's installer fetches it into the module cache,
+and the agent opens `package {module: cloudcli, artifact, digest}` for it.
+The agent unpacks it under
 `cloudcli/node/` in its state root, `/var/lib/neutrino/agent/cloudcli/node/`
 on Linux, `%ProgramData%\Neutrino\agent\state\cloudcli\node` on Windows and
 `/Library/Application Support/Neutrino/agent/state/cloudcli/node` on macOS,
@@ -36,17 +39,22 @@ directory it finds directly under `cloudcli/`; one whose files are still
 open, as on Windows while an instance runs on it, goes at a later apply.
 Node is never put on `PATH`, in any shell profile, or under `/usr/local`.
 
-**CloudCLI is installed per account, apart from the account's own npm.** As
-the account, with that Node, the agent runs
-`npm install @cloudcli-ai/cloudcli@1.37.3 --prefix <app dir>` with
-`npm_config_cache` inside the app directory and `npm_config_userconfig`
-naming an empty file, so no `~/.npmrc` is read, `~/.npm` is untouched and
-nothing is installed globally. The app directory is
+**CloudCLI is installed per account, apart from the account's own npm.** The
+`cloudcli` artifact is of kind `npm`, its sources the npm registries. The
+agent ranks the registries, compares the chosen one's `dist.integrity` for
+the version with the artifact's digest, and goes on to the next registry
+when the two differ ([module_install.md](../module_install.md), "Choosing a
+source"). As the account, with that Node, it runs `npm install
+@cloudcli-ai/cloudcli@<version> --prefix <app-dir> --registry <registry>`
+with `npm_config_cache` inside the app directory and
+`npm_config_userconfig` naming an empty file, so no `~/.npmrc` is read,
+`~/.npm` is untouched and nothing is installed globally. The app directory is
 `~/.local/share/neutrino/agent/cloudcli/app` on Linux,
 `~/Library/Application Support/Neutrino/agent/cloudcli/app` on macOS and
-`%LOCALAPPDATA%\Neutrino\agent\cloudcli\app` on Windows. The install reaches
-nodejs.org, npm and GitHub; a LAN machine reaches them through the hub's
-proxy, and no mirror is configured.
+`%LOCALAPPDATA%\Neutrino\agent\cloudcli\app` on Windows. npm fetches the
+package's dependencies from the same registry, each under its own
+integrity. An install that fails on one registry runs again on the next, and
+the last failure is the one reported.
 
 **The service's environment is written from scratch**: `HOST=127.0.0.1`,
 `SERVER_PORT` (CloudCLI's own name for its port) and `PATH`. Nothing is
@@ -69,14 +77,17 @@ system.** The install scripts of the native modules call `node` by name,
 and a task or a service that inherits no profile has nothing else on its
 path that answers to it.
 
-**A failed install names its step**: `cloudcli_node_download_failed`,
-`cloudcli_npm_install_failed`, or `cloudcli_native_module_failed` when
-better-sqlite3, node-pty or bcrypt cannot fetch its prebuilt binary; both
-npm codes carry `detail`, the last lines prebuild-install, node-gyp and npm
-wrote. node-pty and bcrypt carry their binaries inside their npm packages;
-better-sqlite3 fetches its own, from where the state's `npm_environment`
-says ("Where each edition fetches from" in
-[install_and_dev.md](../../install_and_dev.md)).
+**A failed install names its step.** `download_failed {file, sources}` is
+an install that no source served Node.js, or that no registry served the
+package's integrity. `cloudcli_npm_install_failed` is a failed npm, and
+`cloudcli_native_module_failed` is better-sqlite3, node-pty or bcrypt unable
+to fetch its prebuilt binary. Both npm codes hold `detail`, the last lines
+prebuild-install, node-gyp and npm wrote. node-pty and bcrypt hold their binaries inside their npm packages.
+better-sqlite3 fetches its own from the host
+`npm_config_better_sqlite3_binary_host` names: the artifact's `hosts` list
+that setting's hosts, its GitHub releases and then npmmirror's copy, and the
+agent sets it to the fastest. An install that fails on a native module runs
+again with the next host.
 
 **npm cannot take the agent down.** On Linux an account's npm runs as a
 transient service of its own, `neutrino_cloudcli_install_<account>.service`,

@@ -14,7 +14,9 @@ entirely by the rendered YAML. It listens on `127.0.0.1` alone, so no
 exposure and no firewall rule names its port. The hub's own machine reaches
 it there. A client reaches it through its own forward and the `connect`
 streams the hub relays, and a managed machine through its agent's forward
-("How a managed machine's tools are pointed at the gateway"). A machine on
+("How a managed machine's tools are pointed at the gateway"). A container
+reaches the same forward at `host.containers.internal`
+([../agent.md](../agent.md), "The listeners a container reaches"). A machine on
 the LAN with neither a client nor an agent does not reach it. Two kinds of
 credential feed it:
 
@@ -35,8 +37,19 @@ own. `config/cliproxyapi/cliproxyapi.json` keeps `device_keys` beside
 the gateway's `api-keys`. `ensure_device_key`, beside `ensure_client_key` in
 `modules/clients/ai_keys.py`, mints a device's key when the device's AI tools
 setting goes on. The key is revoked when the setting goes off and when the
-device is removed. No module's state carries it: the device's `ai_tools`
+device is removed. No module's state holds it: the device's `ai_tools`
 section does ("How a managed machine's tools are pointed at the gateway").
+
+A container module that uses the gateway has a key of its own on each
+device. The hub generates it, seals it in that module's
+`config/devices/<id>/<module>.json`, registers it under the device and the
+module, and voids it at the module's uninstall. The renderer writes it into
+`api-keys` beside the keys of `cliproxyapi.json`, reading every such module
+file. It does not follow the device's AI tools setting, and the module's
+containers receive it in their environment
+([../agent/modules/containers.md](../agent/modules/containers.md),
+"Reaching the machine"). Its usage is a row of its own, under the device and
+the module.
 
 ## How a request routes
 

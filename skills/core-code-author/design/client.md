@@ -54,7 +54,29 @@ are the same on Linux, Windows and macOS.
 | The daemon keeps a handle on the holding process and frees the machine once it has ended, by a quit, a crash or the end of its session. | A crashed resident never says it is done, and the handle keeps the process id from naming another process meanwhile. |
 | `nclient gui` refused a hold exits with no window, no tray icon and no message. Every other `nclient` command of another account prints the one line `client_held`, naming the holder's account, and exits 1. | A second window that can do nothing is noise; a terminal is where a person asks why. |
 | Where no daemon answers, as in a checkout, the resident starts and holds nothing. | A checkout runs no daemon, and a client that cannot start is worse than two. |
-| An installer, which runs elevated as whichever administrator started it, asks the one running client to quit for an upgrade, whoever's account it belongs to; the client registers its return as its own account and comes back in its own session ([install_and_dev.md](install_and_dev.md), "A client upgraded while it runs comes back"). | An upgrade replaces the files of the one client that runs, whoever installs it. |
+| An installer, which runs elevated as whichever administrator started it, asks the one running client to quit for an upgrade, whoever's account it belongs to; the client registers its return as its own account and comes back in its own session ("A client upgraded while it runs comes back"). | An upgrade replaces the files of the one client that runs, whoever installs it. |
+
+## A client upgraded while it runs comes back
+
+An install over a running client closes it to replace its files, and the
+client is running again when the install ends, in the same person's session,
+as that person, never as SYSTEM or elevated, with no second prompt. An
+install over no running client starts nothing.
+
+On Windows the installer asks the one running client to quit for an
+upgrade, whichever account it belongs to ("One client per machine"). It asks
+the EasyTier daemon which client holds the machine and opens that account's
+control pipe, which admits the administrators besides its own account. The
+installer runs elevated, and the client takes that one request and no other
+from an elevated caller; a caller that is neither its own account nor
+elevated is refused. The client registers, as its own account, the task
+`NeutrinoClientRelaunch_<account>`: no trigger, the limited run level, run
+only while the account is signed in, starting `nclientw.exe gui --hidden`.
+The installer's last step, as SYSTEM, starts every such task, and the client
+deletes its own task when it starts. An account that is not signed in, as
+under an install from ssh or a management tool with nobody at the desktop,
+does not run its task, and the install does not fail. A removal deletes
+every such task.
 
 ## The layout
 
@@ -850,7 +872,8 @@ row per core the client carries (`<name> <version>` at the left, `<licence>
 patch), where **Source** and **Patch** are short link words that open the
 repository or the patch in the browser; no URL is ever written out. The
 client's own **Source** and its patches open the repository of the client's
-edition: GitHub for `intl`, Gitee for `cn`; the desktop window reads the
+edition: GitHub for `intl`, and `https://cnb.cool/iffi-X/neutrino` on CNB
+for `cn`; the desktop window reads the
 edition from the `edition` field of its state document. In `cn`, a carried
 core's **Source** opens a Gitee repository that holds the same tag at the
 same commit where one exists: EasyTier's own `gitee.com/easytier/EasyTier`

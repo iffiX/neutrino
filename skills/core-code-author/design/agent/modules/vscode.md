@@ -19,6 +19,10 @@ table ([agent.md](../../agent.md), "The platform layer"). Its token is the
 instance's connection token, which `code serve-web` checks itself, so the
 module names no forwarder rule.
 
+The CLI's versions and digests come from Microsoft's update API, and its
+one source is Microsoft's own address
+([module_install.md](../module_install.md), "Sources").
+
 Its journal on Windows reads the end of `<account>.log` beside the CLI,
 which the task's `cmd.exe` appends to; on macOS the LaunchDaemon's
 `StandardOutPath` and `StandardErrorPath` name

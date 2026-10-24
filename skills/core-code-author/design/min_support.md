@@ -51,8 +51,8 @@ satisfies it, and RHEL 9 has 4.0 (`client/desktop/packaging/build_rpm.py:54`).
 The introspection library on RHEL 9 is older than the bindings need, so the
 package installs its own (`client/desktop/packaging/payload.py:127`).
 
-The amd64 macOS packages are built on GitHub's `macos-15-intel` runner, for
-`intl` only. GitHub provides its Intel macOS runners until autumn 2027, and
+The amd64 macOS packages are built on GitHub's `macos-15-intel` runner, in
+both editions. GitHub provides its Intel macOS runners until autumn 2027, and
 macOS Tahoe 26 is the last macOS for Intel Macs; whether the amd64 packages
 continue is decided then.
 
@@ -60,6 +60,72 @@ The two phone rows are the floor each app's build declares: `minSdk 26` in
 the Gradle project and a deployment target of 16.0 in `project.yml`. The
 phone's installer rejects the app on an older system, so the floor is
 enforced by the declaration itself.
+
+## What each package holds and depends on
+
+A package either holds a part or names it as a dependency, and the choice
+follows from who can install the part safely.
+
+### The hub's package
+
+`nftables`, `dnsmasq`, `iproute2`, NetworkManager, `fail2ban`, `iw`,
+`arp-scan` and `curl` are the hub's dependencies, declared in the
+`Depends:` of the `.deb`, the `Requires:` of the `.rpm` and the `depends=` of
+the Arch package. All three are generated from `SYSTEM_RUNTIME_PACKAGES` in
+[`system/constants.py`](../../../hub/neutrino_hub/system/constants.py), so a
+dependency field and what the hub believes it needs cannot say different
+things. `hostapd` is a recommendation: a gateway with no radio routes
+without it.
+
+The package manager installs them, and the hub's own setup never does.
+Installing NetworkManager from a process that runs on the machine takes the
+machine's network down while it runs, and on a gateway that is the network.
+It happened once here, and the box needed a reboot. A package manager
+installs before anything of the hub runs, the one moment when taking the
+network down costs nothing. On macOS and Windows the hub's package names no
+dependency and holds every program it drives ([files.md](files.md),
+"/opt/neutrino: what the packages put here").
+
+### The agent's package
+
+The agent's package lays the payload down, `nagent join` joins a hub, and
+the hub's state says what the machine hosts. The package holds an
+interpreter under `/opt/neutrino/agent` with the agent installed beside it,
+and the RustDesk host, both built for one machine. It holds no cc-switch:
+the agent fetches it from the hub the first time the machine's AI tools
+setting needs it ([agent/ai_tools.md](agent/ai_tools.md)). The hub's
+`data/manifests/cc_switch.json` pins the client's version, the one
+`packaging/shared/constants.py` holds, with the same files and digests, and
+a hub test keeps the two the same. The agent draws no window, so it holds no
+bindings and depends on nothing named `python`.
+
+The interpreter is held because the system's is no fit. The agent is
+standard library only, so one architecture-independent package once ran on
+whatever Python a device already had. A project that installs into
+somebody's system Python is what `EXTERNALLY-MANAGED` exists to stop, and a
+machine's own interpreter is not one this project can pin. A checkout pays
+none of it: `pip install -e agent` installs the agent alone.
+
+### The client's package
+
+The client is a person's application: it runs when the person opens it, in
+their own session, never as root. Its packages hold the client compiled by
+Nuitka, with the interpreter compiled in, so none of them holds a Python
+tree and none depends on one: `nclient` on Linux under `/opt/neutrino/client`
+with the root mount helper compiled under its `libexec` at the path polkit
+pins, `nclient.exe` from the Windows installer, `Neutrino Client.app` from
+the macOS one. Beside the binary are the two tools it drives, cc-switch and
+the RustDesk viewer, pinned by digest; the hub's manifest for the agent's
+copy of cc-switch repeats the same pin.
+
+A machine still supplies the window's toolkit. On Linux that is the
+WebKitGTK 4.1 stack and the appindicator library, plain dependencies of the
+deb and the rpm; on Windows the WebView2 runtime, for which the installer
+runs Microsoft's bootstrapper when the machine has none; on macOS WKWebView,
+which is the system's. The compile is native, so each package comes off a
+machine of its own architecture. A checkout pays none of it: `pip install -e
+client` runs on the checkout's interpreter, and `nclient gui` uses whatever
+can import `gi`.
 
 ## What the hub drives
 
@@ -110,9 +176,9 @@ releases a supported family provides.
 | Program | Minimum | What needs it | Where |
 | --- | --- | --- | --- |
 | podman on Linux | 3.4 | a container becomes a plain unit below 4.4 and a Quadlet `.container` file from 4.4; the floor is Linux's alone | `agent/neutrino_agent/modules/podman/constants.py:5`, `agent/neutrino_agent/modules/podman/applier.py:90` |
-| Podman on Windows and macOS | the release each manifest branch pins: 6.1.4 for Windows amd64, a 6.x release for macOS arm64, a 5.8.x release for macOS amd64 | Containers there; Podman inside the machine is the machine image's own, always 4.4 or later, so every container there is a Quadlet file | `hub/neutrino_hub/data/manifests/podman.json` |
-| WSL | 2, from the WSL msi the Windows branch pins at 3.0.3, on Windows 10 2004, build 19041, or later | the Podman machine on Windows; Podman's msi refuses an older build, and the branch's `min_version` is 19041 | `hub/neutrino_hub/data/manifests/podman.json` |
-| macOS, for Containers | 13 | the Podman machine on applehv; the macOS branches' `min_version` | `hub/neutrino_hub/data/manifests/podman.json` |
+| Podman on Windows and macOS | the tested version each platform entry of `podman.json` names, or the version the machine chose: 6.1.4 for Windows amd64, a 6.x release for macOS arm64, a 5.8.x release for macOS amd64 | Containers there; Podman inside the machine is the machine image's own, always 4.4 or later, so every container there is a Quadlet file | `hub/neutrino_hub/data/manifests/podman.json` |
+| WSL | 2, from the WSL msi the Windows entry pins at 3.0.3, on Windows 10 2004, build 19041, or later | the Podman machine on Windows; Podman's msi refuses an older build, and the entry's `min_version` is 19041 | `hub/neutrino_hub/data/manifests/podman.json` |
+| macOS, for Containers | 13 | the Podman machine on applehv; the macOS entries' `min_version` | `hub/neutrino_hub/data/manifests/podman.json` |
 | Samba | 4.15 | the session list; `smbstatus --json` exists from 4.16, and below it the text tables of `-p` and `-S` are parsed | `agent/neutrino_agent/modules/samba/applier.py:356` |
 | ZFS | 2.1 | `zpool status` and `zpool import` are read as text, because neither has a machine format on this release | `agent/neutrino_agent/modules/zfs/applier.py:4` |
 | systemd | 236 | `systemd-run --collect` for the transient unit a self-update runs in | `agent/neutrino_agent/core/self_update.py:216` |
@@ -132,8 +198,14 @@ floor. Podman 6 supports Windows 11 alone, so a Windows 10 machine runs a
 Podman its publisher no longer supports there. The macOS floor of 13 is not
 proven by a run: the `podman_macos` CI job installs Podman and makes a
 machine on macOS 15, on `macos-15` for arm64 and `macos-15-intel` for amd64,
-and starts no machine. A lower or a proven floor moves the branch's
+and starts no machine. A lower or a proven floor moves the entry's
 `min_version` and this row together.
+
+A floor in these tables is the tested version's. `min_version` belongs to a
+platform entry and holds for every version a machine chooses there. A
+version that does not run on the machine ends `install_failed` with the
+failure's code ([agent/module_install.md](agent/module_install.md), "Module
+versions").
 
 ## What the client's window loads
 

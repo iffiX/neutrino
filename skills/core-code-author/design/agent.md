@@ -7,8 +7,10 @@ machine's desktop when told. It draws no window. Every port it listens on
 is on `127.0.0.1`: the forwarders in front of the programs run as an
 account, CloudCLI, code-server and Codeg
 ([module_template.md](agent/module_template.md), "The run"), and the AI
-gateway forward, 8317, while the machine's AI tools use the gateway, on
-every machine but the hub's own ("The AI gateway forward"). Its own
+gateway forward, 8317, on every machine but the hub's own ("The AI gateway
+forward"). On Linux it opens the same ports on the gateway of each Podman
+bridge as well, for the containers there ("The listeners a container
+reaches"). Its own
 code is pure standard library. The
 package includes the interpreter that runs it, so it installs on a machine
 with no Python and touches none the machine already has.
@@ -44,7 +46,7 @@ hub's pages, in the agent, and in the client:
   the bytes; the agent observes, installs and configures. A device's Modules
   page writes one `want` per module into `config/devices/<id>/modules.json`.
   The state the agent receives names, per module, that `want`, the
-  configuration, and the install and uninstall recipes for its platform
+  configuration, and the recipe for its platform
   ([protocol.md](protocol.md), "The channel").
 - **Services** are what the hub publishes and what a client consumes: a web
   link, a port, the AI gateway, a share, a shared desktop. The agent composes
@@ -97,8 +99,9 @@ and nothing about a socket reaches `config/`.
 **The state is one document per device.** The hub composes it from
 `config/devices/<id>/`: `modules.json` with each module's `want`, one file per
 module with its configuration, and `rdp.json` with the sealed seat password.
-The install and uninstall recipes resolved for the machine's platform are
-added to it, and it is sent under one hash. The agent keeps a root-only copy,
+The recipe of each module, resolved for the machine's platform and its
+chosen version as `{runner, method, params}`, is added to it, and it is sent
+under one hash. The agent keeps a root-only copy,
 compares on connect and on every `state` frame, and makes each mentioned
 module's actual state equal its `want`:
 
@@ -260,27 +263,26 @@ drawn:
 ## The kinds of module
 
 Every module is of one kind by how it runs, and each platform entry of its
-manifest has one install source. The flow every module shares, from the
-manifest to the published entry, is
-[module_template.md](agent/module_template.md); the sources, the presence
-check and what an uninstall removes are
+manifest names one runner and one install method. The flow every module
+shares, from the manifest to the published entry, is
+[module_template.md](agent/module_template.md); the install methods, the
+presence check and what an uninstall removes are
 [module_install.md](agent/module_install.md); each module's own page is
 linked from the table.
 
-| Kind | Modules | Install source | Run |
+| Kind | Modules | Install method | Run |
 | --- | --- | --- | --- |
-| carried by the agent | [Terminal](agent/modules/terminal.md), [Remote desktop](agent/modules/remote_desktop.md), which also detects a person's own AnyDesk and TeamViewer | the agent's package, on every system | the module's own applier per system |
-| software the module configures | [File share](agent/modules/file_share.md), [Containers](agent/modules/containers.md), [ZFS storage](agent/modules/zfs.md) | the system's sources; on Windows and macOS the file share's system SMB server is `builtin`, and Containers comes from the hub's cache | the module's own applier; for Containers on Windows and macOS, inside a Podman machine of one account |
-| a service with a system account of its own | [Gitea](agent/modules/gitea.md) | the hub's cache | the account and the service the module makes, in the publisher's layout on every system |
-| a program run as a person's account | [VS Code](agent/modules/vscode.md), [code-server](agent/modules/code_server.md), [CloudCLI](agent/modules/cloudcli.md), [Codeg](agent/modules/codeg.md) | the hub's cache, each component unpacked and sealed under `agent/<module>/<component>/` | one account service per instance, the forwarder in front of it, one `web` entry per running instance |
-| container images | every module whose software is container images | a container registry, pulled by the Containers module's Podman | hub containers on the Containers module, which the module needs |
+| carried by the agent | [Terminal](agent/modules/terminal.md), [Remote desktop](agent/modules/remote_desktop.md), which also detects a person's own AnyDesk and TeamViewer | `agent`, on every system | the module's own applier per system |
+| software the module configures | [File share](agent/modules/file_share.md), [Containers](agent/modules/containers.md), [ZFS storage](agent/modules/zfs.md) | `system`; on Windows and macOS the file share's SMB server is `builtin`, and Containers is `hub` | the module's own applier; for Containers on Windows and macOS, inside a Podman machine of one account |
+| a service with a system account of its own | [Gitea](agent/modules/gitea.md) | `hub` | the account and the service the module makes, in the publisher's layout on every system |
+| a program run as a person's account | [VS Code](agent/modules/vscode.md), [code-server](agent/modules/code_server.md), [CloudCLI](agent/modules/cloudcli.md), [Codeg](agent/modules/codeg.md) | `hub`, each archive unpacked and sealed under `agent/<module>/<directory>/` | one account service per instance, the forwarder in front of it, one `web` entry per running instance |
+| container images | every module whose software is container images | `container`, pulled by the Containers module's Podman | hub containers on the Containers module, which the module needs |
 
-Terminal and Remote desktop install nothing: their manifests name the tier
-`agent`, their state entries name no recipe, they are never in the Modules
-page's picker, always a tab, and take none of the four presses
-([protocol.md](protocol.md), "The modules section, one entry per module");
-the hub composes both from their own files under `config/devices/<id>/`,
-not from `modules.json`.
+Terminal and Remote desktop install nothing: their platform entries name the
+method `agent`, they are never in the Modules page's picker, always a tab,
+and take none of the four presses ([protocol.md](protocol.md), "The modules
+section, one entry per module"); the hub composes both from their own files
+under `config/devices/<id>/`, not from `modules.json`.
 
 A run is the module's own applier for the first three kinds, one per system
 where the systems differ, under `modules/<module>/`: the agent's code for
@@ -361,8 +363,8 @@ connection"), and each also answers the agent's dial on loopback:
 
 The hub's AI gateway listens on the hub's own loopback alone
 ([hub_components/ai.md](hub_components/ai.md), "What serves"), so a managed
-machine's AI tools reach it through the agent. While the `ai_tools` section
-is on and its `is_forwarded` is true, the agent listens on `127.0.0.1:8317`,
+machine's AI tools reach it through the agent. While the `ai_tools`
+section's `is_forwarded` is true, the agent listens on `127.0.0.1:8317`,
 and the endpoint the switch writes into each tool is that port
 ([ai_tools.md](agent/ai_tools.md)). For
 each connection it accepts there, the agent opens `connect {id}` to the
@@ -372,13 +374,30 @@ AI forward opens; the hub joins it to the gateway on the hub's loopback
 
 | Rule | Reason |
 | --- | --- |
-| The forward listens on `127.0.0.1` alone, opens no port in any firewall, and closes when the section turns off or its `is_forwarded` turns false. | The gateway serves the hub's own machine, its clients and its managed machines, and no other host on the LAN; a port on any other address opens it to the LAN. |
+| The forward listens on `127.0.0.1`, and on Linux on the Podman bridges ("The listeners a container reaches"), opens no port in any firewall, and closes when its `is_forwarded` turns false. | The gateway serves the hub's own machine, its clients, its managed machines and their containers, and no other host on the LAN; a port on a LAN address opens it to the LAN. |
 | While the agent has no channel to the hub, the forward stops accepting new connections and stays bound; the connections waiting in its listen queue are served once the channel is back. | A client's forward does the same ([client.md](client.md), "The local port table"), for the same reason: a connection accepted with no channel can only be closed at once. |
-| The hub closes the stream `permission_denied {kind: ai}` while that machine's AI tools setting is off. | The setting is the machine's one permission for the gateway. |
+| The hub closes the stream `permission_denied {kind: ai}` while that machine's AI tools setting is off and no container module that uses the gateway is installed there. | The setting and the container modules are the machine's permissions for the gateway. |
 | The forward adds no key and reads none; each request holds the device's own key, which the switch wrote into the tool, and the gateway checks it. | The gateway's key check is the one gate on it, wherever a request comes from. |
 | The hub sends `is_forwarded` false to the agent on its own machine, which opens no forward. Its tools are pointed at the gateway's own loopback port, `listen_port`. | The gateway already listens on that machine's loopback, at 8317 by default, the port a forward there takes. The hub knows which device is its own machine by the machine id; the agent is told, and reads it from nothing else. |
+| On a managed machine `is_forwarded` is true while the machine's AI tools setting is on, or while a container module that uses the gateway is installed. | A container module's key works whatever the AI tools setting says ([modules/containers.md](agent/modules/containers.md), "Reaching the machine"), and the gateway's key check is the one gate on every request. |
 | A port the agent cannot listen on is one line in its log, and the agent tries it again every report interval while the section asks for the forward. | Another program can hold 8317 for a while, and the forward is there once it lets go. |
 | Bytes go both ways under the channel's credit, and either socket's end closes the stream. | It is a `connect` stream like any other, in the other direction. |
+
+## The listeners a container reaches
+
+Every container on a machine reaches the agent's `127.0.0.1` listeners at
+`host.containers.internal`, on the same port. On Linux the agent makes that
+true itself; on macOS the Podman machine's own network does
+([modules/containers.md](agent/modules/containers.md), "Reaching the
+machine").
+
+| Rule | Reason |
+| --- | --- |
+| On Linux the agent opens each of its loopback listeners also on the gateway address of every Podman bridge on the machine, bound to that bridge with `SO_BINDTODEVICE`. It relays each connection to `127.0.0.1` on the same port. | A container's loopback is its own, and its way to the machine is its bridge's gateway. Binding to the bridge keeps the port off every other interface. |
+| The listeners relayed are the AI gateway forward and the forwarders of the programs run as an account. | They are the agent's own; VS Code's listener belongs to VS Code. |
+| The agent reads the bridges every report interval, and opens and closes the relays to match. | A bridge appears with its first container. |
+| On the hub's own machine, where the agent opens no AI forward, it relays the gateway's own port the same way, the port the `ai_tools` section names as `gateway_port`. | A container on the hub's machine reaches the gateway at the same address as one on a managed machine. |
+| A relayed connection meets the check of the listener behind it: a forwarder's token or login, and the gateway's key. | The relay adds a way in for the machine's containers, and no way past a check. |
 
 ## The local control channel
 
@@ -467,12 +486,12 @@ module the state names reads `unsupported`, never `failed`, beside the
 Terminal and Remote desktop rows every platform has. A platform with
 `hub_packages` gets Gitea and the programs run as an account, VS Code,
 CloudCLI and Codeg, and macOS code-server beside them, and Containers as
-`PodmanMachineModuleRunner`, kind `podman_machine`, which runs Podman inside
+`PodmanMachineModuleRunner`, runner `podman_machine`, which runs Podman inside
 a Podman machine of one account; on Linux all of them are among the runners
-`packages` builds, Containers as `PodmanModuleRunner` by the
-`system_package` recipe ([modules/containers.md](agent/modules/containers.md)). On every system, software the hub
+`packages` builds, Containers as `PodmanModuleRunner`, runner `podman`, by
+the `system` method ([modules/containers.md](agent/modules/containers.md)). On every system, software the hub
 sends down a package stream is unpacked into a directory of the module's
-own name under the state root, one subdirectory per component, cc-switch into
+own name under the state root, one subdirectory per artifact, cc-switch into
 `ai_tools/bin/`, and that directory alone is opened to every account to read and run: mode 755, and on Windows
 read and execute for the Users group. Every import
 only POSIX has is guarded, so one package imports on all three systems.
@@ -551,10 +570,10 @@ no output and no place in the report's `sessions`.
 
 ### Which modules each system runs
 
-A module runs on a system when its manifest has a branch for the machine's
-platform and the machine's `version` is not below that branch's
-`min_version` ([protocol.md](protocol.md), "The modules section, one entry
-per module"). The Modules page greys out every other module in its picker
+A module runs on a system when its manifest has a platform entry for the
+machine and the machine's `version` is not below that entry's
+`min_version` ([module_install.md](agent/module_install.md), "The
+manifest"). The Modules page greys out every other module in its picker
 and never shows it as a tab. The agent's minimum system stays where it is; a
 module a system cannot run is left out on that system.
 
@@ -594,7 +613,8 @@ the text leaves the agent, and a reinstall's output goes through the same
 mask.
 
 The hub's own machine on macOS and Windows runs the local agent
-`nhub setup` installs ([install_and_dev.md](install_and_dev.md)), so its
+`nhub setup` installs ([architecture.md](architecture.md), "`nhub setup`
+configures and starts, and installs nothing"), so its
 shares and VS Code are that agent's modules, as on any device.
 
 Each module's own page is under `agent/modules/`, linked from the table of
@@ -773,6 +793,30 @@ upgrade an agent performs when `welcome` names a newer `software` are in
 one number behind, is admitted for that upgrade alone and connects with
 the new number after it ([protocol.md](protocol.md), "An agent of 0.5").
 
+## The agent's packages come from the hub
+
+Every hub package holds one agent package, the one of its own system,
+architecture and package family, in `/var/lib/neutrino/hub/agent_cache/`.
+That package installs the hub's own local agent, and enrolls and updates
+every device of the same platform with no network of its own. The Arch
+package holds none, because no agent package is published for Arch.
+
+Another platform's agent package is fetched when a device of that platform
+needs it, for an install over SSH or for a self-update:
+
+1. The hub reads the platform's entry in `agent_packages.json`: the file
+   name, and the digest that the release's `SHA256SUMS` lists for the file.
+1. It fetches the file from the release sites, at the release the hub came
+   from, with the method every download uses
+   ([module_install.md](agent/module_install.md), "Choosing a source").
+1. It keeps a file that matches the digest in the cache. When no site
+   serves one, the fetch fails `download_failed {file, sources}`.
+
+A platform the manifest does not name is refused with `agent_package_missing`,
+never served another machine's build. A package dropped under
+`config/devices/packages` wins over both. Where those files are and what an
+upgrade does to them is in [files.md](files.md).
+
 ## What an attacker in each position gets
 
 **On the wire, or owning the network** (ARP, DHCP, DNS, a squatted IP): they
@@ -805,13 +849,15 @@ who can already strip TLS, who fails the fingerprint check first.
 
 **A local account on the managed machine**: the control socket is 0600 under
 a 0700 directory, so the kernel rejects their connection before a request is
-read. The agent's only local ports are on `127.0.0.1`. The CloudCLI,
-code-server and Codeg forwarders answer 401 to a request carrying neither a
-token the hub minted nor a login the forwarder set, so neither the account
-nor a website in their browser reaches an instance through them. The AI
-gateway forward passes a request to the gateway, which answers it only with
-the device's key, held in the tool files of the accounts the setting
-names.
+read. The agent's only local ports are on `127.0.0.1`, and on Linux the
+same ports on the Podman bridges. The CloudCLI, code-server and Codeg
+forwarders answer 401 to a request holding neither a token the hub
+generated nor a login the forwarder set, so neither the account, nor a
+website in their browser, nor a process in a container reaches an instance
+through them. The AI gateway forward passes a request to the gateway, which
+answers it only with a key it knows: the device's, held in the tool files of
+the accounts the setting names, or a container module's, held in that
+module's containers.
 
 **Rooting the hub box** is outside the model: the key, the vault and the
 panel all live there. The panel port itself is plain HTTP unless its HTTPS is
