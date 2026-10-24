@@ -16,6 +16,7 @@ import json
 import os
 import shutil
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -35,6 +36,8 @@ from tests.streams.fake_channel import FakeChannel
 
 PACKAGE_BYTES = b"!<arch>agent-package"
 PACKAGE_OPEN = {"type": "open", "stream": 1, "kind": "package"}
+GOLDEN = Path(__file__).parent / "golden"
+GOLDEN_STATE = "C:\\ProgramData\\Neutrino\\agent\\state"
 
 
 def sha256(data: bytes) -> str:
@@ -1165,6 +1168,43 @@ def test_the_msi_waits_for_the_windows_installer_before_each_try():
     )
     assert "$deadline = (Get-Date).AddSeconds(300)" in script
     assert "if ($code -eq 1618) { $code = Invoke-Install }" in script
+
+
+@pytest.mark.parametrize(
+    "case, path, state_dir, version, is_reinstall",
+    [
+        (
+            "upgrade",
+            GOLDEN_STATE + "\\packages\\neutrino-agent-0.5.2-windows-amd64.msi",
+            GOLDEN_STATE,
+            "0.5.2",
+            False,
+        ),
+        (
+            "reinstall",
+            GOLDEN_STATE + "\\packages\\neutrino-agent-0.5.2-windows-amd64.msi",
+            GOLDEN_STATE,
+            "0.5.2",
+            True,
+        ),
+        ("quoted", "C:\\it's\\agent.msi", "C:\\it's", "0.4.0", False),
+    ],
+)
+def test_the_msi_install_renders_the_golden_command_byte_for_byte(
+    monkeypatch, case, path, state_dir, version, is_reinstall
+):
+    """The golden was rendered before the msiexec wait and retry moved to
+    ``installers``; the script that composes them is the same text."""
+    monkeypatch.setenv("ProgramFiles", "C:\\Program Files")
+    golden = json.loads(
+        (GOLDEN / "self_update_msi_commands.json").read_text(encoding="utf-8")
+    )
+
+    command = self_update.install_command(
+        "msi", path, state_dir=state_dir, version=version, is_reinstall=is_reinstall
+    )
+
+    assert command == golden[case]
 
 
 # --- the Windows install, run in PowerShell where there is one ---

@@ -154,10 +154,12 @@ AGENT_UPDATE_PACKAGE_STEM = "update"
 # What dnf5 says when it refuses at once because another transaction holds
 # the rpm lock.
 AGENT_UPDATE_DNF_LOCK_TEXT = "rpm transaction lock"
-# The Windows Installer holds this mutex while it installs, and msiexec
-# answers this code while another install holds it.
+# The Windows Installer holds this mutex while it installs, msiexec answers
+# the busy code while another install holds it, and the reboot code when an
+# install finished with a restart owed.
 AGENT_UPDATE_MSI_MUTEX = "Global\\_MSIExecute"
 AGENT_UPDATE_MSI_BUSY_CODE = 1618
+AGENT_UPDATE_MSI_REBOOT_CODE = 3010
 # The agent's own program as the deb and the rpm install it.
 AGENT_LINUX_PROGRAM_PATH = "/usr/bin/nagent"
 
@@ -285,7 +287,7 @@ AGENT_REINSTALL_WAIT_S = 120.0
 AGENT_REINSTALL_POLL_S = 1.0
 # The exit statuses of an install that went through: msiexec's 3010 is one
 # that finished with a restart owed.
-AGENT_REINSTALL_INSTALLED_CODES = (0, 3010)
+AGENT_REINSTALL_INSTALLED_CODES = (0, AGENT_UPDATE_MSI_REBOOT_CODE)
 
 # How long a module's live details stand in the report before the engine
 # reads them again. The reporter never waits on a read.

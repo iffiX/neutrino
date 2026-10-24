@@ -48,14 +48,18 @@ from neutrino_agent.constants import (
     AGENT_UPDATE_DNF_LOCK_TEXT,
     AGENT_UPDATE_LAUNCH_TIMEOUT_S,
     AGENT_UPDATE_LOCK_TIMEOUT_S,
-    AGENT_UPDATE_MSI_BUSY_CODE,
-    AGENT_UPDATE_MSI_MUTEX,
     AGENT_UPDATE_PACKAGE_STEM,
     AGENT_UPDATE_SCRIPT_MODE,
     AGENT_UPDATE_SCRIPT_NAME,
     AGENT_UPDATE_UNIT,
 )
 from neutrino_agent.exceptions import GatewayUnreachable, SelfUpdateError
+from neutrino_agent.modules.shared.installers import (
+    msiexec_arguments,
+    msiexec_script,
+    powershell_command,
+    powershell_quote,
+)
 from neutrino_agent.modules.shared.log_tail import mask_secrets
 from neutrino_agent.platforms import win32
 from neutrino_agent.platforms.windows import agent_program_path
@@ -89,13 +93,13 @@ RELEASE_VERSION_PATTERN = re.compile(r"^neutrino-agent[_-]([^_-]+)[_-]")
 # result.
 WINDOWS_CREATE_BREAKAWAY_FROM_JOB = 0x01000000
 
-# The PowerShell the Windows install runs in: a wait for the Windows
-# Installer, the version installed now, read unless the install is a
-# reinstall, msiexec, run once more after a busy answer, its verbose log,
-# the version installed afterwards, which decides the exit of an install to
-# another version, and the result in the shape the reporting script writes
-# elsewhere, UTF-8 without a byte order mark.
-_WINDOWS_SCRIPT = """$ErrorActionPreference = 'Continue'
+# The PowerShell the Windows install runs in: the version installed now,
+# read unless the install is a reinstall; then msiexec as
+# ``installers.msiexec_script`` runs it, skipped when the version installed
+# is the one wanted; then the version installed afterwards, which decides
+# the exit of an install to another version, and the result in the shape
+# the reporting script writes elsewhere, UTF-8 without a byte order mark.
+_WINDOWS_SCRIPT_HEAD = """$ErrorActionPreference = 'Continue'
 $log = {log}
 $version = {version}
 $wanted = {wanted}
@@ -107,30 +111,13 @@ function Get-Installed {{
     }}
     return ''
 }}
-function Wait-Installer {{
-    $deadline = (Get-Date).AddSeconds({lock_timeout})
-    while ((Get-Date) -lt $deadline) {{
-        $held = $null
-        try {{
-            if (-not [Threading.Mutex]::TryOpenExisting({mutex}, [ref]$held)) {{ return }}
-            $held.Dispose()
-        }} catch [UnauthorizedAccessException] {{
-        }}
-        Start-Sleep -Seconds 1
-    }}
-}}
-function Invoke-Install {{
-    Wait-Installer
-    if ($wanted -and (Get-Installed) -eq $wanted) {{
+"""
+_WINDOWS_SCRIPT_ALREADY = """    if ($wanted -and (Get-Installed) -eq $wanted) {
         [IO.File]::WriteAllText($log, "already $wanted`n")
         return 0
-    }}
-    $run = Start-Process -FilePath msiexec.exe -Wait -PassThru -NoNewWindow -ArgumentList {arguments}
-    return $run.ExitCode
-}}
-$code = Invoke-Install
-if ($code -eq {busy}) {{ $code = Invoke-Install }}
-$note = ''
+    }
+"""
+_WINDOWS_SCRIPT_TAIL = """$note = ''
 if ($wanted) {{
     $installed = Get-Installed
     if ($installed -eq $wanted) {{
@@ -557,37 +544,23 @@ def _windows_install_command(
     log = ntpath.join(state_dir, AGENT_REINSTALL_LOG_NAME)
     # A newer package has a product code of its own, so this is an upgrade
     # that removes the installed product; REINSTALL would skip the files.
-    arguments = f'/i "{path}" /qn /norestart /l*v "{log}"'
-    script = _WINDOWS_SCRIPT.format(
-        log=_powershell_quote(log),
-        version=_powershell_quote(version),
-        wanted=_powershell_quote("" if is_reinstall else version),
-        program=_powershell_quote(agent_program_path()),
-        lock_timeout=AGENT_UPDATE_LOCK_TIMEOUT_S,
-        mutex=_powershell_quote(AGENT_UPDATE_MSI_MUTEX),
-        arguments=_powershell_quote(arguments),
-        busy=AGENT_UPDATE_MSI_BUSY_CODE,
+    arguments = msiexec_arguments(path, log_path=log)
+    head = _WINDOWS_SCRIPT_HEAD.format(
+        log=powershell_quote(log),
+        version=powershell_quote(version),
+        wanted=powershell_quote("" if is_reinstall else version),
+        program=powershell_quote(agent_program_path()),
+    )
+    tail = _WINDOWS_SCRIPT_TAIL.format(
         installed_codes="@("
         + ", ".join(str(code) for code in AGENT_REINSTALL_INSTALLED_CODES)
         + ")",
         tail=AGENT_REINSTALL_OUTPUT_LIMIT_BYTES,
-        package=_powershell_quote(ntpath.basename(path)),
-        result=_powershell_quote(ntpath.join(state_dir, AGENT_REINSTALL_RESULT_NAME)),
+        package=powershell_quote(ntpath.basename(path)),
+        result=powershell_quote(ntpath.join(state_dir, AGENT_REINSTALL_RESULT_NAME)),
     )
-    return [
-        "powershell.exe",
-        "-NoProfile",
-        "-NonInteractive",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-Command",
-        script,
-    ]
-
-
-def _powershell_quote(text: str) -> str:
-    """One value as a PowerShell literal string."""
-    return "'" + text.replace("'", "''") + "'"
+    install = msiexec_script(arguments, before=_WINDOWS_SCRIPT_ALREADY)
+    return powershell_command(head + install + tail)
 
 
 def _reinstall_result_path(state_dir: str) -> str:

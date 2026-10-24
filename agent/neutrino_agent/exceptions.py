@@ -132,7 +132,20 @@ class EnrollmentError(RuntimeError):
 
 
 class InstallError(RuntimeError):
-    """Raised when a package cannot be installed, removed or configured."""
+    """Raised when a package cannot be installed, removed or configured.
+
+    Attributes:
+        exit_code: The installer's exit code; None when none is known.
+    """
+
+    def __init__(self, message: str, *, exit_code: "int | None" = None):
+        """
+        Args:
+            message: What failed, with the installer's own words.
+            exit_code: The installer's exit code; None when none is known.
+        """
+        super().__init__(message)
+        self.exit_code = exit_code
 
 
 class SelfUpdateError(RuntimeError):
