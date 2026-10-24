@@ -39,6 +39,7 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_MODULE_STATE_INSTALLED,
     CHANNEL_MODULE_STATE_RUNNING,
     CHANNEL_MODULE_STATE_STOPPED,
+    CHANNEL_MODULE_WANTS,
     CHANNEL_STREAM_COMMAND,
     CHANNEL_VERB_JOURNAL,
     CHANNEL_VERB_VALIDATE,
@@ -724,9 +725,9 @@ def _set_want(
 ) -> DeviceModuleListView:
     """Write one module's ``want`` on one device, push it, and answer the list.
 
-    On a module whose last report is ``failed`` or ``install_failed`` the
-    press also puts a fresh retry mark into the state, so the agent tries
-    the step again.
+    On a module whose last report is ``failed`` or ``install_failed``, or a
+    steady state other than the ``want`` written, the press also puts a
+    fresh retry mark into the state, so the agent applies the module again.
 
     Args:
         runtime: The shared runtime.
@@ -763,10 +764,10 @@ def _set_want(
         require_terms(runtime, key, module)
     if not runtime.agent_sessions.is_online(key):
         raise _refusal(status.HTTP_409_CONFLICT, CODE_AGENT_OFFLINE, device_id=key)
-    is_failed = _is_failed(runtime, key, module)
+    is_retried = _is_retried(runtime, key, module, want)
     try:
         runtime.desired_states.set_want(key, module, want)
-        if is_failed:
+        if is_retried:
             DeviceRetryMarks().mark(key, module)
     except OSError as error:
         raise _config_unwritable(error) from error
@@ -777,7 +778,7 @@ def _set_want(
 
 def mark_retry(runtime: PanelRuntime, key: str, name: str) -> bool:
     """Put a fresh retry mark on one module whose last report is ``failed``
-    or ``install_failed``.
+    or ``install_failed``, or a steady state other than its ``want``.
 
     Args:
         runtime: The shared runtime.
@@ -785,13 +786,14 @@ def mark_retry(runtime: PanelRuntime, key: str, name: str) -> bool:
         name: The module.
 
     Returns:
-        Whether a mark was put; a module that did not fail takes none.
+        Whether a mark was put; a module that did not fail and reads its
+        ``want`` takes none.
 
     Raises:
         HTTPException: 500 ``config_unwritable`` when the mark cannot be
             written.
     """
-    if not _is_failed(runtime, key, name):
+    if not _is_retried(runtime, key, name, _want_of(runtime, key, name)):
         return False
     try:
         DeviceRetryMarks().mark(key, name)
@@ -800,11 +802,31 @@ def mark_retry(runtime: PanelRuntime, key: str, name: str) -> bool:
     return True
 
 
-def _is_failed(runtime: PanelRuntime, key: str, module: str) -> bool:
-    """Whether the machine last reported the module ``failed`` or
-    ``install_failed``."""
+def _is_retried(runtime: PanelRuntime, key: str, module: str, want: str) -> bool:
+    """Whether a press on one module asks the machine to apply it again.
+
+    Args:
+        runtime: The shared runtime.
+        key: The device.
+        module: The module.
+        want: The module's ``want`` after the press.
+
+    Returns:
+        True when the machine last reported the module ``failed`` or
+        ``install_failed``, or ``absent``, ``installed``, ``stopped`` or
+        ``running`` other than ``want``.
+    """
     state = module_status(runtime, key, module)["state"]
-    return state in CHANNEL_MODULE_RETRIED_STATES
+    if state in CHANNEL_MODULE_RETRIED_STATES:
+        return True
+    return bool(want) and state in CHANNEL_MODULE_WANTS and state != want
+
+
+def _want_of(runtime: PanelRuntime, key: str, module: str) -> str:
+    """The ``want`` the state sends for one module of one device."""
+    if module in DEVICE_AGENT_MODULES:
+        return runtime.desired_states.agent_module_want(key, module)
+    return runtime.desired_states.want_of(key, module)
 
 
 def _require_device(device_id: str) -> ManagedDevice:

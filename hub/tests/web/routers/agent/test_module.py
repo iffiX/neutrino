@@ -875,6 +875,22 @@ def test_apply_pushes_the_state_again(box):
     )
 
 
+@pytest.mark.parametrize(
+    ("state", "is_marked"),
+    [("installed", True), ("stopped", True), ("failed", True), ("running", False)],
+)
+def test_apply_marks_a_module_whose_state_is_not_its_want(box, state, is_marked):
+    from neutrino_hub.modules.devices.retry_marks import DeviceRetryMarks
+
+    client, runtime = box
+    runtime.desired_states.set_want(LAPTOP, MODULE, "running")
+    runtime.report(LAPTOP, MODULE, state)
+
+    client.post(f"{BLOCK_PATH}/apply", json={"device_id": LAPTOP})
+
+    assert (MODULE in DeviceRetryMarks().marks(LAPTOP)) is is_marked
+
+
 # --- a press on a failed module tries again ---
 
 
@@ -907,17 +923,75 @@ def test_a_press_on_a_failed_module_puts_a_fresh_retry_mark(api, press, state):
     assert len(runtime.agent_sessions.pushes) == 2
 
 
-@pytest.mark.parametrize("state", ["installed", "running", "unknown"])
-def test_a_press_on_a_module_that_did_not_fail_puts_no_mark(api, state):
+@pytest.mark.parametrize(
+    ("press", "state"),
+    [
+        ("install", "installed"),
+        ("start", "running"),
+        ("stop", "stopped"),
+        ("uninstall", "absent"),
+        ("install", "installing"),
+        ("start", "queued"),
+        ("start", "unsupported"),
+        ("install", "unknown"),
+    ],
+)
+def test_a_press_on_a_module_that_reads_its_want_or_moves_puts_no_mark(
+    api, press, state
+):
     client, runtime = api
     runtime.agent_sessions.online.add(DEVICE)
     runtime.device_modules[DEVICE] = {"fakedesk": {"state": state}}
 
     client.post(
-        f"{MODULE_PATH}/install", json={"device_id": DEVICE, "module": "fakedesk"}
+        f"{MODULE_PATH}/{press}", json={"device_id": DEVICE, "module": "fakedesk"}
     )
 
     assert retry_marks() == {}
+
+
+@pytest.mark.parametrize(
+    ("press", "state"),
+    [
+        ("start", "installed"),
+        ("start", "stopped"),
+        ("start", "absent"),
+        ("stop", "running"),
+        ("install", "absent"),
+        ("uninstall", "installed"),
+    ],
+)
+def test_a_press_on_a_module_whose_state_is_not_its_want_puts_a_mark(api, press, state):
+    client, runtime = api
+    runtime.agent_sessions.online.add(DEVICE)
+    runtime.device_modules[DEVICE] = {"fakedesk": {"state": state}}
+
+    client.post(
+        f"{MODULE_PATH}/{press}", json={"device_id": DEVICE, "module": "fakedesk"}
+    )
+
+    assert set(retry_marks()) == {"fakedesk"}
+
+
+def test_start_again_on_a_module_left_installed_under_running_asks_again(api):
+    """The want is already running and the machine reads installed: the
+    want alone would change nothing in the state, the mark does."""
+    client, runtime = api
+    runtime.agent_sessions.online.add(DEVICE)
+    runtime.desired_states.set_want(DEVICE, "fakedesk", "running")
+    runtime.device_modules[DEVICE] = {"fakedesk": {"state": "installed"}}
+
+    client.post(
+        f"{MODULE_PATH}/start", json={"device_id": DEVICE, "module": "fakedesk"}
+    )
+    first = retry_marks()
+    client.post(
+        f"{MODULE_PATH}/start", json={"device_id": DEVICE, "module": "fakedesk"}
+    )
+
+    assert set(first) == {"fakedesk"}
+    assert retry_marks()["fakedesk"] != first["fakedesk"]
+    assert len(runtime.agent_sessions.pushes) == 2
 
 
 # --- the two modules the agent carries ---
