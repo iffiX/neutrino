@@ -132,10 +132,11 @@ package, and the agent installs it over itself ([protocol.md](protocol.md),
 
 **A press writes `want`, and the machine's report is the answer.** Pressing
 a button writes the value, the agent makes the machine match it, and what
-the machine reports afterwards is shown. The agent keeps no retry policy and
-no memory of past failures. A step that failed is reported failed with its
-code and is not repeated while its entry in the state is unchanged; trying
-again is a person's word, never a timer's.
+the machine reports afterwards is shown. The agent keeps no retry policy. A
+step that failed is reported with its code and is not repeated while its
+entry in the state is unchanged; trying again is a person's word, never a
+timer's. The agent keeps each module's last failure on disk, so a restart
+reports it unchanged ("A failure outlives a restart").
 
 **A retry is the same press again.** The agent tries each module's entry
 once and keeps, for each module and for the `ai_tools` section, the hash of
@@ -146,10 +147,10 @@ the next agent that holds the same state applies it again after a removal
 undid it. An upgrade replaces the package without either and applies
 nothing again. When a
 person presses a module's own action again on a module whose last report is
-`failed`, the hub writes a fresh `retry_mark` into that module's entry of
-the state. The mark means nothing to the agent; it changes that entry's
-hash, so the hash the agent tried for that module no longer matches and that
-module alone is tried again. A change to one module's entry, or a mark on it,
+`failed` or `install_failed`, the hub writes a fresh `retry_mark` into that
+module's entry of the state. The mark means nothing to the agent; it changes
+that entry's hash, so the hash the agent tried for that module no longer
+matches and that module alone is tried again. A change to one module's entry, or a mark on it,
 never runs another module's failed step again.
 The machine's AI tools take the same mark on the `ai_tools` section when a
 press asks again while an account's result is `failed`. A press on a module
@@ -159,10 +160,11 @@ Software somebody installs or removes by hand is displayed, never fought. A
 hand-installed Samba reports `installed`; its shares and users become the
 hub's configuration at the machine's first report on a socket, and the
 first **Configure** imports them when that report found none
-([protocol.md](protocol.md), "The modules section"). A failure
-exists only in the report, and a hub restart loses nothing, because `want` is
-in `config/`. Machinery whose only purpose is surviving a restart is removed
-on sight ([../kill_on_sight.md](../kill_on_sight.md), "Unasked survival
+([protocol.md](protocol.md), "The modules section"). A failure is
+in the machine's report and in the agent's record of it, and a hub restart
+loses nothing, because `want` is in `config/`. Machinery whose only purpose
+is surviving a restart, beyond that record and the tried hash, is removed on
+sight ([../kill_on_sight.md](../kill_on_sight.md), "Unasked survival
 machinery").
 
 The file share's own rules, what it changes on each system and what a
@@ -185,9 +187,11 @@ table on every surface:
 
 | Steady | Transient | Shared |
 | --- | --- | --- |
-| `absent`, `installed`, `stopped`, `running` | `installing`, `uninstalling`, `queued` | `failed`, `unsupported` |
+| `absent`, `installed`, `stopped`, `running`, `install_failed` | `installing`, `uninstalling`, `queued` | `failed`, `unsupported` |
 
-`installed` is present and never configured by the hub; `stopped` and
+`installed` is present and never configured by the hub; `install_failed` is
+a module whose last install failed, whatever that install left on the
+machine ("An install that fails ends install_failed"); `stopped` and
 `running` are configured by the hub and told apart by the unit; `installing`
 also covers a module's own install that runs inside its apply or as a task
 the apply left running, and a state waiting on such a task is applied again
@@ -201,15 +205,29 @@ apply goes on with the install after it
 module the agent reaches after the one it is applying ("One module at a
 time").
 
-**An install that leaves nothing behind ends absent.** An install that fails
-on a machine where the module's check then finds nothing installed reports
-`absent` with the failure's `{code, params}`, never `failed`, and the agent
-deletes its tried hash for that module, so the next install of the same entry
-runs. The hub drops the module's `want` and its retry mark
-([protocol.md](protocol.md), "The modules section"), and **Install** is the
-next press, a fresh install. A step that fails on a module the machine has
-(start, stop, configure, uninstall) reports `failed` and keeps it. No button
-cancels a step.
+**An install that fails ends install_failed.** An install that fails
+reports `install_failed` with the failure's `{code, params}`, whether the
+module's check then finds the software or not, and never `installed`,
+`absent` or `failed`. The agent keeps the tried hash for that module, and the
+hub keeps the module's `want` ([protocol.md](protocol.md), "The modules
+section"). **Install** is the next press: its retry mark changes the entry,
+and the agent runs the install again even where the module's check passes.
+**Uninstall** runs the module's uninstall on whatever the install left; on
+software the check does not find, a step of it that fails is a line in the
+log, and the outcome is what the check finds afterwards. A step that fails
+on a module the machine has (start, stop, configure, uninstall) reports
+`failed`. No button cancels a step.
+
+**A failure outlives a restart.** The agent keeps each module's last failed
+step, its state (`install_failed` or `failed`) and its `{code, params}`,
+root-only in `failures/<module>.json` under the state root, and reports the
+module from it after a restart: a module whose install failed reads
+`install_failed`, and one whose configure, start, stop or uninstall failed
+reads `failed` while its software is there. The module's next attempt
+replaces the record, and deletes it when the attempt took; a state that no
+longer names the module, a join and a leave delete it as well. A failure the
+socket caused, `hub_unreachable`, is kept like any other, and its tried hash
+is not, so the next state runs the step again.
 
 A surface that meets a token outside the state table shows "waiting for the
 agent", the word for a machine that has not reported. Wherever a state is
@@ -455,7 +473,7 @@ only POSIX has is guarded, so one package imports on all three systems.
 | --- | --- | --- | --- |
 | Program | `/opt/neutrino/agent` | `C:\Program Files\Neutrino\agent` | `/Library/Application Support/Neutrino/agent/app` |
 | Configuration root: the binding, the credentials, the desired state | `/etc/neutrino/agent` | `%ProgramData%\Neutrino\agent\config`, under `%ProgramData%\Neutrino\agent`, whose ACL, SYSTEM and the administrators alone, the `.msi` sets | `/Library/Application Support/Neutrino/agent/config`, mode 700 |
-| State root: configured marks, packages, the last reinstall, `vscode/`, `code_server/`, `cloudcli/`, `codeg/`, `ai_tools/`, and on Windows and macOS `gitea/`, `gitea_data/` and `podman/` | `/var/lib/neutrino/agent` | `%ProgramData%\Neutrino\agent\state` | `/Library/Application Support/Neutrino/agent/state`, mode 755 |
+| State root: configured marks, the modules' kept failures, packages, the last reinstall, `vscode/`, `code_server/`, `cloudcli/`, `codeg/`, `ai_tools/`, and on Windows and macOS `gitea/`, `gitea_data/` and `podman/` | `/var/lib/neutrino/agent` | `%ProgramData%\Neutrino\agent\state` | `/Library/Application Support/Neutrino/agent/state`, mode 755 |
 | Log | the journal | `%ProgramData%\Neutrino\agent\log\agent.log` | `/Library/Logs/Neutrino/agent/agent.log` |
 | Service | systemd `neutrino_agent.service` runs `nagent run` | the `neutrino_agent` service, LocalSystem, runs `nagent service run` | the `com.neutrino.agent` LaunchDaemon runs `nagent run` |
 | Control transport | Unix socket `/run/neutrino/agent/agent.sock` | named pipe `\\.\pipe\neutrino_agent`, its descriptor SYSTEM and the administrators | Unix socket `/var/run/neutrino/agent/agent.sock` |

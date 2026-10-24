@@ -693,12 +693,12 @@ module and the same shape in each.
 | Route | Parameters | Does |
 | --- | --- | --- |
 | `GET /api/agent/module` | `?device_id=` | each module's observed `state`, `is_active` and `details` |
-| `POST /api/agent/module/install` | `{device_id, module}` | writes `want: installed`; on a module whose last report is `failed`, also a fresh `retry_mark` |
+| `POST /api/agent/module/install` | `{device_id, module}` | writes `want: installed`; on a module whose last report is `failed` or `install_failed`, also a fresh `retry_mark` |
 | `POST /api/agent/module/start` | `{device_id, module}` | writes `want: running`; the same `retry_mark` on a failed module |
 | `POST /api/agent/module/stop` | `{device_id, module}` | writes `want: stopped`; the same `retry_mark` on a failed module |
 | `POST /api/agent/module/uninstall` | `{device_id, module}` | writes `want: absent`; the same `retry_mark` on a failed module |
 | `GET /api/agent/module/journal` | `?device_id=&module=&lines=` | the tail of the module's log on the device: its units' journal on Linux, its own sources and the agent's lines naming it on Windows and macOS ([agent.md](agent.md), "Which modules each system runs") |
-| `POST /api/agent/module/<name>/apply` | `{device_id}` | pushes the device's state again, for `samba`, `terminal`, `remote_desktop`, `gitea`, `podman`, `zfs`, `vscode`, `code_server`, `cloudcli` and `codeg` alike, with a fresh `retry_mark` on a module whose last report is `failed`; 409 `agent_offline` |
+| `POST /api/agent/module/<name>/apply` | `{device_id}` | pushes the device's state again, for `samba`, `terminal`, `remote_desktop`, `gitea`, `podman`, `zfs`, `vscode`, `code_server`, `cloudcli` and `codeg` alike, with a fresh `retry_mark` on a module whose last report is `failed` or `install_failed`; 409 `agent_offline` |
 | `GET /api/agent/module/samba` | `?device_id=` | the hub's Samba configuration for the device |
 | `GET /api/agent/module/samba/status` | `?device_id=` | `SambaStatusView`: whether the unit is active, the sessions open and how full each share's disk is, as last reported |
 | `POST /api/agent/module/samba/import` | `{device_id}` | the machine's shares and users become the hub's configuration |
@@ -1246,18 +1246,19 @@ from the same facts, whoever installed the software:
 | --- | --- |
 | `absent` | the software is missing |
 | `installed` | the software is present and the hub has never configured it; `is_active` says whether it runs |
+| `install_failed` | the last install failed with `{code, params}`, whatever it left on the machine |
 | `stopped` | the hub has configured it and the unit is stopped |
 | `running` | the hub has configured it and the unit is active |
 | `installing`, `uninstalling` | in transit; an `installing` row can hold `{code, params}`, `reboot_required` while a Windows machine owes the restart an install step asked for ([agent.md](agent.md), "Status is typed") |
 | `queued` | in transit: its `want` differs from what it reports, and the agent is applying another module first ([agent.md](agent.md), "One module at a time") |
 | `failed`, `unsupported` | the last step failed with `{code, params}`; the agent has no runner for this module |
 
-`absent` with `{code, params}` is an install that failed and left nothing of
-the module on the machine ([agent.md](agent.md), "An install that leaves
-nothing behind"). The hub drops the module's `want` and its retry mark, the
-attempt's only records, keeps the configuration the person saved, and keeps
-the failure's `{code, params}` in memory beside the module until the next
-press on it, which the module's output box shows.
+`install_failed` and `failed` are kept by the agent across its restarts
+until the module's next attempt, or a state that no longer names the module
+([agent.md](agent.md), "A failure outlives a restart"). The hub keeps the
+module's `want` and its configuration; **Install** and **Uninstall** on an
+`install_failed` module write a fresh `retry_mark`, as every press on a
+`failed` one does.
 
 This table is closed on every surface; a surface that meets a token outside it
 shows the word for a machine that has not reported. That is also what the

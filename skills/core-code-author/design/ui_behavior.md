@@ -574,11 +574,15 @@ reports another state ([agent.md](agent.md), "One module at a time"). After a
 press, the tab's optimistic step holds until the machine reports the module
 in a state other than the one it showed at the press, at most two minutes.
 
-A module reported `absent` with a code is an install that failed and left
-nothing behind: the output box shows the code's words, once, until the next
-press, and **Install** is live as for any absent module
-([agent.md](agent.md), "An install that leaves nothing behind"). No module
-has a **Cancel** button.
+A module reported `install_failed` has an `error` dot in the module list.
+Its tab reads `state.install_failed` beside the same dot, and shows the
+code's words as the error notice a `failed` module shows. **Install** and
+**Uninstall** are live, and **Start**, **Stop** and **Configure** are not:
+**Install** runs the install again, and **Uninstall** removes what the
+install left ([agent.md](agent.md), "An install that fails ends
+install_failed"). The output box shows the failed install's lines while the
+hub holds its task, and never the module's journal. No module has a
+**Cancel** button.
 
 A module reported `installing` with a code shows the code's words as a
 notice at the top of its tab, and its buttons stay disabled as for any

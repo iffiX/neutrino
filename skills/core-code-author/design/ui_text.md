@@ -225,6 +225,7 @@ where they fit, and a managed machine is a managed device, as the
 | `ui.ai_tools.slot_default`, `ui.ai_tools.slot_opus`, `ui.ai_tools.slot_sonnet`, `ui.ai_tools.slot_haiku` | Default model, Opus slot, Sonnet slot, Haiku slot | 默认模型、Opus 档位、Sonnet 档位、Haiku 档位 |
 | `ui.ai_tools.codex_effort` | Reasoning effort | 推理强度 |
 | `state.queued` | queued | 排队中 |
+| `state.install_failed`, and `ui.module_state.install_failed` on a machine chip | install failed | 安装失败 |
 | `state.ai_tools_switched` | Uses the hub's AI gateway | 使用中枢的 AI 网关 |
 | `state.ai_tools_switched_back` | Uses its own settings | 使用自己原来的设置 |
 | `ui.ai_tools.switch_back_failed`, an account `failed` with `switch_failed` while the setting is off | cc-switch did not put the tools back to their own settings: {detail} | cc-switch 没能把工具改回原来的设置：{detail} |
