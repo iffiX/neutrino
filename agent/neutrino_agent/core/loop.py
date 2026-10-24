@@ -72,6 +72,8 @@ from neutrino_agent.exceptions import (
     SelfUpdateError,
 )
 from neutrino_agent.platforms.detect import detect_platform
+from neutrino_agent.modules.podman.constants import PODMAN_BINARY, PODMAN_MODULE_NAME
+from neutrino_agent.modules.podman.machine_runner import PodmanMachineModuleRunner
 from neutrino_agent.modules.remote_desktop.constants import REMOTE_DESKTOP_NAME
 from neutrino_agent.modules.remote_desktop.rdp.host import RdpShareHost
 from neutrino_agent.streams import (
@@ -539,6 +541,7 @@ class Agent:
                         sessions=self._shells,
                         terminal=self._terminal_settings,
                         platform=self._platform,
+                        container_podman=self._container_podman,
                     ),
                     STREAM_KIND_EXEC: functools.partial(
                         open_exec_stream,
@@ -556,6 +559,23 @@ class Agent:
         """The Terminal module's settings a new shell runs with."""
         runner = self._engine.module_runners.get(TERMINAL_NAME)
         return runner.settings() if runner is not None else TerminalConfig()
+
+    def _container_podman(self) -> tuple:
+        """The podman command a container's shell runs through.
+
+        Returns:
+            The Podman machine's read command where the machine runner
+            holds the module, empty while it has no machine; this machine's
+            ``podman`` everywhere else.
+
+        Raises:
+            ModuleApplyError: The machine runner's ``machine_unreachable``
+                or ``account_unknown {account}``.
+        """
+        runner = self._engine.module_runners.get(PODMAN_MODULE_NAME)
+        if isinstance(runner, PodmanMachineModuleRunner):
+            return runner.read_command()
+        return (PODMAN_BINARY,)
 
     def _published_ports(self, protocol: str = AGENT_CONNECT_TCP) -> dict:
         """Every port this machine publishes now on one protocol, each to the

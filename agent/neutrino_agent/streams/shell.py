@@ -8,9 +8,12 @@ exits. A stream opened with a ``session_id`` attaches to a shell the agent
 keeps by that id, :mod:`neutrino_agent.streams.shell_session`, beside any
 other stream attached to it, and the terminal takes the smallest window
 of them. A ``shell`` opened with
-``{module: podman, container}`` runs inside that container instead. On
-Windows the shell is PowerShell on a pseudo console, served by
-:class:`~neutrino_agent.streams.windows_shell.WindowsShellStream`.
+``{module: podman, container}`` runs inside that container instead, as
+the agent, through ``podman exec -it``; on Windows and macOS through the
+Podman machine's read command, the machine's ``--url`` and the account's
+key. On Windows the shell is PowerShell on a pseudo console, served by
+:class:`~neutrino_agent.streams.windows_shell.WindowsShellStream`, which
+also serves a container's shell there.
 
 A new shell runs as the Terminal module says: as the agent runs, which is
 root, with the shell picked here while its settings are empty; as the
@@ -150,14 +153,56 @@ def shell_account() -> str:
         return str(os.getuid())
 
 
-def listed_containers() -> list:
-    """The names of every container podman knows, running or not."""
-    reader = PodmanStatusReader()
+def listed_containers(podman: tuple = (PODMAN_BINARY,)) -> list:
+    """The names of every container podman knows, running or not.
+
+    Args:
+        podman: The podman command: the program and the options before its
+            verb; empty lists none.
+    """
+    if not podman:
+        return []
+    reader = PodmanStatusReader(podman=podman)
     return [state.name for state in reader.survey(declared_names=[])]
 
 
+def container_shell_command(podman: tuple, name: str) -> list:
+    """What a container's shell runs: ``exec -it`` through the podman command.
+
+    Args:
+        podman: The podman command: the program and the options before its
+            verb.
+        name: The container.
+
+    Returns:
+        The argument vector.
+    """
+    return [*podman, "exec", "-it", name, "sh", "-c", CONTAINER_SHELL_COMMAND]
+
+
+def check_container(podman: tuple, name: str) -> None:
+    """Refuse a container podman does not list.
+
+    Args:
+        podman: The podman command: the program and the options before its
+            verb.
+        name: The container the open names.
+
+    Raises:
+        StreamRefused: ``container_unknown {name}``.
+    """
+    if not name or name not in listed_containers(podman):
+        raise StreamRefused("container_unknown", {"name": name})
+
+
 def open_shell_stream(
-    channel, args: dict, *, sessions=None, terminal=None, platform=None
+    channel,
+    args: dict,
+    *,
+    sessions=None,
+    terminal=None,
+    platform=None,
+    container_podman=None,
 ):
     """The handler for one ``shell`` stream: this machine's, or a container's.
 
@@ -172,13 +217,21 @@ def open_shell_stream(
             :class:`~neutrino_agent.modules.terminal.config.TerminalConfig`
             a new shell runs with; None runs every shell as the agent.
         platform: The machine's platform, which steps down to an account.
+        container_podman: Returns the podman command a container's shell
+            runs through, the Podman machine's read command on Windows and
+            macOS, empty while there is no machine; it raises
+            :class:`~neutrino_agent.exceptions.ModuleApplyError` when the
+            machine cannot be reached. None is this machine's ``podman``.
 
     Returns:
         The handler, not yet opened.
 
     Raises:
         StreamRefused: ``verb_unknown`` naming a module other than the
-            container engine's.
+            container engine's; for a container's shell on Windows,
+            ``container_unknown {name}`` for a container podman does not
+            list; the machine's own code, ``machine_unreachable`` among
+            them, when the podman command cannot be read.
     """
     module = str(args.get("module", "") or "")
     if not module:
@@ -193,7 +246,27 @@ def open_shell_stream(
         )
     if module != CONTAINER_MODULE:
         raise StreamRefused("verb_unknown", {"module": module})
-    return ContainerShellStream(channel, args)
+    try:
+        podman = (
+            tuple(container_podman())
+            if container_podman is not None
+            else (PODMAN_BINARY,)
+        )
+    except ModuleApplyError as error:
+        raise refusal(error) from None
+    if sys.platform == "win32":
+        from neutrino_agent.streams.windows_shell import WindowsShellStream
+
+        name = str(args.get("container", "") or "")
+        check_container(podman, name)
+        return WindowsShellStream(
+            channel,
+            args,
+            platform=platform,
+            argv=container_shell_command(podman, name),
+            is_exec=False,
+        )
+    return ContainerShellStream(channel, args, podman=podman)
 
 
 def shell_environment(base: "dict | None" = None) -> dict:
@@ -636,26 +709,21 @@ class ContainerShellStream(ShellStream):
     It ends with its stream: a container's shell is never kept.
     """
 
-    def __init__(self, channel, args: dict):
+    def __init__(self, channel, args: dict, *, podman: tuple = (PODMAN_BINARY,)):
         """
         Args:
             channel: The stream's channel.
             args: ``{"container", "cols", "rows"}``, the container and the
                 terminal's first size.
+            podman: The podman command the shell runs ``exec -it`` through:
+                the program and the options before its verb.
         """
         self._name = str(args.get("container", ""))
+        self._podman = tuple(podman)
         super().__init__(
             channel,
             args,
-            command=[
-                PODMAN_BINARY,
-                "exec",
-                "-it",
-                self._name,
-                "sh",
-                "-c",
-                CONTAINER_SHELL_COMMAND,
-            ],
+            command=container_shell_command(self._podman, self._name),
         )
 
     def open(self) -> None:
@@ -666,5 +734,4 @@ class ContainerShellStream(ShellStream):
                 platform with no pseudo-terminals.
         """
         super().open()
-        if not self._name or self._name not in listed_containers():
-            raise StreamRefused("container_unknown", {"name": self._name})
+        check_container(self._podman, self._name)

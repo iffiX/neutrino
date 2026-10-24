@@ -6,7 +6,10 @@ the hub's bytes reach the shell's input with credit offered back as each
 piece is written, a close from the hub ends a shell that would run on, the
 ``shell`` kind's entry picks the machine's shell or a container's by the
 open's ``module``, a container shell is refused typed when podman does
-not list the container, and a shell opened with a session id and made
+not list the container, a container's shell on a Podman machine runs
+``exec -it`` through the machine's read command and is refused
+``container_unknown`` with no machine and with the machine's own code
+when it cannot be reached, and a shell opened with a session id and made
 persistent keeps running when its stream closes and is attached again with
 its output. The Terminal module: a shell for a named account starts as the
 platform steps down to it, with its login shell or the module's program as
@@ -26,7 +29,7 @@ import time
 import pytest
 
 from neutrino_agent.streams import shell as shell_module
-from neutrino_agent.exceptions import StreamRefused
+from neutrino_agent.exceptions import ModuleApplyError, StreamRefused
 from neutrino_agent.modules.terminal.config import TerminalConfig
 from neutrino_agent.streams.shell import (
     ContainerShellStream,
@@ -137,7 +140,7 @@ def test_login_shell_is_usable_and_absolute():
 
 
 def test_a_container_podman_does_not_list_is_refused(monkeypatch):
-    monkeypatch.setattr(shell_module, "listed_containers", lambda: ["web"])
+    monkeypatch.setattr(shell_module, "listed_containers", lambda podman: ["web"])
     stream = ContainerShellStream(FakeChannel(), {"container": "kuma"})
 
     with pytest.raises(StreamRefused) as refused:
@@ -148,7 +151,7 @@ def test_a_container_podman_does_not_list_is_refused(monkeypatch):
 
 
 def test_a_listed_container_is_opened_with_podman_exec(monkeypatch):
-    monkeypatch.setattr(shell_module, "listed_containers", lambda: ["kuma"])
+    monkeypatch.setattr(shell_module, "listed_containers", lambda podman: ["kuma"])
     stream = ContainerShellStream(FakeChannel(), {"container": "kuma"})
 
     stream.open()
@@ -170,6 +173,96 @@ def test_the_entry_picks_the_shell_by_the_opens_module():
         open_shell_stream(FakeChannel(), {"module": "samba"})
     assert refused.value.code == "verb_unknown"
     assert refused.value.params == {"module": "samba"}
+
+
+# What reaches root's Podman in a Windows or macOS machine.
+MACHINE_URL = "ssh://root@127.0.0.1:50743/run/podman/podman.sock"
+MACHINE_KEY = "/Users/me/.local/share/containers/podman/machine/machine"
+# Answers the listing with one container, and prints what an exec was given.
+FAKE_PODMAN = """#!/bin/sh
+for word in "$@"; do
+  case "$word" in
+    ps) echo '[{"Names": ["kuma"], "State": "running", "Image": "nginx"}]'; exit 0;;
+    inspect) echo '[]'; exit 0;;
+    exec) echo "podman: $*"; exit 7;;
+  esac
+done
+exit 1
+"""
+
+
+def machine_read_command(tmp_path) -> tuple:
+    program = tmp_path / "podman"
+    program.write_text(FAKE_PODMAN)
+    program.chmod(0o755)
+    return (str(program), "--url", MACHINE_URL, "--identity", MACHINE_KEY)
+
+
+def test_a_containers_shell_runs_exec_through_the_machines_read_command(tmp_path):
+    read = machine_read_command(tmp_path)
+    channel = FakeChannel()
+    stream = open_shell_stream(
+        channel,
+        {"module": "podman", "container": "kuma", "cols": 80, "rows": 24},
+        container_podman=lambda: read,
+    )
+
+    stream.open()
+    closed = stream.run()
+
+    assert type(stream) is ContainerShellStream
+    said = f"podman: --url {MACHINE_URL} --identity {MACHINE_KEY} exec -it kuma sh -c"
+    assert said.encode() in channel.output()
+    assert closed == {"code": "", "params": {"exit_code": 7}}
+
+
+def test_a_container_the_machine_does_not_list_is_refused(tmp_path):
+    read = machine_read_command(tmp_path)
+    stream = open_shell_stream(
+        FakeChannel(),
+        {"module": "podman", "container": "web"},
+        container_podman=lambda: read,
+    )
+
+    with pytest.raises(StreamRefused) as refused:
+        stream.open()
+
+    assert (refused.value.code, refused.value.params) == (
+        "container_unknown",
+        {"name": "web"},
+    )
+
+
+def test_no_machine_lists_no_container_and_runs_nothing(monkeypatch):
+    def no_reader(**_):
+        raise AssertionError("podman ran with no machine")
+
+    monkeypatch.setattr(shell_module, "PodmanStatusReader", no_reader)
+    stream = open_shell_stream(
+        FakeChannel(), {"module": "podman", "container": "kuma"}, container_podman=tuple
+    )
+
+    with pytest.raises(StreamRefused) as refused:
+        stream.open()
+
+    assert refused.value.code == "container_unknown"
+
+
+def test_a_machine_that_cannot_be_reached_refuses_a_containers_shell():
+    def unreachable():
+        raise ModuleApplyError("machine_unreachable", {"detail": "no ssh port"})
+
+    with pytest.raises(StreamRefused) as refused:
+        open_shell_stream(
+            FakeChannel(),
+            {"module": "podman", "container": "kuma"},
+            container_podman=unreachable,
+        )
+
+    assert (refused.value.code, refused.value.params) == (
+        "machine_unreachable",
+        {"detail": "no ssh port"},
+    )
 
 
 def serve_kept(registry, channel, session_id, **args):

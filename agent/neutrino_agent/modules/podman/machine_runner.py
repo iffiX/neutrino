@@ -453,6 +453,30 @@ class PodmanMachineModuleRunner(ModuleRunner):
         _command, info = self._read(self._machine_of_record(record))
         return info is not None
 
+    def read_command(self) -> tuple:
+        """The read's command, which a container's shell runs ``exec -it`` through.
+
+        Returns:
+            Podman's program with the ``--url`` and the ``--identity`` that
+            reach root's Podman in the last applied account's machine, the
+            port read now; empty while no machine was applied.
+
+        Raises:
+            ModuleApplyError: ``machine_unreachable`` when the machine's
+                settings file names no port; ``account_unknown {account}``
+                when the computer no longer has the account.
+        """
+        record = self._record()
+        if not record:
+            return ()
+        machine = self._machine_of_record(record)
+        try:
+            return machine.read_command()
+        except KeyError:
+            raise ModuleApplyError(
+                "account_unknown", {"account": machine.account}
+            ) from None
+
     def details(self, resolved: dict) -> dict:
         """Every container in the machine, and the machine itself.
 

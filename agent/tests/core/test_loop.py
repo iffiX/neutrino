@@ -14,7 +14,9 @@ live socket to the name's address; the self-update a welcome's
 once-per-target latch; a reinstall of the running version told apart from
 an install to another; a start dropping a failed install record of the
 version it runs; ``sync`` sending a
-report now and what ``probe`` does; the wake flag cleared before a
+report now and what ``probe`` does; a container's shell going through the
+Podman machine's read command where the machine runner holds the module
+and through this machine's ``podman`` elsewhere; the wake flag cleared before a
 turn rather than after it; and the AI gateway forward following each state,
 the kept one at a start, and closed by a leave, a ``binding_unknown`` and a
 stop, a tool's connection riding the live socket as ``connect {id: ai}``.
@@ -50,6 +52,8 @@ from neutrino_agent.exceptions import (
     PlatformUnsupportedError,
     SocketClosed,
 )
+from neutrino_agent.modules.podman.constants import PODMAN_BINARY
+from neutrino_agent.modules.podman.machine_runner import PodmanMachineModuleRunner
 from neutrino_agent.platforms.base import AgentPlatform
 from neutrino_agent.streams.shell_session import ShellSession
 from tests.conftest import BINDING_ID, BINDING_TOKEN, bind
@@ -71,6 +75,8 @@ DROP_AFTER_REPORT = object()
 DROP_AFTER_SECOND_REPORT = object()
 # The report each drop entry hangs up at.
 DROP_AT_REPORT = {DROP_AFTER_REPORT: 1, DROP_AFTER_SECOND_REPORT: 2}
+# What reaches root's Podman in a Windows or macOS machine.
+MACHINE_URL = "ssh://root@127.0.0.1:50743/run/podman/podman.sock"
 
 
 class _FakePlatform(AgentPlatform):
@@ -278,6 +284,30 @@ def test_an_exec_stream_runs_with_the_terminal_settings_and_platform_a_shell_doe
     }
     assert kinds["exec"].keywords["terminal"] == kinds["shell"].keywords["terminal"]
     assert "sessions" not in kinds["exec"].keywords
+
+
+class MachineRunner(PodmanMachineModuleRunner):
+    """The Windows and macOS runner, reduced to the read's command."""
+
+    def __init__(self):
+        pass
+
+    def read_command(self):
+        return ("podman.exe", "--url", MACHINE_URL, "--identity", "key")
+
+
+def test_a_containers_shell_runs_through_the_machines_read_command_where_it_runs(
+    config_path, monkeypatch
+):
+    agent, _script = scripted_agent(config_path, monkeypatch, [[WELCOME]])
+    shell = agent._open_session()._stream_kinds["shell"]
+
+    on_linux = shell.keywords["container_podman"]()
+    monkeypatch.setitem(agent._engine._module_runners, "podman", MachineRunner())
+    on_a_machine = shell.keywords["container_podman"]()
+
+    assert on_linux == (PODMAN_BINARY,)
+    assert on_a_machine == ("podman.exe", "--url", MACHINE_URL, "--identity", "key")
 
 
 def test_a_connect_stream_dials_only_what_the_last_state_and_report_publish(

@@ -9,12 +9,18 @@ resize resizes the console, a close from the hub terminates the shell and
 closes its job, the shell starts suspended with the agent's standard
 handles set aside and is resumed only once it is in the job, it starts in
 the console account's profile directory or the system drive's root when
-nobody is signed in, and a Windows without a pseudo console is refused.
+nobody is signed in, and a Windows without a pseudo console is refused. A
+container's shell runs ``exec -it`` through the Podman machine's read
+command on the console, never kept, its frames sent with no ``fd`` head,
+and a container the machine does not list is refused before anything
+starts.
 """
 
 import ctypes
+import subprocess
 import threading
 import time
+import types
 
 import pytest
 
@@ -505,3 +511,98 @@ def test_an_exec_whose_program_is_not_found_refuses_the_open():
         stream.open()
 
     assert refused.value.params == {"path": "no-such-program-xyz"}
+
+
+# What reaches root's Podman in the account's WSL machine.
+MACHINE_URL = "ssh://root@127.0.0.1:50743/run/podman/podman.sock"
+MACHINE_KEY = "C:\\Users\\lab\\.local\\share\\containers\\podman\\machine\\machine"
+
+
+def containers_on_windows(monkeypatch, tmp_path, kernel32, listed):
+    """The ``shell`` entry as Windows takes it, its podman a file in ``tmp_path``.
+
+    Returns:
+        The machine's read command, and the commands the listing was given.
+    """
+    program = tmp_path / "podman.exe"
+    program.write_bytes(b"MZ")
+    program.chmod(0o755)
+    asked = []
+
+    def listing(podman):
+        asked.append(podman)
+        return list(listed)
+
+    monkeypatch.setattr(shell_module, "sys", types.SimpleNamespace(platform="win32"))
+    monkeypatch.setattr(shell_module, "listed_containers", listing)
+    monkeypatch.setattr(
+        win32, "libraries", lambda: types.SimpleNamespace(kernel32=kernel32)
+    )
+    return (str(program), "--url", MACHINE_URL, "--identity", MACHINE_KEY), asked
+
+
+def test_a_containers_shell_runs_exec_on_the_console_with_its_frames_unheaded(
+    monkeypatch, tmp_path
+):
+    kernel32 = FakeKernel32([b"/ # "])
+    read, asked = containers_on_windows(monkeypatch, tmp_path, kernel32, ["probe"])
+    registry = ShellSessionRegistry()
+    channel = FakeChannel()
+    channel.feed(("data", b"exit 0\r"))
+
+    stream = shell_module.open_shell_stream(
+        channel,
+        {
+            "module": "podman",
+            "container": "probe",
+            "cols": 100,
+            "rows": 30,
+            "session_id": "tab-1",
+        },
+        sessions=registry,
+        platform=FakePlatform(),
+        container_podman=lambda: read,
+    )
+    stream.open()
+    closed = stream.run()
+
+    create = next(call for call in kernel32.calls if call[0] == "CreateProcessW")
+    assert type(stream) is WindowsShellStream
+    assert asked == [read]
+    assert create[1] == subprocess.list2cmdline(
+        [
+            *read,
+            "exec",
+            "-it",
+            "probe",
+            "sh",
+            "-c",
+            shell_module.CONTAINER_SHELL_COMMAND,
+        ]
+    )
+    assert ("CreatePseudoConsole", 100, 30) in kernel32.calls
+    assert channel.sent == [b"/ # "]
+    assert closed == {"code": "", "params": {"exit_code": 0}}
+    assert stream._session.account == "SYSTEM"
+    assert registry.describe() == []
+
+
+def test_a_container_the_machine_does_not_list_is_refused_on_windows(
+    monkeypatch, tmp_path
+):
+    kernel32 = FakeKernel32()
+    read, _asked = containers_on_windows(monkeypatch, tmp_path, kernel32, ["web"])
+
+    with pytest.raises(StreamRefused) as refused:
+        shell_module.open_shell_stream(
+            FakeChannel(),
+            {"module": "podman", "container": "probe"},
+            platform=FakePlatform(),
+            container_podman=lambda: read,
+        )
+
+    assert (refused.value.code, refused.value.params) == (
+        "container_unknown",
+        {"name": "probe"},
+    )
+    assert "CreateProcessW" not in kernel32.names()

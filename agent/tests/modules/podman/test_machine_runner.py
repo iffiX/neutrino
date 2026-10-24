@@ -9,9 +9,10 @@ machine taken over made rootful and sized; a change of size against the last
 apply, the disk grown and never shrunk; a new account stopping the old
 machine and removing its keeper; the wait for the machine to answer; the one
 root script; the reads through the ssh URL with addresses blanked and
-folders back in the computer's form; the keeper's log in the journal; the
-verbs; stop, removal and uninstall keeping the machine; and a restarted
-agent reading on from the record.
+folders back in the computer's form; the read's command a container's
+shell runs through, empty before any apply; the keeper's log in the
+journal; the verbs; stop, removal and uninstall keeping the machine; and a
+restarted agent reading on from the record.
 """
 
 import json
@@ -118,6 +119,7 @@ class World:
         self.shell_answers: list = []
         self.answers_after = 0
         self.is_answering = True
+        self.is_account_gone = False
 
 
 def machine_class_for(world: World):
@@ -158,6 +160,8 @@ def machine_class_for(world: World):
             world.running.discard(self.account)
 
         def read_command(self):
+            if world.is_account_gone:
+                raise KeyError(self.account)
             if not world.is_answering:
                 raise ModuleApplyError("machine_unreachable", {"detail": "no port"})
             return (
@@ -778,6 +782,40 @@ def test_a_machine_that_does_not_answer_is_not_active(rig):
     assert details["machine"]["account"] == "me"
     assert details["machine"]["is_running"] is False
     assert details["machine"]["disk_gib"] == 100
+
+
+def test_a_containers_shell_takes_the_read_command_of_the_applied_machine(rig):
+    rig.keep_image()
+    rig.runner.apply(CONFIG)
+    rig.world.calls.clear()
+
+    command = rig.runner.read_command()
+
+    assert command == (
+        rig.system.binary,
+        "--url",
+        "ssh://root@127.0.0.1:50743/me",
+        "--identity",
+        "key",
+    )
+    assert rig.world.calls == []
+
+
+def test_before_any_apply_a_containers_shell_has_no_command(rig):
+    assert rig.runner.read_command() == ()
+
+
+def test_a_machine_with_no_port_or_no_account_refuses_the_shells_command(rig):
+    rig.keep_image()
+    rig.runner.apply(CONFIG)
+    rig.world.is_answering = False
+
+    unreachable = refusal(rig.runner.read_command)
+    rig.world.is_account_gone = True
+    gone = refusal(rig.runner.read_command)
+
+    assert unreachable.code == "machine_unreachable"
+    assert (gone.code, gone.params) == ("account_unknown", {"account": "me"})
 
 
 def test_before_any_apply_nothing_runs_as_an_account(rig):

@@ -13,7 +13,8 @@ ends its output. The shell is a
 :class:`~neutrino_agent.streams.shell_session.ShellSession`, kept by id when
 the stream's open names one. An ``exec`` stream opened with ``is_tty`` runs
 its ``argv`` on the console in place of PowerShell, never kept, every frame
-down headed with stdout's ``fd``.
+down headed with stdout's ``fd``. A container's shell runs its ``podman
+exec -it`` the same way, its frames sent as they are.
 
 Windows 10 1809 is the first with a pseudo console; an older Windows refuses
 the stream with ``unsupported_platform``.
@@ -427,6 +428,7 @@ class WindowsShellStream(SessionShellStream):
         platform=None,
         terminal=None,
         argv: "list | None" = None,
+        is_exec: bool = True,
     ):
         """
         Args:
@@ -440,15 +442,20 @@ class WindowsShellStream(SessionShellStream):
                 the Windows platform.
             terminal: Returns the Terminal module's settings, of which only
                 the shell program is read; None is PowerShell.
-            argv: An ``exec`` stream's command, run in place of the shell
-                with no settings read, its output headed with stdout's
-                ``fd``. None is a shell.
+            argv: A command run in place of the shell with no settings
+                read: an ``exec`` stream's, or a container's shell. None is
+                a shell.
+            is_exec: Whether ``argv`` is an ``exec`` stream's, whose output
+                is headed with stdout's ``fd``; a container's shell sends
+                its output as it is.
         """
         super().__init__(
             channel,
             args,
             sessions=sessions,
-            frame_head=bytes([AGENT_EXEC_FD_STDOUT]) if argv is not None else b"",
+            frame_head=(
+                bytes([AGENT_EXEC_FD_STDOUT]) if argv is not None and is_exec else b""
+            ),
         )
         self._argv = argv
         self._kernel32 = kernel32
