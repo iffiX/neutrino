@@ -109,7 +109,10 @@ releases a supported family provides.
 
 | Program | Minimum | What needs it | Where |
 | --- | --- | --- | --- |
-| podman | 3.4 | a container becomes a plain unit below 4.4 and a Quadlet `.container` file from 4.4 | `agent/neutrino_agent/modules/podman/constants.py:5`, `agent/neutrino_agent/modules/podman/applier.py:90` |
+| podman on Linux | 3.4 | a container becomes a plain unit below 4.4 and a Quadlet `.container` file from 4.4; the floor is Linux's alone | `agent/neutrino_agent/modules/podman/constants.py:5`, `agent/neutrino_agent/modules/podman/applier.py:90` |
+| Podman on Windows and macOS | the release each manifest branch pins: 6.1.4 for Windows amd64, a 6.x release for macOS arm64, a 5.8.x release for macOS amd64 | Containers there; Podman inside the machine is the machine image's own, always 4.4 or later, so every container there is a Quadlet file | `hub/neutrino_hub/data/manifests/podman.json` |
+| WSL | 2, from the WSL msi the Windows branch pins at 3.0.3, on Windows 10 2004, build 19041, or later | the Podman machine on Windows; Podman's msi refuses an older build, and the branch's `min_version` is 19041 | `hub/neutrino_hub/data/manifests/podman.json` |
+| macOS, for Containers | 13 | the Podman machine on applehv; the macOS branches' `min_version` | `hub/neutrino_hub/data/manifests/podman.json` |
 | Samba | 4.15 | the session list; `smbstatus --json` exists from 4.16, and below it the text tables of `-p` and `-S` are parsed | `agent/neutrino_agent/modules/samba/applier.py:356` |
 | ZFS | 2.1 | `zpool status` and `zpool import` are read as text, because neither has a machine format on this release | `agent/neutrino_agent/modules/zfs/applier.py:4` |
 | systemd | 236 | `systemd-run --collect` for the transient unit a self-update runs in | `agent/neutrino_agent/core/self_update.py:216` |
@@ -121,6 +124,16 @@ releases a supported family provides.
 | Gitea's release binaries | macOS 10.12 and Windows 10 by their builds, below the agent's own floors | the Gitea module on macOS and Windows | `hub/neutrino_hub/data/manifests/gitea.json` |
 | glibc | 2.28, below the agent's floor | the VS Code server Microsoft's CLI downloads for `serve-web`, the Node.js build CloudCLI runs on, and code-server's standalone release builds (with `GLIBCXX_3.4.21`); the agent's own 2.34 covers them, so their Linux entries name no `min_version` | `hub/neutrino_hub/data/manifests/vscode.json`, `cloudcli.json`, `code_server.json` |
 | glibc | 2.34, the agent's floor | Codeg's `codeg-server`, `codeg-mcp` and `codeg-computer-helper`, x64 and arm64 | `hub/neutrino_hub/data/manifests/codeg.json`, which names no `min_version` since the floor is the same |
+
+Containers on Windows was proven on build 26100 alone. Build 19041 is what
+both msi files accept: Podman's refuses an older build with a launch
+condition, the WSL msi checks no build, and Microsoft states 19041 as WSL's
+floor. Podman 6 supports Windows 11 alone, so a Windows 10 machine runs a
+Podman its publisher no longer supports there. The macOS floor of 13 is not
+proven by a run: the `podman_macos` CI job installs Podman and makes a
+machine on macOS 15, on `macos-15` for arm64 and `macos-15-intel` for amd64,
+and starts no machine. A lower or a proven floor moves the branch's
+`min_version` and this row together.
 
 ## What the client's window loads
 

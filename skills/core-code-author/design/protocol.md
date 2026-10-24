@@ -727,9 +727,10 @@ module and the same shape in each.
 | `POST /api/agent/module/code_server/set` | `{device_id, instances: [{account, port}]}`, `port` 1024 to 65535 | replaces the instances, generating each instance's token secret the first time; 400 `account_duplicate {account}`, `port_duplicate {port}`; the agent's own refusals as 400 |
 | `GET /api/agent/module/codeg` | `?device_id=` | the instances as `GET /api/agent/module/code_server` gives them, with `login_id` on each, and the `accounts` the machine reported |
 | `POST /api/agent/module/codeg/set` | `{device_id, instances: [{account, port, login_id}]}`, `port` 1024 to 65535, `login_id` for a Windows machine | replaces the instances, generating each instance's token secret the first time as `code_server/set` does; the refusals of `vscode/set` |
-| `GET /api/agent/module/podman` | `?device_id=` | |
+| `GET /api/agent/module/podman` | `?device_id=` | `PodmanDeviceView`: the declared `containers`, each with its `services`; the `mirrors`; `running`, each container as last reported with its `host_bindings` and their `detected`; and on Windows and macOS `machine`, the stored Run settings with `login_id` and without the password, the machine as last reported (`details.machine`), and the `accounts` the machine reported |
 | `POST /api/agent/module/podman/import` | `{device_id}` | |
-| `POST /api/agent/module/podman/container/set` | `{device_id, ...}` | |
+| `POST /api/agent/module/podman/container/set` | `{device_id, containers}` | replaces the declared containers, each with its `services`; the agent's own refusals as 400, `service_protocol_none {port}` and on Windows and macOS `volume_not_shared {name, volume}` among them |
+| `POST /api/agent/module/podman/machine/set` | `{device_id, account, login_id, cpus, memory_gib, disk_gib}`, `login_id` for a Windows machine | stores the Run settings as `machine` in `config/devices/<id>/podman.json` and pushes the state; `PodmanDeviceView`; 400 `unsupported_platform` for a Linux machine, `unknown_credential {field}` for a login the vault does not hold, `credential_missing {account}` for a Windows machine with no login, then the agent's own refusals (`machine_account_missing`, `machine_cpus_invalid {cpus, max}`, `machine_memory_invalid {memory_gib, max}`, `machine_disk_shrink {disk_gib, current_gib}`, `account_unknown {account}`); 409 `agent_offline` |
 | `POST /api/agent/module/podman/mirror/set` | `{device_id, ...}` | |
 | `GET /api/agent/module/podman/tag` | `?device_id=` | the tags an image has |
 | `GET /api/agent/module/podman/container/journal` | `?device_id=&name=` | |
@@ -1211,8 +1212,14 @@ whose `installer` is `builtin` names software the system itself carries, as
 Samba's `windows` and `darwin` branches name the system's own SMB server: it
 names nothing to download or install, needs neither `verify` nor `uninstall`,
 and the agent's runner checks for the software itself; the loader refuses any
-other branch `installer` and a builtin branch naming `url`, `packages` or any
-other download field. The hub
+other branch `installer` but `hub`, and a builtin branch naming `url`,
+`packages` or any other download field. A branch can name its own `kind`,
+`installer`, `version`, `source`, `license` and `corresponding_source`,
+which take the place of the manifest's for that platform alone; the hub
+resolves them in one function, `branch_identity`, before it composes the
+catalog's row and the recipe, so a recipe's `kind` is the resolved branch's
+and the identity fields stay out of the recipe. Podman's Linux branches name
+none, and their recipes are byte for byte as before. The hub
 resolves the branch for the machine's platform and sends it with the state;
 the agent has no manifest logic of its own. A branch may name `min_version`,
 a dotted number the loader checks: a machine whose platform `version` is
@@ -1241,7 +1248,7 @@ from the same facts, whoever installed the software:
 | `installed` | the software is present and the hub has never configured it; `is_active` says whether it runs |
 | `stopped` | the hub has configured it and the unit is stopped |
 | `running` | the hub has configured it and the unit is active |
-| `installing`, `uninstalling` | in transit |
+| `installing`, `uninstalling` | in transit; an `installing` row can hold `{code, params}`, `reboot_required` while a Windows machine owes the restart an install step asked for ([agent.md](agent.md), "Status is typed") |
 | `queued` | in transit: its `want` differs from what it reports, and the agent is applying another module first ([agent.md](agent.md), "One module at a time") |
 | `failed`, `unsupported` | the last step failed with `{code, params}`; the agent has no runner for this module |
 
@@ -1312,7 +1319,7 @@ the whole file back.
 | Module | What `details` reports, and what import reads |
 | --- | --- |
 | Samba | `testparm -s` parsed into the global section and each share, `pdbedit -L` into the user list |
-| Podman | `podman ps -a --format json` and `podman inspect`: each container's image, ports, volumes, environment, and whether a unit exists; its `host_bindings`, one `{address, port, protocol}` per published host port, `protocol` being `tcp` or `udp` and `address` empty for every address; the registry mirrors |
+| Podman | `podman ps -a --format json` and `podman inspect`: each container's image, ports, volumes, environment, and whether a unit exists; its `host_bindings`, one `{address, port, protocol, detected}` per published host port, `protocol` being `tcp` or `udp`, `address` empty for every address, and `detected` `http`, `https` or `tcp` as the agent's probe found on a running TCP binding, empty on UDP and before the probe; the registry mirrors; the import gives every port the service `auto` |
 | ZFS | pools, vdevs and datasets; there is no wanted pool list, so nothing is imported |
 | Gitea | the hub's own instance; a hand-installed one reports as running on its port and is not imported |
 | VS Code | each server's account, port, url and whether it runs; nothing is imported |
@@ -1410,6 +1417,52 @@ and an apply refuse `gitea_git_missing` while the machine has no usable
 `git`, and an install on macOS refuses `user_create_failed {user, detail}`
 when the system will not make the server's account.
 
+The `podman` module runs the declared containers on Linux, Windows and
+macOS ([agent/modules/containers.md](agent/modules/containers.md)). Its
+configuration is `{containers, mirrors, machine}`. Each container is
+`{name, image, ports, volumes, environment, command, is_autostart,
+services}`, and `services` is a list of `{port, kind, scheme, protocols}`
+per host port: `kind` `auto`, `web` or `port`, `scheme` `http` or `https`
+for `web`, and `protocols` a list of `tcp` and `udp` for `port`; a host
+port the list does not name is `auto`. `machine` is the Run settings,
+`{account, cpus, memory_gib, disk_gib}`, a 0 being Podman's default, with
+`password`, the vault login's, added for a Windows machine while `login_id`
+stays on the hub. The hub sends `machine` to a Windows or macOS machine
+alone, and a Linux state never names it. The Linux recipe is
+`system_package`, as before; the Windows and macOS recipe is
+`podman_machine`:
+
+```json
+"podman": {
+  "want": "running",
+  "config": {"containers": ["..."], "mirrors": [], "machine": {"account": "lab", "cpus": 0, "memory_gib": 0, "disk_gib": 0, "password": "..."}},
+  "install": {"kind": "podman_machine", "min_version": "19041", "verify": "\"C:\\Program Files\\Podman\\podman.exe\" --version", "components": [{"name": "wsl", "package_kind": "msi", "directory": "wsl", "sha256": "..."}, {"name": "installer", "package_kind": "msi", "directory": "installer", "sha256": "..."}, {"name": "image", "package_kind": "tar_zst", "directory": "image", "sha256": "..."}]},
+  "uninstall": {"packages": [], "post_uninstall": [], "is_data_kept": true}
+}
+```
+
+The macOS recipe names two components, `installer` with `package_kind`
+`pkg` and `image` with `raw_zst`, `min_version` `13` and `verify`
+`/opt/podman/bin/podman --version`. The agent opens `package {module:
+podman, component}` for each. On Windows and macOS `details` adds
+`machine`, `{account, is_running, cpus, memory_gib, disk_gib}`, what the
+machine reports through the agent's read (`podman info`), `disk_gib` the
+size of its disk now.
+
+An apply refuses `service_protocol_none {port}` for a `port` service with
+no protocol checked. On Windows and macOS it also refuses
+`machine_account_missing`, `machine_cpus_invalid {cpus, max}`,
+`machine_memory_invalid {memory_gib, max}`, `machine_disk_shrink {disk_gib,
+current_gib}`, `volume_not_shared {name, volume}` and `account_unknown
+{account}`, and on Windows `credential_missing {account}` and
+`credential_invalid {account}` as VS Code's does. An install ends
+`windows_feature_failed {feature, exit_code}` or `podman_install_failed
+{component, exit_code}`; the machine's own steps fail with
+`machine_image_missing`, `machine_init_failed {detail}`,
+`machine_set_failed {detail}` and `machine_unreachable {detail}`. `machine`,
+`services`, `detected` and the code on an `installing` row are added fields
+and keep `PROTOCOL`.
+
 Package bytes come to the agent down a `package {module, component}` stream it
 opens, `component` naming the component wanted and absent for a module with
 one archive, the same stream that serves its own upgrade. A package asked
@@ -1436,8 +1489,8 @@ what the entry's `payload` names:
 
 | `type` | `payload` | An entry is in the list while |
 | --- | --- | --- |
-| `web` | `{url, is_token_required}`, `is_token_required` present and true only on a VS Code, code-server, CloudCLI or Codeg instance, whose page opens with a token the `service` stream hands | a device's Gitea module reports a URL, a device's VS Code, code-server, CloudCLI or Codeg module runs an instance, or an `http` record is declared |
-| `port` | `{host, port, protocol}`, `protocol` being `tcp` or `udp`; it is an added field and keeps `PROTOCOL`, and a reader that finds none reads `tcp`. One entry has one protocol, so a number published on both is two entries; a container's UDP entry has the id of its TCP one with `_udp` after it, `podman_<device>_<container>_<port>_udp` | a device's Podman container publishes a host port on either protocol, one entry for each item of its `host_bindings` (a report with no `host_bindings`, from an agent before 0.5.0, gives each `host_ports` number as `tcp`), or a `generic_tcp` or `generic_udp` record is declared |
+| `web` | `{url, is_token_required}`, `is_token_required` present and true only on a VS Code, code-server, CloudCLI or Codeg instance, whose page opens with a token the `service` stream hands | a device's Gitea module reports a URL, a device's VS Code, code-server, CloudCLI or Codeg module runs an instance, a device's Podman container publishes a TCP port whose service is web, chosen or detected (`http` or `https` under `auto`), with `url` `<scheme>://<host>:<port>/` and the id its `port` entry has, `podman_<device>_<container>_<port>`, or an `http` record is declared |
+| `port` | `{host, port, protocol}`, `protocol` being `tcp` or `udp`; it is an added field and keeps `PROTOCOL`, and a reader that finds none reads `tcp`. One entry has one protocol, so a number published on both is two entries; a container's UDP entry has the id of its TCP one with `_udp` after it, `podman_<device>_<container>_<port>_udp` | a device's Podman container publishes a host port whose service is port, chosen or under `auto` on a TCP binding detected `tcp` or not yet detected and on every UDP binding, one entry for each item of its `host_bindings` (a report with no `host_bindings`, from an agent before 0.5.0, gives each `host_ports` number as `tcp`), or a `generic_tcp` or `generic_udp` record is declared |
 | `ai` | `{endpoint, protocol, models}`, `protocol` being `openai` | the AI gateway is installed and enabled |
 | `file` | `{protocol, host, share, users}`, `protocol` being `smb`; `users` is the share's `valid_users`, or every user of the device's Samba module when the share names none, and empty on a declared record; it is an added field, absent from a hub before 0.5.0, and keeps `PROTOCOL` | a device's Samba module reports the share, or a `samba` record is declared |
 | `rdp` | `{protocol, host, port, attention, platform_os}`, `protocol` being `rustdesk`, `platform_os` the sharing machine's `linux`, `windows` or `darwin` | a machine keeps reporting that it shares its desktop; `attention` is what somebody must do at that machine before a peer sees the desktop, as a code, empty when nothing is in the way and always empty from a Mac |
@@ -1454,7 +1507,11 @@ reporting now, and empty on a record no probe has reached. A `generic_udp`
 record is never probed, so its health stays empty. Only `false` is
 unhealthy: an entry with empty health carries no health word and keeps its
 actions ([client.md](client.md), "The button rule"). A container's
-entry on either protocol is healthy while the container runs.
+entry, `web` or `port` on either protocol, is healthy while the container
+runs, and a container's TCP binding is a `web` entry or a `port` entry,
+never both
+([agent/modules/containers.md](agent/modules/containers.md), "Services of
+a container").
 
 `description` is the English provenance line the composer writes, and
 `description_code` names the same provenance for a surface that words it in
@@ -1505,7 +1562,7 @@ is added without a change to the protocol; a kind is added by a row here.
 
 | Opened by | `kind` | Arguments and result |
 | --- | --- | --- |
-| hub, to an agent | `shell` | `{cols, rows}`, the shell running as the Terminal module's account with its shell program, refused `account_unknown {account}` or `shell_program_unusable {path}` when the machine cannot; with `{module: podman, container}` added for a container's shell, which the module does not touch, or `{session_id, is_resumed, owner, is_shared}` for a shell the agent keeps: `session_id` names the session and is generated by whoever opened the shell; an id the machine holds attaches to that session beside every stream already attached to it, and its kept output is sent first; `is_resumed: true` asks only for a session the machine holds, refused `session_unknown {session_id}` otherwise; `owner` is the hub's stamp, which the agent keeps as given and reports; `is_shared`, false when absent, says whether a new session starts shared; a shell opened without an id ends with its stream. Terminal bytes both ways; closed with `params: {exit_code}` once the shell ends, or empty when the stream closed on a shell that runs on |
+| hub, to an agent | `shell` | `{cols, rows}`, the shell running as the Terminal module's account with its shell program, refused `account_unknown {account}` or `shell_program_unusable {path}` when the machine cannot; with `{module: podman, container}` added for a container's shell, which the module does not touch, and which on Windows and macOS the agent starts as `podman exec -it` through the Podman machine's read URL with the account's machine key, on the pseudo console or pseudo-terminal a shell takes ([agent/modules/containers.md](agent/modules/containers.md), "Reads and writes"), or `{session_id, is_resumed, owner, is_shared}` for a shell the agent keeps: `session_id` names the session and is generated by whoever opened the shell; an id the machine holds attaches to that session beside every stream already attached to it, and its kept output is sent first; `is_resumed: true` asks only for a session the machine holds, refused `session_unknown {session_id}` otherwise; `owner` is the hub's stamp, which the agent keeps as given and reports; `is_shared`, false when absent, says whether a new session starts shared; a shell opened without an id ends with its stream. Terminal bytes both ways; closed with `params: {exit_code}` once the shell ends, or empty when the stream closed on a shell that runs on |
 | hub, to an agent | `exec` | `{argv, is_tty, cols, rows}`: one run of `argv`, a list of strings run as given with no shell between, as the Terminal module's account, else as the agent runs; never kept, and no `session_id`. Without `is_tty` the process's stdin, stdout and stderr are pipes, every binary frame down carries `fd`, the frames up are its stdin, and `eof` closes its stdin; with `is_tty` it runs on a pseudo-terminal of `cols` by `rows` as a shell does. Closed with `params: {exit_code}` once the process ended and its output is sent; refused `account_unknown {account}`, or `shell_program_unusable {path}` when `argv` is empty or its program cannot be found or run. "The exec stream" has the rest |
 | hub, to an agent | `file` | one file operation `{op, path, ...}`; `op` is `list`, `download`, `upload`, `rename`, `remove`, `directory_create` or `directory_download`, and every path is absolute in the machine's own form. `list` closes with `params: {path, separator, entries}`, `separator` being `\` on Windows and `/` elsewhere and each entry `{name, path, kind, size, modified_at, mode}`; on Windows a `list` of `/` or of no path closes with `path` `/` and one `dir` entry per drive, named `C:` with `path` `C:\`. `separator` and the drive list are added and keep `PROTOCOL`; an agent before 0.5.0 sends no `separator` |
 | agent, to the hub | `log` | `{module}`: opened for an install or an uninstall, output up as binary frames line by line, closed with `params: {state}` |

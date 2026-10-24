@@ -14,7 +14,7 @@ a module the agent has no runner for reads `unsupported`.
 | Kind | Modules | What the machinery does for it | What the module supplies |
 | --- | --- | --- | --- |
 | Carried by the agent | Terminal; Remote desktop, which also detects a person's own AnyDesk and TeamViewer | installs nothing: the agent's package holds what each needs, the entry is in every machine's state with no recipe, and the four presses are refused `module_not_optional` | its configuration file, its runner, one applier per system where the systems differ ([terminal.md](terminal.md), [remote_desktop.md](remote_desktop.md)) |
-| Installed from the system's own sources | File share, Containers, ZFS storage | installs and removes the packages the manifest names with the system's package manager, by the `system_package` recipe; on Windows and macOS the file share drives the SMB server the system has and installs nothing | its configuration, its renderer and its applier ([file_share.md](file_share.md), [containers.md](containers.md), [zfs.md](zfs.md)) |
+| Installed from the system's own sources | File share, Containers, ZFS storage | installs and removes the packages the manifest names with the system's package manager, by the `system_package` recipe; on Windows and macOS the file share drives the SMB server the system has and installs nothing, and Containers installs Podman's msi or pkg and keeps its machine image, all from the hub's cache, by the `podman_machine` recipe | its configuration, its renderer and its applier ([file_share.md](file_share.md), [containers.md](containers.md), [zfs.md](zfs.md)) |
 | A service with a system account of its own | Gitea | fetches the release binary into the hub's cache and sends it down `package {module}`; the agent makes the account and the service, and the publisher's layout holds on every system | its configuration, one applier per system, the rendered `app.ini` ([gitea.md](gitea.md)) |
 | A program run as a person's account | VS Code, code-server, CloudCLI, Codeg | the whole flow of this page: the unpack under the state root, one account service per instance, the forwarder, the `web` entry, the shared router and the shared panel | `config.py`, `constants.py` and `hooks.py` ([vscode.md](vscode.md), [code_server.md](code_server.md), [cloudcli.md](cloudcli.md), [codeg.md](codeg.md)) |
 
@@ -30,18 +30,34 @@ state, so the agent is handed conclusions and holds no manifest logic
 | --- | --- |
 | `name`, `title`, `installer`, `source`, `version`, `license`, `corresponding_source`, `description` | the module's identity: its manifest name, the title every surface shows, its installer tier (`agent`, `platform` or `hub`), its publisher, the pinned version, the licence and the source the licence asks for |
 | `platforms.<os>-<arch>` | one entry per platform the module runs on; a platform with no entry cannot run the module, and the Modules page greys it out ([protocol.md](../../protocol.md), "The modules section, one entry per module") |
-| `url`, `sha256`, `package_kind` | on a platform entry: the publisher's file, its digest and how it unpacks; the digest is the publisher's, so a mirror serving the same file is covered by the same pin |
-| `components` | on a platform entry, in place of one `url`: a list of `{name, url, sha256, package_kind, directory}`, with `cn_url` optional on each, one per archive the module unpacks; a manifest with one archive lists none |
+| `kind`, `installer`, `version`, `source`, `license`, `corresponding_source` | on a platform entry: the branch's own identity, in place of the manifest's for that platform alone; a branch's `installer` is `builtin` or `hub` |
+| `url`, `sha256`, `package_kind` | on a platform entry: the publisher's file, its digest and how it unpacks; the digest is the publisher's, so a mirror serving the same file is covered by the same pin, and the `digest` GitHub's API gives a release asset, or an OCI registry's blob digest of the same bytes, counts as the publisher's |
+| `components` | on a platform entry, in place of one `url`: a list of `{name, url, sha256, package_kind, directory}`, with `cn_url` optional on each, one per file the module takes; a manifest with one file lists none |
 | `verify` | the command whose success means the software is installed, run after the unpack and at every observation; on Windows `cmd.exe` runs it, and it is the program's quoted path with `--version`, such as `"%ProgramData%\Neutrino\agent\state\vscode\code.exe" --version`, which fails when the file is missing |
 | `uninstall` | `{packages, post_uninstall, is_data_kept}`: what an uninstall removes beyond the module's own directory; every shipped manifest keeps the data |
 | `cn_url` | the mirror's address of the same file, which a `cn` hub fetches from when the entry has one; a file no mirror carries has none, and the `cn` hub fetches `url` itself |
 
-What an entry names follows its kind. An `agent` manifest names no
-platform, no `url` and no recipe. A `platform` entry names `packages`, with
-`pre_install` where the system needs a step first, and never a download. A
-`hub` entry names a download, as one `url` or as `components`, and never
-`packages` for a program run as an account. The loader refuses a manifest
-outside these shapes, so a wrong file fails the suite.
+What an entry names follows its tier, the branch's own or the manifest's.
+An `agent` manifest names no platform, no `url` and no recipe. A `platform`
+entry names `packages`, with `pre_install` where the system needs a step
+first, and never a download. A `hub` entry names a download, as one `url`
+or as `components`, and never `packages` for a program run as an account;
+it resolves a `version`, a `license` and a `corresponding_source`, its own
+or the manifest's, and a branch of any other tier resolves none of the
+three. The loader refuses a manifest outside these shapes, so a wrong file
+fails the suite.
+
+`branch_identity(manifest, entry)` in `modules/devices/manifests.py` is the
+one place a branch's identity is resolved. The catalog's row
+(`catalog.resolve_module`), the Modules page's list (`list_modules`), the
+cache's file title (`artifact_title`) and the state's recipe, whose `kind`
+is the resolved branch's (`desired_state._recipes`), all read it.
+Containers is the manifest that uses it: its Linux branches name no
+identity of their own and keep the manifest's `platform` tier and
+`system_package` kind, so their recipes are byte for byte as before, and
+its Windows and macOS branches name `installer` `hub`, `kind`
+`podman_machine` and their own pinned Podman release
+([containers.md](containers.md)).
 
 ## The install
 
@@ -51,11 +67,14 @@ one owner:
 1. The hub's cache fetches each archive the entry names into the module
    cache, from `cn_url` on a `cn` hub where the entry has one.
 1. The cache checks the bytes against the pinned `sha256` and keeps nothing
-   that differs.
+   that differs. It refuses a file larger than 2 GiB, and after it places a
+   new file it deletes the files it held for the same module, component and
+   platform.
 1. The agent opens `package {module, component}` for each component, or
    `package {module}` for a module with one archive, and the hub streams the
    cached file down with its digest in the close
-   ([protocol.md](../../protocol.md), "The stream layer").
+   ([protocol.md](../../protocol.md), "The stream layer"), writing `hub:
+   sending <file> <sent> / <total> MB` into the module's output as it goes.
 1. The agent unpacks each archive under `agent/<module>/<directory>/` in
    the state root, `<directory>` being the component's `directory`; an
    archive whose members all sit under one top directory is unpacked
@@ -66,6 +85,21 @@ one owner:
    `PATH`.
 1. The agent runs the manifest's `verify` command; its success is
    `installed`.
+
+Four component kinds are never unpacked. The agent keeps the file as the
+publisher's bytes under `agent/<module>/<directory>/` in the state root, and
+the module takes it from there:
+
+| `package_kind` | The file | What the module does with it |
+| --- | --- | --- |
+| `msi` | a Windows Installer package | installs it with `installers.install_msi` |
+| `pkg` | a macOS installer package | installs it with `installers.install_pkg` |
+| `tar_zst` | a zstd-compressed tar, such as Podman's machine image for WSL | passes its path to the module's program |
+| `raw_zst` | a zstd-compressed disk image, such as Podman's machine image for applehv | passes its path to the module's program |
+
+The cache checks the head of each before it keeps it: `msi` and `pkg` by the
+magic bytes it already checks for the agent's own packages, and the two zstd
+kinds by `28 b5 2f fd`.
 
 A runtime a module needs, Node.js among them, is one of its components,
 pinned in its own manifest. A module reads no other module's directory and
@@ -158,7 +192,7 @@ carries them opened. The panel draws the four with one `instances_panel.tsx`
 | `package.py` | installing, removing and verifying one downloaded-package module |
 | `unpacked_tree.py` | a module's archive from the hub, unpacked under the module's own directory and sealed |
 | `system_package.py` | installing and uninstalling modules the machine's package manager carries |
-| `installers.py` | installing a downloaded package the way this machine installs things, one function per package kind |
+| `installers.py` | installing a downloaded package the way this machine installs things, one function per package kind: `install_msi` and `uninstall_msi` run `msiexec`, waiting for the Windows Installer mutex, trying once more on 1618 and taking 0 and 3010 as success; `install_pkg` runs `installer -pkg <file> -target /`; the agent's self-update uses the same functions, and the scripts it renders stay as they are |
 | `http_forward.py` | what every forwarder in front of a module's page shares: the listener, the token check, the pass-through |
 | `log_tail.py` | the last lines of a log file, and the mask every journal passes through |
 | `subprocess_run.py` | running one command for a module applier, with its output kept |

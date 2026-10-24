@@ -191,7 +191,13 @@ table on every surface:
 `running` are configured by the hub and told apart by the unit; `installing`
 also covers a module's own install that runs inside its apply or as a task
 the apply left running, and a state waiting on such a task is applied again
-every 30 seconds under the same hash until the task ends. `queued` is a
+every 30 seconds under the same hash until the task ends. An `installing`
+row can hold `{code, params}` naming what holds up the install:
+`reboot_required` while a Windows machine owes the restart that the Windows
+features of Containers asked for. The agent never restarts the machine; a
+person does, from the module's tab or the device, and the same 30-second
+apply goes on with the install after it
+([modules/containers.md](agent/modules/containers.md)). `queued` is a
 module the agent reaches after the one it is applying ("One module at a
 time").
 
@@ -228,7 +234,7 @@ is linked from the table.
 | Kind | Modules | Install | Run |
 | --- | --- | --- | --- |
 | carried by the agent | [Terminal](agent/modules/terminal.md), [Remote desktop](agent/modules/remote_desktop.md), which also detects a person's own AnyDesk and TeamViewer | nothing: the agent's package holds what each needs, on every system | the module's own applier per system |
-| installed from the system's own sources | [File share](agent/modules/file_share.md), [Containers](agent/modules/containers.md), [ZFS storage](agent/modules/zfs.md) | the system's package manager, by the `system_package` recipe; on Windows and macOS the file share drives the system's SMB server and installs nothing | the module's own applier |
+| installed from the system's own sources | [File share](agent/modules/file_share.md), [Containers](agent/modules/containers.md), [ZFS storage](agent/modules/zfs.md) | the system's package manager, by the `system_package` recipe; on Windows and macOS the file share drives the system's SMB server and installs nothing, and Containers installs Podman from the hub's cache, by the `podman_machine` recipe | the module's own applier; for Containers on Windows and macOS, inside a Podman machine of one account |
 | a service with a system account of its own | [Gitea](agent/modules/gitea.md) | the release binary from the hub's cache, down `package {module}` | the account and the service the module makes, in the publisher's layout on every system |
 | a program run as a person's account | [VS Code](agent/modules/vscode.md), [code-server](agent/modules/code_server.md), [CloudCLI](agent/modules/cloudcli.md), [Codeg](agent/modules/codeg.md) | each component from the hub's cache, down `package {module, component}`, unpacked and sealed under `agent/<module>/<component>/` | one account service per instance, the forwarder in front of it, one `web` entry per running instance |
 
@@ -238,8 +244,12 @@ against the pinned sha256 and streams it down `package`; the agent unpacks
 it under the state root into a directory of the module's own name, one
 subdirectory per component, sealed read-only to every account and on no
 `PATH`, and runs the manifest's `verify` command. A module from the
-system's own sources asks the hub for no bytes: the platform installs the
-named packages with its own tooling. Terminal and Remote desktop install
+system's own sources asks the hub for no bytes on Linux: the platform
+installs the named packages with its own tooling. Containers on Windows and
+macOS asks the hub for its components and unpacks none of them: its msi or
+pkg goes to the system's installer, and its machine image stays one file
+for `podman machine init`
+([modules/containers.md](agent/modules/containers.md)). Terminal and Remote desktop install
 nothing: their manifests name the tier `agent`, their state entries name no
 recipe, they are never in the Modules page's picker, always a tab, and take
 none of the four presses ([protocol.md](protocol.md), "The modules section,
@@ -280,7 +290,7 @@ machine publishes at that moment on the stream's protocol:
 | the desktop is shared | the RustDesk direct port the `desktop` section reports |
 | the Gitea module reports its URL | that URL's port |
 | a VS Code, code-server, CloudCLI or Codeg instance is configured | the instance's port |
-| a running Podman container publishes a host port | that port on the protocol it is published on, dialled on the host address it is published on when it names one; a stopped container's ports are not published, so a stream on one ends `port_not_published` within a second of the stop |
+| a running Podman container publishes a host port | that port on the protocol it is published on, dialled on the host address it is published on when it names one, and on Windows and macOS dialled on `127.0.0.1` whatever it names, since the Podman machine's ports reach the computer there; a stopped container's ports are not published, so a stream on one ends `port_not_published` within a second of the stop |
 
 Every other port in the table is published on TCP alone. Any other port,
 and a number published on the other protocol alone, is refused
@@ -317,7 +327,7 @@ connection"), and each also answers the agent's dial on loopback:
 | the file share on Windows and macOS | the system's SMB server on every address; the fence blocks every network outside the composed ones and leaves `127.0.0.0/8` and `::1` out of what it blocks |
 | Gitea | every address (`HTTP_ADDR = 0.0.0.0`); on Windows the system firewall decides who on the LAN reaches it, and the module opens no port in it |
 | RustDesk's direct port | every address, as RustDesk opens it; the share is declared once the port answers on `127.0.0.1` |
-| a Podman container's published port | every address, or the one address it is published on, which the agent dials |
+| a Podman container's published port | every address, or the one address it is published on, which the agent dials; on Windows `127.0.0.1` alone, through WSL's forwarding from the Podman machine, and on macOS where Podman's forwarder listens, `127.0.0.1` among them |
 | VS Code | `127.0.0.1` alone |
 | the CloudCLI, code-server and Codeg forwarders | `127.0.0.1` alone, in front of CloudCLI and Codeg on loopback and code-server on its account's socket |
 
@@ -374,7 +384,8 @@ it.
 
 The agent is root, so reaching down to an account is `runuser -u <account>
 --`, never `sudo`, for the reason the hub bans it
-([privilege.md](privilege.md)). That reach is three things. One is the seat
+([privilege.md](privilege.md)). The agent reaches an account in the cases
+that follow and in no other. One is the seat
 whose desktop is shared, whose RustDesk configuration lives in that
 account's own session. Another is the programs run as an account, VS Code,
 code-server, CloudCLI and Codeg, whose instances the account service layer,
@@ -392,8 +403,15 @@ the account the Terminal module names, on Linux and macOS: the shell, or the
 command an
 `exec` stream names, runs through the platform's step-down with that
 account's home and environment, the shell as a login shell on a
-pseudo-terminal the agent makes. Everything else the agent does is root's
-own work.
+pseudo-terminal the agent makes. The fifth is Containers on Windows and
+macOS, whose Podman machine is the default machine of the account the Run
+settings name: every `podman machine` and `wsl` command, and the root
+script that writes into the machine, run as that account through
+`run_as_account`; the
+keeper that starts the machine at boot is an account service; and the
+agent reads the machine itself, as SYSTEM or root, with that account's
+machine key ([modules/containers.md](agent/modules/containers.md)).
+Everything else the agent does is root's own work.
 
 ## The platform layer
 
@@ -422,8 +440,11 @@ system carries, with nothing to install or uninstall; there, any other
 module the state names reads `unsupported`, never `failed`, beside the
 Terminal and Remote desktop rows every platform has. A platform with
 `hub_packages` gets Gitea and the programs run as an account, VS Code,
-CloudCLI and Codeg, and macOS code-server beside them; on Linux all of them
-are among the runners `packages` builds. On every system, software the hub
+CloudCLI and Codeg, and macOS code-server beside them, and Containers as
+`PodmanMachineModuleRunner`, kind `podman_machine`, which runs Podman inside
+a Podman machine of one account; on Linux all of them are among the runners
+`packages` builds, Containers as `PodmanModuleRunner` by the
+`system_package` recipe ([modules/containers.md](agent/modules/containers.md)). On every system, software the hub
 sends down a package stream is unpacked into a directory of the module's
 own name under the state root, one subdirectory per component, cc-switch into
 `ai_tools/bin/`, and that directory alone is opened to every account to read and run: mode 755, and on Windows
@@ -434,7 +455,7 @@ only POSIX has is guarded, so one package imports on all three systems.
 | --- | --- | --- | --- |
 | Program | `/opt/neutrino/agent` | `C:\Program Files\Neutrino\agent` | `/Library/Application Support/Neutrino/agent/app` |
 | Configuration root: the binding, the credentials, the desired state | `/etc/neutrino/agent` | `%ProgramData%\Neutrino\agent\config`, under `%ProgramData%\Neutrino\agent`, whose ACL, SYSTEM and the administrators alone, the `.msi` sets | `/Library/Application Support/Neutrino/agent/config`, mode 700 |
-| State root: configured marks, packages, the last reinstall, `vscode/`, `code_server/`, `cloudcli/`, `codeg/`, `ai_tools/`, and on Windows and macOS `gitea/` and `gitea_data/` | `/var/lib/neutrino/agent` | `%ProgramData%\Neutrino\agent\state` | `/Library/Application Support/Neutrino/agent/state`, mode 755 |
+| State root: configured marks, packages, the last reinstall, `vscode/`, `code_server/`, `cloudcli/`, `codeg/`, `ai_tools/`, and on Windows and macOS `gitea/`, `gitea_data/` and `podman/` | `/var/lib/neutrino/agent` | `%ProgramData%\Neutrino\agent\state` | `/Library/Application Support/Neutrino/agent/state`, mode 755 |
 | Log | the journal | `%ProgramData%\Neutrino\agent\log\agent.log` | `/Library/Logs/Neutrino/agent/agent.log` |
 | Service | systemd `neutrino_agent.service` runs `nagent run` | the `neutrino_agent` service, LocalSystem, runs `nagent service run` | the `com.neutrino.agent` LaunchDaemon runs `nagent run` |
 | Control transport | Unix socket `/run/neutrino/agent/agent.sock` | named pipe `\\.\pipe\neutrino_agent`, its descriptor SYSTEM and the administrators | Unix socket `/var/run/neutrino/agent/agent.sock` |
@@ -443,7 +464,7 @@ only POSIX has is guarded, so one package imports on all three systems.
 | Machine id | `/etc/machine-id` | the registry's `MachineGuid` | `IOPlatformUUID` from `ioreg` |
 | Accounts | uid 1000 and above with a login shell | the enabled local accounts from `NetUserEnum`, without Administrator, Guest, DefaultAccount, WDAGUtilityAccount and the file share's own; the home is the `ProfileImagePath` under the account's SID in the registry's `ProfileList` | `dscl`, uid 501 and above, home under `/Users` |
 | Power | `systemctl reboot` or `poweroff --force` | `shutdown /r` or `/s /t 0` | `shutdown -r` or `-h now` |
-| Running as an account | `runuser -u <account> --`, with the account's home and environment; an answered run on a pseudo-terminal the agent makes | a one-shot scheduled task `neutrino_run_as_<account>`, registered through the PowerShell host with the login the Credentials page holds for the account's instance and a limited token, started in the account's profile; its script, standard input, output and exit code are files in `state\run_as\<account>\`, whose ACL grants the account modify and SYSTEM and the administrators full control; the task and the files are removed once the exit code is read, and an uninstall removes a task or files a stopped run left; a login Windows rejects at registration (`0x8007052E`) is `credential_invalid {account}`, an account with no login `credential_missing {account}`; an answered run is `nagent answer` inside the task | a child process with the account's uid and group and no other groups, in its home, with `HOME`, `USER` and `LOGNAME` set; an answered run on a pseudo-terminal the agent makes |
+| Running as an account | `runuser -u <account> --`, with the account's home and environment; an answered run on a pseudo-terminal the agent makes | a one-shot scheduled task `neutrino_run_as_<account>`, registered through the PowerShell host with the login the Credentials page holds for the account's instance and a limited token, started in the account's profile; its script, standard input, output and exit code are files in `state\run_as\<account>\`, whose ACL grants the account modify and SYSTEM and the administrators full control; the task and the files are removed once the exit code is read, and an uninstall removes a task or files a stopped run left; two runs for one account take turns under a lock per account, since they share the task's name and its directory; a login Windows rejects at registration (`0x8007052E`) is `credential_invalid {account}`, an account with no login `credential_missing {account}`; an answered run is `nagent answer` inside the task | a child process with the account's uid and group and no other groups, in its home, with `HOME`, `USER` and `LOGNAME` set; an answered run on a pseudo-terminal the agent makes |
 | Refused | nothing | packages | packages |
 | Kill | SIGTERM, then SIGKILL after two seconds | `OpenProcess` with `PROCESS_TERMINATE` and `TerminateProcess` | SIGTERM, then SIGKILL after two seconds |
 | Shell stream, the Terminal module's settings empty | the login shell on a pseudo-terminal, which is its controlling terminal so a resize reaches it as `SIGWINCH`, started in root's home | PowerShell on a pseudo console, in a job that kills it on close, started in the signed-in account's profile directory, and in the system drive's root when nobody is signed in or the profile cannot be found (a domain account, a directory that is not there), never in the service's own directory | `zsh -il` on a pseudo-terminal, its controlling terminal as on Linux, started in root's home |
@@ -515,7 +536,7 @@ module a system cannot run is left out on that system.
 | --- | --- | --- | --- |
 | [File share](agent/modules/file_share.md) | Samba | the system's own SMB server | the system's own SMB server |
 | [Gitea](agent/modules/gitea.md) | amd64 and arm64 | amd64 | arm64 and amd64 |
-| [Containers](agent/modules/containers.md) (Podman) | yes | no | no |
+| [Containers](agent/modules/containers.md) (Podman) | yes | amd64, build 19041 or later, on WSL 2 | arm64 with Podman 6.x and amd64 with Podman 5.8.x, macOS 13 or later |
 | [ZFS storage](agent/modules/zfs.md) | yes | no | no |
 | [VS Code](agent/modules/vscode.md) | amd64 and arm64 | amd64 | arm64 and amd64 |
 | [code-server](agent/modules/code_server.md) | amd64 and arm64 | no | arm64 and amd64 |
@@ -533,7 +554,8 @@ lines that name the module, from `agent.log` under the log root (the rotated
 most half the box, and a box is empty only while the agent has logged
 nothing about the module. Which sources a module reads there is on its own
 page: [file_share.md](agent/modules/file_share.md),
-[gitea.md](agent/modules/gitea.md), [vscode.md](agent/modules/vscode.md),
+[gitea.md](agent/modules/gitea.md),
+[containers.md](agent/modules/containers.md), [vscode.md](agent/modules/vscode.md),
 [code_server.md](agent/modules/code_server.md),
 [cloudcli.md](agent/modules/cloudcli.md) and
 [codeg.md](agent/modules/codeg.md).
