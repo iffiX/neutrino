@@ -289,6 +289,7 @@
   "ui.install_agent.unsupported_remote_install_unknown": "The SSH installer is for Linux; send this machine an enrollment link instead.",
   "ui.install_agent.username": "Username",
   "ui.module_state.failed": "failed",
+  "ui.module_state.install_failed": "install failed",
   "ui.module_state.installing": "installing…",
   "ui.module_state.uninstalling": "uninstalling…",
   "ui.module_state.unsupported": "not available here",

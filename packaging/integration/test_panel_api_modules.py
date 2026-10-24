@@ -54,6 +54,7 @@ STATE_WORDS = frozenset(
         "installed",
         "stopped",
         "running",
+        "install_failed",
         "installing",
         "uninstalling",
         "failed",

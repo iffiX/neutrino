@@ -187,12 +187,17 @@ const STATE_KEYS: Record<string, string> = {
   uninstalling: "state.uninstalling",
   queued: "state.queued",
   failed: "state.failed",
+  install_failed: "state.install_failed",
   unsupported: "state.unsupported",
 };
 const STATE_NEVER_REPORTED_KEY = "state.never_reported";
 
 /** The states in which the software is on the machine. */
 const PRESENT_STATES = ["installed", "stopped", "running"];
+
+/** The states of a module whose last step failed: the tab shows the code's
+ * words, and Uninstall is live. */
+const FAILED_STATES = ["failed", "install_failed"];
 
 /** The wants under which the machine applies the hub's configuration, so a
  * `failed` row under one of them is a refused configuration. */
@@ -702,7 +707,7 @@ export function ModulesPage() {
                           </div>
                         </div>
                       )}
-                    {activeRow.state === "failed" && (
+                    {FAILED_STATES.includes(activeRow.state) && (
                       <div className="notice notice--error">
                         <Icon name="alert" size={15} />
                         <div className="notice_body">
@@ -740,6 +745,7 @@ export function ModulesPage() {
                           isEnabled={
                             canAct &&
                             (activeRow.state === "absent" ||
+                              activeRow.state === "install_failed" ||
                               isRetried(activeRow, "installed"))
                           }
                           disabledReason={
@@ -778,7 +784,8 @@ export function ModulesPage() {
                           action="uninstall"
                           isEnabled={
                             canAct &&
-                            (isPresent || activeRow.state === "failed")
+                            (isPresent ||
+                              FAILED_STATES.includes(activeRow.state))
                           }
                           disabledReason={
                             activeRow.state === "absent"
@@ -970,7 +977,7 @@ function dotTone(row: DeviceModuleView): StatusTone {
   if (BUSY_STATES.includes(row.state)) {
     return "warn";
   }
-  if (row.state === "failed" || row.state === "stopped") {
+  if (FAILED_STATES.includes(row.state) || row.state === "stopped") {
     return "error";
   }
   return "idle";

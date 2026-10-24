@@ -289,6 +289,7 @@
   "ui.install_agent.unsupported_remote_install_unknown": "SSH 安装器只支持 Linux，请改为发送加入链接。",
   "ui.install_agent.username": "用户名",
   "ui.module_state.failed": "失败",
+  "ui.module_state.install_failed": "安装失败",
   "ui.module_state.installing": "安装中…",
   "ui.module_state.uninstalling": "卸载中…",
   "ui.module_state.unsupported": "此处不可用",

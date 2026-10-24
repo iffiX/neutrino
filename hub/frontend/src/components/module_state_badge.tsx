@@ -13,6 +13,7 @@ const STATE_KEYS: Record<string, string> = {
   installing: "ui.module_state.installing",
   uninstalling: "ui.module_state.uninstalling",
   failed: "ui.module_state.failed",
+  install_failed: "ui.module_state.install_failed",
   unsupported: "ui.module_state.unsupported",
 };
 
@@ -21,6 +22,7 @@ const STATE_TONES: Record<string, string> = {
   installing: "badge--warn",
   uninstalling: "badge--warn",
   failed: "badge--error",
+  install_failed: "badge--error",
 };
 
 interface ModuleStateBadgeProps {

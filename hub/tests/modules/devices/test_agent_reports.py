@@ -7,7 +7,9 @@ with the socket's peer standing in and being recorded when the report
 names none, and the MAC the socket runs on, noted on the device's row;
 ``modules``, where a module the hub wanted absent and the machine now
 reports absent is settled in the device's file, keeping its want and
-leaving the state, and the state pushed again; ``desktop`` and ``error``.
+leaving the state, and the state pushed again, while a module reported
+``install_failed`` keeps its want and is neither settled nor taken over;
+``desktop`` and ``error``.
 The desktop share is recorded
 against the device the token resolved to, at the address the hub holds,
 and withdrawn when the machine stops or its socket ends.
@@ -32,7 +34,6 @@ class FakeRuntime:
     def __init__(self, lans=()):
         self.device_metrics = {}
         self.device_modules = {}
-        self.install_failures: dict = {}
         self.device_platform = {}
         self.device_hostname = {}
         self.device_accounts = {}
@@ -312,31 +313,40 @@ def test_a_module_wanted_absent_and_reported_absent_is_settled_and_the_state_pus
 
 
 @pytest.mark.parametrize("want", ["installed", "running", "stopped"])
-def test_an_install_that_left_nothing_drops_the_want_and_holds_the_failure(
-    box, monkeypatch, tmp_path, want
-):
-    """The machine reports the module absent with the install's code: the
-    hub hands the module back, so the next Install is a fresh one."""
-    from neutrino_hub.modules.devices.retry_marks import DeviceRetryMarks
-
+def test_a_failed_install_keeps_its_want_and_the_report_as_it_came(box, want):
+    """The machine reports ``install_failed`` with the install's code: the
+    hub keeps the want, writes nothing and pushes nothing, and the row reads
+    the report."""
     runtime, device = box
-    marks = DeviceRetryMarks(path=tmp_path / "device_retry_marks.json")
-    monkeypatch.setattr(agent_reports, "DeviceRetryMarks", lambda: marks)
-    marks.mark(DEVICE, "code_server")
-    marks.mark(DEVICE, "gitea")
     runtime.desired_states.wants[(DEVICE, "code_server")] = want
-    failure = {"code": "module_fetch_failed", "params": {"detail": "no route"}}
+    reported = {
+        "state": "install_failed",
+        "code": "module_fetch_failed",
+        "params": {"detail": "no route"},
+    }
+
+    agent_reports.record_report(
+        runtime, device, report(modules={"code_server": dict(reported)})
+    )
+
+    assert runtime.desired_states.want_of(DEVICE, "code_server") == want
+    assert runtime.desired_states.settled == []
+    assert runtime.device_modules[DEVICE]["code_server"] == reported
+    assert runtime.pushed == []
+
+
+def test_a_failed_install_is_not_taken_over_at_the_first_report(box):
+    runtime, device = box
 
     agent_reports.record_report(
         runtime,
         device,
-        report(modules={"code_server": {"state": "absent", **failure}}),
+        report(modules={"samba": {"state": "install_failed", "code": "x"}}),
+        is_first=True,
     )
 
-    assert runtime.desired_states.want_of(DEVICE, "code_server") == ""
-    assert marks.marks(DEVICE) == {"gitea": marks.marks(DEVICE)["gitea"]}
-    assert runtime.install_failures == {DEVICE: {"code_server": failure}}
-    assert runtime.pushed == [DEVICE]
+    assert runtime.desired_states.want_of(DEVICE, "samba") == ""
+    assert runtime.pushed == []
 
 
 def test_an_absent_module_with_no_code_or_no_want_is_left_as_it_is(box):
@@ -355,7 +365,6 @@ def test_an_absent_module_with_no_code_or_no_want_is_left_as_it_is(box):
     )
 
     assert runtime.desired_states.want_of(DEVICE, "podman") == "running"
-    assert runtime.install_failures == {}
     assert runtime.pushed == []
 
 

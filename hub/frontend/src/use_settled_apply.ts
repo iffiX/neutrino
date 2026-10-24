@@ -99,10 +99,13 @@ export function useSettledApply(
   return { isSettling, isApplied, begin, clear };
 }
 
+/** The states of a module whose last step failed. */
+const FAILED_STATES = ["failed", "install_failed"];
+
 /** Whether the machine reports the module or one of its instances failing. */
 export function isFailing(report: ReportedModule): boolean {
   return (
-    report.state === "failed" ||
+    FAILED_STATES.includes(report.state) ||
     report.instances.some((instance) => instance.code !== "")
   );
 }

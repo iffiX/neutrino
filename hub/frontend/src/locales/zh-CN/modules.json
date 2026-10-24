@@ -18,6 +18,7 @@
   "state.failed": "失败",
   "state.failing": "故障",
   "state.healthy": "正常",
+  "state.install_failed": "安装失败",
   "state.installing": "安装中",
   "state.keyed": "已配令牌",
   "state.never_reported": "未上报",

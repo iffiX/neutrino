@@ -18,6 +18,7 @@
   "state.failed": "failed",
   "state.failing": "failing",
   "state.healthy": "healthy",
+  "state.install_failed": "install failed",
   "state.installing": "installing",
   "state.keyed": "keyed",
   "state.never_reported": "never reported",

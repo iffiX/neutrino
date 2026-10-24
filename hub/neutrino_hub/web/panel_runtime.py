@@ -237,9 +237,6 @@ class PanelRuntime:
         # Latest per-module reconcile state an agent reported, keyed by
         # device id. Runtime only, for the same reason as the metrics.
         self.device_modules: dict[str, dict] = {}
-        # Device key to module to the ``{code, params}`` of an install that
-        # failed and left nothing, held until the next press on the module.
-        self.install_failures: dict[str, dict] = {}
         # The round trip the hub measured to each relayed overlay peer.
         self.peer_latencies = OverlayPeerLatencies()
         # The platform tuple an agent last reported, keyed by device id, so

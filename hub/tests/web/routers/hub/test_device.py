@@ -118,7 +118,6 @@ class ListRuntime:
         self.device_hostname = {}
         self.device_last_error = {}
         self.device_modules = {}
-        self.install_failures: dict = {}
         self.device_shares = DeviceShareRegistry()
         self.agent_sessions = FakeChannelSessions()
         self.agent_update_sessions = {}
@@ -448,7 +447,6 @@ class SshRuntime:
         self.device_hostname = {}
         self.device_last_error = {}
         self.device_modules = {}
-        self.install_failures: dict = {}
         self.agent_sessions = FakeChannelSessions()
         self.agent_update_sessions = {}
 
@@ -923,7 +921,6 @@ class InstallRuntime:
         self.device_hostname = {}
         self.device_last_error = {}
         self.device_modules = {}
-        self.install_failures: dict = {}
         self.enrollments = ChannelTicketRegistry()
         self.agent_sessions = FakeChannelSessions()
         self.agent_update_sessions = {}

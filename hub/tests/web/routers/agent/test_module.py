@@ -5,7 +5,8 @@ forgotten device never reads managed here; each row is what the agent last
 reported beside what the hub asks of it; the four presses write one
 ``want`` each and push it, refuse an offline device before writing, and a
 module the agent carries takes none; a press on a module whose last report is
-``failed`` puts a fresh retry mark, and one on any other module puts none;
+``failed`` or ``install_failed`` puts a fresh retry mark, and one on any other
+module puts none; a failed install reads its code beside the want it keeps;
 the task carrying a module's install lines is
 named on its row. The door: the per-device read carrying the module's own
 fields beside the shared ones, an import that writes what the machine
@@ -161,32 +162,27 @@ def test_an_uninstall_the_machine_confirmed_reads_absent_on_both_halves(api):
     assert (row["want"], row["state"]) == ("absent", "absent")
 
 
-def test_a_failed_install_that_left_nothing_reads_absent_with_its_code_until_a_press(
-    api,
-):
-    """The row shows the held failure under absent, and Install answers it."""
+def test_a_failed_install_reads_install_failed_with_its_code_beside_its_want(api):
+    """The row is the machine's report: the want stays, and the code with it."""
     client, runtime = api
     runtime.agent_sessions.online.add(DEVICE)
-    runtime.device_modules[DEVICE] = {"fakedesk": {"state": "absent"}}
-    runtime.install_failures[DEVICE] = {
-        "fakedesk": {"code": "module_fetch_failed", "params": {"detail": "x"}}
+    runtime.desired_states.set_want(DEVICE, "fakedesk", "installed")
+    runtime.device_modules[DEVICE] = {
+        "fakedesk": {
+            "state": "install_failed",
+            "code": "module_fetch_failed",
+            "params": {"detail": "x"},
+        }
     }
 
-    before = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()
-    client.post(
-        f"{MODULE_PATH}/install", json={"device_id": DEVICE, "module": "fakedesk"}
-    )
-    after = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()
+    row = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()["modules"][0]
 
-    row = before["modules"][0]
     assert (row["state"], row["want"], row["code"], row["params"]) == (
-        "absent",
-        "",
+        "install_failed",
+        "installed",
         "module_fetch_failed",
         {"detail": "x"},
     )
-    assert after["modules"][0]["code"] == ""
-    assert runtime.install_failures[DEVICE] == {}
 
 
 def test_a_module_nobody_touched_reads_unknown_with_no_want(api):
@@ -888,12 +884,13 @@ def retry_marks() -> dict:
     return DeviceRetryMarks().marks(DEVICE)
 
 
+@pytest.mark.parametrize("state", ["failed", "install_failed"])
 @pytest.mark.parametrize("press", ["install", "start", "stop", "uninstall"])
-def test_a_press_on_a_failed_module_puts_a_fresh_retry_mark(api, press):
+def test_a_press_on_a_failed_module_puts_a_fresh_retry_mark(api, press, state):
     client, runtime = api
     runtime.agent_sessions.online.add(DEVICE)
     runtime.device_modules[DEVICE] = {
-        "fakedesk": {"state": "failed", "code": "download_failed", "params": {}}
+        "fakedesk": {"state": state, "code": "download_failed", "params": {}}
     }
 
     client.post(
