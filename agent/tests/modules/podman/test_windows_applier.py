@@ -16,6 +16,7 @@ from neutrino_agent.modules.podman.windows_applier import (
     merged_wslconfig,
     version_numbers,
     vhdx_virtual_size,
+    wsl_script,
 )
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
 from neutrino_agent.platforms.base import AgentPlatform
@@ -465,19 +466,47 @@ def test_a_vhdx_reads_its_size_in_bytes(tmp_path):
 # --- wsl.exe as the account ---
 
 
+def wsl_lines(machine) -> list:
+    """The PowerShell line of each wsl.exe run, with PowerShell's own options checked."""
+    lines = []
+    for run in machine.runs:
+        assert run[:-1] == [
+            "powershell.exe",
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+        ]
+        lines.append(run[-1])
+    return lines
+
+
+def test_wsl_runs_through_powershell_with_its_options_as_bare_words():
+    line = wsl_script(
+        "C:\\Windows\\System32\\wsl.exe",
+        ["--manage", "podman-machine-default", "--resize", "120GB"],
+    )
+
+    assert line == (
+        "$env:WSL_UTF8 = '1'; & 'C:\\Windows\\System32\\wsl.exe' '--manage' "
+        "'podman-machine-default' '--resize' '120GB'; exit $LASTEXITCODE"
+    )
+
+
 def test_a_halt_shuts_wsl_down_as_the_account(rig):
     machine = Machine()
 
     rig.applier.halt(machine)
 
-    assert len(machine.runs) == 1
-    assert machine.runs[0][0].lower().endswith("\\system32\\wsl.exe")
-    assert machine.runs[0][1:] == ["--shutdown"]
+    assert wsl_lines(machine) == [
+        "$env:WSL_UTF8 = '1'; & 'C:\\Windows\\System32\\wsl.exe' '--shutdown'; "
+        "exit $LASTEXITCODE"
+    ]
 
 
-def test_wsls_own_words_come_back_without_their_nulls(rig):
-    said = "The operation timed out.".encode("utf-16-le").decode("utf-8")
-    machine = Machine(answers=[(1, said)])
+def test_wsls_own_words_come_back_with_a_refusal(rig):
+    machine = Machine(answers=[(1, "The operation timed out.\r\n")])
 
     refused = refusal(lambda: rig.applier.halt(machine))
 
@@ -491,23 +520,34 @@ def test_a_wsl_that_cannot_run_is_machine_set_failed(rig):
     assert refusal(lambda: rig.applier.halt(machine)).code == "machine_set_failed"
 
 
-def test_a_resize_stops_the_machines_system_then_sizes_its_disk(rig):
-    machine = Machine(answers=[(1, "not running"), (0, "")])
+def test_a_resize_shuts_wsl_down_then_sizes_the_machines_disk(rig):
+    machine = Machine()
 
     rig.applier.resize_disk(machine, disk_gib=120)
 
-    assert [run[1:] for run in machine.runs] == [
-        ["--terminate", "podman-machine-default"],
-        ["--manage", "podman-machine-default", "--resize", "120GB"],
+    assert [line.split("; ")[1] for line in wsl_lines(machine)] == [
+        "& 'C:\\Windows\\System32\\wsl.exe' '--shutdown'",
+        "& 'C:\\Windows\\System32\\wsl.exe' '--manage' 'podman-machine-default' "
+        "'--resize' '120GB'",
     ]
+    assert "podman: the disk of lab's machine is 120 GB" in rig.lines
 
 
-def test_a_size_wsl_refuses_is_machine_set_failed(rig):
-    machine = Machine(answers=[(0, ""), (1, "The disk is in use.")])
+@pytest.mark.parametrize(
+    "answers, said",
+    [
+        ([(1, "Access is denied.")], "Access is denied."),
+        ([(0, ""), (1, "The disk is in use.")], "The disk is in use."),
+        ([(0, ""), (5, "")], "wsl --manage exited 5"),
+    ],
+)
+def test_a_size_wsl_refuses_is_machine_set_failed(rig, answers, said):
+    machine = Machine(answers=answers)
 
     refused = refusal(lambda: rig.applier.resize_disk(machine, disk_gib=120))
 
-    assert refused.params == {"detail": "The disk is in use."}
+    assert refused.code == "machine_set_failed"
+    assert refused.params == {"detail": said}
 
 
 # --- the account's .wslconfig ---

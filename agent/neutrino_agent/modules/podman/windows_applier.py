@@ -213,6 +213,24 @@ def vhdx_virtual_size(stream) -> int:
     raise ValueError("the VHDX disk names no virtual size")
 
 
+def wsl_script(wsl: str, arguments: list) -> str:
+    """The PowerShell line that runs ``wsl.exe`` with its options as bare words.
+
+    wsl.exe takes a quoted option for a command to run in Linux, and
+    PowerShell passes a word with no space in it unquoted. ``WSL_UTF8``
+    makes wsl.exe write UTF-8 in place of UTF-16.
+
+    Args:
+        wsl: wsl.exe's path.
+        arguments: Its arguments, none with a space in it.
+
+    Returns:
+        The line, which exits with wsl.exe's exit code.
+    """
+    words = " ".join(installers.powershell_quote(word) for word in [wsl, *arguments])
+    return f"$env:WSL_UTF8 = '1'; & {words}; exit $LASTEXITCODE"
+
+
 def installed_products() -> list:
     """The products Windows Installer lists under the machine's Uninstall key.
 
@@ -569,7 +587,10 @@ class PodmanWindowsApplier(PodmanSystemApplier):
             ) from error
 
     def resize_disk(self, machine, *, disk_gib: int) -> None:
-        """Stop the machine's WSL system and give its disk a new size, as the account.
+        """Stop every WSL system of the account, then give the machine's disk a new size, as the account.
+
+        WSL holds the disk until its virtual machine stops, after an init
+        too, so the resize follows a ``wsl --shutdown``.
 
         Args:
             machine: The machine.
@@ -579,8 +600,7 @@ class PodmanWindowsApplier(PodmanSystemApplier):
             ModuleApplyError: ``machine_set_failed`` when WSL refuses the
                 size; ``credential_invalid`` when Windows refuses the login.
         """
-        with contextlib.suppress(ModuleApplyError):
-            self._wsl_as(machine, ["--terminate", PODMAN_MACHINE_NAME])
+        self._wsl_as(machine, ["--shutdown"])
         self._wsl_as(
             machine, ["--manage", PODMAN_MACHINE_NAME, "--resize", f"{disk_gib}GB"]
         )
@@ -640,7 +660,7 @@ class PodmanWindowsApplier(PodmanSystemApplier):
             os.unlink(self._mark_path)
 
     def _wsl_as(self, machine, arguments: list) -> None:
-        """Run ``wsl.exe`` as the machine's account.
+        """Run ``wsl.exe`` as the machine's account, through PowerShell.
 
         Raises:
             ModuleApplyError: ``machine_set_failed`` with WSL's own words when
@@ -649,7 +669,8 @@ class PodmanWindowsApplier(PodmanSystemApplier):
         """
         try:
             done = machine.run_as_account(
-                [self._wsl, *arguments], timeout_s=PODMAN_WINDOWS_WSL_TIMEOUT_S
+                installers.powershell_command(wsl_script(self._wsl, arguments)),
+                timeout_s=PODMAN_WINDOWS_WSL_TIMEOUT_S,
             )
         except (OSError, subprocess.SubprocessError) as error:
             raise ModuleApplyError(
@@ -657,8 +678,7 @@ class PodmanWindowsApplier(PodmanSystemApplier):
                 {"detail": command_detail(error)[:PODMAN_MACHINE_DETAIL_CHARS]},
             ) from error
         if done.returncode != 0:
-            # wsl.exe writes UTF-16 to a file, read back as UTF-8.
-            said = f"{done.stdout or ''}{done.stderr or ''}".replace("\x00", "").strip()
+            said = f"{done.stdout or ''}{done.stderr or ''}".strip()
             detail = said or f"wsl {arguments[0]} exited {done.returncode}"
             raise ModuleApplyError(
                 "machine_set_failed", {"detail": detail[-PODMAN_MACHINE_DETAIL_CHARS:]}
