@@ -5,7 +5,8 @@ catalog: one JSON per module saying, per platform, how it is obtained or
 detected. Every manifest names its ``installer`` tier and its ``source``;
 one that does not is refused at load, so a wrong file fails the suite
 instead of shipping. Comment keys are stripped the same way the rest of
-``config/`` is.
+``config/`` is. A platform branch may name its own identity in place of
+the manifest's, and :func:`branch_identity` is the one place it resolves.
 
 **They come back in the order both surfaces draw them**: the tiers in the
 order a person trusts them — what the agent's own package carries, what the
@@ -19,8 +20,10 @@ import json
 import re
 
 from neutrino_hub.modules.devices.constants import (
+    AGENT_MODULE_BRANCH_INSTALLERS,
     AGENT_MODULE_COMPONENT_FIELDS,
     AGENT_MODULE_DOWNLOAD_FIELDS,
+    AGENT_MODULE_IDENTITY_FIELDS,
     AGENT_MODULE_INSTALLER_AGENT,
     AGENT_MODULE_INSTALLER_BUILTIN,
     AGENT_MODULE_INSTALLER_TIERS,
@@ -66,6 +69,30 @@ def load_module_manifests() -> dict:
         loaded.append((name, manifest))
     loaded.sort(key=_display_order)
     return dict(loaded)
+
+
+def branch_identity(manifest: dict, entry: "dict | None") -> dict:
+    """The identity one platform branch resolves to.
+
+    A field the branch names takes the place of the manifest's for that
+    platform alone; a field it does not name is the manifest's.
+
+    Args:
+        manifest: The module's manifest.
+        entry: Its branch for one platform; None where the manifest offers
+            the platform nothing, which resolves to the manifest's own.
+
+    Returns:
+        Each of :data:`AGENT_MODULE_IDENTITY_FIELDS` as a string, empty
+        where neither names it.
+    """
+    branch = entry if isinstance(entry, dict) else {}
+    return {
+        field: str(
+            (branch[field] if field in branch else manifest.get(field, "")) or ""
+        )
+        for field in AGENT_MODULE_IDENTITY_FIELDS
+    }
 
 
 def load_tool_manifests() -> dict:
@@ -141,7 +168,9 @@ def _check_branches(file_name: str, manifest: dict) -> None:
     whose ``installer`` is ``builtin`` names software the system carries,
     which the agent's runner checks for itself: it names nothing to
     download or install and needs neither ``verify`` nor ``uninstall``. A
-    module of the ``agent`` tier names no platform at all.
+    branch whose ``installer`` is ``hub`` is fetched by the hub's cache
+    like a hub-tier module's. A branch may name its own identity fields,
+    each a string. A module of the ``agent`` tier names no platform at all.
 
     Args:
         file_name: The manifest's file, for the message.
@@ -150,11 +179,12 @@ def _check_branches(file_name: str, manifest: dict) -> None:
     Raises:
         ValueError: Naming the branch and what it lacks, a
             ``min_version`` that is not a dotted number, an ``installer``
-            other than ``builtin``, a builtin branch naming something
-            to download or install, an agent-tier module naming a
-            platform, or a ``components`` list beside a ``url``, with a
-            component lacking one of its fields, or with two components
-            sharing a name or a directory.
+            other than ``builtin`` or ``hub``, an identity field that is
+            not a string or is empty, a builtin branch naming something to download or
+            install, an agent-tier module naming a platform, or a
+            ``components`` list beside a ``url``, with a component lacking
+            one of its fields, or with two components sharing a name or a
+            directory.
     """
     platforms = manifest.get("platforms", {})
     if not isinstance(platforms, dict):
@@ -177,12 +207,24 @@ def _check_branches(file_name: str, manifest: dict) -> None:
                 f"manifest {file_name}: platform {key} min_version must be a "
                 f"dotted number, not {floor!r}"
             )
-        if "installer" in entry:
-            if entry["installer"] != AGENT_MODULE_INSTALLER_BUILTIN:
-                raise ValueError(
-                    f"manifest {file_name}: platform {key} installer must be "
-                    f"{AGENT_MODULE_INSTALLER_BUILTIN!r}, not {entry['installer']!r}"
-                )
+        installer = entry.get("installer")
+        if installer is not None and installer not in AGENT_MODULE_BRANCH_INSTALLERS:
+            raise ValueError(
+                f"manifest {file_name}: platform {key} installer must be one of "
+                f"{', '.join(AGENT_MODULE_BRANCH_INSTALLERS)}, "
+                f"not {installer!r}"
+            )
+        unshaped = [
+            field
+            for field in AGENT_MODULE_IDENTITY_FIELDS
+            if field in entry and not (isinstance(entry[field], str) and entry[field])
+        ]
+        if unshaped:
+            raise ValueError(
+                f"manifest {file_name}: platform {key} must name "
+                f"{', '.join(unshaped)} as a string that is not empty"
+            )
+        if installer == AGENT_MODULE_INSTALLER_BUILTIN:
             named = [field for field in AGENT_MODULE_DOWNLOAD_FIELDS if field in entry]
             if named:
                 raise ValueError(

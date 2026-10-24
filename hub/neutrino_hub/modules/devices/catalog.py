@@ -20,6 +20,7 @@ from neutrino_hub.modules.devices.constants import (
     AGENT_MODULE_COMPONENT_RECIPE_FIELDS,
 )
 from neutrino_hub.modules.devices.manifests import (
+    branch_identity,
     load_module_manifests,
     manifests_stamp,
 )
@@ -38,7 +39,9 @@ def resolve_module(manifest: dict, platform: dict) -> dict:
         The module's title, kind and installer tier, plus the entry, verify
         command and package name for this platform, and the license and
         exact-tag source pointer the surfaces render beside the row, and the
-        source the row is attributed to. An entry that lists ``components``
+        source the row is attributed to; the kind, the tier, the version,
+        the license, the source pointer and the source are the branch's
+        identity (:func:`branch_identity`). An entry that lists ``components``
         adds them as the recipe carries them, each with its name, package
         kind, directory and digest.
         ``entry`` is None where the manifest offers this platform nothing,
@@ -47,15 +50,16 @@ def resolve_module(manifest: dict, platform: dict) -> dict:
     """
     platform_key, entry = resolve_platform_entry(manifest, platform)
     resolved = entry if entry is not None else {}
+    identity = branch_identity(manifest, entry)
     module = {
         "title": manifest.get("title", manifest.get("name", "")),
         "description": manifest.get("description", ""),
-        "kind": manifest.get("kind", ""),
-        "installer": str(manifest.get("installer", "")),
-        "source": str(manifest.get("source", "") or ""),
-        "version": str(manifest.get("version", "") or ""),
-        "license": str(manifest.get("license", "") or ""),
-        "corresponding_source": str(manifest.get("corresponding_source", "") or ""),
+        "kind": identity["kind"],
+        "installer": identity["installer"],
+        "source": identity["source"],
+        "version": identity["version"],
+        "license": identity["license"],
+        "corresponding_source": identity["corresponding_source"],
         "platform_key": platform_key,
         "entry": entry,
         "verify": str(resolved.get("verify", "") or ""),

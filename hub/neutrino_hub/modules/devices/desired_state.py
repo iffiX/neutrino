@@ -58,6 +58,7 @@ from neutrino_hub.modules.devices.manifests import (
     load_tool_manifests,
 )
 from neutrino_hub.modules.devices.constants import (
+    AGENT_MODULE_IDENTITY_FIELDS,
     DEVICE_AI_SWITCHER_NAME,
     DEVICE_AGENT_MODULES,
     DEVICE_AI_TOOLS_NAME,
@@ -927,17 +928,16 @@ def _recipes(resolved: dict) -> dict:
     Returns:
         ``{"install", "uninstall"}``, the branch's own blocks, the
         components of an entry that lists them reduced to their name,
-        package kind, directory and digest; both empty where the manifest
-        offers the platform nothing.
+        package kind, directory and digest; the install's ``kind`` is the
+        branch's resolved one, and no other identity field the branch
+        names is in either; both empty where the manifest offers the
+        platform nothing.
     """
     entry = resolved.get("entry")
     if not isinstance(entry, dict):
         return {"install": {}, "uninstall": {}}
-    install = {
-        name: value
-        for name, value in entry.items()
-        if name not in ("uninstall", "components")
-    }
+    left_out = ("uninstall", "components") + AGENT_MODULE_IDENTITY_FIELDS
+    install = {name: value for name, value in entry.items() if name not in left_out}
     install["kind"] = str(resolved.get("kind", "") or "")
     if "components" in resolved:
         install["components"] = [

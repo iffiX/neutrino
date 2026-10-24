@@ -55,6 +55,23 @@ AGENT_MODULE_RELEASE_PLACEHOLDER = "{release}"
 # itself carries, such as Windows' and macOS's own SMB servers: nothing is
 # downloaded or installed, and the agent's runner checks for it itself.
 AGENT_MODULE_INSTALLER_BUILTIN = "builtin"
+AGENT_MODULE_INSTALLER_HUB = "hub"
+# The installers a platform branch may name in place of the manifest's.
+AGENT_MODULE_BRANCH_INSTALLERS = (
+    AGENT_MODULE_INSTALLER_BUILTIN,
+    AGENT_MODULE_INSTALLER_HUB,
+)
+# The identity fields a platform branch may name in place of the
+# manifest's, for that platform alone; a recipe carries the resolved kind
+# and none of the others.
+AGENT_MODULE_IDENTITY_FIELDS = (
+    "kind",
+    "installer",
+    "version",
+    "source",
+    "license",
+    "corresponding_source",
+)
 # The branch fields that say the module's installer fetches or installs
 # something, none of which a builtin branch may name.
 AGENT_MODULE_DOWNLOAD_FIELDS = (

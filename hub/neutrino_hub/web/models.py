@@ -2060,11 +2060,13 @@ class DeviceModuleView(BaseModel):
     name: str
     title: str
     description: str = ""
-    # The manifest kind; the SSH server's uninstall confirmation keys on it.
+    # The kind of the branch for the device's platform; the SSH server's
+    # uninstall confirmation keys on it.
     kind: str = ""
-    # Who installs it: agent (the agent's own package carries it, so the row
-    # offers none of the four presses), platform (the OS carries it) or hub
-    # (the module's installer fetches it).
+    # Who installs it on the device's platform: agent (the agent's own
+    # package carries it, so the row offers none of the four presses),
+    # platform (the OS's package manager carries it), hub (the module's
+    # installer fetches it) or builtin (the system itself carries it).
     installer: str = ""
     is_supported: bool = True
     # The platform carries this natively: worded built in, no button.

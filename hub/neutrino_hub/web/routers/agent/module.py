@@ -52,7 +52,10 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_MODULE_REPORT_WAIT_S,
     DEVICE_MODULE_VALIDATE_TIMEOUT_S,
 )
-from neutrino_hub.modules.devices.manifests import load_module_manifests
+from neutrino_hub.modules.devices.manifests import (
+    branch_identity,
+    load_module_manifests,
+)
 from neutrino_hub.modules.devices.registry import DeviceRegistry, ManagedDevice
 from neutrino_hub.modules.devices.retry_marks import DeviceRetryMarks
 from neutrino_hub.modules.services.constants import SERVICES_PUBLISHED_MODULES
@@ -153,8 +156,9 @@ def list_modules(
 
     Returns:
         The modules, unsupported ones included so the panel can say why,
-        each with what the hub asks of it and the task carrying its
-        install or uninstall lines, when one has run.
+        each with the identity of its branch for the device's platform,
+        what the hub asks of it and the task carrying its install or
+        uninstall lines, when one has run.
 
     Raises:
         HTTPException: 404 ``device_unknown`` when no device has the id.
@@ -166,22 +170,23 @@ def list_modules(
     modules = []
     for name, manifest in load_module_manifests().items():
         _, entry = resolve_platform_entry(manifest, platform)
-        is_carried = manifest.get("installer") == AGENT_MODULE_INSTALLER_AGENT
+        identity = branch_identity(manifest, entry)
+        is_carried = identity["installer"] == AGENT_MODULE_INSTALLER_AGENT
         modules.append(
             DeviceModuleView(
                 name=name,
                 title=manifest.get("title", name),
                 description=manifest.get("description", ""),
-                kind=manifest.get("kind", ""),
-                installer=manifest.get("installer", ""),
+                kind=identity["kind"],
+                installer=identity["installer"],
                 # With no platform reported yet, nothing is ruled out: the
                 # agent will say what it cannot do once it beats.
                 is_supported=(entry is not None if keys and not is_carried else True),
                 is_native=(entry == {} or is_carried),
                 is_data_kept=_is_data_kept(entry),
-                source=manifest.get("source", ""),
-                license=manifest.get("license", ""),
-                corresponding_source=manifest.get("corresponding_source", ""),
+                source=identity["source"],
+                license=identity["license"],
+                corresponding_source=identity["corresponding_source"],
                 want=(
                     runtime.desired_states.agent_module_want(key, name)
                     if is_carried

@@ -18,7 +18,10 @@ from neutrino_hub.modules.devices.agent_module_cache import (
     resolve_platform_entry,
 )
 from neutrino_hub.modules.devices.catalog import resolve_module
-from neutrino_hub.modules.devices.manifests import load_module_manifests
+from neutrino_hub.modules.devices.manifests import (
+    branch_identity,
+    load_module_manifests,
+)
 
 GITEA_VERSION = "1.27.3"
 # The checksums dl.gitea.com publishes beside each release binary, in its
@@ -354,16 +357,26 @@ def test_the_resolved_module_carries_the_installer_tier():
     assert resolved["installer"] == "hub"
 
 
-def test_every_hub_tier_module_names_its_license_and_source():
-    """A hub-tier module's installer fetches its bytes from a public release,
-    and its manifest names their license and where their source is."""
+def test_every_hub_tier_branch_resolves_its_version_license_and_source():
+    """A branch the hub's cache fetches for takes its bytes from a public
+    release, and resolves their version, their license and where their
+    source is, its own or the manifest's; a branch of any other tier
+    resolves none of the three."""
     for name, manifest in load_module_manifests().items():
-        if manifest["installer"] != "hub":
-            assert "license" not in manifest, name
-            assert "corresponding_source" not in manifest, name
-            continue
-        assert manifest["license"], name
-        assert manifest["corresponding_source"].startswith("https://github.com/"), name
+        branches = manifest.get("platforms") or {"": None}
+        for key, entry in branches.items():
+            identity = branch_identity(manifest, entry)
+            if identity["installer"] != "hub":
+                assert identity["version"] == "", (name, key)
+                assert identity["license"] == "", (name, key)
+                assert identity["corresponding_source"] == "", (name, key)
+                continue
+            assert identity["version"], (name, key)
+            assert identity["license"], (name, key)
+            assert identity["corresponding_source"].startswith("https://github.com/"), (
+                name,
+                key,
+            )
 
 
 def test_the_loader_refuses_a_manifest_that_names_no_source(tmp_path, monkeypatch):
@@ -476,6 +489,8 @@ def test_a_builtin_branch_needs_no_verify_and_no_uninstall(tmp_path, monkeypatch
         {"installer": "builtin", "url": "https://vendor.example/s.msi"},
         {"installer": "builtin", "packages": ["samba"]},
         {"installer": "vendor", "verify": "where s"},
+        {"installer": "platform", "verify": "where s"},
+        {"installer": "agent", "verify": "where s"},
     ],
 )
 def test_the_loader_refuses_a_branch_installer_that_is_not_a_bare_builtin(
@@ -497,6 +512,130 @@ def test_the_loader_refuses_a_branch_installer_that_is_not_a_bare_builtin(
         load_module_manifests()
 
     assert "installer" in str(refusal.value) or "builtin" in str(refusal.value)
+
+
+# --- a branch may name its own identity in place of the manifest's ---
+
+HUB_BRANCH = {
+    "kind": "machine",
+    "installer": "hub",
+    "source": "vendor/sample",
+    "version": "2.0",
+    "license": "Apache-2.0",
+    "corresponding_source": "https://github.com/vendor/sample/tree/v2.0",
+    "components": [
+        {
+            "name": "installer",
+            "url": "https://vendor.example/sample.msi",
+            "sha256": "c" * 64,
+            "package_kind": "msi",
+            "directory": "installer",
+        }
+    ],
+    "verify": "sample --version",
+    "uninstall": {"packages": [], "post_uninstall": [], "is_data_kept": True},
+}
+PLATFORM_MANIFEST = {
+    "name": "sample",
+    "kind": "system_package",
+    "installer": "platform",
+    "source": "system",
+    "platforms": {
+        "linux-debian": {
+            "packages": ["sample"],
+            "verify": "sample --version",
+            "uninstall": {
+                "packages": ["sample"],
+                "post_uninstall": [],
+                "is_data_kept": True,
+            },
+        },
+        "windows-amd64": HUB_BRANCH,
+    },
+}
+
+
+def test_the_loader_accepts_a_hub_branch_with_its_own_identity(tmp_path, monkeypatch):
+    monkeypatch.setattr(manifests_module, "MANIFESTS_DIR", tmp_path)
+    write_manifest(tmp_path, "sample", PLATFORM_MANIFEST)
+
+    manifest = load_module_manifests()["sample"]
+
+    assert manifest["installer"] == "platform"
+    assert manifest["platforms"]["windows-amd64"]["installer"] == "hub"
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["kind", "installer", "version", "source", "license", "corresponding_source"],
+)
+@pytest.mark.parametrize("value", ["", 2, None, ["hub"]])
+def test_the_loader_refuses_a_branch_identity_field_that_is_not_text(
+    field, value, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(manifests_module, "MANIFESTS_DIR", tmp_path)
+    branch = {**HUB_BRANCH, field: value}
+    write_manifest(
+        tmp_path,
+        "sample",
+        {**PLATFORM_MANIFEST, "platforms": {"windows-amd64": branch}},
+    )
+
+    with pytest.raises(ValueError, match=f"windows-amd64 .*{field}"):
+        load_module_manifests()
+
+
+def test_a_branch_identity_takes_the_place_of_the_manifests_field_by_field():
+    windows = branch_identity(PLATFORM_MANIFEST, HUB_BRANCH)
+    linux = branch_identity(
+        PLATFORM_MANIFEST, PLATFORM_MANIFEST["platforms"]["linux-debian"]
+    )
+    partial = branch_identity(
+        {**PLATFORM_MANIFEST, "version": "1.0"}, {"installer": "builtin"}
+    )
+
+    assert windows == {
+        "kind": "machine",
+        "installer": "hub",
+        "version": "2.0",
+        "source": "vendor/sample",
+        "license": "Apache-2.0",
+        "corresponding_source": "https://github.com/vendor/sample/tree/v2.0",
+    }
+    assert linux == {
+        "kind": "system_package",
+        "installer": "platform",
+        "version": "",
+        "source": "system",
+        "license": "",
+        "corresponding_source": "",
+    }
+    assert branch_identity(PLATFORM_MANIFEST, None) == linux
+    assert (partial["installer"], partial["version"], partial["kind"]) == (
+        "builtin",
+        "1.0",
+        "system_package",
+    )
+
+
+def test_the_resolved_module_carries_the_branchs_identity():
+    windows = {"os": "windows", "family": "", "arch": "amd64", "version": "26100"}
+
+    on_windows = resolve_module(PLATFORM_MANIFEST, windows)
+    on_linux = resolve_module(PLATFORM_MANIFEST, DEBIAN)
+
+    assert (on_windows["kind"], on_windows["installer"], on_windows["version"]) == (
+        "machine",
+        "hub",
+        "2.0",
+    )
+    assert on_windows["license"] == "Apache-2.0"
+    assert on_windows["source"] == "vendor/sample"
+    assert (on_linux["kind"], on_linux["installer"], on_linux["license"]) == (
+        "system_package",
+        "platform",
+        "",
+    )
 
 
 NODE_VERSION = "22.23.3"

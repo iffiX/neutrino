@@ -127,6 +127,80 @@ def test_a_module_listing_components_hands_the_catalog_their_recipe_form(box):
     ]
 
 
+def test_each_platform_gets_the_identity_its_branch_resolves_to(box):
+    """A branch naming its own identity gives the catalog's row its kind, tier,
+    version, license and source on that platform alone; another platform's
+    row keeps the manifest's."""
+    manifests, published = box
+    (manifests / "engine.json").write_text(
+        json.dumps(
+            {
+                "name": "engine",
+                "title": "Engine",
+                "kind": "system_package",
+                "installer": "platform",
+                "source": "system",
+                "platforms": {
+                    "linux-debian": {
+                        "packages": ["engine"],
+                        "verify": "engine --version",
+                        "uninstall": {
+                            "packages": ["engine"],
+                            "post_uninstall": [],
+                            "is_data_kept": True,
+                        },
+                    },
+                    "windows-amd64": {
+                        "kind": "engine_machine",
+                        "installer": "hub",
+                        "source": "vendor/engine",
+                        "version": "6.1.4",
+                        "license": "Apache-2.0",
+                        "corresponding_source": "https://github.com/vendor/engine",
+                        "url": "https://vendor.example/engine.msi",
+                        "sha256": "c" * 64,
+                        "package_kind": "msi",
+                        "verify": "engine --version",
+                        "uninstall": {
+                            "packages": [],
+                            "post_uninstall": [],
+                            "is_data_kept": True,
+                        },
+                    },
+                },
+            }
+        )
+    )
+    cache = DeviceCatalogCache(services=published)
+    scope = link_scope("192.168.100.7")
+    fields = ("kind", "installer", "source", "version", "license")
+
+    linux, _ = cache.catalog(
+        scope=scope, platform={"os": "linux", "family": "debian", "arch": "amd64"}
+    )
+    windows, _ = cache.catalog(
+        scope=scope, platform={"os": "windows", "family": "", "arch": "amd64"}
+    )
+
+    assert tuple(linux["modules"]["engine"][field] for field in fields) == (
+        "system_package",
+        "platform",
+        "system",
+        "",
+        "",
+    )
+    assert tuple(windows["modules"]["engine"][field] for field in fields) == (
+        "engine_machine",
+        "hub",
+        "vendor/engine",
+        "6.1.4",
+        "Apache-2.0",
+    )
+    assert windows["modules"]["engine"]["corresponding_source"] == (
+        "https://github.com/vendor/engine"
+    )
+
+
 def test_two_hosts_get_two_catalogs_with_two_hashes(box):
     _, published = box
     published.entries_list = [port_entry()]
