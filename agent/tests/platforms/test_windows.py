@@ -5,12 +5,14 @@ shell32 are fakes that fill the structures they are handed, the PowerShell
 host is a recording one, ``sc`` and icacls are faked at ``subprocess.run``
 or as the injected runner, the iphlpapi and netapi32 reads are replaced at
 their seam, and the registry is a fake ``winreg``. What is pinned is what
-each source is turned into and every request the host is sent.
+each source is turned into, every request the host is sent, and the
+one-shot tasks of one account taking turns.
 """
 
 import contextlib
 import ctypes
 import subprocess
+import threading
 
 import pytest
 
@@ -1428,3 +1430,81 @@ def test_the_one_shot_task_sets_the_variables_it_is_given_first(monkeypatch, tmp
     lines = task.seen["script"].split("\r\n")
     assert lines[2] == 'set "CC_SWITCH_CONFIG_DIR=C:\\Users\\ann\\x%%y"'
     assert lines[3].startswith('"cc.exe"')
+
+
+class HeldTask(OneShotTask):
+    """The one-shot task, each run held until the test lets them end, with
+    the most runs seen at once counted."""
+
+    def __init__(self):
+        super().__init__(exit_text="0", output="")
+        self.started = threading.Semaphore(0)
+        self.release = threading.Event()
+        self._count_lock = threading.Lock()
+        self.running = 0
+        self.most = 0
+
+    def run(self, args):
+        with self._count_lock:
+            self.running += 1
+            self.most = max(self.most, self.running)
+        self.started.release()
+        self.release.wait(5)
+        try:
+            return super().run(args)
+        finally:
+            with self._count_lock:
+                self.running -= 1
+
+
+def run_in_thread(platform, account: str) -> threading.Thread:
+    thread = threading.Thread(
+        target=platform.run_as_account,
+        args=(account, ["cc.exe"]),
+        kwargs={"password": "pw"},  # scan: allow
+        daemon=True,
+    )
+    thread.start()
+    return thread
+
+
+def test_two_runs_for_one_account_take_turns_whatever_its_names_case(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setenv("ProgramData", f"{tmp_path}/")
+    task = HeldTask()
+    platform = run_as_platform(task)
+
+    first = run_in_thread(platform, "ann")
+    assert task.started.acquire(timeout=5)
+    second = run_in_thread(platform, "Ann")
+
+    assert task.started.acquire(timeout=0.3) is False
+    assert task.host.ops() == ["task_run_once"]
+    task.release.set()
+    first.join(5)
+    second.join(5)
+    assert task.most == 1
+    assert task.host.ops() == [
+        "task_run_once",
+        "task_remove",
+        "task_run_once",
+        "task_remove",
+    ]
+
+
+def test_runs_for_two_accounts_do_not_wait_on_each_other(monkeypatch, tmp_path):
+    monkeypatch.setenv("ProgramData", f"{tmp_path}/")
+    task = HeldTask()
+    platform = run_as_platform(task)
+
+    first = run_in_thread(platform, "ann")
+    second = run_in_thread(platform, "bob")
+
+    assert task.started.acquire(timeout=5)
+    assert task.started.acquire(timeout=5)
+    assert task.most == 2
+    task.release.set()
+    first.join(5)
+    second.join(5)
+    assert task.host.ops().count("task_remove") == 2

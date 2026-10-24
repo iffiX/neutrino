@@ -21,6 +21,7 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 import time
 
 from neutrino_agent.constants import (
@@ -356,6 +357,11 @@ class WindowsPlatform(AgentPlatform):
         self._seat = seat if seat is not None else WindowsSeat()
         self._run = run if run is not None else run_command
         self._sleep = sleep
+        # One lock per account, by its lower-case name, around a one-shot
+        # task's whole cycle: the account's runs share the task's name and
+        # its directory.
+        self._run_as_locks: dict = {}
+        self._run_as_locks_guard = threading.Lock()
         self.powershell_host = powershell if powershell is not None else agent_host()
         self.process_table = (
             processes
@@ -448,7 +454,10 @@ class WindowsPlatform(AgentPlatform):
         The task runs with a limited token in the account's profile; its
         script, its standard input, its output and its exit code are files
         in a directory only the account, SYSTEM and the administrators
-        reach, all removed with the task once the exit code is read.
+        reach, all removed with the task once the exit code is read. Two
+        runs for one account take turns, the second waiting until the
+        first's task and files are removed; runs for two accounts do not
+        wait on each other.
 
         Args:
             account: The account.
@@ -469,52 +478,55 @@ class WindowsPlatform(AgentPlatform):
             OSError: When the files cannot be written, or the host cannot
                 register or start the task.
         """
-        directory = ntpath.join(self.agent_var_dir(), AGENT_RUN_AS_DIR_NAME, account)
-        paths = {
-            name: ntpath.join(directory, f"command.{name}")
-            for name in ("cmd", "input", "output", "done")
-        }
-        os.makedirs(directory, exist_ok=True)
-        grant_account_alone(self._run, directory, account, "M", is_tree=True)
-        for name in ("output", "done"):
-            remove_path(paths[name])
-        task = AGENT_RUN_AS_TASK_PREFIX + account
-        try:
-            write_text(
-                paths["cmd"],
-                run_as_script(
-                    argv,
-                    input_path=paths["input"],
-                    output_path=paths["output"],
-                    done_path=paths["done"],
-                    environment=environment,
-                ),
+        with self._run_as_lock(account):
+            directory = ntpath.join(
+                self.agent_var_dir(), AGENT_RUN_AS_DIR_NAME, account
             )
-            write_text(paths["input"], stdin)
-            self.powershell_host.call(
-                "task_run_once",
-                {
-                    "task": task,
-                    "program": ACCOUNT_SERVICE_WINDOWS_SHELL,
-                    "arguments": f'/d /c "{paths["cmd"]}"',
-                    "account": account,
-                    "password": password,
-                    "timeout_s": int(timeout_s),
-                },
-            )
-            deadline = time.monotonic() + timeout_s
-            while not os.path.exists(paths["done"]) and time.monotonic() < deadline:
-                self._sleep(AGENT_RUN_AS_POLL_S)
-            code = _exit_code_in(paths["done"])
-            output = _file_text(paths["output"])
-        finally:
+            paths = {
+                name: ntpath.join(directory, f"command.{name}")
+                for name in ("cmd", "input", "output", "done")
+            }
+            os.makedirs(directory, exist_ok=True)
+            grant_account_alone(self._run, directory, account, "M", is_tree=True)
+            for name in ("output", "done"):
+                remove_path(paths[name])
+            task = AGENT_RUN_AS_TASK_PREFIX + account
             try:
-                self.powershell_host.call("task_remove", {"task": task})
-            except (OSError, ModuleApplyError):
-                pass
-            for path in paths.values():
-                remove_path(path)
-        return subprocess.CompletedProcess(list(argv), code, output, "")
+                write_text(
+                    paths["cmd"],
+                    run_as_script(
+                        argv,
+                        input_path=paths["input"],
+                        output_path=paths["output"],
+                        done_path=paths["done"],
+                        environment=environment,
+                    ),
+                )
+                write_text(paths["input"], stdin)
+                self.powershell_host.call(
+                    "task_run_once",
+                    {
+                        "task": task,
+                        "program": ACCOUNT_SERVICE_WINDOWS_SHELL,
+                        "arguments": f'/d /c "{paths["cmd"]}"',
+                        "account": account,
+                        "password": password,
+                        "timeout_s": int(timeout_s),
+                    },
+                )
+                deadline = time.monotonic() + timeout_s
+                while not os.path.exists(paths["done"]) and time.monotonic() < deadline:
+                    self._sleep(AGENT_RUN_AS_POLL_S)
+                code = _exit_code_in(paths["done"])
+                output = _file_text(paths["output"])
+            finally:
+                try:
+                    self.powershell_host.call("task_remove", {"task": task})
+                except (OSError, ModuleApplyError):
+                    pass
+                for path in paths.values():
+                    remove_path(path)
+            return subprocess.CompletedProcess(list(argv), code, output, "")
 
     def run_as_account_answering(
         self,
@@ -832,6 +844,11 @@ class WindowsPlatform(AgentPlatform):
             in f"{table.command_line(entry.pid)}|{table.image_path(entry.pid)}".lower()
         ]
         table.end(process_tree(entries, roots))
+
+    def _run_as_lock(self, account: str) -> "threading.Lock":
+        """The lock one account's one-shot task runs under, the same for any case."""
+        with self._run_as_locks_guard:
+            return self._run_as_locks.setdefault(account.lower(), threading.Lock())
 
 
 class WindowsHostMetricsReader:
