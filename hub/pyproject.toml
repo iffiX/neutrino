@@ -27,6 +27,7 @@ dependencies = [
 dev = [
     "black>=24.10",
     "pytest>=8.3",
+    "pytest-cov>=7.1",
     "httpx>=0.27",
     # A second opinion for scripts/scan_secrets: it knows many vendor key  # scan: allow
     # formats that this repo's own rules do not. gitleaks is used the same way

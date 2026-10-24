@@ -58,6 +58,8 @@ venv/
 *.egg-info/
 .pytest_cache/
 .mypy_cache/
+.coverage
+coverage.xml
 
 # --- Frontend ---
 hub/build/

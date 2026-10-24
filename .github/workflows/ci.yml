@@ -10,6 +10,10 @@ jobs:
   python:
     name: black, secret scan, tests
     runs-on: ubuntu-24.04
+    # The Codecov uploads sign in with the job's OIDC token.
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v7
 
@@ -35,15 +39,38 @@ jobs:
       - run: nhub scan-secrets
 
       # The panel is not built here: app.py mounts it only when it exists.
-      - run: pytest -q
+      - run: pytest -q --cov=neutrino_hub --cov-report=xml
         working-directory: hub
 
-      - run: pytest -q
+      - run: pytest -q --cov=neutrino_agent --cov-report=xml
         working-directory: agent
+
+      # coverage.xml names each file from its package root, and the three
+      # packages share names such as cli/entry.py, so each upload matches its
+      # paths against its own package's files alone.
+      - uses: codecov/codecov-action@v7.1.1
+        with:
+          files: hub/coverage.xml
+          flags: hub
+          network_filter: hub/neutrino_hub/
+          disable_search: true
+          use_oidc: true
+
+      - uses: codecov/codecov-action@v7.1.1
+        with:
+          files: agent/coverage.xml
+          flags: agent
+          network_filter: agent/neutrino_agent/
+          disable_search: true
+          use_oidc: true
 
   client:
     name: client tests
     runs-on: ubuntu-24.04
+    # The Codecov upload signs in with the job's OIDC token.
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v7
 
@@ -52,10 +79,18 @@ jobs:
         with:
           python-version: "3.13"
 
-      - run: pip install -e client/desktop pytest
+      - run: pip install -e client/desktop pytest pytest-cov
 
-      - run: pytest -q
+      - run: pytest -q --cov=neutrino_client --cov-report=xml
         working-directory: client/desktop
+
+      - uses: codecov/codecov-action@v7.1.1
+        with:
+          files: client/desktop/coverage.xml
+          flags: client
+          network_filter: client/desktop/neutrino_client/
+          disable_search: true
+          use_oidc: true
 
   android:
     name: android tests, lint and ktlint
