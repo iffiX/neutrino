@@ -82,7 +82,7 @@ class HubConnectionsTest {
     }
 
     @Test
-    fun joiningAgainDropsTheOldBinding() = runTest {
+    fun joiningAgainDropsTheOldBindingAndTellsTheHubNothing() = runTest {
         val welcoming = FakeHubTransport { FakeHubTransport.welcoming }
         welcoming.answers["https://192.168.100.1:8443" to "/api/channel/join"] =
             ChannelResult.Ok(JsonObject(mapOf("id" to JsonPrimitive("b1"), "token" to JsonPrimitive("t9"))))
@@ -96,6 +96,74 @@ class HubConnectionsTest {
         assertEquals(listOf(pending.id), store.bindings.value.map { it.id })
         assertEquals("b1", store.get(pending.id)?.boundId)
         assertEquals(listOf("b1"), left)
+        assertEquals(emptyList<Any>(), welcoming.posts.filter { it.second == "/api/channel/leave" })
+    }
+
+    private val oldUrl = "https://10.0.0.9:8443"
+
+    private fun TestScope.rejoining(
+        oldEvents: List<ChannelSocketEvent>,
+        leaveAnswer: ChannelResult<JsonObject>,
+    ): Triple<HubConnections, BindingStore, FakeHubTransport> {
+        val hub = FakeHubTransport { url -> if (url == oldUrl) oldEvents else FakeHubTransport.welcoming }
+        hub.answers[joinAt] =
+            ChannelResult.Ok(JsonObject(mapOf("id" to JsonPrimitive("c9"), "token" to JsonPrimitive("t9"))))
+        hub.answers[oldUrl to "/api/channel/leave"] = leaveAnswer
+        val store = BindingStore(folder.root.resolve("b.sealed"), FakeSecretSealer())
+        store.put(Samples.binding.copy(hubId = "hub-1", gatewayUrl = oldUrl, gatewayUrls = listOf(oldUrl)))
+        return Triple(HubConnections(store, hub, Samples.machine, { null }, backgroundScope) { left += it }, store, hub)
+    }
+
+    private val left = mutableListOf<String>()
+
+    private fun FakeHubTransport.leaves() = posts.filter { it.second == "/api/channel/leave" }
+
+    @Test
+    fun aWelcomeOfANewIdEndsTheOldBindingAndTellsTheHub() = runTest {
+        val ok = ChannelResult.Ok(JsonObject(emptyMap()))
+        val (connections, store, hub) = rejoining(FakeHubTransport.welcoming, ok)
+        connections.start()
+        runCurrent()
+        val pending = (connections.join(link) as ChannelResult.Ok).value
+        runCurrent()
+        assertEquals(listOf(pending.id), store.bindings.value.map { it.id })
+        assertEquals("c9" to "hub-1", store.get(pending.id)?.let { it.boundId to it.hubId })
+        assertEquals(listOf("b1"), left)
+        val told = hub.leaves().single()
+        assertEquals(oldUrl, told.first)
+        assertEquals(JsonPrimitive("b1"), told.third["id"])
+        assertEquals(listOf(pending.id), connections.views.first().map { it.binding.id })
+    }
+
+    @Test
+    fun aBindingTheHubForgotEndsAtTheWelcomeWhateverTheLeaveAnswers() = runTest {
+        val (connections, store, hub) =
+            rejoining(FakeHubTransport.refusing("binding_unknown"), ChannelResult.refused("binding_unknown"))
+        connections.start()
+        runCurrent()
+        assertEquals(HubWaitReason.UNKNOWN_DEVICE, connections.views.first().single().waitReason)
+        val pending = (connections.join(link) as ChannelResult.Ok).value
+        runCurrent()
+        assertEquals(listOf(pending.id), store.bindings.value.map { it.id })
+        assertEquals(listOf("b1"), left)
+        assertEquals(oldUrl, hub.leaves().single().first)
+        assertEquals(listOf(pending.id), connections.views.first().map { it.binding.id })
+    }
+
+    @Test
+    fun aStartKeepsOneBindingPerHub() = runTest {
+        transport.answers[leaveAt] = ChannelResult.refused("binding_unknown")
+        val store = BindingStore(folder.root.resolve("b.sealed"), sealer)
+        store.put(Samples.binding.copy(hubId = "hub-1"))
+        store.put(Samples.binding.copy(id = "b2", hubId = "hub-2"))
+        store.put(Samples.binding.copy(id = "b3", hubId = "hub-1", token = "t3"))
+        val connections = HubConnections(store, transport, Samples.machine, { null }, backgroundScope) { left += it }
+        connections.start()
+        runCurrent()
+        assertEquals(listOf("b2", "b3"), store.bindings.value.map { it.id })
+        assertEquals(listOf("b1"), left)
+        assertEquals(JsonPrimitive("b1"), transport.leaves().single().third["id"])
+        assertEquals(listOf("b2", "b3"), connections.views.first().map { it.binding.id })
     }
 
     private val leaveAt = "https://192.168.100.1:8443" to "/api/channel/leave"

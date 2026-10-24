@@ -49,6 +49,18 @@ class BindingStoreTest {
     }
 
     @Test
+    fun oneBindingPerHubIdIsKeptTheOneJoinedLast() {
+        val store = store()
+        store.put(Samples.binding.copy(hubId = "hub-1"))
+        store.put(Samples.binding.copy(id = "p1", token = "", ticket = "ticket-1"))
+        store.put(Samples.binding.copy(id = "b2", hubId = "hub-2"))
+        store.put(Samples.binding.copy(id = "b3", hubId = "hub-1"))
+        assertEquals(listOf("b1"), store.dropRepeatedHubs().map { it.id })
+        assertEquals(listOf("p1", "b2", "b3"), store().bindings.value.map { it.id })
+        assertEquals(emptyList<HubBinding>(), store.dropRepeatedHubs())
+    }
+
+    @Test
     fun updateChangesOneAndIgnoresAnUnknownId() {
         val store = store()
         store.put(Samples.binding)

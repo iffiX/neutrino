@@ -47,6 +47,7 @@ class HubConnections(
     private val leaving = MutableStateFlow<Set<String>>(emptySet())
     private val jobErrors = MutableStateFlow<Map<String, ChannelResult.Refused>>(emptyMap())
     private val joining = MutableStateFlow(HubJoin())
+    private val replacing = Any()
 
     /** Every hub's view, in the order joined, each with its binding as the store keeps it now and its leave. */
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -68,8 +69,22 @@ class HubConnections(
     /** The join a person started from the Join page. */
     val join: StateFlow<HubJoin> = joining.asStateFlow()
 
-    /** Run one session per binding, following the store as bindings come and go. */
+    /**
+     * Run one session per binding, following the store as bindings come and go. Of two or more bindings holding
+     * one hub id, the one joined last is kept and each other one ends as at a leave, its hub told.
+     */
     fun start() {
+        val dropped = try {
+            store.dropRepeatedHubs()
+        } catch (error: IOException) {
+            Log.w(CLIENT_LOG_TAG, "could not forget the repeated bindings here", error)
+            emptyList()
+        }
+        for (held in dropped) {
+            Log.i(CLIENT_LOG_TAG, "dropped the binding ${held.id}: a later one holds its hub")
+            onLeaving(held.id)
+            if (!held.isPending) scope.launch { tellLeft(held) }
+        }
         scope.launch { store.bindings.collect { follow(it) } }
     }
 
@@ -221,10 +236,21 @@ class HubConnections(
         Log.i(CLIENT_LOG_TAG, "the hub of ${binding.id} answered the leave: $outcome")
     }
 
-    private fun joined(bindingId: String, hubBindingId: String) {
-        for (stale in store.bindings.value.filter { it.id != bindingId && it.boundId == hubBindingId }) {
-            onLeaving(stale.id)
-            forget(stale.id)
+    private fun joined(bindingId: String, hubBindingId: String) =
+        replace(bindingId, isTold = false) { it.boundId == hubBindingId }
+
+    private fun welcomed(bindingId: String, hubId: String) {
+        if (hubId.isNotEmpty()) replace(bindingId, isTold = true) { it.hubId == hubId }
+    }
+
+    private fun replace(bindingId: String, isTold: Boolean, isSameHub: (HubBinding) -> Boolean) {
+        synchronized(replacing) {
+            if (store.get(bindingId) == null) return
+            for (held in store.bindings.value.filter { it.id != bindingId && isSameHub(it) }) {
+                Log.i(CLIENT_LOG_TAG, "the join replaced the binding ${held.id} held here")
+                onLeaving(held.id)
+                if (forget(held.id) is ChannelResult.Ok && isTold && !held.isPending) scope.launch { tellLeft(held) }
+            }
         }
     }
 
@@ -241,6 +267,7 @@ class HubConnections(
                 machine = machine,
                 resolveHubName = resolveHubName,
                 onJoined = ::joined,
+                onWelcomed = ::welcomed,
                 hasNetwork = hasNetwork,
             ).also { it.start(scope) }
         }

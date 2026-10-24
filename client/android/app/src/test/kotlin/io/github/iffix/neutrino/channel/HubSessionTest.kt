@@ -52,6 +52,7 @@ class HubSessionTest {
         local: List<ChannelLocalNetwork> = emptyList(),
         nanoClock: () -> Long = { 0L },
         hasNetwork: () -> Boolean = { true },
+        onWelcomed: (String, String) -> Unit = { _, _ -> },
     ): Pair<HubSession, BindingStore> {
         val store = BindingStore(folder.root.resolve("b.sealed"), FakeSecretSealer())
         store.put(binding)
@@ -62,6 +63,7 @@ class HubSessionTest {
             Samples.machine,
             { nameAddress },
             { id, hubId -> joined += id to hubId },
+            onWelcomed = onWelcomed,
             clock = { CLOCK_MILLIS },
             localNetworks = { local },
             nanoClock = nanoClock,
@@ -92,6 +94,18 @@ class HubSessionTest {
         assertEquals(HubConnection.CONNECTED, session.view.value.connection)
         assertEquals("Neutrino", store.get("b1")?.hubName)
         assertEquals("neutrino_hub/0.5.0", session.view.value.software)
+    }
+
+    @Test
+    fun aWelcomeNamesItsHubBeforeTheBindingTakesIt() = runTest {
+        val transport = FakeHubTransport { FakeHubTransport.welcoming }
+        val seen = mutableListOf<Triple<String, String, String?>>()
+        lateinit var store: BindingStore
+        val (session, kept) = session(transport) { id, hubId -> seen += Triple(id, hubId, store.get(id)?.hubId) }
+        store = kept
+        served(session)
+        assertEquals(listOf(Triple("b1", "hub-1", "")), seen)
+        assertEquals("hub-1", store.get("b1")?.hubId)
     }
 
     @Test

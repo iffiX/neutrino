@@ -84,6 +84,21 @@ class BindingStore(private val file: File, private val sealer: SecretSealer) {
     }
 
     /**
+     * Keep one binding per hub id, the one joined last.
+     *
+     * @return The bindings dropped, in the order joined; empty when no hub id is held twice, and the file is
+     *   then not written.
+     * @throws IOException When the file cannot be written.
+     */
+    fun dropRepeatedHubs(): List<HubBinding> = synchronized(lock) {
+        val list = held.bindings.withIndex()
+        val last = list.associate { (index, binding) -> binding.hubId to index }
+        val (kept, dropped) = list.partition { it.value.hubId.isEmpty() || last[it.value.hubId] == it.index }
+        if (dropped.isNotEmpty()) write(held.copy(bindings = kept.map { it.value }))
+        dropped.map { it.value }
+    }
+
+    /**
      * One binding.
      *
      * @param id The binding's id.

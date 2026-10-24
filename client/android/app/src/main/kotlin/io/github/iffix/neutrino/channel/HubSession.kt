@@ -91,6 +91,8 @@ import kotlinx.serialization.json.longOrNull
  * @param machine What this phone says about itself.
  * @param resolveHubName The IPv4 address `hub.neutrino.internal` resolves to here, or null.
  * @param onJoined Called with the binding's id and the hub's id for it once its ticket is spent.
+ * @param onWelcomed Called with the binding's id and the hub id after each welcome that opens a channel, before
+ *   the binding takes that id and before the socket's first state is read.
  * @param clock The time in milliseconds, stamped on the view when the open socket closes and for the next round.
  * @param localNetworks The networks this phone holds an address in, read at each comparison of paths.
  * @param nanoClock The time in nanoseconds, by which each socket's opening and each ping's round trip are measured.
@@ -104,6 +106,7 @@ class HubSession(
     private val machine: ClientMachine,
     private val resolveHubName: suspend () -> String?,
     private val onJoined: (String, String) -> Unit = { _, _ -> },
+    private val onWelcomed: (String, String) -> Unit = { _, _ -> },
     private val clock: () -> Long = System::currentTimeMillis,
     private val localNetworks: () -> List<ChannelLocalNetwork> = ChannelPath::deviceNetworks,
     private val nanoClock: () -> Long = SystemClock::elapsedRealtimeNanos,
@@ -551,6 +554,7 @@ class HubSession(
     private suspend fun serve(winner: DialledSocket, welcome: ChannelInbound.Welcome): ChannelResult.Refused? {
         changes.tryReceive()
         if (news.tryReceive().isSuccess) changes.trySend(Unit)
+        onWelcomed(bindingId, welcome.id)
         takeChannel(winner, welcome)
         var failure: ChannelResult.Refused? = null
         coroutineScope {
