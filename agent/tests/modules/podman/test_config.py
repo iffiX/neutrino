@@ -324,4 +324,35 @@ def test_no_containers_and_no_account_pass():
     PodmanConfig.from_dict({"containers": []}).validate(os_name="windows")
 
 
+@pytest.mark.parametrize(
+    "ports, services",
+    [
+        (["5353:53/udp"], []),
+        (["5353:53"], [{"port": 5353, "kind": "port", "protocols": ["tcp", "udp"]}]),
+        (["5353:53"], [{"port": 5353, "kind": "port", "protocols": ["udp"]}]),
+    ],
+)
+def test_windows_refuses_a_port_published_on_udp_and_the_macs_take_it(ports, services):
+    container = {"name": "dns", "image": "img", "ports": ports, "services": services}
+    config = machine_config(containers=[container])
+
+    refusal = refusal_on(config, "windows")
+
+    assert refusal.code == "udp_not_forwarded"
+    assert refusal.params == {"name": "dns", "port": 5353}
+    config.validate(os_name="darwin")
+    config.validate(os_name="linux")
+
+
+def test_windows_takes_a_port_on_tcp_and_a_web_service():
+    container = {
+        "name": "web",
+        "image": "img",
+        "ports": ["18080:80", "8443:443/tcp"],
+        "services": [{"port": 18080, "kind": "web", "scheme": "http"}],
+    }
+
+    machine_config(containers=[container]).validate(os_name="windows")
+
+
 FULL_CONTAINER = {"name": "redis", "image": "docker.io/library/redis:7"}

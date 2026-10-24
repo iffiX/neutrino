@@ -247,7 +247,7 @@ MACHINE_CONTAINERS = [
         "image": "nginx",
         "ports": ["8080:80", "5353:53"],
         "volumes": ["C:\\www:/usr/share/nginx/html:ro", "webdata:/data"],
-        "services": [{"port": 5353, "kind": "port", "protocols": ["tcp", "udp"]}],
+        "services": [{"port": 5353, "kind": "port", "protocols": ["tcp"]}],
     },
     {"name": "batch", "image": "alpine", "command": "sleep 60", "is_autostart": False},
 ]
@@ -272,13 +272,12 @@ def test_a_machine_file_has_the_cgroups_line_and_the_folder_as_wsl_mounts_it():
         "web.container"
     ]
 
-    assert text.splitlines()[6:15] == [
+    assert text.splitlines()[6:14] == [
         "[Container]",
         "ContainerName=web",
         "Image=docker.io/library/nginx",
         "PublishPort=8080:80",
         "PublishPort=5353:53",
-        "PublishPort=5353:53/udp",
         "Volume=/mnt/c/www:/usr/share/nginx/html:ro",
         "Volume=webdata:/data",
         "CgroupsMode=enabled",

@@ -276,7 +276,8 @@ class PodmanConfig:
 
         Linux checks the containers and the mirrors alone. Windows and macOS
         also check each volume's folder against what the machine reaches,
-        and the Run settings against the computer.
+        and the Run settings against the computer; Windows refuses a port
+        published on UDP, which WSL does not forward.
 
         Args:
             os_name: The computer's system.
@@ -319,6 +320,8 @@ class PodmanConfig:
             if "\n" in container.command:
                 raise ModuleApplyError("command_invalid", {"name": name})
             self._validate_services(container)
+            if os_name == "windows":
+                self._validate_windows_ports(container)
         for mirror in self.mirrors:
             if not MIRROR_PATTERN.match(mirror):
                 raise ModuleApplyError("mirror_invalid", {"mirror": mirror})
@@ -385,6 +388,14 @@ class PodmanConfig:
             seen.add(service.port)
             if service.kind == PODMAN_SERVICE_PORT and not service.protocols:
                 raise ModuleApplyError("service_protocol_none", {"port": service.port})
+
+    def _validate_windows_ports(self, container: PodmanContainer) -> None:
+        for mapping in container.publish_ports:
+            if mapping.endswith("/" + PODMAN_PROTOCOL_UDP):
+                raise ModuleApplyError(
+                    "udp_not_forwarded",
+                    {"name": container.name, "port": int(mapping.partition(":")[0])},
+                )
 
     def _validate_volume(self, name: str, volume: str) -> None:
         if "\n" in volume or ":" not in volume:

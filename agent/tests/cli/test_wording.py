@@ -98,6 +98,7 @@ MODULE_CODES = (
     "command_invalid",
     "mirror_invalid",
     "volume_not_shared",
+    "udp_not_forwarded",
     "reboot_required",
     "windows_feature_failed",
     "podman_install_failed",

@@ -153,6 +153,10 @@ CLI_CODE_WORDS = {
         "reach; use a folder on a drive on Windows, or under /Users, /private "
         "or /var/folders on a Mac"
     ),
+    "udp_not_forwarded": (
+        "port {port} on {name} is UDP, and WSL forwards TCP alone; on Windows "
+        "publish it on TCP"
+    ),
     "reboot_required": (
         "restart this computer to finish turning on WSL; the install goes on "
         "after it"
