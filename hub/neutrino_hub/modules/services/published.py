@@ -34,6 +34,9 @@ from neutrino_hub.modules.services.collector import (
 )
 from neutrino_hub.modules.services.config import DeclaredServiceRegistry
 from neutrino_hub.modules.services.constants import (
+    SERVICES_CONTAINER_AUTO,
+    SERVICES_CONTAINER_WEB,
+    SERVICES_HTTP_SCHEMES,
     SERVICES_PORT_PROTOCOLS,
     SERVICES_PROTOCOL_TCP,
     SERVICES_ANSWER_TIMEOUT_S,
@@ -357,13 +360,23 @@ class PublishedServiceCache:
                 ],
             }
         if name == "podman":
+            services = {
+                str(declared.get("name", "")): declared.get("services") or []
+                for declared in self._desired_states.read(key, "podman").get(
+                    "containers"
+                )
+                or []
+                if isinstance(declared, dict)
+            }
             return {
                 "containers": [
                     {
                         "name": str(container.get("name", "")),
                         "image": str(container.get("image", "")),
                         "is_running": bool(container.get("is_running")),
-                        "bindings": container_bindings(container),
+                        "bindings": container_bindings(
+                            container, services.get(str(container["name"]), [])
+                        ),
                     }
                     for container in details.get("containers") or []
                     if isinstance(container, dict) and container.get("name")
@@ -422,22 +435,40 @@ class PublishedServiceCache:
 __all__ = ["PublishedServiceCache"]
 
 
-def container_bindings(container: dict) -> list:
-    """The ports one container publishes, each with its protocol, once each.
+def container_bindings(container: dict, services: list) -> list:
+    """The entries the ports one container publishes give, once each.
+
+    A TCP port is a ``web`` entry when its service is ``web``, or ``auto``
+    with ``http`` or ``https`` detected, and a ``port`` entry otherwise; a
+    UDP port is a ``port`` entry unless its service is ``web``.
 
     Args:
         container: One container of a Podman report's ``details``.
+        services: The container's declared services, ``{port, kind,
+            scheme, protocols}`` each; empty for a container the hub does
+            not declare.
 
     Returns:
-        ``(port, protocol)`` pairs in the report's order: one per item of
-        ``host_bindings``, a missing ``protocol`` read as ``tcp``; every
-        ``host_ports`` number as ``tcp`` when the report has no
-        ``host_bindings`` at all, as an agent before 0.5.0 sends it.
+        ``(port, protocol, scheme)`` triples in the report's order, one per
+        port and protocol of ``host_bindings``, a missing ``protocol`` read
+        as ``tcp``, every ``host_ports`` number as ``tcp`` when the report
+        has no ``host_bindings`` at all, as an agent before 0.5.0 sends it;
+        ``scheme`` is ``http`` or ``https`` for a ``web`` entry and empty
+        for a ``port`` entry.
     """
+    kinds = {}
+    for service in services:
+        if not isinstance(service, dict):
+            continue
+        try:
+            kinds[int(service.get("port") or 0)] = service
+        except (TypeError, ValueError):
+            continue
     bindings = container.get("host_bindings")
     if not isinstance(bindings, list):
         bindings = [{"port": port} for port in container.get("host_ports") or []]
-    pairs = []
+    seen = set()
+    triples = []
     for binding in bindings:
         if not isinstance(binding, dict):
             continue
@@ -448,6 +479,27 @@ def container_bindings(container: dict) -> list:
         protocol = str(binding.get("protocol") or SERVICES_PROTOCOL_TCP)
         if port <= 0 or protocol not in SERVICES_PORT_PROTOCOLS:
             continue
-        if (port, protocol) not in pairs:
-            pairs.append((port, protocol))
-    return pairs
+        if (port, protocol) in seen:
+            continue
+        seen.add((port, protocol))
+        service = kinds.get(port, {})
+        is_web = str(service.get("kind") or "") == SERVICES_CONTAINER_WEB
+        if protocol != SERVICES_PROTOCOL_TCP:
+            if not is_web:
+                triples.append((port, protocol, ""))
+            continue
+        triples.append((port, protocol, _web_scheme(service, binding)))
+    return triples
+
+
+def _web_scheme(service: dict, binding: dict) -> str:
+    """The scheme a container's TCP port is a ``web`` entry with, empty for a
+    ``port`` entry."""
+    kind = str(service.get("kind") or SERVICES_CONTAINER_AUTO)
+    if kind == SERVICES_CONTAINER_WEB:
+        scheme = str(service.get("scheme") or "")
+        return scheme if scheme in SERVICES_HTTP_SCHEMES else SERVICES_HTTP_SCHEMES[0]
+    if kind == SERVICES_CONTAINER_AUTO:
+        detected = str(binding.get("detected") or "")
+        return detected if detected in SERVICES_HTTP_SCHEMES else ""
+    return ""

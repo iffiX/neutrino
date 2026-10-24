@@ -205,6 +205,71 @@ def test_a_bad_declaration_is_refused_and_nothing_stored(box):
     )
 
 
+def test_a_port_with_no_protocol_is_refused_with_the_agents_code(box):
+    client, runtime = box
+    runtime.agent_sessions.verdict = {
+        "is_valid": False,
+        "code": "service_protocol_none",
+        "params": {"port": 53},
+    }
+
+    response = client.post(
+        f"{BASE}/container/set",
+        json={
+            "device_id": DEVICE,
+            "containers": [
+                {
+                    "name": "dns",
+                    "image": "coredns",
+                    "ports": ["53:53"],
+                    "services": [{"port": 53, "kind": "port", "protocols": []}],
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "service_protocol_none"
+    assert response.json()["detail"]["params"] == {"port": 53}
+
+
+def test_the_view_holds_what_the_machine_detected_on_each_port(box):
+    client, runtime = box
+    runtime.report(
+        DEVICE,
+        "podman",
+        "running",
+        is_active=True,
+        containers=[
+            {
+                "name": "web",
+                "image": "nginx",
+                "status": "Up",
+                "is_running": True,
+                "is_declared": True,
+                "host_ports": [8080, 5353],
+                "host_bindings": [
+                    {
+                        "address": "",
+                        "port": 8080,
+                        "protocol": "tcp",
+                        "detected": "http",
+                    },
+                    {"address": "", "port": 5353, "protocol": "udp", "detected": ""},
+                ],
+            }
+        ],
+    )
+
+    payload = client.get(BASE, params={"device_id": DEVICE}).json()
+
+    assert payload["running"][0]["host_bindings"] == [
+        {"address": "", "port": 8080, "protocol": "tcp", "detected": "http"},
+        {"address": "", "port": 5353, "protocol": "udp", "detected": ""},
+    ]
+    assert payload["containers"][0]["services"] == []
+
+
 def test_saving_mirrors_keeps_the_containers(box):
     client, runtime = box
 

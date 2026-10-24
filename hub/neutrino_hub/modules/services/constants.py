@@ -25,6 +25,11 @@ SERVICES_PORT_KIND_BY_PROTOCOL = {
 }
 SERVICES_UDP_ID_SUFFIX = "_udp"
 
+# A container's service type per host port, as its declaration names it; a
+# port it does not name is auto, listed by what the agent detected on it.
+SERVICES_CONTAINER_AUTO = "auto"
+SERVICES_CONTAINER_WEB = "web"
+
 SERVICES_HTTP_SCHEMES = ("http", "https")
 
 SERVICES_PORT_MIN = 1

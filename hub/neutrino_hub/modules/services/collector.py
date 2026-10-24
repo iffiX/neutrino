@@ -104,8 +104,9 @@ class ServiceListCollector:
                 account under its name as ``{"instances": [{"account",
                 "port", "is_healthy"}]}`` and
                 ``podman: {"containers": [{"name", "image", "is_running",
-                "bindings"}]}``, ``bindings`` being ``(port, protocol)``
-                pairs.
+                "bindings"}]}``, ``bindings`` being ``(port, protocol,
+                scheme)`` triples, ``scheme`` naming a ``web`` entry's and
+                empty for a ``port`` entry.
             declared_services: Every declared service.
             declared_healths: Declared record id to its
                 :class:`neutrino_hub.modules.services.probe.DeclaredServiceHealth`;
@@ -211,6 +212,24 @@ class ServiceListCollector:
                             device_id=_device_id(device),
                         )
                     )
+        for device in self._device_modules:
+            podman = device.get("podman")
+            host = device.get("host", "")
+            if not podman or not host:
+                continue
+            for container in podman.get("containers") or []:
+                for port, _, scheme in container.get("bindings") or []:
+                    if not scheme:
+                        continue
+                    entries.append(
+                        _container_entry(
+                            device,
+                            container,
+                            id=f"podman_{_device_id(device)}_{container['name']}_{port}",
+                            type=SERVICES_TYPE_WEB,
+                            payload={"url": f"{scheme}://{_url_host(host)}:{port}/"},
+                        )
+                    )
         for record in self._declared_of(SERVICES_KIND_HTTP):
             url = f"{record.scheme}://{record.host}:{record.port}{record.path or '/'}"
             is_healthy, detail_code = self._declared_health(record.id)
@@ -237,27 +256,21 @@ class ServiceListCollector:
             if not podman or not host:
                 continue
             for container in podman.get("containers") or []:
-                for port, protocol in container.get("bindings") or []:
+                for port, protocol, scheme in container.get("bindings") or []:
+                    if scheme:
+                        continue
                     suffix = (
                         SERVICES_UDP_ID_SUFFIX
                         if protocol == SERVICES_PROTOCOL_UDP
                         else ""
                     )
                     entries.append(
-                        _entry(
+                        _container_entry(
+                            device,
+                            container,
                             id=f"podman_{_device_id(device)}_{container['name']}_{port}{suffix}",
                             type=SERVICES_TYPE_PORT,
-                            title=container["name"],
                             payload={"host": host, "port": port, "protocol": protocol},
-                            is_healthy=bool(container.get("is_running")),
-                            description=SERVICES_PODMAN_DESCRIPTION.format(
-                                name=container["name"],
-                                image=container.get("image", ""),
-                                host=host,
-                            ),
-                            description_code=SERVICES_DESCRIPTION_CONTAINER,
-                            description_params={"image": container.get("image", "")},
-                            device_id=_device_id(device),
                         )
                     )
         for record in self._declared_services:
@@ -480,6 +493,31 @@ def _entry(
         "detail_code": detail_code,
         "device_id": device_id,
     }
+
+
+def _container_entry(
+    device: dict, container: dict, *, id: str, type: str, payload: dict
+) -> dict:
+    """One entry of a device's container, healthy while the container runs."""
+    host = device.get("host", "")
+    return _entry(
+        id=id,
+        type=type,
+        title=container["name"],
+        payload=payload,
+        is_healthy=bool(container.get("is_running")),
+        description=SERVICES_PODMAN_DESCRIPTION.format(
+            name=container["name"], image=container.get("image", ""), host=host
+        ),
+        description_code=SERVICES_DESCRIPTION_CONTAINER,
+        description_params={"image": container.get("image", "")},
+        device_id=_device_id(device),
+    )
+
+
+def _url_host(host: str) -> str:
+    """A host as a url writes it, an IPv6 address in brackets."""
+    return f"[{host}]" if ":" in host else host
 
 
 def _host_of(entry_type: str, payload: dict) -> "str | None":

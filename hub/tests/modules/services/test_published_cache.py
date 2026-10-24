@@ -600,3 +600,116 @@ def test_a_containers_bindings_give_one_entry_per_port_and_protocol(box):
         "podman_device-one_dns_5000": "tcp",
     }
     assert all(entry["is_healthy"] is True for entry in entries)
+
+
+def containers_by_service(box, services: list, bindings: list) -> dict:
+    """The entries of one declared container ``app`` whose report carries
+    ``bindings``, by id."""
+    store = DesiredStateStore()
+    store.set_want(DEVICE, "podman", "running")
+    store.write(
+        DEVICE,
+        "podman",
+        {
+            "containers": [
+                {
+                    "name": "app",
+                    "image": "nginx",
+                    "ports": ["8080:80", "53:53", "8443:443"],
+                    "services": services,
+                }
+            ]
+        },
+    )
+    sessions = StubSessions(
+        {
+            DEVICE: report(
+                podman={
+                    "containers": [
+                        {
+                            "name": "app",
+                            "image": "nginx",
+                            "is_running": True,
+                            "host_bindings": bindings,
+                        }
+                    ]
+                },
+            )
+        }
+    )
+    entries, _ = cache(
+        StubUnits(), sessions=sessions, addresses={DEVICE: "192.168.100.7"}
+    ).entries()
+    return {entry["id"]: entry for entry in entries}
+
+
+def test_an_auto_port_detected_http_is_one_web_entry_under_the_port_id(box):
+    by_id = containers_by_service(
+        box,
+        [],
+        [{"address": "", "port": 8080, "protocol": "tcp", "detected": "http"}],
+    )
+
+    assert list(by_id) == ["podman_device-one_app_8080"]
+    entry = by_id["podman_device-one_app_8080"]
+    assert entry["type"] == "web"
+    assert entry["payload"] == {"url": "http://192.168.100.7:8080/"}
+    assert entry["is_healthy"] is True
+    assert entry["description_code"] == "container"
+
+
+def test_an_auto_port_detected_tcp_or_not_yet_is_a_port_entry(box):
+    by_id = containers_by_service(
+        box,
+        [{"port": 8080, "kind": "auto"}],
+        [
+            {"address": "", "port": 8080, "protocol": "tcp", "detected": "tcp"},
+            {"address": "", "port": 8443, "protocol": "tcp", "detected": ""},
+        ],
+    )
+
+    assert {entry_id: entry["type"] for entry_id, entry in by_id.items()} == {
+        "podman_device-one_app_8080": "port",
+        "podman_device-one_app_8443": "port",
+    }
+
+
+def test_a_port_service_with_tcp_and_udp_is_two_port_entries(box):
+    by_id = containers_by_service(
+        box,
+        [{"port": 53, "kind": "port", "protocols": ["tcp", "udp"]}],
+        [
+            {"address": "", "port": 53, "protocol": "tcp", "detected": "http"},
+            {"address": "", "port": 53, "protocol": "udp", "detected": ""},
+        ],
+    )
+
+    assert {entry_id: entry["payload"] for entry_id, entry in by_id.items()} == {
+        "podman_device-one_app_53": {
+            "host": "192.168.100.7",
+            "port": 53,
+            "protocol": "tcp",
+        },
+        "podman_device-one_app_53_udp": {
+            "host": "192.168.100.7",
+            "port": 53,
+            "protocol": "udp",
+        },
+    }
+
+
+def test_a_web_service_is_a_web_entry_alone_with_its_chosen_scheme(box):
+    by_id = containers_by_service(
+        box,
+        [{"port": 8443, "kind": "web", "scheme": "https"}],
+        [
+            {"address": "", "port": 8443, "protocol": "tcp", "detected": "tcp"},
+            {"address": "", "port": 8443, "protocol": "udp", "detected": ""},
+        ],
+    )
+
+    assert list(by_id) == ["podman_device-one_app_8443"]
+    assert by_id["podman_device-one_app_8443"]["type"] == "web"
+    assert by_id["podman_device-one_app_8443"]["payload"] == {
+        "url": "https://192.168.100.7:8443/"
+    }

@@ -2375,6 +2375,20 @@ class PodmanContainerView(BaseModel):
     services: list[PodmanServiceView] = Field(default_factory=list)
 
 
+class PodmanHostBindingView(BaseModel):
+    """One published host port of a container, as the machine reported it.
+
+    ``address`` is empty for every address; ``detected`` is ``http``,
+    ``https`` or ``tcp`` once the agent probed a running container's TCP
+    port, and empty on UDP and before the probe.
+    """
+
+    address: str = ""
+    port: int
+    protocol: str = "tcp"
+    detected: str = ""
+
+
 class PodmanContainerStateView(BaseModel):
     """One container as podman sees it right now, declared or not."""
 
@@ -2383,6 +2397,7 @@ class PodmanContainerStateView(BaseModel):
     status: str
     is_running: bool
     is_declared: bool
+    host_bindings: list[PodmanHostBindingView] = Field(default_factory=list)
 
 
 class PodmanMachineView(BaseModel):

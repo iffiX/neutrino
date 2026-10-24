@@ -55,7 +55,7 @@ def container(name: str, *, ports: list[int], is_running: bool = True) -> dict:
         "name": name,
         "image": "docker.io/nginx:1.25",
         "is_running": is_running,
-        "bindings": [(port, "tcp") for port in ports],
+        "bindings": [(port, "tcp", "") for port in ports],
     }
 
 
@@ -719,7 +719,7 @@ def test_each_code_server_instance_is_a_web_entry_opened_with_a_token():
 
 def test_a_containers_udp_port_is_its_own_entry_with_the_udp_id():
     stopped = {**container("dns", ports=[], is_running=False)}
-    stopped["bindings"] = [(53, "tcp"), (53, "udp")]
+    stopped["bindings"] = [(53, "tcp", ""), (53, "udp", "")]
     entries = collect(device_modules=[hosting(podman={"containers": [stopped]})])
 
     by_id = {entry["id"]: entry for entry in entries}
@@ -739,3 +739,28 @@ def test_a_declared_udp_record_is_a_udp_port_entry_with_empty_health():
     assert entry["type"] == "port"
     assert entry["payload"] == {"host": "10.0.0.5", "port": 53, "protocol": "udp"}
     assert entry["is_healthy"] is None
+
+
+def test_a_containers_web_binding_is_a_web_entry_and_no_port_entry():
+    web = {**container("app", ports=[]), "bindings": [(8443, "tcp", "https")]}
+    web["bindings"].append((53, "udp", ""))
+
+    entries = collect(device_modules=[hosting(podman={"containers": [web]})])
+
+    assert [(entry["id"], entry["type"]) for entry in entries] == [
+        ("podman_device-one_app_8443", "web"),
+        ("podman_device-one_app_53_udp", "port"),
+    ]
+    assert entries[0]["payload"] == {"url": f"https://{DEVICE_HOST}:8443/"}
+    assert entries[0]["title"] == "app"
+    assert entries[0]["device_id"] == DEVICE
+
+
+def test_a_containers_web_entry_on_an_ipv6_host_has_the_address_in_brackets():
+    web = {**container("app", ports=[]), "bindings": [(8080, "tcp", "http")]}
+
+    (entry,) = collect(
+        device_modules=[hosting(host="fd00::7", podman={"containers": [web]})]
+    )
+
+    assert entry["payload"] == {"url": "http://[fd00::7]:8080/"}
