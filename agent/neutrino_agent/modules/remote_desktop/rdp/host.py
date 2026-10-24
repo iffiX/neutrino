@@ -439,10 +439,7 @@ class RdpShareHost:
         ]
         self._give_back_seat_dirs(home)
         registered = read_json(self._registered_path())
-        is_changed = any(
-            rustdesk.would_change(path, self._render(path, password))
-            for path in written
-        )
+        is_changed = any(self._is_unsettled(path, password) for path in written)
         if (
             registered
             and not is_changed
@@ -507,6 +504,14 @@ class RdpShareHost:
             os.unlink(self._registered_path())
         shutil.rmtree(self._kept_dir, ignore_errors=True)
         self._log("remote_desktop: RustDesk is given back")
+
+    def _is_unsettled(self, path: str, password: str) -> bool:
+        """Whether one settings file is not yet what the share writes; the
+        password file by the password RustDesk reads from it, sealed or
+        not."""
+        if _is_password_file(path):
+            return rustdesk.stored_password(path, self._machine_id) != password
+        return rustdesk.would_change(path, self._render(path, password))
 
     def _give_back_seat_dirs(self, home: str) -> None:
         """Give the seat's settings folders that root owns to the seat's

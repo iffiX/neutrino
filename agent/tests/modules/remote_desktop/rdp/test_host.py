@@ -1067,6 +1067,43 @@ def test_a_failed_repair_is_logged_and_tried_at_the_next_report(linux_host):
     assert _steps(host.applier) == ["stop", "start"]
 
 
+def test_the_same_password_sealed_restarts_nothing_at_a_state_push(linux_host):
+    """RustDesk seals the plain password the agent wrote; the next state
+    finds the share standing and drops no viewer."""
+    host = linux_host
+    _shared(host)
+
+    host.set_switch(True)
+
+    assert _steps(host.applier) == []
+    assert "password = '00" in _root_file(host, "RustDesk.toml").read_text()
+
+
+def test_a_state_push_over_another_sealed_password_writes_the_seat_one(linux_host):
+    host = linux_host
+    _shared(host)
+    _rustdesk_wrote(host, SEALED_SOMEBODY_ELSE)
+
+    host.set_switch(True)
+
+    assert _steps(host.applier) == ["stop", "register", "start"]
+    assert _stored_password(host) == "seat-pass"
+
+
+def test_a_state_push_over_a_seal_that_does_not_open_here_writes_it_again(
+    linux_host,
+):
+    host = linux_host
+    _shared(host)
+    host.platform.read_machine_id = lambda: "another-machine-id"
+    host._machine_id_read = ""
+
+    host.set_switch(True)
+
+    assert _steps(host.applier) == ["stop", "register", "start"]
+    assert "password = 'seat-pass'" in _root_file(host, "RustDesk.toml").read_text()
+
+
 def test_on_windows_the_service_password_is_not_watched(linux_host):
     """The session's host there writes no settings over the service's."""
     host = linux_host
