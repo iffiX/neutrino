@@ -226,6 +226,95 @@ def test_a_recipe_carries_each_component_without_where_it_comes_from(config):
     assert "url" not in json.dumps(desired["modules"]["cloudcli"]["install"])
 
 
+@pytest.fixture
+def shipped(monkeypatch, tmp_path):
+    """A config directory, with the shipped manifests resolved as they are."""
+    monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(desired_state_module, "UTILS_CONFIG_DIR", tmp_path)
+    return tmp_path
+
+
+# Containers' Linux recipe as the hub sent it before its manifest named
+# branches of its own, in the canonical form the state hash is taken over.
+PODMAN_LINUX_RECIPE = (
+    '{"install":{"kind":"system_package","packages":["podman","podman-docker"],'
+    '"verify":"podman --version"},"uninstall":{"is_data_kept":true,'
+    '"packages":["podman","podman-docker"],"post_uninstall":[]}}'
+)
+
+
+@pytest.mark.parametrize(
+    "platform",
+    [
+        {"os": "linux", "family": "debian", "arch": "amd64", "version": "2.36"},
+        {"os": "linux", "family": "rhel", "arch": "arm64", "version": "2.34"},
+        {"os": "linux", "family": "arch", "arch": "amd64", "version": "2.40"},
+    ],
+)
+def test_the_linux_containers_recipe_is_byte_for_byte_as_before(shipped, platform):
+    store = DesiredStateStore()
+    store.set_want(DEVICE, "podman", "running")
+
+    desired, _ = store.compose(DEVICE, platform)
+
+    podman = desired["modules"]["podman"]
+    recipe = {"install": podman["install"], "uninstall": podman["uninstall"]}
+    assert json.dumps(recipe, sort_keys=True, separators=(",", ":")) == (
+        PODMAN_LINUX_RECIPE
+    )
+
+
+@pytest.mark.parametrize(
+    ("platform", "floor", "verify", "components"),
+    [
+        (
+            {"os": "windows", "family": "", "arch": "amd64", "version": "26100"},
+            "19041",
+            '"C:\\Program Files\\Podman\\podman.exe" --version',
+            [("wsl", "msi"), ("installer", "msi"), ("image", "tar_zst")],
+        ),
+        (
+            {"os": "darwin", "family": "", "arch": "arm64", "version": "15.3"},
+            "13",
+            "/opt/podman/bin/podman --version",
+            [("installer", "pkg"), ("image", "raw_zst")],
+        ),
+    ],
+)
+def test_an_off_linux_containers_recipe_has_the_branchs_kind_and_no_identity(
+    shipped, platform, floor, verify, components
+):
+    """The recipe's kind is the branch's own, and the branch's installer,
+    version, source, license and source pointer stay on the hub."""
+    store = DesiredStateStore()
+    store.set_want(DEVICE, "podman", "running")
+    store.set_want(DEVICE, "samba", "running")
+
+    desired, _ = store.compose(DEVICE, platform)
+
+    install = desired["modules"]["podman"]["install"]
+    assert set(install) == {"kind", "min_version", "verify", "components"}
+    assert (install["kind"], install["min_version"], install["verify"]) == (
+        "podman_machine",
+        floor,
+        verify,
+    )
+    assert [
+        (component["name"], component["package_kind"])
+        for component in install["components"]
+    ] == components
+    assert all(
+        set(component) == {"name", "package_kind", "directory", "sha256"}
+        for component in install["components"]
+    )
+    assert desired["modules"]["podman"]["uninstall"] == {
+        "packages": [],
+        "post_uninstall": [],
+        "is_data_kept": True,
+    }
+    assert desired["modules"]["samba"]["install"] == {"kind": "system_package"}
+
+
 def test_compose_is_the_same_twice_and_moves_with_a_write(config):
     store = DesiredStateStore()
 

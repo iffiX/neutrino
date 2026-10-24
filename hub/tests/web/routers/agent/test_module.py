@@ -406,7 +406,7 @@ SUPPORTED_OFF_LINUX = {
     "code_server": (False, True),
     "codeg": (True, True),
     "gitea": (True, True),
-    "podman": (False, False),
+    "podman": (True, True),
     "samba": (True, True),
     "vscode": (True, True),
     "zfs": (False, False),
@@ -429,6 +429,55 @@ def test_each_shipped_module_is_supported_off_linux_as_its_manifest_says(
             seen.setdefault(row["name"], []).append(row["is_supported"])
 
     assert {name: tuple(flags) for name, flags in seen.items()} == (SUPPORTED_OFF_LINUX)
+
+
+@pytest.mark.parametrize(
+    ("platform", "identity"),
+    [
+        (
+            {"os": "linux", "family": "debian", "arch": "amd64", "version": "2.36"},
+            ("system_package", "platform", "system", "", ""),
+        ),
+        (
+            WINDOWS,
+            (
+                "podman_machine",
+                "hub",
+                "podman-container-tools/podman",
+                "Apache-2.0",
+                "https://github.com/podman-container-tools/podman/tree/v6.1.4",
+            ),
+        ),
+        (
+            {**DARWIN, "arch": "amd64"},
+            (
+                "podman_machine",
+                "hub",
+                "podman-container-tools/podman",
+                "Apache-2.0",
+                "https://github.com/podman-container-tools/podman/tree/v5.8.9",
+            ),
+        ),
+    ],
+)
+def test_the_containers_row_carries_the_identity_of_the_platforms_branch(
+    api, monkeypatch, platform, identity
+):
+    client, runtime = api
+    monkeypatch.setattr(device_modules, "load_module_manifests", shipped_manifests)
+    runtime.device_platform[DEVICE] = platform
+
+    rows = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()
+
+    row = {entry["name"]: entry for entry in rows["modules"]}["podman"]
+    assert (
+        row["kind"],
+        row["installer"],
+        row["source"],
+        row["license"],
+        row["corresponding_source"],
+    ) == identity
+    assert row["is_supported"] is True
 
 
 def test_a_windows_machine_takes_the_file_share_as_its_own_server(

@@ -916,6 +916,163 @@ def test_code_server_has_no_windows_branch_and_no_glibc_floor():
     )
 
 
+# --- Containers: the system's Podman on Linux, a pinned release elsewhere ---
+
+PODMAN_RELEASES = "https://github.com/podman-container-tools/podman/releases/download/"
+PODMAN_IMAGES = (
+    "https://github.com/podman-container-tools/podman-machine-os/releases/download/"
+)
+# Each digest is the one GitHub's release API gives the asset; the msi and
+# pkg ones are also in the Podman release's own shasums file.
+PODMAN_PINS = {
+    "windows-amd64": (
+        "6.1.4",
+        "19041",
+        '"C:\\Program Files\\Podman\\podman.exe" --version',
+        [
+            (
+                "wsl",
+                "https://github.com/microsoft/WSL/releases/download/3.0.3/"
+                "wsl.3.0.3.0.x64.msi",
+                "ae977286974255bd26bf925f00f40f5692c6b2084155cbc0563c09aea091f211",  # scan: allow
+                "msi",
+            ),
+            (
+                "installer",
+                f"{PODMAN_RELEASES}v6.1.4/podman-installer-windows-amd64.msi",
+                "4a05240054cb990629cbe098db090c5c7848c44162c11910cabb45ca75a40d53",  # scan: allow
+                "msi",
+            ),
+            (
+                "image",
+                f"{PODMAN_IMAGES}v6.1.4/podman-machine.x86_64.wsl.tar.zst",
+                "84c99d407af99d36e18d32327c86f57128d0e76f70c357fc4bc27f307be98738",  # scan: allow
+                "tar_zst",
+            ),
+        ],
+    ),
+    "darwin-arm64": (
+        "6.1.4",
+        "13",
+        "/opt/podman/bin/podman --version",
+        [
+            (
+                "installer",
+                f"{PODMAN_RELEASES}v6.1.4/podman-installer-macos-arm64.pkg",
+                "48f675622f66233ca2116e67fdab41ed9dbcc25b48b78a8e6ef0be6549031d22",  # scan: allow
+                "pkg",
+            ),
+            (
+                "image",
+                f"{PODMAN_IMAGES}v6.1.4/podman-machine.aarch64.applehv.raw.zst",
+                "d92af11c2980615ad1645fd36999f5abb53e4118a7a19fc981fbaccf57de1737",  # scan: allow
+                "raw_zst",
+            ),
+        ],
+    ),
+    "darwin-amd64": (
+        "5.8.9",
+        "13",
+        "/opt/podman/bin/podman --version",
+        [
+            (
+                "installer",
+                f"{PODMAN_RELEASES}v5.8.9/podman-installer-macos-amd64.pkg",
+                "3d600c6a1efd41445b56ed9864b9daba0765cfeae9d62604e87cf6c01b613403",  # scan: allow
+                "pkg",
+            ),
+            (
+                "image",
+                f"{PODMAN_IMAGES}v5.8.9/podman-machine.x86_64.applehv.raw.zst",
+                "eac6f4ca8e3b6c1abd6bd6f331f05eecf0779b4d601d13ed9815be521c4715af",  # scan: allow
+                "raw_zst",
+            ),
+        ],
+    ),
+}
+
+
+def test_containers_keeps_its_linux_branches_with_no_identity_of_their_own():
+    manifest = load_module_manifests()["podman"]
+
+    assert (manifest["kind"], manifest["installer"], manifest["source"]) == (
+        "system_package",
+        "platform",
+        "system",
+    )
+    assert "version" not in manifest and "license" not in manifest
+    for key in ("linux-debian", "linux-rhel", "linux-arch"):
+        assert manifest["platforms"][key] == {
+            "packages": ["podman", "podman-docker"],
+            "verify": "podman --version",
+            "uninstall": {
+                "packages": ["podman", "podman-docker"],
+                "post_uninstall": [],
+                "is_data_kept": True,
+            },
+        }, key
+
+
+def test_containers_pins_podmans_release_per_platform_off_linux():
+    manifest = load_module_manifests()["podman"]
+    off_linux = {
+        key: entry
+        for key, entry in manifest["platforms"].items()
+        if not key.startswith("linux")
+    }
+
+    assert set(off_linux) == set(PODMAN_PINS)
+    assert "windows-arm64" not in manifest["platforms"]
+    for key, (version, floor, verify, components) in PODMAN_PINS.items():
+        entry = off_linux[key]
+        assert branch_identity(manifest, entry) == {
+            "kind": "podman_machine",
+            "installer": "hub",
+            "version": version,
+            "source": "podman-container-tools/podman",
+            "license": "Apache-2.0",
+            "corresponding_source": (
+                f"https://github.com/podman-container-tools/podman/tree/v{version}"
+            ),
+        }, key
+        assert entry["min_version"] == floor
+        assert entry["verify"] == verify
+        assert entry["uninstall"] == {
+            "packages": [],
+            "post_uninstall": [],
+            "is_data_kept": True,
+        }
+        assert [
+            (
+                component["name"],
+                component["url"],
+                component["sha256"],
+                component["package_kind"],
+            )
+            for component in entry["components"]
+        ] == components, key
+        assert all(
+            component["directory"] == component["name"] and "cn_url" not in component
+            for component in entry["components"]
+        ), key
+
+
+@pytest.mark.parametrize(
+    ("platform", "expected"),
+    [
+        ({"os": "windows", "family": "", "arch": "amd64", "version": "19041"}, True),
+        ({"os": "windows", "family": "", "arch": "amd64", "version": "18363"}, False),
+        ({"os": "windows", "family": "", "arch": "arm64", "version": "26100"}, False),
+        ({"os": "darwin", "family": "", "arch": "arm64", "version": "13.0"}, True),
+        ({"os": "darwin", "family": "", "arch": "amd64", "version": "12.7.6"}, False),
+    ],
+)
+def test_containers_resolves_off_linux_from_each_branchs_floor(platform, expected):
+    _, entry = resolve_platform_entry(load_module_manifests()["podman"], platform)
+
+    assert (entry is not None) is expected
+
+
 # --- a branch that unpacks several archives lists them as components ---
 
 COMPONENT = {
