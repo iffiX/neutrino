@@ -124,6 +124,7 @@ SURVIVING_MODULES = {
     "neutrino_agent.modules.remote_desktop.rdp.netstat",
     "neutrino_agent.modules.remote_desktop.rdp.rustdesk",
     "neutrino_agent.modules.remote_desktop.rdp.seat",
+    "neutrino_agent.modules.remote_desktop.rdp.secretbox",
     "neutrino_agent.modules.remote_desktop.rdp.windows_seat",
     "neutrino_agent.modules.remote_desktop.records",
     "neutrino_agent.modules.remote_desktop.runner",

@@ -678,3 +678,327 @@ def test_two_processes_giving_rustdesk_back_take_turns(host, tmp_path):
     host.applier.calls.clear()
     host.leave_hub()
     assert _steps(host.applier) == []
+
+
+# --- the seat's settings folders ---
+
+
+def test_the_seats_settings_folders_are_made_as_the_seats_own(host, monkeypatch):
+    """RustDesk running as the person at the screen cannot store its
+    configuration in a folder left to root."""
+    from neutrino_agent.modules.remote_desktop.rdp import rustdesk
+
+    home = host.root / "home" / "pat"
+    home.mkdir(parents=True)
+    real_stat = rustdesk._stat
+    chowned = []
+
+    class _Pat:
+        st_uid = 4242
+        st_gid = 4343
+        st_mode = 0o755
+
+    def stat(target):
+        return _Pat() if target == str(home) else real_stat(target)
+
+    def chown(target, uid, gid):
+        chowned.append((target, uid, gid))
+
+    monkeypatch.setattr(rustdesk, "_stat", stat)
+    monkeypatch.setattr(rustdesk.os, "chown", chown)
+
+    host.set_switch(True)
+
+    folders = [entry for entry in chowned if not entry[0].endswith(".tmp")]
+    assert folders == [
+        (str(home / ".config"), 4242, 4343),
+        (str(home / ".config" / "rustdesk"), 4242, 4343),
+    ]
+
+
+# --- RustDesk's own settings over root's ---
+
+# Sealed by libsodium as RustDesk 1.4.9 seals a password, keyed by
+# MACHINE_ID; each is pinned against its text in test_rustdesk.py.
+MACHINE_ID = "0123456789abcdef0123456789abcdef"
+SEALED_SEAT_PASS = "00AQECAwQFBgcICQoLDA0ODxAREhMUFRYXGG2fyudFFP3NcbnInbL1TKs2qvqEDMktoUs="  # scan: allow
+SEALED_SOMEBODY_ELSE = "00AQECAwQFBgcICQoLDA0ODxAREhMUFRYXGBSElnFzz9I+Uc3wfcpDZGI2oPaVQ9YoqxVyJktV"  # scan: allow
+
+
+class _LinuxPlatform(_Platform):
+    os_name = "linux"
+
+    def __init__(self, root):
+        super().__init__(root)
+        self.machine_id_reads = 0
+
+    def read_machine_id(self):
+        self.machine_id_reads += 1
+        return MACHINE_ID
+
+
+class Sleeper:
+    """Records every wait, and runs once what a test says RustDesk does
+    meanwhile."""
+
+    def __init__(self):
+        self.waits = []
+        self.meanwhile = None
+
+    def __call__(self, seconds):
+        self.waits.append(seconds)
+        if self.meanwhile is not None:
+            meanwhile, self.meanwhile = self.meanwhile, None
+            meanwhile()
+
+
+@pytest.fixture()
+def linux_host(tmp_path):
+    store = MachineStateStore(path=str(tmp_path / "state.json"))
+    applier = FakeApplier(str(tmp_path))
+    platform = _LinuxPlatform(str(tmp_path))
+    sleeper = Sleeper()
+    lines = []
+    made = RdpShareHost(
+        platform=platform,
+        store=store,
+        credentials_dir=str(tmp_path / "credentials"),
+        state_dir=str(tmp_path / "var"),
+        log=lines.append,
+        seat=FakeSeat(),
+        applier=applier,
+        sleep=sleeper,
+    )
+    made.applier = applier
+    made.seat = made._seat
+    made.root = tmp_path
+    made.platform = platform
+    made.sleeper = sleeper
+    made.lines = lines
+    return made
+
+
+def _rustdesk_wrote(host, password, *, has_key_pair=True):
+    """Root's RustDesk.toml as RustDesk writes it: a sealed id, the password,
+    the salt and the key pair, each array item on its own line."""
+    pair = ["    [", "        12,", "        34,", "    ],", "    [", "        56,"]
+    pair += ["    ],"] if has_key_pair else []
+    lines = ["enc_id = '00AQIDBAUGBwgJCgsMDQ4PEBES'", f"password = '{password}'"]
+    lines += ["salt = 'abc'", "key_pair = ["]
+    lines += pair if has_key_pair else ["    [],", "    [],"]
+    lines += ["]", "key_confirmed = false", "", "[keys_confirmed]", ""]
+    path = _root_file(host, "RustDesk.toml")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines))
+
+
+def _shared(host):
+    """The switch on, on a machine where RustDesk wrote its id, its key pair
+    and the sealed seat password before."""
+    _rustdesk_wrote(host, SEALED_SEAT_PASS)
+    host.take_seat_password("seat-pass")
+    host.set_switch(True)
+    _rustdesk_wrote(host, SEALED_SEAT_PASS)
+    host.applier.calls.clear()
+    host.sleeper.waits.clear()
+
+
+def _stored_password(host):
+    from neutrino_agent.modules.remote_desktop.rdp import rustdesk
+
+    path = str(_root_file(host, "RustDesk.toml"))
+    return rustdesk.stored_password(path, lambda: MACHINE_ID)
+
+
+def test_a_fresh_machine_gets_the_seat_password_back_from_rustdesks_first_write(
+    linux_host,
+):
+    """The session's host makes its own key pair while root's file has none,
+    sends its settings to root, and root's password comes out empty."""
+    host = linux_host
+    (host.root / "home" / "pat").mkdir(parents=True)
+    names = ("RustDesk2.toml", "RustDesk.toml")
+    assert not any(_root_file(host, name).exists() for name in names)
+    assert not any(_seat_file(host, name).exists() for name in names)
+    host.take_seat_password("seat-pass")
+    host.sleeper.meanwhile = lambda: _rustdesk_wrote(host, "")
+
+    host.set_switch(True)
+
+    assert _steps(host.applier) == [
+        "keep",
+        "stop",
+        "register",
+        "start",
+        "stop",
+        "start",
+    ]
+    assert "password = 'seat-pass'" in _root_file(host, "RustDesk.toml").read_text()
+    assert _stored_password(host) == "seat-pass"
+    assert "56," in _root_file(host, "RustDesk.toml").read_text()
+    assert _root_file(host, "RustDesk2.toml").exists()
+    assert _seat_file(host, "RustDesk2.toml").exists()
+    assert not _seat_file(host, "RustDesk.toml").exists()
+
+
+def test_the_wait_for_rustdesks_id_and_key_pair_is_bounded(linux_host):
+    from neutrino_agent.modules.remote_desktop.constants import (
+        REMOTE_DESKTOP_IDENTITY_WAIT_S,
+        REMOTE_DESKTOP_POLL_S,
+    )
+
+    host = linux_host
+    host.take_seat_password("seat-pass")
+
+    host.set_switch(True)
+
+    assert set(host.sleeper.waits) == {REMOTE_DESKTOP_POLL_S}
+    assert sum(host.sleeper.waits) == REMOTE_DESKTOP_IDENTITY_WAIT_S
+    assert _steps(host.applier) == ["keep", "stop", "register", "start"]
+    assert "password = 'seat-pass'" in _root_file(host, "RustDesk.toml").read_text()
+
+
+def test_with_nobody_at_the_screen_nothing_is_waited_for(linux_host):
+    host = linux_host
+    host.seat.seated = []
+    host.take_seat_password("seat-pass")
+
+    host.set_switch(True)
+
+    assert host.sleeper.waits == []
+
+
+def test_an_id_and_key_pair_already_there_end_the_wait_at_once(linux_host):
+    host = linux_host
+
+    _shared(host)
+    host.take_seat_password("second")
+    host.set_switch(True)
+
+    assert host.sleeper.waits == []
+    assert _steps(host.applier) == ["stop", "register", "start"]
+
+
+def test_a_password_rustdesk_emptied_later_is_written_again(linux_host):
+    host = linux_host
+    _shared(host)
+    _rustdesk_wrote(host, "")
+
+    host.repair_password()
+
+    assert _steps(host.applier) == ["stop", "start"]
+    assert _stored_password(host) == "seat-pass"
+    assert "56," in _root_file(host, "RustDesk.toml").read_text()
+    assert any("replaced the seat password" in line for line in host.lines)
+
+
+def test_a_password_of_somebody_elses_is_replaced_too(linux_host):
+    """A person's own RustDesk sends the password it holds."""
+    host = linux_host
+    _shared(host)
+    _rustdesk_wrote(host, SEALED_SOMEBODY_ELSE)
+
+    host.repair_password()
+
+    assert _steps(host.applier) == ["stop", "start"]
+    assert _stored_password(host) == "seat-pass"
+
+
+@pytest.mark.parametrize("stored", [SEALED_SEAT_PASS, "seat-pass"])
+def test_an_intact_password_is_a_file_read_and_no_command(
+    linux_host, monkeypatch, stored
+):
+    import subprocess
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("a command ran")
+
+    host = linux_host
+    _shared(host)
+    _rustdesk_wrote(host, stored)
+    before = _root_file(host, "RustDesk.toml").read_text()
+    monkeypatch.setattr(subprocess, "run", refuse)
+    monkeypatch.setattr(subprocess, "Popen", refuse)
+    monkeypatch.setattr(subprocess, "check_output", refuse)
+
+    host.repair_password()
+    host.repair_password()
+
+    assert host.applier.calls == []
+    assert _root_file(host, "RustDesk.toml").read_text() == before
+    assert host.platform.machine_id_reads <= 1
+
+
+def test_a_sealed_password_that_does_not_open_here_is_left_alone(linux_host):
+    host = linux_host
+    _shared(host)
+    host.platform.read_machine_id = lambda: "another-machine-id"
+    host._machine_id_read = ""
+
+    host.repair_password()
+
+    assert _steps(host.applier) == []
+
+
+def test_before_rustdesk_wrote_a_key_pair_nothing_is_repaired(linux_host):
+    host = linux_host
+    _shared(host)
+    _rustdesk_wrote(host, "", has_key_pair=False)
+
+    host.repair_password()
+
+    assert _steps(host.applier) == []
+
+
+def test_with_the_switch_off_nothing_is_repaired(linux_host):
+    host = linux_host
+    _shared(host)
+    host.set_switch(False)
+    host.applier.calls.clear()
+    _rustdesk_wrote(host, "")
+
+    host.repair_password()
+
+    assert _steps(host.applier) == []
+
+
+def test_a_repair_skips_the_turn_while_another_change_holds_the_lock(linux_host):
+    host = linux_host
+    _shared(host)
+    _rustdesk_wrote(host, "")
+
+    with host._lock:
+        host.repair_password()
+
+    assert _steps(host.applier) == []
+
+
+def test_a_failed_repair_is_logged_and_tried_at_the_next_report(linux_host):
+    host = linux_host
+    _shared(host)
+    _rustdesk_wrote(host, "")
+    host.applier.failing = "start"
+
+    host.repair_password()
+
+    assert any("rdp_takeover_failed step=start" in line for line in host.lines)
+    host.applier.failing = ""
+    host.applier.calls.clear()
+    _rustdesk_wrote(host, "")
+    host.repair_password()
+    assert _steps(host.applier) == ["stop", "start"]
+
+
+def test_on_windows_the_service_password_is_not_watched(linux_host):
+    """The session's host there writes no settings over the service's."""
+    host = linux_host
+    host.platform.os_name = "windows"
+    host.take_seat_password("seat-pass")
+
+    host.set_switch(True)
+    host.applier.calls.clear()
+    _rustdesk_wrote(host, "")
+    host.repair_password()
+
+    assert host.sleeper.waits == []
+    assert _steps(host.applier) == []

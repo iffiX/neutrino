@@ -612,7 +612,8 @@ class Agent:
 
     def _tick(self) -> None:
         """Between reports: adopt a binding written on disk, look at the
-        network, and listen on the AI gateway forward's port if it could not.
+        network, listen on the AI gateway forward's port if it could not,
+        and write the seat password into RustDesk again if it was replaced.
 
         A live socket stays where it is, whatever the network does; the
         next round starts from the top of the hub's addresses.
@@ -620,6 +621,7 @@ class Agent:
         self._adopt_external_binding()
         self._watch_network()
         self._ai_forward.ensure()
+        self._rdp.repair_password()
 
     def _watch_network(self) -> bool:
         """Look at the route to the hub.

@@ -243,3 +243,200 @@ def test_a_rewrite_keeps_going_where_ownership_cannot_be_set(monkeypatch, tmp_pa
 
     assert write_config(str(path), (("direct-server", "Y"),)) is True
     assert "direct-server = 'Y'" in path.read_text()
+
+
+class _Owned:
+    """A stat that names another owner."""
+
+    def __init__(self, uid, gid, mode):
+        self.st_uid = uid
+        self.st_gid = gid
+        self.st_mode = mode
+
+
+def _owners(monkeypatch, owners):
+    """Make ``chown`` record into ``owners`` and ``_stat`` read from it, so a
+    folder given an owner reads back as that owner's."""
+    real_stat = rustdesk._stat
+    chowned = []
+
+    def stat(target):
+        found = real_stat(target)
+        if found is None or target not in owners:
+            return found
+        return _Owned(owners[target][0], owners[target][1], found.st_mode)
+
+    def chown(target, uid, gid):
+        chowned.append((target, uid, gid))
+        owners[target] = (uid, gid)
+
+    monkeypatch.setattr(rustdesk, "_stat", stat)
+    monkeypatch.setattr(rustdesk.os, "chown", chown)
+    return chowned
+
+
+def test_each_folder_made_under_a_home_is_given_the_homes_owner(monkeypatch, tmp_path):
+    """RustDesk running as that person writes its own files into these
+    folders; one left to root fails to store its configuration."""
+    home = tmp_path / "pat"
+    home.mkdir()
+    chowned = _owners(monkeypatch, {str(home): (4242, 4343)})
+    path = home / ".config" / "rustdesk" / "RustDesk2.toml"
+
+    rustdesk.write_settings(str(path), lambda existing: "[options]\n", str(home))
+
+    assert chowned == [
+        (str(home / ".config"), 4242, 4343),
+        (str(home / ".config" / "rustdesk"), 4242, 4343),
+        (f"{path}.tmp", 4242, 4343),
+    ]
+    assert path.is_file()
+
+
+def test_a_folder_that_was_there_keeps_its_owner(monkeypatch, tmp_path):
+    home = tmp_path / "pat"
+    (home / ".config").mkdir(parents=True)
+    chowned = _owners(monkeypatch, {str(home): (4242, 4343)})
+    path = home / ".config" / "rustdesk" / "RustDesk2.toml"
+
+    rustdesk.write_settings(str(path), lambda existing: "[options]\n", str(home))
+
+    folders = [target for target, _, _ in chowned if not target.endswith(".tmp")]
+    assert folders == [str(home / ".config" / "rustdesk")]
+
+
+def test_folders_outside_the_home_are_made_as_this_process(monkeypatch, tmp_path):
+    home = tmp_path / "pat"
+    home.mkdir()
+    chowned = _owners(monkeypatch, {str(home): (4242, 4343)})
+    path = tmp_path / "root" / ".config" / "rustdesk" / "RustDesk.toml"
+
+    rustdesk.write_settings(str(path), lambda existing: "id = ''\n", str(home))
+    rustdesk.write_password(str(path), "seat-pass")
+
+    assert [target for target, _, _ in chowned if not target.endswith(".tmp")] == []
+    assert "seat-pass" in path.read_text()
+
+
+# --- what RustDesk itself writes into RustDesk.toml ---
+
+# Sealed by libsodium's crypto_secretbox_easy as RustDesk 1.4.9 seals: the
+# format byte 1, the nonce 01 02 .. 18, then the box, keyed by MACHINE_ID.
+MACHINE_ID = "0123456789abcdef0123456789abcdef"
+SEALED_SEAT_PASS = "00AQECAwQFBgcICQoLDA0ODxAREhMUFRYXGG2fyudFFP3NcbnInbL1TKs2qvqEDMktoUs="  # scan: allow
+SEALED_SOMEBODY_ELSE = "00AQECAwQFBgcICQoLDA0ODxAREhMUFRYXGBSElnFzz9I+Uc3wfcpDZGI2oPaVQ9YoqxVyJktV"  # scan: allow
+# The older form: the box alone under a zero nonce.
+SEALED_SEAT_PASS_LEGACY = "00bBoLokP5NnGNORK88bt24/ZYHbDqGSdFzA=="  # scan: allow
+# A Mac's id is 36 characters; RustDesk keys with its first 32.
+MAC_ID = "564D0000-1111-2222-3333-444455556666"
+SEALED_ON_A_MAC = "00AQECAwQFBgcICQoLDA0ODxAREhMUFRYXGLoT23bUpRkua1oi2WoGNnWxo8xQXw7dj7o="  # scan: allow
+# A short id is padded with zeros to 32 bytes.
+SEALED_UNDER_ABC = "00AQECAwQFBgcICQoLDA0ODxAREhMUFRYXGNK4bFJhtgwmuwHbhe9/CjmUmdOeRJg57Uk="  # scan: allow
+
+
+def rustdesk_toml(password="", *, enc_id="00AQIDBAUGBwgJCgsMDQ4PEBES", pairs=True):
+    """``RustDesk.toml`` as RustDesk writes it, its arrays one item a line."""
+    lines = [f"enc_id = '{enc_id}'", f"password = '{password}'", "salt = 'abc'"]
+    if pairs:
+        lines += ["key_pair = [", "    [", "        12,", "        34,", "    ],"]
+        lines += ["    [", "        56,", "    ],", "]"]
+    else:
+        lines += ["key_pair = [", "    [],", "    [],", "]"]
+    lines += ["key_confirmed = false", "", "[keys_confirmed]"]
+    return "\n".join(lines) + "\n"
+
+
+def test_the_values_are_read_whole_across_lines(tmp_path):
+    path = tmp_path / "RustDesk.toml"
+    path.write_text(rustdesk_toml("pw") + "password_under_a_table = 'no'\n")
+
+    values = rustdesk.read_values(str(path))
+
+    assert values["password"] == "pw"
+    assert values["salt"] == "abc"
+    assert "56" in values["key_pair"]
+    assert values["key_confirmed"] == "false"
+    assert "password_under_a_table" not in values
+
+
+def test_a_file_the_agent_wrote_alone_holds_no_identity(tmp_path):
+    path = tmp_path / "RustDesk.toml"
+    write_password(str(path), "seat-pass")
+
+    assert rustdesk.has_identity(str(path)) is False
+    assert rustdesk.has_identity(str(tmp_path / "absent.toml")) is False
+
+
+def test_an_id_and_a_key_pair_are_the_identity(tmp_path):
+    path = tmp_path / "RustDesk.toml"
+
+    path.write_text(rustdesk_toml(pairs=False))
+    assert rustdesk.has_identity(str(path)) is False
+
+    path.write_text(rustdesk_toml(enc_id=""))
+    assert rustdesk.has_identity(str(path)) is False
+
+    path.write_text(rustdesk_toml())
+    assert rustdesk.has_identity(str(path)) is True
+
+    path.write_text("id = '123456789'\nkey_pair = [[1, 2], [3]]\n")
+    assert rustdesk.has_identity(str(path)) is True
+
+
+@pytest.mark.parametrize(
+    "value, machine_id, opened",
+    [
+        (SEALED_SEAT_PASS, MACHINE_ID, "seat-pass"),
+        (SEALED_SOMEBODY_ELSE, MACHINE_ID, "somebody-else"),
+        (SEALED_SEAT_PASS_LEGACY, MACHINE_ID, "seat-pass"),
+        (SEALED_ON_A_MAC, MAC_ID, "seat-pass"),
+        (SEALED_UNDER_ABC, "abc", "seat-pass"),
+        (SEALED_SEAT_PASS, "another-machine-id", None),
+        ("seat-pass", MACHINE_ID, None),
+    ],
+)
+def test_a_sealed_value_opens_with_the_machines_id(value, machine_id, opened):
+    assert rustdesk.open_sealed(value, machine_id) == opened
+
+
+def test_a_plain_password_that_starts_like_a_sealed_one_is_plain():
+    """The hub's seat passwords are 22 letters and digits; RustDesk reads
+    one starting with 00 as plain text too."""
+    assert rustdesk.is_sealed("00abcdefghijKLMNOPQRST") is False
+    assert rustdesk.is_sealed(SEALED_SEAT_PASS) is True
+
+
+def test_the_stored_password_is_read_as_a_peer_types_it(tmp_path):
+    path = tmp_path / "RustDesk.toml"
+
+    path.write_text(rustdesk_toml(SEALED_SEAT_PASS))
+    assert rustdesk.stored_password(str(path), lambda: MACHINE_ID) == "seat-pass"
+
+    path.write_text(rustdesk_toml(""))
+    assert rustdesk.stored_password(str(path), lambda: MACHINE_ID) == ""
+
+    path.write_text(rustdesk_toml(SEALED_SEAT_PASS))
+    assert rustdesk.stored_password(str(path), lambda: "another") is None
+
+    assert rustdesk.stored_password(str(tmp_path / "absent"), lambda: "") == ""
+
+
+def test_a_plain_password_needs_no_machine_id(tmp_path):
+    path = tmp_path / "RustDesk.toml"
+    write_password(str(path), "seat-pass")
+
+    def unreadable():
+        raise AssertionError("the machine id was read")
+
+    assert rustdesk.stored_password(str(path), unreadable) == "seat-pass"
+
+
+def test_a_password_rewrite_keeps_what_rustdesk_wrote(tmp_path):
+    path = tmp_path / "RustDesk.toml"
+    path.write_text(rustdesk_toml(""))
+
+    write_password(str(path), "seat-pass")
+
+    assert rustdesk.has_identity(str(path)) is True
+    assert rustdesk.stored_password(str(path), lambda: MACHINE_ID) == "seat-pass"
+    assert "[keys_confirmed]" in path.read_text()

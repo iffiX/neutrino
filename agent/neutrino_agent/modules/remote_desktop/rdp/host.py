@@ -11,7 +11,10 @@ system's registration is its applier's (``modules/remote_desktop/``).
 
 The seat password is the hub's: it arrives in the state's ``desktop``
 section, is written into ``RustDesk.toml`` whenever it changed, and is kept
-in a root-only file. It enters neither the store nor any report.
+in a root-only file. It enters neither the store nor any report. On Linux
+and macOS a session's host writes its own settings over root's until root's
+file holds an id and a key pair, so after a start, and at each report, the
+host writes the password again when that file no longer holds it.
 
 **A share is declared only once it listens.** The host reads the system's
 socket table for its copy on the direct port; it opens no connection to it.
@@ -48,6 +51,7 @@ from neutrino_agent.modules.remote_desktop.rdp import rustdesk
 from neutrino_agent.modules.remote_desktop.constants import (
     REMOTE_DESKTOP_DIR_NAME,
     REMOTE_DESKTOP_DIRECT_PORT,
+    REMOTE_DESKTOP_IDENTITY_WAIT_S,
     REMOTE_DESKTOP_KEPT_DIR_NAME,
     REMOTE_DESKTOP_KEPT_SETTINGS_DIR_NAME,
     REMOTE_DESKTOP_LISTEN_TTL_S,
@@ -55,7 +59,9 @@ from neutrino_agent.modules.remote_desktop.constants import (
     REMOTE_DESKTOP_OPTIONS,
     REMOTE_DESKTOP_OPTIONS_FILE,
     REMOTE_DESKTOP_PASSWORD_FILE,
+    REMOTE_DESKTOP_POLL_S,
     REMOTE_DESKTOP_REGISTERED_NAME,
+    REMOTE_DESKTOP_SYNCED_OS_NAMES,
 )
 from neutrino_agent.modules.remote_desktop.records import (
     held,
@@ -136,6 +142,7 @@ class RdpShareHost:
         log=print,
         seat=None,
         applier=None,
+        sleep=time.sleep,
     ):
         """
         Args:
@@ -148,6 +155,7 @@ class RdpShareHost:
             seat: Who is at the screen and what a peer would wait on; None
                 is the platform's own.
             applier: The system's registration; None is the platform's own.
+            sleep: Waits a number of seconds.
         """
         self._platform = platform
         self._seat = seat if seat is not None else seat_for(platform.os_name)
@@ -161,8 +169,10 @@ class RdpShareHost:
             else applier_for(platform.os_name, self._kept_dir)
         )
         self._log = log
+        self._sleep = sleep
         self._lock = threading.Lock()
         self._seat_password = ""
+        self._machine_id_read = ""
         self._listened_at = 0.0
         self._listeners: list = []
         self._attention_at = 0.0
@@ -255,6 +265,34 @@ class RdpShareHost:
             except STEP_ERRORS as error:
                 self._log(f"remote_desktop: {command_detail(error)}"[:500])
             self._listened_at = 0.0
+
+    def repair_password(self) -> None:
+        """Write the seat password into root's ``RustDesk.toml`` again when
+        RustDesk replaced it there, while the switch is on.
+
+        Called at each report: a read of that file alone while it holds the
+        seat password. A turn on which another change of the share holds
+        the lock is skipped. A failure is logged.
+        """
+        if not self._is_seat_synced() or not os.path.isfile(self._registered_path()):
+            return
+        password = self._read_password() or self._seat_password
+        if not password or not self._is_password_lost(password):
+            return
+        if not self._lock.acquire(blocking=False):
+            return
+        try:
+            with held(os.path.join(self._dir, REMOTE_DESKTOP_LOCK_NAME)):
+                if os.path.isfile(self._registered_path()) and (
+                    self._is_password_lost(password)
+                ):
+                    _, _, uid = self._seat_of()
+                    self._rewrite_password(password, uid)
+        except ModuleApplyError as error:
+            said = " ".join(f"{key}={value}" for key, value in error.params.items())
+            self._log(f"remote_desktop: {error.code} {said}"[:500])
+        finally:
+            self._lock.release()
 
     def leave_hub(self) -> None:
         """Cut the share off and give RustDesk back: the machine left the hub
@@ -381,7 +419,7 @@ class RdpShareHost:
         password = self._seat_password or self._read_password()
         paths = self._settings_paths(home)
         # The password goes into the service's own file alone: the session's
-        # host takes it from the service and stores it in its own form.
+        # host copies it from there when that file holds an id and a key pair.
         service_password = paths[1] if password else ""
         written = [
             path
@@ -415,7 +453,7 @@ class RdpShareHost:
                 self._keep_settings(registered, path)
             write_json(self._registered_path(), registered)
             for path in written:
-                rustdesk.write_settings(path, self._render(path, password))
+                rustdesk.write_settings(path, self._render(path, password), home)
             step = STEP_REGISTER
             applier.register()
             step = STEP_START
@@ -426,6 +464,8 @@ class RdpShareHost:
             )
         if password:
             self._write_password(password)
+        if password and account and self._is_seat_synced():
+            self._settle_password(password, uid)
         self._log("remote_desktop: the agent's RustDesk runs")
         if not was_on and account:
             self._seat.ask_for_permissions(account)
@@ -455,6 +495,78 @@ class RdpShareHost:
             os.unlink(self._registered_path())
         shutil.rmtree(self._kept_dir, ignore_errors=True)
         self._log("remote_desktop: RustDesk is given back")
+
+    def _settle_password(self, password: str, uid) -> None:
+        """Read root's ``RustDesk.toml`` until RustDesk wrote an id and a key
+        pair into it, for at most :data:`REMOTE_DESKTOP_IDENTITY_WAIT_S`,
+        then write the seat password again if it is not there.
+
+        Raises:
+            ModuleApplyError: ``rdp_takeover_failed {step, detail}``.
+        """
+        path = self._service_password_path()
+        waited = 0.0
+        while not rustdesk.has_identity(path):
+            if waited >= REMOTE_DESKTOP_IDENTITY_WAIT_S:
+                self._log("remote_desktop: RustDesk wrote no id and key pair yet")
+                return
+            self._sleep(REMOTE_DESKTOP_POLL_S)
+            waited += REMOTE_DESKTOP_POLL_S
+        if self._is_password_lost(password):
+            self._rewrite_password(password, uid)
+
+    def _rewrite_password(self, password: str, uid) -> None:
+        """Stop the host, write the seat password into root's
+        ``RustDesk.toml`` again and start the host.
+
+        Raises:
+            ModuleApplyError: ``rdp_takeover_failed {step, detail}``.
+        """
+        self._log("remote_desktop: RustDesk replaced the seat password; writing it")
+        applier = self._applier
+        step = STEP_STOP
+        try:
+            applier.stop_hosts()
+            step = STEP_SETTINGS
+            rustdesk.write_password(self._service_password_path(), password)
+            step = STEP_START
+            applier.start(uid)
+        except STEP_ERRORS as error:
+            raise ModuleApplyError(
+                CODE_TAKEOVER_FAILED, {"step": step, "detail": command_detail(error)}
+            )
+        self._listened_at = 0.0
+
+    def _is_password_lost(self, password: str) -> bool:
+        """Whether root's ``RustDesk.toml`` holds an id, a key pair and a
+        password other than the seat password; a sealed value that does not
+        open with this machine's id counts as kept."""
+        path = self._service_password_path()
+        if not rustdesk.has_identity(path):
+            return False
+        stored = rustdesk.stored_password(path, self._machine_id)
+        return stored is not None and stored != password
+
+    def _is_seat_synced(self) -> bool:
+        """Whether a session's host here sends its settings to root's
+        service."""
+        return self._platform.os_name in REMOTE_DESKTOP_SYNCED_OS_NAMES
+
+    def _service_password_path(self) -> str:
+        """Root's ``RustDesk.toml``, the one the service reads."""
+        return os.path.join(
+            self._applier.settings_dirs("")[0], REMOTE_DESKTOP_PASSWORD_FILE
+        )
+
+    def _machine_id(self) -> str:
+        """The machine's id, which RustDesk seals with; read until one is
+        found, then kept."""
+        if not self._machine_id_read:
+            try:
+                self._machine_id_read = str(self._platform.read_machine_id() or "")
+            except (OSError, PlatformUnsupportedError):
+                self._machine_id_read = ""
+        return self._machine_id_read
 
     def _render(self, path: str, password: str):
         """What one settings file is written through."""

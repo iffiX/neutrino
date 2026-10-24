@@ -1801,6 +1801,7 @@ class RecordedDesktop:
 
     def __init__(self):
         self.left = 0
+        self.repaired = 0
 
     def leave_hub(self):
         self.left += 1
@@ -1810,6 +1811,22 @@ class RecordedDesktop:
 
     def settle_at_start(self):
         """Nothing to settle."""
+
+    def repair_password(self):
+        self.repaired += 1
+
+
+def test_each_report_turn_checks_the_seat_password_rustdesk_holds(
+    config_path, monkeypatch
+):
+    agent, _ = scripted_agent(config_path, monkeypatch, [])
+    desktop = RecordedDesktop()
+    agent._rdp = desktop
+
+    agent._tick()
+    agent._tick()
+
+    assert desktop.repaired == 2
 
 
 def test_leave_cuts_the_desktop_share_off(config_path, monkeypatch):

@@ -59,6 +59,12 @@ REMOTE_DESKTOP_VIEWER_FLAGS = (
 REMOTE_DESKTOP_STOP_TIMEOUT_S = 30
 REMOTE_DESKTOP_POLL_S = 0.5
 REMOTE_DESKTOP_COMMAND_TIMEOUT_S = 60
+# How long root's RustDesk.toml is read after a start, every
+# REMOTE_DESKTOP_POLL_S, for the id and the key pair RustDesk writes into it.
+REMOTE_DESKTOP_IDENTITY_WAIT_S = 30
+# The systems whose session host writes its own settings over the root
+# service's until root's RustDesk.toml holds an id and a key pair.
+REMOTE_DESKTOP_SYNCED_OS_NAMES = ("linux", "darwin")
 # How long the socket table is believed: the report reads it every few
 # seconds.
 REMOTE_DESKTOP_LISTEN_TTL_S = 3.0
