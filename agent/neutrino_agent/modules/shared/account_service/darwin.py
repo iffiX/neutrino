@@ -60,6 +60,8 @@ def render_plist(service, *, home: str, log_path: str) -> bytes:
         )
     if service.umask:
         document["Umask"] = int(service.umask, 8)
+    if service.is_process_group_abandoned:
+        document["AbandonProcessGroup"] = True
     return plistlib.dumps(document)
 
 

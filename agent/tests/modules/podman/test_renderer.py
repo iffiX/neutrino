@@ -17,6 +17,7 @@ from neutrino_agent.modules.podman.renderer import (
     PodmanQuadletRenderer,
     PodmanRegistriesRenderer,
     PodmanUnitRenderer,
+    machine_boot_unit,
     machine_control_script,
     machine_journal_script,
     machine_stop_script,
@@ -547,3 +548,92 @@ def test_the_stop_script_stops_each_generated_container_and_keeps_its_file(
         "stop web.service",
     ]
     assert (shell.quadlet / "web.container").exists()
+
+
+# --- the boot unit, where the machine mounts the computer's /etc/containers ---
+
+BOOT_UNIT = "etc/systemd/system/neutrino_containers.service"
+BOOT_LINK = "etc/systemd/system/multi-user.target.wants/neutrino_containers.service"
+
+
+def mounted_machine(tmp_path) -> "MachineShell":
+    """A macOS machine whose own unit mounts the computer's folder on /etc/containers."""
+    shell = MachineShell(tmp_path, "darwin")
+    mount_unit = shell.root / "etc/systemd/system/etc-containers.mount"
+    mount_unit.parent.mkdir(parents=True)
+    mount_unit.write_text("[Mount]\nWhere=/etc/containers\n")
+    return shell
+
+
+def test_the_boot_unit_reloads_systemd_and_starts_multi_user_after_the_mount():
+    unit = machine_boot_unit()
+
+    assert unit.startswith(PODMAN_GENERATED_MARKER + "\n")
+    assert "RequiresMountsFor=/etc/containers\n" in unit
+    assert unit.index("ExecStart=/usr/bin/systemctl daemon-reload\n") < unit.index(
+        "ExecStart=/usr/bin/systemctl start --no-block multi-user.target\n"
+    )
+    assert unit.endswith("[Install]\nWantedBy=multi-user.target\n")
+
+
+def test_a_mounted_machine_gets_the_boot_unit_turned_on_once(tmp_path):
+    shell = mounted_machine(tmp_path)
+
+    done, _calls = shell.run(machine_config())
+    again, _calls = shell.run(machine_config())
+
+    assert done.returncode == 0, done.stderr
+    assert (shell.root / BOOT_UNIT).read_text() == machine_boot_unit()
+    assert os.readlink(shell.root / BOOT_LINK) == "../neutrino_containers.service"
+    assert changed_lines(done)[-2:] == [
+        f"changed: {shell.root / BOOT_UNIT}",
+        f"changed: {shell.root / BOOT_LINK}",
+    ]
+    assert again.returncode == 0, again.stderr
+    assert changed_lines(again) == []
+
+
+def test_a_machine_without_the_mount_has_no_boot_unit_and_loses_a_stale_one(
+    tmp_path,
+):
+    shell = MachineShell(tmp_path, "darwin")
+    stale = shell.root / BOOT_UNIT
+    stale.parent.mkdir(parents=True)
+    stale.write_text(machine_boot_unit())
+
+    done, _calls = shell.run(machine_config())
+
+    assert done.returncode == 0, done.stderr
+    assert not stale.exists()
+    assert changed_lines(done)[-1] == f"changed: -{stale}"
+
+
+def test_no_containers_take_the_boot_unit_and_its_link_away(tmp_path):
+    shell = mounted_machine(tmp_path)
+    shell.run(machine_config())
+
+    done, _calls = shell.run(PodmanConfig())
+
+    assert done.returncode == 0, done.stderr
+    assert not (shell.root / BOOT_UNIT).exists()
+    assert not os.path.lexists(shell.root / BOOT_LINK)
+
+
+def test_a_person_s_unit_of_the_same_name_is_left(tmp_path):
+    shell = MachineShell(tmp_path, "darwin")
+    mine = shell.root / BOOT_UNIT
+    mine.parent.mkdir(parents=True)
+    mine.write_text("[Unit]\nDescription=mine\n")
+
+    done, _calls = shell.run(machine_config())
+
+    assert done.returncode == 0, done.stderr
+    assert mine.read_text() == "[Unit]\nDescription=mine\n"
+
+
+def test_the_windows_script_has_no_boot_unit():
+    script = PodmanMachineScriptRenderer(
+        config=machine_config(), os_name="windows"
+    ).render()
+
+    assert "neutrino_containers" not in script

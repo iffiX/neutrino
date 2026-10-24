@@ -42,6 +42,19 @@ PODMAN_MACHINE_QUADLET_DIRS = {
     "darwin": PODMAN_QUADLET_DIR,
 }
 
+# Podman 6 mounts the account's containers folder on the machine's
+# /etc/containers with this unit, after systemd's generators run. Where the
+# Quadlet folder is under that mount, the root script writes the boot unit,
+# which reloads systemd and starts multi-user.target's containers after the
+# mount, and turns it on with the link.
+PODMAN_MACHINE_CONFIG_MOUNT_POINT = "/etc/containers"
+PODMAN_MACHINE_CONFIG_MOUNT_UNIT = "/etc/systemd/system/etc-containers.mount"
+PODMAN_MACHINE_BOOT_UNIT_NAME = "neutrino_containers.service"
+PODMAN_MACHINE_BOOT_UNIT_PATH = "/etc/systemd/system/neutrino_containers.service"
+PODMAN_MACHINE_BOOT_UNIT_LINK = (
+    "/etc/systemd/system/multi-user.target.wants/neutrino_containers.service"
+)
+
 # What every .container file rendered for a machine carries under
 # [Container]: the machine runs systemd under cgroupfs, where Quadlet's
 # default split mode finds no controllers.

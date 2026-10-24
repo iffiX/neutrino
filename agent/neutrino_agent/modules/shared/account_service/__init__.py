@@ -97,6 +97,9 @@ class AccountService:
         is_output_discarded: Whether stdout and stderr are discarded: the
             unit's output goes to systemd's null on Linux, and no log file
             is written on macOS or Windows.
+        is_process_group_abandoned: macOS: whether launchd leaves the
+            processes the program started running when the job stops; the
+            plist's ``AbandonProcessGroup``. Unread elsewhere.
     """
 
     name: str
@@ -114,6 +117,7 @@ class AccountService:
     files: tuple = ()
     directories: tuple = ()
     is_output_discarded: bool = False
+    is_process_group_abandoned: bool = False
 
 
 @dataclass(frozen=True)

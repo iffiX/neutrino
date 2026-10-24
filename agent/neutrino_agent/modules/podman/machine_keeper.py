@@ -167,7 +167,8 @@ def keeper_service(
     Returns:
         The service: the script as the account's file, run by the task's
         ``cmd.exe`` on Windows and by ``/bin/sh`` on macOS, its output in
-        the module's log of the account.
+        the module's log of the account. On macOS launchd leaves the
+        machine's processes running when the keeper's job stops.
 
     Raises:
         ValueError: For a system with no keeper.
@@ -186,4 +187,5 @@ def keeper_service(
                 keeper_script(os_name=os_name, binary=binary, provider=provider),
             ),
         ),
+        is_process_group_abandoned=True,
     )

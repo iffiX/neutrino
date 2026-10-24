@@ -16,13 +16,19 @@ Pure: config in, one file's text per container out.
 from __future__ import annotations
 
 import base64
+import textwrap
 
 from neutrino_agent.modules.podman.config import PodmanConfig, PodmanContainer
 from neutrino_agent.modules.podman.constants import (
     PODMAN_BINARY,
     PODMAN_CONTAINER_ACTIONS,
     PODMAN_GENERATED_MARKER,
+    PODMAN_MACHINE_BOOT_UNIT_LINK,
+    PODMAN_MACHINE_BOOT_UNIT_NAME,
+    PODMAN_MACHINE_BOOT_UNIT_PATH,
     PODMAN_MACHINE_CGROUPS_LINE,
+    PODMAN_MACHINE_CONFIG_MOUNT_POINT,
+    PODMAN_MACHINE_CONFIG_MOUNT_UNIT,
     PODMAN_MACHINE_QUADLET_DIRS,
     PODMAN_REGISTRIES_CONF_PATH,
 )
@@ -75,6 +81,43 @@ _MACHINE_SCRIPT_MIRRORS_REMOVE = """if [ -f "$mirrors" ]; then
 fi
 """
 
+# The boot unit is written and turned on while the machine's own mount unit
+# puts the computer's folder on /etc/containers, and removed otherwise.
+_MACHINE_SCRIPT_BOOT_REMOVE = """if [ -f {unit} ] && [ "$(head -n 1 {unit})" = "$marker" ]; then
+    rm -f {unit} {link}
+    echo "changed: -"{unit}
+fi
+"""
+
+_MACHINE_SCRIPT_BOOT_PUT = """if [ -f {mount_unit} ]; then
+    mkdir -p "$(dirname {link})" || exit 1
+    put {unit} {encoded} || :
+    if [ ! -L {link} ]; then
+        ln -s ../{name} {link} || exit 1
+        echo "changed: "{link}
+    fi
+else
+{remove}fi
+"""
+
+# The boot unit: after the mount, systemd reads the Quadlet folder again and
+# starts what multi-user.target wants, which a reload alone does not.
+_MACHINE_BOOT_UNIT = """{marker}
+
+[Unit]
+Description=Start the declared containers after {mount_point} is mounted
+RequiresMountsFor={mount_point}
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl daemon-reload
+ExecStart=/usr/bin/systemctl start --no-block multi-user.target
+
+[Install]
+WantedBy=multi-user.target
+"""
+
 # A changed container that is not started at boot is restarted only while
 # it runs, as on Linux.
 _MACHINE_SCRIPT_TAIL = """systemctl daemon-reload || exit 1
@@ -117,6 +160,18 @@ def qualified_image(image: str) -> str:
     if "/" not in image:
         return f"docker.io/library/{image}"
     return f"docker.io/{image}"
+
+
+def machine_boot_unit() -> str:
+    """The unit that starts a machine's containers at boot after its ``/etc/containers`` is mounted.
+
+    Returns:
+        The systemd unit's text, the generated marker first.
+    """
+    return _MACHINE_BOOT_UNIT.format(
+        marker=PODMAN_GENERATED_MARKER,
+        mount_point=PODMAN_MACHINE_CONFIG_MOUNT_POINT,
+    )
 
 
 def machine_stop_script(*, os_name: str, root: str = "") -> str:
@@ -340,9 +395,11 @@ class PodmanMachineScriptRenderer:
     The script carries every Quadlet file and the mirrors drop-in
     base64-encoded, writes the ones that differ, removes the generated files
     the configuration no longer names, reloads systemd and restarts each
-    changed container that starts at boot or runs. It prints one ``changed:
-    <file>`` line per change, ``-<file>`` for a removal, and exits non-zero
-    when systemd refuses.
+    changed container that starts at boot or runs. Where the Quadlet folder
+    is under ``/etc/containers``, it also writes the boot unit while the
+    machine mounts that folder. It prints one ``changed: <file>`` line per
+    change, ``-<file>`` for a removal, and exits non-zero when systemd
+    refuses.
     """
 
     def __init__(self, *, config: PodmanConfig, os_name: str, root: str = ""):
@@ -369,12 +426,11 @@ class PodmanMachineScriptRenderer:
         rendered = PodmanQuadletRenderer(
             config=self._config, machine_os_name=self._os_name
         ).render()
+        quadlet_dir = PODMAN_MACHINE_QUADLET_DIRS[self._os_name]
         parts = [
             _MACHINE_SCRIPT_HEAD.format(
                 marker_comment=PODMAN_GENERATED_MARKER,
-                quadlet=_shell_quoted(
-                    self._root + PODMAN_MACHINE_QUADLET_DIRS[self._os_name]
-                ),
+                quadlet=_shell_quoted(self._root + quadlet_dir),
                 mirrors=_shell_quoted(self._root + PODMAN_REGISTRIES_CONF_PATH),
                 marker=_shell_quoted(PODMAN_GENERATED_MARKER),
             )
@@ -394,8 +450,27 @@ class PodmanMachineScriptRenderer:
             parts.append(_MACHINE_SCRIPT_MIRRORS_PUT.format(encoded=_encoded(mirrors)))
         else:
             parts.append(_MACHINE_SCRIPT_MIRRORS_REMOVE)
+        if quadlet_dir.startswith(PODMAN_MACHINE_CONFIG_MOUNT_POINT + "/"):
+            parts.append(self._boot_unit_part())
         parts.append(_MACHINE_SCRIPT_TAIL)
         return "".join(parts)
+
+    def _boot_unit_part(self) -> str:
+        """The script's lines that write or remove the boot unit."""
+        paths = {
+            "unit": _shell_quoted(self._root + PODMAN_MACHINE_BOOT_UNIT_PATH),
+            "link": _shell_quoted(self._root + PODMAN_MACHINE_BOOT_UNIT_LINK),
+        }
+        remove = _MACHINE_SCRIPT_BOOT_REMOVE.format(**paths)
+        if not self._config.containers:
+            return remove
+        return _MACHINE_SCRIPT_BOOT_PUT.format(
+            mount_unit=_shell_quoted(self._root + PODMAN_MACHINE_CONFIG_MOUNT_UNIT),
+            name=PODMAN_MACHINE_BOOT_UNIT_NAME,
+            encoded=_encoded(machine_boot_unit()),
+            remove=textwrap.indent(remove, "    "),
+            **paths,
+        )
 
 
 def _encoded(text: str) -> str:

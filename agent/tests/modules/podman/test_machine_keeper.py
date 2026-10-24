@@ -123,7 +123,7 @@ def test_the_task_runs_the_script_with_its_output_in_the_accounts_log():
     ]
 
 
-def test_the_plist_runs_the_script_as_the_account_with_its_log():
+def test_the_plist_runs_the_script_as_the_account_with_its_log_and_abandons_its_group():
     module_dir = "/Library/Application Support/Neutrino/agent/state/podman"
     service = keeper_service(
         os_name="darwin",
@@ -147,4 +147,5 @@ def test_the_plist_runs_the_script_as_the_account_with_its_log():
         "KeepAlive": True,
         "StandardOutPath": log,
         "StandardErrorPath": log,
+        "AbandonProcessGroup": True,
     }
