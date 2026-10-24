@@ -72,3 +72,18 @@
   flex: 1;
   min-width: 0;
 }
+
+.string_list_editor_buttons {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* With Browse… the input keeps room for a folder, and the two buttons move
+   under it together on a row too narrow for the three. */
+.string_list_editor_add--browse {
+  flex-wrap: wrap;
+}
+
+.string_list_editor_add--browse .input {
+  flex-basis: 16rem;
+}

@@ -50,6 +50,7 @@ export function StringListEditor({
   // Redrawn when the panel's language changes.
   useLanguage();
   const [draft, setDraft] = useState("");
+  const isBrowsable = onBrowse !== undefined && browseLabel !== undefined;
 
   const handleAdd = (event: FormEvent) => {
     event.preventDefault();
@@ -102,27 +103,34 @@ export function StringListEditor({
         ))}
       </div>
 
-      <form className="string_list_editor_add" onSubmit={handleAdd}>
+      <form
+        className={`string_list_editor_add ${
+          isBrowsable ? "string_list_editor_add--browse" : ""
+        }`}
+        onSubmit={handleAdd}
+      >
         <input
           className="input"
           value={draft}
           placeholder={placeholder ?? t("ui.list.add_placeholder")}
           onChange={(event) => setDraft(event.target.value)}
         />
-        <button type="submit" className="button button--small">
-          <Icon name="plus" size={13} />
-          {t("ui.list.add")}
-        </button>
-        {onBrowse !== undefined && browseLabel !== undefined && (
-          <button
-            type="button"
-            className="button button--small"
-            onClick={handleBrowse}
-          >
-            <Icon name="folder" size={13} />
-            {browseLabel}
+        <div className="string_list_editor_buttons">
+          <button type="submit" className="button button--small">
+            <Icon name="plus" size={13} />
+            {t("ui.list.add")}
           </button>
-        )}
+          {isBrowsable && (
+            <button
+              type="button"
+              className="button button--small"
+              onClick={handleBrowse}
+            >
+              <Icon name="folder" size={13} />
+              {browseLabel}
+            </button>
+          )}
+        </div>
       </form>
     </div>
   );
