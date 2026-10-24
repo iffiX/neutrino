@@ -47,7 +47,7 @@ On Windows and macOS, **Run settings** choose whose Podman machine runs the cont
 | **Memory (GiB)**                  | the memory the Podman machine uses                                                                   |
 | **Disk limit (GiB)**              | the size of the Podman machine's disk, which only grows; the hint under the field gives its size now |
 
-A 0 keeps Podman's default: half the computer's processors, 2 GiB of memory and a 100 GiB disk. The first apply creates the account's default Podman machine, which takes about a minute. When the account already has one, the agent uses it, and `podman ps` run as that account lists the same containers.
+A 0 keeps Podman's default: half the computer's processors, 2 GiB of memory and, on macOS, a 100 GiB disk. On Windows, **Disk limit (GiB)** starts at 100 and takes 1 or more. The first apply creates the account's default Podman machine, which takes about a minute. When the account already has one, the agent uses it, and `podman ps` run as that account lists the same containers.
 
 The computer starts the Podman machine at boot, before anyone signs in, and the container ports answer about 30 seconds later. After you choose another account, the declared containers run in that account's Podman machine. The old account's machine stops, and its images and named volumes stay in that account's profile.
 
@@ -148,7 +148,7 @@ When the tab shows a code, its cause and fix are under [Containers](../../refere
 
 **Running now** lists every container on the machine with its image, its status and a **declared** or **ad hoc** badge. A running container has **Journal**, **Shell**, **Restart** and **Stop**, and a stopped one has **Journal** and **Start**.
 
-**Shell** opens a terminal inside the container, in a window on the page, on every system. It runs bash when the image has it, and sh otherwise. **Close** ends it.
+**Shell** opens a terminal inside the container, in a window on the page, on every system. It runs bash when the image has it, and sh otherwise. **Close**, or `exit` typed in it, ends the shell and every program it started in the container.
 
 Under **Registry mirrors**, select **Add mirror**, fill the address, then select **Apply mirrors**. Podman tries the mirrors in order before `docker.io`, from the next pull on.
 
