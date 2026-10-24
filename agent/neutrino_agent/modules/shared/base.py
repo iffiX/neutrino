@@ -203,6 +203,18 @@ class ModuleRunner:
         """
         return {}
 
+    def absent_reason(self, resolved: dict) -> dict:
+        """What is missing of software whose check fails while part of it is there.
+
+        Args:
+            resolved: The module as the hub resolved it.
+
+        Returns:
+            ``{"code", "params"}`` naming the missing part; empty for a
+            module that names none.
+        """
+        return {}
+
     def is_active(self) -> bool:
         """Whether the unit this module runs as is active.
 

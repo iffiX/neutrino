@@ -177,6 +177,15 @@ CONTAINERS_CODES = (
 )
 
 
+@pytest.mark.parametrize("code", ["zfs_kernel_module_missing"])
+def test_every_code_an_absent_module_row_carries_is_worded_in_every_language(code):
+    for language in sorted(path.name for path in LOCALES_DIR.iterdir()):
+        worded = set()
+        for path in (LOCALES_DIR / language).glob("*.json"):
+            worded |= set(json.loads(path.read_text(encoding="utf-8")))
+        assert f"code.{code}" in worded, language
+
+
 @pytest.mark.parametrize("code", CONTAINERS_CODES)
 def test_every_code_containers_answers_is_worded_in_every_language(code):
     for language in sorted(path.name for path in LOCALES_DIR.iterdir()):

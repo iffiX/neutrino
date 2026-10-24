@@ -10,6 +10,7 @@ from neutrino_agent.modules.zfs.applier import (
     ZfsPoolManager,
     ZfsPoolReader,
     cap_arc,
+    missing_kernel_module,
     parse_zpool_import,
     parse_zpool_status,
     vdev_arguments,
@@ -313,3 +314,24 @@ def test_the_arc_cap_is_written_once_and_poked_live(tmp_path, monkeypatch):
     assert "zfs_arc_max=2048000000" in conf.read_text()
     assert parameter.read_text() == "2048000000"
     assert cap_arc() == ""
+
+
+def test_a_kernel_with_no_zfs_module_is_named_by_its_release(
+    commands, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(applier_module, "ZFS_KERNEL_MODULE_DIR", str(tmp_path / "zfs"))
+    commands.answers[("modinfo", "-n")] = (1, "")
+
+    assert missing_kernel_module() == applier_module.os.uname().release
+    assert ["modinfo", "-n", "zfs"] in commands.calls
+
+
+def test_a_kernel_with_the_zfs_module_names_nothing(commands, monkeypatch, tmp_path):
+    monkeypatch.setattr(applier_module, "ZFS_KERNEL_MODULE_DIR", str(tmp_path / "zfs"))
+    commands.answers[("modinfo", "-n")] = (0, "/lib/modules/6.1/updates/dkms/zfs.ko\n")
+    assert missing_kernel_module() == ""
+
+    (tmp_path / "zfs").mkdir()
+    commands.calls.clear()
+    assert missing_kernel_module() == ""
+    assert commands.calls == []

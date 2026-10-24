@@ -28,6 +28,7 @@ from neutrino_agent.modules.zfs.applier import (
     ZfsPoolReader,
     cap_arc,
     is_zfs_installed,
+    missing_kernel_module,
 )
 from neutrino_agent.modules.zfs.config import (
     validate_dataset_path,
@@ -99,6 +100,24 @@ class ZfsModuleRunner(SystemPackageModuleRunner):
         """Drop the ARC cap; the pools stay on their disks."""
         with contextlib.suppress(OSError):
             os.unlink(ZFS_MODPROBE_CONF)
+
+    def absent_reason(self, resolved: dict) -> dict:
+        """``zfs_kernel_module_missing {kernel}`` while the tools are
+        installed and the running kernel has no ZFS module.
+
+        Args:
+            resolved: The module as the hub resolved it.
+
+        Returns:
+            ``{"code", "params"}``, or empty when the tools are not there
+            or the kernel has the module.
+        """
+        if not is_zfs_installed():
+            return {}
+        kernel = missing_kernel_module()
+        if not kernel:
+            return {}
+        return {"code": "zfs_kernel_module_missing", "params": {"kernel": kernel}}
 
     def is_active(self) -> bool:
         """Whether the ZFS kernel module is loaded; there is no unit to ask."""

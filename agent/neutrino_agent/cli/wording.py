@@ -194,6 +194,9 @@ CLI_CODE_WORDS = {
     "recordsize_unknown": "recordsize {recordsize} is not offered",
     "mountpoint_invalid": "the mountpoint must be an absolute path",
     "mountpoint_forbidden": "{mountpoint} would sit over the operating system",
+    "zfs_kernel_module_missing": (
+        "the running kernel {kernel} has no ZFS module; install ZFS storage again"
+    ),
 }
 
 # Where a shared desktop stands, plus the word for a machine that has not

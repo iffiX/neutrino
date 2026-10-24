@@ -724,6 +724,46 @@ def test_software_that_is_not_there_is_absent_whatever_the_mark(tmp_path):
     }
 
 
+class PartlyThereRunner(ConfigurableRunner):
+    """A runner whose check fails and which names the part that is missing."""
+
+    def absent_reason(self, resolved):
+        return {"code": "zfs_kernel_module_missing", "params": {"kernel": "6.1.0"}}
+
+
+def test_an_absent_row_carries_the_part_its_runner_names_missing(tmp_path):
+    engine = module_engine(
+        PartlyThereRunner(is_installed=False), module_wanted("running"), tmp_path
+    )
+
+    engine._refresh(is_forced=True)
+
+    row = engine.report()["samba"]
+    assert (row["state"], row["code"], row["params"]) == (
+        "absent",
+        "zfs_kernel_module_missing",
+        {"kernel": "6.1.0"},
+    )
+
+
+def test_a_kept_failure_takes_the_place_of_the_missing_part(tmp_path):
+    engine = module_engine(
+        PartlyThereRunner(is_installed=False), module_wanted("running"), tmp_path
+    )
+    engine.record_failure(
+        "samba", {"state": "failed", "code": "uninstall_unconfirmed", "params": {}}
+    )
+
+    engine._refresh(is_forced=True)
+
+    row = engine.report()["samba"]
+    assert (row["state"], row["code"], row["params"]) == (
+        "absent",
+        "uninstall_unconfirmed",
+        {},
+    )
+
+
 def test_a_module_the_state_does_not_name_is_observed_by_its_own_check():
     """A hand-installed Samba shows as installed, its unit reported, from
     the runner's own check: there is no recipe to ask."""

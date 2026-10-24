@@ -26,6 +26,7 @@ from neutrino_agent.modules.zfs.constants import (
     ZFS_DISK_BY_ID_DIR,
     ZFS_DISK_BY_PATH_DIR,
     ZFS_DISK_ID_PREFERENCE,
+    ZFS_KERNEL_MODULE_DIR,
     ZFS_MEMINFO_PATH,
     ZFS_MODPROBE_CONF,
     ZFS_TRANSIENT_GROUP_PREFIXES,
@@ -172,6 +173,25 @@ class ZfsImportable:
 def is_zfs_installed() -> bool:
     """Whether the ZFS userland tools are present."""
     return shutil.which("zpool") is not None
+
+
+def missing_kernel_module() -> str:
+    """The running kernel's release when it has no ZFS module.
+
+    Returns:
+        The release, as ``uname -r`` prints it, when the module is neither
+        loaded nor found by ``modinfo``; empty otherwise, and when
+        ``modinfo`` cannot run.
+    """
+    if os.path.isdir(ZFS_KERNEL_MODULE_DIR):
+        return ""
+    try:
+        result = run(["modinfo", "-n", "zfs"], is_checked=False, timeout_s=30)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    if result.is_success:
+        return ""
+    return os.uname().release
 
 
 def parse_zpool_status(text: str) -> tuple:

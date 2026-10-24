@@ -217,6 +217,10 @@ const PRESSED_STATES: Record<ModuleAction | "configure", string> = {
   configure: "queued",
 };
 
+/** The states whose code the tab words as a notice at its top: what holds
+ * up an install, and what is missing of software that is partly there. */
+const NOTICED_STATES = ["installing", "absent"];
+
 /** The code of an install that goes on only after the machine restarts. */
 const REBOOT_REQUIRED_CODE = "reboot_required";
 
@@ -682,7 +686,7 @@ export function ModulesPage() {
                         </div>
                       </div>
                     )}
-                    {activeRow.state === "installing" &&
+                    {NOTICED_STATES.includes(activeRow.state) &&
                       activeRow.code !== "" && (
                         <div className="notice notice--warn modules_install_notice">
                           <Icon name="alert" size={15} />

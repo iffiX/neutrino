@@ -712,7 +712,8 @@ class ModuleEngine(ReconcileWorker):
         Returns:
             ``{"state", "is_active", "code", "params", "details"}``; an
             ``installing`` row carries the runner's install wait as its
-            code and params, and a module whose last install failed reads
+            code and params, an ``absent`` row the part the runner names
+            missing, and a module whose last install failed reads
             ``install_failed`` with that install's code and params,
             whatever is on the machine.
         """
@@ -732,7 +733,11 @@ class ModuleEngine(ReconcileWorker):
         try:
             observed = runner.observe(_row(recipe))
             if not self._verify(runner, recipe, observed):
-                status = _typed(AGENT_MODULE_STATE_ABSENT)
+                reason = runner.absent_reason(_row(recipe))
+                status = _typed(
+                    AGENT_MODULE_STATE_ABSENT, str(reason.get("code", "") or "")
+                )
+                status["params"] = dict(reason.get("params") or {})
                 return self._with_failure(name, status, is_present=False)
             is_active = bool(observed.get("is_active", False))
             status = _typed(

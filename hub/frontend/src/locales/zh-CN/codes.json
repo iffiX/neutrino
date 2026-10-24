@@ -332,6 +332,7 @@
   "code.wol_sent": "已发送唤醒包",
   "code.setup_in_progress": "这个中枢已在配置中。",
   "code.gateway_not_serving": "中枢的 AI 网关还没有可用的模型，先到 AI 页设置好。",
+  "code.zfs_kernel_module_missing": "正在运行的内核 {kernel} 没有 ZFS 模块，重新安装这个模块。",
   "code.switch_failed": "cc-switch 没能把工具指向网关：{detail}",
   "code.cc_switch_download_failed": "这台机器没能从中枢取得 cc-switch：{detail}",
   "code.hub_release_file_gone": "中枢自己的发布已不再带有这个文件，请把中枢更新到最新发布",

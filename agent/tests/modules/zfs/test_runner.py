@@ -85,6 +85,22 @@ def test_is_active_is_the_kernel_module_loaded(runner, monkeypatch, tmp_path):
     assert runner.is_active() is True
 
 
+def test_absent_tools_with_no_kernel_module_name_the_running_kernel(
+    runner, monkeypatch
+):
+    monkeypatch.setattr(runner_module, "missing_kernel_module", lambda: "6.1.0-54")
+
+    assert runner.absent_reason({}) == {
+        "code": "zfs_kernel_module_missing",
+        "params": {"kernel": "6.1.0-54"},
+    }
+    monkeypatch.setattr(runner_module, "missing_kernel_module", lambda: "")
+    assert runner.absent_reason({}) == {}
+    monkeypatch.setattr(runner_module, "missing_kernel_module", lambda: "6.1.0-54")
+    monkeypatch.setattr(runner_module, "is_zfs_installed", lambda: False)
+    assert runner.absent_reason({}) == {}
+
+
 def test_apply_caps_the_arc_and_nothing_else(runner):
     runner.apply({})
 
