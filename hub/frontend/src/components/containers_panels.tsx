@@ -2,6 +2,8 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 
 import { ApplyBar } from "./apply_bar";
+import { ContainersRunSettings } from "./containers_run_settings";
+import { DirectoryPickerModal } from "./directory_picker_modal";
 import { JournalPanel } from "./journal_panel";
 import { ErrorPanel } from "./error_panel";
 import { Icon } from "./icon";
@@ -46,6 +48,10 @@ import "./containers_panels.css";
  * the default network. That is the deliberate line: panels that grew custom
  * networks and healthchecks would be compose with worse ergonomics, and
  * anything past the line works fine from a terminal.
+ *
+ * On Windows and macOS the containers run in one account's Podman machine,
+ * and the Run settings that name it come first; until they name an account
+ * the panels under them hold nothing to apply.
  */
 
 const EMPTY_CONTAINER: PodmanContainer = {
@@ -83,18 +89,35 @@ const SERVICE_PROTOCOLS: ServiceChoice<PodmanServiceProtocol>[] = [
   { id: "udp", labelKey: "ui.containers.service_udp" },
 ];
 
+/** The systems whose containers run in an account's Podman machine. */
+const MACHINE_RUN_OS = ["windows", "darwin"];
+
+/** The system whose machine starts with the account's Windows login. */
+const WINDOWS_OS = "windows";
+
+/** A volume in each system's own form, shown in the empty add field. */
+const VOLUME_PLACEHOLDER_KEYS: Record<string, string> = {
+  linux: "ui.containers.volume_placeholder_linux",
+  windows: "ui.containers.volume_placeholder_windows",
+  darwin: "ui.containers.volume_placeholder_darwin",
+};
+const VOLUME_PLACEHOLDER_DEFAULT_KEY = "ui.containers.volume_placeholder_linux";
+
 interface ContainersPanelsProps {
   /** The machine this page's shells and journals reach. */
   deviceId: string;
   /** Where podman answers: `/agent/module/podman`. */
   basePath: string;
   isEditable: boolean;
+  /** The system the machine's agent reports: `linux`, `windows`, `darwin`. */
+  platformOs: string;
 }
 
 export function ContainersPanels({
   deviceId,
   basePath,
   isEditable,
+  platformOs,
 }: ContainersPanelsProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
@@ -204,6 +227,9 @@ export function ContainersPanels({
     return <div className="skeleton" style={{ height: 360 }} />;
   }
 
+  const isMachineRun = MACHINE_RUN_OS.includes(platformOs);
+  const isRunNeeded = isMachineRun && (saved.machine?.account ?? "") === "";
+
   return (
     <>
       {!saved.is_installed && (
@@ -211,6 +237,17 @@ export function ContainersPanels({
           <Icon name="alert" size={15} />
           <div className="notice_body">{t("ui.containers.not_installed")}</div>
         </div>
+      )}
+
+      {isMachineRun && (
+        <ContainersRunSettings
+          deviceId={deviceId}
+          basePath={basePath}
+          saved={saved}
+          isEditable={isEditable}
+          isWindows={platformOs === WINDOWS_OS}
+          onApplied={resource.reload}
+        />
       )}
 
       <section className="settings_group">
@@ -230,7 +267,9 @@ export function ContainersPanels({
             <div className="notice_body">{liveError}</div>
           </div>
         )}
-        {saved.running.length === 0 ? (
+        {isRunNeeded ? (
+          <p className="field_hint">{t("ui.containers.run_needed")}</p>
+        ) : saved.running.length === 0 ? (
           <p className="field_hint">{t("ui.containers.live_empty")}</p>
         ) : (
           <div className="container_rows">
@@ -267,52 +306,61 @@ export function ContainersPanels({
         <div className="settings_group_title">
           <h2>{t("ui.containers.mirrors_title")}</h2>
         </div>
-        <p className="field_hint">{t("ui.containers.mirrors_hint")}</p>
-        {mirrors.map((mirror, index) => (
-          <div key={index} className="mirror_row">
-            <input
-              className="input"
-              placeholder="mirror.ccs.tencentyun.com"
-              value={mirror}
-              onChange={(event) =>
-                setMirrors((current) =>
-                  current.map((entry, at) =>
-                    at === index
-                      ? event.target.value
-                          .replace(/^https?:\/\//, "")
-                          .replace(/\/+$/, "")
-                      : entry,
-                  ),
-                )
-              }
-            />
-            <button
-              type="button"
-              className="button button--ghost button--small"
-              onClick={() =>
-                setMirrors((current) => current.filter((_, at) => at !== index))
-              }
-            >
-              <Icon name="trash" size={13} />
-            </button>
-          </div>
-        ))}
-        <div>
-          <button
-            type="button"
-            className="button"
-            onClick={() => setMirrors((current) => [...current, ""])}
-          >
-            <Icon name="plus" size={14} />
-            {t("ui.containers.mirror_add")}
-          </button>
-        </div>
+        {isRunNeeded ? (
+          <p className="field_hint">{t("ui.containers.run_needed")}</p>
+        ) : (
+          <>
+            <p className="field_hint">{t("ui.containers.mirrors_hint")}</p>
+            {mirrors.map((mirror, index) => (
+              <div key={index} className="mirror_row">
+                <input
+                  className="input"
+                  placeholder="mirror.ccs.tencentyun.com"
+                  value={mirror}
+                  onChange={(event) =>
+                    setMirrors((current) =>
+                      current.map((entry, at) =>
+                        at === index
+                          ? event.target.value
+                              .replace(/^https?:\/\//, "")
+                              .replace(/\/+$/, "")
+                          : entry,
+                      ),
+                    )
+                  }
+                />
+                <button
+                  type="button"
+                  className="button button--ghost button--small"
+                  onClick={() =>
+                    setMirrors((current) =>
+                      current.filter((_, at) => at !== index),
+                    )
+                  }
+                >
+                  <Icon name="trash" size={13} />
+                </button>
+              </div>
+            ))}
+            <div>
+              <button
+                type="button"
+                className="button"
+                onClick={() => setMirrors((current) => [...current, ""])}
+              >
+                <Icon name="plus" size={14} />
+                {t("ui.containers.mirror_add")}
+              </button>
+            </div>
+          </>
+        )}
         <ApplyBar
           isDirty={isMirrorsDirty}
           isBusy={isMirrorsBusy}
           label={t("ui.containers.mirrors_apply")}
           hint={t("ui.containers.mirrors_apply_hint")}
           blockedHint={isEditable ? null : t("ui.modules.agent_offline")}
+          isApplyDisabled={isRunNeeded}
           error={mirrorsError}
           notice={mirrorsNotice}
           onReset={mirrorsDraft.reset}
@@ -326,39 +374,48 @@ export function ContainersPanels({
         <div className="settings_group_title">
           <h2>{t("ui.containers.declared_title")}</h2>
         </div>
-        {containers.map((container, index) => (
-          <ContainerEditor
-            key={index}
-            deviceId={deviceId}
-            basePath={basePath}
-            container={container}
-            state={saved.running.find((state) => state.name === container.name)}
-            onChange={(patch) =>
-              setContainers((current) =>
-                current.map((entry, at) =>
-                  at === index ? { ...entry, ...patch } : entry,
-                ),
-              )
-            }
-            onRemove={() =>
-              setContainers((current) =>
-                current.filter((_, at) => at !== index),
-              )
-            }
-          />
-        ))}
-        <div>
-          <button
-            type="button"
-            className="button"
-            onClick={() =>
-              setContainers((current) => [...current, EMPTY_CONTAINER])
-            }
-          >
-            <Icon name="plus" size={14} />
-            {t("ui.containers.container_add")}
-          </button>
-        </div>
+        {isRunNeeded ? (
+          <p className="field_hint">{t("ui.containers.run_needed")}</p>
+        ) : (
+          <>
+            {containers.map((container, index) => (
+              <ContainerEditor
+                key={index}
+                deviceId={deviceId}
+                basePath={basePath}
+                platformOs={platformOs}
+                container={container}
+                state={saved.running.find(
+                  (state) => state.name === container.name,
+                )}
+                onChange={(patch) =>
+                  setContainers((current) =>
+                    current.map((entry, at) =>
+                      at === index ? { ...entry, ...patch } : entry,
+                    ),
+                  )
+                }
+                onRemove={() =>
+                  setContainers((current) =>
+                    current.filter((_, at) => at !== index),
+                  )
+                }
+              />
+            ))}
+            <div>
+              <button
+                type="button"
+                className="button"
+                onClick={() =>
+                  setContainers((current) => [...current, EMPTY_CONTAINER])
+                }
+              >
+                <Icon name="plus" size={14} />
+                {t("ui.containers.container_add")}
+              </button>
+            </div>
+          </>
+        )}
         <ApplyBar
           isDirty={isDirty}
           isBusy={isBusy}
@@ -366,6 +423,7 @@ export function ContainersPanels({
           hint={t("ui.containers.containers_apply_hint")}
           warning={t("ui.containers.containers_apply_warning")}
           blockedHint={isEditable ? null : t("ui.modules.agent_offline")}
+          isApplyDisabled={isRunNeeded}
           error={error}
           notice={notice}
           onReset={containersDraft.reset}
@@ -461,6 +519,8 @@ function detectedWords(
 interface ContainerEditorProps {
   deviceId: string;
   basePath: string;
+  /** The system the machine's agent reports: `linux`, `windows`, `darwin`. */
+  platformOs: string;
   container: PodmanContainer;
   /** The container as the machine last reported it, by its saved name. */
   state: PodmanContainerState | undefined;
@@ -468,9 +528,17 @@ interface ContainerEditorProps {
   onRemove: () => void;
 }
 
+/** A Browse… waiting on the path window: where it opens, and what takes
+ * the folder chosen. */
+interface FolderBrowse {
+  startPath: string;
+  pick: (folder: string) => void;
+}
+
 function ContainerEditor({
   deviceId,
   basePath,
+  platformOs,
   container,
   state,
   onChange,
@@ -480,6 +548,7 @@ function ContainerEditor({
   useLanguage();
   const [tags, setTags] = useState<string[] | null>(null);
   const [isLoadingTags, setIsLoadingTags] = useState(false);
+  const [browse, setBrowse] = useState<FolderBrowse | null>(null);
 
   const ports = hostPorts(container.ports);
 
@@ -644,8 +713,13 @@ function ContainerEditor({
           label={t("ui.containers.volumes")}
           values={container.volumes}
           onChange={(volumes) => onChange({ volumes })}
-          placeholder="/srv/share:/data"
+          placeholder={t(
+            VOLUME_PLACEHOLDER_KEYS[platformOs] ??
+              VOLUME_PLACEHOLDER_DEFAULT_KEY,
+          )}
           emptyText="host_path:container_path"
+          onBrowse={(startPath, pick) => setBrowse({ startPath, pick })}
+          browseLabel={t("ui.containers.browse")}
         />
         <StringListEditor
           label={t("ui.containers.environment")}
@@ -735,6 +809,17 @@ function ContainerEditor({
         label={t("ui.containers.autostart")}
         description={t("ui.containers.autostart_hint")}
       />
+      {browse !== null && (
+        <DirectoryPickerModal
+          deviceId={deviceId}
+          startPath={browse.startPath}
+          onPick={(folder) => {
+            browse.pick(folder);
+            setBrowse(null);
+          }}
+          onCancel={() => setBrowse(null)}
+        />
+      )}
     </div>
   );
 }

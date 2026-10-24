@@ -70,4 +70,5 @@
 
 .string_list_editor_add .input {
   flex: 1;
+  min-width: 0;
 }

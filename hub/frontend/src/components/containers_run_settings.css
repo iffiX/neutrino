@@ -1,0 +1,16 @@
+/* The Run settings: the account and its login, then the machine's CPUs,
+   memory and disk limit. */
+.containers_run_account,
+.containers_run_numbers {
+  display: grid;
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.containers_run_account {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.containers_run_numbers {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}

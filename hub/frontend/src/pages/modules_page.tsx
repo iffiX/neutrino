@@ -43,6 +43,7 @@ import type {
   DeviceOnlineView,
   DeviceRequest,
   DevicesOnlineResponse,
+  TaskStarted,
   VscodeDeviceView,
 } from "../api_types";
 
@@ -67,8 +68,9 @@ import "./modules_page.css";
  * machine already has, so the first push changes nothing on it. VS Code
  * shows Microsoft's terms on top, and nothing else until they are accepted
  * for the machine. The programs run as an account are drawn by one panel
- * from the descriptor table. The machine, the module and the sections open
- * are kept between visits, until a reload.
+ * from the descriptor table. A module installing with a code shows its words
+ * on top, and an install waiting on a restart offers one. The machine, the
+ * module and the sections open are kept between visits, until a reload.
  */
 
 /** The machine a module's own panels are pointed at. */
@@ -111,6 +113,7 @@ const MODULE_PANELS: Record<string, (target: PanelTarget) => ReactNode> = {
       deviceId={target.deviceId}
       basePath={target.basePath}
       isEditable={target.isEditable}
+      platformOs={target.platformOs}
     />
   ),
   ...Object.fromEntries(
@@ -207,6 +210,12 @@ const PRESSED_STATES: Record<ModuleAction | "configure", string> = {
   stop: "queued",
   configure: "queued",
 };
+
+/** The code of an install that goes on only after the machine restarts. */
+const REBOOT_REQUIRED_CODE = "reboot_required";
+
+/** The route that restarts a managed machine, as the device drawer's Reboot. */
+const REBOOT_PATH = "/hub/device/reboot";
 
 /** How long a press's transient holds before the machine's own report, or
  * its silence, takes over. */
@@ -481,6 +490,34 @@ export function ModulesPage() {
     }
   };
 
+  const restart = async () => {
+    if (deviceId === null) {
+      return;
+    }
+    setBusyAction("restart");
+    setActionError(null);
+    const request: DeviceRequest = { device_id: deviceId };
+    try {
+      await apiPost<TaskStarted>(REBOOT_PATH, request);
+    } catch (cause: unknown) {
+      setActionError(describeError(cause));
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const askRestart = () => {
+    if (selectedDevice === null) {
+      return;
+    }
+    confirm.ask({
+      title: t("ui.modules.restart_title", { device: selectedDevice.name }),
+      body: t("ui.modules.restart_body"),
+      confirmLabel: t("ui.modules.restart_confirm"),
+      onConfirm: () => void restart(),
+    });
+  };
+
   const askUninstall = () => {
     if (selectedDevice === null || activeRow === undefined) {
       return;
@@ -639,6 +676,32 @@ export function ModulesPage() {
                         </div>
                       </div>
                     )}
+                    {activeRow.state === "installing" &&
+                      activeRow.code !== "" && (
+                        <div className="notice notice--warn modules_install_notice">
+                          <Icon name="alert" size={15} />
+                          <div className="notice_body">
+                            <span>
+                              {wordedCode(activeRow) ?? activeRow.code}
+                            </span>
+                            {activeRow.code === REBOOT_REQUIRED_CODE && (
+                              <button
+                                type="button"
+                                className="button button--small"
+                                disabled={!isAgentOnline || isBusy}
+                                onClick={askRestart}
+                              >
+                                {busyAction === "restart" ? (
+                                  <Spinner size={13} />
+                                ) : (
+                                  <Icon name="refresh" size={13} />
+                                )}
+                                {t("ui.modules.restart_now")}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     {activeRow.state === "failed" && (
                       <div className="notice notice--error">
                         <Icon name="alert" size={15} />
@@ -987,17 +1050,22 @@ function configuredKey(deviceId: string, module: string): string {
 
 /** A failed step, worded from the code the agent reported. */
 function describeFailure(row: DeviceModuleView): string {
-  const key = `code.${row.code}`;
-  if (row.code !== "" && hasWord(key)) {
-    return t(
-      key,
-      withModuleTitle(asParams(row.params), { [row.name]: row.title }),
-    );
-  }
   if (row.code === "") {
     return t("ui.modules.failed");
   }
-  return t("ui.modules.failed_code", { code: row.code });
+  return wordedCode(row) ?? t("ui.modules.failed_code", { code: row.code });
+}
+
+/** The code the agent reported, in words; null for one the catalog lacks. */
+function wordedCode(row: DeviceModuleView): string | null {
+  const key = `code.${row.code}`;
+  if (row.code === "" || !hasWord(key)) {
+    return null;
+  }
+  return t(
+    key,
+    withModuleTitle(asParams(row.params), { [row.name]: row.title }),
+  );
 }
 
 /** The values a sentence can take from a report's params. */

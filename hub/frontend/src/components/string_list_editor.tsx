@@ -12,8 +12,12 @@ import "./string_list_editor.css";
  * The values are xray routing rules (`geosite:cn`, `192.168.0.0/16`), which
  * the backend validates, so the editor's job is only to keep the list tidy:
  * trim, refuse blanks, and refuse a duplicate rather than silently adding a
- * second copy that would confuse the rendered config.
+ * second copy that would confuse the rendered config. With Browse… a row
+ * starts with a folder of a machine, `<folder>:<rest>`, as a volume does.
  */
+
+/** A Windows drive at the start of a row: its colon belongs to the folder. */
+const DRIVE_PATTERN = /^[A-Za-z]:(?=[\\/]|$)/;
 
 interface StringListEditorProps {
   label: string;
@@ -24,6 +28,13 @@ interface StringListEditorProps {
   placeholder?: string;
   /** What stands in for an empty list; the proxy sentence when not given. */
   emptyText?: string;
+  /**
+   * Opens the path window at `startPath`, the folder the add field names,
+   * and hands the folder chosen to `pick`. Given with `browseLabel`, the
+   * button follows Add.
+   */
+  onBrowse?: (startPath: string, pick: (folder: string) => void) => void;
+  browseLabel?: string;
 }
 
 export function StringListEditor({
@@ -33,6 +44,8 @@ export function StringListEditor({
   description,
   placeholder,
   emptyText,
+  onBrowse,
+  browseLabel,
 }: StringListEditorProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
@@ -51,6 +64,12 @@ export function StringListEditor({
 
   const handleRemove = (entry: string) => {
     onChange(values.filter((value) => value !== entry));
+  };
+
+  const handleBrowse = () => {
+    onBrowse?.(rowFolder(draft.trim()), (folder) =>
+      setDraft((current) => withRowFolder(current.trim(), folder)),
+    );
   };
 
   return (
@@ -94,7 +113,36 @@ export function StringListEditor({
           <Icon name="plus" size={13} />
           {t("ui.list.add")}
         </button>
+        {onBrowse !== undefined && browseLabel !== undefined && (
+          <button
+            type="button"
+            className="button button--small"
+            onClick={handleBrowse}
+          >
+            <Icon name="folder" size={13} />
+            {browseLabel}
+          </button>
+        )}
       </form>
     </div>
   );
+}
+
+/** Where a row's own colon is, after a drive's; -1 when it has none. */
+function separatorAt(row: string): number {
+  const drive = DRIVE_PATTERN.exec(row);
+  return row.indexOf(":", drive === null ? 0 : drive[0].length);
+}
+
+/** The folder a row names: what comes before its own colon, or all of it. */
+function rowFolder(row: string): string {
+  const at = separatorAt(row);
+  return at < 0 ? row : row.slice(0, at);
+}
+
+/** The row with its folder replaced by `folder` and `:` after it, keeping
+ * what followed the row's own colon. */
+function withRowFolder(row: string, folder: string): string {
+  const at = separatorAt(row);
+  return `${folder}:${at < 0 ? "" : row.slice(at + 1)}`;
 }

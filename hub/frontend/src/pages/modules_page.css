@@ -98,6 +98,12 @@
   justify-content: flex-end;
 }
 
+/* A module installing with a code: its words, and under them the button the
+   code offers. */
+.modules_install_notice .button {
+  align-self: flex-start;
+}
+
 /* A dead press loses its border, the red one of Uninstall included. */
 .modules_actions .button:disabled {
   border-color: transparent;
