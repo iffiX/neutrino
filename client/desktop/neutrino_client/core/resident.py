@@ -1710,11 +1710,41 @@ class ClientResident:
     def _hub_joined(self, session: ClientHubSession, binding: dict) -> None:
         """A pending join was completed: keep it where the binding file is read.
 
+        A session holding the id the hub gave, as a join again from this
+        machine lands on, gives way before the hello: its row goes at once,
+        the completed binding keeps its hub's id and name, and the session
+        ends with what it held.
+
         Raises:
             OSError: When the binding file cannot be written.
         """
         with self._binding_lock:
+            with self._lock:
+                replaced = [
+                    held
+                    for held in self._sessions.values()
+                    if held is not session and held.binding_id == binding.get("id")
+                ]
+            for held in replaced:
+                if held.hub_id():
+                    binding = dict(
+                        binding, hub_id=held.hub_id(), hub_name=held.hub_name()
+                    )
             session.adopt_join(binding)
+            with self._lock:
+                for held in replaced:
+                    self._sessions.pop(held.local_key, None)
+        if not replaced:
+            return
+        self.notify()
+        for held in replaced:
+            self._log(f"the join replaced the binding {held.binding_id} held here")
+            self._start_thread(functools.partial(self._end_replaced, held))
+
+    def _end_replaced(self, session: ClientHubSession) -> None:
+        """End a session a completed join replaced, and what it held."""
+        self._forget_session(session)
+        self._overlay.refresh()
 
     def _overlay_bindings(self) -> list:
         """Each hub's overlay objects and choice, by its session's key, for the memberships."""

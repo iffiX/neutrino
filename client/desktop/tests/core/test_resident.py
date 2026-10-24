@@ -1493,6 +1493,37 @@ def test_a_completed_join_keeps_the_session_and_its_network(joining_resident):
     assert [binding["id"] for binding in enrollment.bindings()] == ["c7"]
 
 
+def test_a_join_landing_on_a_binding_held_here_leaves_one_row(config_path):
+    """The hub lands a machine joining again on its row: the old binding gives way."""
+    bind(config_path, url=HOME_URL)
+    enrollment.set_exit_hub_id("h1")
+    resident = ClientResident(
+        log=discard,
+        platform=FakeClientPlatform(),
+        overlay_drivers={
+            "easytier": FakeOverlayDriver(),
+            "netbird": FakeOverlayDriver(),
+        },
+        start_thread=run_inline,
+    )
+    resident.connect(link_for({"urls": [HOME_URL], "token": "ticket-2"}))
+    _held, joining = sessions_of(resident).values()
+    completed = dict(
+        joining.binding(), id="c1", token="fresh", ticket="", is_pending=False
+    )
+
+    resident._hub_joined(joining, completed)
+
+    assert list(sessions_of(resident).values()) == [joining]
+    (row,) = resident.hubs()
+    assert (row["binding_id"], row["hub_id"], row["hub_name"]) == ("c1", "h1", "home")
+    assert row["connection"] == "connecting"
+    assert resident.exit_hub_id() == "h1"
+    stored = [(binding["id"], binding["token"]) for binding in enrollment.bindings()]
+    assert stored == [("c1", "fresh")]
+    resident.shutdown()
+
+
 def test_leaving_a_pending_join_tells_no_hub(joining_resident, monkeypatch):
     resident, _driver = joining_resident
     told = []
