@@ -37,22 +37,23 @@ The agent's own package includes [Terminal](./modules/terminal.md) and [Remote d
 | **running**                      | has the hub's configuration, with the service running                    |
 | **installing**, **uninstalling** | is in the middle of that step                                            |
 | **queued**                       | is applying another module first; the agent applies one module at a time |
+| **install failed**               | reported that the last install failed, with the reason on the right      |
 | **failed**                       | reported that the last step failed, with the reason on the right         |
 | **unsupported**                  | runs an agent older than the module; the whole tab is greyed out         |
 | **never reported**               | has said nothing about this module                                       |
 
 ## Install, start and stop
 
-| Button        | What happens on the machine                                     | Available when the tab reads                        |
-| ------------- | --------------------------------------------------------------- | --------------------------------------------------- |
-| **Install**   | the software is installed, and nothing is configured or started | **not installed**                                   |
-| **Start**     | the configuration is applied and the service starts             | **installed**, **stopped**                          |
-| **Stop**      | the configuration is applied and the service stops              | **running**, or **installed** with the service up   |
-| **Uninstall** | the software and the configuration the hub wrote are removed    | **installed**, **stopped**, **running**, **failed** |
+| Button        | What happens on the machine                                     | Available when the tab reads                                            |
+| ------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| **Install**   | the software is installed, and nothing is configured or started | **not installed**, **install failed**                                   |
+| **Start**     | the configuration is applied and the service starts             | **installed**, **stopped**                                              |
+| **Stop**      | the configuration is applied and the service stops              | **running**, or **installed** with the service up                       |
+| **Uninstall** | the software and the configuration the hub wrote are removed    | **installed**, **stopped**, **running**, **failed**, **install failed** |
 
 After a press, the tab reads **queued** or **installing**, and its buttons stay greyed until the machine reports a new state, for two minutes at most. During an install or an uninstall, the box on the right shows **Output**, and otherwise the last 200 lines of the module's log.
 
-On a tab that reads **failed**, the button of the failed step stays available; select it again to run the step again. A module section's apply button and **Configure** retry a refused configuration the same way. When a press fails, see [Errors on the Modules page](../reference/troubleshooting.md#errors-on-the-modules-page).
+On a tab that reads **failed**, the button of the failed step stays available; select it again to run the step again. A module section's apply button and **Configure** retry a refused configuration the same way. On a tab that reads **install failed**, **Install** runs the install again, and **Uninstall** removes whatever the install left on the machine. Both words stay after the agent or the machine restarts, until the next press on the module. When a press fails, see [Errors on the Modules page](../reference/troubleshooting.md#errors-on-the-modules-page).
 
 On the **VS Code** tab, Microsoft's terms come first, as [VS Code](./modules/vscode.md) describes.
 
