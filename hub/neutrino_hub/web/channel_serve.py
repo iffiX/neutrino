@@ -63,13 +63,14 @@ from neutrino_hub.modules.channel.sessions import (
 )
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.clients.services import panel_material, service_material
-from neutrino_hub.modules.devices.agent_module_cache import format_megabytes
+from neutrino_hub.modules.devices.agent_module_cache import AgentModuleFetchProgress
 from neutrino_hub.modules.devices.agent_package import platform_family
 from neutrino_hub.modules.devices.agent_reports import (
     record_hello,
     record_offline,
     record_report,
 )
+from neutrino_hub.modules.devices.constants import AGENT_MODULE_PROGRESS_VERB_SEND
 from neutrino_hub.modules.devices.manifests import (
     load_module_manifests,
     load_tool_manifests,
@@ -268,7 +269,9 @@ async def serve_package_stream(
     component}`` one component of a module that unpacks several archives;
     ``{}`` is the agent's own package for its platform. The bytes go down
     under the agent's credit and the close carries their ``sha256`` and the
-    file's own ``name``, the release's file name with no directory.
+    file's own ``name``, the release's file name with no directory. A
+    module's bytes are counted into its task as ``hub: sending <title>,
+    <sent> / <total> MB to <device>`` lines while they go.
 
     Args:
         runtime: The shared runtime.
@@ -290,8 +293,8 @@ async def serve_package_stream(
             module_task_label(session.key, module),
         )
     try:
-        path = await asyncio.to_thread(
-            _package_path, runtime, module, platform, on_progress, component
+        path, title = await asyncio.to_thread(
+            _package_file, runtime, module, platform, on_progress, component
         )
     except AgentArtifactFetchError as error:
         if not module and not platform:
@@ -311,13 +314,19 @@ async def serve_package_stream(
         )
         await stream.close(error.code, error.params)
         return
+    progress = None
+    size = 0
     if is_module:
-        size = await asyncio.to_thread(_file_size, path)
-        publish_module_line(
-            runtime,
-            module_task_label(session.key, module),
-            f"hub: sending {format_megabytes(size)} MB to {session.name}",
+        progress = AgentModuleFetchProgress(
+            title=title,
+            on_line=functools.partial(
+                publish_module_line, runtime, module_task_label(session.key, module)
+            ),
+            verb=AGENT_MODULE_PROGRESS_VERB_SEND,
+            recipient=session.name,
         )
+        size = await asyncio.to_thread(_file_size, path)
+    sent = 0
     digest = hashlib.sha256()
     try:
         with path.open("rb") as handle:
@@ -327,9 +336,14 @@ async def serve_package_stream(
                     break
                 digest.update(chunk)
                 await stream.send_bytes(chunk)
+                sent += len(chunk)
+                if progress is not None:
+                    progress.note(sent, size)
     except OSError:
         await stream.close("module_artifact_missing", {})
         return
+    if progress is not None:
+        progress.note(sent, size, is_done=True)
     await stream.close("", {"sha256": digest.hexdigest(), "name": path.name})
 
 
@@ -490,29 +504,34 @@ async def _platform_once_reported(runtime, key: str) -> dict:
     return {}
 
 
-def _package_path(
+def _package_file(
     runtime, module: str, platform: dict, on_progress=None, component: str = ""
-):
-    """Where the package a ``package`` stream asks for is on this hub.
+) -> tuple:
+    """Where the package a ``package`` stream asks for is on this hub, and its title.
+
+    Returns:
+        ``(path, title)``, the title empty for the agent's own package.
 
     Raises:
         AgentArtifactFetchError: ``module_unknown`` for a name no manifest
             names, and the caches' own typed reasons.
     """
     if not module:
-        return runtime.agent_packages.package(
+        path = runtime.agent_packages.package(
             family=platform_family(platform), architecture=str(platform.get("arch", ""))
         )
+        return path, ""
     manifest = load_module_manifests().get(module) or load_tool_manifests().get(module)
     if manifest is None:
         raise AgentArtifactFetchError("module_unknown", name=module)
-    return runtime.agent_modules.artifact(
+    artifact = runtime.agent_modules.artifact(
         name=module,
         manifest=manifest,
         platform=platform,
         component=component,
         on_progress=on_progress,
-    ).path
+    )
+    return artifact.path, artifact.title
 
 
 async def _serve_frames(websocket: WebSocket, session: ChannelSession, frames) -> None:

@@ -11,7 +11,8 @@ so the entry is the only honest identity of what will be installed: change
 its url, its package kind or its install arguments and the digest changes
 with it, which is what stops a manifest edit from being served yesterday's
 file. Nothing but the key names a file, so losing the directory costs a
-download and nothing else.
+download and nothing else. Once a new file is in place, the files held for
+the same module, component and platform under another digest are deleted.
 
 Not pure: fetches over the network and writes under the state root.
 """
@@ -43,8 +44,10 @@ from neutrino_hub.modules.devices.constants import (
     AGENT_MODULE_LISTING_LIMIT_BYTES,
     AGENT_MODULE_PROGRESS_INTERVAL_S,
     AGENT_MODULE_PROGRESS_PERCENT_STEP,
+    AGENT_MODULE_PROGRESS_VERB_DOWNLOAD,
     AGENT_MODULE_RELEASE_PLACEHOLDER,
 )
+from neutrino_hub.modules.devices.manifests import branch_identity
 from neutrino_hub.modules.devices.streamed_file import (
     DownloadedFile,
     file_sha256,
@@ -64,6 +67,7 @@ class AgentModuleArtifact:
         package_kind: The kind the manifest names.
         component: The component's name; empty for a module with one
             archive.
+        title: What progress lines call it, from :func:`artifact_title`.
     """
 
     key: str
@@ -71,6 +75,7 @@ class AgentModuleArtifact:
     digest: str
     package_kind: str
     component: str = ""
+    title: str = ""
 
 
 def platform_keys(platform: dict) -> list:
@@ -211,20 +216,24 @@ def format_megabytes(size: int) -> str:
     return f"{size / (1024 * 1024):.1f}"
 
 
-def artifact_title(name: str, manifest: dict, component: str = "") -> str:
+def artifact_title(
+    name: str, manifest: dict, *, entry: "dict | None" = None, component: str = ""
+) -> str:
     """What progress lines call a module's artifact: its title and version.
 
     Args:
         name: The module name, used when the manifest names no title.
         manifest: Its manifest.
+        entry: The branch resolved for the machine's platform, whose
+            identity gives the version; None reads the manifest's.
         component: The component's name, named after the version; empty
             for a module with one archive.
 
     Returns:
-        Such as ``VS Code 1.140.0`` or ``CloudCLI 1.37.3 (node)``.
+        Such as ``VS Code 1.140.0`` or ``Containers 6.1.4 (image)``.
     """
     title = str(manifest.get("title", "") or name)
-    version = str(manifest.get("version", "") or "")
+    version = branch_identity(manifest, entry)["version"]
     titled = f"{title} {version}" if version else title
     return f"{titled} ({component})" if component else titled
 
@@ -266,11 +275,13 @@ def latest_release_url(listing_url: str, pinned_url: str, listing: str) -> tuple
 
 
 class AgentModuleFetchProgress:
-    """Turns a download's running byte count into ``hub: downloading`` lines.
+    """Turns a running byte count into ``hub: downloading`` or ``hub: sending`` lines.
 
-    A line is written for the first chunk, then each time the share received
-    moves by :data:`AGENT_MODULE_PROGRESS_PERCENT_STEP` percent or
-    :data:`AGENT_MODULE_PROGRESS_INTERVAL_S` seconds pass, and for the last.
+    A line is written for the first chunk, then each time the share of the
+    bytes moved grows by :data:`AGENT_MODULE_PROGRESS_PERCENT_STEP` percent
+    or :data:`AGENT_MODULE_PROGRESS_INTERVAL_S` seconds pass, and for the
+    last. The cache's download and the ``package`` stream's send both count
+    by it.
     """
 
     def __init__(
@@ -279,6 +290,8 @@ class AgentModuleFetchProgress:
         title: str,
         on_line: Callable[[str], None],
         clock: Callable[[], float] = time.monotonic,
+        verb: str = AGENT_MODULE_PROGRESS_VERB_DOWNLOAD,
+        recipient: str = "",
     ):
         """
         Args:
@@ -286,11 +299,17 @@ class AgentModuleFetchProgress:
                 :func:`artifact_title`.
             on_line: Called with each line.
             clock: Seconds, monotonic; injected by tests.
+            verb: What the hub is doing with the bytes, the line's second
+                word.
+            recipient: The machine the bytes go to, named after the
+                amount; empty for a download.
         """
         self._title = title
         self._source = ""
         self._on_line = on_line
         self._clock = clock
+        self._verb = verb
+        self._recipient = recipient
         self._last_at: "float | None" = None
         self._last_percent = 0
 
@@ -340,7 +359,8 @@ class AgentModuleFetchProgress:
         if total > 0:
             amount = f"{amount} / {format_megabytes(total)}"
         origin = f" from {self._source}" if self._source else ""
-        return f"hub: downloading {self._title}{origin}, {amount} MB"
+        recipient = f" to {self._recipient}" if self._recipient else ""
+        return f"hub: {self._verb} {self._title}{origin}, {amount} MB{recipient}"
 
 
 class AgentModuleCache:
@@ -442,7 +462,7 @@ class AgentModuleCache:
         )
         path = self._root / key
 
-        title = artifact_title(name, manifest, component)
+        title = artifact_title(name, manifest, entry=entry, component=component)
         with self._lock_for(key):
             held = self._read_held(path)
             if held is None:
@@ -453,6 +473,7 @@ class AgentModuleCache:
                     )
                 download = self._fetch(source, progress=progress)
                 self._place(download, path)
+                self._prune_superseded(path)
                 held = download.sha256
             elif on_progress is not None:
                 on_progress(f"hub: {title} is in the cache")
@@ -462,6 +483,7 @@ class AgentModuleCache:
                 digest=held,
                 package_kind=package_kind,
                 component=component,
+                title=title,
             )
 
     def artifact_for_key(
@@ -542,6 +564,33 @@ class AgentModuleCache:
             for character in named
         )
         return f"{safe}-{digest}"
+
+    def _prune_superseded(self, path: Path) -> None:
+        """Delete the files held for the same module, component and platform as ``path``.
+
+        Such a file's name is ``path``'s with another digest in place of
+        its own and nothing more, so ``podman-windows-amd64-<digest>``
+        never matches ``podman-image-windows-amd64-<digest>``. A file that
+        cannot be deleted is left.
+
+        Args:
+            path: The file just placed, which stays.
+        """
+        named = path.name[: -(AGENT_MODULE_KEY_DIGEST_CHARS + 1)]
+        superseded = re.compile(
+            f"{re.escape(named)}-[0-9a-f]{{{AGENT_MODULE_KEY_DIGEST_CHARS}}}"
+        )
+        try:
+            held = list(self._root.iterdir())
+        except OSError:
+            return
+        for other in held:
+            if other.name == path.name or not superseded.fullmatch(other.name):
+                continue
+            try:
+                other.unlink()
+            except OSError:
+                continue
 
     def _lock_for(self, key: str) -> threading.Lock:
         """The one lock every asker for this artifact waits on."""

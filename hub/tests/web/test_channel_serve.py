@@ -153,7 +153,7 @@ class StubModules:
         self.components.append(component)
         if on_progress is not None:
             on_progress(f"hub: downloading {name}, 1.0 / 1.0 MB")
-        return SimpleNamespace(path=self.path)
+        return SimpleNamespace(path=self.path, title=f"{name.title()} 1.0")
 
 
 class FakeRuntime:
@@ -909,7 +909,11 @@ def test_a_package_stream_naming_cc_switch_is_served_from_the_module_cache(api):
 
 
 def test_a_module_download_and_its_sending_are_lines_of_the_modules_task(api):
+    """The send counts the bytes into the module's task as they go, named by
+    the artifact's title and the machine they go to: a line per 64 KB chunk
+    of a ten-chunk file, each a tenth of it, and the last again at the end."""
     client, runtime = api
+    runtime.package_path.write_bytes(b"x" * (10 * 64 * 1024))
     device_id, token = bound_device()
     socket = welcomed(client, device_id, token)
     try:
@@ -934,11 +938,45 @@ def test_a_module_download_and_its_sending_are_lines_of_the_modules_task(api):
         socket.receive_json()
 
         task = runtime.tasks.running(label)
-        assert wait_until(lambda: len(task.buffer) == 2)
-        assert task.buffer == [
-            "hub: downloading samba, 1.0 / 1.0 MB\n",
-            "hub: sending 0.1 MB to box\n",
+        assert wait_until(lambda: len(task.buffer) == 12)
+        assert task.buffer[0] == "hub: downloading samba, 1.0 / 1.0 MB\n"
+        assert task.buffer[1] == "hub: sending Samba 1.0, 0.1 / 0.6 MB to box\n"
+        assert task.buffer[-2:] == [
+            "hub: sending Samba 1.0, 0.6 / 0.6 MB to box\n",
+            "hub: sending Samba 1.0, 0.6 / 0.6 MB to box\n",
         ]
+        assert all(
+            line.startswith("hub: sending Samba 1.0, ") for line in task.buffer[1:]
+        )
+    finally:
+        socket.__exit__(None, None, None)
+
+
+def test_the_agents_own_package_writes_no_sending_line(api):
+    client, runtime = api
+    device_id, token = bound_device()
+    socket = welcomed(client, device_id, token)
+    try:
+        socket.send_json(report())
+        socket.receive_json()
+        socket.send_json(
+            {"type": "open", "stream": 1, "kind": "log", "module": "samba"}
+        )
+        socket.receive_json()
+        label = channel_serve.module_task_label(device_id, "samba")
+        assert wait_until(lambda: runtime.tasks.running(label) is not None)
+        expected = runtime.package_path.read_bytes()
+
+        socket.send_json({"type": "open", "stream": 3, "kind": "package"})
+        socket.receive_json()
+        socket.send_json({"type": "credit", "stream": 3, "bytes": len(expected)})
+        received = b""
+        while len(received) < len(expected):
+            received += socket.receive_bytes()[4:]
+        close = socket.receive_json()
+
+        assert close["params"]["sha256"] == hashlib.sha256(expected).hexdigest()
+        assert runtime.tasks.running(label).buffer == []
     finally:
         socket.__exit__(None, None, None)
 

@@ -91,12 +91,13 @@ AGENT_MODULE_COMPONENT_FIELDS = ("name", "url", "sha256", "package_kind", "direc
 AGENT_MODULE_COMPONENT_RECIPE_FIELDS = ("name", "package_kind", "directory", "sha256")
 
 # The agent module cache: what the hub presents when a module's installer
-# fetches an artifact for a managed machine, and what it accepts back. The ceiling is generous —
-# remote desktop packages run past 100 MB — and exists so a mirror serving
-# something endless cannot fill the panel's memory.
+# fetches an artifact for a managed machine, and what it accepts back. The
+# ceiling is generous, since Podman's machine image for applehv runs past
+# 1 GB, and exists so a mirror serving something endless cannot fill the
+# hub's disk.
 AGENT_MODULE_CACHE_DIR = UTILS_STATE_ROOT / "agent_module_cache"
 AGENT_MODULE_FETCH_TIMEOUT_S = 300
-AGENT_MODULE_FETCH_LIMIT_BYTES = 512 * 1024 * 1024
+AGENT_MODULE_FETCH_LIMIT_BYTES = 2 * 1024 * 1024 * 1024
 AGENT_MODULE_KEY_DIGEST_CHARS = 16
 AGENT_MODULE_FETCH_CHUNK_BYTES = 64 * 1024
 # How much of a download's start is kept for the check of what kind of file
@@ -106,6 +107,10 @@ AGENT_MODULE_HEAD_BYTES = 512
 # this many seconds when the percent moves slower or the size is unknown.
 AGENT_MODULE_PROGRESS_PERCENT_STEP = 5
 AGENT_MODULE_PROGRESS_INTERVAL_S = 2.0
+# The second word of a progress line: the cache's download, and the
+# ``package`` stream's send to the machine that asked.
+AGENT_MODULE_PROGRESS_VERB_DOWNLOAD = "downloading"
+AGENT_MODULE_PROGRESS_VERB_SEND = "sending"
 AGENT_MODULE_GITHUB_API = "https://api.github.com/repos/{repo}/releases/latest"
 # The edition whose installer fetches from a manifest entry's ``cn_url``
 # where the entry names one, and how much of a mirror's listing of its
@@ -173,6 +178,10 @@ AGENT_MODULE_PACKAGE_MAGIC = {
     # A release binary: ELF on Linux, a 64-bit Mach-O on macOS, PE on
     # Windows.
     "binary": (b"\x7fELF", b"\xcf\xfa\xed\xfe", b"MZ"),
+    # A zstd frame, kept as the publisher's bytes and never unpacked:
+    # Podman's machine images.
+    "tar_zst": (b"\x28\xb5\x2f\xfd",),
+    "raw_zst": (b"\x28\xb5\x2f\xfd",),
 }
 
 # The four kinds of device module the description table sorts every module

@@ -192,10 +192,12 @@ def test_a_manifest_that_changes_its_url_is_not_served_the_old_file(cache, monke
     second = cache.artifact(name="fakedesk", manifest=moved, platform=AMD64)
 
     # The key carries a digest of the entry itself, so the edit is a
-    # different artifact rather than a stale file under the same name.
+    # different artifact rather than a stale file under the same name, and
+    # the file it supersedes is deleted once the new one is in place.
     assert second.key != first.key
     assert second.path.read_bytes() == newer
-    assert first.path.read_bytes() == DEB
+    assert not first.path.exists()
+    assert left_on_disk(cache) == [second.key]
 
 
 def test_a_held_artifact_is_not_fetched_again(cache, monkeypatch):
@@ -918,3 +920,226 @@ def test_an_intl_hub_fetches_the_publishers_file_and_not_the_release(
     cache.artifact(name="cc_switch", manifest=RELEASED_MANIFEST, platform=LINUX_AMD)
 
     assert fetches.urls == [RELEASED_MANIFEST["platforms"]["linux-amd64"]["url"]]
+
+
+# --- the files Containers keeps: a 2 GiB limit, zstd, one file per slot ---
+
+ZSTD = b"\x28\xb5\x2f\xfd"
+MSI = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
+WINDOWS_AMD = {"os": "windows", "family": "", "arch": "amd64", "version": "26100"}
+
+
+def podman_manifest(image_url: str, image_bytes: bytes, installer_bytes: bytes):
+    """Containers with a hub branch for Windows that names its own version."""
+    return {
+        "name": "podman",
+        "title": "Containers",
+        "kind": "system_package",
+        "installer": "platform",
+        "platforms": {
+            "windows-amd64": {
+                "kind": "podman_machine",
+                "installer": "hub",
+                "version": "6.1.4",
+                "components": [
+                    {
+                        "name": "installer",
+                        "url": "https://vendor.example/podman.msi",
+                        "sha256": hashlib.sha256(installer_bytes).hexdigest(),
+                        "package_kind": "msi",
+                        "directory": "installer",
+                    },
+                    {
+                        "name": "image",
+                        "url": image_url,
+                        "sha256": hashlib.sha256(image_bytes).hexdigest(),
+                        "package_kind": "tar_zst",
+                        "directory": "image",
+                    },
+                ],
+                "verify": "podman --version",
+            },
+        },
+    }
+
+
+def serving_by_url(bodies: dict):
+    """An open that answers each url's own bytes."""
+
+    def open_(request):
+        return ChunkedResponse(bodies[request.full_url])
+
+    return open_
+
+
+def test_the_limit_is_two_gib_and_a_file_past_it_is_refused(tmp_path):
+    from neutrino_hub.modules.devices.constants import AGENT_MODULE_FETCH_LIMIT_BYTES
+    from neutrino_hub.modules.devices.streamed_file import DownloadedFile
+
+    limit = 2 * 1024 * MEGABYTE
+    at_limit = DownloadedFile(path=tmp_path / "a", size=limit, sha256="", head=ZSTD)
+    past = DownloadedFile(path=tmp_path / "b", size=limit + 1, sha256="", head=ZSTD)
+    entry = {"package_kind": "raw_zst"}
+
+    AgentModuleCache._judge(at_limit, entry, is_pinned=False)
+    with pytest.raises(AgentArtifactFetchError) as refusal:
+        AgentModuleCache._judge(past, entry, is_pinned=False)
+
+    assert AGENT_MODULE_FETCH_LIMIT_BYTES == limit
+    assert (refusal.value.code, refusal.value.params) == (
+        "module_fetch_too_large",
+        {"limit_mb": 2048},
+    )
+
+
+@pytest.mark.parametrize("kind", ["tar_zst", "raw_zst"])
+def test_a_zstd_file_is_recognised_by_its_frame_magic(kind):
+    assert looks_like_package(ZSTD + b"\x84\x60\x00\xee", kind)
+    assert not looks_like_package(b"\x1f\x8b\x08", kind)
+    assert not looks_like_package(b"<!doctype html>", kind)
+
+
+def test_an_msi_and_a_pkg_are_recognised_by_their_magic():
+    assert looks_like_package(MSI, "msi")
+    assert looks_like_package(b"xar!\x00\x1c\x00\x01", "pkg")
+    assert not looks_like_package(b"<!doctype html>", "msi")
+    assert not looks_like_package(b"<!doctype html>", "pkg")
+
+
+def test_a_new_file_deletes_the_one_it_supersedes_and_no_other(cache, monkeypatch):
+    """The image of a new release takes the old image's place alone: the
+    installer, another platform's image, a one-file module named like the
+    module, another module and a partial download all stay."""
+    old_image = ZSTD + b"old-image"
+    new_image = ZSTD + b"new-image"
+    installer = MSI + b"installer"
+    bodies = {
+        "https://vendor.example/image-1.tar.zst": old_image,
+        "https://vendor.example/image-2.tar.zst": new_image,
+        "https://vendor.example/podman.msi": installer,
+    }
+    monkeypatch.setattr(cache, "_open", serving_by_url(bodies))
+    first = podman_manifest(
+        "https://vendor.example/image-1.tar.zst", old_image, installer
+    )
+    second = podman_manifest(
+        "https://vendor.example/image-2.tar.zst", new_image, installer
+    )
+    old = cache.artifact(
+        name="podman", manifest=first, platform=WINDOWS_AMD, component="image"
+    )
+    kept_installer = cache.artifact(
+        name="podman", manifest=first, platform=WINDOWS_AMD, component="installer"
+    )
+    neighbours = [
+        "podman-image-darwin-arm64-0123456789abcdef",
+        "podman-windows-amd64-0123456789abcdef",
+        "podman_image-windows-amd64-0123456789abcdef",
+        "podman-image-windows-amd64-0123456789abcdef.old",
+        ".partial_podman-image-windows-amd64-0123456789abcdef",
+    ]
+    for name in neighbours:
+        (cache._root / name).write_bytes(b"x")
+
+    new = cache.artifact(
+        name="podman", manifest=second, platform=WINDOWS_AMD, component="image"
+    )
+
+    assert new.key != old.key
+    assert left_on_disk(cache) == sorted(neighbours + [kept_installer.key, new.key])
+
+
+def test_a_one_file_module_never_deletes_a_components_file(cache, monkeypatch):
+    image = ZSTD + b"image"
+    installer = MSI + b"installer"
+    bodies = {
+        "https://vendor.example/image.tar.zst": image,
+        "https://vendor.example/podman.msi": installer,
+        "https://vendor.example/podman-one.deb": DEB,
+    }
+    monkeypatch.setattr(cache, "_open", serving_by_url(bodies))
+    manifest = podman_manifest("https://vendor.example/image.tar.zst", image, installer)
+    held = cache.artifact(
+        name="podman", manifest=manifest, platform=WINDOWS_AMD, component="image"
+    )
+    one_file = {
+        "name": "podman",
+        "platforms": {
+            "windows-amd64": {
+                "url": "https://vendor.example/podman-one.deb",
+                "package_kind": "deb",
+            }
+        },
+    }
+
+    placed = cache.artifact(name="podman", manifest=one_file, platform=WINDOWS_AMD)
+
+    assert left_on_disk(cache) == sorted([held.key, placed.key])
+
+
+def test_a_superseded_file_that_cannot_be_deleted_is_left(cache, monkeypatch):
+    from pathlib import Path
+
+    monkeypatch.setattr(cache, "_open", serving(content=DEB))
+    first = cache.artifact(name="fakedesk", manifest=MANIFEST, platform=AMD64)
+    moved = {
+        **MANIFEST,
+        "platforms": {
+            **MANIFEST["platforms"],
+            "linux-debian-amd64": {
+                "url": "https://vendor.example/fakedesk-amd64-v5.deb",
+                "package_kind": "deb",
+            },
+        },
+    }
+
+    def refuse(self, missing_ok=False):
+        raise PermissionError("in use")
+
+    monkeypatch.setattr(Path, "unlink", refuse)
+    second = cache.artifact(name="fakedesk", manifest=moved, platform=AMD64)
+
+    assert first.path.exists() and second.path.exists()
+
+
+def test_the_title_and_the_lines_name_the_branchs_own_version(cache, monkeypatch):
+    image = ZSTD + b"image"
+    installer = MSI + b"installer"
+    bodies = {
+        "https://vendor.example/image.tar.zst": image,
+        "https://vendor.example/podman.msi": installer,
+    }
+    monkeypatch.setattr(cache, "_open", serving_by_url(bodies))
+    manifest = podman_manifest("https://vendor.example/image.tar.zst", image, installer)
+    lines: list = []
+
+    artifact = cache.artifact(
+        name="podman",
+        manifest=manifest,
+        platform=WINDOWS_AMD,
+        component="image",
+        on_progress=lines.append,
+    )
+
+    assert artifact.title == "Containers 6.1.4 (image)"
+    assert lines[0].startswith("hub: downloading Containers 6.1.4 (image) from ")
+
+
+def test_a_send_is_counted_in_sending_lines_naming_the_machine():
+    lines: list = []
+    clock = StoppedClock()
+    progress = AgentModuleFetchProgress(
+        title="Containers 6.1.4 (image)",
+        on_line=lines.append,
+        clock=clock,
+        verb="sending",
+        recipient="nmxwin",
+    )
+
+    progress.note(MEGABYTE, 4 * MEGABYTE)
+    progress.note(4 * MEGABYTE, 4 * MEGABYTE, is_done=True)
+
+    assert lines == [
+        "hub: sending Containers 6.1.4 (image), 1.0 / 4.0 MB to nmxwin",
+        "hub: sending Containers 6.1.4 (image), 4.0 / 4.0 MB to nmxwin",
+    ]
