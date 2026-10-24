@@ -102,3 +102,63 @@ def test_a_mirror_that_is_a_url_or_garbled_is_refused(mirror):
 )
 def test_a_sound_mirror_passes(mirror):
     config_with(mirrors=[mirror]).validate()
+
+
+def with_services(ports: list, services: list) -> PodmanConfig:
+    return config_with(
+        containers=[{"name": "x", "image": "img", "ports": ports, "services": services}]
+    )
+
+
+def test_services_survive_a_round_trip_and_an_absent_list_is_empty():
+    config = with_services(
+        ["8080:80", "53:53"],
+        [
+            {"port": 8080, "kind": "web", "scheme": "https"},
+            {"port": 53, "kind": "port", "protocols": ["tcp", "udp"]},
+        ],
+    )
+
+    assert PodmanConfig.from_dict(config.to_dict()).to_dict() == config.to_dict()
+    assert config.to_dict()["containers"][0]["services"] == [
+        {"port": 8080, "kind": "web", "scheme": "https", "protocols": ["tcp"]},
+        {"port": 53, "kind": "port", "scheme": "http", "protocols": ["tcp", "udp"]},
+    ]
+    assert config_with().containers[0].services == []
+
+
+@pytest.mark.parametrize(
+    "service",
+    [
+        {"port": 8080, "kind": "auto"},
+        {"port": 8080, "kind": "web", "scheme": "http"},
+        {"port": 8080, "kind": "port", "protocols": ["udp"]},
+    ],
+)
+def test_a_sound_service_passes(service):
+    with_services(["8080:80"], [service]).validate()
+
+
+def test_a_port_service_with_no_protocol_is_refused_with_its_port():
+    config = with_services(["53:53"], [{"port": 53, "kind": "port", "protocols": []}])
+
+    with pytest.raises(ModuleApplyError) as refused:
+        config.validate()
+
+    assert refused.value.code == "service_protocol_none"
+    assert refused.value.params == {"port": 53}
+
+
+@pytest.mark.parametrize(
+    "services",
+    [
+        [{"port": 9090, "kind": "web"}],
+        [{"port": 8080, "kind": "ftp"}],
+        [{"port": 8080, "kind": "web", "scheme": "gopher"}],
+        [{"port": 8080, "kind": "port", "protocols": ["sctp"]}],
+        [{"port": 8080, "kind": "web"}, {"port": 8080, "kind": "port"}],
+        [{"port": "eighty", "kind": "web"}],
+    ],
+)
+def test_a_service_off_the_published_ports_or_garbled_is_refused(services):
+    assert refused_code(with_services(["8080:80"], services)) == "port_mapping_invalid"

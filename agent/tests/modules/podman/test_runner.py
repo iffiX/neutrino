@@ -30,6 +30,7 @@ PS_OUTPUT = json.dumps(
             "Names": ["web"],
             "Image": "docker.io/library/nginx:1.27",
             "State": "running",
+            "StartedAt": 1791761649,
             "Status": "Up 2 hours",
             "Ports": [
                 {
@@ -123,6 +124,9 @@ class FakeRegistries:
 
 
 class FakeReader:
+    def __init__(self, *, probe=None):
+        self.probe = probe
+
     def survey(self, *, declared_names):
         return [
             PodmanContainerState(
@@ -130,6 +134,16 @@ class FakeReader:
             ),
             PodmanContainerState("adhoc", "alpine", "Exited", False, False, []),
         ]
+
+
+class FakeProbe:
+    """Answers ``http`` for every port it is asked about, and records them."""
+
+    asked: list = []
+
+    def detected(self, targets):
+        FakeProbe.asked.append(list(targets))
+        return {key: "http" for key, _, _ in targets}
 
 
 class FakeController:
@@ -149,6 +163,8 @@ def runner(monkeypatch):
     FakeRegistries.written = []
     FakeController.calls = []
     FakeController.error = None
+    FakeProbe.asked = []
+    monkeypatch.setattr(runner_module, "PodmanServiceProbe", FakeProbe)
     monkeypatch.setattr(runner_module, "container_applier", FakeUnitApplier)
     monkeypatch.setattr(runner_module, "PodmanRegistriesApplier", FakeRegistries)
     monkeypatch.setattr(runner_module, "PodmanStatusReader", FakeReader)
@@ -330,8 +346,11 @@ def test_observe_reads_what_podman_itself_says_of_each_container(runner, monkeyp
             "container=podman",
         ],
         "has_unit": True,
-        "host_bindings": [{"address": "", "port": 8080, "protocol": "tcp"}],
+        "host_bindings": [
+            {"address": "", "port": 8080, "protocol": "tcp", "detected": "http"}
+        ],
     }
+    assert FakeProbe.asked == [[(("0a1b", "1791761649", "", 8080), "127.0.0.1", 8080)]]
     assert by_name["adhoc"]["is_running"] is False
     assert by_name["adhoc"]["host_bindings"] == []
     assert by_name["adhoc"]["ports"] == []

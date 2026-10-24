@@ -11,6 +11,7 @@ Not pure: writes unit files, runs podman and drives systemd.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 import re
@@ -23,6 +24,8 @@ from neutrino_agent.modules.podman.constants import (
     PODMAN_BINARY,
     PODMAN_CONTAINER_ACTIONS,
     PODMAN_GENERATED_MARKER,
+    PODMAN_PROBE_ADDRESS,
+    PODMAN_PROTOCOL_TCP,
     PODMAN_QUADLET_DIR,
     PODMAN_QUADLET_VERSION,
     PODMAN_REGISTRIES_CONF_PATH,
@@ -53,9 +56,11 @@ class PodmanContainerState:
         environment: The container's environment, ``KEY=value`` each.
         has_unit: Whether a unit file this machine renders stands for it.
         host_bindings: Each published host port with the host address it
-            is published on and its protocol, ``{"address", "port",
-            "protocol"}``, the protocol ``tcp`` or ``udp`` and the address
-            empty for every address.
+            is published on, its protocol and what answers on it,
+            ``{"address", "port", "protocol", "detected"}``, the protocol
+            ``tcp`` or ``udp``, the address empty for every address, and
+            ``detected`` ``http``, ``https`` or ``tcp`` once the service
+            probe found it on a running container's TCP port, else empty.
     """
 
     name: str
@@ -258,6 +263,7 @@ class PodmanStatusReader:
         has_unit=None,
         is_address_kept: bool = True,
         host_volume=None,
+        probe=None,
     ):
         """
         Args:
@@ -271,11 +277,16 @@ class PodmanStatusReader:
                 address.
             host_volume: Called with a mount's source as podman names it,
                 the source as the configuration writes it; None keeps it.
+            probe: The runner's
+                :class:`~neutrino_agent.modules.podman.service_probe.PodmanServiceProbe`,
+                which fills each running container's ``detected``; None
+                leaves it empty.
         """
         self._podman = tuple(podman)
         self._has_unit = has_unit
         self._is_address_kept = is_address_kept
         self._host_volume = host_volume
+        self._probe = probe
 
     def survey(self, *, declared_names: list) -> list:
         """List every container, running or not.
@@ -303,30 +314,43 @@ class PodmanStatusReader:
             return []
         has_unit = self._has_unit if self._has_unit is not None else has_unit_file
         states = []
+        probed = []
         inspected = self._inspect(
             [str((entry.get("Names") or ["?"])[0]) for entry in entries]
         )
         for entry in entries:
             names = entry.get("Names") or ["?"]
             detail = inspected.get(names[0], {})
+            is_running = entry.get("State", "") == "running"
+            bindings = _host_bindings(
+                entry.get("Ports") or [], is_address_kept=self._is_address_kept
+            )
+            if is_running:
+                probed += _probed_bindings(entry, bindings)
             states.append(
                 PodmanContainerState(
                     name=names[0],
                     image=entry.get("Image", ""),
                     status=entry.get("Status", ""),
-                    is_running=entry.get("State", "") == "running",
+                    is_running=is_running,
                     is_declared=names[0] in declared_names,
                     host_ports=_host_ports(entry.get("Ports") or []),
-                    host_bindings=_host_bindings(
-                        entry.get("Ports") or [],
-                        is_address_kept=self._is_address_kept,
-                    ),
+                    host_bindings=bindings,
                     ports=_inspected_ports(detail),
                     volumes=_inspected_volumes(detail, host_volume=self._host_volume),
                     environment=_inspected_environment(detail),
                     has_unit=has_unit(names[0]),
                 )
             )
+        if self._probe is not None:
+            found = self._probe.detected(
+                [
+                    (key, _probe_address(binding["address"]), binding["port"])
+                    for key, binding in probed
+                ]
+            )
+            for key, binding in probed:
+                binding["detected"] = found.get(key, "")
         # A declared container with autostart off exists only as a unit
         # until its first start, so podman has no row for it yet.
         present = {state.name for state in states}
@@ -520,10 +544,32 @@ def _host_bindings(entries: list, *, is_address_kept: bool = True) -> list:
             "address": address,
             "port": port,
             "protocol": protocol,
+            "detected": "",
         }
         if binding not in bindings:
             bindings.append(binding)
     return bindings
+
+
+def _probed_bindings(entry: dict, bindings: list) -> list:
+    """The TCP bindings of one running container, each with its probe key."""
+    start = (str(entry.get("Id", "") or ""), str(entry.get("StartedAt", "") or ""))
+    return [
+        (start + (binding["address"], binding["port"]), binding)
+        for binding in bindings
+        if binding["protocol"] == PODMAN_PROTOCOL_TCP
+    ]
+
+
+def _probe_address(address: str) -> str:
+    """Where a port published on one address is probed: loopback for every
+    address, the address itself otherwise."""
+    try:
+        if ipaddress.ip_address(address).is_unspecified:
+            return PODMAN_PROBE_ADDRESS
+    except ValueError:
+        return PODMAN_PROBE_ADDRESS
+    return address
 
 
 def _read(path: str) -> "str | None":

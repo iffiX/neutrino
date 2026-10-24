@@ -157,3 +157,63 @@ def test_only_an_autostart_container_is_wanted_by_the_boot_target():
     assert unit(PodmanContainer(name="app", image="nginx")).startswith(
         PODMAN_GENERATED_MARKER
     )
+
+
+def publishes(container: dict) -> list:
+    text = render([container])[f"{container['name']}.container"]
+    return [line for line in text.splitlines() if line.startswith("PublishPort=")]
+
+
+def test_no_services_and_every_port_auto_render_the_same_file():
+    plain = {"name": "app", "image": "nginx", "ports": ["8080:80", "5353:53/udp"]}
+    auto = {
+        **plain,
+        "services": [{"port": 8080, "kind": "auto"}, {"port": 5353, "kind": "auto"}],
+    }
+
+    assert render([plain]) == render([auto])
+    assert publishes(plain) == ["PublishPort=8080:80", "PublishPort=5353:53/udp"]
+
+
+def test_a_web_port_publishes_tcp():
+    container = {
+        "name": "app",
+        "image": "nginx",
+        "ports": ["8443:443/udp"],
+        "services": [{"port": 8443, "kind": "web", "scheme": "https"}],
+    }
+
+    assert publishes(container) == ["PublishPort=8443:443"]
+
+
+def test_a_port_port_publishes_each_checked_protocol_once():
+    container = {
+        "name": "dns",
+        "image": "coredns",
+        "ports": ["53:53", "53:53/udp", "9000:9000/udp"],
+        "services": [
+            {"port": 53, "kind": "port", "protocols": ["udp", "tcp"]},
+            {"port": 9000, "kind": "port", "protocols": ["tcp"]},
+        ],
+    }
+
+    assert publishes(container) == [
+        "PublishPort=53:53",
+        "PublishPort=53:53/udp",
+        "PublishPort=9000:9000",
+    ]
+
+
+def test_a_checked_udp_reaches_the_command_line_of_an_old_podman():
+    line = exec_start(
+        PodmanContainer.from_dict(
+            {
+                "name": "dns",
+                "image": "coredns",
+                "ports": ["53:53"],
+                "services": [{"port": 53, "kind": "port", "protocols": ["tcp", "udp"]}],
+            }
+        )
+    )
+
+    assert "-p 53:53 -p 53:53/udp" in line

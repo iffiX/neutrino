@@ -34,3 +34,33 @@ PODMAN_CONTAINER_ACTIONS = ("start", "stop", "restart")
 PODMAN_COMMAND_CONTROL = "control"
 PODMAN_COMMAND_JOURNAL = "journal"
 PODMAN_JOURNAL_LINES = 200
+
+# The service type of a container's host port, and what each type holds.
+PODMAN_SERVICE_AUTO = "auto"
+PODMAN_SERVICE_WEB = "web"
+PODMAN_SERVICE_PORT = "port"
+PODMAN_SERVICE_KINDS = (PODMAN_SERVICE_AUTO, PODMAN_SERVICE_WEB, PODMAN_SERVICE_PORT)
+PODMAN_SERVICE_SCHEMES = ("http", "https")
+PODMAN_PROTOCOL_TCP = "tcp"
+PODMAN_PROTOCOL_UDP = "udp"
+PODMAN_PROTOCOLS = (PODMAN_PROTOCOL_TCP, PODMAN_PROTOCOL_UDP)
+
+# What the service probe reports for a published TCP port.
+PODMAN_DETECTED_HTTP = "http"
+PODMAN_DETECTED_HTTPS = "https"
+PODMAN_DETECTED_TCP = "tcp"
+# Where a port published on every address is probed.
+PODMAN_PROBE_ADDRESS = "127.0.0.1"
+# How long the probe waits for a service that speaks first.
+PODMAN_PROBE_READ_S = 0.3
+# How long each later step waits to connect and for each read.
+PODMAN_PROBE_STEP_S = 1.0
+# The longest a report waits for the probes it started; a later result is
+# kept for the next report.
+PODMAN_PROBE_WAIT_S = 1.0
+PODMAN_PROBE_REQUEST = b"HEAD / HTTP/1.0\r\n\r\n"
+PODMAN_PROBE_REPLY_PREFIX = b"HTTP/"
+# Enough of a reply to hold its status code, ``HTTP/1.1 400``.
+PODMAN_PROBE_REPLY_BYTES = 12
+# The status a web server with TLS on the port answers a plain request with.
+PODMAN_PROBE_PLAIN_TO_TLS_STATUS = b"400"

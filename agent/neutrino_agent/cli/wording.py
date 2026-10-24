@@ -143,6 +143,7 @@ CLI_CODE_WORDS = {
     "container_unknown": "{name} is not a container podman knows",
     "image_invalid": "container {name} needs an image reference with no spaces",
     "port_mapping_invalid": "port {port} on {name} is not host:container",
+    "service_protocol_none": "port {port} needs TCP, UDP or both",
     "volume_invalid": "volume {volume} on {name} is not source:destination",
     "environment_invalid": "environment entry {entry} on {name} is not KEY=value",
     "command_invalid": "the command on {name} cannot span lines",

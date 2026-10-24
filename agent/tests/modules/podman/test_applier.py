@@ -178,11 +178,11 @@ def test_each_host_port_is_bound_with_its_address_and_protocol(commands):
     (state,) = PodmanStatusReader().survey(declared_names=[])
 
     assert state.host_bindings == [
-        {"address": "192.168.1.5", "port": 5432, "protocol": "tcp"},
-        {"address": "", "port": 8080, "protocol": "tcp"},
-        {"address": "", "port": 5353, "protocol": "udp"},
-        {"address": "", "port": 53, "protocol": "tcp"},
-        {"address": "", "port": 53, "protocol": "udp"},
+        {"address": "192.168.1.5", "port": 5432, "protocol": "tcp", "detected": ""},
+        {"address": "", "port": 8080, "protocol": "tcp", "detected": ""},
+        {"address": "", "port": 5353, "protocol": "udp", "detected": ""},
+        {"address": "", "port": 53, "protocol": "tcp", "detected": ""},
+        {"address": "", "port": 53, "protocol": "udp", "detected": ""},
     ]
     assert state.host_ports == [53, 5353, 5432, 8080, 9899]
 
@@ -220,8 +220,8 @@ def test_the_reader_by_default_asks_this_machines_podman_as_before(
     ]
     assert state.has_unit is True
     assert state.host_bindings == [
-        {"address": "127.0.0.1", "port": 8080, "protocol": "tcp"},
-        {"address": "::", "port": 8080, "protocol": "tcp"},
+        {"address": "127.0.0.1", "port": 8080, "protocol": "tcp", "detected": ""},
+        {"address": "::", "port": 8080, "protocol": "tcp", "detected": ""},
     ]
     assert state.volumes == ["/mnt/c/data:/data", "cache:/cache"]
 
@@ -268,7 +268,9 @@ def test_a_reader_given_its_podman_command_reads_a_podman_machine(monkeypatch):
     ]
     assert asked_units == ["web"]
     assert state.has_unit is False
-    assert state.host_bindings == [{"address": "", "port": 8080, "protocol": "tcp"}]
+    assert state.host_bindings == [
+        {"address": "", "port": 8080, "protocol": "tcp", "detected": ""}
+    ]
     assert state.volumes == ["C:\\data:/data", "cache:/cache"]
 
 
@@ -344,3 +346,50 @@ def test_the_inspected_ports_keep_their_protocol_as_the_configuration_writes_it(
     assert ports == ["5353:53", "5353:53/udp", "8080:80"]
     for port in ports:
         assert PORT_MAPPING_PATTERN.match(port)
+
+
+class RecordingProbe:
+    """Answers ``https`` for every port it is asked about, and records them."""
+
+    def __init__(self):
+        self.asked: list = []
+
+    def detected(self, targets):
+        self.asked.append(list(targets))
+        return {key: "https" for key, _, _ in targets}
+
+
+def test_the_probe_is_asked_for_each_tcp_binding_of_a_running_container(commands):
+    """Keyed by the container's id, its start and the binding; a UDP binding
+    and a stopped container are never probed, and a binding on one address
+    is probed there."""
+    commands.answers[("/usr/bin/podman", "ps")] = (
+        0,
+        '[{"Id": "aa", "StartedAt": 1700000000, "Names": ["web"], "Image": "nginx", '
+        '"Status": "Up", "State": "running", '
+        '"Ports": [{"host_ip": "", "host_port": 8080, "protocol": "tcp"}, '
+        '{"host_ip": "192.168.1.5", "host_port": 8443, "protocol": "tcp"}, '
+        '{"host_ip": "0.0.0.0", "host_port": 9000, "protocol": "tcp"}, '
+        '{"host_ip": "", "host_port": 5353, "protocol": "udp"}]}, '
+        '{"Id": "bb", "StartedAt": 1700000001, "Names": ["old"], "Image": "nginx", '
+        '"Status": "Exited", "State": "exited", '
+        '"Ports": [{"host_ip": "", "host_port": 8081, "protocol": "tcp"}]}]',
+    )
+    probe = RecordingProbe()
+
+    old, web = PodmanStatusReader(probe=probe).survey(declared_names=[])
+
+    assert probe.asked == [
+        [
+            (("aa", "1700000000", "", 8080), "127.0.0.1", 8080),
+            (("aa", "1700000000", "192.168.1.5", 8443), "192.168.1.5", 8443),
+            (("aa", "1700000000", "0.0.0.0", 9000), "127.0.0.1", 9000),
+        ]
+    ]
+    assert [binding["detected"] for binding in web.host_bindings] == [
+        "https",
+        "https",
+        "https",
+        "",
+    ]
+    assert old.host_bindings[0]["detected"] == ""

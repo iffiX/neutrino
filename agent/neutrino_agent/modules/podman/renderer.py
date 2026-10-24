@@ -73,7 +73,7 @@ class PodmanQuadletRenderer:
             f"ContainerName={container.name}",
             f"Image={qualified_image(container.image)}",
         ]
-        for port in container.ports:
+        for port in container.publish_ports:
             lines.append(f"PublishPort={port}")
         for volume in container.volumes:
             lines.append(f"Volume={volume}")
@@ -144,7 +144,7 @@ class PodmanUnitRenderer:
 
     def _run_command(self, container: PodmanContainer) -> list:
         command = [PODMAN_BINARY, "run", "--rm", "--name", container.name]
-        for port in container.ports:
+        for port in container.publish_ports:
             command += ["-p", port]
         for volume in container.volumes:
             command += ["-v", volume]

@@ -42,6 +42,7 @@ from neutrino_agent.modules.podman.constants import (
     PODMAN_UNIT,
 )
 from neutrino_agent.modules.podman.renderer import PodmanRegistriesRenderer
+from neutrino_agent.modules.podman.service_probe import PodmanServiceProbe
 from neutrino_agent.modules.shared.subprocess_run import command_detail, run, unit_state
 from neutrino_agent.modules.shared.system_package import SystemPackageModuleRunner
 
@@ -55,6 +56,7 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
     def __init__(self, *, platform, log=print, publish=None):
         super().__init__(platform=platform, log=log, publish=publish)
         self._config: "PodmanConfig | None" = None
+        self._probe = PodmanServiceProbe()
 
     def validate(self, config: dict) -> None:
         """Parse, check and render a configuration.
@@ -142,10 +144,13 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
             ``{"containers", "mirrors", "version", "is_active"}``, each
             container ``{"name", "image", "status", "is_running",
             "is_declared", "host_ports", "ports", "volumes",
-            "environment", "has_unit"}``.
+            "environment", "has_unit", "host_bindings"}``, each binding
+            with what the service probe detected on it.
         """
         config = self._config or PodmanConfig()
-        states = PodmanStatusReader().survey(declared_names=config.declared_names)
+        states = PodmanStatusReader(probe=self._probe).survey(
+            declared_names=config.declared_names
+        )
         return {
             "containers": [vars(state) for state in states],
             "mirrors": list(config.mirrors),
