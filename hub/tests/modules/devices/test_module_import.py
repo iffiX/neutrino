@@ -3,7 +3,9 @@
 Each import is a pure function of ``details``: Samba's shares and users in
 the hub's shape, a share with no path left out and ``valid users`` kept to
 the names the user list carries; Podman's containers with a unit read as
-autostart; Gitea's nothing; and a module with no import answering empty.
+autostart, each container's services and the Podman machine's account taken
+where they are reported; Gitea's nothing; and a module with no import
+answering empty.
 """
 
 from neutrino_hub.modules.devices.module_import import (
@@ -95,6 +97,53 @@ def test_podman_reads_the_containers_and_the_mirrors():
         ],
         "mirrors": ["https://mirror.example"],
     }
+
+
+def test_podman_takes_the_services_and_the_machines_account_where_reported():
+    details = {
+        "containers": [
+            {
+                "name": "web",
+                "image": "nginx",
+                "ports": ["8080:80", "5353:53"],
+                "has_unit": True,
+                "services": [
+                    {"port": 8080, "kind": "web", "scheme": "https"},
+                    {"port": 5353, "kind": "port", "protocols": ["tcp", "udp"]},
+                    "not a service",
+                ],
+            },
+            {"name": "shell", "image": "alpine"},
+        ],
+        "machine": {
+            "account": "lab",
+            "is_running": True,
+            "cpus": 8,
+            "memory_gib": 4,
+            "disk_gib": 100,
+        },
+    }
+
+    imported = podman_import_config(details)
+
+    assert imported["containers"][0]["services"] == [
+        {"port": 8080, "kind": "web", "scheme": "https", "protocols": []},
+        {"port": 5353, "kind": "port", "scheme": "http", "protocols": ["tcp", "udp"]},
+    ]
+    assert "services" not in imported["containers"][1]
+    assert imported["machine"] == {
+        "account": "lab",
+        "login_id": "",
+        "cpus": 0,
+        "memory_gib": 0,
+        "disk_gib": 0,
+    }
+
+
+def test_podman_takes_no_machine_without_a_reported_account():
+    assert "machine" not in podman_import_config({"machine": {"account": ""}})
+    assert "machine" not in podman_import_config({"machine": "lab"})
+    assert "machine" not in podman_import_config({})
 
 
 def test_gitea_imports_nothing():

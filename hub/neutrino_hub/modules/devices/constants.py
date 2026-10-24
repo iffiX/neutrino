@@ -272,6 +272,10 @@ DEVICE_TERMINAL_MODULE = "terminal"
 DEVICE_REMOTE_DESKTOP_MODULE = "remote_desktop"
 DEVICE_AGENT_MODULES = (DEVICE_TERMINAL_MODULE, DEVICE_REMOTE_DESKTOP_MODULE)
 DEVICE_TERMINAL_ACCOUNT_OS = ("linux", "darwin")
+# The systems whose containers run in an account's Podman machine; only these
+# are sent the Run settings, ``machine`` in ``podman.json``.
+DEVICE_PODMAN_MACHINE_OS = ("windows", "darwin")
+DEVICE_PODMAN_MACHINE_KEY = "machine"
 DEVICE_CODE_SERVER_SECRET_KEY = "secret_sealed"  # scan: allow
 DEVICE_CODE_SERVER_SECRET_AAD = b"device_code_server:secret"
 DEVICE_CODE_SERVER_SECRET_BYTES = 32

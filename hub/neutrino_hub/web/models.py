@@ -2347,6 +2347,18 @@ class GiteaPasswordUpdate(BaseModel):
     password: str = Field(min_length=1, max_length=128)
 
 
+class PodmanServiceView(BaseModel):
+    """The service type of one host port a container publishes."""
+
+    port: int
+    # auto, web or port.
+    kind: str = "auto"
+    # http or https, for web.
+    scheme: str = "http"
+    # tcp and udp, for port.
+    protocols: list[str] = Field(default_factory=list)
+
+
 class PodmanContainerView(BaseModel):
     """One declared container, as configured."""
 
@@ -2357,6 +2369,8 @@ class PodmanContainerView(BaseModel):
     environment: list[str] = Field(default_factory=list)
     command: str = ""
     is_autostart: bool = True
+    # One per host port; a port with none is auto.
+    services: list[PodmanServiceView] = Field(default_factory=list)
 
 
 class PodmanContainerStateView(BaseModel):
@@ -2369,6 +2383,29 @@ class PodmanContainerStateView(BaseModel):
     is_declared: bool
 
 
+class PodmanMachineView(BaseModel):
+    """The Run settings as stored: the account whose Podman machine runs the
+    containers, the vault login it signs in with on Windows, and the
+    machine's resources, each 0 for Podman's default."""
+
+    account: str = ""
+    login_id: str = ""
+    cpus: int = 0
+    memory_gib: int = 0
+    disk_gib: int = 0
+
+
+class PodmanMachineStateView(BaseModel):
+    """The Podman machine as the computer last reported it."""
+
+    account: str = ""
+    is_running: bool = False
+    cpus: int = 0
+    memory_gib: float = 0
+    # The size of its disk now, the least a disk limit can be.
+    disk_gib: float = 0
+
+
 class PodmanSettingsView(BaseModel):
     """The Containers tab: declarations beside what actually runs."""
 
@@ -2378,6 +2415,12 @@ class PodmanSettingsView(BaseModel):
     is_installed: bool
     is_active: bool
     version: str
+    # The human accounts the machine last reported, for the Run settings.
+    accounts: list[str] = Field(default_factory=list)
+    # The Run settings on Windows and macOS; None on Linux.
+    machine: PodmanMachineView | None = None
+    # The Podman machine as last reported; None until one is.
+    machine_state: PodmanMachineStateView | None = None
 
 
 class PodmanDeviceView(ModuleDeviceFields, PodmanSettingsView):
@@ -2396,6 +2439,18 @@ class PodmanMirrorListUpdate(BaseModel):
 
     device_id: str
     mirrors: list[str]
+
+
+class PodmanMachineUpdate(BaseModel):
+    """The Run settings being saved."""
+
+    device_id: str
+    account: str = ""
+    # The vault login the account signs in with, for a Windows machine.
+    login_id: str = ""
+    cpus: int = Field(default=0, ge=0)
+    memory_gib: int = Field(default=0, ge=0)
+    disk_gib: int = Field(default=0, ge=0)
 
 
 class PodmanContainerRequest(BaseModel):

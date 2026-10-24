@@ -136,3 +136,41 @@ def test_every_attention_an_agent_declares_is_worded_in_every_language(code):
         for path in (LOCALES_DIR / language).glob("*.json"):
             worded |= set(json.loads(path.read_text(encoding="utf-8")))
         assert f"code.{code}" in worded, language
+
+
+# What the Containers module's agent answers an apply, an install, a press or
+# the Run settings with, which the Containers tab words out of the same
+# catalogs.
+CONTAINERS_CODES = (
+    "service_protocol_none",
+    "reboot_required",
+    "windows_feature_failed",
+    "podman_install_failed",
+    "machine_account_missing",
+    "machine_cpus_invalid",
+    "machine_memory_invalid",
+    "machine_disk_shrink",
+    "volume_not_shared",
+    "machine_image_missing",
+    "machine_init_failed",
+    "machine_set_failed",
+    "machine_unreachable",
+    "account_unknown",
+    "credential_missing",
+    "credential_invalid",
+    "unknown_credential",
+    "unsupported_platform",
+    "volume_invalid",
+    "apply_failed",
+    "command_failed",
+    "container_unknown",
+)
+
+
+@pytest.mark.parametrize("code", CONTAINERS_CODES)
+def test_every_code_containers_answers_is_worded_in_every_language(code):
+    for language in sorted(path.name for path in LOCALES_DIR.iterdir()):
+        worded = set()
+        for path in (LOCALES_DIR / language).glob("*.json"):
+            worded |= set(json.loads(path.read_text(encoding="utf-8")))
+        assert f"code.{code}" in worded, language

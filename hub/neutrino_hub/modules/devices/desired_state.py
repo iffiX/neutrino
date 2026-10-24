@@ -74,6 +74,8 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_INSTANCE_LOGIN_KEY,
     DEVICE_MODULES_FILE,
     DEVICE_PACKAGES_DIR_NAME,
+    DEVICE_PODMAN_MACHINE_KEY,
+    DEVICE_PODMAN_MACHINE_OS,
     DEVICE_RDP_FILE,
     DEVICE_RDP_SEAT_PASSWORD_AAD,
     DEVICE_RDP_SEAT_PASSWORD_CHARS,
@@ -158,6 +160,41 @@ def instances_agent_config(
                 sent["password"] = _login_password(login_id)
         instances.append(sent)
     config["instances"] = instances
+    return config
+
+
+def podman_agent_config(stored: dict, platform: dict) -> dict:
+    """What the agent is sent for the Containers module.
+
+    Args:
+        stored: ``podman.json``: the containers, the mirrors and the Run
+            settings, ``machine``, with the login its account signs in with.
+        platform: The tuple the agent reported; only a Windows or macOS
+            machine is sent ``machine``, and only a Windows one a password.
+
+    Returns:
+        The file's fields as stored, ``machine`` left out on Linux and on a
+        machine that reported no system; on Windows and macOS ``machine``
+        is ``{account, cpus, memory_gib, disk_gib}``, with the ``password``
+        of its login on Windows.
+    """
+    config = {
+        key: value for key, value in stored.items() if key != DEVICE_PODMAN_MACHINE_KEY
+    }
+    machine = stored.get(DEVICE_PODMAN_MACHINE_KEY)
+    os_name = platform.get("os")
+    if os_name not in DEVICE_PODMAN_MACHINE_OS or not isinstance(machine, dict):
+        return config
+    sent = {
+        "account": str(machine.get("account", "") or ""),
+        "cpus": machine.get("cpus", 0),
+        "memory_gib": machine.get("memory_gib", 0),
+        "disk_gib": machine.get("disk_gib", 0),
+    }
+    login_id = str(machine.get(DEVICE_INSTANCE_LOGIN_KEY, "") or "")
+    if os_name == VSCODE_PASSWORD_OS and login_id:
+        sent["password"] = _login_password(login_id)
+    config[DEVICE_PODMAN_MACHINE_KEY] = sent
     return config
 
 
@@ -705,9 +742,10 @@ class DesiredStateStore:
 
         Returns:
             The configuration: Samba with the networks its shares answer,
-            Gitea with its address and the secrets it signs with, and a
-            program run as an account with its sealed fields and logins
-            opened, as its row says.
+            Gitea with its address and the secrets it signs with, Containers
+            as :func:`podman_agent_config` composes it, and a program run as
+            an account with its sealed fields and logins opened, as its row
+            says.
 
         Raises:
             VaultLockedError: When a sealed token or login cannot be opened.
@@ -718,6 +756,8 @@ class DesiredStateStore:
         elif name == "gitea":
             config["address"] = address
             config["secrets"] = self.gitea_secrets(key)
+        elif name == "podman":
+            config = podman_agent_config(config, platform)
         elif name in account_program_names():
             config = instances_agent_config(module_row(name), config, platform)
         elif name == DEVICE_TERMINAL_MODULE:

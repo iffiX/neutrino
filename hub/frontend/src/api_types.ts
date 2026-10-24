@@ -2056,6 +2056,17 @@ export interface NetbirdJoinRequest {
 
 // --- Containers ---
 
+/** The service type of one host port a container publishes. */
+export interface PodmanService {
+  port: number;
+  /** auto, web or port. */
+  kind: string;
+  /** http or https, for web. */
+  scheme: string;
+  /** tcp and udp, for port. */
+  protocols: string[];
+}
+
 export interface PodmanContainer {
   name: string;
   image: string;
@@ -2068,6 +2079,8 @@ export interface PodmanContainer {
   /** Overrides the image's own command; empty keeps the default. */
   command: string;
   is_autostart: boolean;
+  /** One per host port; a port with none is auto. */
+  services: PodmanService[];
 }
 
 export interface PodmanContainerState {
@@ -2079,6 +2092,27 @@ export interface PodmanContainerState {
   is_declared: boolean;
 }
 
+/** The Run settings as stored: the account whose Podman machine runs the
+ * containers, the vault login it signs in with on Windows, and the machine's
+ * resources, each 0 for Podman's default. */
+export interface PodmanMachine {
+  account: string;
+  login_id: string;
+  cpus: number;
+  memory_gib: number;
+  disk_gib: number;
+}
+
+/** The Podman machine as the computer last reported it. */
+export interface PodmanMachineState {
+  account: string;
+  is_running: boolean;
+  cpus: number;
+  memory_gib: number;
+  /** The size of its disk now, the least a disk limit can be. */
+  disk_gib: number;
+}
+
 export interface PodmanSettings {
   containers: PodmanContainer[];
   /** docker.io mirrors, tried in order before the registry itself. */
@@ -2087,10 +2121,27 @@ export interface PodmanSettings {
   is_installed: boolean;
   is_active: boolean;
   version: string;
+  /** The human accounts the machine last reported, for the Run settings. */
+  accounts: string[];
+  /** The Run settings on Windows and macOS; null on Linux. */
+  machine: PodmanMachine | null;
+  /** The Podman machine as last reported; null until one is. */
+  machine_state: PodmanMachineState | null;
 }
 
 /** Podman on one device: its settings, and where the module stands there. */
 export interface PodmanDeviceView extends PodmanSettings, ModuleDeviceState {}
+
+/** The Run settings being saved. */
+export interface PodmanMachineUpdate {
+  device_id: string;
+  account: string;
+  /** The vault login the account signs in with, for a Windows machine. */
+  login_id: string;
+  cpus: number;
+  memory_gib: number;
+  disk_gib: number;
+}
 
 // --- Websocket frames ---
 

@@ -5,8 +5,10 @@ wants beside them, a module the file does not name being mentioned nowhere,
 a module the machine settled keeping its want and leaving the state,
 a hash that moves only with the state, the composed shape the agent
 applies, the secrets a device's Gitea is handed once and kept, the fence
-and address the hub folds in, and the sweep that removes a directory no
-stored device names.
+and address the hub folds in, the sweep that removes a directory no
+stored device names, and the Containers Run settings: sent to Windows and
+macOS alone, with the login's password on Windows and never the login's
+id, and a Linux entry byte for byte as before.
 """
 
 import json
@@ -813,3 +815,118 @@ def test_the_one_composition_answers_byte_for_byte_what_the_three_did(
     assert json.dumps(composed, sort_keys=True) == json.dumps(
         PINNED_CONFIGS[pinned], sort_keys=True
     )
+
+
+# --- Containers: the Run settings ---
+
+PODMAN_STORED = {
+    "containers": [
+        {
+            "name": "web",
+            "image": "docker.io/library/nginx:1.27",
+            "ports": ["8080:80", "5353:53/udp"],
+            "volumes": ["/srv/web:/usr/share/nginx/html", "data:/data"],
+            "environment": ["NGINX_PORT=80"],
+            "command": "",
+            "is_autostart": True,
+        }
+    ],
+    "mirrors": ["mirror.example"],
+}
+PODMAN_RUN_SETTINGS = {
+    "account": "lab",
+    "login_id": "l-lab",
+    "cpus": 4,
+    "memory_gib": 8,
+    "disk_gib": 120,
+}
+PODMAN_SENT_MACHINE = {"account": "lab", "cpus": 4, "memory_gib": 8, "disk_gib": 120}
+# The hash of the Linux ``podman`` entry for ``PODMAN_STORED`` under the
+# catalog's own recipe, captured before the Run settings existed.
+PODMAN_LINUX_ENTRY_HASH = (
+    "be399912fdb9cc26d9bd724feef0aab35f7a58e0fdc325c63f8dcea3deec6318"  # scan: allow
+)
+
+
+@pytest.fixture
+def podman_config(monkeypatch, tmp_path):
+    """The config dir under tmp_path, the catalog's own recipes, pinned logins."""
+    monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(desired_state_module, "UTILS_CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(desired_state_module, "_login_password", _password_for_pin)
+    return tmp_path
+
+
+def test_a_linux_podman_entry_is_byte_for_byte_as_before_and_names_no_machine(
+    podman_config,
+):
+    store = DesiredStateStore()
+    store.set_want(DEVICE, "podman", "running")
+    store.write(DEVICE, "podman", PODMAN_STORED)
+    before, before_hash = store.compose(DEVICE, PINNED_PLATFORMS["linux"])
+    store.write(DEVICE, "podman", {**PODMAN_STORED, "machine": PODMAN_RUN_SETTINGS})
+    after, after_hash = store.compose(DEVICE, PINNED_PLATFORMS["linux"])
+
+    assert state_hash(before["modules"]["podman"]) == PODMAN_LINUX_ENTRY_HASH
+    assert after == before
+    assert after_hash == before_hash
+
+
+@pytest.mark.parametrize(
+    "platform, machine",
+    [
+        ("windows", {**PODMAN_SENT_MACHINE, "password": "pw-l-lab"}),
+        ("darwin", PODMAN_SENT_MACHINE),
+        ("linux", None),
+        ("unreported", None),
+    ],
+)
+def test_the_run_settings_reach_windows_and_macos_alone_with_a_password_on_windows(
+    podman_config, platform, machine
+):
+    from neutrino_hub.modules.devices.desired_state import podman_agent_config
+
+    composed = podman_agent_config(
+        {**PODMAN_STORED, "machine": PODMAN_RUN_SETTINGS},
+        PINNED_PLATFORMS.get(platform, {}),
+    )
+
+    assert composed.get("machine") == machine
+    assert {key: value for key, value in composed.items() if key != "machine"} == (
+        PODMAN_STORED
+    )
+
+
+def test_a_windows_machine_with_no_login_is_sent_no_password(podman_config):
+    from neutrino_hub.modules.devices.desired_state import podman_agent_config
+
+    composed = podman_agent_config(
+        {"machine": {**PODMAN_RUN_SETTINGS, "login_id": ""}},
+        PINNED_PLATFORMS["windows"],
+    )
+
+    assert composed == {"machine": PODMAN_SENT_MACHINE}
+
+
+def test_the_podman_section_checked_on_an_apply_is_the_one_a_windows_state_carries(
+    podman_config,
+):
+    store = DesiredStateStore()
+    store.set_want(DEVICE, "podman", "running")
+    store.write(DEVICE, "podman", {**PODMAN_STORED, "machine": PODMAN_RUN_SETTINGS})
+    windows = PINNED_PLATFORMS["windows"]
+
+    desired, digest = store.compose(DEVICE, windows)
+    checked = store.agent_config(
+        DEVICE, "podman", store.read(DEVICE, "podman"), windows
+    )
+    store.write(
+        DEVICE,
+        "podman",
+        {**PODMAN_STORED, "machine": {**PODMAN_RUN_SETTINGS, "cpus": 2}},
+    )
+    _, moved = store.compose(DEVICE, windows)
+
+    assert checked == desired["modules"]["podman"]["config"]
+    assert checked["machine"] == {**PODMAN_SENT_MACHINE, "password": "pw-l-lab"}
+    assert moved != digest

@@ -78,33 +78,47 @@ def podman_import_config(details: dict) -> dict:
     Args:
         details: What the agent last reported: ``containers`` from
             ``podman ps`` and ``podman inspect``, each ``{name, image,
-            ports, volumes, environment, has_unit}``, and ``mirrors``.
+            ports, volumes, environment, has_unit}`` and ``services`` where
+            the machine reports them, ``mirrors``, and on Windows and macOS
+            the Podman machine, ``machine``, with its ``account``.
 
     Returns:
-        ``{"containers", "mirrors"}`` in the hub's shape; a container comes
-        up with the machine where a unit already stands for it.
+        ``{"containers", "mirrors"}`` in the hub's shape, and ``machine``,
+        the Run settings naming the reported account with Podman's
+        defaults, where a machine is reported; a container comes up with
+        the machine where a unit already stands for it, and keeps its
+        ``services`` where they are reported.
     """
     containers = []
     for container in details.get("containers") or []:
         if not isinstance(container, dict) or not container.get("name"):
             continue
-        containers.append(
-            {
-                "name": str(container.get("name", "")),
-                "image": str(container.get("image", "")),
-                "ports": [str(port) for port in container.get("ports") or []],
-                "volumes": [str(mount) for mount in container.get("volumes") or []],
-                "environment": [
-                    str(line) for line in container.get("environment") or []
-                ],
-                "command": "",
-                "is_autostart": bool(container.get("has_unit", False)),
-            }
-        )
-    return {
+        imported = {
+            "name": str(container.get("name", "")),
+            "image": str(container.get("image", "")),
+            "ports": [str(port) for port in container.get("ports") or []],
+            "volumes": [str(mount) for mount in container.get("volumes") or []],
+            "environment": [str(line) for line in container.get("environment") or []],
+            "command": "",
+            "is_autostart": bool(container.get("has_unit", False)),
+        }
+        if isinstance(container.get("services"), list):
+            imported["services"] = _imported_services(container["services"])
+        containers.append(imported)
+    config = {
         "containers": containers,
         "mirrors": [str(mirror) for mirror in details.get("mirrors") or []],
     }
+    machine = details.get("machine")
+    if isinstance(machine, dict) and machine.get("account"):
+        config["machine"] = {
+            "account": str(machine["account"]),
+            "login_id": "",
+            "cpus": 0,
+            "memory_gib": 0,
+            "disk_gib": 0,
+        }
+    return config
 
 
 # The modules with an import, by name.
@@ -130,3 +144,17 @@ def import_module_config(module: str, details: dict) -> dict:
     if importer is None:
         return {}
     return dict(importer(details))
+
+
+def _imported_services(services: list) -> list:
+    """A container's reported services in the hub's shape, one per host port."""
+    return [
+        {
+            "port": service.get("port", 0),
+            "kind": str(service.get("kind", "") or "auto"),
+            "scheme": str(service.get("scheme", "") or "http"),
+            "protocols": [str(name) for name in service.get("protocols") or []],
+        }
+        for service in services
+        if isinstance(service, dict)
+    ]

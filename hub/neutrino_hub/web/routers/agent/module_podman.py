@@ -4,13 +4,20 @@ A declared container is the device's desired state, checked on the agent,
 stored and pushed, and comes out the other side as a systemd unit on the
 device. The live list shows every container the device's podman knows,
 including ones started by hand at a shell, each with start, stop and
-restart and its unit's journal.
+restart and its unit's journal. On Windows and macOS the containers run in
+one account's Podman machine, which the Run settings name.
 """
 
 import httpx
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from neutrino_hub.modules.channel.constants import CHANNEL_MODULE_PRESENT_STATES
+from neutrino_hub.modules.credentials.vault import SecretVault
+from neutrino_hub.modules.devices.constants import (
+    DEVICE_INSTANCE_LOGIN_KEY,
+    DEVICE_PODMAN_MACHINE_KEY,
+    DEVICE_PODMAN_MACHINE_OS,
+)
 from neutrino_hub.web.constants import WEB_JOURNAL_LINE_LIMIT
 from neutrino_hub.modules.devices.module_import import podman_import_config
 from neutrino_hub.web.dependencies import get_runtime
@@ -21,6 +28,9 @@ from neutrino_hub.web.models import (
     PodmanContainerStateView,
     PodmanContainerView,
     PodmanDeviceView,
+    PodmanMachineStateView,
+    PodmanMachineUpdate,
+    PodmanMachineView,
     PodmanMirrorListUpdate,
     PodmanTagListView,
 )
@@ -40,6 +50,13 @@ CONTROL_START = "start"
 CONTROL_STOP = "stop"
 CONTROL_RESTART = "restart"
 TAGS_TIMEOUT_S = 10.0
+# The system whose Podman machine starts only with its account's password.
+OS_WINDOWS = "windows"
+LOGIN_KIND = "login"
+
+CODE_UNSUPPORTED_PLATFORM = "unsupported_platform"
+CODE_UNKNOWN_CREDENTIAL = "unknown_credential"
+CODE_CREDENTIAL_MISSING = "credential_missing"
 
 
 def device_view(
@@ -53,10 +70,18 @@ def device_view(
 
     Returns:
         Declared containers as configured, every container the device's
-        podman knows, and the engine's own state.
+        podman knows, the engine's own state, and the human accounts the
+        machine reported; on Windows and macOS the stored Run settings, and
+        the Podman machine wherever the machine reports one.
     """
     details = context.details
     config = context.config
+    is_machine_run = (
+        runtime.device_platform.get(context.key, {}).get("os")
+        in DEVICE_PODMAN_MACHINE_OS
+    )
+    stored_machine = config.get(DEVICE_PODMAN_MACHINE_KEY)
+    reported_machine = details.get(DEVICE_PODMAN_MACHINE_KEY)
     return PodmanDeviceView(
         **context.fields(),
         containers=[
@@ -72,6 +97,19 @@ def device_view(
         is_installed=context.state in CHANNEL_MODULE_PRESENT_STATES,
         is_active=bool(details.get("is_active")),
         version=str(details.get("version", "") or ""),
+        accounts=[str(name) for name in runtime.device_accounts.get(context.key, [])],
+        machine=(
+            PodmanMachineView(
+                **(stored_machine if isinstance(stored_machine, dict) else {})
+            )
+            if is_machine_run
+            else None
+        ),
+        machine_state=(
+            PodmanMachineStateView(**reported_machine)
+            if isinstance(reported_machine, dict)
+            else None
+        ),
     )
 
 
@@ -126,6 +164,44 @@ def update_mirrors(
     context = device_context(runtime, MODULE, update.device_id)
     config = dict(context.config)
     config["mirrors"] = list(update.mirrors)
+    store_config(runtime, context, config)
+    return device_view(runtime, context)
+
+
+@router.post("/machine/set", response_model=PodmanDeviceView)
+def update_machine(
+    update: PodmanMachineUpdate,
+    runtime: PanelRuntime = Depends(get_runtime),
+) -> PodmanDeviceView:
+    """Replace the Run settings of a Windows or macOS machine.
+
+    Args:
+        update: The device, the account whose Podman machine runs the
+            containers, its vault login, and the machine's resources.
+        runtime: The shared runtime.
+
+    Returns:
+        The device's view afterwards.
+
+    Raises:
+        HTTPException: 400 ``unsupported_platform`` for a machine that is
+            not Windows or macOS, ``unknown_credential`` for a login the
+            vault does not hold, ``credential_missing`` for an account of a
+            Windows machine with no login; 409 ``agent_offline``; 400 with
+            the agent's code when it refuses the settings.
+    """
+    context = device_context(runtime, MODULE, update.device_id)
+    os_name = runtime.device_platform.get(context.key, {}).get("os")
+    if os_name not in DEVICE_PODMAN_MACHINE_OS:
+        raise _refusal(CODE_UNSUPPORTED_PLATFORM)
+    if update.login_id:
+        record = SecretVault().get(update.login_id)
+        if record is None or record.kind != LOGIN_KIND:
+            raise _refusal(CODE_UNKNOWN_CREDENTIAL, field=DEVICE_INSTANCE_LOGIN_KEY)
+    elif os_name == OS_WINDOWS and update.account:
+        raise _refusal(CODE_CREDENTIAL_MISSING, account=update.account)
+    config = dict(context.config)
+    config[DEVICE_PODMAN_MACHINE_KEY] = update.model_dump(exclude={"device_id"})
     store_config(runtime, context, config)
     return device_view(runtime, context)
 
@@ -304,3 +380,10 @@ def list_image_tags(image: str) -> list[str]:
         for entry in payload.get("results", [])
         if isinstance(entry, dict) and entry.get("name")
     ]
+
+
+def _refusal(code: str, **params) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail={"code": code, "params": dict(params)},
+    )

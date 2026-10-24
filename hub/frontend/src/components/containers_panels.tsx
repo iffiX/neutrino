@@ -51,6 +51,7 @@ const EMPTY_CONTAINER: PodmanContainer = {
   environment: [],
   command: "",
   is_autostart: true,
+  services: [],
 };
 
 interface ContainersPanelsProps {

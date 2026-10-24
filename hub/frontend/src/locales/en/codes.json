@@ -338,5 +338,20 @@
   "code.shell_program_unusable": "{path} is not a program this machine can run.",
   "code.rdp_takeover_failed": "Remote desktop could not start at {step}: {detail}",
   "code.rdp_restore_failed": "Remote desktop could not put back the machine's RustDesk at {step}: {detail}",
-  "code.easytier_invalid": "Manual bootstrap peers needs at least one bootstrap peer."
+  "code.easytier_invalid": "Manual bootstrap peers needs at least one bootstrap peer.",
+  "code.reboot_required": "Windows needs a restart to finish turning on WSL; the install goes on after it.",
+  "code.service_protocol_none": "Port {port} needs TCP, UDP or both.",
+  "code.windows_feature_failed": "Windows could not turn on {feature} (exit code {exit_code}).",
+  "code.podman_install_failed": "The {component} installer failed (exit code {exit_code}).",
+  "code.machine_account_missing": "Choose the account that runs the containers.",
+  "code.machine_cpus_invalid": "CPUs must be between 0 and {max}.",
+  "code.machine_memory_invalid": "Memory must be between 0 and {max} GiB.",
+  "code.machine_disk_shrink": "The disk is {current_gib} GiB and only grows; {disk_gib} GiB is smaller.",
+  "code.volume_not_shared": "The volume {volume} of {name} is outside what the Podman machine shares: a fixed drive on Windows; /Users, /private or /var/folders on macOS.",
+  "code.machine_image_missing": "The Podman machine image is not on this machine; install the module again.",
+  "code.machine_init_failed": "Podman could not create the machine: {detail}",
+  "code.machine_set_failed": "Podman could not change the machine: {detail}",
+  "code.machine_unreachable": "The Podman machine does not answer: {detail}",
+  "code.volume_invalid": "The volume {volume} of {name} needs a folder or a volume name, a colon, and a path in the container.",
+  "code.container_unknown": "Podman has no container called {name}."
 }
