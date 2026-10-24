@@ -193,6 +193,16 @@ class ModuleRunner:
         """
         return False
 
+    def install_wait(self) -> dict:
+        """What holds up the install :meth:`is_installing` reports.
+
+        Returns:
+            ``{"code", "params"}`` naming it, the code ``reboot_required``
+            while a restart is owed; empty for a module whose install
+            waits on nothing it names.
+        """
+        return {}
+
     def is_active(self) -> bool:
         """Whether the unit this module runs as is active.
 

@@ -627,7 +627,9 @@ class ModuleEngine(ReconcileWorker):
                 it not.
 
         Returns:
-            ``{"state", "is_active", "code", "params", "details"}``.
+            ``{"state", "is_active", "code", "params", "details"}``; an
+            ``installing`` row carries the runner's install wait as its
+            code and params.
         """
         recipe = _recipe_of(wanted)
         runner = self._runner_for(str(recipe.get("kind", "")), name)
@@ -647,6 +649,9 @@ class ModuleEngine(ReconcileWorker):
             )
             if observed.get("is_installing"):
                 status["state"] = AGENT_MODULE_STATE_INSTALLING
+                wait = runner.install_wait()
+                status["code"] = str(wait.get("code", "") or "")
+                status["params"] = dict(wait.get("params") or {})
             details = observed.get("details")
             status["details"] = dict(details) if isinstance(details, dict) else {}
         except PlatformUnsupportedError:

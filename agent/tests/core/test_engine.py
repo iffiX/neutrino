@@ -10,7 +10,8 @@ output line handed on as it comes and the row transient meanwhile, a
 package's bytes asked for only by the kinds that install from bytes and
 the file deleted afterwards, the uninstall recipe's own packages and
 steps, results judged by the machine's own state, one package operation
-at a time, a module whose own install runs reading installing, the modules
+at a time, a module whose own install runs reading installing with the
+code its runner names for what holds it up, the modules
 waiting behind the one being applied reading queued, an install that failed
 and left nothing reading absent with its code, and that nothing in it ever
 retries anything.
@@ -604,6 +605,81 @@ def test_an_install_of_the_module_s_own_reads_installing(tmp_path, is_marked):
     engine._refresh(is_forced=True)
 
     assert engine.report()["samba"]["state"] == "installing"
+
+
+class WaitingRunner(ConfigurableRunner):
+    """A runner whose own install runs, or not, and names what holds it up."""
+
+    def __init__(self, *, is_installing_now, wait):
+        super().__init__(is_active_now=True)
+        self.is_installing_now = is_installing_now
+        self.wait = wait
+
+    def is_installing(self):
+        return self.is_installing_now
+
+    def install_wait(self):
+        return self.wait
+
+
+def test_an_installing_row_carries_what_holds_the_install_up(tmp_path):
+    engine = module_engine(
+        WaitingRunner(is_installing_now=True, wait={"code": "reboot_required"}),
+        module_wanted("running"),
+        tmp_path,
+    )
+
+    engine._refresh(is_forced=True)
+
+    row = engine.report()["samba"]
+    assert (row["state"], row["code"], row["params"]) == (
+        "installing",
+        "reboot_required",
+        {},
+    )
+
+
+def test_the_wait_s_params_are_copied_onto_the_row(tmp_path):
+    params = {"component": "image"}
+    engine = module_engine(
+        WaitingRunner(
+            is_installing_now=True, wait={"code": "install_waits", "params": params}
+        ),
+        module_wanted("running"),
+        tmp_path,
+    )
+
+    engine._refresh(is_forced=True)
+    params["component"] = "changed"
+
+    assert engine.report()["samba"]["params"] == {"component": "image"}
+
+
+def test_an_install_waiting_on_nothing_named_reads_installing_with_no_code(tmp_path):
+    engine = module_engine(
+        WaitingRunner(is_installing_now=True, wait={}),
+        module_wanted("running"),
+        tmp_path,
+    )
+
+    engine._refresh(is_forced=True)
+
+    row = engine.report()["samba"]
+    assert (row["state"], row["code"], row["params"]) == ("installing", "", {})
+
+
+def test_a_module_not_installing_takes_no_code_from_its_install_wait(tmp_path):
+    engine = module_engine(
+        WaitingRunner(is_installing_now=False, wait={"code": "reboot_required"}),
+        module_wanted("running"),
+        tmp_path,
+    )
+    engine.mark_configured("samba")
+
+    engine._refresh(is_forced=True)
+
+    row = engine.report()["samba"]
+    assert (row["state"], row["code"]) == ("running", "")
 
 
 def test_the_mark_is_a_root_only_file_named_after_the_module(tmp_path):
