@@ -413,6 +413,7 @@ class ClientHubSession:
         on_disabled=None,
         on_unbound=None,
         on_joined=None,
+        on_welcomed=None,
         local_networks=None,
         refresh_timeout_s: float = CLIENT_REFRESH_TIMEOUT_S,
         clock=time.monotonic,
@@ -439,6 +440,10 @@ class ClientHubSession:
             on_joined: ``on_joined(session, binding)`` keeps the binding a
                 pending join completed, by :meth:`adopt_join`, raising
                 OSError when it cannot; None adopts it directly.
+            on_welcomed: ``on_welcomed(session, hub_id)`` is called after
+                every welcome, with the hub id it names, before the binding
+                takes that id and before the socket's first state is read;
+                None for nobody listening.
             local_networks: Returns this machine's networks, as
                 ``a.b.c.d/n`` or IPv6 prefixes, by which a candidate address
                 reads as ``lan``; None knows none.
@@ -459,6 +464,7 @@ class ClientHubSession:
         self._on_disabled = on_disabled if on_disabled is not None else _nobody
         self._on_unbound = on_unbound if on_unbound is not None else _nobody
         self._on_joined = on_joined if on_joined is not None else _adopt_join
+        self._on_welcomed = on_welcomed if on_welcomed is not None else _nobody
         self._local_networks = (
             local_networks if local_networks is not None else _no_networks
         )
@@ -1562,6 +1568,7 @@ class ClientHubSession:
         except Exception:
             client.close()
             raise
+        self._on_welcomed(self, str(welcome.get("id", "") or ""))
         self._note_hub(welcome)
         with self._lock:
             self._client = client

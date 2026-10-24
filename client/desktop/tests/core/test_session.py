@@ -389,6 +389,30 @@ def test_the_welcome_names_the_hub_and_is_written_onto_the_binding(
     assert (binding["id"], binding["token"]) == ("c1", "tok")
 
 
+def test_a_welcome_names_its_hub_before_the_binding_takes_it_or_a_state_is_read(
+    config_path, monkeypatch
+):
+    bind(config_path, url="https://hub.lan:8443")
+    listener = Listener()
+    seen = []
+
+    def welcomed(session, hub_id: str) -> None:
+        seen.append((hub_id, session.hub_id(), listener.names()))
+
+    session = session_for(
+        binding={"hub_id": "", "hub_name": ""},
+        listener=listener,
+        on_welcomed=welcomed,
+    )
+    socket_of(monkeypatch, [WELCOME, STATE])
+
+    session.run_once()
+
+    assert seen == [("h2", "", [])]
+    assert session.hub_id() == "h2"
+    assert listener.names() == ["services"]
+
+
 def test_a_welcome_naming_what_the_binding_holds_writes_nothing(
     bound, monkeypatch, config_path
 ):

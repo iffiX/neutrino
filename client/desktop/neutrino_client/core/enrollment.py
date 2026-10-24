@@ -345,6 +345,35 @@ def remove_binding(binding_id: str) -> None:
     save_config(config)
 
 
+@_one_writer
+def drop_repeated_hubs() -> list:
+    """Keep one binding per hub id, the one joined last.
+
+    Returns:
+        The bindings dropped, in the order joined; empty when no hub id
+        is held twice, and the file is then not written.
+
+    Raises:
+        OSError: When the file cannot be written.
+    """
+    config = load_config()
+    held = config["bindings"]
+    last = {binding["hub_id"]: index for index, binding in enumerate(held)}
+    dropped = [
+        binding
+        for index, binding in enumerate(held)
+        if binding["hub_id"] and last[binding["hub_id"]] != index
+    ]
+    if dropped:
+        config["bindings"] = [
+            binding
+            for index, binding in enumerate(held)
+            if not binding["hub_id"] or last[binding["hub_id"]] == index
+        ]
+        save_config(config)
+    return dropped
+
+
 def note_hub(binding_id: str, hub_id: str, hub_name: str) -> None:
     """Record what the hub's welcome said it is, on one binding.
 

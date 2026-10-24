@@ -590,6 +590,32 @@ def test_remove_binding_drops_one_and_leaves_the_rest():
     assert enrollment.is_configured() is True
 
 
+def test_one_binding_per_hub_id_is_kept_the_one_joined_last(config_path):
+    enrollment.add_binding(BINDING)
+    waiting = pending()
+    enrollment.add_binding(SECOND)
+    enrollment.add_binding(dict(BINDING, id="c3", token="tok3"))
+
+    dropped = enrollment.drop_repeated_hubs()
+
+    assert dropped == [BINDING]
+    assert [binding["id"] for binding in enrollment.bindings()] == [
+        waiting["id"],
+        "c2",
+        "c3",
+    ]
+
+
+def test_a_file_with_no_hub_held_twice_is_not_written(config_path):
+    enrollment.add_binding(BINDING)
+    enrollment.add_binding(SECOND)
+    pending()
+    before = config_path.stat().st_mtime_ns
+
+    assert enrollment.drop_repeated_hubs() == []
+    assert config_path.stat().st_mtime_ns == before
+
+
 @pytest.mark.parametrize("needle", ["c2", "h2", "office"])
 def test_find_binding_answers_to_the_binding_id_the_hub_id_and_its_name(needle):
     enrollment.add_binding(BINDING)

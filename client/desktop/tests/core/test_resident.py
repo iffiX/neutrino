@@ -16,7 +16,10 @@ press shown before the work, a duplicate press dropped and never answered
 as ``busy``, a failure kept on the entry until the next press or a refresh,
 the notice a forgotten binding leaves, closed or dropped by a refresh, a
 leave that forgets the binding whatever the hub answers, and the clipboard
-written.
+written. One binding per hub id: a join ending the binding held for its hub,
+by the id the hub gave before the hello with the hub not told, and by the
+hub id the welcome names with the hub told whatever it answers, and a start
+keeping the binding joined last of each hub.
 """
 
 import functools
@@ -1493,12 +1496,52 @@ def test_a_completed_join_keeps_the_session_and_its_network(joining_resident):
     assert [binding["id"] for binding in enrollment.bindings()] == ["c7"]
 
 
-def test_a_join_landing_on_a_binding_held_here_leaves_one_row(config_path):
-    """The hub lands a machine joining again on its row: the old binding gives way."""
+class LeaveDesk:
+    """The hub's leave route as the resident reaches it.
+
+    Attributes:
+        told: The id of every binding the hub was told of, in order.
+        refusal: Raised by every tell; None answers each one.
+    """
+
+    def __init__(self, refusal=None):
+        self.told = []
+        self.refusal = refusal
+
+    def __call__(self, binding: dict) -> None:
+        self.told.append(binding["id"])
+        if self.refusal is not None:
+            raise self.refusal
+
+
+def completing(binding_id: str):
+    """``complete_join`` as a hub answers it, with the id it gives."""
+
+    def complete(binding: dict, url: str) -> dict:
+        return enrollment._binding(
+            dict(
+                binding,
+                id=binding_id,
+                token="fresh",
+                gateway_url=url,
+                ticket="",
+                is_pending=False,
+            )
+        )
+
+    return complete
+
+
+@pytest.fixture
+def rejoining(config_path, monkeypatch):
+    """The home hub's binding c1, the exit, and a join of the home hub beside it."""
     bind(config_path, url=HOME_URL)
     enrollment.set_exit_hub_id("h1")
+    desk = LeaveDesk()
+    monkeypatch.setattr(enrollment, "leave", desk)
+    lines = []
     resident = ClientResident(
-        log=discard,
+        log=lines.append,
         platform=FakeClientPlatform(),
         overlay_drivers={
             "easytier": FakeOverlayDriver(),
@@ -1507,6 +1550,15 @@ def test_a_join_landing_on_a_binding_held_here_leaves_one_row(config_path):
         start_thread=run_inline,
     )
     resident.connect(link_for({"urls": [HOME_URL], "token": "ticket-2"}))
+    yield resident, desk, lines
+    resident.shutdown()
+
+
+def test_a_join_landing_on_the_binding_held_here_ends_it_and_tells_no_hub(
+    rejoining,
+):
+    """The hub lands a machine joining again on its row: the old binding gives way."""
+    resident, desk, _lines = rejoining
     _held, joining = sessions_of(resident).values()
     completed = dict(
         joining.binding(), id="c1", token="fresh", ticket="", is_pending=False
@@ -1521,6 +1573,73 @@ def test_a_join_landing_on_a_binding_held_here_leaves_one_row(config_path):
     assert resident.exit_hub_id() == "h1"
     stored = [(binding["id"], binding["token"]) for binding in enrollment.bindings()]
     assert stored == [("c1", "fresh")]
+    assert desk.told == []
+
+
+def test_a_join_given_a_new_id_ends_the_binding_its_welcome_names_and_tells_the_hub(
+    rejoining, monkeypatch
+):
+    resident, desk, _lines = rejoining
+    held, joining = sessions_of(resident).values()
+    scripts = sockets_by_hub(monkeypatch, {"hub.lan": [HOME_WELCOME, HOME_STATE]})
+    monkeypatch.setattr(enrollment, "complete_join", completing("c9"))
+    made = scripts(host="hub.lan")
+    made.connect()
+
+    joining._greet(made, HOME_URL)
+
+    assert list(sessions_of(resident).values()) == [joining]
+    (row,) = resident.hubs()
+    assert (row["binding_id"], row["hub_id"], row["hub_name"]) == ("c9", "h1", "home")
+    assert row["connection"] == "connected"
+    assert resident.exit_hub_id() == "h1"
+    assert [binding["id"] for binding in enrollment.bindings()] == ["c9"]
+    assert desk.told == ["c1"]
+    assert held.connection() != "connected"
+
+
+def test_a_binding_the_hub_forgot_ends_at_the_welcome_whatever_the_leave_answers(
+    rejoining, monkeypatch
+):
+    resident, desk, lines = rejoining
+    desk.refusal = GatewayRefused("hub refused this client's token")
+    held, joining = sessions_of(resident).values()
+    held._unbind({"code": "binding_unknown", "params": {}})
+    assert resident.hubs()[0]["wait_reason"] == "unknown_device"
+    scripts = sockets_by_hub(monkeypatch, {"hub.lan": [HOME_WELCOME, HOME_STATE]})
+    monkeypatch.setattr(enrollment, "complete_join", completing("c9"))
+    made = scripts(host="hub.lan")
+    made.connect()
+
+    joining._greet(made, HOME_URL)
+
+    assert [row["binding_id"] for row in resident.hubs()] == ["c9"]
+    assert [binding["id"] for binding in enrollment.bindings()] == ["c9"]
+    assert desk.told == ["c1"]
+    assert any("could not tell the hub we are leaving" in line for line in lines)
+
+
+def test_a_start_with_two_bindings_for_one_hub_keeps_the_one_joined_last(
+    config_path, monkeypatch
+):
+    bind(
+        config_path,
+        bindings=[
+            dict(BINDING, gateway_url=HOME_URL),
+            dict(OFFICE_BINDING),
+            dict(BINDING, id="c3", token="tok3", gateway_url=HOME_URL),
+        ],
+    )
+    desk = LeaveDesk(refusal=GatewayRefused("hub refused this client's token"))
+    monkeypatch.setattr(enrollment, "leave", desk)
+
+    resident = ClientResident(
+        log=discard, platform=FakeClientPlatform(), start_thread=run_inline
+    )
+
+    assert [row["binding_id"] for row in resident.hubs()] == ["c2", "c3"]
+    assert [binding["id"] for binding in enrollment.bindings()] == ["c2", "c3"]
+    assert desk.told == ["c1"]
     resident.shutdown()
 
 
