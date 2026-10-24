@@ -338,6 +338,26 @@ def test_the_root_script_renders_the_golden_text_around_each_files_base64():
     ]
 
 
+def test_the_mac_script_writes_where_linux_has_the_files_with_the_cgroups_line(
+    tmp_path,
+):
+    shell = MachineShell(tmp_path, "darwin")
+    config = machine_config()
+
+    done, _calls = shell.run(config)
+
+    assert done.returncode == 0, done.stderr
+    assert shell.quadlet == shell.root / "etc/containers/systemd"
+    text = (shell.quadlet / "web.container").read_text()
+    assert text == (
+        PodmanQuadletRenderer(config=config, machine_os_name="darwin").render()[
+            "web.container"
+        ]
+    )
+    assert "\nCgroupsMode=enabled\n" in text
+    assert not (shell.root / "usr").exists()
+
+
 # A systemctl that records each call, reads a unit active when ACTIVE names
 # it, and refuses a restart of a unit REFUSED names.
 SYSTEMCTL_STUB = """#!/bin/sh
@@ -356,9 +376,14 @@ exit 0
 class MachineShell:
     """The root script run with ``sh`` against a temporary root, systemctl stubbed."""
 
-    def __init__(self, tmp_path):
+    def __init__(self, tmp_path, os_name="windows"):
+        self.os_name = os_name
         self.root = tmp_path / "machine"
-        self.quadlet = self.root / "usr/share/containers/systemd"
+        self.quadlet = self.root / (
+            "usr/share/containers/systemd"
+            if os_name == "windows"
+            else "etc/containers/systemd"
+        )
         self.mirrors = (
             self.root / "etc/containers/registries.conf.d/99_neutrino_mirrors.conf"
         )
@@ -373,7 +398,7 @@ class MachineShell:
     def run(self, config: PodmanConfig, *, active="", refused="") -> tuple:
         self.log.write_text("")
         script = PodmanMachineScriptRenderer(
-            config=config, os_name="windows", root=str(self.root)
+            config=config, os_name=self.os_name, root=str(self.root)
         ).render()
         done = subprocess.run(
             ["sh", "-s"],
@@ -499,15 +524,18 @@ def test_the_verbs_scripts_name_the_containers_unit():
         machine_control_script("web", "kill")
 
 
-def test_the_stop_script_stops_each_generated_container_and_keeps_its_file(tmp_path):
-    shell = MachineShell(tmp_path)
+@pytest.mark.parametrize("os_name", ["windows", "darwin"])
+def test_the_stop_script_stops_each_generated_container_and_keeps_its_file(
+    tmp_path, os_name
+):
+    shell = MachineShell(tmp_path, os_name)
     shell.run(machine_config())
     (shell.quadlet / "mine.container").write_text("[Container]\n")
     shell.log.write_text("")
 
     subprocess.run(
         ["sh", "-s"],
-        input=machine_stop_script(root=str(shell.root)),
+        input=machine_stop_script(os_name=os_name, root=str(shell.root)),
         text=True,
         env={"PATH": shell.path, "SYSTEMCTL_LOG": str(shell.log)},
         check=True,

@@ -168,6 +168,33 @@ def test_an_applehv_init_takes_its_size(tmp_path):
     assert platform.calls[0]["password"] == ""
 
 
+def test_the_machines_variables_go_with_every_command_and_the_provider_wins(
+    tmp_path,
+):
+    platform = RecordingPlatform("darwin", str(tmp_path / "me"))
+    machine = PodmanMachine(
+        platform=platform,
+        account="me",
+        password="",
+        binary="/opt/podman/bin/podman",
+        provider="applehv",
+        environment={
+            "TMPDIR": "/var/folders/xy/abc/T/",
+            "CONTAINERS_MACHINE_PROVIDER": "libkrun",
+        },
+        run=RecordingRun(),
+    )
+
+    machine.stop()
+    machine.shell("true\n")
+
+    for call in platform.calls:
+        assert call["environment"] == {
+            "TMPDIR": "/var/folders/xy/abc/T/",
+            "CONTAINERS_MACHINE_PROVIDER": "applehv",
+        }
+
+
 def test_rootful_resources_start_and_stop_are_podman_machine_verbs(tmp_path):
     platform = RecordingPlatform("darwin", str(tmp_path / "me"))
     machine = mac_machine(tmp_path, platform)

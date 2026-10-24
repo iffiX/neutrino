@@ -23,7 +23,7 @@ from neutrino_agent.modules.podman.constants import (
     PODMAN_CONTAINER_ACTIONS,
     PODMAN_GENERATED_MARKER,
     PODMAN_MACHINE_CGROUPS_LINE,
-    PODMAN_MACHINE_QUADLET_DIR,
+    PODMAN_MACHINE_QUADLET_DIRS,
     PODMAN_REGISTRIES_CONF_PATH,
 )
 from neutrino_agent.modules.podman.machine_paths import to_machine
@@ -119,18 +119,22 @@ def qualified_image(image: str) -> str:
     return f"docker.io/{image}"
 
 
-def machine_stop_script(*, root: str = "") -> str:
+def machine_stop_script(*, os_name: str, root: str = "") -> str:
     """The root script that stops every generated container in a machine.
 
     Args:
+        os_name: The computer's system, ``windows`` or ``darwin``.
         root: A directory every path in the machine is under; empty is the
             machine's own ``/``.
 
     Returns:
         The POSIX sh text; the files stay.
+
+    Raises:
+        KeyError: For a system with no Podman machine.
     """
     return _MACHINE_SCRIPT_STOP.format(
-        quadlet=_shell_quoted(root + PODMAN_MACHINE_QUADLET_DIR),
+        quadlet=_shell_quoted(root + PODMAN_MACHINE_QUADLET_DIRS[os_name]),
         marker=_shell_quoted(PODMAN_GENERATED_MARKER),
     )
 
@@ -358,6 +362,9 @@ class PodmanMachineScriptRenderer:
 
         Returns:
             The POSIX sh text, read by ``sh -s`` as root in the machine.
+
+        Raises:
+            KeyError: For a system with no Podman machine.
         """
         rendered = PodmanQuadletRenderer(
             config=self._config, machine_os_name=self._os_name
@@ -365,7 +372,9 @@ class PodmanMachineScriptRenderer:
         parts = [
             _MACHINE_SCRIPT_HEAD.format(
                 marker_comment=PODMAN_GENERATED_MARKER,
-                quadlet=_shell_quoted(self._root + PODMAN_MACHINE_QUADLET_DIR),
+                quadlet=_shell_quoted(
+                    self._root + PODMAN_MACHINE_QUADLET_DIRS[self._os_name]
+                ),
                 mirrors=_shell_quoted(self._root + PODMAN_REGISTRIES_CONF_PATH),
                 marker=_shell_quoted(PODMAN_GENERATED_MARKER),
             )

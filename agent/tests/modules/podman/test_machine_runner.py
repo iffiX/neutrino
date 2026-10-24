@@ -120,15 +120,19 @@ class World:
         self.answers_after = 0
         self.is_answering = True
         self.is_account_gone = False
+        self.environments: list = []
 
 
 def machine_class_for(world: World):
     class FakeMachine:
-        def __init__(self, *, platform, account, password, binary, provider):
+        def __init__(
+            self, *, platform, account, password, binary, provider, environment
+        ):
             self.account = account
             self.password = password
             self.binary = binary
             self.provider = provider
+            world.environments.append((account, dict(environment)))
 
         @property
         def is_sized_at_init(self):
@@ -229,6 +233,9 @@ class FakeSystem(PodmanSystemApplier):
 
     def resize_disk(self, machine, *, disk_gib):
         self.calls.append(("disk", machine.account, disk_gib))
+
+    def machine_environment(self, account):
+        return {"TMPDIR": f"/var/folders/{account}/T/"}
 
 
 class Launchctl:
@@ -549,6 +556,16 @@ def test_a_new_machine_is_made_from_the_kept_image_and_runs_the_containers(rig):
         }
     ]
     assert rig.lines[-1] == "podman: made the machine of me; containers unchanged"
+
+
+def test_every_machine_carries_the_systems_variables_for_its_account(rig):
+    rig.keep_image()
+
+    rig.runner.apply(CONFIG)
+
+    assert rig.world.environments
+    for made in rig.world.environments:
+        assert made == ("me", {"TMPDIR": "/var/folders/me/T/"})
 
 
 def test_a_wsl_machine_is_sized_after_the_init_and_before_its_first_start(tmp_path):
@@ -914,7 +931,7 @@ def test_stop_stops_the_declared_containers_and_leaves_the_machine(rig):
 
     rig.runner.stop()
 
-    assert rig.world.scripts[-1][2] == machine_stop_script()
+    assert rig.world.scripts[-1][2] == machine_stop_script(os_name="darwin")
     assert rig.world.calls == []
 
 

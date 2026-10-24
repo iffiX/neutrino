@@ -87,12 +87,17 @@ def podman_system_applier_for(platform, *, log=print) -> PodmanSystemApplier:
         The system's applier; the base, which refuses every step, on a
         system with none.
     """
+    # Imported here: each system's applier is built on this module's base.
     if platform.os_name == "windows":
         from neutrino_agent.modules.podman.windows_applier import (
             PodmanWindowsApplier,
         )
 
         return PodmanWindowsApplier(platform=platform, log=log)
+    if platform.os_name == "darwin":
+        from neutrino_agent.modules.podman.darwin_applier import PodmanDarwinApplier
+
+        return PodmanDarwinApplier(platform=platform)
     return PodmanSystemApplier()
 
 
@@ -221,6 +226,17 @@ class PodmanSystemApplier:
         """
         raise PlatformUnsupportedError("no Podman machine here")
 
+    def machine_environment(self, account: str) -> dict:
+        """The variables every machine command of the account runs with, beside the provider.
+
+        Args:
+            account: The machine's account.
+
+        Returns:
+            Name to value; empty on a system that needs none.
+        """
+        return {}
+
 
 class PodmanMachineModuleRunner(ModuleRunner):
     """Installs Podman from the hub's bytes and keeps the declared containers running in one account's machine."""
@@ -249,7 +265,8 @@ class PodmanMachineModuleRunner(ModuleRunner):
             service_machine: The computer as the account service layer
                 reaches it; None is the platform's own.
             machine_class: Made with ``platform``, ``account``, ``password``,
-                ``binary`` and ``provider``; drives one account's machine.
+                ``binary``, ``provider`` and ``environment``; drives one
+                account's machine.
             clock: The monotonic clock the waits and the reading age on.
             sleep: Waits between two asks while the machine starts.
         """
@@ -425,7 +442,10 @@ class PodmanMachineModuleRunner(ModuleRunner):
             record = self._record()
             if not record:
                 return
-            self._run_quietly(self._machine_of_record(record), machine_stop_script())
+            self._run_quietly(
+                self._machine_of_record(record),
+                machine_stop_script(os_name=self._platform.os_name),
+            )
 
     def remove_configuration(self) -> None:
         """Take the containers' files out of the machine, remove the keeper and stop the machine.
@@ -894,6 +914,7 @@ class PodmanMachineModuleRunner(ModuleRunner):
             password=password,
             binary=self._system.binary,
             provider=self._system.provider,
+            environment=self._system.machine_environment(account),
         )
 
     def _machine_of_record(self, record: dict) -> PodmanMachine:

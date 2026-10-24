@@ -22,6 +22,8 @@ import ntpath
 import posixpath
 
 from neutrino_agent.modules.podman.constants import (
+    PODMAN_DARWIN_TEMP_DIR_COMMAND,
+    PODMAN_DARWIN_TEMP_DIR_VARIABLE,
     PODMAN_GENERATED_MARKER,
     PODMAN_MACHINE_KEEPER_INTERVAL_S,
     PODMAN_MACHINE_KEEPER_NAMES,
@@ -58,10 +60,13 @@ ping -n {pings} 127.0.0.1 >nul
 goto loop
 """
 
-# The keeper on macOS.
+# The keeper on macOS. Podman keeps the machine's sockets under
+# ``$TMPDIR/podman``, and ``TMPDIR`` is the account's own temporary
+# directory, the one its sessions and the agent's machine commands have.
 _DARWIN_SCRIPT = """#!/bin/sh
 {marker}
 export {variable}={provider}
+temp=$({temp_dir_command}) && export {temp_dir_variable}="$temp"
 PATH="{program_dir}:$PATH"
 while :; do
     state=$(podman machine inspect --format '{{{{.State}}}}' {machine} 2>/dev/null)
@@ -110,6 +115,8 @@ def keeper_script(*, os_name: str, binary: str, provider: str) -> str:
             marker=PODMAN_GENERATED_MARKER,
             variable=PODMAN_MACHINE_PROVIDER_VARIABLE,
             provider=provider,
+            temp_dir_command=" ".join(PODMAN_DARWIN_TEMP_DIR_COMMAND),
+            temp_dir_variable=PODMAN_DARWIN_TEMP_DIR_VARIABLE,
             program_dir=posixpath.dirname(binary),
             machine=PODMAN_MACHINE_NAME,
             interval=PODMAN_MACHINE_KEEPER_INTERVAL_S,

@@ -82,6 +82,7 @@ class PodmanMachine:
         password: str,
         binary: str,
         provider: str,
+        environment: "dict | None" = None,
         run=run_command,
     ):
         """
@@ -93,6 +94,9 @@ class PodmanMachine:
                 with; empty elsewhere.
             binary: Podman's program on the computer.
             provider: The machine provider, ``wsl`` or ``applehv``.
+            environment: Variables every command run as the account gets
+                beside the provider, such as macOS's ``TMPDIR``; None is
+                none.
             run: Runs one command as the agent itself, as
                 :func:`subprocess_run.run` does.
         """
@@ -101,6 +105,7 @@ class PodmanMachine:
         self._password = password
         self.binary = binary
         self.provider = provider
+        self._environment = dict(environment or {})
         self._run = run
         self._join = ntpath.join if platform.os_name == "windows" else posixpath.join
 
@@ -368,7 +373,7 @@ class PodmanMachine:
         )
 
     def run_as_account(self, argv: list, *, stdin: str = "", timeout_s: int):
-        """Run one command as the machine's account, the provider named for Podman.
+        """Run one command as the machine's account, with the provider and the machine's variables.
 
         Args:
             argv: The argument vector.
@@ -390,7 +395,10 @@ class PodmanMachine:
             stdin=stdin,
             timeout_s=timeout_s,
             password=self._password,
-            environment={PODMAN_MACHINE_PROVIDER_VARIABLE: self.provider},
+            environment={
+                **self._environment,
+                PODMAN_MACHINE_PROVIDER_VARIABLE: self.provider,
+            },
         )
 
     def as_account(self, step, *arguments):

@@ -32,9 +32,15 @@ PODMAN_MACHINE_KIND = "podman_machine"
 # The account's default machine, the one its own ``podman`` reaches.
 PODMAN_MACHINE_NAME = "podman-machine-default"
 
-# Where Quadlet reads declared containers from inside a machine: the
-# machine's own disk, read before systemd's generators run.
-PODMAN_MACHINE_QUADLET_DIR = "/usr/share/containers/systemd"
+# Where Quadlet reads declared containers from inside a machine, by the
+# computer's system. In the WSL machine ``/etc/containers`` is a Windows
+# folder mounted after systemd's generators run, so the files go on the
+# machine's own disk; the applehv machine is Fedora CoreOS, whose ``/usr`` is
+# read-only, so they go where Linux has them.
+PODMAN_MACHINE_QUADLET_DIRS = {
+    "windows": "/usr/share/containers/systemd",
+    "darwin": PODMAN_QUADLET_DIR,
+}
 
 # What every .container file rendered for a machine carries under
 # [Container]: the machine runs systemd under cgroupfs, where Quadlet's
@@ -62,6 +68,23 @@ PODMAN_MACHINE_KEY_PATH = (
 # through the ssh port the machine forwards to the computer's loopback.
 PODMAN_MACHINE_READ_HOST = "127.0.0.1"
 PODMAN_MACHINE_SOCKET_PATH = "/run/podman/podman.sock"
+
+# Podman on macOS: its program, its pkg's receipt, and what the pkg and its
+# scripts put on the computer.
+PODMAN_DARWIN_BINARY = "/opt/podman/bin/podman"
+PODMAN_DARWIN_PKG_ID = "com.redhat.podman"
+PODMAN_DARWIN_INSTALLED_PATHS = (
+    "/opt/podman",
+    "/etc/paths.d/podman-pkg",
+    "/usr/local/etc/man.d/podman.man.conf",
+)
+# The computer's logical processors and memory in bytes, one per line.
+PODMAN_DARWIN_SYSCTL_COMMAND = ("/usr/sbin/sysctl", "-n", "hw.logicalcpu", "hw.memsize")
+# The account's own temporary directory, run as the account: Podman keeps a
+# machine's sockets under ``$TMPDIR/podman``.
+PODMAN_DARWIN_TEMP_DIR_COMMAND = ("/usr/bin/getconf", "DARWIN_USER_TEMP_DIR")
+PODMAN_DARWIN_TEMP_DIR_VARIABLE = "TMPDIR"
+PODMAN_DARWIN_COMMAND_TIMEOUT_S = 30
 
 # Podman's own defaults for a 0 in the Run settings.
 PODMAN_MACHINE_DEFAULT_MEMORY_GIB = 2
