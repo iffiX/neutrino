@@ -9,6 +9,7 @@ import os
 import queue
 import sys
 import threading
+import time
 
 import pytest
 
@@ -98,9 +99,11 @@ def resident(monkeypatch, notified, handlers):
 
 
 def _stop_soon(handlers) -> threading.Thread:
+    """Stop the unit once its first pass has run."""
+
     def stop():
-        while run.signal.SIGTERM not in handlers:
-            pass
+        while run.signal.SIGTERM not in handlers or _Controller.passes == 0:
+            time.sleep(0.001)
         handlers[run.signal.SIGTERM](run.signal.SIGTERM, None)
 
     thread = threading.Thread(target=stop, daemon=True)
