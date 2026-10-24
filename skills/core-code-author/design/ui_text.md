@@ -283,6 +283,7 @@ the agent's `cli/wording.py` words the same codes in English.
 | `ui.containers.run_memory` | Memory (GiB) | 内存（GiB） |
 | `ui.containers.run_disk` | Disk limit (GiB) | 磁盘上限（GiB） |
 | `ui.containers.run_default_hint` | 0 uses Podman's default: half the CPUs, 2 GiB of memory, a 100 GiB disk. | 填 0 用 Podman 的默认值：一半的 CPU、2 GiB 内存、100 GiB 磁盘。 |
+| `ui.containers.run_default_hint_windows` | A 0 for CPUs or memory uses Podman's default: half the CPUs, 2 GiB of memory. | CPU 数或内存填 0 用 Podman 的默认值：一半的 CPU、2 GiB 内存。 |
 | `ui.containers.run_disk_hint` | The disk only grows. It is {current} GiB now. | 磁盘只能改大，现在是 {current} GiB。 |
 | `ui.containers.run_apply` | Apply run settings | 应用运行设置 |
 | `ui.containers.run_apply_hint` | Starts this account's Podman machine, and creates it the first time. | 启动这个账户的 Podman 虚拟机，第一次会先新建。 |
@@ -320,6 +321,7 @@ the agent's `cli/wording.py` words the same codes in English.
 | `code.machine_cpus_invalid` | CPUs must be between 0 and {max}. | 非法 CPU 数：要在 0 到 {max} 之间。 |
 | `code.machine_memory_invalid` | Memory must be between 0 and {max} GiB. | 非法内存大小：要在 0 到 {max} GiB 之间。 |
 | `code.machine_disk_shrink` | The disk is {current_gib} GiB and only grows; {disk_gib} GiB is smaller. | 磁盘现在是 {current_gib} GiB，只能改大，{disk_gib} GiB 比它小。 |
+| `code.machine_disk_invalid` | The disk limit {disk_gib} GiB is not valid: on Windows it is 1 GiB or more. | 非法磁盘上限：Windows 上至少要 1 GiB，{disk_gib} GiB 不行。 |
 | `code.volume_not_shared` | The volume {volume} of {name} is outside what the Podman machine shares: a fixed drive on Windows; /Users, /private or /var/folders on macOS. | 容器 {name} 的卷 {volume} 不在 Podman 虚拟机共享的范围内：Windows 上是本机的固定磁盘，macOS 上是 /Users、/private 或 /var/folders。 |
 | `code.udp_not_forwarded` | Port {port} of {name} is UDP, and WSL forwards TCP alone; on Windows publish it on TCP. | 容器 {name} 的端口 {port} 是 UDP，而 WSL 只转发 TCP；在 Windows 上请用 TCP 发布。 |
 | `code.machine_image_missing` | The Podman machine image is not on this machine; install the module again. | 这台机器上没有 Podman 虚拟机映像，重新安装这个模块。 |

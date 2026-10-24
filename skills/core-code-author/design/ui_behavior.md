@@ -640,8 +640,8 @@ On Linux the tab has no Run settings, since root runs Podman there
 | --- | --- |
 | **Account** | a picker over the human accounts the machine reported, as `instances_panel.tsx` draws one |
 | **Windows login for {account}** | on Windows alone, a `VaultPicker` that adds a login in place, with no link to the Credentials page |
-| **CPUs**, **Memory (GiB)** | number fields, 0 for Podman's default, `ui.containers.run_default_hint` under them |
-| **Disk limit (GiB)** | a number field whose least value is the disk's size now, as the machine reported it, with `ui.containers.run_disk_hint` under it; it follows Podman Desktop's **Edit** form for a machine, where the disk size only grows |
+| **CPUs**, **Memory (GiB)** | number fields, 0 for Podman's default, `ui.containers.run_default_hint` under them on macOS and `ui.containers.run_default_hint_windows` on Windows |
+| **Disk limit (GiB)** | a number field whose least value is the disk's size now, as the machine reported it, and on Windows at least 1, with `ui.containers.run_disk_hint` under it; it follows Podman Desktop's **Edit** form for a machine, where the disk size only grows. On Windows the field starts at 100 while the stored Run settings name no account, and the apply bar is disabled while it is below 1 |
 
 The group is one `settings_group` with its own apply bar,
 `ui.containers.run_apply`. While it is dirty, the bar's warning is

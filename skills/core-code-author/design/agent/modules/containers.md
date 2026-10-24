@@ -26,6 +26,7 @@ the machine's package manager installs them.
 | Rule | Reason |
 | --- | --- |
 | From Podman 4.4 a declared container is a Quadlet file, `/etc/containers/systemd/<name>.container`; below 4.4 it is a plain unit, `/etc/systemd/system/<name>.service`, that runs `podman run`. | A Podman older than 4.4 reads no `.container` file, and the supported distributions have 3.4 and later ([min_support.md](../../min_support.md)). |
+| Every apply runs `systemctl enable --no-reload` on the plain unit of each container that starts with the box, and `systemctl disable --no-reload` on each other one, before its `daemon-reload`; a removed plain unit is disabled before its file goes. | Quadlet's generator links a `.container` file that has `WantedBy=` into `multi-user.target` itself, and a plain unit's `[Install]` section starts nothing at boot until the unit is enabled. |
 | Every rendered file starts with the generated marker, and an apply removes only marked files. | A file a person wrote beside them is theirs. |
 | The registry mirrors are one drop-in, `/etc/containers/registries.conf.d/99_neutrino_mirrors.conf`. | The distribution's own `registries.conf` stays as it is. |
 | The module's `is_active` is the state of `podman.socket`. | Podman has no daemon, and its API socket is the engine. |
@@ -89,8 +90,10 @@ exit_code}`.
 The Run settings are the configuration's `machine`, `{account, cpus,
 memory_gib, disk_gib}`, with the account's `password` added by the hub for a
 Windows machine. A 0 CPUs is half the computer's logical processors and a 0
-memory is 2 GiB, Podman's defaults. A 0 disk is 100 GiB at an init, and
-leaves the disk of a machine taken over as it is.
+memory is 2 GiB, Podman's defaults. On Windows the disk limit is 1 GiB or
+more, and a 0 is refused `machine_disk_invalid {disk_gib}`. On macOS a 0
+disk is 100 GiB at an init, and leaves the disk of a machine taken over as
+it is.
 
 | Rule | Reason |
 | --- | --- |
@@ -102,7 +105,8 @@ leaves the disk of a machine taken over as it is.
 | On WSL the CPUs and the memory are `processors=<n>` and `memory=<n>GB` under `[wsl2]` in the account's `%USERPROFILE%\.wslconfig`, a 0 written as the default's number; the agent makes the file or the section when it is missing, changes these two keys and keeps every other line. | WSL ignores Podman's numbers and reads this file, which is the person's own and applies to every WSL system of the account. |
 | A change of CPUs, memory or disk in the configuration, against the last one applied, runs `wsl --shutdown` as the account on WSL, which stops every WSL system of that account, then resizes the disk when it grew, and starts the machine before the apply writes into it. The panel warns before the apply. | WSL reads `.wslconfig`, and resizes a disk, only while none of the account's WSL systems runs; a person's own edit of the file is theirs and restarts nothing. |
 | On macOS a change runs `podman machine set --cpus --memory --disk-size` on the stopped machine, then starts it. | Podman sets an applehv machine's resources itself. |
-| A disk other than 0 and smaller than the machine's disk now, its virtual size, is refused `machine_disk_shrink {disk_gib, current_gib}`; CPUs past the computer's logical processors `machine_cpus_invalid {cpus, max}`, memory past its size `machine_memory_invalid {memory_gib, max}`, an empty account `machine_account_missing`, and an account the computer does not have `account_unknown {account}`. | Shrinking a disk can cut the data on it; WSL shrinks one when asked, so the rule is the module's. |
+| A disk other than 0 and smaller than the machine's disk now, its virtual size, is refused `machine_disk_shrink {disk_gib, current_gib}`, a machine taken over among them; a disk of 0 on Windows `machine_disk_invalid {disk_gib}`; CPUs past the computer's logical processors `machine_cpus_invalid {cpus, max}`, memory past its size `machine_memory_invalid {memory_gib, max}`, an empty account `machine_account_missing`, and an account the computer does not have `account_unknown {account}`. | Shrinking a disk can cut the data on it; WSL shrinks one when asked, so the rule is the module's. |
+| On WSL, when the `.wslconfig` write or the resize right after the init fails, the agent removes the machine the init made, with `podman machine rm -f` as the account, and the apply fails with the step's code. | The new machine holds nothing yet, and kept with WSL's 1 TB disk it would refuse every smaller limit; the next apply makes it again and sizes it. |
 | A new account stops the old account's machine and removes its keeper before the new one starts; the old machine, its images and named volumes and the old account's `.wslconfig` stay as they are. | Two running machines publish the same ports on `127.0.0.1`, and the old machine's data is the person's. |
 
 ### The keeper
@@ -254,6 +258,25 @@ a feature off owes another restart.
 | The Quadlet files | `/usr/share/containers/systemd/` in the machine | `/etc/containers/systemd/` in the machine, which is `~/.config/containers/systemd/` with Podman 6 |
 | The boot unit | none | `/etc/systemd/system/neutrino_containers.service` in the machine, with Podman 6 |
 | The mirrors drop-in | `/etc/containers/registries.conf.d/` in the machine, which is `C:\Users\<account>\AppData\Roaming\containers\registries.conf.d\` | `/etc/containers/registries.conf.d/` in the machine, which is `~/.config/containers/registries.conf.d/` with Podman 6 |
+
+## A container's shell
+
+A `shell` stream opened with `{module: podman, container}` runs
+`podman exec -it -e NEUTRINO_SHELL_ID=<id> <container> sh -c <shell>` on
+the agent's pseudo-terminal, on Windows its pseudo console, where `podman`
+is the read's command on Windows and macOS. `<id>` is 32 random hex digits,
+new for each shell, and `<shell>` runs the container's bash where it has
+one, else its sh. The shell is never kept.
+
+| Rule | Reason |
+| --- | --- |
+| Once the shell has ended, by its own exit or by the stream's close, the agent ends its `podman exec` and then runs `podman exec <container> sh -c <sweep> sh <id>`. The sweep kills every process in the container whose environment holds `NEUTRINO_SHELL_ID=<id>`, and every process in the session of one. | The shell runs in Podman's exec session, which outlives the `podman exec` that started it: on Podman 4.3.1 the shell and every program it started kept running. |
+| The sweep uses the builtins of POSIX `sh` alone and reads `/proc/<pid>/environ` and `/proc/<pid>/stat`. | The shell needs `sh` already, and an image may hold no other program. |
+| An `exit` closes the stream with the shell's exit code; the sweep runs after it and changes no code. | The exit code is the shell's, and the sweep ends only what the shell left behind. |
+
+A killed process whose parent dies first becomes a child of the
+container's first process. A first process that reaps no child, such as
+`sleep infinity`, keeps it as a zombie entry until the container restarts.
 
 ## Services of a container
 
