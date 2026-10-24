@@ -306,6 +306,13 @@ the agent's `cli/wording.py` words the same codes in English.
 | `code.service_invalid` | The service on port {port} of {name} cannot be used: the port is not published, is listed twice, or has an unknown type or protocol. | 非法服务设置：容器 {name} 的端口 {port} 没有发布、重复列出，或类型、协议不在可选范围内。 |
 | `code.volume_invalid` | The volume {volume} of {name} needs a folder or a volume name, a colon, and a path in the container. | 非法卷：容器 {name} 的卷 {volume} 要写成文件夹或卷名、冒号、容器里的路径。 |
 | `code.container_unknown` | Podman has no container called {name}. | Podman 里没有叫 {name} 的容器。 |
+| `code.container_name_invalid` | The container name {name} cannot be used; use up to 64 lowercase letters, digits, dashes and underscores, starting with a letter or a digit. | 非法容器名：{name}，只能用小写字母、数字、连字符和下划线，以字母或数字开头，最多 64 个字符。 |
+| `code.container_name_duplicate` | Two containers are both named {name}. | 有两个容器都叫 {name}。 |
+| `code.image_invalid` | The image tag of {name} is empty or holds a space. | 非法镜像：容器 {name} 的镜像标签为空或含空格。 |
+| `code.port_mapping_invalid` | The port {port} of {name} needs a host port, a colon and a container port, such as 8080:80, with /udp after it for UDP. | 非法端口映射：容器 {name} 的端口 {port} 要写成主机端口、冒号、容器端口，例如 8080:80，UDP 在后面加 /udp。 |
+| `code.environment_invalid` | The environment entry {entry} of {name} needs a name, an equals sign and a value, such as KEY=value. | 非法环境变量：容器 {name} 的 {entry} 要写成变量名、等号、值，例如 KEY=value。 |
+| `code.command_invalid` | The command of {name} needs to fit on one line. | 非法命令：容器 {name} 的命令只能写在一行里。 |
+| `code.mirror_invalid` | The mirror {mirror} needs a registry host, with an optional port and path and no http://, such as mirror.ccs.tencentyun.com. | 非法镜像源：{mirror} 要写成镜像仓库的主机名，可带端口和路径，不带 http://，例如 mirror.ccs.tencentyun.com。 |
 | `code.windows_feature_failed` | Windows could not turn on {feature} (exit code {exit_code}). | Windows 没能打开 {feature}（退出码 {exit_code}）。 |
 | `code.podman_install_failed` | The {component} installer failed (exit code {exit_code}). | {component} 安装包没能装上（退出码 {exit_code}）。 |
 | `code.machine_account_missing` | Choose the account that runs the containers. | 选一个运行容器的账户。 |

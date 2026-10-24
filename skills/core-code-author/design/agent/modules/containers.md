@@ -272,6 +272,7 @@ publishes that port on UDP, as it does without the service type.
 
 | Rule | Reason |
 | --- | --- |
+| A service whose port the container does not publish, whose `kind`, `scheme` or protocol is unknown, or whose port appears twice is refused `service_invalid {name, port}`, as a `port` service with no protocol is refused `service_protocol_none {port}`. | A service is the type of one published host port, and one with no such port, a second one for the same port, or a value the agent does not know gives the agent nothing to publish. |
 | A container's `web` entry has the id its TCP `port` entry has, `podman_<device>_<container>_<port>`, and a UDP `port` entry adds `_udp`. | A client keeps its local port per entry id, so a port whose type changes keeps it. |
 | A TCP binding is a `web` entry or a `port` entry, never both. | A client shows a `web` entry on its Web page and a `port` entry on its Ports page, and one service appears once. |
 | `<device>` is the device's id and `<container>` the container's name, which `CONTAINER_NAME_PATTERN` keeps to lowercase letters, digits, `_` and `-`. | An id holds no character a client or a file name has to escape. |
