@@ -90,16 +90,15 @@ REFUSED_PROGRAMS = {
     "iptables",
     "ip6tables",
     "netsh",
-    "powershell",
-    "powershell.exe",
-    "pwsh",
-    "pwsh.exe",
     "podman",
     "virsh",
     "systemd-run",
     "yum",
     "zypper",
 }
+# PowerShell, which a test runs only on a script it wrote under the
+# temporary directory.
+POWERSHELL_PROGRAMS = {"powershell", "powershell.exe", "pwsh", "pwsh.exe"}
 MUTATING_IP_VERBS = {"add", "del", "delete", "replace", "change", "set", "flush"}
 # firewalld's tools, and the starts of the options that change its rules.
 FIREWALLD_PROGRAMS = {"firewall-cmd", "firewall-offline-cmd"}
@@ -126,6 +125,13 @@ def _refuses(command) -> str | None:
     if not isinstance(command, (list, tuple)) or not command:
         return None
     program = os.path.basename(str(command[0]))
+    if program.lower() in POWERSHELL_PROGRAMS:
+        words = [str(word) for word in command]
+        script = words[words.index("-File") + 1] if "-File" in words[:-1] else ""
+        under_temp = os.path.realpath(tempfile.gettempdir()) + os.sep
+        if script and os.path.realpath(script).startswith(under_temp):
+            return None
+        return f"{program} runs only a script a test wrote"
     if program in REFUSED_PROGRAMS:
         return f"{program} would ask for authorization or change the machine"
     if program in FIREWALLD_PROGRAMS and any(
