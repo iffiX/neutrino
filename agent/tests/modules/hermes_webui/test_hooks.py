@@ -8,7 +8,8 @@ a request with neither; two devices' pages open in one browser keeping both
 logins; the four gateway keys written with ``hermes config set``
 once ``config.yaml`` exists and again when the base URL changes, never
 ``model.default``; ``installing`` until the keys and ``/health`` hold, the
-start waiting meanwhile; a version change making ``agent`` and ``app``
+start waiting meanwhile; the webui's own update check saved off once the
+first start has ended; a version change making ``agent`` and ``app``
 again and keeping ``home`` and ``workspace``; and the record that brings
 the forwarder back after a restart.
 """
@@ -32,6 +33,7 @@ from neutrino_agent.modules.hermes_webui.hooks import (
     gateway_keys,
     normal_path,
     session_cookie,
+    webui_settings,
 )
 from neutrino_agent.modules.shared.http_forward import InstanceForwarder, mint_token
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
@@ -133,6 +135,8 @@ class Box:
         self.podman = podman or FakePodman()
         self.containers = containers or FakeContainers()
         self.status = 503
+        self.settings_status = 200
+        self.saved: list = []
         self.forwarders: list = []
         self.lines: list = []
         self.record_dir = str(tmp_path / "hermes_webui")
@@ -147,6 +151,7 @@ class Box:
             run_command=self.podman,
             health=self.health,
             login=self.login,
+            save_settings=self.save_settings,
             forwarder_factory=self.forwarder,
             record_dir=self.record_dir,
         )
@@ -157,6 +162,10 @@ class Box:
 
     def login(self, port, password):
         return 200, [("Set-Cookie", COOKIE)]
+
+    def save_settings(self, port, cookie, settings):
+        self.saved.append((port, cookie, settings))
+        return self.settings_status
 
     def forwarder(self, **kwargs):
         made = FakeForwarder(**kwargs)
@@ -255,6 +264,63 @@ def test_the_module_reads_installing_until_health_answers_200_once(box):
     box.status = 500
     box.hooks.start()
     assert box.hooks.is_running() is False
+
+
+def test_the_update_check_is_saved_off_once_the_first_start_has_ended(box):
+    """The webui's banner asked for a docker pull and a new container."""
+    box.podman.has_config = True
+    box.hooks.installed("0.52.492")
+    box.hooks.apply(CONFIG)
+
+    with pytest.raises(ModuleInstallPending):
+        box.hooks.start()
+    assert box.saved == []
+    box.status = 200
+    box.hooks.start()
+    box.hooks.start()
+
+    assert box.saved == [(41234, COOKIE.split(";")[0], {"check_for_updates": False})]
+    assert box.record()["is_update_check_off"] is True
+
+
+def test_a_failed_save_holds_nothing_up_and_the_next_start_tries_again(box):
+    box.podman.has_config = True
+    box.status = 200
+    box.settings_status = 403
+    box.hooks.installed("0.52.492")
+    box.hooks.apply(CONFIG)
+
+    box.hooks.start()
+    box.settings_status = 200
+    box.hooks.start()
+
+    assert len(box.saved) == 2
+    assert box.record()["is_ready"] is True
+    assert box.record()["is_update_check_off"] is True
+    assert "hermes_webui: the update check stays on: status 403" in box.lines
+
+
+def test_a_version_change_saves_the_update_check_off_again(box):
+    box.podman.has_config = True
+    box.status = 200
+    box.hooks.installed("0.52.492")
+    box.hooks.apply(CONFIG)
+    box.hooks.start()
+
+    box.hooks.installed("0.52.500")
+    box.hooks.start()
+
+    assert len(box.saved) == 2
+
+
+def test_the_settings_are_saved_with_the_login_cookie_and_no_origin(webui):
+    status = webui_settings(webui.port, f"{COOKIE_NAME}=abc123", {"a": False})
+    refused = webui_settings(webui.port, f"{COOKIE_NAME}=wrong", {"a": False})
+
+    assert (status, refused) == (200, 401)
+    method, target, headers, body = webui.requests[0]
+    assert (method, target, json.loads(body)) == ("POST", "/api/settings", {"a": False})
+    assert "origin" not in headers
 
 
 def test_a_base_url_that_changes_writes_the_keys_again(box):

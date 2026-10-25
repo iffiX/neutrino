@@ -16,7 +16,8 @@ naming the key's variable, with ``hermes config set`` in the agent container, an
 record holds. From the install, and after a version change, the module
 reads ``installing`` until the keys hold the current base URL and the
 webui's ``/health`` first answers 200; meanwhile its start waits, and the
-state is applied again. A version change stops both containers and makes
+state is applied again. Then the agent signs in and turns the webui's own
+update check off through its settings route, at each start until it took. A version change stops both containers and makes
 the ``agent`` and ``app`` volumes again. The record keeps what the
 forwarder needs, so it listens again after the agent restarts.
 
@@ -63,6 +64,8 @@ from neutrino_agent.modules.hermes_webui.constants import (
     HERMES_WEBUI_PODMAN_TIMEOUT_S,
     HERMES_WEBUI_PROVIDER,
     HERMES_WEBUI_RECORD_FIELDS,
+    HERMES_WEBUI_SETTINGS_PATH,
+    HERMES_WEBUI_UPDATE_CHECK_OFF,
     HERMES_WEBUI_UPSTREAM_HOST,
     HERMES_WEBUI_WEBUI_CONTAINER,
 )
@@ -190,6 +193,39 @@ def webui_login(port: int, password: str) -> tuple:
         connection.close()
 
 
+def webui_settings(port: int, cookie: str, settings: dict) -> int:
+    """Save some of the webui's own settings, signed in with its cookie.
+
+    Args:
+        port: The loopback port the webui is published at.
+        cookie: The login cookie as ``name=value``.
+        settings: The settings to save, by key.
+
+    Returns:
+        The HTTP status the webui answers with.
+
+    Raises:
+        OSError: When the webui does not answer.
+    """
+    connection = http.client.HTTPConnection(
+        HERMES_WEBUI_UPSTREAM_HOST, port, timeout=AGENT_FORWARD_UPSTREAM_TIMEOUT_S
+    )
+    try:
+        connection.request(
+            "POST",
+            HERMES_WEBUI_SETTINGS_PATH,
+            body=json.dumps(settings).encode("utf-8"),
+            headers={"Content-Type": "application/json", "Cookie": cookie},
+        )
+        response = connection.getresponse()
+        response.read()
+        return int(response.status)
+    except http.client.HTTPException as error:
+        raise ConnectionError(str(error)) from error
+    finally:
+        connection.close()
+
+
 def _cookie_name(record: dict) -> str:
     """The name of the webui's login cookie the record holds, the webui's default when it holds none."""
     return str(record.get("cookie_name", "") or "") or HERMES_WEBUI_COOKIE
@@ -223,6 +259,7 @@ class HermesWebuiHooks(ContainerHooks):
         run_command=run,
         health=health_status,
         login=webui_login,
+        save_settings=webui_settings,
         forwarder_factory=None,
         record_dir: str = "",
     ):
@@ -237,6 +274,8 @@ class HermesWebuiHooks(ContainerHooks):
             health: Returns the status ``/health`` answers with at a port.
             login: Returns the webui's answer to a login at a port with a
                 password, as :func:`webui_login`.
+            save_settings: Saves the webui's own settings at a port with a
+                login cookie, as :func:`webui_settings`.
             forwarder_factory: Called with ``name``, ``record``, ``hooks``
                 and ``log``; returns a forwarder. None makes an
                 :class:`InstanceForwarder` that tries a held port again every
@@ -248,6 +287,7 @@ class HermesWebuiHooks(ContainerHooks):
         self._run = run_command
         self._health = health
         self._login = login
+        self._save_settings = save_settings
         self._forwarder_factory = forwarder_factory or _forwarder
         self._records = InstanceRecordStore(
             directory=record_dir or os.path.join(platform.agent_data_dir(), name),
@@ -288,11 +328,17 @@ class HermesWebuiHooks(ContainerHooks):
             self._reset_caches()
         if held != version:
             self._keep(
-                {**record, "version": version, "base_url": "", "is_ready": False}
+                {
+                    **record,
+                    "version": version,
+                    "base_url": "",
+                    "is_ready": False,
+                    "is_update_check_off": False,
+                }
             )
 
     def start(self) -> None:
-        """Serve the page, and write the gateway keys once the first start allows.
+        """Serve the page, write the gateway keys once the first start allows, then turn the update check off.
 
         Raises:
             ModuleInstallPending: Until the keys hold the current base URL
@@ -310,13 +356,15 @@ class HermesWebuiHooks(ContainerHooks):
             if self._write_keys(base_url):
                 record = self._keep({**record, "base_url": base_url})
         if record.get("is_ready"):
+            self._turn_update_check_off(record)
             return
         is_written = bool(base_url) and record.get("base_url") == base_url
         if is_written and self._health(int(record["upstream_port"])) == 200:
-            self._keep({**record, "is_ready": True})
+            record = self._keep({**record, "is_ready": True})
             self._log(f"{self._name}: the first start has ended")
             with self._lock:
                 self._is_starting = False
+            self._turn_update_check_off(record)
             return
         raise ModuleInstallPending(HERMES_WEBUI_PENDING)
 
@@ -445,6 +493,28 @@ class HermesWebuiHooks(ContainerHooks):
         if status != 200:
             return ""
         return session_cookie(headers, _cookie_name(record))
+
+    def _turn_update_check_off(self, record: dict) -> None:
+        """Save the webui's ``check_for_updates`` off once; a failure is a line in the log."""
+        if record.get("is_update_check_off"):
+            return
+        cookie = self._signed_in(record).split(";", 1)[0].strip()
+        status = 0
+        if cookie:
+            try:
+                status = self._save_settings(
+                    int(record.get("upstream_port", 0) or 0),
+                    cookie,
+                    dict(HERMES_WEBUI_UPDATE_CHECK_OFF),
+                )
+            except OSError as error:
+                self._log(f"{self._name}: the update check stays on: {error}")
+                return
+        if status != 200:
+            self._log(f"{self._name}: the update check stays on: status {status}")
+            return
+        self._keep({**record, "is_update_check_off": True})
+        self._log(f"{self._name}: the webui's update check is off")
 
     def _started_record(self) -> dict:
         """The record as this start serves it: the configuration, the published port, running.

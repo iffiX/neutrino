@@ -47,11 +47,17 @@ HERMES_WEBUI_HEALTH_PATH = "/health"
 HERMES_WEBUI_LOGIN_PATH = "/api/auth/login"
 HERMES_WEBUI_COOKIE = "hermes_session"
 HERMES_WEBUI_HEALTH_TIMEOUT_S = 3.0
+# The webui's settings route, and the setting that turns off its update
+# check, whose banner asks for a docker pull; the module's version comes
+# with a hub release.
+HERMES_WEBUI_SETTINGS_PATH = "/api/settings"
+HERMES_WEBUI_UPDATE_CHECK_OFF = {"check_for_updates": False}
 
 # What the module keeps, root-only, in its record: the forwarder's port and
 # secrets, the login cookie's name, the loopback port the webui is published
 # at, the pair it last installed, the base URL the keys were written with,
-# whether its first start has ended, and whether it was stopped.
+# whether its first start has ended, whether the webui's update check is
+# off, and whether it was stopped.
 HERMES_WEBUI_RECORD_FIELDS = (
     "account",
     "port",
@@ -62,6 +68,7 @@ HERMES_WEBUI_RECORD_FIELDS = (
     "version",
     "base_url",
     "is_ready",
+    "is_update_check_off",
     "is_stopped",
 )
 # The fields whose change starts the forwarder again.
