@@ -46,8 +46,9 @@ package's removal on Linux shows what both print.
 does not carry it. While the section is on and names an account, the agent
 needs a copy of the version the section's `cc_switch_version` names. When it
 has none, or one of another version, it opens `package {module: cc_switch,
-artifact, digest}` ([protocol.md](../protocol.md), "The stream layer"),
-checks the bytes against the digest, unpacks the `cc-switch` at the
+artifact, digest}` with the section's `cc_switch_artifact`
+([protocol.md](../protocol.md), "The stream layer"), checks the bytes
+against the digest, unpacks the `cc-switch` at the
 archive's top
 (`cc-switch.exe` on Windows) into `ai_tools/bin/` under the state root, and
 writes the version beside it in `version`, replacing a copy of another
@@ -59,8 +60,9 @@ section names when none is. The hub's cache fetches cc-switch from its
 publisher's GitHub release and from the release sites, which hold the same
 files ([module_install.md](module_install.md), "Sources"). A download or an
 unpack that fails gives every account the section names, and every account
-it is to switch back, `failed` with `download_failed {file, sources}`, runs
-nothing, and leaves the state to be tried again at the next state or the
+it is to switch back, `failed` with `download_failed {file, sources}`, and a
+section with no `cc_switch_artifact` with `no_platform_build {module}`; it
+runs nothing, and leaves the state to be tried again at the next state or the
 next retry.
 
 The records are the client's, one per tool, `{is_present, previous, added}`,

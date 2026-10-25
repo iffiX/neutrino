@@ -326,7 +326,7 @@ The HTTP status names the class of the refusal:
 | 413 | a body past the agent port's limit | `request_too_large {limit}` |
 | 409 | a state the action cannot run in | `agent_offline`, `protocol_too_old`, `protocol_too_new`, `role_mismatch`, `update_in_progress`, `release_not_latest`, `no_platform_build {module}`, `admission_paused {retry_after_s}`, `terms_not_accepted {module}`, `gateway_not_serving`, `frp_not_signed_in {title}` |
 | 500 | the hub could not write its own `config/` | `config_unwritable {detail}`, from the per-device module routes |
-| 502 | a service the hub asked did not answer as one | `gateway_unreachable`, `geodata_unreachable`, `release_dns_failed`, `release_timed_out`, `release_refused`, `release_http_error {status}`, `release_rate_limited {minutes, reset_at}`, `release_unreachable`, `relay_apply_failed {detail}`, `direct_apply_failed {detail}`, `frp_vendor_unreachable {title, detail}`, `frp_config_unusable {title}` |
+| 502 | a service the hub asked did not answer as one | `gateway_unreachable`, `download_failed {file, sources}`, `relay_apply_failed {detail}`, `direct_apply_failed {detail}`, `frp_vendor_unreachable {title, detail}`, `frp_config_unusable {title}` |
 
 Every surface words a code itself: the hub's catalogs are
 `hub/frontend/src/locales/<language>/codes.json` under `code.<code>`, the
@@ -466,7 +466,7 @@ moved. Its steps and their order are [network.md](hub_components/network.md),
 | `POST /api/hub/proxy/node/remove` | `{node_id}` | |
 | `POST /api/hub/proxy/node/test` | `{node_id}`, or `{}` for every node | measures now, returns the node list |
 | `POST /api/hub/proxy/balancer/set` | the balancer's settings | |
-| `POST /api/hub/proxy/geodata/scan` | | reads the two latest releases from GitHub; returns the read's `geodata` block with `latest` filled |
+| `POST /api/hub/proxy/geodata/scan` | | reads the two latest releases from their publisher's API with the method every download uses ([agent/module_install.md](agent/module_install.md), "Choosing a source"); returns the read's `geodata` block with `latest` filled |
 | `POST /api/hub/proxy/geodata/update` | | fetches both files, checks their sha256, writes them atomically, restarts the xray unit; returns `TaskStarted`, output on `/ws/hub/task` |
 
 #### `/api/hub/ai`
@@ -613,7 +613,7 @@ has is refused 400 `permission_device_unknown {device_id}`.
 | `POST /api/hub/setting/restore` | the archive | |
 | `GET /api/hub/setting/about` | | `AboutView`: versions, the credited components, and `os` and `os_version`, the system the hub runs on and its version |
 | `GET /api/hub/setting/release` | | `HubReleaseView`: the version running, whether this hub came from a package, `package_family` (`deb`, `rpm`, `arch`, `msi`, `pkg`, or empty in a checkout) and `log_root`, the record of its last update with its `steps` and `output`, the tail of the package manager's log, and the staging task while one runs |
-| `POST /api/hub/setting/release/scan` | | reads the newest release from GitHub; returns `HubReleaseScanView`: the release or none published, whether it carries a package of this hub's family (`has_package`; a release without one is not an error), whether it is newer or a new major, whether a rollback package can be had, and the room the update needs and has; 409 `hub_not_packaged` from a checkout |
+| `POST /api/hub/setting/release/scan` | | reads `latest.json` and the release's `SHA256SUMS` from the release sites ([architecture.md](architecture.md), "The hub updates itself outside its own process"); returns `HubReleaseScanView`: the release or none published, whether it carries a package of this hub's family (`has_package`; a release without one is not an error), whether it is newer or a new major, whether a rollback package can be had, and the room the update needs and has; 409 `hub_not_packaged` from a checkout |
 | `POST /api/hub/setting/release/install` | `{version}`, the release confirmed | reads the newest release, or takes the one a scan read in the last 10 minutes, stages the package and hands the install to the `neutrino_hub_update` unit; returns `TaskStarted`, output on `/ws/hub/task`; 409 `release_not_latest` when the newest release is no longer the one named, `release_not_newer`, `release_major`, `disk_space_short`, `update_in_progress` |
 
 ### The agent group
@@ -1128,11 +1128,13 @@ in the machine's VS Code, code-server, CloudCLI or Codeg configuration;
 `password`
 is the login's own for the account's first instance in that order, sent only
 to a Windows machine. `cc_switch_version` is the version
-`data/manifests/cc_switch.json` pins, the copy of cc-switch the agent runs.
-With it false the section is `{is_enabled: false, is_forwarded, gateway_port,
-cc_switch_version}`, the
-version there so that a copy fetched for a switch back is the one the next
-switch runs. The section carries the device's `retry_mark` on and off alike,
+`data/manifests/cc_switch.json` pins, the copy of cc-switch the agent runs,
+and `cc_switch_artifact` that manifest's artifact for the machine's platform,
+`{name, kind, digest}`, which the agent's `package` stream names; it is
+absent where the manifest names no entry for the platform. With it false the
+section is `{is_enabled: false, is_forwarded, gateway_port,
+cc_switch_version, cc_switch_artifact}`, the version and the artifact there
+so that a copy fetched for a switch back is the one the next switch runs. The section carries the device's `retry_mark` on and off alike,
 so a press of off after a switch back that could not run tries it again. The report's
 `ai_tools` lists each account the state names and each one switched back
 under the current hash, `state` being `switched`, `switched_back` or
