@@ -40,6 +40,7 @@ from neutrino_agent.exceptions import (
     ModuleApplyError,
     PlatformUnsupportedError,
 )
+from neutrino_agent.modules.podman.container_runner import ContainerModuleRunner
 from neutrino_agent.modules.podman.machine_runner import PodmanMachineModuleRunner
 from neutrino_agent.modules.podman.runner import PodmanModuleRunner
 from neutrino_agent.modules.shared.base import ModuleRunner
@@ -136,6 +137,8 @@ def bare_engine(*, runner=None, verified=None, tmp_path=None):
     runner = runner if runner is not None else HubRunner()
     engine._module_runners = {runner.name: runner}
     engine._runners_by_name = {runner.runner: runner}
+    engine._container_runners = {}
+    engine._platform = None
     if verified is not None:
         answers = list(verified)
 
@@ -362,12 +365,12 @@ def test_a_recipe_naming_a_runner_this_agent_lacks_is_refused(tmp_path):
 
 def test_a_method_this_agent_does_not_install_by_is_refused(tmp_path):
     engine = bare_engine(tmp_path=tmp_path)
-    recipe = dict(HUB_RECIPE, method="container")
+    recipe = dict(HUB_RECIPE, method="flatpak")
     engine._wanted = {"fakedesk": dict(WANTED["fakedesk"], install=recipe)}
 
     assert engine.install("fakedesk", receive=None) == {
         "code": "method_unknown",
-        "params": {"method": "container"},
+        "params": {"method": "flatpak"},
     }
 
 
@@ -460,6 +463,8 @@ def system_engine(platform, tmp_path, verified):
     runner = MountRunner(platform=platform, log=engine._collect)
     engine._module_runners = {runner.name: runner}
     engine._runners_by_name = {runner.runner: runner}
+    engine._container_runners = {}
+    engine._platform = None
     engine._wanted = {name: dict(entry) for name, entry in SYSTEM_WANTED.items()}
     return engine, runner
 
@@ -1673,3 +1678,132 @@ def test_an_artifact_of_a_kind_no_shared_path_takes_is_install_failed(tmp_path):
 
     assert refusal["code"] == "install_failed"
     assert "rar" in refusal["params"]["detail"]
+
+
+# --- container modules ---
+
+CONTAINER_RECIPE = {
+    "runner": "container",
+    "method": "container",
+    "params": {
+        "version": "1.0",
+        "artifacts": [
+            {
+                "name": "web",
+                "kind": "image",
+                "digest": "sha256:" + "c" * 64,
+                "sources": ["ghcr.io/acme/web"],
+            }
+        ],
+        "source_sets": ["pypi"],
+    },
+}
+PYPI = {"pypi": {"probe": "/pip/", "sources": ["https://p.example"], "variables": []}}
+
+
+class ContainersRunner(ModuleRunner):
+    """The Containers runner as the engine hands it to a container module."""
+
+    runner = "podman"
+    name = "podman"
+
+    def __init__(self):
+        super().__init__(platform=FakePlatform(), log=lambda line: None)
+        self.source_sets: dict = {}
+        self.configs: list = []
+
+    def take_source_sets(self, source_sets):
+        self.source_sets = dict(source_sets)
+
+    def take_config(self, config):
+        self.configs.append(config)
+
+
+def container_engine(tmp_path):
+    """A bare engine with a Containers runner, the state naming one container module."""
+    containers = ContainersRunner()
+    engine = bare_engine(runner=containers, tmp_path=tmp_path)
+    engine._platform = FakePlatform()
+    engine._wanted = {}
+    return engine, containers
+
+
+def test_a_container_module_gets_its_runner_the_first_time_the_state_names_it(
+    tmp_path,
+):
+    engine, containers = container_engine(tmp_path)
+
+    engine.take_state(
+        {
+            "demo": {"want": "installed", "config": {}, "install": CONTAINER_RECIPE},
+            "podman": {"want": "running", "config": {"mirrors": ["m"]}},
+        },
+        PYPI,
+    )
+    runner = engine.module_runners["demo"]
+    engine.take_state(
+        {"demo": {"want": "installed", "config": {}, "install": CONTAINER_RECIPE}}
+    )
+
+    assert isinstance(runner, ContainerModuleRunner)
+    assert runner.name == "demo"
+    assert runner._containers is containers
+    assert engine.container_runners() == {"demo": runner}
+    assert engine.module_runners["demo"] is runner
+    assert containers.source_sets == {}
+    assert containers.configs[0] == {"mirrors": ["m"]}
+
+
+def test_every_runner_takes_the_state_s_source_sets(tmp_path):
+    engine, containers = container_engine(tmp_path)
+
+    engine.take_state({}, PYPI)
+
+    assert containers.source_sets == PYPI
+
+
+def test_a_container_module_is_present_by_its_runner_s_image_check(
+    tmp_path, monkeypatch
+):
+    engine, _containers = container_engine(tmp_path)
+    wanted = {"want": "installed", "config": {}, "install": CONTAINER_RECIPE}
+    engine.take_state({"demo": wanted})
+    answers = iter([False, True])
+    monkeypatch.setattr(
+        ContainerModuleRunner, "verify", lambda self, recipe: next(answers)
+    )
+    monkeypatch.setattr(ContainerModuleRunner, "is_active", lambda self: False)
+    monkeypatch.setattr(ContainerModuleRunner, "details", lambda self, recipe: {})
+
+    assert engine._read_one("demo", wanted)["state"] == "absent"
+    assert engine._read_one("demo", wanted)["state"] == "installed"
+
+
+def test_a_container_module_reads_unsupported_where_no_containers_runner_is(
+    tmp_path,
+):
+    engine = bare_engine(tmp_path=tmp_path)
+    engine._platform = FakePlatform()
+    wanted = {"want": "installed", "config": {}, "install": CONTAINER_RECIPE}
+
+    engine.take_state({"demo": wanted})
+
+    assert engine.container_runners() == {}
+    assert engine._read_one("demo", wanted)["state"] == "unsupported"
+
+
+def test_a_container_install_runs_the_runner_s_install_and_checks_it_took(
+    tmp_path, monkeypatch
+):
+    engine, _containers = container_engine(tmp_path)
+    wanted = {"want": "installed", "config": {}, "install": CONTAINER_RECIPE}
+    engine.take_state({"demo": wanted})
+    engine._wanted = {"demo": wanted}
+    pulled: list = []
+    monkeypatch.setattr(
+        ContainerModuleRunner, "install", lambda self, recipe: pulled.append(recipe)
+    )
+    monkeypatch.setattr(ContainerModuleRunner, "verify", lambda self, recipe: True)
+
+    assert engine.install("demo", receive=None) == {}
+    assert pulled == [CONTAINER_RECIPE]

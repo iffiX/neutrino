@@ -7,9 +7,9 @@ Before an instance first runs, its account installs the recipe's npm
 artifact into its own app directory with that Node.js: as a transient
 service on Linux, so a kill for want of memory ends it and not the agent; as
 the account's own process on macOS; as a task of its own on Windows, left
-running and judged by the next apply. The registries that name the pinned
-integrity are tried fastest first, each with the hosts of the npm settings
-fastest first, until one install takes. Each instance runs Node.js with the account's server script,
+running and judged by the next apply. The registries of the state's ``npm``
+source set that name the pinned integrity are tried fastest first, each with
+the hosts of the npm settings fastest first, until one install takes. Each instance runs Node.js with the account's server script,
 from an environment written from scratch, on a loopback port the agent
 picks and keeps in the record. The forwarder registers CloudCLI's
 administrator on the first start, trades the hub's token for CloudCLI's
@@ -602,9 +602,11 @@ class CloudcliHooks(InstanceHooks):
         self._refused: set = set()
         # The install tasks Windows holds, read once per apply.
         self._install_tasks: dict = {}
-        # The version and the npm artifact the recipe names.
+        # The version and the npm artifact the recipe names, and the state's
+        # source sets, whose ``npm`` set holds the registries.
         self._version = ""
         self._npm: dict = {}
+        self._source_sets: dict = {}
 
     @property
     def node(self) -> str:
@@ -641,6 +643,14 @@ class CloudcliHooks(InstanceHooks):
         """
         self._version = str(params_of(recipe).get("version", "") or "")
         self._npm = npm_artifact(recipe)
+
+    def take_source_sets(self, source_sets: dict) -> None:
+        """Take the state's source sets, the npm artifact's set among them.
+
+        Args:
+            source_sets: ``{name: {probe, sources, variables}}``.
+        """
+        self._source_sets = dict(source_sets)
 
     def after_install(self) -> None:
         """Remove the Node.js directory an older build kept under its own name.
@@ -933,8 +943,9 @@ class CloudcliHooks(InstanceHooks):
     def _attempts(self) -> list:
         """Each ``(registry, settings)`` an account's install tries, in order.
 
-        The registries that name the pinned integrity, fastest first, each
-        with every host of the npm settings, fastest first.
+        The registries of the artifact's source set that name the pinned
+        integrity, fastest first, each with every host of the npm settings,
+        fastest first.
 
         Returns:
             The attempts.
@@ -942,10 +953,15 @@ class CloudcliHooks(InstanceHooks):
         Raises:
             ModuleApplyError: ``download_failed {file, sources}`` when no
                 registry names the pinned integrity, or the recipe names no
-                npm package.
+                npm package or a set the state does not hold.
         """
         package = str(self._npm.get("package", "") or "")
-        registries = [str(source) for source in self._npm.get("sources") or []]
+        held = self._source_sets.get(str(self._npm.get("source_set", "") or ""))
+        registries = [
+            str(source)
+            for source in (held.get("sources") if isinstance(held, dict) else None)
+            or []
+        ]
         named = f"{package}@{self._version}"
         if not package or not self._version or not registries:
             raise ModuleApplyError("download_failed", {"file": named, "sources": []})

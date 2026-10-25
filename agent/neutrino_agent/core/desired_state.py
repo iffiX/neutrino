@@ -56,7 +56,9 @@ import threading
 
 from neutrino_agent import AGENT_BUILT_AT, AGENT_VERSION
 from neutrino_agent.constants import (
+    AGENT_CONTAINERS_MODULE,
     AGENT_DESIRED_STATE_PATH,
+    AGENT_METHOD_CONTAINER,
     AGENT_MODULE_INSTALL_RECHECK_S,
     AGENT_MODULE_STATE_FAILED,
     AGENT_MODULE_STATE_INSTALL_FAILED,
@@ -76,13 +78,16 @@ from neutrino_agent.streams import STREAM_KIND_LOG, STREAM_KIND_PACKAGE
 from neutrino_agent.streams.log import LogStream
 from neutrino_agent.streams.package import PackageStream
 
-# The order modules apply in: storage first, then what serves from it.
+# The order modules apply in: storage first, then what serves from it. A
+# container module the list does not name applies right after Containers,
+# whose Podman runs it.
 APPLY_ORDER = (
     "zfs",
     "samba",
     "terminal",
     "gitea",
     "podman",
+    "hermes_webui",
     "vscode",
     "code_server",
     "cloudcli",
@@ -108,6 +113,43 @@ TRIED_SUFFIX = ".tried"
 AGENT_BUILD = f"{AGENT_VERSION} {AGENT_BUILT_AT}".strip()
 # The state's section for the machine's AI tools, tried like a module.
 AI_TOOLS_SECTION = "ai_tools"
+# The state's section of the source sets its recipes name.
+SOURCE_SETS_SECTION = "source_sets"
+# The module whose Podman runs every container module, applied again once a
+# container module's install took.
+CONTAINERS_MODULE = AGENT_CONTAINERS_MODULE
+
+
+def apply_order(modules: dict, runners: dict) -> list:
+    """The modules of one state that have a runner, in the order they apply.
+
+    Args:
+        modules: The state's modules section.
+        runners: Module name to its runner.
+
+    Returns:
+        The names in ``APPLY_ORDER``; a container module the order does not
+        name comes right after Containers, by name.
+    """
+    named = [name for name in APPLY_ORDER if name in modules and name in runners]
+    extra = sorted(
+        name
+        for name in modules
+        if name in runners
+        and name not in APPLY_ORDER
+        and _method_of(modules[name]) == AGENT_METHOD_CONTAINER
+    )
+    slot = APPLY_ORDER.index(CONTAINERS_MODULE) + 1
+    at = len([name for name in named if APPLY_ORDER.index(name) < slot])
+    return named[:at] + extra + named[at:]
+
+
+def _method_of(entry: dict) -> str:
+    """The install method a state entry's recipe names, empty for none."""
+    recipe = entry.get("install") if isinstance(entry, dict) else None
+    return (
+        str((recipe or {}).get("method", "") or "") if isinstance(recipe, dict) else ""
+    )
 
 
 def _section_hash(section) -> str:
@@ -287,6 +329,9 @@ class DesiredStateApplier:
         self._state_error: "dict | None" = None
         # The state whose apply waits on a running install, applied again.
         self._rechecked: "dict | None" = None
+        # Set when a container module's install took, so Containers is
+        # applied again and renders its containers.
+        self._is_containers_marked = False
         self._wakeup = threading.Event()
         self._worker = threading.Thread(
             target=self._run, name="desired_state", daemon=True
@@ -368,11 +413,13 @@ class DesiredStateApplier:
 
         Each mentioned module with a runner whose entry differs from the one
         last tried is made to match its ``want``, one at a time in
-        ``APPLY_ORDER``. A ``want`` outside the four is left alone, with a
-        line in the log.
+        ``APPLY_ORDER``, a container module the order does not name right
+        after Containers. A ``want`` outside the four is left alone, with a
+        line in the log. A container module whose install took marks
+        Containers to be applied again, and the state is applied once more.
 
         Args:
-            document: The state, ``{hash, modules, desktop}``.
+            document: The state, ``{hash, modules, desktop, source_sets}``.
         """
         state_hash = str(document.get("hash", "") or "")
         modules = document.get("modules")
@@ -381,10 +428,14 @@ class DesiredStateApplier:
             for name, entry in (modules if isinstance(modules, dict) else {}).items()
             if isinstance(entry, dict)
         }
-        self._engine.take_state(modules)
+        source_sets = document.get(SOURCE_SETS_SECTION)
+        self._engine.take_state(
+            modules, source_sets if isinstance(source_sets, dict) else {}
+        )
         self._apply_desktop(document.get("desktop"))
         with self._lock:
             tried = dict(self._tried)
+            self._is_containers_marked = False
         hashes = {
             name: _section_hash(
                 [entry, document.get("desktop")]
@@ -393,13 +444,9 @@ class DesiredStateApplier:
             )
             for name, entry in modules.items()
         }
-        steps = [
-            name
-            for name in APPLY_ORDER
-            if name in self._runners
-            and name in modules
-            and hashes[name] != tried.get(name)
-        ]
+        runners = {**self._runners, **self._engine.container_runners()}
+        order = apply_order(modules, runners)
+        steps = [name for name in order if hashes[name] != tried.get(name)]
         reported = self._engine.report()
         waiting = [
             name
@@ -410,7 +457,7 @@ class DesiredStateApplier:
         for name in steps:
             waiting = [other for other in waiting if other != name]
             self._engine.set_queued(waiting)
-            failure = self._reconcile_one(name, self._runners[name], modules[name])
+            failure = self._reconcile_one(name, runners[name], modules[name])
             code = failure["code"] if failure else ""
             is_failed = bool(code) and code != PENDING_CODE
             self._engine.record_failure(name, failure if is_failed else None)
@@ -425,7 +472,15 @@ class DesiredStateApplier:
             if section_hash != tried.get(AI_TOOLS_SECTION):
                 self._ai_tools.apply(section, state_hash, receive=self._receive)
                 self._keep_tried(AI_TOOLS_SECTION, section_hash)
-        self._settle_hash(state_hash, modules, document)
+        self._settle_hash(state_hash, order, document)
+        with self._lock:
+            is_marked = self._is_containers_marked
+        if is_marked:
+            self._keep_tried(CONTAINERS_MODULE, "")
+            with self._lock:
+                if self._pending is None:
+                    self._pending = dict(document)
+            self._wakeup.set()
         self._engine.refresh_now()
 
     def _apply_desktop(self, wanted) -> None:
@@ -456,15 +511,13 @@ class DesiredStateApplier:
         except OSError as error:
             self._log(f"could not keep the tried state: {error}")
 
-    def _settle_hash(self, state_hash: str, modules: dict, document: dict) -> None:
-        """Move the applied hash and the state error by every mentioned
-        module's last outcome."""
+    def _settle_hash(self, state_hash: str, order: list, document: dict) -> None:
+        """Move the applied hash and the state error by the last outcome of
+        every mentioned module, in the order they apply."""
         with self._lock:
             first_failure = None
             is_pending = False
-            for name in APPLY_ORDER:
-                if name not in self._runners or name not in modules:
-                    continue
+            for name in order:
                 outcome = self._outcomes.get(name)
                 if outcome is None:
                     continue
@@ -520,6 +573,9 @@ class DesiredStateApplier:
             )
             if failure:
                 return failure
+            if _method_of(wanted) == AGENT_METHOD_CONTAINER:
+                with self._lock:
+                    self._is_containers_marked = True
         if want not in CONFIGURING_WANTS:
             return None
         failure = self._apply_one(name, runner, want, wanted.get("config"))
@@ -618,7 +674,9 @@ class DesiredStateApplier:
         """
         try:
             runner.apply(dict(config) if isinstance(config, dict) else {})
-            if want == AGENT_WANT_STOPPED:
+            if want == AGENT_WANT_RUNNING:
+                runner.start()
+            elif want == AGENT_WANT_STOPPED:
                 runner.stop()
             self._log(f"{name}: {want}")
         except ModuleInstallPending:

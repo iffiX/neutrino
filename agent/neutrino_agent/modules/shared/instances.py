@@ -210,6 +210,13 @@ class InstanceHooks:
             recipe: ``{runner, method, params}``.
         """
 
+    def take_source_sets(self, source_sets: dict) -> None:
+        """Take the state's ``source_sets`` section.
+
+        Args:
+            source_sets: ``{name: {probe, sources, variables}}``.
+        """
+
     def after_install(self) -> None:
         """Tidy the module's directory once an archive landed.
 
@@ -465,6 +472,14 @@ class InstancesModuleRunner(ModuleRunner):
             recipe: ``{runner, method, params}``.
         """
         self._hooks.take_recipe(recipe)
+
+    def take_source_sets(self, source_sets: dict) -> None:
+        """Hand the state's ``source_sets`` section to the module's hooks.
+
+        Args:
+            source_sets: ``{name: {probe, sources, variables}}``.
+        """
+        self._hooks.take_source_sets(source_sets)
 
     def install_artifact(self, recipe: dict, artifact: dict, path: str) -> None:
         """Put one artifact on the machine as its kind says, then tidy the module's directory.

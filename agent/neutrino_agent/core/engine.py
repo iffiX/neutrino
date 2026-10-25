@@ -37,8 +37,11 @@ import time
 
 from neutrino_agent.constants import (
     AGENT_CONFIGURED_DIR,
+    AGENT_CONTAINER_RUNNER,
+    AGENT_CONTAINERS_MODULE,
     AGENT_METHOD_AGENT,
     AGENT_METHOD_BUILTIN,
+    AGENT_METHOD_CONTAINER,
     AGENT_METHOD_HUB,
     AGENT_METHOD_SYSTEM,
     AGENT_FAILURES_DIR_NAME,
@@ -59,6 +62,7 @@ from neutrino_agent.modules.cloudcli.hooks import CloudcliHooks
 from neutrino_agent.modules.code_server.hooks import CodeServerHooks
 from neutrino_agent.modules.codeg.hooks import CodegHooks
 from neutrino_agent.modules.gitea.runner import GiteaModuleRunner
+from neutrino_agent.modules.podman.container_runner import ContainerModuleRunner
 from neutrino_agent.modules.podman.machine_runner import PodmanMachineModuleRunner
 from neutrino_agent.modules.podman.runner import PodmanModuleRunner
 from neutrino_agent.modules.remote_desktop.runner import RemoteDesktopModuleRunner
@@ -88,7 +92,12 @@ IDLE_RECHECK_INTERVAL_S = 60
 # The methods whose presence check is the recipe's ``verify`` command.
 VERIFIED_METHODS = (AGENT_METHOD_SYSTEM, AGENT_METHOD_HUB)
 # The methods an install runs by; ``agent`` takes no operation.
-INSTALLED_METHODS = (AGENT_METHOD_BUILTIN, AGENT_METHOD_SYSTEM, AGENT_METHOD_HUB)
+INSTALLED_METHODS = (
+    AGENT_METHOD_BUILTIN,
+    AGENT_METHOD_SYSTEM,
+    AGENT_METHOD_HUB,
+    AGENT_METHOD_CONTAINER,
+)
 
 # The programs run as a person's account, each the shared runner with the
 # module's own hooks.
@@ -263,13 +272,27 @@ class ModuleEngine(ReconcileWorker):
             runner = kind(platform=platform, log=self._collect, publish=self._publish)
             self._module_runners[runner.name] = runner
             self._runners_by_name[runner.runner] = runner
+        self._platform = platform
+        # One runner per container module the state has named, by module
+        # name, each reaching Podman through the Containers runner.
+        self._container_runners: dict = {}
         self._failures = self._read_failures()
         super().__init__(log=log, on_change=on_change)
 
     @property
     def module_runners(self) -> dict:
-        """The runners that apply configuration, by module name."""
-        return dict(self._module_runners)
+        """The runners that apply configuration, by module name, container modules' among them."""
+        with self._lock:
+            return {**self._module_runners, **self._container_runners}
+
+    def container_runners(self) -> dict:
+        """The runners of the container modules the state has named, by module name.
+
+        Returns:
+            A copy of the map.
+        """
+        with self._lock:
+            return dict(self._container_runners)
 
     @property
     def platform_tuple(self) -> dict:
@@ -286,15 +309,18 @@ class ModuleEngine(ReconcileWorker):
             self._wakeup.set()
         return super().report()
 
-    def take_state(self, modules: dict) -> None:
+    def take_state(self, modules: dict, source_sets: "dict | None" = None) -> None:
         """Take the modules section of the hub's state, and observe against it.
 
-        Each module's runner is handed its recipe. The failure kept for a
+        Each module's runner is handed its recipe and its configuration, a
+        container module getting its runner the first time the state names
+        it, and every runner the state's source sets. The failure kept for a
         module the state no longer names is deleted.
 
         Args:
             modules: ``{name: {"want", "config", "install"}}``; empty when
                 the machine belongs to no hub.
+            source_sets: The state's ``source_sets`` section; None is none.
         """
         with self._lock:
             self._wanted = {
@@ -304,11 +330,19 @@ class ModuleEngine(ReconcileWorker):
             }
             wanted = dict(self._wanted)
             dropped = [name for name in self._failures if name not in self._wanted]
+            for name, entry in wanted.items():
+                self._add_container_runner(name, _recipe_of(entry))
+            runners = {**self._module_runners, **self._container_runners}
+        sets = dict(source_sets) if isinstance(source_sets, dict) else {}
+        for runner in runners.values():
+            runner.take_source_sets(sets)
         for name, entry in wanted.items():
             recipe = _recipe_of(entry)
             runner = self._runner_for(name, recipe)
             if runner is not None:
                 runner.take_recipe(recipe)
+                config = entry.get("config")
+                runner.take_config(dict(config) if isinstance(config, dict) else {})
         for name in dropped:
             self.record_failure(name, None)
         self._wakeup.set()
@@ -652,7 +686,7 @@ class ModuleEngine(ReconcileWorker):
             state does not name; an unnamed module maps to None.
         """
         observed = {name: dict(entry) for name, entry in self._wanted.items()}
-        for name in self._module_runners:
+        for name in [*self._module_runners, *self._container_runners]:
             observed.setdefault(name, None)
         return observed
 
@@ -825,9 +859,11 @@ class ModuleEngine(ReconcileWorker):
         """Whether the software is there, by the method's one presence check.
 
         A module the agent carries is always there; a ``system`` or a
-        ``hub`` recipe is there while its ``verify`` exits 0. A ``builtin``
-        recipe, and a module the state does not name, which comes with no
-        recipe, are judged by the runner's own check.
+        ``hub`` recipe is there while its ``verify`` exits 0; a
+        ``container`` recipe while every image it pins is in Containers'
+        Podman, as its runner reads it. A ``builtin`` recipe, and a module
+        the state does not name, which comes with no recipe, are judged by
+        the runner's own check.
         """
         method = str(recipe.get("method", "") or "")
         if method == AGENT_METHOD_AGENT:
@@ -850,8 +886,31 @@ class ModuleEngine(ReconcileWorker):
         """
         runner_name = str(recipe.get("runner", "") or "")
         if not runner_name:
-            return self._module_runners.get(name)
+            return self._module_runners.get(name) or self._container_runners.get(name)
+        if runner_name == AGENT_CONTAINER_RUNNER:
+            return self._container_runners.get(name)
         return self._runners_by_name.get(runner_name)
+
+    def _add_container_runner(self, name: str, recipe: dict) -> None:
+        """Make the runner of a container module the state names, once. Call under the lock.
+
+        A machine with no Containers runner gets none, and the module reads
+        unsupported there.
+        """
+        if str(recipe.get("runner", "") or "") != AGENT_CONTAINER_RUNNER:
+            return
+        containers = self._module_runners.get(AGENT_CONTAINERS_MODULE)
+        if name in self._container_runners or containers is None:
+            return
+        if name in self._module_runners or not _is_plain(name):
+            return
+        self._container_runners[name] = ContainerModuleRunner(
+            platform=self._platform,
+            name=name,
+            containers=containers,
+            log=self._collect,
+            publish=self._publish,
+        )
 
 
 def _is_plain(name: str) -> bool:

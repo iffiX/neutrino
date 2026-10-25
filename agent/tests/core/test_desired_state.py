@@ -33,6 +33,7 @@ from neutrino_agent.core.desired_state import (
     APPLY_ORDER,
     DesiredStateApplier,
     DesiredStateStore,
+    apply_order,
 )
 from neutrino_agent.exceptions import (
     GatewayUnreachable,
@@ -75,8 +76,12 @@ class FakeEngine:
         self.install_refusal = install_refusal
         self.queued: list = []
 
-    def take_state(self, modules):
+    def take_state(self, modules, source_sets=None):
         self.states.append(modules)
+        self.source_sets = source_sets
+
+    def container_runners(self):
+        return {}
 
     def is_installed(self, name):
         return name in self.installed
@@ -158,6 +163,9 @@ class FakeRunner:
             raise self.failure
         self.applied.append(config)
         self.journal.append(("apply", id(self)))
+
+    def start(self):
+        self.journal.append(("start", id(self)))
 
     def stop(self):
         self.stops += 1
@@ -276,10 +284,9 @@ def test_modules_apply_in_the_fixed_order(tmp_path):
 
     held.apply(state(**{name: "running" for name in APPLY_ORDER}))
 
-    assert [id(runners[name]) for name in APPLY_ORDER] == [
-        entry[1] for entry in journal
-    ]
-    assert all(entry[0] == "apply" for entry in journal)
+    applied = [entry[1] for entry in journal if entry[0] == "apply"]
+    assert [id(runners[name]) for name in APPLY_ORDER] == applied
+    assert {entry[0] for entry in journal} == {"apply", "start"}
     assert engine.states[0].keys() == set(APPLY_ORDER)
 
 
@@ -1312,3 +1319,105 @@ def test_an_artifact_is_asked_for_by_its_module_its_name_and_its_digest(tmp_path
     ]
     assert whole["sha256"] == hashlib.sha256(b"bytes").hexdigest()
     assert node["path"].startswith(str(tmp_path / "packages"))
+
+
+# --- container modules ---
+
+CONTAINER_INSTALL = {"runner": "container", "method": "container", "params": {}}
+
+
+def with_container(document: dict, name: str, want: str) -> dict:
+    """The same state naming one container module more."""
+    document["modules"][name] = {
+        "want": want,
+        "config": {"n": name},
+        "install": dict(CONTAINER_INSTALL),
+    }
+    return document
+
+
+class ContainerEngine(FakeEngine):
+    """An engine whose container modules have runners of their own."""
+
+    def __init__(self, names, containers, **kwargs):
+        super().__init__(names, **kwargs)
+        self.containers = dict(containers)
+
+    def container_runners(self):
+        return dict(self.containers)
+
+
+def test_a_container_module_the_order_does_not_name_applies_right_after_containers():
+    runners = {name: object() for name in ("zfs", "podman", "vscode", "demo", "box")}
+    modules = {
+        "vscode": {"install": {"method": "hub"}},
+        "zfs": {"install": {"method": "system"}},
+        "box": {"install": {"method": "container"}},
+        "podman": {"install": {"method": "system"}},
+        "demo": {"install": {"method": "container"}},
+        "stray": {"install": {"method": "container"}},
+    }
+
+    assert apply_order(modules, runners) == ["zfs", "podman", "box", "demo", "vscode"]
+    assert apply_order(
+        {"demo": modules["demo"], "vscode": modules["vscode"]}, runners
+    ) == [
+        "demo",
+        "vscode",
+    ]
+    assert APPLY_ORDER.index("hermes_webui") == APPLY_ORDER.index("podman") + 1
+
+
+def test_running_starts_the_unit_after_the_configuration_and_stopped_stops_it(
+    tmp_path,
+):
+    journal: list = []
+    runners = {"samba": FakeRunner(journal=journal), "zfs": FakeRunner(journal=journal)}
+    held, _engine = applier(runners, tmp_path=tmp_path)
+
+    held.apply(state(samba="running", zfs="stopped"))
+
+    assert [entry[0] for entry in journal] == ["apply", "stop", "apply", "start"]
+
+
+def test_a_container_module_s_install_marks_containers_to_be_applied_again(tmp_path):
+    journal: list = []
+    podman = FakeRunner(journal=journal)
+    demo = FakeRunner(journal=journal)
+    engine = ContainerEngine(["podman", "demo"], {"demo": demo}, absent=("demo",))
+    held, _ = applier({"podman": podman}, engine=engine, tmp_path=tmp_path)
+    document = with_container(state(podman="running"), "demo", "running")
+
+    held.apply(document)
+
+    assert [name for name, _ in engine.installs] == ["demo"]
+    assert "podman" not in held._tried
+    assert held._pending == document
+    drive_once(held)
+    assert [name for name, _ in engine.installs] == ["demo"]
+    assert journal.count(("apply", id(podman))) == 2
+    assert "podman" in held._tried
+    assert held._pending is None
+
+
+def test_a_container_module_already_there_marks_nothing(tmp_path):
+    podman = FakeRunner()
+    demo = FakeRunner()
+    engine = ContainerEngine(["podman", "demo"], {"demo": demo})
+    held, _ = applier({"podman": podman}, engine=engine, tmp_path=tmp_path)
+
+    held.apply(with_container(state(podman="running"), "demo", "running"))
+
+    assert engine.installs == []
+    assert held._pending is None
+    assert demo.applied == [{"n": "demo"}]
+
+
+def test_the_state_s_source_sets_reach_the_engine(tmp_path):
+    held, engine = applier({"samba": FakeRunner()}, tmp_path=tmp_path)
+    document = state(samba="running")
+    document["source_sets"] = {"npm": {"probe": "/npm/latest", "sources": ["r"]}}
+
+    held.apply(document)
+
+    assert engine.source_sets == document["source_sets"]

@@ -86,13 +86,23 @@ CLOUDCLI_RECIPE = {
                 "kind": "npm",
                 "package": "@cloudcli-ai/cloudcli",
                 "digest": CLOUDCLI_INTEGRITY,
-                "sources": ["https://registry.npmmirror.com"],
+                "source_set": "npm",
                 "hosts": {
                     "npm_config_better_sqlite3_binary_host": ["https://m.example/bs3"]
                 },
             }
         ],
     },
+}
+
+
+# The state's source sets: the npm set CloudCLI's artifact names.
+CLOUDCLI_SOURCE_SETS = {
+    "npm": {
+        "probe": "/npm/latest",
+        "sources": ["https://registry.npmmirror.com"],
+        "variables": ["npm_config_registry"],
+    }
 }
 
 
@@ -106,6 +116,7 @@ def cloudcli_hooks(os_name, machine, **kwargs):
     """CloudCLI's hooks bound to a machine, holding the recipe, every source answering."""
     hooks = bound(CloudcliHooks, os_name, machine, probe=answering_probe, **kwargs)
     hooks.take_recipe(CLOUDCLI_RECIPE)
+    hooks.take_source_sets(CLOUDCLI_SOURCE_SETS)
     return hooks
 
 

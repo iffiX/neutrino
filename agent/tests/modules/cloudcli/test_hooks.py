@@ -88,26 +88,48 @@ HOST = "https://m/bs3"
 HOST_SETTING = "npm_config_better_sqlite3_binary_host"
 
 
-def recipe(registries=(REGISTRY,), hosts=(HOST,)) -> dict:
-    """CloudCLI's recipe with its npm artifact naming these sources."""
+class HeldRecipe(dict):
+    """A recipe, with the state's source sets that come with it as ``sets``."""
+
+    def __init__(self, recipe: dict, sets: dict):
+        super().__init__(recipe)
+        self.sets = sets
+
+
+def npm_sets(registries) -> dict:
+    """The state's source sets with an ``npm`` set of these registries."""
     return {
-        "runner": "cloudcli",
-        "method": "hub",
-        "params": {
-            "version": "1.37.3",
-            "artifacts": [
-                {"name": "node", "kind": "tar_gz", "directory": "node"},
-                {
-                    "name": "cloudcli",
-                    "kind": "npm",
-                    "package": "@cloudcli-ai/cloudcli",
-                    "digest": INTEGRITY,
-                    "sources": list(registries),
-                    "hosts": {HOST_SETTING: list(hosts)} if hosts else {},
-                },
-            ],
-        },
+        "npm": {
+            "probe": "/npm/latest",
+            "sources": list(registries),
+            "variables": ["npm_config_registry"],
+        }
     }
+
+
+def recipe(registries=(REGISTRY,), hosts=(HOST,)) -> HeldRecipe:
+    """CloudCLI's recipe, its npm artifact naming the ``npm`` set of these registries."""
+    return HeldRecipe(
+        {
+            "runner": "cloudcli",
+            "method": "hub",
+            "params": {
+                "version": "1.37.3",
+                "artifacts": [
+                    {"name": "node", "kind": "tar_gz", "directory": "node"},
+                    {
+                        "name": "cloudcli",
+                        "kind": "npm",
+                        "package": "@cloudcli-ai/cloudcli",
+                        "digest": INTEGRITY,
+                        "source_set": "npm",
+                        "hosts": {HOST_SETTING: list(hosts)} if hosts else {},
+                    },
+                ],
+            },
+        },
+        npm_sets(registries),
+    )
 
 
 class Probe:
@@ -162,7 +184,9 @@ def hooks_for(os_name, module_dir, *, held=None, **kwargs) -> CloudcliHooks:
     tools = {key: kwargs.pop(key) for key in ("run", "powershell") if key in kwargs}
     kwargs.setdefault("probe", Probe())
     hooks = CloudcliHooks(platform=Platform(os_name), log=lambda line: None, **kwargs)
-    hooks.take_recipe(held if held is not None else recipe())
+    held = held if held is not None else recipe()
+    hooks.take_recipe(held)
+    hooks.take_source_sets(getattr(held, "sets", {}))
     join = ntpath.join if os_name == "windows" else os.path.join
     machine = ServiceMachine(
         os_name=os_name,
@@ -614,12 +638,12 @@ def test_a_recipe_naming_no_npm_package_is_download_failed(tmp_path):
 def test_the_windows_script_tries_each_registry_and_host_in_turn(windows):
     hooks, host, entry = windows
     hooks._probe = Probe(speeds={"https://a.example": 10.0, "https://h1": 10.0})
-    hooks.take_recipe(
-        recipe(
-            registries=("https://b.example", "https://a.example"),
-            hosts=("https://h2", "https://h1"),
-        )
+    held = recipe(
+        registries=("https://b.example", "https://a.example"),
+        hosts=("https://h2", "https://h1"),
     )
+    hooks.take_recipe(held)
+    hooks.take_source_sets(held.sets)
 
     hooks.prepare_module()
     hooks.prepare(CONFIG, CONFIG.instances[0], entry)
@@ -1326,3 +1350,25 @@ def test_a_websocket_with_cloudclis_login_is_relayed_both_ways(listening, cloudc
         echoed = client.recv(65536)
 
     assert echoed == b"PING"
+
+
+def test_the_registries_are_the_ones_the_state_s_npm_set_names(tmp_path):
+    probe = Probe()
+    held = recipe(registries=("https://set.example",))
+    hooks, machine, entry = attempted(tmp_path, held, probe, {})
+
+    hooks.prepare(CONFIG, CONFIG.instances[0], entry)
+
+    assert probe.asked[0].startswith("https://set.example/")
+    assert machine.tried[0][0] == "https://set.example"
+
+
+def test_a_set_the_state_does_not_carry_is_download_failed(tmp_path):
+    held = HeldRecipe(recipe(), {})
+    hooks, machine, entry = attempted(tmp_path, held, Probe(), {})
+
+    with pytest.raises(ModuleApplyError) as caught:
+        hooks.prepare(CONFIG, CONFIG.instances[0], entry)
+
+    assert caught.value.code == "download_failed"
+    assert machine.tried == []
