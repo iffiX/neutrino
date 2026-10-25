@@ -103,15 +103,17 @@ enable_epel() {
     case "$id" in
         rocky | almalinux | centos)
             echo "Enabling CRB and EPEL, which the package's dependencies come from"
-            $as_root dnf config-manager --set-enabled crb \
-                && $as_root dnf install -y epel-release \
-                || fail "EPEL could not be enabled; nothing was installed."
+            if ! { $as_root dnf config-manager --set-enabled crb \
+                && $as_root dnf install -y epel-release; }; then
+                fail "EPEL could not be enabled; nothing was installed."
+            fi
             ;;
         rhel)
             echo "Enabling CodeReady Builder and EPEL, which the package's dependencies come from"
-            $as_root subscription-manager repos --enable "codeready-builder-for-rhel-$major-$(uname -m)-rpms" \
-                && $as_root dnf install -y "$EPEL_RELEASE_PREFIX$major.noarch.rpm" \
-                || fail "EPEL could not be enabled; nothing was installed."
+            if ! { $as_root subscription-manager repos --enable "codeready-builder-for-rhel-$major-$(uname -m)-rpms" \
+                && $as_root dnf install -y "$EPEL_RELEASE_PREFIX$major.noarch.rpm"; }; then
+                fail "EPEL could not be enabled; nothing was installed."
+            fi
             ;;
     esac
 }
