@@ -37,6 +37,7 @@ from venv_tree import (
     HUB_IS_SET_UP,
     stage_desktop_entry,
 )
+from shared import edition_build  # noqa: E402
 
 # RHEL family keeps units here; Debian's /lib/systemd/system is a symlink to
 # it, so the two packages disagree in spelling only.
@@ -237,11 +238,20 @@ def _build(
     if result.returncode != 0:
         raise SystemExit((result.stderr or result.stdout).strip()[-2000:])
 
-    name = asset_name("rpm", package_version, architecture)
-    built = topdir / "RPMS" / architecture / name
+    built = (
+        topdir
+        / "RPMS"
+        / architecture
+        / edition_build.built_name(
+            "rpm",
+            name=PACKAGE_NAME,
+            version=package_version,
+            architecture=architecture,
+        )
+    )
     if not built.is_file():
-        raise SystemExit(f"rpmbuild wrote no {name}")
-    target = output_dir / name
+        raise SystemExit(f"rpmbuild wrote no {built.name}")
+    target = output_dir / asset_name("rpm", package_version, architecture)
     shutil.copyfile(built, target)
     return target
 

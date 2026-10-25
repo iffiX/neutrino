@@ -13,7 +13,11 @@ import os
 import subprocess
 from pathlib import Path
 
-from shared.constants import PACKAGING_ARCHITECTURE_NAMES, PACKAGING_EDITION_ENV
+from shared.constants import (
+    PACKAGING_ARCHITECTURE_NAMES,
+    PACKAGING_EDITION_ENV,
+    PACKAGING_RELEASE_SITES_ENV,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -32,13 +36,8 @@ BUILD_PLATFORMS = {"amd64": "linux/amd64", "arm64": "linux/arm64"}
 # The Debian name of the machine the kernel reports, the default target.
 HOST_ARCHITECTURES = {"x86_64": "amd64", "aarch64": "arm64", "arm64": "arm64"}
 
-# What the hub's build reads to learn where a release publishes the agent
-# packages it seeds its cache with. Passed into the container only when it is
-# given: without it the hub package carries the entries it seeded and no URL,
-# which is what makes a local build refuse a platform it did not make rather
-# than reach for a file nobody published.
-AGENT_PACKAGE_URL_BASE_ENV = "NEUTRINO_AGENT_PACKAGE_URL_BASE"
-# And what it reads to find agent packages already built, for every machine.
+# What the hub's build reads to find agent packages already built, for every
+# machine.
 AGENT_PACKAGES_DIR_ENV = "NEUTRINO_AGENT_PACKAGES_DIR"
 
 
@@ -73,7 +72,7 @@ def build_in_container(
     architecture: str,
     family: str,
     *,
-    agent_package_url_base: str = "",
+    has_release_sites: bool = False,
     agent_packages: str = "",
     edition: str = "intl",
 ) -> None:
@@ -87,9 +86,8 @@ def build_in_container(
         output_dir: Where the package should land.
         architecture: The architecture to build for, named the Debian way.
         family: Which family is being built, which names the architecture.
-        agent_package_url_base: Where a release publishes the agent packages
-            the hub's build seeds its cache with; nothing is stamped without
-            it.
+        has_release_sites: Whether the build stamps the release sites,
+            handed in as ``NEUTRINO_HAS_RELEASE_SITES``.
         agent_packages: A directory of agent packages already built, mounted
             into the container for the hub's build to seed from; empty has
             the hub's build make its own machine's.
@@ -114,8 +112,8 @@ def build_in_container(
             "distribution"
         )
     stamp = ["-e", f"{PACKAGING_EDITION_ENV}={edition}"]
-    if agent_package_url_base:
-        stamp += ["-e", f"{AGENT_PACKAGE_URL_BASE_ENV}={agent_package_url_base}"]
+    if has_release_sites:
+        stamp += ["-e", f"{PACKAGING_RELEASE_SITES_ENV}=1"]
     if agent_packages:
         stamp += [
             "-v",

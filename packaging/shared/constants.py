@@ -1,19 +1,42 @@
-"""What the project names its package files and its machines.
+"""What the project names its package files, its machines and its release
+sites.
 
-The build scripts read these tables. A running hub learns the one name it
-needs from the stamp its build writes into ``neutrino_hub/_version.py``.
+The build scripts read these tables. A running hub learns what it needs of
+them from the stamp its build writes into ``neutrino_hub/_version.py``.
 """
 
 # The file each format writes, and so the name the hub asks a release for
 # when it updates itself. `name` is the package, `version` the release,
-# `architecture` the machine as that format spells it.
+# `architecture` the machine as that format spells it, and `suffix` the
+# edition's, from PACKAGING_EDITION_SUFFIXES.
 PACKAGING_ASSET_PATTERNS = {
-    "deb": "{name}_{version}_{architecture}.deb",
-    "rpm": "{name}-{version}-1.{architecture}.rpm",
-    "pkg": "{name}-{version}-1-{architecture}.pkg.tar.zst",
-    "msi": "{name}-{version}-windows-{architecture}.msi",
-    "macos_pkg": "{name}-{version}-macos-{architecture}.pkg",
+    "deb": "{name}_{version}_{architecture}{suffix}.deb",
+    "rpm": "{name}-{version}-1.{architecture}{suffix}.rpm",
+    "pkg": "{name}-{version}-1-{architecture}{suffix}.pkg.tar.zst",
+    "msi": "{name}-{version}-windows-{architecture}{suffix}.msi",
+    "macos_pkg": "{name}-{version}-macos-{architecture}{suffix}.pkg",
+    "apk": "{name}-{version}-android{suffix}.apk",
+    "ipa": "{name}-{version}-ios{suffix}.ipa",
 }
+
+# The release sites, GitHub first: each the address of a tag's files, with
+# `{tag}` open, and the address of `latest.json`, which names the latest
+# release as {tag, version}. A release build stamps them into the hub; any
+# other build names none.
+PACKAGING_RELEASE_SITES = (
+    {
+        "files": "https://github.com/iffiX/neutrino/releases/download/{tag}/",
+        "latest": "https://github.com/iffiX/neutrino/releases/latest/download/latest.json",
+    },
+    {
+        "files": "https://cnb.cool/iffi-X/neutrino/-/releases/download/{tag}/",
+        "latest": "https://cnb.cool/iffi-X/neutrino/-/git/raw/main/latest.json",
+    },
+)
+# The file of every release that names it, and the variable a build in a
+# container reads as "1" when it stamps the release sites.
+PACKAGING_LATEST_FILE = "latest.json"
+PACKAGING_RELEASE_SITES_ENV = "NEUTRINO_HAS_RELEASE_SITES"
 
 # The name each family gives the same machine.
 PACKAGING_ARCHITECTURE_NAMES = {
@@ -21,9 +44,11 @@ PACKAGING_ARCHITECTURE_NAMES = {
     "arm64": {"debian": "arm64", "rhel": "aarch64", "arch": "aarch64"},
 }
 
-# The two editions, and the file at the root of a tree naming its own.
+# The two editions, the file at the root of a tree naming its own, and what
+# each edition's file names hold before the extension.
 PACKAGING_EDITIONS = ("intl", "cn")
 PACKAGING_EDITION_FILE = "EDITION"
+PACKAGING_EDITION_SUFFIXES = {"intl": "", "cn": "-cn"}
 
 # Every repository path that exists for the feature the mainland edition `cn`
 # leaves out, the proxy, and for nothing else: its packages, their mirrored

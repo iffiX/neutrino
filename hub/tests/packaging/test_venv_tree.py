@@ -14,6 +14,7 @@ import sys
 import pytest
 
 import venv_tree
+from shared.constants import PACKAGING_EDITION_ENV, PACKAGING_RELEASE_SITES_ENV
 
 # A readelf whose answer for a file is the version its own name spells, so a
 # tree can be staged with the versions the walk is meant to read.
@@ -292,25 +293,42 @@ def test_a_tree_at_the_floor_is_a_package_the_build_lets_through(tmp_path, monke
     venv_tree.require_glibc_floor(tree)
 
 
-def test_each_format_names_its_file_the_way_the_release_carries_it():
+@pytest.mark.parametrize(
+    ("edition", "deb", "rpm", "pkg"),
+    [
+        (
+            "intl",
+            "neutrino-hub_0.3.1_amd64.deb",
+            "neutrino-hub-0.3.1-1.aarch64.rpm",
+            "neutrino-hub-0.3.1-1-x86_64.pkg.tar.zst",
+        ),
+        (
+            "cn",
+            "neutrino-hub_0.3.1_amd64-cn.deb",
+            "neutrino-hub-0.3.1-1.aarch64-cn.rpm",
+            "neutrino-hub-0.3.1-1-x86_64-cn.pkg.tar.zst",
+        ),
+    ],
+)
+def test_each_format_names_its_file_the_way_the_release_holds_it(
+    monkeypatch, edition, deb, rpm, pkg
+):
     """The file a build writes is the name the hub asks a release for, so
-    the three formats spell it from one table."""
-    assert (
-        venv_tree.asset_name("deb", "0.3.1", "amd64") == "neutrino-hub_0.3.1_amd64.deb"
-    )
-    assert (
-        venv_tree.asset_name("rpm", "0.3.1", "aarch64")
-        == "neutrino-hub-0.3.1-1.aarch64.rpm"
-    )
-    assert (
-        venv_tree.asset_name("pkg", "0.3.1", "x86_64")
-        == "neutrino-hub-0.3.1-1-x86_64.pkg.tar.zst"
-    )
+    the three formats spell it from one table, ``-cn`` before the extension
+    in the mainland edition."""
+    monkeypatch.setenv(PACKAGING_EDITION_ENV, edition)
+
+    assert venv_tree.asset_name("deb", "0.3.1", "amd64") == deb
+    assert venv_tree.asset_name("rpm", "0.3.1", "aarch64") == rpm
+    assert venv_tree.asset_name("pkg", "0.3.1", "x86_64") == pkg
 
 
-def test_the_stamp_carries_the_version_and_the_file_name_with_the_version_open():
+def test_the_stamp_carries_the_version_and_the_file_name_with_the_version_open(
+    monkeypatch,
+):
     """What the build writes into the tree is what the running hub reads:
     its version, and the name of its own kind of package for any version."""
+    monkeypatch.setenv(PACKAGING_EDITION_ENV, "intl")
     stamp = venv_tree.version_stamp(
         "0.3.1", venv_tree.asset_name("deb", "{version}", "amd64")
     )
@@ -326,17 +344,47 @@ def test_the_stamp_carries_the_version_and_the_file_name_with_the_version_open()
     )
 
 
+@pytest.mark.parametrize("edition", ["intl", "cn"])
+def test_a_release_build_stamps_the_release_sites_in_both_editions(
+    monkeypatch, edition
+):
+    from shared.constants import PACKAGING_RELEASE_SITES
+
+    monkeypatch.setenv(PACKAGING_EDITION_ENV, edition)
+    monkeypatch.setenv(PACKAGING_RELEASE_SITES_ENV, "1")
+    namespace = {}
+
+    exec(venv_tree.version_stamp("0.3.1", "x"), namespace)  # noqa: S102
+
+    assert namespace["HUB_RELEASE_SITES"] == PACKAGING_RELEASE_SITES
+    assert namespace["HUB_RELEASE_SITES"][0]["files"].startswith("https://github.com/")
+    assert all(
+        "{tag}" in site["files"] and site["latest"].endswith("/latest.json")
+        for site in namespace["HUB_RELEASE_SITES"]
+    )
+
+
+def test_any_other_build_stamps_no_release_site(monkeypatch):
+    monkeypatch.setenv(PACKAGING_EDITION_ENV, "intl")
+    monkeypatch.setenv(PACKAGING_RELEASE_SITES_ENV, "")
+    namespace = {}
+
+    exec(venv_tree.version_stamp("0.3.1", "x"), namespace)  # noqa: S102
+
+    assert namespace["HUB_RELEASE_SITES"] == ()
+
+
 def test_the_builds_read_the_naming_tables_the_packaging_owns():
     """One table names the machine for every family and one the file of
-    every format; the container builds and the hub's build read them rather
-    than keeping a copy that could drift."""
-    from shared import constants, container_build
+    every format; the container builds and the edition's names read them
+    rather than keeping a copy that could drift."""
+    from shared import constants, container_build, edition_build
 
     assert (
         container_build.PACKAGING_ARCHITECTURE_NAMES
         is constants.PACKAGING_ARCHITECTURE_NAMES
     )
-    assert venv_tree.PACKAGING_ASSET_PATTERNS is constants.PACKAGING_ASSET_PATTERNS
+    assert edition_build.PACKAGING_ASSET_PATTERNS is constants.PACKAGING_ASSET_PATTERNS
     assert set(constants.PACKAGING_ARCHITECTURE_NAMES) == {"amd64", "arm64"}
     assert set(constants.PACKAGING_ASSET_PATTERNS) == {
         "deb",
@@ -344,6 +392,8 @@ def test_the_builds_read_the_naming_tables_the_packaging_owns():
         "pkg",
         "msi",
         "macos_pkg",
+        "apk",
+        "ipa",
     }
     assert constants.PACKAGING_ASSET_PATTERNS["pkg"].endswith(".pkg.tar.zst")
 

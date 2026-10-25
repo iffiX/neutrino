@@ -56,7 +56,6 @@ from shared import nuitka_build  # noqa: E402
 import netbird_payload  # noqa: E402
 import payload  # noqa: E402
 from shared import pkg_build  # noqa: E402
-from shared.constants import PACKAGING_ASSET_PATTERNS  # noqa: E402
 
 # The labels, the directories and the portal are the client's own, named here
 # so the installer and the runtime cannot drift.
@@ -262,8 +261,8 @@ def main() -> int:
     machine = macos_machine(arguments.architecture)
     output_dir = Path(arguments.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
-    target = output_dir / PACKAGING_ASSET_PATTERNS["macos_pkg"].format(
-        name=PACKAGE_NAME, version=version, architecture=machine
+    target = output_dir / edition_build.asset_name(
+        "macos_pkg", name=PACKAGE_NAME, version=version, architecture=machine
     )
 
     with tempfile.TemporaryDirectory() as workdir:

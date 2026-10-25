@@ -17,9 +17,9 @@ tun2socks, with EasyTier's ``wintun.dll`` and the stand-in ``packet.dll``
 beside them. The
 geodata and the agent's ``.msi`` land under the state directory in
 ``C:\\ProgramData\\Neutrino\\hub``, which the installer creates open to SYSTEM
-and the administrators alone. With ``--agent-package-url-base`` every agent
-package in the directory is named in the manifest; without it, the
-agent's ``.msi`` alone.
+and the administrators alone. With ``--release-sites`` the release sites
+are stamped and every agent package of the edition in the directory is
+named in the manifest; without it, the agent's ``.msi`` alone.
 
 The installer registers the ``neutrino_hub`` service, run as LocalSystem at
 boot with ``service run`` and recovered when it ends, and starts it, on a
@@ -47,8 +47,8 @@ import compiled_tree  # noqa: E402
 from constants import HUB_ICON_NAME  # noqa: E402
 from shared import edition_build  # noqa: E402
 from shared import hub_assets  # noqa: E402
+from shared import release_sites  # noqa: E402
 from shared import wix_build  # noqa: E402
-from shared.constants import PACKAGING_ASSET_PATTERNS  # noqa: E402
 import venv_tree  # noqa: E402
 
 sys.path.append(
@@ -234,11 +234,7 @@ def main() -> int:
         help="a directory of agent packages already built, the agent's .msi "
         "among them",
     )
-    parser.add_argument(
-        "--agent-package-url-base",
-        default="",
-        help="where a release publishes the agent packages the manifest names",
-    )
+    release_sites.add_release_sites_argument(parser)
     parser.add_argument(
         "--packet-dll",
         default="",
@@ -256,6 +252,7 @@ def main() -> int:
     )
     arguments = parser.parse_args()
     edition_build.require_edition_tree(arguments.edition)
+    release_sites.name_release_sites(arguments.has_release_sites)
     _check_tools(arguments.stage_only)
 
     version = venv_tree.version()
@@ -271,7 +268,6 @@ def main() -> int:
             version,
             machine,
             agent_packages=Path(arguments.agent_packages).resolve(),
-            url_base=arguments.agent_package_url_base,
             packet_dll=Path(arguments.packet_dll) if arguments.packet_dll else None,
         )
         source = root / "neutrino_hub.wxs"
@@ -318,10 +314,13 @@ def msi_name(version: str, machine: str) -> str:
         machine: ``amd64``.
 
     Returns:
-        The file name.
+        The file name, ``-cn`` before the extension in a ``cn`` build.
+
+    Raises:
+        SystemExit: When ``NEUTRINO_EDITION`` names no edition.
     """
-    return PACKAGING_ASSET_PATTERNS["msi"].format(
-        name=PACKAGE_NAME, version=version, architecture=machine
+    return edition_build.asset_name(
+        "msi", name=PACKAGE_NAME, version=version, architecture=machine
     )
 
 
@@ -384,7 +383,6 @@ def _lay_out(
     machine: str,
     *,
     agent_packages: Path,
-    url_base: str,
     packet_dll: "Path | None",
 ) -> dict:
     """Write everything the installer carries.
@@ -394,7 +392,6 @@ def _lay_out(
         version: The version being packaged.
         machine: ``amd64``.
         agent_packages: The directory the agent's packages are in.
-        url_base: Where a release publishes them, empty for none.
         packet_dll: The stand-in packet.dll; None refuses the build.
 
     Returns:
@@ -453,7 +450,6 @@ def _lay_out(
         installed / "neutrino_hub" / compiled_tree.DATA_DIR_NAME,
         family=AGENT_FAMILY,
         machine=machine,
-        url_base=url_base,
     )
     icon = icons.write_ico(root / "neutrino_hub.ico", name=HUB_ICON_NAME)
     return {"payload": installed, "binary": binary, "state": state, "icon": icon}

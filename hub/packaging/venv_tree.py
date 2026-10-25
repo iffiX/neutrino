@@ -39,7 +39,7 @@ if str(SHARED_PACKAGING_DIR) not in sys.path:
     sys.path.insert(0, str(SHARED_PACKAGING_DIR))
 from shared import edition_build  # noqa: E402
 from shared import hub_assets  # noqa: E402
-from shared.constants import PACKAGING_ASSET_PATTERNS  # noqa: E402
+from shared import release_sites  # noqa: E402
 
 HUB_ROOT = Path(__file__).resolve().parent.parent
 AGENT_ROOT = HUB_ROOT.parent / "agent"
@@ -168,11 +168,6 @@ AGENT_PACKAGE_LICENSES = ("rustdesk.txt",)
 # What builds the agent's own package of each family, when no directory of
 # packages already built is given.
 AGENT_BUILD_SCRIPTS = {"deb": "build_deb.py", "rpm": "build_rpm.py"}
-
-# Where a release publishes the agent packages, so an installed hub can fetch
-# a platform its package does not carry. A build that is not a release names
-# none, and the manifest then carries the seeded entry alone.
-AGENT_PACKAGE_URL_BASE_ENV = "NEUTRINO_AGENT_PACKAGE_URL_BASE"
 
 # A directory of agent packages already built, every family and machine the
 # release makes. The build reads every one into the manifest and seeds the
@@ -339,7 +334,7 @@ echo ""
 
 
 def asset_name(kind: str, version: str, machine: str) -> str:
-    """The file a build of this kind writes, which is what a release carries.
+    """The file a build of this kind writes, which is what a release holds.
 
     Args:
         kind: ``deb``, ``rpm`` or ``pkg``.
@@ -348,10 +343,13 @@ def asset_name(kind: str, version: str, machine: str) -> str:
         machine: The architecture as that format spells it.
 
     Returns:
-        The file name.
+        The file name, ``-cn`` before the extension in a ``cn`` build.
+
+    Raises:
+        SystemExit: When ``NEUTRINO_EDITION`` names no edition.
     """
-    return PACKAGING_ASSET_PATTERNS[kind].format(
-        name=PACKAGE_NAME, version=version, architecture=machine
+    return edition_build.asset_name(
+        kind, name=PACKAGE_NAME, version=version, architecture=machine
     )
 
 
@@ -361,8 +359,9 @@ def version_stamp(version: str, asset: str) -> str:
     No packaging format installs a .dist-info for the hub itself, so the
     version is stamped where importlib.metadata cannot answer, and the
     package's own release file name beside it, with the version left open,
-    the edition the build was asked for, and the versions of the carried
-    programs the build pins outside the hub.
+    the edition the build was asked for, the release sites a release build
+    stamps, and the versions of the carried programs the build pins outside
+    the hub.
 
     Args:
         version: The version being packaged.
@@ -380,6 +379,7 @@ def version_stamp(version: str, asset: str) -> str:
         f'HUB_VERSION = "{version}"\n'
         f'HUB_PACKAGE_ASSET = "{asset}"\n'
         f'EDITION = "{edition_build.build_edition()}"\n'
+        f"HUB_RELEASE_SITES = {release_sites.stamped_sites()!r}\n"
         f"HUB_CARRIED_VERSIONS = {hub_assets.stamped_versions()!r}\n"
     )
 
@@ -466,9 +466,9 @@ def stage_agent_cache(
     the hub's own agent and every device of its platform need no network.
 
     A release hands this build every agent package it made, through
-    :data:`AGENT_PACKAGES_DIR_ENV`: each enters the manifest with its hash and
-    its URL, and the one of this package's family and machine enters the
-    cache. A build given none makes that one agent package itself.
+    :data:`AGENT_PACKAGES_DIR_ENV`: each of the build's edition enters the
+    manifest with its hash, and the one of this package's family and machine
+    enters the cache. A build given none makes that one agent package itself.
 
     Args:
         tree: The staging directory.
@@ -480,8 +480,8 @@ def stage_agent_cache(
 
     Raises:
         SystemExit: When a file's platform cannot be read from its name,
-            the directory given holds no agent package at all, or none of
-            this package's family and machine.
+            the directory given holds no agent package of the build's
+            edition, or none of this package's family and machine.
     """
     cache = tree / str(AGENT_PACKAGE_CACHE_DIR).lstrip("/")
     cache.mkdir(parents=True, exist_ok=True)
@@ -489,13 +489,7 @@ def stage_agent_cache(
         built = Path(workdir)
         prebuilt = _agent_packages_dir()
         if prebuilt is not None:
-            found = sorted(
-                path
-                for path in prebuilt.iterdir()
-                if path.name.startswith("neutrino-agent")
-            )
-            if not found:
-                raise SystemExit(f"no agent package under {prebuilt}")
+            found = edition_agent_packages(prebuilt)
             for path in found:
                 shutil.copyfile(path, built / path.name)
         elif family:
@@ -511,9 +505,7 @@ def stage_agent_cache(
                 cwd=AGENT_ROOT,
             )
         seeded = AGENT_PLATFORM_KEY(family, AGENT_PACKAGE_MACHINE(machine))
-        manifest = agent_manifest(
-            sorted(built.iterdir()), _agent_url_base(), seeded=seeded
-        )
+        manifest = agent_manifest(sorted(built.iterdir()), seeded=seeded)
         if seeded and seeded not in manifest:
             raise SystemExit(
                 f"no agent {family} for {machine} among the agent packages; "
@@ -532,40 +524,62 @@ def stage_agent_cache(
     )
 
 
-def agent_manifest(paths: list, url_base: str, *, seeded: str) -> dict:
+def edition_agent_packages(directory: Path) -> list:
+    """The agent packages of the build's edition in a directory of them.
+
+    Args:
+        directory: The release's agent packages.
+
+    Returns:
+        Their paths, sorted.
+
+    Raises:
+        SystemExit: When the directory holds none of the edition, or
+            ``NEUTRINO_EDITION`` names no edition.
+    """
+    edition = edition_build.build_edition()
+    found = sorted(
+        path
+        for path in directory.iterdir()
+        if path.is_file()
+        and path.name.startswith("neutrino-agent")
+        and edition_build.is_edition_file(path.name, edition)
+    )
+    if not found:
+        raise SystemExit(f"no {edition} agent package under {directory}")
+    return found
+
+
+def agent_manifest(paths: list, *, seeded: str) -> dict:
     """What a hub package's manifest names, beside the one file it carries.
 
     Args:
         paths: Every agent package the build was given or made.
-        url_base: Where the release publishes them, empty for a build that
-            publishes nothing.
         seeded: The platform key of the file the package carries, empty for
             none.
 
     Returns:
-        Platform key to ``{name, url, sha256, size}``: every platform for a
-        release, and the seeded one alone for a build with no URL base, so a
-        platform nothing published is refused by name.
+        Platform key to ``{name, sha256, size}``: every platform for a build
+        that stamps the release sites, and the seeded one alone for any
+        other, so a platform nothing published is refused by name.
 
     Raises:
         SystemExit: When a file's name says no family or no machine.
     """
-    entries = agent_cache_entries(paths, url_base)
-    if url_base:
+    entries = agent_cache_entries(paths)
+    if release_sites.stamped_sites():
         return entries
     return {key: entry for key, entry in entries.items() if key == seeded}
 
 
-def agent_cache_entries(paths: list, url_base: str) -> dict:
+def agent_cache_entries(paths: list) -> dict:
     """What the manifest says about the packages a build seeded.
 
     Args:
         paths: The files the agent's builds wrote.
-        url_base: Where a release publishes them, empty for a build that
-            publishes nothing.
 
     Returns:
-        Platform key to ``{name, url, sha256, size}``. The name is the file's
+        Platform key to ``{name, sha256, size}``. The name is the file's
         own, which is what a release publishes it as.
 
     Raises:
@@ -577,7 +591,6 @@ def agent_cache_entries(paths: list, url_base: str) -> dict:
         payload = path.read_bytes()
         entries[AGENT_PLATFORM_KEY(family, architecture)] = {
             "name": path.name,
-            "url": f"{url_base.rstrip('/')}/{path.name}" if url_base else "",
             "sha256": hashlib.sha256(payload).hexdigest(),
             "size": len(payload),
         }
@@ -601,11 +614,6 @@ def _agent_platform(name: str) -> tuple:
     if not family or not architecture:
         raise SystemExit(f"{name} names no family and machine to serve it for")
     return family, architecture
-
-
-def _agent_url_base() -> str:
-    """Where a release publishes the agent packages, empty for any other build."""
-    return os.environ.get(AGENT_PACKAGE_URL_BASE_ENV, "").strip()
 
 
 def _agent_packages_dir() -> Path | None:

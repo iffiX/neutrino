@@ -15,8 +15,9 @@ interpreter it runs on into a standalone ``nhub`` with the libraries and
 ``/usr/local/bin``. Beside it under ``bin`` are xray, cli-proxy-api,
 netbird, easytier-core, easytier-cli, frpc and tun2socks for the machine. The
 geodata and the agent's ``.pkg`` land under the state directory. With
-``--agent-package-url-base`` every agent package in the directory is named
-in the manifest; without it, the agent's ``.pkg`` of this machine alone.
+``--release-sites`` the release sites are stamped and every agent package of
+the edition in the directory is named in the manifest; without it, the
+agent's ``.pkg`` of this machine alone.
 
 The ``com.neutrino.hub`` LaunchDaemon runs ``nhub run`` as root. The
 postinstall makes ``config`` and ``state`` root's alone and the log
@@ -53,7 +54,7 @@ from constants import HUB_ICON_NAME  # noqa: E402
 from shared import edition_build  # noqa: E402
 from shared import hub_assets  # noqa: E402
 from shared import pkg_build  # noqa: E402
-from shared.constants import PACKAGING_ASSET_PATTERNS  # noqa: E402
+from shared import release_sites  # noqa: E402
 import venv_tree  # noqa: E402
 
 sys.path.append(
@@ -179,11 +180,7 @@ def main() -> int:
         help="a directory of agent packages already built, the agent's .pkg "
         "of this machine among them",
     )
-    parser.add_argument(
-        "--agent-package-url-base",
-        default="",
-        help="where a release publishes the agent packages the manifest names",
-    )
+    release_sites.add_release_sites_argument(parser)
     parser.add_argument(
         "--stage-only",
         action="store_true",
@@ -191,6 +188,7 @@ def main() -> int:
     )
     arguments = parser.parse_args()
     edition_build.require_edition_tree(arguments.edition)
+    release_sites.name_release_sites(arguments.has_release_sites)
     _check_tools(arguments.stage_only)
 
     version = venv_tree.version()
@@ -206,7 +204,6 @@ def main() -> int:
             version,
             machine,
             agent_packages=Path(arguments.agent_packages).resolve(),
-            url_base=arguments.agent_package_url_base,
         )
         if arguments.stage_only:
             print(f"staged {staged['root']}")
@@ -257,10 +254,13 @@ def pkg_name(version: str, machine: str) -> str:
         machine: ``arm64`` or ``amd64``.
 
     Returns:
-        The file name.
+        The file name, ``-cn`` before the extension in a ``cn`` build.
+
+    Raises:
+        SystemExit: When ``NEUTRINO_EDITION`` names no edition.
     """
-    return PACKAGING_ASSET_PATTERNS["macos_pkg"].format(
-        name=PACKAGE_NAME, version=version, architecture=machine
+    return edition_build.asset_name(
+        "macos_pkg", name=PACKAGE_NAME, version=version, architecture=machine
     )
 
 
@@ -320,9 +320,7 @@ def write_app_entry(package_root: Path, version: str, machine: str) -> Path:
     return bundle
 
 
-def _lay_out(
-    root: Path, version: str, machine: str, *, agent_packages: Path, url_base: str
-) -> dict:
+def _lay_out(root: Path, version: str, machine: str, *, agent_packages: Path) -> dict:
     """Write everything the installer carries.
 
     Args:
@@ -330,7 +328,6 @@ def _lay_out(
         version: The version being packaged.
         machine: ``arm64`` or ``amd64``.
         agent_packages: The directory the agent's packages are in.
-        url_base: Where a release publishes them, empty for none.
 
     Returns:
         ``{"root", "scripts"}``: the package root standing in for the
@@ -363,7 +360,6 @@ def _lay_out(
         app / "neutrino_hub" / compiled_tree.DATA_DIR_NAME,
         family=AGENT_FAMILY,
         machine=machine,
-        url_base=url_base,
     )
     pkg_build.require_system_links(app)
     _sign_tree(app)

@@ -33,6 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import bundled  # noqa: E402
 import payload  # noqa: E402
 from gui_assets import ICONS_DIR  # noqa: E402
+from shared import edition_build  # noqa: E402
 
 from neutrino_client.constants import (  # noqa: E402
     CLIENT_DESKTOP_NAME,
@@ -319,11 +320,15 @@ def _build(
         topdir
         / "RPMS"
         / architecture
-        / f"{PACKAGE_NAME}-{version}-1.{architecture}.rpm"
+        / edition_build.built_name(
+            "rpm", name=PACKAGE_NAME, version=version, architecture=architecture
+        )
     )
     if not built.is_file():
         raise SystemExit(f"rpmbuild wrote no {built.name}")
-    target = output_dir / built.name
+    target = output_dir / edition_build.asset_name(
+        "rpm", name=PACKAGE_NAME, version=version, architecture=architecture
+    )
     shutil.copyfile(built, target)
     return target
 

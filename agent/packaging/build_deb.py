@@ -18,6 +18,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import payload  # noqa: E402
 from shared import deb_build  # noqa: E402
+from shared import edition_build  # noqa: E402
 
 AGENT_ROOT = payload.AGENT_ROOT
 PACKAGE_NAME = payload.PACKAGE_NAME
@@ -186,7 +187,9 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as workdir:
         tree = Path(workdir) / f"{PACKAGE_NAME}_{version}_{architecture}"
         _lay_out(tree, version, architecture, arguments.maintainer)
-        target = output_dir / f"{PACKAGE_NAME}_{version}_{architecture}.deb"
+        target = output_dir / edition_build.asset_name(
+            "deb", name=PACKAGE_NAME, version=version, architecture=architecture
+        )
         _build(tree, target)
 
     print(f"wrote {target} ({target.stat().st_size // 1024 // 1024} MiB)")

@@ -87,6 +87,7 @@ from shared.constants import (  # noqa: E402
     PACKAGING_EARLIER_PACKAGES,
     PACKAGING_EARLIER_RELEASE_URL,
     PACKAGING_EARLIER_VERSION,
+    PACKAGING_EDITION_SUFFIXES,
 )
 
 # Every check ends within this whole, and every command it runs within its
@@ -420,10 +421,12 @@ LINUX_COMMANDS = {
     "neutrino-agent": "nagent",
     "neutrino-client": "nclient",
 }
-# A package file's name: the package, then the machine after its version.
+# A package file's name: the package, then the machine after its version,
+# and the edition's suffix.
 LINUX_PACKAGE_NAME = re.compile(
     r"^(neutrino-hub|neutrino-agent|neutrino-client)[_-][0-9][^_]*?[_.-]"
-    r"(?:1[.-])?(amd64|x86_64|arm64|aarch64)\."
+    r"(?:1[.-])?(amd64|x86_64|arm64|aarch64)"
+    rf"(?:{re.escape(PACKAGING_EDITION_SUFFIXES['cn'])})?\."
 )
 # The container platform for each spelling of a machine in a file name.
 LINUX_PLATFORMS = {

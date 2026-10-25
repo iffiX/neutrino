@@ -49,7 +49,6 @@ from shared import nuitka_build  # noqa: E402
 import payload  # noqa: E402
 from shared import pkg_build  # noqa: E402
 from shared import rustdesk_assets  # noqa: E402
-from shared.constants import PACKAGING_ASSET_PATTERNS  # noqa: E402
 
 REPO_ROOT = payload.REPO_ROOT
 PACKAGE_NAME = payload.PACKAGE_NAME
@@ -238,10 +237,13 @@ def pkg_name(version: str, machine: str) -> str:
         machine: ``arm64`` or ``amd64``.
 
     Returns:
-        The file name.
+        The file name, ``-cn`` before the extension in a ``cn`` build.
+
+    Raises:
+        SystemExit: When ``NEUTRINO_EDITION`` names no edition.
     """
-    return PACKAGING_ASSET_PATTERNS["macos_pkg"].format(
-        name=PACKAGE_NAME, version=version, architecture=machine
+    return edition_build.asset_name(
+        "macos_pkg", name=PACKAGE_NAME, version=version, architecture=machine
     )
 
 

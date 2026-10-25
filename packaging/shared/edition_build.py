@@ -1,10 +1,12 @@
-"""Which edition a build makes, and the check that its tree holds that edition.
+"""Which edition a build makes, the check that its tree holds that edition,
+and the names its files take.
 
 Every script under ``packaging/build`` takes ``--edition intl`` or
 ``--edition cn``. Before it builds anything it checks the tree it runs in
 with :func:`shared.edition_tree.check_tree`, then names the edition in
 ``NEUTRINO_EDITION``, which a build in a container is handed and which the
-step writing each package's ``_version.py`` reads.
+step writing each package's ``_version.py`` reads. A ``cn`` file's name
+holds ``-cn`` before its extension, so one release holds both editions.
 
 Not pure: reads the tree and sets the process's environment.
 """
@@ -12,7 +14,12 @@ Not pure: reads the tree and sets the process's environment.
 import os
 from pathlib import Path
 
-from shared.constants import PACKAGING_EDITION_ENV, PACKAGING_EDITIONS
+from shared.constants import (
+    PACKAGING_ASSET_PATTERNS,
+    PACKAGING_EDITION_ENV,
+    PACKAGING_EDITION_SUFFIXES,
+    PACKAGING_EDITIONS,
+)
 from shared.edition_tree import check_tree
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -66,3 +73,63 @@ def build_edition() -> str:
             f"there is: {', '.join(PACKAGING_EDITIONS)}"
         )
     return edition
+
+
+def asset_name(kind: str, *, name: str, version: str, architecture: str = "") -> str:
+    """The file a build of the running edition writes, as a release holds it.
+
+    Args:
+        kind: A key of :data:`PACKAGING_ASSET_PATTERNS`.
+        name: The package, such as ``neutrino-agent``.
+        version: The version, or ``{version}`` to leave it open.
+        architecture: The machine as the format spells it; none for the apk
+            and the ipa.
+
+    Returns:
+        The file name, ``-cn`` before the extension for ``cn``.
+
+    Raises:
+        KeyError: When ``kind`` is no format the project builds.
+        SystemExit: When ``NEUTRINO_EDITION`` names no edition.
+    """
+    return PACKAGING_ASSET_PATTERNS[kind].format(
+        name=name,
+        version=version,
+        architecture=architecture,
+        suffix=PACKAGING_EDITION_SUFFIXES[build_edition()],
+    )
+
+
+def built_name(kind: str, *, name: str, version: str, architecture: str) -> str:
+    """The file a format's own tool writes, before the edition names it.
+
+    Args:
+        kind: ``rpm`` or ``pkg``, whose tools name their output themselves.
+        name: The package.
+        version: The version.
+        architecture: The machine as the format spells it.
+
+    Returns:
+        The file name with no edition suffix.
+
+    Raises:
+        KeyError: When ``kind`` is no format the project builds.
+    """
+    return PACKAGING_ASSET_PATTERNS[kind].format(
+        name=name, version=version, architecture=architecture, suffix=""
+    )
+
+
+def is_edition_file(name: str, edition: str) -> bool:
+    """Whether a release file's name is one of an edition's.
+
+    Args:
+        name: The file name.
+        edition: ``intl`` or ``cn``.
+
+    Returns:
+        True for a name holding ``-cn`` before its extension when the
+        edition is ``cn``, and for a name holding none when it is ``intl``.
+    """
+    is_cn = f"{PACKAGING_EDITION_SUFFIXES['cn']}." in name
+    return is_cn == (edition == "cn")

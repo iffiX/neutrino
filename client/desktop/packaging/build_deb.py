@@ -40,6 +40,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import bundled  # noqa: E402
 import payload  # noqa: E402
 from shared import deb_build  # noqa: E402
+from shared import edition_build  # noqa: E402
 from gui_assets import ICONS_DIR  # noqa: E402
 
 # The helper's path and the desktop name are the client's own, named here so
@@ -184,7 +185,9 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as workdir:
         tree = Path(workdir) / f"{PACKAGE_NAME}_{version}_{architecture}"
         _lay_out(tree, version, architecture, arguments.maintainer)
-        target = output_dir / f"{PACKAGE_NAME}_{version}_{architecture}.deb"
+        target = output_dir / edition_build.asset_name(
+            "deb", name=PACKAGE_NAME, version=version, architecture=architecture
+        )
         _build(tree, target)
 
     print(f"wrote {target} ({target.stat().st_size // 1024 // 1024} MiB)")

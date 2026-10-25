@@ -11,9 +11,10 @@ container under emulation and needs QEMU registered with binfmt_misc first.
 
 Each hub package carries one agent package, the one of its own family and
 machine, and the Arch package none. ``--agent-packages`` names a directory
-holding every agent package of the release, which the manifest names with
-their hashes; without it the hub's build makes its own one and names that
-alone. ``--agent-package-url-base`` is where the release publishes them.
+holding every agent package of the release; without it the hub's build
+makes its own one. ``--release-sites`` stamps the release sites, and the
+manifest then names every agent package of the edition with its hash;
+without it, the one the package carries alone.
 
 Not pure: runs container and packaging tools.
 """
@@ -26,6 +27,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "packaging"))
 from shared import edition_build  # noqa: E402
 from shared import container_build  # noqa: E402
+from shared import release_sites  # noqa: E402
 
 # What builds the hub for each distribution family, and what that family needs
 # installed first, the agent package of the same family among it. Each is run inside a container of that family, because the
@@ -107,11 +109,7 @@ def main() -> int:
         default=",".join(container_build.CONTAINER_FAMILIES),
         help="which distribution families to build for",
     )
-    parser.add_argument(
-        "--agent-package-url-base",
-        default="",
-        help="where a release publishes the agent packages the hub seeds",
-    )
+    release_sites.add_release_sites_argument(parser)
     parser.add_argument(
         "--agent-packages",
         default="",
@@ -146,7 +144,7 @@ def main() -> int:
             output_dir,
             arguments.architecture,
             family,
-            agent_package_url_base=arguments.agent_package_url_base,
+            has_release_sites=arguments.has_release_sites,
             agent_packages=arguments.agent_packages,
             edition=arguments.edition,
         )

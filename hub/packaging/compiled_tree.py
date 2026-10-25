@@ -173,7 +173,6 @@ def seed_agent_cache(
     *,
     family: str,
     machine: str,
-    url_base: str = "",
 ) -> Path:
     """Seed the hub's own agent package and name the release's in the manifest.
 
@@ -184,26 +183,18 @@ def seed_agent_cache(
             manifest is written.
         family: ``msi`` or ``pkg``, the hub's own system's.
         machine: ``amd64`` or ``arm64``, the hub's own machine.
-        url_base: Where a release publishes the packages, empty for a build
-            that publishes nothing.
 
     Returns:
         The seeded package.
 
     Raises:
-        SystemExit: When the directory holds no agent package, a file's name
-            says no family or machine, or none is for this system and
-            machine.
+        SystemExit: When the directory holds no agent package of the build's
+            edition, a file's name says no family or machine, or none is for
+            this system and machine.
     """
-    found = sorted(
-        path
-        for path in agent_packages.iterdir()
-        if path.is_file() and path.name.startswith("neutrino-agent")
-    )
-    if not found:
-        raise SystemExit(f"no agent package under {agent_packages}")
+    found = venv_tree.edition_agent_packages(agent_packages)
     key = venv_tree.AGENT_PLATFORM_KEY(family, machine)
-    manifest = venv_tree.agent_manifest(found, url_base, seeded=key)
+    manifest = venv_tree.agent_manifest(found, seeded=key)
     if key not in manifest:
         raise SystemExit(
             f"no agent {family} for {machine} under {agent_packages}; "

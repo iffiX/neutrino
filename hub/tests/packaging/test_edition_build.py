@@ -135,3 +135,44 @@ def test_the_hub_stamp_carries_the_edition(monkeypatch, edition):
 
     assert namespace["EDITION"] == edition
 
+
+@pytest.mark.parametrize(
+    ("kind", "architecture", "intl", "cn"),
+    [
+        ("deb", "amd64", "x_1.0_amd64.deb", "x_1.0_amd64-cn.deb"),
+        ("rpm", "x86_64", "x-1.0-1.x86_64.rpm", "x-1.0-1.x86_64-cn.rpm"),
+        (
+            "pkg",
+            "x86_64",
+            "x-1.0-1-x86_64.pkg.tar.zst",
+            "x-1.0-1-x86_64-cn.pkg.tar.zst",
+        ),
+        ("msi", "amd64", "x-1.0-windows-amd64.msi", "x-1.0-windows-amd64-cn.msi"),
+        ("macos_pkg", "arm64", "x-1.0-macos-arm64.pkg", "x-1.0-macos-arm64-cn.pkg"),
+        ("apk", "", "x-1.0-android.apk", "x-1.0-android-cn.apk"),
+        ("ipa", "", "x-1.0-ios.ipa", "x-1.0-ios-cn.ipa"),
+    ],
+)
+def test_a_cn_file_name_holds_cn_before_its_extension(
+    monkeypatch, kind, architecture, intl, cn
+):
+    for edition, expected in (("intl", intl), ("cn", cn)):
+        monkeypatch.setenv(PACKAGING_EDITION_ENV, edition)
+
+        found = edition_build.asset_name(
+            kind, name="x", version="1.0", architecture=architecture
+        )
+
+        assert found == expected
+        assert edition_build.is_edition_file(found, edition)
+        assert not edition_build.is_edition_file(found, OTHER_OF[edition])
+    if kind in ("rpm", "pkg"):
+        assert (
+            edition_build.built_name(
+                kind, name="x", version="1.0", architecture=architecture
+            )
+            == intl
+        )
+
+
+OTHER_OF = {"intl": "cn", "cn": "intl"}

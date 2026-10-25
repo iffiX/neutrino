@@ -13,6 +13,7 @@ import json
 import pytest
 
 import compiled_tree
+from shared.constants import PACKAGING_EDITION_ENV, PACKAGING_RELEASE_SITES_ENV
 
 
 def test_the_staged_package_is_stamped_and_carries_its_icons(tmp_path, monkeypatch):
@@ -69,14 +70,24 @@ def test_the_data_lands_beside_the_compiled_package(tmp_path, monkeypatch):
     assert kwargs["options"][-1] == "--x"
 
 
-def test_only_the_hubs_own_agent_is_seeded_and_every_one_is_named(tmp_path):
+@pytest.mark.parametrize(
+    ("edition", "suffix"), [("intl", ""), ("cn", "-cn")], ids=["intl", "cn"]
+)
+def test_only_the_hubs_own_agent_is_seeded_and_every_one_is_named(
+    tmp_path, monkeypatch, edition, suffix
+):
+    monkeypatch.setenv(PACKAGING_EDITION_ENV, edition)
+    monkeypatch.setenv(PACKAGING_RELEASE_SITES_ENV, "1")
     agents = tmp_path / "agents"
     agents.mkdir()
-    for name in (
-        "neutrino-agent-9.9.9-macos-arm64.pkg",
-        "neutrino-agent-9.9.9-windows-amd64.msi",
-        "neutrino-agent-9.9.9-1.x86_64.rpm",
-        "SHA256SUMS",
+    for name in ("SHA256SUMS",) + tuple(
+        f"neutrino-agent-9.9.9-{platform}{held}.{extension}"
+        for held in ("", "-cn")
+        for platform, extension in (
+            ("macos-arm64", "pkg"),
+            ("windows-amd64", "msi"),
+            ("1.x86_64", "rpm"),
+        )
     ):
         (agents / name).write_bytes(name.encode())
 
@@ -86,19 +97,22 @@ def test_only_the_hubs_own_agent_is_seeded_and_every_one_is_named(tmp_path):
         tmp_path / "data",
         family="msi",
         machine="amd64",
-        url_base="https://example.invalid/v9.9.9/",
     )
 
-    assert seeded == tmp_path / "cache" / "neutrino-agent-9.9.9-windows-amd64.msi"
+    assert seeded == (
+        tmp_path / "cache" / f"neutrino-agent-9.9.9-windows-amd64{suffix}.msi"
+    )
     assert [path.name for path in (tmp_path / "cache").iterdir()] == [seeded.name]
     manifest = json.loads((tmp_path / "data" / "agent_packages.json").read_text())
-    assert sorted(manifest) == ["msi-amd64", "pkg-arm64", "rpm-amd64"]
-    assert manifest["rpm-amd64"]["url"] == (
-        "https://example.invalid/v9.9.9/neutrino-agent-9.9.9-1.x86_64.rpm"
-    )
+    assert {key: entry["name"] for key, entry in manifest.items()} == {
+        "msi-amd64": f"neutrino-agent-9.9.9-windows-amd64{suffix}.msi",
+        "pkg-arm64": f"neutrino-agent-9.9.9-macos-arm64{suffix}.pkg",
+        "rpm-amd64": f"neutrino-agent-9.9.9-1.x86_64{suffix}.rpm",
+    }
 
 
-def test_an_empty_agent_directory_is_refused(tmp_path):
+def test_an_empty_agent_directory_is_refused(tmp_path, monkeypatch):
+    monkeypatch.setenv(PACKAGING_EDITION_ENV, "intl")
     (tmp_path / "agents").mkdir()
 
     with pytest.raises(SystemExit) as refused:
@@ -110,7 +124,7 @@ def test_an_empty_agent_directory_is_refused(tmp_path):
             machine="arm64",
         )
 
-    assert "no agent package" in str(refused.value)
+    assert "no intl agent package" in str(refused.value)
 
 
 def test_the_build_python_is_the_pinned_minor(monkeypatch):

@@ -16,7 +16,7 @@ Then ``gradlew assembleDebug`` or ``assembleRelease`` runs in
 otherwise. The arm64-v8a apk is written as
 ``neutrino-client-<version>-android.apk``, the one published, and the x86_64
 apk beside it as ``neutrino-client-<version>-android-x86_64.apk``, the one an
-emulator runs. ``--cache-key`` prints the one name the cores are cached
+emulator runs; a ``cn`` build names both with ``-cn`` before ``.apk``. ``--cache-key`` prints the one name the cores are cached
 under in CI and builds nothing.
 
 Not pure: runs the core builds and Gradle, writes the apks.
@@ -53,6 +53,8 @@ SIGNING_VARIABLES = (
 # The machine whose apk is published, and the one an emulator runs.
 PUBLISHED_ABI = "arm64-v8a"
 EMULATOR_ABI = "x86_64"
+# The package the apk files are named after.
+PACKAGE_NAME = "neutrino-client"
 
 
 def main() -> int:
@@ -96,9 +98,10 @@ def main() -> int:
     version = _version()
     output_dir = (REPO_ROOT / arguments.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
+    published = edition_build.asset_name("apk", name=PACKAGE_NAME, version=version)
     for abi, name in (
-        (PUBLISHED_ABI, f"neutrino-client-{version}-android.apk"),
-        (EMULATOR_ABI, f"neutrino-client-{version}-android-{EMULATOR_ABI}.apk"),
+        (PUBLISHED_ABI, published),
+        (EMULATOR_ABI, published.replace("-android", f"-android-{EMULATOR_ABI}", 1)),
     ):
         built = _built_apk(arguments.variant, abi)
         shutil.copyfile(built, output_dir / name)

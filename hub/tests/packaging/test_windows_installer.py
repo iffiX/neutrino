@@ -19,6 +19,7 @@ import pytest
 
 import build_hub_windows
 import compiled_tree
+from shared.constants import PACKAGING_EDITION_ENV, PACKAGING_RELEASE_SITES_ENV
 
 WXS = "{http://wixtoolset.org/schemas/v4/wxs}"
 UTIL = "{http://wixtoolset.org/schemas/v4/wxs/util}"
@@ -189,6 +190,8 @@ def laid_out(tmp_path, monkeypatch, agent_packages, packet_dll):
         geodata.mkdir(parents=True)
         (geodata / "geosite.dat").write_bytes(b"db")
 
+    monkeypatch.setenv(PACKAGING_EDITION_ENV, "intl")
+    monkeypatch.setenv(PACKAGING_RELEASE_SITES_ENV, "")
     monkeypatch.setattr(build_hub_windows, "_check_build_machine", lambda m: None)
     monkeypatch.setattr(compiled_tree.venv_tree, "require_built_frontend", lambda: None)
     monkeypatch.setattr(
@@ -205,7 +208,6 @@ def laid_out(tmp_path, monkeypatch, agent_packages, packet_dll):
         "9.9.9",
         "amd64",
         agent_packages=agent_packages,
-        url_base="",
         packet_dll=packet_dll,
     )
     return staged, calls
@@ -255,9 +257,9 @@ def test_the_state_seeds_the_agents_installer_and_a_build_with_no_release_names_
         ).read_text()
     )
     assert sorted(manifest) == ["msi-amd64"]
-    assert manifest["msi-amd64"]["url"] == ""
     stamp = (tmp_path / "work" / "tree" / "neutrino_hub" / "_version.py").read_text()
     assert 'HUB_PACKAGE_ASSET = "neutrino-hub-{version}-windows-amd64.msi"' in stamp
+    assert "HUB_RELEASE_SITES = ()" in stamp
 
 
 @pytest.mark.parametrize("given", [None, "missing", "text"])
@@ -273,9 +275,14 @@ def test_the_build_refuses_to_package_without_the_stand_in(tmp_path, given):
         build_hub_windows._check_packet_dll(path)
 
 
-def test_the_package_is_named_the_way_the_release_publishes_it():
+def test_the_package_is_named_the_way_the_release_publishes_it(monkeypatch):
+    monkeypatch.setenv(PACKAGING_EDITION_ENV, "intl")
     assert build_hub_windows.msi_name("0.5.0", "amd64") == (
         "neutrino-hub-0.5.0-windows-amd64.msi"
+    )
+    monkeypatch.setenv(PACKAGING_EDITION_ENV, "cn")
+    assert build_hub_windows.msi_name("0.5.0", "amd64") == (
+        "neutrino-hub-0.5.0-windows-amd64-cn.msi"
     )
     assert build_hub_windows.windows_machine("x64") == "amd64"
     assert build_hub_windows.windows_machine("AMD64") == "amd64"

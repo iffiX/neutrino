@@ -256,10 +256,29 @@ def test_an_frpc_answering_the_pin_passes(check, capsys):
         ("neutrino-hub_0.5.0_arm64.deb", ["neutrino-agent_0.5.0_arm64.deb"]),
         ("neutrino-hub-0.5.0-1.aarch64.rpm", ["neutrino-agent-0.5.0-1.aarch64.rpm"]),
         ("neutrino-hub-0.5.0-1-x86_64.pkg.tar.zst", []),
+        ("neutrino-hub_0.5.0_amd64-cn.deb", ["neutrino-agent_0.5.0_amd64-cn.deb"]),
+        (
+            "neutrino-hub-0.5.0-1.x86_64-cn.rpm",
+            ["neutrino-agent-0.5.0-1.x86_64-cn.rpm"],
+        ),
+        ("neutrino-hub-0.5.0-1-x86_64-cn.pkg.tar.zst", []),
     ],
 )
 def test_a_linux_hub_carries_the_agent_package_of_its_own_platform(check, hub, agent):
     assert check.hub_agent_cache(hub) == agent
+
+
+@pytest.mark.parametrize(
+    ("name", "machine"),
+    [
+        ("neutrino-client_0.6.0_arm64.deb", "arm64"),
+        ("neutrino-client_0.6.0_arm64-cn.deb", "arm64"),
+        ("neutrino-agent-0.6.0-1.x86_64-cn.rpm", "x86_64"),
+        ("neutrino-hub-0.6.0-1-x86_64-cn.pkg.tar.zst", "x86_64"),
+    ],
+)
+def test_a_linux_package_of_either_edition_is_read_by_its_name(check, name, machine):
+    assert check.LINUX_PACKAGE_NAME.match(name).group(2) == machine
 
 
 def test_the_linux_hub_check_fails_when_the_cache_holds_another_platform(

@@ -22,6 +22,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import payload  # noqa: E402
+from shared import edition_build  # noqa: E402
 
 AGENT_ROOT = payload.AGENT_ROOT
 PACKAGE_NAME = payload.PACKAGE_NAME
@@ -277,11 +278,15 @@ def _build(
         topdir
         / "RPMS"
         / architecture
-        / f"{PACKAGE_NAME}-{version}-1.{architecture}.rpm"
+        / edition_build.built_name(
+            "rpm", name=PACKAGE_NAME, version=version, architecture=architecture
+        )
     )
     if not built.is_file():
         raise SystemExit(f"rpmbuild wrote no {built.name}")
-    target = output_dir / built.name
+    target = output_dir / edition_build.asset_name(
+        "rpm", name=PACKAGE_NAME, version=version, architecture=architecture
+    )
     shutil.copyfile(built, target)
     return target
 

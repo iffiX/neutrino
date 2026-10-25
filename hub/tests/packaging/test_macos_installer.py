@@ -19,6 +19,7 @@ import pytest
 
 import build_hub_macos
 import compiled_tree
+from shared.constants import PACKAGING_EDITION_ENV, PACKAGING_RELEASE_SITES_ENV
 
 AGENT_PACKAGES = (
     "neutrino-agent-9.9.9-macos-arm64.pkg",
@@ -76,12 +77,10 @@ def _laid_out(tmp_path, monkeypatch, agent_packages, machine):
         lambda directory: staged_programs.append(("links", directory, len(signed))),
     )
 
+    monkeypatch.setenv(PACKAGING_EDITION_ENV, "intl")
+    monkeypatch.setenv(PACKAGING_RELEASE_SITES_ENV, "1")
     staged = build_hub_macos._lay_out(
-        tmp_path / "work",
-        "9.9.9",
-        machine,
-        agent_packages=agent_packages,
-        url_base="https://example.invalid/v9.9.9",
+        tmp_path / "work", "9.9.9", machine, agent_packages=agent_packages
     )
     return staged, signed, staged_programs
 
@@ -160,16 +159,14 @@ def test_the_state_carries_the_geodata_and_the_agent_of_this_machine(laid_out):
     ]
 
 
-def test_the_manifest_names_every_agent_package_with_its_release_url(laid_out):
+def test_the_manifest_names_every_agent_package_with_its_hash(laid_out):
     staged, _signed, _calls = laid_out
 
     manifest = json.loads(
         (staged["root"] / APP / "neutrino_hub/data/agent_packages.json").read_text()
     )
     assert sorted(manifest) == ["deb-amd64", "msi-amd64", "pkg-amd64", "pkg-arm64"]
-    assert manifest["pkg-arm64"]["url"] == (
-        "https://example.invalid/v9.9.9/neutrino-agent-9.9.9-macos-arm64.pkg"
-    )
+    assert manifest["pkg-arm64"]["name"] == "neutrino-agent-9.9.9-macos-arm64.pkg"
     assert len(manifest["pkg-arm64"]["sha256"]) == 64
 
 
@@ -372,12 +369,17 @@ def test_the_preinstall_removes_the_program_alone_once_the_service_is_out():
     assert script.index("launchctl bootout") < script.index('rm -rf "$program"')
 
 
-def test_the_package_is_named_the_way_the_release_publishes_it():
+def test_the_package_is_named_the_way_the_release_publishes_it(monkeypatch):
+    monkeypatch.setenv(PACKAGING_EDITION_ENV, "intl")
     assert build_hub_macos.pkg_name("0.5.0", "arm64") == (
         "neutrino-hub-0.5.0-macos-arm64.pkg"
     )
     assert build_hub_macos.pkg_name("0.5.0", "amd64") == (
         "neutrino-hub-0.5.0-macos-amd64.pkg"
+    )
+    monkeypatch.setenv(PACKAGING_EDITION_ENV, "cn")
+    assert build_hub_macos.pkg_name("0.5.0", "amd64") == (
+        "neutrino-hub-0.5.0-macos-amd64-cn.pkg"
     )
     assert build_hub_macos.macos_machine("x86_64") == "amd64"
     assert build_hub_macos.macos_machine("aarch64") == "arm64"

@@ -37,6 +37,7 @@ from venv_tree import (
     HUB_IS_SET_UP,
     stage_desktop_entry,
 )
+from shared import edition_build  # noqa: E402
 
 UNIT_DIR = "usr/lib/systemd/system"
 # makepkg wants a reason beside every optional dependency.
@@ -208,6 +209,12 @@ def main() -> int:
             root,
             output_dir,
             builder,
+            built=edition_build.built_name(
+                "pkg",
+                name=PACKAGE_NAME,
+                version=package_version,
+                architecture=arguments.architecture,
+            ),
             name=asset_name("pkg", package_version, arguments.architecture),
         )
 
@@ -215,16 +222,20 @@ def main() -> int:
     return 0
 
 
-def _build(root: Path, output_dir: Path, builder: str, *, name: str) -> Path:
+def _build(
+    root: Path, output_dir: Path, builder: str, *, built: str, name: str
+) -> Path:
     """Run makepkg and move the result where it was asked for.
 
     Args:
         root: The directory holding the PKGBUILD.
         output_dir: Where the package should land.
         builder: The account makepkg runs as.
-        name: The file makepkg is expected to write: the name a release
-            carries and the hub asks for, so a build whose ``PKGEXT``
-            differs is refused rather than published under another name.
+        built: The file makepkg is expected to write, so a build whose
+            ``PKGEXT`` differs is refused rather than published under
+            another name.
+        name: The name a release holds the package under and the hub asks
+            for.
 
     Returns:
         The path written.
@@ -243,14 +254,14 @@ def _build(root: Path, output_dir: Path, builder: str, *, name: str) -> Path:
     if result.returncode != 0:
         raise SystemExit((result.stderr or result.stdout).strip()[-2000:])
 
-    built = root / name
-    if not built.is_file():
-        written = ", ".join(path.name for path in sorted(root.glob("*.pkg.tar.*")))
+    written = root / built
+    if not written.is_file():
+        found = ", ".join(path.name for path in sorted(root.glob("*.pkg.tar.*")))
         raise SystemExit(
-            f"makepkg wrote no {name}" + (f" (found {written})" if written else "")
+            f"makepkg wrote no {built}" + (f" (found {found})" if found else "")
         )
     target = output_dir / name
-    shutil.copyfile(built, target)
+    shutil.copyfile(written, target)
     return target
 
 

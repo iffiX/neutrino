@@ -8,7 +8,8 @@ cache or built, which needs what that script names. ``xcodegen generate``
 writes the project from ``client/ios/project.yml``, ``xcodebuild`` builds the
 app for ``generic/platform=iOS`` with code signing off, the app's binary must
 define ``_nd_start``, and the ``.app`` is zipped under ``Payload/`` as
-``neutrino-client-<version>-ios.ipa``. Before the zip,
+``neutrino-client-<version>-ios.ipa``, ``-cn`` before ``.ipa`` in a ``cn``
+build. Before the zip,
 the app's icon, ``images/icons/neutrino_ios.png``, is put into an asset
 catalog under ``client/ios/build/icon`` and compiled into the ``.app`` by
 ``actool``, its keys merged into the app's ``Info.plist``. The version, read
@@ -44,9 +45,11 @@ BUILD_DIR = Path(__file__).resolve().parent
 IOS_CORE_SCRIPT = "build_core_rustdesk_ios.py"
 IOS_CORE_SYMBOL = "_nd_start"
 
-# The scheme and the app's product name, as project.yml names them.
+# The scheme and the app's product name, as project.yml names them, and the
+# package the .ipa is named after.
 IOS_SCHEME = "Neutrino"
 IOS_APP = "Neutrino.app"
+PACKAGE_NAME = "neutrino-client"
 
 # Where the build writes: xcodebuild's derived data, and the icon's asset
 # catalog with the Info.plist keys actool writes for it.
@@ -125,7 +128,9 @@ def main() -> int:
     _add_icon(app)
     output_dir = (REPO_ROOT / arguments.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
-    ipa = output_dir / f"neutrino-client-{_version()}-ios.ipa"
+    ipa = output_dir / edition_build.asset_name(
+        "ipa", name=PACKAGE_NAME, version=_version()
+    )
     _zip_payload(app, ipa)
     print(f"wrote {ipa} ({ipa.stat().st_size // 1024 // 1024} MiB)")
     return 0
