@@ -30,26 +30,26 @@
 在 Linux 或 macOS 上，用一条命令安装中枢：
 
 ```bash
-curl -fsSL https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.sh | sh
+curl -fsSL https://cnb.cool/iffi-X/neutrino/-/git/raw/main/packaging/install/install.sh | sh
 ```
 
 在 Windows 上，以管理员身份打开 PowerShell，运行：
 
 ```powershell
-irm https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.ps1 | iex
+irm https://cnb.cool/iffi-X/neutrino/-/git/raw/main/packaging/install/install.ps1 | iex
 ```
 
-脚本从本仓库的[发行版页面](https://gitee.com/iffiX/neutrino/releases)下载安装包，核对校验和后安装。在 Linux 或 macOS 上，在 `sh` 后面加 `-s -- agent` 安装被控端，加 `-s -- client` 安装客户端；Windows 上的被控端和客户端，从发行版页面下载 `.msi` 安装。
+脚本从本仓库的[发行版页面](https://cnb.cool/iffi-X/neutrino/-/releases)下载安装包，核对校验和后安装。在 Linux 或 macOS 上，在 `sh` 后面加 `-s -- agent` 安装被控端，加 `-s -- client` 安装客户端；Windows 上的被控端和客户端，从发行版页面下载 `.msi` 安装。
 
 也可以在发行版页面自己下载安装包。文件名里的 `<version>` 是页面上的版本号：
 
-| 系统                | 中枢                                       | 被控端                                       | 客户端                                        |
-| ------------------- | ------------------------------------------ | -------------------------------------------- | --------------------------------------------- |
-| Linux amd64         | `neutrino-hub_<version>_amd64.deb`         | `neutrino-agent_<version>_amd64.deb`         | `neutrino-client_<version>_amd64.deb`         |
-| Linux arm64         | `neutrino-hub_<version>_arm64.deb`         | `neutrino-agent_<version>_arm64.deb`         | `neutrino-client_<version>_arm64.deb`         |
-| Windows x64         | `neutrino-hub-<version>-windows-amd64.msi` | `neutrino-agent-<version>-windows-amd64.msi` | `neutrino-client-<version>-windows-amd64.msi` |
-| macOS（Apple 芯片） | `neutrino-hub-<version>-macos-arm64.pkg`   | `neutrino-agent-<version>-macos-arm64.pkg`   | `neutrino-client-<version>-macos-arm64.pkg`   |
-| Android             |                                            |                                              | `neutrino-client-<version>-android.apk`       |
+| 系统                | 中枢                                          | 被控端                                          | 客户端                                           |
+| ------------------- | --------------------------------------------- | ----------------------------------------------- | ------------------------------------------------ |
+| Linux amd64         | `neutrino-hub_<version>_amd64-cn.deb`         | `neutrino-agent_<version>_amd64-cn.deb`         | `neutrino-client_<version>_amd64-cn.deb`         |
+| Linux arm64         | `neutrino-hub_<version>_arm64-cn.deb`         | `neutrino-agent_<version>_arm64-cn.deb`         | `neutrino-client_<version>_arm64-cn.deb`         |
+| Windows x64         | `neutrino-hub-<version>-windows-amd64-cn.msi` | `neutrino-agent-<version>-windows-amd64-cn.msi` | `neutrino-client-<version>-windows-amd64-cn.msi` |
+| macOS（Apple 芯片） | `neutrino-hub-<version>-macos-arm64-cn.pkg`   | `neutrino-agent-<version>-macos-arm64-cn.pkg`   | `neutrino-client-<version>-macos-arm64-cn.pkg`   |
+| Android             |                                               |                                                 | `neutrino-client-<version>-android-cn.apk`       |
 
 ## 装好之后
 
@@ -75,7 +75,7 @@ irm https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.ps1 | ie
 
 ## 完整版和开发
 
-这里发布的是国内版，包含完整版功能的一部分。完整版和全部开发都在 GitHub：<https://github.com/iffiX/neutrino>，Intel 芯片的 Mac、Fedora、Arch 等系统的安装包也在那里。
+这里发布的是国内版，包含完整版功能的一部分。完整版和全部开发都在 GitHub：<https://github.com/iffiX/neutrino>。
 
 ## 许可证
 

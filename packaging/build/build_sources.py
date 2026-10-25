@@ -11,11 +11,14 @@ the source of everything the packages carry beside it under
 ``third_party/``, so a release attaches a single file.
 ``neutrino-<version>-cn-source.tar.xz`` is the mainland tree: the same
 commit without the paths ``PACKAGING_CN_LEFT_OUT_PATHS`` lists, ``EDITION``
-naming ``cn`` and both install scripts stamped ``cn``, with the source of
-what the ``cn`` packages carry. ``--tree`` writes the mainland tree
-unpacked, without ``third_party/``, for a build or a test run from it.
+naming ``cn`` and both install scripts stamped ``cn`` with the release sites,
+with the source of what the ``cn`` packages carry. Beside the archive go the
+edition's two install scripts as the release publishes them, stamped with
+the edition and the release sites: ``install.sh`` and ``install.ps1``, or
+``install-cn.sh`` and ``install-cn.ps1``. ``--tree`` writes the mainland
+tree unpacked, without ``third_party/``, for a build or a test run from it.
 
-Not pure: runs git, downloads, writes the archive.
+Not pure: runs git, downloads, writes the archive and the scripts.
 """
 
 import argparse
@@ -32,7 +35,8 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "packaging"))
-from shared.constants import PACKAGING_EDITIONS  # noqa: E402
+from shared import install_script_stamp  # noqa: E402
+from shared.constants import PACKAGING_EDITIONS, PACKAGING_RELEASE_SITES  # noqa: E402
 from shared.edition_tree import make_cn_tree  # noqa: E402
 
 # The upstream source the mainland packages do not carry, left out of its
@@ -118,7 +122,7 @@ def main() -> int:
 
 
 def write_source_archive(output_dir: Path, *, edition: str = "intl") -> None:
-    """Write one edition's source archive.
+    """Write one edition's source archive and its two install scripts.
 
     ``neutrino-<version>/`` holds this tree as git carries it at the current
     commit, the mainland tree for ``cn``, and ``neutrino-<version>/third_party/``
@@ -131,7 +135,8 @@ def write_source_archive(output_dir: Path, *, edition: str = "intl") -> None:
 
     Raises:
         SystemExit: When an upstream archive is not the one pinned, the tree
-            is not a git checkout, or the mainland tree cannot be made.
+            is not a git checkout, an install script holds no line to stamp,
+            or the mainland tree cannot be made.
     """
     package_version = version()
     root = f"neutrino-{package_version}"
@@ -140,6 +145,10 @@ def write_source_archive(output_dir: Path, *, edition: str = "intl") -> None:
     with tempfile.TemporaryDirectory() as workdir:
         tree = Path(workdir) / root
         unpack_head(tree)
+        for script in install_script_stamp.write_release_scripts(
+            tree, output_dir, edition=edition, sites=PACKAGING_RELEASE_SITES
+        ):
+            print(f"wrote {script}")
         if edition == "cn":
             make_cn_tree(tree)
 

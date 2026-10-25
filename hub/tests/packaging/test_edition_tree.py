@@ -10,9 +10,12 @@ from pathlib import Path
 import pytest
 
 import build_sources
+from shared import install_script_stamp
 from shared.constants import (
     PACKAGING_CN_LEFT_OUT_PATHS,
     PACKAGING_INSTALL_EDITION_LINES,
+    PACKAGING_INSTALL_SITES_LINES,
+    PACKAGING_RELEASE_SITES,
 )
 from shared.edition_tree import check_tree, make_cn_tree
 
@@ -32,11 +35,15 @@ def intl_tree(root: Path) -> Path:
     for relative, line in PACKAGING_INSTALL_EDITION_LINES.items():
         path = root / relative
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(f"# a script\n{line.format(edition='intl')}\n", "utf-8")
+        path.write_text(
+            f"# a script\n{line.format(edition='intl')}\n"
+            f"{PACKAGING_INSTALL_SITES_LINES[relative].format(sites='')}\n",
+            "utf-8",
+        )
     (root / "EDITION").write_text("intl\n", encoding="utf-8")
     (root / "README.md").write_text("# the full README\n", encoding="utf-8")
     (root / "README.zh-CN.md").write_text("# 完整的中文 README\n", encoding="utf-8")
-    (root / "README.zh-CN-Gitee.md").write_text("# Gitee 的 README\n", "utf-8")
+    (root / "README.zh-CN-CNB.md").write_text("# CNB 的 README\n", "utf-8")
     (root / "hub" / "neutrino_hub" / "kept.py").write_text("", encoding="utf-8")
     return root
 
@@ -60,49 +67,52 @@ def test_the_mainland_tree_holds_none_of_the_listed_paths(tmp_path):
     check_tree(root, "cn")
 
 
-def test_both_install_scripts_are_stamped_cn(tmp_path):
+def test_both_install_scripts_are_stamped_cn_with_the_release_sites(tmp_path):
+    """CNB serves the mainland tree's scripts, so they name the sites."""
     root = intl_tree(tmp_path)
 
     make_cn_tree(root)
 
     for relative, line in PACKAGING_INSTALL_EDITION_LINES.items():
-        text = (root / relative).read_text(encoding="utf-8")
-        assert line.format(edition="cn") in text.splitlines()
-        assert line.format(edition="intl") not in text
+        lines = (root / relative).read_text(encoding="utf-8").splitlines()
+        assert line.format(edition="cn") in lines
+        assert line.format(edition="intl") not in lines
+        sites = install_script_stamp.sites_text(relative, PACKAGING_RELEASE_SITES)
+        assert PACKAGING_INSTALL_SITES_LINES[relative].format(sites=sites) in lines
 
 
-def test_the_mainland_readme_is_the_gitee_one_and_the_only_one(tmp_path):
+def test_the_mainland_readme_is_the_cnb_one_and_the_only_one(tmp_path):
     root = intl_tree(tmp_path)
 
     make_cn_tree(root)
 
-    assert (root / "README.md").read_text(encoding="utf-8") == "# Gitee 的 README\n"
+    assert (root / "README.md").read_text(encoding="utf-8") == "# CNB 的 README\n"
     assert not (root / "README.zh-CN.md").exists()
-    assert not (root / "README.zh-CN-Gitee.md").exists()
+    assert not (root / "README.zh-CN-CNB.md").exists()
 
 
-def test_a_tree_without_the_gitee_readme_stops_the_mainland_tree(tmp_path):
+def test_a_tree_without_the_cnb_readme_stops_the_mainland_tree(tmp_path):
     root = intl_tree(tmp_path)
-    (root / "README.zh-CN-Gitee.md").unlink()
+    (root / "README.zh-CN-CNB.md").unlink()
 
-    with pytest.raises(SystemExit, match="holds no README.zh-CN-Gitee.md"):
+    with pytest.raises(SystemExit, match="holds no README.zh-CN-CNB.md"):
         make_cn_tree(root)
 
 
-def test_the_gitee_readme_tells_a_mainland_tree_from_a_full_one(tmp_path):
+def test_the_cnb_readme_tells_a_mainland_tree_from_a_full_one(tmp_path):
     root = intl_tree(tmp_path)
     make_cn_tree(root)
-    (root / "README.zh-CN-Gitee.md").write_text("# back\n", encoding="utf-8")
+    (root / "README.zh-CN-CNB.md").write_text("# back\n", encoding="utf-8")
 
-    with pytest.raises(SystemExit, match="a cn tree holds README.zh-CN-Gitee.md"):
+    with pytest.raises(SystemExit, match="a cn tree holds README.zh-CN-CNB.md"):
         check_tree(root, "cn")
 
 
-def test_an_intl_tree_lacking_the_gitee_readme_is_refused(tmp_path):
+def test_an_intl_tree_lacking_the_cnb_readme_is_refused(tmp_path):
     root = intl_tree(tmp_path)
-    (root / "README.zh-CN-Gitee.md").unlink()
+    (root / "README.zh-CN-CNB.md").unlink()
 
-    with pytest.raises(SystemExit, match="an intl tree lacks README.zh-CN-Gitee.md"):
+    with pytest.raises(SystemExit, match="an intl tree lacks README.zh-CN-CNB.md"):
         check_tree(root, "intl")
 
 

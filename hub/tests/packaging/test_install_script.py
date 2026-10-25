@@ -1,14 +1,17 @@
 """The one-command installer for macOS and Linux, run against stand-ins.
 
-``install.sh`` runs under ``sh`` with ``uname``, ``id``, ``curl``, ``sudo``
-and every package manager replaced by scripts that record what they were
-asked, so what is asserted is the package each system and machine takes,
-the command that installs it, the release it comes from, the checksum that
-stops a wrong file, and the one sentence each refusal prints. The fake
-``nhub`` lies outside the path, where the script must name it whole.
+``install.sh`` runs under ``sh`` with ``uname``, ``id``, ``sudo`` and every
+package manager replaced by scripts that record what they were asked, and
+the real ``curl`` against stand-in release sites on 127.0.0.1, so what is
+asserted is the package each system and machine takes, the command that
+installs it, the site and the release it comes from, the move to the next
+site on a stall, an error or other bytes, the checksum that stops a wrong
+file, and the one sentence each refusal prints. The fake ``nhub`` lies
+outside the path, where the script must name it whole.
 """
 
 import hashlib
+import json
 import sys
 import os
 import re
@@ -17,11 +20,12 @@ from pathlib import Path
 
 import pytest
 
-SCRIPT = Path(__file__).resolve().parents[3] / "packaging" / "install" / "install.sh"
+from shared import install_script_stamp
+from shared.constants import PACKAGING_RELEASE_SITES
 
-RELEASE = "https://github.com/iffiX/neutrino/releases"
-CN_RELEASE = "https://gitee.com/iffiX/neutrino/releases"
-CN_LATEST = "https://gitee.com/api/v5/repos/iffiX/neutrino/releases/latest"
+SCRIPT = Path(__file__).resolve().parents[3] / "packaging" / "install" / "install.sh"
+RELATIVE = "packaging/install/install.sh"
+TAG = "v9.9.9"
 
 PACKAGES = (
     "neutrino-hub_9.9.9_amd64.deb",
@@ -34,7 +38,13 @@ PACKAGES = (
     "neutrino-hub-9.9.9-macos-amd64.pkg",
     "neutrino-client-9.9.9-macos-amd64.pkg",
     "neutrino-hub-9.9.9-windows-amd64.msi",
+    "neutrino-hub_9.9.9_amd64-cn.deb",
+    "neutrino-hub_9.9.9_arm64-cn.deb",
+    "neutrino-hub-9.9.9-1.x86_64-cn.rpm",
+    "neutrino-hub-9.9.9-1-x86_64-cn.pkg.tar.zst",
+    "neutrino-hub-9.9.9-macos-amd64-cn.pkg",
     "install.sh",
+    "install-cn.sh",
 )
 
 OS_RELEASES = {
@@ -67,17 +77,6 @@ case "$1" in
 esac
 exec "$@"
 """,
-    "curl": """#!/bin/sh
-for argument in "$@"; do
-    case "$previous" in -o) target=$argument ;; esac
-    previous=$argument
-    url=$argument
-done
-echo "curl $url" >> "$FAKE_LOG"
-served="$FAKE_SERVED/$(basename "$url")"
-[ -f "$served" ] || exit 22
-cp "$served" "$target"
-""",
     "getent": """#!/bin/sh
 [ "$1" = passwd ] && [ "$2" = "$FAKE_SUDO_USER_NAME" ] || exit 2
 echo "$2:x:1001:1001::$FAKE_SUDO_USER_HOME:/bin/sh"
@@ -102,9 +101,20 @@ FRESH_SETTINGS = (
 )
 
 
+def _write_sums(served):
+    """SHA256SUMS over every file the release holds."""
+    lines = []
+    for path in sorted(served.iterdir()):
+        if path.name in ("SHA256SUMS", "latest.json"):
+            continue
+        lines.append(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}")
+    (served / "SHA256SUMS").write_text("\n".join(lines) + "\n")
+
+
 @pytest.fixture
-def stand_ins(tmp_path):
-    """The fakes on the path, a release of fake packages, and how to run."""
+def stand_ins(tmp_path, release_sites):
+    """The fakes on the path, two release sites serving one release of fake
+    packages, and how to run."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     for name, text in FAKES.items():
@@ -114,13 +124,13 @@ def stand_ins(tmp_path):
     programs.mkdir()
     (programs / "nhub").write_text(NHUB)
     (programs / "nhub").chmod(0o755)
-    served = tmp_path / "release"
-    served.mkdir()
-    lines = []
+    served = release_sites.served
     for name in PACKAGES:
         (served / name).write_bytes(name.encode())
-        lines.append(f"{hashlib.sha256(name.encode()).hexdigest()}  {name}")
-    (served / "SHA256SUMS").write_text("\n".join(lines) + "\n")
+    _write_sums(served)
+    (served / "latest.json").write_text(json.dumps({"tag": TAG, "version": "9.9.9"}))
+    first = release_sites()
+    second = release_sites()
     log = tmp_path / "log"
 
     def run(
@@ -131,6 +141,7 @@ def stand_ins(tmp_path):
         uid="1000",
         environment=None,
         edition="intl",
+        sites=None,
         script=SCRIPT,
     ):
         release_file = tmp_path / "os-release"
@@ -145,10 +156,13 @@ def stand_ins(tmp_path):
         )
         assert text.rstrip().endswith('main "$@"')
         functions.write_text(text.rstrip()[: -len('main "$@"')])
+        addresses = " ".join(
+            f"{site.files} {site.latest}" if hasattr(site, "files") else " ".join(site)
+            for site in ((first, second) if sites is None else sites)
+        )
         env = {
             "PATH": f"{bin_dir}:/usr/bin:/bin",
             "FAKE_LOG": str(log),
-            "FAKE_SERVED": str(served),
             "FAKE_SYSTEM": system,
             "FAKE_MACHINE": machine,
             "FAKE_UID": uid,
@@ -160,7 +174,9 @@ def stand_ins(tmp_path):
             [
                 "sh",
                 "-c",
-                f'. "{functions}"; OS_RELEASE="{release_file}"; '
+                f'. "{functions}"; RELEASE_SITES="{addresses}"; '
+                "PROBE_WAIT_S=1; STALL_S=1; "
+                f'OS_RELEASE="{release_file}"; '
                 f'AGENT_BINDING_LINUX="{tmp_path}/agent.json"; '
                 f'AGENT_BINDING_MACOS="{tmp_path}/agent.json"; '
                 f'HUB_COMMAND_LINUX="{programs}/nhub"; '
@@ -175,6 +191,7 @@ def stand_ins(tmp_path):
             env=env,
             stdin=subprocess.DEVNULL,
             start_new_session=True,
+            timeout=60,
         )
         asked = log.read_text().splitlines() if log.exists() else []
         log.unlink(missing_ok=True)
@@ -182,22 +199,29 @@ def stand_ins(tmp_path):
         return result, asked
 
     run.served = served
+    run.first = first
+    run.second = second
+    run.dead = release_sites.dead
+    run.dead_host = release_sites.dead_host
+    run.open_site = release_sites
     run.nhub = programs / "nhub"
     run.settings = tmp_path / "settings.json"
     return run
 
 
 def _installs(asked):
-    return [line for line in asked if not line.startswith(("curl", "sudo", "nhub"))]
-
-
-def _fetches(asked):
-    return [line for line in asked if line.startswith("curl")]
+    return [line for line in asked if not line.startswith(("sudo", "nhub"))]
 
 
 def _said(result):
     """The one sentence a refusal ends on."""
     return result.stderr.strip().splitlines()[-1]
+
+
+def _publish(served, name, data):
+    """One more file in the release, with SHA256SUMS written again."""
+    (served / name).write_bytes(data)
+    _write_sums(served)
 
 
 def test_the_script_is_posix_sh_and_ends_by_running_main():
@@ -212,23 +236,32 @@ def test_a_debian_machine_installs_the_hub_deb_from_the_latest_release(stand_ins
     result, asked = stand_ins()
 
     assert result.returncode == 0, result.stderr
-    assert _fetches(asked) == [
-        f"curl {RELEASE}/latest/download/SHA256SUMS",
-        f"curl {RELEASE}/latest/download/neutrino-hub_9.9.9_amd64.deb",
-    ]
     (install,) = _installs(asked)
     assert install.startswith("apt-get install -y /")
     assert install.endswith("/neutrino-hub_9.9.9_amd64.deb")
     assert any(line.startswith("sudo apt-get install -y") for line in asked)
-
-
-def test_a_pinned_version_comes_from_that_release(stand_ins):
-    _result, asked = stand_ins(environment={"NEUTRINO_VERSION": "v9.9.9"})
-
-    assert _fetches(asked) == [
-        f"curl {RELEASE}/download/v9.9.9/SHA256SUMS",
-        f"curl {RELEASE}/download/v9.9.9/neutrino-hub_9.9.9_amd64.deb",
+    paths = [
+        path
+        for site in (stand_ins.first, stand_ins.second)
+        for path, _ in site.requests
     ]
+    assert "/latest.json" in paths
+    assert f"/download/{TAG}/SHA256SUMS" in paths
+    assert f"/download/{TAG}/neutrino-hub_9.9.9_amd64.deb" in paths
+
+
+def test_a_pinned_version_comes_from_that_release_and_reads_no_latest(stand_ins):
+    result, _asked = stand_ins(environment={"NEUTRINO_VERSION": "v9.9.8"})
+
+    assert result.returncode == 0, result.stderr
+    paths = [
+        path
+        for site in (stand_ins.first, stand_ins.second)
+        for path, _ in site.requests
+    ]
+    assert "/latest.json" not in paths
+    assert "/download/v9.9.8/neutrino-hub_9.9.9_amd64.deb" in paths
+    assert not any(path.startswith(f"/download/{TAG}/") for path in paths)
 
 
 def test_the_component_names_the_package(stand_ins):
@@ -324,18 +357,33 @@ def test_local_files_install_with_nothing_downloaded(stand_ins):
     )
 
     assert result.returncode == 0, result.stderr
-    assert not any(line.startswith("curl") for line in asked)
+    assert stand_ins.first.requests == [] and stand_ins.second.requests == []
     (install,) = _installs(asked)
     assert f"{stand_ins.served}/neutrino-client-9.9.9-macos-amd64.pkg" in install
 
 
-def test_a_download_names_its_source_its_checksum_and_the_install(stand_ins):
+def test_local_files_need_no_release_site(stand_ins):
+    result, _asked = stand_ins(
+        "client",
+        system="Darwin",
+        machine="x86_64",
+        sites=(),
+        environment={"NEUTRINO_ASSET_DIR": str(stand_ins.served)},
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_a_download_names_its_site_its_checksum_and_the_install(stand_ins):
     result, _asked = stand_ins()
 
     lines = result.stdout.splitlines()
     name = "neutrino-hub_9.9.9_amd64.deb"
-    assert lines[:4] == [
-        f"Downloaded {name} from {RELEASE}/latest/download",
+    assert re.fullmatch(r"Downloaded SHA256SUMS from 127\.0\.0\.1:\d+", lines[0])
+    assert re.fullmatch(
+        rf"Downloaded {re.escape(name)} from 127\.0\.0\.1:\d+", lines[1]
+    )
+    assert lines[2:5] == [
         f"{name} matches its SHA256SUMS line",
         f"Installing {name}",
         f"Installed {name}",
@@ -359,10 +407,12 @@ def test_local_files_name_the_directory_they_came_from(stand_ins):
     ]
 
 
-def test_a_package_that_does_not_match_its_checksum_is_never_installed(stand_ins):
+def test_a_local_package_that_does_not_match_its_checksum_is_never_installed(
+    stand_ins,
+):
     (stand_ins.served / "neutrino-hub_9.9.9_amd64.deb").write_bytes(b"tampered")
 
-    result, asked = stand_ins()
+    result, asked = stand_ins(environment={"NEUTRINO_ASSET_DIR": str(stand_ins.served)})
 
     assert result.returncode == 1
     assert _said(result) == (
@@ -417,15 +467,187 @@ def test_a_system_with_no_package_stops_with_one_sentence(
     assert _installs(asked) == []
 
 
-def test_a_release_that_cannot_be_reached_stops_with_one_sentence(stand_ins):
-    (stand_ins.served / "SHA256SUMS").unlink()
+# --- the release sites ---
 
-    result, _asked = stand_ins()
+
+def test_a_checkout_names_no_site_and_stops_with_one_sentence(stand_ins):
+    result, asked = stand_ins(sites=())
 
     assert result.returncode == 1
     assert _said(result) == (
-        f"Downloading {RELEASE}/latest/download/SHA256SUMS failed."
+        "This script names no release site; take it from a release, or set "
+        "NEUTRINO_ASSET_DIR."
     )
+    assert asked == []
+
+
+def test_the_committed_script_names_no_site():
+    assert '\nRELEASE_SITES=""\n' in SCRIPT.read_text()
+
+
+def test_the_fastest_site_serves_the_package(stand_ins):
+    name = "neutrino-hub_9.9.9_amd64.deb"
+    _publish(stand_ins.served, name, os.urandom(1536 * 1024))
+    stand_ins.first.chunk_delay_s = 0.05
+
+    result, _asked = stand_ins()
+
+    assert result.returncode == 0, result.stderr
+    assert stand_ins.first.downloads(name) == []
+    assert stand_ins.second.downloads(name) == [""]
+    assert f"Downloaded {name} from {stand_ins.second.host}" in result.stdout
+
+
+def test_a_stalled_download_resumes_on_the_next_site_where_it_stopped(stand_ins):
+    name = "neutrino-hub_9.9.9_amd64.deb"
+    data = os.urandom(3 * 1024 * 1024)
+    _publish(stand_ins.served, name, data)
+    stand_ins.first.stall_at = 2 * 1024 * 1024
+    stand_ins.second.chunk_delay_s = 0.05
+
+    result, asked = stand_ins()
+
+    assert result.returncode == 0, result.stderr
+    assert stand_ins.first.downloads(name) == [""]
+    (resumed,) = stand_ins.second.downloads(name)
+    offset = int(re.fullmatch(r"bytes=(\d+)-", resumed).group(1))
+    assert offset >= 2 * 1024 * 1024
+    assert f"Downloaded {name} from {stand_ins.second.host}" in result.stdout
+    (install,) = _installs(asked)
+    assert install.endswith("/" + name)
+
+
+def test_a_site_serving_other_bytes_is_dropped_and_the_next_serves(stand_ins):
+    name = "neutrino-hub_9.9.9_amd64.deb"
+    _publish(stand_ins.served, name, os.urandom(1536 * 1024))
+    stand_ins.first.is_wrong = True
+    stand_ins.second.chunk_delay_s = 0.05
+
+    result, asked = stand_ins(environment={"NEUTRINO_VERSION": TAG})
+
+    assert result.returncode == 0, result.stderr
+    assert stand_ins.first.downloads(name) == [""]
+    assert stand_ins.second.downloads(name) == [""]
+    assert f"Downloaded {name} from {stand_ins.second.host}" in result.stdout
+    assert len(_installs(asked)) == 1
+
+
+def test_a_site_missing_the_files_is_one_failed_source(stand_ins):
+    stand_ins.first.is_missing = True
+
+    result, asked = stand_ins()
+
+    assert result.returncode == 0, result.stderr
+    assert len(_installs(asked)) == 1
+
+
+def test_a_site_nothing_listens_on_is_one_failed_source(stand_ins):
+    result, asked = stand_ins(sites=(stand_ins.dead, stand_ins.second))
+
+    assert result.returncode == 0, result.stderr
+    assert len(_installs(asked)) == 1
+
+
+def test_a_site_that_does_not_answer_in_time_is_tried_after_the_others(stand_ins):
+    stand_ins.first.is_hanging = True
+    name = "neutrino-hub_9.9.9_amd64.deb"
+
+    result, _asked = stand_ins(environment={"NEUTRINO_VERSION": TAG})
+
+    assert result.returncode == 0, result.stderr
+    assert f"Downloaded {name} from {stand_ins.second.host}" in result.stdout
+
+
+def test_a_site_that_answers_a_range_with_the_whole_file_is_never_moved_to(
+    stand_ins,
+):
+    name = "neutrino-hub_9.9.9_amd64.deb"
+    _publish(stand_ins.served, name, os.urandom(3 * 1024 * 1024))
+    stand_ins.first.stall_at = 2 * 1024 * 1024
+    stand_ins.second.is_rangeless = True
+    stand_ins.second.chunk_delay_s = 0.05
+
+    result, asked = stand_ins(environment={"NEUTRINO_VERSION": TAG})
+
+    assert result.returncode == 1
+    assert _said(result) == (
+        f"No release site served {name}: {stand_ins.first.host} (stalled), "
+        f"{stand_ins.second.host} (http_200)."
+    )
+    assert _installs(asked) == []
+
+
+def test_no_site_serving_the_package_stops_naming_each_site_and_why(stand_ins):
+    name = "neutrino-hub_9.9.9_amd64.deb"
+    (stand_ins.served / name).unlink()
+
+    result, asked = stand_ins(sites=(stand_ins.first, stand_ins.dead))
+
+    assert result.returncode == 1
+    assert _said(result) == (
+        f"No release site served {name}: {stand_ins.first.host} (http_404), "
+        f"{stand_ins.dead_host} (unreachable)."
+    )
+    assert _installs(asked) == []
+
+
+def test_every_site_serving_other_bytes_installs_nothing(stand_ins):
+    stand_ins.first.is_wrong = True
+    stand_ins.second.is_wrong = True
+    name = "neutrino-hub_9.9.9_amd64.deb"
+
+    result, asked = stand_ins(environment={"NEUTRINO_VERSION": TAG})
+
+    assert result.returncode == 1
+    hosts = sorted([stand_ins.first.host, stand_ins.second.host])
+    said = _said(result)
+    assert said.startswith(f"No release site served {name}: ")
+    assert sorted(re.findall(r"(127\.0\.0\.1:\d+) \(digest_mismatch\)", said)) == hosts
+    assert _installs(asked) == []
+
+
+@pytest.mark.parametrize("fast_tag", ["v9.9.9", "v9.9.8"])
+def test_the_latest_release_is_the_fastest_answer_that_names_a_tag(stand_ins, fast_tag):
+    slow_tag = "v9.9.8" if fast_tag == "v9.9.9" else "v9.9.9"
+    stand_ins.first.latest_text = json.dumps({"tag": slow_tag})
+    stand_ins.first.latest_delay_s = 0.5
+    stand_ins.second.latest_text = json.dumps({"tag": fast_tag})
+
+    result, _asked = stand_ins()
+
+    assert result.returncode == 0, result.stderr
+    paths = [
+        path
+        for site in (stand_ins.first, stand_ins.second)
+        for path, _ in site.requests
+    ]
+    assert f"/download/{fast_tag}/SHA256SUMS" in paths
+    assert not any(path.startswith(f"/download/{slow_tag}/") for path in paths)
+
+
+def test_a_site_that_does_not_answer_leaves_the_tag_to_the_others(stand_ins):
+    stand_ins.first.is_hanging = True
+
+    result, _asked = stand_ins()
+
+    assert result.returncode == 0, result.stderr
+    assert (f"/download/{TAG}/SHA256SUMS", "") in stand_ins.second.requests
+
+
+def test_no_site_naming_the_latest_release_stops_naming_each_site(stand_ins):
+    (stand_ins.served / "latest.json").write_text('{"version": "9.9.9"}')
+
+    result, asked = stand_ins(sites=(stand_ins.first, stand_ins.dead))
+
+    assert result.returncode == 1
+    assert _said(result) == (
+        "No release site named the latest release: "
+        f"{stand_ins.first.host} (no_tag), {stand_ins.dead_host} (unreachable)."
+    )
+    assert _installs(asked) == []
+
+
+# --- the edition ---
 
 
 def test_the_script_names_the_edition_of_its_tree():
@@ -434,53 +656,53 @@ def test_the_script_names_the_edition_of_its_tree():
     assert f'\nEDITION="{edition}"\n' in SCRIPT.read_text()
 
 
-def test_a_cn_script_reads_the_latest_tag_from_gitee_then_its_files(stand_ins):
-    (stand_ins.served / "latest").write_text(
-        '{"id":7,"tag_name":"v9.9.9","name":"v9.9.9","assets":[]}'
+@pytest.mark.parametrize(
+    "os_release, system, machine, name",
+    [
+        ("ubuntu", "Linux", "x86_64", "neutrino-hub_9.9.9_amd64-cn.deb"),
+        ("ubuntu", "Linux", "aarch64", "neutrino-hub_9.9.9_arm64-cn.deb"),
+        ("fedora", "Linux", "x86_64", "neutrino-hub-9.9.9-1.x86_64-cn.rpm"),
+        ("arch", "Linux", "x86_64", "neutrino-hub-9.9.9-1-x86_64-cn.pkg.tar.zst"),
+        ("ubuntu", "Darwin", "x86_64", "neutrino-hub-9.9.9-macos-amd64-cn.pkg"),
+    ],
+)
+def test_a_cn_script_takes_the_cn_package_of_the_same_release(
+    stand_ins, os_release, system, machine, name
+):
+    result, asked = stand_ins(
+        edition="cn", os_release=os_release, system=system, machine=machine
     )
 
-    result, asked = stand_ins(edition="cn")
-
     assert result.returncode == 0, result.stderr
-    assert _fetches(asked)[:3] == [
-        f"curl {CN_LATEST}",
-        f"curl {CN_RELEASE}/download/v9.9.9/SHA256SUMS",
-        f"curl {CN_RELEASE}/download/v9.9.9/neutrino-hub_9.9.9_amd64.deb",
-    ]
     (install,) = _installs(asked)
-    assert install.endswith("/neutrino-hub_9.9.9_amd64.deb")
+    assert f"/{name}" in install
 
 
-def test_a_cn_script_given_a_version_asks_the_api_nothing(stand_ins):
-    result, asked = stand_ins(edition="cn", environment={"NEUTRINO_VERSION": "v9.9.9"})
+def test_an_intl_script_never_takes_a_cn_package(stand_ins):
+    (stand_ins.served / "neutrino-hub_9.9.9_amd64.deb").unlink()
+    _write_sums(stand_ins.served)
 
-    assert result.returncode == 0, result.stderr
-    assert _fetches(asked)[0] == f"curl {CN_RELEASE}/download/v9.9.9/SHA256SUMS"
-
-
-def test_a_cn_latest_release_with_no_tag_stops_with_one_sentence(stand_ins):
-    (stand_ins.served / "latest").write_text("null")
-
-    result, asked = stand_ins(edition="cn")
-
-    assert result.returncode == 1
-    assert _said(result) == (f"The latest release at {CN_LATEST} names no tag.")
-    assert _installs(asked) == []
-
-
-def test_a_cn_release_with_its_files_not_yet_uploaded_stops_with_one_sentence(
-    stand_ins,
-):
-    (stand_ins.served / "latest").write_text('{"tag_name": "v9.9.9"}')
-    (stand_ins.served / "SHA256SUMS").unlink()
-
-    result, asked = stand_ins(edition="cn")
+    result, asked = stand_ins()
 
     assert result.returncode == 1
     assert _said(result) == (
-        f"Downloading {CN_RELEASE}/download/v9.9.9/SHA256SUMS failed."
+        "The release publishes no Neutrino hub package for deb on amd64."
     )
     assert _installs(asked) == []
+
+
+@pytest.mark.parametrize("edition", ["intl", "cn"])
+def test_a_release_build_stamps_the_edition_and_the_sites(edition):
+    text = install_script_stamp.stamped_text(
+        SCRIPT.read_text(), RELATIVE, edition=edition, sites=PACKAGING_RELEASE_SITES
+    )
+
+    assert f'\nEDITION="{edition}"\n' in text
+    sites = " ".join(
+        f"{site['files']} {site['latest']}" for site in PACKAGING_RELEASE_SITES
+    )
+    assert f'\nRELEASE_SITES="{sites}"\n' in text
+    assert sites.split()[0].startswith("https://github.com/")
 
 
 # The mainland tree is written from the intl checkout, and from nothing else.
@@ -510,27 +732,31 @@ def mainland_tree(tmp_path_factory):
 
 
 @from_intl_tree
-def test_the_mainland_tree_stamps_both_scripts_cn(mainland_tree):
+def test_the_mainland_tree_stamps_both_scripts_cn_with_the_sites(mainland_tree):
     install = mainland_tree / "packaging" / "install"
+    shell = (install / "install.sh").read_text()
+    powershell = (install / "install.ps1").read_text()
 
-    assert '\nEDITION="cn"\n' in (install / "install.sh").read_text()
-    assert "\n$script:NeutrinoEdition = 'cn'\n" in (install / "install.ps1").read_text()
+    assert '\nEDITION="cn"\n' in shell
+    assert "\n$script:NeutrinoEdition = 'cn'\n" in powershell
+    assert (
+        f'\nRELEASE_SITES="{install_script_stamp.sites_text(RELATIVE, PACKAGING_RELEASE_SITES)}"\n'
+        in shell
+    )
+    assert "\n$script:NeutrinoReleaseSites = @(@{ Files = 'https://github.com/" in (
+        powershell
+    )
 
 
 @from_intl_tree
-def test_the_mainland_script_installs_from_gitee(stand_ins, mainland_tree):
-    (stand_ins.served / "latest").write_text('{"tag_name": "v9.9.9"}')
-
+def test_the_mainland_script_installs_the_cn_package(stand_ins, mainland_tree):
     result, asked = stand_ins(
         edition=None, script=mainland_tree / "packaging" / "install" / "install.sh"
     )
 
     assert result.returncode == 0, result.stderr
-    assert _fetches(asked)[:3] == [
-        f"curl {CN_LATEST}",
-        f"curl {CN_RELEASE}/download/v9.9.9/SHA256SUMS",
-        f"curl {CN_RELEASE}/download/v9.9.9/neutrino-hub_9.9.9_amd64.deb",
-    ]
+    (install,) = _installs(asked)
+    assert install.endswith("/neutrino-hub_9.9.9_amd64-cn.deb")
 
 
 # --- one request for administrator rights ---

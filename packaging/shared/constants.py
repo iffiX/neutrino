@@ -21,8 +21,8 @@ PACKAGING_ASSET_PATTERNS = {
 
 # The release sites, GitHub first: each the address of a tag's files, with
 # `{tag}` open, and the address of `latest.json`, which names the latest
-# release as {tag, version}. A release build stamps them into the hub; any
-# other build names none.
+# release as {tag, version}. A release build stamps them into the hub, and
+# every build of the install scripts into the scripts; a checkout names none.
 PACKAGING_RELEASE_SITES = (
     {
         "files": "https://github.com/iffiX/neutrino/releases/download/{tag}/",
@@ -166,11 +166,16 @@ PACKAGING_CC_SWITCH_BINARY_NAME = "cc-switch"
 PACKAGING_CC_SWITCH_WINDOWS_BINARY_NAME = "cc-switch.exe"
 PACKAGING_CC_SWITCH_LICENSE = "cc_switch.txt"
 
-# The line naming the edition in each one-command install script, which the
-# mainland source tree stamps `cn`.
+# The lines of each one-command install script a build stamps: the edition,
+# `cn` in the mainland source tree, and the release sites, none in the
+# committed files.
 PACKAGING_INSTALL_EDITION_LINES = {
     "packaging/install/install.sh": 'EDITION="{edition}"',
     "packaging/install/install.ps1": "$script:NeutrinoEdition = '{edition}'",
+}
+PACKAGING_INSTALL_SITES_LINES = {
+    "packaging/install/install.sh": 'RELEASE_SITES="{sites}"',
+    "packaging/install/install.ps1": "$script:NeutrinoReleaseSites = @({sites})",
 }
 
 # The variable a build in a container reads its edition from.

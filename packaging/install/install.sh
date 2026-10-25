@@ -4,13 +4,15 @@
 #
 #   curl -fsSL https://github.com/iffiX/neutrino/releases/latest/download/install.sh | sh
 #   curl -fsSL https://github.com/iffiX/neutrino/releases/latest/download/install.sh | sh -s -- agent
-#   curl -fsSL https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.sh | sh
+#   curl -fsSL https://cnb.cool/iffi-X/neutrino/-/git/raw/main/packaging/install/install.sh | sh
 #
-# EDITION is the edition this script installs: intl from GitHub, cn from
-# Gitee, where the latest release's tag is read from the API first.
-# NEUTRINO_VERSION names the release, such as v0.5.0; the latest when unset.
-# NEUTRINO_ASSET_DIR names a directory holding SHA256SUMS and the packages,
-# which are installed from there with nothing downloaded.
+# EDITION is the edition whose package this script installs, and
+# RELEASE_SITES the release sites its build stamped; a checkout names none.
+# The latest release's tag is read from latest.json on the sites, and each
+# file comes from the fastest site, the script moving to the next one on a
+# stall. NEUTRINO_VERSION names the release, such as v0.5.0; the latest when
+# unset. NEUTRINO_ASSET_DIR names a directory holding SHA256SUMS and the
+# packages, which are installed from there with nothing downloaded.
 #
 # Run as a person, the script asks for the sudo password once, before it
 # downloads anything, and keeps sudo's ticket fresh until it ends: the
@@ -20,9 +22,15 @@ set -eu
 
 # The edition this script installs; the mainland source tree stamps it cn.
 EDITION="intl"
-RELEASES="https://github.com/iffiX/neutrino/releases"
-CN_RELEASES="https://gitee.com/iffiX/neutrino/releases"
-CN_LATEST_RELEASE_API="https://gitee.com/api/v5/repos/iffiX/neutrino/releases/latest"
+# The release sites, each as the address of a tag's files, {tag} in it, then
+# the address of latest.json, every address parted by a space.
+RELEASE_SITES=""
+# How long a probe or a read of latest.json waits for a site, how long a
+# download may receive nothing before its site counts as stalled, in seconds,
+# and how many bytes a probe asks for.
+PROBE_WAIT_S=5
+STALL_S=20
+PROBE_BYTES=1048576
 OS_RELEASE=/etc/os-release
 # The agent's binding to its hub on each system: a machine that holds one
 # has joined, and is not told to join again.
@@ -73,25 +81,33 @@ linux_family() {
     return 1
 }
 
+# What this script's edition's file names hold before the extension.
+edition_suffix() {
+    if [ "$EDITION" = cn ]; then
+        echo "-cn"
+    fi
+}
+
 # The pattern SHA256SUMS names the package by, with any version.
 asset_pattern() {
     component=$1
     kind=$2
     machine=$3
+    suffix=$(edition_suffix)
     case "$kind" in
-        macos) echo "neutrino-$component-[0-9][^ ]*-macos-$machine\\.pkg" ;;
-        deb) echo "neutrino-${component}_[0-9][^_ ]*_$machine\\.deb" ;;
+        macos) echo "neutrino-$component-[0-9][^ ]*-macos-$machine$suffix\\.pkg" ;;
+        deb) echo "neutrino-${component}_[0-9][^_ ]*_$machine$suffix\\.deb" ;;
         rpm)
             if [ "$machine" = amd64 ]; then
                 rpm_machine=x86_64
             else
                 rpm_machine=aarch64
             fi
-            echo "neutrino-$component-[0-9][^ ]*-1\\.$rpm_machine\\.rpm"
+            echo "neutrino-$component-[0-9][^ ]*-1\\.$rpm_machine$suffix\\.rpm"
             ;;
         arch)
             [ "$machine" = amd64 ] || return 1
-            echo "neutrino-$component-[0-9][^ ]*-1-x86_64\\.pkg\\.tar\\.zst"
+            echo "neutrino-$component-[0-9][^ ]*-1-x86_64$suffix\\.pkg\\.tar\\.zst"
             ;;
     esac
 }
@@ -109,8 +125,189 @@ sha256_of() {
     fi
 }
 
-fetch() {
-    curl -fsSL --retry 3 -o "$2" "$1" || fail "Downloading $1 failed."
+# The host of an address, which names its site to a person.
+host_of() {
+    echo "$1" | sed -E 's|^[a-z]+://([^/]+).*|\1|'
+}
+
+# Why curl failed, as every download names it: its exit code, then what it
+# wrote out of the HTTP status.
+failure_reason() {
+    case "$1" in
+        6 | 7) echo unreachable ;;
+        22) echo "http_$2" ;;
+        28) echo "$3" ;;
+        33) echo http_200 ;;
+        *) echo unreachable ;;
+    esac
+}
+
+# Each site's address of the release's files, one per line.
+site_bases() {
+    # shellcheck disable=SC2086
+    set -- $RELEASE_SITES
+    while [ "$#" -ge 2 ]; do
+        echo "${1%%"{tag}"*}$tag${1#*"{tag}"}"
+        shift 2
+    done
+}
+
+# The latest release's tag: every site's latest.json read at once, each for
+# at most PROBE_WAIT_S, and the fastest answer naming a tag taken.
+latest_tag() {
+    read_dir="$work/latest"
+    mkdir -p "$read_dir"
+    read_pids=""
+    read_index=0
+    # shellcheck disable=SC2086
+    set -- $RELEASE_SITES
+    while [ "$#" -ge 2 ]; do
+        read_index=$((read_index + 1))
+        echo "$2" >"$read_dir/$read_index.url"
+        (
+            read_code=0
+            curl -fsSL --max-time "$PROBE_WAIT_S" -o "$read_dir/$read_index.json" \
+                -w '%{http_code} %{time_total}' "$2" >"$read_dir/$read_index.out" \
+                2>/dev/null || read_code=$?
+            echo " $read_code" >>"$read_dir/$read_index.out"
+        ) &
+        read_pids="$read_pids $!"
+        shift 2
+    done
+    # shellcheck disable=SC2086
+    wait $read_pids
+    read_found=""
+    read_reasons=""
+    for read_out in "$read_dir"/*.out; do
+        read_base=${read_out%.out}
+        read -r read_status read_time read_code <"$read_out"
+        read_host=$(host_of "$(cat "$read_base.url")")
+        read_tag=""
+        if [ "$read_code" = 0 ]; then
+            read_tag=$(sed -n -E 's/.*"tag"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' \
+                "$read_base.json" | head -n 1)
+            [ -n "$read_tag" ] || read_reasons="$read_reasons, $read_host (no_tag)"
+        else
+            read_reasons="$read_reasons, $read_host ($(failure_reason "$read_code" "$read_status" timeout))"
+        fi
+        if [ -n "$read_tag" ]; then
+            read_found="$read_found$read_time $read_tag
+"
+        fi
+    done
+    read_tag=$(printf '%s' "$read_found" | sort -n | head -n 1 | cut -d ' ' -f 2)
+    [ -n "$read_tag" ] \
+        || fail "No release site named the latest release: ${read_reasons#, }."
+    echo "$read_tag"
+}
+
+# The sites serving one file, fastest first: every site probed at once for
+# the file's first PROBE_BYTES, each for at most PROBE_WAIT_S. A site that
+# answered is ranked by its speed from the first byte to the last, two
+# speeds within a tenth of each other going to the earlier first byte; a
+# site that did not answer in time comes after them; a site that failed is
+# left out, and its reason added to $work/reasons.
+rank_sites() {
+    probe_dir="$work/probes"
+    rm -rf "$probe_dir"
+    mkdir -p "$probe_dir"
+    probe_pids=""
+    probe_index=0
+    for probe_base in $(site_bases); do
+        probe_index=$((probe_index + 1))
+        echo "$probe_base" >"$probe_dir/$probe_index.base"
+        (
+            probe_code=0
+            curl -sL -r "0-$((PROBE_BYTES - 1))" --max-time "$PROBE_WAIT_S" -o /dev/null \
+                -w '%{http_code} %{size_download} %{time_starttransfer} %{time_total}' \
+                "$probe_base$1" >"$probe_dir/$probe_index.out" 2>/dev/null \
+                || probe_code=$?
+            echo " $probe_code" >>"$probe_dir/$probe_index.out"
+        ) &
+        probe_pids="$probe_pids $!"
+    done
+    # shellcheck disable=SC2086
+    wait $probe_pids
+    : >"$probe_dir/answered"
+    : >"$probe_dir/late"
+    for probe_out in "$probe_dir"/*.out; do
+        probe_base=$(cat "${probe_out%.out}.base")
+        read -r probe_status probe_size probe_start probe_total probe_code <"$probe_out"
+        case "$probe_status" in
+            200 | 206) ;;
+            000)
+                if [ "$probe_code" = 28 ]; then
+                    echo "$probe_base" >>"$probe_dir/late"
+                else
+                    echo "$(host_of "$probe_base") ($(failure_reason "$probe_code" "$probe_status" timeout))" \
+                        >>"$work/reasons"
+                fi
+                continue
+                ;;
+            *)
+                echo "$(host_of "$probe_base") (http_$probe_status)" >>"$work/reasons"
+                continue
+                ;;
+        esac
+        echo "$probe_size $probe_start $probe_total $probe_base" >>"$probe_dir/answered"
+    done
+    awk '
+        function before(a, b) {
+            if (speed[a] > speed[b] * 1.1) return 1
+            if (speed[b] > speed[a] * 1.1) return 0
+            return start[a] < start[b]
+        }
+        {
+            span = $3 - $2
+            if (span < 0.001) span = 0.001
+            speed[NR] = $1 / span
+            start[NR] = $2
+            base[NR] = $4
+            order[NR] = NR
+        }
+        END {
+            for (i = 2; i <= NR; i++) {
+                for (j = i; j > 1 && before(order[j], order[j - 1]); j--) {
+                    kept = order[j]
+                    order[j] = order[j - 1]
+                    order[j - 1] = kept
+                }
+            }
+            for (i = 1; i <= NR; i++) print base[order[i]]
+        }
+    ' "$probe_dir/answered"
+    cat "$probe_dir/late"
+}
+
+# Download one file into the work directory from the fastest site, moving to
+# the next site on a stall or an error and resuming where the last one
+# stopped. Given a digest, a file that does not match it drops that site and
+# is fetched again from the next one. Stops the script, naming each site and
+# why it failed, when no site serves the file.
+fetch_file() {
+    fetch_target="$work/$1"
+    rm -f "$fetch_target"
+    : >"$work/reasons"
+    for fetch_base in $(rank_sites "$1"); do
+        fetch_host=$(host_of "$fetch_base")
+        fetch_code=0
+        fetch_status=$(curl -fsSL -C - --connect-timeout "$PROBE_WAIT_S" \
+            --speed-limit 1 --speed-time "$STALL_S" -o "$fetch_target" \
+            -w '%{http_code}' "$fetch_base$1" 2>/dev/null) || fetch_code=$?
+        if [ "$fetch_code" != 0 ]; then
+            echo "$fetch_host ($(failure_reason "$fetch_code" "$fetch_status" stalled))" \
+                >>"$work/reasons"
+            continue
+        fi
+        if [ -n "${2:-}" ] && [ "$(sha256_of "$fetch_target")" != "$2" ]; then
+            echo "$fetch_host (digest_mismatch)" >>"$work/reasons"
+            rm -f "$fetch_target"
+            continue
+        fi
+        echo "Downloaded $1 from $fetch_host"
+        return 0
+    done
+    fail "No release site served $1: $(paste -s -d ',' "$work/reasons" | sed 's/,/, /g')."
 }
 
 # Ask for the sudo password once unless sudo already runs a command without
@@ -167,26 +364,6 @@ is_client_bound() {
     grep -Eq '"token"[[:space:]]*:[[:space:]]*"[^"]' "$bindings" 2>/dev/null
 }
 
-# Where the release's files are, for this script's edition. A cn release is
-# found by its tag, which the API names for the latest one.
-release_base() {
-    if [ "$EDITION" != cn ]; then
-        if [ -n "${NEUTRINO_VERSION:-}" ]; then
-            echo "$RELEASES/download/$NEUTRINO_VERSION"
-        else
-            echo "$RELEASES/latest/download"
-        fi
-        return 0
-    fi
-    tag=${NEUTRINO_VERSION:-}
-    if [ -z "$tag" ]; then
-        fetch "$CN_LATEST_RELEASE_API" "$1/latest.json"
-        tag=$(sed -n -E 's/.*"tag_name" *: *"([^"]+)".*/\1/p' "$1/latest.json" | head -n 1)
-        [ -n "$tag" ] || fail "The latest release at $CN_LATEST_RELEASE_API names no tag."
-    fi
-    echo "$CN_RELEASES/download/$tag"
-}
-
 main() {
     component=${1:-hub}
     case "$component" in
@@ -207,6 +384,9 @@ main() {
     esac
     pattern=$(asset_pattern "$component" "$kind" "$machine") \
         || fail "No Neutrino $component package is published for $kind on $machine."
+    if [ -z "${NEUTRINO_ASSET_DIR:-}" ] && [ -z "$RELEASE_SITES" ]; then
+        fail "This script names no release site; take it from a release, or set NEUTRINO_ASSET_DIR."
+    fi
 
     if [ "$(id -u)" = 0 ]; then
         as_root=""
@@ -221,9 +401,12 @@ main() {
         source_dir=$NEUTRINO_ASSET_DIR
         [ -f "$source_dir/SHA256SUMS" ] || fail "There is no SHA256SUMS in $source_dir."
     else
-        base=$(release_base "$work") || exit 1
+        tag=${NEUTRINO_VERSION:-}
+        if [ -z "$tag" ]; then
+            tag=$(latest_tag) || exit 1
+        fi
         source_dir=$work
-        fetch "$base/SHA256SUMS" "$work/SHA256SUMS"
+        fetch_file SHA256SUMS
     fi
 
     found=$(find_asset "$source_dir/SHA256SUMS" "$pattern")
@@ -232,8 +415,7 @@ main() {
     expected=${found%% *}
     name=${found#* }
     if [ -z "${NEUTRINO_ASSET_DIR:-}" ]; then
-        fetch "$base/$name" "$work/$name"
-        echo "Downloaded $name from $base"
+        fetch_file "$name" "$expected"
     fi
     package="$source_dir/$name"
     [ -f "$package" ] || fail "There is no $name in $source_dir."
