@@ -146,7 +146,9 @@ When the tab shows a code, its cause and fix are under [Containers](../../refere
 
 ## Running now and mirrors
 
-**Running now** lists every container on the machine with its image, its status and a **declared** or **ad hoc** badge. A running container has **Journal**, **Shell**, **Restart** and **Stop**, and a stopped one has **Journal** and **Start**.
+**Running now** lists every container on the machine with its image and its status, and ends each row with where the container comes from: **hub** for one a module of the hub runs, **declared** for one you declared, and **manual** for one started by hand. A running container has **Journal**, **Shell**, **Restart** and **Stop**, and a stopped one has **Journal** and **Start**. A container a module runs shows the module's name and has **Journal** alone.
+
+**Hub containers** lists the containers the hub's modules run on the machine, with their images, ports and volumes. Each one is changed in its module's tab.
 
 **Shell** opens a terminal inside the container, in a window on the page, on every system. It runs bash when the image has it, and sh otherwise. **Close**, or `exit` typed in it, ends the shell and every program it started in the container.
 
@@ -154,7 +156,7 @@ Under **Registry mirrors**, select **Add mirror**, fill the address, then select
 
 ## Uninstall
 
-**Uninstall** on the tab stops every declared container and removes Podman. The containers' data stays on the computer, and the hub keeps the declarations.
+**Uninstall** on the tab stops every declared container and removes Podman. While a module that runs on Containers is installed, uninstall that module first. The containers' data stays on the computer, and the hub keeps the declarations.
 
 | System  | Removed                                                            | Kept                                                                                                                                                  |
 | ------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |

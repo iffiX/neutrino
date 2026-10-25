@@ -108,6 +108,11 @@
   font-size: 12px;
 }
 
+.container_row_module {
+  font-family: var(--font-sans);
+  color: var(--color-text);
+}
+
 /* A running container carries four buttons. The row wraps, so the group has
    to wrap with it rather than run one unbreakable line past the card. */
 .container_row_actions {

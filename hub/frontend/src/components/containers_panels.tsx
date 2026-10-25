@@ -20,6 +20,7 @@ import {
   describeError,
 } from "../api_client";
 import { t, useLanguage } from "../i18n";
+import { moduleTitle } from "../module_title";
 import { useApiResource } from "../use_api_resource";
 import { useDraft } from "../use_draft";
 import { HUB_EVENT_CONFIG, HUB_EVENT_DEVICE_REPORT } from "../use_hub_events";
@@ -28,8 +29,10 @@ import type { ReportedModule, SettledApply } from "../use_settled_apply";
 import type {
   ApplyResult,
   PodmanContainer,
+  PodmanContainerSource,
   PodmanContainerState,
   PodmanDeviceView,
+  PodmanHubContainer,
   PodmanService,
   PodmanServiceKind,
   PodmanServiceProtocol,
@@ -50,6 +53,10 @@ import "./containers_panels.css";
  * the default network. That is the deliberate line: panels that grew custom
  * networks and healthchecks would be compose with worse ergonomics, and
  * anything past the line works fine from a terminal.
+ *
+ * A container one of the hub's modules runs is listed read only under Hub
+ * containers, and its live row names the module and offers its journal
+ * alone. Every live row ends with where its container comes from.
  *
  * On Windows and macOS the containers run in one account's Podman machine,
  * and the Run settings that name it come first; until they name an account
@@ -93,6 +100,22 @@ const SERVICE_PROTOCOLS: ServiceChoice<PodmanServiceProtocol>[] = [
   { id: "udp", labelKey: "ui.containers.service_udp" },
 ];
 
+/** Where a container comes from, worded at the end of its row. */
+const SOURCE_KEYS: Record<PodmanContainerSource, string> = {
+  hub: "ui.containers.source_hub",
+  declared: "ui.containers.source_declared",
+  manual: "ui.containers.source_manual",
+};
+// A module of the hub's in the accent, the person's own in the secondary.
+const SOURCE_TONES: Record<PodmanContainerSource, string> = {
+  hub: "badge--accent",
+  declared: "badge--secondary",
+  manual: "badge--secondary",
+};
+
+/** How many characters of a digest's hex a hub container's row shows. */
+const DIGEST_SHOWN_CHARS = 12;
+
 /** The systems whose containers run in an account's Podman machine. */
 const MACHINE_RUN_OS = ["windows", "darwin"];
 
@@ -117,6 +140,8 @@ interface ContainersPanelsProps {
   platformOs: string;
   /** What the hub asks of the module: `running`, `stopped`, or empty. */
   want: string;
+  /** Each module's title as its manifest gives it, by name. */
+  manifestTitles: Record<string, string>;
 }
 
 export function ContainersPanels({
@@ -125,6 +150,7 @@ export function ContainersPanels({
   isEditable,
   platformOs,
   want,
+  manifestTitles,
 }: ContainersPanelsProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
@@ -289,6 +315,10 @@ export function ContainersPanels({
               <div key={state.name}>
                 <ContainerRow
                   state={state}
+                  moduleLabel={moduleTitle(
+                    state.module,
+                    manifestTitles[state.module] ?? state.module,
+                  )}
                   onAction={(action) =>
                     void controlContainer(state.name, action)
                   }
@@ -307,6 +337,29 @@ export function ContainersPanels({
                   isOpen={journalTarget === state.name}
                 />
               </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="settings_group">
+        <div className="settings_group_title">
+          <h2>{t("ui.containers.hub_title")}</h2>
+        </div>
+        <p className="field_hint">{t("ui.containers.hub_hint")}</p>
+        {saved.hub_containers.length === 0 ? (
+          <p className="field_hint">{t("ui.containers.hub_empty")}</p>
+        ) : (
+          <div className="container_rows">
+            {saved.hub_containers.map((container) => (
+              <HubContainerRow
+                key={container.name}
+                container={container}
+                moduleLabel={moduleTitle(
+                  container.module,
+                  manifestTitles[container.module] ?? container.module,
+                )}
+              />
             ))}
           </div>
         )}
@@ -495,6 +548,14 @@ function appliedNotice(
   return settle.isApplied && report !== null && !isFailing(report)
     ? t("ui.api.applied")
     : null;
+}
+
+/** A hub container's image as its row names it: the first source and the
+ * start of the digest. */
+function hubImage(container: PodmanHubContainer): string {
+  const source = container.image.sources[0] ?? "";
+  const hex = container.image.digest.replace(/^sha256:/, "");
+  return `${source}@${hex.slice(0, DIGEST_SHOWN_CHARS)}`;
 }
 
 /** The image without its tag; the tag chips swap what follows the colon. */
@@ -874,18 +935,22 @@ function ContainerEditor({
 interface ContainerRowProps {
   onJournal: () => void;
   state: PodmanContainerState;
+  /** The title of the module that runs it, for a hub container. */
+  moduleLabel: string;
   onAction: (action: string) => void;
   onShell: () => void;
 }
 
 function ContainerRow({
   state,
+  moduleLabel,
   onAction,
   onShell,
   onJournal,
 }: ContainerRowProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
+  const isHub = state.source === "hub";
   return (
     <div className="container_row">
       <span className="container_row_name">
@@ -897,11 +962,7 @@ function ContainerRow({
       </span>
       <span className="container_row_image">{state.image}</span>
       <span className="container_row_status">{state.status}</span>
-      {state.is_declared ? (
-        <span className="badge badge--accent">{t("state.declared")}</span>
-      ) : (
-        <span className="badge">{t("state.ad_hoc")}</span>
-      )}
+      {isHub && <span className="container_row_module">{moduleLabel}</span>}
       <div className="container_row_actions">
         <button
           type="button"
@@ -911,7 +972,7 @@ function ContainerRow({
           <Icon name="file" size={12} />
           {t("ui.containers.row_journal")}
         </button>
-        {state.is_running ? (
+        {!isHub && state.is_running && (
           <>
             <button
               type="button"
@@ -938,7 +999,8 @@ function ContainerRow({
               {t("ui.containers.row_stop")}
             </button>
           </>
-        ) : (
+        )}
+        {!isHub && !state.is_running && (
           <button
             type="button"
             className="button button--small"
@@ -949,6 +1011,36 @@ function ContainerRow({
           </button>
         )}
       </div>
+      <span className={`badge ${SOURCE_TONES[state.source]}`}>
+        {t(SOURCE_KEYS[state.source])}
+      </span>
+    </div>
+  );
+}
+
+interface HubContainerRowProps {
+  container: PodmanHubContainer;
+  /** The title of the module that runs it. */
+  moduleLabel: string;
+}
+
+/** One hub container as the hub composes it, read only. */
+function HubContainerRow({ container, moduleLabel }: HubContainerRowProps) {
+  return (
+    <div className="container_row">
+      <span className="container_row_name">{container.name}</span>
+      <span className="container_row_module">{moduleLabel}</span>
+      <span className="container_row_image">{hubImage(container)}</span>
+      {container.ports.length > 0 && (
+        <span className="container_row_status">
+          {container.ports.join(", ")}
+        </span>
+      )}
+      {container.volumes.length > 0 && (
+        <span className="container_row_status">
+          {container.volumes.join(", ")}
+        </span>
+      )}
     </div>
   );
 }

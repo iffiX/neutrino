@@ -87,6 +87,8 @@ interface PanelTarget {
   isInstalling: boolean;
   /** What the hub asks of the module: `running`, `stopped`, or empty. */
   want: string;
+  /** Each module's title as its manifest gives it, by name. */
+  manifestTitles: Record<string, string>;
 }
 
 /** The modules this page has panels for, in tab order. */
@@ -116,6 +118,7 @@ const MODULE_PANELS: Record<string, (target: PanelTarget) => ReactNode> = {
       isEditable={target.isEditable}
       platformOs={target.platformOs}
       want={target.want}
+      manifestTitles={target.manifestTitles}
     />
   ),
   ...Object.fromEntries(
@@ -733,6 +736,7 @@ export function ModulesPage() {
                           platformOs: selectedDevice.platform.os ?? "",
                           isInstalling: activeRow.state === "installing",
                           want: activeRow.want,
+                          manifestTitles: manifestTitlesOf(modules.data),
                         })}
                       </fieldset>
                     )}
@@ -888,6 +892,15 @@ function rowsByName(
     }
   }
   return rows;
+}
+
+/** Every module's title as its manifest gives it, by name. */
+function manifestTitlesOf(
+  list: DeviceModuleListView | null,
+): Record<string, string> {
+  return Object.fromEntries(
+    (list?.modules ?? []).map((row) => [row.name, row.title]),
+  );
 }
 
 /** Which tabs the page shows: what the row stores, else what the machine

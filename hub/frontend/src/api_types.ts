@@ -2093,14 +2093,34 @@ export interface PodmanHostBinding {
   detected: string;
 }
 
+/** Where a container comes from: a module of the hub's, the hub's
+ * declarations, or a person who started it by hand. */
+export type PodmanContainerSource = "hub" | "declared" | "manual";
+
 export interface PodmanContainerState {
   name: string;
   image: string;
   status: string;
   is_running: boolean;
-  /** Declared in config/, so it is systemd-supervised and reboots with the box. */
-  is_declared: boolean;
+  source: PodmanContainerSource;
+  /** The module its label names; empty for any other container. */
+  module: string;
   host_bindings: PodmanHostBinding[];
+}
+
+/** A hub container's image: its digest and the references that serve it. */
+export interface PodmanHubImage {
+  digest: string;
+  sources: string[];
+}
+
+/** One container a container module runs, as the hub composes it. */
+export interface PodmanHubContainer {
+  module: string;
+  name: string;
+  image: PodmanHubImage;
+  ports: string[];
+  volumes: string[];
 }
 
 /** The Run settings as stored: the account whose Podman machine runs the
@@ -2126,6 +2146,8 @@ export interface PodmanMachineState {
 
 export interface PodmanSettings {
   containers: PodmanContainer[];
+  /** The containers the machine's container modules run, read only. */
+  hub_containers: PodmanHubContainer[];
   /** docker.io mirrors, tried in order before the registry itself. */
   mirrors: string[];
   running: PodmanContainerState[];

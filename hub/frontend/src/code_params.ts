@@ -1,9 +1,17 @@
+import { getLanguage } from "./i18n";
+import { moduleTitle } from "./module_title";
+
+/** What joins the modules a `module_in_use` names, by language. */
+const MODULE_SEPARATORS: Record<string, string> = { "zh-CN": "、" };
+const MODULE_SEPARATOR_DEFAULT = ", ";
+
 /**
  * The values a code's sentence takes from its params.
  *
  * A string or a number stands as it is. `sources`, the list a
  * `download_failed` names, becomes one text naming each source and why it
- * failed. Anything else is left out.
+ * failed, and `modules`, the list a `module_in_use` names, one text of
+ * their titles. Anything else is left out.
  */
 export function codeParams(value: unknown): Record<string, string | number> {
   const params: Record<string, string | number> = {};
@@ -15,6 +23,10 @@ export function codeParams(value: unknown): Record<string, string | number> {
       params[name] = item;
     } else if (name === "sources" && Array.isArray(item)) {
       params[name] = item.map(sourceText).join("; ");
+    } else if (name === "modules" && Array.isArray(item)) {
+      params[name] = item
+        .map((module) => moduleTitle(String(module), String(module)))
+        .join(MODULE_SEPARATORS[getLanguage()] ?? MODULE_SEPARATOR_DEFAULT);
     }
   }
   return params;
