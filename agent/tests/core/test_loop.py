@@ -206,6 +206,28 @@ def test_an_untouched_file_reloads_nothing(config_path):
     assert agent._operator is made
 
 
+class JournalRunner:
+    """A container module's runner that answers its journal."""
+
+    def command(self, verb, args, on_line=None):
+        return {"exit_code": 0, "output": f"{verb} {args['lines']}"}
+
+
+def test_a_verb_reaches_a_container_runner_made_after_the_operator(
+    config_path, monkeypatch
+):
+    """A container module's runner is made when a state first names it, after
+    the operator; Hermes WebUI's journal read ``verb_unknown`` before."""
+    bind(config_path)
+    agent = Agent(log=lambda message: None)
+    made = agent._operator
+
+    monkeypatch.setitem(agent._engine._container_runners, "demo", JournalRunner())
+    outcome = made.run("demo", "journal", {"lines": 5})
+
+    assert (outcome.exit_code, outcome.code, outcome.output) == (0, "", "journal 5")
+
+
 def test_a_rewrite_of_the_same_binding_wipes_no_state(config_path):
     bind(config_path)
     agent = Agent(log=lambda message: None)

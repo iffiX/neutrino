@@ -125,6 +125,7 @@ def bare_engine(*, runner=None, verified=None, tmp_path=None):
     engine._operation_lock = threading.Lock()
     engine._in_transit = set()
     engine._queued = set()
+    engine._held_installing = set()
     engine._statuses = {}
     engine._signature = ""
     engine._checked_at = 0.0
@@ -1861,3 +1862,150 @@ def test_a_container_install_runs_the_runner_s_install_and_checks_it_took(
 
     assert engine.install("demo", receive=None) == {}
     assert pulled == [CONTAINER_RECIPE]
+
+
+class ContainerReads:
+    """What a container module reads as, set by a test between passes."""
+
+    def __init__(self, monkeypatch):
+        self.is_present = False
+        self.is_active = False
+        self.is_installing = False
+        monkeypatch.setattr(ContainerModuleRunner, "verify", self.verify)
+        monkeypatch.setattr(ContainerModuleRunner, "is_active", self.active)
+        monkeypatch.setattr(ContainerModuleRunner, "is_installing", self.installing)
+        monkeypatch.setattr(ContainerModuleRunner, "details", self.details)
+
+    def verify(self, recipe):
+        return self.is_present
+
+    def active(self):
+        return self.is_active
+
+    def installing(self):
+        return self.is_installing
+
+    def details(self, recipe):
+        return {}
+
+
+def held_engine(tmp_path, monkeypatch, want="running"):
+    engine, _containers = container_engine(tmp_path)
+    wanted = {"want": want, "config": {}, "install": CONTAINER_RECIPE}
+    engine.take_state({"demo": wanted})
+    engine._wanted = {"demo": wanted}
+    return engine, ContainerReads(monkeypatch)
+
+
+def test_a_held_container_module_reads_installing_until_it_reads_its_want(
+    tmp_path, monkeypatch
+):
+    """The row read queued, installing, installed, queued and installing
+    again between the press and running."""
+    engine, reads = held_engine(tmp_path, monkeypatch)
+    rows = []
+
+    engine.hold_installing(["demo"])
+    rows.append(engine.report()["demo"]["state"])
+    engine.set_queued(["demo"])
+    rows.append(engine.report()["demo"]["state"])
+    engine.set_queued([])
+    rows.append(engine.report()["demo"]["state"])
+    reads.is_present = True
+    engine._refresh(is_forced=True)
+    rows.append(engine.report()["demo"]["state"])
+    engine.mark_configured("demo")
+    engine._refresh(is_forced=True)
+    rows.append(engine.report()["demo"]["state"])
+    reads.is_active = True
+    engine._refresh(is_forced=True)
+    rows.append(engine.report()["demo"]["state"])
+    reads.is_active = False
+    engine._refresh(is_forced=True)
+    rows.append(engine.report()["demo"]["state"])
+
+    assert rows == [
+        "installing",
+        "installing",
+        "installing",
+        "installing",
+        "installing",
+        "running",
+        "stopped",
+    ]
+
+
+def test_a_held_row_keeps_the_first_start_s_own_code(tmp_path, monkeypatch):
+    engine, reads = held_engine(tmp_path, monkeypatch)
+    reads.is_present = True
+    reads.is_installing = True
+    engine.mark_configured("demo")
+    monkeypatch.setattr(
+        ContainerModuleRunner,
+        "install_wait",
+        lambda self: {"code": "demo_first_start", "params": {}},
+    )
+
+    engine.hold_installing(["demo"])
+    engine._refresh(is_forced=True)
+
+    row = engine.report()["demo"]
+    assert (row["state"], row["code"]) == ("installing", "demo_first_start")
+
+
+@pytest.mark.parametrize("state", ["install_failed", "failed"])
+def test_a_failure_ends_the_hold(tmp_path, monkeypatch, state):
+    engine, reads = held_engine(tmp_path, monkeypatch)
+    reads.is_present = True
+    engine.hold_installing(["demo"])
+
+    engine.record_failure("demo", failure(state, "download_failed"))
+    engine._refresh(is_forced=True)
+    engine.record_failure("demo", None)
+    engine._refresh(is_forced=True)
+
+    assert engine.report()["demo"]["state"] == "installed"
+
+
+def test_a_hold_ends_when_the_state_no_longer_asks_for_the_module(
+    tmp_path, monkeypatch
+):
+    engine, _reads = held_engine(tmp_path, monkeypatch)
+    engine.hold_installing(["demo"])
+
+    engine.take_state({})
+    engine._refresh(is_forced=True)
+
+    assert engine.report()["demo"]["state"] == "absent"
+
+
+def test_the_containers_row_is_kept_while_a_container_module_pulls(
+    tmp_path, monkeypatch
+):
+    """On Windows a read of the Podman machine failed during a 2.8 GB pull,
+    and Containers read stopped."""
+    engine, _reads = held_engine(tmp_path, monkeypatch)
+    running = {
+        "state": "running",
+        "is_active": True,
+        "code": "",
+        "params": {},
+        "details": {"containers": []},
+    }
+    engine._statuses["podman"] = dict(running)
+    engine._in_transit.add("demo")
+    engine._statuses["demo"] = {
+        "state": "installing",
+        "is_active": False,
+        "code": "",
+        "params": {},
+        "details": {},
+    }
+
+    engine._refresh(is_forced=True)
+    kept = engine.report()["podman"]
+    engine._in_transit.discard("demo")
+    engine._refresh(is_forced=True)
+
+    assert kept == running
+    assert engine.report()["podman"]["state"] != "running"

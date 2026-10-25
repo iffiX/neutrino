@@ -109,7 +109,7 @@ class DeviceOperator:
         platform,
         reinstall=None,
         resize=None,
-        module_runners=None,
+        runner_of=None,
         remote_desktop=None,
         settle=None,
         on_module_changed=None,
@@ -125,8 +125,9 @@ class DeviceOperator:
             resize: Called with ``(stream_id, cols, rows)`` for the
                 ``resize`` verb; returns True when a shell stream of that
                 id took the size. None refuses the verb as unsupported.
-            module_runners: Module name to its runner, for the verbs a
-                module answers. None refuses every module verb.
+            runner_of: Called with a module's name when a verb of it
+                comes; returns its runner, or None for a module this agent
+                runs none of. None refuses every module verb.
             remote_desktop: The reader the remote desktop verbs run on.
                 None reads this machine through the platform.
             settle: Called with a timeout before a module verb that acts
@@ -140,7 +141,7 @@ class DeviceOperator:
         self._platform = platform
         self._reinstall = reinstall
         self._resize = resize
-        self._module_runners = dict(module_runners or {})
+        self._runner_of = runner_of
         self._remote_desktop = remote_desktop or RemoteDesktopReader(platform=platform)
         self._settle = settle
         self._on_module_changed = on_module_changed
@@ -161,7 +162,7 @@ class DeviceOperator:
         """
         if module == AGENT_COMMAND_MODULE:
             return self._agent_verb(verb, args)
-        runner = self._module_runners.get(module)
+        runner = self._runner_of(module) if self._runner_of else None
         if runner is None:
             return _refused("verb_unknown", module=module, verb=verb)
         return self._module_verb(module, runner, verb, args, on_line)

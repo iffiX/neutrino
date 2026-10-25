@@ -56,6 +56,7 @@ from neutrino_agent.constants import (
     AGENT_MODULE_STATE_STOPPED,
     AGENT_MODULE_STATE_UNINSTALLING,
     AGENT_MODULE_STATE_UNSUPPORTED,
+    AGENT_PRESENT_WANTS,
 )
 from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
 from neutrino_agent.modules.cloudcli.hooks import CloudcliHooks
@@ -122,6 +123,13 @@ CONTAINER_MODULE_HOOKS[HERMES_WEBUI_NAME] = HermesWebuiHooks
 FAILURE_STATES = (AGENT_MODULE_STATE_INSTALL_FAILED, AGENT_MODULE_STATE_FAILED)
 # The suffix of the file one module's failure is kept in.
 FAILURE_SUFFIX = ".json"
+# The states that end a container module's hold on installing, beside its
+# want.
+HOLD_ENDING_STATES = (
+    AGENT_MODULE_STATE_INSTALL_FAILED,
+    AGENT_MODULE_STATE_FAILED,
+    AGENT_MODULE_STATE_UNSUPPORTED,
+)
 
 
 class ReconcileWorker:
@@ -239,6 +247,9 @@ class ModuleEngine(ReconcileWorker):
         self._in_transit: set = set()
         # The modules waiting behind the one the applier is on.
         self._queued: set = set()
+        # The container modules that read installing until they read their
+        # want or a step fails.
+        self._held_installing: set = set()
         # Module name to its last failed step, ``{"state", "code",
         # "params"}``, as kept on disk.
         self._failures: dict = {}
@@ -293,6 +304,20 @@ class ModuleEngine(ReconcileWorker):
         with self._lock:
             return {**self._module_runners, **self._container_runners}
 
+    def runner_of(self, name: str):
+        """The runner of one module as the engine holds it now.
+
+        A container module's runner is made when a state first names the
+        module, so a caller looks it up each time it needs it.
+
+        Args:
+            name: The module name.
+
+        Returns:
+            The runner, or None for a module this agent runs none of.
+        """
+        return self.module_runners.get(name)
+
     def container_runners(self) -> dict:
         """The runners of the container modules the state has named, by module name.
 
@@ -338,6 +363,7 @@ class ModuleEngine(ReconcileWorker):
             }
             wanted = dict(self._wanted)
             dropped = [name for name in self._failures if name not in self._wanted]
+            self._held_installing &= set(self._wanted)
             for name, entry in wanted.items():
                 self._add_container_runner(name, _recipe_of(entry))
             runners = {**self._module_runners, **self._container_runners}
@@ -462,6 +488,23 @@ class ModuleEngine(ReconcileWorker):
         for name in sorted(left):
             if name in observed:
                 self._publish_observed(name, self._read_one(name, observed[name]))
+
+    def hold_installing(self, names) -> None:
+        """Read these container modules ``installing`` until each reads its ``want`` or fails.
+
+        A container module's install is its pull, after which Containers is
+        applied again for it and its first start runs; its row reads
+        ``installing`` through all of it.
+
+        Args:
+            names: The container modules a state asks to be present that
+                are not installed.
+        """
+        names = list(names)
+        with self._lock:
+            self._held_installing |= set(names)
+        for name in names:
+            self._publish_observed(name, _typed(AGENT_MODULE_STATE_INSTALLING))
 
     def refresh_now(self) -> None:
         """Report every module again from what is true right now."""
@@ -722,6 +765,11 @@ class ModuleEngine(ReconcileWorker):
         for name, wanted in observed.items():
             with self._lock:
                 is_held = name in self._in_transit or name in self._queued
+                # Containers keeps its row while a container module pulls on
+                # its Podman, which a read then finds busy.
+                is_pulled_on = name == AGENT_CONTAINERS_MODULE and self._is_pulling()
+            if is_pulled_on:
+                continue
             if is_held:
                 self._publish_observed(name, _typed(AGENT_MODULE_STATE_QUEUED))
                 continue
@@ -745,10 +793,41 @@ class ModuleEngine(ReconcileWorker):
                 return
             if name in self._queued:
                 status = _typed(AGENT_MODULE_STATE_QUEUED)
+            status = self._held_status(name, status)
             is_news = self._statuses.get(name) != status
             self._statuses[name] = status
         if is_news and self._on_change is not None:
             self._on_change()
+
+    def _held_status(self, name: str, status: dict) -> dict:
+        """The row of a module held ``installing``, which ends the hold once
+        it reads its ``want`` or fails. Call under the lock."""
+        if name not in self._held_installing:
+            return status
+        want = str((self._wanted.get(name) or {}).get("want", "") or "")
+        if want not in AGENT_PRESENT_WANTS or status["state"] in (
+            want,
+            *HOLD_ENDING_STATES,
+        ):
+            self._held_installing.discard(name)
+            return status
+        if status["state"] == AGENT_MODULE_STATE_INSTALLING:
+            return status
+        return {
+            **status,
+            "state": AGENT_MODULE_STATE_INSTALLING,
+            "code": "",
+            "params": {},
+        }
+
+    def _is_pulling(self) -> bool:
+        """Whether a container module's install runs. Call under the lock."""
+        return any(
+            name in self._in_transit
+            and (self._statuses.get(name) or {}).get("state")
+            == AGENT_MODULE_STATE_INSTALLING
+            for name in self._container_runners
+        )
 
     def _read_one(self, name: str, wanted: "dict | None") -> dict:
         """What one module actually is on this machine, acting on nothing.

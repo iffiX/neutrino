@@ -1010,7 +1010,7 @@ class Agent:
                     reinstall=self._reinstall,
                     resize=self._resize_shell,
                     shells=self._shells,
-                    module_runners=self._engine.module_runners,
+                    runner_of=self._engine.runner_of,
                     settle=self._desired.settle,
                     on_module_changed=self._report_module_now,
                 )

@@ -62,8 +62,8 @@ from neutrino_agent.constants import (
     AGENT_MODULE_INSTALL_RECHECK_S,
     AGENT_MODULE_STATE_FAILED,
     AGENT_MODULE_STATE_INSTALL_FAILED,
+    AGENT_PRESENT_WANTS,
     AGENT_WANT_ABSENT,
-    AGENT_WANT_INSTALLED,
     AGENT_WANT_RUNNING,
     AGENT_WANT_STOPPED,
 )
@@ -95,8 +95,6 @@ APPLY_ORDER = (
     "remote_desktop",
 )
 
-# The wants under which the software must be there.
-PRESENT_WANTS = (AGENT_WANT_INSTALLED, AGENT_WANT_STOPPED, AGENT_WANT_RUNNING)
 # The wants that apply the hub's configuration.
 CONFIGURING_WANTS = (AGENT_WANT_RUNNING, AGENT_WANT_STOPPED)
 
@@ -416,7 +414,9 @@ class DesiredStateApplier:
         ``APPLY_ORDER``, a container module the order does not name right
         after Containers. A ``want`` outside the four is left alone, with a
         line in the log. A container module whose install took marks
-        Containers to be applied again, and the state is applied once more.
+        Containers to be applied again, and the state is applied once more;
+        a container module the state asks to be present while it is not
+        installed reads ``installing`` from here until it reads its want.
 
         Args:
             document: The state, ``{hash, modules, desktop, source_sets}``.
@@ -447,6 +447,9 @@ class DesiredStateApplier:
         runners = {**self._runners, **self._engine.container_runners()}
         order = apply_order(modules, runners)
         steps = [name for name in order if hashes[name] != tried.get(name)]
+        self._engine.hold_installing(
+            [name for name in steps if self._is_container_install(name, modules[name])]
+        )
         reported = self._engine.report()
         waiting = [
             name
@@ -482,6 +485,17 @@ class DesiredStateApplier:
                     self._pending = dict(document)
             self._wakeup.set()
         self._engine.refresh_now()
+
+    def _is_container_install(self, name: str, wanted: dict) -> bool:
+        """Whether a state entry asks a container module to be present that is not installed."""
+        return (
+            _method_of(wanted) == AGENT_METHOD_CONTAINER
+            and str(wanted.get("want", "") or "") in AGENT_PRESENT_WANTS
+            and (
+                self._engine.is_install_failed(name)
+                or not self._engine.is_installed(name)
+            )
+        )
 
     def _apply_desktop(self, wanted) -> None:
         """Give the desktop host the seat password the hub holds.
@@ -564,7 +578,7 @@ class DesiredStateApplier:
                 )
             self._engine.clear_configured(name)
             return None
-        if want not in PRESENT_WANTS:
+        if want not in AGENT_PRESENT_WANTS:
             self._log(f"{name}: want {want!r} is not one this agent knows")
             return None
         if is_install_failed or not self._engine.is_installed(name):

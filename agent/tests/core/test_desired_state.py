@@ -75,6 +75,7 @@ class FakeEngine:
         self.uninstalls: list = []
         self.install_refusal = install_refusal
         self.queued: list = []
+        self.held: list = []
 
     def take_state(self, modules, source_sets=None):
         self.states.append(modules)
@@ -111,6 +112,9 @@ class FakeEngine:
 
     def set_queued(self, names):
         self.queued.append(list(names))
+
+    def hold_installing(self, names):
+        self.held.append(list(names))
 
     def report(self):
         return {
@@ -1411,6 +1415,29 @@ def test_a_container_module_already_there_marks_nothing(tmp_path):
     assert engine.installs == []
     assert held._pending is None
     assert demo.applied == [{"n": "demo"}]
+    assert engine.held == [[]]
+
+
+def test_a_container_module_to_install_is_held_installing_from_the_state_on(
+    tmp_path,
+):
+    """Its row read queued, installing, installed, queued and installing again
+    between the press and running."""
+    engine = ContainerEngine(
+        ["podman", "demo", "samba"], {"demo": FakeRunner()}, absent=("demo", "samba")
+    )
+    held, _ = applier(
+        {"podman": FakeRunner(), "samba": FakeRunner()},
+        engine=engine,
+        tmp_path=tmp_path,
+    )
+    document = with_container(
+        state(podman="running", samba="running"), "demo", "running"
+    )
+
+    held.apply(document)
+
+    assert engine.held == [["demo"]]
 
 
 def test_the_state_s_source_sets_reach_the_engine(tmp_path):

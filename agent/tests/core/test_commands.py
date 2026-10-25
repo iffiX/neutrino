@@ -60,7 +60,7 @@ class NoRemoteDesktop:
 def operator(**runners) -> DeviceOperator:
     return DeviceOperator(
         platform=PowerPlatform(),
-        module_runners=runners,
+        runner_of=runners.get,
         remote_desktop=NoRemoteDesktop(),
     )
 
@@ -196,7 +196,7 @@ def test_validate_reaches_the_runner_without_waiting_on_the_state():
     changed: list = []
     subject = DeviceOperator(
         platform=PowerPlatform(),
-        module_runners={"samba": runner},
+        runner_of={"samba": runner}.get,
         settle=lambda timeout_s: settled.append(timeout_s) or False,
         on_module_changed=changed.append,
     )
@@ -213,7 +213,7 @@ def test_the_journal_reads_while_a_state_is_still_applying():
     settled: list = []
     subject = DeviceOperator(
         platform=PowerPlatform(),
-        module_runners={"samba": FakeRunner()},
+        runner_of={"samba": FakeRunner()}.get,
         settle=lambda timeout_s: settled.append(timeout_s) or False,
     )
 
@@ -481,7 +481,7 @@ def test_a_module_verb_settles_the_desired_state_first():
     runner = FakeRunner()
     subject = DeviceOperator(
         platform=PowerPlatform(),
-        module_runners={"samba": runner},
+        runner_of={"samba": runner}.get,
         settle=lambda timeout_s: order.append(("settle", timeout_s)) or True,
     )
 
@@ -495,7 +495,7 @@ def test_a_state_that_never_settles_refuses_the_verb_typed():
     runner = FakeRunner()
     subject = DeviceOperator(
         platform=PowerPlatform(),
-        module_runners={"samba": runner},
+        runner_of={"samba": runner}.get,
         settle=lambda timeout_s: False,
     )
 
@@ -510,7 +510,7 @@ def test_a_module_verb_that_succeeded_reports_its_module_again():
     changed = []
     subject = DeviceOperator(
         platform=PowerPlatform(),
-        module_runners={"samba": FakeRunner()},
+        runner_of={"samba": FakeRunner()}.get,
         on_module_changed=changed.append,
     )
 
@@ -528,7 +528,7 @@ def test_a_module_verb_that_failed_reports_nothing_again():
     changed = []
     subject = DeviceOperator(
         platform=PowerPlatform(),
-        module_runners={"samba": RefusingRunner()},
+        runner_of={"samba": RefusingRunner()}.get,
         on_module_changed=changed.append,
     )
 
